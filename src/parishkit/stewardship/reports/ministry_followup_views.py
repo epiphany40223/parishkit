@@ -63,7 +63,11 @@ from parishkit.stewardship.workflows.models import (
     STAFF_STATES,
     MinistryRequest,
 )
-from parishkit.stewardship.workflows.review import DecisionRefusal, MinistryDecisions
+from parishkit.stewardship.workflows.review import (
+    DecisionRefusal,
+    MinistryDecisions,
+    undo_entered,
+)
 from parishkit.stewardship.workflows.roster import (
     can_tick,
     mark,
@@ -81,7 +85,7 @@ from .ministries import (
     reads_every_ministry,
     unscoped,
 )
-from .ministry_contacts import request_contacts
+from .ministry_contacts import current_ministry, request_contacts
 from .ministry_exports import MAX_PACKET_MINISTRIES
 from .ministry_followup import (
     CHANNELS,
@@ -369,8 +373,9 @@ def _queue_query(request, principal, parameters):
     A query string carries either the token of a remembered view ("Return
     to Ministry requests", #534) or closed link filters: one Ministry, from
     a leader's My review work (#1690) or with a request type and stage from
-    a count on By Ministry (#1133), or a Stage alone, from Home's Ministry
-    requests to enter by hand card (R39 finding 2). Search and every other
+    a count on By Ministry (#1133), or a Stage alone, from a Staff card of
+    My review work (#1818) or Home's Ministry requests to enter by hand
+    card (R39 finding 2). Search and every other
     filter stay private POST state (``parameters``, the POST body less any
     decision's fields). A Ministry leader's view of Staff's update phase
     reads as their Accepted (``for_reader``).
@@ -562,8 +567,9 @@ def _page_response(
 
             item = result["rows"][0]
             # Named before the contacts are read, so a failed read's audit
-            # event still carries the request's Ministry.
-            shown_ministry = item["ministry_duid"]
+            # event still carries the request's Ministry: the one its
+            # contacts are read under (#1718).
+            shown_ministry = current_ministry(item)
             # The Member's contact details (#1157), read for this one request
             # through the same scoped SQL the Ministry lists used. An in-place
             # history page swaps only the history, so it skips them.
@@ -1060,13 +1066,21 @@ def roster(request, campaign_id, request_id):
     queue token, so it refreshes in place. A tick someone else changed first
     is a conflict (409), as a stale follow-up save is. Roster changes to
     enter records its marks through its own worklist since #1687; clearing
-    a mistaken mark is this page's.
+    a mistaken mark is this page's, and is Back to review of Entered by
+    hand (#1840): its dialog posts the required note, and it is recorded
+    as the worklist's undo is (``review.undo_entered``).
     """
 
     def work(store, actor):
         """Validate the closed form, record the tick and name the answer."""
+        parameters = request.POST.copy()
+        # The undo's note may be longer than a filter input (2,000
+        # characters, checked by the service), so it is read on its own.
+        notes = parameters.pop("note", None)
+        if notes is not None and len(notes) != 1:
+            raise ValueError("The note is sent once.")
         values = filters(
-            request.POST,
+            parameters,
             allowed={
                 "sequence",
                 "entered",
@@ -1083,14 +1097,28 @@ def roster(request, campaign_id, request_id):
             raise ValueError("Invalid roster tick.")
         token = queue_token(values.get("queue", ""))
         _in_campaign(campaign_id, [request_id])
-        set_roster_entered(
-            store,
-            actor,
-            request_id,
-            sequence=expected_version(values.get("sequence", "")),
-            entered=values["entered"] == "yes",
-            request_key=UUID(values.get("request_key", "")),
-        )
+        sequence = expected_version(values.get("sequence", ""))
+        key = UUID(values.get("request_key", ""))
+        if values["entered"] == "yes":
+            if notes is not None:
+                raise ValueError("The mark takes no note.")
+            set_roster_entered(
+                store,
+                actor,
+                request_id,
+                sequence=sequence,
+                entered=True,
+                request_key=key,
+            )
+        else:
+            undo_entered(
+                store,
+                actor,
+                request_id,
+                sequence=sequence,
+                note=notes[0] if notes else "",
+                request_key=key,
+            )
         return with_queue(
             reverse("admin:ministry_followup_item", args=[request_id]), token
         )

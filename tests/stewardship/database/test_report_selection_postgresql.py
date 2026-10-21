@@ -98,7 +98,12 @@ def test_stale_document_carries_its_own_asof_and_matches_export(scenario):  # no
         assert report.status == "updating" and report.updating
         assert report.selected == fact_inputs(facts)
         assert report.selected != report.expected
-        assert report.document == replace(exported, requested_at=report.selected_at)
+        # The export also carries the page's Summary, captured when it was
+        # requested (#1557); the fact document the page selects has none.
+        assert exported.summary is not None and report.document.summary is None
+        assert report.document == replace(
+            exported, requested_at=report.selected_at, summary=None
+        )
         assert report.document.submission_watermark == facts.submission_watermark
         assert report.document.source_generation == facts.source_generation
 

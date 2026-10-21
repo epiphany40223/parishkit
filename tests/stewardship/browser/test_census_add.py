@@ -4,16 +4,25 @@ In Chromium and WebKit. The real page is served by ``census_components``;
 each POST is answered with the fixture page after it. A mark outside every
 region shows the page never reloaded. Add shows only the controls the
 chosen field needs, sends only those, waits until they are complete, shows
-a refusal at its field, and the added row offers only its own steps.
+a refusal at its field, and the added row offers only its own steps; once
+Entered by hand, its Back to review undoes the mark with a required note
+(#1840).
 """
 
 import json
 
 import pytest
 
-from .census_components import ADDED, ADDED_NOTICE, PATH
+from .census_components import (
+    ADDED,
+    ADDED_ENTERED,
+    ADDED_NOTICE,
+    ADDED_REOPENED,
+    ADDED_REOPENED_NOTICE,
+    PATH,
+)
 from .test_bulk_bar import assert_accessible
-from .test_table_sorting import MARK, MARKED
+from .test_table_sorting import MARK, MARKED, fulfil_post_with
 from .waits import available, has_text, hidden, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -139,6 +148,73 @@ def test_an_add_posts_its_fields_and_answers_in_place(page, component_origin):
         "The added change is withdrawn: nothing is entered in ParishSoft, and it "
         "moves to History.",
     )
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_an_added_address_sends_only_the_shown_state(page, component_origin):
+    """An added address starts with United States and its State drop-down
+    (#1785). Showing the address again after another field never brings
+    back the hidden free-text State, so exactly one State is sent."""
+    page.goto(component_origin + PATH)
+    sent = answer_posts(page, component_origin)
+    dialog = open_add(page)
+    changed = dialog.get_by_label("What changed")
+    changed.select_option("home_address")
+    assert dialog.get_by_label("Country").input_value() == "US"
+    changed.select_option("birth_date")
+    changed.select_option("home_address")
+    text = dialog.locator('[name="value_region"]:not(select)')
+    assert text.is_disabled()
+    hidden(text)
+    dialog.get_by_label("Family DUID").fill("1003")
+    dialog.get_by_label("Street", exact=True).fill("1 Main Street")
+    dialog.get_by_label("City").fill("Louisville")
+    dialog.get_by_label("State", exact=True).select_option("KY")
+    dialog.get_by_label("ZIP code").fill("40223")
+    add = dialog.get_by_role("button", name="Add", exact=True)
+    available(add)
+    add.click()
+    has_text(page.locator("#census-notice"), ADDED_NOTICE)
+    assert sent[0].count("value_region=") == 1
+    assert "value_region=KY" in sent[0] and "value_country=US" in sent[0]
+    assert "value_member" not in sent[0]
+
+
+def test_back_to_review_undoes_an_added_changes_mark_in_place(page, component_origin):
+    """An added change Entered by hand offers Back to review (#1840): its
+    dialog says the mark is undone and the change goes back to To enter by
+    hand, and Record waits for the required note; the redrawn row is To
+    enter by hand again, in place."""
+    page.goto(component_origin + ADDED_ENTERED)
+    page.evaluate(MARK)
+    sent = []
+
+    def answer(request):
+        """Keep the body; answer with the page after the undo."""
+        sent.append(request.post_data)
+        return ADDED_REOPENED
+
+    fulfil_post_with(page, "**" + PATH, component_origin, answer)
+    added = page.locator("#census-row-add-a1")
+    has_text(added.locator(".stage-chip .status-word"), "Entered by hand")
+    added.locator('[data-row-action="back_to_review"]').click()
+    dialog = page.locator("#census-decide-dialog")
+    has_text(dialog.locator("h2"), "Send Nickname for Member 03 back to review?")
+    has_text(
+        dialog.locator("[data-confirm-body]"),
+        "Entered by hand is undone: the item goes back to To enter by hand, with "
+        "its decision kept. Say why.",
+    )
+    record = dialog.get_by_role("button", name="Record")
+    assert record.is_disabled()
+    dialog.get_by_label("Note (required)").fill("Typo")
+    available(record)
+    record.click()
+    has_text(page.locator("#census-notice"), ADDED_REOPENED_NOTICE)
+    hidden(dialog)
+    assert "decide=back_to_review" in sent[-1] and "note=Typo" in sent[-1]
+    assert "item=add-a1" in sent[-1] and "version=2" in sent[-1]
+    has_text(added.locator(".stage-chip .status-word"), "To enter by hand")
     assert page.evaluate(MARKED) == "kept"
 
 

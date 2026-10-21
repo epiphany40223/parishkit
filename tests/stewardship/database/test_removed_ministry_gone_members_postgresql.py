@@ -43,6 +43,19 @@ LATER = definition(
     ),
     "stewardship_ministry_followup_v1",
 )
+# 0140 (#1718) has since replaced the packet and report selections again,
+# changing the removed-Ministry text this check reads; 0119's bodies, the
+# ones before it, still hold that text.
+CONSENT = (SCHEMA_FILES / "migrations/0119_leader_request_contacts.sql").read_text(
+    encoding="utf-8"
+)
+LATER_SELECTIONS = [
+    LATER,
+    *(
+        definition(CONSENT, name)
+        for name in ("stewardship_ministry_packet_v1", "stewardship_ministry_report_v3")
+    ),
+]
 
 
 def check_refuses(statement, message):
@@ -53,7 +66,8 @@ def check_refuses(statement, message):
         connection.cursor() as cursor,
     ):
         cursor.execute("SET LOCAL check_function_bodies = false")
-        cursor.execute(LATER)
+        for later in LATER_SELECTIONS:
+            cursor.execute(later)
         cursor.execute(ACL)
         cursor.execute(statement)
         cursor.execute(CHECK)
@@ -69,7 +83,8 @@ def test_the_closing_check_passes_on_the_installed_schema():
     ]
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute("SET LOCAL check_function_bodies = false")
-        cursor.execute(LATER)
+        for later in LATER_SELECTIONS:
+            cursor.execute(later)
         cursor.execute(ACL)
         cursor.execute(CHECK)
         transaction.set_rollback(True)

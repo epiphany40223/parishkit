@@ -25,7 +25,7 @@
     the dialog shows it as drawn.
 {% endcomment %}{% if backup_now.preview %}{% with preview=backup_now.preview %}<div data-review-answer data-review-done="{% translate 'Backup requested.' %}">
 <p id="backup-review-summary">{% if preview.offsite %}{% translate "This asks the server to take one backup soon, of the same kind as the scheduled ones, and to copy it off-site to Google Drive." %}{% else %}{% translate "This asks the server to take one backup soon, of the same kind as the scheduled ones; off-site copies are not set up, so it stays on the server only." %}{% endif %}</p>
-{% if preview.held %}<p class="notice">{% translate "A Family email send is in progress, so the backup will wait until the send finishes." %} <a href="{% url 'admin:family_email_progress' %}">{% translate "Family email progress" %}</a></p>{% endif %}
+{% if preview.held %}<p class="notice">{% translate "A Family email send is in progress, so the backup will wait until the send finishes." %} <a href="{% url 'admin:mail_queue' %}">{% translate "Mail queue" %}</a></p>{% endif %}
 <input type="hidden" name="key" value="{{ preview.key }}" data-review-preview>
 </div>{% endwith %}
 {% elif backup_now.requested %}{% include 'stewardship/system-health-backup-now.html' %}

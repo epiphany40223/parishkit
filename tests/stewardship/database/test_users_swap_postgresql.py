@@ -412,7 +412,7 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0119 (#1591) creates nothing: it replaces the baseline packet selection
 # and 0064's report selection in place, which 0094's rerun
 # (``CLOSURE_REPLACED``) brings back older, so ``CLOSURE_REPLACED`` runs
-# 0119's file after it.
+# 0119's file after it; since 0140 (#1718) replaced both again, 0140's.
 # 0121 (#1658) creates nothing: it replaces the
 # occurrence guard (0005's, before the closure), the digest slot check and
 # the weekly page proof (both the baseline's) in place. No closure file
@@ -440,6 +440,49 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # again) and replaces three bodies (0124's intake check, 0114's state guard,
 # the baseline's request guard) that no closure file installs again, so
 # nothing else is registered.
+# 0133 (#1737, provisional number) creates nothing: it replaces 0060's
+# resolution guard and 0132's refresh check guard, which their files bring
+# back older (``CLOSURE_REPLACED`` runs 0133's file again), and the derived
+# guard last (``CLOSURE_REPLACED_ONLY``).
+# 0137 (#1738, provisional number) creates the census refresh source and
+# replaces 0132's refresh check guard. The source goes, so its file installs
+# whole again after 0132's, putting its guard body back over 0132's.
+# 0138 (#1749, provisional number) creates the address key, widens 0132's
+# outcome check, adds a column to 0060's resolution table and replaces the
+# census refresh source and the resolution, refresh check and derived
+# guards. The key goes and both tables are made again, so its file installs
+# whole again after 0060's, 0132's and 0137's, putting its bodies back over
+# theirs; the derived guard's later reruns are undone by
+# ``CLOSURE_REPLACED_ONLY``.
+# 0142 (#1557) creates the participation Summary capture table (in
+# CLOSURE_TABLES) with its guard and the request table's deferred check
+# (``CLOSURE_CREATED``), and replaces 0109's discard in place, which 0109's
+# file brings back older, so ``CLOSURE_OLD_BODIES`` puts 0142's back.
+# 0143 (#1705, provisional number) creates nothing: it adds what a Family
+# form showed (``reviewed_view``, ``shown_items`` and the check pairing
+# them) to the form baseline and the Submission. While the swap is pending
+# ``before_reviewed_form_shown_items`` drops the four columns (their checks
+# go with them), and ``CLOSURE_ALTERED`` runs the file again afterwards.
+# 0146 (#1840) creates nothing: it replaces 0139's
+# resolution guard, 0060's resolution effect check and 0138's derived guard
+# in place, which the reruns of 0060's, 0133's and 0138's files bring back
+# older, so ``CLOSURE_REPLACED`` runs its file again after theirs and
+# ``CLOSURE_REPLACED_ONLY`` puts its derived guard back last.
+# 0147 (#1840) creates nothing: it alters 0129's
+# resolution table (in CLOSURE_TABLES, so made again by 0129's file) and
+# replaces 0129's three guards in place; every statement can run again, so
+# ``CLOSURE_REPLACED`` runs its file again after 0129's.
+# 0148 (#1840) creates nothing: it replaces 0061's
+# roster entry guard and 0131's request and revision guards in place, so
+# ``CLOSURE_REPLACED`` runs its file again after theirs.
+# 0149 (#1840) creates nothing: it widens 0127's pledge
+# review state check and replaces 0135's pledge review guard in place, which
+# the reruns of 0127's and 0135's files bring back older, so
+# ``CLOSURE_REPLACED`` runs its file again after theirs.
+# 0150 and 0151 (#1840) create nothing: each replaces
+# one of 0126's guards in place (the information revision guard and the
+# limitation review guard), which 0126's rerun brings back older, so
+# ``CLOSURE_REPLACED`` runs each file again after it.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -749,6 +792,68 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_responses", "0015_census_additions"),
     ),
+    # 0134 (#1704, provisional number) creates the pledge refresh check table
+    # (in CLOSURE_TABLES) with its guard and the upcoming pledge selection,
+    # and replaces 0127's pledge review guard, which 0127's own reinstall
+    # puts back first; all go, so its file installs whole again after 0127's.
+    **dict.fromkeys(
+        (
+            "public.stewardship_pledge_upcoming_v1(uuid,uuid,bigint)",
+            "public.stewardship_pledge_refresh_items_v1(uuid,uuid)",
+            "public.stewardship_pledge_refresh_check_guard_v1()",
+        ),
+        ("stewardship_reports", "0033_pledge_refresh_checks"),
+    ),
+    # 0135 (#1747, provisional number) creates the pledge open check table
+    # (in CLOSURE_TABLES) with its guard, the stage selection and the
+    # worker's v2 selection; it alters 0134's check outcomes and 0127's
+    # review table (both made again first, being closure tables) and
+    # replaces both earlier guards, which their own reinstalls put back
+    # first; all go, so its file installs whole again after 0134's.
+    **dict.fromkeys(
+        (
+            "public.stewardship_pledge_stages_v1(uuid,uuid)",
+            "public.stewardship_pledge_refresh_items_v2(uuid,uuid,uuid)",
+            "public.stewardship_pledge_open_check_guard_v1()",
+        ),
+        ("stewardship_reports", "0034_pledge_conflicts"),
+    ),
+    "public.stewardship_refresh_census_source_v1(uuid,uuid,text,text,text)": (
+        "stewardship_workflows",
+        "0005_census_refresh_sources",
+    ),
+    "public.stewardship_refresh_address_key_v1(jsonb)": (
+        "stewardship_responses",
+        "0019_published_refresh_conflicts",
+    ),
+    # 0141 (#1670, provisional number) creates the added Member link table
+    # (in CLOSURE_TABLES), its guard and the definer candidates function;
+    # all go, so its file installs whole again (and replaces the two
+    # Ministry selections; see CLOSURE_REPLACED_ONLY).
+    **dict.fromkeys(
+        (
+            "public.stewardship_added_member_candidates_v1(uuid,uuid)",
+            "public.stewardship_added_member_link_guard_v1()",
+        ),
+        ("stewardship_responses", "0021_added_member_links"),
+    ),
+    # 0142 (#1557) creates the participation Summary capture table (in
+    # CLOSURE_TABLES) with its guard and the request table's deferred check;
+    # all go, so its file installs whole again, after 0109's, whose discard
+    # it replaces (``CLOSURE_OLD_BODIES`` puts it back after 0109's file
+    # runs again on its own).
+    **dict.fromkeys(
+        (
+            "public.stewardship_participation_export_capture_v1()",
+            "public.stewardship_participation_export_summary_v1()",
+        ),
+        ("stewardship_reports", "0036_participation_summary"),
+    ),
+    # 0145 (#1562) creates only Sent mail's Member-name read.
+    "public.stewardship_delivery_page_member_names_v1(uuid[],uuid)": (
+        "stewardship_jobs",
+        "0036_page_member_names",
+    ),
 }
 
 
@@ -804,6 +909,19 @@ CLOSURE_ALTERED = {
         "stewardship_workflows",
         "0003_ministry_review_pipeline",
     ),
+    # 0136 (#1753, provisional number) adds the responses' upcoming pledge
+    # with its INSERT guard and replaces 0135's stage selection in place,
+    # which 0135's reinstall (``CLOSURE_CREATED``) puts back first; its file
+    # then runs whole again (``before_submission_upcoming_pledge`` drops the
+    # column and the guard).
+    ("stewardship_submission", "upcoming_pledge"): (
+        "stewardship_responses",
+        "0018_submission_upcoming_pledge",
+    ),
+    ("stewardship_family_form_baseline", "reviewed_view"): (
+        "stewardship_responses",
+        "0022_reviewed_form_shown_items",
+    ),
 }
 
 
@@ -836,6 +954,9 @@ CLOSURE_ALTERED = {
 # 0119 (#1591) replaces the packet and report selections that 0094's file
 # puts back without the requesting Member's consent, so their entry comes
 # after 0094's, whose rerun the limitations report alone now triggers.
+# 0140 (#1718, provisional number) replaces both again, whole, listing a
+# request under the Ministry its Edit carried forward, so its file (which
+# holds 0119's consent too) is the one that runs.
 CLOSURE_REPLACED = {
     "public.stewardship_debug_off_switch_guard_v1()": (
         ("stewardship_jobs", "0031_debug_allow"),
@@ -868,7 +989,10 @@ CLOSURE_REPLACED = {
             "public.stewardship_ministry_report_v3"
             "(uuid,jsonb,boolean,bigint[],integer,text,integer,integer)",
         ),
-        (("stewardship_reports", "0031_leader_request_contacts"), "AS consented"),
+        (
+            ("stewardship_reports", "0035_edited_ministry_contacts"),
+            "coalesce(r.reviewed_ministry_duid,r.ministry_duid) AS ministry_duid",
+        ),
     ),
     **dict.fromkeys(
         (
@@ -888,6 +1012,76 @@ CLOSURE_REPLACED = {
     "public.stewardship_publication_confirmation_guard_v1()": (
         ("stewardship_responses", "0010_upstream_at_check"),
         "p.version<>f.proposal_version+1",
+    ),
+    # 0133 (#1737) replaces 0060's resolution guard and 0132's refresh
+    # check guard, which those files bring back; it creates nothing, so its
+    # file runs again whole. 0139 (#1773, provisional number) replaced the
+    # resolution guard on 0138's body (which keeps 0133's), and 0146 (#1840,
+    # below) replaces it last on 0139's.
+    "public.stewardship_refresh_check_guard_v1()": (
+        ("stewardship_responses", "0017_entered_incorrectly_fixes"),
+        "k.item_version=change.version-1",
+    ),
+    # 0146 (#1840) replaces the resolution guard (0139's
+    # body), the resolution effect check (0060's) and the derived guard
+    # (0138's). The reruns of 0060's and 0138's files (CLOSURE_CREATED) and
+    # of 0133's (the entry above, which must come first) bring back older
+    # bodies; 0146 creates nothing, so its file runs again whole, after
+    # them. The derived guard's later reruns are undone by
+    # ``CLOSURE_REPLACED_ONLY``.
+    "public.stewardship_proposal_resolution_guard_v1()": (
+        ("stewardship_responses", "0023_census_terminal_undo"),
+        "undo:=NEW.action='reopened' AND NOT replaced",
+    ),
+    "public.stewardship_proposal_resolution_effect_v1()": (
+        ("stewardship_responses", "0023_census_terminal_undo"),
+        "AND NOT (proposal.decision='approved' AND proposal.execution='pending'))",
+    ),
+    # 0147 (#1840) alters 0129's resolution table and
+    # replaces its three guards, which 0129's reinstall (CLOSURE_CREATED)
+    # brings back without the undo; it creates nothing, and each statement
+    # can run again, so its file runs again whole.
+    "public.stewardship_census_addition_resolution_guard_v1()": (
+        ("stewardship_responses", "0024_census_addition_undo"),
+        "Census addition step does not follow its latest step",
+    ),
+    # 0148 (#1840) replaces 0061's roster entry guard
+    # (CLOSURE_CREATED) and 0131's request and revision guards (its file
+    # runs again through CLOSURE_ALTERED), which those reruns bring back
+    # older; it creates nothing, so its file runs again whole.
+    "public.stewardship_ministry_roster_entry_guard_v1()": (
+        ("stewardship_workflows", "0007_ministry_terminal_undo"),
+        "Clearing Entered in ParishSoft needs its Back to review with a note",
+    ),
+    "public.stewardship_ministry_revision_guard_v1()": (
+        ("stewardship_workflows", "0007_ministry_terminal_undo"),
+        "undo := reopen AND NEW.state='resolved';",
+    ),
+    "public.stewardship_ministry_request_guard_v1()": (
+        ("stewardship_workflows", "0007_ministry_terminal_undo"),
+        "NEW.resolution_source_id := NULL;",
+    ),
+    # 0149 (#1840) replaces 0135's pledge review guard
+    # and widens 0127's state check, both of which 0127's and 0135's reruns
+    # (CLOSURE_CREATED) bring back older; it creates nothing, so its file
+    # runs again whole.
+    "public.stewardship_pledge_review_guard_v1()": (
+        ("stewardship_reports", "0038_pledge_terminal_undo"),
+        "item.stage IN ('entered_by_hand','entered_incorrectly','confirmed')",
+    ),
+    # 0150 (#1840) replaces 0126's information revision
+    # guard, which 0126's file (CLOSURE_CREATED) brings back; it creates
+    # nothing, so its file runs again whole.
+    "public.stewardship_information_revision_guard_v1()": (
+        ("stewardship_responses", "0025_information_handled_undo"),
+        "Undoing a handled request needs a note",
+    ),
+    # 0151 (#1840) replaces 0126's limitation review
+    # guard, which 0126's file (CLOSURE_CREATED) makes again; it creates
+    # nothing, so its file runs again whole.
+    "public.stewardship_limitation_review_guard_v1()": (
+        ("stewardship_responses", "0026_limitation_handled_undo"),
+        "WHEN 'handled' THEN NEW.decision='accepted'",
     ),
 }
 
@@ -932,6 +1126,13 @@ CLOSURE_OLD_BODIES = {
     ("stewardship_accounts", "0022_drop_ministry_activity"): (
         "stewardship_ministry_activity"
     ),
+    # 0142 (#1557) replaces 0109's discard, which 0109's file (its routines
+    # in CLOSURE_CREATED and runtime_grants.CLOSURE_FUNCTIONS) brings back
+    # without the participation capture; only that older body goes straight
+    # from the capture loop to the pins.
+    ("stewardship_reports", "0036_participation_summary"): (
+        "END LOOP;\n    DELETE FROM stewardship_fact_pin"
+    ),
 }
 
 
@@ -972,10 +1173,20 @@ def rerun_old_bodies(cursor, migrations):
 # put an earlier body back, when that file also creates tables and so cannot
 # run whole twice: only its replacement statement runs again, unless the body
 # already has the phrase. 0096 (#528) replaced the derived guard after 0090,
-# 0113 (#1596) and 0118 (#1603) replace it last, after 0108's and 0112's
-# reruns; 0118's body keeps 0096's, 0108's, 0112's and 0113's rules, so only
-# the latest replacement runs.
+# 0113 (#1596), 0118 (#1603), 0133 (#1737) and 0138 (#1749) replace it last,
+# after 0108's and 0112's reruns; 0138's body keeps 0096's, 0108's, 0112's,
+# 0113's, 0118's and 0133's rules, so only the latest replacement runs.
 CLOSURE_REPLACED_ONLY = {
+    # 0141 (#1670) replaces both Ministry selections last, reading added
+    # Member links; 0140's rerun (CLOSURE_REPLACED) can put 0140's bodies
+    # back, and 0141 creates a table, so only its replacements run again.
+    **dict.fromkeys(
+        ("stewardship_ministry_packet_v1", "stewardship_ministry_report_v3"),
+        (
+            ("stewardship_responses", "0021_added_member_links"),
+            "bool_or(v.cannot_serve) AS cannot_serve",
+        ),
+    ),
     # 0131 (#1684) replaces the follow-up selection last; 0094's rerun
     # (above) puts back its older body, and 0131 adds columns, so only its
     # replacement statement runs again.
@@ -983,9 +1194,22 @@ CLOSURE_REPLACED_ONLY = {
         ("stewardship_workflows", "0003_ministry_review_pipeline"),
         "AS reviewed_ministry_name",
     ),
+    # 0146 (#1840) replaces it last, on 0138's body (0138 replaced 0133's
+    # for the published Conflict, and 0133 replaced 0118's for Entered
+    # incorrectly's two fixes), for Back to review undoing a terminal step.
     "stewardship_response_derived_guard_v1": (
-        ("stewardship_responses", "0012_gender_by_hand"),
-        "'suffix','gender','marital_status'",
+        ("stewardship_responses", "0023_census_terminal_undo"),
+        "IF OLD.execution='published' AND current_user<>'pk_stewardship_web' "
+        "AND NOT EXISTS (",
+    ),
+    # 0138 (#1749) replaces the refresh check guard last, on 0137's body
+    # (0133's with #1738's fields); the rerun of 0133's file
+    # (CLOSURE_REPLACED, for its refresh check guard) puts 0133's body back over
+    # it, and 0138 creates the address key, so only its replacement
+    # statement runs again.
+    "stewardship_refresh_check_guard_v1": (
+        ("stewardship_responses", "0019_published_refresh_conflicts"),
+        "change.field='new_member'",
     ),
     # 0109 (#1398) widens 0106's safe context with the export report and
     # format keys, and 0122 (#1620) widens 0109's with the automatic view
@@ -1056,6 +1280,18 @@ CLOSURE_REPLACED_ONLY = {
                 "stewardship_setup_secret_audit_v1",
                 "(the instant never changes in place, #1550)",
             ),
+        )
+    },
+    # 0144 (#1799) replaces 0109's timeline capture and request guard and
+    # 0084's request authorization, which the reruns above bring back
+    # (these keys' later values win, so 0109's capture and guard entries
+    # above become 0144's); its bodies keep 0109's and 0084's rules.
+    **{
+        name: (("stewardship_reports", "0037_staff_timeline_export"), phrase)
+        for name, phrase in (
+            ("stewardship_timeline_export_capture_v1", "(#1799)"),
+            ("stewardship_export_request_guard_v1", "since #1799"),
+            ("stewardship_export_request_authorized_v1", "and Staff (#1799)"),
         )
     },
 }
@@ -1246,6 +1482,21 @@ def before_staff_entered():
     ]
 
 
+def before_reviewed_form_shown_items():
+    """The statements that put baselines and submissions back as before 0143.
+
+    #1705's 0143 adds only ``reviewed_view`` and ``shown_items`` to both
+    tables, with a check on each that goes with the columns, so dropping
+    them is the production base; 0143's frozen file (or the full migration)
+    adds them again.
+    """
+    return [
+        f"ALTER TABLE public.{table} DROP COLUMN {column}"
+        for table in ("stewardship_family_form_baseline", "stewardship_submission")
+        for column in ("shown_items", "reviewed_view")
+    ]
+
+
 def before_branding_bundle_mode():
     """The statement that puts branding bundles back as they were before 0082.
 
@@ -1271,6 +1522,21 @@ def before_leader_changes():
     start = text.index("CREATE FUNCTION public.stewardship_ministry_leaders_v1()")
     body = text[start : text.index("END $$;", start) + len("END $$;")]
     return [body.replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1)]
+
+
+def before_submission_upcoming_pledge():
+    """The statements that put responses back as they were before 0136.
+
+    #1753's 0136 adds ``stewardship_submission.upcoming_pledge`` with its
+    INSERT guard and replaces 0135's stage selection, which ``swap_pending``
+    already dropped (``CLOSURE_CREATED``); dropping the guard function drops
+    its trigger. 0136's frozen file (or the full migration) installs all of
+    it again.
+    """
+    return [
+        "DROP FUNCTION public.stewardship_submission_pledge_guard_v1() CASCADE",
+        "ALTER TABLE public.stewardship_submission DROP COLUMN upcoming_pledge",
+    ]
 
 
 def before_ministry_review_pipeline():
@@ -1332,7 +1598,9 @@ def swap_pending():
     and the refusal table and its guard as they were before 0081
     (``before_bounce_report``), and branding bundles as they were before 0082
     (``before_branding_bundle_mode``), and the digest ready row's funnel
-    charts as they were before 0083 (``before_digest_funnel_charts``).
+    charts as they were before 0083 (``before_digest_funnel_charts``), and
+    form baselines and submissions as they were before 0143
+    (``before_reviewed_form_shown_items``).
     """
     from django.db.migrations.loader import MigrationLoader
 
@@ -1377,6 +1645,8 @@ def swap_pending():
             *before_branding_bundle_mode(),
             *before_ministry_review_pipeline(),
             *before_information_limitation_review(),
+            *before_submission_upcoming_pledge(),
+            *before_reviewed_form_shown_items(),
         ):
             cursor.execute(statement)
     try:
@@ -1645,6 +1915,14 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
             # promotion and reads the start row; web only reads both.
             "stewardship_refresh_check": ("pk_stewardship_worker", "INSERT"),
             "stewardship_refresh_check_start": ("pk_stewardship_worker", "SELECT"),
+            # Pledge refresh checks (0134, #1704): the worker records them
+            # in promotion; web only reads them.
+            "stewardship_pledge_refresh_check": ("pk_stewardship_worker", "INSERT"),
+            # To review pledges' checks (0135, #1747), the same way.
+            "stewardship_pledge_open_check": ("pk_stewardship_worker", "INSERT"),
+            # Added Member links (0141, #1670): the worker records them in
+            # promotion; web only reads them.
+            "stewardship_added_member_link": ("pk_stewardship_worker", "INSERT"),
         }
         for table in CLOSURE_TABLES:
             login, privilege = writers.get(table, ("pk_stewardship_web", "INSERT"))

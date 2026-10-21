@@ -84,7 +84,7 @@ def test_testing_draft_steps():
         "Pages and emails",
         "Dates and mail schedules",
         "Preview and test email",
-        "Go-live readiness",
+        "Go live",
     ]
     assert admin[3].url == reverse("admin:campaign_mail", args=[revision])
 
@@ -99,7 +99,7 @@ def test_steps_follow_the_viewers_menu():
         menu(names, greyed={"content_catalog"}),
         test_email=uuid4(),
     )
-    assert "Go-live readiness" not in labels(steps)
+    assert "Go live" not in labels(steps)
     by_label = {step.label: step for step in steps}
     for name in ("Pages and emails", "Preview and test email"):
         assert by_label[name].url is None
@@ -172,7 +172,7 @@ def test_active_and_paused_steps_carry_the_open_counts():
         }
     )
     active = home_steps.next_steps("active", entries, mail_unknown=split(2, 0))
-    assert labels(active) == [*WORK, "Family email progress", "Sent mail"]
+    assert labels(active) == [*WORK, "Mail queue", "Sent mail"]
     assert (active[0].url, active[0].count, str(active[0].note)) == (
         "/census_changes/",
         4,
@@ -263,7 +263,7 @@ def test_closed_and_activating_steps():
 
 
 def test_draft_in_production_preparation_leads_with_go_live_readiness():
-    """Home lists Go-live readiness first while a draft is being prepared."""
+    """Home lists Go live first while a draft is being prepared."""
     entries = menu()
     context = {
         "admin_chrome": {
@@ -275,7 +275,7 @@ def test_draft_in_production_preparation_leads_with_go_live_readiness():
         "dashboard": {"campaign": campaign("draft")},
     }
     assert labels(home_steps.home(context)) == [
-        "Go-live readiness",
+        "Go live",
         "Production activation",
         "Sent mail",
     ]

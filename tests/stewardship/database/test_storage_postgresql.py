@@ -554,6 +554,12 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             "stewardship_refresh_check_guard",
             "stewardship_refresh_check_guard_v1",
         ),
+        # An added Member's ParishSoft link (#1670): INSERT only, by the
+        # promoting worker with its evidence, under its own name.
+        "stewardship_added_member_link": (
+            "stewardship_added_member_link_guard",
+            "stewardship_added_member_link_guard_v1",
+        ),
         # A roster tick's history (#528): INSERT only, under its own name.
         "stewardship_ministry_roster_entry": (
             "stewardship_ministry_roster_entry_guard",
@@ -569,6 +575,18 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
         "stewardship_limitation_review": (
             "stewardship_limitation_review_guard",
             "stewardship_limitation_review_guard_v1",
+        ),
+        # A refresh's check of a decided pledge (#1704): INSERT only, by the
+        # promoting worker, under its own name.
+        "stewardship_pledge_refresh_check": (
+            "stewardship_pledge_refresh_check_guard",
+            "stewardship_pledge_refresh_check_guard_v1",
+        ),
+        # A refresh's check of a To review pledge (#1747): INSERT only, by
+        # the promoting worker, under its own name.
+        "stewardship_pledge_open_check": (
+            "stewardship_pledge_open_check_guard",
+            "stewardship_pledge_open_check_guard_v1",
         ),
         # Publication plans and outcomes (#528, DAT-09.01): INSERT only,
         # each under its own name.
@@ -606,6 +624,10 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
         "stewardship_comparison_export_snapshot": (
             "comparison_export_capture",
             "stewardship_comparison_export_capture_v1",
+        ),
+        "stewardship_participation_export_snapshot": (
+            "participation_export_capture",
+            "stewardship_participation_export_capture_v1",
         ),
         "stewardship_information_revision": (
             "stewardship_information_revision_guard",
@@ -886,6 +908,7 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                 "stewardship_family_test_names_export_snapshot",
                 "stewardship_timeline_export_snapshot",
                 "stewardship_comparison_export_snapshot",
+                "stewardship_participation_export_snapshot",
                 "stewardship_information_revision",
                 "stewardship_ministry_revision",
                 "stewardship_delivery_control",
@@ -909,6 +932,9 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                 "stewardship_refresh_check",
                 "stewardship_pledge_review",
                 "stewardship_limitation_review",
+                "stewardship_pledge_refresh_check",
+                "stewardship_pledge_open_check",
+                "stewardship_added_member_link",
                 "stewardship_publication_plan",
                 "stewardship_publication_entity",
                 "stewardship_publication_field",

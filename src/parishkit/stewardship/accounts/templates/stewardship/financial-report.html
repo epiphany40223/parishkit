@@ -55,7 +55,7 @@
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
 {% comment %}The export (#1679, ui-conventions "Downloaded files"): one row of small export buttons (export_actions), each posting its format, below the table, in the browser's time zone; its form's hidden filters follow each in-place Apply, sort or page (data-table-sync).{% endcomment %}<div class="export-pane">
-<form id="table-export" data-table-sync data-submit-waits method="post" action="{% url 'admin:financial_export' %}">{% csrf_token %}
+<form id="table-export" data-table-sync method="post" action="{% url 'admin:financial_export' %}">{% csrf_token %}
 {% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
 <input type="hidden" name="request_key" value="{{ request_key }}">
 {% export_actions "csv" "xlsx" "pdf" name="financial" label=_("Export complete results") enabled=mutable %}</form></div>

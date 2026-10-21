@@ -85,6 +85,9 @@ def test_slashless_forms_redirect_and_old_addresses_are_gone(auth_service, googl
         "/admin/mail/outgoing/",
         "/admin/mail/outgoing",
         f"/admin/mail/outgoing/{uuid4()}/",
+        # Family email progress, replaced by Mail queue with no redirect (#1562).
+        "/admin/mail/family-progress/",
+        "/admin/mail/family-progress/status/",
         "/admin/family-portal",
         "/admin/presence?size=25",
         f"/admin/campaign/{current}/delivery",
@@ -138,7 +141,7 @@ def test_group_roots_open_the_first_entry_the_viewer_may_open(auth_service, goog
     for root, first in (
         ("/admin/campaign/", "/admin/campaign/settings/"),
         # Pause and resume mail is greyed out in Testing mode.
-        ("/admin/mail/", "/admin/mail/family-progress/"),
+        ("/admin/mail/", "/admin/mail/queue/"),
         ("/admin/parish/", "/admin/parish/settings/"),
     ):
         response = browser.get(root)
@@ -194,11 +197,9 @@ def test_new_campaign_pages_refuse_without_a_current_campaign(auth_service, goog
     for name, args in (
         ("go_live", []),
         ("go_live_families", []),
-        ("go_live_cleanup", [uuid4()]),
-        ("go_live_links", [uuid4()]),
-        ("production_confirmation", [uuid4(), uuid4()]),
+        ("go_live_prepare", []),
+        ("go_live_confirm", []),
         ("production_progress", []),
-        ("production_withdrawal", []),
         ("campaign_mail", [uuid4()]),
         ("campaign_mail_families", [uuid4()]),
     ):
@@ -209,16 +210,23 @@ def test_new_campaign_pages_refuse_without_a_current_campaign(auth_service, goog
     browser.get(reverse("admin:logs"))
     csrf = {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value}
     for name, args, values in (
-        ("go_live", [], {"action": "cleanup", "preview_token": "x"}),
-        ("go_live_cleanup", [uuid4()], {"control": "x"}),
-        ("go_live_links", [uuid4()], {"control": "x"}),
+        ("go_live", [], {"action": "confirm", "preview_token": "x"}),
+        ("go_live", [], {"action": "retry_stop", "control": "x"}),
+        ("go_live_prepare", [], {"action": "stop", "control": "x"}),
+        ("go_live_prepare", [], {"action": "again", "control": "x"}),
         (
-            "production_confirmation",
-            [uuid4(), uuid4()],
-            {"action": "confirm", "preview": "x", "typed": "Production"},
+            "go_live_confirm",
+            [],
+            {"action": "confirm", "review": "x", "typed": "Production"},
         ),
-        ("production_progress", [], {"control": "x"}),
-        ("production_withdrawal", [], {"action": "confirm", "preview": "x"}),
+        ("go_live_confirm", [], {"action": "review"}),
+        ("production_progress", [], {"action": "retry", "control": "x"}),
+        ("production_progress", [], {"action": "review_cancel"}),
+        (
+            "production_progress",
+            [],
+            {"action": "cancel", "review": "x", "reason": "Fix dates"},
+        ),
         ("campaign_mail", [uuid4()], {"preview_token": "x"}),
     ):
         response = browser.post(reverse(f"admin:{name}", args=args), values | csrf)

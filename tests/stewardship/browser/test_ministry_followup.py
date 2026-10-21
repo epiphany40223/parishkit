@@ -581,9 +581,9 @@ def test_each_stage_shows_its_decision_on_the_icons(page, component_origin):
     """Staff see every stage with the pipeline's words (#1684): To review
     offers Accept, Edit and Ignore; an accepted request is To enter by hand
     with Accept selected and Back to review and Entered by hand offered;
-    once entered, the mark is selected and final; an ignored one names its
-    outcome; an edited one and an added one say so; a confirmed one offers
-    nothing."""
+    once entered, the mark is selected and Back to review undoes it (#1840);
+    an ignored one names its outcome; an edited one and an added one say
+    so; a confirmed one offers only Back to review."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + STAGES)
     stage = page.get_by_label("Stage")
@@ -611,7 +611,7 @@ def test_each_stage_shows_its_decision_on_the_icons(page, component_origin):
     has_text(worklist_row(page, accepted).locator(".stage-chip"), "To enter by hand")
     entered = UUID(int=121)
     assert icon_named(page, entered, "Mark").get_attribute("aria-pressed") == "true"
-    assert icon_named(page, entered, "Send").count() == 0
+    visible(icon_named(page, entered, "Send"))
     ignored = worklist_row(page, UUID(int=122))
     has_text(ignored.locator(".stage-chip"), "Ignored")
     assert "Stayed in the Ministry" in ignored.inner_text()
@@ -630,8 +630,50 @@ def test_each_stage_shows_its_decision_on_the_icons(page, component_origin):
     assert "Added by the parish" in added.inner_text()
     confirmed = worklist_row(page, UUID(int=125))
     has_text(confirmed.locator(".stage-chip"), "Confirmed")
-    assert confirmed.locator(".table-actions button").count() == 0
+    offered = [
+        node.get_attribute("data-row-action")
+        for node in confirmed.locator(".table-actions button").all()
+        if node.get_attribute("aria-pressed") != "true"
+    ]
+    assert offered == ["back_to_review"]
     visible(page.locator(".bulk-bar").get_by_role("button", name="Add"))
+
+
+def test_back_to_review_undoes_entered_by_hand_with_a_note(page, component_origin):
+    """On an Entered by hand row, Back to review's dialog says the mark is
+    undone and the request goes back to To enter by hand, and Record waits
+    for the required note; it posts the decision and the note, in place
+    (#1840)."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + STAGES)
+    page.evaluate("window.notReloaded = true")
+    sent = []
+
+    def choose(request):
+        """Keep the body; answer with a page after a decision."""
+        sent.append(request.post_data)
+        return DECIDED
+
+    fulfil_post_with(page, "**/reports/ministries/", component_origin, choose)
+    entered = UUID(int=121)
+    icon_named(page, entered, "Send").click()
+    dialog = page.locator("#requests-decide-dialog")
+    has_text(
+        dialog.locator("[data-confirm-body]"),
+        "Entered by hand is undone: the item goes back to To enter by hand, with "
+        "its decision kept. Say why.",
+    )
+    record = dialog.get_by_role("button", name="Record")
+    assert record.is_disabled()
+    dialog.get_by_label("Note (required)").fill("Not typed yet")
+    available(record)
+    record.click()
+    has_text(page.locator("#requests-notice"), DECIDED_NOTICE)
+    hidden(dialog)
+    body = QueryDict(sent[0])
+    assert body["decide"] == "back_to_review" and body["note"] == "Not typed yet"
+    assert body.getlist("item") == [str(entered)]
+    assert page.evaluate("window.notReloaded") is True
 
 
 def test_a_leader_never_sees_the_update_phase(page, component_origin):

@@ -32,11 +32,16 @@ class PledgeReview(ImmutableRecord):
     answer as SQL fingerprints it (``stewardship_pledge_answer_v1``), set by
     the guard, never by the caller, so a later response is compared with it
     exactly. ``decision`` is the decision in force afterwards (NULL after
-    Back to review), with the reviewer's annual pledge and frequency for
+    Back to review of a decision; Back to review of a terminal step keeps
+    it, #1840), with the reviewer's annual pledge and frequency for
     Accepted (edited); ``entered`` is the Entered by hand mark, which
     carries the decision forward. ``marked_pledge`` is ParishSoft's
-    upcoming-year pledge read at the mark, when ``marked_pledge_known``;
-    nothing reads it before #1704, so every mark records it unknown.
+    upcoming-year pledge read at the mark, when ``marked_pledge_known``
+    (#1704). ``baseline_pledge`` is the item's A after this row (#1747,
+    frozen migration 0135, provisional number): ParishSoft's amount of the
+    Conflict the decision was taken on, carried by Back to review and the
+    mark while the Family's pledge is unchanged; NULL reads as $0.00. The
+    guard sets it, never the caller.
     """
 
     family = models.ForeignKey(
@@ -62,6 +67,7 @@ class PledgeReview(ImmutableRecord):
     marked_pledge = models.DecimalField(max_digits=14, decimal_places=2, null=True)
     marked_pledge_known = models.BooleanField()
     note = models.TextField(default="", blank=True)
+    baseline_pledge = models.DecimalField(max_digits=24, decimal_places=2, null=True)
 
     class Meta:
         db_table = "stewardship_pledge_review"
@@ -122,7 +128,10 @@ class PledgeReview(ImmutableRecord):
                 name="pledge_review_value_shape",
             ),
             # The row's state is what its action records: a mark keeps an
-            # accepted decision, every other action is not a mark.
+            # accepted decision, every other action is not a mark. Back to
+            # review clears the decision, or keeps an accepted one when it
+            # undoes a terminal step (#1840, frozen migration 0149,
+            # provisional number; the guard says which it may be).
             models.CheckConstraint(
                 condition=models.Q(
                     action="accept",
@@ -146,6 +155,12 @@ class PledgeReview(ImmutableRecord):
                     action="back_to_review", decision__isnull=True, entered=False
                 )
                 | models.Q(
+                    action="back_to_review",
+                    decision__isnull=False,
+                    decision__in=("accepted", "accepted_edited"),
+                    entered=False,
+                )
+                | models.Q(
                     action="entered_by_hand",
                     decision__isnull=False,
                     decision__in=("accepted", "accepted_edited"),
@@ -157,5 +172,109 @@ class PledgeReview(ImmutableRecord):
                 condition=models.Q(marked_pledge_known=True, entered=True)
                 | models.Q(marked_pledge_known=False, marked_pledge__isnull=True),
                 name="pledge_review_mark_shape",
+            ),
+        ]
+
+
+# The outcomes a refresh records for a pledge, as 0132's census and Ministry
+# refresh checks name them (``workflows.models.REFRESH_OUTCOMES``), and a
+# Conflict on an accepted pledge not yet marked (#1747, 0135).
+PLEDGE_REFRESH_OUTCOMES = (
+    "confirmed",
+    "unchanged",
+    "entered_incorrectly",
+    "ignored_now_matches",
+    "conflict",
+)
+# A To review pledge's outcomes (#1747): Confirmed with no reviewer, a
+# Conflict, or unchanged (back at A, ending a Conflict).
+PLEDGE_OPEN_OUTCOMES = ("confirmed", "unchanged", "conflict")
+
+
+class PledgeRefreshCheck(ImmutableRecord):
+    """One refresh's outcome for a decided pledge (#1704).
+
+    A pledge's stage is derived from its ``PledgeReview`` rows, so the
+    baseline refresh re-evaluation records what each refresh found here, as
+    ``workflows.models.RefreshCheck`` does for census changes and Ministry
+    requests: the outcome, ParishSoft's upcoming-year amount (``observed``)
+    and whether the refresh was full. ``review`` is the decision row in force
+    when it was written and ``item_version`` that row's sequence; a check
+    counts only while its row is still the item's latest and in force. Only
+    the source worker writes one, inside the promotion of ``snapshot_id``;
+    SQL checks the item, the amount and the outcome and keeps the rows
+    immutable (schema/migrations/0134_pledge_refresh_checks.sql).
+    """
+
+    snapshot_id = models.UUIDField()
+    full_refresh = models.BooleanField()
+    review = models.ForeignKey(
+        PledgeReview, on_delete=models.PROTECT, related_name="refresh_checks"
+    )
+    item_version = models.PositiveBigIntegerField()
+    outcome = models.CharField(max_length=24)
+    observed = models.DecimalField(max_digits=24, decimal_places=2)
+
+    class Meta:
+        db_table = "stewardship_pledge_refresh_check"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("snapshot_id", "review"), name="pledge_refresh_check_once"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(outcome__in=PLEDGE_REFRESH_OUTCOMES),
+                name="pledge_refresh_check_outcome",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(actor_id__isnull=True, item_version__gte=1),
+                name="pledge_refresh_check_identity",
+            ),
+        ]
+
+
+class PledgeOpenCheck(ImmutableRecord):
+    """One refresh's outcome for a To review pledge (#1747).
+
+    A To review pledge has no decision row for a ``PledgeRefreshCheck`` to
+    name, so its check names the Family's current live response
+    (``submission``) and the item's version (``item_version``, its latest
+    row's sequence, 0 with none) instead. It counts while the item is still
+    at that version and no later live response changes the pledge answer
+    (an unchanged resubmission keeps it, as it keeps a decision), which the
+    shared stage selection (``stewardship_pledge_stages_v1``) reads. Only
+    the source worker writes one, inside the promotion of ``snapshot_id``;
+    SQL checks the item, the amount and the outcome and keeps the rows
+    immutable (schema/migrations/0135_pledge_conflicts.sql, provisional).
+    """
+
+    snapshot_id = models.UUIDField()
+    full_refresh = models.BooleanField()
+    family = models.ForeignKey(
+        "stewardship_campaigns.FamilyCampaign",
+        on_delete=models.PROTECT,
+        related_name="pledge_open_checks",
+    )
+    submission = models.ForeignKey(
+        "stewardship_responses.Submission",
+        on_delete=models.PROTECT,
+        related_name="pledge_open_checks",
+    )
+    item_version = models.PositiveBigIntegerField()
+    outcome = models.CharField(max_length=24)
+    observed = models.DecimalField(max_digits=24, decimal_places=2)
+
+    class Meta:
+        db_table = "stewardship_pledge_open_check"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("snapshot_id", "family"), name="pledge_open_check_once"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(outcome__in=PLEDGE_OPEN_OUTCOMES),
+                name="pledge_open_check_outcome",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(actor_id__isnull=True),
+                name="pledge_open_check_identity",
             ),
         ]

@@ -6,8 +6,8 @@ after it. A mark outside every region shows the page never reloaded. The
 shared worklist's general behaviour is tested on its own fixture page
 (``test_review_worklist``); these tests check what Additional information
 adds: its columns and filters, Accept to To handle and then Handled, the
-Ignored request's reopening note, the export pane below the table, and a
-request's own page.
+Ignored request's reopening note, Handled's undo with its note (#1840), the
+export pane below the table, and a request's own page.
 """
 
 from uuid import UUID
@@ -28,6 +28,8 @@ from .information_components import (
     REOPENED_NOTICE,
     STALE,
     STALE_NOTICE,
+    UNDONE,
+    UNDONE_NOTICE,
 )
 from .test_bulk_bar import assert_accessible
 from .test_table_sorting import MARK, MARKED, fulfil_post_with
@@ -142,13 +144,44 @@ def test_accept_then_handled_in_place(page, component_origin):
     icon(page, 0, "Mark", " handled").click()
     has_text(
         dialog.locator("[data-confirm-body]"),
-        "Record that this was handled. This is final.",
+        "Record that this was handled. Back to review undoes it.",
     )
     dialog.get_by_role("button", name="Record").click()
     has_text(page.locator("#information-notice"), HANDLED_NOTICE)
     assert "decide=handled" in sent[-1] and "version=2" in sent[-1]
     has_text(row(page, 0).locator(".stage-chip .status-word"), "Handled")
-    assert row(page, 0).locator("input[data-select-row]").count() == 0
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_back_to_review_undoes_handled_with_a_note(page, component_origin):
+    """A Handled request offers Back to review (#1840); its dialog says the
+    request goes back to To handle with its decision kept and waits for the
+    required note, then the redrawn row is To handle, with no reload."""
+    page.goto(component_origin + HANDLED)
+    page.evaluate(MARK)
+    sent = posts(page, component_origin, UNDONE)
+    actions = [
+        node.get_attribute("data-row-action")
+        for node in row(page, 0).locator(".table-actions button").all()
+    ]
+    assert actions == ["accept", "back_to_review", "handled"]
+    icon(page, 0, "Send", " back to review").click()
+    dialog = page.locator("#information-decide-dialog")
+    has_text(
+        dialog.locator("[data-confirm-body]"),
+        "Handled is undone: the item goes back to To handle, with its decision "
+        "kept. Say why.",
+    )
+    record = dialog.get_by_role("button", name="Record")
+    assert record.get_attribute("aria-disabled") == "true" or record.is_disabled()
+    dialog.get_by_label("Note (required)").fill("Not called yet")
+    available(record)
+    record.click()
+    has_text(page.locator("#information-notice"), UNDONE_NOTICE)
+    body = sent[-1]
+    assert "decide=back_to_review" in body and "version=2" in body
+    assert "note=Not+called+yet" in body
+    has_text(row(page, 0).locator(".stage-chip .status-word"), "To handle")
     assert page.evaluate(MARKED) == "kept"
 
 

@@ -807,7 +807,10 @@ def test_the_review_dialog_gets_a_fragment_and_follows_the_change(converted):
     dialog = form[form.index('<dialog id="user-review"') :]
     assert 'data-review-return="/admin/users/"' in dialog
     assert 'data-review-outcome="users-outcome"' in dialog
-    assert '<form method="post" action="/admin/users/" data-review-apply>' in dialog
+    assert (
+        '<form id="user-review-apply" method="post" '
+        'action="/admin/users/" data-review-apply>' in dialog
+    )
     values = {"email": "dialog@example.org", "name": "Dialog, Dee", "role": "staff"}
     with web():
         reviewed = fetched(

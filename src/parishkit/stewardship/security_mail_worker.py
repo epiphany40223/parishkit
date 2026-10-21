@@ -18,10 +18,12 @@ def main():
     """Never expose input, provider diagnostics or credentials on either output."""
     logging.disable(logging.CRITICAL)
     try:
-        candidate, settings, mail, profile = decode_request(
+        candidate, settings, mail, profile, redirect = decode_request(
             sys.stdin.buffer.read(MAX_INPUT + 1)
         )
-        result = deliver_security_mail(candidate, settings, mail, profile=profile)
+        result = deliver_security_mail(
+            candidate, settings, mail, profile=profile, redirect=redirect
+        )
         sys.stdout.write(
             json.dumps(result.wire_payload(), separators=(",", ":")) + "\n"
         )

@@ -179,7 +179,8 @@ def view(harness, principal, **values):
 
 def test_accept_ignore_and_back_to_review(response_service):
     """Staff decide in one step and undo it; reopening an ignored one needs a
-    note, and a request ticked Entered in ParishSoft cannot go back."""
+    note, and so does undoing Entered by hand, which keeps the Accept
+    (#1840)."""
     harness = setup(response_service)
     staff = actor(harness, {"staff"}, ())
     join, leave = requests()
@@ -200,20 +201,26 @@ def test_accept_ignore_and_back_to_review(response_service):
     decide(harness, staff, "back_to_review", leave, note="Asked again by phone")
     assert (leave.state, leave.outcome) == ("in_progress", None)
     assert leave.resolved_at is None
-    # Entered by hand ticks the accepted join; it can no longer go back.
+    # Entered by hand ticks the accepted join; Back to review undoes the
+    # tick, with a note, back to To enter by hand.
     decide(harness, staff, "entered_by_hand", join)
     assert MinistryRosterEntry.objects.get(request=join).entered
     assert view(harness, staff)[str(join.pk)]["placement"].stage is (
         Stage.ENTERED_BY_HAND
     )
-    with pytest.raises(StaleDecision):
+    with pytest.raises(ValueError, match="needs a note"):
         decide(harness, staff, "back_to_review", join)
+    decide(harness, staff, "back_to_review", join, note="Not typed yet")
+    assert (join.state, join.outcome) == ("resolved", "joined")
+    assert view(harness, staff)[str(join.pk)]["placement"].stage is (
+        Stage.TO_ENTER_BY_HAND
+    )
     # A decision on a version someone else moved is stale; nothing is written.
     stale = MinistryRequest.objects.get(pk=leave.pk)
     stale.version = 1
     with pytest.raises(StaleDecision):
         decide(harness, staff, "accept", stale)
-    assert MinistryWorkflowRevision.objects.count() == 3
+    assert MinistryWorkflowRevision.objects.count() == 4
 
 
 def test_bulk_decisions_are_all_or_none(response_service):

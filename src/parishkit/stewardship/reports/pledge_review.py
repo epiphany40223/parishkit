@@ -3,13 +3,17 @@
 Each Family's current pledge answer is one item ([review pipeline spec,
 "Financial stream"](docs/specs/stewardship/review-pipeline/spec.md)). Its
 history is ``PledgeReview`` (one immutable row per decision), and its stage
-is derived from its latest row by the SQL selection
-``stewardship_pledge_review_states_v1`` (frozen migration 0127, provisional
-number), which the page, the counts and the row guard all read, so none of
-them can disagree about whether a Family's new answer reopened its pledge.
+is derived from its latest row and its latest refresh check by the SQL
+selection ``stewardship_pledge_stages_v1`` (frozen migration 0135,
+provisional number, over 0127's ``stewardship_pledge_review_states_v1``),
+which the page, the counts and the row guard all read, so none of them can
+disagree about whether a Family's new answer reopened its pledge or a
+refresh Confirmed it or found a Conflict.
 
 - ``read_items`` reads that selection with each item's latest row;
-  ``placement`` maps an item onto the pipeline (``financial_placement``).
+  ``placement`` maps an item onto the pipeline (``financial_placement``),
+  with its latest refresh check (``pledge_refresh``, #1704, #1747), which
+  may make it Confirmed, a Conflict or Entered incorrectly.
 - ``edited_value`` checks an Edit's annual pledge and frequency as the
   Family form checks them.
 - ``PledgeDecisions`` is the stream's ``DecisionService``: Accept, Edit,
@@ -36,10 +40,13 @@ from parishkit.stewardship.observability import bound_correlation, correlation
 from parishkit.stewardship.pipeline import (
     ROLES,
     Action,
+    NoteRequired,
     Stage,
     Stream,
     allowed_actions,
     financial_placement,
+    undo_needs_note,
+    undo_stage,
 )
 from parishkit.stewardship.responses.financial import (
     FREQUENCIES,
@@ -51,13 +58,16 @@ from parishkit.stewardship.web.review_worklist import WORDS, StaleDecision
 
 from .export_services import admit_campaign
 from .pledge_models import PledgeReview
+from .pledge_refresh import marked_pledge
 
 STATES = (
-    "SELECT family_id, family_duid, submission_id, sequence, stage, review_id, "
-    "in_force FROM stewardship_pledge_review_states_v1(%s, %s)"
+    "SELECT family_id, family_duid, submission_id, sequence, stage, base_stage, "
+    "review_id, in_force, check_outcome, observed, checks "
+    "FROM stewardship_pledge_stages_v1(%s, %s)"
 )
 # What each worklist action records: the stored action, and the decision
-# the row leaves in force (Entered by hand keeps the one it marks).
+# the row leaves in force (Entered by hand keeps the one it marks, and so
+# does Back to review when it undoes a terminal step, #1840).
 RECORDED = {
     Action.ACCEPT: ("accept", "accepted"),
     Action.EDIT: ("edit", "accepted_edited"),
@@ -79,10 +89,14 @@ class Item:
     """One Family's pledge item, as the shared selection reads it.
 
     ``submission_id`` (the Family's current live response) is the item's id
-    on the page and ``sequence`` (its latest row's, 0 with none) its
-    version; ``review`` is that latest row, ``in_force`` whether the Family's
-    pledge answer is unchanged since it, and ``stage`` the selection's own
-    stage, which ``placement`` must agree with.
+    on the page and ``sequence`` its latest row's (0 with none); its version
+    on the page is ``version_of(item)``. ``review`` is that latest row,
+    ``in_force`` whether the Family's pledge answer is unchanged since it,
+    and ``stage`` the selection's own stage, which ``placement`` must agree
+    with. ``base_stage`` is the stage its decision rows alone give (0127's),
+    ``check`` the outcome of its latest refresh check that counts (None
+    without one), ``observed`` ParishSoft's amount that check found, and
+    ``checks`` how many checks the Family's pledge has (#1747).
     """
 
     family_id: UUID
@@ -92,6 +106,22 @@ class Item:
     stage: str
     review: PledgeReview | None
     in_force: bool
+    base_stage: str = ""
+    check: str | None = None
+    observed: Decimal | None = None
+    checks: int = 0
+
+
+def version_of(item):
+    """The item's version on the page: its sequence plus its checks.
+
+    A decision is made against what the reader saw. Both parts only grow, so
+    the sum changes with every decision and with every refresh check (a
+    Conflict found, or ParishSoft's amount moving under one, #1747): a
+    decision posted over a check the reader never saw is stale, never
+    applied to a Conflict nobody looked at.
+    """
+    return item.sequence + item.checks
 
 
 def read_items(campaign_id, family_id=None):
@@ -102,7 +132,7 @@ def read_items(campaign_id, family_id=None):
     with connection.cursor() as cursor:
         cursor.execute(STATES, [campaign_id, family_id])
         found = cursor.fetchall()
-    reviews = PledgeReview.objects.in_bulk([row[5] for row in found if row[5]])
+    reviews = PledgeReview.objects.in_bulk([row[6] for row in found if row[6]])
     return {
         row[2]: Item(
             family_id=row[0],
@@ -110,8 +140,12 @@ def read_items(campaign_id, family_id=None):
             submission_id=row[2],
             sequence=row[3],
             stage=row[4],
-            review=reviews.get(row[5]),
-            in_force=row[6],
+            base_stage=row[5],
+            review=reviews.get(row[6]),
+            in_force=row[7],
+            check=row[8],
+            observed=row[9],
+            checks=row[10],
         )
         for row in found
     }
@@ -121,14 +155,16 @@ def placement(item):
     """The item's stage and decision on the pipeline.
 
     The latest row's decision counts only while it is in force: a pledge
-    the Family changed since is To review again. The shared selection
-    derives the same stage in SQL; a disagreement is a defect, raised as a
-    ValueError rather than shown.
+    the Family changed since is To review again. Its latest refresh check
+    that counts may move it on (Confirmed, a Conflict, Entered
+    incorrectly). The shared selection derives the same stage in SQL; a
+    disagreement is a defect, raised as a ValueError rather than shown.
     """
     review = item.review if item.in_force else None
     found = financial_placement(
         decision=review.decision if review else None,
         entered=review.entered if review else False,
+        check=item.check,
     )
     if found.stage.value != item.stage:
         raise ValueError("The pledge review stage disagrees with its selection.")
@@ -138,6 +174,23 @@ def placement(item):
 def reader_roles(principal):
     """The pipeline roles a principal holds (an Administrator holds all three)."""
     return frozenset(principal.roles) & frozenset(ROLES)
+
+
+# Actions a stage offers that the stream withholds: Entered incorrectly's
+# Entered by hand again comes with #1737; until then a refresh confirms the
+# pledge once ParishSoft holds the reviewer's amount. Its Back to review
+# undoes the mark like any terminal step's (#1840).
+WITHHELD = {Stage.ENTERED_INCORRECTLY: frozenset({Action.ENTERED_BY_HAND})}
+# Why a Back to review needing a note was refused without one.
+REOPEN_NEEDS_NOTE = "Reopening an ignored pledge needs a note."
+UNDO_NEEDS_NOTE = "Undoing a pledge's mark or confirmation needs a note."
+
+
+def offered(stage, roles):
+    """The actions a pledge at ``stage`` offers readers with ``roles``."""
+    return allowed_actions(Stream.FINANCIAL, stage, roles) - WITHHELD.get(
+        stage, frozenset()
+    )
 
 
 class EditRefusal(ValueError):
@@ -265,24 +318,31 @@ class PledgeDecisions:
         }
         if self._replayed(actor, keys):
             return self._notice(decision, list(ids), matched=False)
+        # A refresh may have Confirmed a pledge, found a Conflict or found
+        # it Entered incorrectly (#1704, #1747); the selection places it as
+        # the page and the guard do.
         items = read_items(self.campaign_id)
         roles = reader_roles(principal)
         matched = False
         for item_id, version in ids.items():
             item = items.get(item_id)
-            if item is None or item.sequence != version:
+            if item is None or version_of(item) != version:
                 # The Family answered again (another response is current) or
                 # someone decided first.
                 raise StaleDecision(self.namer(item_id))
             stage = placement(item).stage
-            if decision.action not in allowed_actions(Stream.FINANCIAL, stage, roles):
+            if decision.action not in offered(stage, roles):
                 raise ValueError("That decision is not offered for this pledge.")
+            # Reopening an Ignored pledge, and undoing a terminal step
+            # (#1840), need a reason; the guard requires it too.
             if (
                 decision.action is Action.BACK_TO_REVIEW
-                and stage is Stage.IGNORED
+                and undo_needs_note(stage)
                 and not decision.note
             ):
-                raise ValueError("Reopening an ignored pledge needs a note.")
+                raise NoteRequired(
+                    REOPEN_NEEDS_NOTE if stage is Stage.IGNORED else UNDO_NEEDS_NOTE
+                )
             action = decision.action
             if action is Action.EDIT and value == family_value(responses[item_id]):
                 action, matched = Action.ACCEPT, True
@@ -301,20 +361,36 @@ class PledgeDecisions:
         ).exists()
 
     def _record(self, actor, item, action, value, key, note):
-        """Insert one decision row and its audit event; the guard checks both."""
+        """Insert one decision row and its audit event; the guard checks both.
+
+        Entered by hand, and Back to review of a terminal step (#1840),
+        carry the decision in force forward with its values: the mark keeps
+        it, and the undo removes only the step after it, so the pledge goes
+        back to To enter by hand (``pipeline.undo_stage``; a Confirmed
+        pledge no decision was behind goes back to To review with none).
+        """
         stored, decision = RECORDED[action]
         reviewed = (None, None)
         entered = False
+        marked = None
+        keeps = action is Action.ENTERED_BY_HAND or (
+            action is Action.BACK_TO_REVIEW
+            and undo_stage(Stream.FINANCIAL, placement(item)) is not Stage.TO_REVIEW
+        )
         if action is Action.EDIT:
             reviewed = value
-        elif action is Action.ENTERED_BY_HAND:
-            # The mark keeps the decision in force and its values.
+        elif keeps:
             decision = item.review.decision
             reviewed = (
                 item.review.reviewed_annual_pledge,
                 item.review.reviewed_frequency,
             )
+        if action is Action.ENTERED_BY_HAND:
+            # The mark records ParishSoft's upcoming-year amount when the
+            # current snapshot proves it (#1704), which the refresh then
+            # compares with; the guard checks it against the same snapshot.
             entered = True
+            marked = marked_pledge(self.campaign_id, item.family_duid)
         review = PledgeReview.objects.create(
             actor_id=actor,
             family_id=item.family_id,
@@ -328,8 +404,8 @@ class PledgeDecisions:
             entered=entered,
             # The guard sets the answer from the response itself.
             answer={},
-            marked_pledge=None,
-            marked_pledge_known=False,
+            marked_pledge=marked,
+            marked_pledge_known=marked is not None,
             note=note,
         )
         # The audit names the row and the versions, never an amount or note.

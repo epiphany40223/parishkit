@@ -83,7 +83,7 @@ def test_preview_waits_for_the_note_and_the_records_check(page, component_origin
     """Preview is unavailable until every required field is filled in."""
     open_panel(page, component_origin)
     retry = page.locator("#bulk-retry_failed")
-    preview = retry.get_by_role("button", name="Preview retry")
+    preview = retry.get_by_role("button", name="Preview sending again")
     assert preview.is_disabled()
     # Only the email types the action covers, with All types first.
     options = retry.locator("select[name=purpose] option").all_inner_texts()
@@ -120,7 +120,7 @@ def test_preview_and_confirm_happen_in_place(page, component_origin):
     open_panel(page, component_origin)
     retry = page.locator("#bulk-retry_failed")
     retry.locator("textarea[name=note]").fill("Gmail was down from 2 to 3 PM.")
-    button = retry.get_by_role("button", name="Preview retry")
+    button = retry.get_by_role("button", name="Preview sending again")
     # Its place on the page (the review may scroll into view below it).
     top = "node => node.getBoundingClientRect().top + window.scrollY"
     before = button.evaluate(top)
@@ -170,7 +170,7 @@ def test_editing_the_form_withdraws_its_preview(page, component_origin):
     open_panel(page, component_origin)
     retry = page.locator("#bulk-retry_failed")
     retry.locator("textarea[name=note]").fill("Gmail was down from 2 to 3 PM.")
-    retry.get_by_role("button", name="Preview retry").click()
+    retry.get_by_role("button", name="Preview sending again").click()
     expect(page.get_by_role("button", name="Retry 3 emails")).to_be_visible()
     retry.locator("select[name=purpose]").select_option("receipt")
     expect(page.get_by_role("button", name="Retry 3 emails")).to_have_count(0)
@@ -192,7 +192,7 @@ def test_a_refused_confirmation_is_shown_in_place(page, component_origin):
     open_panel(page, component_origin)
     retry = page.locator("#bulk-retry_failed")
     retry.locator("textarea[name=note]").fill("Gmail was down from 2 to 3 PM.")
-    retry.get_by_role("button", name="Preview retry").click()
+    retry.get_by_role("button", name="Preview sending again").click()
     page.get_by_role("button", name="Retry 3 emails").click()
     summary = page.locator("#bulk-review [data-error-summary]")
     expect(summary).to_be_focused()

@@ -571,6 +571,7 @@ def test_credential_service_publishes_only_after_admission(
             probes.assert_called_once_with(
                 installer.files.path,
                 profile=configuration.profile,
+                redirect=configuration.mail_redirect,
                 check=lease.check,
             )
             assert lease.check.call_count == 3

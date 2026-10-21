@@ -58,6 +58,11 @@ checks need no database:
   whose Review answers 400 with the page drawn again with Reminder 2 outside
   the campaign, its editor open and the view's summary; ``DATES_STALE``: the
   same page, whose Review answers 409 (``STALE_REFUSAL``).
+- ``NEW_BASIC``, ``EDIT_BASIC`` and ``EDIT_SERIES_BASIC``: New, Edit and
+  the series Edit drawn in Basic, as the view draws a page for a GET
+  (#1129). Every other New and Edit page above is drawn in Advanced, as
+  the view draws a page answering a post sent from Advanced, so their
+  tests reach Repeat and the schedule's own email directly.
 - ``CALENDAR``: the read-only Campaign calendar (#469) of the same schedules
   plus a daily digest at 7:00 AM, the invitation sent, with the weekly digest
   expanded to each Monday and the daily one to each day through November 1
@@ -69,7 +74,13 @@ checks need no database:
   are its addresses with ``?month=``, each the same page (the script reads
   the month). Its table, Every email by date (#1656), opens on the upcoming
   emails in sending order; ``CALENDAR_VIEWS`` are its other Show and sort
-  addresses, each with a month, as the page's links send them.
+  addresses, each with a month, as the page's links send them. Its Move…
+  (#1521) posts to the send's Edit page (the real address the view's own
+  ``edit_url`` gives): Reminder 1's answers with Edit's review, whose Apply
+  posts to ``APPLY`` (Applied at once), after which the calendar redraws in
+  place from its own address; Reminder 2's answers 400 with the entry page
+  drawn again with the send date refused (``DATE_REFUSAL``), as Edit
+  answers a day outside the campaign.
 - Edit's Delete (#1656): ``EDIT`` posts it to ``EDIT_DELETE``, answered with
   the review of removing Reminder 1; ``EDIT_SERIES`` to ``SERIES_DELETE``,
   answered with the review of deleting its whole series; ``EDIT_INITIAL``
@@ -92,6 +103,7 @@ from uuid import uuid4
 from django import forms
 from django.http import QueryDict
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from parishkit.stewardship.accounts import schedule_email
 from parishkit.stewardship.accounts.campaign_mail import NOT_OPEN as CLOSED
@@ -174,6 +186,9 @@ NEW_BLOCKED = "/schedule-new-blocked"
 NEW_PENDING = "/schedule-new-pending"
 NEW_INVALID = "/schedule-new-invalid"
 NEW_STALE = "/schedule-new-stale"
+NEW_BASIC = "/schedule-new-basic"
+EDIT_BASIC = "/schedule-edit-basic"
+EDIT_SERIES_BASIC = "/schedule-edit-series-basic"
 APPLY = "/schedule-list/apply"
 APPLY_PENDING = "/schedule-list/apply-pending"
 PENDING = "/schedule-change-pending"
@@ -282,9 +297,17 @@ def _data():
 
 
 def _list(values, owner, emails, rows, *, sort="when", **extra):
-    """The list page for ``rows`` (Initial invitation sent, with results)."""
+    """The list page for ``rows`` (Initial invitation sent, with results;
+    the Weekly Admin digest has sent too, and stays deletable)."""
     names = email_names([row for row in emails if row["values"]["kind"] == "email"])
-    summary = {rows[0]["id"]: {"delivered": 1031, "failed": 2}}
+    summary = {
+        **{
+            row["id"]: {"delivered": 4}
+            for row in rows
+            if row["values"]["kind"] == "weekly_digest"
+        },
+        rows[0]["id"]: {"delivered": 1031, "failed": 2},
+    }
     described = schedule_rows(rows, owner["values"], summary, NOW, names)
     context = {
         "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
@@ -331,6 +354,10 @@ def _calendar(values, owner, emails, rows, address=CALENDAR):
         "weekdays": WEEK,
         "list_url": LIST,
         "add_url": NEW,
+        # Move… (#1521): the version it posts, and where its review's Apply
+        # confirms.
+        "base_digest": "a" * 64,
+        "apply_url": APPLY,
     } | sends_view(sends, parameters, NOW, CALENDAR)
     return (
         "text/html",
@@ -355,6 +382,7 @@ def _entry(
     list_url=LIST,
     delete_url=EDIT_DELETE,
     skip_send=None,
+    mode="advanced",
 ):
     """New scheduled email, or Edit scheduled email for ``schedule_row``.
 
@@ -367,6 +395,8 @@ def _entry(
     calendar's Add on a day (#1521), ``list_url`` where Cancel and Apply
     return, and ``delete_url`` where Edit's Delete posts its review (#1656).
     ``skip_send`` is the digest send Delete may skip alone (#1658).
+    ``mode`` is the Basic and Advanced toggle's opening mode (#1129,
+    ``schedule_entry_views.editor_mode``).
     """
     entry = entry_form(None, emails, rows, schedule_row, on=on)
     scope_data = QueryDict("series-scope=following") if scope_error else None
@@ -406,6 +436,7 @@ def _entry(
             "delete_url": delete_url,
             "skip_send": skip_send,
             "window_text": window_text(owner["values"]),
+            "editor_mode": mode,
         }
         | entry_times(owner["values"], rows, schedule_row, NOW, bound=False)
         | errors
@@ -798,6 +829,28 @@ def components(context, admin):
             values, owner, emails, rows, post_url=f"{NEW_INVALID}/review"
         ),
         NEW_STALE: _entry(values, owner, emails, rows, post_url=f"{NEW_STALE}/review"),
+        NEW_BASIC: _entry(
+            values, owner, emails, rows, post_url=f"{NEW}/review", mode="basic"
+        ),
+        EDIT_BASIC: _entry(
+            values,
+            owner,
+            emails,
+            rows,
+            schedule_row=first,
+            post_url=f"{EDIT}/review",
+            mode="basic",
+        ),
+        EDIT_SERIES_BASIC: _entry(
+            values,
+            owner,
+            emails,
+            rows,
+            schedule_row=first,
+            post_url=f"{EDIT_SERIES}/review",
+            series=series,
+            mode="basic",
+        ),
         DATES: (
             "text/html",
             _dates(values, owner, emails, rows, post_url=f"{DATES}/review"),
@@ -945,6 +998,17 @@ def components(context, admin):
                 ),
             ),
             f"{EDIT}/review": (200, None, edit_review),
+            # The calendar's Move… of each reminder (#1521), at its Edit page.
+            reverse("admin:schedule_edit", args=[reminders[0]["id"]]): (
+                200,
+                None,
+                edit_review,
+            ),
+            reverse("admin:schedule_edit", args=[reminders[1]["id"]]): (
+                400,
+                None,
+                _invalid(values, owner, emails, rows),
+            ),
             f"{EDIT_SERIES}/review": (200, None, series_review),
             f"{EDIT_PASSED}/review": (200, None, edit_review),
             APPLY_PASSED: (

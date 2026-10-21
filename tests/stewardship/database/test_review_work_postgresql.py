@@ -137,7 +137,8 @@ def panel(body, stream):
 
 def test_staff_land_on_my_review_work_with_linked_counts(response_service, google):
     """Staff sign in to My review work, not Home: one panel per stream, each
-    count a link card to that stream's page."""
+    count a link card to that stream's page at its Stage (#1818), which the
+    page honours; a Stage it does not offer is its plain 400, never a 500."""
     harness = setup(response_service)
     browser, _, _, _ = leader(harness, google, roles=("staff",))
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -156,7 +157,12 @@ def test_staff_land_on_my_review_work_with_linked_counts(response_service, googl
     assert b"data-next-steps" not in body and b"Family participation" not in body
     ministry = panel(body, "ministry")
     assert cards(ministry) == [
-        (b"/admin/reports/ministries/", b"To review", b"2", b"requests"),
+        (
+            b"/admin/reports/ministries/?stage=to_review",
+            b"To review",
+            b"2",
+            b"requests",
+        ),
         (
             b"/admin/reports/ministries/?stage=to_enter_by_hand",
             b"To enter by hand",
@@ -165,17 +171,31 @@ def test_staff_land_on_my_review_work_with_linked_counts(response_service, googl
         ),
     ]
     assert cards(panel(body, "census")) == [
-        (b"/admin/reports/census/", label, b"0", b"changes")
-        for label in (b"To review", b"Conflict", b"To enter by hand")
+        (b"/admin/reports/census/?stage=" + stage, label, b"0", b"changes")
+        for stage, label in (
+            (b"to_review", b"To review"),
+            (b"conflict", b"Conflict"),
+            (b"to_enter_by_hand", b"To enter by hand"),
+        )
     ]
     assert cards(panel(body, "additional_information")) == [
-        (b"/admin/reports/information/", label, b"0", b"items")
-        for label in (b"To review", b"To handle")
+        (b"/admin/reports/information/?stage=" + stage, label, b"0", b"items")
+        for stage, label in ((b"to_review", b"To review"), (b"to_handle", b"To handle"))
     ]
-    # Each linked page opens for Staff.
-    for href in {href for href, *_ in cards(body)}:
+    # Each linked page opens for Staff, at the card's Stage.
+    hrefs = {href.decode() for href, *_ in cards(body)}
+    for href in hrefs:
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            assert get(browser, href.decode())[0].status_code == 200, href
+            response, page = get(browser, href)
+        assert response.status_code == 200, href
+        stage = href.partition("?stage=")[2]
+        if stage:
+            assert re.search(
+                rb'<option value="' + stage.encode() + rb'"[^>]*\bselected\b', page
+            ), href
+    for page in {href.partition("?")[0] for href in hrefs}:
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            assert get(browser, page + "?stage=nope")[0].status_code == 400, page
 
 
 def test_an_administrator_keeps_home(response_service, google):
@@ -192,7 +212,7 @@ def test_an_administrator_keeps_home(response_service, google):
     assert b">My review work</a>" not in body
     census = panel(body, "census")
     assert (
-        b"/admin/reports/census/publication/",
+        b"/admin/reports/census/update-parishsoft/",
         b"Ready to update",
         b"0",
         b"changes",

@@ -50,8 +50,22 @@ def review(decision="accepted", *, entered=False, amount=None, frequency=None):
     return row
 
 
-def item(stage="to_review", latest=None, *, in_force=True, sequence=None):
-    """One pledge item; ``sequence`` defaults to 1 with a row, 0 without."""
+def item(
+    stage="to_review",
+    latest=None,
+    *,
+    in_force=True,
+    sequence=None,
+    check=None,
+    observed=None,
+    base=None,
+):
+    """One pledge item; ``sequence`` defaults to 1 with a row, 0 without.
+
+    ``stage`` is the shared selection's final stage and ``base`` the one
+    its decision rows give (``stage`` unless given); ``check`` and
+    ``observed`` are its latest counting refresh check's (#1704, #1747).
+    """
     return Item(
         family_id=uuid4(),
         family_duid=101,
@@ -60,6 +74,9 @@ def item(stage="to_review", latest=None, *, in_force=True, sequence=None):
         stage=stage,
         review=latest,
         in_force=in_force,
+        base_stage=base or stage,
+        check=check,
+        observed=None if observed is None else Decimal(observed),
     )
 
 
@@ -259,7 +276,9 @@ def test_rows_post_their_response_and_version():
         ("to_review", None, ["accept", "edit", "ignore"]),
         ("ignored", review("ignored"), ["back_to_review"]),
         ("to_enter_by_hand", review("accepted"), ["back_to_review", "entered_by_hand"]),
-        ("entered_by_hand", review("accepted", entered=True), []),
+        # Back to review undoes a terminal step (#1840); Entered by hand
+        # again on Entered incorrectly waits for #1737.
+        ("entered_by_hand", review("accepted", entered=True), ["back_to_review"]),
     ],
 )
 def test_each_stage_offers_its_role_tables_actions(stage, latest, offered):
@@ -320,7 +339,7 @@ def test_the_search_never_travels_in_an_address():
     )
     assert (stage, extra["search"]) == ("all", "Smith")
     with pytest.raises(ValueError):
-        views._choices(QueryDict("stage=conflict"), export=False, private=True)
+        views._choices(QueryDict("stage=updating"), export=False, private=True)
 
 
 def test_the_files_name_every_column_once():
@@ -338,6 +357,7 @@ def test_the_files_name_every_column_once():
         "Reviewer's frequency": "Monthly",
         "Annual pledge to enter": "$1,300.00",
         "Frequency to enter": "Monthly",
+        "ParishSoft annual pledge": "",
         "Stage": "To enter by hand",
         "Decision": "Accepted (edited)",
         "Entered by": "",
@@ -371,3 +391,61 @@ def test_only_accepted_pledges_name_a_pledge_to_enter_in_the_files():
         (line,) = views.export_rows([pledge_row(found)], zone)
         cells = dict(zip(views.HEADINGS, line, strict=True))
         assert cells["Annual pledge to enter"] == cells["Frequency to enter"] == ""
+
+
+@pytest.mark.parametrize(
+    "found,body",
+    [
+        (
+            item("entered_by_hand", review("accepted", entered=True)),
+            "Entered by hand is undone: the item goes back to To enter by hand, "
+            "with its decision kept. Say why.",
+        ),
+        (
+            item(
+                "entered_incorrectly",
+                review("accepted", entered=True),
+                base="entered_by_hand",
+                check="entered_incorrectly",
+            ),
+            "Entered incorrectly is undone: the item goes back to To enter by "
+            "hand, with its decision kept. Say why.",
+        ),
+        (
+            item(
+                "confirmed",
+                review("accepted"),
+                base="to_enter_by_hand",
+                check="confirmed",
+            ),
+            "Confirmed is undone: the item goes back to To enter by hand, with "
+            "its decision kept. Say why.",
+        ),
+        (
+            item("confirmed", None, base="to_review", check="confirmed"),
+            "Confirmed is undone: the item goes back to To review. Say why.",
+        ),
+    ],
+)
+def test_a_terminal_pledges_back_to_review_needs_a_note(found, body):
+    """Back to review on a terminal pledge (#1840): the note is required (the
+    reopen choice), the dialog says where it goes, and a bulk Back to review
+    asks for the note while the row is ticked."""
+    rows = views.decorate([pledge_row(found)])
+    worklist = build(
+        Stream.FINANCIAL,
+        rows,
+        STAFF,
+        prefix="pledges",
+        action="/admin/reports/financial/pledges/",
+        columns=views.COLUMNS,
+        stage=found.stage,
+        counts={found.stage: 1},
+        stages=views.STAGES,
+        baseline=False,
+    )
+    row = worklist.rows[0]
+    (back,) = [icon for icon in row["icons"] if not icon["selected"]]
+    assert back["action"] == "back_to_review"
+    assert back["choice"] == "reopen" and back["body"] == body
+    assert row["choice"] == "reopen"
