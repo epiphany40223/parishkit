@@ -27,13 +27,10 @@ FROZEN_SQL = (
 
 class Migration(migrations.Migration):
     dependencies = [
-        # The accounts app's previous migration.
-        ("stewardship_accounts", "0030_secret_request_session"),
-        # The migration that installs the previous frozen file on main (0132,
-        # the refresh checks), so the files apply in prefix order. 0133-0166
-        # are assigned to other open changes; whichever merges last
-        # re-points this.
-        ("stewardship_workflows", "0004_refresh_checks"),
+        # The accounts app's previous migration, which installs the
+        # previous frozen file (0167, the address leader scope), so the files
+        # apply in prefix order.
+        ("stewardship_accounts", "0033_address_leader_scope"),
     ]
 
     operations = [migrations.RunSQL(FROZEN_SQL.read_text(encoding="utf-8"))]
