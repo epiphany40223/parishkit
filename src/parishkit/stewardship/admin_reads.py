@@ -846,7 +846,7 @@ def _page_read(caller, service, actor, campaign_id, read):
 
 @dataclass(frozen=True)
 class GoLiveReadiness(ReadModel):
-    """Go-live readiness for the current Testing draft: codes and counts only.
+    """Go live readiness for the current Testing draft: codes and counts only.
 
     ``problems`` are the stored codes the page translates; ``checks_passed``
     is true when there are none (the public web address check and cleanup
