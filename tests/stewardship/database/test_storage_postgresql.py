@@ -576,6 +576,12 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             "stewardship_pledge_refresh_check_guard",
             "stewardship_pledge_refresh_check_guard_v1",
         ),
+        # A refresh's check of a To review pledge (#1747): INSERT only, by
+        # the promoting worker, under its own name.
+        "stewardship_pledge_open_check": (
+            "stewardship_pledge_open_check_guard",
+            "stewardship_pledge_open_check_guard_v1",
+        ),
         # Publication plans and outcomes (#528, DAT-09.01): INSERT only,
         # each under its own name.
         **{
@@ -916,6 +922,7 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                 "stewardship_pledge_review",
                 "stewardship_limitation_review",
                 "stewardship_pledge_refresh_check",
+                "stewardship_pledge_open_check",
                 "stewardship_publication_plan",
                 "stewardship_publication_entity",
                 "stewardship_publication_field",

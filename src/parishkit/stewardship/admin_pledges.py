@@ -44,6 +44,7 @@ from .admin_reads import NotAvailable, ReadModel, _recheck
 # keeps them equal.
 STAGE_CHOICES = (
     "to_review",
+    "conflict",
     "to_enter_by_hand",
     "entered_by_hand",
     "entered_incorrectly",
