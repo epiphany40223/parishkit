@@ -39,6 +39,11 @@ def add_report_email_grants(tables, columns, *, worker):
     )
     if not worker:
         _columns(columns, SNAPSHOT, SNAPSHOT_BINDING)
+        # Scheduler selection of fact generations calls the invoker-rights
+        # stewardship_fact_disposable (0161), which asks whether a report
+        # email snapshot still holds a generation: the generation's id only,
+        # never the email.
+        _columns(columns, SNAPSHOT, {"fact_set_id"})
         _columns(columns, RECIPIENT, RECIPIENT_BINDING)
         return
     for table in (SNAPSHOT, RECIPIENT):
