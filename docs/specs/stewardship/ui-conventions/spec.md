@@ -3577,8 +3577,11 @@ learned once. **Shared code.**
   ([schedule previews](#schedule-previews)). The
   preview is redrawn in place as the editor changes
   ([in-place controls](#in-place-controls)), in a region that keeps its
-  place ([no layout shift](#no-layout-shift)). The review lists every
-  occurrence a change adds. A feature-specific view, such as the refresh
+  place ([no layout shift](#no-layout-shift)). A generated occurrence whose
+  time has already passed is listed as not added, never counted or offered,
+  since a missed send would go at once
+  ([#1948](https://github.com/epiphany40223/parishkit/issues/1948)). The
+  review lists every occurrence a change adds. A feature-specific view, such as the refresh
   schedule's seven-day preview or the Campaign calendar, is an extra view of
   the same evaluation, not a second preview. Every list of a schedule's
   occurrences, live or in a review, is drawn by the one
