@@ -226,6 +226,14 @@ TIME_PASSED = _(
     "later time, or change that reminder on its own."
 )
 SERIES_REFUSED = _("This change can't be made to the series. Reload the page.")
+# A repeat on New whose date's send time has already passed (#1948). The page
+# script never offers such a date, so only an old page or a crafted post
+# meets this; an added reminder in the past would send at once.
+REPEAT_PASSED = _(
+    "The reminder on %(date)s at %(time)s would send at a time that has "
+    "already passed, so it would send at once. Choose a later first date or "
+    "a later send time."
+)
 # Another reminder from the cut date whose time has passed without sending
 # (#469): a series change would add it again on its past date, so it would
 # send at once. Only the page refuses this; the command line allows it.
@@ -1066,6 +1074,24 @@ def scope_refusals(record, saved, schedule, campaign, read_only, now):
     return result
 
 
+def _repeat_passed(entries, campaign_zone, zone, now):
+    """Words refusing New's repeat when a reminder it adds is already past.
+
+    ``entries`` are the campaign-local schedules ``_entries`` built; the
+    first whose send moment is at or before ``now`` is named in the
+    browser's ``zone``. Returns None when every reminder is still ahead.
+    """
+    for row in entries:
+        moment = schedule_local.instant(row, campaign_zone, now)
+        if moment <= now:
+            shown = moment.astimezone(browser_zone(zone))
+            return REPEAT_PASSED % {
+                "date": parish_date(shown.date()),
+                "time": format_time(shown.time()),
+            }
+    return None
+
+
 class TimePassed(ValueError):
     """A series edit's new time would put another reminder in the past (#469)."""
 
@@ -1605,6 +1631,16 @@ def _entry(request, campaign_id, schedule_id=None):
                     % {"window": window_text(values)},
                     code="outside_campaign",
                 ),
+            )
+            return _entry_page(request, context, status=400)
+        passed = (
+            _repeat_passed(entries, values["timezone"], posted.get(ZONE, ""), now)
+            if repeat is not None and repeat.cleaned_data["repeat"]
+            else None
+        )
+        if passed:
+            repeat.add_error(
+                "repeat", forms.ValidationError(passed, code="repeat_time_passed")
             )
             return _entry_page(request, context, status=400)
         added = (
