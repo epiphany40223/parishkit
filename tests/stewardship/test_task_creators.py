@@ -255,6 +255,11 @@ SITES = {
         WEB,
         {"admin_digests.py", "reports/weekly_manual_views.py"},
     ),
+    # A report email's Send now (#1786); its page and command ship with
+    # the Report emails page (report-emails spec, delivery plan item 5).
+    "reports/report_email_manual.py::request_send_now": site(
+        "report_email_prepare", WEB
+    ),
     "responses/receipts.py::create_submission_receipt": site(
         # A Family's submission receipt.
         "outbox_delivery",
@@ -343,6 +348,11 @@ SITES = {
     "reports/weekly_ownership.py::WeeklyDigestProducer.__call__": site(
         "weekly_digest_prepare", SCHEDULER, {"runtime_process.py"}
     ),
+    # Compiled into the scheduler with the conversion (report-emails spec,
+    # delivery plan item 4).
+    "reports/report_email_ownership.py::ReportEmailProducer.__call__": site(
+        "report_email_prepare", SCHEDULER
+    ),
     "source/setup_cleanup.py::produce_setup_cleanup": site(
         "setup_source_cleanup", SCHEDULER, {"runtime_process.py"}
     ),
@@ -363,6 +373,7 @@ SITES = {
             "jobs/family_mail_test_tasks.py",
             "jobs/operational_fanout.py",
             "reports/digest_fanout.py",
+            "reports/report_email_fanout.py",
             "reports/weekly_fanout.py",
         },
     ),

@@ -498,6 +498,9 @@ FROZEN = {
     "0155_reviewed_pledge_resubmission.sql": (
         "c58fed6f43b79cd5bf5c6b8979df949d68cd461d7be04c816afc3a38055427f3"
     ),
+    "0156_report_pipeline.sql": (
+        "dc04b332bc79d4ebeb52f4349e426744b79a83aac233fe9eea833ede7ee43a69"
+    ),
 }
 
 
