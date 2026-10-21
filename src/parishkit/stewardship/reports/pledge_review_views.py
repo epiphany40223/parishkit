@@ -47,7 +47,7 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
-from parishkit.stewardship.pipeline import Stage, Stream
+from parishkit.stewardship.pipeline import TERMS, Stage, Stream
 from parishkit.stewardship.responses.financial import FREQUENCIES
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.source.source_status import (
@@ -73,6 +73,7 @@ from parishkit.stewardship.web.exports import (
 from parishkit.stewardship.web.refusals import Refusal, with_status_code
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.review_worklist import (
+    NOT_SEEN,
     Column,
     build,
     page_address,
@@ -85,7 +86,9 @@ from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .financial import FREQUENCY_LABELS, FinancialQuery, name_families, shape_result
 from .money import MoneyAmount
+from .pledge_refresh import display, pledge_check_states
 from .pledge_review import (
+    WITHHELD,
     EditRefusal,
     PledgeDecisions,
     placement,
@@ -100,16 +103,19 @@ FORMATS = {
     "pdf": "application/pdf",
 }
 # The Stage filter's choices, To review first and the default (review
-# pipeline spec, "Review worklist"); Entered incorrectly and Not seen in
-# ParishSoft join them with pledge confirmation (#1704).
+# pipeline spec, "Review worklist"). The refresh places Entered incorrectly
+# and Confirmed, and sets the Not seen in ParishSoft flag, a choice of its
+# own after the stages while some pledge has it (#1704).
 STAGES = (
     Stage.TO_REVIEW,
     Stage.TO_ENTER_BY_HAND,
     Stage.ENTERED_BY_HAND,
+    Stage.ENTERED_INCORRECTLY,
+    Stage.CONFIRMED,
     Stage.IGNORED,
 )
 EVERY = "all"
-STAGE_VALUES = frozenset({*(stage.value for stage in STAGES), EVERY})
+STAGE_VALUES = frozenset({*(stage.value for stage in STAGES), NOT_SEEN, EVERY})
 DEFAULT_STAGE = Stage.TO_REVIEW.value
 PREFIX = "pledges"
 # The worklist's identity columns, in the shared order (UX conventions,
@@ -136,6 +142,9 @@ HEADINGS = (
     "Reviewer's frequency",
     "Annual pledge to enter",
     "Frequency to enter",
+    # ParishSoft's upcoming-year amount the latest refresh check found
+    # (#1704); blank before any.
+    "ParishSoft annual pledge",
     "Stage",
     "Decision",
     "Entered by",
@@ -158,6 +167,7 @@ PDF_WEIGHTS = {
     "Reviewer's frequency": 5,
     "Annual pledge to enter": 6,
     "Frequency to enter": 5,
+    "ParishSoft annual pledge": 6,
     "Stage": 5,
     "Decision": 5,
     "Entered by": 5,
@@ -171,8 +181,16 @@ PRIVACY = "Sensitive parish report. Share only with authorized recipients."
 FORMER = "Former portal user"
 CANNOT_GIVE = "Cannot contribute"
 # The stages at which a file names the pledge to enter: accepted, and
-# not yet or already entered. At the others nothing is to be entered.
-ENTERING = frozenset({Stage.TO_ENTER_BY_HAND.value, Stage.ENTERED_BY_HAND.value})
+# not yet or already entered (or confirmed by a refresh, #1704). At the
+# others nothing is to be entered.
+ENTERING = frozenset(
+    {
+        Stage.TO_ENTER_BY_HAND.value,
+        Stage.ENTERED_BY_HAND.value,
+        Stage.ENTERED_INCORRECTLY.value,
+        Stage.CONFIRMED.value,
+    }
+)
 NO_FREQUENCY = "No frequency"
 CHANGED = "The Family changed its pledge after the last decision."
 EDIT_REFUSED = "Correct the value, then save it again."
@@ -223,9 +241,10 @@ def pledge_rows(campaign_id, principal, search=""):
     The Financial stewardship selection (no filter but ``search``, which
     matches the Family name or DUID as that report's does) names, words and
     types each pledge; ``read_items`` gives its stage. Two reads for the
-    whole campaign, plus one for the deciding users' emails. Returns the
-    rows, each carrying ``item`` and ``placement``, and the selection's
-    metadata.
+    whole campaign, plus one for the deciding users' emails and two for the
+    refresh checks (#1704). Returns the rows, each carrying ``item``,
+    ``check`` (its latest refresh check, or None), ``placement`` and
+    ``not_seen``, and the selection's metadata.
     """
     query = FinancialQuery(search=search)
     with connection.cursor() as cursor:
@@ -255,6 +274,7 @@ def pledge_rows(campaign_id, principal, search=""):
     )
     name_families(result)
     items = read_items(campaign_id)
+    checks = pledge_check_states(items.values())
     names = _labels(item.review.actor_id for item in items.values() if item.review)
     rows = []
     for row in result["rows"]:
@@ -265,8 +285,14 @@ def pledge_rows(campaign_id, principal, search=""):
             continue
         review = item.review
         row["item"] = item
-        row["placement"] = placement(item)
+        row["check"] = checks.get(item.submission_id)
+        row["placement"] = placement(item, row["check"])
         row["stage"] = row["placement"].stage.value
+        # The Not seen in ParishSoft flag, on Entered by hand only (#1704).
+        row["not_seen"] = bool(
+            row["check"]
+            and row["check"].not_seen(row["placement"].stage is Stage.ENTERED_BY_HAND)
+        )
         row["decided_by"] = names.get(review.actor_id, FORMER) if review else ""
         row["decided_at"] = review.created_at if review else None
         row["note"] = review.note if review else ""
@@ -336,11 +362,28 @@ def reviewer_value(row):
 
 
 def mark(row):
-    """Who marked the pledge entered by hand and when, or (None, None)."""
-    review = row["item"].review
-    if row["stage"] != Stage.ENTERED_BY_HAND.value:
+    """Who marked the pledge entered by hand and when, or (None, None).
+
+    A marked pledge a refresh Confirmed or found Entered incorrectly keeps
+    its mark (#1704).
+    """
+    item = row["item"]
+    review = item.review
+    if not (item.in_force and review and review.entered):
         return None, None
     return row["decided_by"], review.created_at
+
+
+def parishsoft_amount(row):
+    """ParishSoft's upcoming-year amount the latest refresh found, or ""."""
+    check = row.get("check")
+    return display(check.observed) if check and check.observed is not None else ""
+
+
+def stage_text(row):
+    """The row's stage as a file words it, with the Not seen flag."""
+    label = row["placement"].stage.label
+    return f"{label}, {TERMS[NOT_SEEN]}" if row.get("not_seen") else label
 
 
 def iso_time(moment):
@@ -377,7 +420,8 @@ def export_rows(rows, zone, *, time_text=iso_time):
                 shares,
                 *reviewed_parts(row),
                 *(to_enter(row) if row["stage"] in ENTERING else ("", "")),
-                row["placement"].stage.label,
+                parishsoft_amount(row),
+                stage_text(row),
                 decision.label if decision else "",
                 entered_by or "",
                 instant(entered_at),
@@ -560,7 +604,12 @@ def _choices(parameters, *, export, private):
 
 
 def at_stage(rows, stage):
-    """The rows at the chosen Stage (Every stage keeps every row)."""
+    """The rows at the chosen Stage (Every stage keeps every row).
+
+    Not seen in ParishSoft is a flag, not a stage: it keeps the flagged rows.
+    """
+    if stage == NOT_SEEN:
+        return [row for row in rows if row.get("not_seen", False)]
     return [row for row in rows if stage == EVERY or row["stage"] == stage]
 
 
@@ -703,7 +752,17 @@ def decorate(rows):
                 "baseline": "",
                 "family_answer": family_answer(row),
                 "reviewer_value": reviewer_value(row),
-                "parishsoft_now": "",
+                # Shown beside Entered incorrectly and Not seen in
+                # ParishSoft (the component's shows_now), #1704.
+                "parishsoft_now": parishsoft_amount(row),
+                "not_seen": row.get("not_seen", False),
+                # Refresh rule 1 on an Ignored pledge: noted, never a stage.
+                "now_matches": bool(
+                    row.get("check")
+                    and row["placement"].stage is Stage.IGNORED
+                    and row.get("check").outcome == "ignored_now_matches"
+                ),
+                "withheld": WITHHELD.get(row["placement"].stage, ()),
                 "submitted_at": row["submitted_at"],
                 "decided_by": row["decided_by"] if in_force else "",
                 "decided_at": row["decided_at"] if in_force else None,
@@ -730,6 +789,10 @@ def stage_table(rows, stage, extra, *, action):
     memory, its controls posting the view to ``action``.
     """
     counts = Counter(row["stage"] for row in rows)
+    # A flag on Entered by hand, counted beside it while some row has it.
+    flagged = sum(row.get("not_seen", False) for row in rows)
+    if flagged:
+        counts[NOT_SEEN] = flagged
     table = paginate(
         at_stage(rows, stage),
         extra["paging"],
