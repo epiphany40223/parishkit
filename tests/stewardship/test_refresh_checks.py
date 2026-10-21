@@ -13,8 +13,8 @@ from parishkit.stewardship.responses.refresh_checks import (
     CHECKED_FIELDS,
     CheckState,
     _census_same,
-    _owed,
-    _summaries,
+    owed,
+    summaries,
 )
 
 START = datetime(2026, 10, 30, tzinfo=UTC)
@@ -39,12 +39,12 @@ def test_unseen_counts_full_unchanged_checks_after_the_start_and_mark():
         ("c", at(1), "unchanged", True, None),
         ("c", at(3), "unchanged", True, None),
     ]
-    states = _summaries(checks, start, {"c": at(2)})
+    states = summaries(checks, start, {"c": at(2)})
     assert states["a"] == CheckState("unchanged", None, 1, 2)
     assert states["b"] == CheckState("unchanged", None, 1, 2)
     assert states["c"].unseen == 1
     assert not states["a"].not_seen(True)
-    assert _summaries(checks, None, {})["a"].not_seen_after is None
+    assert summaries(checks, None, {})["a"].not_seen_after is None
 
 
 def test_not_seen_needs_a_mark_the_threshold_and_the_start():
@@ -60,16 +60,16 @@ def test_a_check_is_owed_only_when_something_changed():
     """A changed outcome, a new wrong value, or a marked item's full refresh
     until Not seen; nothing for a quiet refresh."""
     quiet = CheckState(not_seen_after=2)
-    assert not _owed("unchanged", quiet, full=False, marked=True)
-    assert not _owed("unchanged", quiet, full=True, marked=False)
-    assert _owed("unchanged", quiet, full=True, marked=True)
-    assert not _owed(
+    assert not owed("unchanged", quiet, full=False, marked=True)
+    assert not owed("unchanged", quiet, full=True, marked=False)
+    assert owed("unchanged", quiet, full=True, marked=True)
+    assert not owed(
         "unchanged", CheckState("unchanged", None, 2, 2), full=True, marked=True
     )
-    assert _owed("confirmed", quiet, full=False, marked=False)
+    assert owed("confirmed", quiet, full=False, marked=False)
     wrong = CheckState("entered_incorrectly", {"value": "a"}, 0, 2)
-    assert not _owed("entered_incorrectly", wrong, full=True, marked=True)
-    assert _owed("entered_incorrectly", wrong, full=True, marked=True, moved=True)
+    assert not owed("entered_incorrectly", wrong, full=True, marked=True)
+    assert owed("entered_incorrectly", wrong, full=True, marked=True, moved=True)
 
 
 def test_census_comparison_is_canonical_and_availability_aware():

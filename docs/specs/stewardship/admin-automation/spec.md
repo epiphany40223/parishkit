@@ -3159,7 +3159,7 @@ ids, version and time and whether an edit is now set (`edited`);
 the value, the note, the Family or the Member. Standard input carries only
 one of `--value -` and `--note -`.
 
-`report pledges [--stage to_review|to_enter_by_hand|entered_by_hand|ignored|all]`
+`report pledges [--stage to_review|to_enter_by_hand|entered_by_hand|entered_incorrectly|confirmed|ignored|all]`
 ([#1733](https://github.com/epiphany40223/parishkit/issues/1733)) counts
 [Pledges](../reports/spec.md#pledges) as `report census`
 counts Census changes: the page's admission (`pledge_review_views._principal`:
