@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from parishkit.stewardship.accounts import admin_editing
+from parishkit.stewardship.accounts.role_refusal import RoleDenied
 from parishkit.stewardship.web.refusals import UserFacingDenied
 
 
@@ -21,9 +22,11 @@ def test_a_request_without_a_current_session_is_told_to_sign_in(monkeypatch):
 
 
 def test_a_signed_in_account_without_the_capability_is_still_refused(monkeypatch):
-    """A current Staff session keeps the ordinary capability refusal."""
+    """A current Staff session is refused with the role wording (#1924)."""
     monkeypatch.setattr(admin_editing, "authenticated_admin", lambda *a, **k: object())
     monkeypatch.setattr(admin_editing, "allows", lambda *a, **k: False)
     with pytest.raises(PermissionError) as raised:
         admin_editing.principal(object(), SimpleNamespace(store=None))
-    assert not isinstance(raised.value, UserFacingDenied)
+    # A current session is told the role is the reason, not to sign in again.
+    assert isinstance(raised.value, RoleDenied)
+    assert not raised.value.offers_sign_in
