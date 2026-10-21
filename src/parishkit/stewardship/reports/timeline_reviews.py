@@ -11,7 +11,8 @@ from the audit log, whose context deliberately names no item or value:
   anyway) and ``stewardship_proposal_resolution`` (Entered by hand, Ignore
   and Back to review), which share their change's version sequence;
 - Ministry: ``stewardship_ministry_revision`` (each follow-up edit) and
-  ``stewardship_ministry_roster_entry`` (each Entered in ParishSoft tick);
+  ``stewardship_ministry_roster_entry`` (each Entered in ParishSoft tick,
+  except the clearing a Back to review undo writes with its revision);
 - Additional information: ``stewardship_information_revision``.
 
 Each history row stores the item's state after the step, not the step
@@ -107,8 +108,8 @@ WITH subs AS (
     UNION ALL
     SELECT 'ministry_revision', q.id::text, v.expected_version, v.created_at,
         v.actor_id, q.submission_id, q.entity_kind, q.entity_key,
-        q.ministry_duid::text, v.state, v.outcome, q.action, NULL,
-        NULL, NULL, NULL
+        q.ministry_duid::text, v.state, v.outcome, q.action,
+        (v.decision_note<>'')::text, NULL, NULL, NULL
     FROM subs JOIN stewardship_ministry_request q ON q.submission_id=subs.id
     JOIN stewardship_ministry_revision v ON v.request_id=q.id
     UNION ALL
@@ -118,6 +119,13 @@ WITH subs AS (
         NULL, NULL, NULL
     FROM subs JOIN stewardship_ministry_request q ON q.submission_id=subs.id
     JOIN stewardship_ministry_roster_entry e ON e.request_id=q.id
+    -- A tick cleared by Back to review's undo (#1840) is part of that undo,
+    -- written with its revision (the same actor and request key), which
+    -- reads as the one Back to review line; only a clearing without one
+    -- (made before #1840) is a line of its own.
+    WHERE e.entered OR NOT EXISTS (SELECT 1 FROM stewardship_ministry_revision r
+        WHERE r.request_id=q.id AND r.actor_id=e.actor_id
+          AND r.request_key=e.request_key)
     UNION ALL
     SELECT 'information', i.id::text, v.expected_version, v.created_at,
         v.actor_id, i.submission_id, NULL, NULL, NULL,
@@ -215,7 +223,8 @@ def state_after(row, before):
     The row's ``a`` to ``d`` columns are, by stream: a census review's
     decision, whether it set a Reviewer's value, that value and whether it
     used the Family's value anyway; a census resolution's action; a Ministry
-    revision's state and outcome (``c`` the request's join or leave); a
+    revision's state and outcome (``c`` the request's join or leave, ``d``
+    whether it has a decision note); a
     roster tick's "true" or "false"; an Additional information revision's
     follow-up-needed and followed-up flags.
     """
@@ -237,23 +246,59 @@ def state_after(row, before):
     if stream == "census_resolution":
         if a == "entered":
             return replace(before, done="entered")
-        return replace(before, decision=Decision.IGNORED if a == "ignored" else None)
+        if a == "ignored":
+            return replace(before, decision=Decision.IGNORED)
+        if before.decision is Decision.IGNORED:
+            # Reopening an Ignore: no decision is in force.
+            return replace(before, decision=None)
+        # Back to review of a terminal step (#1840) keeps the decision behind
+        # it: a mark that accepted in one step leaves the change Accepted.
+        # Updated in ParishSoft and Already in ParishSoft have no step of
+        # their own here, so the states alone cannot tell this line apart
+        # and its word is forced.
+        decision = before.decision
+        if before.done == "entered" and decision is None:
+            decision = Decision.ACCEPTED
+        return replace(before, decision=decision, done=None, forced=BACK_TO_REVIEW)
     if stream == "ministry_revision":
         # The roster flags only move a decided join or leave between To
         # enter by hand and Entered by hand; the decision is the same.
         placement = ministry_placement(
             state=a, outcome=b, source_resolved=False, roster_entered=False
         )
-        return replace(before, decision=placement.decision)
+        # Back to review of a terminal step (#1840) records the decision
+        # again, keeping it in force, and clears the tick if one was ticked
+        # (that clearing, written with it, is no line of its own:
+        # ``_HISTORY``), or, for a request a refresh resolved with no
+        # decision behind it, reopens it with the required note.
+        kept = (
+            a == "resolved"
+            and before.decision is not None
+            and placement.decision == before.decision
+        )
+        undone = kept or (
+            a == "in_progress" and before.decision is None and row["d"] == "true"
+        )
+        return replace(
+            before,
+            decision=placement.decision,
+            done=None if kept else before.done,
+            forced=BACK_TO_REVIEW if undone else None,
+        )
     if stream == "ministry_roster":
         return replace(before, done="entered" if a == "true" else None)
     # Additional information: followed up is Handled, needed is Accepted
     # (To handle), neither is To review (``pipeline.information_placement``).
+    # Leaving Handled with the decision kept is Handled's undo, Back to
+    # review (review pipeline spec, "Undoing a terminal stage", #1840).
     needed, handled = a == "true", b == "true"
+    decision = Decision.ACCEPTED if needed or handled else None
+    undone = before.done == "handled" and not handled and decision is not None
     return replace(
         before,
-        decision=Decision.ACCEPTED if needed or handled else None,
+        decision=decision,
         done="handled" if handled else None,
+        forced=BACK_TO_REVIEW if undone else None,
     )
 
 

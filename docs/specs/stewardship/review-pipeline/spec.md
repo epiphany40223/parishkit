@@ -146,8 +146,10 @@ shown as **Added by the parish**, and goes through the rest of the pipeline
 like any other item; it may name the item it was added in place of, so the
 history reads "Ignored; Added in its place: …". **Back to review** undoes a
 decision while the item has not started its update (for an Added item, it
-withdraws the item). Every decision takes an optional note; reopening an
-ignored item requires one, as
+withdraws the item), and undoes a terminal step after it
+([undoing a terminal stage](#undoing-a-terminal-stage)). Every decision
+takes an optional note; reopening an ignored item, or undoing a terminal
+step, requires one, as
 [Manual census resolution](../reports/spec.md#manual-census-resolution)
 already requires for Reopen.
 
@@ -231,8 +233,9 @@ way, whether it was written by the update run or entered by hand,
 including pledges ([what is confirmable](#what-is-confirmable)). For an
 item no read returns (data ParishSoft does not hold, and the few ParishSoft
 values no read exposes), there is nothing to wait for, so **Handled** or
-**Entered by hand** is final. Confirmed is the pipeline's only fully closed
-stage for confirmable data.
+**Entered by hand** is where it rests. Confirmed is the pipeline's only fully
+closed stage for confirmable data. None of them is final: Back to review
+undoes each ([undoing a terminal stage](#undoing-a-terminal-stage)).
 
 ### Entered incorrectly stage
 
@@ -254,7 +257,9 @@ define it exactly. It is shown:
 It is fixed by Staff or an Administrator in one of two ways: correct the
 value in ParishSoft and mark **Entered by hand** again (the next refresh
 re-checks it), or, if ParishSoft's value is right after all, **Back to
-review** and Edit to that value, which the next refresh Confirms. Ministry
+review** twice (to To enter by hand, then To review;
+[undoing a terminal stage](#undoing-a-terminal-stage)) and Edit to that
+value, which the next refresh Confirms. Ministry
 leaders never see this stage. An item that ParishSoft's API wrote cannot
 reach it: a written item is read back in the run, and a later difference is
 a [Conflict](#baseline-refresh-re-evaluation).
@@ -262,6 +267,82 @@ a [Conflict](#baseline-refresh-re-evaluation).
 Ministry requests have no value that can be wrong: a join or leave either
 shows in the roster or does not. For them only Not seen in ParishSoft
 applies.
+
+### Undoing a terminal stage
+
+No stage is final (Administrator, 2026-10-20,
+[#1840](https://github.com/epiphany40223/parishkit/issues/1840)): every
+stream handles its terminal stages the same way. A **terminal stage** is one
+an item reaches by a step after its decision: **Entered by hand**,
+**Handled**, **Updated in ParishSoft**, and the refresh outcomes
+**Confirmed** and **Entered incorrectly** (with the Not seen in ParishSoft
+flag, which is Entered by hand still waiting). Updating (an update run in
+flight) is not terminal, and History (superseded, cancelled, withdrawn) is
+not a stage anyone acts on.
+
+The rule, for every stream and every terminal stage:
+
+- **Back to review undoes the terminal step, and only that step.** The
+  decision behind it stays in force, so the item returns to the stage it
+  held just before the step: To enter by hand, To handle or Ready to update,
+  with its Accept or Edit value kept. An item whose terminal step had no
+  decision behind it returns to To review: a change or pledge ParishSoft
+  already held before anyone decided it ("Already in ParishSoft") and a
+  Ministry request the refresh resolved. A census By hand change that
+  Entered by hand accepted and marked in one step
+  ([decision 2](#decisions)) is shown Accepted, so it returns to To enter by
+  hand, Accepted. To decide the item again, choose Back to review once more
+  from its accepted stage.
+- **A note is required**, as for reopening an Ignored item: the dialog's
+  note is "Note (required)" for such a row, and a bulk Back to review needs
+  one while any ticked row does.
+- **Staff and Administrators only.** Ministry leaders never see these
+  stages ([role-specific actions](#role-specific-actions)).
+- **History keeps everything.** The terminal step, every refresh check of
+  it and the undo are immutable rows; the undo advances the item's
+  version, so a refresh outcome recorded for the undone step (Confirmed,
+  Entered incorrectly, unchanged towards Not seen) no longer places the
+  item and stays in its history. A later mark starts afresh: Not seen
+  counts from it.
+- **Updated in ParishSoft** is undone in the portal only: the change is
+  Ready to update again, nothing is written to or read from ParishSoft, and
+  the dialog says so. A later update run plans it from a fresh read, like
+  any Ready change, so it is written again only if ParishSoft no longer
+  holds it.
+- **The next refresh re-evaluates the item as an open one**
+  ([baseline refresh re-evaluation](#baseline-refresh-re-evaluation)): a
+  Ministry request whose roster already shows the change, or a value
+  ParishSoft already holds when ParishSoft next changes, can be Confirmed
+  again, which is expected.
+- **Entered incorrectly** follows the same rule: Back to review returns it
+  to To enter by hand (this replaces the first fix of
+  [#1737](https://github.com/epiphany40223/parishkit/issues/1737), which
+  sent it to To review); to Edit it to ParishSoft's value, choose Back to
+  review again and Edit. Entered by hand again stays its other fix.
+- The undo is a stream audit event (versions and counts only), and the
+  Family's [Timeline](../reports/spec.md#timeline-review-lines) lists it as
+  a Back to review line; like every Timeline line it shows no note (notes
+  can hold personal detail), which the item's own row keeps.
+- The same undo is in `pk-admin` wherever the stream's Back to review is
+  ([admin automation](../admin-automation/spec.md)), with the required
+  `--note`; no command asks "cannot be undone" for these marks any more.
+
+How each stream stores the undo:
+
+| Stream | Terminal step undone | Stored as |
+| --- | --- | --- |
+| Census | Entered by hand, Entered incorrectly, Confirmed, Updated in ParishSoft | a `reopened` resolution (forward migration 0146): the change's execution returns to `pending` with its decision kept |
+| Census (Added by the parish) | Entered by hand | a `reopened` addition resolution (0147) after the `entered` one |
+| Ministry | Entered by hand, Confirmed | a Back to review revision with its note (0148), which clears the roster tick or the refresh resolution and advances the request's version |
+| Financial | Entered by hand, Entered incorrectly, Confirmed | a `back_to_review` pledge review row that keeps the decision in force (0149) |
+| Additional information | Handled | a revision clearing the follow-up with its note, follow-up still needed (0150) |
+| Cannot participate | Handled | an `accepted` review row with its note (0151) |
+
+Rejected: undoing only until a refresh has checked the mark (a mistake found
+after a refresh would stay wrong), keeping the marks final (a mis-click had
+no way back), and sending every undo to To review (it would discard the
+Accept or Edit value, so one wrong mark would mean deciding the item
+again).
 
 ## One working change set
 
@@ -955,7 +1036,7 @@ worklist's Who cell shows the shared
 for such a Member, whatever the row's stage. The Family's own resubmission
 still withdraws the ordinary changes of a Member no longer on its form, as
 any omitted answer is withdrawn. An item whose
-row is final (a census change Entered by hand or Updated in ParishSoft) or
+row is terminal (a census change Entered by hand or Updated in ParishSoft) or
 decided (a Ministry request a person accepted or ignored) gets a **refresh
 check** instead (a census change a later Family response replaced does not:
 it is history, below): an immutable record, written in the promotion transaction,
@@ -966,11 +1047,12 @@ Entered incorrectly item's ParishSoft value changes again), and an unchanged
 one on a marked item only on a full refresh, until Not seen is reached. The
 stage is derived from the item's latest check, never stored on the item, and
 a Confirmed item is not checked again, so its ParishSoft value is the one
-that confirmed it. A Ministry request Confirmed this way offers no action, so
-the review service refuses Back to review on it; its revision guard does not
-read the checks, and a request reopened anyway would be resolved as
-Confirmed by the next refresh, as an open request whose roster is current is
-today. Roster changes to enter no longer counts it as not yet entered.
+that confirmed it. A Ministry request Confirmed this way offers only Back to
+review ([undoing a terminal stage](#undoing-a-terminal-stage)), which
+advances its version past the check; the next refresh resolves it as
+Confirmed again while its roster is current, as it does an open request
+whose roster is current. Roster changes to enter no longer counts it as not
+yet entered.
 Pledges get pledge refresh checks of their own
 ([Financial stream](#financial-stream),
 [#1704](https://github.com/epiphany40223/parishkit/issues/1704),
@@ -1033,21 +1115,22 @@ also works: the next refresh confirms it.
   until ParishSoft changes, is Confirmed once ParishSoft holds the
   carried-forward value, and is Entered incorrectly again at yet another
   value.
-- **Back to review** reopens the change (a resolution row too): it is To
-  review again, open to today's reconciliation, with its edited value kept
-  and no decision in force. The reviewer then Edits it to ParishSoft's value,
-  which the next refresh Confirms. A refresh before the Edit finds ParishSoft
-  differing from both the stored value and the reviewer's, so the change is
-  a Conflict; an Edit then accepts ParishSoft's value and the change waits
-  To enter by hand (or Ready), since reconciliation looks again only when
-  ParishSoft's value changes, so the dialog promises no confirmation.
+- **Back to review** undoes the mark (a resolution row too), as on every
+  terminal stage ([undoing a terminal stage](#undoing-a-terminal-stage);
+  until #1840 it went to To review with no decision in force): it is To
+  enter by hand (or Ready) again with its decision and edited value kept,
+  open to today's reconciliation. A refresh before it is marked again finds
+  ParishSoft differing from both the stored value and the reviewer's, so the
+  change is a Conflict, decided again against ParishSoft's value; to Edit it
+  to ParishSoft's value at once, choose Back to review again and Edit. The
+  dialog promises no confirmation.
 
-Both are refused unless the change's latest refresh check, at its current
-version, says Entered incorrectly. A final change the Family's later
-response replaced (the same field answered again, which makes a change of
-its own) is history: it gets no refresh check, is placed by its execution
-alone, and takes neither fix. The census guard admits a change leaving
-Entered by hand only this way, with its paired resolution row. Migration 0133
+Entered by hand again is refused unless the change's latest refresh check,
+at its current version, says Entered incorrectly. A final change the
+Family's later response replaced (the same field answered again, which makes
+a change of its own) is history: it gets no refresh check, is placed by its
+execution alone, and takes neither fix. The census guard admits a change
+leaving Entered by hand only with its paired resolution row. Migration 0133
 (provisional number) adds these rules. It also checks every census refresh
 check of a change Entered by hand against the value recorded at its mark:
 unchanged exactly when ParishSoft holds that value, and Entered incorrectly
@@ -1113,7 +1196,7 @@ only when a value was recorded and ParishSoft holds another one.
   the primary is the mailing block: then there is no check. A Family whose
   primary is the mailing block may hold any address there, so a different
   value is unchanged (Not seen after the threshold), never Entered
-  incorrectly. The mailing address stays final when Entered by hand. The
+  incorrectly. The mailing address stays Entered by hand (nothing confirms it). The
   Family must be active in the data, as for the email opt-out.
 - **The update run's queue step refuses a Member who left the Family** in
   the database too: the census guard lets the publish worker queue a change
@@ -1133,7 +1216,7 @@ field:
   leaves (the roster lists), the upcoming pledge amount, the Family's email
   opt-out (below), and the Family's home address, against ParishSoft's
   primary address ([address finding](#family-addresses)).
-- **Not confirmable** (Entered by hand is final unless noted): share
+- **Not confirmable** (Entered by hand stays there unless noted): share
   methods, the Family's
   mailing address, a New Member marked without its ParishSoft Member ID
   (until one is given, [above](#refresh-checks)),
@@ -1257,7 +1340,9 @@ per decision on a Family's pledge (frozen migration 0127, provisional
 number): who, when, the note, the response it was made on, that response's
 pledge answer (annual pledge, frequency, cannot contribute and share
 methods), the decision (Accepted, Accepted (edited) with the reviewer's
-annual pledge and frequency, Ignored, or none after Back to review) and the
+annual pledge and frequency, Ignored, or none after Back to review of a
+decision; a Back to review of a terminal step keeps the decision in force,
+[undoing a terminal stage](#undoing-a-terminal-stage)) and the
 Entered by hand mark. The
 [Financial stewardship detail](../reports/spec.md#financial-stewardship-detail)
 report still lists every current pledge, and
@@ -1307,9 +1392,11 @@ its $0.00 words). That replaces rule 3's withdrawal, because the pledge item
 is the Family's current answer and stays listed, and rule 4's To review for
 a first answer ParishSoft already holds, so no reviewer accepts a pledge
 that would then be entered twice. If any earlier version of the Family's
-pledge was ever marked Entered by hand (even one later reopened), the new
-answer stays To review instead (its row says the Family changed its pledge),
-so Staff see it and can undo the entry, and the refresh judges it; rule 3's
+pledge was ever marked Entered by hand (even one later reopened, or a mark
+undone with Back to review, since the amount may have been typed before the
+undo), the new answer stays To review instead (its row says the Family
+changed its pledge), so Staff see it and can undo the entry, and the refresh
+judges it; rule 3's
 "Withdrawn by the Family after it was entered" note is not shown. Without a
 recorded amount the pledge is To review, as before. Pledges and funds are
 read-only in ParishSoft's API, so the stream never has Ready to update.
@@ -1377,15 +1464,16 @@ maps a Family's ParishSoft pledge for the upcoming year to the pipeline item:
   amount moves under a Conflict or an Entered incorrectly pledge, and (for a
   marked pledge) once per full refresh until Not seen is reached.
 - R = C makes an accepted pledge **Confirmed**, keeping its Accepted or
-  Accepted (edited), with nothing offered; on an Ignored pledge it only
+  Accepted (edited), offering only Back to review; on an Ignored pledge it only
   notes "ParishSoft now matches the Family's answer". On a To review pledge
   it is **Confirmed** with no reviewer, its row saying "Already in
-  ParishSoft", with nothing offered: like a decided pledge, it is Confirmed
+  ParishSoft", offering only Back to review: like a decided pledge, it is Confirmed
   on the amount alone (frequency below; share methods have no read). A
   marked pledge whose R differs from C and from the amount
   recorded at the mark is **Entered incorrectly**, shown with ParishSoft
-  now beside the Reviewer's value and no action until
-  [#1737](https://github.com/epiphany40223/parishkit/issues/1737); one
+  now beside the Reviewer's value, offering Back to review (Entered by hand
+  again waits for
+  [#1737](https://github.com/epiphany40223/parishkit/issues/1737)); one
   still at the mark after the configured number of full refreshes is
   flagged **Not seen in ParishSoft**.
 - R differing from A and from C on a To review or To enter by hand pledge
@@ -1403,7 +1491,7 @@ maps a Family's ParishSoft pledge for the upcoming year to the pipeline item:
   annual pledge (`installmentAmount`, `numberOfMonths`,
   `fulfillmentMethod`); until then frequency is not confirmable and the
   item is Confirmed on the amount alone.
-- Share methods have no ParishSoft read; Entered by hand is final for them.
+- Share methods have no ParishSoft read; Entered by hand stays there for them.
 
 Ministry leaders never see this stream.
 
@@ -1420,8 +1508,10 @@ the Family's effective live response as the report always read it, so the
 Family submit path stores nothing new. Its decision is the latest review row
 for that answer while every later live response still gives the answer:
 none, or Back to review → To review; Accepted → To handle; Ignored →
-Ignored; Handled → Handled. A response that answers the other way
-withdraws the item, and giving it again later is a new item, To review; one
+Ignored; Handled → Handled. Back to review of Handled records Accepted
+again, with its required note, so the answer is To handle
+([undoing a terminal stage](#undoing-a-terminal-stage)). A response that
+answers the other way withdraws the item, and giving it again later is a new item, To review; one
 that leaves the answer out changes nothing
 ([rule 1 to 5](#resubmission-before-the-reviewed-form)).
 
@@ -1436,7 +1526,10 @@ migration 0126,
 followed up → Handled; follow-up needed → To handle; current actionable and
 not needed → Ignored when the latest revision says so, else To review (the
 [existing state](#existing-state-to-stage) rule for revisions saved before
-0126); superseded / withdrawn → history. The
+0126); superseded / withdrawn → history. Back to review of Handled is a
+revision that clears the follow-up (its time and who) and keeps it needed,
+with its required note, so the request is To handle
+([undoing a terminal stage](#undoing-a-terminal-stage)). The
 [Additional information](../reports/spec.md#additional-information)
 worklist expresses the two booleans as one stage, with bulk Accept,
 Ignore, Back to review and Handled.
@@ -1553,7 +1646,9 @@ turning back), and, in the update phase, Entered by hand / Handled (check in
 a box). A census New Member Entered by hand also offers Correct (or Add) the
 ParishSoft Member ID (pencil, after its selected mark;
 [refresh checks](#refresh-checks)). Each takes the optional note in the
-shared confirmation dialog.
+shared confirmation dialog; Back to review requires it on an Ignored row and
+on a [terminal stage](#undoing-a-terminal-stage), whose dialog says where
+the row goes.
 
 ### Selected-state icons
 

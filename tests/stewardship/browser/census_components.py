@@ -61,8 +61,16 @@ EDITED_NOTICE = "Home address for the Family in Family DUID 1002 accepted (edite
 # Add (#1710): the page after an Add, with the added row (id "add-a1").
 ADDED = "/census-changes-added"
 ADDED_NOTICE = "Nickname for Member DUID 103 in Family DUID 1003 added."
+# The added row Entered by hand, and the page after Back to review undid its
+# mark (#1840): To enter by hand again, at its next version.
+ADDED_ENTERED = "/census-changes-added-entered"
+ADDED_REOPENED = "/census-changes-added-reopened"
+ADDED_REOPENED_NOTICE = (
+    "Nickname for Member DUID 103 in Family DUID 1003 sent back to review."
+)
 # Row 3 Entered incorrectly (#1737): a refresh found ParishSoft at a third
-# value, and the pages after each of its two fixes.
+# value, and the pages after each of its two fixes: Back to review undoes
+# the mark (#1840), so row 3 is To enter by hand again, Accepted.
 INCORRECT = "/census-changes-incorrect"
 WRONG = "555-0199"
 REENTERED = "/census-changes-reentered"
@@ -72,6 +80,11 @@ REENTERED_NOTICE = (
 RETURNED = "/census-changes-returned"
 RETURNED_NOTICE = (
     "Mobile phone for Member DUID 103 in Family DUID 1003 sent back to review."
+)
+# The page after Back to review undid row 1's Entered by hand (#1840).
+UNDONE = "/census-changes-undone"
+UNDONE_NOTICE = (
+    "Mobile phone for Member DUID 101 in Family DUID 1001 sent back to review."
 )
 # The page after an Edit of row 0's mobile phone (R38 finding 4).
 EDITED_PHONE = "/census-changes-edited-phone"
@@ -139,8 +152,9 @@ def components(context, admin):
             )
         )
 
-    def addition():
-        """The parish-added row: Member 03's nickname, To enter by hand."""
+    def addition(step=None, sequence=None):
+        """The parish-added row: Member 03's nickname, To enter by hand, or
+        at its latest ``step`` (``sequence``)."""
         return shape_addition(
             {
                 "id": "a1",
@@ -157,10 +171,11 @@ def components(context, admin):
                 "snapshot_id": None,
                 "added_by": "staff@example.org",
                 "added_note": "Phoned in",
-                "step": None,
-                "step_note": None,
-                "step_at": None,
-                "step_by": None,
+                "step": step,
+                "step_note": "Typo" if step == "reopened" else None,
+                "step_at": when + timedelta(hours=2) if step else None,
+                "step_by": "staff@example.org" if step else None,
+                "step_sequence": sequence,
             }
         )
 
@@ -227,13 +242,16 @@ def components(context, admin):
             "member_status": "moved" if index == 1 else None,
         }
 
-    def page(paging, notice=None, *, stage="all", rows=ROWS, added=False, **changes):
+    def page(
+        paging, notice=None, *, stage="all", rows=ROWS, added=False, step=(), **changes
+    ):
         """Render the page with the table paged and sorted as ``paging`` says,
         the Stage filter at ``stage``, ``notice`` above the table, and
         ``changes`` (``shaped``'s) applied, for a Staff reader; ``added``
-        puts the parish-added row first."""
+        puts the parish-added row first, at ``step`` (``addition``'s
+        arguments) when given."""
         query = CensusQuery(stage=stage)
-        found = [addition()] * added + [
+        found = [addition(*step)] * added + [
             shaped(index, **changes) for index in range(rows)
         ]
         result = select(found, query, administrator=False)
@@ -271,6 +289,15 @@ def components(context, admin):
             ),
         )
 
+    def undo_pages(size):
+        """The added row Entered by hand, and after its undo (#1840)."""
+        return {
+            ADDED_ENTERED: page(size, added=True, step=("entered", 1)),
+            ADDED_REOPENED: page(
+                size, ADDED_REOPENED_NOTICE, added=True, step=("reopened", 2)
+            ),
+        }
+
     size = {"size": "25"}
     return {
         "/census-changes": page(size),
@@ -283,6 +310,7 @@ def components(context, admin):
         STALE: page(size, STALE_NOTICE),
         EDITED: page(size, EDITED_NOTICE, accepted={2}),
         ADDED: page(size, ADDED_NOTICE, added=True),
+        **undo_pages(size),
         NEW_MEMBER: page(size, new_members=True),
         MEMBER_ENTERED: page(
             size, MEMBER_ENTERED_NOTICE, new_members=True, entered={4}
@@ -292,7 +320,9 @@ def components(context, admin):
         ),
         INCORRECT: page(size, incorrect={3}),
         REENTERED: page(size, REENTERED_NOTICE, entered={3}),
-        RETURNED: page(size, RETURNED_NOTICE),
+        RETURNED: page(size, RETURNED_NOTICE, accepted={3}),
+        # Row 1's Entered by hand undone (#1840): To enter by hand, Accepted.
+        UNDONE: page(size, UNDONE_NOTICE, accepted={1}),
         EDITED_PHONE: page(size, EDITED_PHONE_NOTICE, accepted={0}, edited={0}),
         # No changes at all, and none at the stage chosen.
         "/census-changes-none": page(size, rows=0),

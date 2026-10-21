@@ -11,20 +11,30 @@ pairing with the proposal and the audit event
 (``schema/migrations/0060_census_resolution.sql``), so a forged or stale
 request is refused even if this code were bypassed.
 
-Since the review pipeline (#1683) the Census changes worklist records only
+Since the review pipeline (#1683) the Census changes worklist records
 **Entered by hand** here (on a To review By hand change it accepts and marks
-in one step); its Ignore and Back to review are reviews
-(``census_review``). The ``ignored`` and ``reopened`` actions remain for
+in one step), and Back to review of a terminal step (``reopened``, #1840,
+below); its Ignore and other Back to review are reviews (``census_review``).
+The ``ignored`` action, and ``reopened`` of an Ignore, remain for
 ``pk-admin census resolve``.
 
-A change a refresh found Entered incorrectly (#1689) takes the same two
-actions as its fixes (#1737): ``entered`` again marks it Entered by hand
-once more, and ``reopened`` sends it Back to review (pending, no decision).
-On the worklist both are Staff's as well as an Administrator's
-(``pk-admin census resolve`` keeps Reopen the Administrator's, with a
-note). SQL admits them only while its latest refresh check says Entered
-incorrectly and no later response of the Family answered the field again
+A change a refresh found Entered incorrectly (#1689) may be marked
+``entered`` again (#1737), Staff's as well as an Administrator's, while its
+latest refresh check says Entered incorrectly and no later response of the
+Family answered the field again
 (``schema/migrations/0133_entered_incorrectly_fixes.sql``, provisional).
+
+No stage is final (#1840, the review pipeline's "Undoing a terminal
+stage"): ``reopened`` on a change Entered by hand (also Entered incorrectly
+or Confirmed), Updated in ParishSoft or Already in ParishSoft is Back to
+review of that terminal step, Staff's as well as an Administrator's, with a
+required note. It removes only the step: the change is pending again with
+the decision behind it kept (``undo_decision``), so it returns to the stage
+before the step, and nothing is written to or read from ParishSoft. A
+change a later response of the Family replaced is history and takes no
+undo. SQL checks the same
+(``schema/migrations/0146_census_terminal_undo.sql``).
+Reopening an Ignore stays the Administrator's (``capability``).
 
 Marking a New Member entered may name the **ParishSoft Member ID** of the
 Member Staff added (#1749, ``member_ids``), which the refresh confirms the
@@ -46,15 +56,24 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.pipeline import (
+    NoteRequired,
+    Stage,
+    Stream,
+    census_by_hand,
+    census_placement,
+    undo_needs_note,
+    undo_stage,
+)
 from parishkit.stewardship.reports.export_services import admit_campaign
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import check_version
 
 from .models import (
     RESOLUTION_ACTIONS,
-    CensusAddition,
     ProposalResolution,
     ProposedChange,
+    open_additions,
 )
 from .refresh_checks import check_states, entered_incorrectly, replaced
 
@@ -189,20 +208,28 @@ class ReopenCovered(ValueError):
 def covered_by_addition(proposal):
     """Whether an open parish addition covers ``proposal``'s field (#1710).
 
-    The same Family, Member (or Family) and field, with no later step.
-    The callers hold the work order, so no Add can slip in between this
-    check and their write.
+    The same Family, Member (or Family) and field, with no later step or
+    one Back to review reopened (#1840). The callers hold the work order,
+    so no Add can slip in between this check and their write.
     """
-    return CensusAddition.objects.filter(
-        family_id=proposal.submission.family_id,
-        entity_kind=proposal.entity_kind,
-        entity_key=proposal.entity_key,
-        field=proposal.field,
-        resolution__isnull=True,
-    ).exists()
+    return (
+        open_additions()
+        .filter(
+            family_id=proposal.submission.family_id,
+            entity_kind=proposal.entity_kind,
+            entity_key=proposal.entity_key,
+            field=proposal.field,
+        )
+        .exists()
+    )
 
 
 OPEN_EXECUTIONS = frozenset({"pending", "conflict"})
+# The executions a terminal step leaves a change at (#1840): Entered by hand
+# (and Entered incorrectly or Confirmed, which its refresh checks place it
+# at), Updated in ParishSoft and Already in ParishSoft. Back to review
+# undoes each. Updating (queued) is a run in flight, not a terminal step.
+TERMINAL_EXECUTIONS = frozenset({"resolved_external", "published", "resolved_upstream"})
 
 
 def by_hand(proposal):
@@ -215,30 +242,76 @@ def by_hand(proposal):
     return proposal.handling != "api" or proposal.entity_kind == "family"
 
 
-def allowed(proposal, action, *, incorrect=False):
+def allowed(proposal, action, *, incorrect=False, replaced=False):
     """Whether ``action`` may start from the proposal's current state.
 
     ``incorrect`` is whether the change is Entered incorrectly now
-    (``refresh_checks.entered_incorrectly``): it then takes only its two
-    fixes, Entered by hand again and Back to review (#1737).
+    (``refresh_checks.entered_incorrectly``): it may then be marked Entered
+    by hand again (#1737). ``replaced`` is whether a later response of the
+    Family replaced it (``refresh_checks.replaced``): such a change is
+    history and takes no undo. A terminal change takes Back to review
+    (``reopened``, #1840), which undoes its step (``undo_decision``).
     """
+    if proposal.handling == "report-only":
+        return False
+    if action == "reopened" and proposal.execution in TERMINAL_EXECUTIONS:
+        return not replaced
     if incorrect:
-        return proposal.execution == "resolved_external" and action in {
-            "entered",
-            "reopened",
-        }
-    if proposal.execution not in OPEN_EXECUTIONS or proposal.handling == "report-only":
+        return proposal.execution == "resolved_external" and action == "entered"
+    if proposal.execution not in OPEN_EXECUTIONS:
         return False
     if action == "reopened":
         return proposal.decision == "ignored"
     return by_hand(proposal) and proposal.decision != "ignored"
 
 
-def capability(action):
-    """Reopening is the Administrator's; the tick and Ignore are Staff's too."""
-    return (
-        Capability.PUBLISH_CENSUS if action == "reopened" else Capability.MANUAL_CENSUS
+def capability(action, proposal=None):
+    """The capability ``action`` needs on ``proposal`` (None: before it is read).
+
+    Reopening an Ignore is the Administrator's; the tick, Ignore and the
+    undo of a terminal step (#1840) are Staff's too. Before the change is
+    read only the census capability every action needs is known.
+    """
+    if (
+        action == "reopened"
+        and proposal is not None
+        and proposal.execution not in TERMINAL_EXECUTIONS
+    ):
+        return Capability.PUBLISH_CENSUS
+    return Capability.MANUAL_CENSUS
+
+
+def terminal_placement(proposal):
+    """The terminal ``Placement`` of a change at a ``TERMINAL_EXECUTIONS`` one.
+
+    Its refresh checks may say Confirmed or Entered incorrectly instead of
+    Entered by hand or Updated in ParishSoft, but the decision behind the
+    step, which is all an undo reads, is the same, so they are not read.
+    """
+    return census_placement(
+        decision=proposal.decision,
+        execution=proposal.execution,
+        handling=proposal.handling,
+        entity_kind=proposal.entity_kind,
+        admin_value_set=proposal.admin_value_set,
     )
+
+
+def undo_decision(proposal):
+    """The decision a terminal change keeps when Back to review undoes its step.
+
+    The stage before the step (``pipeline.undo_stage``, #1840): To review
+    when no decision was behind it (a change ParishSoft already held that
+    nobody approved), so ``unreviewed``; otherwise To enter by hand or Ready
+    to update, so ``approved``, also for a change Entered by hand accepted
+    and marked in one step (decision 2), which was shown Accepted.
+    """
+    stage = undo_stage(
+        Stream.CENSUS,
+        terminal_placement(proposal),
+        by_hand=census_by_hand(proposal.handling, proposal.entity_kind),
+    )
+    return "unreviewed" if stage is Stage.TO_REVIEW else "approved"
 
 
 def _valid(action, note):
@@ -247,7 +320,8 @@ def _valid(action, note):
         action in RESOLUTION_ACTIONS
         and isinstance(note, str)
         and len(note) <= MAX_NOTE
-        # Undoing an Ignore says why; SQL requires the same.
+        # Undoing an Ignore or a terminal step says why; SQL requires the
+        # same.
         and not (action == "reopened" and not note.strip())
     )
 
@@ -294,6 +368,16 @@ def record_resolution(
             raise KeyRebound("This request key is already bound.")
         return previous
     check_version(proposal, expected_version)
+    # Back to review of a terminal step (#1840): it keeps the decision and
+    # needs a note, as the uniform pipeline rule says (``undo_needs_note``).
+    # A change a later response of the Family replaced is history and takes
+    # no undo.
+    terminal = action == "reopened" and proposal.execution in TERMINAL_EXECUTIONS
+    history = terminal and replaced(proposal)
+    undo = terminal and allowed(proposal, action, replaced=history)
+    stage = terminal_placement(proposal).stage if undo else None
+    if undo and undo_needs_note(stage) and not note.strip():
+        raise NoteRequired("Say why this census change goes back.")
     incorrect = entered_incorrectly(proposal)
     # A New Member's Member ID corrected (#1773): a mark made again over the
     # one in force, with an ID. The cheap tests come first (and
@@ -310,9 +394,9 @@ def record_resolution(
             "Enter the corrected ID.",
             correcting=True,
         )
-    if not (correctable or allowed(proposal, action, incorrect=incorrect)) or (
-        member_duid is not None and action != "entered"
-    ):
+    if not (
+        correctable or allowed(proposal, action, incorrect=incorrect, replaced=history)
+    ) or (member_duid is not None and action != "entered"):
         raise ValueError("This census change cannot be resolved that way now.")
     if action == "reopened" and covered_by_addition(proposal):
         raise ReopenCovered("An open addition covers this census change.")
@@ -321,10 +405,12 @@ def record_resolution(
     )
     if action == "entered":
         change = {"execution": "resolved_external"}
-    elif incorrect:
-        # Back to review from Entered incorrectly (#1737): the change is open
-        # again, with no decision, for reconciliation and an Edit.
-        change = {"decision": "unreviewed", "execution": "pending"}
+    elif undo:
+        # Back to review of a terminal step (#1840): the change is open
+        # again, for reconciliation and the next mark or update run, with
+        # the decision behind the step kept. Its refresh checks stay as
+        # history; the version moves on, so they no longer place it.
+        change = {"decision": undo_decision(proposal), "execution": "pending"}
     else:
         change = {"decision": "ignored" if action == "ignored" else "unreviewed"}
     ProposedChange.objects.filter(pk=proposal.pk).update(
@@ -366,13 +452,18 @@ def resolve_census_change(
         raise ValueError("Invalid census change resolution.")
     bounded_text(note)
     with work_transaction():
-        if not allows(current_principal(store, actor_id), capability(action)):
+        principal = current_principal(store, actor_id)
+        if not allows(principal, capability(action)):
             raise PermissionError("Census change resolution is unavailable.")
         proposal = (
             ProposedChange.objects.select_for_update(of=("self",))
             .select_related("submission")
             .get(pk=proposal_id, submission__mode="live")
         )
+        # Reopening an Ignore is the Administrator's; undoing a terminal
+        # step is Staff's too (#1840), which the change's state decides.
+        if not allows(principal, capability(action, proposal)):
+            raise PermissionError("Census change resolution is unavailable.")
         admit_campaign(proposal.submission.campaign_id, mutating=True)
         system = SystemConfiguration.objects.select_related(
             "active_configuration__parish"

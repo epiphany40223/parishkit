@@ -463,6 +463,26 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # them) to the form baseline and the Submission. While the swap is pending
 # ``before_reviewed_form_shown_items`` drops the four columns (their checks
 # go with them), and ``CLOSURE_ALTERED`` runs the file again afterwards.
+# 0146 (#1840) creates nothing: it replaces 0139's
+# resolution guard, 0060's resolution effect check and 0138's derived guard
+# in place, which the reruns of 0060's, 0133's and 0138's files bring back
+# older, so ``CLOSURE_REPLACED`` runs its file again after theirs and
+# ``CLOSURE_REPLACED_ONLY`` puts its derived guard back last.
+# 0147 (#1840) creates nothing: it alters 0129's
+# resolution table (in CLOSURE_TABLES, so made again by 0129's file) and
+# replaces 0129's three guards in place; every statement can run again, so
+# ``CLOSURE_REPLACED`` runs its file again after 0129's.
+# 0148 (#1840) creates nothing: it replaces 0061's
+# roster entry guard and 0131's request and revision guards in place, so
+# ``CLOSURE_REPLACED`` runs its file again after theirs.
+# 0149 (#1840) creates nothing: it widens 0127's pledge
+# review state check and replaces 0135's pledge review guard in place, which
+# the reruns of 0127's and 0135's files bring back older, so
+# ``CLOSURE_REPLACED`` runs its file again after theirs.
+# 0150 and 0151 (#1840) create nothing: each replaces
+# one of 0126's guards in place (the information revision guard and the
+# limitation review guard), which 0126's rerun brings back older, so
+# ``CLOSURE_REPLACED`` runs each file again after it.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -995,17 +1015,73 @@ CLOSURE_REPLACED = {
     ),
     # 0133 (#1737) replaces 0060's resolution guard and 0132's refresh
     # check guard, which those files bring back; it creates nothing, so its
-    # file runs again whole. 0139 (#1773, provisional number) replaces the
-    # resolution guard last, on 0138's body (which keeps 0133's), after
-    # 0138's file runs again (``CLOSURE_CREATED``); it creates nothing
-    # either, so its file runs again whole.
-    "public.stewardship_proposal_resolution_guard_v1()": (
-        ("stewardship_responses", "0020_new_member_id_correction"),
-        "AND NOT again",
-    ),
+    # file runs again whole. 0139 (#1773, provisional number) replaced the
+    # resolution guard on 0138's body (which keeps 0133's), and 0146 (#1840,
+    # below) replaces it last on 0139's.
     "public.stewardship_refresh_check_guard_v1()": (
         ("stewardship_responses", "0017_entered_incorrectly_fixes"),
         "k.item_version=change.version-1",
+    ),
+    # 0146 (#1840) replaces the resolution guard (0139's
+    # body), the resolution effect check (0060's) and the derived guard
+    # (0138's). The reruns of 0060's and 0138's files (CLOSURE_CREATED) and
+    # of 0133's (the entry above, which must come first) bring back older
+    # bodies; 0146 creates nothing, so its file runs again whole, after
+    # them. The derived guard's later reruns are undone by
+    # ``CLOSURE_REPLACED_ONLY``.
+    "public.stewardship_proposal_resolution_guard_v1()": (
+        ("stewardship_responses", "0023_census_terminal_undo"),
+        "undo:=NEW.action='reopened' AND NOT replaced",
+    ),
+    "public.stewardship_proposal_resolution_effect_v1()": (
+        ("stewardship_responses", "0023_census_terminal_undo"),
+        "AND NOT (proposal.decision='approved' AND proposal.execution='pending'))",
+    ),
+    # 0147 (#1840) alters 0129's resolution table and
+    # replaces its three guards, which 0129's reinstall (CLOSURE_CREATED)
+    # brings back without the undo; it creates nothing, and each statement
+    # can run again, so its file runs again whole.
+    "public.stewardship_census_addition_resolution_guard_v1()": (
+        ("stewardship_responses", "0024_census_addition_undo"),
+        "Census addition step does not follow its latest step",
+    ),
+    # 0148 (#1840) replaces 0061's roster entry guard
+    # (CLOSURE_CREATED) and 0131's request and revision guards (its file
+    # runs again through CLOSURE_ALTERED), which those reruns bring back
+    # older; it creates nothing, so its file runs again whole.
+    "public.stewardship_ministry_roster_entry_guard_v1()": (
+        ("stewardship_workflows", "0007_ministry_terminal_undo"),
+        "Clearing Entered in ParishSoft needs its Back to review with a note",
+    ),
+    "public.stewardship_ministry_revision_guard_v1()": (
+        ("stewardship_workflows", "0007_ministry_terminal_undo"),
+        "undo := reopen AND NEW.state='resolved';",
+    ),
+    "public.stewardship_ministry_request_guard_v1()": (
+        ("stewardship_workflows", "0007_ministry_terminal_undo"),
+        "NEW.resolution_source_id := NULL;",
+    ),
+    # 0149 (#1840) replaces 0135's pledge review guard
+    # and widens 0127's state check, both of which 0127's and 0135's reruns
+    # (CLOSURE_CREATED) bring back older; it creates nothing, so its file
+    # runs again whole.
+    "public.stewardship_pledge_review_guard_v1()": (
+        ("stewardship_reports", "0038_pledge_terminal_undo"),
+        "item.stage IN ('entered_by_hand','entered_incorrectly','confirmed')",
+    ),
+    # 0150 (#1840) replaces 0126's information revision
+    # guard, which 0126's file (CLOSURE_CREATED) brings back; it creates
+    # nothing, so its file runs again whole.
+    "public.stewardship_information_revision_guard_v1()": (
+        ("stewardship_responses", "0025_information_handled_undo"),
+        "Undoing a handled request needs a note",
+    ),
+    # 0151 (#1840) replaces 0126's limitation review
+    # guard, which 0126's file (CLOSURE_CREATED) makes again; it creates
+    # nothing, so its file runs again whole.
+    "public.stewardship_limitation_review_guard_v1()": (
+        ("stewardship_responses", "0026_limitation_handled_undo"),
+        "WHEN 'handled' THEN NEW.decision='accepted'",
     ),
 }
 
@@ -1118,15 +1194,17 @@ CLOSURE_REPLACED_ONLY = {
         ("stewardship_workflows", "0003_ministry_review_pipeline"),
         "AS reviewed_ministry_name",
     ),
-    # 0138 (#1749) replaces it last, on 0133's body (0133 replaced 0118's
-    # for Entered incorrectly's two fixes), for the published Conflict.
+    # 0146 (#1840) replaces it last, on 0138's body (0138 replaced 0133's
+    # for the published Conflict, and 0133 replaced 0118's for Entered
+    # incorrectly's two fixes), for Back to review undoing a terminal step.
     "stewardship_response_derived_guard_v1": (
-        ("stewardship_responses", "0019_published_refresh_conflicts"),
-        "only with its refresh check",
+        ("stewardship_responses", "0023_census_terminal_undo"),
+        "IF OLD.execution='published' AND current_user<>'pk_stewardship_web' "
+        "AND NOT EXISTS (",
     ),
     # 0138 (#1749) replaces the refresh check guard last, on 0137's body
     # (0133's with #1738's fields); the rerun of 0133's file
-    # (CLOSURE_REPLACED, for its resolution guard) puts 0133's body back over
+    # (CLOSURE_REPLACED, for its refresh check guard) puts 0133's body back over
     # it, and 0138 creates the address key, so only its replacement
     # statement runs again.
     "stewardship_refresh_check_guard_v1": (

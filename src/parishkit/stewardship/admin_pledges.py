@@ -231,11 +231,16 @@ def _mutable(campaign_id):
 
 
 def row_actions(row, roles):
-    """The decisions ``roles`` may record on ``row`` now, as its row offers them."""
-    from .pipeline import Stream, allowed_actions
+    """The decisions ``roles`` may record on ``row`` now, as its row offers them.
+
+    The page's own offer (``pledge_review.offered``), so an action the
+    stream withholds (Entered by hand again on Entered incorrectly, #1737)
+    is listed by neither.
+    """
+    from .reports.pledge_review import offered
     from .web.review_worklist import ROW_ORDER
 
-    allowed = allowed_actions(Stream.FINANCIAL, row["placement"].stage, roles)
+    allowed = offered(row["placement"].stage, roles)
     return [action.value for action in ROW_ORDER if action in allowed]
 
 
@@ -244,10 +249,12 @@ def pledges_jsonl(rows, zone, actor, *, mutable=True):
 
     Each cell is the CSV's text (``export_rows``), so the formats never
     disagree about a value; ``item_id``, ``version`` and ``actions`` come
-    from the row the cells were made from. ``mutable`` is the page's check
+    from the row the cells were made from. ``version`` is the page's own
+    (``version_of``: the sequence plus the refresh checks), which
+    ``pledges decide`` is compared with. ``mutable`` is the page's check
     that no other campaign work holds the campaign.
     """
-    from .reports.pledge_review import reader_roles
+    from .reports.pledge_review import reader_roles, version_of
     from .reports.pledge_review_views import export_rows
 
     roles = reader_roles(actor) if mutable else frozenset()
@@ -256,7 +263,7 @@ def pledges_jsonl(rows, zone, actor, *, mutable=True):
         record = dict(zip(JSONL_KEYS, cells, strict=True))
         record |= {
             "item_id": str(row["item"].submission_id),
-            "version": row["item"].sequence,
+            "version": version_of(row["item"]),
             "actions": row_actions(row, roles),
         }
         lines.append(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
@@ -517,9 +524,10 @@ def decide_pledges(
     (``not_available`` otherwise), and the page's ``PledgeDecisions``
     records the decision: someone else's decision or a newer answer from
     the Family first is ``stale_version``; an action the stage does not
-    offer, a missing note to reopen an ignored pledge, or an Edit value the
-    Family form would refuse (at ``amount`` or ``frequency``) is
-    ``invalid``. A new key records ``admin_cmd_pledges_decide`` once.
+    offer, a missing note to reopen an ignored pledge or to undo a terminal
+    step (#1840), or an Edit value the Family form would refuse (at
+    ``amount`` or ``frequency``) is ``invalid``. A new key records
+    ``admin_cmd_pledges_decide`` once.
     """
     from .admin_followup import _record_command
     from .admin_report_reads import _current, _refusal, _refusals, _require_module

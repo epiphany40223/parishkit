@@ -4,7 +4,8 @@
   form, or by a stream's value editor after its own fields. `note_name` is
   the field's name: "note" for one item's decision, "bulk_note" for the
   bulk bar's. Every decision takes the optional note; reopening an Ignored
-  item requires it (review pipeline spec, "Reviewed stage"): ui-v1.js sets
+  item, or undoing a terminal step, requires it (review pipeline spec,
+  "Reviewed stage", "Undoing a terminal stage", #1840): ui-v1.js sets
   the nameless choice field from the opening control's
   data-confirm-choice, and the note is required while it says "reopen"
   (data-required-when). Its label follows in place: "Note (optional)",
@@ -16,5 +17,5 @@
   (the "no_note" choice, web/review_worklist.build's `silent`) hides the
   label and field (data-note-field) while its dialog is open; the empty
   note is still posted.
-{% endcomment %}<div class="dialog-fields" data-missing-hint="{% translate 'Say why this ignored item is reopened.' %}"><input type="hidden" id="{{ dialog_id }}-choice" value="" data-confirm-choice><div data-note-field><label for="{{ dialog_id }}-note" data-optional-label="{% translate 'Note (optional)' %}" data-required-label="{% translate 'Note (required)' %}">{% translate "Note (optional)" %}</label><input id="{{ dialog_id }}-note" name="{{ note_name|default:'note' }}" maxlength="2000" value="" data-confirm-reset data-required-when="{{ dialog_id }}-choice=reopen"></div></div>
+{% endcomment %}<div class="dialog-fields" data-missing-hint="{% translate 'Say why this item goes back.' %}"><input type="hidden" id="{{ dialog_id }}-choice" value="" data-confirm-choice><div data-note-field><label for="{{ dialog_id }}-note" data-optional-label="{% translate 'Note (optional)' %}" data-required-label="{% translate 'Note (required)' %}">{% translate "Note (optional)" %}</label><input id="{{ dialog_id }}-note" name="{{ note_name|default:'note' }}" maxlength="2000" value="" data-confirm-reset data-required-when="{{ dialog_id }}-choice=reopen"></div></div>
 <p class="help" id="{{ accept_hint }}" data-complete-hint="reserve"></p>

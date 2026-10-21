@@ -72,7 +72,9 @@ from .capabilities import Handling, capability
 from .census import InvalidHousehold, validate_address
 from .census_resolution import (
     MAX_NOTE,
+    TERMINAL_EXECUTIONS,
     KeyRebound,
+    NoteRequired,
     ReopenCovered,
     covered_by_addition,
     member_id,
@@ -435,7 +437,7 @@ def _record(
     if decision == "unreviewed" and proposal.decision == "ignored" and not note.strip():
         # Reopening an ignored change says why (the review pipeline's
         # "Reviewed stage"); the SQL guard requires the same.
-        raise ValueError("Sending an ignored census change back needs a note.")
+        raise NoteRequired("Sending an ignored census change back needs a note.")
     if (
         decision == "unreviewed"
         and proposal.decision == "ignored"
@@ -765,8 +767,10 @@ def _decide(proposal, action, actor_id, version, key, note, parish, value, membe
     review are decisions. Entered by hand is a resolution
     (``census_resolution``), which on a To review By hand change accepts and
     marks it in one step (decision 2), and on a change Entered incorrectly
-    marks it again. Back to review on a change Entered incorrectly is a
-    resolution too (``reopened``, #1737): the change is final for reviews.
+    marks it again. Back to review on a terminal change (Entered by hand,
+    Entered incorrectly, Confirmed, Updated in ParishSoft) is a resolution
+    too (``reopened``, #1840), which undoes the step and keeps the decision:
+    a terminal change takes no review.
     ``member`` is the ParishSoft Member ID a New Member's Entered by hand
     names, as typed (``census_resolution.member_id``, #1749), or None.
     """
@@ -782,9 +786,9 @@ def _decide(proposal, action, actor_id, version, key, note, parish, value, membe
             member_duid=member_id(proposal, member),
         )
     if action == BACK and (
-        proposal.execution == "resolved_external"
+        proposal.execution in TERMINAL_EXECUTIONS
         # A repeated post (the same request key) follows its first post's
-        # path: that post reopened the change, which is no longer entered.
+        # path: that post reopened the change, which is no longer terminal.
         or ProposalResolution.objects.filter(
             actor_id=actor_id, request_key=key
         ).exists()

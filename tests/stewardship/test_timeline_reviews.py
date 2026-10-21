@@ -90,6 +90,38 @@ def test_census_reviews_and_resolutions_read_as_pipeline_actions():
     assert [at for at, _what, _detail in lines] == [row["at"] for row in rows]
 
 
+def test_undoing_a_terminal_census_step_reads_back_to_review():
+    """Back to review of a mark or an update (#1840) reads "Back to review"
+    and keeps the decision behind it, so the next step words from it: a
+    one-step Entered by hand leaves the change Accepted, and marking it
+    again reads Entered by hand."""
+    rows = [
+        # Accepted, marked, the mark undone, marked again.
+        row("census_review", "p", 1, "approved", "false", None, "false"),
+        row("census_resolution", "p", 2, "entered"),
+        row("census_resolution", "p", 3, "reopened"),
+        row("census_resolution", "p", 4, "entered"),
+        # Accepted and marked in one step, undone, then sent back again.
+        row("census_resolution", "q", 5, "entered"),
+        row("census_resolution", "q", 6, "reopened"),
+        row("census_review", "q", 7, "unreviewed", "false", None, "false"),
+        # An Updated in ParishSoft change (no step of its own here) undone.
+        row("census_review", "r", 8, "approved", "false", None, "false"),
+        row("census_resolution", "r", 9, "reopened"),
+    ]
+    assert words(rows) == [
+        "Accepted",
+        "Entered by hand",
+        "Back to review",
+        "Entered by hand",
+        "Entered by hand",
+        "Back to review",
+        "Back to review",
+        "Accepted",
+        "Back to review",
+    ]
+
+
 def test_member_names_fall_back_to_parishsoft_and_additions_say_so():
     """A Member with no answered name reads as ParishSoft has them; a new
     Member's change names the addition; an unknown actor is said so."""
@@ -164,7 +196,15 @@ def test_a_ministry_the_catalog_lost_is_named_by_its_duid():
 
 
 def test_ministry_follow_up_and_roster_ticks_share_one_request():
-    """Revisions and ticks of one request replay together, in time order."""
+    """Revisions and ticks of one request replay together, in time order.
+
+    A tick cleared without a revision (before #1840) is its own line. Back
+    to review of Entered by hand (#1840) is one line: its revision keeps the
+    decision and clears the tick, whose clearing row ``_HISTORY`` leaves
+    out, so ticking again reads Entered by hand. Back to review of a
+    request the refresh resolved (no decision behind it, In progress with
+    the required note) reads Back to review too.
+    """
     ministry = {"subject": "9"}
     rows = [
         row("ministry_revision", "m", 1, "in_progress", None, "join", **ministry),
@@ -182,6 +222,29 @@ def test_ministry_follow_up_and_roster_ticks_share_one_request():
             "leave",
             **ministry,
         ),
+        row("ministry_revision", "p", 8, "resolved", "joined", "join", **ministry),
+        row("ministry_roster", "p", 9, "true", None, "join", **ministry),
+        row(
+            "ministry_revision",
+            "p",
+            10,
+            "resolved",
+            "joined",
+            "join",
+            "true",
+            **ministry,
+        ),
+        row("ministry_roster", "p", 11, "true", None, "join", **ministry),
+        row(
+            "ministry_revision",
+            "q",
+            12,
+            "in_progress",
+            None,
+            "join",
+            "true",
+            **ministry,
+        ),
     ]
     assert words(rows, {9: "Choir"}) == [
         "Follow-up updated",
@@ -191,6 +254,11 @@ def test_ministry_follow_up_and_roster_ticks_share_one_request():
         "Back to review",
         "Ignored",
         "Ignored",
+        "Accepted",
+        "Entered by hand",
+        "Back to review",
+        "Entered by hand",
+        "Back to review",
     ]
     details = [detail for _at, _what, detail in steps(rows, {9: "Choir"})]
     assert details[0] == "Join Choir for Smith, Anne; by staff@example.org"
@@ -204,7 +272,11 @@ def test_ministry_follow_up_and_roster_ticks_share_one_request():
 
 
 def test_additional_information_follow_up_reads_as_handled():
-    """Needed is Accepted (To handle), followed up is Handled, neither is To review."""
+    """Needed is Accepted (To handle), followed up is Handled, neither is To review.
+
+    Leaving Handled with the Accept kept is Handled's undo, Back to review
+    (#1840), as leaving it for To review is.
+    """
     item = {"entity_kind": None, "entity_key": None, "subject": None}
     rows = [
         row("information", "i", 1, "true", "false", **item),
@@ -217,7 +289,7 @@ def test_additional_information_follow_up_reads_as_handled():
     assert words(rows) == [
         "Accepted",
         "Handled",
-        "Handled cleared",
+        "Back to review",
         "Follow-up updated",
         "Back to review",
         "Handled",
