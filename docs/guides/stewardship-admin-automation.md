@@ -3429,6 +3429,29 @@ never signed in come last either way.
 | `sort` | The sort used |
 | `users` | Each user's `email`, `name`, `role` (`administrator`, `staff` or `ministry_leader`) and `last_login`, the newest successful sign-in of any Google account with that address, or `null` |
 
+`users timeline` prints one user's
+[Timeline](../specs/stewardship/admin-portal/spec.md#user-timeline)
+([#1866](https://github.com/epiphany40223/parishkit/issues/1866)): the
+user's sign-ins and sign-outs, Admin actions, role changes and emails,
+newest first, unpaged. Name the user by the `id` that `users list` prints.
+Any session may run it, and it records the page's `user_timeline_viewed`.
+
+```sh
+pk-admin users timeline --user USER_ID
+pk-admin users timeline --user USER_ID --kind emails
+pk-admin users timeline --user USER_ID --from 2026-10-01 --to 2026-10-07 --zone America/New_York
+```
+
+`--kind` is `all` (the default), `sessions`, `actions`, `roles` or
+`emails`; `--from` and `--to` are whole days in `--zone`, which a day needs.
+
+| `users timeline` field | What it holds |
+| --- | --- |
+| `user` | The user's `id`, `email`, `name`, `role` (`null` once no longer a user) and `removed_at` |
+| `summary` | `last_sign_in`, `last_email` (a line, or `null`) and the `ministries` the user leads now |
+| `kind` | The Kind used |
+| `lines` | Each line, newest first: `at`, `kind`, `what`, `detail` and, for an email Sent mail lists, its `message_id` |
+
 Until the users upgrade, the users are the exact-address rules that grant a
 role, each with its highest role and a `null` name. Deny rules and
 hosted-domain rules are not users: see the upgrade preview for a domain

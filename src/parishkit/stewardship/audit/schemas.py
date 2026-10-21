@@ -205,6 +205,9 @@ class Action(StrEnum):
     # The operator's one-time engagement backfill (#477), with its counts.
     FAMILY_ENGAGEMENT_BACKFILLED = "family_engagement_backfilled"
     USERS_VIEWED = "portal_users_viewed"
+    # One user's timeline (#1866): the subject is the user's record id,
+    # never the address.
+    USER_TIMELINE_VIEWED = "user_timeline_viewed"
     # A Users page change recorded as a configuration request (#952): its
     # subject is the request, whose patch names the user; ``count`` is how
     # many users it touches.

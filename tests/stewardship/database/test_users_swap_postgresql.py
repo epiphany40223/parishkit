@@ -483,6 +483,8 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # one of 0126's guards in place (the information revision guard and the
 # limitation review guard), which 0126's rerun brings back older, so
 # ``CLOSURE_REPLACED`` runs each file again after it.
+# 0152 (#1866) creates only the audit actor index, only when missing, and
+# replaces nothing; the swap drops none of it, so nothing is registered.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",

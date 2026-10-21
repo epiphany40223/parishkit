@@ -15,6 +15,8 @@ column. The reader's own row has no Delete (an Administrator never deletes
 themselves, Administrator decision 2026-10-11), and neither has the only
 Administrator's, who is always the reader; the line under the table says
 why, and the server refuses it anyway.
+Each row's Email links that user's Timeline (#1866), where the user's
+sign-ins, actions, role changes and emails are listed.
 The rows have no Sign-in activity control (Administrator, 2026-10-11): the
 link above the table opens all sign-in activity in System logs, and Edit user
 lists one button per recorded Google identity (#953).
@@ -56,7 +58,7 @@ time zone (data-compact, date-format-v1.js), as other dense tables do
   </tr></thead>
   <tbody>
   {% for row in table.rows %}<tr>
-    <th scope="row"><span class="cell-ellipsis" title="{{ row.email }}">{{ row.email }}</span></th>
+    <th scope="row"><a href="{{ row.timeline_url }}" class="cell-ellipsis" title="{{ row.email }}">{{ row.email }}</a></th>
     <td><span class="cell-ellipsis" title="{{ row.name }}">{{ row.name }}</span></td>
     <td class="nowrap">{{ row.role_label }}</td>
     <td class="nowrap">{% if row.last_login %}<time datetime="{{ row.last_login|instant }}" data-local-instant data-compact>{{ row.last_login|instant }}</time>{% else %}{% translate "Never" %}{% endif %}</td>

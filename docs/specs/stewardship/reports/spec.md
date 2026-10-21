@@ -978,9 +978,11 @@ current campaign. It replaced the Family timeline page
 address, so nothing is redirected or aliased
 ([#864](https://github.com/epiphany40223/parishkit/issues/864)); the name
 "Family timeline" is retired from the page, its navigation and its help.
-People's own timelines (Administrators, Staff and Ministry leaders, who may
-also be ParishSoft Family members) are planned on the same page design in a
-later slice of #1570; until then the page has only the Family subject.
+People's own timelines (Administrators, Staff and Ministry leaders) are
+each user's [Timeline](../admin-portal/spec.md#user-timeline) under Users,
+which shares this page's table and filter rules; the Family part of a
+person's timeline (for users who are also ParishSoft Family members)
+follows in [#1867](https://github.com/epiphany40223/parishkit/issues/1867).
 
 `<family>` is the Family's campaign record id, an opaque random identifier
 like a Mail message's; the Family's name, DUID, envelope number and code never
@@ -1136,7 +1138,7 @@ too:
   and submissions), Emails (every email line and the not-sent lines),
   Sign-ins and sign-outs (sign-ins, Staff opened the form, Signed out,
   Session ended and Earlier session ended), or Reviews (the
-  [review lines](#timeline-review-lines)). A person's timeline will add
+  [review lines](#timeline-review-lines)). A user's timeline adds
   Admin actions and Role changes; a Family's shows only the kinds it can have
   ([conditional fields](../ui-conventions/spec.md#conditional-fields)).
 - **From** and **Through:** whole days in the browser's time zone, as on
