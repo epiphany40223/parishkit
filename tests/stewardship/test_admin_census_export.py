@@ -90,14 +90,18 @@ def test_each_record_is_the_csv_row_with_its_id_version_and_actions():
 
 
 def test_actions_follow_the_reader_s_capabilities():
-    """Reopen is the Administrator's alone; nothing is offered on a row the
-    page offers nothing on (an automatic change, a published one)."""
+    """Reopening an Ignore is the Administrator's alone; nothing is offered
+    on a row the page offers nothing on (an automatic change still open, one
+    queued). A terminal row's Reopen undoes its step (#1840), Staff's too."""
     assert records([row()], STAFF)[0]["actions"] == ["entered", "ignored"]
     assert records([row(decision="ignored")], STAFF)[0]["actions"] == []
     automatic = row(entity_kind="member", entity_key="3", handling="api")
     assert records([automatic], ADMIN)[0]["actions"] == []
+    queued = row(execution="queued", decision="approved")
+    assert records([queued], ADMIN)[0]["actions"] == []
     done = row(execution="published", decision="approved")
-    assert records([done], ADMIN)[0]["actions"] == []
+    assert records([done], ADMIN)[0]["actions"] == ["reopened"]
+    assert records([done], STAFF)[0]["actions"] == ["reopened"]
     # While other campaign work holds the campaign, the page offers none.
     held = [row(), row(decision="ignored")]
     assert [record["actions"] for record in records(held, ADMIN, mutable=False)] == [

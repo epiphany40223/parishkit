@@ -27,6 +27,7 @@ from parishkit.stewardship.reports.export_models import (
     ExportDiscard,
     ExportRequest,
     InformationExportSnapshot,
+    ParticipationExportSnapshot,
 )
 from parishkit.stewardship.reports.export_services import cancel_export
 from parishkit.stewardship.reports.models import CampaignFactPin
@@ -98,7 +99,11 @@ def test_an_ended_exports_pin_goes_and_a_live_ones_stays(
     assert set(pins.values_list("parent_id", flat=True)) == {live.pk}
     record = ExportDiscard.objects.get()
     assert (record.request_id, record.exact_request_id) == (gone.pk, None)
-    assert (record.documents, record.pins, record.by_deploy) == (0, 1, False)
+    # The Response dashboard's Summary capture (#1557) is cleared with it;
+    # the live export's stays whole.
+    assert (record.documents, record.pins, record.by_deploy) == (1, 1, False)
+    assert ParticipationExportSnapshot.objects.get(request=gone).document == {}
+    assert ParticipationExportSnapshot.objects.get(request=live).document != {}
     # The request and its history stay; only its link to the generation
     # goes, so compaction may remove it. The live one keeps its link.
     assert ExportRequest.objects.get(pk=gone.pk).fact_set_id is None
@@ -387,6 +392,7 @@ CAPTURES = (
     "family_test_names",
     "timeline",
     "comparison",
+    "participation",
 )
 # A value for each NOT NULL column type a capture row needs (an aged
 # fixture: its keys are never checked, since the transaction rolls back).

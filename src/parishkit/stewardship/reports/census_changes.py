@@ -28,6 +28,7 @@ from django.utils.datastructures import MultiValueDict
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.pipeline import (
+    TERMINAL_STAGES,
     Decision,
     Placement,
     Stage,
@@ -319,7 +320,21 @@ SELECT p.id::text, p.entity_kind, p.entity_key, p.field,
         sc.snapshot_id, p.entity_key, f.family_duid) END AS member_status,
     -- The response's place in its Family's order, which tells a final change
     -- a later response replaced (#1737).
-    s.family_version
+    s.family_version,
+    -- The ParishSoft Member ID a New Member's latest mark named (#1749).
+    latest.member_duid,
+    -- Whether a refresh put this Updated in ParishSoft change back in
+    -- Conflict (#1749): its latest check says so and no review has decided
+    -- it since.
+    p.execution='conflict' AND coalesce((
+        SELECT true
+        FROM (SELECT k.outcome, k.item_version
+            FROM stewardship_refresh_check k WHERE k.proposal_id=p.id
+            ORDER BY k.created_at DESC, k.id DESC LIMIT 1) k
+        WHERE k.outcome='conflict'
+          AND NOT EXISTS (SELECT 1 FROM stewardship_proposal_review v
+              WHERE v.proposal_id=p.id AND v.expected_version>k.item_version)),
+        false) AS refresh_conflict
 FROM stewardship_campaign c
 LEFT JOIN stewardship_source_current sc ON sc.singleton
 JOIN stewardship_submission s ON s.campaign_id=c.id AND s.mode='live'
@@ -332,12 +347,14 @@ LEFT JOIN stewardship_source_member sm ON sm.id=mm.payload_id
 -- with who made it. Each advances the proposal's version, so the two
 -- histories never share one.
 LEFT JOIN LATERAL (
-    SELECT h.action, h.note, h.created_at, u.email
+    SELECT h.action, h.note, h.created_at, u.email, h.member_duid
     FROM (
-        SELECT r.action, r.note, r.created_at, r.actor_id, r.expected_version
+        SELECT r.action, r.note, r.created_at, r.actor_id, r.expected_version,
+            r.member_duid
         FROM stewardship_proposal_resolution r WHERE r.proposal_id=p.id
         UNION ALL
-        SELECT v.decision, v.note, v.created_at, v.actor_id, v.expected_version
+        SELECT v.decision, v.note, v.created_at, v.actor_id, v.expected_version,
+            NULL
         FROM stewardship_proposal_review v WHERE v.proposal_id=p.id
     ) h
     LEFT JOIN stewardship_portal_user u ON u.id=h.actor_id
@@ -350,8 +367,9 @@ ORDER BY f.family_duid, s.submitted_at, p.entity_kind,
 # One row per census change the parish added (#1710), named as ROWS names
 # a change: the Family from the shared lookup, a Member from the current
 # ParishSoft source (an addition has no Family answer to take a name from).
-# Its creator, the note and its later step (Entered by hand or withdrawn)
-# come with it. Takes the unnamed-Family words, then the campaign.
+# Its creator, the note and its latest later step (Entered by hand,
+# withdrawn, or reopened by Back to review, #1840) with that step's
+# sequence come with it. Takes the unnamed-Family words, then the campaign.
 ADDITION_ROWS = """
 SELECT a.id::text, a.entity_kind, a.entity_key, a.field, a.value::text,
     a.in_place_of_id::text, a.created_at, a.baseline::text, f.family_duid,
@@ -360,14 +378,16 @@ SELECT a.id::text, a.entity_kind, a.entity_key, a.field, a.value::text,
     nullif(btrim(concat_ws(' ',
         nullif(btrim(sm.canonical::jsonb->>'firstName'),''),
         nullif(btrim(sm.canonical::jsonb->>'lastName'),''))),'') AS member_name,
-    sc.snapshot_id, u.email, a.note, r.action, r.note, r.created_at, ru.email
+    sc.snapshot_id, u.email, a.note, r.action, r.note, r.created_at, ru.email,
+    r.sequence
 FROM stewardship_census_addition a
 JOIN stewardship_family_campaign f ON f.id=a.family_id
 LEFT JOIN stewardship_source_current sc ON sc.singleton
 LEFT JOIN stewardship_snapshot_member mm ON a.entity_kind='member'
     AND mm.snapshot_id=sc.snapshot_id AND mm.source_key=a.entity_key
 LEFT JOIN stewardship_source_member sm ON sm.id=mm.payload_id
-LEFT JOIN stewardship_census_addition_resolution r ON r.addition_id=a.id
+LEFT JOIN LATERAL (SELECT * FROM stewardship_census_addition_resolution x
+    WHERE x.addition_id=a.id ORDER BY x.sequence DESC LIMIT 1) r ON true
 LEFT JOIN stewardship_portal_user u ON u.id=a.actor_id
 LEFT JOIN stewardship_portal_user ru ON ru.id=r.actor_id
 WHERE f.campaign_id=%s
@@ -392,11 +412,13 @@ ADDITION_COLUMNS = (
     "step_note",
     "step_at",
     "step_by",
+    "step_sequence",
 )
 # How an addition's state reads as a proposal's execution, so the shared
 # shaping words it (``status``: To do, Entered by hand, Cancelled).
 ADDITION_EXECUTION = {
     "open": "pending",
+    "reopened": "pending",
     "entered": "resolved_external",
     "withdrawn": "cancelled",
 }
@@ -428,6 +450,8 @@ COLUMNS = (
     "reopened",
     "member_status",
     "family_version",
+    "resolution_member",
+    "refresh_conflict",
 )
 
 # The menu's open count (#585, #1590; admin_context.OPEN_COUNTS embeds it):
@@ -549,9 +573,10 @@ def link_additions(changes, added):
     Returns each ignored change's additions made in place of it (its
     history line names them), and marks rows in place: an open addition
     whose field the Family has an open change of too (``overlap``, from a
-    later response), and an ignored change an open addition of its field
-    covers (``covered``: it is not sent back to review while that addition
-    is open, so the field never has two open changes, #1710).
+    later response), and an ignored or terminal change an open addition of
+    its field covers (``covered``: it is not sent back to review while that
+    addition is open, so the field never has two open changes, #1710,
+    #1840).
     """
     replacements = {}
     for row in added:
@@ -565,15 +590,19 @@ def link_additions(changes, added):
     for row in added:
         key = _key(row)
         row["overlap"] = row["stage"] == Stage.TO_ENTER_BY_HAND.value and key in asked
-    # An ignored change an open addition of its field covers is not sent
-    # back to review while it is open (``census_resolution.
+    # An ignored change, or one whose terminal step Back to review would
+    # undo (#1840), that an open addition of its field covers is not sent
+    # back to review while the addition is open (``census_resolution.
     # covered_by_addition`` refuses it too), so the field never has two.
     covering = {
         _key(row) for row in added if row["stage"] == Stage.TO_ENTER_BY_HAND.value
     }
     for row in changes:
         key = _key(row)
-        row["covered"] = row["stage"] == Stage.IGNORED.value and key in covering
+        row["covered"] = key in covering and (
+            row["stage"] == Stage.IGNORED.value
+            or Stage(row["stage"]) in TERMINAL_STAGES
+        )
     return replacements
 
 
@@ -621,6 +650,8 @@ def census_rows(campaign_id):
         for name in JSON_COLUMNS:
             row[name] = None if row[name] is None else json.loads(row[name])
         row["check"] = checks.get(row["id"])
+        # A New Member's ID correction (#1773) is not offered on history.
+        row["replaced"] = row["family_version"] != latest[key(row)]
     return [shape(row) for row in rows]
 
 
@@ -643,13 +674,15 @@ def shape_addition(raw):
     It reads as a change that is accepted with a reviewer's value and no
     Family's answer, By hand (nothing writes an addition to ParishSoft
     until #1688), in the stage ``census_addition_placement`` gives it:
-    To enter by hand while open, then Entered by hand, or History once
-    withdrawn. Its version is 1 while open and 2 after its one later step.
-    Its last decision is that step, else the Add itself (who, when, the
+    To enter by hand while open (or reopened by Back to review, #1840),
+    then Entered by hand, or History once withdrawn. Its version is 1
+    before any later step, then its latest step's sequence plus one. Its
+    last decision is that step, else the Add itself (who, when, the
     note). Its Submitted time is when it was added, and its Baseline
     ParishSoft's value then, where the source could read it.
     """
-    state = raw["step"] or "open"
+    step = raw["step"]
+    state = "open" if step in (None, "reopened") else step
     value = json.loads(raw["value"])
     # ParishSoft's value when the change was added, where it could be read.
     baseline = json.loads(raw["baseline"]) if raw["baseline"] else {}
@@ -669,13 +702,13 @@ def shape_addition(raw):
             "admin_value": value,
             "handling": "manual",
             "decision": "approved",
-            "execution": ADDITION_EXECUTION[state],
+            "execution": ADDITION_EXECUTION[step or "open"],
             "submitted_at": raw["created_at"],
             "family_duid": raw["family_duid"],
             "family_name": raw["family_name"],
             "member_name": raw["member_name"],
             "snapshot_id": raw["snapshot_id"],
-            "version": 1 if state == "open" else 2,
+            "version": (raw["step_sequence"] or 0) + 1,
             "resolution_action": raw["step"] or "added",
             "resolution_note": raw["step_note"] if raw["step"] else raw["added_note"],
             "resolution_at": raw["step_at"] if raw["step"] else raw["created_at"],
@@ -955,8 +988,10 @@ def shape(row):
         row
     )
     # What a person may record on this row now (#528): the page offers only
-    # these, and the service and SQL check them again. Reopen is the
-    # Administrator's; the page shows it only to them.
+    # these, and the service and SQL check them again. Reopening an Ignore
+    # is the Administrator's; the page shows it only to them. Reopen of a
+    # terminal change undoes its step (#1840), Staff's too, never on one a
+    # later response replaced.
     state = SimpleNamespace(
         handling=row["handling"],
         entity_kind=row["entity_kind"],
@@ -966,7 +1001,7 @@ def shape(row):
         current_available=row["current_available"],
     )
     shown["can_resolve"] = allowed(state, "entered")
-    shown["can_reopen"] = allowed(state, "reopened")
+    shown["can_reopen"] = allowed(state, "reopened", replaced=bool(row.get("replaced")))
     # An Administrator's Review of an Automatic row (ADM-09): the form values
     # (census_change_views.REVIEWS) it may record now, in the page's order.
     shown["review_actions"] = [

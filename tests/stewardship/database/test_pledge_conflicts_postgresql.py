@@ -62,8 +62,8 @@ def test_a_to_review_pledge_already_in_parishsoft_is_confirmed_closed(
     response_service,
 ):
     """Rule 1 on To review: Confirmed with no reviewer ("Already in
-    ParishSoft"), nothing offered, and never checked again; the service and
-    the guard both refuse a decision on it."""
+    ParishSoft") and never checked again; the service and the guard both
+    refuse a decision on it (only Back to review undoes it, #1840)."""
     harness, submission = pledged(response_service)
     refresh(harness, "1000.00", "234.50")
     assert opened() == [("confirmed", Decimal(ANSWER))]

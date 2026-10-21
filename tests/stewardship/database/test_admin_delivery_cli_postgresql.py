@@ -111,7 +111,10 @@ def test_list_and_show_read_outgoing_mail_without_recipients(
         assert views() == before + 3
         code, missing, _ = admin("delivery", "show", str(uuid4()), secret=secret)
         assert code == 1 and missing["error"]["code"] == "not_available"
-        code, bad, _ = admin("delivery", "list", "--recipient", "x", secret=secret)
+        # Any other text is part of a name (#1849); a malformed DUID is refused.
+        code, named, _ = admin("delivery", "list", "--recipient", "Zzqx", secret=secret)
+        assert code == 0 and named["result"]["deliveries"] == []
+        code, bad, _ = admin("delivery", "list", "--recipient", "1,2", secret=secret)
         assert code == 1 and bad["error"]["code"] == "invalid"
 
 

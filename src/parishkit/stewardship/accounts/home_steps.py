@@ -42,7 +42,7 @@ _WORK = (
     "information_queue",
     "ministry_report",
 )
-_ACTIVE = (*_WORK, "family_email_progress", "mail_problems")
+_ACTIVE = (*_WORK, "mail_queue", "mail_problems")
 # What each count means, after the number: Census changes' To review and
 # Conflict rows, and Ministry requests' To enter by hand Stage.
 _NOTES = {

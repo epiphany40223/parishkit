@@ -1,8 +1,9 @@
 """The Timeline page of one Family, for Administrators and Staff (#477, #1570).
 
 ``reports/families/<family>/`` shows one Family of the current campaign
-(``timeline``): a summary for both roles, and the full timeline for
-Administrators only. ``<family>`` is the Family's campaign record id, an
+(``timeline``): its summary and full timeline, for Administrators and Staff
+(Staff since the Administrator's decision of 2026-10-19, #1774), with its
+export (Staff's since #1799). ``<family>`` is the Family's campaign record id, an
 opaque random UUID that, like a Mail message's, names no person; the Family's
 name, DUID, envelope number and code never enter the URL, and the page's title
 leaves the name out so browser history does not keep it. The page replaced
@@ -16,7 +17,7 @@ address is refused like any unknown filter. The Family code is decrypted
 under the credential key-set lock inside the guard, as the directory page
 does.
 
-The Administrator's timeline is a shared Admin table (``web/tables.py``)
+The timeline is a shared Admin table (``web/tables.py``)
 whose When heading sorts it in place, newest first by default. Its rows are
 few (one Family's lines), so it shows them all: no paging, no navigator. A
 filter bar (``TimelineQuery``) narrows its lines by kind and by From and
@@ -26,7 +27,8 @@ plus the hub's ``tab``.
 
 The page is the Family's information hub (#1678, admin-portal spec "Family
 information hub"): a header strip, then the shared tabs (``web/tabs.py``).
-The Timeline tab holds everything above. The Family tab and one tab per
+The Timeline tab holds everything above, with the review lines
+(``timeline_reviews``) read only while it is chosen. The Family tab and one tab per
 Member (slice 2) show the Family's census answers against their baseline,
 with each change's review-pipeline stage (``hub_census``); the Member tabs
 also show Ministry joins and leaves, and the Financial and the Cannot
@@ -353,7 +355,7 @@ def page_context(campaign, family_id, identity, timeline, as_of, **options):
     """The page's template context; a pure function of its inputs.
 
     ``timeline`` is the ``timelines.Timeline``. The ``options`` are ``full``
-    (an Administrator's view: the timeline, its filters and its export),
+    (the timeline and its filters: Administrators' and Staff's view),
     ``show_codes`` (the role may see Family codes; without it the code and
     Open form are left out), ``testing_codes`` and ``family_test_url`` (the
     chosen-Family test page's link in Testing mode, given only to roles
@@ -362,6 +364,8 @@ def page_context(campaign, family_id, identity, timeline, as_of, **options):
     Open form), ``query``, the validated ``TimelineQuery``, ``values``, the
     timeline table's validated ``sort`` and ``size``, ``export``, the
     export form's values (``export_context``), shown only on the full view,
+    ``mail_links``, whether the role may open the Mail message page its
+    email lines link,
     and for the hub's tabs (``hub_tabs``) ``parameters``, the address's,
     ``sections``, the content tabs that apply (``hub_sections``),
     ``census``, the Family and Member tabs' ``HubCensus``, and the chosen
@@ -432,6 +436,9 @@ def page_context(campaign, family_id, identity, timeline, as_of, **options):
         "family_test_url": options.get("family_test_url"),
         "page_url": page_url,
         "export": options.get("export") if full else None,
+        # Email lines link their Mail message page only for roles that may
+        # open it (Administrators); Staff see the lines unlinked (#1774).
+        "mail_links": full and options.get("mail_links", False),
     }
 
 
@@ -464,8 +471,14 @@ def _principal(request, store, *, read_only=False):
 
 
 def _full(principal):
-    """Only Administrators see the full timeline; Staff get the summary."""
-    return "administrator" in principal.roles
+    """Administrators and Staff see the full timeline (#1774) and export it.
+
+    Any other role that may open the page (none today: Ministry leaders
+    hold no ``CAMPAIGN_REPORT``) would get the summary and the Last portal
+    action only, and no export. The export's SQL (migration 0144, #1799)
+    admits the same two roles.
+    """
+    return bool({"administrator", "staff"} & principal.roles)
 
 
 def _audit(principal, campaign_id, family_id, outcome):
@@ -536,7 +549,7 @@ def read_identity(family, *, codes, workgroup=None):
 
 @require_safe
 def timeline(request, campaign_id, family_id):
-    """One Family's summary (Admin and Staff) and timeline (Admin only)."""
+    """One Family's hub: its summary and timeline, for Admin and Staff."""
     finish, handed_off = None, False
     try:
         service = runtime()
@@ -596,13 +609,6 @@ def timeline(request, campaign_id, family_id):
                 "active_configuration__parish"
             ).get()
             testing_codes = system.mode == "testing"
-            # Production records only (#1570): the Testing view was removed.
-            records = read_timeline(
-                ResponseScope(campaign_id),
-                family.pk,
-                full=full,
-                current_mode=system.mode,
-            )
             # The hub's Family and Member tabs (#1678): read on every load,
             # whichever tab is chosen, since the Member tabs' names need it.
             sections = hub_sections(campaign.active_configuration.values)
@@ -611,6 +617,17 @@ def timeline(request, campaign_id, family_id):
                 census = read_hub_census(
                     campaign_id, family.pk, census="family" in sections
                 )
+            # Production records only (#1570): the Testing view was removed.
+            # The review lines (#1774) are read only while the Timeline tab
+            # is the one drawn, the tab the address chooses or falls back to.
+            chosen = hub_tabs("", request.GET, sections, census).selected
+            records = read_timeline(
+                ResponseScope(campaign_id),
+                family.pk,
+                full=full,
+                current_mode=system.mode,
+                reviews=full and chosen == "timeline",
+            )
             # The chosen tab's other stream (slices 3 and 4), if any.
             streams = hub_reads(
                 campaign,
@@ -643,6 +660,7 @@ def timeline(request, campaign_id, family_id):
                 query=query,
                 values=values,
                 export=export_context(campaign_id, family.pk) if full else None,
+                mail_links=allows(principal, Capability.BACKGROUND_WORK),
                 parameters=request.GET,
                 sections=sections,
                 census=census,
@@ -688,12 +706,12 @@ def timeline(request, campaign_id, family_id):
 def export(request, campaign_id, family_id):
     """Queue this Family's timeline file, as the page's export form posts it.
 
-    The page's full timeline is the Administrator's view, so only an
-    Administrator may export it (``create_timeline_export`` rechecks inside its
-    lock). The form carries the format, the time zone and a one-time request
-    key; anything else (a ``mode`` included, since #1570) is refused, and the
-    export is of Production records, as the page shows. The file can hold the
-    Family's live code.
+    Administrators and Staff may export it (``_full``, #1799;
+    ``create_timeline_export`` rechecks inside its lock). The form carries
+    the format, the time zone and a one-time request key; anything else
+    (a ``mode`` included, since #1570) is refused, and the export is of
+    Production records, as the page shows. The file can hold the Family's
+    live code.
     """
     from uuid import UUID
 
@@ -707,7 +725,9 @@ def export(request, campaign_id, family_id):
         service = runtime()
         principal = _principal(request, service.store)
         if not _full(principal):
-            raise PermissionError("The timeline export is for Administrators.")
+            raise PermissionError(
+                "The timeline export is for Administrators and Staff."
+            )
         parameters = request.POST.copy()
         parameters.pop("csrfmiddlewaretoken", None)
         # The browser's zone is posted unasked, so it is optional and never

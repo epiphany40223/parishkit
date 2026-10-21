@@ -40,6 +40,7 @@ from .test_leader_emails_postgresql import (  # noqa: F401
     claim,
     consume,
     mail_ready,
+    prepared,
     production,
     schedule,
     seed,
@@ -283,6 +284,24 @@ def test_paused_mail_refuses_the_review_and_apply(production, admin):  # noqa: F
         assert code == 1 and document["error"]["code"] == "not_available", document
     assert events("user_leader_emails_reviewed") == reviewed
     assert not LeaderEmailRequest.objects.exists() and events(EVENT) == 0
+
+
+def test_delivery_list_takes_the_ministry_leader_purpose(production, admin):  # noqa: F811
+    """``delivery list --purpose leader_email`` lists the Ministry leader
+    emails, as Sent mail's Purpose filter does (#1562), with no address."""
+    harness, _browser = production
+    rows = prepared(harness.service.store, ["leader-9@example.org"])
+    _, secret, _ = paired(admin.service)
+    code, document = one(
+        admin, "delivery", "list", "--purpose", "leader_email", secret=secret
+    )
+    assert code == 0, document
+    result = document["result"]
+    assert result["purpose"] == "leader_email"
+    listed = [row["id"] for row in result["deliveries"]]
+    assert listed == [str(rows["leader-9@example.org"].outbox_id)]
+    assert result["deliveries"][0]["purpose"] == "leader_email"
+    assert "leader-9@example.org" not in json.dumps(document)
 
 
 def test_a_changed_or_expired_review_is_stale(

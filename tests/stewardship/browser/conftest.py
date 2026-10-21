@@ -782,28 +782,11 @@ def component_origin():
             },
         ),
         (
-            # The Backup encryption key change's review page; the other
-            # integrations review in the review dialog (#750).
-            "/integration-preview",
-            "integration-preview",
-            {
-                "target": "backup_key",
-                "label": "Backup encryption key",
-                "preview": "synthetic-preview",
-                "changes": [
-                    {
-                        "label": "Key fingerprint",
-                        "before": "0123456789abcdef",
-                        "after": "fedcba9876543210",
-                    }
-                ],
-            },
-        ),
-        (
             "/backup-key",
             "backup-key",
             {
                 "label": "Backup encryption key",
+                "page_url": "/admin/system/integrations/backup_key/",
                 "current": KeyStatus("installed", "0123456789abcdef", backup_at=NOW),
                 "key_error": "This is not a backup public key.",
             },
@@ -813,6 +796,7 @@ def component_origin():
             "backup-key",
             {
                 "label": "Backup encryption key",
+                "page_url": "/admin/system/integrations/backup_key/",
                 "current": KeyStatus("configured", "0123456789abcdef"),
                 "new_fingerprint": "fedcba9876543210",
                 # A real challenge line is one unbroken 87-character word.

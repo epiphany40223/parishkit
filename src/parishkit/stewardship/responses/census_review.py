@@ -72,9 +72,12 @@ from .capabilities import Handling, capability
 from .census import InvalidHousehold, validate_address
 from .census_resolution import (
     MAX_NOTE,
+    TERMINAL_EXECUTIONS,
     KeyRebound,
+    NoteRequired,
     ReopenCovered,
     covered_by_addition,
+    member_id,
     record_resolution,
 )
 from .comparison import ADDRESS_COMPONENTS, ValueKind
@@ -434,7 +437,7 @@ def _record(
     if decision == "unreviewed" and proposal.decision == "ignored" and not note.strip():
         # Reopening an ignored change says why (the review pipeline's
         # "Reviewed stage"); the SQL guard requires the same.
-        raise ValueError("Sending an ignored census change back needs a note.")
+        raise NoteRequired("Sending an ignored census change back needs a note.")
     if (
         decision == "unreviewed"
         and proposal.decision == "ignored"
@@ -754,7 +757,7 @@ ACCEPT, EDIT, IGNORE, BACK, ENTERED = (
 WORKLIST_ACTIONS = frozenset({ACCEPT, EDIT, IGNORE, BACK, ENTERED})
 
 
-def _decide(proposal, action, actor_id, version, key, note, parish, value):
+def _decide(proposal, action, actor_id, version, key, note, parish, value, member):
     """Record one worklist decision on one locked proposal.
 
     Accept approves; on a Conflict it resolves it against ParishSoft's
@@ -764,17 +767,28 @@ def _decide(proposal, action, actor_id, version, key, note, parish, value):
     review are decisions. Entered by hand is a resolution
     (``census_resolution``), which on a To review By hand change accepts and
     marks it in one step (decision 2), and on a change Entered incorrectly
-    marks it again. Back to review on a change Entered incorrectly is a
-    resolution too (``reopened``, #1737): the change is final for reviews.
+    marks it again. Back to review on a terminal change (Entered by hand,
+    Entered incorrectly, Confirmed, Updated in ParishSoft) is a resolution
+    too (``reopened``, #1840), which undoes the step and keeps the decision:
+    a terminal change takes no review.
+    ``member`` is the ParishSoft Member ID a New Member's Entered by hand
+    names, as typed (``census_resolution.member_id``, #1749), or None.
     """
     if action == ENTERED:
         return record_resolution(
-            proposal, actor_id, version, key, "entered", note, parish
+            proposal,
+            actor_id,
+            version,
+            key,
+            "entered",
+            note,
+            parish,
+            member_duid=member_id(proposal, member),
         )
     if action == BACK and (
-        proposal.execution == "resolved_external"
+        proposal.execution in TERMINAL_EXECUTIONS
         # A repeated post (the same request key) follows its first post's
-        # path: that post reopened the change, which is no longer entered.
+        # path: that post reopened the change, which is no longer terminal.
         or ProposalResolution.objects.filter(
             actor_id=actor_id, request_key=key
         ).exists()
@@ -823,7 +837,16 @@ def _decide(proposal, action, actor_id, version, key, note, parish, value):
 
 
 def decide_census_changes(
-    store, actor_id, action, versions, *, note, request_key, bulk=False, value=None
+    store,
+    actor_id,
+    action,
+    versions,
+    *,
+    note,
+    request_key,
+    bulk=False,
+    value=None,
+    member=None,
 ):
     """Record one worklist decision on one or several census changes, all or none.
 
@@ -831,14 +854,16 @@ def decide_census_changes(
     ``request_key`` is the row's key, or for ``bulk`` the page's bulk key,
     from which each change's own key is derived (``bulk_key_for``), so a
     repeated post records nothing more. ``value`` is Edit's raw value, one
-    change only. Every change is locked in primary-key order first, in one
-    work transaction (as the publish worker locks), and recorded exactly as
-    its own icon would record it (its own review or resolution row, version
-    and audit event). They must all belong to one campaign. One that changed
-    since the page was drawn raises ``BulkStale`` naming it; any other
-    refusal is a ValueError, or ``InvalidEdit`` for a value the change
-    cannot take. Nothing is saved then. Returns the rows in primary-key
-    order.
+    change only; ``member`` is the ParishSoft Member ID typed for Entered by
+    hand on one New Member (#1749), or None. Every change is locked in
+    primary-key order first, in one work transaction (as the publish worker
+    locks), and recorded exactly as its own icon would record it (its own
+    review or resolution row, version and audit event). They must all
+    belong to one campaign. One that changed since the page was drawn
+    raises ``BulkStale`` naming it; any other refusal is a ValueError,
+    ``InvalidEdit`` for a value the change cannot take, or
+    ``InvalidMemberId`` for a Member ID it cannot. Nothing is saved then.
+    Returns the rows in primary-key order.
     """
     if (
         not isinstance(actor_id, UUID)
@@ -848,6 +873,8 @@ def decide_census_changes(
         or not 1 <= len(versions) <= MAX_BULK
         or (action == EDIT and (bulk or len(versions) != 1 or value is None))
         or (action != EDIT and value is not None)
+        or (member is not None and (action != ENTERED or bulk or len(versions) != 1))
+        or (member is not None and not isinstance(member, str))
         or any(
             not isinstance(key, UUID)
             or type(version) is not int
@@ -883,6 +910,7 @@ def decide_census_changes(
                         note,
                         parish,
                         value,
+                        member,
                     )
                 )
             except StaleRecordError:

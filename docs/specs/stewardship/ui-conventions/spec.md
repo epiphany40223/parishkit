@@ -70,6 +70,7 @@ when it lands.
   [colour scheme](#colour-scheme),
   [status indicators](#status-indicators), [stat tiles](#stat-tiles),
   [overview pages](#overview-pages),
+  [working spinner](#working-spinner),
   [stage boxes](#stage-boxes), [time entry](#time-entry),
   [schedules](#schedules), [schedule previews](#schedule-previews).
 - Tables: [Admin tables](#admin-tables),
@@ -634,7 +635,9 @@ never scrolls to show it (Administrator, pk-local review of
   replaced, and the address is unchanged. The error summary, which the base
   template draws above the page content, moves to the top of the region when
   it is drawn outside the region; this page's own older summaries outside
-  the regions are removed then (a successful swap leaves them). The reader
+  the regions are removed then (a successful swap leaves them, except an
+  item whose field the swap removed, which goes, and the summary with it
+  once it lists nothing, #750). The reader
   keeps their place, focus moves to the summary (or to the control when
   there is none), the fields it names are marked in error beside their
   message as the fetched page draws them, and the live region reads the
@@ -821,7 +824,8 @@ browser reload lands on the same page and view with the current status.
 2026-10-17). **Shared code.** `live-status-v1.js` status regions and
 `ui-v1.js`'s periodic quiet re-read (`a[data-reread-every]`), both built on
 the [in-place controls](#in-place-controls); no other mechanism.
-**Precedent.** System health (#1214), Family email progress, #869, #1353.
+**Precedent.** System health (#1214), Family email progress (now the
+Mail queue, #1562), #869, #1353.
 
 - **Passive reads only.** Every automatic read is one the page already
   makes: a status region's passive status read
@@ -1567,8 +1571,11 @@ the campaign wizard in #1404 PR 4).
   form shows its error summary and marks each field, as the
   [field errors](#field-errors-and-live-checks) convention says, and becomes
   editable again. Where panes share one dialog and each pane has its own
-  status line (see After Apply below), the refusal is said in that pane's
-  line instead, which takes focus without scrolling, and the field is marked
+  status line (see After Apply below), or a form sits far below the page
+  heading and names its region's status line (Backup encryption key's code,
+  [#750](https://github.com/epiphany40223/parishkit/issues/750)), the
+  refusal is said in that line instead, which takes focus without
+  scrolling, and the field is marked
   and described by it: no summary is placed above the heading, since moving
   focus there would jump the page to the top, and no error line is added
   that would move the pane's controls. The line clears on the form's next
@@ -1776,11 +1783,14 @@ use the dialog too (#750): an ordinary settings edit is a compact review, a
 refresh schedule change keeps its full review, and setting up Off-site
 backups by its folder, removing Slack, turning off off-site copies, a key
 change and Finish switching to the new key are confirmations (#1568); the
-Backup encryption key change still uses its separate
-Review page. The in-place review panel of #532 is retired
+[Backup encryption key](../admin-portal/spec.md#parish-and-integration-configuration)
+change, once its code is proved, is a compact review (its proof steps act in
+place). The in-place review panel of #532 is retired
 ([#1429](https://github.com/epiphany40223/parishkit/issues/1429),
-[in-place controls](#in-place-controls)); the other editors use separate
-Review and Change status pages.
+[in-place controls](#in-place-controls)); Pages and emails' editor still uses
+its separate Review and Change status pages, as does Copy campaign, which
+refuses every request until
+[#145](https://github.com/epiphany40223/parishkit/issues/145).
 [#750](https://github.com/epiphany40223/parishkit/issues/750) tracks the
 conversion.
 
@@ -2238,6 +2248,30 @@ and #1062 (Parish logos), then the scheduling editors of #1129.
   dialog it returns to the toggle's chosen segment. The focus ring is drawn
   on the chosen or focused segment and keeps the
   [theme's contrast](#accessibility-and-client-behavior).
+- **Additive editors.** An editor whose common case is already a few plain
+  fields, with less common tools that add to them, has no presets: Basic
+  shows those fields, and Advanced shows the same fields with the extra
+  tools. The fields both modes use stay outside the panels; each tool sits
+  where it applies, in an Advanced panel of its own (an editor may have
+  several). A Basic configuration is one with every Advanced tool off, so
+  the rules above narrow to these:
+  - Basic → Advanced writes nothing, and Advanced → Basic switches at once
+    while every Advanced tool is off. There is no Basic choice to make
+    before Review.
+  - Advanced → Basic with a tool in use asks in the same dialog ("Your
+    custom schedule has no basic equivalent."). The dialog's text names
+    only the Advanced tools in use that Switch to Basic will turn off,
+    not the editor's other tools. **Switch to Basic** turns each tool off,
+    as unticking it would, so the hidden panels post nothing and Basic
+    needs no exception to [conditional fields](#conditional-fields). A tool
+    that hides when another choice changes (Repeat, when the mail type is
+    no longer Reminder) is turned off then, and is not a tool in use.
+  - The mode is not stored with the setting: the page opens in Basic, or in
+    Advanced when it is drawn with a tool in use or answers a post sent
+    from Advanced (a refused Review, the browser restoring the page).
+  - First use: [New and Edit scheduled
+    email](../admin-portal/spec.md#new-and-edit-scheduled-email)
+    ([#1129](https://github.com/epiphany40223/parishkit/issues/1129)).
 
 A setting that can't change in the page's present state (rather than one
 that does not apply to the choices made) stays where it is, disabled, with
@@ -3178,9 +3212,12 @@ two ways of reading to a screen reader. **Precedent.**
   draws a row of them. Its `shown()` takes a value that is already text,
   only for figures that must read word for word as another renderer
   formats them: Campaign comparison's, shared with its PDF and the report
-  emails, and a report email's saved copy, which shows exactly what was
-  emailed. A guard test fails when a template outside `components/` draws
-  stat-tile markup by hand, with no exceptions. Email and PDF reports
+  emails, and a report email's saved copy (its Campaign totals and its
+  Compared with past campaigns figures), which shows exactly what was
+  emailed, an unknown value reading "—" with its reason where the email had
+  a word ([#1639](https://github.com/epiphany40223/parishkit/issues/1639)). A
+  guard test fails when a template outside `components/` draws stat-tile
+  markup by hand, with no exceptions. Email and PDF reports
   cannot load the stylesheet and keep their own layouts.
 
 ### Overview pages
@@ -3248,6 +3285,36 @@ and `.link-cards` in `ui-v1.css`; `.home-alerts` for the count lines.
 ([#1673](https://github.com/epiphany40223/parishkit/issues/1673); see
 [Home page](../admin-portal/spec.md#home-page)).
 
+### Working spinner
+
+**Rule.** Anything that shows work in flight with a spinning icon uses the
+one shared spinner, never a spinner of its own: a small ring with one
+quarter open, turning once every .8 seconds. It is drawn by the
+`components/spinner.html` include (`<span class="spinner"
+aria-hidden="true">`), or, on a button whose request is in flight
+(`is-busy`), by the same CSS rule on the button's `::after`. The spinner
+is decorative: it is hidden from assistive technology, and words beside it
+(the button's label, "Working…", "In progress") carry the state. Its ring
+takes its colour from the [design tokens](#shared-visual-style) (the accent
+by default, the text colour on a busy button and the attention ink in an
+In progress stage box), so Dark mode keeps it readable. Under reduced motion it stands still, a static ring that still
+says "working", through the theme's one reduced-motion rule. A spinner's
+space is reserved, or it takes the place of a mark that was already there,
+so it never moves the content around it when it appears or goes
+([no layout shift](#no-layout-shift)). Never add another spinner class,
+spinning animation or keyframes: extend this one, with a placement rule
+for its context if needed. **Why.** The Administrator, 2026-10-20 (pk-local
+R40b), asking for a working spinner in an In progress stage box "like the
+spinner the export download buttons show", and: "Is the spinning icon
+common code? If it's not, it should be." **Shared code.** The
+`components/spinner.html` include; the one `.spinner` rule, shared with
+`is-busy` buttons, and `@keyframes busy-spin` in `ui-v1.css`;
+`test_spinner_guard.py` fails if another spinning rule or keyframes
+appears. **Precedent.** Busy buttons (export buttons included), the live
+"Working…" line (`live-running.html`), a point-in-time export's pending
+state and In progress stage boxes
+([#1847](https://github.com/epiphany40223/parishkit/issues/1847)).
+
 ### Stage boxes
 
 **Rule.** A page that follows a long piece of work through its major
@@ -3256,13 +3323,18 @@ left to right, wrapping onto more rows on a phone with no sideways scroll.
 Each box names its stage and its state in words, Not started, In progress,
 Done or Failed (Finishing setup also has Waiting for the server operator),
 so its text, and its name as a list item, carry the state; a mark (a
-bullet, a pointer, a check, a cross or a pause) and a colour from the
+bullet, the [working spinner](#working-spinner), a check, a cross or a
+pause) and a colour from the
 [design tokens](#shared-visual-style) only reinforce it, in light and dark:
 Not started keeps the page's own background, In progress is the attention
 yellow (`warning-bg`, `warning-border`), Done the light accent green
 (`accent-soft`, `accent-line`) and Failed the error tone (`error-bg`,
 `error-border`); Dark mode takes each token's dark value. A change of state
 changes only these colours, the mark and the words, never the box's size.
+An In progress box, and only that box, shows the
+[working spinner](#working-spinner) in its mark's reserved slot; setup's
+list of collections downloaded from ParishSoft marks its active row the
+same way.
 The boxes show only stages the server reports, never invented ones. While
 the work runs, the page updates the boxes in place from a passive status
 read, and announces a change of state politely through the page's
@@ -3274,7 +3346,10 @@ each major step in the loading process, proceeding from left to right",
 and the same boxes, from the same code, as setup's Loading parish data and
 Finishing setup, so a reader learns the pattern once; and on their colours
 (Administrator, 2026-10-17): "'normal' background before starting, yellow
-while running, and light green when done". **Shared code.** The
+while running, and light green when done"; and on the spinner
+(Administrator, 2026-10-20): a "working" spinning icon in a box while
+that stage is actively In progress, to show progress visually. **Shared
+code.** The
 `components/stage-boxes.html` include, `accounts/stages.py` (`rows`, which
 marks the stages before the current one done, and the state words) and
 `.stage-boxes` in `ui-v1.css`. **Precedent.** Setup's Loading parish data
@@ -3448,8 +3523,11 @@ learned once. **Shared code.**
 - **Basic and Advanced.** An editor whose full rule set is much harder than
   the common case follows [Basic and Advanced modes](#basic-and-advanced-modes):
   Basic has a few presets, and Advanced has the rules, the exceptions, and
-  "Edit as text" where the editor has it. An editor of one or two plain
-  fields, such as the campaign dates, has no modes.
+  "Edit as text" where the editor has it. An editor of a few plain fields
+  with less common tools, such as New and Edit scheduled email (Repeat and
+  the schedule's own email), is an
+  [additive editor](#basic-and-advanced-modes). An editor of one or two
+  plain fields, such as the campaign dates, has no modes.
 - **Times of day** are [time entry](#time-entry) fields. No schedule editor
   draws its own reading or uses a native time control.
 - **Days of the week** use one picker that lists Monday to Sunday with the
@@ -3544,9 +3622,10 @@ shared zone note, as do System logs and Ministry requests; New and Edit
 scheduled email follows once its open changes land. The two mail
 repeat panels, New scheduled email's Repeat and the date-change review's
 Repeat a reminder, draw one repeat rule, so they offer the same choices in
-the same order and one page script expands both. Later
+the same order and one page script expands both. New and Edit scheduled
+email have the Basic and Advanced modes as an additive editor. Later
 [#1129](https://github.com/epiphany40223/parishkit/issues/1129) slices bring
-the shared preview and Basic and Advanced modes to the mail schedule
+the shared preview and Basic and Advanced modes to the date-change review's
 editors and reminder repeats; the report email editor is built with them
 ([#1786](https://github.com/epiphany40223/parishkit/issues/1786)). Until
 each change lands, an
@@ -3957,11 +4036,15 @@ inventory on #879 lists.
   records rather than removes, and that the row's other action undoes, also
   takes an icon of its own and acts [in place](#in-place-controls) without a
   dialog; so far only the request page's tick, "Mark … entered in
-  ParishSoft" (a check mark) and "Clear Entered in ParishSoft for …" (an
-  undo arrow). An action that carries a note opens the confirmation dialog
+  ParishSoft" (a check mark), whose undo, "Clear Entered in ParishSoft for
+  …" (an undo arrow), opens the confirmation dialog for its required note
+  like every undo of a terminal step (below). An action that carries a note opens the confirmation dialog
   instead, which holds the note, with an ordinary confirm button unless the
-  action cannot be undone; so far only Census changes ([#879](https://github.com/epiphany40223/parishkit/issues/879)), whose
-  decisions take an optional note and Reopen a required one. A note field
+  action cannot be undone: Census changes ([#879](https://github.com/epiphany40223/parishkit/issues/879)), whose
+  decisions take an optional note and Reopen a required one; every review
+  worklist's Back to review on a terminal stage, which needs a note
+  ([#1840](https://github.com/epiphany40223/parishkit/issues/1840)); and the
+  Ministry request page's Clear Entered in ParishSoft, the same undo. A note field
   shared by several actions is labelled by the action chosen: "Note
   (optional)", and "Note (required)" only while that action needs one,
   changing in place as the dialog opens (the review worklist, R38). An
@@ -3981,10 +4064,19 @@ inventory on #879 lists.
   again is not an undo; the row's own undo action (the review pipeline's
   Back to review) is, so the selected icon is unavailable
   (`aria-disabled="true"`) and its tooltip names the state and the undo
-  in one phrase.
+  in one phrase. Every recorded state has that undo, a final-looking mark
+  (Entered by hand, Handled, Updated in ParishSoft, Confirmed) included,
+  and undoing such a mark needs a note saying why
+  ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
+  [#1840](https://github.com/epiphany40223/parishkit/issues/1840)): no row's state is left with no way back.
   So the decision shows on the icons, not only in a
   status column ([review pipeline](../review-pipeline/spec.md#selected-state-icons),
-  [#1680](https://github.com/epiphany40223/parishkit/issues/1680)). **Shared
+  [#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
+  An action that amends the mark in force rather than undoing it comes
+  after the selected icon, is never a toggle (no `aria-pressed`), acts on
+  one row at a time (no bulk), and returns focus to the selected icon; so
+  far only Census changes' Correct the ParishSoft Member ID
+  ([#1773](https://github.com/epiphany40223/parishkit/issues/1773)). **Shared
   code.** `components/review-worklist.html` and `web/review_worklist.py`
   ([#1681](https://github.com/epiphany40223/parishkit/issues/1681)).
 - **By role.** Row actions the reader's role does not allow are not shown,
@@ -4466,6 +4558,18 @@ same way, and a Family cell with its
 [ParishSoft status](#members-and-families-no-longer-in-parishsoft) badge is
 Family and ParishSoft status (#1216).
 
+A download of a page with more than one table carries every section of the
+page, in page order, each section with the same columns in every format:
+the XLSX has one sheet per section, the CSV is one table whose first column,
+Section, names each row's section, followed by every section's columns in
+order (each row filling only its own section's), and the PDF prints the
+sections in page order. The Response dashboard's export, its Summary and its
+Daily participation, was the first
+([#1557](https://github.com/epiphany40223/parishkit/issues/1557);
+[participation graph](../reports/spec.md#participation-graph)). **Why.** One
+download per page keeps one small export row, and a single CSV keeps one
+file to open, while each section's columns stay as the page shows them.
+
 Recorded exceptions to the rule above:
 
 - **System logs:** CSV, XLSX and JSON Lines, no PDF. Its rows are wide raw
@@ -4602,7 +4706,7 @@ references (`tests/stewardship/test_export_columns.py` guards it), except the
 recorded exceptions above. A download written straight from its page registers
 with `web.exports.page_download`; the guard finds every registered and routed
 one, and fails until a new one has a case there; a case without a PDF table
-must be one of the exceptions above (or the participation chart). The
+must be one of the exceptions above. The
 Limitations report (formerly Talents and limitations,
 [#970](https://github.com/epiphany40223/parishkit/issues/970)) offers all
 three formats; the guard checks its Members and Families tables in each.
