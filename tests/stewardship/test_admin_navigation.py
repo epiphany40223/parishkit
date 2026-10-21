@@ -603,7 +603,7 @@ SPEC_ORDER = [
     "production_progress",
     # Mail and Family portal
     "delivery_control",
-    "family_email_progress",
+    "mail_queue",
     "family_email_sends",
     "deliveries",
     "family_portal",
@@ -692,7 +692,6 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
         "go_live",
         "production_progress",
         "delivery_control",
-        "family_email_progress",
         "family_email_sends",
         "response_dashboard",
         "campaign_comparison",

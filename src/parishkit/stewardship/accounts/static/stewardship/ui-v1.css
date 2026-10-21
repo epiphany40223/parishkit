@@ -517,6 +517,10 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
   .stat-tiles:has(> [data-stat]:nth-child(5):last-child) { grid-template-columns: repeat(auto-fit, minmax(max(clamp(12.5rem, (65.5rem - 100%) * 100000, (100% - 1.5rem) / 3), min(100%, (39rem - 100%) * 100000)), 1fr)); }
 }
 .stat-detail { color: var(--muted); font-size: .875rem; }
+/* Mail queue (#1562): the other mode's line keeps one line's height while empty, so the
+   table below never moves when it appears (no layout shift); a kind's zero counts are muted. */
+.mail-queue-other { min-height: 1.6em; min-height: 1lh; margin-block: .5rem 0; }
+.mail-queue-zero { color: var(--muted); }
 /* An unknown value's "—" carries its reason in a toggletip beside it (#1540), its "i" at the
    size it has elsewhere. The 1.75rem button is centred in the value's 2.1rem line from its top,
    so it never makes the line taller: a value that becomes unknown in place moves nothing. */
@@ -1358,6 +1362,10 @@ section.filter-panel > h2 { margin: 0; padding-block: .6rem; font-size: 1rem; li
    6.5rem, so the button wrapped and pushed that field's control below the
    others'. */
 .filter-bar.mail-filters > div:not(.short):has(> .label-row) { min-width: 7.5rem; }
+/* Sent mail's hint row (the gate's hint and a refused Recipient's message,
+   #1562) keeps its own full-width line under the fields, as the plain hint
+   paragraph did, rather than taking a field's share of the row. */
+.filter-bar.mail-filters > .hint-row-messages { flex: 0 1 100%; }
 /* From and Through are wide enough for the empty "mm/dd/yyyy" placeholder
    beside the calendar button, with Linux's wider fonts too. They drop the
    desktop short-field rule's end margin: the bar's gap spaces them, and

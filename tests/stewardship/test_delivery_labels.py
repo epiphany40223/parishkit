@@ -102,8 +102,8 @@ STATE_PAGES = (
     "admin-status.html",
     "admin-banners.html",
     "delivery-control.html",
-    "family-email-progress.html",
-    "family-email-progress-status.html",
+    "mail-queue.html",
+    "family-send-progress.html",
     "family-email-sends.html",
     "family-email-sends-table.html",
 )
@@ -119,7 +119,7 @@ OLD_NAMES = (
 
 
 def test_state_counts_use_the_plain_words_elsewhere():
-    """The status bar, pause pages and Family email progress and sends say
+    """The status bar, pause pages, the Mail queue and Family email history say
     "Not sure it arrived", the Sent mail filter's word, never the old
     names one click away from it (#678)."""
     for name in STATE_PAGES:

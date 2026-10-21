@@ -5430,14 +5430,31 @@ was created), which the page does not offer as headings.
 **Filters.** One compact filter bar (one row on a desktop screen; it wraps on
 a phone, without sideways scrolling) holds:
 
-- **Recipient**: a Family DUID (with or without its thousands commas), an
-  email address, or a delivery ID. A DUID lists that Family's emails; an
-  address lists every email whose intended recipients include it, in either
-  case, across kinds (a Family member who is also an Administrator sees both
-  their Family's emails and their reports); a delivery ID lists that one
-  email (or, as before, the emails of the Family record with that id).
-  Anything else is refused with the page's field error. A Testing email's
-  routed address (the Testing recipient) is not searched.
+- **Recipient**: a name, a Family DUID (with or without its thousands
+  commas), an email address, or a delivery ID. A DUID lists that Family's
+  emails; an address lists every email whose intended recipients include
+  it, in either case, across kinds (a Family member who is also an
+  Administrator sees both their Family's emails and their reports); a
+  delivery ID lists that one email (or, as before, the emails of the Family
+  record with that id). Any other text is a name
+  ([#1849](https://github.com/epiphany40223/parishkit/issues/1849),
+  Administrator decision 2026-10-20): it lists the emails whose Recipient
+  name contains it, ignoring case, as the other Admin list search boxes
+  match. A Family email matches by its Family's name in the latest
+  ParishSoft data (the surname and heads Recipient shows), and an email to
+  a person by what Recipient shows for them (the Users-page Name, else
+  the ParishSoft Member name, else the address, so part of an unnamed
+  person's address matches too). Text of only digits, commas and spaces
+  that is not a whole DUID, or with an "@" that is not one email address,
+  is refused at the field
+  ([field errors](../ui-conventions/spec.md#field-errors-and-live-checks)):
+  the field's pattern holds Apply filters while it is so, saying "Enter a
+  name, a whole Family DUID, one email address or a delivery ID, or clear
+  it." in the bar's reserved hint row; a value the pattern lets through
+  that the server still refuses draws the page again in place, answered
+  400, with the same words at the field and the list for no filters, never
+  an error page (R40b). A Testing email's routed address (the Testing
+  recipient) is not searched.
 - **Purpose**: All; Family invitations and reminders (Initial invitation
   and Reminder together, the Family email
   [System health](#system-health)'s Waiting to retry counts,
@@ -5502,7 +5519,8 @@ page 1. A link from Family email history that names a send
 (`send=<schedule>:<revision>:<mode>:<cycle>`) shows that send's mode unless
 it names a mode itself.
 
-The Recipient filter names a person (an email address or a Family DUID),
+The Recipient filter names a person (a name, an email address or a Family
+DUID),
 so it is private filter state
 ([Admin tables](../ui-conventions/spec.md#admin-tables)) and never reaches
 a URL: the filter form posts every filter in a CSRF-protected POST body,
@@ -5527,7 +5545,12 @@ nothing appears or vanishes under the pointer
 **Cost.** Purpose, mode, state, date and Family filters use the outbox's own
 columns. The address filter reads the matching email ids through an
 Administrator-only definer read over the renderings' intended recipients,
-backed by an index (below), then finds the emails by primary key. The
+backed by an index (below), then finds the emails by primary key. A name
+filter reads the Family DUIDs whose name in the current snapshot contains
+the text (one query over the snapshot's Families) and, as the Recipient
+sort does, the names of every email to a person the other filters match
+(one id query, the address definer read per 500 of them, the users and
+the Member-name read), then finds the emails by DUID and by id. The
 Recipient names of a page's emails to people take one definer read for
 the page's ids and one query of the current configuration's users,
 however many rows, plus one Member-name read of the emails whose address

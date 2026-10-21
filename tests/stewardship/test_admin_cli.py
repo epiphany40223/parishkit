@@ -58,7 +58,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "status",
         "task list",
         "task show",
-        "send progress",
+        "mail queue",
         "send history",
         "schedule show",
         "go-live readiness",
@@ -484,7 +484,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         assert entries[name]["scope"] == "read_only", name
         assert not entries[name]["changes_state"], name
         assert entries[name]["watch"] == (
-            name in {"task show", "send progress", "go-live progress", "system health"}
+            name in {"task show", "mail queue", "go-live progress", "system health"}
         )
     assert entries["status"]["audit_event"] == "dashboard_viewed"
     for name in ("users list", "users preview-upgrade"):
@@ -591,7 +591,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "required"
     ]
     assert clear["result_fields"] == ["clear_id", "halt_id", "created", "created_at"]
-    for name in ("send progress", "go-live progress", "system health"):
+    for name in ("mail queue", "go-live progress", "system health"):
         watch = {option["name"] for option in entries[name]["options"]}
         assert {"--watch", "--timeout"} <= watch, name
     states = {option["name"]: option for option in entries["task list"]["options"]}

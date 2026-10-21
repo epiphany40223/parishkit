@@ -876,8 +876,8 @@ each one is skipped when it is planned, and one already prepared is not sent.
 Nothing else changes. The Family still gets the invitation, receipts and
 confirmations, keeps its code and link (emailed codes and links are never
 changed), can still respond, and counts in every report. The Family's
-timeline says "Reminders skipped: in ParishSoft WorkGroup …", and Family
-email progress counts the skipped Reminders separately.
+timeline says "Reminders skipped: in ParishSoft WorkGroup …", and the Mail
+queue's Family send progress panel counts the skipped Reminders separately.
 
 **What you do.**
 

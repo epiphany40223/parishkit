@@ -197,6 +197,28 @@ RECIPIENT_HINT = "Use a Family DUID, an email address or a delivery ID."
 # An email address as Sent mail's Recipient filter takes it: one "@" with
 # no spaces around it. The provider and the render guard check the rest.
 _ADDRESS = re.compile(r"[^@\s]+@[^@\s]+")
+# Sent mail's Recipient as the page refuses it at its field (#1562, UX
+# conventions "Field errors and live checks"): the server's words, and the
+# same words as the field's data-missing-hint, so Apply waits saying them.
+# A name is the likeliest wrong value (the column shows names), so it says
+# names are not searched.
+RECIPIENT_REFUSAL = _(
+    "Enter a Family DUID, an email address or a delivery ID, or clear it. "
+    "Names are not searched."
+)
+# The Recipient field's HTML pattern: a coarse browser check of
+# ``recipient_scope``, so a name holds Apply before anything is sent. It
+# admits every value the server admits apart from exotic padding (a
+# non-breaking space around it), and refuses any value with a letter
+# outside a-f, A-F and a UUID's own "urn:" and "uuid:" prefix unless it has
+# an "@" (so any name a Family has, bar a short hex-like one such as
+# "Abbe", or a malformed DUID such as ",", which the server then refuses at
+# the field in place). It is in
+# the subset both Python's ``re`` and the browser's "v" flag read alike
+# (see ``web.field_rules``).
+RECIPIENT_PATTERN = (
+    r"[ \t]*([0-9,]+|[^@ \t]+@[^@ \t]+|(urn:)?(uuid:)?[0-9A-Fa-f\{\}\-]+)?[ \t]*"
+)
 
 
 def messages():
