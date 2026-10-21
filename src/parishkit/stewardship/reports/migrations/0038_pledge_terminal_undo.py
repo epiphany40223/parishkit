@@ -1,8 +1,8 @@
 """Forward migration: Back to review undoes a pledge's terminal stage (#1840).
 
-Its SQL is the frozen file ``schema/migrations/0213_pledge_terminal_undo.sql``
-(prefix 0213 in the repository-wide file sequence, provisional until the
-coordinator assigns it at merge), read whole and never parsed. It widens
+Its SQL is the frozen file ``schema/migrations/0149_pledge_terminal_undo.sql``
+(prefix 0149 in the repository-wide file sequence), read whole and never
+parsed. It widens
 0127's ``pledge_review_action_state`` check so a Back to review row may keep
 an accepted decision, and replaces 0135's pledge review guard in place so
 Back to review on Entered by hand, Entered incorrectly or Confirmed needs a
@@ -13,9 +13,8 @@ state, so ``makemigrations --check`` stays clean. Reversing needs its own
 forward migration, so, like the baseline, it has no reverse operation.
 
 It depends on the reports app's previous migration, which installs the
-previous frozen file, and on the workflows migration that installs the
-latest frozen file before it in this branch, so the files apply in prefix
-order (the coordinator rewires the chain when the numbers are assigned).
+earlier frozen file, and on the workflows migration that installs the
+frozen file before it (0148), so the files apply in prefix order.
 """
 
 from pathlib import Path
@@ -26,7 +25,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0213_pledge_terminal_undo.sql"
+    / "0149_pledge_terminal_undo.sql"
 )
 
 
@@ -34,7 +33,7 @@ class Migration(migrations.Migration):
     dependencies = [
         # The reports app's previous migration.
         ("stewardship_reports", "0037_staff_timeline_export"),
-        # The migration that installs the previous frozen file (0212,
+        # The migration that installs the previous frozen file (0148,
         # #1840), so the files apply in prefix order.
         ("stewardship_workflows", "0007_ministry_terminal_undo"),
     ]

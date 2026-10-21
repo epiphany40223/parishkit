@@ -33,7 +33,7 @@ the decision behind it kept (``undo_decision``), so it returns to the stage
 before the step, and nothing is written to or read from ParishSoft. A
 change a later response of the Family replaced is history and takes no
 undo. SQL checks the same
-(``schema/migrations/0210_census_terminal_undo.sql``, provisional).
+(``schema/migrations/0146_census_terminal_undo.sql``).
 Reopening an Ignore stays the Administrator's (``capability``).
 
 Marking a New Member entered may name the **ParishSoft Member ID** of the

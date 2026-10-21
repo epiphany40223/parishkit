@@ -1,5 +1,5 @@
--- Frozen forward migration 0214 (provisional number, assigned in merge
--- order): Back to review undoes an Additional information request's Handled
+-- Frozen forward migration 0150 (the repository-wide file sequence):
+-- Back to review undoes an Additional information request's Handled
 -- (#1840). It is installed by the Django migration that names it in
 -- FROZEN_SQL and must never change once released;
 -- tests/stewardship/test_schema_migration_files.py pins its digest and
@@ -124,7 +124,7 @@ BEGIN
               AND t.tgfoid='public.stewardship_information_revision_guard_v1()'::regprocedure
               AND t.tgenabled='O' AND NOT t.tgisinternal)<>1
     THEN
-        RAISE EXCEPTION 'Migration 0214: the information revision guard does not require an undo note';
+        RAISE EXCEPTION 'Migration 0150: the information revision guard does not require an undo note';
     END IF;
 END
 $check$;

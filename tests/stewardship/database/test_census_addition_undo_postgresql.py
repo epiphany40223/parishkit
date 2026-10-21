@@ -2,7 +2,7 @@
 
 An entered addition is reopened, with a required note, back to To enter by
 hand (review pipeline spec, "Undoing a terminal stage"); then it may be
-entered again or withdrawn, and every step is kept. The frozen file 0211
+entered again or withdrawn, and every step is kept. The frozen file 0147
 lets the resolution table hold more than one step per addition and checks
 which step may follow which; its guards are tested here with the service
 bypassed too.
@@ -42,7 +42,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 MIGRATIONS = Path(__file__).resolve().parents[3] / (
     "src/parishkit/stewardship/schema/migrations"
 )
-FROZEN = MIGRATIONS / "0211_census_addition_undo.sql"
+FROZEN = MIGRATIONS / "0147_census_addition_undo.sql"
 OLD = MIGRATIONS / "0129_census_additions.sql"
 
 
@@ -164,7 +164,7 @@ RESOLUTION = (
 def test_sql_holds_the_undo_to_its_rules(
     response_service, who, action, note, sequence, message
 ):
-    """The 0211 guard admits the undo only from a current Staff member or
+    """The 0147 guard admits the undo only from a current Staff member or
     Administrator, with a note, as the next step after Entered by hand."""
     harness, admin, staff, _, _, addition = entered(response_service)
     actor = leader(harness, admin) if who == "leader" else staff
@@ -269,7 +269,7 @@ def old_check():
 
 
 def test_the_old_definition_refused_the_undo(response_service):
-    """Before 0211, one step per addition and no 'reopened': the undo was
+    """Before 0147, one step per addition and no 'reopened': the undo was
     refused. Put back in a rolled-back transaction."""
     _, _, staff, _, _, addition = entered(response_service)
     with (
@@ -283,7 +283,7 @@ def test_the_old_definition_refused_the_undo(response_service):
 
 
 def test_do_block_passes_installed_and_refuses_an_old_body():
-    """0211's closing check passes as installed, and raises once the
+    """0147's closing check passes as installed, and raises once the
     resolution guard is 0129's again."""
     text = FROZEN.read_text(encoding="utf-8")
     check = text[text.index("DO $check$") :]

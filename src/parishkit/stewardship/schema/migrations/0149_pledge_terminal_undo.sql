@@ -1,6 +1,6 @@
--- Frozen forward migration file 0213 (the repository-wide file sequence;
--- provisional, the coordinator assigns the final number at merge): Back to
--- review undoes a pledge's terminal stage (#1840, review pipeline). This file
+-- Frozen forward migration file 0149 (the repository-wide file
+-- sequence): Back to review undoes a pledge's terminal stage (#1840,
+-- review pipeline). This file
 -- is installed by its Django migration in the reports app and must never
 -- change once released; tests/stewardship/test_schema_migration_files.py
 -- pins its digest.

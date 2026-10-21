@@ -6,7 +6,7 @@ incorrectly or Confirmed pledge removes only that step, with a required
 note, for Staff and Administrators only. The decision behind it stays in
 force with its values, so the pledge returns to To enter by hand; a pledge
 ParishSoft already held, with no decision behind it, returns to To review.
-Frozen migration 0213 (provisional number) widens the review rows' state
+Frozen migration 0149 widens the review rows' state
 check and the pledge review guard. These tests run the real service on the
 web login and real promotions, so the next refresh is seen to judge the
 undone pledge as an open one, and the guard's refusals of rows the service
@@ -52,7 +52,7 @@ from .test_refresh_checks_postgresql import started  # noqa: F401 (a fixture)
 pytestmark = pytest.mark.django_db(transaction=True)
 
 SCHEMA = Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema"
-FROZEN = SCHEMA / "migrations/0213_pledge_terminal_undo.sql"
+FROZEN = SCHEMA / "migrations/0149_pledge_terminal_undo.sql"
 
 
 def latest():
@@ -303,7 +303,7 @@ def guard_body(name, text, created="CREATE OR REPLACE FUNCTION"):
 def test_the_old_guard_refuses_the_undo_and_the_files_check_refuses_it(
     response_service,
 ):
-    """0135's guard refuses the undo the new one admits, and 0213's DO block
+    """0135's guard refuses the undo the new one admits, and 0149's DO block
     refuses to commit over 0135's guard or 0127's state check."""
     harness, submission = accepted(response_service)
     old = (SCHEMA / "migrations/0135_pledge_conflicts.sql").read_text(encoding="utf-8")

@@ -1,5 +1,5 @@
--- Frozen forward migration 0215 (provisional number, assigned in merge
--- order): Back to review undoes a Limitations answer's Handled (#1840). It
+-- Frozen forward migration 0151 (the repository-wide file sequence):
+-- Back to review undoes a Limitations answer's Handled (#1840). It
 -- is installed by the Django migration that names it in FROZEN_SQL and must
 -- never change once released; tests/stewardship/test_schema_migration_files.py
 -- pins its digest.
@@ -93,7 +93,7 @@ BEGIN
               AND t.tgfoid='public.stewardship_limitation_review_guard_v1()'::regprocedure
               AND t.tgtype=31 AND t.tgenabled='O')
     THEN
-        RAISE EXCEPTION 'Migration 0215: the limitation review guard does not admit the undo of Handled';
+        RAISE EXCEPTION 'Migration 0151: the limitation review guard does not admit the undo of Handled';
     END IF;
 END
 $check$;

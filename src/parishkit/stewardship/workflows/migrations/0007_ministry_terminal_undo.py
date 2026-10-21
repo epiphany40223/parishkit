@@ -1,7 +1,7 @@
 """Forward migration: Back to review undoes a Ministry request's terminal step (#1840).
 
-Its SQL is the frozen file ``schema/migrations/0212_ministry_terminal_undo.sql``
-(number 0212, provisional until the coordinator assigns it in merge order),
+Its SQL is the frozen file ``schema/migrations/0148_ministry_terminal_undo.sql``
+(number 0148 in the repository-wide file sequence),
 read whole and never parsed. It replaces the Ministry request guard and
 revision guard (baseline functions) and the roster entry guard (0061's) in
 place, so that Back to review, with its required note and by Staff or an
@@ -29,7 +29,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0212_ministry_terminal_undo.sql"
+    / "0148_ministry_terminal_undo.sql"
 )
 
 
@@ -37,7 +37,7 @@ class Migration(migrations.Migration):
     dependencies = [
         # This app's previous migration, so the app keeps one leaf.
         ("stewardship_workflows", "0006_refresh_check_conflict"),
-        # The migration that installs the previous frozen file (0211,
+        # The migration that installs the previous frozen file (0147,
         # #1840), so the files apply in prefix order.
         ("stewardship_responses", "0024_census_addition_undo"),
     ]

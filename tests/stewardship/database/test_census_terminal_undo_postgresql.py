@@ -4,7 +4,7 @@ The review pipeline (spec, "Undoing a terminal stage") makes no stage final:
 Back to review removes only the terminal step, so a change Entered by hand
 (also Entered incorrectly or Confirmed), Updated in ParishSoft or Already in
 ParishSoft goes back to the stage before it with its decision kept, with a
-required note, for Staff and Administrators only. Migration 0210
+required note, for Staff and Administrators only. Migration 0146
 (provisional number) admits the paired ``reopened`` resolution. These tests
 run the real service on the web login, re-evaluate the undone change with
 real promotions, check the SQL guards with the service bypassed, and check
@@ -51,7 +51,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 MIGRATIONS = (
     Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema/migrations"
 )
-FROZEN = MIGRATIONS / "0210_census_terminal_undo.sql"
+FROZEN = MIGRATIONS / "0146_census_terminal_undo.sql"
 
 
 def undo(harness, actor, change, *, note="Marked by mistake", key=None):

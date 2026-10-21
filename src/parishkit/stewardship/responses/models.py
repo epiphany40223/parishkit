@@ -705,7 +705,7 @@ class CensusAdditionResolution(ImmutableRecord):
     (``sequence``), so its version is its latest sequence plus one, and
     two readers' steps at the same time cannot both be recorded (the
     unique sequence). SQL checks which step may follow which
-    (schema/migrations/0211_census_addition_undo.sql).
+    (schema/migrations/0147_census_addition_undo.sql).
     """
 
     addition = models.ForeignKey(

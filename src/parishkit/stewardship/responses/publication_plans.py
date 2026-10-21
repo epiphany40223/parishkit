@@ -202,7 +202,7 @@ def _mark_upstream(record, plans):
     nothing. The derived guard (frozen migration 0112) admits exactly this,
     for a field row at the change's current version in a non-Testing plan
     recorded in this transaction; ``resolved_upstream`` is terminal there:
-    no writer but Staff's Back to review (#1840, frozen migration 0210,
+    no writer but Staff's Back to review (#1840, frozen migration 0146,
     which undoes the mark with a note) moves the change on. The rows are
     locked in pk order first, as every other proposal writer locks them.
     """

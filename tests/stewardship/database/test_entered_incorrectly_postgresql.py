@@ -9,7 +9,7 @@ undoes the mark (#1840), back to To enter by hand with its decision kept,
 and once more sends it to To review for an Edit to ParishSoft's value.
 Migration 0133 (provisional number) admits Entered by hand again only while
 the latest check says Entered incorrectly, and checks every census refresh
-check against the value recorded at the mark; 0210 (provisional) makes Back
+check against the value recorded at the mark; 0146 makes Back
 to review the undo of any terminal step. The changes are made through the
 real service on the web login and re-evaluated by real promotions.
 """

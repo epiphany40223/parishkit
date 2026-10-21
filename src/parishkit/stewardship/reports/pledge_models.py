@@ -130,7 +130,7 @@ class PledgeReview(ImmutableRecord):
             # The row's state is what its action records: a mark keeps an
             # accepted decision, every other action is not a mark. Back to
             # review clears the decision, or keeps an accepted one when it
-            # undoes a terminal step (#1840, frozen migration 0213,
+            # undoes a terminal step (#1840, frozen migration 0149,
             # provisional number; the guard says which it may be).
             models.CheckConstraint(
                 condition=models.Q(

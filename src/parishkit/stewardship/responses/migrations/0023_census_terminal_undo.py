@@ -1,7 +1,7 @@
 """Forward migration: Back to review undoes a census change's terminal step (#1840).
 
-Its SQL is the frozen file ``schema/migrations/0210_census_terminal_undo.sql``
-(number 0210, provisional until it is assigned in merge order), read whole
+Its SQL is the frozen file ``schema/migrations/0146_census_terminal_undo.sql``
+(number 0146 in the repository-wide file sequence), read whole
 and never parsed. It replaces the resolution guard (from 0139's body), the
 resolution effect check (from 0060's) and the census guard (from 0138's) so
 a Staff member or an Administrator may undo Entered by hand, Updated in
@@ -21,7 +21,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0210_census_terminal_undo.sql"
+    / "0146_census_terminal_undo.sql"
 )
 
 

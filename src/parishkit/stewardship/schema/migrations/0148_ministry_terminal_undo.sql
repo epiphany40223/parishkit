@@ -1,6 +1,6 @@
--- Frozen forward migration file 0212 (the repository-wide file sequence;
--- provisional, the number is assigned centrally in merge order): Back to
--- review undoes a Ministry request's Entered by hand and Confirmed (#1840).
+-- Frozen forward migration file 0148 (the repository-wide file
+-- sequence): Back to review undoes a Ministry request's Entered by hand
+-- and Confirmed (#1840).
 -- This file is installed by its Django migration in the workflows app and
 -- must never change once released; tests/stewardship/test_schema_migration_files.py
 -- pins its digest and checks that each replaced baseline function's copy
@@ -49,7 +49,7 @@ SET LOCAL search_path = public;
 -- how many definitions there are), compared in the DO block. A
 -- transaction-local setting holds them: the migration login has no TEMP
 -- privilege.
-SELECT set_config('stewardship.migration_0212_acl', (
+SELECT set_config('stewardship.migration_0148_acl', (
     SELECT count(*)||':'||coalesce(string_agg(p.proname||'='||coalesce(p.proacl::text,'default')
             ||'/'||coalesce((SELECT array_agg(c ORDER BY c) FROM unnest(p.proconfig) c)::text,''),';'
         ORDER BY p.proname),'')
@@ -429,7 +429,7 @@ BEGIN
                 AND p.prosrc LIKE '%Clearing Entered in ParishSoft needs its Back to review with a note%'
                 AND p.prosrc LIKE '%AND r.decision_note ~ ''\\S'')%'
                 AND p.prosrc LIKE '%FOR NO KEY UPDATE%')))<>3 THEN
-        RAISE EXCEPTION 'Migration 0212 (Ministry terminal undo) did not replace the guards';
+        RAISE EXCEPTION 'Migration 0148 (Ministry terminal undo) did not replace the guards';
     END IF;
     -- The guards still run as the triggers they were.
     IF (SELECT count(*) FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid
@@ -441,7 +441,7 @@ BEGIN
                 'stewardship_ministry_revision_guard_v1'),
             ('public.stewardship_ministry_roster_entry'::regclass,'stewardship_ministry_roster_entry_guard',
                 'stewardship_ministry_roster_entry_guard_v1')))<>3 THEN
-        RAISE EXCEPTION 'Migration 0212 (Ministry terminal undo) lost a Ministry trigger';
+        RAISE EXCEPTION 'Migration 0148 (Ministry terminal undo) lost a Ministry trigger';
     END IF;
     -- CREATE OR REPLACE keeps the grants and names the same settings; check
     -- that nothing changed them.
@@ -451,8 +451,8 @@ BEGIN
         FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname IN ('stewardship_ministry_request_guard_v1','stewardship_ministry_revision_guard_v1',
         'stewardship_ministry_roster_entry_guard_v1'))
-        IS DISTINCT FROM current_setting('stewardship.migration_0212_acl') THEN
-        RAISE EXCEPTION 'Migration 0212 changed the Ministry functions'' grants or settings';
+        IS DISTINCT FROM current_setting('stewardship.migration_0148_acl') THEN
+        RAISE EXCEPTION 'Migration 0148 changed the Ministry functions'' grants or settings';
     END IF;
 END
 $check$;

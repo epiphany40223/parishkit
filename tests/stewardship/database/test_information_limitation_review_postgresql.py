@@ -4,7 +4,7 @@ The worklists' services record each decision as the stream's own immutable
 row under the real web login; SQL admits only what the services may record,
 and an Additional information revision saved before 0126 reads by its
 follow-up flags. Back to review undoes Handled with a note (#1840,
-migrations 0214 and 0215).
+migrations 0150 and 0151).
 """
 
 import json
@@ -352,14 +352,14 @@ def test_the_command_line_clear_of_handled_needs_a_note(live_response_service, g
     assert stage_of(item.pk) is Stage.TO_REVIEW
 
 
-def test_migration_0214_check_refuses_the_previous_guard(live_response_service, google):
-    """0214's DO block passes as installed and fails on 0126's guard, which
+def test_migration_0150_check_refuses_the_previous_guard(live_response_service, google):
+    """0150's DO block passes as installed and fails on 0126's guard, which
     admitted Handled's undo with no note (the Python service alone refused
     it); rolled back, the installed guard refuses it again."""
     harness = live_response_service
     actor = staff_actor()
     item = handled_request(harness, actor, "Please call about the bake sale")
-    text = (MIGRATIONS / "migrations/0214_information_handled_undo.sql").read_text(
+    text = (MIGRATIONS / "migrations/0150_information_handled_undo.sql").read_text(
         encoding="utf-8"
     )
     check = text[text.index("DO $check$") : text.index("$check$;") + len("$check$;")]
@@ -372,7 +372,7 @@ def test_migration_0214_check_refuses_the_previous_guard(live_response_service, 
     previous = old[start : old.index("END $$;", start) + len("END $$;")]
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(check)  # The installed definition passes.
-        with pytest.raises(DatabaseError, match="Migration 0214"), transaction.atomic():
+        with pytest.raises(DatabaseError, match="Migration 0150"), transaction.atomic():
             cursor.execute(previous)
             cursor.execute(check)
         with transaction.atomic():
@@ -852,8 +852,8 @@ def test_back_to_review_undoes_a_handled_answer(response_service, google):
     assert limitation_stage(again).stage is Stage.TO_HANDLE
 
 
-def test_migration_0215_check_refuses_the_previous_guard(response_service, google):
-    """0215's DO block passes as installed and fails on 0126's guard, which
+def test_migration_0151_check_refuses_the_previous_guard(response_service, google):
+    """0151's DO block passes as installed and fails on 0126's guard, which
     refused any step from Handled; rolled back, the installed guard admits
     the undo again."""
     harness = response_service
@@ -865,7 +865,7 @@ def test_migration_0215_check_refuses_the_previous_guard(response_service, googl
     member = answer_id(family.family_duid, "member", "3")
     decide_answer(harness, actor, Action.ACCEPT, member, 0)
     decide_answer(harness, actor, Action.HANDLED, member, 1)
-    text = (MIGRATIONS / "migrations/0215_limitation_handled_undo.sql").read_text(
+    text = (MIGRATIONS / "migrations/0151_limitation_handled_undo.sql").read_text(
         encoding="utf-8"
     )
     check = text[text.index("DO $check$") : text.index("$check$;") + len("$check$;")]
@@ -881,7 +881,7 @@ def test_migration_0215_check_refuses_the_previous_guard(response_service, googl
     )
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(check)  # The installed definition passes.
-        with pytest.raises(DatabaseError, match="Migration 0215"), transaction.atomic():
+        with pytest.raises(DatabaseError, match="Migration 0151"), transaction.atomic():
             cursor.execute(previous)
             cursor.execute(check)
         with transaction.atomic():

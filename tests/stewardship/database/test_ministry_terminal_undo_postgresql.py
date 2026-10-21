@@ -4,7 +4,7 @@ Entered by hand and Confirmed are undone by a revision that keeps the
 decision and advances the request's version (the tick, if set, is cleared
 in the same transaction); a request the refresh resolved goes back to To
 review (review pipeline spec, "Undoing a terminal stage"). Each takes a
-required note, from Staff or an Administrator only. Migration 0212's guards
+required note, from Staff or an Administrator only. Migration 0148's guards
 are tested here with the service bypassed too, against the old bodies.
 """
 
@@ -36,7 +36,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 MIGRATIONS = Path(__file__).resolve().parents[3] / (
     "src/parishkit/stewardship/schema/migrations"
 )
-FROZEN = MIGRATIONS / "0212_ministry_terminal_undo.sql"
+FROZEN = MIGRATIONS / "0148_ministry_terminal_undo.sql"
 OLD = MIGRATIONS / "0131_ministry_review_pipeline.sql"
 
 
@@ -225,7 +225,7 @@ def revise(target, actor_id, *, state, outcome, note, version=None):
     ],
 )
 def test_sql_holds_the_undo_to_its_rules(response_service, values, message):
-    """The 0212 revision guard admits the undo only with a note, keeping
+    """The 0148 revision guard admits the undo only with a note, keeping
     the decision, at the request's version."""
     harness, staff, join = accepted(response_service)
     decide(harness, staff, "entered_by_hand", join)
@@ -262,7 +262,7 @@ def test_sql_refuses_a_bare_clear_of_the_tick(response_service):
 
 
 def old_body(name):
-    """0131's statement of ``name``, as it was before 0212."""
+    """0131's statement of ``name``, as it was before 0148."""
     text = OLD.read_text(encoding="utf-8")
     start = text.index(f"CREATE OR REPLACE FUNCTION public.{name}()")
     return text[start : text.index("END $$;", start) + len("END $$;")]
@@ -273,8 +273,8 @@ class Rollback(Exception):
 
 
 def test_the_old_guards_refused_the_undo(response_service):
-    """Before 0212, the revision guard refused any reopen of a ticked
-    request, so the undo was refused; 0212's admits it. Each is tried in a
+    """Before 0148, the revision guard refused any reopen of a ticked
+    request, so the undo was refused; 0148's admits it. Each is tried in a
     rolled-back transaction (before the deferred audit check)."""
     harness, staff, join = accepted(response_service)
     decide(harness, staff, "entered_by_hand", join)
@@ -305,7 +305,7 @@ def test_the_old_guards_refused_the_undo(response_service):
 
 
 def test_do_block_passes_installed_and_refuses_an_old_body():
-    """0212's closing check passes as installed, and raises once the
+    """0148's closing check passes as installed, and raises once the
     revision guard is 0131's again."""
     text = FROZEN.read_text(encoding="utf-8")
     prefix = text[: text.index("CREATE OR REPLACE FUNCTION")]

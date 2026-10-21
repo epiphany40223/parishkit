@@ -1,6 +1,6 @@
--- Frozen forward migration file 0211 (the repository-wide file sequence;
--- provisional, the number is assigned centrally in merge order): Back to
--- review undoes a parish-added census change's Entered by hand (#1840). This
+-- Frozen forward migration file 0147 (the repository-wide file
+-- sequence): Back to review undoes a parish-added census change's
+-- Entered by hand (#1840). This
 -- file is installed by its Django migration in the responses app and must
 -- never change once released; tests/stewardship/test_schema_migration_files.py
 -- pins its digest.
@@ -247,7 +247,7 @@ BEGIN
        OR NOT EXISTS (SELECT 1 FROM pg_index
             WHERE indexrelid='public.stewardship_census_addition_resolution_addition_id_60dcd2ac'::regclass)
     THEN
-        RAISE EXCEPTION 'Migration 0211 did not change the census addition resolutions';
+        RAISE EXCEPTION 'Migration 0147 did not change the census addition resolutions';
     END IF;
     IF (SELECT count(*) FROM pg_proc
             WHERE NOT prosecdef AND proconfig=ARRAY['search_path=pg_catalog, public, pg_temp']
@@ -260,6 +260,6 @@ BEGIN
                 OR (oid='public.stewardship_census_addition_resolution_effect_v1()'::regprocedure
                     AND prosrc LIKE '%''before_version'',NEW.sequence,''after_version'',NEW.sequence+1%')))<>3
     THEN
-        RAISE EXCEPTION 'Migration 0211 did not replace the census addition guards';
+        RAISE EXCEPTION 'Migration 0147 did not replace the census addition guards';
     END IF;
 END $check$;

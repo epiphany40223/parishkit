@@ -1,6 +1,6 @@
--- Frozen forward migration file 0210 (the repository-wide file sequence;
--- provisional, the number is assigned centrally in merge order): Back to
--- review undoes a census change's terminal step (#1840). This file is
+-- Frozen forward migration file 0146 (the repository-wide file
+-- sequence): Back to review undoes a census change's terminal step
+-- (#1840). This file is
 -- installed by its Django migration in the responses app and must never
 -- change once released; tests/stewardship/test_schema_migration_files.py
 -- pins its digest.

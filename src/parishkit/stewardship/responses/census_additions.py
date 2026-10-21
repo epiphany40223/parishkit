@@ -21,7 +21,7 @@ withdraws an open one and reopens an entered one (with a required note,
 #1840), so it can be entered again or withdrawn. SQL checks the actor, the
 campaign, the Family, the Member, the field and the value's shape again,
 which step may follow which, and pairs each row with its audit event
-(``schema/migrations/0129_census_additions.sql``, ``0211_census_addition_undo.sql``).
+(``schema/migrations/0129_census_additions.sql``, ``0147_census_addition_undo.sql``).
 """
 
 from uuid import UUID

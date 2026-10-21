@@ -25,7 +25,7 @@ Every decision is one revision of its request, written through
 order with the requests locked first; a bulk decision is all or none. What
 each reader may do is the pipeline's role-action table
 (``pipeline.allowed_actions``) at the request's current stage, and the SQL
-guards (migrations 0131 and 0212) check it all again. The stage is the pipeline's
+guards (migrations 0131 and 0148) check it all again. The stage is the pipeline's
 mapping (``ministry_placement``) of the locked row, so a decision against a
 row someone else changed first is a ``StaleDecision``, never a guess.
 """
@@ -633,7 +633,7 @@ def _undo(actor_id, target, version, key, note, current):
     revision (``undo_intent``) is written first, then, if the request is
     ticked Entered in ParishSoft, the tick is cleared by a roster entry
     under the same request key, which the roster guard pairs with that
-    revision (migration 0212); all in the caller's transaction.
+    revision (migration 0148); all in the caller's transaction.
     """
     system = _system()
     notes = _latest_notes([target.pk])[target.pk]

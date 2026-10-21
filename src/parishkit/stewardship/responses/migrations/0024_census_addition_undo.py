@@ -1,7 +1,7 @@
 """Forward migration: Back to review undoes a parish-added change's mark (#1840).
 
-Its SQL is the frozen file ``schema/migrations/0211_census_addition_undo.sql``
-(number 0211, provisional until the coordinator assigns it in merge order),
+Its SQL is the frozen file ``schema/migrations/0147_census_addition_undo.sql``
+(number 0147 in the repository-wide file sequence),
 read whole and never parsed. A census addition may now have more than one
 later step: its resolution's UNIQUE ``addition_id`` goes, a ``sequence``
 numbers each addition's steps (unique per addition), the action
@@ -31,14 +31,14 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0211_census_addition_undo.sql"
+    / "0147_census_addition_undo.sql"
 )
 
 
 class Migration(migrations.Migration):
     dependencies = [
         # This app's previous migration, which also installs the previous
-        # frozen file (0210, #1840), so the app keeps one leaf and the
+        # frozen file (0146, #1840), so the app keeps one leaf and the
         # files apply in prefix order.
         ("stewardship_responses", "0023_census_terminal_undo"),
     ]

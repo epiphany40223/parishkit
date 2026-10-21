@@ -6,14 +6,14 @@ hand. Staff and Admin record that here: each set or clear is one immutable
 ``MinistryRosterEntry`` row, and the latest row is the current state.
 Clearing a mark is Back to review of Entered by hand, with a required
 note (#1840): ``review.undo_entered`` and the worklist's undo record it,
-as a revision paired with the clearing row (migration 0212). Ministry
+as a revision paired with the clearing row (migration 0148). Ministry
 requests' bulk Entered by hand marks several at once
 (``mark_many_entered``, #879), each exactly as a single tick is recorded.
 A request resolved because the ParishSoft roster already showed the
 change (it has a resolution source) needs no tick. SQL checks the actor,
 the request, the sequence and the audit again
 (``schema/migrations/0061_roster_entries.sql``,
-``0212_ministry_terminal_undo.sql``).
+``0148_ministry_terminal_undo.sql``).
 
 Ministry leaders see the tick but never set it: its readers here take no
 principal, and the views show it read-only to them.

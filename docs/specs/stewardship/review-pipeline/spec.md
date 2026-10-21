@@ -331,12 +331,12 @@ How each stream stores the undo:
 
 | Stream | Terminal step undone | Stored as |
 | --- | --- | --- |
-| Census | Entered by hand, Entered incorrectly, Confirmed, Updated in ParishSoft | a `reopened` resolution (forward migration 0210, provisional number): the change's execution returns to `pending` with its decision kept |
-| Census (Added by the parish) | Entered by hand | a `reopened` addition resolution (0211, provisional) after the `entered` one |
-| Ministry | Entered by hand, Confirmed | a Back to review revision with its note (0212, provisional), which clears the roster tick or the refresh resolution and advances the request's version |
-| Financial | Entered by hand, Entered incorrectly, Confirmed | a `back_to_review` pledge review row that keeps the decision in force (0213, provisional) |
-| Additional information | Handled | a revision clearing the follow-up with its note, follow-up still needed (0214, provisional) |
-| Cannot participate | Handled | an `accepted` review row with its note (0215, provisional) |
+| Census | Entered by hand, Entered incorrectly, Confirmed, Updated in ParishSoft | a `reopened` resolution (forward migration 0146): the change's execution returns to `pending` with its decision kept |
+| Census (Added by the parish) | Entered by hand | a `reopened` addition resolution (0147) after the `entered` one |
+| Ministry | Entered by hand, Confirmed | a Back to review revision with its note (0148), which clears the roster tick or the refresh resolution and advances the request's version |
+| Financial | Entered by hand, Entered incorrectly, Confirmed | a `back_to_review` pledge review row that keeps the decision in force (0149) |
+| Additional information | Handled | a revision clearing the follow-up with its note, follow-up still needed (0150) |
+| Cannot participate | Handled | an `accepted` review row with its note (0151) |
 
 Rejected: undoing only until a refresh has checked the mark (a mistake found
 after a refresh would stay wrong), keeping the marks final (a mis-click had
