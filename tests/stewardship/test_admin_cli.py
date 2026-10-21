@@ -314,16 +314,10 @@ def test_the_catalog_lists_every_command_with_its_flags():
             }
         ), name
         # A prompting command, and only one, takes --yes. Other branches add
-        # their own prompting commands, so this is not a closed list. A
-        # command that stopped asking when its mark could be undone (#1840)
-        # still takes --yes, ignored, so older scripts keep working.
-        kept_yes = name in {
-            "pledges decide",
-            "census resolve",
-            "information decide",
-            "limitations decide",
-        }
-        assert ("--yes" in names) == (entry["prompts"] or kept_yes), name
+        # their own prompting commands, so this is not a closed list. The
+        # commands that stopped asking when their marks could be undone
+        # (#1840) take no --yes at all (#1893).
+        assert ("--yes" in names) == entry["prompts"], name
         # Only the downloads stream a file to standard output.
         assert entry["streams"] == (
             name
@@ -853,9 +847,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert options["--address"]["required"] and options["--note"]["required"]
     # census resolve: a Census changes row's Record outcome, keyed and
     # versioned, full scope, not fresh-gated, as its page asks for no recent
-    # sign-in. Every outcome can be undone now (#1840), so nothing asks;
-    # --yes is still accepted (and does nothing), so scripts that pass it
-    # keep working.
+    # sign-in. Every outcome can be undone now (#1840), so nothing asks,
+    # and it takes no --yes (#1893).
     census = entries["census resolve"]
     assert census["scope"] == "full" and census["changes_state"]
     assert census["request_key"] and census["expected_version"]
@@ -914,8 +907,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
     options = {option["name"]: option for option in edit["options"]}
     assert {"--value", "--clear"} <= set(options)
     # information decide and limitations decide (#1735): keyed, full scope,
-    # not fresh-gated; nothing asks since Handled can be undone (#1840), but
-    # they keep --yes, ignored, for older scripts.
+    # not fresh-gated; nothing asks since Handled can be undone (#1840), and
+    # they take no --yes (#1893).
     # Each chosen item carries its own version, so there is no
     # --expected-version.
     for name in ("information decide", "limitations decide"):
@@ -949,8 +942,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
     ]
     assert "--search" not in options
     # pledges decide (#1733): keyed, full scope, not fresh-gated; it asks
-    # nothing, since Entered by hand can be undone (#1840), but still takes
-    # --yes for older scripts. Each chosen pledge carries its own version,
+    # nothing, since Entered by hand can be undone (#1840), and takes no
+    # --yes (#1893). Each chosen pledge carries its own version,
     # so there is no --expected-version.
     pledges = entries["pledges decide"]
     assert pledges["scope"] == "full" and pledges["changes_state"]

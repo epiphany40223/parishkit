@@ -2699,9 +2699,7 @@ def census_resolve(args, preamble, runtime, context):
     Every outcome can be undone: Reopen also undoes a terminal step (Entered
     in ParishSoft, Entered incorrectly, Confirmed, Updated in ParishSoft;
     #1840) as the page's Back to review does, with the required note. So
-    nothing asks first; ``--yes`` is still accepted, so scripts that pass it
-    keep working, and does nothing; a note read from standard input needs
-    no ``--yes`` either.
+    nothing asks first, and the command takes no ``--yes`` (#1893).
     """
     from .accounts.policy import Capability
     from .admin_census import resolve_census
@@ -4458,11 +4456,8 @@ def _census_resolve_options(parser):
         help="an optional note (required to reopen or undo), or - to read it "
         "from standard input",
     )
-    # A mark asked first while it was final; nothing asks now (#1840), but
-    # scripts written then may still pass --yes.
-    parser.add_argument(
-        "--yes", action="store_true", help="accepted for older scripts; ignored"
-    )
+    # A mark asked first while it was final; nothing asks now (#1840), and
+    # the Administrator removed --yes with no backwards compatibility (#1893).
     _request_key_option(parser)
 
 
@@ -7665,8 +7660,7 @@ def _worklist_decide(stream, args, context, runtime):
     ``denied`` before any input or prompt. Without ``--request-key`` a new
     key is made and written to standard error before anything is done.
     Every decision can be changed again, Handled too (Back to review with a
-    note, #1840), so none asks first; ``--yes`` is still accepted for older
-    scripts and does nothing.
+    note, #1840), so none asks first, and none takes ``--yes`` (#1893).
     """
     from . import admin_worklists
     from .web.review_worklist import MAX_NOTE
@@ -7781,11 +7775,9 @@ def _decide_options(chosen, source):
             help="an optional note (required to reopen an ignored item or to "
             "undo Handled), or - to read it from standard input",
         )
-        # A mark asked first while it was final; nothing asks now (#1840), but
-        # scripts written then may still pass --yes.
-        parser.add_argument(
-            "--yes", action="store_true", help="accepted for older scripts; ignored"
-        )
+        # A mark asked first while it was final; nothing asks now (#1840), and
+        # the Administrator removed --yes with no backwards compatibility
+        # (#1893).
         _request_key_option(parser)
 
     return add
@@ -7887,8 +7879,8 @@ def pledges_decide(args, preamble, runtime, context):
     ``denied`` before any input or prompt. Without ``--request-key`` a new
     key is made and written to standard error before anything is done.
     Every decision can be changed again, Entered by hand too (Back to
-    review with a note undoes it, #1840), so none asks first; ``--yes`` is
-    still accepted, and does nothing, so older scripts keep working.
+    review with a note undoes it, #1840), so none asks first, and it takes
+    no ``--yes`` (#1893).
     """
     from . import admin_pledges
     from .web.review_worklist import MAX_NOTE
@@ -8002,10 +7994,8 @@ def _pledges_decide_options(parser):
         "back_to_review), or - to read it from standard input",
     )
     # Entered by hand asked first while it was final; nothing asks now
-    # (#1840), but scripts written then may still pass --yes.
-    parser.add_argument(
-        "--yes", action="store_true", help="accepted for older scripts; ignored"
-    )
+    # (#1840), and the Administrator removed --yes with no backwards
+    # compatibility (#1893).
     _request_key_option(parser)
 
 
