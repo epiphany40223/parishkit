@@ -543,7 +543,7 @@ def test_a_missed_send_or_a_digest_does_not_move(auth_service, google, monkeypat
     """Not movable (#1521): the calendar offers no Move… and the server refuses.
 
     The Initial invitation's time has passed without work (missed), so it
-    still links to Edit but not to Move…; a Daily Admin digest never moves.
+    still links to Edit but not to Move…; a Daily report never moves.
     Both refusals are plain ones for the review dialog, recording nothing.
     """
     store = auth_service.store

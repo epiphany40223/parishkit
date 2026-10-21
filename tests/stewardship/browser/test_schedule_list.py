@@ -264,13 +264,13 @@ def test_delete_says_sent_email_is_not_recalled_only_for_one_that_sent(
     page, component_origin
 ):
     """The Delete confirmation's caution (R40b) is said only while a chosen
-    schedule has sent email: the Weekly Admin digest has, the reminders
+    schedule has sent email: the Weekly report has, the reminders
     have not. Delete selected says it once the digest is ticked too."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + BULK)
     failures = watch(page)
     caution = dialog(page).get_by_text("Email already sent is never recalled")
-    page.get_by_role("button", name="Delete Weekly Admin digest").click()
+    page.get_by_role("button", name="Delete Weekly report").click()
     visible(dialog(page))
     visible(caution)
     page.keyboard.press("Escape")
