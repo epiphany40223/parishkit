@@ -853,7 +853,9 @@ def component_origin():
                         "after": "2055-10-01 through 2055-10-31",
                     }
                 ],
-                "schedules": [_describe(mail["values"], mail_campaign["values"])],
+                "schedules": [
+                    _describe(mail["values"], mail_campaign["values"], now=NOW)
+                ],
                 "preview": "synthetic-preview",
                 "content_previews": [
                     {

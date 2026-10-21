@@ -3862,11 +3862,20 @@ keep a reader's open days by date. `test_occurrences_component.py`
 renders each state and layout, and lists the templates that still draw an
 occurrence list by hand, so no new one is added.
 
-**Adoption.** The refresh schedule's seven-day list draws it (ADM-04
-slice 7b); the next
-[ADM-04](../../../plans/stewardship/admin-portal.md#adm-04-campaign-editor-content-schedules-and-previews)
-slice brings it to the mail schedule review. Until that lands, the review's
-feature spec stands.
+`occurrence_preview.wall_shift(day, wall, due, zone)` is the one test of
+whether a clock change moves a wall time ("forward", "back" or None), so
+the refresh list and the mail review give each line its `shift` the same
+way. A shifted send's wall time is written in the parish's clock ("sends
+at 3:00 AM"), as the line's "set for" time; a refresh list keeps its
+24-hour `HH:MM`.
+
+**Adoption.** The refresh schedule's seven-day list (ADM-04 slice 7b) and
+the mail schedule review (slice 7c) draw it
+([ADM-04](../../../plans/stewardship/admin-portal.md#adm-04-campaign-editor-content-schedules-and-previews)).
+Copy campaign's review still lists its copied schedules through the mail
+review's summary until
+[#145](https://github.com/epiphany40223/parishkit/issues/145) removes the
+page, which the server refuses.
 
 ## Tables
 

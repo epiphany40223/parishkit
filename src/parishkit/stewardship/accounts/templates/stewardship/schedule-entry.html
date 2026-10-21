@@ -91,7 +91,7 @@ mode (schedule_entry_views.editor_mode); it is never saved.
 </form>
 {% if not direct and not new %}<section class="panel schedule-delete" aria-labelledby="schedule-delete-title">
 <h2 id="schedule-delete-title">{% translate "Delete this scheduled email" %}</h2>
-<form method="post" action="{{ delete_url }}" id="schedule-delete-form" data-review-open="schedule-delete-review">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="schedule_id" value="{{ schedule.id }}">
+<form method="post" action="{{ delete_url }}" id="schedule-delete-form" data-review-open="schedule-delete-review">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="schedule_id" value="{{ schedule.id }}"><input type="hidden" name="zone" value="" data-browser-zone>
 {% if series %}<fieldset class="field" aria-describedby="schedule-delete-help"><legend>{% translate "Delete" %}</legend>
 <div><input type="radio" name="scope" value="this" id="schedule-delete-this" checked> <label for="schedule-delete-this">{% translate "This reminder only" %}</label></div>
 <div><input type="radio" name="scope" value="series" id="schedule-delete-series"> <label for="schedule-delete-series">{% translate "The whole series" %}</label></div>
