@@ -26,6 +26,7 @@ from parishkit.stewardship.accounts.schedule_entry_views import (
     _delete_entries,
     _entries,
     _fields,
+    _leaves_series,
     _remember,
     _rule,
     _series_edit,
@@ -771,3 +772,22 @@ def test_delete_the_whole_series_of_a_reminder_no_longer_in_one_is_refused():
     rows = saved(emails())
     with pytest.raises(UserFacingError, match="no longer part of a series"):
         _delete_entries(rows[1], None, rows, set(), "series")
+
+
+def test_a_reminder_moved_off_its_rule_says_it_leaves_its_series():
+    """Edit's "This reminder only" line (#1521), on upkeep's own test.
+
+    The series sends every day of October, so a reminder moved to another
+    October day stays in it and November 3 takes it out; a reminder in no
+    series, or a change with no date, says nothing.
+    """
+    rows = saved(emails())
+    record = series_of(rows)
+    moved = [{"id": rows[1]["id"], "date": "2054-11-03", "time": "09:00:00"}]
+    (line,) = _leaves_series(record, moved)
+    assert str(line).startswith("This reminder leaves its series (")
+    assert str(line).endswith("), since the series does not send on its new day.")
+    kept = [{"id": rows[1]["id"], "date": "2054-10-12", "time": "09:00:00"}]
+    assert _leaves_series(record, kept) == []
+    assert _leaves_series(None, moved) == []
+    assert _leaves_series(record, [{"id": rows[1]["id"], "date": None}]) == []

@@ -19,6 +19,13 @@ so the real gateway can never reach its PUT until a confirmed read replaces
 that refusal and the human-run smoke test has written one test Member and
 read it back (docs/guides/stewardship-member-requests.md#parishsoft-publication).
 
+The one exception is the local fake ParishSoft (#1884), whose record shape
+this package defines (``stewardship.local.fake_contact``): for the fake's
+base URL, which only a LOCAL deployment can choose, the read is
+``GET members/{id}`` mapped onto the request schema's names, so pk-local
+runs the real worker, session and helper end to end against the fake. The
+real API's read stays refused.
+
 That smoke test (``responses.contact_smoke``) is the one other user of this
 gateway. It opens it with ``open_operator`` (no task owns a human's run) and
 reads the candidate record with ``probe_member_record``, which returns the
@@ -30,7 +37,7 @@ from typing import Protocol
 
 from django.db import connection
 
-from parishkit.parishsoft_http_worker import admitted_base_url
+from parishkit.parishsoft_http_worker import LOCAL_SOURCE_BASE_URL, admitted_base_url
 from parishkit.parishsoft_transport import (
     BoundedPublicationSession,
     SourceTransportError,
@@ -99,7 +106,8 @@ class ParishSoftContactGateway:
         """Build the gateway for one running publish task.
 
         ``base_url`` is the deployment's chosen ParishSoft base URL; the
-        session refuses a LOCAL profile, which never writes (#1399).
+        session refuses a LOCAL profile with the real API, which it never
+        writes to (#1399); with the local fake it is admitted (#1884).
 
         ``on_timeout(limit, elapsed)`` records a request killed at its
         deadline (``source.transport.source_timeout_recorder``), so every
@@ -144,9 +152,26 @@ class ParishSoftContactGateway:
         )
 
     def read_member_contact(self, member_id, *, timeout):
-        """Refused until a GET returning all fifteen contact fields is confirmed."""
-        _member_id(member_id)
-        raise ContactGatewayError("read_unconfirmed")
+        """Refused until a GET returning all fifteen contact fields is confirmed.
+
+        Only the local fake's read is defined (#1884): its ``GET members/{id}``
+        Member object mapped onto the request schema's names. The fake's base
+        URL is admitted only for a LOCAL profile (checked when the gateway
+        was built), so Production always refuses here.
+        """
+        member_id = _member_id(member_id)
+        if self.base_url != LOCAL_SOURCE_BASE_URL:
+            raise ContactGatewayError("read_unconfirmed")
+        # Lazy: only a LOCAL deployment reading the fake ever needs it.
+        from parishkit.stewardship.local.fake_contact import contact_record
+
+        record = self._member_object(member_id, timeout)
+        if record is None:
+            return None
+        try:
+            return contact_record(record)
+        except ValueError:
+            raise ContactGatewayError("read_unavailable") from None
 
     def probe_member_record(self, member_id, *, timeout):
         """One Member's raw ``GET members/{id}`` record, or None when not found.
@@ -155,7 +180,15 @@ class ParishSoftContactGateway:
         record carries the fifteen PUT fields; it is not the publication
         read. Failures are fixed words, never provider text.
         """
-        url = f"{self.base_url}/members/{_member_id(member_id)}"
+        return self._member_object(_member_id(member_id), timeout)
+
+    def _member_object(self, member_id, timeout):
+        """``GET members/{id}`` as a dict, or None when not found.
+
+        Shared by the smoke check's probe and the local fake's contact read;
+        a failed or malformed answer is ``read_unavailable``.
+        """
+        url = f"{self.base_url}/members/{member_id}"
         try:
             response = self.session.get(url, timeout=timeout)
             if response.status_code == 404:

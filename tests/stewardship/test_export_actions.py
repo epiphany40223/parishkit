@@ -27,7 +27,7 @@ EXPORTS = {
     ("campaign-comparison.html", "admin:campaign_comparison_export"): "pdf xlsx csv",
     ("census-worklist-export.html", "admin:census_changes_export"): "csv xlsx pdf",
     ("directory.html", "admin:family_directory_export"): "csv xlsx pdf",
-    ("timeline.html", "export.url"): "csv xlsx pdf",
+    ("timeline-panel.html", "export.url"): "csv xlsx pdf",
     ("financial-report.html", "admin:financial_export"): "csv xlsx pdf",
     ("pledges-export.html", "admin:pledges_to_enter_export"): "csv xlsx pdf",
     ("information-worklist-export.html", "admin:information_export"): "csv xlsx pdf",

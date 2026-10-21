@@ -4,11 +4,13 @@ The page renders ``system_health.read_health`` as a dashboard (#1214): the
 overall status line, then one tile per area, each with its state, its
 problems and its panel content. live-status-v1.js re-reads the status
 fragment every 10 seconds while the page is open (pausing while the tab is
-hidden), so a problem that starts or ends appears by itself. Only opening
-the page is audited (``system_health_viewed``); the fragment records nothing
-and never renews the Administrator's idle time. Neither read takes the
-work-order lock or any data lock; the only lock is the brief one the first
-sign-in check takes on the reader's own session row.
+hidden), so a problem that starts or ends appears by itself; the two
+page-load tiles are checked again by the fragment about every 5 minutes
+(#1790). Only opening the page is audited (``system_health_viewed``); the
+fragment records nothing and never renews the Administrator's idle time.
+Neither read takes the work-order lock or any data lock; the only lock is
+the brief one the first sign-in check takes on the reader's own session
+row.
 """
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -59,6 +61,11 @@ from .source_form_views import source_form_summary
 # How often the open page re-reads the status, in ms (the specification's
 # 10 seconds). Watching stops after live-status-v1.js's usual hour.
 POLL_MILLISECONDS = 10_000
+# How often the open page asks the fragment to check the two page-load tiles
+# again (``?slow=1``), in ms: each check reads every Family or every saved
+# page and email, so it runs at most every 5 minutes, not on every poll
+# (#1790).
+RECHECK_MILLISECONDS = 300_000
 
 
 def _principal(request, store, *, final=False, activity=False):
@@ -117,6 +124,7 @@ def _context(health, extra, *, loaded):
         # Clear the halt (ADM-13 PR 4b): None unless a mail sender is halted.
         "clear_halt": extra.get("clear_halt"),
         "poll_interval": POLL_MILLISECONDS,
+        "recheck_interval": RECHECK_MILLISECONDS,
     }
 
 
@@ -125,6 +133,27 @@ def _status_url(loaded):
     url = reverse("admin:system_health_status")
     query = loaded_query(loaded)
     return f"{url}?{urlencode({'loaded': query})}" if query else url
+
+
+def _loaded_reads(service, extra):
+    """Run the two page-load checks: ``(states, context)``.
+
+    Families the form cannot open (#774) and the content to re-save (#838)
+    each read every Family or every saved page and email, so only opening
+    the page and the fragment's slow recheck (``?slow=1``, #1790) run them,
+    never an ordinary poll. ``states`` are the tiles' states for the
+    dashboard, ``context`` the answers and summaries the templates draw.
+    """
+    source_form = source_form_summary(extra["campaign_id"])
+    resave = resave_summary(service, extra["campaign_id"])
+    context = {
+        "source_form_count": source_form,
+        "resave": resave,
+        # Their summaries and states, chosen in one place (#1214).
+        "source_form_tile": source_form_tile(source_form),
+        "resave_tile": resave_tile(resave),
+    }
+    return loaded_states(source_form, resave), context
 
 
 def _read(request, template, *, page):
@@ -136,37 +165,40 @@ def _read(request, template, *, page):
     rendered withholds it. Only the page is audited, with the number of
     problems it showed.
 
-    The fragment accepts one query key, ``loaded``: the page-load tiles'
-    states, which it counts into the overall line (``parse_loaded`` ignores
-    anything else in it). The page accepts none.
+    The fragment accepts two query keys. ``loaded`` carries the page-load
+    tiles' states, which an ordinary poll counts into the overall line
+    (``parse_loaded`` ignores anything else in it). ``slow=1`` asks it to
+    check those tiles again instead (#1790): the answer carries their
+    copies and the address with their new states. Either way the fragment
+    stays passive: no audit row, no renewed idle time. The page accepts
+    no key.
     """
     try:
-        query = filters(request.GET, allowed=set() if page else {"loaded"})
+        query = filters(request.GET, allowed=set() if page else {"loaded", "slow"})
+        if query.get("slow", "1") != "1":
+            raise ValueError("slow takes only 1.")
         service = runtime()
         actor = _principal(request, service.store, activity=page)
         found = read_health(service.store)
         if found is None:
             return _error(ErrorCode.UNAVAILABLE, 503)
         health, extra = found
-        if page:
-            # Families the form cannot open (#774): on page load only, never
-            # in the polled status, so the poll never pays for the scan.
-            source_form = source_form_summary(extra["campaign_id"])
-            # Content to re-save (#838): likewise on page load only.
-            resave = resave_summary(service, extra["campaign_id"])
-            loaded = loaded_states(source_form, resave)
-            context = _context(health, extra, loaded=loaded)
-            context["source_form_count"] = source_form
-            context["resave"] = resave
-            # Their summaries and states, chosen in one place (#1214).
-            context["source_form_tile"] = source_form_tile(source_form)
-            context["resave_tile"] = resave_tile(resave)
+        if page or "slow" in query:
+            loaded, reads = _loaded_reads(service, extra)
+            context = _context(health, extra, loaded=loaded) | reads
+            # Later polls echo these states (live-status-v1.js follows a
+            # fresh data-live-url).
             context["status_url"] = _status_url(loaded)
+        else:
+            context = _context(health, extra, loaded=parse_loaded(query.get("loaded")))
+            # An ordinary poll has no fresh page-load reads, so it draws no
+            # copies of those tiles; the page keeps the last ones.
+            context["loaded_echoed"] = True
+        if page:
             # The Admin chrome reuses this instant instead of reading the clock.
             request._stewardship_display_now = health.checked_at
             response = render(request, template, context)
         else:
-            context = _context(health, extra, loaded=parse_loaded(query.get("loaded")))
             # The fragment needs no Admin chrome, so it skips the context
             # processors (and their queries) a full page render runs.
             response = HttpResponse(render_to_string(template, context))
@@ -430,14 +462,15 @@ def _act(request):
             return _error(ErrorCode.UNAVAILABLE, 503)
         health, extra = found
         # Only the action's region is used, so the answer skips the
-        # page-load tiles' reads; they show as Working in the discarded rest.
-        # A review dialog's action answers with its fragment instead, whose
-        # result draws the region again.
+        # page-load tiles' reads; they show as Working in the discarded rest,
+        # which draws no copies of them (loaded_echoed) that a status region
+        # could take. A review dialog's action answers with its fragment
+        # instead, whose result draws the region again.
         response = render(
             request,
             _DIALOG_ANSWERS.get((region, allow), "stewardship/system-health.html"),
             _context(health, extra, loaded={})
-            | {"status_url": _status_url({}), region: result},
+            | {"status_url": _status_url({}), "loaded_echoed": True, region: result},
             status=status,
         )
         if status != 200:

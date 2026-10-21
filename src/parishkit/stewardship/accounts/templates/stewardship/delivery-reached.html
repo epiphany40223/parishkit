@@ -1,0 +1,3 @@
+{% load i18n %}{% comment %}The outcome panel's count of a delivered email's addresses, when an
+accepted attempt reached only some of them (#806, #1563): the To: line
+below says which.{% endcomment %}{% if recipients.reached %}<p id="email-reached">{% blocktranslate trimmed count total=recipients.reached.1 with reached=recipients.reached.0 %}Delivered to {{ reached }} of {{ total }} address.{% plural %}Delivered to {{ reached }} of {{ total }} addresses.{% endblocktranslate %}</p>{% endif %}

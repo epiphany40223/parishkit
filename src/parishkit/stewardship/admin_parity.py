@@ -6,7 +6,7 @@ inventory" and "Rules for new Admin actions"):
 
 - ``command``: the commands that cover the route, all in the catalog now;
   ``owed`` names the pull request that adds the rest of a partly covered
-  route (``go_live`` reads today, its preview and confirmation come in PR 12);
+  route (``branding_settings`` reads today, its logo uploads are owed);
 - ``pending``: the pull request that will add its commands, which it names
   (an ADM-11 pull request, or a feature's own later slice, "#528 slice 4");
 - ``permanent``: web-only by nature, with the reason;
@@ -55,6 +55,11 @@ NAME_SEARCH = (
 def permanent(reason):
     """Routes that stay web-only, with the reason."""
     return Parity("permanent", (reason,))
+
+
+def deferred(decision):
+    """Routes waiting on a decision, which ``decision`` names."""
+    return Parity("deferred", (decision,))
 
 
 SESSION_CHROME = (
@@ -129,6 +134,9 @@ LEDGER = {
     "schedule_new": command("schedule preview", "schedule confirm"),
     "schedule_edit": command("schedule show", "schedule preview", "schedule confirm"),
     "schedule_delete": command("schedule preview", "schedule confirm"),
+    # The campaign wizard's suggested schedules (#1404 PR 6) are three
+    # ordinary schedules, which a schedule change document adds.
+    "schedule_suggested": command("schedule preview", "schedule confirm"),
     # A test of New and Edit scheduled email's unsaved email text (#446):
     # the command line takes no unsaved text; ``test sample`` tests a saved
     # email, and the content commands save text to test.
@@ -150,13 +158,17 @@ LEDGER = {
     ),
     # The live end-date check validates what ``schedule preview`` reviews.
     "campaign_end_date_check": command("schedule preview"),
-    # The command line has no first-campaign path yet: ``campaign confirm``
-    # edits the current campaign and refuses any added one. When PR 10 adds
-    # one, it must admit the first campaign only through
-    # ``single_campaign.first_campaign_admitted`` (and
-    # ``refuse_campaign_creation(first=True)``), as this page does.
-    "campaign_create": pending("PR 10", "campaign create-preview", "campaign create"),
-    "campaign_clone": pending("PR 10", "campaign clone"),
+    # Create the campaign's Review and Apply (#1899): the first campaign
+    # only, admitted through the page's own ``_admitted`` and ``_scope``
+    # (``single_campaign.first_campaign_admitted``) and confirmed with
+    # ``first_campaign=True``, as the page does.
+    "campaign_create": command("campaign create-preview", "campaign create"),
+    # Copy campaign refuses every request before reading anything until
+    # #145 (navigation rule 10), so a command could only repeat that
+    # refusal; #145 decides whether copying comes back.
+    "campaign_clone": deferred(
+        "#145, the single-campaign change, which retires or restores Copy campaign"
+    ),
     # A Campaign setup step's Continue (#1404), and Pages and emails'
     # editor's Keep as is and go back (one item, #1404 PR 6b), only record
     # the browser stepper's "kept as is" and open the next step page (or
@@ -203,28 +215,42 @@ LEDGER = {
     "artwork_settings": command(
         "artwork show", "artwork remove-preview", "artwork remove"
     ),
-    # Applying logos is owed with the uploads: staged logos belong to the
-    # sign-in that uploaded them, and each pk-admin run is its own sign-in,
-    # so a command cannot apply logos staged in the browser (#463).
-    "branding_settings": command("branding show", owed="PR 10"),
+    # The upload with its review and the dialog's Apply (#1865). Staged
+    # logos belong to the sign-in that uploaded them, which for pk-admin is
+    # the automation session, so branding confirm applies the logos its own
+    # session's branding preview staged, never the browser's.
+    "branding_settings": command(
+        "branding show", "branding preview", "branding confirm"
+    ),
     "hosted_file_upload": permanent(UPLOAD),
     "artwork_upload": permanent(UPLOAD),
     "branding_asset": permanent(IMAGES),
-    # Production transition and withdrawal.
-    # The verified preview with the DNS check and cleanup come in PR 12.
-    "go_live": command("go-live readiness", owed="PR 12"),
-    "go_live_families": pending("PR 12", "go-live families"),
-    "go_live_cleanup": pending(
-        "PR 12", "go-live cleanup-status", "go-live cleanup-retry"
+    # Production transition and withdrawal: the four-step Go live page
+    # (#1585), its actions added by PR 12 (#1809) and named after the
+    # page's labels; ``go-live retry`` retries whichever failed task the
+    # current step offers a Retry for (a stop on Check, a box on Prepare,
+    # mail preparation on Production activation).
+    "go_live": command(
+        "go-live readiness", "go-live preview", "go-live start", "go-live retry"
     ),
-    "go_live_links": pending("PR 12", "go-live links", "go-live links-status"),
-    "production_confirmation": pending(
-        "PR 12", "go-live confirm-preview", "go-live confirm"
+    "go_live_families": command("go-live families"),
+    "go_live_prepare": command(
+        "go-live status",
+        "go-live retry",
+        "go-live refresh-again",
+        "go-live stop",
     ),
-    # The page's "Retry failed mail preparation" control comes in PR 12.
-    "production_progress": command("go-live progress", owed="PR 12"),
-    "production_withdrawal": pending(
-        "PR 12", "go-live withdraw-preview", "go-live withdraw"
+    "go_live_confirm": command(
+        "go-live confirm-preview",
+        "go-live confirm",
+        "go-live stop",
+        "go-live refresh-again",
+    ),
+    "production_progress": command(
+        "go-live progress",
+        "go-live retry",
+        "go-live cancel-preview",
+        "go-live cancel",
     ),
     # Family email history and Pause and resume mail.
     "family_email_progress": command("send progress"),
@@ -320,6 +346,8 @@ LEDGER = {
     # and history, as the Ministry follow-up items are read; its content is
     # Family-level and comes through ``export information``.
     "information_item": command("followup information-show"),
+    # Its Contact details' passive status (#1863): no data of its own.
+    "information_contacts_status": command("followup information-show"),
     # Ministry requests (#1133) is the follow-up queue with the summary's
     # By Ministry counts. ``report ministry`` prints those counts, and
     # ``export ministry`` writes one Ministry's join or leave list, the file
@@ -422,6 +450,7 @@ LEDGER = {
     "source_form": command("report source-form"),
     # Data to fix in ParishSoft (#1011): its section counts only.
     "parishsoft_fixes": command("report data-to-fix"),
+    "parishsoft_fixes_status": command("report data-to-fix"),
     # Operations.
     "background": command("task list"),
     "background_tasks": command("task list"),
@@ -458,6 +487,8 @@ LEDGER = {
     "user_name_suggestions": command("users preview"),
     # The leaders table and its import review (#952 slice 6).
     "user_leader_import": command("users import-leaders"),
+    # The leaders section's passive status (#1863): no data of its own.
+    "user_leaders_status": command("users import-leaders"),
     # Email Ministry leaders (#1592): its review and Apply (#1622).
     "user_leader_emails": command("users email-leaders"),
     # Home's Acknowledge buttons; events list reads what they acknowledge.

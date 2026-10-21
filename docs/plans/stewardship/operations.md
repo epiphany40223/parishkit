@@ -309,7 +309,7 @@ scripted Production upgrade (#460, #461).
    and digests stay unchanged. Add the `local-seed` steps under existing
    identities only (no superuser, no bypass, no new login or grant):
    - phase 1 at the Friday before the start configures dates and all
-     schedules, meets go-live readiness (full refresh, Family test mail,
+     schedules, meets the Go live checks (full refresh, Family test mail,
      provider-check receipts, no pending configuration request) and runs the
      real go-live through a real request with an `authenticated_admin`
      session;
