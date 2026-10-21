@@ -1540,6 +1540,20 @@
     if (loose) fresh.prepend(loose);
     return loose || null;
   };
+  // A successful swap can remove the fields an earlier refusal's summary
+  // (outside every region) links to: Backup encryption key's Start over
+  // after a wrong code (#750). Such an item names nothing any more, so it
+  // goes, and the summary with it once it lists nothing; a summary item
+  // whose field is still shown stays until that field is edited.
+  const dropOrphanedSummaries = () => {
+    document.querySelectorAll("[data-error-summary]").forEach((summary) => {
+      if (summary.closest(REGIONS)) return;
+      summary.querySelectorAll('li a[href^="#"]').forEach((link) => {
+        if (!document.getElementById(link.hash.slice(1))) link.closest("li")?.remove();
+      });
+      if (!summary.querySelector("li")) summary.remove();
+    });
+  };
   // Show an answer as the whole page, as a native submission would have shown
   // it. document.open keeps this window: it erases the old page's event
   // listeners but not its timers, which would keep running beside the new
@@ -1952,6 +1966,7 @@
     } finally {
       swappingFor = null;
     }
+    if (!refused) dropOrphanedSummaries();
     if (!anywhere) syncControls(parsed);
     // Clear filters (#1651) asked the server for the unfiltered view, so the
     // form takes that answer's values, as after a cross-link that sets them.
@@ -6375,7 +6390,9 @@
   //   - [data-editor-mode-panel="advanced"]: the full configuration. It is
   //     only ever hidden, never disabled: its fields carry the configuration
   //     the server validates and stores in either mode (the recorded
-  //     exception to conditional fields).
+  //     exception to conditional fields). An additive editor (#1129) has
+  //     no Basic panel and one Advanced panel per extra tool, each off in
+  //     Basic; its adapter has only toBasic and clearBasic.
   // The editor's script registers an adapter by the editor's name with
   // ParishEditorMode.register(name, adapter). It is looked up by name when
   // an event fires, so it still applies after an in-place answer redraws
@@ -6410,14 +6427,18 @@
     .find((node) => node.closest("[data-editor-modes]") === root);
   const modeChoice = (root, mode) => modeToggle(root)
     ?.querySelector(`input[data-editor-mode-choice][value="${mode}"]`);
-  const modePanel = (root, mode) => [...root.querySelectorAll(
-    `[data-editor-mode-panel="${mode}"]`)].find((node) => node.closest("[data-editor-modes]") === root);
+  // root's panels for mode (not a nested editor's). An additive editor
+  // (New and Edit scheduled email, #1129) has several Advanced panels, one
+  // where each of its tools is drawn; other editors have one of each.
+  const modePanels = (root, mode) => [...root.querySelectorAll(
+    `[data-editor-mode-panel="${mode}"]`)].filter((node) => node.closest("[data-editor-modes]") === root);
+  const modePanel = (root, mode) => modePanels(root, mode)[0];
   // The Advanced fields that are in error: marked by the server or a live
   // check, or invalid in the browser's own terms (an unreadable time). A
   // field only waiting for its group's first choice (data-require-one, such
   // as Parish logos' sizes with no file chosen) is incomplete, not in error.
-  const advancedErrors = (root) => [...(modePanel(root, "advanced")
-    ?.querySelectorAll("input, select, textarea") || [])]
+  const advancedErrors = (root) => modePanels(root, "advanced")
+    .flatMap((panel) => [...panel.querySelectorAll("input, select, textarea")])
     .filter((node) => node.getAttribute("aria-invalid") === "true"
       || node.hasAttribute("data-field-error") || node.hasAttribute("data-client-error")
       || (node.willValidate && !node.validity.valid
@@ -7184,6 +7205,10 @@
     const control = (name) => panel.querySelector(`[data-repeat="${name}"]`);
     const update = () => {
       const reminder = kind.value === "reminder";
+      // Repeat is a Reminder's: with another mail type its panel is hidden,
+      // so the box is unticked rather than posted hidden (conditional
+      // fields), and it does not count as a tool in use for Basic.
+      if (!reminder) enabled.checked = false;
       const on = reminder && enabled.checked;
       panel.hidden = !reminder;
       rule.hidden = !on;
@@ -7543,7 +7568,7 @@
   // source). The one response also carries the generated plain text, relayed
   // to the plain-text preview as "stewardship:source-preview", and a
   // plain-language list of removed markup, shown as text (never as markup).
-  function liveSource(form, visual, editor, source) {
+  function liveSource(form, visual, editor, source, removing) {
     const url = visual.dataset.previewUrl;
     const csrf = form.querySelector('input[name="csrfmiddlewaretoken"]');
     const updating = visual.querySelector("[data-visual-updating]");
@@ -7559,11 +7584,14 @@
     let controller = null;
     const tools = [...form.querySelectorAll("[data-content-tag]")];
     // A stale pane accepts neither typing nor formatting: either would call
-    // sync() and overwrite newer source with the stale pane's content.
+    // sync() and overwrite newer source with the stale pane's content. Once
+    // the newest answer is in, the pane stays read-only while "Remove this
+    // selected content" is ticked (removing()).
     const busy = (value) => {
       visual.setAttribute("aria-busy", String(value));
-      editor.contentEditable = value ? "false" : "true";
-      tools.forEach((button) => { button.disabled = value; });
+      const locked = value || removing();
+      editor.contentEditable = locked ? "false" : "true";
+      tools.forEach((button) => { button.disabled = locked; });
       updating.hidden = !value;
     };
     const refresh = async () => {
@@ -7635,6 +7663,52 @@
       form.dispatchEvent(new Event("stewardship:html-changed"));
     };
     editor.addEventListener("input", sync);
+    // While "Remove this selected content" is ticked the HTML source is
+    // greyed and not sent (data-enabled-when, content_forms), so the pane
+    // that writes it stops accepting edits too, and its formatting buttons
+    // are unavailable (#563, #750). It keeps its size: only its colour
+    // changes (ui-v1.css), so nothing moves. While the pane waits for the
+    // sanitizer (aria-busy) liveSource's busy() decides, with the same rule.
+    const clear = form.elements.namedItem("clear");
+    const removing = () => clear instanceof HTMLInputElement && clear.checked && !clear.disabled;
+    const lock = () => {
+      const removed = removing();
+      if (removed) editor.setAttribute("aria-disabled", "true");
+      else editor.removeAttribute("aria-disabled");
+      if (visual.getAttribute("aria-busy") === "true") return;
+      editor.contentEditable = removed ? "false" : "true";
+      form.querySelectorAll("[data-content-tag]").forEach((button) => { button.disabled = removed; });
+    };
+    if (clear instanceof HTMLInputElement) {
+      clear.addEventListener("change", lock);
+      window.addEventListener("pageshow", lock);
+    }
+    // A Preview refused for the values (the review dialog, #750) marks the
+    // HTML source, which is folded away while this pane is in use, so its
+    // message is shown here too, as the page draws it on a load (#563):
+    // the answer's own list beside the pane, which clears on the next edit.
+    form.addEventListener("review-refused", (event) => {
+      const fresh = event.detail?.getElementById?.("visual-content-error");
+      form.querySelector("#visual-content-error")?.remove();
+      editor.removeAttribute("aria-invalid");
+      editor.removeAttribute("aria-describedby");
+      if (!fresh) return;
+      editor.after(document.importNode(fresh, true));
+      editor.setAttribute("aria-invalid", "true");
+      editor.setAttribute("aria-describedby", "visual-content-error");
+    });
+    // An edit of the HTML in either place clears the refusal from both: the
+    // pane's copy, and the HTML source's mark and error summary item, which
+    // the source's own handler never clears when sync() writes its value.
+    const clearHtmlRefusal = () => {
+      if (source.hasAttribute("data-field-error")) clearFieldError(source);
+      if (editor.getAttribute("aria-invalid") !== "true") return;
+      form.querySelector("#visual-content-error")?.remove();
+      editor.removeAttribute("aria-invalid");
+      editor.removeAttribute("aria-describedby");
+    };
+    editor.addEventListener("input", clearHtmlRefusal);
+    source.addEventListener("input", clearHtmlRefusal);
     // Shift+Enter is a line break (<br>) inside the paragraph everywhere.
     // Chrome, Firefox and Linux WebKit do that natively, but macOS WebKit
     // (and presumably Safari) maps Shift+Return to the same "insert newline"
@@ -7648,7 +7722,8 @@
           || event.altKey || event.ctrlKey || event.metaKey) return;
       if (document.execCommand("insertLineBreak")) event.preventDefault();
     });
-    liveSource(form, visual, editor, source);
+    liveSource(form, visual, editor, source, removing);
+    lock();
     const selectedRange = () => {
       const selection = window.getSelection();
       if (!selection || !selection.rangeCount) return null;
@@ -7805,6 +7880,28 @@
       // does not replace it.
       edited = true;
     });
+  });
+
+  // New and Edit scheduled email's Basic and Advanced modes (#1129; UX
+  // conventions, "Basic and Advanced modes", additive editors). Both modes
+  // show the schedule's fields; Advanced adds Repeat and "Edit this
+  // schedule's email", each an Advanced panel where it is drawn. Basic is
+  // the page with both off, so Advanced → Basic switches at once while
+  // they are off and otherwise asks. Switch to Basic unticks them through
+  // their own change events, so the repeat rule and the email fields close
+  // as if the reader had unticked them, and nothing hidden is posted.
+  // A Repeat ticked under another mail type is unticked as it hides (the
+  // repeat script), so a tool in use is always one on screen.
+  const scheduleTools = (root) => [...root.querySelectorAll(
+    'input[data-repeat="enabled"], input[name="edit_email"]')];
+  window.ParishEditorMode.register("schedule-entry", {
+    toBasic: (root) => scheduleTools(root).every((box) => !box.checked),
+    clearBasic(root) {
+      scheduleTools(root).filter((box) => box.checked).forEach((box) => {
+        box.checked = false;
+        box.dispatchEvent(new Event("change", {bubbles: true}));
+      });
+    },
   });
 
   // "Send a test of this text" under a scheduled email's own email (#446,
@@ -7977,7 +8074,18 @@
       text.focus();
     };
     box.addEventListener("change", () => { show(); if (box.checked) refresh(); });
-    panel.querySelector("[data-edit-plain-text]")?.addEventListener("click", edit);
+    const editButton = panel.querySelector("[data-edit-plain-text]");
+    editButton?.addEventListener("click", edit);
+    // While "Remove this selected content" is ticked the generated-text box
+    // and the plain text are greyed (data-enabled-when), so "Edit plain
+    // text" is unavailable with them; unticking gives it back (#563, #750).
+    const clear = form.elements.namedItem("clear");
+    if (editButton && clear instanceof HTMLInputElement) {
+      const lockEdit = () => { editButton.disabled = clear.checked && !clear.disabled; };
+      clear.addEventListener("change", lockEdit);
+      window.addEventListener("pageshow", lockEdit);
+      lockEdit();
+    }
     // Typing into the read-only generated text means "let me edit it".
     text.addEventListener("keydown", (event) => {
       if (!box.checked || event.ctrlKey || event.metaKey || event.altKey) return;

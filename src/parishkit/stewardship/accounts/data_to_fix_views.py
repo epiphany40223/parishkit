@@ -47,11 +47,13 @@ from parishkit.stewardship.web.contracts import (
     filters,
     validation_response,
 )
+from parishkit.stewardship.web.refusals import AccessDenied
 from parishkit.stewardship.web.report_errors import report_unavailable
 
 from . import admin_context, admin_navigation
 from .authentication import denial, runtime
 from .policy import Capability, allows
+from .role_refusal import role_denied_for
 from .runtime_models import SystemConfiguration
 from .sessions import authenticated_admin
 
@@ -149,8 +151,10 @@ def _principal(request, store, *, activity=True, read_only=False):
         activity=activity and not read_only,
         read_only=read_only,
     )
+    if principal is None:
+        raise AccessDenied("Access is unavailable.")
     if not visible_sections(principal):
-        raise PermissionError("Data to fix in ParishSoft is unavailable.")
+        raise role_denied_for("staff")
     return principal
 
 

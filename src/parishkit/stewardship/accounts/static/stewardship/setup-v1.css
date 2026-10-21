@@ -31,7 +31,8 @@
 .setup-continue:hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--paper); }
 /* Source-load progress: each downloaded collection (the parts of the load
    are stage boxes, .stage-boxes in ui-v1.css). The status word always
-   carries the meaning; the mark only reinforces it. */
+   carries the meaning; the mark (a bullet, the working spinner or a
+   check) only reinforces it. */
 .setup-load-collections { list-style: none; margin: 0 0 1rem; padding: 0; }
 .setup-load-collections li {
   display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
@@ -43,7 +44,11 @@
   font-weight: 700; content: "\2022"; color: var(--muted);
 }
 .setup-load-done::before { content: "\2713" !important; color: var(--accent) !important; }
-.setup-load-active::before { content: "\25B8" !important; color: var(--ink) !important; }
+/* The active collection shows the working spinner (components/spinner.html,
+   ui-conventions "Working spinner") in its mark's slot, as an In progress
+   stage box does, so nothing moves when it comes or goes (#1847). */
+.setup-load-active::before { content: none !important; }
+.setup-load-collections li > .spinner { --spinner-ink: currentColor; position: absolute; left: calc(.55rem + (1rem - 1em) / 2); top: calc(.5rem + (1.6em - 1em) / 2); top: calc(.5rem + (1lh - 1em) / 2); }
 .setup-load-active { background: var(--accent-soft); font-weight: 600; }
 .setup-load-waiting .setup-load-label { color: var(--muted); }
 .setup-load-status { font-size: .925rem; font-variant-numeric: tabular-nums; }

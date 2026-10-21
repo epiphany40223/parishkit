@@ -566,7 +566,7 @@ def _stage_cards(view, item, counts):
     A stream in ``STAGE_LINKED`` links its page filtered to each stage
     (Ministry To enter by hand is Ministry requests at that Stage, where
     Roster changes to enter was folded, R39 finding 2). Census Ready to
-    update is Publish to ParishSoft instead, the update run's page, which
+    update is Update ParishSoft instead, the update run's page, which
     is opened from Census changes.
     """
     cards = []
@@ -575,7 +575,7 @@ def _stage_cards(view, item, counts):
             continue
         url = item.url
         if url and stage is Stage.READY_TO_UPDATE:
-            url = reverse("admin:census_publication")
+            url = reverse("admin:update_parishsoft")
         elif url and view.stream in STAGE_LINKED:
             url = f"{url}?stage={stage.value}"
         cards.append(

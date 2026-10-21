@@ -172,7 +172,7 @@ def test_active_and_paused_steps_carry_the_open_counts():
         }
     )
     active = home_steps.next_steps("active", entries, mail_unknown=split(2, 0))
-    assert labels(active) == [*WORK, "Family email progress", "Sent mail"]
+    assert labels(active) == [*WORK, "Mail queue", "Sent mail"]
     assert (active[0].url, active[0].count, str(active[0].note)) == (
         "/census_changes/",
         4,

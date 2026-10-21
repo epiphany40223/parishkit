@@ -7,6 +7,7 @@ only the commands add.
 """
 
 import json
+from dataclasses import replace
 from decimal import Decimal
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -17,7 +18,11 @@ from parishkit.stewardship import admin_cli, admin_pledges
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.admin_followup import InvalidFollowup
 from parishkit.stewardship.reports import pledge_review_views as views
-from parishkit.stewardship.reports.pledge_review import RECORDED, bulk_key_for
+from parishkit.stewardship.reports.pledge_review import (
+    RECORDED,
+    bulk_key_for,
+    version_of,
+)
 from parishkit.stewardship.responses.financial import FREQUENCIES
 
 from .test_admin_cli import run
@@ -63,6 +68,7 @@ def test_the_command_line_vocabularies_are_the_pages():
         "Reviewer's frequency": "reviewer_frequency",
         "Annual pledge to enter": "annual_pledge_to_enter",
         "Frequency to enter": "frequency_to_enter",
+        "ParishSoft annual pledge": "parishsoft_annual_pledge",
         "Stage": "stage",
         "Decision": "decision",
         "Entered by": "entered_by",
@@ -78,7 +84,8 @@ def test_each_record_is_the_csv_row_with_its_item_version_and_actions():
     """The cells are the files' under fixed keys; the item, version and the
     actions the reader's role and the row's stage offer are the row's."""
     entered = pledge_row()
-    fresh = pledge_row(item())
+    # A refresh check counts in the version, as on the page.
+    fresh = pledge_row(replace(item(), checks=2))
     found = records([entered, fresh], STAFF)
     cells = views.export_rows([entered, fresh], ZoneInfo("America/New_York"))
     for record, values, source in zip(found, cells, (entered, fresh), strict=True):
@@ -90,7 +97,8 @@ def test_each_record_is_the_csv_row_with_its_item_version_and_actions():
         }
         assert [record[key] for key in admin_pledges.JSONL_KEYS] == list(values)
         assert record["item_id"] == str(source["item"].submission_id)
-        assert record["version"] == source["item"].sequence
+        assert record["version"] == version_of(source["item"])
+    assert found[1]["version"] == 2
     assert found[0]["actions"] == ["back_to_review", "entered_by_hand"]
     assert found[1]["actions"] == ["accept", "edit", "ignore"]
     assert found[0]["annual_pledge_to_enter"] == "$1,300.00"
@@ -103,10 +111,28 @@ def test_each_record_is_the_csv_row_with_its_item_version_and_actions():
     assert records([], STAFF) == []
 
 
-def test_an_entered_pledge_offers_no_action():
-    """Entered by hand is final: its row offers nothing."""
-    row = pledge_row(item("entered_by_hand", review("accepted", entered=True)))
-    assert records([row], STAFF)[0]["actions"] == []
+def test_a_terminal_pledge_offers_back_to_review():
+    """Entered by hand, Entered incorrectly and Confirmed offer Back to review
+    (#1840), as the page does; Entered by hand again stays withheld (#1737),
+    and a leader is offered nothing."""
+    marked = review("accepted", entered=True)
+    rows = [
+        pledge_row(item("entered_by_hand", marked)),
+        pledge_row(
+            item(
+                "entered_incorrectly",
+                marked,
+                base="entered_by_hand",
+                check="entered_incorrectly",
+                observed="900",
+            )
+        ),
+        pledge_row(item("confirmed", None, base="to_review", check="confirmed")),
+    ]
+    assert [record["actions"] for record in records(rows, STAFF)] == [
+        ["back_to_review"]
+    ] * 3
+    assert all(not record["actions"] for record in records(rows, LEADER))
 
 
 @pytest.mark.parametrize(

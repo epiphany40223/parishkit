@@ -71,10 +71,13 @@ def page(browser, path=USERS):
 
 
 def row(body, email):
-    """The Users table row whose header cell is this address."""
+    """The Users table row whose header cell is this address.
+
+    The address links the user's Timeline (#1866).
+    """
     found = re.findall(
-        r'<tr>\s*<th scope="row"><span class="cell-ellipsis" '
-        rf'title="{re.escape(email)}">.*?</tr>',
+        r'<tr>\s*<th scope="row"><a href="/admin/users/[0-9a-f-]+/timeline/" '
+        rf'class="cell-ellipsis" title="{re.escape(email)}">.*?</tr>',
         body,
         flags=re.S,
     )

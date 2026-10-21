@@ -298,7 +298,7 @@ def _missing():
 
 
 def table_rows(rows, users, own_email=None):
-    """Add each row's Edit address and whether it may be deleted.
+    """Add each row's Edit and Timeline addresses and whether it may be deleted.
 
     The reader's own row and the only Administrator's offer no Delete
     (#563); the reason is said once under the table (the only Administrator
@@ -312,6 +312,8 @@ def table_rows(rows, users, own_email=None):
         | {
             "role_label": ROLE_LABELS[row["role"]],
             "edit_url": reverse("admin:user_edit", args=[row["id"]]),
+            # The row's Email opens the user's Timeline (#1866).
+            "timeline_url": reverse("admin:user_timeline", args=[row["id"]]),
             "deletable": row["id"] not in own
             and not only_administrator(users, row["id"]),
             # The delete dialog names the user's address, Name and role.
@@ -505,6 +507,10 @@ def _entry_context(
         "apply_url": reverse("admin:users"),
         "list_url": reverse("admin:users"),
         "names_url": reverse("admin:user_name_suggestions"),
+        # Edit user links the user's Timeline (#1866).
+        "timeline_url": None
+        if user_id is None
+        else reverse("admin:user_timeline", args=[user_id]),
     }
 
 

@@ -1,4 +1,4 @@
-"""Family email progress in a real browser (#413): accessible, live and quiet."""
+"""The Mail queue in a real browser (#1562, #413): accessible, live and quiet."""
 
 from datetime import timedelta
 from itertools import pairwise
@@ -12,8 +12,8 @@ from .waits import visible
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
-REGION = '[data-live-status="send-progress"]'
-ANNOUNCER = '[data-live-announcer="send-progress"]'
+REGION = '[data-live-status="mail-queue"]'
+ANNOUNCER = '[data-live-announcer="mail-queue"]'
 
 
 @pytest.mark.parametrize("width", [320, 1280])
@@ -48,6 +48,11 @@ def test_progress_pages_are_accessible_at_phone_and_desktop_widths(
         # Counts change on every poll, so the region itself never speaks.
         assert page.locator(REGION).get_attribute("aria-live") is None
         assert page.get_by_role("link", name="Sent mail").count() >= 1
+        # Four headline tiles and one row per kind Sent mail lists.
+        tiles = page.get_by_role("list", name="Emails waiting to go out")
+        assert tiles.get_by_role("listitem").count() == 4
+        table = page.get_by_role("table", name="Queued emails by kind")
+        assert table.locator("tbody tr").count() >= 8
 
 
 def test_the_running_page_follows_the_send_and_announces_only_its_end(
@@ -62,6 +67,10 @@ def test_the_running_page_follows_the_send_and_announces_only_its_end(
     assert region.get_attribute("data-live-pending") is not None
     assert region.get_attribute("data-live-interval") == "5000"
     visible(page.get_by_text("500 of 1,100 emails finished (45%)"))
+    visible(page.get_by_role("link", name="1 email queued in Testing"))
+    kinds = page.get_by_role("table", name="Queued emails by kind")
+    top = kinds.bounding_box()["y"]
+    visible(kinds.get_by_role("link", name="Initial invitation"))
     # The first rendering is not announced; nothing has changed yet.
     assert page.locator(ANNOUNCER).text_content() == ""
     # The fixture's status fragment reports the send as finished.
@@ -73,6 +82,12 @@ def test_the_running_page_follows_the_send_and_announces_only_its_end(
     ).to_be_visible(timeout=20000)
     assert region.get_attribute("data-live-pending") is not None
     visible(page.get_by_text("Last send: Invitation email"))
+    # The queue emptied: the other mode's line and the Kind links went, and
+    # nothing moved (no layout shift): the line kept its height and every
+    # kind kept its row, its name now plain text.
+    assert page.get_by_role("link", name="1 email queued in Testing").count() == 0
+    assert kinds.get_by_role("link").count() == 0
+    assert kinds.bounding_box()["y"] == top
     assert page.get_by_role("progressbar").count() == 0
     assert (
         page.locator(ANNOUNCER).text_content() == "No Family email send is in progress."

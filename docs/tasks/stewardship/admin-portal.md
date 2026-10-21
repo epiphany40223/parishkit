@@ -1129,6 +1129,24 @@ no current campaign, the plain-text preview equal to the page's answer
 with no event and no renewed session, a read-only session and Staff
 denied, an ended session) and the unchanged content page suites.
 
+Another part (#1873) adds the `--edit` mode of `content preview` and
+`content confirm`, the content editor's Preview changes and its review
+dialog's Apply, in `parishkit.stewardship.admin_content`: the fields come
+as one JSON object on standard input (`editor_data`), are bound to the
+page's own `ContentForm` and built through the editor's own change (moved
+into `content_views.review_change` and `preview_salt`, which the editor now
+calls), with the existing `admin_cmd_content_confirm` and no schema change;
+proven by `tests/stewardship/test_admin_content_changes.py` (catalog flags,
+usage errors, the fields' defaults and refusals, the salt),
+`tests/stewardship/test_admin_content.py` (the ledger owes nothing),
+`tests/stewardship/database/test_admin_content_edit_cli_postgresql.py` (a
+page changed, confirmed and installed with one event and a repeat, an
+email's switched schedules, the form's refusals at their fields, no
+change, removing a sent email, a stale version, an unknown slot or
+revision, a removal without a subject, another editor's, the Delete's or
+an altered token, a held campaign, a read-only session and Staff denied,
+an ended session) and the unchanged content page suites.
+
 Another part adds `integration list`, `integration show` and `integration
 status`, the Integrations pages' reads, in
 `parishkit.stewardship.admin_integrations`, through the pages' own helpers

@@ -26,6 +26,7 @@ from uuid import uuid4
 
 from django.core import signing
 from django.shortcuts import render
+from django.urls import reverse
 from django.utils.crypto import constant_time_compare, salted_hmac
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.debug import sensitive_variables
@@ -59,6 +60,18 @@ PROOF_SALT = "stewardship-backup-key-proof-v1"
 # Long enough to reach the key machine, short enough that a stolen page or
 # session is not a standing authority to change the key.
 PROOF_SECONDS = 900
+
+WRONG_CODE = _(
+    "That code does not match. Check that you used the private key that "
+    "belongs to this public key, and type the code exactly as backup-prove "
+    "printed it."
+)
+# PROOF_SECONDS, in the reader's words.
+EXPIRED = _(
+    "This code has expired: a code works for 15 minutes after Continue. "
+    "Choose Start over and paste the public key again, then run "
+    "backup-prove on the new line."
+)
 
 # A pasted key or typed code is short, and a signed intent a few hundred
 # characters; anything longer is not one.
@@ -189,13 +202,16 @@ def start_proof(actor, configuration, recipient):
     return challenge, intent
 
 
-def load_intent(actor, configuration, intent):
+def load_intent(actor, configuration, intent, *, expiring=True):
     """Open a signed intent that belongs to this Administrator and settings.
 
     It cannot be replayed by someone else, across another settings change or
-    after ``PROOF_SECONDS``.
+    after ``PROOF_SECONDS`` (``signing.SignatureExpired``). ``expiring=False``
+    skips only the age check, to draw an expired challenge again with its
+    refusal; the signature, Administrator and settings are still checked.
     """
-    value = signing.loads(intent, salt=PROOF_SALT, max_age=PROOF_SECONDS)
+    max_age = PROOF_SECONDS if expiring else None
+    value = signing.loads(intent, salt=PROOF_SALT, max_age=max_age)
     if value["actor"] != str(actor.identity):
         raise PermissionError("The key check belongs to another Administrator.")
     if value["base"] != configuration.active_configuration.digest:
@@ -255,8 +271,12 @@ def _patch(configuration, record, text):
     ]
 
 
-def _render(request, configuration, *, status=200, **context):
-    """The key page: the key in use, and whichever step of a change is next."""
+def _render(request, configuration, *, status=200, codes=(), **context):
+    """The key page: the key in use, and whichever step of a change is next.
+
+    ``codes`` are a refusal's closed error codes for the refusal log, after
+    the status's own (#1444).
+    """
     # Pasting and proving a new key are the first step of the change (#196).
     admin_navigation.place(request, flow="change", step="edit")
     # A refusal shows at its field and in the page's error summary, which
@@ -277,14 +297,17 @@ def _render(request, configuration, *, status=200, **context):
             "breadcrumb_label": LABEL,
             "current": key_status(configuration),
             "errors": errors,
+            # Every step posts to, and the review dialog's Apply redraws
+            # from, the page's own address (#750).
+            "page_url": reverse("admin:integration_settings", args=[TARGET]),
             **context,
         },
         status=status,
     )
     if status == 400:
         response.stewardship_safe_error = True
-        # The refusal log's code for this page's own refusal (#1444).
-        with_default_code(response)
+        # The refusal log's codes for this page's own refusal (#1444).
+        with_default_code(response, *codes)
     return response
 
 
@@ -325,17 +348,20 @@ def review_change(service, configuration, actor, text):
 
 
 def _review(request, service, configuration, actor, text):
-    """Show the proved change for confirmation: old and new key IDs."""
+    """The review dialog's answer to a proved code: the key change to apply.
+
+    ``integration-review.html``'s compact review (#750): the old and new key
+    fingerprints, and the signed preview the dialog's Apply posts back to
+    this page. It is a fragment the dialog shows, never a page of its own.
+    """
     before, after, token = review_change(service, configuration, actor, text)
-    admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
-        "stewardship/integration-preview.html",
+        "stewardship/integration-review.html",
         {
+            "kind": "backup_key",
             "target": TARGET,
             "label": LABEL,
-            "breadcrumb_label": LABEL,
-            "configuration": configuration,
             "changes": [
                 {
                     "label": _("Key fingerprint"),
@@ -353,7 +379,8 @@ def backup_key_page(request, service, actor):
 
     - GET shows the key in use and the field for a new public key.
     - ``challenge`` checks the pasted key and shows its sealed code.
-    - ``preview`` checks the typed code and shows the change to confirm.
+    - ``preview`` checks the typed code and answers the review dialog with
+      the change to apply (#750).
     - ``confirm`` records the configuration request, like any settings
       change.
     """
@@ -389,21 +416,40 @@ def backup_key_page(request, service, actor):
         )
     form_action(request.POST, preview_fields={"intent", "code"})
     intent = _field(request, "intent", MAX_INTENT)
-    text = finish_proof(actor, configuration, intent, _field(request, "code"))
+    try:
+        text = finish_proof(actor, configuration, intent, _field(request, "code"))
+    except signing.SignatureExpired:
+        # Too late for this challenge: refused at the code like a wrong one,
+        # in place, saying how to get a new challenge (#750). Its signature
+        # was checked; only its age is not, to draw it again.
+        return _refuse_code(
+            request, configuration, actor, intent, "code_expired", expiring=False
+        )
     if text is None:
         # Show the same challenge again: its code is still the right one.
-        value = load_intent(actor, configuration, intent)
-        return _render(
-            request,
-            configuration,
-            status=400,
-            new_fingerprint=value["fingerprint"],
-            challenge=value["challenge"],
-            intent=intent,
-            code_error=_(
-                "That code does not match. Check that you used the private key "
-                "that belongs to this public key, and type the code exactly as "
-                "backup-prove printed it."
-            ),
-        )
+        return _refuse_code(request, configuration, actor, intent, "code_mismatch")
     return _review(request, service, configuration, actor, text)
+
+
+# Each refusal of a typed code: its closed error code and its words.
+CODE_REFUSALS = {"code_mismatch": WRONG_CODE, "code_expired": EXPIRED}
+
+
+def _refuse_code(request, configuration, actor, intent, code, *, expiring=True):
+    """The challenge drawn again with refusal ``code`` at the code field.
+
+    Status 400, so the review dialog takes it as a field refusal: the dialog
+    stays shut and the change region's status line says why (#750). The
+    refusal log records ``code`` after the status's own.
+    """
+    value = load_intent(actor, configuration, intent, expiring=expiring)
+    return _render(
+        request,
+        configuration,
+        status=400,
+        codes=(code,),
+        new_fingerprint=value["fingerprint"],
+        challenge=value["challenge"],
+        intent=intent,
+        code_error=CODE_REFUSALS[code],
+    )
