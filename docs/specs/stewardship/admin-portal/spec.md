@@ -6293,7 +6293,7 @@ keep the filters. The summary is not filtered.
 **Reads and audit.** One read-only snapshot: the user's records in every
 configuration and the activations, the Google accounts of the address, their
 audit records through the audit's `(actor_id, created_at)` index (frozen
-migration 0240, provisional number, which adds that index), the emails
+migration 0152, which adds that index), the emails
 through the Administrator-only address read of
 [Sent mail](#sent-mail) (frozen migration 0116), and the leader scope. Each
 view sends `Cache-Control: no-store` and records one `user_timeline_viewed`

@@ -67,7 +67,7 @@ class AuditEvent(ImmutableRecord):
             # id), with a keyset cursor on the same pair (#308).
             models.Index(fields=["created_at", "id"], name="audit_event_created_id"),
             # A user's timeline reads the records of the user's Google
-            # accounts by actor, in time order (#1866, frozen file 0240).
+            # accounts by actor, in time order (#1866, frozen file 0152).
             models.Index(
                 fields=["actor_id", "created_at"], name="audit_event_actor_time"
             ),

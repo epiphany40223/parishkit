@@ -2,7 +2,7 @@
 
 The page reads one user's records in every configuration, the Google
 accounts of the address and their audit records (through
-``audit_event_actor_time``, frozen migration 0240), and the emails meant for
+``audit_event_actor_time``, frozen migration 0152), and the emails meant for
 the address through Sent mail's Administrator-only read (0116). These tests
 check what the page shows, who may open it, its audit, its filters and
 paging, the Users page's links, ``pk-admin users timeline``, the index the
@@ -36,7 +36,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 FROZEN = (
     Path(__file__).resolve().parents[3]
-    / "src/parishkit/stewardship/schema/migrations/0240_audit_actor_time.sql"
+    / "src/parishkit/stewardship/schema/migrations/0152_audit_actor_time.sql"
 ).read_text(encoding="utf-8")
 CHECK = FROZEN[FROZEN.index("DO $check$") :]
 # One of the Family's two heads in ``family_message``: a user here too.
@@ -262,7 +262,7 @@ def test_the_migration_check_accepts_the_catalog():
 def test_the_migration_check_refuses_a_missing_or_different_index(statement):
     """The DO block raises for a missing index or a changed one."""
     with (
-        pytest.raises(DatabaseError, match="Migration 0240"),
+        pytest.raises(DatabaseError, match="Migration 0152"),
         transaction.atomic(),
         connection.cursor() as cursor,
     ):

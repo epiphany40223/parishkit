@@ -27,7 +27,7 @@ that holds the record. Its lines come from four sources, each one read:
 The ``*_lines`` and ``role_changes`` functions are pure, so the wording and
 the order are unit tested without a database. The reads run in the page's
 read-only snapshot and take no lock. The audit records are read through
-``audit_event_actor_time`` (frozen migration 0240), the emails by id. The
+``audit_event_actor_time`` (frozen migration 0152), the emails by id. The
 role history reads the record's rows by ``record_id``, which no index
 leads with (the unique key leads with the configuration): one row per
 user per configuration version is a few thousand rows at parish scale,
@@ -345,7 +345,7 @@ def audit_records(accounts):
     """The audit read: ``(instant, type, outcome)`` of the accounts' records.
 
     Oldest first, without page views, through ``audit_event_actor_time``
-    (frozen migration 0240). Only each record's recorded ``outcome`` is
+    (frozen migration 0152). Only each record's recorded ``outcome`` is
     taken from its context row, never the rest of the context.
     """
     return (

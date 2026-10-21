@@ -1,7 +1,7 @@
 """Forward migration: the audit index the user timeline reads by (#1866).
 
-Its SQL is the frozen file ``schema/migrations/0240_audit_actor_time.sql``
-(prefix 0240, a provisional number assigned centrally at merge), read whole
+Its SQL is the frozen file ``schema/migrations/0152_audit_actor_time.sql``
+(prefix 0152, a number assigned centrally at merge), read whole
 and never parsed. It creates ``audit_event_actor_time``, a B-tree on the
 audit records' ``(actor_id, created_at)``, so a user's timeline reads the
 records of the user's Google accounts without scanning the whole audit
@@ -24,7 +24,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0240_audit_actor_time.sql"
+    / "0152_audit_actor_time.sql"
 )
 
 

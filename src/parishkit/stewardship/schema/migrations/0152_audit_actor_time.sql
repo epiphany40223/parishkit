@@ -1,5 +1,5 @@
--- Frozen forward migration file 0240 (the repository-wide file sequence;
--- provisional number, assigned centrally at merge): the audit index the user
+-- Frozen forward migration file 0152 (the repository-wide file sequence;
+-- number assigned centrally at merge): the audit index the user
 -- timeline reads by (#1866, part of #1570; admin portal spec, User
 -- timeline). This file is installed by its Django migration in the audit
 -- app and must never change once released;
@@ -40,7 +40,7 @@ BEGIN
           AND i.relname='audit_event_actor_time'
           AND x.indisvalid AND x.indisready
           AND pg_get_indexdef(i.oid)='CREATE INDEX audit_event_actor_time ON public.stewardship_audit_event USING btree (actor_id, created_at)') THEN
-        RAISE EXCEPTION 'Migration 0240 (audit actor index) is not installed as declared';
+        RAISE EXCEPTION 'Migration 0152 (audit actor index) is not installed as declared';
     END IF;
 END
 $check$;

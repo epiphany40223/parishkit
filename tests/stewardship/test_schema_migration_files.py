@@ -429,8 +429,8 @@ FROZEN = {
     "0132_refresh_checks.sql": (
         "850b796b28d7cd472fee463fc6e119b73c33150ca920c899d1d69d400f84ed9d"
     ),
-    "0240_audit_actor_time.sql": (
-        "24affe0a21ece111aaee7d3e860f9285d43f734e40088cc5c00674bee9f5568b"
+    "0152_audit_actor_time.sql": (
+        "1f7ac38ef615a918afcc7a6ff87d743484b013b5af31b5174b743c87868b96fb"
     ),
 }
 

@@ -440,9 +440,8 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # again) and replaces three bodies (0124's intake check, 0114's state guard,
 # the baseline's request guard) that no closure file installs again, so
 # nothing else is registered.
-# 0240 (#1866, provisional number) creates only the audit actor index, only
-# when missing, and replaces nothing; the swap drops none of it, so nothing
-# is registered.
+# 0152 (#1866) creates only the audit actor index, only when missing, and
+# replaces nothing; the swap drops none of it, so nothing is registered.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
