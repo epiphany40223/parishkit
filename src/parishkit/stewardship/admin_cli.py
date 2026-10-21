@@ -33,8 +33,9 @@ The session commands (``login start``, ``login wait``, ``logout``,
 status commands (``status``, ``task list``, ``task show``, ``send
 progress``, ``send history``, ``schedule show``, ``go-live readiness`` and
 ``go-live progress``) follow (PR 3), built on the read models of
-``admin_reads``. ``task show``, ``send progress`` and ``go-live progress``
-take ``--watch``. The schedule change commands (``schedule preview`` and
+``admin_reads``; ``mail queue`` replaced ``send progress`` (#1562).
+``task show``, ``mail queue`` and ``go-live progress`` take ``--watch``.
+The schedule change commands (``schedule preview`` and
 ``schedule confirm``, in ``admin_changes``) and ``config request show``
 (with ``--watch``) follow (PR 4), then ``task retry`` and the delivery
 commands (PR 9, in ``admin_operations``), ``logs list`` and ``logs
@@ -51,32 +52,54 @@ delete`` and ``files rename`` (PR 10, in ``admin_hosted_files``),
 and ``content confirm`` (PR 10, in
 ``admin_content``), ``integration list``, ``integration show``, ``integration status``
 and ``integration schedule-preview`` (PR 10, in ``admin_integrations``),
+``integration key replace`` (PR 10, in ``admin_integration_keys``), which
+takes a key from the host wrapper on the line after the preamble,
 ``parish show``, ``ministries list``, ``branding show`` and ``campaign
 shares`` (PR 10, in ``admin_settings``), ``parish preview`` and
 ``parish confirm`` (PR 10, in ``admin_parish``), and ``events list`` and
 ``events acknowledge`` (PR 11, in ``admin_events``). A
 command that streams a file (``logs export``, ``export census``,
-``export limitations``, ``export roster`` and ``export download
---stream``) writes the file's bytes, and nothing else, to standard output,
-and its document to standard error. Other areas join the same
+``export limitations``, ``export roster``, ``export pledges``, ``followup
+export`` and ``export download --stream``) writes the file's bytes, and nothing else,
+to standard output, and its document to standard error. Other areas join the same
 subparser tree in later pull requests, each listed in the catalog with the
 pull request that added it. ``report roster`` (in ``admin_roster``) counts
-the Roster changes to enter list, whose download is ``export roster`` (in
-``admin_roster_export``), and ``report census`` (in
+the roster list (Ministry requests' To enter by hand rows), whose download
+is ``export roster`` (in ``admin_roster_export``), and ``report census`` (in
 ``admin_census``) the Census changes list (#463), whose download is
 ``export census`` (in ``admin_census_export``). ``export limitations``
 (in ``admin_limitations_export``) is the Limitations report's download.
 ``artwork show``,
 ``artwork remove-preview`` and ``artwork remove`` (PR 10, in
 ``admin_artwork``) read Campaign images and remove one of them.
+``branding preview`` and ``branding confirm`` (#1865, in ``admin_branding``)
+are Parish logos' upload with its review and the review dialog's Apply; the
+preview reads the image from standard input after the preamble.
 ``workgroup show``, ``workgroup preview`` and ``workgroup confirm`` (PR 10,
 in ``admin_workgroup``) read and change the No-reminders WorkGroup.
 ``campaign show``, ``campaign preview`` and ``campaign confirm`` (PR 10, in
 ``admin_campaign``) read and change Campaign settings.
+``campaign create-preview`` and ``campaign create`` (#1899, in
+``admin_campaign_create``) are Create the campaign's Review and Apply.
 ``campaign shares-preview`` and ``campaign shares-confirm`` (PR 10, in
 ``admin_shares``) change a campaign's Share options.
 ``followup list``, ``followup show``, ``followup update`` and ``followup
 bulk`` (PR 11a, in ``admin_followup``) read and record Ministry follow-up.
+``followup roster-entered`` and ``followup roster-bulk`` (PR 11b, in
+``admin_roster_tick``) set the roster tick; ``followup information-show``
+and ``followup information-update`` (PR 11b, in ``admin_information``)
+read and record Additional information follow-up. ``followup export``
+(PR 11c, in ``admin_followup_export``) is the queue's Export these
+requests, streamed as ``export roster`` is. ``information list``,
+``information decide`` and ``limitations decide`` (#1735, in
+``admin_worklists``) list the Additional information worklist's requests as
+identifiers and decide both worklists through the pages' own decision
+services. ``report pledges``, ``export pledges`` and ``pledges decide``
+(#1733, in ``admin_pledges``) count, download and decide Pledges through
+the page's own read, writer and ``PledgeDecisions`` service. ``census
+update-check``, ``census update-plan``, ``census update-confirm`` and
+``census update-rerun`` (#1755, in ``admin_census_update``) are the Update
+ParishSoft page's steps, through the page's own checks and services.
 """
 
 import argparse
@@ -218,6 +241,9 @@ class CommandSpec:
     result_fields: tuple
     pr: int
     options: tuple = ()
+    # A privileged command: it needs a full-scope automation session and is
+    # reported with the automation_fresh_gate event and notice. The name is
+    # historical: no sign-in age is checked any more (#1547).
     fresh_gated: bool = False
     prompts: bool = False
     request_key: bool = False
@@ -327,6 +353,12 @@ def configure_admin_process(configuration):
     values["DATABASES"] = {"default": database_settings(configuration)}
     values["STEWARDSHIP_OPERATIONAL_POLICY"] = configuration.operational_alerts
     values["STEWARDSHIP_REPORTS_ROOT"] = configuration.paths["reports"]
+    # The web's private media mount, where ``branding preview`` stages logos
+    # as the page's upload does (#1865); the web created and checked it.
+    values["STEWARDSHIP_MEDIA_ROOT"] = configuration.paths["media"]
+    # The census update-* commands obey the web's parishsoft_publication
+    # setting, from the same deployment file, as the page does (#1755).
+    values["STEWARDSHIP_PARISHSOFT_PUBLICATION"] = configuration.parishsoft_publication
     values.update(profile_settings(configuration))
     settings.configure(**values)
     django.setup()
@@ -759,11 +791,11 @@ def task_show(args, preamble, runtime, context):
     )
 
 
-def send_progress(args, preamble, runtime, context):
-    """The Family email send in progress, or the most recent one."""
-    from .admin_reads import read_send_progress
+def mail_queue(args, preamble, runtime, context):
+    """Every email waiting to go out, and the Family send in progress (#1562)."""
+    from .admin_reads import read_mail_queue
 
-    return read_send_progress(context["caller"], runtime, audit=context["audit"])
+    return read_mail_queue(context["caller"], runtime, audit=context["audit"])
 
 
 def send_controls(args, preamble, runtime, context):
@@ -826,7 +858,7 @@ def send_resolve_preview(args, preamble, runtime, context):
 def send_confirm(args, preamble, runtime, context):
     """Confirm a reviewed pause, resume or resolution, as the page's Confirm.
 
-    The page needs a recent sign-in, so this always prompts (``--yes``
+    The confirmation is privileged, so this always prompts (``--yes``
     answers it) with the preview's action, reason, counts and caution,
     after checking the Administrator role and then the token's signature,
     and before any transaction.
@@ -880,6 +912,147 @@ def go_live_progress(args, preamble, runtime, context):
     from .admin_reads import read_go_live_progress
 
     return read_go_live_progress(context["caller"], runtime, args.campaign)
+
+
+# --- The Go live page's actions (PR 12, #1809, in ``admin_go_live``) ----------
+
+
+def go_live_preview(args, preamble, runtime, context):
+    """Check readiness and public web address: the start token, if startable."""
+    from .admin_go_live import preview_start
+
+    return preview_start(context["caller"], runtime)
+
+
+def go_live_start(args, preamble, runtime, context):
+    """Start go-live from a ``go-live preview`` token, as the dialog's Apply.
+
+    The role first, then the token and readiness are checked and the
+    prompt (the acknowledgement that Testing cleanup cannot be undone) is
+    asked, before any transaction. The same token again starts nothing
+    more, so it is not asked about.
+    """
+    from .admin_changes import TOKEN_LIMIT
+    from .admin_go_live import start, start_prompt_lines
+
+    _role_first(context, runtime)
+    token = _input(args.token, context, TOKEN_LIMIT)
+    lines = start_prompt_lines(context["caller"], runtime, token)
+    if lines is not None:
+        confirm(context, lines)
+    return start(
+        context["caller"],
+        runtime,
+        token=token,
+        context=context,
+        asked=lines is not None,
+    )
+
+
+def go_live_status(args, preamble, runtime, context):
+    """The Go live page's Prepare step, with Check's stop."""
+    from .admin_go_live import read_status
+
+    return read_status(context["caller"], runtime)
+
+
+def go_live_retry(args, preamble, runtime, context):
+    """The one Retry the current go-live step offers."""
+    from .admin_go_live import retry
+
+    return retry(context["caller"], runtime, context=context)
+
+
+def _go_live_prepare_control(action, context, runtime, lines):
+    """Refresh and prepare again or Stop go-live: read, prompt, then act.
+
+    The role first, then the step's control is read and the page's words
+    asked at the prompt, before any transaction.
+    """
+    from .admin_go_live import apply_prepare, prepare_control
+
+    _role_first(context, runtime)
+    token, shown = prepare_control(context["caller"], runtime, action)
+    confirm(context, lines(shown))
+    return apply_prepare(
+        context["caller"], runtime, action, token=token, context=context
+    )
+
+
+def go_live_refresh_again(args, preamble, runtime, context):
+    """Refresh and prepare again: begin the next go-live attempt."""
+    from .admin_go_live import again_prompt_lines
+
+    return _go_live_prepare_control("again", context, runtime, again_prompt_lines)
+
+
+def go_live_stop(args, preamble, runtime, context):
+    """Stop go-live: discard the Family links and stop Testing cleanup."""
+    from .admin_go_live import stop_prompt_lines
+
+    return _go_live_prepare_control("stop", context, runtime, stop_prompt_lines)
+
+
+def go_live_confirm_preview(args, preamble, runtime, context):
+    """The Confirm Production dialog's Review."""
+    from .admin_go_live import preview_confirm
+
+    return preview_confirm(context["caller"], runtime)
+
+
+def go_live_confirm(args, preamble, runtime, context):
+    """Confirm Production from a ``go-live confirm-preview`` token.
+
+    The role first, then the token's signature; the prompt asks for the
+    typed word ``Production``, as the dialog does, before any transaction.
+    """
+    from .admin_changes import TOKEN_LIMIT
+    from .admin_go_live import confirm as confirm_production
+    from .admin_go_live import confirm_prompt_lines
+
+    _role_first(context, runtime)
+    token = _input(args.token, context, TOKEN_LIMIT)
+    confirm(
+        context,
+        confirm_prompt_lines(context["caller"], runtime, token),
+        typed="Production",
+    )
+    return confirm_production(context["caller"], runtime, token=token, context=context)
+
+
+def go_live_cancel_preview(args, preamble, runtime, context):
+    """The Cancel go-live dialog's Review, with the reason."""
+    from .admin_go_live import preview_cancel
+
+    # Up to four UTF-8 bytes a character; the dialog counts characters.
+    reason = _input(args.reason, context, 2000 * 4)
+    return preview_cancel(context["caller"], runtime, reason=reason)
+
+
+def go_live_cancel(args, preamble, runtime, context):
+    """Cancel go-live from a ``go-live cancel-preview`` token.
+
+    The role first, then the token's signature; the prompt is the
+    acknowledgement that deleted Testing data is not restored, before any
+    transaction.
+    """
+    from .admin_changes import TOKEN_LIMIT
+    from .admin_go_live import cancel, cancel_prompt_lines
+
+    _role_first(context, runtime)
+    token = _input(args.token, context, TOKEN_LIMIT)
+    confirm(context, cancel_prompt_lines(context["caller"], runtime, token))
+    return cancel(context["caller"], runtime, token=token, context=context)
+
+
+def go_live_families(args, preamble, runtime, context):
+    """The Testing submissions list, streamed as CSV."""
+    from .admin_go_live import export_families
+
+    return export_families(context["caller"], runtime, context=context)
+
+
+# --- end of the Go live page's actions ----------------------------------------
 
 
 # The answer read at a prompt: one line of at most this many bytes.
@@ -1056,14 +1229,22 @@ def _request_key(args, context):
 
 
 def delivery_list(args, preamble, runtime, context):
-    """One page of Outgoing mail, filtered and sorted as the page (PR 9)."""
+    """One page of Sent mail, filtered and sorted as the page (PR 9, #1562)."""
     from .admin_operations import read_deliveries
     from .admin_reads import query
+    from .web.dates import parish_zone
 
     parameters = query(
         state=args.state,
         send=args.send,
-        q=args.search,
+        recipient=args.recipient,
+        purpose=args.purpose,
+        mode=args.mode,
+        start=args.start,
+        end=args.end,
+        # The days are in --zone, else the parish's zone: a host command has
+        # no browser (#1562). Sent only with a day, as the page's form.
+        zone=(args.zone or parish_zone()) if args.start or args.end else None,
         page=args.page,
         size=args.size,
         sort=args.sort,
@@ -1420,7 +1601,7 @@ def integration_preview(args, preamble, runtime, context):
 def integration_confirm(args, preamble, runtime, context):
     """Apply a reviewed integration settings change (PR 10).
 
-    The page's Apply needs a recent sign-in (#547), so this always prompts,
+    The page's Apply is privileged (#547), so this always prompts,
     naming the integration and the settings the review changes (never their
     values), after checking the Administrator role and then the token's
     signature, and before any transaction.
@@ -1492,7 +1673,7 @@ def integration_key_finish_switching_preview(args, preamble, runtime, context):
 def integration_key_finish_switching(args, preamble, runtime, context):
     """Finish switching an integration to its new key (PR 10).
 
-    The page needs a recent sign-in (#547), so this always prompts, naming
+    The switch is privileged (#547), so this always prompts, naming
     the integration and the settings the switch also changes (never their
     values), after checking the Administrator role and then the token's
     signature, and before any transaction.
@@ -1508,6 +1689,137 @@ def integration_key_finish_switching(args, preamble, runtime, context):
     return confirm_finish(
         context["caller"], runtime, args.target, token=token, context=context
     )
+
+
+# The tags of the line after the preamble that carries a key, a backup
+# public key or a backup key proof code: the host wrapper's --secret-file
+# or --secret-stdin, --public-key-file, and --code-file or --code-stdin send
+# it as base64 (its secret_row table names the same tags).
+SECRET_TAG = "pk-admin-secret/1"
+PUBLIC_KEY_TAG = "pk-admin-public-key/1"
+PROOF_TAG = "pk-admin-proof/1"
+
+
+def read_secret(stream, *, tag=SECRET_TAG, size=None):
+    """Read the tagged line the host wrapper sends after the preamble.
+
+    One line, ``<tag> <base64>``: the wrapper pipes the file or standard
+    input through ``head -c`` (the page's limit plus one byte) and
+    ``base64``, so the value is never an argument, a variable or a file. A
+    missing, overlong or malformed line is a usage error (exit 2) that names
+    no part of it. ``size`` is the page's limit in bytes (by default an
+    integration key's, 128 KiB). Returns the decoded bytes; the caller
+    checks their size and encoding. Nothing of the line is logged or kept.
+    """
+    import base64
+    import binascii
+
+    from .accounts.key_files import MAX_FILE_BYTES
+
+    prefix = f"{tag} ".encode("ascii")
+    size = MAX_FILE_BYTES if size is None else size
+    # Base64 of one byte over the limit, the most the wrapper ever sends.
+    limit = len(prefix) + 4 * -(-(size + 1) // 3) + 1
+    raw = stream.readline(limit + 1)
+    if len(raw) > limit or not raw.endswith(b"\n") or not raw.startswith(prefix):
+        raise UsageError("The line after the preamble is missing or malformed.")
+    try:
+        return base64.b64decode(raw[len(prefix) : -1], validate=True)
+    except (binascii.Error, ValueError):
+        raise UsageError("The line after the preamble is malformed.") from None
+
+
+def integration_key_replace(args, preamble, runtime, context):
+    """Replace an integration's key, as its settings page's Save with a key.
+
+    The role first (#1339), so Staff is denied before the key is read.
+    Then the key line, the page's checks in one snapshot, the prompt
+    naming the integration and the settings saved with it (never a value
+    or the key), and the page's own staging. ``--yes`` answers the prompt;
+    the wrapper requires it when the key itself came on standard input.
+    """
+    from .admin_integration_changes import parse_settings
+    from .admin_integration_keys import (
+        key_text,
+        replace_key,
+        replace_prompt_lines,
+        review_replacement,
+    )
+
+    _role_first(context, runtime)
+    key = key_text(read_secret(context["stdin"]))
+    fields = {} if args.changes is None else parse_settings(args.changes, args.target)
+    review = review_replacement(
+        context["caller"],
+        runtime,
+        args.target,
+        expected_version=args.expected_version,
+        fields=fields,
+        key=key,
+    )
+    confirm(context, replace_prompt_lines(review))
+    try:
+        return replace_key(
+            context["caller"],
+            runtime,
+            args.target,
+            expected_version=args.expected_version,
+            fields=fields,
+            key=key,
+            context=context,
+        )
+    finally:
+        del key
+
+
+def integration_backup_key_challenge(args, preamble, runtime, context):
+    """Check a new backup public key and seal a proof code to it (PR 10).
+
+    The role first (#1339), so Staff is denied before the key line is read.
+    The host wrapper's ``--public-key-file`` sends the key after the
+    preamble; it is never an argument.
+    """
+    from .admin_backup_key import FIELD_LIMIT, challenge, line_text
+
+    _role_first(context, runtime)
+    raw = read_secret(context["stdin"], tag=PUBLIC_KEY_TAG, size=FIELD_LIMIT)
+    return challenge(context["caller"], runtime, line_text(raw, "public_key"))
+
+
+def integration_backup_key_preview(args, preamble, runtime, context):
+    """Check the code backup-prove printed and review the key change (PR 10).
+
+    The role first (#1339); the code comes from the host wrapper's
+    ``--code-file`` or ``--code-stdin`` after the preamble.
+    """
+    from .admin_backup_key import FIELD_LIMIT, line_text, preview
+
+    _role_first(context, runtime)
+    raw = read_secret(context["stdin"], tag=PROOF_TAG, size=FIELD_LIMIT)
+    return preview(
+        context["caller"],
+        runtime,
+        intent=args.intent,
+        code=line_text(raw, "code"),
+    )
+
+
+def integration_backup_key_confirm(args, preamble, runtime, context):
+    """Confirm a reviewed backup encryption key change (PR 10).
+
+    The page's Confirm is a privileged action, so this always prompts,
+    naming the old and new fingerprints as the page's review shows them,
+    after checking the Administrator role and the token (signature, expiry,
+    owner and settings version), and before any transaction.
+    """
+    from .admin_backup_key import confirm as confirm_key
+    from .admin_backup_key import prompt_lines
+    from .admin_changes import TOKEN_LIMIT
+
+    _role_first(context, runtime)
+    token = _input(args.token, context, TOKEN_LIMIT)
+    confirm(context, prompt_lines(context["caller"], runtime, token))
+    return confirm_key(context["caller"], runtime, token=token, context=context)
 
 
 def parish_show(args, preamble, runtime, context):
@@ -1609,6 +1921,36 @@ def campaign_confirm(args, preamble, runtime, context):
     )
 
 
+def campaign_create_preview(args, preamble, runtime, context):
+    """Review the deployment's first campaign, as Create the campaign (#1899)."""
+    from .admin_campaign import CHANGES_LIMIT
+    from .admin_campaign_create import preview_create
+
+    # The role first (#1341): denied before any input is read.
+    _role_first(context, runtime)
+    return preview_create(
+        context["caller"],
+        runtime,
+        expected_version=args.expected_version,
+        changes=_input(args.changes, context, CHANGES_LIMIT),
+    )
+
+
+def campaign_create(args, preamble, runtime, context):
+    """Confirm a reviewed first campaign as a request (#1899)."""
+    from .admin_campaign_create import confirm_create
+    from .admin_changes import TOKEN_LIMIT
+
+    # The role first (#1341): denied before any input is read.
+    _role_first(context, runtime)
+    return confirm_create(
+        context["caller"],
+        runtime,
+        token=_input(args.token, context, TOKEN_LIMIT),
+        context=context,
+    )
+
+
 def ministries_list(args, preamble, runtime, context):
     """The Ministries page's catalog, every row (PR 10)."""
     from .admin_settings import read_ministries
@@ -1621,6 +1963,38 @@ def branding_show(args, preamble, runtime, context):
     from .admin_settings import read_branding
 
     return read_branding(context["caller"], runtime)
+
+
+def branding_preview(args, preamble, runtime, context):
+    """Stage and review new parish logos from standard input (#1865).
+
+    The image's bytes follow the preamble (the wrapper forwards them for the
+    ``-`` input); nothing else is read.
+    """
+    from .admin_branding import preview_branding, read_image
+
+    return preview_branding(
+        context["caller"],
+        runtime,
+        read_image(context["stdin"]),
+        size=args.size,
+        expected_version=args.expected_version,
+        context=context,
+    )
+
+
+def branding_confirm(args, preamble, runtime, context):
+    """Apply reviewed parish logos as a configuration request (#1865)."""
+    from .admin_branding import confirm_branding
+    from .admin_changes import TOKEN_LIMIT
+
+    return confirm_branding(
+        context["caller"],
+        runtime,
+        args.bundle,
+        token=_input(args.token, context, TOKEN_LIMIT),
+        context=context,
+    )
 
 
 def campaign_shares(args, preamble, runtime, context):
@@ -1814,13 +2188,13 @@ def history_remove(args, preamble, runtime, context):
 def system_backup_now(args, preamble, runtime, context):
     """Take a backup now, as System health's button does (ADM-13 PR 3b).
 
-    The page needs a recent sign-in, so this always prompts, with the
+    The request is privileged, so this always prompts, with the
     page's preview (the last backup and its size, off-site copies,
     retention, a send in progress), before any transaction; a request
     already live or a restore under review is refused before the prompt.
     ``--request-key`` names the request, so a repeat returns the first.
-    The session stands in for the page's recent sign-in, as the request's
-    guard admits.
+    The request's guard binds the command session as it does a browser
+    session.
     """
     from .system_health import backup_now, backup_preview_lines
 
@@ -1847,8 +2221,8 @@ def system_debug_off(args, preamble, runtime, context):
     (the services with debug logging on, what stays in the logs, and that
     only the server operator clears the switch), before any transaction;
     a switch already set is refused before the prompt. ``--request-key``
-    names the switch, so a repeat returns the first. The session stands in
-    for the page's recent sign-in, as the switch's guard admits.
+    names the switch, so a repeat returns the first. The switch's guard
+    binds the command session as it does a browser session.
     """
     from .system_health import debug_off, debug_off_preview_lines
 
@@ -1885,8 +2259,8 @@ def system_refresh_accept(args, preamble, runtime, context):
     It always prompts with the counts that fell too far and the page's tick
     box ("I checked this in ParishSoft, and the change is real") before any
     transaction, after checking the token. The token's key names the
-    acceptance, so a repeat returns the first. The session stands in for
-    the page's recent sign-in, as the acceptance's guard admits.
+    acceptance, so a repeat returns the first. The acceptance's guard binds
+    the command session as it does a browser session.
     """
     from .admin_changes import TOKEN_LIMIT
     from .system_health import accept_prompt_lines, refresh_accept
@@ -1899,6 +2273,43 @@ def system_refresh_accept(args, preamble, runtime, context):
     return refresh_accept(context["caller"], runtime, token=token, context=context)
 
 
+def system_mail_clear_preview(args, preamble, runtime, context):
+    """Review clearing the halted mail sender, as System health's Clear the
+    halt preview (ADM-13 PR 4a).
+
+    Asks mail dispatch for a mailbox check when none is live and none passed
+    recently, as opening the page's preview does, and waits for it (at most
+    two minutes, or not at all with ``--no-wait``). Prints the halt, the
+    waiting and unsettled emails, the check and ``preview.token``, the
+    signed binding ``system mail-clear`` takes, while the halt can be
+    cleared. Records no audit event, as the page's preview records none.
+    """
+    from .mail_halt_clear import mail_clear_preview
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
+    return mail_clear_preview(context["caller"], runtime, wait=not args.no_wait)
+
+
+def system_mail_clear(args, preamble, runtime, context):
+    """Clear the halted mail sender, as System health's Clear the halt
+    confirmation does (ADM-13 PR 4a).
+
+    It always prompts with what clearing does before any transaction, after
+    checking the token. The token's key names the clear signal, so a
+    repeat returns the first. No recent sign-in is needed (#1547).
+    """
+    from .admin_changes import TOKEN_LIMIT
+    from .mail_halt_clear import clear_prompt_lines, mail_clear
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
+
+    token = _input(args.token, context, TOKEN_LIMIT)
+    confirm(context, clear_prompt_lines(runtime, token, context["caller"]))
+    return mail_clear(context["caller"], runtime, token=token, context=context)
+
+
 def system_debug_allow(args, preamble, runtime, context):
     """Allow debug logging again, as System health's button does in Testing
     (ADM-13 PR 6c).
@@ -1907,8 +2318,8 @@ def system_debug_allow(args, preamble, runtime, context):
     Production, or while no switch is set, it is refused before the prompt.
     ``--switch`` names the switch to clear (by default the one set now), so
     a repeat naming a switch this Administrator already cleared returns it.
-    The session stands in for the page's recent sign-in, as the switch's
-    guard admits.
+    The switch's guard binds the command session as it does a browser
+    session.
     """
     from .system_health import debug_allow, debug_allow_preview_lines
 
@@ -1925,7 +2336,7 @@ def portal_maintenance_set(args, preamble, runtime, context):
     """Close or reopen the Family portal, as its page's buttons do (PR 7a).
 
     The note is read and checked with the page's own rules first, so a bad
-    one is refused before the prompt. The page needs a recent sign-in, so
+    one is refused before the prompt. The change is privileged, so
     this always prompts, with the page's notices, before any transaction.
     """
     from .accounts.family_maintenance import MESSAGE_LIMIT, clean_message
@@ -2036,7 +2447,7 @@ def export_archive(args, preamble, runtime, context):
     """Request the campaign archive workbook, as Past campaigns does (#1018).
 
     It holds each Family's giving, so, like ``export financial``, it is a
-    fresh-gated action: the command asks at the confirmation prompt (or
+    privileged action: the command asks at the confirmation prompt (or
     takes ``--yes``) before a request key is made or any transaction opens.
     """
     from .admin_family_exports import export_archive as request
@@ -2062,10 +2473,10 @@ def export_archive(args, preamble, runtime, context):
 def export_financial(args, preamble, runtime, context):
     """Request a financial report export, as its export form does (PR 8e).
 
-    Creating one is a fresh-gated action (#547), so the command asks at the
+    Creating one is a privileged action (#547), so the command asks at the
     confirmation prompt (or takes ``--yes``) before a request key is made or
-    any transaction opens; the session then stands in for the page's recent
-    sign-in (``admin_family_exports.export_financial``).
+    any transaction opens; the export then needs the live full-scope session
+    (``admin_family_exports.export_financial``).
     """
     from .accounts.policy import Capability
     from .admin_family_exports import export_financial as request
@@ -2104,6 +2515,7 @@ def export_information(args, preamble, runtime, context):
         zone=args.timezone,
         request_key=_request_key(args, context),
         context=context,
+        stage=args.stage,
     )
 
 
@@ -2143,7 +2555,7 @@ def export_ministry_packet(args, preamble, runtime, context):
 def export_directory(args, preamble, runtime, context):
     """Request a Family-code directory export, as its form does (PR 8f).
 
-    Fresh-gated (#547), so it asks at the confirmation prompt first, as
+    Privileged (#547), so it asks at the confirmation prompt first, as
     ``export financial`` does.
     """
     from .accounts.policy import Capability
@@ -2179,7 +2591,7 @@ def export_postal(args, preamble, runtime, context):
     ``--filter reach=`` asking for any other list (``email`` or
     ``neither``) is a usage error rather than silently replaced.
 
-    Fresh-gated (#547), so it asks at the confirmation prompt first, as
+    Privileged (#547), so it asks at the confirmation prompt first, as
     ``export financial`` does.
     """
     from .accounts.policy import Capability
@@ -2217,7 +2629,7 @@ def export_postal(args, preamble, runtime, context):
 
 
 def export_exact_create(args, preamble, runtime, context):
-    """Request an exact daily export, as the page's form does (PR 8h)."""
+    """Request an exact daily export of the latest data (PR 8h)."""
     from .admin_exact_exports import create_exact
 
     return create_exact(
@@ -2261,7 +2673,7 @@ def export_exact_retry(args, preamble, runtime, context):
 def export_family_timeline(args, preamble, runtime, context):
     """Request one Family's timeline export, as its page's form does (PR 8g).
 
-    The file can hold the Family's live code, so it is fresh-gated (#547)
+    The file can hold the Family's live code, so it is privileged (#547)
     and asks at the confirmation prompt first, as ``export directory`` does.
     """
     from .accounts.policy import Capability
@@ -2341,7 +2753,7 @@ def report_list(args, preamble, runtime, context):
 
 
 def report_participation(args, preamble, runtime, context):
-    """The Participation page's statistics and daily table (PR 8c)."""
+    """The Response dashboard's statistics and daily table (PR 8c)."""
     from .admin_report_reads import read_participation
 
     return read_participation(context["caller"], runtime, scope=args.scope)
@@ -2372,7 +2784,7 @@ def report_limitations(args, preamble, runtime, context):
     """The Limitations report's summary, without its rows (PR 8c, #970)."""
     from .admin_report_reads import read_limitations
 
-    return read_limitations(context["caller"], runtime)
+    return read_limitations(context["caller"], runtime, args.stage)
 
 
 def report_information(args, preamble, runtime, context):
@@ -2390,6 +2802,7 @@ def report_information(args, preamble, runtime, context):
             "end": args.end,
             "zone": args.zone,
         },
+        stage=args.stage,
     )
 
 
@@ -2417,7 +2830,7 @@ def report_ministry(args, preamble, runtime, context):
 
 
 def report_roster(args, preamble, runtime, context):
-    """The Roster changes to enter list, as counts only (#463)."""
+    """The roster list (Ministry requests to enter by hand), as counts (#463)."""
     from .admin_roster import read_roster
 
     return read_roster(
@@ -2440,7 +2853,7 @@ def _census_filters(args):
 
 
 def export_roster(args, preamble, runtime, context):
-    """The Roster changes to enter download, streamed to standard output (#463)."""
+    """The roster list's download, streamed to standard output (#463)."""
     from .admin_roster_export import export_roster as export
 
     return export(
@@ -2465,6 +2878,7 @@ def export_limitations(args, preamble, runtime, context):
         fmt=args.format,
         zone_name=args.timezone,
         context=context,
+        stage=args.stage,
     )
 
 
@@ -2490,13 +2904,14 @@ def report_census(args, preamble, runtime, context):
 
 
 def census_resolve(args, preamble, runtime, context):
-    """Record a Census changes row's outcome, as its Record outcome does (#463).
+    """Record a Census changes row's outcome, as its row actions do (#463).
 
     Without ``--request-key`` a new key is made and written to standard error
     before anything is done, so a run that crashes can be repeated with it.
-    Entered in ParishSoft cannot be undone, so, as the page's confirmation
-    dialog does, it asks first (or takes ``--yes``); Ignore and Reopen can
-    be undone and ask nothing, as on the page.
+    Every outcome can be undone: Reopen also undoes a terminal step (Entered
+    in ParishSoft, Entered incorrectly, Confirmed, Updated in ParishSoft;
+    #1840) as the page's Back to review does, with the required note. So
+    nothing asks first, and the command takes no ``--yes`` (#1893).
     """
     from .accounts.policy import Capability
     from .admin_census import resolve_census
@@ -2509,15 +2924,6 @@ def census_resolve(args, preamble, runtime, context):
     # The page strips the note it posts; so does a note read from standard
     # input (``_input``).
     note = _input(args.note, context, MAX_NOTE * 4).strip()
-    if args.action == "entered":
-        confirm(
-            context,
-            (
-                f"Mark census change {args.proposal_id} (version "
-                f"{args.expected_version}) as entered in ParishSoft.",
-                "Entered in ParishSoft cannot be undone.",
-            ),
-        )
     return resolve_census(
         context["caller"],
         runtime,
@@ -2531,16 +2937,16 @@ def census_resolve(args, preamble, runtime, context):
 
 
 def census_review(args, preamble, runtime, context):
-    """Review an Automatic census change, as its row's Review does (#528).
+    """Review an Automatic census change, as its row's actions do (#528).
 
-    Approve (``approved``), Ignore (``ignored``) or Back to To review
-    (``unreviewed``). Without ``--request-key`` a new key is made and
+    Accept (``accepted``, stored as ``approved``), Ignore (``ignored``) or
+    Back to To review (``unreviewed``). Without ``--request-key`` a new key is made and
     written to standard error before anything is done. Every review can be
     changed again until publication of the change starts, so, as on the
     page, it asks nothing.
     """
     from .accounts.policy import Capability
-    from .admin_census import review_census
+    from .admin_census import review_census, stored_decision
     from .responses.census_resolution import MAX_NOTE
 
     # The role first (#1341): an Administrator's, so Staff are denied before
@@ -2555,7 +2961,7 @@ def census_review(args, preamble, runtime, context):
         context["caller"],
         runtime,
         args.proposal_id,
-        decision=args.decision,
+        decision=stored_decision(args.decision),
         expected_version=args.expected_version,
         note=note,
         request_key=key,
@@ -2709,8 +3115,7 @@ def digest_weekly_request(args, preamble, runtime, context):
 # The page's acknowledgements, asked at the prompt (PR 9c): the same words
 # the person ticks on the delivery and refused address pages.
 RESEND_ACKNOWLEDGEMENT = (
-    "The prior attempt may already have been delivered. I accept the "
-    "duplicate risk and explicitly authorize another attempt."
+    "It may already have arrived. I accept that the recipient could get a second copy."
 )
 CLEAR_ACKNOWLEDGEMENT = (
     "I verified this address for this Family and authorize removing this refusal."
@@ -2876,6 +3281,44 @@ def users_import_leaders(args, preamble, runtime, context):
     )
 
 
+def users_email_leaders(args, preamble, runtime, context):
+    """Review or confirm Email Ministry leaders, as the Users page does (#1622).
+
+    ``--preview`` takes ``--all`` or ``--email`` (repeatable), never both:
+    unlike the import's listing, there is nothing to read without a choice,
+    as the page's Email selected needs a ticked leader. ``--confirm`` sends
+    outbound mail, so, like ``send confirm`` and ``delivery resend``, it
+    prompts with the review's count and mode (``--yes`` answers it) after
+    checking the Administrator role and before any transaction.
+    """
+    from .accounts.policy import Capability
+    from .admin_users import (
+        TOKEN_LIMIT,
+        confirm_leader_emails,
+        leader_emails_prompt_lines,
+        preview_leader_emails,
+    )
+
+    if args.confirm:
+        if args.token is None or args.all or args.email:
+            raise UsageError("--confirm takes only --token (and --yes).")
+        # The role first (#1339): Staff is denied before any read or prompt.
+        _role_first(context, runtime, Capability.MANAGE_USERS)
+        token = _input(args.token, context, TOKEN_LIMIT)
+        confirm(context, leader_emails_prompt_lines(token))
+        return confirm_leader_emails(
+            context["caller"], runtime, token=token, context=context
+        )
+    if args.token is not None or args.all == bool(args.email):
+        raise UsageError("--preview takes --all or --email, not both, and no --token.")
+    if args.yes:
+        # The review sends nothing and asks nothing; --yes answers Apply.
+        raise UsageError("--yes goes with --confirm.")
+    return preview_leader_emails(
+        context["caller"], runtime, everyone=args.all, emails=args.email or []
+    )
+
+
 def users_preview_upgrade(args, preamble, runtime, context):
     """The read-only users upgrade preview of Portal users (#952 slice 2)."""
     from .admin_reads import read_users_upgrade
@@ -3018,11 +3461,15 @@ def _task_retry_options(parser):
     _request_key_option(parser)
 
 
-# Outgoing mail's state filter. Spelled out because the parser is built
+# Sent mail's state filter. Spelled out because the parser is built
 # before Django is set up, when ``jobs.delivery_metadata`` cannot be
 # imported; a test keeps it equal to ``delivery_metadata.STATES``.
 DELIVERY_STATES = (
     "all",
+    "needs_attention",
+    "needs_review",
+    "not_delivered",
+    "still_sending",
     "delivery_unknown",
     "permanent_failure",
     "pending",
@@ -3030,6 +3477,21 @@ DELIVERY_STATES = (
     "submitting",
     "delivered",
     "cancelled",
+)
+# Sent mail's Purpose filter, spelled out for the same reason; a test keeps
+# it equal to ``delivery_metadata.PURPOSE_CHOICES``.
+DELIVERY_PURPOSES = (
+    "all",
+    "family",
+    "initial",
+    "reminder",
+    "receipt",
+    "family_test",
+    "daily_digest",
+    "weekly_digest",
+    "operational",
+    "security_event",
+    "leader_email",
 )
 # The resolutions ``delivery resolve`` offers (``admin_operations``); a test
 # keeps them equal.
@@ -3088,6 +3550,26 @@ def _refresh_accept_options(parser):
         "--token",
         required=True,
         help="preview.token from system refresh-accept-preview, or - for "
+        "standard input (then answer the prompt with --yes)",
+    )
+
+
+def _mail_clear_preview_options(parser):
+    """Options of ``system mail-clear-preview``: whether to wait for the
+    mailbox check."""
+    parser.add_argument(
+        "--no-wait",
+        action="store_true",
+        help="print the preview at once, without waiting for the mailbox check",
+    )
+
+
+def _mail_clear_options(parser):
+    """Options of ``system mail-clear``: the preview's token."""
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from system mail-clear-preview, or - for "
         "standard input (then answer the prompt with --yes)",
     )
 
@@ -3413,6 +3895,66 @@ def _integration_key_finish_options(parser):
     )
 
 
+def _integration_key_replace_options(parser):
+    """Options of ``integration key replace``: the integration, version, key."""
+    parser.add_argument("target", choices=INTEGRATION_KEY_TARGETS, metavar="TARGET")
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_digest,
+        help="the version integration show printed",
+    )
+    parser.add_argument(
+        "--changes",
+        help="settings saved with the key, as integration preview's JSON "
+        "document (not -: standard input carries the key)",
+    )
+    parser.add_argument(
+        "--secret-stdin",
+        action="store_true",
+        required=True,
+        help="read the key from the line after the preamble, which the host "
+        "wrapper's --secret-file PATH or --secret-stdin sends",
+    )
+
+
+def _integration_backup_key_challenge_options(parser):
+    """Options of ``integration backup-key challenge``: the key's line."""
+    parser.add_argument(
+        "--public-key-stdin",
+        action="store_true",
+        required=True,
+        help="read the new public key from the line after the preamble, which "
+        "the host wrapper's --public-key-file PATH sends",
+    )
+
+
+def _integration_backup_key_preview_options(parser):
+    """Options of ``integration backup-key preview``: the intent and code."""
+    parser.add_argument(
+        "--intent",
+        required=True,
+        help="the intent integration backup-key challenge printed",
+    )
+    parser.add_argument(
+        "--code-stdin",
+        action="store_true",
+        required=True,
+        help="read the code from the line after the preamble, which the host "
+        "wrapper's --code-file PATH or --code-stdin sends",
+    )
+
+
+def _integration_backup_key_confirm_options(parser):
+    """Options of ``integration backup-key confirm``: the token."""
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from integration backup-key preview, or - for "
+        "standard input (needs --yes)",
+    )
+
+
 def _content_preview_options(parser):
     """Options of ``content preview``: the emails to delete, or HTML to preview."""
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -3495,6 +4037,48 @@ def _artwork_remove_options(parser):
     )
 
 
+def _branding_preview_options(parser):
+    """Options of ``branding preview``: ``-``, the one size and the version.
+
+    The sizes are ``admin_branding.SIZES``, the page's, which a test keeps
+    equal to ``branding_slots.SLOTS``.
+    """
+    from .admin_branding import SIZES
+
+    parser.add_argument(
+        "file",
+        choices=("-",),
+        metavar="-",
+        help="read the image's bytes from standard input",
+    )
+    parser.add_argument(
+        "--size",
+        choices=SIZES,
+        help="replace only this size (Advanced); without it the image makes all four",
+    )
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_digest,
+        help="the version branding show printed",
+    )
+
+
+def _branding_confirm_options(parser):
+    """Options of ``branding confirm``: the staged bundle and the token."""
+    parser.add_argument(
+        "--bundle",
+        type=_uuid,
+        required=True,
+        help="bundle from branding preview",
+    )
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from branding preview, or - for standard input",
+    )
+
+
 def _files_delete_options(parser):
     """Options of ``files delete``: the files, by ``files list`` id."""
     parser.add_argument("file_id", type=_uuid, nargs="+", metavar="FILE_ID")
@@ -3512,13 +4096,36 @@ def _files_rename_options(parser):
 
 
 def _delivery_list_options(parser):
-    """Options of ``delivery list``: Outgoing mail's filters."""
+    """Options of ``delivery list``: Sent mail's filters (#1562)."""
     parser.add_argument("--state", choices=DELIVERY_STATES, help="default all")
+    parser.add_argument("--purpose", choices=DELIVERY_PURPOSES, help="default all")
+    parser.add_argument(
+        "--mode", choices=("production", "testing"), help="default both modes"
+    )
+    parser.add_argument(
+        "--from",
+        dest="start",
+        metavar="YYYY-MM-DD",
+        help="the first day listed (by when each email last changed)",
+    )
+    parser.add_argument(
+        "--to",
+        dest="end",
+        metavar="YYYY-MM-DD",
+        help="the last day listed, whole",
+    )
+    parser.add_argument(
+        "--zone", help="the time zone of --from and --to; default the parish's"
+    )
     parser.add_argument(
         "--send", help="one Family email send (send history's send value)"
     )
     parser.add_argument(
-        "--search", help="an exact Family DUID or delivery ID, as the page's search"
+        "--recipient",
+        help=(
+            "a Family DUID, an email address, a delivery ID or part of a "
+            "name, as the page's"
+        ),
     )
     _page_options(parser)
 
@@ -3733,6 +4340,33 @@ def _export_information_options(parser):
     parser.add_argument(
         "--history", action="store_true", help="include each item's workflow history"
     )
+    _information_stage_option(
+        parser,
+        default=None,
+        help="the worklist's Stage, as its export pane posts it (instead of "
+        "the disposition, needed and completed filters)",
+    )
+
+
+def _information_stage_option(parser, *, default, help):
+    """``--stage``: the Additional information worklist's Stage choice."""
+    from .admin_worklists import INFORMATION_STAGES
+
+    parser.add_argument(
+        "--stage", choices=INFORMATION_STAGES, default=default, help=help
+    )
+
+
+def _limitation_stage_option(parser):
+    """``--stage``: the Limitations worklist's Stage, every stage by default."""
+    from .admin_worklists import LIMITATION_STAGES
+
+    parser.add_argument(
+        "--stage",
+        choices=LIMITATION_STAGES,
+        default="all",
+        help="the worklist's Stage (default all, every stage)",
+    )
 
 
 def _export_ministry_options(parser):
@@ -3807,9 +4441,11 @@ def _export_family_timeline_options(parser):
     )
     parser.add_argument(
         "--mode",
+        # "testing" stays a choice so a script that passes it gets the
+        # command's plain invalid answer rather than a usage error (#1570).
         choices=("production", "testing"),
         default="production",
-        help="production (default) or the Testing rehearsal",
+        help="production (the default and only export since #1570; testing is refused)",
     )
     _family_export_options(parser, filters=False)
 
@@ -3872,7 +4508,8 @@ def _report_responses_options(parser):
 
 def _date_options(parser):
     """--start, --end and --zone: submitted on or after, and on or before, a
-    day in a time zone, as the pages take them in the browser's zone (#558)."""
+    day in a time zone. The review worklist pages no longer offer them
+    (#1888); these host-only commands keep them (#463)."""
     parser.add_argument(
         "--start", metavar="DATE", help="submitted on or after this day (YYYY-MM-DD)"
     )
@@ -3895,6 +4532,11 @@ def _report_information_options(parser):
     parser.add_argument("--needed", help="follow-up needed: any (default), yes or no")
     parser.add_argument("--completed", help="followed up: any (default), yes or no")
     _date_options(parser)
+    _information_stage_option(
+        parser,
+        default=None,
+        help="count the worklist by Stage instead of the follow-up filters",
+    )
 
 
 def _ministry_duid(value):
@@ -3984,11 +4626,13 @@ def _export_limitations_options(parser):
         help="any (default), cannot_serve (cannot participate in ministries) "
         "or cannot_attend (cannot attend Mass or prayer services)",
     )
+    _limitation_stage_option(parser)
     parser.add_argument(
         "--format",
-        choices=("csv", "xlsx", "pdf"),
+        choices=("csv", "xlsx", "pdf", "jsonl"),
         default=DEFAULT_EXPORT_FORMAT,
-        help=f"default {DEFAULT_EXPORT_FORMAT}",
+        help=f"default {DEFAULT_EXPORT_FORMAT}; jsonl adds each answer's item "
+        "id, version and actions",
     )
     parser.add_argument(
         "--timezone",
@@ -4048,14 +4692,15 @@ CENSUS_ACTIONS = ("entered", "ignored", "reopened")
 
 
 def _census_resolve_options(parser):
-    """Options of ``census resolve``: a Census changes row's Record outcome."""
+    """Options of ``census resolve``: a Census changes row's outcome."""
     parser.add_argument("proposal_id", type=_uuid, metavar="PROPOSAL_ID")
     parser.add_argument(
         "--action",
         required=True,
         choices=CENSUS_ACTIONS,
         help="entered (Entered in ParishSoft), ignored (Ignore) or reopened "
-        "(Reopen, Administrators only)",
+        "(Reopen an ignored change, Administrators only; or Back to review of "
+        "an entered, updated or confirmed change, which undoes that step)",
     )
     parser.add_argument(
         "--expected-version",
@@ -4066,16 +4711,19 @@ def _census_resolve_options(parser):
     parser.add_argument(
         "--note",
         default="",
-        help="an optional note (required to reopen), or - to read it from "
-        "standard input (needs --yes)",
+        help="an optional note (required to reopen or undo), or - to read it "
+        "from standard input",
     )
+    # A mark asked first while it was final; nothing asks now (#1840), and
+    # the Administrator removed --yes with no backwards compatibility (#1893).
     _request_key_option(parser)
 
 
-# An Administrator's review decisions (``responses.models.REVIEW_DECISIONS``),
-# spelled out because the parser is built before Django is set up; a test
-# keeps them equal.
-CENSUS_DECISIONS = ("approved", "ignored", "unreviewed")
+# An Administrator's review decisions (``responses.models.REVIEW_DECISIONS``)
+# in the review pipeline's words (decision 7, #1755: Accept, never Approve;
+# ``admin_census.DECISION_WORDS``), spelled out because the parser is built
+# before Django is set up; a test keeps them equal.
+CENSUS_DECISIONS = ("accepted", "ignored", "unreviewed")
 
 
 def _census_review_options(parser):
@@ -4085,7 +4733,7 @@ def _census_review_options(parser):
         "--decision",
         required=True,
         choices=CENSUS_DECISIONS,
-        help="approved (Approve), ignored (Ignore) or unreviewed (Back to To review)",
+        help="accepted (Accept), ignored (Ignore) or unreviewed (Back to To review)",
     )
     parser.add_argument(
         "--expected-version",
@@ -4225,6 +4873,26 @@ def _go_live_progress_options(parser):
     _watch_options(parser)
 
 
+def _go_live_token_options(parser):
+    """--token: a go-live preview's token."""
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from the matching go-live preview command, or - "
+        "for standard input (needs --yes)",
+    )
+
+
+def _go_live_cancel_preview_options(parser):
+    """--reason: why go-live is cancelled, as the dialog asks."""
+    parser.add_argument(
+        "--reason",
+        required=True,
+        help="why (at most 2,000 characters; kept with the cancellation), or - "
+        "to read it from standard input",
+    )
+
+
 def _pairing_options(parser):
     """Options of ``login start``; the wrapper passes the same ones."""
     parser.add_argument("--name", required=True, help="the session file's name")
@@ -4341,6 +5009,31 @@ def _campaign_confirm_options(parser):
     )
 
 
+def _campaign_create_preview_options(parser):
+    """Options of ``campaign create-preview``: the version and the new campaign."""
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_digest,
+        help="the version campaign create-preview is reviewed against "
+        "(parish show prints it)",
+    )
+    parser.add_argument(
+        "--changes",
+        required=True,
+        help="the new campaign as JSON, or - to read it from standard input",
+    )
+
+
+def _campaign_create_options(parser):
+    """Options of ``campaign create``: the preview's token."""
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from campaign create-preview, or - for standard input",
+    )
+
+
 def _users_confirm_options(parser):
     """Options of ``users confirm``: the preview's token."""
     parser.add_argument(
@@ -4368,6 +5061,31 @@ def _users_import_options(parser):
         "--email",
         action="append",
         help="with --preview: one leader's address to import (repeatable)",
+    )
+    parser.add_argument(
+        "--token",
+        help="with --confirm: preview.token from --preview, or - for standard input",
+    )
+
+
+def _users_email_options(parser):
+    """Options of ``users email-leaders``: review whom, or confirm a review."""
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument(
+        "--preview",
+        action="store_true",
+        help="review emailing the chosen Ministry leader users (sends nothing)",
+    )
+    mode.add_argument(
+        "--confirm", action="store_true", help="apply a reviewed send (--token)"
+    )
+    parser.add_argument(
+        "--all", action="store_true", help="with --preview: every Ministry leader user"
+    )
+    parser.add_argument(
+        "--email",
+        action="append",
+        help="with --preview: one Ministry leader user's address (repeatable)",
     )
     parser.add_argument(
         "--token",
@@ -4472,13 +5190,14 @@ def _read_specs():
     from .admin_reads import (
         GoLiveProgress,
         GoLiveReadiness,
+        MailQueueRead,
         ScheduleShow,
         SendHistory,
-        SendProgressRead,
         Status,
         TaskList,
         TaskShow,
     )
+    from .mail_halt_clear import MailClear, MailClearPreview
     from .system_health import (
         BackupNow,
         DebugAllow,
@@ -4524,12 +5243,12 @@ def _read_specs():
             watch_subject="task_id",
         ),
         CommandSpec(
-            "send progress",
-            "Show the Family email send in progress, or the latest one.",
-            send_progress,
+            "mail queue",
+            "Show every email waiting to go out, and the Family send in progress.",
+            mail_queue,
             "read_only",
             False,
-            SendProgressRead.field_names(),
+            MailQueueRead.field_names(),
             3,
             options=(_watch_options,),
             audit_event="delivery_viewed",
@@ -4583,7 +5302,7 @@ def _read_specs():
             audit_event="system_health_viewed",
             watch=True,
         ),
-        # Take a backup now (ADM-13 PR 3b): keyed, fresh-gated, prompting.
+        # Take a backup now (ADM-13 PR 3b): keyed, privileged, prompting.
         CommandSpec(
             "system backup-now",
             "Ask the server to take a backup now, as System health does.",
@@ -4597,7 +5316,7 @@ def _read_specs():
             prompts=True,
             request_key=True,
         ),
-        # Turn off debug logging (ADM-13 PR 6b): keyed, fresh-gated, prompting.
+        # Turn off debug logging (ADM-13 PR 6b): keyed, privileged, prompting.
         CommandSpec(
             "system debug-off",
             "Turn off debug logging in every service, as System health does.",
@@ -4612,7 +5331,7 @@ def _read_specs():
             request_key=True,
         ),
         # Accept this change once (ADM-13 PR 5b): the page's preview, then
-        # its confirmation with the preview's token, fresh-gated, prompting
+        # its confirmation with the preview's token, privileged, prompting
         # with the page's tick box. The preview changes nothing and records
         # nothing, as the page's preview step records nothing.
         CommandSpec(
@@ -4640,7 +5359,7 @@ def _read_specs():
             prompts=True,
         ),
         # Allow debug logging again (ADM-13 PR 6c): Testing only, keyed by
-        # the switch it clears, fresh-gated, prompting.
+        # the switch it clears, privileged, prompting.
         CommandSpec(
             "system debug-allow",
             "Clear the debug-off switch in Testing, as System health does.",
@@ -4651,6 +5370,33 @@ def _read_specs():
             3,
             options=(_debug_allow_options,),
             fresh_gated=True,
+            prompts=True,
+        ),
+        # Clear the halt (ADM-13 PR 4a): the page's preview, which asks
+        # for a mailbox check and records no audit event, then its
+        # confirmation with the preview's token, prompting. Neither needs a
+        # recent sign-in (#1547), so neither is fresh-gated.
+        CommandSpec(
+            "system mail-clear-preview",
+            "Review clearing a halted mail sender, after a mailbox check, as "
+            "System health does.",
+            system_mail_clear_preview,
+            "full",
+            False,
+            MailClearPreview.field_names(),
+            3,
+            options=(_mail_clear_preview_options,),
+            audit_event=None,
+        ),
+        CommandSpec(
+            "system mail-clear",
+            "Clear a reviewed halted mail sender, as System health does.",
+            system_mail_clear,
+            "full",
+            True,
+            MailClear.field_names(),
+            3,
+            options=(_mail_clear_options,),
             prompts=True,
         ),
         CommandSpec(
@@ -4664,6 +5410,152 @@ def _read_specs():
             options=(_go_live_progress_options,),
             audit_event=None,
             watch=True,
+        ),
+    )
+
+
+def _go_live_specs():
+    """The Go live page's actions (PR 12, #1809, in ``admin_go_live``).
+
+    Every action needs a full-scope session, as the page's posts record
+    activity; ``go-live status`` and ``go-live families`` are passive reads
+    any session may run. Start, confirm and cancel are privileged
+    (fresh-gated) and irreversible; they, refresh-again and stop prompt.
+    The previews record no event; ``go-live families`` streams its file.
+    """
+    from .admin_go_live import (
+        CancelPreview,
+        CancelResult,
+        ConfirmPreview,
+        ConfirmResult,
+        FamiliesExport,
+        GoLiveStatus,
+        PrepareResult,
+        RetryResult,
+        StartPreview,
+        StartResult,
+    )
+
+    token = (_go_live_token_options,)
+    return (
+        CommandSpec(
+            "go-live preview",
+            "Check readiness and the public web address; print the start token.",
+            go_live_preview,
+            "full",
+            False,
+            StartPreview.field_names(),
+            12,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "go-live start",
+            "Start go-live: delete Testing data and prepare Family links.",
+            go_live_start,
+            "full",
+            True,
+            StartResult.field_names(),
+            12,
+            options=token,
+            fresh_gated=True,
+            prompts=True,
+        ),
+        CommandSpec(
+            "go-live status",
+            "Show the Go live page's Prepare step.",
+            go_live_status,
+            "read_only",
+            False,
+            GoLiveStatus.field_names(),
+            12,
+            options=(_watch_options,),
+            audit_event=None,
+            watch=True,
+        ),
+        CommandSpec(
+            "go-live retry",
+            "Retry the failed part the current go-live step offers a Retry for.",
+            go_live_retry,
+            "full",
+            True,
+            RetryResult.field_names(),
+            12,
+        ),
+        CommandSpec(
+            "go-live refresh-again",
+            "Refresh ParishSoft data and prepare the Family links again.",
+            go_live_refresh_again,
+            "full",
+            True,
+            PrepareResult.field_names(),
+            12,
+            prompts=True,
+        ),
+        CommandSpec(
+            "go-live stop",
+            "Stop go-live; the campaign stays a Testing draft.",
+            go_live_stop,
+            "full",
+            True,
+            PrepareResult.field_names(),
+            12,
+            prompts=True,
+        ),
+        CommandSpec(
+            "go-live confirm-preview",
+            "Review confirming Production; print its token.",
+            go_live_confirm_preview,
+            "full",
+            False,
+            ConfirmPreview.field_names(),
+            12,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "go-live confirm",
+            "Confirm Production from a reviewed token.",
+            go_live_confirm,
+            "full",
+            True,
+            ConfirmResult.field_names(),
+            12,
+            options=token,
+            fresh_gated=True,
+            prompts=True,
+        ),
+        CommandSpec(
+            "go-live cancel-preview",
+            "Review cancelling go-live before the campaign starts.",
+            go_live_cancel_preview,
+            "full",
+            False,
+            CancelPreview.field_names(),
+            12,
+            options=(_go_live_cancel_preview_options,),
+            audit_event=None,
+        ),
+        CommandSpec(
+            "go-live cancel",
+            "Cancel go-live from a reviewed token.",
+            go_live_cancel,
+            "full",
+            True,
+            CancelResult.field_names(),
+            12,
+            options=token,
+            fresh_gated=True,
+            prompts=True,
+        ),
+        CommandSpec(
+            "go-live families",
+            "Write the Testing submissions list (CSV) to standard output.",
+            go_live_families,
+            "read_only",
+            False,
+            FamiliesExport.field_names(),
+            12,
+            audit_event=None,
+            streams=True,
         ),
     )
 
@@ -4755,7 +5647,7 @@ def _operation_specs():
         ),
         CommandSpec(
             "delivery list",
-            "List Outgoing mail, without recipients.",
+            "List Sent mail, without recipients.",
             delivery_list,
             "read_only",
             False,
@@ -5009,7 +5901,7 @@ def _send_control_specs():
 
     The previews record activity as the page's preview posts do, so they
     need a full-scope session, and record no event. ``send confirm`` is
-    fresh-gated on the page, so it always prompts.
+    privileged, so it always prompts.
     """
     from .admin_delivery_control import ControlConfirm, ControlPreview
 
@@ -5118,9 +6010,8 @@ def _file_specs():
         # The email tables' Delete, split into a preview and a confirm as
         # schedule preview / schedule confirm split a schedule's Delete,
         # and the editors' plain-text preview. Full scope, as the Delete
-        # post records activity; no recent sign-in on the page, so neither
-        # is fresh-gated, and the reviewed token stands in for the dialog,
-        # so neither prompts.
+        # post records activity; neither is privileged, and the reviewed
+        # token stands in for the dialog, so neither prompts.
         CommandSpec(
             "content preview",
             "Build a delete of unused emails, or preview HTML as plain text.",
@@ -5154,8 +6045,8 @@ def _file_specs():
             10,
             audit_event=None,
         ),
-        # The page's row actions: no recent sign-in on the page, so neither
-        # is fresh-gated; a deletion cannot be undone, so it prompts.
+        # The page's row actions: neither is privileged; a deletion cannot
+        # be undone, so it prompts.
         CommandSpec(
             "files delete",
             "Delete unused hosted files; their links stop working.",
@@ -5188,8 +6079,8 @@ def _settings_specs():
     pages' GETs record nothing. The parish profile's Review and Apply are
     ``parish preview`` and ``parish confirm`` (``admin_parish``), as ``users
     preview`` and ``users confirm``: full scope, as the page's posts record
-    activity; neither is fresh-gated nor prompts, as the page asks for no
-    recent sign-in and its Apply is the reviewed token. The other pages'
+    activity; neither is privileged nor prompts, as its Apply is the
+    reviewed token. The other pages'
     changes come later in PR 10.
     """
     from .admin_parish import ParishConfirm, ParishPreview
@@ -5262,8 +6153,8 @@ def _workgroup_specs():
     nothing, as the page's GET records nothing. The page's Review and Apply
     are ``workgroup preview`` and ``workgroup confirm``, as ``parish
     preview`` and ``parish confirm``: full scope, as the page's posts record
-    activity; neither is fresh-gated nor prompts, as the page asks for no
-    recent sign-in and its Apply is the reviewed token.
+    activity; neither is privileged nor prompts, as its Apply is the
+    reviewed token.
     """
     from .admin_workgroup import WorkGroupConfirm, WorkGroupPreview, WorkGroupShow
 
@@ -5310,10 +6201,12 @@ def _campaign_specs():
     nothing, as the page's GET records nothing. The page's Review and Apply
     are ``campaign preview`` and ``campaign confirm``, as ``parish
     preview`` and ``parish confirm``: full scope, as the page's posts record
-    activity; neither is fresh-gated nor prompts, as the page asks for no
-    recent sign-in and its Apply is the reviewed token.
+    activity; neither is privileged nor prompts, as its Apply is the
+    reviewed token. Create the campaign's Review and Apply (#1899,
+    ``admin_campaign_create``) follow the same rules for the first campaign.
     """
     from .admin_campaign import CampaignConfirm, CampaignPreview, CampaignShow
+    from .admin_campaign_create import CampaignCreate, CampaignCreatePreview
 
     return (
         CommandSpec(
@@ -5348,6 +6241,64 @@ def _campaign_specs():
             10,
             options=(_campaign_confirm_options,),
         ),
+        # Create the campaign (#1899): the first campaign only.
+        CommandSpec(
+            "campaign create-preview",
+            "Review the deployment's first campaign.",
+            campaign_create_preview,
+            "full",
+            False,
+            CampaignCreatePreview.field_names(),
+            10,
+            options=(_campaign_create_preview_options,),
+            expected_version=True,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "campaign create",
+            "Create the reviewed first campaign.",
+            campaign_create,
+            "full",
+            True,
+            CampaignCreate.field_names(),
+            10,
+            options=(_campaign_create_options,),
+        ),
+    )
+
+
+def _branding_specs():
+    """Parish logos' upload review and Apply (#1865, ``admin_branding``).
+
+    ``branding show`` (in ``_settings_specs``) is the read. Both need a full
+    scope, as the page's upload and Apply record activity, and both change
+    state: the preview stages the logos, as the page's upload does. Neither
+    is privileged nor prompts, as the page's Apply is the reviewed token.
+    """
+    from .admin_branding import BrandingConfirm, BrandingPreview
+
+    return (
+        CommandSpec(
+            "branding preview",
+            "Upload new parish logos from standard input and review them.",
+            branding_preview,
+            "full",
+            True,
+            BrandingPreview.field_names(),
+            10,
+            options=(_branding_preview_options,),
+            expected_version=True,
+        ),
+        CommandSpec(
+            "branding confirm",
+            "Apply reviewed parish logos.",
+            branding_confirm,
+            "full",
+            True,
+            BrandingConfirm.field_names(),
+            10,
+            options=(_branding_confirm_options,),
+        ),
     )
 
 
@@ -5358,8 +6309,8 @@ def _artwork_specs():
     nothing, as the page's GET records nothing. Remove this image and its
     Apply are ``artwork remove-preview`` and ``artwork remove``, as ``parish
     preview`` and ``parish confirm``: full scope, as the page's requests
-    record activity; neither is fresh-gated nor prompts, as the page asks
-    for no recent sign-in and its Apply is the reviewed token.
+    record activity; neither is privileged nor prompts, as its Apply is the
+    reviewed token.
     """
     from .admin_artwork import ArtworkRemove, ArtworkRemovePreview, ArtworkShow
 
@@ -5409,22 +6360,37 @@ def _integration_specs():
     check, which records nothing either. A settings page's Save and Remove
     are ``integration preview`` and ``integration confirm``
     (``admin_integration_changes``), as ``parish preview`` and ``parish
-    confirm``: full scope, as the page's posts record activity. The page
-    asks for a recent sign-in (#547), so ``integration confirm`` is
-    fresh-gated and prompts; the preview records nothing.
-    ``integration backup-probe`` (Test access) and ``integration dismiss``
-    (a key change line's Dismiss) are full scope and neither fresh-gated
-    nor prompting, as those pages ask for neither
+    confirm``: full scope, as the page's posts record activity.
+    ``integration confirm`` is privileged (#547) and prompts; the preview
+    records nothing. ``integration backup-probe`` (Test access) and
+    ``integration dismiss`` (a key change line's Dismiss) are full scope and
+    neither privileged nor prompting, as those pages ask for no confirmation
     (``admin_integration_actions``). A key change's status page and Finish
     switching are ``integration key status`` (any session, records nothing)
     and ``integration key finish-switching-preview`` and
     ``integration key finish-switching`` (``admin_integration_keys``), the
-    confirmation fresh-gated and prompting, as ``integration confirm``.
-    Replacing a key comes later in PR 10.
+    confirmation privileged and prompting, as ``integration confirm``.
+    ``integration key replace`` is a settings page's Save with a new key
+    (full scope, privileged and prompting); the host wrapper sends the key
+    after the preamble, never as an argument. ``integration backup-key
+    challenge``, ``preview`` and ``confirm`` are the Backup encryption key
+    page's steps (``admin_backup_key``): full scope; the first two record
+    nothing and take the public key or the proof code from the wrapper
+    after the preamble; the confirmation is privileged and prompting.
     """
+    from .admin_backup_key import (
+        BackupKeyChallenge,
+        BackupKeyConfirm,
+        BackupKeyPreview,
+    )
     from .admin_integration_actions import BackupProbe, KeyDismissal
     from .admin_integration_changes import IntegrationConfirm, IntegrationPreview
-    from .admin_integration_keys import FinishConfirm, FinishPreview, KeyStatus
+    from .admin_integration_keys import (
+        FinishConfirm,
+        FinishPreview,
+        KeyReplacement,
+        KeyStatus,
+    )
     from .admin_integrations import (
         IntegrationList,
         IntegrationShow,
@@ -5554,6 +6520,53 @@ def _integration_specs():
             FinishConfirm.field_names(),
             10,
             options=(_integration_key_finish_options,),
+            fresh_gated=True,
+            prompts=True,
+        ),
+        CommandSpec(
+            "integration key replace",
+            "Replace an integration's key, or set Slack up with its first key.",
+            integration_key_replace,
+            "full",
+            True,
+            KeyReplacement.field_names(),
+            10,
+            options=(_integration_key_replace_options,),
+            fresh_gated=True,
+            prompts=True,
+            expected_version=True,
+        ),
+        CommandSpec(
+            "integration backup-key challenge",
+            "Check a new backup public key and seal a proof code to it.",
+            integration_backup_key_challenge,
+            "full",
+            False,
+            BackupKeyChallenge.field_names(),
+            10,
+            options=(_integration_backup_key_challenge_options,),
+            audit_event=None,
+        ),
+        CommandSpec(
+            "integration backup-key preview",
+            "Check the proof code and review the backup key change.",
+            integration_backup_key_preview,
+            "full",
+            False,
+            BackupKeyPreview.field_names(),
+            10,
+            options=(_integration_backup_key_preview_options,),
+            audit_event=None,
+        ),
+        CommandSpec(
+            "integration backup-key confirm",
+            "Replace the backup encryption key with the proved new key.",
+            integration_backup_key_confirm,
+            "full",
+            True,
+            BackupKeyConfirm.field_names(),
+            10,
+            options=(_integration_backup_key_confirm_options,),
             fresh_gated=True,
             prompts=True,
         ),
@@ -5837,7 +6850,7 @@ def _report_specs():
         # The exact daily exports (PR 8h, ``admin_exact_exports``).
         CommandSpec(
             "export exact create",
-            "Request an exact daily export, as the Participation page does.",
+            "Request an exact daily export of the latest data.",
             export_exact_create,
             "full",
             True,
@@ -5953,7 +6966,7 @@ def _report_specs():
         ),
         CommandSpec(
             "report participation",
-            "Show the Participation report's statistics and daily counts.",
+            "Show the Response dashboard's statistics and daily counts.",
             report_participation,
             "read_only",
             False,
@@ -6002,6 +7015,7 @@ def _report_specs():
             False,
             LimitationsReport.field_names(),
             8,
+            options=(_limitation_stage_option,),
             # The page keeps the event it recorded as Talents and limitations.
             audit_event="talents_report_viewed",
         ),
@@ -6027,7 +7041,7 @@ def _report_specs():
             options=(_report_ministry_options,),
             audit_event="ministry_report_viewed",
         ),
-        # Roster changes to enter (#528): counts only; its rows name
+        # The roster list (#528): counts only; its rows name
         # Members, so they stay on the page and its downloads.
         CommandSpec(
             "report roster",
@@ -6040,10 +7054,10 @@ def _report_specs():
             options=(_report_roster_options,),
             audit_event="roster_changes_viewed",
         ),
-        # The Roster changes to enter download (PR 8g): the page's file.
+        # The roster list's download (PR 8g).
         CommandSpec(
             "export roster",
-            "Write the Roster changes to enter download to standard output.",
+            "Write the roster changes to enter, as a file, to standard output.",
             export_roster,
             "full",
             False,
@@ -6099,23 +7113,22 @@ def _report_specs():
         # page's service, keyed by the page's request key.
         CommandSpec(
             "census resolve",
-            "Record a census change's outcome, as its row's Record outcome does.",
+            "Record a census change's outcome, as its row's actions do.",
             census_resolve,
             "full",
             True,
             CensusResolve.field_names(),
             8,
             options=(_census_resolve_options,),
-            # Only Entered in ParishSoft, which cannot be undone, asks.
-            prompts=True,
+            # Nothing asks any more: every outcome can be undone (#1840).
             request_key=True,
             expected_version=True,
         ),
-        # An Automatic row's Review (#528, ADM-09): the page's service,
+        # An Automatic row's review (#528, ADM-09): the page's service,
         # keyed by the page's request key; reversible, so it asks nothing.
         CommandSpec(
             "census review",
-            "Review an automatic census change, as its row's Review does.",
+            "Review an automatic census change, as its row's actions do.",
             census_review,
             "full",
             True,
@@ -6144,7 +7157,7 @@ def _report_specs():
         # it asks nothing.
         CommandSpec(
             "census resolve-conflict",
-            "Approve an automatic census conflict over ParishSoft's value.",
+            "Accept an automatic census conflict over ParishSoft's value.",
             census_resolve_conflict,
             "full",
             True,
@@ -6189,10 +7202,11 @@ def _users_specs():
     ``portal_users_viewed``. ``users preview`` and ``users confirm`` change
     users as the Users page does (slice 5) and need a full-scope session, as
     does ``users import-leaders``, the page's leaders table and import
-    (slice 6).
+    (slice 6), and ``users email-leaders``, its Email Ministry leaders
+    review and Apply (#1622).
     """
     from .admin_reads import UsersList, UsersUpgradePreview
-    from .admin_users import LeaderImport, UsersConfirm, UsersPreview
+    from .admin_users import LeaderEmails, LeaderImport, UsersConfirm, UsersPreview
 
     return (
         CommandSpec(
@@ -6248,6 +7262,18 @@ def _users_specs():
             11,
             options=(_users_import_options,),
         ),
+        CommandSpec(
+            "users email-leaders",
+            "Email chosen Ministry leader users how to sign in, after a preview.",
+            users_email_leaders,
+            "full",
+            True,
+            LeaderEmails.field_names(),
+            11,
+            options=(_users_email_options,),
+            # Apply queues outbound mail, as test sample and send confirm do.
+            prompts=True,
+        ),
     )
 
 
@@ -6256,8 +7282,7 @@ def _events_specs():
 
     ``events list`` is a passive read any session may run; Home records no
     event. ``events acknowledge`` is the pages' Acknowledge, which asks for
-    no recent sign-in and no confirmation, so it is neither fresh-gated nor
-    prompting.
+    no confirmation, so it is neither privileged nor prompting.
     """
     from .admin_events import EventsAcknowledgement, EventsList
 
@@ -6578,8 +7603,7 @@ def _followup_specs():
     ``followup list`` and ``followup show`` are passive reads any session
     may run; they record the page's ``ministry_followup_viewed``. ``followup
     update`` asks nothing, as the page's Save does not; ``followup bulk``
-    asks, as the queue's bulk dialog does. Neither change is fresh-gated,
-    as the page asks for no recent sign-in.
+    asks, as the queue's bulk dialog does. Neither change is privileged.
     """
     from .admin_followup import FollowupBulk, FollowupList, FollowupShow, FollowupUpdate
 
@@ -6705,8 +7729,8 @@ def _share_specs():
     """Share options' Review and Apply (PR 10, ``admin_shares``).
 
     As ``campaign preview`` and ``campaign confirm``: full scope, as the
-    page's posts record activity; neither is fresh-gated nor prompts, as
-    the page asks for no recent sign-in and its Apply is the reviewed token.
+    page's posts record activity; neither is privileged nor prompts, as
+    its Apply is the reviewed token.
     """
     from .admin_shares import SharesConfirm, SharesPreview
 
@@ -6739,6 +7763,975 @@ def _share_specs():
 # ------------------------------------------------- end of Share options block
 
 
+# ------------------------ Roster tick and information follow-up (PR 11b)
+#
+# ``followup roster-entered``, ``followup roster-bulk`` (in
+# ``admin_roster_tick``), ``followup information-show`` and ``followup
+# information-update`` (in ``admin_information``), #463: a resolved Ministry
+# request's Entered in ParishSoft tick, Ministry requests' bulk Entered by hand,
+# and an Additional information item's page and Save.
+
+# The longest Staff notes an information item takes (5,000 characters), in
+# UTF-8 bytes at most four per character.
+INFORMATION_NOTES_LIMIT = 5000 * 4
+
+
+def _tick_version(value):
+    """A tick's current sequence: 0 (never ticked) or a positive integer."""
+    if not value.isdecimal() or not 0 <= int(value) < 2**63 - 2:
+        raise argparse.ArgumentTypeError("not a version")
+    return int(value)
+
+
+def _chosen_tick(value):
+    """``--request ID:VERSION``: a request and its tick's current sequence."""
+    identity, separator, version = value.partition(":")
+    if not separator:
+        raise argparse.ArgumentTypeError("not ID:VERSION")
+    try:
+        return _uuid(identity), _tick_version(version)
+    except argparse.ArgumentTypeError:
+        raise argparse.ArgumentTypeError("not ID:VERSION") from None
+
+
+def _yes_no(value):
+    """A follow-up checkbox: ``yes`` or ``no``."""
+    if value not in {"yes", "no"}:
+        raise argparse.ArgumentTypeError("not yes or no")
+    return value == "yes"
+
+
+def followup_roster_entered(args, preamble, runtime, context):
+    """Set or clear one request's Entered in ParishSoft tick (#463, #528).
+
+    The request page's tick asks nothing, so neither does this. ``--clear``
+    is Back to review of the mark (#1840) and needs ``--note``, as the
+    page's dialog does. Without ``--request-key`` a new key is made and
+    written to standard error before anything is done.
+    """
+    from .admin_roster_tick import roster_entered
+    from .workflows.review import MAX_NOTE
+
+    key = _request_key(args, context)
+    # The page's dialog strips the note it posts; so does a note read from
+    # standard input (``_input``).
+    note = None if args.note is None else _input(args.note, context, MAX_NOTE * 4)
+    return roster_entered(
+        context["caller"],
+        runtime,
+        args.request_id,
+        expected_version=args.expected_version,
+        entered=args.set,
+        note=note.strip() if note is not None else None,
+        request_key=key,
+        context=context,
+    )
+
+
+def followup_roster_bulk(args, preamble, runtime, context):
+    """Mark several requests Entered in ParishSoft at once (#463, #879).
+
+    Ministry requests' bulk Entered by hand asks in its dialog, so this asks
+    first (or takes ``--yes``), after the list's own role check, which
+    refuses a Ministry leader before anything is read or asked.
+    """
+    from . import admin_roster_tick
+
+    admin_roster_tick.admit_roster(context["caller"], runtime)
+    key = _request_key(args, context)
+    versions = dict(args.request)
+    if len(versions) != len(args.request):
+        raise ValueError("A request was chosen twice.")
+    # Refused before the prompt: nothing is asked about a choice the list
+    # could not record.
+    admin_roster_tick.check_bulk(versions)
+    confirm(
+        context,
+        (
+            f"Mark {len(versions)} roster change(s) Entered in ParishSoft. "
+            "Each gets its own entry in the request's history.",
+            "A mark can be cleared later, one request at a time.",
+        ),
+    )
+    return admin_roster_tick.roster_bulk(
+        context["caller"], runtime, versions, request_key=key, context=context
+    )
+
+
+def followup_information_show(args, preamble, runtime, context):
+    """One Additional information item and its history, without content (#463)."""
+    from .admin_information import read_information_show
+
+    return read_information_show(
+        context["caller"], runtime, args.item_id, history_page=args.page or 1
+    )
+
+
+def followup_information_update(args, preamble, runtime, context):
+    """Record follow-up on one Additional information item, as its Save does.
+
+    The page's Save asks nothing, so neither does this; clearing a
+    completed follow-up needs ``--confirm-clear``, the page's confirmation
+    box. Without ``--request-key`` a new key is made and written to
+    standard error before anything is done.
+    """
+    from .admin_information import update_information_item
+
+    key = _request_key(args, context)
+    notes = None
+    if args.notes is not None:
+        notes = _input(args.notes, context, INFORMATION_NOTES_LIMIT)
+    return update_information_item(
+        context["caller"],
+        runtime,
+        args.item_id,
+        expected_version=args.expected_version,
+        request_key=key,
+        needed=args.needed,
+        completed=args.completed,
+        confirm_clear=args.confirm_clear,
+        notes=notes,
+        context=context,
+    )
+
+
+def _roster_entered_options(parser):
+    """Options of ``followup roster-entered``: the request page's tick."""
+    parser.add_argument("request_id", type=_uuid, metavar="REQUEST_ID")
+    choice = parser.add_mutually_exclusive_group(required=True)
+    choice.add_argument(
+        "--set",
+        action="store_true",
+        help="mark the change entered in ParishSoft",
+    )
+    choice.add_argument(
+        "--clear",
+        action="store_true",
+        help="clear a mistaken mark: Back to review of Entered by hand, which "
+        "needs --note",
+    )
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_tick_version,
+        help="the tick's current sequence, as followup show prints "
+        "roster.sequence (0 before any tick)",
+    )
+    parser.add_argument(
+        "--note",
+        metavar="TEXT|-",
+        help="why the mark is cleared (required with --clear), or - to read "
+        "it from standard input",
+    )
+    _request_key_option(parser)
+
+
+def _roster_bulk_options(parser):
+    """Options of ``followup roster-bulk``: a bulk Entered by hand."""
+    parser.add_argument(
+        "--request",
+        required=True,
+        action="append",
+        type=_chosen_tick,
+        metavar="ID:VERSION",
+        help="a chosen request and its tick's current sequence, as followup "
+        "show prints roster.sequence (repeat for each, up to 250)",
+    )
+    _request_key_option(parser)
+
+
+def _information_show_options(parser):
+    """Options of ``followup information-show``: the item and its history page."""
+    parser.add_argument("item_id", type=_uuid, metavar="ITEM_ID")
+    parser.add_argument(
+        "--page", type=_positive, help="the history's page number (default 1)"
+    )
+
+
+def _information_update_options(parser):
+    """Options of ``followup information-update``: an item page's form."""
+    parser.add_argument("item_id", type=_uuid, metavar="ITEM_ID")
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_version,
+        help="the item's version, as followup information-show prints it",
+    )
+    parser.add_argument(
+        "--needed",
+        type=_yes_no,
+        metavar="yes|no",
+        help="Follow-up needed (default: kept)",
+    )
+    parser.add_argument(
+        "--completed",
+        type=_yes_no,
+        metavar="yes|no",
+        help="Follow-up completed (default: kept)",
+    )
+    parser.add_argument(
+        "--confirm-clear",
+        action="store_true",
+        help="with --completed no on a completed follow-up: reopen it",
+    )
+    parser.add_argument(
+        "--notes",
+        help="the Staff notes, replacing them (default: kept), or - to read "
+        "them from standard input",
+    )
+    _request_key_option(parser)
+
+
+def _followup_more_specs():
+    """The roster tick and information follow-up commands (ADM-11 PR 11b).
+
+    ``followup information-show`` is a passive read any session may run; it
+    records the page's ``information_viewed``. The changes need a full-scope
+    session; only ``followup roster-bulk`` asks, as Roster changes to
+    enter's dialog does. None is privileged.
+    """
+    from .admin_information import InformationShow, InformationUpdate
+    from .admin_roster_tick import RosterBulk, RosterEntered
+
+    return (
+        CommandSpec(
+            "followup roster-entered",
+            "Set or clear a Ministry request's Entered in ParishSoft tick.",
+            followup_roster_entered,
+            "full",
+            True,
+            RosterEntered.field_names(),
+            11,
+            options=(_roster_entered_options,),
+            request_key=True,
+            expected_version=True,
+        ),
+        CommandSpec(
+            "followup roster-bulk",
+            "Mark several Ministry requests Entered in ParishSoft.",
+            followup_roster_bulk,
+            "full",
+            True,
+            RosterBulk.field_names(),
+            11,
+            options=(_roster_bulk_options,),
+            prompts=True,
+            request_key=True,
+            expected_version=True,
+        ),
+        CommandSpec(
+            "followup information-show",
+            "Show one Additional information item and its follow-up history.",
+            followup_information_show,
+            "read_only",
+            False,
+            InformationShow.field_names(),
+            11,
+            options=(_information_show_options,),
+            audit_event="information_viewed",
+        ),
+        CommandSpec(
+            "followup information-update",
+            "Record follow-up on one Additional information item.",
+            followup_information_update,
+            "full",
+            True,
+            InformationUpdate.field_names(),
+            11,
+            options=(_information_update_options,),
+            request_key=True,
+            expected_version=True,
+        ),
+    )
+
+
+# ------------------ end of roster tick and information follow-up block
+
+
+# ------------------------------------------ Follow-up export (PR 11c)
+#
+# ``followup export`` (#463, in ``admin_followup_export``): the follow-up
+# queue's Export these requests, the page's own file streamed to standard
+# output.
+
+# The queue's Status choices the page's export takes: ``followup list``'s
+# less ``not_in_parishsoft``, which the export refuses (#1217, a Member no
+# longer in ParishSoft never goes into the file).
+FOLLOWUP_EXPORT_STATES = tuple(
+    state for state in FOLLOWUP_STATES if state != "not_in_parishsoft"
+)
+
+
+def followup_export(args, preamble, runtime, context):
+    """The follow-up queue's Export these requests, streamed (#463 PR 11c)."""
+    from .admin_followup_export import export_followup
+
+    return export_followup(
+        context["caller"],
+        runtime,
+        filters={
+            "ministry": args.ministry,
+            "action": args.action,
+            "state": args.state,
+            "outcome": args.outcome,
+            "sort": args.sort,
+        },
+        fmt=args.format,
+        zone_name=args.timezone,
+        context=context,
+    )
+
+
+def _followup_export_options(parser):
+    """Options of ``followup export``: the queue's filters, format and zone.
+
+    The filters are ``followup list``'s without the search (text naming
+    Members would stay in shell history) and without the page and size (the
+    file is the whole filtered set). The format choices are the page's own
+    (``ministry_followup_exports.FORMATS``, which a test keeps equal),
+    listed here because the parser is built before Django is set up.
+    """
+    parser.add_argument("--ministry", metavar="DUID", help="one Ministry, by DUID")
+    parser.add_argument("--action", choices=("any", "join", "leave"))
+    parser.add_argument(
+        "--state",
+        choices=FOLLOWUP_EXPORT_STATES,
+        help="default unresolved (New or In progress)",
+    )
+    parser.add_argument("--outcome", choices=FOLLOWUP_OUTCOMES)
+    parser.add_argument(
+        "--sort", choices=("newest", "name", "ministry"), help="default newest"
+    )
+    parser.add_argument(
+        "--format",
+        choices=("csv", "xlsx", "pdf"),
+        default=DEFAULT_EXPORT_FORMAT,
+        help=f"default {DEFAULT_EXPORT_FORMAT}; PDF holds at most 1,000 requests",
+    )
+    parser.add_argument(
+        "--timezone",
+        default="UTC",
+        help="the time zone of the file's times (default UTC)",
+    )
+
+
+def _followup_export_specs():
+    """The follow-up queue's download (ADM-11 PR 11c, ``admin_followup_export``).
+
+    Full scope, as every export and as the download's post records
+    activity; neither prompting nor privileged, as the page's download is
+    not. It records only the page's ``ministry_followup_exported``.
+    """
+    from .admin_followup_export import FollowupExport
+
+    return (
+        CommandSpec(
+            "followup export",
+            "Write the Ministry follow-up queue's export to standard output.",
+            followup_export,
+            "full",
+            False,
+            FollowupExport.field_names(),
+            11,
+            options=(_followup_export_options,),
+            audit_event="ministry_followup_exported",
+            streams=True,
+        ),
+    )
+
+
+# ------------------------------------------- end of follow-up export block
+
+# ------------------- Additional information and Limitations decisions (#1735)
+#
+# ``information list``, ``information decide`` and ``limitations decide``
+# (in ``admin_worklists``): the Additional information worklist's requests
+# as identifiers, and both worklists' row and bulk decisions through the
+# pages' own decision services.
+
+
+def information_list(args, preamble, runtime, context):
+    """The Additional information worklist's requests, as identifiers (#1735)."""
+    from .admin_worklists import list_information
+
+    return list_information(
+        context["caller"],
+        runtime,
+        stage=args.stage,
+        dates={"start": args.start, "end": args.end, "zone": args.zone},
+    )
+
+
+def _worklist_decide(stream, args, context, runtime):
+    """Record one decision on one or several items, as the page does (#1735).
+
+    The page's own role check comes first, so a Ministry leader is
+    ``denied`` before any input or prompt. Without ``--request-key`` a new
+    key is made and written to standard error before anything is done.
+    Every decision can be changed again, Handled too (Back to review with a
+    note, #1840), so none asks first, and none takes ``--yes`` (#1893).
+    """
+    from . import admin_worklists
+    from .web.review_worklist import MAX_NOTE
+
+    admin_worklists.admit_decide(stream, context["caller"], runtime)
+    versions = dict(args.item)
+    if len(versions) != len(args.item):
+        raise ValueError("An item was chosen twice.")
+    key = _request_key(args, context)
+    # The page strips the note it posts; so does a note read from standard
+    # input (``_input``).
+    note = _input(args.note, context, MAX_NOTE * 4).strip()
+    # Refused before the prompt: nothing is asked about a decision the page
+    # could not post (too many items, a malformed item, a long note).
+    admin_worklists.check_choice(stream, versions, note)
+    return admin_worklists.decide(
+        stream,
+        context["caller"],
+        runtime,
+        versions,
+        action=args.action,
+        note=note,
+        request_key=key,
+        context=context,
+    )
+
+
+def information_decide(args, preamble, runtime, context):
+    """A decision on Additional information requests, as the worklist's (#1735)."""
+    from .admin_worklists import INFORMATION
+
+    return _worklist_decide(INFORMATION, args, context, runtime)
+
+
+def limitations_decide(args, preamble, runtime, context):
+    """A decision on Limitations answers, as the worklist's (#1735)."""
+    from .admin_worklists import LIMITATIONS
+
+    return _worklist_decide(LIMITATIONS, args, context, runtime)
+
+
+def _information_list_options(parser):
+    """Options of ``information list``: the page's Stage and dates, no search."""
+    _information_stage_option(
+        parser,
+        default="to_review",
+        help="default to_review; all is Every stage (without History)",
+    )
+    _date_options(parser)
+
+
+def _chosen_request(value):
+    """``--item ID:VERSION``: a request and the version its row shows."""
+    identity, separator, version = value.partition(":")
+    if not separator:
+        raise argparse.ArgumentTypeError("not ID:VERSION")
+    try:
+        return _uuid(identity), _tick_version(version)
+    except argparse.ArgumentTypeError:
+        raise argparse.ArgumentTypeError("not ID:VERSION") from None
+
+
+def _chosen_answer(value):
+    """``--item ID:VERSION``: an answer's item id and the version its row shows.
+
+    The id's own form is checked once Django is set up
+    (``limitation_review.parse_answer``, ``invalid`` otherwise); here only
+    that it is short printable ASCII, as the page's form check takes it.
+    """
+    from .admin_worklists import MAX_ITEM
+
+    identity, separator, version = value.rpartition(":")
+    if (
+        not separator
+        or not identity
+        or len(identity) > MAX_ITEM
+        or not identity.isascii()
+        or not identity.isprintable()
+    ):
+        raise argparse.ArgumentTypeError("not ID:VERSION")
+    try:
+        return identity, _tick_version(version)
+    except argparse.ArgumentTypeError:
+        raise argparse.ArgumentTypeError("not ID:VERSION") from None
+
+
+def _decide_options(chosen, source):
+    """Options of a ``decide`` command: a row's action or the bulk bar's."""
+
+    def add(parser):
+        """The action, the items, the note and the key."""
+        from .admin_worklists import DECIDE_ACTIONS
+
+        parser.add_argument(
+            "--action",
+            required=True,
+            choices=DECIDE_ACTIONS,
+            help="accept, ignore, back_to_review or handled",
+        )
+        parser.add_argument(
+            "--item",
+            required=True,
+            action="append",
+            type=chosen,
+            metavar="ID:VERSION",
+            help=f"an item's item_id and version, as {source} prints them "
+            "(repeat for each, up to 100)",
+        )
+        parser.add_argument(
+            "--note",
+            default="",
+            help="an optional note (required to reopen an ignored item or to "
+            "undo Handled), or - to read it from standard input",
+        )
+        # A mark asked first while it was final; nothing asks now (#1840), and
+        # the Administrator removed --yes with no backwards compatibility
+        # (#1893).
+        _request_key_option(parser)
+
+    return add
+
+
+def _worklist_specs():
+    """The worklists' commands (#1735, ``admin_worklists``).
+
+    ``information list`` is a passive read any session may run, as
+    ``followup information-show``; the ``decide`` commands are keyed and
+    full scope, and neither privileged nor asking, as on the pages.
+    """
+    from .admin_worklists import InformationList, WorklistDecide
+
+    return (
+        # Identifiers only: the requests' content stays on the page and in
+        # ``export information``.
+        CommandSpec(
+            "information list",
+            "List the Additional information requests' ids, versions and stages.",
+            information_list,
+            "read_only",
+            False,
+            InformationList.field_names(),
+            11,
+            options=(_information_list_options,),
+            audit_event="information_viewed",
+        ),
+        CommandSpec(
+            "information decide",
+            "Record a decision on Additional information requests.",
+            information_decide,
+            "full",
+            True,
+            WorklistDecide.field_names(),
+            11,
+            options=(_decide_options(_chosen_request, "information list"),),
+            # Nothing asks (Handled can be undone, #1840).
+            request_key=True,
+        ),
+        CommandSpec(
+            "limitations decide",
+            "Record a decision on Limitations answers.",
+            limitations_decide,
+            "full",
+            True,
+            WorklistDecide.field_names(),
+            11,
+            options=(
+                _decide_options(_chosen_answer, "export limitations --format jsonl"),
+            ),
+            # Nothing asks (Handled can be undone, #1840).
+            request_key=True,
+        ),
+    )
+
+
+# ------------- end of Additional information and Limitations decisions block
+
+
+# ---------------------------------------------- Pledges (#1733)
+#
+# ``report pledges``, ``export pledges`` and ``pledges decide`` (in
+# ``admin_pledges``): Pledges' counts, its download and its row
+# and bulk decisions, through the page's own read, writer and
+# ``PledgeDecisions`` service.
+
+# A pledge's frequencies (``responses.financial.FREQUENCIES``), spelled out
+# because the parser is built before Django is set up; a test keeps them
+# equal.
+PLEDGE_FREQUENCIES = ("weekly", "monthly", "quarterly", "annual")
+
+
+def report_pledges(args, preamble, runtime, context):
+    """Pledges, as counts by stage only (#1733)."""
+    from .admin_pledges import read_pledges
+
+    return read_pledges(context["caller"], runtime, stage=args.stage)
+
+
+def export_pledges(args, preamble, runtime, context):
+    """The Pledges download, streamed to standard output (#1733)."""
+    from .admin_pledges import export_pledges as export
+
+    return export(
+        context["caller"],
+        runtime,
+        stage=args.stage,
+        fmt=args.format,
+        zone_name=args.timezone,
+        context=context,
+    )
+
+
+def pledges_decide(args, preamble, runtime, context):
+    """Record one decision on one or several pledges, as the page does (#1733).
+
+    The page's own role check comes first, so a Ministry leader is
+    ``denied`` before any input or prompt. Without ``--request-key`` a new
+    key is made and written to standard error before anything is done.
+    Every decision can be changed again, Entered by hand too (Back to
+    review with a note undoes it, #1840), so none asks first, and it takes
+    no ``--yes`` (#1893).
+    """
+    from . import admin_pledges
+    from .web.review_worklist import MAX_NOTE
+
+    admin_pledges.admit_decide(context["caller"], runtime)
+    versions = dict(args.item)
+    if len(versions) != len(args.item):
+        raise ValueError("A pledge was chosen twice.")
+    key = _request_key(args, context)
+    # The page strips the note it posts; so does a note read from standard
+    # input (``_input``).
+    note = _input(args.note, context, MAX_NOTE * 4).strip()
+    # Refused before any transaction: a decision the page could not post
+    # (too many pledges, a long note, a value or option an Edit would
+    # refuse).
+    admin_pledges.check_choice(
+        versions, args.action, amount=args.amount, frequency=args.frequency, note=note
+    )
+    return admin_pledges.decide_pledges(
+        context["caller"],
+        runtime,
+        versions,
+        action=args.action,
+        amount=args.amount,
+        frequency=args.frequency,
+        note=note,
+        request_key=key,
+        context=context,
+    )
+
+
+def _pledge_stage_option(parser):
+    """``--stage``: the page's Stage choice, To review by default."""
+    from .admin_pledges import DEFAULT_STAGE, STAGE_CHOICES
+
+    parser.add_argument(
+        "--stage",
+        choices=STAGE_CHOICES,
+        default=DEFAULT_STAGE,
+        help=f"default {DEFAULT_STAGE}; all is Every stage",
+    )
+
+
+def _export_pledges_options(parser):
+    """Options of ``export pledges``: the page's Stage, format and time zone.
+
+    The page's search is left out: no command takes text that names a
+    Family. The format choices are the page's own (``pledge_review_views.
+    FORMATS``, which a test keeps equal) and the command's ``jsonl``.
+    """
+    _pledge_stage_option(parser)
+    parser.add_argument(
+        "--format",
+        choices=("csv", "xlsx", "pdf", "jsonl"),
+        default=DEFAULT_EXPORT_FORMAT,
+        help=f"default {DEFAULT_EXPORT_FORMAT}; jsonl adds each pledge's item "
+        "id, version and actions",
+    )
+    parser.add_argument(
+        "--timezone",
+        default="UTC",
+        help="the time zone of the file's times (default UTC)",
+    )
+
+
+def _chosen_pledge(value):
+    """``--item ID:VERSION``: a pledge item and the version its row shows."""
+    identity, separator, version = value.partition(":")
+    if not separator:
+        raise argparse.ArgumentTypeError("not ID:VERSION")
+    try:
+        return _uuid(identity), _tick_version(version)
+    except argparse.ArgumentTypeError:
+        raise argparse.ArgumentTypeError("not ID:VERSION") from None
+
+
+def _pledges_decide_options(parser):
+    """Options of ``pledges decide``: a row's action or the bulk bar's."""
+    from .admin_pledges import DECIDE_ACTIONS
+
+    parser.add_argument(
+        "--action",
+        required=True,
+        choices=DECIDE_ACTIONS,
+        help="accept, edit (one pledge, with --amount), ignore, "
+        "back_to_review or entered_by_hand",
+    )
+    parser.add_argument(
+        "--item",
+        required=True,
+        action="append",
+        type=_chosen_pledge,
+        metavar="ID:VERSION",
+        help="a pledge's item_id and version, as export pledges --format "
+        "jsonl prints them (repeat for each, up to 100)",
+    )
+    parser.add_argument(
+        "--amount",
+        help="edit: the annual pledge, as the Family form takes it",
+    )
+    parser.add_argument(
+        "--frequency",
+        choices=PLEDGE_FREQUENCIES,
+        help="edit: how often the Family gives (none for a zero pledge)",
+    )
+    parser.add_argument(
+        "--note",
+        default="",
+        help="an optional note (required to reopen an ignored pledge or to "
+        "undo Entered by hand, Entered incorrectly or Confirmed with "
+        "back_to_review), or - to read it from standard input",
+    )
+    # Entered by hand asked first while it was final; nothing asks now
+    # (#1840), and the Administrator removed --yes with no backwards
+    # compatibility (#1893).
+    _request_key_option(parser)
+
+
+def _pledge_specs():
+    """Pledges' commands (#1733, ``admin_pledges``).
+
+    ``report pledges`` is a read-only count; ``export pledges`` needs full
+    scope, as every export and as the download's post records activity;
+    ``pledges decide`` is keyed and full scope, and neither privileged nor
+    asking, as on the page.
+    """
+    from .admin_pledges import PledgeDecide, PledgeExport, PledgeReport
+
+    return (
+        # Counts only: each row names a Family and its pledge.
+        CommandSpec(
+            "report pledges",
+            "Count the pledges on the Pledges page, by stage.",
+            report_pledges,
+            "read_only",
+            False,
+            PledgeReport.field_names(),
+            8,
+            options=(_pledge_stage_option,),
+            audit_event="pledges_to_enter_viewed",
+        ),
+        # The page's file, or JSON Lines with each pledge's item id,
+        # version and actions for ``pledges decide``.
+        CommandSpec(
+            "export pledges",
+            "Write the Pledges download to standard output.",
+            export_pledges,
+            "full",
+            False,
+            PledgeExport.field_names(),
+            8,
+            options=(_export_pledges_options,),
+            audit_event="pledges_to_enter_exported",
+            streams=True,
+        ),
+        # A row's Accept, Edit, Ignore, Back to review or Entered by hand,
+        # or the bulk bar's: the page's service, keyed.
+        CommandSpec(
+            "pledges decide",
+            "Record a decision on pledges, as Pledges' actions do.",
+            pledges_decide,
+            "full",
+            True,
+            PledgeDecide.field_names(),
+            8,
+            options=(_pledges_decide_options,),
+            # Nothing asks: every decision can be undone (#1840).
+            request_key=True,
+        ),
+    )
+
+
+# ------------------------------------------- end of Pledges block
+
+
+# ------------------------------------------ Update ParishSoft (#1755)
+#
+# ``census update-check``, ``census update-plan``, ``census update-confirm``
+# and ``census update-rerun`` (in ``admin_census_update``): the Update
+# ParishSoft page's Check ParishSoft, its plan, Update's Apply and Run
+# again, through the page's own checks and services.
+
+
+def census_update_check(args, preamble, runtime, context):
+    """Check ParishSoft, as the Update ParishSoft page's button does (#1755).
+
+    The Administrator's role first, so Staff are ``denied`` before anything
+    is read. Without ``--request-key`` a new key is made and written to
+    standard error before anything is done. The page asks nothing, so
+    neither does the command.
+    """
+    from .accounts.policy import Capability
+    from .admin_census_update import update_check
+
+    _role_first(context, runtime, Capability.PUBLISH_CENSUS)
+    key = _request_key(args, context)
+    return update_check(context["caller"], runtime, request_key=key, context=context)
+
+
+def census_update_plan(args, preamble, runtime, context):
+    """The Update ParishSoft page's plan, ids and counts only (#1755)."""
+    from .admin_census_update import read_update_plan
+
+    return read_update_plan(context["caller"], runtime, args.plan_id)
+
+
+def census_update_confirm(args, preamble, runtime, context):
+    """Update's Apply for the newest plan, after its question (#1755).
+
+    The role first; then the page's checks and its question with the
+    plan's counts, asked before any transaction opens (or ``--yes``); then
+    the confirmation with exactly the counts asked about. Without
+    ``--request-key`` a new key is made and written to standard error
+    first, so a run that crashes can be repeated with it.
+    """
+    from .accounts.policy import Capability
+    from .admin_census_update import update_confirm, update_preview
+
+    _role_first(context, runtime, Capability.PUBLISH_CENSUS)
+    key = _request_key(args, context)
+    caller = context["caller"]
+    counts, lines = update_preview(caller, runtime, args.plan_id, request_key=key)
+    confirm(context, lines)
+    return update_confirm(
+        caller, runtime, args.plan_id, counts=counts, request_key=key, context=context
+    )
+
+
+def census_update_rerun(args, preamble, runtime, context):
+    """Run again for the newest plan's unfinished Members, after asking (#1755).
+
+    As ``census update-confirm``: the role first, the page's checks and
+    question before any transaction opens, then the retry under the key.
+    """
+    from .accounts.policy import Capability
+    from .admin_census_update import rerun_preview, update_rerun
+
+    _role_first(context, runtime, Capability.PUBLISH_CENSUS)
+    key = _request_key(args, context)
+    caller = context["caller"]
+    confirm(context, rerun_preview(caller, runtime, args.plan_id, request_key=key))
+    return update_rerun(caller, runtime, args.plan_id, request_key=key, context=context)
+
+
+def _update_key_option(parser):
+    """``--request-key``: a version 4 UUID, as the page's keys must be."""
+    parser.add_argument(
+        "--request-key",
+        type=_uuid4,
+        help="a version 4 UUID that makes a repeat safe (default: a new "
+        "one, written to standard error)",
+    )
+
+
+def _update_plan_options(parser):
+    """Options of ``census update-plan``: an optional plan id."""
+    parser.add_argument(
+        "plan_id",
+        nargs="?",
+        type=_uuid,
+        metavar="PLAN_ID",
+        help="a plan of the current campaign (default: the newest)",
+    )
+
+
+def _update_plan_step_options(parser):
+    """Options of ``census update-confirm`` and ``update-rerun``."""
+    parser.add_argument(
+        "plan_id",
+        type=_uuid,
+        metavar="PLAN_ID",
+        help="the newest plan, as census update-plan prints it",
+    )
+    _update_key_option(parser)
+
+
+def _census_update_specs():
+    """Update ParishSoft's commands (#1755, ``admin_census_update``).
+
+    ``census update-plan`` is a passive read, for any session.
+    ``census update-check`` is keyed and full scope, and asks nothing, as
+    on the page. ``census update-confirm`` is privileged (fresh-gated) and
+    asks, and ``census update-rerun`` asks; both are keyed and full scope.
+    None takes ``--watch``: each write prints its task, which ``task show
+    --watch`` follows.
+    """
+    from .admin_census_update import UpdateCheck, UpdateConfirm, UpdatePlan, UpdateRerun
+
+    return (
+        CommandSpec(
+            "census update-check",
+            "Check ParishSoft for the changes Ready to update.",
+            census_update_check,
+            "full",
+            True,
+            UpdateCheck.field_names(),
+            8,
+            options=(_update_key_option,),
+            request_key=True,
+        ),
+        CommandSpec(
+            "census update-plan",
+            "Show the newest check's plan for updating ParishSoft.",
+            census_update_plan,
+            "read_only",
+            False,
+            UpdatePlan.field_names(),
+            8,
+            options=(_update_plan_options,),
+            audit_event="census_publication_viewed",
+        ),
+        CommandSpec(
+            "census update-confirm",
+            "Write the newest check's changes to ParishSoft, after asking.",
+            census_update_confirm,
+            "full",
+            True,
+            UpdateConfirm.field_names(),
+            8,
+            options=(_update_plan_step_options,),
+            fresh_gated=True,
+            prompts=True,
+            request_key=True,
+        ),
+        CommandSpec(
+            "census update-rerun",
+            "Run an update again for the Members it did not finish.",
+            census_update_rerun,
+            "full",
+            True,
+            UpdateRerun.field_names(),
+            8,
+            options=(_update_plan_step_options,),
+            prompts=True,
+            request_key=True,
+        ),
+    )
+
+
+# ---------------------------------------- end of Update ParishSoft block
+
+
 COMMANDS = (
     COMMANDS
     + _read_specs()
@@ -6758,7 +8751,14 @@ COMMANDS = (
     + _followup_specs()
     + _history_specs()
     + _artwork_specs()
+    + _branding_specs()
     + _integration_specs()
+    + _followup_more_specs()
+    + _followup_export_specs()
+    + _worklist_specs()
+    + _pledge_specs()
+    + _go_live_specs()
+    + _census_update_specs()
 )
 BY_NAME = {spec.name: spec for spec in COMMANDS}
 
@@ -6920,6 +8920,10 @@ def classify(error, *, admitted_process, changed, committed=False):
         return "outcome_unknown"
     if isinstance(error, (WatchTimeout, ConfirmationRequired)):
         return error.code
+    if getattr(error, "command_code", None) in COMMAND_CODES:
+        # A page's refusal a command marked with its code and reason
+        # (``admin_census_update._refused``, #1755).
+        return error.command_code
     if isinstance(error, StartupBusy):
         return "busy"
     # A configuration change activating, or a restore under review, is as
@@ -6958,6 +8962,10 @@ def classify(error, *, admitted_process, changed, committed=False):
     if isinstance(error, (ValueError, ConfigError)):
         return "invalid"
     return "outcome_unknown" if changed else "internal"
+
+
+# The codes a command may mark a page's refusal with (``command_code``).
+COMMAND_CODES = frozenset({"invalid", "stale_version", "not_available"})
 
 
 # The codes an unexpected error ends as. Their documents say only that much,
@@ -7342,6 +9350,9 @@ def run(args, *, stdin, stdout, stderr):
             if code == "invalid" and getattr(error, "fields", None):
                 # The page's own messages for each field it refused.
                 output["error"]["fields"] = error.fields
+            if code in COMMAND_CODES and getattr(error, "command_reason", None):
+                # The page's closed reason code for its refusal (#1755).
+                output["error"]["reason"] = error.command_reason
             if code == "outcome_unknown" and context.get("request_id"):
                 # The request the command may have recorded, fixed before it
                 # acted, so the operator can read it (config request show) or
@@ -7451,7 +9462,8 @@ def admit_session(spec, preamble, runtime, stderr, context):
         close_command_session(caller.portal_session)
         raise PermissionError("This command needs a full-scope session.")
     if spec.changes_state:
-        # A fresh gate this command passes names it in the dashboard notice.
+        # A privileged check this command passes names it in the dashboard
+        # notice.
         caller.command_type = command_event_type(spec.name)
     warn_if_expiring(caller.automation_session, database_now(), stderr)
     return caller
@@ -7510,6 +9522,9 @@ def main(argv=None, *, stdin=None, stdout=None, stderr=None):
             # The Delete is built against a version; the plain-text preview
             # reads no configuration, so it takes none.
             raise UsageError("--expected-version goes with --delete, and only there.")
+        if args.command_name == "integration key replace" and args.changes == "-":
+            # Standard input carries the key (and the prompt's answer).
+            raise UsageError("Give --changes as JSON; standard input holds the key.")
         if hasattr(args, "watch"):
             # --timeout belongs to --watch; alone it would silently do nothing.
             if args.watch is None:

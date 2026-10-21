@@ -87,9 +87,7 @@ the Administrator proves they hold it:
 1. On the key machine, make a new pair with `backup-keygen` into a new file,
    as in [The key](#the-key), and record its fingerprint with it.
 2. Paste only the printed `public_key` value on the page and select
-   **Continue** (a Google sign-in from the last five minutes is needed, and
-   again to confirm; the page asks for it after the code if it has gone
-   stale, and the code expires after 15 minutes).
+   **Continue** (the code expires after 15 minutes).
    The page shows the new fingerprint and a challenge line starting with
    `PKBKP1:`.
 3. On the key machine, run `backup-prove` with the new private key and paste
@@ -652,6 +650,16 @@ layout; where the deployment YAML overrides a path, use that path instead.
        --input /set/database.pgdump.sealed --destination /out/database.pgdump
    ```
 
+   **Which image opens a set.** Run `backup-open` from the image the
+   set was taken under: the manifest's `image` (its `application_version`
+   is the release). A different release's image may refuse the set, and
+   then prints only that the sealed backup could not be opened. When the
+   `manifest.json` beside the file names another release, the refusal
+   says which release and image to use instead; if it does, switch images
+   before suspecting the key. A set taken before the manifest recorded its
+   image is opened with the release the operators' records name for it.
+   In a drill, record which image opened each set.
+
    Copy `database.pgdump` and `files.tar` to the host over a private
    channel.
 
@@ -794,9 +802,11 @@ layout; where the deployment YAML overrides a path, use that path instead.
    backup was taken under, in that image, then `pull`. The manifest's
    `image` is its complete reference and `application_version` its release;
    for a set taken before the manifest recorded the image, the operators'
-   notes have its digest. The deployment YAML is not in the set: if it names a
-   field that release does not know, `retarget-image` refuses with no
-   cause, so remove such a field first, as the deployment runbook's
+   notes have its digest. The deployment YAML is not in the set, and must
+   be readable by the container's user (mode 0644, as Production keeps it;
+   `pk-restore` refuses plainly otherwise). If it names a field that
+   release does not know, `retarget-image` refuses with no cause, so
+   remove such a field first, as the deployment runbook's
    [rollback](stewardship-deployment-runbook.md#rollback) says. Then give
    that image its own static files, on every host (a replacement host has
    no `cache/static` yet, so it starts at the empty one). First move any current `cache/static` aside under a name that does not

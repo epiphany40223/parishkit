@@ -8,7 +8,16 @@ from uuid import UUID
 from django.template.loader import render_to_string
 from django.utils.http import urlencode
 
-from parishkit.stewardship.accounts.system_health_views import POLL_MILLISECONDS
+from parishkit.stewardship.accounts.system_health_views import (
+    POLL_MILLISECONDS,
+    RECHECK_MILLISECONDS,
+)
+from parishkit.stewardship.mail_halt_clear import (
+    ClearPreview,
+    ClearState,
+    Halt,
+    MailboxCheckStatus,
+)
 from parishkit.stewardship.source.data_age import Connection
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.system_health import (
@@ -46,7 +55,8 @@ BACKUP_PAGE = "/admin/system/health/"
 BACKUP_STATUS = "/system-health-backup/status"
 BACKUP_PREVIEW = "/system-health-backup-preview"
 BACKUP_REQUESTED = "/system-health-backup-requested"
-BACKUP_STEP_UP = "/system-health-backup-step-up"
+# The answer when the session ended meanwhile (#1547).
+BACKUP_SIGNED_OUT = "/system-health-backup-signed-out"
 BACKUP_BUSY = "/system-health-backup-busy"
 # The page with a request held while a Family email send is in progress;
 # its polls (BACKUP_STATUS) bring the same state.
@@ -63,7 +73,7 @@ DEBUG_PAGE = "/system-health-debug"
 DEBUG_STATUS = "/system-health-debug/status"
 DEBUG_PREVIEW = "/system-health-debug-preview"
 DEBUG_SET = "/system-health-debug-set"
-DEBUG_STEP_UP = "/system-health-debug-step-up"
+DEBUG_SIGNED_OUT = "/system-health-debug-signed-out"
 # The Debug logging tile (#1214 slice 5): the same page, whose next poll
 # finds the switch set and no service logging in debug form any more.
 DEBUG_TILE = "/system-health-debug-tile"
@@ -118,6 +128,22 @@ ALLOW_CLEARED = "/system-health-allow-cleared"
 # Allow debug logging again's steps answer the review dialog with this
 # fragment (#1356).
 ALLOW_ANSWER = "stewardship/system-health-debug-allow-review.html"
+# Clear the halt (ADM-13 PR 4b): a page whose mail senders are halted, its
+# poll (the mailbox check has passed), and the answers its steps get: the
+# preview (the check still running) and the clear. The browser test serves
+# the page at the real address (BACKUP_PAGE) by routing, as the POSTs are.
+CLEAR_PAGE = "/system-health-clear"
+CLEAR_STATUS = "/system-health-clear/status"
+CLEAR_PREVIEW = "/system-health-clear-preview"
+CLEAR_DONE = "/system-health-clear-done"
+# The same page's polled status once the halt is no longer recorded, and with
+# the newest mailbox check refused; and pages whose senders still report
+# Halted with no halt recorded (just cleared, and for too long).
+CLEAR_NONE_STATUS = "/system-health-clear/status-none"
+CLEAR_REFUSED_STATUS = "/system-health-clear/status-refused"
+CLEAR_CLEARING_PAGE = "/system-health-clear-clearing"
+CLEAR_STUCK_PAGE = "/system-health-clear-stuck"
+CLEAR_HALT = UUID(int=9)
 # A healthy page whose next poll changes only a time's datetime attribute.
 DATED = "/system-health-dated"
 DATED_STATUS = "/system-health-dated/status"
@@ -144,19 +170,20 @@ LOADED = loaded_states(0, list(RESAVE))
 # checks unable to run.
 TILE_STATES = ("working", "warning", "error", "unchecked")
 TILE_PAGES = "/system-health-tiles-"
-# Accept this change once while the sign-in was stale when the page was
-# drawn (#1331 item 18): the offer shows the step-up notice and greys the
-# button; a fresh page offers it, and no poll changes which (#1159).
-ACCEPT_STEP_UP = "/system-health-accept-step-up"
-ACCEPT_STEP_UP_STATUS = "/system-health-accept-step-up/status"
-ACCEPT_FRESH = "/system-health-accept-fresh"
-ACCEPT_FRESH_STATUS = "/system-health-accept-fresh/status"
-ACCEPT_STEP_UP_LATE = "/system-health-accept-step-up-late"
-ACCEPT_STEP_UP_LATE_STATUS = "/system-health-accept-step-up-late/status"
-# Accept this change once in LOCAL, drawn with a recent and a stale sign-in.
-ACCEPT_LOCAL_FRESH = "/system-health-accept-local-fresh"
-ACCEPT_LOCAL_STALE = "/system-health-accept-local-stale"
+# Accept this change once offered on a page whose polls bring the same
+# refusal: the button is offered whenever the Administrator signed in
+# (#1547), and no poll greys it.
+ACCEPT_OFFERED = "/system-health-accept-offered"
+ACCEPT_OFFERED_STATUS = "/system-health-accept-offered/status"
 TROUBLED_STATUS = canonical(f"{STATUS}?{urlencode({'loaded': loaded_query(LOADED)})}")
+# The page-load tiles' slow recheck (#1790): a page whose tiles are all
+# Working asks for it every RECHECK_MILLISECONDS. Its ordinary polls echo
+# the page's states; the recheck (?slow=1) finds an email that cannot be
+# sent, so Pages and emails to re-save turns Error, and its answer names the
+# address with that state, whose ordinary polls echo it in turn.
+RECHECK = "/system-health-recheck"
+RECHECK_STATUS = f"{RECHECK}/status"
+RECHECK_LOADED = f"{RECHECK_STATUS}?{urlencode({'loaded': loaded_query(LOADED)})}"
 
 
 def _row(now, service, process="main", *, age=0, **values):
@@ -280,6 +307,7 @@ def health(
         send_active=False,
         planning_held=False,
         retry_waiting=4 if troubled else 0,
+        retry_waiting_other=0,
         next_retry_at=now + timedelta(minutes=3) if troubled else None,
         daily_sent=1612 if troubled else 240,
         daily_limit=1600,
@@ -376,12 +404,29 @@ def mail_state(model, now, state):
             _row(now, "mail-dispatch", age=600),
             _row(now, "mail-dispatch", "mail"),
         ],
+        # Both mail senders halted (Clear the halt, ADM-13 PR 4b).
+        "halted": [
+            _row(
+                now,
+                "mail-dispatch",
+                sender_state="halted",
+                sender_since=now - timedelta(minutes=12),
+            ),
+            _row(
+                now,
+                "mail-dispatch",
+                "mail",
+                sender_state="halted",
+                sender_since=now - timedelta(minutes=12),
+            ),
+        ],
     }.get(state)
     values = {
         "sending": {"send_active": True},
         "paused": {"delivery_paused": True, "paused_at": now - timedelta(minutes=30)},
         "daily": {"daily_sent": 1612, "daily_resume_at": now + timedelta(hours=5)},
         "stopped": {},
+        "halted": {},
     }[state]
     if rows:
         kept = [line for line in model.processes if not line.sender]
@@ -401,6 +446,52 @@ def mail_state(model, now, state):
             ),
         }
     return replace(model, **values)
+
+
+def clear_state(now, status, phase=None):
+    """Clear the halt's state for the halted pages: the newest mailbox check
+    in ``status`` (None: none asked for yet), and the reason it gives. With
+    a ``phase`` no halt is recorded, a sender still reporting Halted."""
+    if phase is not None:
+        return ClearState(
+            halt=None, check=None, unsettled=0, reason="not_halted", phase=phase
+        )
+    halt = Halt(
+        halt_id=CLEAR_HALT, kind="before_data", began_at=now - timedelta(minutes=12)
+    )
+    check = (
+        None
+        if status is None
+        else MailboxCheckStatus(
+            check_id=UUID(int=10),
+            status=status,
+            created_at=now - timedelta(minutes=1),
+            claimed_at=now - timedelta(seconds=50),
+            finished_at=now - timedelta(seconds=30) if status == "passed" else None,
+        )
+    )
+    reason = {
+        None: "check_needed",
+        "waiting": "checking",
+        "passed": None,
+        "refused": "check_failed",
+    }[status]
+    return ClearState(halt=halt, check=check, unsettled=0, reason=reason)
+
+
+def clear_preview(now):
+    """Clear the halt's preview, the mailbox check just asked for."""
+    state = clear_state(now, "waiting")
+    return ClearPreview(
+        halt=state.halt,
+        check=state.check,
+        waiting=37,
+        unsettled=0,
+        unsettled_ids=(),
+        paused=False,
+        reason="checking",
+        token="signed-binding",
+    )
 
 
 def components(context, admin):
@@ -476,8 +567,6 @@ def components(context, admin):
                 "source_form_count": form,
                 "source_form_tile": source_form_tile(form),
                 "resave_tile": resave_tile(resave),
-                # A sign-in recent enough for the step-up gated actions.
-                "fresh": True,
                 "debug_actor": "other@example.org" if switch else None,
                 "accept_actor": "other@example.org" if accepted is True else None,
                 "refused_attempt": attempt if refused else None,
@@ -489,6 +578,9 @@ def components(context, admin):
                 # Content to re-save (#838) on the troubled page; none on
                 # the healthy one.
                 "resave": resave,
+                # As an ordinary poll answers (#1790): no copies of the
+                # page-load tiles, which only the view's own reads draw.
+                "loaded_echoed": True,
             }
             | extra
         )
@@ -586,35 +678,25 @@ def components(context, admin):
         extra[canonical(f"{url}?{urlencode({'loaded': query})}") if query else url] = (
             status(found)
         )
-    # Accept this change once with a stale sign-in (#1331 item 18). The
-    # status is the same whatever the sign-in; only the page's own
-    # data-health-fresh, set when it was drawn, picks the form.
-    stale_sign_in = {"fresh": False, "status_url": ACCEPT_STEP_UP_STATUS}
-    extra[ACCEPT_STEP_UP] = page(values(False, refused=True) | stale_sign_in)
-    extra[ACCEPT_STEP_UP_STATUS] = status(values(False, refused=True))
-    # A page drawn with a recent sign-in, whose polls bring the same refusal.
-    extra[ACCEPT_FRESH] = page(
-        values(False, refused=True) | {"status_url": ACCEPT_FRESH_STATUS}
+    # Accept this change once offered, whose polls bring the same refusal.
+    extra[ACCEPT_OFFERED] = page(
+        values(False, refused=True) | {"status_url": ACCEPT_OFFERED_STATUS}
     )
-    extra[ACCEPT_FRESH_STATUS] = status(values(False, refused=True))
-    # A stale page drawn before any refusal, carrying a CSRF token, whose
-    # poll brings one: the swapped-in step-up form takes the page's token.
-    extra[ACCEPT_STEP_UP_LATE] = page(
-        values(False)
-        | {
-            "fresh": False,
-            "csrf_token": "component-token",
-            "status_url": ACCEPT_STEP_UP_LATE_STATUS,
-        }
+    extra[ACCEPT_OFFERED_STATUS] = status(values(False, refused=True))
+    # The slow recheck (#1790): the page and the recheck draw the page-load
+    # tiles' copies from their own reads; ordinary polls echo the states.
+    slow = {"recheck_interval": RECHECK_MILLISECONDS}
+    found = values(False, loaded=LOADED) | slow
+    found |= {"resave": list(RESAVE), "resave_tile": resave_tile(list(RESAVE))}
+    extra[RECHECK] = page(
+        values(False, status_url=RECHECK_STATUS, loaded_echoed=False) | slow
     )
-    extra[ACCEPT_STEP_UP_LATE_STATUS] = status(values(False, refused=True))
-    # In LOCAL, an open refusal's offer drawn with a recent sign-in and with
-    # a stale one (#1385): only the shown copy's step-up records a return
-    # path. Their polls bring the same refusal.
-    for url, fresh in ((ACCEPT_LOCAL_FRESH, True), (ACCEPT_LOCAL_STALE, False)):
-        local = values(False, refused=True) | {"local_environment": True}
-        extra[url] = page(local | {"fresh": fresh, "status_url": f"{url}/status"})
-        extra[f"{url}/status"] = status(local)
+    extra[RECHECK_STATUS] = status(values(False) | slow)
+    for asked in (f"{RECHECK_STATUS}?slow=1", f"{RECHECK_LOADED}&slow=1"):
+        extra[canonical(asked)] = status(
+            found | {"status_url": RECHECK_LOADED, "loaded_echoed": False}
+        )
+    extra[RECHECK_LOADED] = status(found)
     return extra | {
         PAGE: (
             "text/html",
@@ -687,14 +769,14 @@ def components(context, admin):
                 "stewardship/system-health-status.html", values(False, waiting=True)
             ),
         ),
-        BACKUP_STEP_UP: (
+        BACKUP_SIGNED_OUT: (
             "text/html",
             render_to_string(
                 BACKUP_ANSWER,
                 values(
                     False,
                     status_url=BACKUP_STATUS,
-                    backup_now={"refused": "reauthenticate"},
+                    backup_now={"refused": "signed_out"},
                 ),
             ),
         ),
@@ -801,7 +883,7 @@ def components(context, admin):
                 ),
             ),
         ),
-        DEBUG_STEP_UP: (
+        DEBUG_SIGNED_OUT: (
             "text/html",
             render_to_string(
                 DEBUG_ANSWER,
@@ -809,7 +891,7 @@ def components(context, admin):
                     False,
                     debug=True,
                     status_url=DEBUG_STATUS,
-                    debug_off={"refused": "reauthenticate"},
+                    debug_off={"refused": "signed_out"},
                     debug_off_shown=True,
                 ),
             ),
@@ -997,6 +1079,91 @@ def components(context, admin):
                         "created": True,
                     },
                     debug_off_shown=True,
+                ),
+            ),
+        ),
+        CLEAR_PAGE: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(
+                    False,
+                    mail="halted",
+                    status_url=CLEAR_STATUS,
+                    clear_halt=clear_state(now, None),
+                ),
+            ),
+        ),
+        CLEAR_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html",
+                values(False, mail="halted", clear_halt=clear_state(now, "passed")),
+            ),
+        ),
+        CLEAR_NONE_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html",
+                values(
+                    False,
+                    mail="halted",
+                    clear_halt=clear_state(now, None, phase="unrecorded"),
+                ),
+            ),
+        ),
+        CLEAR_REFUSED_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html",
+                values(False, mail="halted", clear_halt=clear_state(now, "refused")),
+            ),
+        ),
+        CLEAR_CLEARING_PAGE: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(
+                    False,
+                    mail="halted",
+                    clear_halt=clear_state(now, None, phase="clearing"),
+                ),
+            ),
+        ),
+        CLEAR_STUCK_PAGE: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(
+                    False,
+                    mail="halted",
+                    clear_halt=clear_state(now, None, phase="stuck"),
+                ),
+            ),
+        ),
+        CLEAR_PREVIEW: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(
+                    False,
+                    mail="halted",
+                    status_url=CLEAR_STATUS,
+                    clear_halt=clear_state(now, "waiting"),
+                    clear={"preview": clear_preview(now)},
+                ),
+            ),
+        ),
+        CLEAR_DONE: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(
+                    False,
+                    mail="halted",
+                    status_url=CLEAR_STATUS,
+                    clear_halt=clear_state(now, "passed"),
+                    clear={"cleared": SimpleNamespace(), "created": True},
                 ),
             ),
         ),

@@ -2,7 +2,8 @@
 
    Pointing at or tapping a date, or moving the slider, shows a short tooltip
    beside that date (#575): the date as a small heading, then a few
-   "label: value" lines. The fuller sentence for each date stays in the
+   "label: value" lines, and a faint guide line at that date across the
+   plot (#1536). The fuller sentence for each date stays in the
    visually hidden live region and the slider's value text for screen readers;
    the tooltip itself is aria-hidden so it is not announced twice.
 
@@ -20,6 +21,8 @@
     const slider = root.querySelector("input[type=range]");
     const output = root.querySelector("[data-digest-values]");
     const tip = root.querySelector("[data-digest-tip]");
+    // Optional, so a page without it still gets the tooltip.
+    const guide = root.querySelector("[data-digest-guide]");
     const source = root.querySelector("#digest-chart-data") || document.getElementById("digest-chart-data");
     const controls = root.querySelector("[data-digest-controls]");
     if (!image || !slider || !output || !tip || !source || !controls) return;
@@ -60,11 +63,17 @@
     // Put the tooltip beside the date's x position, at the top of the plot.
     // It sits right of the date in the left half and left of it in the right
     // half, clamped so it never leaves the image (or widens a phone's page).
+    // The guide line runs down the plot (every panel) at the date itself.
     const place = index => {
       const width = image.clientWidth;
       const height = image.clientHeight;
       if (!width || !height) return;
       const x = (plot.left + (index - low) / (high - low) * (plot.right - plot.left)) * width;
+      if (guide) {
+        guide.style.left = `${x}px`;
+        guide.style.top = `${(1 - plot.top) * height}px`;
+        guide.style.height = `${(plot.top - plot.bottom) * height}px`;
+      }
       const gap = 12;
       const box = tip.offsetWidth;
       let left = x <= width / 2 ? x + gap : x - gap - box;
@@ -84,9 +93,13 @@
       if (output.textContent !== data.labels[index]) output.textContent = data.labels[index];
       if (index !== shown) { fill(index); shown = index; }
       tip.classList.add("digest-tip-open");
+      guide?.classList.add("digest-guide-open");
       place(index);
     };
-    const hide = () => { tip.classList.remove("digest-tip-open"); };
+    const hide = () => {
+      tip.classList.remove("digest-tip-open");
+      guide?.classList.remove("digest-guide-open");
+    };
 
     const point = event => {
       const bounds = image.getBoundingClientRect();
@@ -136,6 +149,7 @@
     fill(data.labels.length - 1);
     shown = data.labels.length - 1;
     tip.hidden = false;
+    if (guide) guide.hidden = false;
     controls.hidden = false;
   };
   document.querySelectorAll("[data-digest-chart]").forEach(wire);

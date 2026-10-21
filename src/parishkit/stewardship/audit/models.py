@@ -5,9 +5,41 @@ Event-specific payload schemas and retention/export workflows are deliberately
 not enabled by this foundation.
 """
 
+from django.contrib.postgres.indexes import GinIndex, OpClass
 from django.db import models
+from django.db.models.functions import Cast, Upper
 
 from parishkit.stewardship.storage import ImmutableRecord
+
+
+def value_text_index(name):
+    """Trigram GIN on the text of every context value (#765).
+
+    It holds exactly what the System logs search compares
+    (``log_search.ContextValues`` under ``icontains``'s ``UPPER``), so the
+    planner can use it; frozen migration file 0117 creates it.
+    """
+    values = models.Func(
+        "context",
+        models.Value("$.*"),
+        function="jsonb_path_query_array",
+        output_field=models.JSONField(),
+    )
+    return GinIndex(
+        OpClass(Upper(Cast(values, models.TextField())), name="gin_trgm_ops"),
+        name=name,
+    )
+
+
+def type_indexes(column, prefix):
+    """The search's type indexes (#765): trigram GIN under ``icontains``'s
+    ``UPPER``, and a pattern B-tree for equality, lists and prefixes."""
+    return [
+        GinIndex(OpClass(Upper(column), name="gin_trgm_ops"), name=f"{prefix}_trgm"),
+        models.Index(
+            fields=[column], opclasses=["varchar_pattern_ops"], name=f"{prefix}_pattern"
+        ),
+    ]
 
 
 class AuditEvent(ImmutableRecord):
@@ -34,6 +66,8 @@ class AuditEvent(ImmutableRecord):
             # System logs and their export read newest first by (created_at,
             # id), with a keyset cursor on the same pair (#308).
             models.Index(fields=["created_at", "id"], name="audit_event_created_id"),
+            # System logs text search (#765, log_search).
+            *type_indexes("event_type", "audit_event_type"),
         ]
         constraints = [
             models.CheckConstraint(
@@ -62,6 +96,8 @@ class AuditContext(ImmutableRecord):
 
     class Meta:
         db_table = "stewardship_audit_context"
+        # System logs text search (#765, log_search).
+        indexes = [value_text_index("audit_context_value_trgm")]
 
 
 class OperationalLog(ImmutableRecord):
@@ -85,6 +121,9 @@ class OperationalLog(ImmutableRecord):
                 condition=models.Q(event="admin_input_refused"),
                 name="operational_refusal_actor_time",
             ),
+            # System logs text search (#765, log_search).
+            value_text_index("operational_value_trgm"),
+            *type_indexes("event", "operational_event"),
         ]
         constraints = [
             models.CheckConstraint(

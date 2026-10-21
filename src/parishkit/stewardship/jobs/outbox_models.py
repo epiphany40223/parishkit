@@ -7,8 +7,9 @@ again. Runtime exposure belongs to the compiled delivery owners, not these ORM
 declarations or possession of a message UUID.
 """
 
+from django.contrib.postgres.indexes import GinIndex, OpClass
 from django.db import models
-from django.db.models.functions import Now
+from django.db.models.functions import Cast, Lower, Now
 
 from parishkit.stewardship.storage import (
     ImmutableRecord,
@@ -30,10 +31,14 @@ DELIVERY_PURPOSES = (
     "weekly_digest",
     "operational",
     "security_event",
+    "leader_email",
 )
 # Purposes routed to Administrators as operational mail: no campaign, no
 # Family, no credential namespace and no Testing redirection.
 ADMINISTRATOR_PURPOSES = ("operational", "security_event")
+# Ministry leader emails (#1592) belong to no campaign either, but are routed
+# like campaign mail: to the Testing recipient in Testing.
+PARISH_PURPOSES = ADMINISTRATOR_PURPOSES + ("leader_email",)
 DELIVERY_ACTIONS = ("created", "prepared", "hold", "release_hold") + tuple(
     action.value for action in DeliveryAction
 )
@@ -169,7 +174,14 @@ class OutboxMessage(MutableRecord, DeliveryCommand):
                         family=None,
                     )
                     | (
-                        ~models.Q(purpose__in=ADMINISTRATOR_PURPOSES)
+                        models.Q(purpose="leader_email", family=None, campaign=None)
+                        & (
+                            models.Q(routing="testing_override", mode="testing")
+                            | models.Q(routing="production", mode="production")
+                        )
+                    )
+                    | (
+                        ~models.Q(purpose__in=PARISH_PURPOSES)
                         & models.Q(campaign__isnull=False)
                         & (
                             models.Q(routing="testing_override", mode="testing")
@@ -191,6 +203,7 @@ class OutboxMessage(MutableRecord, DeliveryCommand):
                             "weekly_digest",
                             "operational",
                             "security_event",
+                            "leader_email",
                         ],
                         family=None,
                     )
@@ -336,6 +349,27 @@ class OutboxRender(ImmutableRecord):
 
     class Meta:
         db_table = "stewardship_outbox_render"
+        indexes = [
+            # Sent mail's Recipient filter finds the emails meant for one
+            # address, in any case, through an Administrator-only definer
+            # read (#1562, frozen migration 0116). Lower-casing the JSON
+            # text keeps it valid JSON, so containment works on the result.
+            # The jsonb_path_ops operator class: the read uses only
+            # containment (@>), which it answers with a smaller index than
+            # the default jsonb_ops. Django writes OpClass on an expression
+            # correctly only once OpClass is an index wrapper, which the
+            # jobs app registers (apps.JobsConfig.ready).
+            GinIndex(
+                OpClass(
+                    Cast(
+                        Lower(Cast("intended_recipients", models.TextField())),
+                        models.JSONField(),
+                    ),
+                    name="jsonb_path_ops",
+                ),
+                name="outbox_render_intended_lower",
+            ),
+        ]
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(payload_digest__regex=r"^[0-9a-f]{64}$"),

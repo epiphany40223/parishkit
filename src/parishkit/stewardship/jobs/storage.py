@@ -18,7 +18,7 @@ from django.db import connection, transaction
 from django.db.models.functions import Now
 
 from parishkit.stewardship.campaigns.work_locks import require_work_order
-from parishkit.stewardship.observability import correlation
+from parishkit.stewardship.observability import FailureKind, correlation
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
 from .models import TaskRun
@@ -27,6 +27,35 @@ from .phases import TaskPhase
 
 class TaskRetryConflict(StorageInvariantError):
     """A user-selected run is no longer the chain's latest failed execution."""
+
+
+class TaskNotAdmitted(PermissionError):
+    """The owning handler refused to start a task's work: a claim or its effect.
+
+    A designed refusal, not a fault (#1659): Family mail refuses new work
+    while sending is paused or stopped, and other handlers refuse work their
+    domain does not admit at that moment. A refused claim leaves the task
+    queued for a later hint; a refused effect leaves it running until its
+    lease expires, when it is retried. It stays a PermissionError, so every
+    caller that already treats a refusal as one is unchanged, but it names
+    its own category: as a plain PermissionError (an OSError) it was classed
+    ``filesystem_unavailable``. The consumer logs it at INFO.
+    """
+
+    failure_kind = FailureKind.TASK_NOT_ADMITTED
+
+
+class TransitionNotAdmitted(PermissionError):
+    """The owning handler refused any other task transition (#1659).
+
+    Completing, failing, retrying, cancelling, expiring or recovering a run
+    against its domain's evidence (a Family delivery completed before its
+    dispatch is delivered) is an invariant violation, not a designed hold, so
+    the consumer keeps its ERROR line, under its own category rather than
+    ``filesystem_unavailable``.
+    """
+
+    failure_kind = FailureKind.TASK_TRANSITION_REFUSED
 
 
 @dataclass(frozen=True)
@@ -76,7 +105,9 @@ def _admit(callback, action, status):
     if not callable(callback):
         raise TypeError("Task admission callback is required.")
     if callback(action, status) is not True:
-        raise PermissionError("Task operation is not admitted.")
+        # Only a refused claim is a designed refusal; see TaskNotAdmitted.
+        refusal = TaskNotAdmitted if action == "claim" else TransitionNotAdmitted
+        raise refusal("Task operation is not admitted.")
 
 
 @contextmanager

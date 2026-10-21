@@ -16,12 +16,9 @@ from django.test import Client, RequestFactory
 from django.urls import resolve
 
 from parishkit.stewardship.accounts.admin_editing import error_response
-from parishkit.stewardship.accounts.admin_editing import (
-    step_up_response as step_up,
-)
 from parishkit.stewardship.accounts.automation_views import _fields
 from parishkit.stewardship.accounts.policy import Principal
-from parishkit.stewardship.accounts.sessions import FreshAuthenticationRequired
+from parishkit.stewardship.accounts.sessions import SignInEnded
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web import refusal_log
 from parishkit.stewardship.web.contracts import (
@@ -97,14 +94,8 @@ def answer(response, request=None):
             None,
         ),
         (signing.BadSignature("x"), "bad_signature", ["invalid"], 400, "INFO", None),
-        (
-            FreshAuthenticationRequired("x"),
-            "fresh_authentication_required",
-            ["denied"],
-            403,
-            "INFO",
-            None,
-        ),
+        # A session that ended between admission and a guard's write (#1547).
+        (SignInEnded("x"), "denied", ["denied"], 403, "WARNING", None),
         (UserFacingDenied("Not now."), "denied", ["denied"], 403, "WARNING", None),
         (AccessDenied("x"), "denied", ["denied"], 403, "WARNING", None),
         (
@@ -158,14 +149,6 @@ def test_each_shared_refusal_is_recorded_with_its_reason_and_level(
     assert context["mode"] == "testing"
     assert record.level == level
     assert record.actor_id == ACTOR
-
-
-def test_a_step_up_answer_is_an_info_fresh_authentication_refusal(recorded):
-    """The ordinary first answer to a fresh-gated action (spec: INFO)."""
-    answer(step_up("/admin/", "Home"))
-    (record,) = recorded
-    assert record.context()["reason"] == "fresh_authentication_required"
-    assert record.level == "INFO"
 
 
 def test_a_csrf_failure_is_a_warning_with_its_closed_reason_only(recorded):
@@ -261,7 +244,7 @@ def test_only_typed_refusals_carry_a_reason():
 
     assert reason_of(Foreign()) is None
     assert reason_of(AccessDenied()) == "denied"
-    assert reason_of(FreshAuthenticationRequired()) == ("fresh_authentication_required")
+    assert reason_of(SignInEnded()) == "denied"
 
 
 def test_the_response_keeps_only_the_exception_class(recorded):

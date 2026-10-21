@@ -52,12 +52,12 @@ def test_stepper_follows_an_applied_change_and_offers_the_next_step(
     browser, _ = signed_in()
     region = stepper(browser.get(path).content)
     assert region is not None
-    assert "Step 2 of 7:" in region and "<strong>Share options</strong>" in region
+    assert "Step 3 of 8:" in region and "<strong>Share options</strong>" in region
     # Campaign settings is completed by creating the campaign; the default
     # share options the campaign started with complete nothing.
     assert status_of(region, "Campaign settings") == "Completed"
     assert status_of(region, "Share options") == "Current step — Not done yet"
-    assert "1 of 7 steps completed" in region
+    assert "1 of 8 steps completed" in region
     settings = reverse("admin:campaign_settings")
     content = reverse("admin:content_catalog")
     # The summary names the next step as text; Back and Continue are the
@@ -76,7 +76,7 @@ def test_stepper_follows_an_applied_change_and_offers_the_next_step(
     # stepper marks the step completed (as on a reload).
     region = stepper(browser.get(path).content)
     assert status_of(region, "Share options") == "Current step — Completed"
-    assert "2 of 7 steps completed" in region
+    assert "2 of 8 steps completed" in region
     assert "Next: Pages and emails" in region
     # Change status, which the dialog follows, offers the same next step.
     status_url = reverse("admin:configuration_request", args=[requested(response)])
@@ -87,8 +87,11 @@ def test_stepper_follows_an_applied_change_and_offers_the_next_step(
     # The other steps' pages draw it too, each as its own current step.
     whole = browser.get(settings).content
     page = stepper(whole)
-    assert "Step 1 of 7:" in page and b"data-campaign-step-back" not in whole
-    assert "Step 7 of 7:" in stepper(browser.get(reverse("admin:go_live")).content)
+    assert "Step 1 of 8:" in page and b"data-campaign-step-back" not in whole
+    # Go live, the last step, draws only its own step bar (#1585), with its
+    # Back to the step before it.
+    check = browser.get(reverse("admin:go_live")).content
+    assert stepper(check) is None and b"data-go-live-back" in check
     # Pages that are not steps, Home among them, draw none.
     assert stepper(browser.get("/admin/").content) is None
     # Once the campaign leaves draft there is no stepper and no Continue.

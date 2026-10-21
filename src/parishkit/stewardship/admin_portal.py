@@ -11,9 +11,9 @@ capability and records nothing, as the page's GET records nothing. It
 returns the closing Administrator's id, not the email address the page
 shows, as the reads leave out addresses.
 
-``set`` is fresh-gated on the page. A full-scope automation session stands
-in for the recent sign-in (``require_fresh``'s automation branch, which
-records ``automation_fresh_gate`` and the ``fresh_gated`` notice), in the
+``set`` is privileged: it needs a live full-scope automation session
+(``sign_in_instant``'s automation branch, which records
+``automation_fresh_gate`` and the ``fresh_gated`` notice), in the
 same transaction as the page's ``set_closed`` and the command's
 ``admin_cmd_portal_maintenance_set``, so all commit or roll back together.
 The switch has no version: asking for the state it is already in is the
@@ -96,7 +96,7 @@ def set_maintenance(caller, service, *, closed, message, context):
     """``portal maintenance set``: the page's Close or Reopen button.
 
     ``message`` was already cleaned by the page's ``clean_message`` (and is
-    empty for a reopening). The fresh gate, the page's ``set_closed`` (which
+    empty for a reopening). The privileged check, the page's ``set_closed`` (which
     records ``family_maintenance_started`` or ``_ended``) and the command's
     own event share one transaction. ``context["committed"]`` is set once
     the change may have committed (exit 6 then). Returns the switch as read
@@ -106,7 +106,7 @@ def set_maintenance(caller, service, *, closed, message, context):
 
     from .accounts.family_maintenance import AlreadySet, current_state, set_closed
     from .accounts.policy import Capability
-    from .accounts.sessions import require_fresh
+    from .accounts.sessions import sign_in_instant
     from .audit.schemas import Action, ActorKind, Outcome
     from .audit.services import record_action
     from .observability import _guard_refusal
@@ -117,8 +117,8 @@ def set_maintenance(caller, service, *, closed, message, context):
     try:
         with transaction.atomic():
             # The automation branch locks the session row for this
-            # transaction and records the fresh-gate event and notice here.
-            require_fresh(caller)
+            # transaction and records the privileged-command event and notice.
+            sign_in_instant(caller)
             try:
                 set_closed(actor, closed=closed, message=message)
             except AlreadySet as error:

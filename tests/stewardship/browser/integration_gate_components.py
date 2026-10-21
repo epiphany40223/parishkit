@@ -99,7 +99,6 @@ def components(context, admin):
             {
                 "label": "Backup encryption key",
                 "current": KeyStatus("configured", "0123456789abcdef"),
-                "fresh": True,
             },
         ),
         # The second step, waiting for the code.
@@ -108,7 +107,6 @@ def components(context, admin):
             {
                 "label": "Backup encryption key",
                 "current": KeyStatus("configured", "0123456789abcdef"),
-                "fresh": True,
                 "new_fingerprint": "fedcba9876543210",
                 "challenge": "PKBKP1:" + "A" * 80,
                 "intent": "synthetic-intent",

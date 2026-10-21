@@ -170,8 +170,14 @@ def test_reference_family_population_does_not_expand_interactive_queries(
         # has started, the patches applied since the campaign's creation
         # (with that creation's sequence as a subquery) and the steps kept
         # as is; it reuses the dashboard's invitation revision. Three fixed
-        # statements, none of them over the Families: 55.
-        "admin_shell": _measure(admin_page, query_limit=55),
+        # statements, none of them over the Families: 55. The menu counts
+        # Census changes' Work to do rows too (#1590), on the menu counts'
+        # one statement; Census changes is the only counted entry that is a
+        # link on a Testing draft, so that statement now runs here when it
+        # did not before. One fixed statement whatever the population: 56.
+        # Home's Review work counts (#1690) ride on that same statement
+        # (review_work.with_counts) and add none.
+        "admin_shell": _measure(admin_page, query_limit=56),
     }
     print("Identity baseline: " + json.dumps(result, sort_keys=True))
     # A Family page reads its own session and Family, never the population.

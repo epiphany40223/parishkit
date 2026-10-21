@@ -29,7 +29,6 @@ from parishkit.stewardship.accounts.secret_models import SecretReplacementReques
 from . import campaign_builders
 from .auth_builders import signed_in, stale_sign_in
 from .campaign_builders import change
-from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_configuration_service_postgresql import (  # noqa: F401
     as_config_installer,
     config_role,
@@ -87,7 +86,20 @@ def replacement(request, monkeypatch, tmp_path, google):
         selection=ConfigurationChangeRequest.objects.get(
             request_key=selection_key(row.pk)
         ),
-        url=f"/admin/system/key-changes/{row.pk}/selection/",
+    )
+
+
+def review(browser):
+    """Finish switching's Review, in the settings page's dialog (#1568)."""
+    return post(browser, SETTINGS, {"action": "finish"})
+
+
+def confirm_switch(browser, preview, row, **fields):
+    """The dialog's Apply of Finish switching: its preview and key change."""
+    return post(
+        browser,
+        SETTINGS,
+        {"action": "confirm", "preview": preview, "request_id": str(row.pk)} | fields,
     )
 
 
@@ -162,18 +174,19 @@ def test_select_acknowledged_fingerprint_via_real_web_and_config_roles(
 ):
     """Neither installed bytes nor an Applying request alone changes selected YAML."""
     value = replacement
-    assert value.browser.get(value.url).status_code == 404
+    # Nothing to finish while the key is still being installed.
+    assert review(value.browser).status_code == 409
     complete(value)
     old = value.service.store.active()
     with identity("pk_stewardship_web"):
-        page = value.browser.get(value.url)
-        # Finish switching reviews a change under its integration (#196).
-        assert flow_steps(page.content) == (STEPS, "Review")
-        assert f'<li><a href="{SETTINGS}">ParishSoft</a></li>'.encode() in page.content
+        page = review(value.browser)
+        # The dialog's confirmation, never a page of its own (#1568).
+        assert b"data-review-answer" in page.content
+        assert b"Finish switching to the new key?" in page.content
+        assert b"<html" not in page.content
+        assert hidden(page, "request_id") == str(value.row.pk)
         preview = hidden(page, "preview")
-        response = post(
-            value.browser, value.url, {"action": "confirm", "preview": preview}
-        )
+        response = confirm_switch(value.browser, preview, value.row)
         assert response.status_code == 302, response.content
     assert value.service.store.active() == old
     row = ConfigurationChangeRequest.objects.get(
@@ -199,18 +212,17 @@ def test_select_acknowledged_fingerprint_via_real_web_and_config_roles(
         "values"
     ]
     assert record["credential_fingerprint"] == file_fingerprint(CANDIDATE)
-    assert b"already in use" in value.browser.get(value.url).content
-    # The switch's status names Finish switching but returns to ParishSoft.
+    finished = review(value.browser)
+    assert finished.status_code == 409
+    assert b"No new key is waiting to be switched to." in finished.content
+    # The switch's status returns to the page it was confirmed on.
     status = value.browser.get(response["Location"]).content
-    assert b"<li><span>Finish switching to the new key</span></li>" in status
     assert f'<a href="{SETTINGS}">Return to ParishSoft</a>'.encode() in status
     assert (
-        post(value.browser, value.url, {"action": "confirm", "preview": preview})[
-            "Location"
-        ]
+        confirm_switch(value.browser, preview, value.row)["Location"]
         == response["Location"]
     )
-    assert CANDIDATE not in value.browser.get(value.url).content
+    assert CANDIDATE not in page.content and CANDIDATE not in finished.content
 
 
 @pytest.mark.parametrize("cadence_before", [False, True])
@@ -245,10 +257,8 @@ def test_selection_parser_is_bound_to_preview_not_later_cadence(
     if cadence_before:
         cadence("03:15")
     with identity("pk_stewardship_web"):
-        preview = hidden(value.browser.get(value.url), "preview")
-        response = post(
-            value.browser, value.url, {"action": "confirm", "preview": preview}
-        )
+        preview = hidden(review(value.browser), "preview")
+        response = confirm_switch(value.browser, preview, value.row)
     assert response.status_code == 302, response.content
     row = ConfigurationChangeRequest.objects.get(
         pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
@@ -266,23 +276,17 @@ def test_selection_parser_is_bound_to_preview_not_later_cadence(
     )
     cadence("04:15")
     with identity("pk_stewardship_web"):
-        retry = post(
-            value.browser, value.url, {"action": "confirm", "preview": preview}
-        )
+        retry = confirm_switch(value.browser, preview, value.row)
     assert retry.status_code == 302, retry.content
     assert retry["Location"] == response["Location"]
 
 
-@pytest.mark.parametrize(
-    "failure", ["stale_base", "settings", "freshness", "hidden", "csrf"]
-)
-def test_selection_rechecks_proof_intent_and_fresh_auth(
-    replacement, monkeypatch, failure
-):
-    """A correct old preview never authorizes new settings or stale authentication."""
+@pytest.mark.parametrize("failure", ["stale_base", "settings", "hidden", "csrf"])
+def test_selection_rechecks_proof_and_intent(replacement, monkeypatch, failure):
+    """A correct old preview never authorizes new settings or a changed proof."""
     value = replacement
     complete(value)
-    preview = hidden(value.browser.get(value.url), "preview")
+    preview = hidden(review(value.browser), "preview")
     before = value.service.store.active()
     if failure in {"stale_base", "settings"}:
         section = "parish" if failure == "stale_base" else "integrations"
@@ -302,28 +306,37 @@ def test_selection_rechecks_proof_intent_and_fresh_auth(
                 }
             ],
         )
-    elif failure == "freshness":
-        stale_sign_in()
     count = ConfigurationChangeRequest.objects.count()
-    data = {"action": "confirm", "preview": preview}
+    data = {"action": "confirm", "preview": preview, "request_id": str(value.row.pk)}
     if failure == "hidden":
         data["credential_fingerprint"] = "b" * 64
     response = (
-        value.browser.post(value.url, data)
+        value.browser.post(SETTINGS, data)
         if failure == "csrf"
-        else post(value.browser, value.url, data)
+        else post(value.browser, SETTINGS, data)
     )
     assert (
         response.status_code
         == {
             "stale_base": 409,
             "settings": 409,
-            "freshness": 403,
             "hidden": 400,
             "csrf": 403,
         }[failure]
     )
     assert ConfigurationChangeRequest.objects.count() == count
+
+
+def test_an_old_sign_in_confirms_the_selection(replacement):
+    """A sign-in older than five minutes confirms the reviewed key (#1547)."""
+    value = replacement
+    complete(value)
+    preview = hidden(review(value.browser), "preview")
+    count = ConfigurationChangeRequest.objects.count()
+    stale_sign_in()
+    response = confirm_switch(value.browser, preview, value.row)
+    assert response.status_code == 302, response.content
+    assert ConfigurationChangeRequest.objects.count() == count + 1
 
 
 def test_installer_refuses_fingerprint_without_matching_ack(replacement):
@@ -366,8 +379,8 @@ def test_second_replacement_requires_selection_of_the_installed_predecessor(
     old = value.service.store.active()
     assert save_key(value.browser, "third-candidate").status_code == 409
     assert SecretReplacementRequest.objects.count() == 1
-    preview = hidden(value.browser.get(value.url), "preview")
-    response = post(value.browser, value.url, {"action": "confirm", "preview": preview})
+    preview = hidden(review(value.browser), "preview")
+    response = confirm_switch(value.browser, preview, value.row)
     row = ConfigurationChangeRequest.objects.get(
         pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
@@ -399,6 +412,8 @@ def test_pending_replacement_holds_selection_and_latest_receipt_is_required(
     """An in-flight replacement is not mistaken for current acknowledged evidence."""
     value = replacement
     complete(value)
+    preview = hidden(review(value.browser), "preview")
+    count = ConfigurationChangeRequest.objects.count()
     from parishkit.stewardship.accounts.secret_requests import stage_secret_request
 
     # The legacy internal protocol can also reserve a target. Even though the
@@ -414,7 +429,9 @@ def test_pending_replacement_holds_selection_and_latest_receipt_is_required(
         expected_fingerprint=file_fingerprint(CANDIDATE),
         correlation_id=uuid4(),
     )
-    assert value.browser.get(value.url).status_code == 503
+    # Apply repeats the selection's check of every reservation under the lock.
+    assert confirm_switch(value.browser, preview, value.row).status_code == 503
+    assert ConfigurationChangeRequest.objects.count() == count
 
 
 def test_pending_replacement_does_not_permanently_reject_selection_intent(
@@ -428,8 +445,8 @@ def test_pending_replacement_does_not_permanently_reject_selection_intent(
 
     value = replacement
     complete(value)
-    preview = hidden(value.browser.get(value.url), "preview")
-    response = post(value.browser, value.url, {"action": "confirm", "preview": preview})
+    preview = hidden(review(value.browser), "preview")
+    response = confirm_switch(value.browser, preview, value.row)
     request = ConfigurationChangeRequest.objects.get(
         pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
@@ -481,7 +498,7 @@ def test_selection_preview_does_not_hold_the_global_work_lock(
 
     monkeypatch.setattr(views, hook, probe)
     with identity("pk_stewardship_web"):
-        assert value.browser.get(value.url).status_code == 200
+        assert review(value.browser).status_code == 200
     assert observed == [True]
 
 
@@ -497,7 +514,7 @@ def test_another_admin_can_select_with_own_preview_but_not_replay_original(
 
     value = replacement
     complete(value)
-    preview = hidden(value.browser.get(value.url), "preview")
+    preview = hidden(review(value.browser), "preview")
     change(
         value.service.store,
         value.service.store.active(),
@@ -516,14 +533,11 @@ def test_another_admin_can_select_with_own_preview_but_not_replay_original(
         disabled=True, version=F("version") + 1
     )
     browser, _ = signed_in()
-    page = browser.get(value.url)
+    page = review(browser)
     assert page.status_code == 200
     own_preview = hidden(page, "preview")
-    assert (
-        post(browser, value.url, {"action": "confirm", "preview": preview}).status_code
-        == 403
-    )
-    response = post(browser, value.url, {"action": "confirm", "preview": own_preview})
+    assert confirm_switch(browser, preview, value.row).status_code == 403
+    response = confirm_switch(browser, own_preview, value.row)
     assert response.status_code == 302, response.content
     assert (
         b"Switching to it now"
@@ -541,3 +555,21 @@ def test_another_admin_can_select_with_own_preview_but_not_replay_original(
             ).state
             == "applied"
         )
+
+
+def test_a_switch_is_confirmed_only_on_its_own_integrations_page(replacement):
+    """Finish switching's Apply names its key change, which must belong to
+    the integration whose page it is posted to (#1568): the same signed
+    preview posted to another integration's page is refused (404) and
+    records nothing."""
+    value = replacement
+    complete(value)
+    preview = hidden(review(value.browser), "preview")
+    count = ConfigurationChangeRequest.objects.count()
+    response = post(
+        value.browser,
+        "/admin/system/integrations/google_workspace/",
+        {"action": "confirm", "preview": preview, "request_id": str(value.row.pk)},
+    )
+    assert response.status_code == 404
+    assert ConfigurationChangeRequest.objects.count() == count

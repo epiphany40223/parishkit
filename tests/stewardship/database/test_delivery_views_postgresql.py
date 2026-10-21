@@ -54,6 +54,7 @@ from ..policy_factory import address
 from ..test_outbox_validation import rendering
 from .auth_builders import signed_in
 from .campaign_builders import campaign_clock, change
+from .family_link_checks import link_reads, timeline_link
 from .response_builders import activate_response_service, response_source
 from .test_background_grants_postgresql import task_login
 from .test_daily_digest_dispatch_postgresql import allocated as daily_allocated
@@ -125,19 +126,19 @@ def test_uncertainty_warns_once_and_admin_metadata_never_discloses_payload(
     with task_login(ServiceRole.WEB, exact=True):
         for path in (
             "/admin/",
-            "/admin/mail/outgoing/",
-            f"/admin/mail/outgoing/{message.pk}/",
+            "/admin/mail/sent/",
+            f"/admin/mail/sent/{message.pk}/",
         ):
             response = browser.get(path)
             assert response.status_code == 200
-            # The status bar, Outgoing mail and the Mail message page all
+            # The status bar, Sent mail and the Mail message page all
             # name the state in the plain words (#589, #678).
             assert b"Not sure it arrived" in response.content
             assert b"Delivery unknown" not in response.content
             assert family_mail.code.encode() not in response.content
             assert message.sealed_substitutions.encode() not in response.content
             assert b"sealed_substitutions" not in response.content
-        listing = browser.get("/admin/mail/outgoing/?state=all&size=25")
+        listing = browser.get("/admin/mail/sent/?state=all&size=25")
         assert listing.status_code == 200
         assert b'class="table-nav"' in listing.content
         assert b'<input type="hidden" name="state" value="all">' in listing.content
@@ -149,7 +150,7 @@ def test_uncertainty_warns_once_and_admin_metadata_never_discloses_payload(
     # Dashboard is activity; the status pages themselves must remain passive.
     assert activity < PortalSession.objects.get().last_activity_at
     before = PortalSession.objects.get().last_activity_at
-    for path in ("/admin/mail/outgoing/", f"/admin/mail/outgoing/{message.pk}/"):
+    for path in ("/admin/mail/sent/", f"/admin/mail/sent/{message.pk}/"):
         assert browser.get(path).status_code == 200
         assert PortalSession.objects.get().last_activity_at == before
 
@@ -183,8 +184,8 @@ def test_delivery_pages_and_warning_are_admin_only(
     names = []
     monkeypatch.setattr(delivery_views, "with_family_names", names.append)
     for path in (
-        "/admin/mail/outgoing/",
-        f"/admin/mail/outgoing/{message.pk}/",
+        "/admin/mail/sent/",
+        f"/admin/mail/sent/{message.pk}/",
         "/admin/mail/refusals/",
         # A refusal's page names its Family too (#935); unknown or not,
         # the role check refuses it first.
@@ -192,22 +193,23 @@ def test_delivery_pages_and_warning_are_admin_only(
     ):
         response = browser.get(path)
         assert response.status_code == 403
-        # Outgoing mail's Family names (#931) are the page's, not the error's.
+        # Sent mail's Family names (#931) are the page's, not the error's.
         assert name not in response.content
     assert names == []
     assert b"data-delivery-warning" not in browser.get("/admin/").content
 
 
 def family_name(message):
-    """The Family name Outgoing mail shows for ``message``, from the snapshot."""
+    """The Family name Sent mail shows for ``message``, from the snapshot."""
     duid = FamilyCampaign.objects.get(pk=message.family_id).family_duid
     snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
     return snapshot_family_names(snapshot, [duid], NAME_NOT_RECORDED)[duid]
 
 
-def test_outgoing_mail_names_each_family_beside_its_duid(family_mail, google):  # noqa: F811
-    """#931: the Family's name opens the email; its DUID is a separate column.
-    Both sort on the server, and When is the one time of the email's current
+def test_sent_mail_names_each_family_with_its_duid(family_mail, google):  # noqa: F811
+    """#931, #1562: When heads the row and opens the email; Recipient names
+    the Family with its DUID below and lists that Family's email. Recipient
+    sorts on the server, and When is the one time of the email's current
     state (its last change), not when it was created."""
     message = uncertain(family_mail)
     assert message.updated_at != message.created_at
@@ -216,38 +218,46 @@ def test_outgoing_mail_names_each_family_beside_its_duid(family_mail, google):  
     assert name and name != NAME_NOT_RECORDED
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True):
-        response = browser.get("/admin/mail/outgoing/", {"sort": "-duid"})
+        # The fixture's email is a Testing rehearsal's (Production is the
+        # page's default view, #1562).
+        response = browser.get(
+            "/admin/mail/sent/", {"sort": "-name", "mode": "testing"}
+        )
     assert response.status_code == 200
     html = response.content.decode()
+    # Recipient posts the Family's DUID, never a link (#1562).
     assert (
-        f'<th scope="row"><a href="/admin/mail/outgoing/{message.pk}/">'
-        f"{escape(name)}</a></th>"
+        f'<input type="hidden" name="recipient" value="{duid}">'
+        '<input type="hidden" name="mode" value="testing">'
     ) in html
+    assert f">{escape(name)}</button></form></td>" in html
     assert f'<td class="numeric nowrap">{duid}</td>' in html
-    # Family DUID is the sorted heading; Family sorts too (token name).
+    # Recipient is the sorted heading (token name).
     heading = html.split('aria-sort="descending"')[1].split("</th>")[0]
-    assert "Family DUID" in heading
-    assert "sort=name" in html
-    # When: one time, the last change, newest first by default.
-    when = f'<td class="nowrap"><time datetime="{instant(message.updated_at)}"'
+    assert "Recipient" in heading
+    # When: one time, the last change, heading the row and opening the email.
+    when = (
+        f'<th scope="row" class="nowrap"><a href="/admin/mail/sent/{message.pk}/">'
+        f'<time datetime="{instant(message.updated_at)}"'
+    )
     assert when in html
     assert f'datetime="{instant(message.created_at)}"' not in html
     assert "Changed" not in html
     with task_login(ServiceRole.WEB, exact=True):
-        default = browser.get("/admin/mail/outgoing/").content.decode()
+        default = browser.get("/admin/mail/sent/").content.decode()
     heading = default.split('aria-sort="descending"')[1].split("</th>")[0]
     assert ">When<" in heading
     # The name is only shown, never searched: the filter stays exact.
-    assert browser.get("/admin/mail/outgoing/", {"q": name}).status_code == 400
+    assert browser.get("/admin/mail/sent/", {"recipient": name}).status_code == 400
+    # The retired search parameter is refused, not ignored.
+    assert browser.get("/admin/mail/sent/", {"q": str(duid)}).status_code == 400
     # Family DUID's sort token is duid; the older recipient is not kept.
-    assert browser.get("/admin/mail/outgoing/", {"sort": "recipient"}).status_code == (
-        400
-    )
+    assert browser.get("/admin/mail/sent/", {"sort": "recipient"}).status_code == (400)
     # The email's own page is named after the email and its Family (#1015),
     # names the Family beside its DUID and reads in the requested order;
     # the browser title leaves the name out.
     with task_login(ServiceRole.WEB, exact=True):
-        own = browser.get(f"/admin/mail/outgoing/{message.pk}/").content.decode()
+        own = browser.get(f"/admin/mail/sent/{message.pk}/").content.decode()
     assert f"<h1>Initial invitation to {escape(name)}</h1>" in own
     assert f"Family: {escape(name)} · Family DUID: {duid}" in own
     assert escape(name) not in own.split("<title>")[1].split("</title>")[0]
@@ -270,22 +280,24 @@ def test_outgoing_mail_names_reports_and_families_no_longer_in_the_data(
     family_mail,  # noqa: F811
     google,
 ):
-    """#931: an Administrator digest is an Administrator report, and a Family
-    the latest ParishSoft data no longer has is said so, through the real
-    snapshot read, which takes at most two queries however many rows."""
+    """#931, #1562: an Administrator digest names its Administrator's address
+    (no Users-page Name here), and a Family the latest ParishSoft data no
+    longer has is said so, through the real snapshot read, which takes at
+    most two queries however many rows."""
     message = uncertain(family_mail)
     with campaign_clock(DIGEST_INSTANT):
         daily_allocated(family_mail)
     digest = OutboxMessage.objects.get(purpose="daily_digest")
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True):
-        response = browser.get("/admin/mail/outgoing/")
+        response = browser.get("/admin/mail/sent/", {"mode": "testing"})
     assert response.status_code == 200
     html = response.content.decode()
     assert (
-        f'<th scope="row"><a href="/admin/mail/outgoing/{digest.pk}/">'
-        "Administrator report</a></th>"
+        '<input type="hidden" name="recipient" value="admin@example.org">'
+        '<input type="hidden" name="mode" value="testing">'
     ) in html
+    assert ">admin@example.org</button></form></td>" in html
     assert escape(family_name(message)) in html
 
     # The listed rows, plus one whose Family DUID the snapshot lacks.
@@ -306,8 +318,8 @@ def test_outgoing_mail_names_reports_and_families_no_longer_in_the_data(
         gone["id"]: None,
     }
 
-    # Family sorts the whole list by name: the Administrator report, which
-    # has no Family, comes last in both directions.
+    # Recipient sorts the whole list by name: the Administrator's report,
+    # which has no Family, comes last in both directions.
     with task_login(ServiceRole.WEB, exact=True):
         for sort in ("name", "-name"):
             assert [
@@ -316,16 +328,18 @@ def test_outgoing_mail_names_reports_and_families_no_longer_in_the_data(
                 message.pk,
                 digest.pk,
             ]
-            response = browser.get("/admin/mail/outgoing/", {"sort": sort})
+            response = browser.get(
+                "/admin/mail/sent/", {"sort": sort, "mode": "testing"}
+            )
             assert response.status_code == 200
             html = response.content.decode()
             assert html.index(escape(family_name(message))) < html.index(
-                "Administrator report</a>"
+                "admin@example.org</button>"
             )
 
 
 def test_family_name_sort_keys_match_the_shown_names(response_service):
-    """#931: the SQL name keys Outgoing mail sorts by are exactly the names the
+    """#931: the SQL name keys Sent mail sorts by are exactly the names the
     page shows (snapshot_family_names), lowercased, and order Families by
     surname, then the whole name, as the Family codes directory does."""
     data = response_source()
@@ -456,7 +470,7 @@ def test_tied_family_names_keep_each_familys_emails_together(response_service):
 def test_refused_addresses_sort_by_family_name(response_service, google):
     """#935: Refused addresses' Family column sorts on the server by the
     Family's name (surname, whole name, Family DUID, then address), so each
-    Family's addresses stay together, as Outgoing mail's Family column."""
+    Family's addresses stay together, as Sent mail's Family column."""
     harness = activate_response_service(response_service)
     for duid, mailbox in (
         (1, "b@example.org"),
@@ -489,7 +503,7 @@ def test_refused_addresses_sort_by_family_name(response_service, google):
 def test_outgoing_mail_and_refused_addresses_lead_to_each_other(
     response_service, google
 ):
-    """#935: Outgoing mail marks each email with an unresolved refused address
+    """#935: Sent mail marks each email with an unresolved refused address
     and counts them in its link line; Refused addresses names the Family
     beside its own Family DUID column and links the recording email; and a
     cleared refusal drops out of both."""
@@ -506,13 +520,17 @@ def test_outgoing_mail_and_refused_addresses_lead_to_each_other(
     assert name
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        html = browser.get("/admin/mail/outgoing/", {"state": "all"}).content.decode()
+        html = browser.get("/admin/mail/sent/", {"state": "all"}).content.decode()
         assert "Review refused addresses (2 unresolved)</a>" in html
         marker = '<a href="/admin/mail/refusals/?duid=1">1 address refused</a>'
         assert html.count(marker) == 2
 
-        listing = browser.get("/admin/mail/refusals/", {"duid": "1"})
+        with CaptureQueriesContext(connection) as queries:
+            listing = browser.get("/admin/mail/refusals/", {"duid": "1"})
         assert listing.status_code == 200
+        # The Family's name opens its Timeline (#1570), its record id read
+        # once for the page's two rows.
+        assert len(link_reads(queries)) == 1
         html = listing.content.decode()
         # Dates first, then the Family's name, then its own DUID column
         # (#932), then the address and the recording email.
@@ -520,21 +538,22 @@ def test_outgoing_mail_and_refused_addresses_lead_to_each_other(
         thead = html.split("<thead>")[1].split("</thead>")[0]
         places = [thead.index(f">{heading}<") for heading in headings]
         assert places == sorted(places)
-        assert f'<th scope="row">{escape(name)}</th>' in html
+        link = timeline_link(harness.campaign, 1, name)
+        assert html.count(f'<th scope="row">{link}</th>') == 2
         assert '<td class="numeric nowrap">1</td>' in html
         for mailbox, refusal in refusals.items():
             message = events[mailbox].message_id
             assert f'<a href="/admin/mail/refusals/{refusal.pk}/">{mailbox}</a>' in html
-            assert f'<a href="/admin/mail/outgoing/{message}/">Open email</a>' in html
+            assert f'<a href="/admin/mail/sent/{message}/">Open email</a>' in html
         # The name is shown, not searched: the filter stays an exact DUID.
         assert browser.get("/admin/mail/refusals/", {"duid": name}).status_code == 400
 
         refusal = refusals["head@example.org"]
         path = f"/admin/mail/refusals/{refusal.pk}/"
         html = browser.get(path).content.decode()
-        assert escape(name) in html
+        assert f"{refusal.address} · {link} · " in html
         assert (
-            f'<a href="/admin/mail/outgoing/{events["head@example.org"].message_id}/">'
+            f'<a href="/admin/mail/sent/{events["head@example.org"].message_id}/">'
         ) in html
         assert '<a href="/admin/mail/refusals/?duid=1">' in html
         assert 'data-in-place="refusal-clear"' in html
@@ -551,7 +570,7 @@ def test_outgoing_mail_and_refused_addresses_lead_to_each_other(
             HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
         )
         assert cleared.status_code == 302 and cleared["Location"] == path
-        html = browser.get("/admin/mail/outgoing/", {"state": "all"}).content.decode()
+        html = browser.get("/admin/mail/sent/", {"state": "all"}).content.decode()
         assert "Review refused addresses (1 unresolved)</a>" in html
         assert html.count(marker) == 1
         html = browser.get("/admin/mail/refusals/").content.decode()
@@ -568,14 +587,14 @@ def test_outgoing_mail_and_refused_addresses_lead_to_each_other(
 
 def test_outgoing_mail_always_links_refused_addresses(response_service, google):
     """#935: an Administrator always sees the Review refused addresses link
-    on Outgoing mail, with nothing refused and under any state filter or
+    on Sent mail, with nothing refused and under any state filter or
     sort, not only when refusals exist."""
     activate_response_service(response_service)
     browser, _ = signed_in()
     link = '<a href="/admin/mail/refusals/">Review refused addresses</a>'
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         for query in ({}, {"state": "all"}, {"state": "delivered"}, {"sort": "name"}):
-            response = browser.get("/admin/mail/outgoing/", query)
+            response = browser.get("/admin/mail/sent/", query)
             assert response.status_code == 200, query
             assert link in response.content.decode(), query
 
@@ -635,11 +654,12 @@ def test_an_email_counts_each_refused_address_once(response_service, google):
     ] == [2]
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        html = browser.get("/admin/mail/outgoing/", {"state": "all"}).content.decode()
-        own = browser.get(f"/admin/mail/outgoing/{first.message_id}/")
+        html = browser.get("/admin/mail/sent/", {"state": "all"}).content.decode()
+        own = browser.get(f"/admin/mail/sent/{first.message_id}/")
     assert '<a href="/admin/mail/refusals/?duid=1">2 addresses refused</a>' in html
     # The email's own page lists each refused address once, linking its
-    # newest refusal (#1015).
+    # newest refusal (#1015): in the outcome panel of a delivered or failed
+    # email (#1563).
     newest = RecipientRefusal.objects.filter(address=heads[0]).latest("created_at")
     links = [
         f'<a href="/admin/mail/refusals/{newest.pk}/">{heads[0]}</a>',
@@ -647,7 +667,7 @@ def test_an_email_counts_each_refused_address_once(response_service, google):
         f'{RecipientRefusal.objects.get(address=heads[1]).pk}/">{heads[1]}</a>',
     ]
     page = own.content.decode()
-    assert f"Refused addresses: {links[0]}, {links[1]}" in page
+    assert f"{links[0]}, {links[1]}" in page
     assert page.count(f">{heads[0]}</a>") == 1
 
 
@@ -670,7 +690,7 @@ def test_delivery_filters_are_closed(auth_service, google, query):
     """Unknown/duplicate fields, raw column names as sorts and unbounded
     pagination fail before reads."""
     browser, _ = signed_in()
-    assert browser.get("/admin/mail/outgoing/?" + query).status_code == 400
+    assert browser.get("/admin/mail/sent/?" + query).status_code == 400
     assert browser.get("/admin/mail/refusals/?" + query).status_code == 400
 
 
@@ -710,13 +730,21 @@ def test_delivery_lists_sort_on_the_server_and_count_pages(response_service, goo
     assert 'aria-sort="descending"' in html and "Page 1 of 1" in html
     assert "Showing 1–3 of 3" in html
     assert '<input type="hidden" name="sort" value="-address">' in html
-    listing = browser.get(
-        "/admin/mail/outgoing/", {"sort": "-attempts", "state": "all"}
-    )
+    listing = browser.get("/admin/mail/sent/", {"sort": "-purpose", "state": "all"})
     assert listing.status_code == 200
     html = listing.content.decode()
     assert 'aria-sort="descending"' in html and "Page 1 of 1" in html
-    assert "state=all&amp;size=25&amp;sort=attempts" in html
+    # Its headings are POST forms carrying the filters (#1562).
+    assert (
+        '<input type="hidden" name="state" value="all">'
+        '<input type="hidden" name="size" value="25">'
+        '<input type="hidden" name="sort" value="purpose">'
+    ) in html
+    # The command line's tokens of columns Sent mail no longer shows still
+    # sort it (#1562); no heading is then marked sorted.
+    listing = browser.get("/admin/mail/sent/", {"sort": "-attempts"})
+    assert listing.status_code == 200
+    assert "aria-sort" not in listing.content.decode()
 
 
 def test_authority_is_rechecked_after_render(family_mail, google, monkeypatch):  # noqa: F811
@@ -734,7 +762,7 @@ def test_authority_is_rechecked_after_render(family_mail, google, monkeypatch): 
         return result
 
     monkeypatch.setattr(delivery_views, "render", revoked)
-    response = browser.get(f"/admin/mail/outgoing/{message.pk}/")
+    response = browser.get(f"/admin/mail/sent/{message.pk}/")
     assert response.status_code == 403
     assert str(message.pk).encode() not in response.content
     assert not AuditEvent.objects.filter(event_type="delivery_viewed").exists()
@@ -823,7 +851,7 @@ def test_mail_message_page_shows_only_the_recipient_addresses(
     assert recipients_as(ServiceRole.WEB, message.pk, admin, exact=False) == "42501"
     # The page names them under the Family line, before the attempt history.
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        page = browser.get(f"/admin/mail/outgoing/{message.pk}/")
+        page = browser.get(f"/admin/mail/sent/{message.pk}/")
     assert page.status_code == 200
     html = page.content.decode()
     # Each address the email was sent to is followed by its latest attempt's
@@ -887,7 +915,7 @@ def test_a_refused_recipient_read_leaves_the_page_to_its_recheck(
         return result
 
     monkeypatch.setattr(delivery_views, "read_detail", demoted)
-    response = browser.get(f"/admin/mail/outgoing/{message.pk}/")
+    response = browser.get(f"/admin/mail/sent/{message.pk}/")
     assert response.status_code == 403
     assert str(message.pk).encode() not in response.content
     assert not AuditEvent.objects.filter(event_type="delivery_viewed").exists()
@@ -909,8 +937,11 @@ def test_verified_clearance_form_is_audited_and_replay_safe(response_service, go
     )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         activity = PortalSession.objects.get().last_activity_at
-        page = browser.get(path)
+        with CaptureQueriesContext(connection) as queries:
+            page = browser.get(path)
         assert page.status_code == 200 and b"csrfmiddlewaretoken" in page.content
+        # The Family's name opens its Timeline (#1570), its record id read once.
+        assert len(link_reads(queries)) == 1
         assert PortalSession.objects.get().last_activity_at == activity
         assert browser.post(path + "clearance/", values).status_code == 403
         for _ in range(2):
@@ -958,7 +989,7 @@ def test_delivery_forms_apply_once_with_current_session_and_csrf(
         message = failed_delivery(family_mail, status)
         old_version, old_attempt = message.version, message.attempt
         browser, _ = signed_in()
-        path = f"/admin/mail/outgoing/{message.pk}/"
+        path = f"/admin/mail/sent/{message.pk}/"
         values = dict(
             command_id=str(uuid4()),
             expected_version=str(message.version),
@@ -970,11 +1001,12 @@ def test_delivery_forms_apply_once_with_current_session_and_csrf(
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             page = browser.get(path)
             assert page.status_code == 200
-            # A decision is available, so the forms sit in the "Resolve this
-            # email" section, above the Admin evidence (#1015).
+            # The outcome panel asks its question first, its answer for
+            # this action's form above the Admin evidence (#1563).
             html = page.content.decode()
-            resolve = html.index('<h2 id="resolve-heading">Resolve this email</h2>')
-            assert resolve < html.index("Admin evidence and decisions")
+            panel = html.index('id="outcome-heading"')
+            form = html.index(f'<input type="hidden" name="action" value="{action}">')
+            assert panel < form < html.index("Admin evidence and decisions")
             assert browser.post(path + "resolution/", values).status_code == 403
             for _ in range(2):
                 response = browser.post(
@@ -991,7 +1023,8 @@ def test_delivery_forms_apply_once_with_current_session_and_csrf(
             # (#806).
             assert (b"(not sure it arrived)" in result.content) == (action == "note")
             if action == "accept":
-                assert b"Retry is not available right now" not in result.content
+                assert b"Sending it again is not available" not in result.content
+                assert b"data-in-place-focus>Delivered</h2>" in result.content
             if action == "confirm_unsent":
                 # The Admin record is not presented as a provider refusal.
                 assert b"Not sent, per provider records; no resend" in result.content
@@ -1044,7 +1077,7 @@ def test_invalid_form_has_private_accessible_recovery(family_mail, google):  # n
     """Validation errors are navigable HTML, not JSON or an echo of private data."""
     message = uncertain(family_mail)
     browser, _ = signed_in()
-    path = f"/admin/mail/outgoing/{message.pk}/"
+    path = f"/admin/mail/sent/{message.pk}/"
     with task_login(ServiceRole.WEB, exact=True):
         assert browser.get(path).status_code == 200
         response = browser.post(
@@ -1060,7 +1093,7 @@ def test_invalid_form_has_private_accessible_recovery(family_mail, google):  # n
     assert response.status_code == 400
     assert response["Content-Type"].startswith("text/html")
     assert b'role="alert"' in response.content
-    assert b'"/admin/mail/outgoing/"' in response.content
+    assert b'"/admin/mail/sent/"' in response.content
     assert b"private-evidence-marker" not in response.content
     assert response["Cache-Control"] == "no-store"
 
@@ -1168,7 +1201,7 @@ def test_held_decisions_are_shown_unavailable_and_still_refused(
         message = failed_delivery(family_mail, FamilyDeliveryStatus.UNKNOWN)
         browser, _ = signed_in()
         hold_campaign_work()
-        path = f"/admin/mail/outgoing/{message.pk}/"
+        path = f"/admin/mail/sent/{message.pk}/"
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             html = browser.get(path).content.decode()
             response = browser.post(
@@ -1181,19 +1214,16 @@ def test_held_decisions_are_shown_unavailable_and_still_refused(
                 ),
                 HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
             )
-    section = html[html.index('id="resolve-heading"') :].split("</section>")[0]
-    assert 'id="delivery-held"' in section
-    assert (
-        'disabled aria-describedby="delivery-held">'
-        "Confirm delivery using external evidence</button>"
-    ) in section
+    section = html[html.index('id="outcome-heading"') :].split("</section>")[0]
+    assert 'id="reason-found-held"' in section
+    # Every answer, the resend's among them, is held, named by the same
+    # notice (#1331, #1563), with no form to send.
+    for value in ("sent", "not_sent", "unsure"):
+        assert (
+            f'name="found" value="{value}" disabled '
+            'aria-describedby="reason-found-held">'
+        ) in section
     assert "<form" not in section
-    # The resend is held with the rest, named by the same notice (#1331).
-    assert (
-        'disabled aria-describedby="delivery-held">'
-        "Authorize potentially duplicate resend</button>"
-    ) in section
-    assert "retry-unavailable" not in html
     assert response.status_code != 302
     assert DeliveryResolution.objects.count() == 0
 

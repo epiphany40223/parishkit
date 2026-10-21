@@ -8,13 +8,13 @@ crosses between the page and the command line. ``refresh status`` is the
 page's read (``read_refresh_page``): what is running or waiting, and the
 latest full and incremental outcomes.
 
-The page asks for no fresh sign-in and no typed value, so neither command
-prompts. ``refresh start`` admits as the page's form post does (``CONFIGURE``,
-recording activity, so it needs a full-scope session) and runs inside the
-delivery pages' command scope (``jobs.task_retries.command_scope``): the work
+The page asks for no typed value, so neither command prompts. ``refresh
+start`` admits as the page's form post does (``CONFIGURE``, recording
+activity, so it needs a full-scope session) and runs inside the delivery
+pages' command scope (``jobs.task_retries.command_scope``): the work
 transaction, a lock on the command session's row, and the Administrator
-rechecked before and after the effect. In that same transaction it records
-one ``admin_cmd_refresh_start`` event, only when the key is new.
+rechecked before and after the effect. In that same transaction it records one
+``admin_cmd_refresh_start`` event, only when the key is new.
 """
 
 from dataclasses import dataclass

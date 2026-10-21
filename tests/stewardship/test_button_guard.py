@@ -36,6 +36,11 @@ RAW_ALLOWED = {
     # Attribute values built from several parts ("log-{{ … }}-actor"), which
     # the tag cannot take as one argument yet.
     "hosted-files.html": 2,
+    # A binary choice's two POST segments (#1535) are drawn in the shared
+    # segmented look, like its link segments, never as portal buttons; each
+    # is marked aria-current inside its own tag, which the block tag cannot
+    # take.
+    "components/segmented-choice.html": 2,
 }
 
 COMMENT = re.compile(r"{% comment %}.*?{% endcomment %}", re.S)
@@ -378,5 +383,5 @@ def test_only_the_class_makes_a_button_secondary():
     selectors = sorted({part.strip() for rule in rules for part in rule.split(",")})
     assert selectors == [
         ".button-secondary",
-        ".button-secondary:not(:disabled):hover",
+        ".button-secondary:not(:disabled):not(:where([aria-disabled=true])):hover",
     ]

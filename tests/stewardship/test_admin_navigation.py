@@ -206,15 +206,48 @@ def test_non_admin_and_unknown_routes_yield_no_trail():
 def test_exact_page_entry_is_marked_as_the_current_page():
     """On a sidebar entry's own page, its link is aria-current="page"."""
     match = SimpleNamespace(
-        url_name="participation", namespace="admin", kwargs={"campaign_id": uuid4()}
+        url_name="response_dashboard",
+        namespace="admin",
+        kwargs={"campaign_id": uuid4()},
     )
     sections, _ = navigation.build(match, _items())
     marked = [
         item for section in sections for item in section["items"] if item["current"]
     ]
     assert [(item["label"], item["current"]) for item in marked] == [
-        (navigation.PAGES["participation"].label, "page")
+        (navigation.PAGES["response_dashboard"].label, "page")
     ]
+
+
+def test_a_step_of_a_guided_page_marks_that_page_and_never_repeats_it():
+    """Go live's Prepare step is the Go live page: same name, its menu entry
+    is aria-current="page", and the trail names Go live once (``step_of``)."""
+    match = SimpleNamespace(url_name="go_live_prepare", namespace="admin", kwargs={})
+    sections, trail = navigation.build(match, _items())
+    marked = [
+        (item["name"], item["current"])
+        for section in sections
+        for item in section["items"]
+        if item["current"]
+    ]
+    assert marked == [("go_live", "page")]
+    assert [section["key"] for section in sections if section["current"]] == [
+        "campaign"
+    ]
+    labels = [str(crumb["label"]) for crumb in trail]
+    assert labels == [
+        str(navigation.PAGES["index"].label),
+        str(navigation.SECTION_LABELS["campaign"]),
+        "Go live",
+    ]
+    assert (
+        navigation.PAGES["go_live_prepare"].label == navigation.PAGES["go_live"].label
+    )
+    html = render_to_string(
+        "stewardship/admin-breadcrumbs.html", {"admin_chrome": {"breadcrumbs": trail}}
+    )
+    assert html.count("Go live") == 1
+    assert html.count('aria-current="page"') == 1
 
 
 def test_retained_content_trail_avoids_the_current_campaign_editor():
@@ -287,25 +320,29 @@ def test_a_test_email_trail_names_its_email_editor():
     assert navigation.back(match, placed)["url"] == trail[4]["url"]
 
 
-def test_a_timeline_export_trail_keeps_the_timeline_mode():
-    """A placed query reaches the ancestor's crumb and back link, nothing else."""
+def test_a_timeline_export_trail_keeps_the_family():
+    """A placed query reaches the ancestor's crumb and back link, nothing else.
+
+    The Timeline export's trail runs through its Family's Timeline (#1570).
+    """
     family = uuid4()
     placed = navigation.Placement(
-        parent="family_timeline",
+        parent="timeline",
         arguments={"family_id": family},
-        queries={"family_timeline": "mode=testing"},
+        queries={"timeline": "sort=when"},
     )
     match = _match("report_export", request_id=uuid4())
     _, trail = navigation.build(match, _items(), placed)
-    timeline = reverse("admin:family_timeline", args=[family])
+    timeline = reverse("admin:timeline", args=[family])
     assert [crumb["label"] for crumb in trail][2:] == [
         navigation.PAGES["family_directory"].label,
-        navigation.PAGES["family_timeline"].label,
+        navigation.PAGES["timeline"].label,
         navigation.PAGES["report_export"].label,
     ]
+    assert navigation.PAGES["timeline"].label == "Timeline"
     assert trail[2]["url"] == reverse("admin:family_directory")
-    assert trail[3]["url"] == timeline + "?mode=testing"
-    assert navigation.back(match, placed)["url"] == timeline + "?mode=testing"
+    assert trail[3]["url"] == timeline + "?sort=when"
+    assert navigation.back(match, placed)["url"] == timeline + "?sort=when"
 
 
 def test_a_placed_configuration_change_joins_its_origin_section():
@@ -448,20 +485,14 @@ def test_change_origins_need_a_session():
     assert navigation.change_origin(request, uuid4()) is None
 
 
-def test_go_live_steps_run_from_readiness_to_activation():
-    """Going live shows its five steps; earlier ones are done, none are links."""
-    shown = navigation.steps(navigation.Placement(flow="go_live", step="links"))
-    assert [item["state"] for item in shown] == [
-        "done",
-        "done",
-        "current",
-        "upcoming",
-        "upcoming",
-    ]
-    html = render_to_string(
-        "stewardship/admin-flow-steps.html", {"admin_chrome": {"flow_steps": shown}}
-    )
-    assert "<a " not in html and html.count("<li") == 5
+def test_going_live_draws_only_its_own_step_bar():
+    """Going live has no numbered flow list: every Go live step, Production
+    activation included (#1585 slice 5), draws the Go live step bar instead,
+    whose last step is Activation."""
+    from parishkit.stewardship.accounts.go_live_check import STEPS
+
+    assert "go_live" not in navigation.FLOWS
+    assert [str(label) for _key, label in STEPS][-1] == "Activation"
 
 
 @pytest.mark.parametrize("offered", [True, False])
@@ -496,32 +527,10 @@ def test_an_error_page_shows_no_step_or_placed_trail():
     from parishkit.stewardship.web.error_pages import ERROR_PAGE_ATTRIBUTE
 
     request = SimpleNamespace()
-    navigation.place(request, flow="go_live", step="confirm")
-    assert navigation.placement(request).step == "confirm"
+    navigation.place(request, flow="export", step="prepare")
+    assert navigation.placement(request).step == "prepare"
     setattr(request, ERROR_PAGE_ATTRIBUTE, True)
     assert navigation.placement(request) is None
-
-
-def test_a_key_page_for_an_unknown_integration_stays_under_integrations():
-    """An unknown target places nothing, so the trail and Return stop there."""
-    from parishkit.stewardship.accounts.integration_views import place_key_page
-
-    request = SimpleNamespace()
-    place_key_page(request, "nonsense")
-    assert navigation.placement(request) is None
-    match = _match("credential_status", request_id=uuid4())
-    _, trail = navigation.build(match, _items())
-    assert trail[-2] == {
-        "label": navigation.PAGES["integration_settings"].label,
-        "url": None,
-    }
-    assert navigation.back(match) == {
-        "label": navigation.PAGES["integrations"].label,
-        "url": reverse("admin:integrations"),
-    }
-    # A step still shows without a known integration.
-    place_key_page(request, "nonsense", flow="change", step="review")
-    assert navigation.placement(request).step == "review"
 
 
 # Stable menu shape (ADM-12.02 to .04; admin-portal spec, "Stable menu shape").
@@ -565,16 +574,17 @@ CAMPAIGNS = {
     },
 }
 ROLES = ("administrator", "staff", "ministry_leader")
-# Which entries each role sees, whatever the mode or campaign state.
+# Which entries each role sees, whatever the mode or campaign state: Review
+# work, then Reports and queries (R39 findings 1 and 4).
 REPORTS = [
+    "census_changes",
+    "ministry_report",
+    "pledges_to_enter",
+    "information_queue",
+    "limitations_report",
     "response_dashboard",
-    "participation",
     "campaign_comparison",
     "financial_report",
-    "limitations_report",
-    "census_changes",
-    "information_queue",
-    "ministry_report",
     "family_directory",
     "emailed_reports",
 ]
@@ -593,20 +603,21 @@ SPEC_ORDER = [
     "production_progress",
     # Mail and Family portal
     "delivery_control",
-    "family_email_progress",
+    "mail_queue",
     "family_email_sends",
     "deliveries",
     "family_portal",
     "presence",
-    # Responses and reports
+    # Review work
+    "census_changes",
+    "ministry_report",
+    "pledges_to_enter",
+    "information_queue",
+    "limitations_report",
+    # Reports and queries
     "response_dashboard",
-    "participation",
     "campaign_comparison",
     "financial_report",
-    "limitations_report",
-    "census_changes",
-    "information_queue",
-    "ministry_report",
     "family_directory",
     "emailed_reports",
     # Parish data
@@ -681,12 +692,11 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
         "go_live",
         "production_progress",
         "delivery_control",
-        "family_email_progress",
         "family_email_sends",
         "response_dashboard",
-        "participation",
         "campaign_comparison",
         "financial_report",
+        "pledges_to_enter",
         "limitations_report",
         "census_changes",
         "information_queue",
@@ -708,16 +718,14 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
             "draft",
             "testing",
             "production_progress",
-            "Production has not been confirmed for this campaign; "
-            "start at Go-live readiness",
+            "Production has not been confirmed for this campaign; start at Go live",
         ),
         # Production mode set without a confirmation: the draft never went live.
         (
             "draft",
             "production",
             "production_progress",
-            "Production has not been confirmed for this campaign; "
-            "start at Go-live readiness",
+            "Production has not been confirmed for this campaign; start at Go live",
         ),
         (
             "active",
@@ -771,7 +779,6 @@ def test_available_campaign_entries_link_the_current_campaign():
     assert urls["production_progress"] == reverse("admin:production_progress")
     # The Response dashboard has its own entry (#522).
     assert urls["response_dashboard"] == reverse("admin:response_dashboard")
-    assert urls["participation"] == reverse("admin:participation")
     assert urls["deliveries"] == reverse("admin:deliveries")
 
 
@@ -850,7 +857,7 @@ def test_way_forward_links_only_entries_the_viewer_is_offered():
     assert str(greyed.refusal().refusal.link_label) == "Go to Campaign settings"
     draft = _menu("administrator", CAMPAIGNS["draft"], "testing")
     assert navigation.greyed_entry("delivery_control", draft).forward == (
-        "Go-live readiness",
+        "Go live",
         reverse("admin:go_live"),
     )
     live = _menu("administrator", CAMPAIGNS["active"], "production")
@@ -935,11 +942,12 @@ def test_an_entry_hidden_by_role_is_never_explained(role):
 
 
 def test_menu_entries_and_groups_follow_the_spec():
-    """Seven groups in campaign order; every entry is a page in its group."""
+    """Eight groups in campaign order; every entry is a page in its group."""
     assert [str(section.label) for section in navigation.SECTIONS] == [
         "Campaign setup",
         "Mail and Family portal",
-        "Responses and reports",
+        "Review work",
+        "Reports and queries",
         "Parish data",
         "Users and access",
         "System",
@@ -1160,28 +1168,47 @@ def test_a_trail_links_only_pages_the_viewer_may_open(role):
                 assert gate in offered, (role, name, ancestor)
 
 
-def test_a_ministry_leaders_export_names_participation_without_a_link():
-    """A Ministry leader may open their export, but not the Participation report."""
+def test_a_ministry_leaders_export_names_the_dashboard_without_a_link():
+    """A Ministry leader may open their export, but not the Response dashboard."""
     campaign = CAMPAIGNS["active"]
     for role, linked in (("ministry_leader", False), ("staff", True)):
         items = _menu(role, campaign, "production")
         # Every export, a latest-data one included, shares one page (NAV-12).
         match = _match("report_export", request_id=uuid4())
         _, trail = navigation.build(match, items)
-        assert trail[-2]["label"] == navigation.PAGES["participation"].label
+        assert trail[-2]["label"] == navigation.PAGES["response_dashboard"].label
         assert (trail[-2]["url"] == reverse("admin:reports")) is linked
 
 
 def test_open_counts_read_once_per_request_and_only_for_offered_entries(
     monkeypatch,
 ):
-    """One statement for both counts, none without a counted link (#585)."""
+    """One statement for every count, none without a counted link (#585).
+
+    Census changes' groups (#1590) are counted at the worklist's To review
+    and Conflict stages, for Staff and Administrators alike (Administrator
+    decision, 2026-10-18); nothing ready to update, published, ignored or
+    superseded.
+    """
     from parishkit.stewardship.accounts import admin_context
     from parishkit.stewardship.reports.ministry_followup import FollowupQuery
 
     statements = []
     # The Ministries the follow-up selection reports it read (#389 L3).
     selected = [9]
+    # Census changes' groups: handling, entity kind, decision, execution and
+    # rows. An automatic change and a By hand Family change no one reviewed
+    # (both To review), a Conflict, an approved change Ready to update, and
+    # stages the count leaves out.
+    groups = [
+        ["api", "member", "unreviewed", "pending", 2],
+        ["manual", "family", "unreviewed", "pending", 1],
+        ["api", "member", "approved", "conflict", 4],
+        ["api", "member", "approved", "pending", 8],
+        ["api", "member", "approved", "published", 5],
+        ["manual", "member", "ignored", "pending", 6],
+        ["api", "member", "approved", "superseded", 7],
+    ]
 
     class Cursor:
         """Records each statement and answers both counts."""
@@ -1200,6 +1227,10 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
                 3 if statements[-1]["information"] else None,
                 2 if statements[-1]["ministry"] else None,
                 selected if statements[-1]["ministry"] else None,
+                json.dumps(groups) if statements[-1]["census"] else None,
+                6 if statements[-1]["roster"] else None,
+                [] if statements[-1]["roster"] else None,
+                4 if statements[-1]["limitations"] else None,
             )
 
     monkeypatch.setattr(
@@ -1208,9 +1239,31 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
         SimpleNamespace(cursor=lambda: Cursor(), in_atomic_block=False),
     )
     active = _campaign("active")
+    census = _campaign("active", modules=("ministry", "census"))
+    draft = _campaign("draft")
+    # Limitations (R39 finding 10) is counted for Administrators and Staff.
+    queues = {"information_queue": 3, "ministry_report": 2, "limitations_report": 4}
     cases = (
-        # Both queues for Staff: every Ministry.
-        ("staff", active, {"information_queue": 3, "ministry_report": 2}),
+        # Both queues and the To enter by hand count (ENTRY_COUNT, which
+        # replaced Roster changes to enter's, R39) for Staff: every Ministry.
+        ("staff", active, {**queues, "ministry_entry": 6}),
+        # A draft has nothing to enter yet, so its roster count is not read.
+        ("staff", draft, queues),
+        # With the census: Staff and an Administrator both count To review
+        # and Conflict, never Ready to update.
+        (
+            "staff",
+            census,
+            {"census_changes": 7, **queues, "ministry_entry": 6},
+        ),
+        (
+            "administrator",
+            census,
+            {"census_changes": 7, **queues, "ministry_entry": 6},
+        ),
+        # A leader has no Census changes entry and never sees To enter by
+        # hand, so neither count is read.
+        ("ministry_leader", census, {"ministry_report": 2}),
         # A leader only has Ministry requests, scoped to their Ministry.
         ("ministry_leader", active, {"ministry_report": 2}),
         # Greyed out (no Ministry module) or absent: no count, no query.
@@ -1240,6 +1293,27 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
                 | {"assignee": "any", "presence": "current"}
             )
             assert statements[0]["viewer"] == actor.identity
+            # The roster count runs its page's selection (roster_rows) only
+            # past go-live, for Administrators and Staff.
+            assert statements[0]["roster"] is (
+                role != "ministry_leader" and campaign.state != "draft"
+            )
+            assert json.loads(statements[0]["roster_filters"]) == (
+                FollowupQuery(state="resolved", history="all").form_values()
+                | {"assignee": "any", "presence": "any"}
+            )
+            assert statements[0]["roster_outcomes"] == ["joined", "leave_confirmed"]
+            # Limitations runs its page's selection with the page's defaults.
+            assert statements[0]["limitations"] is (role != "ministry_leader")
+            # With Pledges in the menu, Limitations' count adds the Cannot
+            # contribute answers at To review (R39 finding 11).
+            assert statements[0]["pledges"] is any(
+                item.name == "pledges_to_enter" and item.url for item in items
+            )
+            assert json.loads(statements[0]["limitation_filters"]) == {
+                "search": "",
+                "show": "any",
+            }
     # A count over a Ministry outside the leader's own scope is drift the
     # follow-up page refuses, so the menu shows no number either.
     selected[:] = [9, 77]

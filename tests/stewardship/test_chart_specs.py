@@ -29,18 +29,14 @@ from parishkit.stewardship.reports.chart_specs import (
     activity_chart,
     financial_charts,
     funnel_chart,
-    information_followup,
     label_room,
-    ministry_followup,
     participation_chart,
-    population_progress,
     quiet_slots,
     round_ticks,
     share,
     stage_label,
     whole_dollars,
 )
-from parishkit.stewardship.reports.money import MoneyAmount
 from parishkit.stewardship.reports.participation import ParticipationDay
 from parishkit.stewardship.reports.response_metrics import (
     ActivityBucket,
@@ -51,7 +47,6 @@ from parishkit.stewardship.reports.response_metrics import (
     activity_series,
     stage_counts,
 )
-from parishkit.stewardship.reports.statistics import PopulationStatistics
 from parishkit.stewardship.web.dates import using
 from parishkit.stewardship.web.design_tokens import (
     CHART_COLORS,
@@ -59,7 +54,6 @@ from parishkit.stewardship.web.design_tokens import (
     COLORS,
     hex6,
 )
-from parishkit.stewardship.web.report_markup import TRACK
 
 from .test_comparison_charts import comparison
 from .test_participation_rendering import document as participation
@@ -486,152 +480,6 @@ def test_financial_share_chart_draws_every_offered_method_and_groups_retired():
     )
 
 
-def test_information_followup_draws_each_state_against_the_matching_requests():
-    """Additional information's follow-up states are progress bars (#720).
-
-    Every matching request is in exactly one state, so the axis ends at the
-    matching requests; each bar's count and share is the second line of its
-    axis label and its accessible name, in the selection's state order.
-    """
-    counts = {"completed": 3, "needed_open": 5, "not_needed_open": 2}
-    chart = information_followup(counts, 10)
-    assert (chart.key, chart.title) == ("information-followup", "Follow-up status")
-    spec = json.loads(json.dumps(chart.spec))
-    assert spec["encoding"]["x"]["scale"] == {"domain": [0, 10], "nice": False}
-    assert spec["encoding"]["x"]["title"] == "Requests"
-    rows = spec["data"]["values"]
-    assert [row["tick"] for row in rows] == [
-        "Completed — 3 out of 10 (30%)",
-        "Needed, not completed — 5 out of 10 (50%)",
-        "Not needed, not completed — 2 out of 10 (20%)",
-    ]
-    assert rows[1]["name"] == "Needed, not completed: 5 out of 10 (50%)"
-    assert chart.table.headings == (
-        "Follow-up status",
-        "Requests",
-        "Share of matching requests",
-    )
-
-
-def test_information_followup_without_matching_requests_draws_nothing():
-    """No matching request has no follow-up state to draw."""
-    assert (
-        information_followup(
-            dict.fromkeys(("completed", "needed_open", "not_needed_open"), 0), 0
-        )
-        is None
-    )
-
-
-def test_population_progress_draws_each_card_against_active_families():
-    """Responded and email reach are progress bars against active Families (#720).
-
-    The axis ends at the active Families, a grey track shows the rest, and
-    the label, name, summary and table keep the cards' exact wording. The
-    value is the second line of each bar's axis label, and every layer reads
-    the rows untransformed, so the bars keep the cards' order.
-    """
-    active = PopulationStatistics(1000, 2345, 900, 800, 2, MoneyAmount(0))
-    chart = population_progress(active)
-    assert (chart.key, chart.title) == (
-        "active-population",
-        "Responses and email reach",
-    )
-    spec = json.loads(json.dumps(chart.spec))
-    assert spec["encoding"]["x"]["scale"] == {"domain": [0, 1000], "nice": False}
-    assert spec["encoding"]["x"]["axis"]["titlePadding"] == 8
-    rows = spec["data"]["values"]
-    assert [(row["label"], row["tick"]) for row in rows] == [
-        (
-            "Families that have responded",
-            "Families that have responded — 2 out of 1,000 (0.2%)",
-        ),
-        (
-            "Families with eligible email",
-            "Families with eligible email — 900 out of 1,000 (90%)",
-        ),
-        (
-            "Families with deliverable email",
-            "Families with deliverable email — 800 out of 1,000 (80%)",
-        ),
-    ]
-    assert rows[0]["name"] == "Families that have responded: 2 out of 1,000 (0.2%)"
-    y = spec["encoding"]["y"]
-    assert (y["field"], y["sort"]) == ("tick", {"field": "order"})
-    assert y["axis"]["labelExpr"] == "split(datum.label, ' — ')"
-    track, bar = spec["layer"]
-    assert track["mark"] == {"type": "bar", "color": TRACK, "aria": False}
-    assert track["encoding"]["x"] == {"field": "total", "type": "quantitative"}
-    assert bar["encoding"]["description"] == {"field": "name"}
-    assert not any("transform" in layer for layer in spec["layer"])
-    assert chart.summary == (
-        "Responses and email reach: Families that have responded 2 out of 1,000 "
-        "(0.2%), Families with eligible email 900 out of 1,000 (90%), Families "
-        "with deliverable email 800 out of 1,000 (80%)."
-    )
-    assert chart.table.headings == (
-        "Responses and email reach",
-        "Families",
-        "Share of active Families",
-    )
-    assert chart.table.rows[0] == ("Families that have responded", "2", "0.2%")
-
-
-def test_population_progress_without_families_or_observation():
-    """No active Families dashes every share; no observation draws nothing."""
-    chart = population_progress(PopulationStatistics(0, 0, 0, 0, 0, MoneyAmount(0)))
-    assert chart.spec["encoding"]["x"]["scale"]["domain"] == [0, 1]
-    assert {row[2] for row in chart.table.rows} == {"—"}
-    assert chart.spec["data"]["values"][0]["text"] == "0 out of 0 (—)"
-    assert population_progress(None) is None
-
-
-def test_ministry_followup_draws_each_state_against_all_requests():
-    """Resolved or closed and Unresolved are progress bars against every
-    current request of the matching Ministries (#720), each bar's value on
-    its axis label's second line, as the Participation chart draws it."""
-    totals = {
-        "joining": 30,
-        "leaving": 10,
-        "unresolved": 28,
-        "completed": 12,
-        "requests": 40,
-    }
-    chart = ministry_followup(totals)
-    assert (chart.key, chart.title) == ("ministry-followup", "Follow-up progress")
-    spec = json.loads(json.dumps(chart.spec))
-    assert spec["encoding"]["x"]["scale"] == {"domain": [0, 40], "nice": False}
-    assert spec["encoding"]["x"]["title"] == "Requests"
-    assert [row["tick"] for row in spec["data"]["values"]] == [
-        "Resolved or closed — 12 out of 40 (30%)",
-        "Unresolved — 28 out of 40 (70%)",
-    ]
-    assert chart.summary == (
-        "Follow-up progress: Resolved or closed 12 out of 40 (30%), "
-        "Unresolved 28 out of 40 (70%)."
-    )
-    assert chart.table.headings == (
-        "Follow-up progress",
-        "Requests",
-        "Share of all requests",
-    )
-
-
-def test_ministry_followup_without_progress_draws_zero_bars():
-    """With no request, or no progress at all (Members no longer in
-    ParishSoft), the chart still draws, its bars at zero, so its box never
-    appears or disappears under the reader (no layout shift, #736)."""
-    empty = dict.fromkeys(
-        ("joining", "leaving", "unresolved", "completed", "requests"), 0
-    )
-    gone = {"joining": 2, "leaving": 1, "requests": None}
-    for totals in (empty, gone):
-        chart = ministry_followup(totals)
-        assert chart.key == "ministry-followup"
-        assert [row["count"] for row in chart.spec["data"]["values"]] == [0, 0]
-        assert chart.spec["encoding"]["x"]["scale"]["domain"] == [0, 1]
-
-
 def test_participation_chart_is_panels_on_one_date_axis():
     """The Participation page's daily chart (#720 slice 2c) is the static
     drawing's design in the chart engine: titled panels on one shared date
@@ -692,6 +540,25 @@ def test_participation_chart_is_panels_on_one_date_axis():
         hover = panel["layer"][-1]
         assert hover["mark"] == {"type": "bar", "opacity": 0, "aria": False}
         assert hover["encoding"]["tooltip"] == {"field": "tip"}
+    # Each column selects its date (one selection per panel, since a chart
+    # names each once), and under it every panel's guide line follows any of
+    # them, so one line crosses all the panels (#1536).
+    names = ["hover0", "hover1", "hover2"]
+    for panel, name in zip(panels, names, strict=True):
+        guide, hover = panel["layer"][-2:]
+        assert hover["params"] == [chart_specs.hover_param("tick", name)]
+        assert hover["params"][0]["select"]["fields"] == ["tick"]
+        assert guide["mark"] == {"type": "rule", "color": COLORS["ink"], "aria": False}
+        # On the panel's own date axis, which it inherits.
+        assert guide["encoding"] == {
+            "opacity": {
+                "condition": {
+                    "test": {"or": [{"param": n, "empty": False} for n in names]},
+                    "value": 0.5,
+                },
+                "value": 0,
+            }
+        }
     assert json.loads(json.dumps(spec)) == spec
 
 
@@ -794,7 +661,7 @@ def page_charts():
 
     The response dashboard's funnel and activity (by hour and by day), the
     Financial stewardship summary's count bars,
-    the Participation page's progress bars and daily chart, and the
+    the Response dashboard's daily chart, and the
     Campaign comparison's day-by-day, final-figures and pledge-band charts.
     """
     built = comparison()
@@ -807,7 +674,6 @@ def page_charts():
         activity_chart(metrics()),
         activity_chart(metrics(grain="day")),
         *financial_charts(financial_summary(), CHOICES),
-        population_progress(PopulationStatistics(4, 2, 1, 1, 0, MoneyAmount(0))),
         participation_chart(participation()),
         *charts.day_charts(built),
         *charts.final_charts(built),
@@ -838,12 +704,6 @@ def test_every_chart_colour_is_a_token():
     light = {hex6((COLORS | CHART_COLORS)[name]) for name in names}
     documents = [
         *page_charts(),
-        information_followup(
-            {"completed": 1, "needed_open": 1, "not_needed_open": 1}, 3
-        ),
-        ministry_followup(
-            {"joining": 2, "leaving": 1, "unresolved": 1, "completed": 2, "requests": 3}
-        ),
     ]
     found = set().union(*(colours_in(document.spec) for document in documents))
     assert found and {hex6(colour) for colour in found} <= light
@@ -868,8 +728,8 @@ def test_every_page_chart_compiles_without_warnings(capfd):
     the container width warned that fit-y was dropped, #1325). A step
     height still warns, so the check can fail."""
     documents = page_charts()
-    # Every kind of chart is here: 2 + 1 + 2 + 1 + 1 + 3 + 2 + 3.
-    assert len(documents) == 15
+    # Every kind of chart is here: 2 + 1 + 2 + 1 + 3 + 2 + 3.
+    assert len(documents) == 14
     for document in documents:
         assert page_warnings(document.spec, capfd) == [], document.key
     # A bar chart (here the funnel and the final figures) given back a step
@@ -879,6 +739,94 @@ def test_every_page_chart_compiles_without_warnings(capfd):
     for document in (documents[0], finals):
         stepped = document.spec | {"height": {"step": 36}}
         assert any("fit-y" in line for line in page_warnings(stepped, capfd))
+
+
+def chart_views(spec):
+    """Every view of a chart: the spec itself, its panels and their layers."""
+    yield spec
+    for part in (*spec.get("vconcat", ()), *spec.get("layer", ())):
+        yield from chart_views(part)
+
+
+def hover_guides(spec):
+    """The chart's hover guide lines: rules shown only while a selection is set."""
+    return [
+        view
+        for view in chart_views(spec)
+        if view.get("mark", {}).get("type") == "rule"
+        and "condition" in view.get("encoding", {}).get("opacity", {})
+    ]
+
+
+# The one date chart without a guide line: the Response dashboard's activity
+# chart, which #1537 retires (reports spec, "Response activity over time").
+GUIDELESS = {"response-activity"}
+
+
+def test_every_date_chart_with_tooltips_has_the_hover_guide():
+    """A chart on a date, time or campaign-day axis that shows tooltips draws
+    the shared hover guide line in each panel, driven by its own hover
+    bands' selections (ui-conventions, "Charts"; #1536), so a new chart
+    cannot leave it out. A category chart (a nominal or ordinal y axis: rows
+    of bars that react as a whole) has none."""
+    guided = set()
+    for document in page_charts():
+        spec = document.spec
+        views = list(chart_views(spec))
+        assert any("tooltip" in view.get("encoding", {}) for view in views)
+        # Keyed on y, not x: a participation chart's x is an ordinal date
+        # band, so only a category chart's y axis tells the two apart.
+        categories = {
+            view["encoding"]["y"].get("type")
+            for view in views
+            if isinstance(view.get("encoding", {}).get("y"), dict)
+        } & {"nominal", "ordinal"}
+        if categories or document.key in GUIDELESS:
+            assert hover_guides(spec) == [], document.key
+            continue
+        guided.add(document.key)
+        params = {param["name"] for view in views for param in view.get("params", ())}
+        for panel in spec.get("vconcat", [spec]):
+            (guide,) = hover_guides(panel)
+            assert guide["mark"]["color"] == chart_specs.GUIDE, document.key
+            assert guide["mark"]["aria"] is False
+            condition = guide["encoding"]["opacity"]["condition"]
+            tests = condition.get("test", {}).get("or", [condition])
+            assert {test["param"] for test in tests} <= params, document.key
+            assert all(test["empty"] is False for test in tests)
+    assert guided == {
+        "daily-participation",
+        "comparison-families",
+        "comparison-percent",
+        "comparison-pledged",
+    }
+
+
+def test_hover_guide_shows_only_while_hovered():
+    """The guide is a rule in the shared colour at half opacity while its
+    selection is set and invisible otherwise, so a print or an image never
+    shows it; given rows, it draws from them."""
+    x = {"field": "day", "type": "quantitative"}
+    assert chart_specs.hover_guide(x, data=[{"day": 1}]) == {
+        "data": {"values": [{"day": 1}]},
+        "mark": {"type": "rule", "color": COLORS["ink"], "aria": False},
+        "encoding": {
+            "x": x,
+            "opacity": {
+                "condition": {"param": "hover", "empty": False, "value": 0.5},
+                "value": 0,
+            },
+        },
+    }
+    assert chart_specs.hovered(1, ("a", "b")) == {
+        "condition": {
+            "test": {
+                "or": [{"param": "a", "empty": False}, {"param": "b", "empty": False}]
+            },
+            "value": 1,
+        },
+        "value": 0,
+    }
 
 
 def empty_activity_charts():

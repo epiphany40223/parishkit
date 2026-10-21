@@ -28,7 +28,7 @@ GONE = b"This export is no longer available."
 
 
 def _create(browser, facts):
-    """Queue one Participation chart export from the page's form; its page."""
+    """Queue one daily chart export from the Response dashboard's form; its page."""
     values = {
         "fact_set_id": str(facts.pk),
         "format": "csv",
@@ -44,7 +44,7 @@ def _create(browser, facts):
 
 
 def _back(facts):
-    """The page's link back: Participation, with the export's own scope."""
+    """The page's link back: the Response dashboard, with the export's own scope."""
     from parishkit.stewardship.reports.workspace import ReportQuery
 
     url = ReportQuery(scope=facts.population_scope, timezone="UTC").url()
@@ -245,8 +245,10 @@ def test_a_latest_data_exports_failed_calculation_ends_too(
         "browser_timezone": "UTC",
         "request_key": str(uuid4()),
     }
+    from .test_exact_export_ui_postgresql import request_exact
+
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        page = post(admin, reverse("admin:report_exact_create"), values)["Location"]
+        page = request_exact(store, setup[2].campaign_id, values)
     job = ExactExportRequest.objects.get(request_key=values["request_key"])
     act(act(_status(job.task), "claim"), "permanent_failure")
     key = uuid4()

@@ -78,13 +78,15 @@ BEGIN
               AND login.revoked_at IS NULL AND login.expires_at>clock_timestamp()
               AND login.last_activity_at>clock_timestamp()-interval '60 minutes'
               AND login.authenticated_at=NEW.authenticated_at
-              AND (login.authenticated_at BETWEEN clock_timestamp()-interval '5 minutes' AND clock_timestamp()
+              -- Any sign-in age (#1547); a command session still needs
+              -- its live full-scope automation session (ADM-11).
+              AND login.authenticated_at<=clock_timestamp()
+              AND (NOT EXISTS (SELECT 1 FROM public.stewardship_automation_login command
+                       WHERE command.portal_session_id=login.id)
                    OR public.stewardship_automation_fresh_v1(login.id,NEW.actor_id)))
        OR NOT EXISTS(SELECT 1 FROM public.stewardship_production_event event
-            WHERE event.request_id=request.id AND event.action='complete'
-              AND (event.created_at<=NEW.authenticated_at
-                   OR public.stewardship_automation_fresh_v1(NEW.session_id,NEW.actor_id))) THEN
-        RAISE EXCEPTION 'Production confirmation requires fresh post-cleanup Admin authentication' USING ERRCODE='42501';
+            WHERE event.request_id=request.id AND event.action='complete') THEN
+        RAISE EXCEPTION 'Production confirmation requires completed cleanup and a live Admin session' USING ERRCODE='42501';
     END IF;
     IF request.id IS NULL OR preparation.id IS NULL OR generation.id IS NULL OR campaign.id IS NULL
        OR runtime.current_campaign_id IS DISTINCT FROM campaign.id

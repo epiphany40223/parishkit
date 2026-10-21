@@ -80,7 +80,7 @@ def test_continue_keeps_an_unchanged_step_and_opens_the_next(auth_service, googl
     with web():
         region = stepper(browser.get(path).content)
     assert status_of(region, "Share options") == "Current step — Completed"
-    assert "2 of 7 steps completed" in region
+    assert "2 of 8 steps completed" in region
     # Pressed again (Back, then Continue), nothing more is recorded; it still
     # opens the next step not done yet.
     again = keep(browser, "share_options")
@@ -107,9 +107,12 @@ def test_home_and_sub_pages_lead_back_into_the_stepper(auth_service, google):
         home = browser.get("/admin/").content.decode()
         schedules = browser.get(reverse("admin:schedule_settings")).content.decode()
         calendar = browser.get(reverse("admin:schedule_calendar")).content.decode()
+    # The campaign has no Families yet, so its first step not done is step
+    # 2, Load ParishSoft data (#1404 PR 5).
     assert (
-        f'<a href="{reverse("admin:share_settings")}">'
-        "Continue campaign setup: Share options</a>"
+        f'<a href="{reverse("admin:source_refresh")}">'
+        '<span class="link-card-label">'
+        "Continue campaign setup: Load ParishSoft data</span></a>"
     ) in home
     # Dates and mail schedules with its schedule (the builder adds one): an
     # ordinary Continue (with none it says so, test_campaign_wizard).

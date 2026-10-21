@@ -62,7 +62,8 @@ LABEL = re.compile(r'\{% translate "([^"]+)" %\}')
 # Each DUID heading and the name headings it may follow. Census changes'
 # Member column is headed Who.
 NAMED_BY = {
-    "Family DUID": {"Family"},
+    # Sent mail's Recipient names the Family of a Family email (#1562).
+    "Family DUID": {"Family", "Recipient"},
     "Member DUID": {"Member", "Who"},
 }
 # DUID columns that do not follow a name, on purpose, with the reason.
@@ -197,27 +198,44 @@ OTHER_DUID_LABEL = re.compile(
     r'|\(DUID |\{% translate "DUID" %\}'
 )
 # Printed values that hold a Family's DUID under a name that does not say
-# so: each template's rows are Families (the Family timeline's envelope
+# so: each template's rows are Families (the Timeline's envelope
 # number is printed with the same plain-digits filter).
 FAMILY_ROWS = {
     ("campaign-mail-families.html", "row.duid"),
     ("campaign-mail-families.html", "item.duid"),
-    ("family-timeline.html", "identity.duid"),
-    ("family-timeline.html", "identity.envelope"),
+    ("timeline.html", "identity.duid"),
+    ("timeline.html", "identity.envelope"),
+    # The hub's Family and Member tabs (#1678): a Member's heading names
+    # its DUID, and the Family tab's the Family's (R38 finding 17).
+    ("hub-census-panel.html", "identity.duid"),
+    ("hub-census-panel.html", "subject.duid"),
     ("go-live-families.html", "row.duid"),
     ("presence.html", "row.duid"),
     ("system-health-accept.html", "duid"),
 }
 # Bare "DUID" labels that name a Family's DUID in a line about one Family.
-FAMILY_LABELS = {"find-family-results.html": "a Family search result's DUID"}
+FAMILY_LABELS = {
+    "find-family-results.html": "a Family search result's DUID",
+    # The hub tab headings, "Family (DUID n)" and "Name (DUID n)" for a
+    # Member (R38 finding 17).
+    "hub-census-panel.html": "the Family's or a Member's tab heading",
+}
 # The pages where staff act on a specific Member in ParishSoft, the only ones
-# that show a Member DUID (UX conventions, "Table column order", #1123), plus
+# that show a Member DUID (UX conventions, "Table column order", #1123):
+# Update ParishSoft writes each Member whole and leaves its Conflicts and
+# Cannot checks for staff to find in ParishSoft (#528). Plus
 # the Users page's ParishSoft Ministry leaders table and its import review,
 # kept at the Administrator's request (2026-10-12, #932).
 MEMBER_DUID_PAGES = {
     "census-changes.html",
+    "update-parishsoft.html",
+    # Census Add's dialog asks for the Member's DUID (#1710).
+    "census-worklist-add.html",
     "limitations-report.html",
     "ministry-followup.html",
+    # Ministry requests' review worklist (#1684): its help and Add's Member.
+    "ministry-requests.html",
+    "ministry-worklist-add.html",
     "ministry-roster.html",
     "source-form.html",
     "user-leader-import.html",

@@ -14,7 +14,12 @@ from parishkit.stewardship.reports.financial import (
     PAGE_SIZES,
     FinancialQuery,
 )
-from parishkit.stewardship.reports.financial_views import FIELD_IDS, FIELD_LINES
+from parishkit.stewardship.reports.financial_views import (
+    FIELD_IDS,
+    FIELD_LINES,
+    page_address,
+    summary_tiles,
+)
 from parishkit.stewardship.reports.money import MoneyAmount
 from parishkit.stewardship.web.filter_errors import (
     FilterError,
@@ -27,12 +32,14 @@ from parishkit.stewardship.web.tables import report_table
 DATED_ZONE = "America/Havana"
 
 
-def refused_values():
-    """The view's context for At most below At least, refused at its field."""
-    sent = FinancialQuery(pledge_min="500", pledge_max="100")
-    error = FilterError(
-        "pledge_max", FIELD_MESSAGES["pledge_max"], sent, pair="pledge_min"
-    )
+def refused_values(name="pledge_max", pair="pledge_min", **sent_fields):
+    """The view's context for a range out of order, refused at its end.
+
+    By default At most below At least; ``name`` and ``pair`` name another
+    range's ends, and ``sent_fields`` the values sent.
+    """
+    sent = FinancialQuery(**(sent_fields or dict(pledge_min="500", pledge_max="100")))
+    error = FilterError(name, FIELD_MESSAGES[name], sent, pair=pair)
     shown = FinancialQuery()
     return error_context(error, FIELD_IDS, FIELD_LINES) | dict(
         query=sent, applied=shown, query_fields=shown.form_values()
@@ -55,6 +62,7 @@ def components(context, admin):
         installment=MoneyAmount(10288),
         frequency="monthly",
         frequency_label=FREQUENCY_LABELS["monthly"],
+        frequency_short="mo",
         shares=[
             dict(label="Online <giving>", text=""),
             dict(label="Another way", text="Stock <gift>"),
@@ -71,11 +79,39 @@ def components(context, admin):
         installment=MoneyAmount(None),
         frequency="",
         frequency_label=FREQUENCY_LABELS["none"],
+        frequency_short="",
         shares=[],
         source_pledge=MoneyAmount(None),
         source_contributions=MoneyAmount(None),
         staff_entered=False,
     )
+    # Rows as a parish's typically read (#1544): a longer surname-first
+    # name, a seven-digit DUID, five-figure sums and up to three methods,
+    # one with Other text, an inactive Family with its badge, and a Family
+    # with a single Other method.
+    typical = [
+        row
+        | dict(
+            family_name="Hernandez-Oliveira, Maria and Jose",
+            family_duid=7654321,
+            annual=MoneyAmount(1200000),
+            installment=MoneyAmount(100000),
+            shares=[
+                dict(label="Online giving", text=""),
+                dict(label="Envelope", text=""),
+                dict(label="Other", text="Quarterly stock transfer"),
+            ],
+            source_pledge=MoneyAmount(1150000),
+            source_contributions=MoneyAmount(1098765),
+        ),
+        unproven | dict(family_name="Nguyen, Thanh", active=False),
+        row
+        | dict(
+            family_name="Smith, John",
+            staff_entered=False,
+            shares=[dict(label="Other", text="Payroll gift")],
+        ),
+    ]
     # Share methods are stable option identities, as the closed grammar requires.
     online, other = str(UUID(int=98)), str(UUID(int=99))
     query = FinancialQuery.parse(
@@ -117,6 +153,7 @@ def components(context, admin):
         shares=[("Another way", 4), ("Online <giving>", 40)],
         share_counts={other: 4, online: 40},
         no_share=7,
+        cannot_give=2,
     )
     filtered = summary | dict(
         families=4,
@@ -147,12 +184,15 @@ def components(context, admin):
         total=51,
         # The export form: enabled, with its one-time key and timezone choices.
         mutable=True,
+        # This view's own address (#1586): the sample's search and pledge
+        # range are private, and its share method is closed.
+        page_address=page_address(reverse("admin:financial_report"), query, 50),
         request_key=UUID(int=100),
-        export_timezones=("America/New_York", "UTC"),
         # The filters' reserved message lines (#1332), as the view sizes them.
         filter_sizes=line_sizes(FIELD_MESSAGES, FIELD_LINES),
         summary=summary,
-        # The summary's charts (#720), as the view builds them.
+        # The summary's tiles and charts (#720), as the view builds them.
+        summary_tiles=summary_tiles(summary),
         charts=financial_charts(summary, choices),
         metadata=dict(
             name="Sample campaign",
@@ -172,6 +212,7 @@ def components(context, admin):
             metadata=values["metadata"] | dict(giving_through=None),
         ),
         "/financial-empty": values | dict(table=table([], total=0), total=0),
+        "/financial-typical": values | dict(table=table(typical)),
         # The campaign cannot accept work: the export controls are offered gated.
         "/financial-gated": values | dict(mutable=False),
         # The report as first opened, with no filter applied: its Filters
@@ -182,7 +223,18 @@ def components(context, admin):
         # The answer to an applied filter: a smaller summary, its charts
         # drawn again in place (#720).
         "/financial-filtered": values
-        | dict(summary=filtered, charts=financial_charts(filtered, choices), total=4),
+        | dict(
+            summary=filtered,
+            summary_tiles=summary_tiles(filtered),
+            charts=financial_charts(filtered, choices),
+            total=4,
+            # The answer names its view's closed choices for the address bar.
+            page_address=page_address(
+                reverse("admin:financial_report"),
+                FinancialQuery(frequency="monthly", sort="pledge_desc"),
+                100,
+            ),
+        ),
         # Every Family chose one long-named method (#1266): its full-length
         # bar's label must still fit after it at phone width.
         "/financial-long-labels": values
@@ -190,9 +242,32 @@ def components(context, admin):
         # Filters the server refused at At most (#1332): drawn again with
         # the values sent, the error at the field and the unfiltered results.
         "/financial-refused": values | refused_values(),
+        # Each response-date range refused the same way, a Through date
+        # before its From date (#1469: the message said once).
+        "/financial-refused-first": values
+        | refused_values(
+            "first_end",
+            "first_start",
+            first_start="2026-11-02",
+            first_end="2026-11-01",
+            zone=DATED_ZONE,
+        ),
+        "/financial-refused-latest": values
+        | refused_values(
+            "latest_end",
+            "latest_start",
+            latest_start="2026-11-02",
+            latest_end="2026-11-01",
+            zone=DATED_ZONE,
+        ),
         "/financial-dated": values
         | dict(query=dated, query_fields=dated.form_values()),
     }
+    # The report at its own address, and at the address an applied filter's
+    # answer names (#1586), so a reload of that address draws its view.
+    route = reverse("admin:financial_report")
+    pages[route] = pages["/financial-report"]
+    pages[pages["/financial-filtered"]["page_address"]] = pages["/financial-filtered"]
     result = {
         path: (
             "text/html",

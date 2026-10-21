@@ -1,11 +1,11 @@
-"""``report roster``: Roster changes to enter, as counts (#463, ADM-11).
+"""``report roster``: the roster changes to enter, as counts (#463, ADM-11).
 
 Process admission is replaced by the test's own Django assembly; everything
 after it is the real command line on the restricted web login, reading the
-list through the page's own admission and ``roster_rows`` under the campaign
-read guard. The command's counts are the page's rows counted, and it records
-the page's ``roster_changes_viewed`` with the same outcomes and context
-members as a page view.
+list through its own admission and ``roster_rows`` under the campaign read
+guard. The list's page, Roster changes to enter, was folded into Ministry
+requests' To enter by hand Stage (R39 finding 2); the command keeps the
+list's counts and its ``roster_changes_viewed`` event.
 """
 
 from dataclasses import replace
@@ -25,12 +25,10 @@ from .test_admin_status_cli_postgresql import (
     one,
     session,
 )
-from .test_report_workspace_postgresql import read
 from .test_roster_entries_postgresql import resolved, tick
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
-ROUTE = "/admin/reports/ministries/follow-up/roster/"
 EVENT = "roster_changes_viewed"
 
 
@@ -67,15 +65,16 @@ def succeeded_counts():
 
 
 def test_the_counts_are_the_page_s_list(response_service, google, cli):  # noqa: F811
-    """The list counted as the page lists it, with its Show and Ministry
-    choices, the page's event, and no Member, Family or address printed."""
+    """The list counted, with its Show and Ministry choices, its event, and
+    no Member, Family or address printed."""
     harness, admin_id, join, _ = resolved(response_service)
-    browser, _ = signed_in()
+    signed_in()
     run = cli()
 
-    parity(EVENT, lambda: read(browser, ROUTE), lambda: run("report", "roster"))
-    # The page recorded the row it showed; the command shows none.
-    assert succeeded_counts() == [0, 1]
+    code, document = run("report", "roster")
+    assert code == 0, document
+    # The command shows no row.
+    assert succeeded_counts() == [0]
 
     code, document = run("report", "roster")
     assert code == 0, document

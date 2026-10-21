@@ -1,4 +1,4 @@
-"""An automation session passing a fresh gate is recorded (ADM-11 PR 5b).
+"""An automation session admitting a privileged command is recorded (PR 5b).
 
 Once per state-changing command, in the action's own transaction: the
 ``automation_fresh_gate`` audit event (the Administrator as actor, the
@@ -30,7 +30,7 @@ class Rollback(Exception):
 
 
 def recorded():
-    """The fresh-gate audit events and the notices, apart from approval's."""
+    """The ``automation_fresh_gate`` events and the notices, apart from approval's."""
     return (
         list(AuditEvent.objects.filter(event_type=EVENT)),
         list(AutomationNotice.objects.exclude(kind="approved").order_by("created_at")),
@@ -38,15 +38,15 @@ def recorded():
 
 
 def test_a_fresh_gated_command_is_recorded_once(auth_service, google):
-    """One event and one fresh_gated notice per command, however many gates."""
+    """One event and one fresh_gated notice per command, however many calls."""
     _, secret, row = paired(auth_service)
     # The command line binds one correlation per invocation before admission.
     with correlation():
         caller = command(auth_service, secret)
         caller.command_type = "admin_cmd_send_confirm"
         with transaction.atomic():
-            sessions.require_fresh(caller)
-            sessions.require_fresh(caller)
+            sessions.sign_in_instant(caller)
+            sessions.sign_in_instant(caller)
     [event], [notice] = recorded()
     assert event.actor_id == row.principal_id and event.subject_id == row.pk
     assert notice.kind == "fresh_gated"
@@ -63,7 +63,7 @@ def test_an_irreversible_action_opens_its_incident(auth_service, google):
     caller = command(auth_service, secret)
     caller.command_type = "admin_cmd_go_live_confirm"
     with transaction.atomic():
-        sessions.require_fresh(caller, irreversible=True)
+        sessions.sign_in_instant(caller, irreversible=True)
     [_], [notice] = recorded()
     assert notice.kind == "irreversible"
     assert OperationalIncident.objects.filter(kind="automation_irreversible").exists()
@@ -74,29 +74,29 @@ def test_reads_previews_and_rollbacks_record_nothing(auth_service, google):
     _, secret, _ = paired(auth_service)
     caller = command(auth_service, secret)
     with transaction.atomic():
-        sessions.require_fresh(caller)
+        sessions.sign_in_instant(caller)
     assert recorded() == ([], [])
     caller.command_type = "admin_cmd_send_confirm"
     with pytest.raises(Rollback), transaction.atomic():
-        sessions.require_fresh(caller)
+        sessions.sign_in_instant(caller)
         raise Rollback
     assert recorded() == ([], [])
     # A retried attempt after the rollback records it.
     with transaction.atomic():
-        sessions.require_fresh(caller)
+        sessions.sign_in_instant(caller)
     assert len(recorded()[1]) == 1
 
 
-def test_an_irreversible_gate_after_a_fresh_one_still_records(auth_service, google):
+def test_an_irreversible_call_after_an_ordinary_one_still_records(auth_service, google):
     """Dedupe is per kind: the irreversible notice and incident still come."""
     _, secret, _ = paired(auth_service)
     with correlation():
         caller = command(auth_service, secret)
         caller.command_type = "admin_cmd_go_live_confirm"
         with transaction.atomic():
-            sessions.require_fresh(caller)
-            sessions.require_fresh(caller, irreversible=True)
-            sessions.require_fresh(caller, irreversible=True)
+            sessions.sign_in_instant(caller)
+            sessions.sign_in_instant(caller, irreversible=True)
+            sessions.sign_in_instant(caller, irreversible=True)
     events, notices = recorded()
     assert len(events) == 2
     assert [notice.kind for notice in notices] == ["fresh_gated", "irreversible"]
@@ -104,36 +104,28 @@ def test_an_irreversible_gate_after_a_fresh_one_still_records(auth_service, goog
 
 
 def test_a_passive_probe_records_nothing(auth_service, google):
-    """record=False: a page asking whether a sign-in is fresh is no action."""
+    """record=False admits without recording: it is no action."""
     _, secret, _ = paired(auth_service)
     caller = command(auth_service, secret)
     caller.command_type = "admin_cmd_send_pause"
     with transaction.atomic():
-        sessions.require_fresh(caller, record=False)
+        sessions.sign_in_instant(caller, record=False)
     assert recorded() == ([], [])
 
 
 @pytest.mark.parametrize(
-    "module,function,probe",
+    "module,function",
     [
-        ("confirmation_commands", "confirm", None),
-        ("withdrawal_commands", "withdraw", "page"),
-        ("delivery_control_commands", None, "page"),
+        ("confirmation_commands", "confirm"),
+        ("withdrawal_commands", "withdraw"),
     ],
 )
-def test_the_call_sites_mark_irreversible_actions_and_passive_probes(
-    module, function, probe
-):
-    """Confirmation and withdrawal are irreversible; status pages only probe."""
+def test_the_call_sites_mark_irreversible_actions(module, function):
+    """The Production confirmation and withdrawal are irreversible."""
     import inspect
     from importlib import import_module
 
     source = import_module(f"parishkit.stewardship.accounts.{module}")
-    if function is not None:
-        assert "require_fresh(request, irreversible=True)" in inspect.getsource(
-            getattr(source, function)
-        )
-    if probe is not None:
-        assert "require_fresh(request, record=False)" in inspect.getsource(
-            getattr(source, probe)
-        )
+    assert "sign_in_instant(request, irreversible=True)" in inspect.getsource(
+        getattr(source, function)
+    )

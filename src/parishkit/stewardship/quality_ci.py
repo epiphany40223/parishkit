@@ -46,19 +46,22 @@ BASELINE_COLLECTION_SECONDS = 5 * 60
 # Valkey pair (issue #625). This is the one tuning knob: the contract tests
 # derive the workflow's job matrix and its service pairs from it, and fail
 # naming what to change. Three per job keeps a full run's PostgreSQL group to
-# six of the account's twenty concurrent job slots for sixteen partitions
-# (#625, #1200). It also fits a 4 vCPU / 16 GB hosted runner: the partitions
-# spend much of their time waiting on PostgreSQL and on real lease and drain
-# deadlines, and three 2 GiB tmpfs clusters plus three pytest processes stay
-# well inside 16 GB. Job one holds partition one and the BASELINE_PARTS
-# baseline parts, also three pytest processes.
+# eight of the account's twenty concurrent job slots for twenty-two
+# partitions (#625, #1200, #1529). It also fits a 4 vCPU / 16 GB hosted
+# runner: the partitions spend much of their time waiting on PostgreSQL and
+# on real lease and drain deadlines, and three 2 GiB tmpfs clusters plus
+# three pytest processes stay well inside 16 GB. Job one holds partition one
+# and the BASELINE_PARTS baseline parts, also three pytest processes.
 PARTITIONS_PER_JOB = 3
 # Each pytest child's deadline: a partition's database run, and each
 # baseline part beside partition one's. Packed fourteen ways, partitions took
 # 1,120 to 1,690 s and the baseline 1,310 to 1,330 s in October 2026 (#1200);
-# sixteen partitions bring the heaviest to about 24 minutes. The margin
-# absorbs slow runners, not a slower suite: when a partition nears it, add
-# partitions; when a baseline part does, add parts (BASELINE_PARTS).
+# sixteen partitions brought the heaviest to about 24 minutes. By
+# 2026-10-17 sixteen took 825 to 1,757 s, mostly by runner, and two were
+# killed here, so the workflow runs twenty-two, projected at most about
+# 1,330 s (#1529). The margin absorbs slow runners, not a slower suite:
+# when a partition nears it, add partitions; when a baseline part does,
+# add parts (BASELINE_PARTS).
 SHARD_TIMEOUT = 30 * 60
 # The first slot keeps the services' default ports. Valkey port 56380 stays
 # unused: the unavailable-service tests rely on nothing listening there.

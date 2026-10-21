@@ -13,10 +13,13 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import requests
 
 import parishkit
 from parishkit import __version__
 from parishkit.config import ConfigError
+from parishkit.parishsoft import DEFAULT_API_BASE_URL
+from parishkit.parishsoft_http_worker import LOCAL_SOURCE_BASE_URL
 from parishkit.stewardship import provider_check_worker, smoke
 from parishkit.stewardship.accounts.key_files import write_private
 from parishkit.stewardship.deployment import ServiceRole
@@ -43,7 +46,7 @@ SYNTHETIC = {
     "dateOfBirth": "1970-01-02",
     "dateOfDeath": None,
     "emailAddress": "a@example.invalid; b@example.invalid",
-    "fax": None,
+    "fax": "(555) 555-0104",
     "firstName": "Synthetic",
     "gender": "F",
     "homePhone": "(555) 555-0102",
@@ -52,7 +55,7 @@ SYNTHETIC = {
     "maidenName": None,
     "middleName": None,
     "nickName": None,
-    "pager": None,
+    "pager": "(555) 555-0103",
     "workPhone": None,
 }
 
@@ -60,7 +63,10 @@ SYNTHETIC = {
 class FakeGateway:
     """One synthetic Member record; writes apply under the record's spelling.
 
-    Each accepted write bumps the volatile ``dateModified`` stamp. ``side``
+    A write is a partial update, as the live v2 contact PUT is (#528): fields
+    left out are kept, ``null`` is ignored and ``""`` is refused
+    (``write_rejected``) with nothing changed. Each accepted write bumps the
+    volatile ``dateModified`` stamp. ``side``
     is a dict of extra record changes every write makes, ``failures`` a list
     of failure words (or exceptions) for successive writes, None for success.
     """
@@ -86,8 +92,11 @@ class FakeGateway:
             raise failure
         if failure is not None:
             raise ContactGatewayError(failure)
+        if "" in payload.values():
+            raise ContactGatewayError("write_rejected")
         for name, value in payload.items():
-            self.record[self.spelling.get(name, name)] = value
+            if value is not None:
+                self.record[self.spelling.get(name, name)] = value
         self.record.update(self.side)
         self.record["dateModified"] = len(self.writes)
 
@@ -139,7 +148,7 @@ def test_the_probe_reports_names_types_shapes_and_encodings_but_no_values():
     assert result["parishkit_version"] == __version__
     assert result["record_keys"] == sorted(member())
     assert result["unsendable"] == [] and result["markers_present"] == []
-    assert result["unsettled"] == ["dateOfDeath", "fax", "pager", "workPhone"]
+    assert result["unsettled"] == ["dateOfDeath", "workPhone"]
     fields = result["fields"]
     assert set(fields) == set(MEMBER_CONTACT_FIELDS)
     assert fields["gender"] == {
@@ -147,7 +156,8 @@ def test_the_probe_reports_names_types_shapes_and_encodings_but_no_values():
         "source": "gender",
         "type": "string",
         "shape": "a",
-        "encoder_matches_read": True,
+        # Gender is by hand (#1603): publication never writes it.
+        "encoder_matches_read": None,
         "sendable": True,
     }
     assert fields["dateOfBirth"]["shape"] == "9999-99-99"
@@ -157,6 +167,14 @@ def test_the_probe_reports_names_types_shapes_and_encodings_but_no_values():
     assert fields["pager"] == {
         "present": True,
         "source": "pager",
+        "type": "string",
+        "shape": "(999) 999-9999",
+        "encoder_matches_read": None,
+        "sendable": True,
+    }
+    assert fields["workPhone"] == {
+        "present": True,
+        "source": "workPhone",
         "type": "null",
         "sendable": True,
     }
@@ -168,7 +186,11 @@ def test_the_probe_reports_names_types_shapes_and_encodings_but_no_values():
 
 
 def test_the_encoder_check_and_the_schema_check_name_their_fields():
-    """A date-time, a long gender and a re-ordered email are reported."""
+    """A date-time, a long gender and a re-ordered email are reported.
+
+    Only the marker field is ever sent, so other unsendable fields do not
+    stop the round trip; an unsendable marker field does.
+    """
     record = member(
         dateOfBirth="1970-01-02T00:00:00",
         gender="Female",
@@ -182,9 +204,15 @@ def test_the_encoder_check_and_the_schema_check_name_their_fields():
     assert fields["emailAddress"]["encoder_matches_read"] is False
     assert fields["emailAddress"]["separators"] == [", "]
     assert fields["gender"]["sendable"] is False
+    assert fields["gender"]["encoder_matches_read"] is None
     assert "encoder_matches_read" not in fields["homePhone"]
     assert result["unsendable"] == ["dateOfBirth", "gender", "homePhone"]
     assert "homePhone" in result["unsettled"]
+    assert result["write"] == "accepted" and result["confirmed"] is True
+    assert {name for _, body in gateway.writes for name in body} == {"pager"}
+    gateway = FakeGateway(member(pager="555-0103"))
+    result, _, _ = recorded_run(gateway, send=True)
+    assert result["unsendable"] == ["pager"]
     assert result["write"] == "refused_unsendable" and gateway.writes == []
 
 
@@ -194,13 +222,12 @@ def test_shapes_mask_every_letter_and_digit_not_only_ascii():
 
 
 def test_the_round_trip_writes_the_marker_then_restores_the_original():
-    """Two PUTs of the full payload as read; only the chosen field differs."""
+    """Two one-field PUTs, as publication sends (#1600): marker, then original."""
     gateway = FakeGateway(member())
     result, sleeps, reports = recorded_run(gateway, send=True)
-    original = {name: SYNTHETIC[name] for name in MEMBER_CONTACT_FIELDS}
     assert gateway.writes == [
-        (42, {**original, "pager": MARKERS["pager"]}),
-        (42, original),
+        (42, {"pager": MARKERS["pager"]}),
+        (42, {"pager": SYNTHETIC["pager"]}),
     ]
     assert gateway.record == member(dateModified=2)
     assert sleeps == []
@@ -218,16 +245,32 @@ def test_the_round_trip_writes_the_marker_then_restores_the_original():
     assert result["confirmed"] is True
 
 
-def test_an_incomplete_read_refuses_any_write():
-    """A field the read lacks could be cleared by a PUT, so nothing is sent."""
+def test_an_unread_marker_field_refuses_any_write():
+    """Without the marker field's original there is nothing to restore.
+
+    Another unread field is only reported: no PUT sends it, so it cannot be
+    cleared.
+    """
     record = member()
     del record["fax"]
     gateway = FakeGateway(record)
     result, _, _ = recorded_run(gateway, send=True)
-    assert gateway.writes == [] and result["sent"] is False
-    assert result["read_complete"] is False
-    assert result["write"] == "refused_incomplete_read"
+    assert result["read_complete"] is False and result["confirmed"] is True
     assert result["fields"]["fax"] == {"present": False, "ambiguous": False}
+    gateway = FakeGateway(record)
+    result, _, _ = recorded_run(gateway, send=True, field="fax")
+    assert gateway.writes == [] and result["sent"] is False
+    assert result["write"] == "refused_marker_field_unread"
+
+
+@pytest.mark.parametrize("blank", [None, "", "   "])
+def test_a_blank_marker_field_refuses_any_write(blank):
+    """The API cannot clear a value (null ignored, "" refused), so a blank
+    marker field could never be put back: nothing is sent."""
+    gateway = FakeGateway(member(pager=blank))
+    result, _, _ = recorded_run(gateway, send=True)
+    assert gateway.writes == [] and result["sent"] is False
+    assert result["write"] == "refused_blank_marker_field"
 
 
 def test_member_record_aliases_map_and_disagreeing_spellings_are_detailed():
@@ -309,9 +352,9 @@ def test_a_failed_marker_write_settles_before_the_restore_read():
     """A timed-out PUT may land late: wait, then read; the restore still runs."""
     gateway = FakeGateway(member(), failures=["write_unavailable"])
     result, sleeps, _ = recorded_run(gateway, send=True)
-    assert [payload["pager"] for _, payload in gateway.writes] == [
-        MARKERS["pager"],
-        None,
+    assert [payload for _, payload in gateway.writes] == [
+        {"pager": MARKERS["pager"]},
+        {"pager": SYNTHETIC["pager"]},
     ]
     assert result["write"] == "write_unavailable"
     assert result["restore_write"] == "accepted" and result["restored"] is True
@@ -395,6 +438,114 @@ def test_the_command_refuses_without_an_explicit_confirmed_member(
         smoke.check_parishsoft_contact(configuration, **contact_args(**changes))
 
 
+def local_worker(tmp_path, base_url=None, key=b"key"):
+    """A LOCAL worker reading the fake (the default) or ``base_url``."""
+    from dataclasses import replace
+
+    from parishkit.stewardship.deployment import DeploymentProfile
+
+    return replace(
+        consumer(tmp_path, ServiceRole.WORKER, parishsoft=key),
+        profile=DeploymentProfile.LOCAL,
+        parishsoft_base_url=base_url,
+    )
+
+
+def test_the_command_in_the_local_profile_with_the_real_api_is_refused(
+    tmp_path, monkeypatch, no_database
+):
+    """pk-local never writes to the real ParishSoft (#1399, #1884): with the
+    real API it is refused before the database, the tenant read or the
+    gateway, by the shared write rule."""
+    configuration = local_worker(tmp_path, DEFAULT_API_BASE_URL)
+    monkeypatch.setattr(
+        smoke, "check_parishsoft", lambda *a, **k: pytest.fail("checked")
+    )
+    monkeypatch.setattr(
+        ParishSoftContactGateway,
+        "open_operator",
+        classmethod(lambda cls, *a, **k: pytest.fail("opened")),
+    )
+    for send in (False, True):
+        with pytest.raises(ConfigError, match="only against the local fake"):
+            smoke.check_parishsoft_contact(configuration, **contact_args(send=send))
+    assert no_database == []
+
+
+def test_the_command_in_the_local_profile_runs_against_the_fake(
+    tmp_path, monkeypatch, no_database
+):
+    """A LOCAL deployment reading the fake runs the same check as Production,
+    and its gateway is opened for the fake's base URL only."""
+    configuration = local_worker(tmp_path)
+    gateway = FakeGateway(member())
+    gateway.close = lambda: None
+    opened = []
+    monkeypatch.setattr(
+        ParishSoftContactGateway,
+        "open_operator",
+        classmethod(lambda cls, credential, **kwargs: opened.append(kwargs) or gateway),
+    )
+    monkeypatch.setattr(provider_check_worker, "_parishsoft", outcome("valid"))
+    result = smoke.check_parishsoft_contact(configuration, **contact_args(send=True))
+    assert result["confirmed"] is True and no_database == [configuration]
+    assert opened[0]["profile"] == "local"
+    assert opened[0]["base_url"] == LOCAL_SOURCE_BASE_URL
+
+
+def test_the_local_tenant_check_reaches_the_in_process_fake(
+    tmp_path, monkeypatch, no_database
+):
+    """The tenant check is not stubbed on the LOCAL path: it asks the fake's
+    organizations/search, so drift in the fake's answer (organization 1001)
+    fails here instead of stopping the pk-local smoke check at
+    ``credential != valid``. The Member read stays on the fake gateway."""
+    from parishkit.stewardship.local import LOCAL_ORGANIZATION_ID, LOCAL_PARISHSOFT_KEY
+    from parishkit.stewardship.local.fake_parishsoft import (
+        BASE_PATH,
+        FakeConfiguration,
+        FakeParishSoft,
+    )
+
+    from .test_provider_checks import Response
+
+    path = tmp_path / "fake-parishsoft.json"
+    path.write_text(
+        json.dumps(
+            {"seed": 1, "families": 40, "anchor_date": "2026-09-16", "release_at": None}
+        )
+    )
+    fake = FakeParishSoft(FakeConfiguration.read(path))
+    asked = []
+
+    def request(session, method, url, **kwargs):
+        """Answer the check's request from the fake, with no socket."""
+        asked.append((method, url))
+        assert url.startswith(LOCAL_SOURCE_BASE_URL)
+        status, content = fake.handle(
+            method,
+            BASE_PATH + url[len(LOCAL_SOURCE_BASE_URL) :].lstrip("/"),
+            kwargs.get("json"),
+            {"x-api-key": session.headers["x-api-key"]},
+        )
+        return Response(status=status, body=content)
+
+    monkeypatch.setattr(requests.Session, "request", request)
+    configuration = local_worker(tmp_path, key=LOCAL_PARISHSOFT_KEY.encode())
+    gateway = FakeGateway(member())
+    gateway.close = lambda: None
+    monkeypatch.setattr(
+        ParishSoftContactGateway,
+        "open_operator",
+        classmethod(lambda cls, credential, **kwargs: gateway),
+    )
+    result = smoke.check_parishsoft_contact(
+        configuration, **contact_args(organization_id=LOCAL_ORGANIZATION_ID)
+    )
+    assert asked == [("POST", LOCAL_SOURCE_BASE_URL + "/organizations/search")]
+    assert result["credential"] == "valid"
+
+
 def test_the_command_runs_only_in_the_worker(tmp_path, no_database):
     """The worker holds the ParishSoft credential; nothing else may run it."""
     configuration = consumer(tmp_path, ServiceRole.WEB)
@@ -426,6 +577,7 @@ def test_the_command_checks_the_tenant_then_round_trips_the_one_member(
     assert result["credential"] == "valid" and result["confirmed"] is True
     assert gateway.reads == [42, 42, 42] and {w[0] for w in gateway.writes} == {42}
     assert opened[0]["profile"] == configuration.profile.value
+    assert opened[0]["base_url"] == DEFAULT_API_BASE_URL
     assert opened[0]["on_timeout"] is smoke._contact_timeout
     assert gateway.closed is True
     # The marker step went to standard error before the restore.

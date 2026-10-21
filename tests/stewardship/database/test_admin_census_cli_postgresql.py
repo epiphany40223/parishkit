@@ -110,7 +110,7 @@ def test_the_counts_are_the_page_s_list(response_service, google, cli):  # noqa:
     for private in ("Requested", "Census Way", "@"):
         assert private not in text, private
 
-    # The page's filters narrow the list; the summary stays the campaign's.
+    # The page's filters narrow the list; the status counts stay the campaign's.
     code, document = run("report", "census", "--status", "all", "--route", "by_hand")
     assert code == 0, document
     assert document["result"]["matching"] == 1

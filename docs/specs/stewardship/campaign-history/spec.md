@@ -37,7 +37,7 @@ The readers are parish leadership: the pastor, the stewardship committee and
 staff. They are not technical and read pictures before numbers. Staff and
 Administrators open the page; the rest of leadership receive the
 [one-page summary](#downloads-and-sharing) or the
-[digest section](#digest-section) from the Administrator. The report
+[report email block](#digest-section) from the Administrator. The report
 therefore follows the visual, charts-first style of
 [#720](https://github.com/epiphany40223/parishkit/issues/720): a few large
 headline figures, line charts with the exact numbers in tooltips and a table,
@@ -418,11 +418,10 @@ day, and a `note.*` row says the campaign collected no pledges.
 ### Download campaign archive
 
 **Access:** Administrators only, as for Past campaigns (`CONFIGURE` and
-`FINANCIAL_DETAIL`). The file holds Family-level giving, so creating it
-needs a Google sign-in within five minutes, as the
+`FINANCIAL_DETAIL`). The file holds Family-level giving, so creating it is
+audited as the
 [financial stewardship detail](../reports/spec.md#financial-stewardship-detail)
-export does; a stale sign-in gets the step-up page, which returns to Past
-campaigns, and nothing is made.
+export is.
 
 Past campaigns gets a section, **This campaign's archive**, below the
 imported table. It names the current campaign, says whether a download now
@@ -437,7 +436,9 @@ no current campaign, before day 1 has ended, or while no Family has
 responded by the cutoff (an archive needs at least one Family).
 
 The action queues the shared export lifecycle's `campaign_archive` kind,
-XLSX only, and answers with the shared status page (download, Cancel and
+XLSX only, and downloads in place, with the button busy until the file
+arrives ([downloads happen in place](../ui-conventions/spec.md#downloads-happen-in-place));
+its status address keeps the shared lifecycle (download, Cancel and
 Retry as for every export, within the shared
 [download window](../operations/spec.md#point-in-time-exports)). The worker
 reads the submissions itself at generation, under the request's
@@ -775,13 +776,13 @@ the report.
 
 ### Privacy
 
-- Only aggregates leave the Admin portal: report pages, digests, downloads
+- Only aggregates leave the Admin portal: report pages, report emails, downloads
   and command output carry counts, sums, averages, quartiles and
-  percentages, never a Family row or identifier. Downloads and digests also
+  percentages, never a Family row or identifier. Downloads and report emails also
   apply the [small-count protection](#pledge-distribution).
 - The free-text `note.*`, provenance and dedup texts appear only on the
   Admin portal page (the Review card and the report's data notes). Downloads
-  and digests carry none of them.
+  and report emails carry none of them.
 - Stored Family rows are read only inside the database, by the renewal
   calculation, which returns counts.
 - The audit trail records `campaign_archive_previewed`,
@@ -797,7 +798,7 @@ appear only when the current campaign has the financial module, as on the
 leaders never see it.
 
 The page is **Campaign comparison** at `/admin/reports/comparison/`, in the
-Responses and reports menu group after Participation. It is unavailable
+Reports and queries menu group after the Response dashboard. It is unavailable
 when there is no current campaign. With no imported years it shows the
 current campaign only, with one line saying no past campaigns are imported
 and, for an Administrator, a link to Past campaigns.
@@ -813,8 +814,8 @@ campaigns started on dates from September 11 to October 5.
   Historical-as-of-day fact set row for local date start + N − 1.
 - **The comparison day** is the current campaign's last complete local day:
   the day before today in the campaign's time zone, as the
-  [daily digest's](../background-processing/spec.md#daily-campaign-digest)
-  report day is. Before day 1 has ended the page shows the imported years'
+  report day of a [report email](../report-emails/spec.md#as-of) as of the
+  end of the previous day is. Before day 1 has ended the page shows the imported years'
   final results only. After the current campaign's end date the comparison
   day stays at the day of its end date.
 - A final imported year (`is_final` `TRUE`) whose `daily` sheet ends before
@@ -870,8 +871,9 @@ and the average of all imported years:
   slice that uses it, since the import slice's migration is frozen once it
   is released.
 - A figure that cannot be computed shows "—" with a toggletip giving the
-  reason (no Family rows for last year, different id
-  systems, financial module off).
+  reason (no Family rows for last year, different id systems, financial
+  module off, no responders last year, no active Families on the day, or no
+  figure for the day yet). Every "—" has a reason.
 
 ### Pledge distribution
 
@@ -925,7 +927,7 @@ value by a cent in rare cases. Amounts are
 nominal dollars with no inflation adjustment, and the report says so.
 
 **Small-count protection.** In anything that leaves the Admin portal (the
-PDF, CSV and XLSX downloads, the digest and command output), a band with
+PDF, CSV and XLSX downloads, report emails and command output), a band with
 fewer than 5 Families shows "fewer than 5" in place of its count and share,
 and no total or share of total. When any band of a year is withheld, that
 year's outside outputs also withhold:
@@ -947,7 +949,7 @@ Families shows no quartiles and no bands there.
 **The current campaign stays inside the portal.** Its distribution and
 quartiles change day by day, and the difference between two days could
 expose one Family's pledge. They therefore appear only on the Admin portal
-page. Outside the portal (downloads, digest, command output) distributions
+page. Outside the portal (downloads, report emails, command output) distributions
 and quartiles are shown only for final imported years. The Admin portal
 page itself shows every figure, since only Administrators and Staff open
 it.
@@ -972,10 +974,12 @@ first, explanation in the About this page panel.
    "Day 12 of Stewardship 2027 · through Wednesday, October 14", with the
    last-year and average years named ("compared with 2026 and the
    2020–2026 average").
-2. **Headline tiles**, one per metric above, in that order. Each shows the
-   current figure large, then two lines: "Last year on day 12: 240 (12.5%
-   more)" and "2020–2026 average: 220 (22.7% more)". The full wording sits in the
-   tile's tooltip and accessible name.
+2. **Headline tiles**, one per metric above, in that order, drawn as
+   [stat tiles](../ui-conventions/spec.md#stat-tiles). Each shows the
+   current figure large, then two lines: "Last year on day 12: 240 (↑ 12.5%
+   more)" and "2020–2026 average: 220 (↑ 22.7% more)"; the average pledge
+   first adds its median so far. A screen reader reads the label, value
+   and lines in that order, as shown.
 3. **Day-by-day charts**, through the [chart
    engine](../reports/spec.md#chart-engine), one per measure, each with its
    summary and exact-values table: cumulative Families responded, percent of
@@ -985,11 +989,12 @@ first, explanation in the About this page panel.
    every other year thin and muted grey with its year labeled at the line's
    end; the prior-years average dark and dash-dotted. A vertical rule marks
    day N. Pointing anywhere over the plot (or tapping it) picks the nearest
-   campaign day: a faint rule and each line's point on that day appear, and
+   campaign day: the [hover guide line](../ui-conventions/spec.md#charts)
+   and each line's point on that day appear, and
    one tooltip headed "Day 15" lists every line with a value that day, in
    the legend's order, each with its value and local date (a final year
    carried past its last day reads "(final)" with no date; the average has
-   no date). Readers need not find a thin line or a small point.
+   no date).
 4. **Final results by year:** two bar charts, Families responded and annual
    pledges, one bar per imported year plus the current campaign drawn
    lighter and labeled "so far". Pointing anywhere on a year's row, not
@@ -1061,8 +1066,14 @@ Each view reads under the campaign's
 [read guard](../data/spec.md#campaign-read-guards), sends `Cache-Control:
 no-store` (the figures are financial), and records one
 `campaign_comparison_viewed` audit event with the day and outcome, no
-figure. If the current fact set is not ready, the page shows the last ready
-one with the participation graph's **Updating** notice.
+figure; a view the page made by itself to bring newer figures in is marked
+`automatic: true`. If the current fact set is not ready, the page shows the
+last ready one with the participation graph's **Updating** notice, and
+brings the new figures in by itself once they are ready, as the Response
+dashboard does
+([pages that update themselves](../ui-conventions/spec.md#pages-that-update-themselves)).
+A page that refuses the day asked for (a 400) still shows the notice but
+does not follow, since its own re-read would only be refused again.
 
 ### Downloads and sharing
 
@@ -1078,32 +1089,38 @@ aggregates only, apply the [small-count
 protection](#pledge-distribution), carry none of the free-text notes, and
 record
 `campaign_comparison_exported` like other exports. No public or
-unauthenticated link exists. The files hold campaign days and dates, no
-exact action times, so the download form asks for no time zone: the
+unauthenticated link exists. The download asks for no time zone: the
 browser's sets the file's request time, else the parish's, under the
-[time zone question](../ui-conventions/spec.md#downloaded-files) rule
+[time zones](../ui-conventions/spec.md#downloaded-files) rule
 ([#1161](https://github.com/epiphany40223/parishkit/issues/1161)).
 
 ### Digest section
 
-The daily Administrator digest may include a **Compared with past
-campaigns** section, off by default and turned on for the daily digest
-schedule on
-[Dates and mail schedules](../admin-portal/spec.md#campaign-configuration).
-It follows the digest's #720 style: the cumulative Families chart and the
+A [report email](../report-emails/spec.md) may include the **Compared with
+past campaigns** block
+([its block](../report-emails/spec.md#compared-with-past-campaigns-block)),
+chosen per report on
+[Report emails](../report-emails/spec.md#blocks-field); it was the daily
+digest's optional section before #1786. It follows the report emails' #720
+style: the cumulative Families chart and the
 cumulative pledges chart first (PNG through the chart engine's server
 renderer, with alt text carrying the figures), then one line per headline
 figure with its last-year and average comparisons, then a link to the
-report. Its comparison day is the digest's report day, and its current
-figures come from the digest's pinned fact set. When the digest is
-compiled, the occurrence stores the section's computed aggregates (the
-figures, the chart specifications and each imported year's checksum), so
-the saved digest page shows exactly what was sent, whatever is imported or
-removed later. The section applies the [small-count
-protection](#pledge-distribution) and carries no note text. With no
-imported years the section is left out. It is the first task to use the
-chart engine's server renderer, so its slice adds that renderer's timeout
-name, as the [chart engine](../reports/spec.md#chart-engine) requires.
+report. Its comparison day is the report's report day for a report as of
+the end of the previous day, or the last complete campaign day before the
+capture instant for a report as of when it is made (a partial day is not
+compared with past campaigns' whole days), and its current figures come
+from the report's pinned fact set. When the report is compiled, the
+occurrence stores the section's computed aggregates (the figures, the chart
+specifications and each imported year's checksum), so the saved copy shows
+exactly what was sent, whatever is imported or
+removed later; that page draws the stored figures as
+[stat tiles](../ui-conventions/spec.md#stat-tiles), word for word. The
+section applies the [small-count protection](#pledge-distribution) and
+carries no note text. With no imported years the section is left out. It
+is the first task to use the chart engine's server renderer, so its slice
+adds that renderer's timeout name, as the
+[chart engine](../reports/spec.md#chart-engine) requires.
 
 ## Command line
 
@@ -1160,7 +1177,6 @@ importing them.
 | Financial module off | Pledge figures, charts and columns are left out |
 | Checking a file exceeds its 60-second limit | Stopped, logged as a durable timeout entry naming the limit and the elapsed time, and refused as too large to check |
 | Archive download with no current campaign, before day 1 has ended, for a closed campaign with a live submission after the cutoff (closed today with a response today), or with no Family responded by the cutoff | Download campaign archive unavailable with the reason; the command refuses |
-| Archive download with a stale sign-in | The step-up page, returning to Past campaigns; nothing queued |
 | Archive's derived `daily` disagrees with an available fact figure | The generation fails as a fact failure (retried, then failed with its reason); no file is offered |
 | A fact row's population or pledge total is unavailable | Not a disagreement: that figure is left unchecked for the day, and a `note.*` row counts such days |
 | No ready fact set's watermark yet covers every version submitted before the cutoff | Download campaign archive unavailable with that reason (the facts are recalculated automatically after responses); the worker's own coverage check fails a request rather than write a file without it |
@@ -1248,8 +1264,8 @@ committed.
   overlap at phone and laptop widths, a year with an older band set showing its
   note, the data notes starting closed and opening on request,
   the shared notes shown once and each year's own after them.
-- **Downloads and digest:** the three formats carry the same columns and
-  aggregates only, with no note text; a saved digest page shows the stored
+- **Downloads and report emails:** the three formats carry the same columns
+  and aggregates only, with no note text; a report email's saved copy shows the stored
   section unchanged after a later import and a removal; the chart
   renderer's timeout name is recorded on a kill.
 - **Command line:** each command through the page's service, the catalog
@@ -1423,7 +1439,12 @@ linked to #1018 (slice 7 completed part (b)).
    averages whatever its distribution's reason (an older band set).
 7. **Digest section.** The daily digest option, with its own
    forward migration if the digest occurrence needs new columns to record
-   the imported years it used.
+   the imported years it used. (Since
+   [#1786](https://github.com/epiphany40223/parishkit/issues/1786) the
+   section is the
+   [Compared with past campaigns block](../report-emails/spec.md#compared-with-past-campaigns-block)
+   of report emails; the record below is what was built for the daily
+   digest.)
    As built: the setting is the daily digest schedule's **Include Compared
    with past campaigns** checkbox on New and Edit scheduled email (and
    each schedule's editor on Dates and mail schedules), saved in the
@@ -1477,7 +1498,7 @@ Part (a), the [archive export](#archive-export), follows in its own slices
   forward migration for its request arm, which stores the cutoff instant and
   the submission watermark and pins the checked fact-set generation against
   compaction, at the next free number when it is built), the Past campaigns
-  section with its fresh sign-in, `pk-admin export archive`, its rows in the
+  section, `pk-admin export archive`, its rows in the
   admin automation spec's
   [fresh-gated actions](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line)
   and [reports and exports](../admin-automation/spec.md#reports-and-exports)
@@ -1542,6 +1563,8 @@ The Administrator accepted every proposed default on October 11, 2026
    the quartiles and the [pledge distribution](#pledge-distribution) beside
    it (new requirement from this decision).
 9. **Digest section:** off by default; when on, in the daily digest only.
+   (Since #1786 it is a block any report email may include; see
+   [report emails](../report-emails/spec.md#compared-with-past-campaigns-block).)
 10. **Sending to leadership:** the one-page PDF download, which the
     Administrator emails. No public link.
 11. **Upload limits:** 20 MiB per file, 300 MiB uncompressed and 500,000

@@ -54,8 +54,10 @@ def reconcile_proposals(snapshot, corpus, *, campaign_id):
     """Use the promotion owner's coherent corpus, never fetch a second generation.
 
     Family membership is checked before reading a Member's new values, even for
-    staff-derived reconciliation. A Member moved elsewhere becomes unavailable,
-    not a source of another household's private data. Canonically unchanged
+    staff-derived reconciliation. A Member moved elsewhere or gone is never
+    read, so another household's private data is not a source; nor is an
+    inactive or deceased one, except for a death date. Such a change is kept
+    as it is (rule 4). Canonically unchanged
     inputs keep their old reference; unrelated nightly refreshes do not create
     new retention pins or rewrite every pending proposal.
     """
@@ -150,21 +152,21 @@ def _proposal_updates(corpus, campaign_id, *, record=True):
             )
         field = definitions[row.field]
         member = corpus["member"].get(row.entity_key)
-        if member is not None and (
+        if member is None or (
             member["family_key"] != str(row.family_duid)
             or (
                 row.field != "death_date"
                 and (not member["active"] or member["deceased"])
             )
         ):
-            member = None
-        if (
-            member is None
-            and row.field == "death_date"
-            and row.execution == "conflict"
-            and not row.current_available
-        ):
-            # An unchanged scope block is not a new comparison or staff edit.
+            # Rule 4 (review pipeline spec, #1738): the Member left the
+            # Family (gone, moved, inactive or deceased), so this refresh
+            # holds no value for the change, which keeps its stage; the
+            # worklist shows the shared ParishSoft status badge. Cancelling
+            # it is not needed for safety: publication refuses a Member the
+            # promoted data no longer lists in the change's Family
+            # (``publication_plans.unlisted_changes``). A death date is read
+            # whatever the Member's status, so it needs only the Family.
             continue
         unusable = False
         try:
@@ -190,7 +192,6 @@ def _proposal_updates(corpus, campaign_id, *, record=True):
         )
         if (
             not unusable
-            and member is not None
             # A formerly unusable value may become genuinely unavailable.
             # Re-run the merge to clear that block even though both carry null.
             and not (not row.current_available and row.execution == "conflict")
@@ -201,23 +202,41 @@ def _proposal_updates(corpus, campaign_id, *, record=True):
             )
         ):
             continue
+        # The refresh rules compare ParishSoft's value (R) with the baseline
+        # the change was answered against (A) and its carried-forward value
+        # (C): the reviewer's value when it was Edited, else the Family's
+        # answer (review pipeline spec, "Baseline refresh re-evaluation").
+        carried = row.admin_value if row.admin_value_set else row.submitted_value
         result = merge_value(
             field.kind,
             current,
             PriorChange(
                 KnownValue(row.baseline_available, row.baseline_value),
-                row.submitted_value,
+                carried,
             ),
         )
+        # An Edit back to the baseline value (C = A) takes the merge's
+        # unchanged-answer path; read it as publication does
+        # (``publication._MERGE_OUTCOMES``): ParishSoft still at it holds
+        # the reviewer's value, and any other value is a third one.
+        caught_up = result.state is MergeState.UPSTREAM_CAUGHT_UP or (
+            row.admin_value_set and result.state is MergeState.CURRENT
+        )
+        third = result.conflict or (
+            row.admin_value_set and result.state is MergeState.SOURCE_CHANGED
+        )
         execution = (
-            ("conflict" if row.field == "death_date" else "cancelled")
-            if member is None
-            else "resolved_upstream"
-            if result.state is MergeState.UPSTREAM_CAUGHT_UP
+            "resolved_upstream"
+            if caught_up
             else "conflict"
-            if unusable or result.conflict
+            if unusable or third
             else "pending"
         )
+        if execution == "resolved_upstream" and row.decision == "ignored":
+            # An Ignored change stays Ignored when ParishSoft reaches the
+            # Family's answer: no change was wanted, so it is not Confirmed;
+            # its row says ParishSoft now matches (#1689).
+            execution = "pending"
         decision = "unreviewed" if resets_approval(row, execution) else row.decision
         yield row, current, execution, decision
 

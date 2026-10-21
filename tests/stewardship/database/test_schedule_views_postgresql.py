@@ -373,7 +373,10 @@ def test_proposed_dates_page_posts_to_its_clean_path(auth_service, google):
     assert page.status_code == 200
     body = page.content.decode()
     assert f'<form method="post" action="{path}" id="schedule-dates-form"' in body
-    assert f'<form method="post" action="{path}" data-review-apply>' in body
+    assert (
+        '<form id="schedule-dates-review-apply" method="post" '
+        f'action="{path}" data-review-apply>' in body
+    )
     assert f'data-review-return="{path}"' in body
     data, _ = fields(store, campaign)
     data["window-start_date"] = "2054-09-30"

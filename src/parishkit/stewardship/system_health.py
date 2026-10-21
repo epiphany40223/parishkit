@@ -19,7 +19,7 @@ words. The actions (take a backup now, clear a halt, accept a large change,
 turn off debug logging) come with ADM-13 PR 3 to PR 6, each with its own
 service function here; Take a backup now (PR 3), Accept this change once
 (PR 5b) and Turn off debug logging (PR 6b) have landed, and share
-``_record_fresh``. Allow debug logging again (PR 6c), Testing's clear of the
+``_record_action_row``. Allow debug logging again (PR 6c), Testing's clear of the
 debug-off switch, has its own (``allow_debug``), since it updates the switch
 instead of recording a row.
 
@@ -64,6 +64,10 @@ SOURCE_INCIDENTS = (
 )
 BACKUP_INCIDENTS = ("backup_rpo_breach", "backup_offsite_failed", "backup_key_changed")
 INCIDENTS = MAIL_INCIDENTS + SOURCE_INCIDENTS + BACKUP_INCIDENTS
+# Read with the incidents above but not listed as a problem of its own (the
+# refresh status already says it): a provider failure opened it, which tells
+# a real outage from an organization mismatch (#1492).
+PROVIDER_FAILURE_INCIDENT = "source_refresh_failed"
 # The operator runbooks the page links, in the public repository's guides.
 RUNBOOKS = {
     "deployment": (
@@ -150,21 +154,18 @@ BANNER_PROBLEMS = {
     "mail_provider_failed": "sender_halted",
     "retry_refusal_unrecorded": "refusal_unrecorded",
 }
-# Mapped events whose banner group links no tile yet. "Email sending failed"
+# Mapped events whose banner group links no tile. "Email sending failed"
 # is also recorded for failures that halt nothing, so it should link the
 # Mail tile only while a halt is current; the banner's one query cannot tell
-# that until ADM-13 PR 4 adds halt identities.
+# that, and reading the halt records (ADM-13 PR 4a) would add a query to
+# every Admin page.
 UNLINKED_EVENTS = frozenset({"mail_provider_failed"})
-# Kinds whose sentence on Home already links its own tile ("See Mail
-# sender", "See the counts", "See Version"), so Home's line adds no second
-# link to it (system-health-home-line.html).
-SENTENCE_LINKS_TILE = frozenset(
-    {"mail_provider_unavailable", "source_destructive_change", "versions_differ"}
-)
-# Kinds whose Home line links no tile at all: while the configured backup
-# key cannot be read, the System health page cannot be shown (it answers
-# 503), so a link to its Backups tile would lead nowhere useful.
-NO_TILE_LINK = frozenset({"backup_key_unchecked"})
+# Kinds that keep the System health page from opening: while the
+# configured backup key cannot be read, the page answers 503. Home counts
+# the other problems with a link to System health (#1673), so it shows
+# these by their own sentence instead, with no link
+# (system-health-home-line.html), and its count line then links nothing.
+BLOCKS_PAGE = frozenset({"backup_key_unchecked"})
 # Problems a short watch cannot wait out, so ``system health --watch``
 # stops with them still listed (SystemHealth.terminal): off-site copies that
 # are not set up, which need an Administrator, and a requested backup that
@@ -390,33 +391,6 @@ class Problem:
     def tiles(self):
         """The tiles that show this problem, in page order."""
         return tuple(tile for tile, _, _ in tile_parts(self))
-
-    @property
-    def tile(self):
-        """The tile Home's line links: the first that shows the problem."""
-        return self.tiles[0]
-
-    @property
-    def tile_name(self):
-        """That tile's area name."""
-        return tile_name(self.tile)
-
-    @property
-    def word(self):
-        """The state word Home's line shows beside its icon."""
-        from django.utils.translation import gettext as _
-
-        return {"warning": _("Warning"), "error": _("Error")}[self.severity]
-
-    @property
-    def links_tile(self):
-        """Whether Home's sentence already links the problem's tile."""
-        return self.kind in SENTENCE_LINKS_TILE
-
-    @property
-    def tile_link(self):
-        """Whether Home's line adds its own link to the problem's tile."""
-        return not self.links_tile and self.kind not in NO_TILE_LINK
 
     @property
     def runbooks(self):
@@ -879,7 +853,17 @@ def find_problems(
         )
     if refresh is not None:
         connection = refresh.connection
-        if connection is not None and connection.state == "failing":
+        # A refresh refused because the key sees another organization did
+        # reach ParishSoft: the mismatch says so itself, and "could not be
+        # reached" would send the Administrator after a network fault (#1492).
+        # A mismatch alone opens no provider-failure incident, so a real
+        # outage after the key is fixed (that incident opens, the mismatch
+        # one waits for the next good refresh) is still said.
+        unreachable = (
+            "source_tenant_mismatch" not in incidents
+            or PROVIDER_FAILURE_INCIDENT in incidents
+        )
+        if connection is not None and connection.state == "failing" and unreachable:
             problems.append(Problem("source_failing", at=connection.at))
         elif refresh.failed_at is not None:
             problems.append(Problem("source_failed", at=refresh.failed_at))
@@ -969,6 +953,7 @@ class SystemHealth(ReadModel):
     send_active: bool
     planning_held: bool
     retry_waiting: int
+    retry_waiting_other: int
     next_retry_at: datetime | None
     daily_sent: int
     daily_limit: int
@@ -1059,6 +1044,7 @@ class SystemHealth(ReadModel):
             self.delivery_paused
             or self.planning_held
             or self.retry_waiting
+            or self.retry_waiting_other
             or any(
                 not line.running or line.sender_state != "running"
                 for line in self.senders
@@ -1730,7 +1716,7 @@ def health_params():
     from .source.workgroups import EVIDENCE_KEY
 
     return {
-        "health_incidents": list(INCIDENTS),
+        "health_incidents": [*INCIDENTS, PROVIDER_FAILURE_INCIDENT],
         "critical_window": int(WINDOW.total_seconds()),
         "workgroup_key": EVIDENCE_KEY,
     }
@@ -1824,16 +1810,31 @@ def _facts():
         return health_facts(cursor.fetchone())
 
 
-def _retries():
-    """How many Family emails wait to retry, and when the next is due."""
+def _retries(mode):
+    """How many Family emails wait to retry, by mode, and when the next is due.
+
+    Returns ``(count, other, due)``: the operating mode ``mode``'s count,
+    the other mode's, and when ``mode``'s next retry is due (None without
+    one). Each count gets its own Sent mail link in its mode, so a count is
+    never shown against a list of the other mode's emails (#1576). Both read
+    Sent mail's own filter (``matching``) for Family email waiting to retry,
+    which the links open (``state=retry_wait&purpose=family``), so a count
+    is exactly the rows its link lists (#1632). One grouped query.
+    """
     from django.db.models import Count, Min
 
-    from .jobs.outbox_models import OutboxMessage
+    from .jobs.delivery_metadata import matching, mode_split
 
-    found = OutboxMessage.objects.filter(
-        state="retry_wait", purpose__in=FAMILY_PURPOSES
-    ).aggregate(count=Count("id"), due=Min("not_before"))
-    return found["count"], found["due"]
+    # Sent mail's Family group is FAMILY_PURPOSES (test_system_health pins it).
+    found = {
+        row[0]: row[1:]
+        for row in matching(state="retry_wait", purpose="family")
+        .order_by()
+        .values_list("mode")
+        .annotate(Count("id"), Min("not_before"))
+    }
+    split = mode_split({key: value[0] for key, value in found.items()}, mode)
+    return split["count"], split["other"], found.get(mode, (0, None))[1]
 
 
 def _refused(succeeded_at):
@@ -2208,6 +2209,16 @@ def home_problems(configuration, now, refresh):
     return find_problems(refresh=refresh, **inputs)
 
 
+def _clear_state(processes, now):
+    """Clear the halt's state (``mail_halt_clear.ClearState``) while a running
+    mail consumer reports Halted, else None (no section is drawn)."""
+    if not any(line.running and line.sender_state == "halted" for line in processes):
+        return None
+    from .mail_halt_clear import clear_state
+
+    return clear_state(now)
+
+
 def read_health(store):
     """Read the System health model in one read-only snapshot.
 
@@ -2250,7 +2261,7 @@ def read_health(store):
         refused_at, refused_counts, refused_attempt = _refused(refresh.succeeded_at)
         drop_acceptance, accept_actor = _drop_acceptance(refused_attempt)
         backup_at, key_matches, backup_bytes, backup_version = _backup(configuration)
-        retry_waiting, next_retry_at = _retries()
+        retry_waiting, retry_waiting_other, next_retry_at = _retries(configuration.mode)
         daily_sent = daily_sends()
         daily_resume_at = daily_resume()
         progress = read_progress()
@@ -2267,6 +2278,9 @@ def read_health(store):
             # Which refusal the panel shows, so an open Accept this change
             # once preview of another one is marked changed (live-status).
             "refused_attempt": refused_attempt,
+            # Clear the halt (ADM-13 PR 4b): read only while a running mail
+            # consumer reports Halted, so every other read adds no query.
+            "clear_halt": _clear_state(processes, now),
         }
     model = SystemHealth(
         checked_at=now,
@@ -2281,6 +2295,7 @@ def read_health(store):
         send_active=bool(send and send.active),
         planning_held=bool(send and send.active and send.counts.held),
         retry_waiting=retry_waiting,
+        retry_waiting_other=retry_waiting_other,
         next_retry_at=next_retry_at,
         daily_sent=daily_sent,
         # The share Family invitations, reminders and tests may use: the daily
@@ -2331,13 +2346,12 @@ class BackupPreview:
 def _admit_action(caller, store):
     """An enabled Administrator who may view System health and configure.
 
-    Returns ``(principal, signed-in instant)``; the instant must be within
-    the fresh sign-in window (``sessions.require_fresh``), or the caller
-    gets the "Confirm with Google" step-up.
+    Returns ``(principal, signed-in instant)``: the session's sign-in
+    instant, of any age (``sessions.sign_in_instant``, #1547).
     """
-    from .accounts.sessions import require_fresh
+    from .accounts.sessions import sign_in_instant
 
-    return _admit_requester(caller, store), require_fresh(caller)
+    return _admit_requester(caller, store), sign_in_instant(caller)
 
 
 def _refusal(now):
@@ -2349,7 +2363,7 @@ def _refusal(now):
 
 
 def preview_backup(caller, store):
-    """Take a backup now's preview, for a freshly signed-in Administrator.
+    """Take a backup now's preview, for a signed-in Administrator.
 
     Refused (``StaleRecordError``) while a request is waiting or running.
     Reads only what the page reads; changes nothing.
@@ -2381,9 +2395,9 @@ def preview_backup(caller, store):
 
 
 class ActionRefused(PermissionError):
-    """The database refused a System health action for a reason other than a
-    stale sign-in (a missing grant, another login): the reader is told
-    plainly, and the System logs record why. The step-up would not help."""
+    """The database refused a System health action for a reason other than an
+    ended session (a missing grant, another login): the reader is told
+    plainly, and the System logs record why."""
 
 
 class BackupRequestRefused(ActionRefused):
@@ -2394,9 +2408,9 @@ class DebugOffRefused(ActionRefused):
     """The database refused to set the debug-off switch (see ``ActionRefused``)."""
 
 
-# The guards' words for a sign-in outside the fresh window (0062, 0078): the
-# only permission refusal a "Confirm it's you" step-up can resolve.
-FRESH_REFUSAL = "requires fresh Administrator authentication"
+# The guards' words (0124, #1762) for a session that is no longer live at
+# the write; since #1547 they no longer check its age.
+SIGNED_OUT_REFUSAL = "requires a live Administrator session"
 
 
 def _admit_requester(caller, store):
@@ -2413,8 +2427,8 @@ def _admit_requester(caller, store):
 
 
 @dataclass(frozen=True)
-class _FreshRow:
-    """What differs between the fresh-gated actions ``_record_fresh`` records:
+class _ActionRow:
+    """What differs between the guarded actions ``_record_action_row`` records:
     the row's model, its audit events (the page's and the command's) and
     the words of each refusal."""
 
@@ -2426,16 +2440,16 @@ class _FreshRow:
     refused: type
 
 
-def _record_fresh(caller, store, kind, *, key, command, values=None, then=None):
-    """Record one fresh-gated action row; return ``(row, created)``.
+def _record_action_row(caller, store, kind, *, key, command, values=None, then=None):
+    """Record one guarded action row; return ``(row, created)``.
 
     Shared by Take a backup now, Accept this change once and Turn off debug
-    logging, whose rows' SQL guards make the same checks. The fresh sign-in
-    check runs inside the row's transaction, so an automation session's gate
-    (``sessions.require_fresh``, which locks the session row and records its
-    gate event) commits or rolls back with the row. The guard checks again,
-    in the same transaction, that the sign-in is fresh (or a live full-scope
-    automation session's) and its own one-at-a-time rule. A repeated
+    logging, whose rows' SQL guards make the same checks. The sign-in
+    instant is read inside the row's transaction, so an automation
+    session's check (``sessions.sign_in_instant``, which locks the session
+    row and records its event) commits or rolls back with the row. The
+    guard checks again, in the same transaction, that the session is live
+    and bound to that instant, and its own one-at-a-time rule. A repeated
     confirmation with the same ``key`` returns the first row (``created``
     false). ``kind.action`` is recorded with the row as its subject, and
     from the command line (``command``) also ``kind.command_action`` naming
@@ -2447,7 +2461,7 @@ def _record_fresh(caller, store, kind, *, key, command, values=None, then=None):
     """
     from django.db import DatabaseError, IntegrityError, transaction
 
-    from .accounts.sessions import FreshAuthenticationRequired, require_fresh
+    from .accounts.sessions import SignInEnded, sign_in_instant
     from .audit.schemas import ActorKind, Outcome
     from .audit.services import record_action
     from .observability import emit_failure
@@ -2468,12 +2482,12 @@ def _record_fresh(caller, store, kind, *, key, command, values=None, then=None):
             previous = first()
             if previous is not None:
                 return previous, False
-            fresh = require_fresh(caller)
+            signed_in = sign_in_instant(caller)
             row = kind.model.objects.create(
                 id=key,
                 actor_id=actor.identity,
                 session_id=session.pk,
-                authenticated_at=fresh,
+                authenticated_at=signed_in,
                 **(values or {}),
             )
             record_action(
@@ -2505,11 +2519,9 @@ def _record_fresh(caller, store, kind, *, key, command, values=None, then=None):
     except DatabaseError as error:
         if getattr(error.__cause__, "sqlstate", None) != "42501":
             raise
-        if FRESH_REFUSAL in str(error):
-            # The sign-in lapsed since the check above: the step-up helps.
-            raise FreshAuthenticationRequired(
-                "Please authenticate with Google again."
-            ) from error
+        if SIGNED_OUT_REFUSAL in str(error):
+            # The session ended since the check above: signing in helps.
+            raise SignInEnded("Your sign-in has ended.") from error
         # Any other permission refusal (a missing grant, the wrong login)
         # is not the reader's to fix by signing in again: log it and say so.
         emit_failure(error)
@@ -2519,11 +2531,11 @@ def _record_fresh(caller, store, kind, *, key, command, values=None, then=None):
 
 
 def _backup_kind():
-    """Take a backup now's row, events and refusals, for ``_record_fresh``."""
+    """Take a backup now's row, events and refusals, for ``_record_action_row``."""
     from .audit.schemas import Action
     from .jobs.backup_models import BackupRequest
 
-    return _FreshRow(
+    return _ActionRow(
         model=BackupRequest,
         action=Action.BACKUP_REQUESTED,
         command_action=Action.ADMIN_CMD_SYSTEM_BACKUP_NOW,
@@ -2536,12 +2548,12 @@ def _backup_kind():
 def request_backup(caller, store, *, key, command=False):
     """Record one Take a backup now request; return ``(row, created)``.
 
-    ``_record_fresh`` checks the fresh sign-in in the request's transaction
+    ``_record_action_row`` reads the sign-in in the request's transaction
     and records ``backup_requested`` (and, from the command line
     (``command``), ``admin_cmd_system_backup_now``). The request's guard
     also refuses one while another is live or a restore is under review.
     """
-    return _record_fresh(caller, store, _backup_kind(), key=key, command=command)
+    return _record_action_row(caller, store, _backup_kind(), key=key, command=command)
 
 
 @dataclass(frozen=True)
@@ -2615,10 +2627,11 @@ def backup_now(caller, service, *, key, context):
     """``system backup-now``: Take a backup now, as System health's button.
 
     The command has already shown ``backup_preview_lines`` and had them
-    confirmed. ``request_backup`` checks the fresh sign-in (a full-scope
-    automation session's, which the request's guard accepts too) inside the
-    request's transaction and records ``backup_requested`` with the
-    command's own ``admin_cmd_system_backup_now``. ``key`` (the command's
+    confirmed. ``request_backup`` checks the session (a full-scope
+    automation session's command session, which the request's guard binds
+    as it binds a browser's) inside the request's transaction and records
+    ``backup_requested`` with the command's own
+    ``admin_cmd_system_backup_now``. ``key`` (the command's
     ``--request-key``) is the request's identity, so a repeat returns the
     first request. ``context["committed"]`` is set once it may have
     committed (exit 6 then). Returns the request as the panel words it.
@@ -2693,7 +2706,7 @@ SWITCH_SET = "The debug-off switch is already set."
 
 
 def preview_debug_off(caller, store):
-    """Turn off debug logging's preview, for a freshly signed-in Administrator.
+    """Turn off debug logging's preview, for a signed-in Administrator.
 
     Refused (``StaleRecordError``) while the switch is set. Reads only what
     the page reads; changes nothing. Offered in Testing and Production
@@ -2714,11 +2727,11 @@ def preview_debug_off(caller, store):
 
 
 def _debug_kind():
-    """Turn off debug logging's row, events and refusals, for ``_record_fresh``."""
+    """Turn off debug logging's row, events and refusals, for ``_record_action_row``."""
     from .audit.schemas import Action
     from .jobs.debug_switch_models import DebugOffSwitch
 
-    return _FreshRow(
+    return _ActionRow(
         model=DebugOffSwitch,
         action=Action.DEBUG_LOGGING_TURNED_OFF,
         command_action=Action.ADMIN_CMD_SYSTEM_DEBUG_OFF,
@@ -2731,14 +2744,14 @@ def _debug_kind():
 def turn_off_debug(caller, store, *, key, command=False):
     """Set the debug-off switch; return ``(row, created)``.
 
-    ``_record_fresh`` checks the fresh sign-in in the switch's transaction
+    ``_record_action_row`` reads the sign-in in the switch's transaction
     and records ``debug_logging_turned_off`` (and, from the command line
     (``command``), ``admin_cmd_system_debug_off``). The switch's guard
     (0078) also refuses one while another is set. Every process that
     reaches the database then turns its own debug logging off
     (``debug_switch``) on its next connection or status record.
     """
-    return _record_fresh(caller, store, _debug_kind(), key=key, command=command)
+    return _record_action_row(caller, store, _debug_kind(), key=key, command=command)
 
 
 @dataclass(frozen=True)
@@ -2796,8 +2809,9 @@ def debug_off(caller, service, *, key, context):
     """``system debug-off``: Turn off debug logging, as System health's button.
 
     The command has already shown ``debug_off_preview_lines`` and had them
-    confirmed. ``turn_off_debug`` checks the fresh sign-in (a full-scope
-    automation session's, which the switch's guard accepts too) inside the
+    confirmed. ``turn_off_debug`` checks the session (a full-scope
+    automation session's command session, which the switch's guard binds
+    as it binds a browser's) inside the
     switch's transaction and records ``debug_logging_turned_off`` with the
     command's own ``admin_cmd_system_debug_off``. ``key`` (the command's
     ``--request-key``) is the switch's identity, so a repeat returns the
@@ -2962,7 +2976,7 @@ def _sign(actor, key, attempt, counts):
 
 def _signer(caller, store):
     """Who is confirming, read only to check the binding is theirs; the
-    action's own admission (``_record_fresh``) checks the Administrator."""
+    action's own admission (``_record_action_row``) checks the Administrator."""
     from .accounts.sessions import authenticated_admin
 
     return authenticated_admin(caller, store=store, read_only=True)
@@ -3015,8 +3029,8 @@ def _accept_preview(actor):
 
 
 def preview_acceptance(caller, store):
-    """Accept this change once's preview, for a freshly signed-in
-    Administrator (the page's step). Changes nothing.
+    """Accept this change once's preview, for a signed-in Administrator
+    (the page's step). Changes nothing.
 
     Refused (``StaleRecordError``) while the newest refusal cannot be
     accepted: none is shown, it was accepted already (live or lapsed), or
@@ -3027,11 +3041,11 @@ def preview_acceptance(caller, store):
 
 
 def _accept_kind():
-    """Accept this change once's row, events and refusals, for ``_record_fresh``."""
+    """Accept this change once's row, events and refusals (``_record_action_row``)."""
     from .audit.schemas import Action
     from .source.drop_models import SourceDropAcceptance
 
-    return _FreshRow(
+    return _ActionRow(
         model=SourceDropAcceptance,
         action=Action.SOURCE_DROP_ACCEPTED,
         command_action=Action.ADMIN_CMD_SYSTEM_REFRESH_ACCEPT,
@@ -3099,7 +3113,7 @@ def _refusal_events(attempt_id):
 
 def _acknowledge_refusal(service, actor, row):
     """Acknowledge, for ``actor``, the critical problem the accepted refusal
-    raised, inside the acceptance's transaction (``_record_fresh``'s
+    raised, inside the acceptance's transaction (``_record_action_row``'s
     ``then``).
 
     Accepting the change once is the Administrator's answer to that
@@ -3146,8 +3160,8 @@ def accept_change(caller, service, *, token, command=False, recorded=None):
     copied are the ones the Administrator reviewed; the acceptance's guard
     (0080) refuses them unless they still equal the recorded ones and the
     refusal is still the newest with nothing accepted, which this answers
-    as ``StaleRecordError`` (``ACCEPT_CHANGED``). ``_record_fresh`` checks
-    the fresh sign-in in the row's transaction and records
+    as ``StaleRecordError`` (``ACCEPT_CHANGED``). ``_record_action_row`` reads
+    the sign-in in the row's transaction and records
     ``source_drop_accepted`` (and from the command line ``command``,
     ``admin_cmd_system_refresh_accept``). ``refresh`` is the requested full
     refresh's root task, or None (``_request_refresh``). ``recorded`` is
@@ -3158,7 +3172,7 @@ def accept_change(caller, service, *, token, command=False, recorded=None):
     repeat, or a refused or expired confirmation, acknowledges nothing.
     """
     key, attempt, counts = _unsign(_signer(caller, service.store), token)
-    row, created = _record_fresh(
+    row, created = _record_action_row(
         caller,
         service.store,
         _accept_kind(),
@@ -3195,9 +3209,9 @@ class RefreshAcceptPreview(ReadModel):
 def refresh_accept_preview(caller, service):
     """``system refresh-accept-preview``: Accept this change once's preview.
 
-    Admits an Administrator as the page does, without the page's fresh
-    sign-in: the preview changes nothing, and ``system refresh-accept``,
-    which does, is fresh-gated. Refused (``stale_version``) while the newest
+    Admits an Administrator as the page does: the preview changes nothing,
+    and ``system refresh-accept``, which does, is a privileged command.
+    Refused (``stale_version``) while the newest
     refusal cannot be accepted, as the page's preview is.
     """
     actor = _admit_requester(caller, service.store)
@@ -3259,7 +3273,7 @@ def refresh_accept(caller, service, *, token, context):
     confirmation (``accept_change``), with ``admin_cmd_system_refresh_accept``.
 
     ``context["committed"]`` is set once the acceptance may have committed
-    (exit 6 then): as soon as ``_record_fresh`` returns, or on a database
+    (exit 6 then): as soon as ``_record_action_row`` returns, or on a database
     failure that may have been the commit itself.
     """
     from django.db import DatabaseError, connection
@@ -3344,8 +3358,8 @@ def _set_switch():
 
 
 def preview_debug_allow(caller, store):
-    """Allow debug logging again's preview, for a freshly signed-in
-    Administrator in Testing mode.
+    """Allow debug logging again's preview, for a signed-in Administrator
+    in Testing mode.
 
     Refused in Production (``DebugAllowProduction``) and while no switch is
     set (``StaleRecordError``). Reads only; changes nothing.
@@ -3366,21 +3380,21 @@ def allow_debug(caller, store, *, key, command=False):
     """Clear the debug-off switch ``key`` in Testing; return ``(row, created)``.
 
     The Administrator's clear (``cleared_by`` ``administrator``) is one
-    UPDATE of the switch, in a transaction that also checks the fresh
-    sign-in (``sessions.require_fresh``, whose automation-session gate
-    commits or rolls back with it) and records ``debug_logging_allowed``
+    UPDATE of the switch, in a transaction that also reads the sign-in
+    (``sessions.sign_in_instant``, whose automation-session check commits
+    or rolls back with it) and records ``debug_logging_allowed``
     naming the switch, and from the command line (``command``) also
     ``admin_cmd_system_debug_allow`` naming the automation session. The
-    switch's guard (0088) checks again that the mode is Testing, the
-    sign-in is fresh and the switch is cleared once. A repeat for a switch
-    this Administrator already cleared returns it (``created`` false); one
+    switch's guard (0088, 0114) checks again that the mode is Testing, the
+    Administrator has a live session and the switch is cleared once. A repeat
+    for a switch this Administrator already cleared returns it (``created`` false); one
     cleared by someone else, or a race lost to another clear, is refused
     as stale. An unknown ``key`` is a ``ValueError``.
     """
     from django.db import DatabaseError, transaction
     from django.db.models.functions import Now
 
-    from .accounts.sessions import FreshAuthenticationRequired, require_fresh
+    from .accounts.sessions import SignInEnded, sign_in_instant
     from .audit.schemas import Action, ActorKind, Outcome
     from .audit.services import record_action
     from .jobs.debug_switch_models import DebugOffSwitch
@@ -3407,7 +3421,7 @@ def allow_debug(caller, store, *, key, command=False):
             row = cleared()
             if row is not None:
                 return row, False
-            require_fresh(caller)
+            sign_in_instant(caller)
             # The guard sets the clear time from the database clock.
             changed = DebugOffSwitch.objects.filter(
                 pk=key, cleared_at__isnull=True
@@ -3441,11 +3455,9 @@ def allow_debug(caller, store, *, key, command=False):
     except DatabaseError as error:
         if getattr(error.__cause__, "sqlstate", None) != "42501":
             raise
-        if FRESH_REFUSAL in str(error):
-            # The sign-in lapsed since the check above: the step-up helps.
-            raise FreshAuthenticationRequired(
-                "Please authenticate with Google again."
-            ) from error
+        if SIGNED_OUT_REFUSAL in str(error):
+            # The session ended since the check above: signing in helps.
+            raise SignInEnded("Your sign-in has ended.") from error
         if "in Production" in str(error):
             # The mode changed since the check above.
             raise DebugAllowProduction(TESTING_ONLY) from error
@@ -3507,8 +3519,9 @@ def debug_allow(caller, service, *, switch, context):
 
     The command has already shown ``debug_allow_preview_lines`` and had
     them confirmed; ``switch`` is the switch they named. ``allow_debug``
-    checks the fresh sign-in (a full-scope automation session's, which the
-    switch's guard accepts too) inside the clear's transaction and records
+    checks the session (a full-scope automation session's command session,
+    which the switch's guard accepts as a browser's) inside the clear's
+    transaction and records
     ``debug_logging_allowed`` with the command's own
     ``admin_cmd_system_debug_allow``. ``context["committed"]`` is set once
     it may have committed (exit 6 then).

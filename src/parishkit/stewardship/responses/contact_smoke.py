@@ -1,28 +1,34 @@
 """The human-run Member contact smoke check that confirms the contact read (#528).
 
-Census publication (BG-09) may write a Member only after reading all fifteen
-fields the v2 Member contact PUT replaces, so that a PUT can never clear a
-field nobody read. Which ParishSoft GET returns those fifteen fields is not
-yet confirmed, so ``ParishSoftContactGateway.read_member_contact`` still
-refuses (``read_unconfirmed``). This check settles it, run by a human inside
-the deployed worker against one chosen test Member
+Census publication (BG-09) reads a Member's contact record before and after
+each PUT, to check for conflicts and to verify the write. The v2 Member
+contact PUT is a partial update (observed on 2026-10-17, #528/#1600): a
+field left out of the body is left unchanged, and the API cannot clear a
+value (``null`` was ignored and ``""`` refused). Which ParishSoft GET
+returns the fifteen request-model fields is not yet confirmed, so
+``ParishSoftContactGateway.read_member_contact`` still refuses
+(``read_unconfirmed``). This check settles it, run by a human inside the
+deployed worker against one chosen test Member
 (docs/guides/stewardship-smoke-tools.md#member-contact-round-trip):
 
 1. **Probe** (always): read ``GET members/{id}`` and report, for each PUT
    field, whether the record carries it, under which spelling, its JSON type
    and, for dates, phones and gender, its character shape (digits as ``9``,
    letters as ``a``); whether the publication encoder reproduces the value
-   as read (``encoder_matches_read``); whether the value as read satisfies
+   as read (``encoder_matches_read``; None for a field publication never
+   writes, gender included); whether the value as read satisfies
    the recorded PUT schema; which encoding fields were blank, so are still
    unsettled; and the record's top-level key names. No values.
-2. **Round trip** (only when asked, and only when the probe found all
-   fifteen fields, each sendable as read): PUT the payload exactly as read
-   with one field set to a fixed marker, read back, then always PUT the
-   original payload back, retrying with backoff until a read matches.
+2. **Round trip** (only when asked, and only when the chosen marker field
+   was read, holds a non-blank value and that value is sendable as read):
+   PUT a one-field body setting it to a fixed marker, as publication does,
+   read back, then always PUT a one-field body with the original value,
+   retrying with backoff until a read matches. A blank marker field is
+   refused because the API could not put the blank back.
 
-Every read compares the whole record, not just the fifteen fields, so a PUT
-that also changes something outside the request model is reported (by key
-name) and fails confirmation. The result carries no values, names or ids.
+Every read compares the whole record, not just the fifteen, so a partial
+PUT that also changes something else is reported (by key name) and fails
+confirmation. The result carries no values, names or ids.
 CI drives this module with a fake gateway only.
 """
 
@@ -64,19 +70,21 @@ MARKERS = {
 }
 DEFAULT_FIELD = "pager"
 # Fields whose encoding is still provisional in the publication encoder: a
-# blank one on the test Member leaves its encoding unsettled.
+# blank one on the test Member leaves its encoding unsettled. Gender is not
+# one: it is by hand (the live test of 2026-10-17 found a gender PUT never
+# changes the Member, #1603), so it has no encoding, but its shape is still
+# reported as a record of what the read returns.
 ENCODING_FIELDS = (
     "cellPhone",
     "dateOfBirth",
     "dateOfDeath",
     "emailAddress",
     "fax",
-    "gender",
     "homePhone",
     "pager",
     "workPhone",
 )
-SHAPED = frozenset(ENCODING_FIELDS) - {"emailAddress"}
+SHAPED = (frozenset(ENCODING_FIELDS) | {"gender"}) - {"emailAddress"}
 # Record keys ParishSoft may change on every write (audit stamps). They are
 # reported apart and never fail confirmation; any other key that changes does.
 VOLATILE_KEYS = frozenset(
@@ -153,7 +161,7 @@ def _encoder_matches(name, value):
 
 
 def map_record(record):
-    """The PUT payload one Member record yields, and a per-field report.
+    """The request-model values one Member record yields, and a field report.
 
     Returns ``(payload, fields)``. ``payload`` holds each PUT field the record
     carries, under its own name or one alias. Two spellings carrying
@@ -261,7 +269,7 @@ def _interrupts_ignored():
 
 
 def _restore(gateway, member_id, original, record, *, settle, timeout, sleep):
-    """Put ``original`` back, retrying with backoff until a read matches.
+    """Put the one-field body ``original`` back, retrying until a read matches.
 
     ``record`` is the first full read; the restore is done only when a read
     shows every non-volatile key as it was. ``settle`` waits before the first
@@ -303,9 +311,12 @@ def run(
 
     ``gateway`` is a ``ParishSoftContactGateway`` (a fake in tests). Only
     ``member_id`` is ever read or written: every read must answer with that
-    Member's own ``memberDUID``, and every write targets the same id. The
-    round trip is refused unless the probe found all fifteen fields, each
-    valid for the PUT schema as read, and no field already holds a marker.
+    Member's own ``memberDUID``, and every write targets the same id. Each
+    PUT body holds only ``field`` (the PUT is a partial update). The round
+    trip is refused unless the probe read ``field`` with a non-blank value
+    that is valid for the PUT schema as read (a blank could not be put back:
+    the API cannot clear a value), and no field already holds a marker.
+    Other fields need not be read or sendable, since nothing sends them.
     Once the marker PUT has been attempted the original is always put back
     (even after a failed write, a helper that would not drain or an
     unexpected error), with ``report`` told the value-free result first.
@@ -339,9 +350,13 @@ def run(
     }
     if not send:
         return result
+    value = original.get(field)
     for refusal, reason in (
-        (not complete, "refused_incomplete_read"),
-        (result["unsendable"], "refused_unsendable"),
+        (field not in original, "refused_marker_field_unread"),
+        # The restore must write the original back, and the API cannot
+        # clear a field (null is ignored, "" refused), so it needs a value.
+        (value is None or not str(value).strip(), "refused_blank_marker_field"),
+        (field in result["unsendable"], "refused_unsendable"),
         # A marker left behind by an earlier run: restore it by hand first.
         (result["markers_present"], "refused_marker_present"),
     ):
@@ -358,7 +373,7 @@ def run(
             result["write"] = _write(
                 gateway,
                 member_id,
-                {**original, field: MARKERS[field]},
+                {field: MARKERS[field]},
                 timeout=timeout,
             )
             after = _read_after(gateway, member_id, timeout=timeout)
@@ -380,7 +395,7 @@ def run(
         result |= _restore(
             gateway,
             member_id,
-            original,
+            {field: value},
             record,
             settle=result.get("write") != "accepted",
             timeout=timeout,

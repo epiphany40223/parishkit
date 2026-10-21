@@ -147,10 +147,7 @@ DESCRIPTIONS = {
         "Use of an automation session was refused: an unknown session, one "
         "used from a different server, or a command session seen by the web."
     ),
-    "automation_fresh_gate": _(
-        "An automation session stood in for a recent Google sign-in on an "
-        "action that needs one."
-    ),
+    "automation_fresh_gate": _("An automation session ran a privileged action."),
     "automation_notices_acknowledged": _(
         "An Administrator acknowledged automation notices on their own dashboard."
     ),
@@ -169,6 +166,14 @@ DESCRIPTIONS = {
     "admin_cmd_artwork_remove": _(
         "An automation session confirmed a reviewed removal of a campaign "
         "image, which became a configuration request."
+    ),
+    "admin_cmd_branding_preview": _(
+        "An automation session uploaded parish logos for review, as the "
+        "Parish logos page's upload does."
+    ),
+    "admin_cmd_branding_confirm": _(
+        "An automation session confirmed reviewed parish logos, which became "
+        "a configuration request."
     ),
     "admin_cmd_content_confirm": _(
         "An automation session confirmed a built delete of unused campaign "
@@ -191,6 +196,14 @@ DESCRIPTIONS = {
         "An automation session finished switching an integration to its new "
         "key, which became a configuration request."
     ),
+    "admin_cmd_integration_key_replace": _(
+        "An automation session submitted a new key for an integration, which "
+        "its installer checks before a configuration request switches to it."
+    ),
+    "admin_cmd_integration_backup_key_confirm": _(
+        "An automation session confirmed a proved new backup encryption key, "
+        "which became a configuration request."
+    ),
     "admin_cmd_workgroup_confirm": _(
         "An automation session confirmed a reviewed change to the campaign's "
         "No-reminders WorkGroup, which became a configuration request."
@@ -199,6 +212,10 @@ DESCRIPTIONS = {
         "An automation session confirmed a reviewed change to the campaign's "
         "settings, which became a configuration request."
     ),
+    "admin_cmd_campaign_create": _(
+        "An automation session confirmed a reviewed new campaign, which became "
+        "a configuration request."
+    ),
     "admin_cmd_campaign_shares_confirm": _(
         "An automation session confirmed a reviewed change to the campaign's "
         "Share options, which became a configuration request."
@@ -206,6 +223,10 @@ DESCRIPTIONS = {
     "admin_cmd_users_import_leaders": _(
         "An automation session confirmed a reviewed import of ParishSoft "
         "Ministry leaders as users, which became a configuration request."
+    ),
+    "admin_cmd_users_email_leaders": _(
+        "An automation session applied a reviewed Email Ministry leaders, "
+        "queuing one email to each Ministry leader it listed."
     ),
     "admin_cmd_delivery_bounce_report": _(
         "An automation session reported that a delivered email bounced at "
@@ -220,6 +241,30 @@ DESCRIPTIONS = {
         "after the Administrator accepted the duplicate risk, as the email's "
         "page does."
     ),
+    "admin_cmd_go_live_start": _(
+        "An automation session started go-live, as the Go live page's Start "
+        "go-live does: Testing data is deleted and cannot be restored."
+    ),
+    "admin_cmd_go_live_retry": _(
+        "An automation session retried a failed part of going live, as the "
+        "Go live page's Retry does."
+    ),
+    "admin_cmd_go_live_refresh_again": _(
+        "An automation session asked for a new ParishSoft refresh and new "
+        "Family links, as the Go live page's Refresh and prepare again does."
+    ),
+    "admin_cmd_go_live_stop": _(
+        "An automation session stopped go-live, as the Go live page's Stop "
+        "go-live does."
+    ),
+    "admin_cmd_go_live_confirm": _(
+        "An automation session confirmed Production, as the Go live page's "
+        "Confirm Production does."
+    ),
+    "admin_cmd_go_live_cancel": _(
+        "An automation session cancelled go-live before the campaign "
+        "started, as Production activation's Cancel go-live does."
+    ),
     "admin_cmd_send_confirm": _(
         "An automation session confirmed a reviewed pause, resume or "
         "resolution of held email, as the Pause and resume mail page does."
@@ -230,13 +275,13 @@ DESCRIPTIONS = {
     ),
     "admin_cmd_census_resolve": _(
         "An automation session recorded a census change's outcome (entered "
-        "in ParishSoft, ignored or reopened), as the Census changes page's "
-        "Record outcome does."
+        "in ParishSoft, ignored or reopened), as the row's actions on the "
+        "Census changes page do."
     ),
     "admin_cmd_census_review": _(
         "An automation session reviewed an automatic census change "
-        "(approved, ignored or sent back to To review), as the Census "
-        "changes page's Review does."
+        "(accepted, ignored or sent back to To review), as the row's "
+        "actions on the Census changes page do."
     ),
     "admin_cmd_followup_update": _(
         "An automation session recorded follow-up on a Ministry request, as "
@@ -252,9 +297,49 @@ DESCRIPTIONS = {
         "changes page's Edit value does."
     ),
     "admin_cmd_census_resolve_conflict": _(
-        "An automation session approved an automatic census change over "
+        "An automation session accepted an automatic census change over "
         "ParishSoft's current value, as the Census changes page's Use the "
         "Family's value anyway does."
+    ),
+    "admin_cmd_census_update_check": _(
+        "An automation session asked to check ParishSoft for the census "
+        "changes Ready to update, as Update ParishSoft's Check ParishSoft "
+        "does."
+    ),
+    "admin_cmd_census_update_confirm": _(
+        "An automation session confirmed writing a check's census changes "
+        "to ParishSoft, as Update ParishSoft's Update does."
+    ),
+    "admin_cmd_census_update_rerun": _(
+        "An automation session asked to run an update of ParishSoft again "
+        "for the Members it did not finish, as Update ParishSoft's Run "
+        "again does."
+    ),
+    "admin_cmd_followup_roster_entered": _(
+        "An automation session set or cleared a Ministry request's Entered "
+        "in ParishSoft tick, as the request's tick on Ministry requests does."
+    ),
+    "admin_cmd_followup_roster_bulk": _(
+        "An automation session marked several Ministry requests Entered in "
+        "ParishSoft, as Ministry requests' bulk Entered by hand does."
+    ),
+    "admin_cmd_information_decide": _(
+        "An automation session accepted, ignored, reopened or handled "
+        "Additional information requests, as the actions on Additional "
+        "information do."
+    ),
+    "admin_cmd_limitations_decide": _(
+        "An automation session accepted, ignored, reopened or handled "
+        "Limitations answers, as the actions on Limitations do."
+    ),
+    "admin_cmd_pledges_decide": _(
+        "An automation session accepted, edited, ignored or reopened pledges, "
+        "or marked them entered in ParishSoft, as the actions on Pledges to "
+        "enter do."
+    ),
+    "admin_cmd_followup_information_update": _(
+        "An automation session recorded follow-up on an Additional "
+        "information request, as the request's Save does."
     ),
     "admin_cmd_refresh_start": _(
         "An automation session asked for a full ParishSoft refresh, as the "
@@ -279,6 +364,10 @@ DESCRIPTIONS = {
     "admin_cmd_system_debug_allow": _(
         "An automation session cleared the debug-off switch in Testing, as "
         "System health's Allow debug logging again does."
+    ),
+    "admin_cmd_system_mail_clear": _(
+        "An automation session cleared a halted mail sender, as System "
+        "health's Clear the halt does."
     ),
     "admin_cmd_portal_maintenance_set": _(
         "An automation session closed or reopened the Family portal for "
@@ -389,8 +478,7 @@ DESCRIPTIONS = {
         "shows."
     ),
     "admin_cmd_export_exact_create": _(
-        "An automation session requested an exact daily export, as the "
-        "Participation page's exact-export form does."
+        "An automation session requested an exact daily export of the latest data."
     ),
     "admin_cmd_export_exact_cancel": _(
         "An automation session cancelled an exact daily export, as its status "
@@ -402,7 +490,7 @@ DESCRIPTIONS = {
     ),
     "admin_cmd_export_family_timeline": _(
         "An automation session requested one Family's timeline export, as the "
-        "Family timeline page's export form does."
+        "Timeline page's export form does."
     ),
     "admin_cmd_digest_weekly_request": _(
         "An automation session requested a manual weekly report, as the "
@@ -455,15 +543,19 @@ DESCRIPTIONS = {
         "by the server operator), so services started with debug logging may "
         "log in debug form again."
     ),
+    "mail_halt_cleared": _(
+        "An Administrator cleared a halted mail sender after a passing mailbox "
+        "check; one email is sent as a probe, and sending resumes if it succeeds."
+    ),
     "source_drop_accepted": _(
         "An Administrator accepted a refused large ParishSoft change once, so "
         "the next full refresh may go through if no count falls further."
     ),
     "background_viewed": _("An Administrator opened Background work."),
-    "delivery_viewed": _("An Administrator opened Outgoing mail."),
+    "delivery_viewed": _("An Administrator opened Sent mail."),
     "delivery_bulk_resolved": _(
         "An Administrator retried failed emails, or recorded uncertain emails "
-        "as not sent, several at a time on Outgoing mail. Each email also has "
+        "as not sent, several at a time on Sent mail. Each email also has "
         "its own entry."
     ),
     "family_directory_viewed": _(
@@ -473,7 +565,9 @@ DESCRIPTIONS = {
         "Someone opened the active parishioner family directory with mailing columns."
     ),
     "ministry_report_viewed": _("Someone opened a Ministry report."),
-    "participation_viewed": _("Someone opened the participation report."),
+    "participation_viewed": _(
+        "Someone opened the participation statistics and daily chart."
+    ),
     "campaign_comparison_viewed": _(
         "Someone opened the campaign comparison report (or ran report comparison)."
     ),
@@ -564,7 +658,7 @@ DESCRIPTIONS = {
     ),
     "delivery_unknown": _(
         "The mail provider did not confirm whether an email was accepted; "
-        "review it on Outgoing mail before it is retried."
+        "review it on Sent mail before it is retried."
     ),
     "campaign_boundary_lag": _(
         "A scheduled campaign start or close ran later than planned; the "
@@ -716,6 +810,10 @@ DESCRIPTIONS = {
     "credential_result_dismissed": _(
         "An Administrator dismissed the result of a key change."
     ),
+    "credential_key_organization_mismatch": _(
+        "A new ParishSoft key was refused: it belongs to a different "
+        "ParishSoft organization."
+    ),
     "family_maintenance_started": _(
         "An Administrator closed the Family portal for maintenance."
     ),
@@ -801,6 +899,10 @@ DESCRIPTIONS = {
     "weekly_digest_viewed": _("Someone opened a weekly report."),
     "information_viewed": _("Someone opened the information changes report."),
     "information_updated": _("Someone updated follow-up on an information change."),
+    "limitation_reviewed": _(
+        "Someone recorded a review decision on a cannot-participate or "
+        "cannot-attend answer."
+    ),
     "ministry_followup_viewed": _(
         "Someone opened Ministry requests (formerly Ministry follow-up) or one "
         "of its follow-up requests."
@@ -833,40 +935,66 @@ DESCRIPTIONS = {
     "roster_changes_exported": _(
         "Someone downloaded the Roster changes to enter list."
     ),
+    "pledges_to_enter_viewed": _("Someone opened the Pledges list."),
+    "pledges_to_enter_exported": _("Someone downloaded the Pledges list."),
+    "pledge_review_updated": _(
+        "Someone accepted, edited, ignored or reopened a Family's pledge, or "
+        "marked it entered in ParishSoft."
+    ),
     "census_change_updated": _(
         "Someone marked a census change entered in ParishSoft, ignored it, "
         "or reopened it."
     ),
+    "census_handling_corrected": _(
+        "An upgrade moved open census changes that ParishSoft cannot take "
+        "automatically (a gender, a death date, a Family address, or an "
+        "answer that removes a value) to By hand. Count is how many."
+    ),
+    "refresh_checks_started": _(
+        "An upgrade started recording what each ParishSoft refresh finds for "
+        "census changes and Ministry requests already entered or decided, so "
+        "an entry ParishSoft does not show yet can be flagged Not seen in "
+        "ParishSoft."
+    ),
     "census_publication_planned": _(
-        "The server checked approved census changes against ParishSoft and "
-        "recorded what publishing them would write."
+        "The server checked Ready to update census changes against ParishSoft "
+        "and recorded what updating ParishSoft would write."
     ),
     "census_publication_confirmed": _(
-        "An Administrator confirmed publishing census changes to ParishSoft."
+        "An Administrator confirmed updating ParishSoft with census changes."
     ),
     "census_publication_recorded": _(
-        "The server recorded whether a census change publication to "
-        "ParishSoft was written, stopped because something changed, or failed."
+        "The server recorded whether a Member's census changes were written "
+        "to ParishSoft, stopped because something changed, or failed."
     ),
     "census_publication_preflight_requested": _(
-        "An Administrator asked the server to check approved census changes "
-        "against ParishSoft before publishing them."
+        "An Administrator asked the server to check Ready to update census "
+        "changes against ParishSoft before updating it."
     ),
     "census_publication_rerun_requested": _(
-        "An Administrator asked the server to run a failed census change "
-        "publication to ParishSoft again."
+        "An Administrator asked the server to run an unfinished update of "
+        "ParishSoft with census changes again."
+    ),
+    "census_publication_refresh_requested": _(
+        "After updating ParishSoft with census changes, the server asked for "
+        "a full ParishSoft refresh so Census changes shows the new values. "
+        "It is attributed to the Administrator who confirmed the update."
     ),
     "census_publication_switched_off": _(
-        "A census change publication task stopped without reading or writing "
-        "ParishSoft because publishing to ParishSoft is switched off."
+        "A census change update task stopped without reading or writing "
+        "ParishSoft because updating ParishSoft is switched off."
     ),
     "census_publication_read_unconfirmed": _(
         "A census change check stopped without a plan because reading "
         "ParishSoft contact records is not confirmed yet."
     ),
     "census_publication_refused": _(
-        "A census change publication task stopped without writing ParishSoft "
+        "A census change update task stopped without writing ParishSoft "
         "because what it needed had changed or was missing."
+    ),
+    "census_publication_viewed": _(
+        "Someone opened Update ParishSoft, which shows the latest check of "
+        "Ready to update census changes against ParishSoft."
     ),
     "response_dashboard_viewed": _("Someone opened the response dashboard."),
     "response_submitted_list_viewed": _(
@@ -917,6 +1045,12 @@ DESCRIPTIONS = {
     ),
     "user_leader_imported": _(
         "A ParishSoft Ministry leader was imported as a Ministry leader user."
+    ),
+    "user_leader_emails_reviewed": _(
+        "An Administrator reviewed emailing Ministry leaders that they can sign in."
+    ),
+    "user_leader_emails_requested": _(
+        "An Administrator asked to email Ministry leaders that they can sign in."
     ),
     "system_logs_exported": _("An Administrator downloaded the system logs."),
     "export_cancelled": _("A report download was cancelled."),
@@ -1219,6 +1353,8 @@ FIELD_LABELS = {
     "directory_data_check": _("ParishSoft data to check"),
     "directory_response_columns": _("Response columns included"),
     "directory_sort": _("Sorted by"),
+    # A report view the open page made by itself (#1620).
+    "automatic": _("How it was opened"),
 }
 # A response list's sort columns (#851), by sort key, in each list's own
 # column headings; ``-key`` is the same column sorted the other way. The
@@ -1260,6 +1396,9 @@ _DIRECTORY_SORT_COLUMNS = {"name": _("Family")} | {
 # "all" and "any" are each report's first, unfiltered choice.
 VALUE_LABELS = {
     "report_mode": {"production": _("Production"), "testing": _("Testing")},
+    # Recorded only as true (log_rows._details shows a boolean as text): a
+    # reader's own view has no such field (#1620).
+    "automatic": {"True": _("Automatic refresh (the open page updated itself)")},
     "report_filter": {
         "all": _("Everything (no filter)"),
         "any": _("Everything (no filter)"),

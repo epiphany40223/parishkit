@@ -9,6 +9,8 @@ views act on them:
   this one added or changed, or one reminder per repeat date) and reviews it
   in the shared review dialog (UX conventions, "Review dialog", #750), whose
   Apply confirms on Dates and mail schedules and returns there.
+  Inside the campaign wizard the page saves directly instead, with its
+  action row's Save and go back (#1404 PR 4b, ``campaign_wizard.save_step``).
   The page shows and takes send times in the browser's time zone, which the
   page script posts as ``zone``; ``schedule_local`` converts them to and
   from the campaign-local values a schedule keeps (#558).
@@ -24,7 +26,15 @@ views act on them:
   (``SeriesScope``, ``_series_edit``), planned by the command line's own
   ``series_edits.plan``. Delivery never reads a series.
 - **Delete** answers the list's confirmation dialog: it removes the chosen
-  schedules in one configuration change.
+  schedules in one configuration change. Edit's own Delete (#1656) posts
+  the same route with ``action=preview`` instead and is answered with the
+  review dialog's fragment (``_delete_review``): this schedule alone, or for
+  a series' reminder the whole series (the command line's series delete),
+  confirmed on Dates and mail schedules like every review.
+- **Add these schedules and continue**, inside the campaign wizard on a
+  campaign with no schedule saved (#1404 PR 6), adds the suggested starting
+  schedules (``schedule_suggestions``) in one change, saved directly
+  (``schedule_suggested``).
 
 Neither path has validation of its own. Each turns its request into the
 change document the schedule commands take (``admin_changes.form_data``),
@@ -42,7 +52,8 @@ even from an old link.
 """
 
 import json
-from datetime import date
+import re
+from datetime import date, time
 from uuid import UUID
 
 from django import forms
@@ -63,6 +74,7 @@ from parishkit.stewardship.campaigns.work_locks import (
     work_transaction,
 )
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.time_entry import canonical
 from parishkit.stewardship.wall_clock import weekday_choices
 from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.contracts import filters
@@ -72,12 +84,27 @@ from parishkit.stewardship.web.refusals import (
     UserFacingDenied,
     UserFacingError,
     UserFacingMissing,
+    UserFacingStale,
+    stale_page,
     unexpected_fields,
     with_default_code,
 )
 
-from . import admin_navigation, schedule_email, schedule_local
-from .admin_editing import confirm_intent, error_response, form_action, principal
+from . import (
+    admin_navigation,
+    campaign_wizard,
+    digest_skips,
+    schedule_email,
+    schedule_local,
+    schedule_suggestions,
+)
+from .admin_editing import (
+    confirm_intent,
+    direct_key,
+    error_response,
+    form_action,
+    principal,
+)
 from .authentication import runtime
 from .campaign_mail import admits_test_mail
 from .content_forms import sample_banner, sample_render
@@ -98,13 +125,14 @@ from .schedule_forms import (
     Schedules,
     ScheduleWindow,
     email_usage,
+    saved_send_attrs,
     schedule_labels,
     schedule_order,
     window_text,
 )
 from .schedule_preview import work_summary
 from .schedule_reads import campaign_schedules, schedule_state
-from .schedule_table import schedule_rows
+from .schedule_table import DIGESTS, schedule_rows
 from .series_edits import SCOPES, SeriesEditError, cut, plan, rule_text
 from .series_schema import SECTION as SERIES
 from .sessions import authenticated_admin
@@ -204,6 +232,70 @@ MISSED = _(
 )
 # The browser's IANA time zone, which ui-v1.js fills in (#558).
 ZONE = "zone"
+# New scheduled email's one address parameter: the day the Campaign
+# calendar's Add on a day opened it for (#1521), an ISO date in the browser's
+# zone. That New fills it in as the send date and returns to the calendar.
+ADD_ON = "date"
+# Edit's one address parameter (#1656): the Campaign calendar month
+# (``2054-11``) it was opened from, which its Cancel and Apply return to.
+FROM_CALENDAR = "calendar"
+# The Campaign calendar's Move… (#1521) posts to Edit with ``move=yes``,
+# the new send date, the browser's zone and the configuration version only;
+# Edit fills in the rest of its form from the saved schedule (``_moved``).
+MOVE = "move"
+MOVE_FIELDS = {
+    "action",
+    "csrfmiddlewaretoken",
+    "base_digest",
+    ZONE,
+    MOVE,
+    f"{ENTRY}-date",
+}
+# Why a send the calendar offers no Move… for is refused anyway (an old
+# page or a crafted request): a digest is one repeating schedule, and a
+# missed send's time has passed.
+NOT_MOVABLE = _(
+    "This scheduled email can't be moved from the calendar: it repeats, or its "
+    "send time has passed without sending."
+)
+# Edit's line when "This reminder only" takes a reminder off the dates its
+# series' rule gives (#1521), which ``series_schema.upkeep`` then applies.
+LEAVES_SERIES = _(
+    "This reminder leaves its series (%(rule)s), since the series does not "
+    "send on its new day."
+)
+# A calendar move whose kept time falls in the hour the campaign's clocks
+# repeat on the new day (#1521): the Move dialog has only a date, so the
+# refusal says what it can do there, at the date.
+MOVE_REPEATED_HOUR = _(
+    "On this day the send time falls in the hour that repeats when clocks fall "
+    "back in the campaign's time zone, so it can't be saved exactly. Choose "
+    "another day, or change the time on its Edit page."
+)
+# A year and month as the calendar's addresses name one (``?month=``).
+YEAR_MONTH = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
+# Edit's Delete (#1656): which reminders of a series' reminder it removes,
+# or (#1658) "send", one send of a digest it skips; the fields its review
+# posts, and the review's lines on a series or digest.
+DELETE_SCOPES = ("this", "series", "send")
+DELETE_FIELDS = {
+    "csrfmiddlewaretoken",
+    "base_digest",
+    "schedule_id",
+    "action",
+    "scope",
+    "send",
+}
+# The address parameter naming the digest send Edit was opened for from the
+# Campaign calendar (#1658), which Delete's This email only skips.
+SEND = "send"
+SERIES_DELETED = _(
+    "The whole series is deleted: %(rule)s. Its reminders that already sent "
+    "stay as ordinary reminders."
+)
+DIGEST_DELETED = _(
+    "This digest repeats, so deleting it stops every send of it still to come."
+)
 # Edit's refusal of a save that changes nothing. The page's change gate
 # keeps Review unavailable until something changed, so only a request that
 # bypasses the page script meets it, in the review dialog (#750).
@@ -215,6 +307,13 @@ UNCHANGED = _(
 # editor refuses a preview this large too (content_views._preview).
 PREVIEW_LIMIT = 256_000
 TOO_LARGE = _("This email is too large to save. Shorten it, then try again.")
+# Why a direct save (#1404 PR 4b) saved nothing while send work blocks the
+# change: the review dialog shows the same count with no Apply.
+BLOCKED = _(
+    "Email from these schedules is being sent right now, or has an uncertain "
+    "result, so nothing was saved."
+)
+BLOCKED_FIX = _("Wait for it to finish, or resolve it on Sent mail, then save again.")
 
 
 class RepeatRule(AdminForm):
@@ -429,6 +528,8 @@ def review(
     content=(),
     series=(),
     series_changes=(),
+    key=None,
+    skips=None,
 ):
     """Bind a change document to the review's forms and build the review.
 
@@ -442,7 +543,9 @@ def review(
     ``schedule_email.copy``); the forms offer them as saved emails, so an
     entry may send one. ``series`` and ``series_changes`` are
     ``build_preview``'s reminder series to remember and series operations
-    (#469).
+    (#469). ``key`` signs the review with a direct save's request key
+    (#1404 PR 4b, ``admin_editing.direct_key``). ``skips`` names the one
+    digest send the change skips (#1658, ``build_preview``'s).
     """
     # The schedule commands' own binding, so the page and the command line
     # cannot read the same change differently.
@@ -481,6 +584,8 @@ def review(
         content=content,
         series=series,
         series_changes=series_changes,
+        request_key=key,
+        skips=skips,
     )
     return context, window, schedules, identifiers
 
@@ -540,7 +645,14 @@ def _carry_errors(entry, window, schedules, identifiers, targets):
 
 
 def entry_form(
-    data, templates, saved, schedule=None, kept=None, test_mail=True, drawn=None
+    data,
+    templates,
+    saved,
+    schedule=None,
+    kept=None,
+    test_mail=True,
+    drawn=None,
+    on=None,
 ):
     """The page's one schedule form: blank for New, filled in for Edit.
 
@@ -556,7 +668,9 @@ def entry_form(
     test mail, see ``campaign_mail.admits_test_mail``) replaces each test link
     with a note saying why, so the page never links a test that cannot work
     (#923). ``drawn`` is the moment Edit draws the schedule from (its
-    ``drawn_at`` field, posted back; ``schedule_local.instant``).
+    ``drawn_at`` field, posted back; ``schedule_local.instant``). ``on``
+    is New's send date from the calendar's Add on a day (#1521), drawn as
+    a reminder on that day.
     """
     labels = dict(
         zip((row["id"] for row in saved), schedule_labels(saved), strict=True)
@@ -571,11 +685,21 @@ def entry_form(
         label=labels.get(schedule["id"]) if schedule else None,
         initial=schedule["values"] | {"id": schedule["id"], "drawn_at": drawn or ""}
         if schedule
-        else None,
+        # A day from the calendar is drawn as a reminder on that date: the
+        # page script clears (and hides) the date of a row with no mail
+        # type, so a date alone would be lost. The Initial invitation also
+        # sends on a date, so choosing it keeps the day.
+        else ({"kind": "reminder", "date": on} if on else None),
         browser_times=True,
     )
     # The address names the schedule; a posted ID is never read.
     del form.fields["id"]
+    # Edit posted as shown keeps the saved date, which the browser's window
+    # check (#1787) judges then; ``drawn`` is the saved send's moment.
+    if schedule and drawn:
+        form.fields["date"].widget.attrs.update(
+            saved_send_attrs(schedule["values"], drawn)
+        )
     if kept is not None:
         form.fields["time"].keep(kept)
     return form
@@ -623,7 +747,7 @@ def _fields(new):
     if new:
         names.update(f"repeat-{name}" for name in REPEAT_FIELDS)
     else:
-        names.add(SCOPE)
+        names.update({SCOPE, MOVE})
     return names
 
 
@@ -977,6 +1101,61 @@ def _edit_notes(outcome, cut_date, clock, changed_email):
     return notes
 
 
+def _leaves_series(record, entries):
+    """Edit's review line when this reminder leaves its series (#1521).
+
+    ``record`` is the reminder's series (``_series_of``) and ``entries``
+    the one changed schedule of a "This reminder only" Edit. The line is
+    there when its new campaign-local date is not one its series' rule
+    gives, the same test ``series_schema.upkeep`` takes it out by.
+    """
+    if record is None or not entries or not entries[0].get("date"):
+        return []
+    rule = record["values"]["rule"]
+    if entries[0]["date"] in expand(rule)["dates"]:
+        return []
+    return [LEAVES_SERIES % {"rule": rule_text(rule)}]
+
+
+def _moved(posted, schedule, saved, campaign, now):
+    """The Campaign calendar's Move… (#1521) as Edit's own form would post it.
+
+    ``posted`` holds only ``MOVE_FIELDS``: the new send date in the
+    browser's zone. The send time is the saved one in that zone (so 9:00 AM
+    stays 9:00 AM on the new day), the email is the saved one (a digest's
+    comparison never applies: a digest does not move), and ``drawn_at`` is
+    the saved send's moment, as a freshly drawn Edit page would post them;
+    Edit then reviews it exactly as if the Administrator had changed only
+    the date there. A send the calendar
+    offers no Move… for (a digest, a missed send) is refused. A blank or
+    unknown zone keeps the campaign-local time, so Edit's own zone refusal
+    answers it.
+    """
+    values = campaign.active_configuration.values
+    row = next(
+        row
+        for row in schedule_rows(saved, values, work_summary(campaign.pk), now)
+        if row.id == schedule["id"]
+    )
+    if not row.movable:
+        raise UserFacingDenied(
+            NOT_MOVABLE, fix=_("Open its Edit page to change it instead.")
+        )
+    drawn = schedule_local.instant(schedule["values"], values["timezone"], now)
+    try:
+        clock = schedule_local.in_browser(
+            schedule["values"], posted.get(ZONE, ""), values["timezone"], now
+        )
+    except UnknownZone:
+        clock = time.fromisoformat(schedule["values"]["time"])
+    moved = posted.copy()
+    del moved[MOVE]
+    moved[f"{ENTRY}-time"] = canonical(clock)
+    moved[f"{ENTRY}-template_version"] = schedule["values"]["template_version"]
+    moved[f"{ENTRY}-drawn_at"] = drawn.isoformat()
+    return moved
+
+
 def _series_notes(reviewed):
     """The review's line on a repeat New remembers as a series (#469)."""
     return [
@@ -1049,6 +1228,56 @@ def _kept(posted, schedule, values, now):
         return None
 
 
+def added_on(parameters):
+    """The day New was opened for by the calendar's Add on a day, or None.
+
+    ``parameters`` are the address's checked ones (``filters``). The day is
+    an ISO date (``2054-10-12``), the browser-local day of the grid cell;
+    anything else is refused as an unknown address (a ``ValueError``, as
+    ``filters`` refuses). Whether it falls inside the campaign is the
+    review's to say, at the field, as for a typed date.
+    """
+    text = parameters.get(ADD_ON)
+    if text is None:
+        return None
+    try:
+        day = date.fromisoformat(text)
+    except ValueError:
+        day = None
+    # fromisoformat also reads "20541012" and other ISO forms; only the
+    # form the date field shows is the calendar's.
+    if day is None or day.isoformat() != text:
+        raise ValueError("Unknown filter input.")
+    return text
+
+
+def year_month(parameters, name):
+    """The calendar month (``2054-11``) the address's ``name`` names, or None.
+
+    ``parameters`` are the address's checked ones (``filters``). Anything
+    but a four-digit year and a two-digit month is refused as an unknown
+    address (a ``ValueError``, as ``filters`` refuses). Whether the month is
+    one of the campaign's is the calendar script's to say, since the months
+    it draws follow the browser's zone.
+    """
+    text = parameters.get(name)
+    if text is not None and not YEAR_MONTH.fullmatch(text):
+        raise ValueError("Unknown filter input.")
+    return text
+
+
+def return_url(on, month):
+    """Where New or Edit's Cancel goes and its Apply returns (#1521, #1656).
+
+    ``on`` is New's day from the calendar's Add, ``month`` Edit's calendar
+    month: either returns to the calendar showing that month; otherwise
+    the page returns to Dates and mail schedules.
+    """
+    if on is None and month is None:
+        return reverse("admin:schedule_settings")
+    return f"{reverse('admin:schedule_calendar')}?month={month or on[:7]}"
+
+
 def _entry(request, campaign_id, schedule_id=None):
     """New (``schedule_id`` None) or Edit scheduled email, GET or POST.
 
@@ -1068,26 +1297,66 @@ def _entry(request, campaign_id, schedule_id=None):
     rule is remembered as a series (``_remember``). On Edit of a series'
     reminder, "this and following" or "the whole series" (``SeriesScope``)
     plans the series edit instead (``_series_edit``); the send date is not
-    posted then, so the date the page showed stands in for it.
+    posted then, so the date the page showed stands in for it. New opened by
+    the Campaign calendar's Add on a day (``?date=``, ``added_on``, #1521)
+    has that send date filled in, and its Cancel and Apply return to the
+    calendar on that day's month; Edit opened from the calendar
+    (``?calendar=<month>``, #1656) returns to that month (``return_url``);
+    opened for one of a digest's sends (``?send=<slot>``, #1658), its Delete
+    offers This email only while that send may be skipped
+    (``digest_skips.skippable``). The page posts to its own path, without the
+    parameters. Edit also draws Delete, whose review is ``_delete_review``'s.
+
+    Inside the campaign wizard the page posts ``save`` instead (#1404 PR 4b):
+    the same review, signed with the save's request key and recorded at once
+    by ``campaign_wizard.save_step`` once the work transaction has ended,
+    answered with the change's status, which the page follows; send work
+    that blocks the change refuses it (``BLOCKED``).
     """
     service = runtime()
     actor = principal(request, service)
-    filters(request.GET, allowed=set())
+    parameters = filters(
+        request.GET,
+        allowed={ADD_ON} if schedule_id is None else {FROM_CALENDAR, SEND},
+    )
+    on = added_on(parameters)
+    month = year_month(parameters, FROM_CALENDAR)
+    send = parameters.get(SEND)
+    if send is not None and digest_skips.slot_date(send) is None:
+        raise ValueError("Unknown filter input.")
     if request.FILES:
         raise unexpected_fields(request.FILES, allowed=())
     new = schedule_id is None
-    # The page posts only a preview; its review confirms on the list.
-    if (
-        request.method == "POST"
-        and form_action(
+    # The page posts a preview, whose review confirms on the list, or inside
+    # the campaign wizard a direct save.
+    action = (
+        form_action(
             request.POST,
             preview_fields=_fields(new),
             multiple_fields=REPEAT_MULTIPLE if new else frozenset(),
+            direct=True,
         )
-        != "preview"
-    ):
+        if request.method == "POST"
+        else None
+    )
+    if action == "confirm":
         # No sources: an unknown action value, not an unexpected field.
         raise unexpected_fields()
+    # The calendar's Move… (#1521): only its own few fields, as a preview.
+    moving = action is not None and MOVE in request.POST
+    if moving and (
+        action != "preview"
+        or request.POST.get(MOVE) != "yes"
+        or set(request.POST) - MOVE_FIELDS
+    ):
+        raise unexpected_fields(request.POST, allowed=MOVE_FIELDS)
+    key = direct_key(request.POST) if action == "save" else None
+    # A repeat of a direct save is answered with its first change's status
+    # before the form is checked again (#1486).
+    if key is not None and (
+        answered := campaign_wizard.repeated_save(request, actor, key)
+    ):
+        return answered
     posted = request.POST if request.method == "POST" else None
     now = timezone.now()
     with work_transaction() if posted is not None else read_transaction():
@@ -1099,6 +1368,8 @@ def _entry(request, campaign_id, schedule_id=None):
         if not new:
             read_only = _changeable(saved, campaign, {str(schedule_id)})
             schedule = next(row for row in saved if row["id"] == str(schedule_id))
+        if moving:
+            posted = _moved(posted, schedule, saved, campaign, now)
         record = _series_of(state[0], campaign, schedule)
         refusals = (
             scope_refusals(record, saved, schedule, campaign, read_only, now)
@@ -1127,6 +1398,7 @@ def _entry(request, campaign_id, schedule_id=None):
             ).isoformat()
             if schedule
             else None,
+            on=on,
         )
         repeat = RepeatRule(posted, prefix="repeat") if new else None
         part_of = series_context(entry, record, posted, refusals)
@@ -1151,7 +1423,18 @@ def _entry(request, campaign_id, schedule_id=None):
             "series": part_of,
             "base_digest": state[0].active_configuration.digest,
             "post_url": request.path,
-            "list_url": reverse("admin:schedule_settings"),
+            # Where Cancel goes and Apply returns: the calendar's month for
+            # its Add and its links (#1656), else the list.
+            "list_url": return_url(on, month),
+            # Edit's Delete (#1656) posts its review here.
+            "delete_url": reverse("admin:schedule_delete"),
+            # The digest send Edit was opened for from the calendar, when
+            # Delete may skip it alone (#1658); else None.
+            "skip_send": digest_skips.skippable(
+                schedule["id"], schedule["values"], values, send, now
+            )
+            if schedule is not None and send is not None
+            else None,
             # The review dialog's Apply confirms on the list, then returns.
             "apply_url": reverse("admin:schedule_settings"),
             "window_text": window_text(values),
@@ -1187,8 +1470,13 @@ def _entry(request, campaign_id, schedule_id=None):
             )
             return _entry_page(request, context, status=400)
         except schedule_local.RepeatedHour:
+            # A move has only its date to change (#1521).
             entry.add_error(
-                "time", forms.ValidationError(REPEATED_HOUR, code="repeated_hour")
+                "date" if moving else "time",
+                forms.ValidationError(
+                    MOVE_REPEATED_HOUR if moving else REPEATED_HOUR,
+                    code="repeated_hour",
+                ),
             )
             return _entry_page(request, context, status=400)
         except ValueError:
@@ -1275,6 +1563,7 @@ def _entry(request, campaign_id, schedule_id=None):
             content=[added] if added else (),
             series=series,
             series_changes=series_changes,
+            key=key,
         )
         if reviewed is None and str(NO_CHANGES) in _messages(window.non_field_errors()):
             # Only Edit can post its schedule as saved. Its change gate keeps
@@ -1306,23 +1595,50 @@ def _entry(request, campaign_id, schedule_id=None):
             if len(reviewed["preview"] or "") > PREVIEW_LIMIT:
                 schedule_email.refuse(email, TOO_LARGE, "too_large")
                 return _entry_page(request, context, status=400)
-            reviewed = reviewed | {"email": _sample(service, campaign, added)}
-        reviewed = reviewed | {
-            "series_notes": _series_notes(reviewed) if notes is None else notes
-        }
-        # The review dialog's fragment, never a page: its Apply confirms on
-        # Dates and mail schedules (the form's dialog names it), and the
-        # dialog then returns there. A New schedule that sends once, with no
-        # email of its own, would only repeat the form: a confirmation.
-        return render(
-            request,
-            "stewardship/schedule-review.html",
-            reviewed
-            | {
-                "new": new,
-                "confirmation": new and added is None and _sends_once(reviewed, repeat),
-            },
-        )
+            if key is None:
+                reviewed = reviewed | {"email": _sample(service, campaign, added)}
+        if key is None:
+            reviewed = reviewed | {
+                "series_notes": _series_notes(reviewed)
+                + (_leaves_series(record, entries) if chosen == "this" else [])
+                if notes is None
+                else notes
+            }
+            # The review dialog's fragment, never a page: its Apply confirms
+            # on Dates and mail schedules (the form's dialog names it), and
+            # the dialog then returns there. A New schedule that sends once,
+            # with no email of its own, would only repeat the form: a
+            # confirmation.
+            return render(
+                request,
+                "stewardship/schedule-review.html",
+                reviewed
+                | {
+                    "new": new,
+                    "confirmation": new
+                    and added is None
+                    and _sends_once(reviewed, repeat),
+                },
+            )
+        if not reviewed["preview"]:
+            # Send work blocks the change: the dialog would offer no Apply.
+            raise UserFacingStale(
+                BLOCKED,
+                fix=BLOCKED_FIX,
+                link=reverse("admin:deliveries"),
+                link_label=_("Sent mail"),
+                reason="send_work_blocks",
+            )
+    # A direct save, recorded now that the work transaction has ended.
+    return campaign_wizard.save_step(
+        request,
+        service,
+        actor,
+        token=reviewed["preview"],
+        salt=preview_salt(campaign_id),
+        current_scope=lambda service: confirm_scope(service, campaign_id, page=True),
+        campaign_id=campaign_id,
+    )
 
 
 def _with_shown_date(posted, schedule, campaign_zone, now):
@@ -1470,8 +1786,12 @@ def _chosen(parameters):
     return [str(UUID(value)) for value in values]
 
 
-def _refusal(window, schedules):
-    """A refused delete, with every rule it would break, as one message."""
+def _refusal(window, schedules, *, fallback=None, fix=None):
+    """A refused delete, with every rule it would break, as one message.
+
+    ``fallback`` and ``fix`` replace the delete's own wording for another
+    change refused the same way (the suggested schedules, #1404 PR 6).
+    """
     messages = [
         *_messages(schedules.non_form_errors()),
         *_messages(window.non_field_errors()),
@@ -1484,9 +1804,126 @@ def _refusal(window, schedules):
     ]
     return UserFacingError(
         " ".join(dict.fromkeys(messages))
+        or fallback
         or _("These scheduled emails can't be deleted together."),
-        fix=_("Nothing was deleted. Change the other schedules first, then try again."),
+        fix=fix
+        or _("Nothing was deleted. Change the other schedules first, then try again."),
     )
+
+
+def _delete_entries(schedule, record, saved, read_only, scope):
+    """What Edit's Delete removes (#1656): ``(entries, series_changes, notes)``.
+
+    ``scope`` "this" removes ``schedule`` alone; a series' reminder then
+    leaves its series through the series upkeep, as a delete from the list
+    does. "series" removes every reminder of ``record`` (the reminder's
+    series) that has not sent or been prepared, and the series record, with
+    the command line's own plan (``series_edits.plan``, scope ``delete``);
+    the sent ones stay as ordinary reminders. ``notes`` are the review's
+    plain lines on what else the delete means.
+    """
+    identifier = schedule["id"]
+    if scope == "this":
+        digest = schedule["values"]["kind"] in DIGESTS
+        return (
+            [{"id": identifier, "delete": True}],
+            [],
+            [DIGEST_DELETED] if digest else [],
+        )
+    if record is None:
+        # A page drawn while the reminder was in a series.
+        raise UserFacingError(
+            NOT_IN_SERIES, fix=_("Reload the page to see it as it is now.")
+        )
+    outcome = plan(
+        record,
+        {row["id"]: row["values"] for row in saved},
+        read_only,
+        scope="delete",
+    )
+    entries = [{"id": member, "delete": True} for member in outcome["remove"]]
+    note = SERIES_DELETED % {"rule": rule_text(record["values"]["rule"])}
+    return entries, outcome["changes"], [note]
+
+
+def _delete_review(request, service, actor, campaign_id):
+    """Review Edit's Delete of one schedule, or of its whole series (#1656).
+
+    The post names one schedule (``schedule_id``), ``action=preview`` and,
+    for a series' reminder, ``scope`` ("this", the default, or "series",
+    ``_delete_entries``). For a digest opened from one of its calendar sends
+    (#1658), ``scope`` "send" with that send's slot date (``send``) skips it
+    alone (``digest_skips``) and keeps the digest; any other scope deletes
+    the whole digest. The schedule must still be changeable
+    (``_changeable``: not run and no work prepared), as on Edit. The change
+    is reviewed exactly as every schedule change is (``review``), and the
+    answer is the review dialog's fragment, whose Apply confirms on Dates and
+    mail schedules; sends that block it give a review without Apply. A rule
+    the remaining schedules would break is a plain refusal the dialog shows,
+    and nothing is recorded until Apply.
+    """
+    posted = request.POST
+    if set(posted) - DELETE_FIELDS or any(
+        len(values) != 1 for _name, values in posted.lists()
+    ):
+        raise unexpected_fields(posted, allowed=DELETE_FIELDS)
+    scope = posted.get("scope", "this")
+    # This email only (#1658) names its digest send; the field is posted
+    # with either choice, and only "send" reads it.
+    slot = digest_skips.slot_date(posted.get(SEND)) if scope == "send" else None
+    if (
+        posted["action"] != "preview"
+        or scope not in DELETE_SCOPES
+        or (scope == "send" and slot is None)
+    ):
+        # No sources: an unknown action or scope value, not an unknown field.
+        raise unexpected_fields()
+    identifier = str(UUID(posted.get("schedule_id", "")))
+    with work_transaction():
+        state, campaign, editable = schedule_state(service, campaign_id, page=True)
+        saved = _saved(state, campaign)
+        read_only = _changeable(saved, campaign, {identifier})
+        schedule = next(row for row in saved if row["id"] == identifier)
+        record = _series_of(state[0], campaign, schedule)
+        if slot is None:
+            entries, series_changes, notes = _delete_entries(
+                schedule, record, saved, read_only, scope
+            )
+        else:
+            # The digest itself stays; build_preview adds the skip.
+            entries, series_changes, notes = [], [], []
+        reviewed, window, schedules, _forms = review(
+            service,
+            actor,
+            state,
+            campaign,
+            editable,
+            entries,
+            base_digest=posted.get("base_digest"),
+            series_changes=series_changes,
+            skips={identifier: slot} if slot else None,
+        )
+    if reviewed is None:
+        raise _refusal(window, schedules)
+    skipped = None
+    if slot is not None:
+        send = digest_skips.send_of(
+            schedule["values"], campaign.active_configuration.values, slot
+        )
+        skipped = {"key": slot, "due_at": send.due_at.isoformat()}
+    response = render(
+        request,
+        "stewardship/schedule-review.html",
+        reviewed
+        | {
+            "new": False,
+            "deleting": scope,
+            "series_notes": notes,
+            "skipped_send": skipped,
+        },
+    )
+    _recheck(request, service)
+    return response
 
 
 @require_http_methods(["POST"])
@@ -1497,7 +1934,8 @@ def schedule_delete(request, campaign_id):
     once (``confirm_intent``: the applied configuration and the campaign's
     work are rechecked under the work lock). A refusal changes nothing. The
     answer is the change's status page, which the dialog follows until the
-    change is applied.
+    change is applied. Edit's Delete posts ``action=preview`` instead, and
+    is answered with its review (``_delete_review``, #1656).
     """
     try:
         service = runtime()
@@ -1505,6 +1943,8 @@ def schedule_delete(request, campaign_id):
         filters(request.GET, allowed=set())
         if request.FILES:
             raise unexpected_fields(request.FILES, allowed=())
+        if "action" in request.POST:
+            return _delete_review(request, service, actor, campaign_id)
         identifiers = _chosen(request.POST)
         listing = reverse("admin:schedule_settings")
         with work_transaction():
@@ -1529,7 +1969,7 @@ def schedule_delete(request, campaign_id):
                     "uncertain result, so they can't be deleted yet."
                 ),
                 fix=_(
-                    "Wait for it to finish, or resolve it on the Outgoing mail "
+                    "Wait for it to finish, or resolve it on the Sent mail "
                     "page, then try again."
                 ),
             )
@@ -1549,5 +1989,116 @@ def schedule_delete(request, campaign_id):
         return HttpResponseRedirect(
             reverse("admin:configuration_request", args=[receipt.request_id])
         )
+    except ERRORS as error:
+        return error_response(error)
+
+
+# Why Add these schedules and continue saved nothing because the campaign
+# no longer has a set to suggest (a schedule was saved, or its Initial
+# invitation email removed, since the page was drawn).
+NOTHING_TO_SUGGEST = _("The suggested schedules no longer apply, so nothing was saved.")
+NOTHING_TO_SUGGEST_FIX = _(
+    "Reload the page to see the campaign's schedules, then add any you need."
+)
+# The fix when the suggested set breaks a schedule rule (an email that no
+# longer fits its mail type, say): the schedules can still be added one by one.
+NOT_ADDED_FIX = _(
+    "Nothing was saved. Add the schedules one at a time with New scheduled email."
+)
+
+
+@require_http_methods(["POST"])
+def schedule_suggested(request, campaign_id):
+    """Add the suggested starting schedules directly (#1404 PR 6).
+
+    Dates and mail schedules' **Add these schedules and continue**, inside
+    the campaign wizard on a campaign with no schedule saved. The form posts
+    only the page's version (``base_digest``) and request key; the server
+    works the set out again from the applied values
+    (``schedule_suggestions.entries``), so the change is exactly what the
+    page listed for that version. It is reviewed as New scheduled email
+    reviews its schedules (``review``), signed with the save's request key
+    (``admin_editing.direct_key``), and recorded at once by
+    ``campaign_wizard.save_step``, which rechecks under the work lock that
+    the wizard still applies. A repeat of the same submit is answered with
+    the first change's status. Refused, with nothing saved: a stale page,
+    setup that has ended, a campaign with a schedule saved meanwhile (or
+    whose Initial invitation time has passed) or send work that blocks it.
+    The answer is the change's status, which the page follows.
+    """
+    try:
+        service = runtime()
+        actor = principal(request, service)
+        filters(request.GET, allowed=set())
+        if request.FILES:
+            raise unexpected_fields(request.FILES, allowed=())
+        values = filters(
+            request.POST,
+            allowed={"csrfmiddlewaretoken", "base_digest", "request_key"},
+        )
+        key = direct_key(request.POST)
+        if answered := campaign_wizard.repeated_save(request, actor, key):
+            return answered
+        with work_transaction():
+            state, campaign, editable = schedule_state(service, campaign_id, page=True)
+            if campaign_wizard.current() is None:
+                raise campaign_wizard.setup_ended()
+            # Asked before the page's version: saving any schedule changes
+            # the version, so a stale page would otherwise always hide this
+            # more specific answer.
+            entries = schedule_suggestions.entries(
+                campaign.active_configuration.values,
+                _records(state[0], campaign_id),
+                timezone.now(),
+            )
+            if not editable or campaign_schedules(state[0], campaign_id) or not entries:
+                raise UserFacingStale(
+                    NOTHING_TO_SUGGEST,
+                    fix=NOTHING_TO_SUGGEST_FIX,
+                    reason="stale_page",
+                )
+            if values.get("base_digest") != state[0].active_configuration.digest:
+                raise stale_page()
+            reviewed, window, schedules, _forms = review(
+                service,
+                actor,
+                state,
+                campaign,
+                editable,
+                entries,
+                base_digest=values["base_digest"],
+                key=key,
+            )
+            if reviewed is None:
+                raise _refusal(
+                    window,
+                    schedules,
+                    fallback=_("The suggested schedules don't fit the campaign."),
+                    fix=NOT_ADDED_FIX,
+                )
+            if not reviewed["preview"]:
+                # A draft with no schedule has no send work to block the
+                # change; should any, refuse it as New scheduled email does.
+                raise UserFacingStale(
+                    BLOCKED,
+                    fix=BLOCKED_FIX,
+                    link=reverse("admin:deliveries"),
+                    link_label=_("Outgoing mail"),
+                    reason="send_work_blocks",
+                )
+        # Recorded once the work transaction has ended.
+        response = campaign_wizard.save_step(
+            request,
+            service,
+            actor,
+            token=reviewed["preview"],
+            salt=preview_salt(campaign_id),
+            current_scope=lambda service: confirm_scope(
+                service, campaign_id, page=True
+            ),
+            campaign_id=campaign_id,
+        )
+        _recheck(request, service)
+        return response
     except ERRORS as error:
         return error_response(error)

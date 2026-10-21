@@ -62,6 +62,9 @@ OWN_ROWS = [
 ]
 
 
+NO_NOTICES = {"total": 0, "rows": []}
+
+
 @pytest.fixture
 def page(monkeypatch):
     """GET Automation access with the database reads stubbed; returns the HTML."""
@@ -71,17 +74,20 @@ def page(monkeypatch):
         "_administrator",
         lambda request, service: SimpleNamespace(identity=ME, roles={"administrator"}),
     )
-    monkeypatch.setattr(views, "_fresh", lambda request: True)
     monkeypatch.setattr(views, "database_now", lambda: NOW)
     monkeypatch.setattr(views, "live_sessions", lambda: [dict(r) for r in LIVE_ROWS])
     monkeypatch.setattr(
         sessions, "sessions_of", lambda principal, now: [dict(r) for r in OWN_ROWS]
     )
+    # The page lists this Administrator's automation notices first (#1673).
+    monkeypatch.setattr(views, "open_notices", lambda viewer: NO_NOTICES)
 
-    def get(query="", rows=None):
+    def get(query="", rows=None, notices=None):
         """The page's response for one query string."""
         if rows is not None:
             monkeypatch.setattr(views, "live_sessions", lambda: list(rows))
+        if notices is not None:
+            monkeypatch.setattr(views, "open_notices", lambda viewer: notices)
         request = RequestFactory().get("/admin/users/automation/" + query)
         request.portal_session = None
         response = views.access_view(request)
@@ -178,6 +184,24 @@ def test_by_default_live_sessions_come_first_and_ended_ones_are_hidden(page):
     assert 'action="/admin/users/automation/sessions/#live-table"' in html
     assert 'data-refresh-url="/admin/users/automation/"' in html
     assert html.count('<dialog id="session-revoke"') == 1
+
+
+def test_automation_notices_come_before_the_sessions(page):
+    """Unacknowledged notices are listed first; none leaves an empty region."""
+    _, html = page()
+    assert '<section id="automation-notices" data-in-place-region></section>' in html
+    notice = {
+        "id": UUID(int=200),
+        "kind": "approved",
+        "label": "alpha",
+        "command_type": None,
+        "created_at": NOW,
+    }
+    status, html = page(notices={"total": 1, "rows": [notice]})
+    assert status == 200
+    assert html.index("Automation notices") < html.index("Live sessions")
+    assert "An automation session was approved" in html
+    assert f'name="notice" value="{notice["id"]}"' in html
 
 
 def test_the_box_shows_ended_sessions_without_revoke(page):

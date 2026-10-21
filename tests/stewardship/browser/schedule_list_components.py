@@ -67,6 +67,30 @@ checks need no database:
   plus a daily digest at 7:00 AM, the invitation sent, with the weekly digest
   expanded to each Monday and the daily one to each day through November 1
   (the day after the campaign closes), its first four days already past.
+  Each campaign day's Add (#1521) opens ``NEW`` with ``?date=``; ``ADD_ON``
+  (``NEW?date=2054-10-12``) is that New with October 12 filled in, as the
+  view draws it, whose Cancel and Apply return to ``CALENDAR`` on October
+  (``CALENDAR_OCTOBER``). The calendar shows one month (#1656); ``MONTHS``
+  are its addresses with ``?month=``, each the same page (the script reads
+  the month). Its table, Every email by date (#1656), opens on the upcoming
+  emails in sending order; ``CALENDAR_VIEWS`` are its other Show and sort
+  addresses, each with a month, as the page's links send them. Its Move…
+  (#1521) posts to the send's Edit page (the real address the view's own
+  ``edit_url`` gives): Reminder 1's answers with Edit's review, whose Apply
+  posts to ``APPLY`` (Applied at once), after which the calendar redraws in
+  place from its own address; Reminder 2's answers 400 with the entry page
+  drawn again with the send date refused (``DATE_REFUSAL``), as Edit
+  answers a day outside the campaign.
+- Edit's Delete (#1656): ``EDIT`` posts it to ``EDIT_DELETE``, answered with
+  the review of removing Reminder 1; ``EDIT_SERIES`` to ``SERIES_DELETE``,
+  answered with the review of deleting its whole series; ``EDIT_INITIAL``
+  to ``INITIAL_DELETE``, refused with ``REFUSAL`` in the server's words.
+  ``EDIT_FROM_CALENDAR`` is ``EDIT`` opened from the calendar's October,
+  whose Cancel and Apply return there. ``EDIT_DIGEST_SEND`` is
+  ``EDIT_DIGEST`` opened from the calendar for its October 12 send
+  (``SKIP_DAY``, #1658), whose Delete offers This email only and The whole
+  digest and posts to ``DIGEST_SKIP``, answered with the review of skipping
+  that send.
 
 ``POSTS`` lists the fixture server's answers to the pages' POSTs; it is
 filled in by ``components``, before the server starts.
@@ -79,12 +103,15 @@ from uuid import uuid4
 from django import forms
 from django.http import QueryDict
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from parishkit.stewardship.accounts import schedule_email
 from parishkit.stewardship.accounts.campaign_mail import NOT_OPEN as CLOSED
+from parishkit.stewardship.accounts.digest_skips import send_of
 from parishkit.stewardship.accounts.schedule_calendar_views import (
     WEEK,
     calendar_sends,
+    sends_view,
 )
 from parishkit.stewardship.accounts.schedule_changes import (
     EMAIL_DOES_NOT_FIT,
@@ -92,6 +119,7 @@ from parishkit.stewardship.accounts.schedule_changes import (
 )
 from parishkit.stewardship.accounts.schedule_entry_views import (
     DAY_MOVED,
+    SERIES_DELETED,
     RepeatRule,
     _edit_notes,
     _sends_once,
@@ -114,13 +142,14 @@ from parishkit.stewardship.accounts.schedule_table import (
     schedule_rows,
 )
 from parishkit.stewardship.accounts.schedule_views import _summary as dates_summary
-from parishkit.stewardship.accounts.series_edits import plan
+from parishkit.stewardship.accounts.series_edits import plan, rule_text
 from parishkit.stewardship.web.refusals import send_time_passed
 from parishkit.stewardship.web.tables import whole_table
 
 from ..campaign_factory import campaign, schedule
 from ..content_factory import content
 from ..test_schedule_forms import data_for
+from .automation_components import canonical
 
 # Between the invitation (October 1, 2054) and the reminders, so the list
 # shows a sent row next to upcoming ones.
@@ -173,6 +202,33 @@ DATES = "/schedule-dates"
 DATES_INVALID = "/schedule-dates-invalid"
 DATES_STALE = "/schedule-dates-stale"
 CALENDAR = "/schedule-calendar"
+# New opened by the calendar's Add on October 12, 2054 (#1521).
+ADD_DAY = "2054-10-12"
+ADD_ON = f"{NEW}?date={ADD_DAY}"
+CALENDAR_OCTOBER = f"{CALENDAR}?month=2054-10"
+MONTHS = [
+    CALENDAR_OCTOBER,
+    f"{CALENDAR}?month=2054-11",
+    # Outside the campaign's months: the script opens the nearer end.
+    f"{CALENDAR}?month=2054-01",
+    f"{CALENDAR}?month=2060-01",
+]
+# Every Show and sort of the calendar's table, with either month: the
+# addresses its in-place links fetch (the script adds the month shown).
+CALENDAR_VIEWS = [
+    f"{CALENDAR}?show={show}&sort={sort}&month={month}"
+    for show in ("upcoming", "all")
+    for sort in ("when", "-when", "schedule", "-schedule")
+    for month in ("2054-10", "2054-11")
+]
+EDIT_DELETE = f"{EDIT}/deletion"
+SERIES_DELETE = f"{EDIT_SERIES}/deletion"
+INITIAL_DELETE = f"{EDIT_INITIAL}/deletion"
+EDIT_FROM_CALENDAR = f"{EDIT}?calendar=2054-10"
+# The weekly digest's Monday send Edit is opened for from the calendar (#1658).
+SKIP_DAY = "2054-10-12"
+EDIT_DIGEST_SEND = f"{EDIT_DIGEST}?send={SKIP_DAY}&calendar=2054-10"
+DIGEST_SKIP = f"{EDIT_DIGEST}/deletion"
 # The end date Campaign settings proposes; the saved one is October 31.
 DATES_END = "2054-10-25"
 # The refusal's own explanation, which the dialog shows.
@@ -241,9 +297,17 @@ def _data():
 
 
 def _list(values, owner, emails, rows, *, sort="when", **extra):
-    """The list page for ``rows`` (Initial invitation sent, with results)."""
+    """The list page for ``rows`` (Initial invitation sent, with results;
+    the Weekly Admin digest has sent too, and stays deletable)."""
     names = email_names([row for row in emails if row["values"]["kind"] == "email"])
-    summary = {rows[0]["id"]: {"delivered": 1031, "failed": 2}}
+    summary = {
+        **{
+            row["id"]: {"delivered": 4}
+            for row in rows
+            if row["values"]["kind"] == "weekly_digest"
+        },
+        rows[0]["id"]: {"delivered": 1031, "failed": 2},
+    }
     described = schedule_rows(rows, owner["values"], summary, NOW, names)
     context = {
         "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
@@ -262,8 +326,12 @@ def _list(values, owner, emails, rows, *, sort="when", **extra):
     )
 
 
-def _calendar(values, owner, emails, rows):
-    """The Campaign calendar for ``rows`` and a daily digest (invitation sent)."""
+def _calendar(values, owner, emails, rows, address=CALENDAR):
+    """The Campaign calendar for ``rows`` and a daily digest (invitation sent).
+
+    ``address`` is the page's address: its ``show`` and ``sort`` choose the
+    table's view, as the view's own ``sends_view`` reads them.
+    """
     names = email_names([row for row in emails if row["values"]["kind"] == "email"])
     summary = {rows[0]["id"]: {"delivered": 1031, "failed": 2}}
     email = next(row for row in emails if row["values"]["slot"] == "daily_digest")
@@ -276,13 +344,21 @@ def _calendar(values, owner, emails, rows):
         subject=email["values"]["subject"],
     )
     rows = sorted([*rows, daily], key=schedule_order)
+    sends = calendar_sends(rows, owner["values"], summary, NOW, names)
+    parameters = QueryDict(address.partition("?")[2]).dict()
+    parameters.pop("month", None)
     context = {
         "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
         "values": owner["values"],
-        "sends": calendar_sends(rows, owner["values"], summary, NOW, names),
+        "sends": sends,
         "weekdays": WEEK,
         "list_url": LIST,
-    }
+        "add_url": NEW,
+        # Move… (#1521): the version it posts, and where its review's Apply
+        # confirms.
+        "base_digest": "a" * 64,
+        "apply_url": APPLY,
+    } | sends_view(sends, parameters, NOW, CALENDAR)
     return (
         "text/html",
         render_to_string("stewardship/schedule-calendar.html", values | context),
@@ -302,6 +378,10 @@ def _entry(
     series=None,
     refusals=None,
     scope_error=None,
+    on=None,
+    list_url=LIST,
+    delete_url=EDIT_DELETE,
+    skip_send=None,
     mode="advanced",
 ):
     """New scheduled email, or Edit scheduled email for ``schedule_row``.
@@ -311,10 +391,14 @@ def _entry(
     series ``schedule_row`` belongs to (#469), drawn as the view draws it,
     with ``refusals`` its scopes known to be unavailable; ``scope_error``
     draws the page refused with "This and following" chosen and that error
-    at the choice, with its summary. ``mode`` is the Basic and Advanced
-    toggle's opening mode (#1129, ``schedule_entry_views.editor_mode``).
+    at the choice, with its summary. ``on`` is New's send date from the
+    calendar's Add on a day (#1521), ``list_url`` where Cancel and Apply
+    return, and ``delete_url`` where Edit's Delete posts its review (#1656).
+    ``skip_send`` is the digest send Delete may skip alone (#1658).
+    ``mode`` is the Basic and Advanced toggle's opening mode (#1129,
+    ``schedule_entry_views.editor_mode``).
     """
-    entry = entry_form(None, emails, rows, schedule_row)
+    entry = entry_form(None, emails, rows, schedule_row, on=on)
     scope_data = QueryDict("series-scope=following") if scope_error else None
     part_of = series_context(entry, series, scope_data, refusals)
     errors = {}
@@ -347,8 +431,10 @@ def _entry(
             "schedule": schedule_row,
             "base_digest": "a" * 64,
             "post_url": post_url,
-            "list_url": LIST,
+            "list_url": list_url,
             "apply_url": apply_url,
+            "delete_url": delete_url,
+            "skip_send": skip_send,
             "window_text": window_text(owner["values"]),
             "editor_mode": mode,
         }
@@ -496,11 +582,22 @@ def _dates_refused(values, owner, emails, rows):
     )
 
 
-def _review(owner, changes, *, new=True, blocking=0, series_notes=()):
+def _review(
+    owner,
+    changes,
+    *,
+    new=True,
+    blocking=0,
+    series_notes=(),
+    deleting=None,
+    skipped_send=None,
+):
     """The review dialog's fragment for ``changes`` (schedule-review.html).
 
     A New review adding one schedule that sends once is the view's
     confirmation (``_sends_once``, #1356), as the server draws it.
+    ``deleting`` is Edit's Delete's scope (#1656), and ``skipped_send`` the
+    digest send This email only skips (#1658).
     """
     reviewed = {
         "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
@@ -510,6 +607,8 @@ def _review(owner, changes, *, new=True, blocking=0, series_notes=()):
         "preview": None if blocking else "synthetic-preview",
         "new": new,
         "series_notes": series_notes,
+        "deleting": deleting,
+        "skipped_send": skipped_send,
     }
     return render_to_string(
         "stewardship/schedule-review.html",
@@ -613,14 +712,48 @@ def components(context, admin):
         REFUSED: _list(values, owner, emails, rows, delete_url=f"{REFUSED}/deletion"),
         FAILED: _list(values, owner, emails, rows, delete_url=f"{FAILED}/deletion"),
         CALENDAR: _calendar(values, owner, emails, rows),
+        **{month: _calendar(values, owner, emails, rows) for month in MONTHS},
+        **{
+            canonical(view): _calendar(values, owner, emails, rows, view)
+            for view in CALENDAR_VIEWS
+        },
         APPLIED: _status(values, "applied"),
         NOT_APPLIED: _status(values, "failed", failure_code="stale_base"),
         NEW: _entry(values, owner, emails, rows, post_url=f"{NEW}/review"),
+        ADD_ON: _entry(
+            values,
+            owner,
+            emails,
+            rows,
+            post_url=f"{NEW}/review",
+            on=ADD_DAY,
+            list_url=CALENDAR_OCTOBER,
+        ),
+        EDIT_FROM_CALENDAR: _entry(
+            values,
+            owner,
+            emails,
+            rows,
+            schedule_row=first,
+            post_url=f"{EDIT}/review",
+            list_url=CALENDAR_OCTOBER,
+        ),
         EDIT: _entry(
             values, owner, emails, rows, schedule_row=first, post_url=f"{EDIT}/review"
         ),
         EDIT_DIGEST: _entry(
             values, owner, emails, rows, schedule_row=digest, post_url=f"{EDIT}/review"
+        ),
+        EDIT_DIGEST_SEND: _entry(
+            values,
+            owner,
+            emails,
+            rows,
+            schedule_row=digest,
+            post_url=f"{EDIT}/review",
+            list_url=CALENDAR_OCTOBER,
+            delete_url=DIGEST_SKIP,
+            skip_send=send_of(digest["values"], owner["values"], SKIP_DAY),
         ),
         EDIT_EMAIL_REFUSED: _entry(
             values,
@@ -631,7 +764,13 @@ def components(context, admin):
             post_url=f"{EDIT_EMAIL_REFUSED}/review",
         ),
         EDIT_INITIAL: _entry(
-            values, owner, emails, rows, schedule_row=initial, post_url=f"{EDIT}/review"
+            values,
+            owner,
+            emails,
+            rows,
+            schedule_row=initial,
+            post_url=f"{EDIT}/review",
+            delete_url=INITIAL_DELETE,
         ),
         EDIT_CLOSED: _entry(
             values,
@@ -650,6 +789,7 @@ def components(context, admin):
             schedule_row=first,
             post_url=f"{EDIT_SERIES}/review",
             series=series,
+            delete_url=SERIES_DELETE,
         ),
         EDIT_SERIES_GATED: _entry(
             values,
@@ -766,6 +906,45 @@ def components(context, admin):
             outcome, first["values"]["date"], time(10, 30), changed_email=False
         ),
     )
+    # Edit's Delete (#1656): Reminder 1 removed, or its whole series, with
+    # the view's own line on the series.
+    removed = [
+        {
+            "label": "Reminder",
+            "operation": "remove",
+            "before": describe(row["values"], owner["values"]),
+            "after": None,
+            "impact": {"cancellable": 3, "occurrences": 1},
+        }
+        for row in reminders
+    ]
+    delete_review = _review(owner, removed[:1], new=False, deleting="this")
+    series_delete = _review(
+        owner,
+        removed,
+        new=False,
+        deleting="series",
+        series_notes=[SERIES_DELETED % {"rule": rule_text(SERIES_RULE)}],
+    )
+    # This email only (#1658): the weekly digest skips its October 12 send.
+    skip_send = send_of(digest["values"], owner["values"], SKIP_DAY)
+    skip_review = _review(
+        owner,
+        [
+            {
+                "label": "Weekly Admin digest",
+                "operation": "update",
+                "before": describe(digest["values"], owner["values"]),
+                "after": describe(
+                    digest["values"] | {"skip_dates": [SKIP_DAY]}, owner["values"]
+                ),
+                "impact": {},
+            }
+        ],
+        new=False,
+        deleting="send",
+        skipped_send={"key": SKIP_DAY, "due_at": skip_send.due_at.isoformat()},
+    )
     blocked = _review(
         owner,
         [
@@ -800,7 +979,36 @@ def components(context, admin):
             ),
             f"{FAILED}/deletion": (303, NOT_APPLIED, ""),
             f"{NEW}/review": (200, None, review),
+            EDIT_DELETE: (200, None, delete_review),
+            SERIES_DELETE: (200, None, series_delete),
+            DIGEST_SKIP: (200, None, skip_review),
+            INITIAL_DELETE: (
+                400,
+                None,
+                json.dumps(
+                    {
+                        "errors": [{"code": "invalid"}],
+                        "refusal": {
+                            "message": REFUSAL,
+                            "fix": "Nothing was deleted. Change the other "
+                            "schedules first, then try again.",
+                            "link": None,
+                        },
+                    }
+                ),
+            ),
             f"{EDIT}/review": (200, None, edit_review),
+            # The calendar's Move… of each reminder (#1521), at its Edit page.
+            reverse("admin:schedule_edit", args=[reminders[0]["id"]]): (
+                200,
+                None,
+                edit_review,
+            ),
+            reverse("admin:schedule_edit", args=[reminders[1]["id"]]): (
+                400,
+                None,
+                _invalid(values, owner, emails, rows),
+            ),
             f"{EDIT_SERIES}/review": (200, None, series_review),
             f"{EDIT_PASSED}/review": (200, None, edit_review),
             APPLY_PASSED: (

@@ -109,7 +109,8 @@ and exits 2. Each command prints exactly one JSON document (schema
 (`logs export`, see [System logs](#system-logs), `export census`, see
 [Census changes download](#census-changes-download), `export limitations`,
 see [Limitations download](#limitations-download), `export roster`, see
-[Roster changes download](#roster-changes-download), and `export download`, see
+[Roster changes download](#roster-changes-download), `followup export`, see
+[Ministry follow-up download](#ministry-follow-up-download), and `export download`, see
 [report exports](#report-exports)), whose document goes to standard error; warnings, such as a session with less than
 72 hours left, and structured logs go to standard error. The document's
 fields, the exit codes and the error codes are in the specification's
@@ -184,8 +185,8 @@ These read what the matching Admin page shows, as counts, states,
 identifiers and UTC instants only: no Family names, email addresses, codes
 or other personal data. A read-only session can run every one of them. Each
 records the same view event in System logs as its page (`status` the home
-page's, `task list` and `task show` Background work's, `send progress` and
-`send history` Outgoing mail's, `system health` System health's);
+page's, `task list` and `task show` Background work's, `mail queue` and
+`send history` Sent mail's, `system health` System health's);
 `schedule show`, `go-live readiness` and `go-live progress` record none,
 like their pages. `system health` needs an Administrator's session, as its
 page does.
@@ -194,7 +195,7 @@ page does.
 pk-admin status
 pk-admin task list --state failed --size 20
 pk-admin task show TASK_ID --watch 5
-pk-admin send progress --watch 10
+pk-admin mail queue --watch 10
 pk-admin send history
 pk-admin schedule show
 pk-admin go-live readiness
@@ -222,7 +223,7 @@ your roles would not show on the page is `null`.
 | `ministry_catalog` | Counts of recent catalog `refreshes`, `missing` and `retired` Ministries |
 | `security_events`, `automation_notices` | How many are unacknowledged for you |
 | `recent_failures` | Tasks failed in the last day: `id`, `type`, `updated_at` |
-| `tasks` | Background work counts by state, `active`, and `delivery_unknown` |
+| `tasks` | Background work counts by state, `active`, `delivery_unknown` (uncertain campaign emails in both modes, archived campaigns too), and the status bar's two Not sure it arrived — review needed counts: `delivery_review` in the operating `mode` and `delivery_review_other` in the other mode (each what Sent mail lists for `--state needs_review` in that mode) |
 | `presence` | `count`: Families on the portal now |
 
 ### `task list` and `task show TASK_ID`
@@ -235,13 +236,20 @@ your roles would not show on the page is `null`.
 | `tasks` or `task` | Each task's `id`, `root_id`, `parent_id`, `retry_sequence`, `type`, `state`, `action`, `version`, `attempt`, `initiator_id`, `progress` (`phase`, `current`, `total`, `percent`), its instants and `active` |
 | `latest_run_id`, `events` | `task show` only: the newest retry, and the history (`version`, `at`, `action`, `state`, `attempt`, `progress`) |
 
-### `send progress` and `send history`
+### `mail queue` and `send history`
+
+`mail queue` reads the Mail queue page: every email waiting to go out, of
+every kind, and the Family send in progress. It replaced `send progress`
+(#1562).
 
 | Field | What it holds |
 | --- | --- |
-| `campaign_id` | The current campaign |
-| `mode`, `paused`, `upcoming` | `send progress` only: the mode, whether delivery is paused, and whether a Production send is about to start |
-| `send` | `send progress` only: the send in progress or the latest, or `null` |
+| `campaign_id` | The current campaign, or `null` |
+| `mode`, `paused`, `upcoming` | `mail queue` only: the operating mode, whether delivery is paused, and whether a Production send is about to start |
+| `counts` | `mail queue` only: the operating mode's queued emails as `queued`, `sending`, `retry_wait` and `paused` |
+| `other_mode_queued` | `mail queue` only: how many emails of the other mode are queued (never added to `counts`) |
+| `kinds` | `mail queue` only: one row per kind (`purpose`, as Sent mail's `--purpose` names it) with the same four counts |
+| `send` | `mail queue` only: the Family send in progress or the latest, or `null` |
 | `page`, `pages`, `count`, `size`, `sends` | `send history` only: one page of sends, newest first |
 
 Each send has `kind`, `active`, `paused`, `stalled`, `held`, `total`,
@@ -249,7 +257,7 @@ Each send has `kind`, `active`, `paused`, `stalled`, `held`, `total`,
 `unprepared`, `unplanned`, `waiting`, `unreachable` and `not_needed`,
 `rate_per_minute`, `started_at`, `last_settled_at`, `finished_at`,
 `finish_at` and `minutes_left`. In `send history` each also has `send` (the
-value Outgoing mail's send filter takes), `number`, `mode`, `cycle`,
+value Sent mail's send filter takes), `number`, `mode`, `cycle`,
 `scheduled_at`, `replaced`, `current`, `earlier`, `live`, `cancelled` and
 `minutes`.
 
@@ -272,19 +280,19 @@ background work holds while mail is being sent, is exit 1
 ### `go-live readiness` and `go-live progress`
 
 These matter again for the next campaign. Both read the current campaign
-unless `--campaign UUID` names another. Starting cleanup, the public web
-address check, preparing links, confirming Production and withdrawing stay
-on the pages until ADM-11 PR 12.
+unless `--campaign UUID` names another. The
+[Go live page's](../specs/stewardship/admin-portal/spec.md#go-live-page)
+actions follow in [Going live](#going-live).
 
-`go-live readiness` is the Go-live readiness page's preview of the current
-Testing draft, without its public web address check:
+`go-live readiness` is the Go live page's Check step: its preview of the
+current Testing draft, without its public web address check:
 
 | Field | What it holds |
 | --- | --- |
 | `campaign_id`, `observed_at`, `target_state` | The draft, when it was read, and what confirming would make it (`scheduled`, `active` or `closed`) |
 | `checks_passed`, `problems` | Whether the settings and data checks passed, and the codes of those that did not (for example `full_refresh_required`, `family_test_mail_required`), which the page explains in words |
 | `family_templates` | The selected Family mail templates, by record id |
-| `source` | The full ParishSoft refresh the preview relies on: `state` (`ready` or why not), `current_id`, `full_id`, `observed_at`, `expires_at` |
+| `source` | The full ParishSoft refresh the preview relies on: `state` (`ready` or why not; `full_refresh_stale` does not block, since Start go-live queues its own refresh), `current_id`, `full_id`, `observed_at`, `expires_at` |
 | `families` | Family mail impact counts: `families`, `active`, `eligible` and `not_eligible` (with and without an eligible email address), `deliverable`, `messages` due at once, `coalesced_slots`, `skipped_slots`, `blocked_families` |
 | `admin_reports` | Admin report mail impact counts: `daily_messages`, `weekly_messages`, `coalesced_slots`, `empty_weekly_reports`, `blocked_groups` |
 | `cleanup` | The Testing data cleanup would delete: `submissions`, `families`, `messages`, `unresolved`, `total`, `inventory` (`category`, `count`) and `message_states` (`state`, `count`) |
@@ -293,8 +301,9 @@ Testing draft, without its public web address check:
 | `version` | Changes whenever anything the preview counts changes |
 
 The Admin report recipients and the Testing Families are not shown; the
-Testing Families list is an export (PR 12). A campaign that is not the
-current Testing draft is exit 1 (`stale_version`), as on the page.
+Testing Families list is `go-live families`, a streamed file. A campaign
+that is not the current Testing draft is exit 1 (`stale_version`), as on
+the page.
 
 `go-live progress` is the Production activation page:
 
@@ -302,14 +311,106 @@ current Testing draft is exit 1 (`stale_version`), as on the page.
 | --- | --- |
 | `campaign_id`, `campaign_state` | The campaign and its state (`scheduled`, `active` or `closed`) |
 | `confirmation_id`, `confirmed_at` | The Production confirmation |
-| `withdrawal_available` | Whether the page offers withdrawal (before the start only) |
-| `preparation` | The initial mail preparation, or `null` when the campaign was confirmed before its start and has none: `complete`, `task_id` (follow it with `task show`), `task_state`, `updated_at`, `phase`, `items_completed`, `groups_completed`, `failure` (a stored code, or `null`) and `retry_available` (the page offers **Retry failed mail preparation**) |
+| `withdrawal_available` | Whether the page offers Cancel go-live (before the start only) |
+| `preparation` | The initial mail preparation, or `null` when the campaign was confirmed before its start and has none: `complete`, `task_id` (follow it with `task show`), `task_state`, `updated_at`, `phase`, `items_completed`, `groups_completed`, `failure` (a stored code, or `null`) and `retry_available` (the page offers mail preparation's **Retry**) |
 | `outcomes` | Each count the confirmation previewed, by `key` (`family_messages`, `daily_messages`, `weekly_messages`, `coalesced_slots`, `active_families`, `eligible_families`, `no_email_families`): `preview`, `actual`, `difference`, and `complete` once that count is final |
 
 A campaign that is not the current Production campaign, a Testing draft
 included, is exit 1 (`denied`), as on the page; the current Production
-campaign with no confirmation receipt is exit 1 (`not_available`). Retrying
-failed preparation stays on the page until PR 12.
+campaign with no confirmation receipt is exit 1 (`not_available`).
+
+### Going live
+
+The [Go live page's](../specs/stewardship/admin-portal/spec.md#go-live-page)
+actions (ADM-11 PR 12,
+[#1809](https://github.com/epiphany40223/parishkit/issues/1809)), on the
+current campaign, in the order of the
+[launch runbook's Production activation](stewardship-launch-runbooks.md#production-activation):
+
+```sh
+pk-admin go-live preview                  # Check readiness and public web address
+pk-admin go-live families > testing.csv   # the Testing submissions list
+pk-admin go-live start --token TOKEN      # Start go-live (prompts)
+pk-admin go-live status --watch 30        # the Prepare step
+pk-admin go-live retry                    # a failed part's Retry
+pk-admin go-live refresh-again            # Refresh and prepare again (prompts)
+pk-admin go-live stop                     # Stop go-live (prompts)
+pk-admin go-live confirm-preview          # Confirm Production's review
+pk-admin go-live confirm --token TOKEN    # Confirm Production (type Production)
+pk-admin go-live progress --watch 30      # Production activation
+pk-admin go-live cancel-preview --reason "Dates changed"
+pk-admin go-live cancel --token TOKEN     # Cancel go-live (prompts)
+```
+
+Every action needs a full-scope session; `go-live status` and `go-live
+families` also run on a read-only one. Each runs the page's own code, so
+the page's rules and server checks apply unchanged. A preview's token
+records what it showed; its confirming command builds everything again
+and refuses with exit 1 (`stale_version`) when anything it showed changed,
+so a token never expires by age alone. Exit 1 `stale_version` also means
+the step is not where the action needs it (go-live already stopped, the
+links being prepared again, Production already confirmed, the public web
+address check failing): read `go-live status` or `go-live progress` and
+act again. An exact repeat of `start`, `confirm` or `cancel` with the same
+token does nothing new and says so (`created` false); a repeated `start`
+asks nothing, while `confirm` and `cancel` ask again first. Another
+Administrator's token is exit 1 (`denied`) before any prompt.
+
+- `go-live preview` runs the public web address check, then reads readiness.
+  It prints `campaign_id`, `origin_verified`, `startable`, `readiness` (the
+  `go-live readiness` document) and `preview.token` (null unless
+  `startable`), the token `go-live start` takes.
+- `go-live start --token TOKEN` is Start go-live: typing `yes` (or
+  `--yes`) acknowledges that Testing data is deleted and cannot be
+  restored, and that Testing links and codes stop working now. It runs the
+  public web address check again first. It prints `created`, `request_id`
+  and `status` (the `go-live status` document). It notifies the
+  Administrators that an automation session took an irreversible action.
+- `go-live status` is the Prepare step: `state` (`running`, `failed`,
+  `again`, `ready`, `closed`, `stopped`, `not_started` or `confirmed`),
+  `reason`, `request_id`, the three `boxes` (`cleanup`, `refresh`,
+  `links`, each with its `state`), `done`, `total`, `preparation`,
+  `max_preparations`, `prepared_id`, `failed_at`, `stop_kind`,
+  `stopped_by_other`, which actions the page offers (`retry_available`,
+  `again_available`, `stop_available`, `confirm_available`) and
+  `stopping` (a stop still running or failed on Check, else `null`).
+  `--watch` stops once the state is no longer `running` and no stop is
+  still `stopping`.
+- `go-live retry` retries the failed part the current step offers a Retry
+  for: mail preparation on Production activation, a failed box on Prepare,
+  or a failed stop on Check. It changes no data and does not prompt.
+  Nothing failed is exit 1 (`not_available`). It prints `step`, `retried`
+  and `status`.
+- `go-live refresh-again` and `go-live stop` are Refresh and prepare again
+  and Stop go-live. Each prompts with the page's words and prints
+  `status`; `refresh-again` also prints `attempt`.
+- `go-live confirm-preview` is Confirm Production's review: `request_id`,
+  `preparation_id`, `target_state` (`active`: go live now; `scheduled`:
+  schedule the campaign), `starts_at`, `start_passed`, `reprepared`, the
+  `counts` the
+  confirmation binds and `preview.token`.
+- `go-live confirm --token TOKEN` asks you to type `Production` (or take
+  `--yes`), runs the public web address check again, rebuilds the preview
+  and confirms only if nothing changed (emails that fell due since the
+  review change the counts). It prints `created`, `confirmation_id`,
+  `target_state` and `progress` (the `go-live progress` document), and
+  notifies the Administrators of an irreversible action.
+- `go-live cancel-preview --reason TEXT` (or `--reason -` to read it from
+  standard input) is Cancel go-live's review, before the campaign starts:
+  `confirmation_id`, `reason`, `inventory` (`occurrences`, `cancellable`,
+  `messages`, `failed`, `delivered`, `blocking`), `cancellable` and
+  `preview.token` (null while mail blocks it: resolve that mail first).
+- `go-live cancel --token TOKEN` prompts, rebuilds the cancellation and
+  cancels only if nothing changed. It prints `created`, `withdrawal_id`
+  and `campaign_id`, and notifies the Administrators of an irreversible
+  action. The campaign is a Testing draft again.
+- `go-live families` writes the Testing submissions list (`duid`, `name`,
+  by DUID) as CSV to standard output, and its document (`campaign_id`,
+  `count`, `file_name`, `content_type`, `size`, `sha256`) to standard
+  error. It holds Family names: keep the file private.
+
+Each action records `admin_cmd_go_live_<verb>` in System logs beside the
+page's own events.
 
 ### `system health`
 
@@ -322,7 +423,8 @@ the page may split between two tiles, so its `severity` is the worse of
 the two), the
 `processes` with their state, version and mail sender state,
 `missing_services`, `versions`, `schema_current`, the reasons Family email
-waits (`delivery_paused`, `planning_held`, `retry_waiting`), the 24-hour
+waits (`delivery_paused`, `planning_held`, `retry_waiting` in the
+operating `mode` and `retry_waiting_other` in the other mode), the 24-hour
 send count `daily_sent`, the `daily_limit` Family email stops at and
 `daily_resume_at`, when that count falls below the limit again (null while
 it is below), the open `incidents`, the ParishSoft `refresh` outcome, a refused load's
@@ -338,15 +440,16 @@ accepted a change, and the page's sentences, are not in it.
 
 System health's **Take a backup now**. It needs a full-scope session and
 always prompts (or takes `--yes`), showing the page's preview: when the
-last backup finished and its size, whether it will also be copied
-off-site, that it follows the usual retention, and that it waits while a
-Family email send is in progress. It is refused (exit 1, `stale_version`) while a
-request is waiting or running or a restore is under review. The session
-stands in for the page's recent sign-in. `--request-key UUID` (a version 4
-UUID, written to standard error when not given) names the request, so a
-repeat returns the first one (`created` false). It prints `request_id`,
-`created`, `status` (as the Backups panel words it; `waiting` until the
-server's five-minute check picks it up) and `created_at`, and records
+last backup finished and its size, whether it will also be copied off-site,
+that it follows the usual retention, and that it waits while a Family email
+send is in progress. It is refused (exit 1, `stale_version`) while a
+request is waiting or running or a restore is under review. It is a
+privileged ([fresh-gated](#confirmations)) action, so System logs record
+`automation_fresh_gate` beside it. `--request-key UUID` (a version 4 UUID,
+written to standard error when not given) names the request, so a repeat
+returns the first one (`created` false). It prints `request_id`, `created`,
+`status` (as the Backups panel words it; `waiting` until the server's
+five-minute check picks it up) and `created_at`, and records
 `backup_requested` and `admin_cmd_system_backup_now`. Follow it with
 `system health --watch 60` (`backup_request`).
 
@@ -373,14 +476,15 @@ newest refusal cannot be accepted: none is shown, it was accepted already
 
 `system refresh-accept --token TOKEN` accepts that refusal. It always
 prompts (or takes `--yes`) with the counts that fell too far and the page's
-tick box, "I checked this in ParishSoft, and the change is real". The
-session stands in for the page's recent sign-in. It records the acceptance
-(the token's key names it, so a repeat returns the first, `created` false),
-asks for a full refresh as **Refresh now** does, and records
-`source_drop_accepted` and `admin_cmd_system_refresh_accept`. Like the
-page, it also acknowledges that refusal's own entry in the critical-problems
-banner (`critical_events_acknowledged`, with the acceptance as its subject),
-so `events list` no longer lists it; other entries stay. It prints
+tick box, "I checked this in ParishSoft, and the change is real". It is a
+privileged ([fresh-gated](#confirmations)) action, so System logs record
+`automation_fresh_gate` beside it. It records the acceptance (the token's
+key names it, so a repeat returns the first, `created` false), asks for a
+full refresh as **Refresh now** does, and records `source_drop_accepted`
+and `admin_cmd_system_refresh_accept`. Like the page, it also acknowledges
+that refusal's own entry in the critical-problems banner
+(`critical_events_acknowledged`, with the acceptance as its subject), so
+`events list` no longer lists it; other entries stay. It prints
 `acceptance_id`, `created`, `created_at`, `expires_at`, `live` and
 `task_root_id` (the requested full refresh's root task, or null when it
 could not be requested; the next full refresh uses the acceptance anyway).
@@ -398,19 +502,20 @@ pk-admin system refresh-accept --token TOKEN
 ### `system debug-off`
 
 System health's **Turn off debug logging**: it sets the debug-off switch,
-which turns debug logging off in every service within about a minute,
-until the server operator clears it offline (`pk-stewardship
-debug-off-clear`, in the
-[deployment runbook](stewardship-deployment-runbook.md#turn-off-debug-logging-530)).
-It needs a full-scope session and always prompts (or takes `--yes`),
-showing the page's preview: the services with debug logging on, that lines
-already written stay in the logs, that the server's setting still says on,
-and that only the server operator clears the switch. It is refused (exit 1,
-`stale_version`) while the switch is set. The session stands in for the
-page's recent sign-in. `--request-key UUID` (a version 4 UUID, written to
-standard error when not given) names the switch, so a repeat returns the
-first one (`created` false). It prints `switch_id`, `created`, `set_at`
-and `active` (whether that switch is still set), and records
+which turns debug logging off in every service within about a minute, until
+the server operator clears it offline (`pk-stewardship debug-off-clear`, in
+the [deployment
+runbook](stewardship-deployment-runbook.md#turn-off-debug-logging-530)). It
+needs a full-scope session and always prompts (or takes `--yes`), showing
+the page's preview: the services with debug logging on, that lines already
+written stay in the logs, that the server's setting still says on, and that
+only the server operator clears the switch. It is refused (exit 1,
+`stale_version`) while the switch is set. It is a privileged
+([fresh-gated](#confirmations)) action, so System logs record
+`automation_fresh_gate` beside it. `--request-key UUID` (a version 4 UUID,
+written to standard error when not given) names the switch, so a repeat
+returns the first one (`created` false). It prints `switch_id`, `created`,
+`set_at` and `active` (whether that switch is still set), and records
 `debug_logging_turned_off` and `admin_cmd_system_debug_off`. Follow it with
 `system health --watch 60` (each process's `debug_logging`).
 
@@ -425,12 +530,13 @@ the debug-off switch, so services started with `PARISHKIT_DEBUG_LOGGING=1`
 log in debug form again within about a minute. It needs a full-scope
 session and always prompts (or takes `--yes`), showing the page's preview:
 when the switch was set, and that it never turns debug logging on in a
-service started without it. It is refused (exit 1, `denied`) in
-Production, where only the server operator clears the switch, and (exit
-1, `stale_version`) while no switch is set. The session stands in for the
-page's recent sign-in. `--switch UUID` names the switch to clear (by
-default the one set now), so a repeat naming a switch you already cleared
-returns it (`created` false). It prints `switch_id`, `created` and
+service started without it. It is refused (exit 1, `denied`) in Production,
+where only the server operator clears the switch, and (exit 1,
+`stale_version`) while no switch is set. It is a privileged
+([fresh-gated](#confirmations)) action, so System logs record
+`automation_fresh_gate` beside it. `--switch UUID` names the switch to
+clear (by default the one set now), so a repeat naming a switch you already
+cleared returns it (`created` false). It prints `switch_id`, `created` and
 `cleared_at`, and records `debug_logging_allowed` and
 `admin_cmd_system_debug_allow`.
 
@@ -438,12 +544,58 @@ returns it (`created` false). It prints `switch_id`, `created` and
 pk-admin system debug-allow
 ```
 
+### `system mail-clear-preview` and `system mail-clear`
+
+System health's **Clear the halt**, in the Mail tile,
+for a mail sender halted by a fault that waiting cannot fix, once the
+cause is fixed (the
+[mail-provider outage runbook](stewardship-launch-runbooks.md#mail-provider-outage)
+describes when). Both need a full-scope session; neither needs a recent
+sign-in.
+
+`system mail-clear-preview` asks the mail sender to check that the
+mailbox still signs in (unless a check is already running, or one passed
+in the last five minutes), waits for it (at most two minutes; `--no-wait`
+prints at once), and prints `halt` (`halt_id`, `kind`: `before_data` or
+`after_data`, `began_at`), `mailbox_check` (`status`: `waiting`, `running`,
+`passed`, `refused`, `unavailable` or `unanswered`), `waiting` (emails
+waiting to be sent), `unsettled` and `unsettled_ids` (emails in
+`delivery_unknown`, which must be settled first, as `delivery resolve`
+does), `delivery_paused`, `reason` (why the halt cannot be cleared now:
+`checking`, `check_failed`, `check_needed`, `unsettled`; null when it can)
+and `preview.token`, the signed binding, valid for 15 minutes and for this
+Administrator only (null with a reason). It records no audit event. It is
+refused (exit 1, `stale_version`) while no mail sender is halted, or its
+halt is not recorded yet (within about 30 seconds of the halt).
+
+`system mail-clear --token TOKEN` clears that halt. It always prompts (or
+takes `--yes`) with what clearing does. It records the clear signal (the
+token's key names it, so a repeat returns the first, `created` false) and
+`mail_halt_cleared` with `admin_cmd_system_mail_clear`. Like the page,
+it also acknowledges the halt's own entries in the critical-problems banner
+that the preview saw (`critical_events_acknowledged`, with the clear signal
+as its subject). It prints
+`clear_id`, `halt_id`, `created` and `created_at`. Both mail senders act on
+it within about 30 seconds and send one probe email per consumer (so up to
+two); if the fault is still there, sending halts again under a new halt. A halt that changed
+since the preview, an expired token, a mailbox check that no longer
+allows it or an email that became `delivery_unknown` is exit 1,
+`stale_version`: review again. With `--token -` the token is read from
+standard input, so add `--yes`. Follow it with `system health --watch 60`
+(the mail senders).
+
+```text
+pk-admin system mail-clear-preview
+pk-admin system mail-clear --token TOKEN
+```
+
 ### Watching and errors
 
-`--watch SECONDS` (2 to 300) on `task show`, `send progress`,
+`--watch SECONDS` (2 to 300) on `task show`, `mail queue`,
 `go-live progress` and `system health` prints one document per poll,
 `final` false until the last. It stops with exit 0 once the task has
-finished, once no send is in progress or about to start, once System
+finished, once nothing is queued and no send is in progress or about to
+start, once System
 health lists no problem except those waiting cannot clear (off-site copies
 not set up, `offsite_missing`, and a requested backup that failed, did not
 finish or was never picked up, `backup_request_failed`: the
@@ -457,8 +609,8 @@ Ctrl-C (or TERM, or a closed terminal or SSH session) stops the watch inside
 the web container too: `pk-admin` sends it SIGINT there, waits up to 10
 seconds for that stop and reports it if it fails or finds no watch, shows
 the watch's last document (`watch_interrupted`, the last state) if it
-arrives within 5 seconds (after Ctrl-C only), and exits 130 (143 for
-TERM, 129 for HUP). A second Ctrl-C meanwhile changes nothing. On a host
+arrives within 5 seconds (after Ctrl-C only), and exits 130 (131 for
+QUIT, Ctrl-\, 143 for TERM, 129 for HUP). A second Ctrl-C meanwhile changes nothing. On a host
 without util-linux `setsid -w`, Ctrl-C also ends the docker client at once,
 so the watch still stops but its last document is not shown, and a second
 Ctrl-C can cut the stop off. If the stop fails, the watch runs until its timeout
@@ -481,8 +633,8 @@ covers each Admin page, or why none does yet.
 they may still change, the campaign dates (for a live campaign, its end date
 alone), through the same review and confirmation as the Dates and mail
 schedules page. Both need a full-scope session.
-Neither asks for a fresh Google sign-in or a confirmation at the prompt,
-because the page asks for neither. `config request show` follows the
+Neither asks for a confirmation at the prompt, because the page asks for
+none. `config request show` follows the
 resulting change; any session may run it.
 
 ```sh
@@ -542,7 +694,7 @@ The document is JSON with two optional members:
 
 | Entry | Members |
 | --- | --- |
-| Change a saved schedule | `id` (from `schedule show`) and any of `date`, `time` and `weekday` (in the campaign's time zone, as for adding one), `template_version` and, for a daily digest, `comparison` (`true` or `false`: whether it includes Compared with past campaigns). Members you leave out keep their values. Its `kind` cannot change, so it may not be given. |
+| Change a saved schedule | `id` (from `schedule show`) and any of `date`, `time` and `weekday` (in the campaign's time zone, as for adding one), `template_version` and, for a daily digest, `comparison` (`true` or `false`: whether it includes Compared with past campaigns). For a daily or weekly digest, `skip` (one `YYYY-MM-DD` slot date, as `schedule show` lists its `resolved` keys) skips just that send, as Edit's Delete with This email only does; the send must still be ahead and have no Production work yet, and `schedule show` then lists it in `skip_dates`. A `skip` cannot be combined with `date`, `time` or `weekday` in the same entry (exit 1, `invalid`): skip the send and change the digest in separate changes. A change to a digest's `weekday`, or to the campaign's dates, drops each of its skips of a send still ahead that is no longer a send; past skips stay. Members you leave out keep their values. Its `kind` cannot change, so it may not be given. |
 | Remove a saved schedule | `id` and `"delete": true`, nothing else. |
 | Add a schedule | `kind` (`initial`, `reminder`, `daily_digest` or `weekly_digest`) and the members its kind needs: `date` for `initial` and `reminder`, `weekday` (0 is Monday) for `weekly_digest`, and `time` (in the campaign's time zone, or in the new one when `window` changes `timezone` in the same document; the Admin portal takes times in your computer's zone instead) and `template_version` for all. A `daily_digest` may add `"comparison": true`; it is off without it. A `time` may be written in any form the page accepts, such as `09:00:00`, `9:00`, `9am` or `21:00`, and is stored as `HH:MM:SS`. |
 | Add repeating reminders | `repeat` (the rule below), `time` and `template_version`, as for one reminder, and nothing else. It adds one ordinary reminder per date the rule gives, as if you listed each one. Every date must fit: unlike the page, which leaves out a date that does not fit, the command refuses the whole change. A problem with one date alone, such as a date after the campaign closes, names that date; a conflict between schedules, such as a date at the same moment as a saved reminder or not after the initial invitation, comes back as a plain `schedules` error, as for reminders listed one by one. A rule that gives no dates or more than 30, or skips a month, is exit 1 (`invalid`). The rule itself is not saved unless you add `"remember": true`, which also saves it as a reminder series holding exactly the reminders this repeat adds, so later changes can treat them as one. The reminders are the same either way, and they send as ordinary reminders. |
@@ -731,8 +883,8 @@ Repeating it with the same `--request-key` returns the same export; System
 logs show `export_requested` and `admin_cmd_export_family_test_names`. `test
 families` always shows the page's words, "I understand that these real
 Families' names and codes will be sent to the Testing recipient.", and
-waits for `yes` (or takes `--yes`). The session stands in for the page's
-recent Google sign-in, so the dashboard shows an automation notice and
+waits for `yes` (or takes `--yes`). It is a privileged action, so the
+dashboard shows an automation notice and
 System logs show `automation_fresh_gate` with `admin_cmd_test_families`. A
 token made on the page works here and the other way round; sending it again
 sends nothing more. An old preview, a Family that can no longer be tested,
@@ -765,8 +917,8 @@ before any prompt. Leave out personal details: the note is also kept in
 System logs. `set` always shows what it is about to do, including the
 page's reminders (wait about 10 seconds after closing before changing
 data; closing does not stop email), and waits for `yes` (or takes
-`--yes`). The session stands in for the page's recent Google sign-in, so
-the dashboard shows an automation notice, and System logs show
+`--yes`). It is a privileged action, so the dashboard shows an automation
+notice, and System logs show
 `automation_fresh_gate` and `admin_cmd_portal_maintenance_set` beside the
 page's own `family_maintenance_started` or `family_maintenance_ended`. The
 result is the new state, as `show` prints it. Asking for the state the
@@ -835,9 +987,8 @@ and `preview.token`.
 
 `send confirm --token TOKEN` is the preview's Confirm button. The token is
 the page's own and lasts five minutes, so a preview made on the page
-confirms here and the other way round. Like the page's button it needs a
-recent sign-in, which a full-scope session stands in for, so it always
-asks, naming the action, the reason, the counts and the page's own caution
+confirms here and the other way round. It is a privileged action and needs
+a full-scope session, so it always asks, naming the action, the reason, the counts and the page's own caution
 (for a resolution, each type's follow-up coverage too); `--yes` answers,
 and `--token -` (standard input) needs it. The page then checks everything
 again, as it does for its own button, and records the control. System logs
@@ -885,8 +1036,7 @@ configured) is exit 3 (`unavailable`). Uploading files stays on the page
 for now.
 
 `files delete` and `files rename` are the page's **Delete** and **Edit**.
-Each needs a full-scope session and an Administrator, and, like the page,
-no recent sign-in. Each works only on a file that nothing uses: a file in
+Each needs a full-scope session and an Administrator. Each works only on a file that nothing uses: a file in
 use is exit 1 (`invalid`), with `error.fields` naming where it is used, in
 the page's words, and nothing changes.
 
@@ -934,10 +1084,10 @@ configuration's version) and, in the page's order, `pages` and `emails`:
 | --- | --- |
 | `pages[].slot`, `emails[].slot` | The page or mail type, such as `welcome` or `reminder` |
 | `pages[].name`, `emails[].name` | Its name on the page, such as "Family welcome" |
-| `pages[].state` | `empty`, `default` (the default text) or `custom` |
+| `pages[].state` | `empty`, `default` (the default text) or `edited` (the page's Edited) |
 | `emails[].scheduled` | Whether schedules send this mail type (invitations and reminders) |
 | `emails[].singleton` | The confirmation email, which has exactly one text |
-| `emails[].revisions` | Its emails: `id`, `subject`, `excerpt` (the start of its text), `used_by` (the schedules that send it, named as on Dates and mail schedules), `deletable`, `state` (`default` or `custom`) and `resave` |
+| `emails[].revisions` | Its emails: `id`, `subject`, `excerpt` (the start of its text), `used_by` (the schedules that send it, named as on Dates and mail schedules), `deletable`, `state` (`default` or `edited`) and `resave` |
 | `resave` | Null, or the page's re-save notice: `removed` (markup today's cleaning drops), `lost` (placeholders only that markup held) and `blocked` (the page's "Can't be sent until fixed") |
 
 A confirmation email that is only a retired closing note has a null `id`,
@@ -1199,6 +1349,54 @@ request, plus what the page records: `campaign_end_date_requested` for an
 end date, `campaign_ministries_requested` for Ministries. Repeating it
 with the same token returns the same request.
 
+## Create the campaign
+
+`campaign create-preview` and `campaign create` are **Create the
+campaign**'s **Create the campaign and continue** review and the review
+dialog's **Apply**: they add the deployment's first campaign as a
+Testing-mode draft, with the default text for each of its pages and
+emails. They need an Administrator and a full-scope session. They work
+only while there is no campaign yet, the system is in Testing mode and
+ParishSoft data has been loaded, as the page does; after that, change the
+campaign with `campaign preview` ([Campaign settings](#campaign-settings)).
+
+`--changes` is a JSON document shaped like `campaign show`'s `settings`.
+A setting it leaves out takes the value the page's form starts with: the
+parish's time zone, Census and Additional information ticked, the default
+Ministry leader roles, and everything else blank, so give at least
+`name`, `start_date` and `end_date`. `--expected-version` is the
+configuration version `parish show` prints. Nothing changes until
+`campaign create`.
+
+```sh
+VERSION=$(pk-admin parish show | jq -r .result.version)
+pk-admin campaign create-preview --expected-version "$VERSION" \
+    --changes '{"campaign": {"name": "Stewardship 2028",
+      "start_date": "2027-10-01", "end_date": "2027-11-30",
+      "ministry": false}}' |
+  jq -r .result.preview.token | pk-admin campaign create --token -
+```
+
+| Field | What it holds |
+| --- | --- |
+| `version` (`campaign create-preview`) | The version the new campaign was reviewed against |
+| `settings` | Every setting as it was reviewed: the document over the form's starting values |
+| `content` | How many pages and emails the campaign starts with, in the default text |
+| `preview.token` | What `campaign create --token` takes, valid for fifteen minutes |
+| `created`, `request` (`campaign create`) | As `parish confirm` prints them; follow the change with `config request show --watch` |
+
+Once the request is applied, load the campaign's Families with `refresh
+start`, as the page's status offers. A value the page refuses is exit 1
+(`invalid`), naming the setting (`campaign.<field>`). A version that is
+no longer current, or an expired token, is exit 1 (`stale_version`). Once
+a campaign exists, or before ParishSoft data is loaded, each command is
+exit 1 (`not_available`). `campaign create` records
+`admin_cmd_campaign_create` in System logs with the request; repeating it
+with the same token returns the same request, even after the campaign
+exists. Copying a campaign has no command: Copy campaign is retired until
+the single-campaign change
+([#145](https://github.com/epiphany40223/parishkit/issues/145)).
+
 ## Parish, Ministry, logo and Share option settings
 
 `parish show`, `ministries list`, `branding show` and `campaign shares`
@@ -1208,8 +1406,9 @@ session of any scope may run them, and they record nothing in System
 logs, as opening the pages records nothing. Each prints `version`, the
 applied configuration's version. Changing the parish profile is
 `parish preview` and `parish confirm`, and changing Share options is
-`campaign shares-preview` and `campaign shares-confirm` (both below);
-uploading logos stays on the page for now.
+`campaign shares-preview` and `campaign shares-confirm` (both below),
+and changing the logos is `branding preview` and `branding confirm`
+([Parish logos](#parish-logos)).
 
 ```sh
 pk-admin parish show
@@ -1236,8 +1435,8 @@ organization, the page cannot show a catalog and `ministries list` is
 exit 3 (`unavailable`). Unlike the Share options page, which only edits
 and refuses a locked campaign, `campaign shares` reads a live or ended
 campaign's options too, with `editable` false. With no current campaign,
-or an unknown one, `campaign shares` is exit 1 (`not_available`). Logo
-images stay on the page.
+or an unknown one, `campaign shares` is exit 1 (`not_available`).
+`branding show` prints the logos' stored facts, never their images.
 
 `parish preview` and `parish confirm` are the Parish settings page's
 **Review** and **Apply**, as `schedule preview` and `schedule confirm` are
@@ -1314,6 +1513,51 @@ unknown one for `campaign shares-preview`, is exit 1 (`not_available`).
 with the request; repeating it with the same token returns the same
 request.
 
+## Parish logos
+
+`branding preview` and `branding confirm` are the **Parish logos** page's
+upload, with its review, and the review's **Apply**. They need a
+full-scope session. `branding preview` reads one PNG, JPEG or WebP image
+(up to 5 MB) from standard input: without `--size` it is the page's
+Basic mode, and the image is made into all four sizes; with `--size
+large`, `menu`, `icon` or `favicon` it is Advanced for that one size, and
+the other three keep their current images. To replace several sizes one by
+one, apply each before previewing the next. The preview stores the sizes
+it made, as the page's upload does, but nothing changes on the site until
+`branding confirm`.
+
+```sh
+VERSION=$(pk-admin branding show | jq -r .result.version)
+pk-admin branding preview - --expected-version "$VERSION" < logo.png > review.json
+jq .result.logos review.json
+pk-admin branding confirm --bundle "$(jq -r .result.bundle review.json)" \
+    --token "$(jq -r .result.preview.token review.json)"
+```
+
+| Field | What it holds |
+| --- | --- |
+| `version` (`branding preview`) | The configuration version the logos were made and reviewed against |
+| `bundle` | The uploaded logos, which `branding confirm --bundle` names |
+| `mode` | `basic` (one image for every size) or `advanced` (one size replaced) |
+| `logos` | Each size in the order `large`, `menu`, `icon`, `favicon`: `slot`, `name` (its label on the page), the new image's `id`, `width` and `height` (pixels), `size` (bytes) and `sha256`, and `changed`, whether this upload changes that size |
+| `preview.token` | What `branding confirm --token` takes with the same `--bundle`, valid for fifteen minutes |
+| `created`, `request` (`branding confirm`) | As `parish confirm` prints them; follow the change with `config request show --watch` |
+
+An image the page refuses (too large, not a supported still image, or a
+size outside its rules) is exit 1 (`invalid`) at `branding.logo`, or
+`branding.<size>` with `--size`, in the page's words. A version that is
+no longer current, logos older than a day, or an expired token is exit 1
+(`stale_version`): read `branding show` and preview again. Uploaded logos
+belong to the session that uploaded them, as on the page: `branding
+confirm` applies only what the same `pk-admin` session's `branding
+preview` uploaded (at any time in the upload's day), never logos uploaded on the page or under another
+session, which are exit 1 (`not_available`). Another bundle's or an
+altered token is exit 1 (`invalid`). Logos never applied expire within a
+day, so previewing again is always safe. `branding preview` records
+`admin_cmd_branding_preview` in System logs and `branding confirm`
+records `admin_cmd_branding_confirm` with the request; repeating
+`branding confirm` with the same token returns the same request.
+
 ## Integrations
 
 `integration list`, `integration show` and `integration status` are the
@@ -1330,8 +1574,11 @@ and `integration key status` and the Finish switching commands follow a key
 change and finish switching to it (see
 [Following a key change and finishing the switch](#following-a-key-change-and-finishing-the-switch)),
 and `integration schedule-preview` previews the ParishSoft refresh schedule
-(see [Previewing the refresh schedule](#previewing-the-refresh-schedule));
-pasting a new key stays on the pages for now.
+(see [Previewing the refresh schedule](#previewing-the-refresh-schedule)),
+and `integration key replace` saves a new key (see
+[Replacing a key](#replacing-a-key)), and the `integration backup-key`
+commands replace the Backup encryption key (see
+[Replacing the backup encryption key](#replacing-the-backup-encryption-key)).
 
 ```sh
 pk-admin integration list
@@ -1344,7 +1591,8 @@ integration, its `target`, `name` and whether it is `configured`.
 
 `integration show TARGET` takes `parishsoft`, `google_workspace` (Google
 Workspace mail), `email` (Outgoing email addresses), `slack` or `backup`
-(Off-site backups); the Backup encryption key stays on its page. Google
+(Off-site backups); the Backup encryption key has its own commands (see
+[Replacing the backup encryption key](#replacing-the-backup-encryption-key)). Google
 Workspace mail or Outgoing email addresses not set up is exit 1
 (`not_available`), as the page finds nothing to show.
 
@@ -1371,9 +1619,8 @@ repeats until nothing is pending.
 
 `integration preview` and `integration confirm` are a settings page's
 **Save** (its review, then **Apply**) and its **Remove**. They need an
-Administrator and a full-scope session. The page asks for a recent Google
-sign-in; the live session stands in for it, so `integration confirm` asks
-you to type `yes` (or takes `--yes`) and leaves a notice on the Admin home
+Administrator and a full-scope session. It is a privileged action, so
+`integration confirm` asks you to type `yes` (or takes `--yes`) and leaves a notice on the Admin home
 page.
 
 ```sh
@@ -1510,7 +1757,7 @@ with `--folder` to check it before saving it, or leave it out to check the
 saved folder. `integration dismiss` is a key change line's **Dismiss**: it
 hides a finished change's line (`updated` or `failed`) for every
 Administrator. Both need a full-scope session and an Administrator; neither
-asks for a recent sign-in or a confirmation, as on the pages.
+asks for a confirmation, as on the pages.
 
 ```sh
 pk-admin integration backup-probe --folder https://drive.google.com/drive/folders/FOLDER
@@ -1538,10 +1785,144 @@ needs Finish switching, or a request the page no longer shows is not
 dismissed: `dismissed` is false, exit 0, and nothing is recorded, as the
 page's Dismiss does nothing then.
 
+### Replacing a key
+
+`integration key replace TARGET` is a settings page's **Save** with a new
+key pasted: an API key (`parishsoft`), the mail service-account key
+(`google_workspace`) or the bot token (`slack`). It needs a full-scope
+session and an Administrator, and
+always asks before it does anything. The key is never an argument: the
+wrapper reads it from a file or from standard input and sends it to the
+command on its own line after the session preamble, so it never appears in
+the process list, shell history, the command's output, System logs or the
+audit trail, and never in the wrapper's work directory.
+
+```sh
+pk-admin integration show slack                # note the version
+pk-admin integration key replace slack --expected-version VERSION \
+    --secret-file ~/slack-token                # prompts at the terminal
+pk-admin integration key replace slack --expected-version VERSION \
+    --secret-stdin                             # paste, then Ctrl-D, then yes
+```
+
+- `--secret-file PATH` reads a regular file you own with no group or other
+  permissions (`chmod 600`), at most 128 KiB. A symbolic link, a FIFO, a
+  larger file or a file others may read is refused (exit 2) before
+  anything runs. Delete the file once the change is done. Keep it in a
+  directory only you can write to (your home directory, or one made with
+  `mkdir -m 700`): the shell cannot refuse a symbolic link that someone
+  swaps in at the instant between the wrapper's checks and its open. What
+  it reads must still be your own private regular file, but a private
+  directory leaves no such instant to anyone else.
+- `--secret-stdin` at a terminal turns echo off, so the key is not shown,
+  and reads until you press Ctrl-D at the start of a line (twice in the
+  middle of one); a multi-line Google Workspace JSON key can be pasted
+  whole. Echo comes back for the prompt's answer. If the command ends
+  before it reads the key (Staff is `denied`, the session has ended, the
+  web container is down), or what you paste is longer than 128 KiB,
+  `pk-admin` says so, keeps echo off and waits: finish the paste and press
+  Ctrl-D, and what you pasted is discarded, never left for your shell to
+  run or keep in its history. A terminal
+  takes at most 1024 bytes on one line on macOS (4096 on Linux), and a
+  Google Workspace JSON key's `private_key` line is longer, so on a Mac
+  give that key with `--secret-file`. From a pipe it needs
+  `--yes`, because standard input then holds only the key, so read what
+  `integration show` says first. Never pipe a key from `echo` or a
+  variable: the value would stay in shell history or the process list.
+  Piping from a password manager's command (`pass show slack | ...`) is
+  fine.
+- `--changes JSON` saves settings with the key, in `integration preview`'s
+  shape (`{"settings": {"channel_id": "C0123ABC"}}`): for example the
+  channel that sets Slack up with its first token, or a new ParishSoft
+  organization ID before any data is loaded. It is literal JSON, never
+  `-`, since standard input carries the key. A refresh schedule change is
+  refused with a key, as on the page: change it first.
+
+The prompt names the integration, whether this sets it up or replaces its
+key, and the settings saved with it (never their values). Then the key is
+sealed for the integration's own installer and staged exactly as from the
+page; the installer checks it with the provider, installs it, and the
+configuration switches to it. If the check fails, nothing changes and the
+current key stays in use. The command prints `version`, `target`, `name`,
+`setup`, `changes`, `key_request_id` and `request` (the configuration
+request that switches to the key); follow the key change with
+`integration key status TARGET --request-id KEY_REQUEST_ID --watch 5`.
+It records the page's own events, the privileged command's event and notice,
+`admin_cmd_integration_key_replace` and a `policy_change` notice for every
+Administrator.
+
+Refusals: Staff is exit 1 (`denied`) before the key is read; another
+version is `stale_version` (run `integration show` again); a key change for
+the integration still running is `not_available` (wait for it, or follow
+it with `integration key status`); a refused setting is `invalid` at
+`settings.NAME`, and an empty key, one that is not UTF-8, is too long or is
+in the wrong format at `key`, never quoting it. Each run is a new key
+change: if the outcome is unknown (exit 6), read the named request with
+`config request show` and the key change with `integration key status`
+before you try again.
+
+### Replacing the backup encryption key
+
+The `integration backup-key` commands are the **Backup encryption key**
+page's three steps, in the same order and with the same checks as the
+page and the backup runbook's "Replacing the key". They need a full-scope
+session and an Administrator.
+Make the new key pair on the key machine first (`pk-stewardship
+backup-keygen`) and save only its `public_key` value in a file you own
+with mode 600; never give this server the private key.
+
+```sh
+pk-admin integration backup-key challenge --public-key-file ~/new-backup.pub
+# on the key machine: run backup-prove with the new private key and paste
+# the challenge line; it prints a 12-character code
+pk-admin integration backup-key preview --intent INTENT --code-stdin
+                                    # type the code, then Ctrl-D (not shown)
+pk-admin integration backup-key confirm --token TOKEN   # prompts
+```
+
+- `challenge` reads the public key from the file, as `--secret-file`
+  reads a key (a private regular file, here at most 200 bytes), and sends
+  it to the command on its own line, never as an argument. It refuses a
+  private key, a text that is not one public key, and the key already in
+  use, in the page's words. It prints `version`, `current` (the key in use
+  as the page's "Key in use" shows it: `source`, `fingerprint` and, for
+  the installed key, `backup_at`), `fingerprint` (the new key's: compare it
+  with the one `backup-keygen` printed), `challenge` (the line to paste
+  into `backup-prove`) and `intent`, which `preview` takes within fifteen
+  minutes. It records nothing.
+- `preview` takes the intent and the code `backup-prove` printed, from
+  `--code-file PATH` or `--code-stdin` (echo off at a terminal; piped, it
+  needs no `--yes`, as nothing prompts). The code is read as the page
+  reads it: any case, spaces or dashes. A code that does not match is
+  `invalid` at `code`; check that you used the new private key, and try
+  again with the same intent. An expired intent, or one made before the
+  settings changed, is `stale_version`: start again with `challenge`. It
+  prints `version`, `changes` (the fingerprint `before`, null when the
+  key in use is not known yet, and `after`) and `preview.token`. It
+  records nothing.
+- `confirm` prompts with both fingerprints and what the change means,
+  then makes the page's configuration request; `--yes` answers the
+  prompt, and `--token -` needs it. It records the privileged command's
+  event and notice, `admin_cmd_integration_backup_key_confirm` and a `policy_change`
+  notice. Once the configuration installer applies it, every
+  Administrator is told by the page's `backup_key_replaced` security
+  event, and the next backup is sealed to the new key. It prints
+  `created` and `request`; follow the request with
+  `config request show REQUEST_ID --watch 5`. Keep the old private key
+  until every backup sealed to it has been deleted by retention, and open
+  the next backup with the new private key, as the restore drill does (see
+  the backup runbook's
+  [Replacing the key](stewardship-backup-runbook.md#replacing-the-key)).
+
+Staff is exit 1 (`denied`) before the public key or the code is read, and
+a read-only session is refused. No private key, code or pasted text is ever
+printed or recorded.
+
 ### Following a key change and finishing the switch
 
-A new key (API key, service-account key or bot token) is still pasted on
-the integration's settings page. `integration key status` is the **Key
+A new key (API key, service-account key or bot token) is pasted on the
+integration's settings page or given to `integration key replace` (see
+[Replacing a key](#replacing-a-key)). `integration key status` is the **Key
 replacement status** page for one of your own key changes: by default your
 latest for the integration, or the one `--request-id` names. Any session of
 an Administrator may run it, and it records nothing. It prints `target`,
@@ -1596,7 +1977,7 @@ field prints one. Given on the command line, the token is confirmed after
 a prompt naming the integration and the settings it also changes. Either
 way the command records the configuration request as the page's button
 does, with `admin_cmd_integration_key_finish_switching`, the
-fresh gate's event and notice and a `policy_change` notice for every
+privileged command's event and notice and a `policy_change` notice for every
 Administrator. A token for an earlier key change is exit 1 (`invalid`),
 including a repeat of an applied token after a newer key change started;
 an expired one, or one whose key is no longer current, is `stale_version`:
@@ -1665,8 +2046,8 @@ and counts), and the commands' `admin_cmd_history_preview`,
 `task retry` is the **Retry** button of a failed task on Background work,
 for the four kinds of work that page can retry: Family mail preparation,
 daily and weekly digest work, and export file cleanup. It needs a
-full-scope session, and asks for no fresh sign-in or confirmation, as the
-page asks for none. Fix the cause first, as the page says.
+full-scope session, and asks for no confirmation, as the page asks for
+none. Fix the cause first, as the page says.
 
 ```sh
 pk-admin task list --state failed
@@ -1702,8 +2083,7 @@ its subject; it creates no automation notice.
 
 ## Confirmations
 
-Every command for an action that needs a recent Google sign-in on its page,
-and every command whose page asks you to type a value or tick an
+Every command for a privileged (fresh-gated) action, and every command whose page asks you to type a value or tick an
 acknowledgement, asks at a prompt before it acts, for example `test sample`
 while an earlier test's outcome is unknown, `delivery resend`, `delivery
 refusal-clear` and `delivery bounce-report`; the catalog's `prompts` flag
@@ -1719,21 +2099,21 @@ the prompt or from `--yes`.
 A prompting command checks your role first: if your user no longer may do
 the action (an Administrator who is now Staff, say), it exits 1 (`denied`)
 before it reads any input, looks anything up or prompts. A command Staff
-may run, such as `export financial` or `census resolve`, still prompts
-Staff.
+may run, such as `export financial`, still prompts Staff.
 
-No command of this release does an action that needs a recent Google
-sign-in; they arrive in later releases. When a session stands in for one
-(pausing or resuming mail, a chosen-Family test, a financial export, the
-Family portal switch, confirming Production, withdrawal, key changes),
-System logs record an
+Since [#1547](https://github.com/epiphany40223/parishkit/issues/1547) no
+Admin page asks for a recent sign-in, so a session never stands in for one.
+The privileged actions that once needed one keep the catalog's
+`fresh_gated` flag. When a session runs one (pausing or resuming mail, a
+chosen-Family test, an export of codes or financial data, the Family portal
+switch, confirming Production, withdrawal, key changes), System logs record an
 `automation_fresh_gate` event beside the action, and the dashboard shows an
 automation notice; confirming Production and withdrawal are marked
 irreversible and also email and post to Slack.
 
-## Outgoing mail
+## Sent mail
 
-The delivery commands read Outgoing mail and Refused addresses as their
+The delivery commands read Sent mail and Refused addresses as their
 pages do, and resolve a delivery as its page's form does. Each read records
 the pages' view event in System logs; any session may run them.
 `delivery resolve` needs a full-scope session. No document names a
@@ -1743,7 +2123,8 @@ open it on the page.
 
 ```sh
 pk-admin delivery list --state delivery_unknown
-pk-admin delivery list --search 1234
+pk-admin delivery list --recipient 1234
+pk-admin delivery list --state needs_attention --purpose daily_digest --from 2026-10-01
 pk-admin delivery show MESSAGE_ID
 pk-admin delivery resolve MESSAGE_ID --action accept --expected-version 3 --note - < note.txt
 pk-admin delivery refusals
@@ -1755,11 +2136,23 @@ pk-admin delivery bounce-report MESSAGE_ID --address ADDRESS \
     --note - --yes < note.txt
 ```
 
-`delivery list` takes the page's `--state`, `--send` (send history's `send`
-value), `--search` (an exact Family DUID or delivery id, as input only),
-`--page`, `--size` and `--sort`. `--sort` takes the page's tokens:
+`delivery list` takes Sent mail's filters: `--recipient` (a Family DUID, an
+email address, a delivery id, or any other text as part of a Family's or a
+person's name, ignoring case, as input only), `--purpose` (`initial`,
+`reminder`, `receipt`, `family_test`, `daily_digest`, `weekly_digest`,
+`operational`, `security_event` or `leader_email`, or the group `family`:
+invitations and reminders), `--state` (a state, or the groups `needs_attention`,
+`needs_review`, `not_delivered` and `still_sending`, as the page defines
+them), `--mode`
+(`production` or `testing`; both when left out), `--from` and `--to` (whole
+days, in the time zone `--zone` names, the parish's time zone by default),
+`--send` (send history's `send` value), `--page`, `--size` and `--sort`. The
+list includes operational and security notices and Ministry leader emails,
+as the page does. `--sort` takes the page's tokens:
 `changed` (when the email last changed; the default is `-changed`, latest
-first), `name`, `duid`, `purpose`, `mode`, `state` and `attempts`, and also
+first), `name` (emails to people, Administrators and Ministry leaders, last,
+by their Name or address),
+`duid`, `purpose`, `mode`, `state` and `attempts`, and also
 `created`. `delivery refusals` takes `--duid`, and its `--sort` takes
 `refused`, `name` (the Family's name, as `delivery list`), `duid`
 (the default), `address` and `id`.
@@ -1767,8 +2160,8 @@ first), `name`, `duid`, `purpose`, `mode`, `state` and `attempts`, and also
 | Field | What it holds |
 | --- | --- |
 | `deliveries`, `delivery` | Each message's `id`, `campaign_id`, `purpose`, `mode`, `state`, `version`, `attempt`, `task_id`, `created_at`, `updated_at`, `finished_at` |
-| `refused` | `delivery list`, in each of `deliveries`: how many of the email's refused addresses are still unresolved, as Outgoing mail marks it (0 for none) |
-| `state`, `send`, `page`, `size`, `sort`, `has_next`, `matching`, `matching_capped` | `delivery list`: the filters and the page of rows |
+| `refused` | `delivery list`, in each of `deliveries`: how many of the email's refused addresses are still unresolved, as Sent mail marks it (0 for none) |
+| `state`, `purpose`, `mode`, `start`, `end`, `send`, `page`, `size`, `sort`, `has_next`, `matching`, `matching_capped` | `delivery list`: the filters (never the recipient) and the page of rows |
 | `task` | `delivery show`: the latest task's `id`, `state`, `version` and `retry_sequence` |
 | `actions`, `retry_unavailable` | `delivery show`: the resolutions the page offers now, and whether a retry is refused by the campaign's resend rule |
 | `events` | `delivery show`: the history's `version`, `at`, `state`, `action`, `attempt` and `result` (a stored code) |
@@ -1824,8 +2217,8 @@ address**: when a bounce message for a delivered Family email arrives in the
 sending mailbox, it sets that address aside for the Family, as a provider's
 refusal does, until `delivery refusal-clear` clears it. It shows the page's
 words ("I saw a bounce message for this address from this email") and asks
-for `yes`; it needs a full-scope session of an Administrator, but no recent
-sign-in, as on the page. When the address is the Family's only one left, the
+for `yes`; it needs a full-scope session of an Administrator, as on the
+page. When the address is the Family's only one left, the
 prompt also warns, as the page's notice does, that the Family will then get
 no campaign email until the address is cleared or ParishSoft is corrected;
 `--yes` skips that warning too. `--address` is the address the bounce
@@ -1944,9 +2337,10 @@ pk-admin report participation
 pk-admin report comparison --day 12
 pk-admin report responses --mode testing --grain day
 pk-admin report financial
-pk-admin report limitations
+pk-admin report limitations --stage to_review
 pk-admin report census --status all --route by_hand
 pk-admin report information --disposition all --needed yes
+pk-admin report information --stage to_handle
 pk-admin report ministry
 pk-admin report ministry --ministry 9 --requests join --state unresolved
 pk-admin report source-form
@@ -1957,13 +2351,13 @@ pk-admin report roster --show all --ministry 9
 | Command | The page | What it prints |
 | --- | --- | --- |
 | `report list` | Campaign reports | `campaign_id` (null without a current campaign) and `reports`: each report your menu offers, with `command`, `page` and `available` (false while the menu greys it out) |
-| `report participation` | Participation | `status` (`current`, `updating` or `unavailable`), `fact_set_id` (for `export create --fact-set`), the figures' source and dates, `statistics` (the active Families, Members, email, responses and, with Financial stewardship, pledge totals, including the comparison pledges of every Family, `comparison_pledge_all`) and `days`, the daily table |
+| `report participation` | Response dashboard (statistics and daily table) | `status` (`current`, `updating` or `unavailable`), `fact_set_id` (for `export create --fact-set`), the figures' source and dates, `statistics` (the active Families, Members, email, responses and, with Financial stewardship, pledge totals, including the comparison pledges of every Family, `comparison_pledge_all`) and `days`, the daily table |
 | `report comparison` | Campaign comparison | `day` and `date` (the comparison day: the current campaign's last complete day, or `--day`), `status`, `last_year`, `current` (the current campaign's figures at the day and so far, and its renewal of last year's Families), `years` (each imported year's figures at the day and final figures, renewal and, for a final year, its pledge distribution) and `averages` (the imported years' mean of each figure at the day); see below |
-| `report responses` | Response dashboard | `metrics`: the funnel `stages`, the three figures beside it, the `activity` buckets, the `sends` and each list's length (`lists`); null in Testing without a rehearsal |
+| `report responses` | Response dashboard (Families by stage) | `metrics`: the funnel `stages`, the three figures beside it, the `activity` buckets, the `sends` and each list's length (`lists`), which the page no longer shows; null in Testing without a rehearsal |
 | `report financial` | Financial report | The summary over every pledge: `families`, `annual_total`, `frequencies`, `shares` (by share option id), `no_share`, `cannot_give` and the comparison period |
-| `report limitations` | Limitations | `cannot_serve` (Members who cannot participate in ministries) and `cannot_attend` (Families who cannot attend Mass or prayer services) |
-| `report census` | Census changes | `matching`: how many changes the filters keep, split by `routes` (`automatic`, `by_hand`) and `kinds` (`contact`, `moved`, `deceased`, `new_member`), and `statuses`, the page's summary of every change by status; see below |
-| `report information` | Additional information | `matching`: how many items match the filters |
+| `report limitations` | Limitations | `cannot_serve` (Members who cannot participate in ministries) and `cannot_attend` (Families who cannot attend Mass or prayer services) at `stage`, and `stages`: every answer by stage, zeros included |
+| `report census` | Census changes | `matching`: how many changes the filters keep, split by `routes` (`automatic`, `by_hand`) and `kinds` (`contact`, `moved`, `deceased`, `new_member`), and `statuses`, every change of the campaign by status (the counts the Status filter's choices show); see below |
+| `report information` | Additional information | `matching`: how many items match the filters; with `--stage`, how many requests are at that stage, and `stages`, each stage's count (null without `--stage`) |
 | `report ministry` | Ministry report | `summaries`: each Ministry's DUID (`ministry`), name, state and request counts; with `--ministry` and `--requests`, `matching` is that list's request count |
 
 The options are the pages' own, and a value the page would refuse is exit 1
@@ -1987,6 +2381,13 @@ The options are the pages' own, and a value the page would refuse is exit 1
   `--completed` (`any`, `yes` or `no`), and `--start` and `--end` (days
   in the time zone `--zone` names, for example `America/New_York`, which
   is required with them, as the page takes days in your browser's zone).
+  `--stage` (`to_review`, `to_handle`, `ignored`, `handled`, `history` or
+  `all`, Every stage, which leaves History out) counts the review worklist
+  instead, as its Stage filter does; it replaces `--disposition`, `--needed`
+  and `--completed`, so giving one of those with it is exit 1 (`invalid`).
+- `report limitations`: `--stage` (`all`, the default, every answer, or
+  `to_review`, `to_handle`, `ignored` or `handled`), the review worklist's
+  Stage filter.
 - `report ministry`: `--sort`, `--page` and `--size` for the summary; `--ministry DUID` with `--requests join` or `--requests leave`
   counts one Ministry's list, and takes `--state`, `--history` (`current`
   or `all`) and `--start`, `--end` and `--zone`, as `report information`
@@ -2039,8 +2440,10 @@ A section that cannot count never fails the command. It prints counts
 only, never a name or address, and records the page's "viewed" event with
 the total it printed. A restore under review is exit 3 (`unavailable`).
 
-`report roster` counts **Roster changes to enter**, the resolved Ministry
-joins and leaves that staff enter in ParishSoft by hand. Like the page,
+`report roster` counts the roster changes to enter, the resolved Ministry
+joins and leaves that staff enter in ParishSoft by hand (on the page,
+Ministry requests' Stage To enter by hand; the Roster changes to enter page
+was folded into it). Like the page,
 Administrators and Staff may run it, from a session of any scope; a
 Ministry leader is refused (`denied`). Its options are the page's:
 `--show todo` (the default: not yet marked Entered in ParishSoft) or
@@ -2059,45 +2462,113 @@ reported, which are carried into ParishSoft automatically or by hand. Like
 the page, Administrators and Staff may run it, from a session of any scope;
 a Ministry leader is refused (`denied`). It prints `filters` (the page's
 choices, as `status`, `history`, `route`, `kind`, `start`, `end` and
-`zone`), `matching`, `routes`, `kinds` and `statuses`: the page's summary,
-every change of the campaign by status key whatever the other filters,
+`zone`), `matching`, `routes`, `kinds` and `statuses`: the counts the Status
+filter's choices show, every change of the campaign by status key whatever the other filters,
 including zeros, with `superseded` and `cancelled` only with `--history`.
 Each row names a Family and often a Member, with their contact details, so
 the rows stay on the page and its downloads. It records the page's
 "viewed" event with a count of 0.
 
+### Pledges
+
+`report pledges` counts **Pledges**, the Families' pledges that
+staff review and then enter in ParishSoft by hand. Like the page,
+Administrators and Staff may run it, from a session of any scope; a Ministry
+leader is refused (`denied`), and a campaign without Financial stewardship
+is exit 1 (`not_available`). `--stage` is the page's Stage filter:
+`to_review` (the default), `conflict`, `to_enter_by_hand`,
+`entered_by_hand`, `entered_incorrectly`, `confirmed`, `ignored` or `all`. It prints `stage`, `matching` (the pledges at that stage), `total`
+and `stages` (every pledge by stage, zeros included). Each row names a
+Family and its pledge, so the rows stay on the page and in `export pledges`.
+It records the page's "viewed" event with a count of 0.
+
+`export pledges` writes the page's download to standard output and its
+document (`campaign_id`, `stage`, `file_name`, `content_type`, `format`,
+`timezone`, `size`, `sha256`, `count`) to standard error, as `export census`
+does. It needs a full-scope session and takes the same `--stage`, plus
+`--format` (`xlsx`, the default, `csv`, `pdf` or `jsonl`) and `--timezone`
+(UTC, the default, or a time zone name). JSON Lines is for scripts: one
+object per pledge, the files' columns under the keys `family`,
+`family_duid`, `parishsoft_status`, `annual_pledge`, `frequency`,
+`share_methods`, `reviewer_annual_pledge`, `reviewer_frequency`,
+`annual_pledge_to_enter`, `frequency_to_enter`, `parishsoft_annual_pledge`,
+`stage`, `decision`, `entered_by`, `entered_at`, `submitted`,
+`last_decision`, `last_decision_at` and `note`, plus `item_id` and `version`, which `pledges decide` takes, and
+`actions`, the decisions you may record on it now. The file names Families,
+so create it private and delete it once used; the wrapper refuses to write
+it to a terminal.
+
+```sh
+(umask 077; pk-admin export pledges --stage all --format jsonl > pledges.jsonl)
+pk-admin pledges decide --action accept --item ITEM_ID:0 --item ITEM_ID:2
+pk-admin pledges decide --action edit --item ITEM_ID:0 \
+    --amount 1,300 --frequency monthly
+pk-admin pledges decide --action entered_by_hand --item ITEM_ID:1
+pk-admin pledges decide --action back_to_review --item ITEM_ID:2 \
+    --note "Marked by mistake"
+```
+
+`pledges decide` records one decision, as a row's icon or the bulk bar does:
+`accept`, `edit` (one pledge, with `--amount` and, for a pledge above zero,
+`--frequency`: `weekly`, `monthly`, `quarterly` or `annual`), `ignore`,
+`back_to_review` or `entered_by_hand`. It needs a full-scope session;
+Administrators and Staff may run it. Nothing asks first: every decision can
+be changed again, Entered by hand too. `back_to_review` on an Ignored pledge
+reopens it, and on an Entered by hand, Entered incorrectly or Confirmed one
+undoes that step, so the pledge goes back to To enter by hand with its
+decision kept (To review for a pledge ParishSoft already held); both need a
+`--note` saying why. There is no `--yes`. Each `--item` is a pledge's `item_id` and `version` from the JSON
+Lines; up to 100 at once, all or none. A campaign without Financial
+stewardship is exit 1 (`not_available`). A pledge someone decided since, or
+that the Family answered again, is exit 1 (`stale_version`): export again.
+A decision the pledge's stage does not offer, or an amount the Family form
+would refuse, is exit 1 (`invalid`, the amount's problem at `amount` or
+`frequency`). `--note -` reads the note from standard input. `--request-key` is made for you when left
+out; repeating with the same key, pledges, decision and value returns the
+same rows (`created` false), and using the key for other pledges, another
+decision or another value is `invalid`. A note longer than 2,000
+characters, or an amount the Edit would refuse, is refused before anything
+is recorded. The result has
+`created`, `request_key` and `decisions` (each row's `id`, `item_id`,
+`sequence`, `action`, `decision`, `entered` and `created_at`), never the
+amount or the note. System logs show the page's `pledge_review_updated` and
+the command's `admin_cmd_pledges_decide`.
+
 ### Recording a census change's outcome
 
-`census resolve` is a Census changes row's **Record outcome**: Entered in
-ParishSoft (`entered`), Ignore (`ignored`) or Reopen (`reopened`). Like the
+`census resolve` is a Census changes row's **Mark entered in ParishSoft**
+(`entered`), **Ignore** (`ignored`) or **Reopen** (`reopened`) icon. Like the
 page's buttons it needs a full-scope session; Administrators and Staff may
 record Entered and Ignore, and only an Administrator may reopen an ignored
-change (Staff get `denied`). It needs no recent sign-in, as on the page.
-Entered in ParishSoft cannot be undone, so, as the page's dialog does,
-`--action entered` shows the change's id and version and asks for `yes`
-(see [Confirmations](#confirmations)), or takes `--yes`; Ignore and Reopen
-ask nothing.
+change (Staff get `denied`). Reopen of a change that is Entered by hand
+(also Entered incorrectly or Confirmed), Updated in ParishSoft or Already in
+ParishSoft is the page's **Back to review** of that step, which Staff may
+record too: the change goes back to the stage before it with its decision
+kept (To enter by hand or Ready to update; To review when nobody had
+decided it), and nothing is written to ParishSoft.
+Every outcome can be undone that way, so no action asks first, and there
+is no `--yes`.
 
 ```sh
 pk-admin census resolve PROPOSAL_ID --action entered --expected-version 3
 pk-admin census resolve PROPOSAL_ID --action reopened --expected-version 4 \
-    --note - --yes < note.txt
+    --note - < note.txt
 ```
 
 `PROPOSAL_ID` and the `--expected-version` are the change's id and version,
 which `export census --format jsonl` prints (`proposal_id` and `version`,
 with the `actions` the change takes now; the page's own downloads leave
-them out). `--note` is optional, except to reopen; `-` reads it from
-standard input, which keeps a note that names people out of shell history
-and the process list, and then needs `--yes`, because standard input cannot
-carry both the note and an answer. `--request-key` is made for you and
+them out). `--note` is optional, except to reopen (an ignored change, or a
+terminal step); `-` reads it from standard input, which keeps a note that
+names people out of shell history and the process list. `--request-key` is made for you and
 written to standard error when left out. Repeating the command with the
 same key returns the same resolution (`created` false) and records nothing
 new; the key used for another outcome or note is exit 1 (`invalid`). A
 change someone updated since that version is exit 1 (`stale_version`):
 read it again on the page. An outcome the change's status does not allow
-(an automatic change, or one already entered), or reopening without a
-note, is exit 1 (`invalid`); a change that is not the current campaign's
+(an automatic change, an entered one marked again before a refresh found
+it wrong, one queued for an update run, or one a later response of the
+Family replaced), or reopening without a note, is exit 1 (`invalid`); a change that is not the current campaign's
 is exit 1 (`not_available`), and so is a repeat after the current campaign
 changed.
 
@@ -2110,16 +2581,16 @@ logs show the page's `census_change_updated` and the command's
 
 ### Reviewing an automatic census change
 
-`census review` is an Automatic row's **Review**: Approve (`approved`),
-Ignore (`ignored`) or Back to To review (`unreviewed`). Only an
+`census review` is an Automatic row's review: **Accept** (`accepted`),
+**Ignore** (`ignored`) or **Send back to To review** (`unreviewed`). Only an
 Administrator may review (Staff and Ministry leaders get `denied`, before
-anything is read), with a full-scope session and no recent sign-in, as on
-the page. Every review can be changed again until publication of the change
-starts, so, as on the page, it asks nothing. Approving does not publish
-anything: publication is a separate step.
+anything is read), with a full-scope session, as on the page. Every review can be changed again until publication of the change
+starts, so, as on the page, it asks nothing. Accepting does not write
+anything to ParishSoft: that is a separate step
+([Updating ParishSoft](#updating-parishsoft)).
 
 ```sh
-pk-admin census review PROPOSAL_ID --decision approved --expected-version 3
+pk-admin census review PROPOSAL_ID --decision accepted --expected-version 3
 pk-admin census review PROPOSAL_ID --decision ignored --expected-version 4 \
     --note - < note.txt
 ```
@@ -2132,24 +2603,33 @@ written to standard error when left out, and a repeat with the same key
 returns the same review (`created` false) and records nothing new; the key
 used for another decision or note is exit 1 (`invalid`). A change someone
 updated since that version is exit 1 (`stale_version`). A decision the change does not
-take now is exit 1 (`invalid`): a By-hand change, the decision it already
-has, approving a Conflict, or any review of a change that is queued for
-publication or already has a final outcome. A change that is not the
+take now is exit 1 (`invalid`): the decision it already has, accepting a
+Conflict, sending an ignored change back (`unreviewed`) without a note, or
+any review of a change that is queued for publication or already has a
+final outcome. Since the Census changes page moved to the review pipeline
+([#1683](https://github.com/epiphany40223/parishkit/issues/1683)), a By-hand
+change takes a review too, as on the page. The command speaks the
+pipeline's words since
+[#1755](https://github.com/epiphany40223/parishkit/issues/1755):
+`accepted`, where it said `approved`, which is no longer taken. A change that is not the
 current campaign's is exit 1 (`not_available`), and so is a repeat after
 the current campaign changed.
 
 The result has `created`, `request_key`, `review` (`id`, `proposal_id`,
 `decision`, `expected_version`, `created_at`) and `proposal` (the change's
 `id`, `version`, `decision` and `execution` as the command left them),
-never the note, the Family, the Member or the value. System logs show the
-page's `census_change_updated` and the command's `admin_cmd_census_review`.
+never the note, the Family, the Member or the value. Every `decision` the
+census commands print, and the `reviews` of `export census --format jsonl`,
+say `accepted` for an accepted change, as the page does, though the
+database still stores `approved`. System logs show the page's
+`census_change_updated` and the command's `admin_cmd_census_review`.
 
 ### Editing a value or resolving a conflict
 
-`census edit` is the same Review's **Edit value** (`--value`) and **Clear
+`census edit` is the same row's **Edit value** (`--value`) and **Clear
 edit** (`--clear`): the value publication writes instead of the Family's
 answer, which never changes. `census resolve-conflict` is **Use the
-Family's value anyway** on a Conflict: it approves the change over
+Family's value anyway** on a Conflict: it accepts the change over
 ParishSoft's current value, which publication then expects to find. Both
 are an Administrator's only, with a full-scope session, one change at a
 time, and ask nothing, as on the page; neither publishes anything.
@@ -2186,6 +2666,90 @@ and `edited`, whether an edited value is now set). `census resolve-conflict`'s
 result is `census review`'s. Neither has the value, the note, the Family or
 the Member. System logs show the page's `census_change_updated` and the
 command's `admin_cmd_census_edit` or `admin_cmd_census_resolve_conflict`.
+
+### Updating ParishSoft
+
+The `census update-*` commands are the
+[Update ParishSoft](../specs/stewardship/reports/spec.md#update-parishsoft)
+page's steps: Check ParishSoft, the plan it makes, Update's Apply and Run
+again. Only an Administrator may run them (Staff and Ministry leaders get
+`denied` before anything is read). While updating ParishSoft is switched off
+(the deployment's `parishsoft_publication`, off by default), every one of
+them is exit 1 (`not_available`) with `error.reason` `publication_off`, and
+nothing is read or queued.
+
+```sh
+pk-admin census update-check
+pk-admin task show TASK_ID --watch 5
+pk-admin census update-plan
+pk-admin census update-confirm PLAN_ID
+pk-admin task show TASK_ID --watch 5
+pk-admin census update-plan PLAN_ID
+pk-admin census update-rerun PLAN_ID
+```
+
+`census update-check` is **Check ParishSoft**, with a full-scope session. It
+asks nothing, as the page does, and is refused as the page's button is
+unavailable: nothing Ready to update (`invalid`,
+`publication_nothing_approved`), an update running or stopped before it
+finished, or other campaign work holding the campaign (`not_available`,
+with `publication_running`, `publication_stopped` or
+`publication_campaign_held`). It prints `created`, `request_key` and the
+check's `task` (`id`, `state`); follow it with `task show TASK_ID --watch
+5`. System logs show `census_publication_preflight_requested` and the
+command's `admin_cmd_census_update_check`.
+
+`census update-plan` reads the newest check's plan, or the plan `PLAN_ID`
+names, from a session of any scope. It prints `waiting` (`changes`,
+`members` and `away`, the Ready changes whose Member left the Family),
+`check` (`available`, and the `reason` Check ParishSoft is unavailable),
+`checking` (a check is under way) and `plan`: `id`, `checked_by` (the
+checking Administrator's user id), `created_at`, `testing`, `expires_at`
+(the end of its hour to be confirmed in) and `expired`, `counts`
+(`write_entities`, `write_fields`, `blocked_entities` and `already`),
+`confirmed`, `run` (its latest run task's `id` and `state`, or null),
+`refreshing` (the refresh after the run is still going) and `offer`:
+`kind` (`update`, `rerun` or null), `available`, `reason` and
+`unfinished` (the Members Run again would try). `plan` is null before the
+first check. `rows` has one entry per row of the page's table:
+`proposal_id`, `proposal_version`, `field`, `member_duid` and `outcome`
+(`write`, `held`, `already_in_parishsoft`, `conflict` or `cannot_check`,
+and once run `updated`, `confirmed`, `not_written`, `failed` or
+`not_finished`); `others` counts the plan's rows the table leaves out. No
+value or name is printed; `export census` has those. System logs show the
+page's `census_publication_viewed`.
+
+`census update-confirm PLAN_ID` is **Update N changes**' Apply. It needs a
+full-scope session, and it is a privileged (fresh-gated) action: it shows
+the plan's counts and asks for `yes` (see [Confirmations](#confirmations)),
+or takes `--yes`. It refuses, before asking and again after, what the page
+would not offer: a plan that is not the newest check (`stale_version`,
+`publication_plan_superseded`), one more than an hour old
+(`publication_plan_expired`) or changed since it was shown
+(`publication_plan_changed`), a plan that writes nothing (`invalid`,
+`publication_nothing_to_write`), Testing mode, an update running, a check
+under way, or the campaign held (`not_available`). The result has
+`created`, `request_key`, `plan_id`, `confirmation` (`id`, `created_at`,
+`write_entities`, `write_fields`, `blocked_entities`) and the run's `task`;
+follow it with `task show TASK_ID --watch 5`, then `census update-plan
+PLAN_ID` for each change's result. System logs show
+`census_publication_confirmed`, the `automation_fresh_gate` event and the
+command's `admin_cmd_census_update_confirm`.
+
+`census update-rerun PLAN_ID` is **Run again**, offered only after a run
+that stopped before every Member was finished (`invalid`,
+`publication_finished`, once every Member is). It asks for `yes` with the
+number of Members it would try, or takes `--yes`, and prints `created`,
+`request_key`, `plan_id` and the retry's `task`. System logs show
+`census_publication_rerun_requested` and `admin_cmd_census_update_rerun`.
+
+`--request-key` (a version 4 UUID) is made for you and written to standard
+error when left out. Repeating `update-check`, `update-confirm` or
+`update-rerun` with the same key returns the same check, run or retry
+(`created` false) and records nothing new, even after a newer check (so
+the key recovers an unknown outcome, exit 6). Once the page's checks
+pass, a key the same command already used for another plan, or another
+Administrator's, is exit 1 (`invalid`).
 
 ## Digests
 
@@ -2252,7 +2816,7 @@ is exit 1 (`not_available`).
 
 ## Report exports
 
-A report export (the Participation page's **Export**, and the export of
+A report export (the Response dashboard's **Export**, and the export of
 every other report page) is a file the server makes in the background. From
 the command line, getting one takes three steps: request it, wait until it
 is ready, and fetch it. Each step does what the export's status page does
@@ -2267,7 +2831,7 @@ pk-admin export fetch EXPORT_ID
 pk-admin exports clean
 ```
 
-- `export create` requests a Participation export, as the page's export
+- `export create` requests a participation export, as the Response dashboard's export
   form does: `--fact-set` names the participation figures to export (the
   page exports the ones it shows; take their `fact_set_id` from
   `report participation`), `--format` is `csv`, `png`, `pdf` or `xlsx`,
@@ -2348,16 +2912,21 @@ pk-admin export fetch EXPORT_ID
 
 - `export financial` is the Financial stewardship page's export;
   `export information` the Additional information page's, with
-  `--history` for each item's workflow history; `export ministry` the
+  `--history` for each item's workflow history and `--stage` for the
+  worklist's Stage (`to_review`, `to_handle`, `ignored`, `handled`,
+  `history` or `all`), which sets the follow-up filters as the page's
+  export pane does, ordered by name unless `--filter sort=` says otherwise
+  (To review and Ignored both export the requests whose follow-up is not
+  needed); `export ministry` the
   Ministry requests page's, for one Ministry's list
   (`--ministry DUID --requests join|leave`, both required; the summary
   export was removed, #1126);
   `export ministry-packet` its follow-up packet, for the
   Ministries `--ministry` names (repeat it; none means every Ministry you
   may report on) and `--history` for earlier versions.
-- `export financial` needs a recent Google sign-in on its page, so it asks
-  at the [confirmation prompt](#confirmations) (or takes `--yes`); the
-  session stands in for the sign-in, and System logs show
+- `export financial` is a privileged action, so it asks at the
+  [confirmation prompt](#confirmations) (or takes `--yes`), and System logs
+  show
   `automation_fresh_gate` beside it. A read-only session is exit 1
   (`denied`).
 - `--format` is `csv`, `xlsx` or `pdf`; `--timezone` the time zone of the
@@ -2386,10 +2955,10 @@ pk-admin export fetch EXPORT_ID
 Family codes, for
 the current campaign, and `export postal` its mail merge. Each needs a
 full-scope session and records the page's events, plus
-`admin_cmd_export_directory` or `admin_cmd_export_postal`. Both need a
-recent Google sign-in on the page, so each asks at the
-[confirmation prompt](#confirmations) (or takes `--yes`); the session
-stands in for the sign-in, and System logs show `automation_fresh_gate`
+`admin_cmd_export_directory` or `admin_cmd_export_postal`. Both are
+privileged actions, so each asks at the
+[confirmation prompt](#confirmations) (or takes `--yes`), and System logs
+show `automation_fresh_gate`
 beside it.
 
 ```sh
@@ -2415,8 +2984,9 @@ pk-admin export postal --format xlsx --timezone America/New_York
 
 #### Exact daily exports
 
-When the Participation page has no complete figures ready yet, its exact
-export calculates today's figures first and then makes the file. From the
+An exact (latest-data) export calculates today's figures first and then
+makes the file; the Response dashboard does not offer it, so the command
+line is the way to request one. From the
 command line it takes two steps more than `export create`: follow the
 calculation, then fetch the export it hands off to.
 
@@ -2455,26 +3025,27 @@ has not failed is exit 1 (`stale_version`).
 
 #### One Family's timeline
 
-`export family-timeline` exports one Family's timeline, as the Family
-timeline page's **Export this timeline** does: every line of its timeline
+`export family-timeline` exports one Family's timeline, as the
+Timeline page's **Export this timeline** does: every line of its timeline
 (oldest first), in the page's columns, with the Family's details, the
 page's summary and its Family code as the report information of an XLSX or
 PDF file (a CSV is the timeline table alone). Like the page's full view, it is
-for Administrators. Because the file holds the Family's code, the page asks
-for a recent Google sign-in, so the command asks at the
+for Administrators. Because the file holds the Family's code, it is a
+privileged action, so the command asks at the
 [confirmation prompt](#confirmations) (or takes `--yes`), and System logs
 show `automation_fresh_gate` beside it.
 
 ```sh
 pk-admin export family-timeline FAMILY_RECORD_ID --format pdf \
   --timezone America/New_York
-pk-admin export family-timeline FAMILY_RECORD_ID --mode testing \
-  --format csv --timezone America/New_York
 ```
 
 `FAMILY_RECORD_ID` is the id in the Family's timeline page address,
-`/admin/reports/families/FAMILY_RECORD_ID/`. `--mode testing` is
-the page's Testing rehearsal view. It takes `--request-key` like the other
+`/admin/reports/families/FAMILY_RECORD_ID/`. The export is of
+Production records, as the page shows: `--mode production` (the default)
+still works for scripts that pass it, and `--mode testing` is refused as
+`invalid` (exit 1), since the page no longer offers Testing records
+(#1570). It takes `--request-key` like the other
 exports. A Family that is not in the current campaign is exit 1
 (`not_available`).
 
@@ -2517,7 +3088,7 @@ date, through its last full day. That is at once when no response arrived
 on the day it closed, and otherwise the next day. It holds each Family's
 giving, so,
 like `export financial`, it asks at the prompt (or takes `--yes`) and needs
-a full-scope session in place of the page's recent sign-in. It records
+a full-scope session. It records
 `campaign_archive_exported` (with the cutoff's campaign day) plus
 `admin_cmd_export_archive`, and the file is fetched with `export fetch`.
 
@@ -2541,20 +3112,38 @@ with the directory's Response filters.
 ### Limitations download
 
 `export limitations` writes the page's download of the **Limitations**
-report to standard output, and its document (`campaign_id`, `file_name`,
-`content_type`, `format`, `timezone`, `size`, `sha256`, `count`) to
-standard error, as `export census` does. It needs a full-scope session, as
+report to standard output, and its document (`campaign_id`, `stage`,
+`file_name`, `content_type`, `format`, `timezone`, `size`, `sha256`,
+`count`) to standard error, as `export census` does. It needs a full-scope session, as
 every export does; Administrators and Staff may run it, and a Ministry
 leader is refused (`denied`). It takes the page's Show menu as `--show`
 (`any`, the default, `cannot_serve` for Members who cannot participate in
 ministries, or `cannot_attend` for Families that cannot attend Mass or
-prayer services), without the page's search, `--format` (`xlsx`, the
-default, `csv` or `pdf`) and `--timezone` (UTC, the default, or a time zone
-name, for the file's times). It records the page's "downloaded" event
-(`talents_report_exported`) with the number of rows in the file.
+prayer services), without the page's search, the download's Stage as
+`--stage` (`all`, the default, or `to_review`, `to_handle`, `ignored` or
+`handled`), `--format` (`xlsx`, the default, `csv`, `pdf` or `jsonl`) and
+`--timezone` (UTC, the default, or a time zone name, for the file's times).
+It records the page's "downloaded" event (`talents_report_exported`) with
+the number of rows the report read (before `--stage` leaves some out, as
+the page counts them); the document's `count` is the rows in the file.
+
+JSON Lines is for scripts: one object per answer, Members' first, with the
+CSV's columns under the keys `member`, `member_duid`, `family`,
+`parishsoft_status`, `family_duid`, `cannot_participate`, `latest_response`
+and `stage` (a Family's answer has only `family`, `parishsoft_status`,
+`family_duid`, `limitation`, `latest_response` and `stage`), plus `kind`
+(`member`, `proposed_member` or `family`), `item_id` and `version`, which
+`limitations decide` takes, and `actions`, the decisions you may record on
+it now (none while other campaign work holds the campaign). Once the
+Limitations page lists the Families that cannot contribute financially
+(R39 finding 11, with #1734), each of those is a Family record of `kind`
+`cannot_give` whose `item_id` is `pledge-<id>` and whose `actions` are
+always empty: it is decided on Pledges, never with `limitations decide`.
 
 ```sh
 (umask 077; pk-admin export limitations --show cannot_serve > limitations.xlsx)
+(umask 077; pk-admin export limitations --stage to_review --format jsonl \
+    > limitations.jsonl)
 ```
 
 The files are the page's own, with the same two tables (Members, then
@@ -2562,10 +3151,71 @@ Families) and columns; `count` is the Member rows plus the Family rows. The
 file names Families and Members, so create it private, as above, and
 delete it once used; the wrapper refuses to write it to a terminal.
 
+### Additional information and Limitations decisions
+
+The **Additional information** and **Limitations** review worklists record
+Staff decisions: Accept, Ignore, Back to review and Handled. `information
+decide` and `limitations decide` record them as a row's icon or the bulk bar
+does, through the pages' own decision services. Like the pages,
+Administrators and Staff may run them, from a full-scope session; a
+Ministry leader is refused (`denied`).
+
+`information list` prints the Additional information requests at the
+worklist's `--stage` (`to_review`, the default, `to_handle`, `ignored`,
+`handled`, `history` or `all`, Every stage, which leaves History out), and
+takes `--start`, `--end` and `--zone` as `report information` does. It
+prints `stage`, `filters` and `requests`, each request's `item_id` and
+`version` (what `information decide` takes), `stage`, `decision`,
+`disposition`, `submitted_at`, `decided_at` and `actions` (the decisions you
+may record on it now), never the Family, what it wrote or the Staff notes:
+read those on the page, or download them with `export information`. It runs
+on a session of any scope and records the page's `information_viewed`.
+Limitations answers come from `export limitations --format jsonl` (see
+[Limitations download](#limitations-download)), since their ids carry the
+Family's DUID.
+
+```sh
+pk-admin information list --stage to_review
+pk-admin information decide --action accept --item ITEM_ID:1 --item ITEM_ID:3
+pk-admin information decide --action back_to_review --item ITEM_ID:2 \
+    --note "Asked the Family again"
+pk-admin limitations decide --action handled --item m41-3:1
+```
+
+Each takes `--action` (`accept`, `ignore`, `back_to_review` or `handled`),
+one `--item ID:VERSION` for each item (up to 100, all or none), `--note TEXT`
+(at most 2,000 characters; `-` reads standard input) and
+`--request-key`. None asks first, as every decision can be
+changed again, Handled too, and none takes `--yes`. Taking an Ignored
+item back to review, or a Handled one (which returns it to To handle,
+with its Accept kept), needs a `--note` saying why (for a request, a new
+one, not its current notes) (exit 1, `invalid`, naming `note`,
+otherwise). An item someone decided since, or that the Family answered
+again, is exit 1 (`stale_version`): list or export again. An action the
+item's stage does not offer is `stale_version` too, as on the page. A
+request that is not one of the current campaign's, or an answer whose
+Family is not, is exit 1 (`not_available`); a Limitations id the page never
+draws is `invalid`. A repeat with the same key, items and decision returns
+the same rows (`created` false); using the key for other items or another
+decision is `invalid`.
+
+| Field | What it holds |
+| --- | --- |
+| `created` | False for a repeat with the same key, which recorded nothing |
+| `request_key` | The key, for a repeat |
+| `decisions` | Each item's recorded row, in the order the items were given: `id`, `expected_version`, `decision` and `created_at`, with `item_id`, `follow_up_needed` and `followed_up` for a request and `kind` for an answer (never its item id, which names the Family's DUID); never the note |
+
+System logs show the services' `information_updated` or
+`limitation_reviewed` for each item and the command's
+`admin_cmd_information_decide` or `admin_cmd_limitations_decide`.
+`followup information-update` still sets a request's follow-up flags, until
+issue 1688 renames the commands; only `information decide` can Ignore a
+request.
+
 ### Roster changes download
 
-`export roster` writes the page's download of **Roster changes to enter**
-to standard output, and its document (`campaign_id`, `file_name`,
+`export roster` writes the roster changes to enter (the file the retired
+Roster changes to enter page downloaded) to standard output, and its document (`campaign_id`, `file_name`,
 `content_type`, `format`, `timezone`, `size`, `sha256`, `count`) to
 standard error, as `export limitations` does. It needs a full-scope
 session, as every export does; Administrators and Staff may run it, and a
@@ -2583,6 +3233,37 @@ for the file's times). It records the page's "downloaded" event
 The files are the page's own, with its columns. They name Members and
 Families, so create them private, as above, and delete them once used; the
 wrapper refuses to write one to a terminal.
+
+### Ministry follow-up download
+
+`followup export` writes the page's **Export these requests** download of
+the Ministry follow-up queue to standard output: every request the
+filters select, not one page, with each Member's contact details as the
+request page shows them. Its document (`campaign_id`, `file_name`,
+`content_type`, `format`, `timezone`, `size`, `sha256`, `count`) goes to
+standard error, as for `export roster`. It needs a full-scope session, as
+every export does; Administrators and Staff may run it, and a Ministry
+leader gets only the requests of the Ministries they lead, as on the page.
+It takes `followup
+list`'s filters, `--ministry DUID`, `--action`, `--state` (`unresolved`,
+the default, `any`, `new`, `in_progress`, `resolved` or
+`closed_no_response`), `--outcome` and `--sort`, but no search, page or
+size, plus `--format` (`xlsx`, the default, `csv` or `pdf`) and
+`--timezone` (UTC, the default, or a time zone name, for the file's
+times). A PDF holds at most 1,000 requests; more is exit 1 (`invalid`, at
+`format`): choose CSV or XLSX, or narrow the filters. It records the
+page's "downloaded" event (`ministry_followup_exported`) with the number
+of requests and the Ministries in the file, never their values.
+
+```sh
+(umask 077; pk-admin followup export --state any --format csv > requests.csv)
+```
+
+The file is made when you run the command and is not kept anywhere else:
+run it again for a newer one. It is the page's own file, with its columns,
+and names Members with their contact details, so create it private, as
+above, and delete it once used; the wrapper refuses to write it to a
+terminal.
 
 ### Census changes download
 
@@ -2606,7 +3287,7 @@ zone the file's times are written in.
 CSV, XLSX and PDF are the page's own files, with the same columns. JSON
 Lines is for scripts: one object per change, the page's columns with the
 same text under the keys `family`, `parishsoft_status`, `family_duid`,
-`who`, `member_duid`, `what`, `parishsoft_now`, `family_answer`, `edited`,
+`who`, `member_parishsoft_status`, `member_duid`, `what`, `parishsoft_now`, `family_answer`, `edited`,
 `route`, `status`, `submitted`, `recorded_by`, `recorded_at` and `note`,
 plus `proposal_id`
 and `version`, which recording a row's outcome needs and the page's files
@@ -2618,7 +3299,7 @@ why), `reviews`: the decisions `census review` takes on that row now
 and `resolvable`: whether `census edit` and `census resolve-conflict` act
 on it now (true or false, for Administrators only). They are empty or false
 while other campaign work holds the campaign, as the page then offers no
-Record outcome or Review. The file names Families and
+row actions. The file names Families and
 Members with their contact details, so create it private, as above, and
 delete it once used; the wrapper refuses to write it to a terminal.
 
@@ -2740,6 +3421,52 @@ pk-admin users import-leaders --confirm --token -
 | `remaining` | Chosen leaders past one change's limit of 100, left for another import |
 | `preview` | `token`, which `--confirm` takes, or `null` with nobody to import |
 | `created`, `request` | With `--confirm`: as `users confirm` prints them |
+
+`users email-leaders` is the Users page's
+[Email Ministry leaders](../specs/stewardship/admin-portal/spec.md#email-ministry-leaders):
+one email to each chosen Ministry leader user saying they can sign in, and
+the open requests in each of their Ministries. It needs a full-scope
+session. `--preview` reviews emailing every Ministry leader user (`--all`)
+or the chosen addresses (`--email`, repeatable; one of the two is
+required) and sends nothing. `--confirm --token` applies the review, as
+the page's Apply does: the emails are queued, and the background engine
+sends them. Like `send confirm`, `--confirm` first asks you to type `yes`,
+showing how many leaders are emailed and the mode; `--yes` answers it, and
+is required with `--token -` (otherwise exit 2, `usage`) or when no terminal
+can answer (otherwise exit 4, `confirmation_required`); nothing is queued. The review
+binds the Testing recipient only by a digest, so the printed token does
+not carry its address. A review lasts fifteen minutes, and the page and the command
+line can apply each other's reviews. Applying the same review again sends
+nothing more; each new review and its Apply sends again, so check Last
+emailed on the Users page first.
+
+```sh
+pk-admin users email-leaders --preview --all
+pk-admin users email-leaders --preview --email ann@example.org
+pk-admin users email-leaders --confirm --token TOKEN
+pk-admin users email-leaders --confirm --token - --yes
+```
+
+| `users email-leaders` field | What it holds |
+| --- | --- |
+| `mode` | `testing` or `production`, the mode the review was made in |
+| `note` | In Testing, that every email goes to the Testing recipient instead of the leader (its address stays on the page); otherwise `null` |
+| `emailed` | Each leader who will be emailed, by Name: `email`, `name` and the `ministries` the email lists, each with its `duid`, `name` and the open `join` and `leave` request counts |
+| `skipped` | Each chosen address left out: `email` and `reason` (`not_leader`, no Ministry leader user now; `no_ministry`, leads none of the campaign's Ministries in ParishSoft) |
+| `remaining` | Chosen leaders past one Apply's limit of 100, left for another review |
+| `preview` | `token`, which `--confirm` takes, or `null` with nobody to email |
+| `created`, `request_id`, `recipient_count` | With `--confirm`: whether this Apply recorded the request (`false` when the same review was applied before), its ID, and how many leaders it emails |
+
+No document names a parishioner. Each review is recorded in System logs
+(`user_leader_emails_reviewed`) and each Apply
+(`user_leader_emails_requested` and `admin_cmd_users_email_leaders`), with
+the number of leaders, never an address. While Production mail is paused
+both are exit 1 (`not_available`) and nothing is queued; so is
+`--preview` with no current campaign with Ministries or with the campaign
+archived. A review that no longer matches (the campaign, mode or Testing
+recipient changed, a leader is no longer one, or a leader's Ministries or
+counts changed) is exit 1 (`stale_version`), as is an expired one; review
+again. Another Administrator's review is `denied`.
 
 ## Security events and critical problems
 
@@ -2890,6 +3617,111 @@ page refuses, or text past its length, is exit 1 (`invalid`), with
 `contact_notes` or `request`). A request that is not one of the current
 campaign's, or is outside your Ministries, is exit 1 (`not_available`).
 
+The queue's **Export these requests** is `followup export`, see
+[Ministry follow-up download](#ministry-follow-up-download).
+
+## Roster tick and Additional information
+
+`followup roster-entered` sets or clears a resolved Ministry request's
+**Entered in ParishSoft** tick, as the tick on the request's page does, and
+`followup roster-bulk` marks several at once, as **Roster changes to
+enter**'s bulk mark does. `followup information-show` reads one
+**Additional information** request's page with its follow-up history, and
+`followup information-update` sets its follow-up flags, which the page's
+review worklist now records as Accept, Handled and Back to review (issue
+1685; issue 1688 renames the commands). The read runs on a
+session of any scope and records the page's `information_viewed`; the
+changes need a full-scope session. Ministry leaders may not tick, and only
+Staff and Administrators follow up Additional information, as on the pages.
+The documents give IDs, versions, flags, account IDs and instants, never a
+Member's or Family's name or DUID, what the Family wrote, or the Staff
+notes; read those on the page, or download them with `export information`.
+
+```sh
+pk-admin followup show REQUEST_ID
+pk-admin followup roster-entered REQUEST_ID --set --expected-version 0
+pk-admin followup roster-entered REQUEST_ID --clear --expected-version 1 \
+  --note "Marked by mistake"
+pk-admin followup roster-bulk --request REQUEST_ID:0 --request OTHER_ID:2
+pk-admin followup information-show ITEM_ID
+pk-admin followup information-update ITEM_ID --expected-version 3 \
+  --completed yes --notes -
+```
+
+`--expected-version` for the tick is its current sequence, as `followup
+show` prints `roster.sequence` (0 before the first tick); each set or clear
+adds one. A tick changed since is exit 1 (`stale_version`). A request that
+takes no tick (only a join or leave a person resolved as joined or leave
+confirmed takes one) is exit 1 (`invalid`, `error.fields` naming
+`request`), and so is a tick that already says so (naming `set` or
+`clear`). `--clear` is the request's Back to review of the mark, as the
+page's Clear Entered in ParishSoft is: it needs `--note TEXT` (or `--note -`
+to read it from standard input), saying why, and records that undo with the
+note; the request is To enter by hand again, its decision kept. Without a
+note it is exit 1 (`invalid`, naming `note`); `--set` takes no note.
+`followup roster-bulk` takes each chosen request as `ID:VERSION`,
+up to 250, and only marks; it asks for confirmation first (or takes
+`--yes`), and saves nothing if any request is stale or already marked.
+Find the requests with `followup list --state resolved`: a row whose
+`roster.eligible` is true and `roster.entered` is false is one to enter, and
+its `id` and `roster.sequence` are the `ID` and `VERSION`. The list shows
+only each Member's newest request for a Ministry (as the queue does), but
+Ministry requests' To enter by hand Stage also lists an older resolved
+request that a newer request has replaced, so such a request can be
+missing from `followup list`. That is a known gap: mark it on the page, or with
+`followup roster-entered` if you already have its ID.
+
+`followup information-update` takes `--needed yes|no` (Follow-up needed),
+`--completed yes|no` (Follow-up completed) and `--notes TEXT` (at most 5,000
+characters; `-` reads standard input, which keeps the text out of shell
+history, and trims surrounding whitespace, as `followup update` does; the
+page keeps it as typed). Each one left out stays as it is, as the page's form opens filled
+in. Clearing a completed follow-up (`--completed no`) needs
+`--confirm-clear`, the page's confirmation box; without it the command is
+exit 1 (`invalid`, naming `confirm_clear`). A version that is no longer
+current is exit 1 (`stale_version`). The flags give the request its
+worklist stage: needed is To handle, completed is Handled, and setting both
+to no keeps a To review or Ignored request as it was, or sends a To handle
+or Handled one back to review; the command never ignores a request. An
+Ignored request leaves Ignored only with new `--notes` saying why, and
+clearing a completed follow-up undoes Handled, which needs new `--notes`
+saying why too (exit 1, `invalid`, naming `notes`, otherwise).
+
+Each change takes `--request-key`; without one it makes a key and prints it
+to standard error. A repeat with the key records nothing twice; the key
+with another change is exit 1 (`invalid`). A request or item that is not
+one of the current campaign's is exit 1 (`not_available`).
+
+| `followup roster-entered` field | What it holds |
+| --- | --- |
+| `created` | False for a repeat with the same key, which recorded nothing |
+| `request_key` | The key, for a repeat |
+| `entry` | The tick recorded: `id`, `request_id`, `sequence`, `entered`, `created_at` |
+
+| `followup roster-bulk` field | What it holds |
+| --- | --- |
+| `created`, `request_key` | As for `followup roster-entered` |
+| `changed` | How many requests this run marked (0 for a repeat) |
+| `entries` | Each chosen request's tick, as `entry` above |
+
+| `followup information-show` field | What it holds |
+| --- | --- |
+| `campaign_id` | The current campaign |
+| `item` | `id`, `version` (what `--expected-version` takes), `disposition` (`current_actionable`, or why the request no longer is), `submitted_at`, `follow_up_needed`, `completed`, `followed_up_at` and `followed_up_by` (an account ID), `replacement_id` (a later request that replaced this one), `previously_reported` and `correction_resolved` |
+| `history_page`, `more_history` | The history page shown (`--page`), and whether another follows |
+| `history` | Each Save, newest first: `id`, `expected_version`, `follow_up_needed`, `followed_up`, `confirm_clear`, `followed_up_at`, `followed_up_by`, `actor_id`, `created_at` |
+
+| `followup information-update` field | What it holds |
+| --- | --- |
+| `created`, `request_key` | As for `followup roster-entered` |
+| `revision` | What was recorded, as a `history` row |
+| `item` | The item now: `id`, `version`, `follow_up_needed`, `followed_up_at` |
+
+Each change is recorded in System logs as on the page
+(`ministry_roster_entered` for each tick, `information_updated`), with
+`admin_cmd_followup_roster_entered`, `admin_cmd_followup_roster_bulk` or
+`admin_cmd_followup_information_update` naming the session.
+
 ## Output changelog
 
 - `pk-admin/1` (ADM-11 PR 2): the first version, with the session commands.
@@ -2978,7 +3810,7 @@ campaign's, or is outside your Ministries, is exit 1 (`not_available`).
   offered `resend` is `delivery resend`.
 - `pk-admin/1` (#944): additive. `config request cancel`, which prompts.
 - `pk-admin/1` (#931): a change of meaning, kept on version 1.
-  `delivery list --sort` follows the reworked Outgoing mail page: the
+  `delivery list --sort` follows the reworked Sent mail page: the
   Family DUID token is `duid` (it was `recipient`, which is now refused),
   the new `name` sorts by the Family's name from the latest ParishSoft
   data, and the default is `-changed`, the latest change first (it was
@@ -3005,8 +3837,8 @@ campaign's, or is outside your Ministries, is exit 1 (`not_available`).
   library and each file's uses (any session, Administrators only, no
   event).
 - `pk-admin/1` (#463): additive. `files delete` and `files rename`, the
-  Hosted files page's Delete and Edit (full scope, Administrators only, no
-  recent sign-in; `files delete` prompts; their events).
+  Hosted files page's Delete and Edit (full scope, Administrators only, not
+  fresh-gated; `files delete` prompts; their events).
 - `pk-admin/1` (#970): a deliberate change, kept on version 1.
   `report talents` is now `report limitations`, with no alias, because the
   Family form no longer asks for talents and the report is Limitations. Its
@@ -3231,6 +4063,26 @@ campaign's, or is outside your Ministries, is exit 1 (`not_available`).
   fresh-gated and prompting, recording
   `admin_cmd_integration_key_finish_switching` and a `policy_change`
   notice).
+- `pk-admin/1` (#463): additive. `integration backup-key challenge
+  --public-key-stdin`, `integration backup-key preview --intent TOKEN
+  --code-stdin` and `integration backup-key confirm --token TOKEN [--yes]`,
+  the Backup encryption key page's steps (full scope; the confirmation is
+  fresh-gated and prompting, recording
+  `admin_cmd_integration_backup_key_confirm` and a `policy_change` notice).
+  The public key and the code follow the preamble as one
+  `pk-admin-public-key/1 <base64>` or `pk-admin-proof/1 <base64>` line,
+  which the host wrapper's `--public-key-file PATH`, or `--code-file PATH`
+  or `--code-stdin`, sends. The results have `version`, `current`,
+  `fingerprint`, `challenge` and `intent`; `version`, `changes` and
+  `preview`; and `created` and `request`.
+- `pk-admin/1` (#463): additive. `integration key replace TARGET
+  --expected-version V --secret-stdin [--changes JSON] [--yes]`, a settings
+  page's Save with a new key (full scope, fresh-gated and prompting,
+  recording `admin_cmd_integration_key_replace` and a `policy_change`
+  notice). The key follows the preamble as one `pk-admin-secret/1 <base64>`
+  line, which the host wrapper's `--secret-file PATH` or `--secret-stdin`
+  sends; the result has `version`, `target`, `name`, `setup`, `changes`,
+  `key_request_id` and `request`.
 - `pk-admin/1` (#463): additive. `export roster [--show todo|all]
   [--ministry DUID] [--format csv|xlsx|pdf] [--timezone ZONE]`, the Roster
   changes to enter download (full scope, Administrators and Staff, the
@@ -3246,11 +4098,16 @@ campaign's, or is outside your Ministries, is exit 1 (`not_available`).
   --format jsonl` records gain `reviews`, the decisions `census review`
   takes on the row now.
 - `pk-admin/1` (#463): additive. `campaign show`, `campaign preview
-  --changes FILE|- --expected-version VERSION` and `campaign confirm
+  --changes JSON|- --expected-version VERSION` and `campaign confirm
   --token TOKEN|-`, Campaign settings' read, Review and Apply
   (Administrators only; the read in any session, the others in a
   full-scope one); `campaign confirm` records `admin_cmd_campaign_confirm`
   and the page's own events.
+- `pk-admin/1` (#1899): additive. `campaign create-preview --changes
+  JSON|- --expected-version VERSION` and `campaign create --token
+  TOKEN|-`, Create the campaign's Review and Apply for the deployment's
+  first campaign (Administrators only, full scope, neither fresh-gated nor
+  prompting); `campaign create` records `admin_cmd_campaign_create`.
 - `pk-admin/1` (#632): additive. `integration schedule-preview
   [--refresh-schedule DOCUMENT|-]`, the ParishSoft page's live refresh
   schedule check (any session, Administrators only, no event).
@@ -3318,3 +4175,104 @@ campaign's, or is outside your Ministries, is exit 1 (`not_available`).
   `first_end=`, `latest_start=`, `latest_end=`) are now days in the time
   zone `--filter zone=…` names, as on the page; a date without it is exit 1
   (`invalid`). Its only readers are Administrator-run assistants.
+- `pk-admin/1` (#463 PR 11b): additive. `followup roster-entered` and
+  `followup roster-bulk`, the Entered in ParishSoft tick and Roster changes
+  to enter's bulk mark, and `followup information-show` and `followup
+  information-update`, an Additional information request's page and Save.
+- `pk-admin/1` (#463 PR 11c): additive. `followup export [--ministry DUID]
+  [--action A] [--state S] [--outcome O] [--sort S] [--format
+  csv|xlsx|pdf] [--timezone ZONE]`, the Ministry follow-up queue's Export
+  these requests (full scope, the page's `ministry_followup_exported`),
+  streamed as `export roster` is.
+- `pk-admin/1` (#1404 PR 6b): a deliberate change, kept on version 1.
+  `content list` and `content show` print the text state `edited` where
+  they printed `custom`, the word Pages and emails now shows (Edited; it
+  was Customized). `empty` and `default` are unchanged. The only readers
+  are Administrator-run assistants.
+- `pk-admin/1` (#1547, 2026-10-17): a change of meaning, kept on version 1.
+  No Admin action checks a sign-in's age any more, so the reason
+  `fresh_authentication_required` is gone: a read-only or no-longer-live
+  automation session at a fresh-gated (privileged) command is now exit 1
+  with reason `denied` in its durable log entry, where it used to report
+  `fresh_authentication_required`. The catalog's `fresh_gated` flag, the
+  `automation_fresh_gate` event and the `fresh_gated` and `irreversible`
+  notices keep their names and now mark a privileged command an automation
+  session ran.
+- `pk-admin/1` (ADM-13 PR 4a, #530): additive. `system mail-clear-preview
+  [--no-wait]` (asks for a mailbox check, records no event) and `system
+  mail-clear --token TOKEN` (always prompts; its event), Clear the halt
+  ahead of System health's button. Neither needs a recent sign-in (#1547).
+- `pk-admin/1` (ADM-13 PR 4b, #530): additive. `system mail-clear` also
+  acknowledges the halt's critical-problems banner entries the preview saw,
+  as System health's Clear the halt does.
+- `pk-admin/1` (#1562, migration 0116): a change of meaning, kept on
+  version 1. `delivery list` follows Sent mail: `--search` is replaced by
+  `--recipient`, which also takes an email address; `--purpose`, `--mode`,
+  `--from`, `--to` and `--zone` are new, `--state` gains `needs_attention`,
+  `not_delivered` and `still_sending`, and the list now includes
+  operational and security notices. The document adds `purpose`, `mode`,
+  `start` and `end`; each row keeps its `mode` and `attempt`. Its only
+  readers are the Administrator and the operator, who keep no legacy forms.
+- `pk-admin/1` (#1562): a change of meaning, kept on version 1.
+  `send progress` is replaced by `mail queue`, with no alias. Its document
+  keeps `campaign_id`, `mode`, `paused`, `upcoming` and `send` unchanged
+  and adds `counts`, `other_mode_queued` and `kinds`; a watch also runs on
+  while any email is queued. Its only readers are the Administrator and
+  the operator, who keep no legacy forms.
+- `pk-admin/1` (#1622): additive. `users email-leaders --preview` and
+  `--confirm`, the Users page's Email Ministry leaders review and Apply
+  (full scope, the page's audit events and `admin_cmd_users_email_leaders`;
+  `--confirm` prompts, `--yes` answers it).
+- `pk-admin/1` (#1658, migration 0121): additive. A
+  `schedule preview` change document may give a saved daily or weekly
+  digest a `skip` date, which skips that one send; `schedule show` and each
+  side of `schedule preview` list a digest's `skip_dates` (empty when none).
+- `pk-admin/1` (#1735): additive. `information list`, `information
+  decide` and `limitations decide`, the Additional information and
+  Limitations worklists' decisions; `report limitations` gains `--stage`
+  and the `stage` and `stages` fields; `report information` gains
+  `--stage` and the `stage` and `stages` fields (null without it);
+  `export limitations` gains `--stage`, `--format jsonl` and the
+  document's `stage`; `export information` gains `--stage`.
+- `pk-admin/1` (#1865): additive. `branding preview - [--size SIZE]
+  --expected-version VERSION` and `branding confirm --bundle ID --token
+  TOKEN|-`, the Parish logos page's upload with its review and its Apply
+  (full scope, Administrators only); they record
+  `admin_cmd_branding_preview` and `admin_cmd_branding_confirm`.
+- `pk-admin/1` (ADM-11 PR 12, #1809): additive. The Go live page's
+  actions: `go-live preview`, `go-live start`, `go-live status`, `go-live
+  retry`, `go-live refresh-again`, `go-live stop`, `go-live
+  confirm-preview`, `go-live confirm`, `go-live cancel-preview`, `go-live
+  cancel` and `go-live families` (a streamed file).
+- `pk-admin/1` (#1752): a deliberate change, kept on version 1, as for
+  #1216. The files `export census` writes have a `Member's ParishSoft
+  status` column right after `Who`, and its JSON Lines a
+  `member_parishsoft_status` key after `who`: "Not in ParishSoft",
+  "Inactive in ParishSoft" or "Deceased in ParishSoft" for a change whose
+  Member is no longer an active, living Member of its Family, blank
+  otherwise. The command's options and document are unchanged; a script
+  that reads these files by position must change.
+- `pk-admin/1` (#1755): additive. `census update-check [--request-key
+  KEY]`, `census update-plan [PLAN_ID]`, `census update-confirm PLAN_ID
+  [--request-key KEY]` (fresh-gated and prompting) and `census update-rerun
+  PLAN_ID [--request-key KEY]` (prompting), the Update ParishSoft page's
+  steps, recording `admin_cmd_census_update_check`,
+  `admin_cmd_census_update_confirm` and `admin_cmd_census_update_rerun`. An
+  error document of these commands may carry `reason`, the page's refusal
+  code.
+- `pk-admin/1` (#1755, decision 7): a rename, kept on version 1, with no
+  alias. `census review --decision approved` is now `--decision accepted`
+  (`approved` is a usage error, exit 2), and every `decision` the census
+  commands print, and `export census --format jsonl`'s `reviews`, say
+  `accepted` where they said `approved`. Its only readers are
+  Administrator-run assistants.
+- `pk-admin/1` (#1704): additive. `report pledges` and `export pledges`
+  take the Pledges page's two new stages, `entered_incorrectly` and
+  `confirmed`, and `report pledges` counts them in `stages`; the
+  JSON Lines of `export pledges` gain `parishsoft_annual_pledge`, the
+  files' new ParishSoft annual pledge column.
+- `pk-admin/1` (#1747): additive. `report pledges` and `export pledges`
+  take the Pledges page's `conflict` stage, and `report pledges` counts
+  it in `stages`.
+- `pk-admin/1` (#1562): additive. `delivery list` also lists the Ministry
+  leader emails, as Sent mail does, and `--purpose` takes `leader_email`.

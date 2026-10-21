@@ -3,13 +3,13 @@
 Everything here calls the production code the Admin and Family pages call,
 inside a process configured like the web service (``configure_web_runtime``)
 and under the web identity. Requests are real Django request objects built
-with ``RequestFactory``; the Admin session is created and made fresh through
+with ``RequestFactory``; the Admin session is created through
 ``establish_identity``, the identity core the Google callback and the LOCAL
-test sign-in share, so sessions, audit and step-up behave as after a real
-sign-in. Family sessions are minted by ``issue_family`` from the Family's
-code, the form baseline by ``issue_baseline``, presence by the real heartbeat
-view and submissions by ``submit_family``. In Testing mode the Family signs in
-with the rehearsal code its chosen-Family Testing send carried
+test sign-in share, so sessions and audit behave as after a real sign-in.
+Family sessions are minted by ``issue_family`` from the Family's code, the
+form baseline by ``issue_baseline``, presence by the real heartbeat view and
+submissions by ``submit_family``. In Testing mode the Family signs in with the
+rehearsal code its chosen-Family Testing send carried
 (``RehearsalFamilyWebDriver``), and that send is made through the page's own
 review and confirmation (``family_tests``). No row is written by anything but
 production code.
@@ -124,11 +124,11 @@ def new_request(path="/admin/", *, method="get", data=None, session=None):
 
 # Admin.
 def sign_in_admin(request, email):
-    """Sign the Admin in (or step up) through the shared identity core.
+    """Sign the Admin in through the shared identity core.
 
     This is exactly what the LOCAL test sign-in does after consuming its
     token: the subject is ``local-test:<email>``, the recovery epoch is the
-    current one and freshness is now. A redirect means success; any other
+    current one and the sign-in instant is now. A redirect means success; any other
     response is the core's uniform denial.
     """
     from django.http import HttpResponseRedirect
@@ -146,7 +146,6 @@ def sign_in_admin(request, email):
         None,
         authenticated_at=database_now(),
         recovery_epoch=revocation_epoch(),
-        destination=None,
     )
     if not isinstance(response, HttpResponseRedirect):
         raise SeedWebRefused(f"The Admin sign-in was refused ({response.status_code}).")
@@ -248,7 +247,7 @@ def sample_mail(request, service, campaign_id, revision_id):
 
     This is the campaign email page's "send a sample" action (``prepare`` is
     its review, ``request_sample`` its send, the signed preview between them
-    the page's own binding), and the test go-live readiness requires of a
+    the page's own binding), and the test Go live requires of a
     Family template: an accepted ``CampaignMailTest`` for the Initial or a
     Reminder revision under the current configuration and credential.
     """
@@ -275,10 +274,14 @@ def start_go_live(request, service, campaign_id):
     )
 
     inputs, verified, token = verify_preview(request, service, campaign_id)
-    if inputs.problems or not verified or token is None:
+    # Readiness waives a stale full refresh only because Start go-live
+    # queues its own (#1812); this tool starts cleanup without one.
+    problems = list(inputs.problems)
+    if inputs.source.reason == "full_refresh_stale":
+        problems.append(inputs.source.reason)
+    if problems or not verified or token is None:
         raise SeedWebRefused(
-            "Go-live readiness is not met: "
-            + (", ".join(inputs.problems) or "origin unverified")
+            "Go live is not ready: " + (", ".join(problems) or "origin unverified")
         )
     if inputs.target_state != "scheduled":
         raise SeedWebRefused(
@@ -495,8 +498,7 @@ def family_tests(request, service, campaign_id, revision_id, duids):
     The page's review (``campaign_family_test.prepare``, signed with its own
     salt) followed by its confirmation (``request_tests``, acknowledged), so
     each Family gets one ticket that the worker prepares with its Testing
-    code and mail-dispatch sends to the Testing recipient only. The caller
-    signs in again first: the confirmation needs a fresh sign-in. Returns
+    code and mail-dispatch sends to the Testing recipient only. Returns
     the tickets.
     """
     from django.core import signing
@@ -737,8 +739,8 @@ def run_wizard(
     (off), a generated parish logo through the real branding staging, the
     access lists, the ParishSoft credential (the fake's key and organization),
     the source load (the worker loads from the fake; ``wait`` blocks until the
-    attempt collects again), the preview, the fixed setup test mail (sent to
-    Mailpit by mail-dispatch) and the final confirmation. The caller then
+    attempt collects again), the fixed setup test mail (sent to Mailpit by
+    mail-dispatch), the preview and the final confirmation. The caller then
     waits for ``setup_is_complete``. Setup collects no campaign (#142); the
     seeder's ``campaign`` step creates it afterwards (``create_campaign``).
     """
@@ -949,7 +951,8 @@ def preview_token(request, service):
 
 
 def wizard_confirm(request, service, attempt_id, *, wait):
-    """Review, send the sample mail, wait for the catcher to take it, confirm."""
+    """Send the sample mail, wait for the catcher to take it, then confirm the
+    current preview (the wizard's Test email, Review and Finish setup, #1476)."""
     from parishkit.stewardship.accounts.setup_confirmation import freeze_setup
     from parishkit.stewardship.accounts.setup_delivery_models import SetupMailDelivery
     from parishkit.stewardship.accounts.setup_mail import request_sample

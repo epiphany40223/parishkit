@@ -2,10 +2,10 @@
 
 The host command line acts as one named Administrator through an automation
 session that Administrator approved once in a browser signed in with Google
-within five minutes (see the Admin automation specification, "Automation
-sessions"). The session secret lives only in an owner-only file on the host;
-this module sees it once per command, keeps only its SHA-256 digest, and never
-logs, prints or stores it.
+(see the Admin automation specification, "Automation sessions"). The session
+secret lives only in an owner-only file on the host; this module sees it once
+per command, keeps only its SHA-256 digest, and never logs, prints or stores
+it.
 
 - **Pairing** stores a pending request in Valkey under a short user code. The
   approval page reads it, and the Administrator approves it into a durable
@@ -345,10 +345,10 @@ def approve(principal, portal_session, request, *, scope, days):
     """Approve one pending pairing as the signed-in Administrator.
 
     Runs in the caller's transaction, after the page re-admitted the
-    Administrator with a fresh Google sign-in. The approver may lower the
-    requested scope and lifetime, never raise them, and must be the address
-    the operator expected. The SQL guard re-checks the browser session, its
-    five-minute sign-in and the Administrator role.
+    signed-in Administrator. The approver may lower the requested scope and
+    lifetime, never raise them, and must be the address the operator
+    expected. The SQL guard re-checks the live browser session, its recorded
+    sign-in instant and the Administrator role.
     """
     from parishkit.stewardship.jobs.operational_content import IncidentKind
 
@@ -815,19 +815,32 @@ def revoke(session_id, actor, *, reason):
         return end_session(session, reason=reason, actor_id=actor.identity)
 
 
-def open_notices(viewer, *, limit=10):
-    """The notices this Administrator has not acknowledged, newest first.
-
-    Two queries: the count and the newest ``limit``. Labels are returned as
-    stored; the template escapes them as text.
-    """
-    pending = AutomationNotice.objects.exclude(
+def _pending(viewer):
+    """The notices this Administrator has not acknowledged, as a query set."""
+    return AutomationNotice.objects.exclude(
         Exists(
             AutomationNoticeAcknowledgement.objects.filter(
                 notice=OuterRef("pk"), administrator_id=viewer.identity
             )
         )
     )
+
+
+def pending_count(viewer):
+    """How many notices this Administrator has not acknowledged (one query).
+
+    Home's count line (#1673); the list is on Automation access.
+    """
+    return _pending(viewer).count()
+
+
+def open_notices(viewer, *, limit=10):
+    """The notices this Administrator has not acknowledged, newest first.
+
+    Two queries: the count and the newest ``limit``. Labels are returned as
+    stored; the template escapes them as text.
+    """
+    pending = _pending(viewer)
     total = pending.count()
     if not total:
         return {"total": 0, "rows": []}

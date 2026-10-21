@@ -6,10 +6,11 @@ scope inside the request owner's transaction. The web process never installs
 YAML or claims that an accepted request has already applied.
 """
 
+import json
 import logging
 from datetime import datetime
 from urllib.parse import urlencode
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 from django.core import signing
 from django.core.exceptions import NON_FIELD_ERRORS
@@ -44,6 +45,7 @@ from parishkit.stewardship.web.refusals import (
     gone_response,
     load_preview,
     send_time_passed,
+    stale_page,
     unavailable_response,
     unexpected_fields,
 )
@@ -54,7 +56,7 @@ from .configuration_request_reads import receipt as configuration_receipt
 from .configuration_requests import record_request
 from .policy import Capability, allows
 from .request_models import ConfigurationChangeRequest
-from .sessions import FreshAuthenticationRequired, authenticated_admin, require_fresh
+from .sessions import authenticated_admin, sign_in_instant
 
 
 def principal(
@@ -109,26 +111,54 @@ def form_action(
     preview_fields,
     multiple_fields=frozenset(),
     confirm_fields=frozenset(),
+    direct=False,
 ):
     """Reject hidden, repeated and cross-action fields before constructing intent.
 
     ``confirm_fields`` names the few explicit confirmation inputs, such as an
-    acknowledgement checkbox, that accompany the signed preview.
+    acknowledgement checkbox, that accompany the signed preview. An editor
+    that also saves directly inside the campaign wizard (``direct``, #1404
+    PR 4) accepts a third action, ``save``: the preview's fields plus the
+    page-drawn ``request_key`` (``direct_key``).
     """
     fields = {
         "preview": {"action", "csrfmiddlewaretoken", *preview_fields},
         "confirm": {"action", "csrfmiddlewaretoken", "preview", *confirm_fields},
     }
+    if direct:
+        fields["save"] = fields["preview"] | {"request_key"}
     action = parameters.get("action")
     if action not in fields:
         # No sources: an unknown action value, not an unexpected field.
         raise unexpected_fields()
-    multiple = multiple_fields if action == "preview" else ()
+    multiple = multiple_fields if action in {"preview", "save"} else ()
     if set(parameters) - fields[action] or any(
         len(values) != 1 and name not in multiple for name, values in parameters.lists()
     ):
         raise unexpected_fields(parameters, allowed=fields[action], multiple=multiple)
     return action
+
+
+def direct_key(parameters):
+    """The request key of a direct save (``form_action``'s ``save``).
+
+    The page draws a fresh ``request_key`` each time it is drawn; the
+    change's own key is derived from it and every posted value (UUID5, the
+    names sorted, each name's values in posted order; the CSRF token, which
+    may be rotated, left out). So a repeated submit of the same values from
+    the same page (a double click, a retry after a lost answer) returns the
+    first submit's receipt instead of recording the change twice, while a
+    different change from the same page is a request of its own and is
+    never answered with the first one's status (#1486 review). Raises
+    ``ValueError`` (a 400 refusal) when the page's key is not a UUID.
+    """
+    page_key = UUID(parameters.get("request_key", ""))
+    posted = sorted(
+        (name, values)
+        for name, values in parameters.lists()
+        if name not in {"csrfmiddlewaretoken", "request_key"}
+    )
+    return uuid5(page_key, json.dumps(posted, separators=(",", ":")))
 
 
 def sign_preview(
@@ -191,15 +221,16 @@ def confirm(
     request_schema=None,
     capability=Capability.CONFIGURE,
     attach=None,
-    fresh=False,
+    privileged=False,
     region=None,
     first_campaign=False,
 ):
     """Admit one exact intent from the page; redirect to its request status.
 
     The page's form carries the signed preview; ``confirm_intent`` does the
-    rest. The status page leads back to this editor (#196). ``fresh`` asks
-    for a recent Google sign-in again under the work lock (#547). An editor
+    rest. The status page leads back to this editor (#196). ``privileged``
+    marks an integration change, which an automation session must make with
+    a live full-scope session, reported once (``sign_in_instant``). An editor
     that names its ``region`` (Create the campaign's, which its review dialog
     follows) is answered with itself instead, naming the request at that
     region.
@@ -215,7 +246,7 @@ def confirm(
         request_schema=request_schema,
         capability=capability,
         attach=attach,
-        fresh=fresh,
+        privileged=privileged,
         first_campaign=first_campaign,
     )
     admin_navigation.remember_origin(request, receipt.request_id)
@@ -302,8 +333,9 @@ def confirm_intent(
     request_schema=None,
     capability=Capability.CONFIGURE,
     attach=None,
-    fresh=False,
+    privileged=False,
     first_campaign=False,
+    direct=False,
 ):
     """Admit one exact intent; identical retries return the original receipt.
 
@@ -314,16 +346,20 @@ def confirm_intent(
     admitted with, so the two cannot diverge if the capability matrix
     changes. `attach(request, extra)` records an editor's companion rows from
     the signed preview inside the request's own durable transaction, and is
-    never called on a retry. With ``fresh``, the sign-in must also still be
-    fresh (``require_fresh``) when rechecked under the work lock, so a
-    sign-in that ages while waiting for the lock is refused. A repeat
-    (the request already exists) still passes that gate, but an automation
-    session's repeated confirm records no second fresh-gate event or notice.
+    never called on a retry. With ``privileged``, an automation caller must
+    still hold a live full-scope session under the work lock
+    (``sign_in_instant``); a repeat (the request already exists) still
+    passes that check, but records no second automation event or notice.
+    A web sign-in of any age confirms (#1547).
     ``first_campaign`` is Create the campaign's confirmation (#142): its
     intent must add exactly one campaign, and its ``current_scope`` refuses
     unless the deployment still has none. A preview that carries reviewed
     send times (``sign_preview``'s ``due``) is refused under the work lock
-    once any has passed (``refuse_passed_sends``, #1464). Returns the
+    once any has passed (``refuse_passed_sends``, #1464). ``direct`` is a
+    campaign wizard step's direct save (#1404 PR 4,
+    ``campaign_wizard.save_step``): its preview was signed by the same
+    request, never shown, so a version that moved since the page was drawn
+    is the stale page's refusal rather than "review again". Returns the
     request's ``RequestStatus``.
     """
     if len(token) > 256_000:
@@ -346,11 +382,11 @@ def confirm_intent(
             existing = ConfigurationChangeRequest.objects.filter(
                 actor_id=actor.identity, request_key=key
             ).exists()
-            if fresh:
-                # A repeat still needs the gate, but an automation session's
-                # repeat records no second fresh-gate event or notice, as
-                # the export commands' repeats record none.
-                require_fresh(caller, record=not existing)
+            if privileged:
+                # A repeat still needs the check, but an automation session's
+                # repeat records no second event or notice, as the export
+                # commands' repeats record none.
+                sign_in_instant(caller, record=not existing)
             if existing:
                 # An identical retry returns the original receipt (record_request
                 # finds it by key) even when the page's own admission no longer
@@ -363,7 +399,7 @@ def confirm_intent(
                 != intent["snapshot"]
             ):
                 # Settings changed since the review; start a fresh one.
-                raise expired_preview(link)
+                raise stale_page() if direct else expired_preview(link)
             # Under the work lock, so the clock is read after any wait for it.
             refuse_passed_sends(intent.get("due"), link)
             return True
@@ -395,11 +431,10 @@ def error_response(error):
     """Expose only closed, static error messages, never exception or submitted text.
 
     Scripts receive JSON. A browser page request is shown the same messages as
-    an HTML page by the browser-error middleware, which, for a missing fresh
-    authentication, offers the step-up "Confirm with Google" instead. A
-    user-facing refusal (``web.refusals``) keeps its base type's status but
-    adds its reviewed explanation and fix link. Every response carries the
-    error's reason for the refusal log (``web.refusals.annotate``).
+    an HTML page by the browser-error middleware. A user-facing refusal
+    (``web.refusals``) keeps its base type's status but adds its reviewed
+    explanation and fix link. Every response carries the error's reason for
+    the refusal log (``web.refusals.annotate``).
     """
     return annotate(_error_response(error), error)
 
@@ -411,10 +446,6 @@ def _error_response(error):
         logging.getLogger("parishkit.stewardship.debug").debug(
             "admin request refused", exc_info=error
         )
-    if isinstance(error, FreshAuthenticationRequired):
-        response = validation_response([FieldError(ErrorCode.DENIED)], status=403)
-        response.stewardship_reauthenticate = True
-        return response
     if isinstance(error, UserFacingGone):
         return gone_response(error)
     if isinstance(error, UserFacingUnavailable):
@@ -434,21 +465,3 @@ def _error_response(error):
     return validation_response(
         [FieldError(code)], status=status, refusal=getattr(error, "refusal", None)
     )
-
-
-def step_up_response(return_path=None, return_label=None):
-    """Refuse a stale sign-in with the step-up page; nothing was done.
-
-    A browser sees "Confirm it's you" with the "Confirm with Google" step-up
-    (``web.error_pages``); a script gets the closed JSON denial. A POST-only
-    route names ``return_path``, the Admin page its form came from, so the
-    step-up returns there with a GET rather than to the POST URL, and names it
-    in ``return_label`` (the page's name) so the page says where it returns.
-    The page revalidates the path with ``admin_return_path``.
-    """
-    response = error_response(
-        FreshAuthenticationRequired("Please authenticate with Google again.")
-    )
-    response.stewardship_return_path = return_path
-    response.stewardship_return_label = return_label
-    return response

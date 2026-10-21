@@ -1,4 +1,4 @@
-"""Outgoing mail's bulk actions: many messages, each resolved on its own (#382 M4).
+"""Sent mail's bulk actions: many messages, each resolved on its own (#382 M4).
 
 After a mail outage an Administrator may face dozens of failed emails, or
 of emails marked Not sure it arrived, and used to resolve them one page at
@@ -196,7 +196,7 @@ def candidates(kind):
 
 
 def overview():
-    """What each bulk action could cover now, for Outgoing mail's panel.
+    """What each bulk action could cover now, for Sent mail's panel.
 
     Returns ``{kind: {"total": n, "purposes": [(purpose, count), ...]}}``
     with only the kinds and email types that have a message, in

@@ -1,5 +1,7 @@
 """Database-free System logs search grammar, links and predicates (#536)."""
 
+from django.db.models.lookups import IContains
+
 from parishkit.stewardship.audit.log_descriptions import (
     DESCRIPTIONS,
     OUTCOME_DESCRIPTIONS,
@@ -14,13 +16,18 @@ from parishkit.stewardship.audit.log_rows import (
 )
 from parishkit.stewardship.audit.log_search import (
     SHOWN_VALUE_SQL,
+    ContextValues,
     ShownValueContains,
+    Unindexed,
     described_types,
     detail_condition,
+    indexable,
     like_pattern,
     ministry_condition,
     type_condition,
+    with_every_value,
 )
+from parishkit.stewardship.audit.models import OperationalLog
 from parishkit.stewardship.audit.schemas import MINISTRY_LIST_FIELDS
 
 from .test_log_rows import IDENTIFIER, NOW
@@ -158,3 +165,37 @@ def test_outcome_sentences_follow_the_shown_explanation():
     assert f"(NOT (AND: ('context__contains', {{'outcome': '{outcome}'}})))" in other
     # Audit entries are explained by their type alone.
     assert "outcome" not in str(type_condition(special, type_column="event_type"))
+
+
+def test_only_a_term_with_a_trigram_compares_the_indexed_expressions():
+    """A term without three letters or digits in a row would make a trigram
+    index read all of itself (#765), so its type and value conditions compare
+    ``Unindexed`` copies of the same text instead."""
+    assert indexable("lag") and indexable("kind_17x") and indexable("日本語")
+    assert indexable("٣٣٣") and indexable("a²bcd")
+    # Superscripts, fractions and circled digits are no pg_trgm word
+    # characters, alone or mixed into a short run.
+    for text in (
+        "ab",
+        "42",
+        "a-b",
+        "a_b_c",
+        "%",
+        'é "x"',
+        "²²²",
+        "½½½",
+        "①②③",
+        "ab²cd",
+    ):
+        assert not indexable(text), text
+    assert "event__icontains" in str(type_condition("lag", type_column="event"))
+    (short,) = type_condition("ab", type_column="event").children[:1]
+    assert isinstance(short, IContains) and isinstance(short.lhs, Unindexed)
+    assert short.rhs == "ab"
+    rows = OperationalLog.objects.all()
+    indexed = with_every_value(rows, "lag").query.annotations["every_value"]
+    assert isinstance(indexed, ContextValues)
+    unindexed = with_every_value(rows, "ab").query.annotations["every_value"]
+    assert isinstance(unindexed, Unindexed)
+    assert isinstance(unindexed.get_source_expressions()[0], ContextValues)
+    assert Unindexed.template == "(%(expressions)s || '')"

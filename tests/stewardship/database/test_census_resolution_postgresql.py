@@ -57,6 +57,24 @@ def prepared(harness):
     return harness, admin.pk, staff.pk, rows["home_address"], rows["first_name"]
 
 
+def leader(harness, admin):
+    """A Ministry leader with current policy, who never sees census changes."""
+    store = harness.service.store
+    change(
+        store,
+        store.active(),
+        admin,
+        [
+            {
+                "operation": "add",
+                "section": "login_rules",
+                **rule("leader@example.org", ("ministry_leader",)),
+            }
+        ],
+    )
+    return user("leader@example.org").pk
+
+
 def resolve(harness, actor, proposal, action, *, version=None, key=None, note=""):
     """Resolve through the service on the restricted web login."""
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -222,8 +240,10 @@ def old_guard():
     )
     assert branch, "the resolution branch is in the baseline"
     old = body.replace(branch[0], "                IF NEW.execution NOT IN", 1)
+    # The branch's closing parentheses: since 0133 (#1737) two more, for the
+    # Entered by hand alternative the removed branch opens.
     old = old.replace(
-        "successor.submission_id=later.id))\n                   ))\n",
+        "successor.submission_id=later.id))\n                   ))))\n",
         "successor.submission_id=later.id))\n                   )\n",
         1,
     )
@@ -262,43 +282,6 @@ def test_migration_self_check_refuses_the_old_guard_and_installs_the_new():
             )
             assert cursor.fetchone() == (True,)
             raise Rollback
-
-
-def test_the_worklist_records_a_resolution_and_answers_in_place(
-    response_service, google
-):
-    """A row's form posts with the page's filters; the page answers with the
-    result and a notice, and a stale form is told the row changed."""
-    from .auth_builders import signed_in
-    from .test_information_followup_postgresql import search
-
-    harness, _, _, home, _ = prepared(response_service)
-    browser, login = signed_in()
-    assert login.status_code == 302
-    route = "/admin/reports/census/"
-    form = {
-        "status": "all",
-        "resolve": "entered",
-        "proposal": str(home.pk),
-        "version": str(home.version),
-        "request_key": str(uuid4()),
-        "note": "  Typed it in  ",
-    }
-    response, body = search(browser, route, form)
-    assert response.status_code == 200
-    assert b"marked entered in ParishSoft." in body and b"Entered by hand" in body
-    assert b"Typed it in" in body
-    home.refresh_from_db()
-    assert home.execution == "resolved_external"
-    assert ProposalResolution.objects.get().note == "Typed it in"
-    # The same form again (another tab, drawn before) is now stale.
-    stale = form | {"request_key": str(uuid4())}
-    response, body = search(browser, route, stale)
-    assert response.status_code == 200 and b"updated by someone else" in body
-    assert ProposalResolution.objects.count() == 1
-    # A form missing a field, or naming an action that is not offered.
-    for broken in ({"resolve": "entered"}, form | {"resolve": "published"}):
-        assert search(browser, route, broken)[0].status_code == 400
 
 
 def resubmit(harness):
@@ -429,7 +412,7 @@ def test_leaders_testing_responses_and_gated_campaigns_are_refused(
     assert login.status_code == 302
     response, body = search(browser, "/admin/reports/census/", {"status": "all"})
     assert response.status_code == 200 and b"Other campaign work" in body
-    assert b'name="resolve"' not in body and b"census-enter-confirm" not in body
+    assert b'name="resolve"' not in body and b"census-enter-dialog" not in body
 
 
 def test_testing_responses_take_no_resolution(response_service):
@@ -466,88 +449,3 @@ def test_reopen_needs_a_note(response_service):
             "gen_random_uuid(),'reopened',E'\\t\\n ')",
             [admin, home.pk, home.version],
         )
-
-
-def test_staff_and_admin_see_their_own_actions_over_http(
-    response_service, google, monkeypatch
-):
-    """Staff get the tick and Ignore but never Reopen; an Administrator gets
-    Reopen on an ignored row. A proposal from another campaign is denied, and
-    a racing write answers with the row's current state, not an outage."""
-    from parishkit.stewardship.reports import census_change_views
-
-    from .auth_builders import signed_in
-    from .test_information_followup_postgresql import search
-
-    harness, _, staff, home, _ = prepared(response_service)
-    route = "/admin/reports/census/"
-    google[0]["email"] = "staff@example.org"
-    browser, login = signed_in()
-    assert login.status_code == 302
-    _, body = search(browser, route, {"status": "all"})
-    assert b'value="entered"' in body and b'value="ignored"' in body
-    assert b"cannot be undone" in body
-    resolve(harness, staff, home, "ignored")
-    _, body = search(browser, route, {"status": "all"})
-    assert b'value="reopened"' not in body
-    google[0]["email"] = "admin@example.org"
-    admin_browser, _ = signed_in()
-    _, body = search(admin_browser, route, {"status": "all"})
-    assert b'value="reopened"' in body and b"Why reopen? (required)" in body
-    home.refresh_from_db()
-    form = {
-        "status": "all",
-        "resolve": "reopened",
-        "proposal": str(home.pk),
-        "version": str(home.version),
-        "request_key": str(uuid4()),
-        "note": "Not a duplicate",
-    }
-    # A proposal is resolved only on its own campaign's page.
-    from types import SimpleNamespace
-
-    from parishkit.stewardship.reports.census_change_views import _resolve
-
-    with pytest.raises(PermissionError):
-        _resolve(
-            SimpleNamespace(store=harness.service.store),
-            SimpleNamespace(identity=uuid4()),
-            uuid4(),
-            {
-                "action": "reopened",
-                "proposal_id": home.pk,
-                "expected_version": home.version,
-                "request_key": uuid4(),
-                "note": "Elsewhere",
-            },
-        )
-
-    class Unique(Exception):
-        """The driver error a unique violation carries."""
-
-        sqlstate = "23505"
-
-    def racing(*args, **kwargs):
-        """Another tab's write committed first: a unique violation."""
-        try:
-            raise Unique
-        except Unique as cause:
-            raise IntegrityError("duplicate key") from cause
-
-    def refused(*args, **kwargs):
-        """Any other database refusal (a guard or audit mismatch)."""
-        raise IntegrityError("Census change resolution requires its result")
-
-    with monkeypatch.context() as patch:
-        patch.setattr(census_change_views, "resolve_census_change", racing)
-        response, body = search(admin_browser, route, form)
-    assert response.status_code == 200
-    assert b"Home address for the Family in Family" in body
-    assert b"was updated by someone else" in body
-    # Any other refusal is not dressed up as the race: it fails, logged.
-    with monkeypatch.context() as patch:
-        patch.setattr(census_change_views, "resolve_census_change", refused)
-        response, body = search(admin_browser, route, form)
-    assert response.status_code == 503 and b"updated by someone else" not in body
-    response, body = search(admin_browser, route, form | {"request_key": str(uuid4())})
-    assert b"Home address for the Family in Family" in body and b"reopened." in body

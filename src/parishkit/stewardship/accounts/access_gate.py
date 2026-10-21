@@ -28,7 +28,8 @@ AUTH_ROUTES = frozenset(
         # portal state; these views authenticate the session themselves.
         "/admin/session/status",
         "/admin/session/renew",
-        # The LOCAL test sign-in (#476) replaces Google sign-in there, and is
+        # The LOCAL test sign-in (#476) stands in for Google sign-in there, or
+        # sits beside it with a real OAuth client (#1399), and is
         # needed most before setup completes or during restore review; the
         # view itself answers 404 under every other profile.
         LOCAL_SIGN_IN,

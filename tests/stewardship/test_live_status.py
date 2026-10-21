@@ -60,26 +60,44 @@ def test_configuration_request_follows_until_applied_or_refused(state, live, tex
 
 
 @pytest.mark.parametrize(
-    ("state", "is_pending", "live", "text"),
+    ("kind", "is_pending", "text"),
     [
-        ("installing", True, True, "Checking and installing the new key"),
-        ("awaiting_ack", True, True, "waiting for the parts of the system that use it"),
-        ("applied", False, False, "Installed and confirmed"),
-        ("failed", False, False, "Not applied"),
+        ("pending", True, "Installing the new key"),
+        ("updated", False, "Key updated."),
+        ("failed", False, "The previous key is still in use."),
     ],
 )
-def test_credential_status_follows_until_confirmed_or_refused(
-    state, is_pending, live, text
-):
-    """The replacement page keeps following installation and consumer checks."""
-    receipt = SimpleNamespace(state=state, request_id=REQUEST)
-    html = render_to_string(
-        "stewardship/credential-status.html",
-        {"receipt": receipt, "pending": is_pending},
+def test_a_key_change_is_followed_and_redrawn_in_place(kind, is_pending, text):
+    """An integration's status line follows its key change while it runs;
+    once it finishes, its one follow-up redraws the status line and the
+    settings editor in place, quietly, never loading the page (#1568)."""
+    summary = SimpleNamespace(
+        kind=kind,
+        message="Key updated." if kind == "updated" else "Checking…",
+        at=datetime(2026, 10, 18, tzinfo=UTC),
+        request_id=REQUEST,
     )
-    assert pending(html, "credential") is live
+    html = render_to_string(
+        "stewardship/integration-status.html",
+        {
+            "target": "parishsoft",
+            "summary": summary,
+            "pending": is_pending,
+            "follow_url": "/admin/system/integrations/parishsoft/",
+        },
+    )
+    assert pending(html, "integration") is is_pending
     assert text in html
-    assert "Refresh status" in html
+    follow = re.findall(r"<a hidden data-live-follow[^>]*>", html)
+    if is_pending:
+        assert follow == []
+    else:
+        (link,) = follow
+        assert "data-in-place " in link and "data-in-place-quiet" in link
+        assert 'data-in-place-only="integration-editor"' in link
+        address = "/admin/system/integrations/parishsoft/#integration-status"
+        assert f'href="{address}"' in link
+    assert "key-changes" not in html
 
 
 def task(state):
@@ -217,7 +235,7 @@ def test_script_backs_off_pauses_and_stops_at_terminal_states():
     source = SCRIPT.read_text()
     assert "const DELAYS = [2000, 2000, 3000, 4000, 6000, 8000, 10000];" in source
     assert 'document.visibilityState !== "visible"' in source
-    assert "Couldn't check status — retrying." in source
+    assert "say(UPDATES_RETRYING);" in source
     # Only pending regions start polling, and a settled region finishes.
     assert 'region.hasAttribute("data-live-pending")' in source
     assert "else finish();" in source
@@ -230,50 +248,6 @@ def test_script_backs_off_pauses_and_stops_at_terminal_states():
     # An unchanged poll must not rebuild the live region (no repeated
     # announcements), and the ticking elapsed time stays out of it.
     assert "freshMarkup === lastMarkup" in source
-
-
-def cleanup(state, *, cancelling=False):
-    """Render the Testing cleanup page for one durable request state."""
-    from parishkit.stewardship.campaigns.domain import Percentage
-
-    status = SimpleNamespace(
-        state=state, request_id=REQUEST, checkpoint_sequence=1, processed_count=1
-    )
-    live = state in {"cleanup_queued", "cleanup_running", "cleanup_retry_wait"} or (
-        cancelling and state != "cancelled"
-    )
-    row = task("running" if live else "succeeded")
-    row.updated_at = datetime(2026, 9, 28, 2, tzinfo=UTC)
-    return render_to_string(
-        "stewardship/go-live-cleanup.html",
-        {
-            "campaign": SimpleNamespace(
-                pk=REQUEST, active_configuration=SimpleNamespace(name="Campaign")
-            ),
-            "status": status,
-            "completion": Percentage(1, 2),
-            "task": row,
-            "cancelling": cancelling,
-            "controls": {},
-            "live_pending": live,
-        },
-    )
-
-
-@pytest.mark.parametrize(
-    ("state", "live", "text"),
-    [
-        ("cleanup_running", True, "Testing cleanup is running"),
-        ("cleanup_complete", False, "Cleanup is complete"),
-        ("cleanup_failed", False, "Cleanup failed"),
-        ("cancelled", False, "Cleanup was cancelled"),
-    ],
-)
-def test_testing_cleanup_follows_until_complete_or_failed(state, live, text):
-    """Cleanup progress stops polling when complete, failed or cancelled."""
-    html = cleanup(state)
-    assert pending(html, "cleanup") is live
-    assert text in html
 
 
 def test_running_indicator_hides_the_ticking_elapsed_time_from_screen_readers():
@@ -319,13 +293,27 @@ def test_script_lets_a_region_renew_its_own_watching_limit():
     The limit is at most 3 hours and counts from the last poll that brought
     new content; other regions keep the one-hour limit from page load. It is
     judged from when the latest check was sent, so a clock jump while a check
-    is in flight still leaves one fresh check before watching stops (#425).
+    is in flight still leaves one fresh check at the region's pace (#425).
+    Past the limit the watch slows to every 30 seconds instead of stopping,
+    and names no Refresh link, since pages have none (#1586). Slowing never
+    speeds a region up: one whose own fixed pace is slower (at most 60 s)
+    keeps it. browser/test_report_figures.py's
+    test_slow_retry_pace_never_speeds_up_past_the_hour checks that timing.
     """
     source = SCRIPT.read_text()
     assert "const GIVE_UP_MS = 60 * 60 * 1000;" in source
     assert 'region.getAttribute("data-live-give-up")' in source
     assert "Math.min(ownLimit, 3 * GIVE_UP_MS) : GIVE_UP_MS" in source
     assert "if (renews) started = Date.now();" in source
-    assert "if (asked - started > giveUp) {" in source
-    assert '|| "Refresh status"' in source
-    assert "Use ${refreshLabel} to check again." in source
+    assert "const slow = asked - started > giveUp;" in source
+    assert "const SLOW_MS = 30 * 1000;" in source
+    # The next check's delay: past the limit the slower of SLOW_MS and the
+    # region's fixed pace (0 when it has none, so SLOW_MS), else the fixed
+    # pace or the back-off.
+    delay = re.search(
+        r"window\.setTimeout\(check,\s*slow\s*\?\s*(.+?)\s*:\s*(.+?)\);", source
+    )
+    assert delay is not None
+    assert delay.group(1) == "Math.max(SLOW_MS, fixed)"
+    assert delay.group(2) == "fixed || DELAYS[Math.min(attempt, DELAYS.length - 1)]"
+    assert "refreshLabel" not in source and "Use ${" not in source

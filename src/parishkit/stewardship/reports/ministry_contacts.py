@@ -2,8 +2,8 @@
 
 The follow-up request page and the queue's "Export these requests" show each
 request's Member contact details, which the retired Members joining and
-Members leaving lists used to show. Both read them here, through SQL that is
-already installed, so no schema change was needed:
+Members leaving lists used to show. Both read them here, through SQL that was
+already installed, so #1157 needed no schema change:
 
 - ``stewardship_ministry_report_v4``, the function those lists read, for one
   Ministry and request kind at a time: a join request's gender, age, email,
@@ -13,14 +13,33 @@ already installed, so no schema change was needed:
   a leave request's email and phones, which the report gives only for joins.
 
 Each derives the reader's scope in SQL from the signed-in user, applies the
-ParishSoft publish-flag rule there (a Ministry leader gets "Not published",
-never the value; Administrators and Staff get operational contact), and is
+leader contact rule there, and is
 cross-checked against Python's view of the same user, so neither can show
 more than the other allows (#389 L3). The caller has already read the
 requests through the follow-up selection, so every request asked about is in
 the reader's scope; a Ministry the report cannot read (for example one
 removed from the campaign whose requests were all withdrawn) has no details,
 which the page and file say, rather than failing.
+
+A request is read under its current Ministry (``current_ministry``): the one
+review's Edit carried forward (#1684), whose leaders now decide it, else the
+Family's. Both selections list an edited request with its details under that
+Ministry only (frozen migration 0140, #1718), so a leader of only the
+carried-forward Ministry gets its details and a leader of only the Family's
+Ministry, who sees it read only, does not.
+
+The leader contact rule: Administrators and Staff get operational contact.
+A Ministry leader gets the values the Member publishes in ParishSoft and
+"Not published" for the rest, except that on a standing request (the
+Member's latest version, not withdrawn) the leader gets the requesting
+Member's own email and phones, since asking to join or leave is consent to
+be contacted about it (Administrator decision, 2026-10-17, #1591; frozen
+migration 0119). A Member whose latest live answer (from the Family's
+newest response that answers for them) marks them as unable to participate
+in any ministries keeps the publish flags on every one of their requests,
+current or history, whatever the roster shows (Administrator decision,
+2026-10-18, applied per Member). Python never
+widens or narrows it: it only renders the visibility the SQL returns.
 """
 
 import json
@@ -34,6 +53,11 @@ from .ministries import MinistryQuery, ministry_page, within_principal
 # Every version and status of one Ministry's requests of one kind, so any
 # request the queue lists (its history option included) is found by id.
 EVERY_REQUEST = MinistryQuery(history="all", state="any")
+
+
+def current_ministry(row):
+    """The Ministry a follow-up row is decided and read under (#1718)."""
+    return row.get("reviewed_ministry_duid") or row["ministry_duid"]
 
 
 def _visible(row):
@@ -97,16 +121,18 @@ def packet_contacts(campaign_id, principal, ministries):
 def request_contacts(campaign_id, principal, requests):
     """The contact details of each request in ``requests``, by request id.
 
-    ``requests`` are follow-up rows (``id``, ``ministry_duid``, ``action``)
-    the reader may already see. Each value holds ``kind`` (``join`` or
-    ``leave``), ``proposed`` (a Member the Family added on the form, whose
-    details are what the Family entered), ``proposed_id``, the email and
-    phone values with their visibility, and for a join ``gender``, ``age``
-    and ``address_lines``, for a leave ``current_role``. A request with no
-    readable details is left out. The report is read once per Ministry and
-    kind present, and the packet once for every leave request.
+    ``requests`` are follow-up rows (``id``, ``ministry_duid``, any
+    ``reviewed_ministry_duid``, ``action``) the reader may already see; each
+    is read under its current Ministry (``current_ministry``). Each value
+    holds ``kind`` (``join`` or ``leave``), ``proposed`` (a Member the
+    Family added on the form, whose details are what the Family entered),
+    ``proposed_id``, the email and phone values with their visibility, and
+    for a join ``gender``, ``age`` and ``address_lines``, for a leave
+    ``current_role``. A request with no readable details is left out. The
+    report is read once per Ministry and kind present, and the packet once
+    for every leave request.
     """
-    pairs = sorted({(row["ministry_duid"], row["action"]) for row in requests})
+    pairs = sorted({(current_ministry(row), row["action"]) for row in requests})
     wanted = {row["id"] for row in requests}
     found, report_date = {}, None
     for ministry, action in pairs:

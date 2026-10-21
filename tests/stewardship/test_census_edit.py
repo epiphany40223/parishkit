@@ -8,16 +8,13 @@ rules, the row's Edit value control and the page's form parsing.
 from datetime import date
 
 import pytest
-from django.http import QueryDict
 
-from parishkit.stewardship.reports.census_change_views import SORTING, _resolution
-from parishkit.stewardship.reports.census_changes import CensusQuery, shape
+from parishkit.stewardship.reports.census_changes import shape
 from parishkit.stewardship.responses.census_review import (
     InvalidEdit,
     edit_limit,
     edited_value,
 )
-from parishkit.stewardship.web.tables import paginate
 
 from .test_census_changes import row
 
@@ -28,9 +25,7 @@ TODAY = date(2054, 10, 6)
     ("field", "raw", "expected"),
     [
         ("first_name", "  Pat ", "Pat"),
-        ("gender", "Female", "Female"),
         ("birth_date", "2000-02-29", "2000-02-29"),
-        ("death_date", "2054-10-06", "2054-10-06"),
         ("email", "B@Example.org; a@example.org", "a@example.org, b@example.org"),
         (
             "mobile_phone",
@@ -52,9 +47,7 @@ def test_an_edit_is_read_as_the_family_form_reads_its_answer(field, raw, expecte
         ("middle_name", "  ", "Enter the value to publish"),
         ("first_name", "x" * 31, "at most 30 characters"),
         ("email", f"{'a' * 70}@example.org; {'b' * 70}@example.org", "at most 150"),
-        ("gender", "male", "Choose one of the displayed options"),
         ("birth_date", "2054-10-07", "no later than today"),
-        ("death_date", "2054-2-1", "no later than today"),
         ("home_phone", "12", "complete phone number"),
     ],
 )
@@ -66,10 +59,13 @@ def test_a_value_publication_would_refuse_is_refused(field, raw, message):
 
 
 @pytest.mark.parametrize(
-    "field", ["prefix", "suffix", "marital_status", "home_address"]
+    "field",
+    ["prefix", "suffix", "gender", "marital_status", "home_address", "death_date"],
 )
 def test_a_by_hand_field_takes_no_edit(field):
-    """Only Automatic Member fields may be edited."""
+    """Only Automatic Member fields may be edited; a death date is By hand
+    since the live API test (#1596), and gender since the gender test
+    (#1603)."""
     with pytest.raises(ValueError) as refused:
         edited_value(field, "Value", today=TODAY)
     assert not isinstance(refused.value, InvalidEdit)
@@ -114,8 +110,8 @@ def test_rows_offer_edit_value_with_the_value_to_publish():
         "Unspecified",
     )
     for values in (
-        {"execution": "queued"},
-        {"execution": "published"},
+        {"execution": "queued", "decision": "approved"},
+        {"execution": "published", "decision": "approved"},
         {"handling": "manual", "field": "suffix"},
         {"entity_kind": "family", "field": "home_address"},
     ):
@@ -125,100 +121,19 @@ def test_rows_offer_edit_value_with_the_value_to_publish():
     assert shape(row(decision="ignored"))["edit"] is not None
 
 
-def test_edit_form_parsing():
-    """Save value sends the value; Clear edit ignores it; no other form may."""
-    proposal, key = (
-        "00000000-0000-4000-8000-000000000001",
-        "00000000-0000-4000-8000-000000000002",
-    )
-    base = f"proposal={proposal}&version=3&request_key={key}&note=+Typo+"
-    parsed = _resolution(QueryDict(f"resolve=edit&value=+Pat+&{base}", mutable=True))
-    assert parsed["action"] == "edit" and parsed["value"] == " Pat "
-    assert parsed["note"] == "Typo"
-    cleared = _resolution(
-        QueryDict(f"resolve=clear_edit&value=Pat&{base}", mutable=True)
-    )
-    assert cleared["action"] == "clear_edit" and cleared["value"] is None
-    assert "value" not in _resolution(
-        QueryDict(f"resolve=approve&{base}", mutable=True)
-    )
-    for broken in (
-        f"resolve=edit&{base}",
-        f"resolve=approve&value=Pat&{base}",
-        f"resolve=edit&value=a&value=b&{base}",
-        "value=Pat",
-    ):
-        with pytest.raises(ValueError):
-            _resolution(QueryDict(broken, mutable=True))
-
-
-def page(shown):
-    """The page as an Administrator sees it, for these shaped rows."""
-    from django.template.loader import render_to_string
-
-    for item in shown:
-        item["describedby"] = f"who-{item['id']} what-{item['id']}"
-        item["confirm_name"] = f"{item['label']} for {item['who']}"
-        item["edit_key"] = "00000000-0000-4000-8000-00000000000e"
-        item["edit_describedby"] = f"{item['describedby']} edit-complete-{item['id']}"
-    return render_to_string(
-        "stewardship/census-changes.html",
-        {
-            "table": paginate(shown, {}, sorting=SORTING),
-            "query": CensusQuery(),
-            "query_fields": {},
-            "summary": [],
-            "status_choices": [],
-            "route_choices": [],
-            "kind_choices": [],
-            "export_timezones": ["UTC"],
-            "administrator": True,
-            "action": "/admin/reports/census/",
-            "mutable": True,
-            "edit_today": "2054-10-06",
-        },
+def test_an_edited_address_past_the_guards_size_is_refused():
+    """Each part within its own limit, the whole edit past the review
+    guard's 1,024 bytes (two bytes a character), is refused before SQL;
+    the same script within the limit is kept (#1719)."""
+    from parishkit.stewardship.responses.census_review import (
+        LONG_ADDRESS,
+        edited_address,
     )
 
+    from .census_factory import address
 
-def test_the_review_disclosure_holds_edit_value():
-    """Edit value is its own change-gated form in the row's Review, with the
-    PUT limit, a date capped at today, and Clear edit only while edited."""
-    html = page(
-        [
-            shape(row(id="plain", field="first_name", submitted_value="Pat")),
-            shape(
-                row(
-                    id="dated",
-                    field="birth_date",
-                    submitted_value="2000-01-02",
-                    admin_value_set=True,
-                    admin_value="2000-01-03",
-                )
-            ),
-            shape(row(id="sex", field="gender", submitted_value="Female")),
-        ]
-    )
-    plain = html[
-        html.index('id="edit-plain"') : html.index(
-            "</form>", html.index('id="edit-plain"')
-        )
-    ]
-    assert 'data-require-change="version" data-require-complete' in plain
-    assert "data-in-place" in plain and 'data-complete-hint="reserve"' in plain
-    assert 'aria-describedby="who-plain what-plain edit-complete-plain"' in plain
-    assert 'name="value" type="text" value="Pat" required maxlength="30"' in plain
-    assert 'value="edit"' in plain and 'value="clear_edit"' not in plain
-    assert "data-unchanged-hint" in plain and "data-change-ignore" in plain
-    assert "ParishSoft takes at most 30 characters here." in plain
-    dated = html[
-        html.index('id="edit-dated"') : html.index(
-            "</form>", html.index('id="edit-dated"')
-        )
-    ]
-    assert 'type="date" value="2000-01-03" required max="2054-10-06"' in dated
-    assert 'value="clear_edit" formnovalidate' in dated
-    sex = html[
-        html.index('id="edit-sex"') : html.index("</form>", html.index('id="edit-sex"'))
-    ]
-    assert '<option value="Female" selected>' in sex
-    assert '<select id="edit-value-sex" name="value"' in sex
+    parts = {"line1": "1" + "é" * 199, "city": "é" * 100, "country": "GB"}
+    assert edited_address(address(**parts))["city"] == "é" * 100
+    longer = address(**parts, line2="é" * 200, region="é" * 100)
+    with pytest.raises(InvalidEdit, match=LONG_ADDRESS):
+        edited_address(longer)

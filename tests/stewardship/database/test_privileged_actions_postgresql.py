@@ -32,7 +32,8 @@ from parishkit.stewardship.storage import StorageInvariantError
 
 from ..policy_factory import address
 from ..test_request_patch import parish_patch
-from .auth_builders import signed_in
+from .auth_builders import signed_in, stale_sign_in, unguarded
+from .automation_builders import paired
 from .campaign_builders import change
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -240,26 +241,54 @@ def test_legacy_expiry_refuses_sealed_requests_before_sql_mutation(
     assert SecretReplacementRequest.objects.get(pk=receipt.request_id).state == "staged"
 
 
-def test_secret_intake_rejects_stale_auth_and_client_evidence(
-    auth_service,
-    google,
-    monkeypatch,
+def test_secret_intake_rejects_client_evidence_and_admits_an_old_sign_in(
+    auth_service, google
 ):
-    """A browser timestamp cannot replace a recent completed Google round trip."""
+    """A browser timestamp is refused; an old sign-in is recorded (#1547).
+
+    The request records the session's own sign-in instant, older than five
+    minutes here, never one the caller supplies.
+    """
     browser, _ = signed_in()
+    stale_sign_in()
     request = admitted_request(browser)
     _, intent = secret_intent()
     with pytest.raises(ValueError, match="caller"):
         sealed_secret_request(request, **intent, reauthenticated_at=timezone.now())
-    from parishkit.stewardship.accounts import sessions
-
-    real_now = sessions.database_now
-    monkeypatch.setattr(
-        sessions, "database_now", lambda: real_now() + timedelta(minutes=6)
-    )
-    with pytest.raises(PermissionError, match="Google"):
-        sealed_secret_request(request, **intent)
+    # Nor may a caller name an automation session (#1763).
+    with pytest.raises(ValueError, match="caller"):
+        sealed_secret_request(request, **intent, automation_session_id=uuid4())
     assert not SecretReplacementRequest.objects.exists()
+    receipt = sealed_secret_request(request, **intent)
+    row = SecretReplacementRequest.objects.get(pk=receipt.request_id)
+    assert row.state == "staged"
+    assert row.reauthenticated_at == PortalSession.objects.get().authenticated_at
+    # A browser request names no automation session.
+    assert row.automation_session_id is None
+
+
+def test_a_browser_replaces_a_key_after_the_session_it_approved_ended(
+    auth_service, google
+):
+    """The approving browser's own request is not refused (#1763).
+
+    The browser shares its sign-in instant with the automation session it
+    approved. Once that session is revoked, the browser's key replacement
+    still stages through the real web path, naming no session.
+    """
+    from parishkit.stewardship.accounts.automation_models import AutomationSession
+
+    browser, _, row = paired(auth_service)
+    with unguarded():
+        AutomationSession.objects.filter(pk=row.pk).update(
+            revoked_at=timezone.now(), end_reason="revoked_by_owner"
+        )
+    _, intent = secret_intent()
+    receipt = sealed_secret_request(admitted_request(browser), **intent)
+    staged = SecretReplacementRequest.objects.get(pk=receipt.request_id)
+    assert staged.state == "staged"
+    assert staged.reauthenticated_at == row.authenticated_at
+    assert staged.automation_session_id is None
 
 
 def test_admission_requires_owning_transaction_and_closed_action(auth_service, google):

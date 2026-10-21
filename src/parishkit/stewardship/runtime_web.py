@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import json
+import os
 from copy import deepcopy
 from importlib import import_module
 
@@ -12,6 +13,7 @@ from .accounts.cryptography import independent_keyrings
 from .accounts.key_files import _unique_object, parse_keyring, read_private
 from .accounts.metrics_credentials import MetricsCredential, credential_receipt
 from .deployment import DeploymentProfile, ServiceRole
+from .mail_catcher import fake_clock
 from .runtime_database import database_settings, profile_settings
 from .runtime_health import RuntimeHealth
 from .runtime_paths import RuntimeLayout, private_directory
@@ -33,10 +35,11 @@ def admit_lifecycle_mounts(configuration):
 
 
 # The LOCAL ``google_oauth`` sentinel (#476). It has the client document's
-# shape but no real client ID or secret. LOCAL accepts only this document and
-# every other profile refuses it, so a real Google client can never be
-# installed locally and the sentinel can never reach Production. Admin sign-in
-# in LOCAL is the local test sign-in (OPS-10.08), which hides Google sign-in.
+# shape but no real client ID or secret. ``up`` installs it, so LOCAL starts
+# with no Google sign-in and the Admin signs in with the local test sign-in
+# (OPS-10.08). LOCAL also admits a real client, a separate one registered for
+# the localhost origin only (#1399), but every other profile refuses the
+# sentinel, so it can never reach Production.
 LOCAL_OAUTH_SENTINEL = {
     "client_id": "local-environment-sentinel.invalid",
     "client_secret": "local-environment-sentinel-not-a-secret",
@@ -50,8 +53,9 @@ def parse_google_client(raw, *, profile):
     The compact operator file has only client_id/client_secret. The application
     never returns this document in diagnostics or persists a SocialApp secret.
     Ownership of the Google account itself is established only during Google
-    login. ``profile`` applies the sentinel rule in both directions: LOCAL
-    admits only ``LOCAL_OAUTH_SENTINEL`` and every other profile refuses it.
+    login. ``profile`` applies the sentinel rule: every profile but LOCAL
+    refuses ``LOCAL_OAUTH_SENTINEL``. LOCAL admits it or a real client (#1399);
+    ``admit_google_clock`` then keeps a real client off the fake clock.
     """
     if not isinstance(profile, DeploymentProfile):
         raise ConfigError("The OAuth client check requires a deployment profile.")
@@ -69,17 +73,40 @@ def parse_google_client(raw, *, profile):
             raise ValueError
     except (ValueError, UnicodeError, RecursionError):
         raise ConfigError("The OAuth client file is invalid.") from None
-    if profile is DeploymentProfile.LOCAL:
-        if value != LOCAL_OAUTH_SENTINEL:
-            raise ConfigError(
-                "The local profile admits only the sentinel OAuth client, never a "
-                "real Google client."
-            )
-    elif value == LOCAL_OAUTH_SENTINEL:
+    if profile is not DeploymentProfile.LOCAL and value == LOCAL_OAUTH_SENTINEL:
         raise ConfigError(
             "The sentinel OAuth client is admitted only in the local profile."
         )
     return value
+
+
+class GoogleClockRefused(ConfigError):
+    """A real Google client refused under the fake clock (#1399).
+
+    Its message is fixed text that names the cause and holds nothing from the
+    client document, so web start and the smoke check show it as it is
+    instead of their generic failure lines.
+    """
+
+
+def admit_google_clock(oauth, environ=os.environ):
+    """Refuse a real Google client on the fake clock (#1399).
+
+    Google sign-in checks the ID token's ``iat`` and ``exp`` and Google's TLS
+    certificates against this process's clock. The fake clock runs up to
+    weeks behind real time, so every token would look issued in the future
+    and a certificate's dates would be checked against a past day. A real
+    client therefore needs the normal clock; the sentinel, which never
+    reaches Google, runs under either. Inert outside LOCAL, which never runs
+    under libfaketime.
+    """
+    if oauth != LOCAL_OAUTH_SENTINEL and fake_clock(environ):
+        raise GoogleClockRefused(
+            "A real Google OAuth client needs the normal clock: this deployment "
+            "runs under the fake clock, which Google's token and certificate "
+            "checks cannot use. Reinstall the sentinel OAuth client, or install "
+            "the real one on a normal-clock (seeded) deployment."
+        )
 
 
 def valkey_client(configuration, *, telemetry=False):
@@ -235,6 +262,7 @@ def configure_web_runtime(configuration):
     }
     independent_keyrings(*rings.values())
     oauth = parse_google_client(loaded["google_oauth"], profile=configuration.profile)
+    admit_google_clock(oauth)
     metrics_token = MetricsCredential.parse(loaded["metrics"]).token
     base = import_module("parishkit.stewardship.settings.base")
     values = {name: getattr(base, name) for name in dir(base) if name.isupper()}
@@ -249,6 +277,10 @@ def configure_web_runtime(configuration):
         "download": _download_settings(configuration, ordinary),
     }
     values["SOCIALACCOUNT_PROVIDERS"] = google_provider_settings(oauth)
+    # Whether Google sign-in can work here: False only for LOCAL's sentinel,
+    # whose sign-in pages then offer the test sign-in alone
+    # (accounts.branding_context.local_environment).
+    values["STEWARDSHIP_GOOGLE_SIGN_IN"] = oauth != LOCAL_OAUTH_SENTINEL
     values["STEWARDSHIP_PROXY_HOPS"] = configuration.trusted_proxy_hops
     values["STEWARDSHIP_OPERATIONAL_POLICY"] = configuration.operational_alerts
     values["STEWARDSHIP_TRUSTED_PROXY_NETWORKS"] = trusted_proxy_networks(configuration)
@@ -312,6 +344,9 @@ def configure_web_runtime(configuration):
     settings.STEWARDSHIP_MEDIA_ROOT = configuration.paths["media"]
     settings.STEWARDSHIP_REPORTS_ROOT = configuration.paths["reports"]
     settings.STEWARDSHIP_PUBLIC_ORIGIN = configuration.public_origin
+    # Update ParishSoft (#528, #1688) offers its check only while the web's own
+    # parishsoft_publication setting is on; the worker obeys its own copy.
+    settings.STEWARDSHIP_PARISHSOFT_PUBLICATION = configuration.parishsoft_publication
     client = valkey_client(configuration)
     limiter_key = hmac.digest(
         rings["django_signing"].active.material,

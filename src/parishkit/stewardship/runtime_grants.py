@@ -146,6 +146,12 @@ WEB_READ_TABLES = frozenset(
         # name and DUID from the snapshot; the page shows only the examples
         # stewardship_source_drop_example_attempt_v1() still allows.
         "stewardship_source_drop_example",
+        # Clear the halt (ADM-13 PR 4a): the current halt (its identity, kind
+        # and start), the clear signals and the mailbox checks, with who
+        # asked and when; no message, address, host or credential.
+        "stewardship_mail_halt",
+        "stewardship_mail_halt_clear",
+        "stewardship_mailbox_check",
     ]
 )
 
@@ -173,18 +179,25 @@ WEB_INSERT_TABLES = frozenset(
     [
         "stewardship_hosted_file",
         "stewardship_backup_drive_probe",
-        # Take a backup now (ADM-13 PR 3): its guard admits only a freshly
-        # signed-in Administrator, one request at a time.
+        # Take a backup now (ADM-13 PR 3): its guard admits only a live
+        # Administrator session, one request at a time.
         "stewardship_backup_request",
         # Turn off debug logging (ADM-13 PR 6b): its guard (0078) admits only
-        # a freshly signed-in Administrator, while no switch is set. The web
+        # a live Administrator session, while no switch is set. The web
         # clears one only in Testing (a column UPDATE below, 0088).
         "stewardship_debug_off_switch",
         # Accept this change once (ADM-13 PR 5b): its guard (0080) admits
-        # only a freshly signed-in Administrator, for the newest refusal with
+        # only a live Administrator session, for the newest refusal with
         # its counts exactly as recorded, while no other acceptance is live.
         # No login may update or delete one.
         "stewardship_source_drop_acceptance",
+        # Clear the halt (ADM-13 PR 4a): each guard (0115) admits only an
+        # enabled Administrator with a live session (no recent sign-in,
+        # #1547); the clear's also repeats every check the preview makes,
+        # and a mailbox check only while none is live. No login may update
+        # or delete a clear; only mail dispatch settles a check.
+        "stewardship_mail_halt_clear",
+        "stewardship_mailbox_check",
         "stewardship_source_refresh_request",
         "stewardship_source_refresh_command",
         "stewardship_chair_seed_intent",
@@ -220,9 +233,9 @@ WEB_INSERT_TABLES = frozenset(
         "stewardship_campaign_config_abort",
         "stewardship_activation_catchup",
         # The restore review (#537): listing held emails (only during a
-        # review; holds only suppress mail, so no fresh sign-in is needed),
-        # and an Administrator's decision on each, which the guard admits
-        # only for a freshly signed-in Administrator.
+        # review; holds only suppress mail), and an Administrator's decision
+        # on each, which the guard admits only for a live Administrator
+        # session.
         "stewardship_restore_delivery_hold",
         "stewardship_restore_hold_resolution",
     ]
@@ -298,12 +311,16 @@ DAILY_SENDS_FUNCTION = "stewardship_family_daily_sends_v1()"
 # When that count falls below the Family limit ("Sending resumes at about
 # 3:10 PM", #530): one instant, for the same reason.
 DAILY_RESUME_FUNCTION = "stewardship_family_daily_resume_v1()"
-# Whether a sign-in instant recorded on a secret request is a live full-scope
-# automation session's (ADM-11 PR 5): the web's intake guard and each
-# credential installer's staged-to-testing guard call it, and the installers
-# read no automation table.
-AUTOMATION_FRESH_FUNCTION = (
-    "stewardship_automation_fresh_principal_v1(uuid, timestamp with time zone)"
+# Whether the automation session a secret request names is live, of full
+# scope, the requester's and holds the request's sign-in instant (0125,
+# #1763): the web's intake guard and each key-replacement installer's
+# staged-to-testing guard call it, so ending an automation session still
+# stops its secret requests, and the installers read no automation table.
+# It replaced 0114's ended-instant check (#1547), which 0125 dropped with
+# its grants, and which also refused a browser's own requests once every
+# automation session it approved had ended.
+AUTOMATION_REQUEST_FUNCTION = (
+    "stewardship_automation_request_live_v1(uuid, uuid, timestamp with time zone)"
 )
 # The credential installers whose secret requests an automation session may
 # make (key replacement); the other targets have no such request.
@@ -359,6 +376,12 @@ MEMBER_NAMES_FOR_FUNCTION = "stewardship_member_names_for_v1(text, text, uuid)"
 # deliberately: one call already returns everything, so repeated calls
 # disclose nothing more; the audit and the digest check are the protections.
 LEADERS_WITHOUT_USER_FUNCTION = "stewardship_leaders_without_user_v1(text, uuid)"
+# The Users page's Email Ministry leaders review (#1592): each Ministry
+# leader user's campaign Ministries and their open request counts. Like the
+# leaders list it takes no address, answers only a live Administrator
+# session and audits every call with the number of leaders; it returns no
+# parishioner data, only counts and Ministry names.
+LEADER_EMAILS_FUNCTION = "stewardship_leader_emails_v1(text, uuid)"
 # One email's recipient addresses for its Mail message page (#1024): web
 # reads them, for an Administrator only, without any grant on the email's
 # rendering (its subject and body).
@@ -369,6 +392,15 @@ RECIPIENT_OUTCOMES_FUNCTION = "stewardship_delivery_recipient_outcomes_v1(uuid, 
 # What a delivered email's follow-up to its addresses refused for now did
 # (#806 slice 2), for the same page and caller: positions and words only.
 ADDRESS_RETRIES_FUNCTION = "stewardship_delivery_address_retries_v1(uuid, uuid)"
+# Sent mail's Recipient filter and column (#1562), for an Administrator
+# only: the ids of the emails meant for one address, and the addresses of
+# a page's Administrator reports and notices, without any grant on the
+# renderings that hold them.
+ADDRESS_DELIVERIES_FUNCTION = "stewardship_delivery_ids_for_address_v1(text, uuid)"
+PAGE_RECIPIENTS_FUNCTION = "stewardship_delivery_page_recipients_v1(uuid[], uuid)"
+# The ParishSoft Member name of each of a page's emails to people (0145,
+# #1562), for the same caller: one name per email, never an address.
+PAGE_MEMBER_NAMES_FUNCTION = "stewardship_delivery_page_member_names_v1(uuid[], uuid)"
 # An Administrator's report that a delivered email bounced at one address
 # (#806 slice 4): the report's only writer, so web keeps SELECT only on the
 # refusal table; the definer and the refusal guard admit it only from web.
@@ -421,11 +453,21 @@ DEBUG_OFF_CLEAR_FUNCTION = "stewardship_debug_off_clear_v2()"
 PUBLICATION_AUDITED_FUNCTION = (
     "stewardship_publication_audited_v1(text, uuid, uuid, jsonb)"
 )
+# Added Member links (#1670, migration 0141): the links a promoted
+# snapshot's evidence supports, which promotion records, the quick update's
+# skip check asks and the link table's guard checks again. Identifiers only;
+# the worker has no grant on the answers it reads.
+ADDED_MEMBER_CANDIDATES_FUNCTION = "stewardship_added_member_candidates_v1(uuid, uuid)"
 # Point-in-time exports (#1398, migration 0109): the scheduler discards the
 # saved data of every ended export, a small batch at a time, through the
 # owner-run discard functions (reports.export_cleanup.produce_discards); a
 # batch of 0 only asks whether any is due.
 EXPORT_DISCARD_FUNCTION = "stewardship_export_discard_due_v1(integer)"
+# The pledges a refresh re-evaluates (0135, #1747, superseding 0134's v1 of
+# #1704), with each one's carried-forward, marked and baseline amounts and
+# latest check: the source worker's one read of them, so it is granted no
+# response answers or decision rows.
+PLEDGE_REFRESH_ITEMS_FUNCTION = "stewardship_pledge_refresh_items_v2(uuid, uuid, uuid)"
 # Publication plans and outcomes (#528, DAT-09.01, migration 0087): the
 # worker writes a preflight's plan and each write attempt's outcome; web
 # reads them all and writes only an Administrator's confirmation.
@@ -464,6 +506,11 @@ CLOSURE_FUNCTIONS = {
     ),
     # Ministry leader changes (0070, #1034) follow 0069.
     LEADER_CHANGES_FUNCTION: ("stewardship_accounts", "0018_leader_changes"),
+    # Added Member links (0141, #1670, provisional number).
+    ADDED_MEMBER_CANDIDATES_FUNCTION: (
+        "stewardship_responses",
+        "0021_added_member_links",
+    ),
     # Mail dispatch's one token read (0073, #389 L1) follows 0072.
     DISPATCH_TOKEN_FUNCTION: ("stewardship_jobs", "0025_dispatch_token_access"),
     # The daily limit's resume time (0076, #530) follows 0075.
@@ -506,6 +553,22 @@ CLOSURE_FUNCTIONS = {
         "stewardship_reports",
         "0029_point_in_time_exports",
     ),
+    # The named automation session check of secret requests (0125, #1763).
+    AUTOMATION_REQUEST_FUNCTION: (
+        "stewardship_accounts",
+        "0030_secret_request_session",
+    ),
+    # Sent mail's recipient reads (0116, #1562).
+    **dict.fromkeys(
+        (ADDRESS_DELIVERIES_FUNCTION, PAGE_RECIPIENTS_FUNCTION),
+        ("stewardship_jobs", "0034_sent_mail_recipients"),
+    ),
+    # The Email Ministry leaders review (0120, #1592).
+    LEADER_EMAILS_FUNCTION: ("stewardship_jobs", "0035_leader_emails"),
+    # The pledges a refresh re-evaluates (0135, provisional, #1747).
+    PLEDGE_REFRESH_ITEMS_FUNCTION: ("stewardship_reports", "0034_pledge_conflicts"),
+    # Sent mail's Member names (0145, #1562).
+    PAGE_MEMBER_NAMES_FUNCTION: ("stewardship_jobs", "0036_page_member_names"),
 }
 
 
@@ -521,6 +584,19 @@ CLOSURE_FUNCTIONS = {
 # Family timeline export's capture (0063, #463) follows 0062, and the
 # Campaign comparison export's capture (0071, #1018) follows 0070.
 _ARCHIVES = ("stewardship_reports", "0014_campaign_archives")
+# Clear the halt's three tables (0115, #530).
+MAIL_HALT_TABLES = (
+    "stewardship_mail_halt",
+    "stewardship_mail_halt_clear",
+    "stewardship_mailbox_check",
+)
+# What mail dispatch may change on a mailbox check (ADM-13 PR 4a): its claim
+# and outcome; the guard in schema/migrations/0115_mail_halt_clear.sql
+# decides which moves are valid.
+MAILBOX_CHECK_COLUMNS = frozenset({"state", "claimed_at", "finished_at"})
+# What mail dispatch reads of the service status records to see a halted
+# consumer (ADM-13 PR 4a): no version, process start, target or log level.
+MAIL_HALT_STATUS_COLUMNS = frozenset({"service", "sender_state", "reported_at"})
 CLOSURE_TABLES = {
     **dict.fromkeys((ARCHIVE_TABLE, *CHILD_TABLES), _ARCHIVES),
     "stewardship_proposal_resolution": (
@@ -546,6 +622,11 @@ CLOSURE_TABLES = {
         "stewardship_reports",
         "0020_comparison_exports",
     ),
+    # The Response dashboard's Summary capture (0142, #1557).
+    "stewardship_participation_export_snapshot": (
+        "stewardship_reports",
+        "0036_participation_summary",
+    ),
     # A delivered email's follow-ups to addresses refused for now (0077, #806).
     "stewardship_outbox_address_retry": ("stewardship_jobs", "0027_address_retry"),
     # System health's debug-off switch (0078, #530), which web sets and reads.
@@ -559,6 +640,9 @@ CLOSURE_TABLES = {
     # A refused large change's example Families (0085, #530), which the
     # worker records and deletes and web reads.
     "stewardship_source_drop_example": ("stewardship_source", "0009_drop_examples"),
+    # Clear the halt's halt records, clear signals and mailbox checks (0115,
+    # #530), which mail dispatch and web write and read.
+    **dict.fromkeys(MAIL_HALT_TABLES, ("stewardship_jobs", "0033_mail_halt_clear")),
     # Publication plans and outcomes (0087, #528), which the worker writes
     # and web reads and confirms.
     **dict.fromkeys(
@@ -567,11 +651,59 @@ CLOSURE_TABLES = {
     # An Administrator's review of an Automatic census change (0096, #528),
     # which web records and reads.
     "stewardship_proposal_review": ("stewardship_responses", "0006_proposal_review"),
+    # Review decisions on cannot-participate and cannot-attend answers
+    # (0126, #1685), which web records and reads.
+    "stewardship_limitation_review": (
+        "stewardship_responses",
+        "0013_information_limitation_review",
+    ),
+    # A census change the parish added and its later step (0129, #1710),
+    # which web records and reads.
+    **dict.fromkeys(
+        ("stewardship_census_addition", "stewardship_census_addition_resolution"),
+        ("stewardship_responses", "0015_census_additions"),
+    ),
     # A Campaign setup step an Administrator kept as is (0105, #1404), which
     # web records and reads.
     "stewardship_campaign_setup_review": (
         "stewardship_accounts",
         "0025_campaign_setup_review",
+    ),
+    # Ministry leader emails (0120, #1592): web records requests and lists
+    # recipients, the worker prepares them and mail dispatch sends them.
+    **dict.fromkeys(
+        (
+            "stewardship_leader_email_request",
+            "stewardship_leader_email_cohort",
+            "stewardship_leader_email_recipient",
+        ),
+        ("stewardship_jobs", "0035_leader_emails"),
+    ),
+    # The baseline refresh re-evaluation's checks and their start (0132,
+    # #1689, provisional number): the worker records checks in promotion,
+    # and web and the worker read both.
+    **dict.fromkeys(
+        ("stewardship_refresh_check", "stewardship_refresh_check_start"),
+        ("stewardship_workflows", "0004_refresh_checks"),
+    ),
+    # A pledge's review history (0127, provisional number, #1686), which
+    # web records and reads.
+    "stewardship_pledge_review": ("stewardship_reports", "0032_pledge_review"),
+    # A decided pledge's refresh checks (0134, provisional number, #1704),
+    # which the worker records in promotion and web and the worker read.
+    "stewardship_pledge_refresh_check": (
+        "stewardship_reports",
+        "0033_pledge_refresh_checks",
+    ),
+    # A To review pledge's refresh checks (0135, provisional number, #1747),
+    # which the worker records in promotion and web and the worker read.
+    "stewardship_pledge_open_check": ("stewardship_reports", "0034_pledge_conflicts"),
+    # Added Member links (0141, #1670, provisional number): the worker
+    # records them in promotion, and web and the worker read them in the
+    # Ministry selections.
+    "stewardship_added_member_link": (
+        "stewardship_responses",
+        "0021_added_member_links",
     ),
 }
 
@@ -593,6 +725,12 @@ CLOSURE_COLUMNS = {
     ("stewardship_daily_digest_ready", "funnel_chart"): (
         "stewardship_reports",
         "0022_digest_funnel_charts",
+    ),
+    # The review pipeline's Ministry Edit (0131, #1684): web updates a
+    # request's edited Ministry with its paired revision.
+    ("stewardship_ministry_request", "reviewed_ministry_duid"): (
+        "stewardship_workflows",
+        "0003_ministry_review_pipeline",
     ),
 }
 
@@ -676,7 +814,8 @@ def runtime_functions(role, *, target=None):
     export's read-guard stops, prunes old task events and refreshes a staged
     source snapshot's planner statistics (#895).
     Web and the parishsoft, google_workspace and slack credential installers
-    check a secret request's automation sign-in instant (ADM-11 PR 5). Web,
+    check that the automation session a secret request names is live
+    (``stewardship_automation_request_live_v1``, #1763). Web,
     the general worker and the download login read a user's role-derived
     Ministry scope (#922); the general worker and the configuration
     installer record the Ministry leader pairs a promotion or an activation
@@ -684,7 +823,9 @@ def runtime_functions(role, *, target=None):
     identities and Member names for the users upgrade (#952), and web reads
     them for that upgrade's read-only preview, one typed address's Member
     names for the New user page's Name default, and the ParishSoft Ministry
-    leaders who are no user yet for the Users page's import. Web reads the
+    leaders who are no user yet for the Users page's import, and each
+    Ministry leader user's Ministries and open request counts for its Email
+    Ministry leaders review (#1592). Web reads the
     campaign comparison report's aggregates (#1018), and so does the general
     worker, for the daily digest's Compared with past campaigns section.
     The general worker also reads the archive's parts of each live answer
@@ -693,9 +834,12 @@ def runtime_functions(role, *, target=None):
     live delivery claim on (#389 L1). Web reads what a delivered email's
     follow-up to its addresses refused for now did (#806); mail dispatch
     opens that follow-up and reads its link token. Web records an
-    Administrator's report that a delivered email bounced (#806 slice 4).
+    Administrator's report that a delivered email bounced (#806 slice 4),
+    and, for an Administrator, reads the emails meant for one address and
+    the addresses of a Sent mail page's reports and notices (#1562).
     The general worker asks whether a publication plan's or outcome's audit
-    event is recorded (#528), since it cannot read audit rows itself.
+    event is recorded (#528), since it cannot read audit rows itself, and
+    which added Member links a promoted snapshot supports (#1670).
     The scheduler discards ended exports' saved data (#1398), through the
     owner-run batch that rechecks each export has ended.
     Every login a running service or an operator command uses reads whether
@@ -708,7 +852,7 @@ def runtime_functions(role, *, target=None):
     if role is ServiceRole.CREDENTIAL_INSTALLER:
         functions = {DEBUG_OFF_FUNCTION}
         if target in AUTOMATION_SECRET_TARGETS:
-            functions.add(AUTOMATION_FRESH_FUNCTION)
+            functions.add(AUTOMATION_REQUEST_FUNCTION)
         return frozenset(functions)
     return frozenset(
         {
@@ -716,18 +860,22 @@ def runtime_functions(role, *, target=None):
                 FAMILY_LOGIN_FUNCTION,
                 DAILY_SENDS_FUNCTION,
                 DAILY_RESUME_FUNCTION,
-                AUTOMATION_FRESH_FUNCTION,
+                AUTOMATION_REQUEST_FUNCTION,
                 LEADER_SCOPE_FUNCTION,
                 PORTAL_IDENTITIES_FUNCTION,
                 MEMBER_NAMES_FUNCTION,
                 MEMBER_NAMES_FOR_FUNCTION,
                 LEADERS_WITHOUT_USER_FUNCTION,
+                LEADER_EMAILS_FUNCTION,
                 RECIPIENTS_FUNCTION,
                 COMPARISON_FUNCTION,
                 ARCHIVE_RENEWAL_FUNCTION,
                 RECIPIENT_OUTCOMES_FUNCTION,
                 ADDRESS_RETRIES_FUNCTION,
                 BOUNCE_REPORT_FUNCTION,
+                ADDRESS_DELIVERIES_FUNCTION,
+                PAGE_RECIPIENTS_FUNCTION,
+                PAGE_MEMBER_NAMES_FUNCTION,
                 DEBUG_OFF_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {
@@ -754,6 +902,8 @@ def runtime_functions(role, *, target=None):
                 DEBUG_OFF_FUNCTION,
                 ARCHIVE_ANSWERS_FUNCTION,
                 PUBLICATION_AUDITED_FUNCTION,
+                PLEDGE_REFRESH_ITEMS_FUNCTION,
+                ADDED_MEMBER_CANDIDATES_FUNCTION,
             },
             "download": {LEADER_SCOPE_FUNCTION},
             ServiceRole.ADMIN_RECOVERY: {
@@ -808,6 +958,17 @@ def runtime_grants(role, *, target=None):
             "SELECT", set()
         ).update({"id", "campaign_id", "mode", "obligation_key", "occurrence_id"})
         add_service_status_writer_grants(tables, columns)
+        # Clear the halt (ADM-13 PR 4a): a halted consumer records its halt
+        # and reads the clear signal for it; the main process claims and
+        # settles a mailbox check. Its guards (0115) admit nothing else.
+        tables["stewardship_mail_halt"] = {"SELECT", "INSERT"}
+        tables["stewardship_mail_halt_clear"] = {"SELECT"}
+        tables["stewardship_mailbox_check"] = {"SELECT"}
+        columns["stewardship_mailbox_check"] = {"UPDATE": set(MAILBOX_CHECK_COLUMNS)}
+        # The main process claims a check also while a mail-dispatch status
+        # record says Halted (a halt the other process holds with no
+        # marker): it reads only which service, its sender state and when.
+        columns["stewardship_service_status"]["SELECT"].update(MAIL_HALT_STATUS_COLUMNS)
         return tables, columns
     if role in {ServiceRole.WORKER, ServiceRole.SCHEDULER}:
         from .jobs.grants import task_runtime_grants
@@ -837,6 +998,27 @@ def runtime_grants(role, *, target=None):
             for table in PUBLICATION_WORKER_TABLES:
                 tables[table] = {"SELECT", "INSERT"}
             tables["stewardship_publication_confirmation"] = {"SELECT"}
+            # Refresh checks (#1689): promotion records one per final census
+            # change or decided Ministry request whose outcome changed, and
+            # reads the latest ones, the Not seen start and each request's
+            # Entered in ParishSoft tick. Its guard admits INSERT alone.
+            tables["stewardship_refresh_check"] = {"SELECT", "INSERT"}
+            tables["stewardship_refresh_check_start"] = {"SELECT"}
+            tables.setdefault("stewardship_ministry_roster_entry", set()).add("SELECT")
+            # A census change a later response of the Family replaced gets
+            # no check (#1737): promotion and the check's guard compare the
+            # responses' places in the Family's order.
+            columns.setdefault("stewardship_submission", {}).setdefault(
+                "SELECT", set()
+            ).update({"family_version", "mode"})
+            # A decided pledge's refresh checks (#1704): promotion reads the
+            # decided pledges through their definer selection
+            # (PLEDGE_REFRESH_ITEMS_FUNCTION) and records a check whose
+            # outcome changed. Its guard admits INSERT alone.
+            tables["stewardship_pledge_refresh_check"] = {"SELECT", "INSERT"}
+            # A To review pledge's refresh checks (#1747), recorded the same
+            # way; the definer selection gives their state.
+            tables["stewardship_pledge_open_check"] = {"SELECT", "INSERT"}
             add_service_status_housekeeping_grants(tables, columns)
         else:
             add_service_status_writer_grants(tables, columns)
@@ -986,8 +1168,8 @@ def runtime_grants(role, *, target=None):
 
         columns["stewardship_task_run"] = {"UPDATE": set(SCHEDULER_CANCEL_COLUMNS)}
         # Allow debug logging again (ADM-13 PR 6c, #1207): the switch's guard
-        # (0088) admits a web clear only in Testing mode, for a freshly
-        # signed-in Administrator, once; it keeps who set the switch and when.
+        # (0088, 0114) admits a web clear only in Testing mode, for a live
+        # Administrator session, once; it keeps who set the switch and when.
         columns["stewardship_debug_off_switch"] = {
             "UPDATE": {"cleared_at", "cleared_by", "cleared_actor_id"}
         }
@@ -1063,6 +1245,9 @@ def runtime_grants(role, *, target=None):
 
         add_digest_web_grants(tables, columns)
         add_weekly_web_grants(tables, columns)
+        from .jobs.leader_email_grants import add_leader_email_web_grants
+
+        add_leader_email_web_grants(tables, columns)
         from .reports.archive_grants import add_archive_web_grants
 
         add_archive_web_grants(tables, columns)

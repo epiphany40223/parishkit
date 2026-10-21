@@ -24,6 +24,8 @@ from pathlib import Path
 
 import pytest
 
+from parishkit.parishsoft import DEFAULT_API_BASE_URL
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools" / "stewardship-local.sh"
 VM_SCRIPT = ROOT / "tools" / "stewardship-local-vm.sh"
@@ -125,7 +127,8 @@ def test_the_guide_and_specification_are_cross_linked():
     # The spec's command table names every laptop command the script accepts.
     for command in (
         "`start`",
-        "`deploy [--schema-change] [--bulk on\\|off] [--smtp-latency-ms N]`",
+        "`deploy [--schema-change] [--bulk on\\|off] [--smtp-latency-ms N] "
+        "[--parishsoft real\\|fake] [--mail-redirect ADDRESS\\|off]`",
         "`rehearse [--due-in MIN] [--send-only] [--timeout MIN] [--label NAME]`",
         "`spike [--families N] [--sources S] [--during-send] [--wait MIN] "
         "[--label NAME]`",
@@ -290,6 +293,14 @@ def vm_commands(calls):
         ("deploy", "--smtp-latency-ms", "5001"),
         ("deploy", "--rollback", "--bulk", "on"),
         ("deploy", "--rollback", "--smtp-latency-ms", "600"),
+        ("deploy", "--parishsoft"),
+        ("deploy", "--parishsoft", "production"),
+        ("deploy", "--rollback", "--parishsoft", "real"),
+        ("deploy", "--mail-redirect"),
+        ("deploy", "--mail-redirect", "Jeff <jeff@example.org>"),
+        ("deploy", "--mail-redirect", "a@example.org,b@example.org"),
+        ("deploy", "--mail-redirect", "nobody"),
+        ("deploy", "--rollback", "--mail-redirect", "jeff@example.org"),
         ("rehearse", "--bogus"),
         ("rehearse", "--due-in"),
         ("finish-setup", "x"),
@@ -448,6 +459,22 @@ def test_deploy_passes_the_rehearsal_rendering_choices(tmp_path):
     # Base 10 whatever the leading zeros: 0600 is 600, not octal 384.
     _, calls, _ = run_local(tmp_path / "zeros", "deploy", "--smtp-latency-ms", "0600")
     assert vm_commands(calls)[-1].endswith(f" 0 {HOST_REMOTE} keep 600")
+    # Which ParishSoft pk-local reads (#1399) is a third, trailing choice.
+    _, calls, _ = run_local(tmp_path / "real", "deploy", "--parishsoft", "real")
+    assert vm_commands(calls)[-1].endswith(f" 0 {HOST_REMOTE} keep keep real")
+    _, calls, _ = run_local(
+        tmp_path / "fake", "deploy", "--bulk", "on", "--parishsoft", "fake"
+    )
+    assert vm_commands(calls)[-1].endswith(f" 0 {HOST_REMOTE} on keep fake")
+    # The mail redirect (#1399) is a fourth, trailing choice.
+    _, calls, _ = run_local(
+        tmp_path / "redirect", "deploy", "--mail-redirect", "jeff@example.org"
+    )
+    assert vm_commands(calls)[-1].endswith(
+        f" 0 {HOST_REMOTE} keep keep keep jeff@example.org"
+    )
+    _, calls, _ = run_local(tmp_path / "off", "deploy", "--mail-redirect", "off")
+    assert vm_commands(calls)[-1].endswith(f" 0 {HOST_REMOTE} keep keep keep off")
 
 
 def test_deploy_passes_the_users_upgrade_inputs_to_the_vm_half(tmp_path):
@@ -764,6 +791,10 @@ def test_the_simple_commands_reach_the_vm_half(tmp_path):
     assert vm_commands(calls) == ["sign-in a@example.test"]
     _, calls, _ = run_local(tmp_path / "finish", "finish-setup")
     assert vm_commands(calls) == ["finish-setup"]
+    _, calls, _ = run_local(
+        tmp_path / "fake", "fake-parishsoft", "member", "500010", "email=x@example.test"
+    )
+    assert vm_commands(calls) == ["fake-parishsoft member 500010 email=x@example.test"]
     result, calls, _ = run_local(tmp_path / "seed", "seed", "--response-scale", "4")
     assert vm_commands(calls) == ["seed 4"]
     assert (tmp_path / "seed" / "home" / ".parishkit-local" / "seed.log").exists()
@@ -875,6 +906,18 @@ case "$*" in
             echo "{\"Service\":\"$s\",$fields,\"ExitCode\":$code}"
         done ;;
     *" run --rm -T "*) echo '{"ok": true}' ;;
+    *" fake-parishsoft-edit show"*) echo "SHOWN" ;;
+    *" fake-parishsoft-edit "*)
+        # The edit command reads the fake's document and prints the new one;
+        # FAKE_EDIT_FAIL refuses the edit as the real command would.
+        [ -z "$FAKE_EDIT_FAIL" ] || { echo "ERROR: There is no Member 1" >&2; exit 2; }
+        # FAKE_EDIT_EMPTY answers as `--help` does: exit 0 and no document.
+        [ -z "$FAKE_EDIT_EMPTY" ] || exit 0
+        echo '{"seed": 7, "edited": true}' ;;
+    *" local-seed --step pledge-period "*)
+        # FAKE_PERIOD_FAIL: the step refuses (no campaign collecting pledges).
+        [ -z "$FAKE_PERIOD_FAIL" ] || { echo "seed step refused" >&2; exit 2; }
+        echo '{"fund": 301, "start": "2027-01-01"}' ;;
     *" ps -q postgres") [ -n "$FAKE_NO_POSTGRES" ] || echo pgcontainer ;;
     *" local-spike --profile local "*)
         # One shard's document; FAKE_SHARD_FAIL makes shard 1 fail.
@@ -1033,6 +1076,9 @@ def test_up_follows_the_runbook_first_installation_order(tmp_path):
         first(calls, " up --detach web"),
     ]
     assert order == sorted(order), calls
+    # A new deployment reads the fake ParishSoft, so census publication is
+    # rendered on from the start (#1884), as an operational switch.
+    assert "-e PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION=1 " in calls[order[1]]
     # The persistent dependencies start before the offline steps.
     assert first(calls, "postgres valkey") < order[3]
     # Every Compose call names the fixed project and the initial file.
@@ -1177,6 +1223,8 @@ def test_a_failed_dependency_start_is_reported_with_its_limit(tmp_path):
         ("snapshot", "testing", "0", "1", "8"),
         ("snapshot-restore", "seeded", "/x/host.sh"),
         ("seed-testing", "/x/host.sh"),
+        ("fake-parishsoft", "member", "500010", "email=x@example.test"),
+        ("fake-parishsoft", "refresh"),
     ],
 )
 def test_every_destructive_or_deployment_command_needs_the_marker(tmp_path, args):
@@ -1261,6 +1309,60 @@ def test_start_applies_the_recorded_clock_mode(tmp_path):
         prepare=lambda r, e, s: installed(r, e, s, mode="sometimes"),
     )
     assert "expected fake or normal" in output
+
+
+@pytest.mark.parametrize("mode", ["fake", "normal"])
+def test_the_fake_clock_refuses_a_real_oauth_client_before_starting(tmp_path, mode):
+    """A real Google client cannot run under the fake clock (#1399).
+
+    Every fake-clock Compose selection refuses it before anything starts, so
+    the developer reads why instead of meeting a web that will not start.
+    The sentinel passes, and the normal clock admits a real client.
+    """
+    from parishkit.stewardship.runtime_web import LOCAL_OAUTH_DOCUMENT
+
+    def prepare(client):
+        """An installed deployment holding ``client`` as its OAuth client."""
+
+        def setup(root, etc, snapshots):
+            installed(root, etc, snapshots, mode=mode, completed=True)
+            (root / "config/services/compose.faketime.json").write_text("{}")
+            oauth = root / "credentials" / "google_oauth"
+            oauth.mkdir(parents=True)
+            (oauth / "credential").write_bytes(client)
+
+        return setup
+
+    real = b'{"client_id": "id.apps.googleusercontent.com", "client_secret": "s"}'
+    calls, output, _ = run_vm(
+        tmp_path / "real",
+        "start",
+        status=1 if mode == "fake" else 0,
+        prepare=prepare(real),
+        env={"FAKE_COMPLETED": "t"},
+    )
+    started = any(c.endswith(" up --detach web") for c in calls)
+    if mode == "fake":
+        assert "A real Google OAuth client is installed" in output
+        assert "reinstall the sentinel OAuth client first" in output
+        assert not started
+    else:
+        assert started
+    calls, _, _ = run_vm(
+        tmp_path / "sentinel",
+        "start",
+        prepare=prepare(LOCAL_OAUTH_DOCUMENT),
+        env={"FAKE_COMPLETED": "t"},
+    )
+    assert any(c.endswith(" up --detach web") for c in calls)
+
+
+def test_the_vm_half_names_the_sentinel_oauth_client():
+    """The VM half's copy of the sentinel's client ID is the package's."""
+    from parishkit.stewardship.runtime_web import LOCAL_OAUTH_SENTINEL
+
+    text = (ROOT / "tools" / "stewardship-local-vm.sh").read_text()
+    assert f"OAUTH_SENTINEL_ID={LOCAL_OAUTH_SENTINEL['client_id']}\n" in text
 
 
 def test_sign_in_needs_the_clock_mode_marker_too(tmp_path):
@@ -1412,7 +1514,9 @@ FAKE_HOST = r"""
 echo "host $* debug=$PARISHKIT_DEBUG_LOGGING" >>"$FAKE_LOG"
 if [ -n "$FAKE_HOST_ENV" ]; then
     bulk=$PARISHKIT_LOCAL_BULK_FAMILY_SEND latency=$PARISHKIT_LOCAL_SMTP_LATENCY_MS
-    echo "host bulk=$bulk latency=$latency" >>"$FAKE_LOG"
+    parishsoft=$PARISHKIT_LOCAL_PARISHSOFT redirect=$PARISHKIT_LOCAL_MAIL_REDIRECT
+    echo "host bulk=$bulk latency=$latency parishsoft=$parishsoft" \
+        "redirect=$redirect" >>"$FAKE_LOG"
 fi
 retarget() {
     echo '{"services": {"web": {"image": "'"$2"'"}}}' >"$3/config/services/compose.json"
@@ -1650,8 +1754,35 @@ def test_deploy_hands_the_rehearsal_choices_to_the_host_half(tmp_path):
         prepare=with_host_script(tmp_path),
         env={"FAKE_IMAGE_EXISTS": "1", "FAKE_HOST_ENV": "1"},
     )
-    assert "bulk=on latency=600" in calls[-1]
-    # Without them, both carry over.
+    assert "bulk=on latency=600 parishsoft=keep redirect=keep" in calls[-1]
+    calls, _, _ = run_vm(
+        tmp_path / "real",
+        "deploy",
+        NEW_IMAGE,
+        "0",
+        str(tmp_path / "real" / "host.sh"),
+        "keep",
+        "keep",
+        "real",
+        prepare=with_host_script(tmp_path / "real"),
+        env={"FAKE_IMAGE_EXISTS": "1", "FAKE_HOST_ENV": "1"},
+    )
+    assert "bulk=keep latency=keep parishsoft=real redirect=keep" in calls[-1]
+    calls, _, _ = run_vm(
+        tmp_path / "redirect",
+        "deploy",
+        NEW_IMAGE,
+        "0",
+        str(tmp_path / "redirect" / "host.sh"),
+        "keep",
+        "keep",
+        "keep",
+        "jeff@example.org",
+        prepare=with_host_script(tmp_path / "redirect"),
+        env={"FAKE_IMAGE_EXISTS": "1", "FAKE_HOST_ENV": "1"},
+    )
+    assert "parishsoft=keep redirect=jeff@example.org" in calls[-1]
+    # Without them, all carry over.
     calls, _, _ = run_vm(
         tmp_path / "keep",
         "deploy",
@@ -1661,7 +1792,7 @@ def test_deploy_hands_the_rehearsal_choices_to_the_host_half(tmp_path):
         prepare=with_host_script(tmp_path / "keep"),
         env={"FAKE_IMAGE_EXISTS": "1", "FAKE_HOST_ENV": "1"},
     )
-    assert "bulk=keep latency=keep" in calls[-1]
+    assert "bulk=keep latency=keep parishsoft=keep redirect=keep" in calls[-1]
 
 
 def test_rehearse_needs_a_seeded_set_up_deployment(tmp_path):
@@ -2308,13 +2439,89 @@ def test_an_older_snapshot_is_migrated_forward_by_the_host_half(tmp_path):
         f"upgrade local {tmp_path / 'build'} debug=1"
     )
     # The running rendering choices travel to the host half.
-    assert calls[upgrade + 1] == "host bulk=on latency=600"
+    assert calls[upgrade + 1] == "host bulk=on latency=600 parishsoft=fake redirect=off"
     # The record is the running deployment's again.
     assert record(tmp_path)["IMAGE"] == IMAGE
     assert record(tmp_path)["PREVIOUS_IMAGE"] == OLD_IMAGE
     assert record(tmp_path)["DEBUG"] == "1"
     assert "Switched to the older snapshot (upgrade)" in output
     assert any("local-sign-in" in c for c in calls[upgrade:])
+
+
+@pytest.mark.parametrize(
+    ("value", "carried"),
+    [(DEFAULT_API_BASE_URL, "real"), ("https://other.example/api/v2", None)],
+)
+def test_an_older_snapshot_switch_carries_the_parishsoft_choice(
+    tmp_path, value, carried
+):
+    """A running real-API choice (#1399) reaches the host half; any other
+    rendered URL is refused before anything stops, as the host half would."""
+    host = tmp_path / "host.sh"
+
+    def prepare(root, etc, snapshots):
+        running(root, etc, snapshots)
+        worker = root / "config" / "services" / "worker.yaml"
+        document = json.loads(worker.read_text())
+        document["deployment"]["parishsoft_base_url"] = value
+        worker.write_text(json.dumps(document))
+        host.write_text(f"#!/usr/bin/env bash\n{FAKE_HOST}\n")
+        snapshot_of(
+            snapshots, "older", image=OLD_IMAGE,
+            migrations="stewardship_accounts 0001_initial",
+        )  # fmt: skip
+
+    calls, output, _ = run_vm(
+        tmp_path, "snapshot-restore", "older", str(host), prepare=prepare,
+        status=0 if carried else 1,
+        env={
+            "FAKE_MIGRATIONS": MIGRATIONS, "FAKE_IMAGE_EXISTS": "1",
+            "FAKE_HOST_ENV": "1",
+        },
+    )  # fmt: skip
+    if carried:
+        upgrade = first(calls, "host - ")
+        assert calls[upgrade + 1] == (
+            f"host bulk=on latency=600 parishsoft={carried} redirect=off"
+        )
+    else:
+        assert "not the real API; refusing" in output
+        assert not any(" stop" in c or c.startswith("rsync") for c in calls)
+
+
+def test_an_older_snapshot_switch_carries_the_mail_redirect(tmp_path):
+    """A running mail redirect (#1399) reaches the host half on a switch."""
+    host = tmp_path / "host.sh"
+
+    def prepare(root, etc, snapshots):
+        running(root, etc, snapshots)
+        worker = root / "config" / "services" / "worker.yaml"
+        document = json.loads(worker.read_text())
+        document["deployment"]["mail_redirect"] = "jeff@example.org"
+        worker.write_text(json.dumps(document))
+        host.write_text(f"#!/usr/bin/env bash\n{FAKE_HOST}\n")
+        snapshot_of(
+            snapshots, "older", image=OLD_IMAGE,
+            migrations="stewardship_accounts 0001_initial",
+        )  # fmt: skip
+
+    calls, _, _ = run_vm(
+        tmp_path, "snapshot-restore", "older", str(host), prepare=prepare,
+        env={
+            "FAKE_MIGRATIONS": MIGRATIONS, "FAKE_IMAGE_EXISTS": "1",
+            "FAKE_HOST_ENV": "1",
+        },
+    )  # fmt: skip
+    upgrade = first(calls, "host - ")
+    assert calls[upgrade + 1] == (
+        "host bulk=on latency=600 parishsoft=fake redirect=jeff@example.org"
+    )
+
+
+def test_the_vm_half_names_the_real_parishsoft_api():
+    """The VM half's copy of the real API's base URL is the package's."""
+    text = (ROOT / "tools" / "stewardship-local-vm.sh").read_text()
+    assert f"            {DEFAULT_API_BASE_URL}) parishsoft=real ;;" in text
 
 
 def post_setup_ready(root, etc, snapshots):
@@ -2572,3 +2779,237 @@ def test_a_failed_data_switch_names_the_whole_restore_that_recovers(tmp_path):
     assert not any(" up --detach" in c for c in calls[stop:])
     assert "FAILED: the switch to the testing snapshot (exit 23)" in output
     assert "'reset testing'" in output and "reset NAME" not in output
+
+
+# ---------------------------------------------------------------------------
+# Changing the fake ParishSoft's data and refreshing it (#1780).
+
+
+def fake_parishsoft_root(root, etc, snapshots):
+    """A set-up root with web's rendering and the fake's configuration file."""
+    frozen_wizard(root, etc, snapshots)
+    (root / "run" / "local" / "fake-parishsoft.json").write_text('{"seed": 7}\n')
+    (root / "config" / "services" / "worker.yaml").write_text(
+        json.dumps({"deployment": {"profile": "local"}})
+    )
+
+
+def test_a_fake_parishsoft_edit_rewrites_the_file_and_recreates_only_the_fake(
+    tmp_path,
+):
+    """The image checks the edit; the new document replaces the file, then only
+    the fake ParishSoft is recreated, since a container keeps its old inode."""
+    calls, output, root = run_vm(
+        tmp_path,
+        "fake-parishsoft",
+        "member",
+        "500010",
+        "email=x@example.test",
+        prepare=fake_parishsoft_root,
+    )
+    edit = first(calls, "fake-parishsoft-edit member 500010 email=x@example.test")
+    assert calls[edit].startswith("run --rm --init --network none ")
+    assert " -i " in calls[edit] and IMAGE in calls[edit]
+    recreate = first(calls, "up --detach --no-deps --force-recreate fake-parishsoft")
+    assert recreate > edit
+    # The fake stops before its file is read, so no contact PUT it records
+    # there (#1884) is lost when the new document replaces the file.
+    assert first(calls, " stop fake-parishsoft") < edit
+    file = root / "run" / "local" / "fake-parishsoft.json"
+    assert json.loads(file.read_text()) == {"seed": 7, "edited": True}
+    # The Compose selection, which can refuse, runs before the edit and write.
+    assert first(calls, "compose ls --all --format json") < edit
+    assert "fake-parishsoft refresh" in output
+
+
+def test_a_refused_fake_parishsoft_edit_changes_nothing(tmp_path):
+    """The image's refusal is shown; the file and the running fake are kept."""
+    calls, output, root = run_vm(
+        tmp_path,
+        "fake-parishsoft",
+        "member",
+        "1",
+        "email=x@example.test",
+        status=2,
+        prepare=fake_parishsoft_root,
+        env={"FAKE_EDIT_FAIL": "1"},
+    )
+    assert "There is no Member 1" in output
+    file = root / "run" / "local" / "fake-parishsoft.json"
+    assert file.read_text() == '{"seed": 7}\n'
+    assert not any("--force-recreate" in call for call in calls)
+    # The fake, stopped for the edit, is started again on the same file.
+    assert first(calls, " stop fake-parishsoft") < first(
+        calls, " start fake-parishsoft"
+    )
+
+
+def test_fake_parishsoft_show_prints_and_writes_nothing(tmp_path):
+    """show is read-only: no file write and no recreate."""
+    calls, output, root = run_vm(
+        tmp_path, "fake-parishsoft", "show", prepare=fake_parishsoft_root
+    )
+    assert "SHOWN" in output
+    assert (root / "run" / "local" / "fake-parishsoft.json").read_text() == (
+        '{"seed": 7}\n'
+    )
+    assert not any("--force-recreate" in call for call in calls)
+
+
+def test_fake_parishsoft_refresh_runs_the_seeder_refresh_step_under_web(tmp_path):
+    """The Admin's full refresh runs as the seeder's refresh step, one-off web."""
+    calls, output, _ = run_vm(
+        tmp_path,
+        "fake-parishsoft",
+        "refresh",
+        prepare=fake_parishsoft_root,
+        env={"FAKE_COMPLETED": "t"},
+    )
+    step = calls[first(calls, "local-seed --step refresh ")]
+    assert "--network parishkit-local_backend" in step
+    assert "--admin-email a@example.test" in step
+    assert "Full ParishSoft refresh finished" in output
+    # Refused before setup is complete.
+    calls, output, _ = run_vm(
+        tmp_path / "early",
+        "fake-parishsoft",
+        "refresh",
+        status=1,
+        prepare=fake_parishsoft_root,
+    )
+    assert "has not completed" in output
+    assert not any("local-seed" in call for call in calls)
+
+
+@pytest.mark.parametrize("args", [("refresh",), ("member", "500010", "suffix=Jr.")])
+def test_fake_parishsoft_refuses_a_deployment_reading_the_real_parishsoft(
+    tmp_path, args
+):
+    """After deploy --parishsoft real nothing runs: no edit, no refresh."""
+
+    def real(root, etc, snapshots):
+        fake_parishsoft_root(root, etc, snapshots)
+        url = "https://ps-fs-external-api-prod.azurewebsites.net/api/v2"
+        (root / "config" / "services" / "worker.yaml").write_text(
+            json.dumps({"deployment": {"parishsoft_base_url": url}})
+        )
+
+    calls, output, _ = run_vm(
+        tmp_path,
+        "fake-parishsoft",
+        *args,
+        status=1,
+        prepare=real,
+        env={"FAKE_COMPLETED": "t"},
+    )
+    assert "reads the real ParishSoft" in output
+    assert calls == []
+
+
+def test_fake_parishsoft_refuses_without_the_fake_configuration(tmp_path):
+    """A root without the fake's file is refused before any Docker call."""
+    calls, output, _ = run_vm(
+        tmp_path, "fake-parishsoft", "show", status=1, prepare=frozen_wizard
+    )
+    assert "No fake ParishSoft configuration" in output
+    assert calls == []
+
+
+def test_a_pledge_edit_defaults_to_the_campaigns_fund_and_period(tmp_path):
+    """Without fund= and start= the campaign's own are read, then passed on."""
+    calls, _, _ = run_vm(
+        tmp_path,
+        "fake-parishsoft",
+        "pledge",
+        "100003",
+        "1800",
+        prepare=fake_parishsoft_root,
+        env={"FAKE_COMPLETED": "t"},
+    )
+    lookup = first(calls, "local-seed --step pledge-period ")
+    edit = first(
+        calls, "fake-parishsoft-edit pledge 100003 1800 fund=301 start=2027-01-01"
+    )
+    assert lookup < edit
+    # Both given: no lookup.
+    calls, _, _ = run_vm(
+        tmp_path / "given",
+        "fake-parishsoft",
+        "pledge",
+        "100003",
+        "1800",
+        "fund=300",
+        "start=2026-01-01",
+        prepare=fake_parishsoft_root,
+        env={"FAKE_COMPLETED": "t"},
+    )
+    assert not any("pledge-period" in call for call in calls)
+    # Before setup there is no campaign to read: refused, nothing written.
+    calls, output, root = run_vm(
+        tmp_path / "early",
+        "fake-parishsoft",
+        "pledge",
+        "100003",
+        "1800",
+        status=1,
+        prepare=fake_parishsoft_root,
+    )
+    assert "give fund= and start=" in output
+    assert not any("fake-parishsoft-edit" in call for call in calls)
+    # The step itself refuses: the command stops with that advice.
+    calls, output, root = run_vm(
+        tmp_path / "nopledges",
+        "fake-parishsoft",
+        "pledge",
+        "100003",
+        "1800",
+        status=1,
+        prepare=fake_parishsoft_root,
+        env={"FAKE_COMPLETED": "t", "FAKE_PERIOD_FAIL": "1"},
+    )
+    assert "Could not read the campaign's pledge fund" in output
+    assert not any("fake-parishsoft-edit" in call for call in calls)
+    assert (root / "run" / "local" / "fake-parishsoft.json").read_text() == (
+        '{"seed": 7}\n'
+    )
+
+
+@pytest.mark.parametrize("args", [(), ("--help",), ("-h",), ("help",)])
+def test_fake_parishsoft_without_a_command_is_refused(tmp_path, args):
+    """Help words never reach the edit command, so the file is never emptied."""
+    calls, output, root = run_vm(
+        tmp_path, "fake-parishsoft", *args, status=1, prepare=fake_parishsoft_root
+    )
+    assert "fake-parishsoft needs a command" in output
+    assert not any("fake-parishsoft-edit" in call for call in calls)
+
+
+def test_an_answer_that_is_not_a_document_is_never_written(tmp_path):
+    """An empty or non-document answer leaves the file and the fake alone."""
+    calls, output, root = run_vm(
+        tmp_path,
+        "fake-parishsoft",
+        "undo",
+        status=1,
+        prepare=fake_parishsoft_root,
+        env={"FAKE_EDIT_EMPTY": "1"},
+    )
+    assert "did not answer with a configuration document" in output
+    assert (root / "run" / "local" / "fake-parishsoft.json").read_text() == (
+        '{"seed": 7}\n'
+    )
+    assert not any("--force-recreate" in call for call in calls)
+
+
+def test_an_unreadable_service_document_fails_the_guard_closed(tmp_path):
+    """A service document jq cannot read counts as possibly the real ParishSoft."""
+
+    def unreadable(root, etc, snapshots):
+        fake_parishsoft_root(root, etc, snapshots)
+        (root / "config" / "services" / "web.yaml").write_text("not: [json\n")
+
+    calls, output, _ = run_vm(
+        tmp_path, "fake-parishsoft", "show", status=1, prepare=unreadable
+    )
+    assert "reads the real ParishSoft" in output
+    assert calls == []

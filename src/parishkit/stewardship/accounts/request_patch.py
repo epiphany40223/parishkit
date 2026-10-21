@@ -386,6 +386,17 @@ def _build_records(
                     and values.get("reminder_workgroup", "") is None
                 ):
                     existing["values"].pop("reminder_workgroup", None)
+                # A daily digest's Compared with past campaigns (#1018) is
+                # saved only while on, so a complete schedule record (the
+                # Schedules form sends every key, including ``kind``) without
+                # it turns it off (#1698). A partial update, such as the local
+                # seeder's date/time move, keeps the saved option.
+                if (
+                    section == "schedules"
+                    and "kind" in values
+                    and "comparison" not in values
+                ):
+                    existing["values"].pop("comparison", None)
             item["values"] = values
         normalized.append(item)
     # Content records carried unchanged from the base keep their applied

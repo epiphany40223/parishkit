@@ -34,6 +34,7 @@ from .integration_selection import (
     NOT_KEY_SCOPE,
     authentication_scope,
     integration_records,
+    loaded_organization,
 )
 from .metrics_credentials import credential_receipt
 from .policy import Capability, allows
@@ -42,7 +43,7 @@ from .request_models import ConfigurationChangeRequest
 from .request_patch import OPTIONAL_INTEGRATIONS, credential_request_schema
 from .secret_models import SECRET_PENDING, SecretReplacementRequest
 from .secret_requests import cancel_secret_request
-from .sessions import authenticated_admin, require_fresh
+from .sessions import authenticated_admin, sign_in_instant
 from .setup_credentials import admit_candidate
 
 # Derives the selection request's key from the secret request's identity, so
@@ -60,6 +61,9 @@ STOPPED = {
     "slack": _("Slack alerts are not sent"),
 }
 
+# Why a new key was refused by its provider. A ParishSoft key for another
+# organization is refused for good too (#1492), but the installer records
+# that cause (#1495) and the page says it instead (MISMATCHED).
 FAILED = {
     "parishsoft": _(
         "ParishSoft did not accept the new API key for this organization ID. "
@@ -183,6 +187,48 @@ def switch_patch(row, records):
     ]
 
 
+# A ParishSoft key that authenticates but sees another organization (#1495).
+# Once data is loaded the organization is locked, so the key must change;
+# before the first load either the key or the organization ID may be wrong.
+MISMATCHED = _(
+    "This key belongs to a different ParishSoft organization than the data "
+    "already loaded. Paste the key for the loaded organization."
+)
+MISMATCHED_BEFORE_LOAD = _(
+    "This key belongs to a different ParishSoft organization than the "
+    "configured organization ID. Check the key and the organization ID, then "
+    "try again."
+)
+
+
+def _mismatched(row):
+    """True when the installer refused this key for another organization."""
+    return AuditEvent.objects.filter(
+        event_type=Action.CREDENTIAL_KEY_ORGANIZATION_MISMATCH.value,
+        subject_id=row.pk,
+    ).exists()
+
+
+def _failed_message(target, row):
+    """Name the one reason a failed key change was refused.
+
+    Only a ParishSoft refusal can have the organization-mismatch cause, so
+    other targets (and every other page) add no query for it.
+
+    The before/after-load wording is chosen when the page renders, not when
+    the key was refused: the request records no organization state and the
+    schema is frozen. The one false case is narrow: the Administrator changes
+    the organization ID before the first load and pastes the key for the new
+    ID, the check (still seeing the old ID) refuses it, the old ID stays
+    configured, and a load then finishes within the hour the line stays
+    visible. The line then says "already loaded" for a key that was for
+    another organization than the one configured at the time.
+    """
+    if target != "parishsoft" or not _mismatched(row):
+        return FAILED[target]
+    return MISMATCHED if loaded_organization() is not None else MISMATCHED_BEFORE_LOAD
+
+
 # How long a finished key change stays on its integration's settings page,
 # unless an Administrator dismisses it sooner.
 RESULT_VISIBLE = timedelta(hours=1)
@@ -302,7 +348,7 @@ def summary(target, record):
     elif row.state == "cancelled":
         message = _("The key change was cancelled.")
     else:
-        message = FAILED[target]
+        message = _failed_message(target, row)
     return CredentialSummary("failed", row.updated_at, message, row.pk)
 
 
@@ -355,7 +401,17 @@ def unfinished_switches(configuration):
 
 
 def save_credential(
-    request, service, configuration, actor, *, target, intent, value, record, settings
+    request,
+    service,
+    configuration,
+    actor,
+    *,
+    target,
+    intent,
+    value,
+    record,
+    settings,
+    attach=None,
 ):
     """Seal ``value`` and queue its selection together with ``settings``.
 
@@ -375,13 +431,29 @@ def save_credential(
     (``admit_candidate``, #476): LOCAL takes only the mail-catcher document
     and every other profile refuses it; a Slack token is parsed the same way
     in every profile (#1399).
+
+    ``request`` is the page's request or an ``AdminCaller`` (``pk-admin
+    integration key replace``). ``attach``, if given, is called with the
+    new selection request inside its durable transaction (``record_request``),
+    so a command's own audit event commits with it.
     """
-    require_fresh(request)
+    # Checked before the key is sealed, in its own transaction: an automation
+    # caller needs a live full-scope session. It records nothing
+    # (``record=False``): the checks under the intake and request locks below
+    # record the automation event with the action. A web caller of any
+    # sign-in age passes (#1547).
+    with transaction.atomic():
+        sign_in_instant(request, record=False)
     if target in {"google_workspace", "slack"}:
-        from parishkit.stewardship.deployment import recorded_profile
+        from parishkit.stewardship.deployment import (
+            recorded_mail_redirect,
+            recorded_profile,
+        )
 
         try:
-            admit_candidate(target, value, recorded_profile())
+            admit_candidate(
+                target, value, recorded_profile(), redirect=recorded_mail_redirect()
+            )
         except ConfigError:
             raise ValueError("The credential has an invalid format.") from None
     records = integration_records(configuration.active_configuration.canonical_document)
@@ -428,6 +500,7 @@ def save_credential(
             role.value for role, names in ALLOWED_SECRETS.items() if target in names
         ),
         provider_settings=scope,
+        service=service,
     )
     values = {"credential_fingerprint": fingerprint}
     if adding:
@@ -436,14 +509,20 @@ def save_credential(
         values["settings"] = settings
 
     def admit():
-        """Repeat authorization, freshness and base under the work lock."""
+        """Repeat authorization and the base under the work lock.
+
+        An automation caller's session is checked again here too
+        (``sign_in_instant``), which locks its automation session row until
+        this transaction commits, so a revocation committed after the intake
+        is seen, and one racing it waits.
+        """
         with work_transaction():
-            fresh = authenticated_admin(request, store=service.store, read_only=True)
-            if not allows(fresh, Capability.CONFIGURE) or fresh.identity != (
-                actor.identity
+            current = authenticated_admin(request, store=service.store, read_only=True)
+            if not allows(current, Capability.CONFIGURE) or (
+                current.identity != actor.identity
             ):
                 return False
-            require_fresh(request)
+            sign_in_instant(request)
             return True
 
     base = service.store.active()
@@ -465,6 +544,7 @@ def save_credential(
             correlation_id=current_correlation(),
             admit=admit,
             request_schema=credential_request_schema(base.document()),
+            attach=attach,
         )
     except Exception:
         cancel_secret_request(

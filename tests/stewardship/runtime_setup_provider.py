@@ -55,7 +55,17 @@ def main():
         check()
         return b"200\n" + json.dumps(result).encode()
 
-    def validate(target, settings, value, *, seconds, check, profile):
+    def validate(
+        target,
+        settings,
+        value,
+        *,
+        seconds,
+        check,
+        profile,
+        base_url=None,
+        redirect=None,
+    ):
         """The installed target owner still admits its exact candidate and context."""
         from parishkit.stewardship.deployment import DeploymentProfile
 

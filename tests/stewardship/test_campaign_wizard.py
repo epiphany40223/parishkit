@@ -7,6 +7,8 @@ or its Continue was pressed with nothing changed (#1404), and its Back and
 Continue never save anything on the page.
 """
 
+import re
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -36,15 +38,18 @@ def test_steps_are_the_campaign_pages_under_their_own_names():
     stepper = wizard.build(True, "settings", done={"settings"}, mail_test_url=TEST_URL)
     assert [str(step.label) for step in stepper.steps] == [
         "Campaign settings",
+        "Load ParishSoft data",
         "Share options",
         "Pages and emails",
         "Dates and mail schedules",
         "Campaign images",
         "Preview and test email",
-        "Go-live readiness",
+        "Go live",
     ]
     for step, page in zip(stepper.steps, wizard.PAGES, strict=True):
-        assert step.label == NAMES[page.route].label
+        # Load ParishSoft data has its own name for Refresh from ParishSoft.
+        if page.key != "load":
+            assert step.label == NAMES[page.route].label
         expected = (
             TEST_URL if page.key == "mail_test" else reverse(f"admin:{page.route}")
         )
@@ -55,14 +60,16 @@ def test_share_options_applies_only_with_financial_stewardship():
     """Share options is a step only when the campaign's modules use it."""
     stepper = wizard.build(False, "content", done=set(), mail_test_url=TEST_URL)
     assert "share_options" not in keys(stepper)
-    assert stepper.previous.key == "settings"
-    assert stepper.total == 6
+    assert stepper.previous.key == "load"
+    assert stepper.total == 7
 
 
 def test_back_and_next_are_the_neighbouring_steps():
     """Back and Next link the pages either side; the ends have only one."""
     first = wizard.build(True, "settings", done=set(), mail_test_url=TEST_URL)
-    assert first.previous is None and first.next.key == "share_options"
+    assert first.previous is None and first.next.key == "load"
+    load = wizard.build(True, "load", done=set(), mail_test_url=TEST_URL)
+    assert (load.previous.key, load.next.key) == ("settings", "share_options")
     middle = wizard.build(True, "schedules", done=set(), mail_test_url=TEST_URL)
     assert (middle.previous.key, middle.next.key) == ("content", "images")
     last = wizard.build(True, "go_live", done=set(), mail_test_url=TEST_URL)
@@ -227,8 +234,8 @@ def test_template_summary_names_the_next_open_step_and_leave():
     )
     region = html[: html.index("</nav>")]
     assert 'id="campaign-stepper"' in region and "data-in-place-region" in region
-    assert "Step 3 of 7:" in region and "<strong>Pages and emails</strong>" in region
-    assert "1 of 7 steps completed" in region
+    assert "Step 4 of 8:" in region and "<strong>Pages and emails</strong>" in region
+    assert "1 of 8 steps completed" in region
     assert "<span data-campaign-step-next>Next: Dates and mail schedules</span>" in (
         region
     )
@@ -252,10 +259,10 @@ def test_upcoming_skips_completed_steps():
     stepper = wizard.build(
         True,
         "settings",
-        done={"settings", "share_options", "content"},
+        done={"settings", "load", "share_options", "content"},
         mail_test_url=TEST_URL,
     )
-    assert stepper.next.key == "share_options"
+    assert stepper.next.key == "load"
     assert stepper.upcoming.key == "schedules"
     # With every later step done, it is simply the next step.
     every = {page.key for page in wizard.PAGES}
@@ -271,32 +278,183 @@ def test_resume_is_the_first_open_step():
     stepper = wizard.build(
         False, None, done={"settings", "content"}, mail_test_url=None
     )
+    assert wizard.resume(stepper).key == "load"
+    stepper = wizard.build(
+        False, None, done={"settings", "load", "content"}, mail_test_url=None
+    )
     assert wizard.resume(stepper).key == "schedules"
     every = {page.key for page in wizard.PAGES}
     stepper = wizard.build(True, None, done=every, mail_test_url=TEST_URL)
     assert wizard.resume(stepper).key == "go_live"
 
 
-def actions(stepper):
-    """The action row the Admin layout draws under a page with ``stepper``."""
+def actions(stepper, **page):
+    """The action row the Admin layout draws under a page with ``stepper``.
+
+    ``page`` is the page's own context, which the row also reads (the
+    editor's ``keep_item`` and ``label``).
+    """
     return render_to_string(
         "stewardship/campaign-step-actions.html",
-        {"admin_chrome": {"campaign_wizard": stepper}},
+        {"admin_chrome": {"campaign_wizard": stepper}} | page,
     )
 
 
 def test_action_row_continues_an_unchanged_step():
     """Back and a Continue form that records the step, naming where it goes."""
     html = actions(
-        wizard.build(True, "share_options", done={"settings"}, mail_test_url=None)
+        wizard.build(
+            True, "share_options", done={"settings", "load"}, mail_test_url=None
+        )
     )
-    assert f'href="{reverse("admin:campaign_settings")}"' in html
+    assert f'href="{reverse("admin:source_refresh")}"' in html
     assert "data-campaign-step-back" in html and ">Back<" in html
     assert f'action="{reverse("admin:campaign_step_continue")}"' in html
     assert '<input type="hidden" name="step" value="share_options">' in html
     assert "Continue to Pages and emails" in html
     # Its hint keeps its line, hidden until a change holds Continue.
     assert 'id="campaign-continue-hint" data-continue-hint data-idle' in html
+
+
+def test_action_row_saves_a_direct_step_in_the_same_place():
+    """Campaign settings and Share options save directly (#1404 PR 4).
+
+    The primary's cell holds Continue and, inactive until the form holds a
+    change, Save and continue, a submit button of the page's own form; the
+    row names the next step an applied save opens, and its status line
+    replaces the hint that pointed at the page's own Save.
+    """
+    stepper = wizard.build(
+        True, "share_options", done={"settings"}, mail_test_url=None, direct=True
+    )
+    assert stepper.direct_form == "settings-form" and stepper.save_key is not None
+    html = actions(stepper)
+    assert f'data-next-url="{reverse("admin:content_catalog")}"' in html
+    assert '<div class="campaign-step-primary" data-campaign-primary>' in html
+    assert f'action="{reverse("admin:campaign_step_continue")}"' in html
+    assert "Continue to Pages and emails" in html
+    assert re.search(
+        r'<button type="submit" form="settings-form" [^>]*data-campaign-save'
+        r" data-step-inactive[^>]*>Save and continue</button>",
+        html,
+    )
+    assert 'id="campaign-step-status" role="status"' in html
+    assert "campaign-continue-hint" not in html
+    # Campaign images saves its staged images with its own form (PR 4c).
+    images = wizard.build(
+        True, "images", done={"settings"}, mail_test_url=None, direct=True
+    )
+    assert images.direct_form == "artwork-save-form"
+    assert re.search(
+        r'<button type="submit" form="artwork-save-form" [^>]*data-campaign-save'
+        r" data-step-inactive[^>]*>Save and continue</button>",
+        actions(images),
+    )
+    # Any other step, and a stepper drawn without ``direct``, is unchanged.
+    for other in (
+        wizard.build(True, "share_options", done={"settings"}, mail_test_url=None),
+        wizard.build(True, "content", done={"settings"}, mail_test_url=None),
+    ):
+        assert other.direct_form is None and other.save_key is None
+        html = actions(other)
+        assert "data-campaign-save" not in html and "data-next-url" not in html
+        assert "campaign-step-status" not in html
+
+
+@pytest.mark.parametrize(
+    ("step", "form", "back"),
+    [
+        ("content", "content-form", "Return to Pages and emails"),
+        ("schedules", "schedule-entry-form", "Return to Dates and mail schedules"),
+    ],
+)
+def test_action_row_saves_a_sub_page_and_goes_back(step, form, back):
+    """A sub-page that saves holds Return to <step> and Save and go back.
+
+    Save and go back (#1404 PR 4b) submits the page's own form, and the
+    step an applied save opens is the parent step, named as it is
+    (data-next-fixed: its address never moves). A sub-page without
+    ``direct`` keeps Return to <step> only.
+    """
+    stepper = wizard.build(
+        True, step, done={"settings"}, mail_test_url=None, sub=True, direct=True
+    )
+    assert stepper.direct_form == form and stepper.save_key is not None
+    html = actions(stepper)
+    assert back in html and "Continue to" not in html
+    assert f'data-next-url="{stepper.current.url}" data-next-fixed' in html
+    assert re.search(
+        rf'<div class="campaign-step-primary" data-campaign-primary><button '
+        rf'type="submit" form="{form}" [^>]*data-campaign-save[^>]*>Save and go '
+        rf"back</button></div>",
+        html,
+    )
+    assert "data-step-inactive" not in html
+    assert 'id="campaign-step-status" role="status"' in html
+    plain = actions(
+        wizard.build(True, step, done={"settings"}, mail_test_url=None, sub=True)
+    )
+    assert back in plain
+    assert "data-campaign-save" not in plain and "data-next-url" not in plain
+    assert "campaign-step-status" not in plain
+
+
+def test_the_editor_keeps_an_item_as_is_in_the_same_place():
+    """Pages and emails' editor holds Keep as is and go back (#1404 PR 6b).
+
+    With a listed item behind the change gate (``keep_item``), the
+    primary's cell holds a form posting the step and the item to the step
+    Continue, named for the status line and the row Pages and emails then
+    focuses, and Save and go back, inactive until the form holds a change.
+    """
+    stepper = wizard.build(
+        True, "content", done={"settings"}, mail_test_url=None, sub=True, direct=True
+    )
+    html = actions(
+        stepper,
+        label="Family welcome",
+        keep_item={"item": "page:welcome", "focus": "content-page-welcome"},
+    )
+    assert f'action="{reverse("admin:campaign_step_continue")}"' in html
+    assert '<input type="hidden" name="step" value="content">' in html
+    assert '<input type="hidden" name="item" value="page:welcome">' in html
+    assert 'data-kept-text="Family welcome kept as is."' in html
+    assert 'data-kept-focus="content-page-welcome"' in html
+    assert f'data-kept-return="{stepper.current.url}"' in html
+    assert ">Keep as is and go back</button></form>" in html
+    assert re.search(
+        r'<button type="submit" form="content-form" [^>]*data-campaign-save'
+        r" data-step-inactive[^>]*>Save and go back</button></div>",
+        html,
+    )
+
+
+def test_every_item_key_fits_the_stored_pattern():
+    """Each page and email slot, with a revision or without, is a valid item."""
+    from parishkit.stewardship.accounts.campaign_wizard_models import (
+        ITEM_PATTERN,
+        item_key,
+    )
+    from parishkit.stewardship.accounts.content_forms import (
+        EMAIL_LABELS,
+        PAGE_LABELS,
+    )
+
+    revision = str(uuid4())
+    # The retired closing note is never listed or edited (receipt_note).
+    pages = set(PAGE_LABELS) - {"submission_confirmation"}
+    for kind, slots in (("page", pages), ("email", EMAIL_LABELS)):
+        for slot in slots:
+            assert re.fullmatch(ITEM_PATTERN, item_key(kind, slot))
+            keyed = item_key(kind, slot, revision)
+            assert re.fullmatch(ITEM_PATTERN, keyed)
+            assert keyed == f"{kind}:{slot}_{revision.replace('-', '')}"
+
+
+def test_only_pages_and_emails_items_are_kept_one_by_one():
+    """An item on another step is refused before anything is read."""
+    with pytest.raises(ValueError, match="Only Pages and emails items"):
+        wizard.record_review(None, None, "settings", "page:welcome")
 
 
 def test_dates_with_no_schedules_continue_without_them():
@@ -311,6 +469,49 @@ def test_dates_with_no_schedules_continue_without_them():
     assert "Continue to Campaign images" in actions(stepper)
 
 
+def test_dates_with_suggested_schedules_add_them_and_continue():
+    """Suggested schedules make Add these schedules and continue the primary.
+
+    #1404 PR 6a: Continue without schedules for now stays, as the secondary
+    before it; the primary submits the suggested schedules' form and is not
+    change-gated (data-campaign-add, not data-campaign-save). The row names
+    the next step an applied save opens, and its status line is reserved.
+    """
+    stepper = wizard.build(
+        True,
+        "schedules",
+        done={"settings"},
+        mail_test_url=None,
+        no_schedules=True,
+        suggest=True,
+    )
+    assert stepper.direct and stepper.save_key is not None
+    assert stepper.direct_form == wizard.SUGGESTED_FORM
+    html = actions(stepper)
+    assert re.search(
+        r'<form method="post" action="[^"]+" data-campaign-continue>.*'
+        r'<button type="submit" class="[^"]*secondary[^"]*"[^>]*>Continue without '
+        r'schedules for now</button></form><div class="campaign-step-primary" '
+        r'data-campaign-primary><button type="submit" form="suggested-schedules-'
+        r'form" [^>]*data-campaign-add[^>]*>Add these schedules and continue'
+        r"</button></div>",
+        html,
+        re.S,
+    )
+    assert "data-campaign-save" not in html
+    assert f'data-next-url="{reverse("admin:artwork_settings")}"' in html
+    assert 'id="campaign-step-status" role="status"' in html
+    # Without suggestions the step keeps its one primary Continue, and still
+    # names its next step for a save made elsewhere on the page.
+    plain = actions(
+        wizard.build(
+            True, "schedules", done={"settings"}, mail_test_url=None, no_schedules=True
+        )
+    )
+    assert "Add these schedules" not in plain and "data-campaign-add" not in plain
+    assert f'data-next-url="{reverse("admin:artwork_settings")}"' in plain
+
+
 def test_test_email_continues_only_after_an_accepted_test():
     """Preview and test email's purpose is the test, so Continue waits for it."""
     before = actions(
@@ -321,13 +522,20 @@ def test_test_email_continues_only_after_an_accepted_test():
         wizard.build(True, "mail_test", done={"mail_test"}, mail_test_url=TEST_URL)
     )
     assert f'href="{reverse("admin:go_live")}"' in after
-    assert "Continue to Go-live readiness" in after and "<form" not in after
+    assert "Continue to Go live" in after and "<form" not in after
 
 
 def test_the_last_step_and_sub_pages_have_back_only():
-    """Go-live readiness has Back; a sub-page has Return to its step."""
-    last = actions(wizard.build(True, "go_live", done=set(), mail_test_url=TEST_URL))
-    assert "data-campaign-step-back" in last and "Continue" not in last
+    """Go live draws its own row; a sub-page has Return to its step.
+
+    The last step's page, the Go live page's Check step, draws only its own
+    step bar and action row (#1585), whose Back opens the step before it.
+    """
+    stepper = wizard.build(True, "go_live", done=set(), mail_test_url=TEST_URL)
+    assert actions(stepper).strip() == ""
+    chrome = {"admin_chrome": {"campaign_wizard": stepper}}
+    assert render_to_string("stewardship/campaign-stepper.html", chrome).strip() == ""
+    assert stepper.previous.url == TEST_URL
     sub = actions(
         wizard.build(True, "content", done={"settings"}, mail_test_url=None, sub=True)
     )
@@ -364,13 +572,15 @@ def test_load_notice_offers_the_load_until_families_exist():
         "stewardship/campaign-stepper.html",
         {"admin_chrome": {"campaign_wizard": loading}},
     )
-    assert "ParishSoft data is loading; Go-live readiness waits for it." in html
+    assert "ParishSoft data is loading; going live waits for it." in html
     assert "source_refresh" not in html and "<form" not in html
 
 
 @pytest.mark.parametrize(
     ("name", "step", "sub"),
     [
+        ("campaign_settings", "settings", False),
+        ("artwork_settings", "images", False),
         ("content_catalog", "content", False),
         ("content_edit", "content", True),
         ("content_revision", "content", True),
@@ -384,10 +594,18 @@ def test_load_notice_offers_the_load_until_families_exist():
     ],
 )
 def test_sub_pages_draw_their_steps_stepper(monkeypatch, name, step, sub):
-    """Each sub-page draws the stepper with its step current (#1404)."""
+    """Each sub-page draws the stepper with its step current (#1404).
+
+    Campaign settings' own page (and Share options') saves directly (#1404
+    PR 4), and so do the sub-pages that save: Pages and emails' editor and
+    New and Edit scheduled email (PR 4b), each with its own form. Content
+    history and the Campaign calendar, which save nothing, do not. Campaign
+    images' refused upload, drawing Campaign images again, saves directly
+    with that page's own save form (PR 4c).
+    """
     monkeypatch.setattr(wizard, "invitation_revision", lambda *_: None)
     monkeypatch.setattr(wizard, "completed", lambda *_: {"settings"})
-    monkeypatch.setattr(wizard, "_load_state", lambda _: None)
+    monkeypatch.setattr(wizard, "_load_state", lambda *_: (None, None, None))
     monkeypatch.setattr(
         "parishkit.stewardship.accounts.schedule_reads.campaign_schedules",
         lambda *_: [{}],
@@ -401,6 +619,18 @@ def test_sub_pages_draw_their_steps_stepper(monkeypatch, name, step, sub):
         assert stepper is None
         return
     assert stepper.current.key == step and stepper.sub is sub
+    forms = {
+        "campaign_settings": "settings-form",
+        "content_edit": "content-form",
+        "content_revision": "content-form",
+        "schedule_new": "schedule-entry-form",
+        "schedule_edit": "schedule-entry-form",
+        "artwork_settings": "artwork-save-form",
+        "artwork_upload": "artwork-save-form",
+    }
+    assert stepper.direct is (name in forms)
+    assert stepper.direct_form == forms.get(name)
+    assert (stepper.save_key is not None) is stepper.direct
 
 
 def test_status_offers_the_next_step_once_applied():
@@ -497,18 +727,19 @@ def test_create_the_campaign_is_step_one_with_every_later_step_unavailable():
         assert step.url is None and step.state == "blocked"
         assert str(step.status) == "Not available yet: Create the campaign first."
     assert stepper.previous is None and stepper.next is None
-    assert (stepper.completed, stepper.total) == (0, 7)
-    assert stepper.upcoming.key == "share_options" and stepper.creating
+    assert (stepper.completed, stepper.total) == (0, 8)
+    assert stepper.upcoming.key == "load" and stepper.creating
     html = render_to_string(
         "stewardship/campaign-stepper.html",
         {"admin_chrome": {"campaign_wizard": stepper}},
     )
     region = html[: html.index("</nav>")]
-    assert "Step 1 of 7:" in region and "<strong>Campaign settings</strong>" in region
-    assert "0 of 7 steps completed" in region
-    assert "Next: Share options" in region and "Leave campaign setup" in region
-    # Six unavailable segments in the bar, none a link to a later page.
-    assert region.count("data-step-unavailable") == 6
+    assert "Step 1 of 8:" in region and "<strong>Campaign settings</strong>" in region
+    assert "0 of 8 steps completed" in region
+    assert "Next: Load ParishSoft data" in region and "Leave campaign setup" in region
+    # Seven unavailable segments in the bar, none a link to a later page.
+    assert region.count("data-step-unavailable") == 7
+    assert reverse("admin:source_refresh") not in region
     assert reverse("admin:share_settings") not in region
     assert "data-campaign-load" not in html
     # The page draws its own action row inside its form, so the shared row
@@ -535,3 +766,248 @@ def test_only_create_the_campaign_draws_the_stepper_before_a_campaign(
     assert (stepper is not None) is drawn
     if drawn:
         assert stepper.creating and stepper.current.key == "settings"
+
+
+@pytest.mark.parametrize(
+    ("load", "done", "continues"),
+    [
+        ("offer", set(), False),
+        ("failed", set(), False),
+        ("loading", set(), False),
+        (None, {"load"}, True),
+    ],
+)
+def test_load_step_continues_once_the_data_is_loaded(load, done, continues):
+    """Load ParishSoft data offers Continue only once loaded (#1404 PR 5).
+
+    Before a load the page's own button is the step's primary, and while
+    the load runs there is no primary at all (Administrator, 2026-10-17:
+    "We're loading the data... ok, now it's done, and we can continue"), so
+    the row has Back only; once the campaign has its Families the row
+    offers Continue to the next step, a plain link: the step stores no
+    review.
+    """
+    html = actions(
+        wizard.build(
+            True, "load", done={"settings", *done}, mail_test_url=None, load=load
+        )
+    )
+    assert f'href="{reverse("admin:campaign_settings")}"' in html
+    assert ("Continue to Share options" in html) is continues
+    assert (f'href="{reverse("admin:share_settings")}"' in html) is continues
+    assert "<form" not in html and "campaign_step_continue" not in html
+
+
+def stepper_html(stepper):
+    """The stepper region and the notices after it, as base.html draws them."""
+    return render_to_string(
+        "stewardship/campaign-stepper.html",
+        {"admin_chrome": {"campaign_wizard": stepper}},
+    )
+
+
+def test_failed_load_says_so_and_offers_try_again():
+    """After a failed load, every other step says so (#1404 PR 5, L6 on #1407).
+
+    The notice names the failure and links its Background task, and its
+    button reads Try again, so a failed load never looks like one never
+    started.
+    """
+    task = uuid4()
+    failed = wizard.build(
+        True,
+        "content",
+        done={"settings"},
+        mail_test_url=None,
+        load="failed",
+        load_task=task,
+    )
+    html = stepper_html(failed)
+    assert "The campaign's ParishSoft data did not load." in html
+    assert f'href="{reverse("admin:background_task_page", args=[task])}"' in html
+    assert ">Try again<" in html
+    assert f'name="request_key" value="{failed.refresh_key}"' in html
+    assert failed.refresh_key is not None
+    assert '<input type="hidden" name="return_step" value="content">' in html
+
+
+@pytest.mark.parametrize("load", ["offer", "loading", "failed", "empty"])
+def test_the_load_step_draws_no_load_notice(load):
+    """Load ParishSoft data is the load itself, so it draws no notice above."""
+    html = stepper_html(
+        wizard.build(True, "load", done={"settings"}, mail_test_url=None, load=load)
+    )
+    assert "data-campaign-load" not in html
+    assert "Step 2 of 8:" in html and "<strong>Load ParishSoft data</strong>" in html
+
+
+def test_families_complete_the_load_step():
+    """The step is completed by the Families, so nothing else is read (PR 5)."""
+    assert wizard._load_state(SimpleNamespace(), {"settings", "load"}) == (
+        None,
+        None,
+        None,
+    )
+
+
+def states(boxes):
+    """Each stage box's (key, state), in order."""
+    return [(box["key"], box["state"]) for box in boxes]
+
+
+KEYS = ["fetching", "staging", "validating", "promoting"]
+
+
+@pytest.mark.parametrize(
+    ("load", "phase", "expected"),
+    [
+        ("offer", None, ["waiting"] * 4),
+        ("loading", "unspecified", ["waiting"] * 4),
+        ("loading", "fetching", ["active", "waiting", "waiting", "waiting"]),
+        ("loading", "validating", ["done", "done", "active", "waiting"]),
+        ("loaded", None, ["done"] * 4),
+        # A load that ran and finished is done, even with no Families.
+        ("empty", None, ["done"] * 4),
+        ("failed", "staging", ["done", "failed", "waiting", "waiting"]),
+        ("failed", "unspecified", ["failed", "waiting", "waiting", "waiting"]),
+    ],
+)
+def test_load_stages_follow_the_refresh_phases(load, phase, expected):
+    """One box per refresh phase the worker reports, in order (#1404 PR 5).
+
+    Not loaded: every stage waiting; loading: the stages before the run's
+    phase done and its own in progress; loaded: every stage done; failed:
+    the stage it stopped in failed. Each box words its state.
+    """
+    boxes = wizard.load_stages(load, phase)
+    assert states(boxes) == list(zip(KEYS, expected, strict=True))
+    words = {"done": "Done", "active": "In progress", "waiting": "Not started"}
+    words["failed"] = "Failed"
+    assert [str(box["status"]) for box in boxes] == [words[x] for x in expected]
+
+
+def test_the_loading_stepper_carries_the_run_to_its_stage_boxes():
+    """The stepper's facts draw the step's one state and its boxes."""
+    task = uuid4()
+    stepper = wizard.build(
+        True,
+        "load",
+        done={"settings"},
+        mail_test_url=None,
+        load="loading",
+        load_task=task,
+        load_progress=("staging", 10, 40),
+    )
+    assert stepper.load_view == "loading" and stepper.load_task == task
+    assert states(stepper.load_stages)[:2] == [
+        ("fetching", "done"),
+        ("staging", "active"),
+    ]
+    loaded = wizard.build(
+        True, "load", done={"settings", "load"}, mail_test_url=None, families=12
+    )
+    assert loaded.load_view == "loaded" and loaded.families == 12
+    assert {box["state"] for box in loaded.load_stages} == {"done"}
+
+
+def load_region(**values):
+    """Load ParishSoft data's status region, drawn from ``values``."""
+    return render_to_string("stewardship/campaign-load-status.html", values)
+
+
+def summary(html):
+    """The load region's visible summary line, without its sizing copies.
+
+    The region also draws invisible, aria-hidden copies of every state's
+    wording to size that line (#1618), so wording checks read the line itself.
+    """
+    return re.search(
+        r'<p class="campaign-load-summary"[^>]*>(.*?)</p>', html, re.DOTALL
+    ).group(1)
+
+
+def test_load_status_region_draws_one_state_each():
+    """Each state's line, its boxes, and polling only while loading (PR 5)."""
+    task = uuid4()
+    status_url = reverse("admin:background_task_status", args=[task])
+    offer = load_region(load="offer", stages=wizard.load_stages("offer", None))
+    assert "This campaign's ParishSoft data hasn't been loaded yet." in summary(offer)
+    assert "data-live-pending" not in offer and "data-live-url" not in offer
+    assert offer.count('data-stage-state="waiting"') == 4
+    loading = load_region(
+        load="loading",
+        load_task=task,
+        stages=wizard.load_stages("loading", "fetching"),
+        progress=("fetching", 1000, 4000),
+    )
+    assert "Loading the campaign's ParishSoft data…" in summary(loading)
+    assert f'data-live-url="{status_url}?view=load"' in loading
+    assert "data-live-pending" in loading and "1,000 of 4,000 records checked" in (
+        loading
+    )
+    assert "Download from ParishSoft: In progress." in loading
+    assert "data-live-follow" not in loading
+    failed = load_region(
+        load="failed", load_task=task, stages=wizard.load_stages("failed", "staging")
+    )
+    assert "did not load." in summary(failed)
+    assert "See what went wrong" in summary(failed)
+    assert reverse("admin:background_task_page", args=[task]) in failed
+    assert "data-live-pending" not in failed
+    loaded = load_region(
+        load="loaded",
+        stages=wizard.load_stages("loaded", None),
+        families=1234,
+        as_of=datetime(2026, 10, 17, 12, 0, tzinfo=UTC),
+    )
+    assert "is loaded." in summary(loaded) and "1,234 Families, as of" in loaded
+    assert 'datetime="2026-10-17T12:00:00+00:00" data-local-instant' in loaded
+    assert loaded.count('data-stage-state="done"') == 4
+    # A poll's settled answer follows up by re-reading the page in place.
+    polled = load_region(
+        **wizard.load_status(task_values("succeeded", task), families=True)
+    )
+    assert "data-live-follow" in polled and 'href="#refresh-run"' in polled
+    assert "is loaded." in summary(polled) and "data-live-pending" not in polled
+    # A succeeded full load with no Families: its own wording, every box
+    # done, the run and Refresh from ParishSoft linked, and no button (#1587).
+    empty = load_region(
+        **wizard.load_status(task_values("succeeded", task), families=False)
+    )
+    assert "loaded, but no Families matched." in summary(empty)
+    assert "is loaded." not in summary(empty)
+    assert empty.count('data-stage-state="done"') == 4
+    assert reverse("admin:background_task_page", args=[task]) in empty
+    assert reverse("admin:source_refresh") in empty
+    assert "<button" not in empty and "hasn't been loaded" not in summary(empty)
+
+
+def task_values(state, task, phase="promoting"):
+    """A refresh run as the Background task read names it."""
+    return {
+        "id": str(task),
+        "state": state,
+        "progress": {"phase": phase, "current": 4000, "total": 4000},
+    }
+
+
+@pytest.mark.parametrize(
+    ("state", "families", "load"),
+    [
+        ("queued", False, "loading"),
+        ("running", False, "loading"),
+        ("retry_wait", False, "loading"),
+        ("succeeded", True, "loaded"),
+        # A run that succeeded but left no Families is not the load: the
+        # poll says what the page's re-read will (#1517 review, L2).
+        ("succeeded", False, "empty"),
+        ("failed", False, "failed"),
+        ("cancelled", True, "failed"),
+    ],
+)
+def test_load_status_reads_the_run_state(state, families, load):
+    """The status fragment names the step's state from the run and Families."""
+    task = uuid4()
+    status = wizard.load_status(task_values(state, task, "staging"), families=families)
+    assert status["load"] == load and status["load_task"] == str(task)
+    assert status["polled"] is True

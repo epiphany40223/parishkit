@@ -2,8 +2,18 @@
 
 The public v2 contact request shapes are captured in the credential-free test
 fixture. A supported field still requires value validation, current full-payload
-preflight, review, tenant verification and publication admission. Those external
-write workflows belong to Phase 6; this module performs no network operations.
+preflight, review, tenant verification and publication admission. This module
+performs no network operations.
+
+The registry follows the live v2 write test of 2026-10-17 (#528, #1596): both
+contact PUTs are partial updates, no value can be cleared (``null`` is
+ignored and ``""`` refused), setting ``dateOfDeath`` leaves the Member
+Active, and Family address blocks cannot be read back. The live gender test
+of the same day (#1603) found that a one-character ``gender`` PUT is
+accepted but never changes the Member's ``sex`` in any read. So a gender, a
+death date, a Family address and any answer that removes a value are worked
+by hand (``proposal_handling``). The SQL proposal guard derives the same handling
+(``stewardship_response_derived_guard_v1``); keep the two in step.
 """
 
 from dataclasses import dataclass
@@ -28,36 +38,18 @@ class Capability:
     provider_fields: tuple[str, ...] = ()
 
 
-_FAMILY_SCHEMA = "FamilyContactUpdateRequestModel"
 _MEMBER_SCHEMA = "MemberContactUpdateRequestModel"
 _MANUAL = Capability(Handling.MANUAL)
 _REPORT = Capability(Handling.REPORT_ONLY)
 
 
-def _address(prefix):
-    """An address proposal is one structured value mapped to its full component set."""
-    return Capability(
-        Handling.API,
-        _FAMILY_SCHEMA,
-        tuple(
-            prefix + suffix
-            for suffix in (
-                "AddressLine1",
-                "AddressLine2",
-                "City",
-                "State",
-                "Country",
-                "PostalCode",
-                "PostalCodePlus4",
-            )
-        ),
-    )
-
-
 FAMILY_CAPABILITIES = MappingProxyType(
     {
-        "home_address": _address("home"),
-        "mailing_address": _address("mailing"),
+        # The v2 Family PUT accepts address blocks, but no v2 read returns
+        # them, so a write could be neither checked for a conflict nor
+        # confirmed. By hand until a verified address read exists.
+        "home_address": _MANUAL,
+        "mailing_address": _MANUAL,
         "email_opt_out": _MANUAL,
         "annual_pledge": _REPORT,
         "frequency": _REPORT,
@@ -75,9 +67,7 @@ MEMBER_CAPABILITIES = MappingProxyType(
                 ("nickname", "nickName"),
                 ("maiden_name", "maidenName"),
                 ("birth_date", "dateOfBirth"),
-                ("death_date", "dateOfDeath"),
                 ("language", "language"),
-                ("gender", "gender"),
                 ("email", "emailAddress"),
                 ("home_phone", "homePhone"),
                 ("mobile_phone", "cellPhone"),
@@ -86,7 +76,14 @@ MEMBER_CAPABILITIES = MappingProxyType(
         },
         "prefix": _MANUAL,
         "suffix": _MANUAL,
+        # The v2 Member PUT accepts a one-character gender (HTTP 200) but the
+        # write never changes the Member in any read (#1603), so gender is
+        # entered by hand, never published.
+        "gender": _MANUAL,
         "marital_status": _MANUAL,
+        # Writing dateOfDeath leaves the Member Active in ParishSoft, so the
+        # date is entered by hand with the deceased status, never published.
+        "death_date": _MANUAL,
         "deceased_status": _MANUAL,
         "moved_household": _MANUAL,
         "ministry_join": _REPORT,
@@ -112,3 +109,27 @@ def capability(entity, field):
         return _REGISTRY[entity][field]
     except KeyError:
         raise ValueError("The proposal field has no registered capability.") from None
+
+
+def clears_value(value):
+    """Whether a submitted census value removes the field's value.
+
+    The Family form stores a removed value as ``None`` (a birth date of
+    Unknown, or a blank optional field) or ``""`` (a
+    blank text, email or phone over a recorded one). A proposal exists only
+    when the answer differs from ParishSoft, so such an answer always clears.
+    """
+    return value is None or value == ""
+
+
+def proposal_handling(entity, field, submitted):
+    """The handling one proposal is stored with: per field, then per value.
+
+    An API-writable field whose answer removes the value is manual, because
+    the ParishSoft API cannot clear a field. The SQL guard requires exactly
+    this handling on every new proposal.
+    """
+    handling = capability(entity, field).handling
+    if handling is Handling.API and clears_value(submitted):
+        return Handling.MANUAL
+    return handling

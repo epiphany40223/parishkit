@@ -20,6 +20,7 @@ from parishkit.stewardship.source.data_age import Connection
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.system_health import (
     BACKUP_SUMMARIES,
+    BLOCKS_PAGE,
     DEBUG_SUMMARIES,
     INCIDENTS,
     LOADED_TILES,
@@ -244,6 +245,7 @@ def health(**values):
             "send_active": False,
             "planning_held": False,
             "retry_waiting": 0,
+            "retry_waiting_other": 0,
             "next_retry_at": None,
             "daily_sent": 0,
             "daily_limit": 1600,
@@ -699,6 +701,7 @@ def test_the_status_region_states_problems_and_panels_in_words():
         delivery_paused=True,
         paused_at=NOW,
         retry_waiting=3,
+        retry_waiting_other=2,
         next_retry_at=NOW,
         daily_sent=1612,
         refused_at=NOW,
@@ -732,7 +735,13 @@ def test_the_status_region_states_problems_and_panels_in_words():
         "Emails went to 1,612 recipients in the last 24 hours. Family "
         "invitations, reminders and Family tests stop at 1,600." in body
     )
-    assert "?state=retry_wait" in body
+    # Each mode's count links Sent mail in its own mode, never summed (#1576).
+    assert "?state=retry_wait&amp;purpose=family&amp;mode=production" in body
+    assert "2 Testing Family emails wait to retry" in body
+    assert (
+        '?state=retry_wait&amp;purpose=family&amp;mode=testing">'
+        "Sent mail: waiting to retry in Testing" in body
+    )
     assert "All services run version 1.4.2." in body
     assert "stewardship-deployment-runbook.md" not in body  # no sender is stopped
     # How long ago the last backup finished is counted in the browser, so an
@@ -1025,8 +1034,8 @@ def test_an_unrecorded_follow_up_refusal_is_a_problem_linking_its_email():
         "stewardship/system-health-problem.html", {"problem": found[1]}
     )
     assert "An address the mail service refused permanently could not" in one
-    assert "use Report a bounced address to set it aside" in one
-    assert f'href="/admin/mail/outgoing/{message}/">See the email</a>' in one
+    assert "open Did this email bounce? and use Report bounce to set it aside" in one
+    assert f'href="/admin/mail/sent/{message}/">See the email</a>' in one
     several = Problem("refusal_unrecorded", at=NOW, count=3, message_id=message)
     body = render_to_string(
         "stewardship/system-health-problem.html", {"problem": several}
@@ -1259,16 +1268,16 @@ def test_the_backup_confirmation_says_only_what_the_page_does_not():
     )
     assert "off-site copies are not set up, so it stays on the server only" in held
     assert "A Family email send is in progress, so the backup will wait" in held
-    assert f'<a href="{reverse("admin:family_email_progress")}">' in held
+    assert f'<a href="{reverse("admin:mail_queue")}">' in held
 
 
 def test_the_backup_request_and_refusals_answer_the_dialog():
     """Apply's answer draws the region again; each refusal is marked for the
-    dialog to show as drawn, the step-up's Confirm with Google included."""
+    dialog to show as drawn, a session that ended meanwhile included."""
     done = backup_answer(requested=SimpleNamespace(created_at=NOW), created=True)
     assert 'id="backup-now"' in done and "data-review-answer" not in done
     for refused, words in (
-        ("reauthenticate", "For security, taking a backup now needs a Google"),
+        ("signed_out", "Your sign-in has ended"),
         ("busy", "A backup is already requested"),
         ("denied", "The server refused this backup request"),
         ("invalid", "That request could not be read."),
@@ -1277,7 +1286,9 @@ def test_the_backup_request_and_refusals_answer_the_dialog():
         assert text.strip().startswith("<div data-review-refusal>"), refused
         assert f'data-backup-refused="{refused}"' in text and words in text
         assert 'id="backup-now"' not in text
-    assert "Confirm with Google" in backup_answer(refused="reauthenticate")
+    ended = backup_answer(refused="signed_out")
+    assert "Sign in again" in ended and "Nothing was requested." in ended
+    assert "Confirm with Google" not in ended
 
 
 def debug_page(
@@ -1412,7 +1423,7 @@ def test_the_debug_off_confirmation_and_each_refusal_answer_the_dialog():
     assert 'id="debug-off"' in done and "data-review-answer" not in done
     assert 'data-debug-status="set"' in done
     for refused, words in (
-        ("reauthenticate", "For security, turning off debug logging needs a Google"),
+        ("signed_out", "Your sign-in has ended"),
         ("busy", "Debug logging has already been turned off"),
         ("denied", "The server refused to turn off debug logging"),
         ("invalid", "That request could not be read."),
@@ -1899,7 +1910,7 @@ def test_the_examples_help_shows_only_when_a_failing_count_gets_examples():
 @pytest.mark.parametrize(
     ("refused", "marker", "words"),
     [
-        ("reauthenticate", "reauthenticate", "For security, accepting this change"),
+        ("signed_out", "signed_out", "Your sign-in has ended"),
         ("busy", "changed", "This changed since you looked; review it again."),
         ("denied", "denied", "The server refused this acceptance"),
         ("invalid", "invalid", "or the box was not ticked"),
@@ -2033,7 +2044,7 @@ def test_the_allow_confirmation_result_and_refusals_answer_the_dialog():
     done = debug_allow_answer(allowed=SimpleNamespace(cleared_at=NOW), created=True)
     assert 'id="debug-off"' in done and "data-review-answer" not in done
     for refused, words in (
-        ("reauthenticate", "allowing debug logging again needs a Google sign-in"),
+        ("signed_out", "Your sign-in has ended"),
         ("busy", "The debug-off switch is no longer set"),
         ("production", "In Production only the server operator can clear"),
         ("denied", "The server refused to allow debug logging again"),
@@ -2345,6 +2356,49 @@ def test_a_failed_refresh_stays_in_the_tile_while_parishsoft_is_not_answering():
     assert failed.count("did not finish") == 1
     assert 'class="notice notice-error" role="status"' not in failed
     assert f"/admin/system/background/{task}/" in failed
+
+
+def test_an_organization_mismatch_is_never_said_as_could_not_be_reached():
+    """A refresh refused because the key sees another organization reached
+    ParishSoft: System health names the mismatch, not "ParishSoft could not
+    be reached", though its refreshes fail (#1492). Without the mismatch, a
+    failing connection is still "could not be reached"."""
+    failed_at = NOW.replace(hour=2)
+    refresh = FullRefreshStatus(
+        NOW - timedelta(days=1),
+        failed_at,
+        False,
+        failed_task_id=uuid4(),
+        connection=Connection("failing", failed_at),
+    )
+
+    def kinds(incidents):
+        """The listed problem kinds for these open incidents."""
+        found = find_problems(
+            mode="production",
+            processes=(),
+            missing=(),
+            schema_current=True,
+            incidents=incidents,
+            refresh=refresh,
+            backup_at=NOW,
+        )
+        return [problem.kind for problem in found]
+
+    assert kinds({"source_tenant_mismatch": NOW}) == [
+        "source_failed",
+        "source_tenant_mismatch",
+    ]
+    words = [
+        Problem(kind, at=NOW).summary for kind in kinds({"source_tenant_mismatch": NOW})
+    ]
+    assert "ParishSoft organization does not match" in words
+    assert "ParishSoft could not be reached" not in words
+    assert kinds({}) == ["source_failing"]
+    # A real outage after the key is fixed opens the provider-failure incident
+    # while the mismatch one still waits for a good refresh: said as before.
+    outage = kinds({"source_tenant_mismatch": NOW, "source_refresh_failed": NOW})
+    assert "source_failing" in outage
 
 
 # ------------------------------ the Backups and Debug logging tiles (slice 5)
@@ -2904,9 +2958,13 @@ def test_a_resave_finding_is_its_tiles_problem_item_with_the_list():
 
 def test_the_page_load_tips_and_about_say_why_the_tiles_do_not_follow_the_poll():
     """A toggletip beside each sentence, and "About this page" explains what
-    keeps a Family from the form."""
+    keeps a Family from the form. Nothing tells the reader to reload the
+    page (#1790): the tiles are checked again about every 5 minutes."""
     page_body = loaded_page(2, [RECOMMENDED])
-    assert page_body.count("checked when the page opens, not every 10 seconds") == 2
+    tip = "This is checked about every 5 minutes, not every 10 seconds"
+    tiles = page_body[page_body.index('id="health-source-form"') :]
+    assert tiles.count(tip) == 2
+    assert "Reload the page" not in page_body
     from pathlib import Path
 
     template = (
@@ -2915,6 +2973,48 @@ def test_the_page_load_tips_and_about_say_why_the_tiles_do_not_follow_the_poll()
     ).read_text()
     assert '<dt>{% translate "Families the form cannot open" %}</dt>' in template
     assert "the next ParishSoft refresh" in template
+    assert "are checked about every 5 minutes instead" in template
+
+
+def test_the_page_load_tiles_follow_only_a_slow_recheck():
+    """#1790: the page and a slow recheck draw lasting copies of the two
+    page-load tiles' summary rows and panels for their mirror targets, and
+    ask for the recheck every 5 minutes; an ordinary poll (loaded_echoed)
+    draws no copies, so the page keeps the last ones."""
+    from parishkit.stewardship.accounts.system_health_views import (
+        RECHECK_MILLISECONDS,
+    )
+
+    assert RECHECK_MILLISECONDS == 300_000
+    reads = {
+        "health": health(),
+        "dashboard": dashboard(health(), loaded=loaded_states(2, [RECOMMENDED])),
+        "source_form_count": 2,
+        "resave": [RECOMMENDED],
+        "source_form_tile": source_form_tile(2),
+        "resave_tile": resave_tile([RECOMMENDED]),
+        "recheck_interval": RECHECK_MILLISECONDS,
+    }
+    body = loaded_page(2, [RECOMMENDED], recheck_interval=RECHECK_MILLISECONDS)
+    region = body[: body.index('id="health-mail"')]
+    assert 'data-live-slow-every="300000"' in region
+    for tile in ("source-form", "resave"):
+        for part in ("summary", "panel"):
+            name = f"health-{tile}-{part}"
+            assert f'<template data-live-mirror="{name}" data-live-mirror-lasting>' in (
+                region
+            )
+            assert f'data-live-mirror-target="{name}"' in body[len(region) :]
+    copy = region.split('data-live-mirror="health-source-form-summary"', 1)[1]
+    assert "2 Families cannot open the form" in copy.split("</template>", 1)[0]
+    status = render_to_string("stewardship/system-health-status.html", reads)
+    assert status.count("data-live-mirror-lasting") == 4
+    echoed = render_to_string(
+        "stewardship/system-health-status.html", reads | {"loaded_echoed": True}
+    )
+    assert "data-live-mirror-lasting" not in echoed
+    assert "health-resave-panel" not in echoed
+    assert 'data-live-slow-every="300000"' in echoed
 
 
 def test_the_version_summary_names_the_first_that_holds():
@@ -2961,58 +3061,36 @@ def test_the_version_panel_repeats_no_problem():
     assert "The services run different versions" not in copy.split("</template>")[0]
 
 
-def test_accept_this_change_once_draws_its_offer_and_its_step_up():
-    """#1331 item 18: an open refusal's offer is drawn offered and, greyed,
-    with the shared step-up notice that names it; the page's sign-in when it
-    was drawn picks one (data-health-fresh), so the polled copy is the same
-    whatever the sign-in. The fixed sign-in sentence is gone, and the polled
-    step-up form leaves its CSRF token empty."""
+def test_accept_this_change_once_draws_its_offer_once():
+    """An open refusal's offer is its one button, whatever the sign-in's age
+    (#1547): no step-up copy, and the polled copy leaves its CSRF token
+    empty."""
     body = accept_page()
     offer = section(body, 'id="accept-change"')
-    assert 'class="accept-when-fresh"' in offer and 'value="accept_preview"' in offer
-    stale = offer.split('class="accept-when-stale">', 1)[1].split("</div>\n<div", 1)[0]
-    assert "data-step-up-notice" in stale and "data-accept-step-up" in stale
-    assert "For security, accepting this change needs" in stale
-    assert 'id="accept-change-fresh-reason"' in stale
-    assert 'aria-describedby="accept-change-fresh-reason"' in stale
-    assert "It needs a recent" not in offer
+    assert offer.count('value="accept_preview"') == 1
+    assert "accept-when" not in offer and "For security" not in offer
     model = health(refused_at=NOW, refused_counts=FAILED)
     region = page({"health": model, "refused_attempt": REFUSED_ATTEMPT})[0]
     copy = region.split('data-live-mirror="accept-offer">', 1)[1].split("</template>")[
         0
     ]
-    assert "data-step-up-notice" in copy
+    assert 'value="accept_preview"' in copy
     assert 'name="csrfmiddlewaretoken" value=""' in copy
-    # The same polled copy for a stale and a fresh reader.
-    again = page({"health": model, "refused_attempt": REFUSED_ATTEMPT, "fresh": True})
-    assert again[0] == region
-    # An accepted refusal's greyed button says who accepted, not the step-up.
-    assert "data-accept-step-up" not in accept_page(acceptance=accepted())
 
 
-def test_only_the_page_judges_the_sign_in(monkeypatch):
-    """The page passes ``fresh`` from the session's sign-in as it is drawn;
-    the fragment and an action's answer never carry it, so no poll changes
-    which form the page shows (#1159)."""
+def test_no_page_or_fragment_judges_the_sign_in():
+    """System health never reads the sign-in's age (#1547)."""
     from pathlib import Path
 
     from parishkit.stewardship.accounts import system_health_views
 
     source = Path(system_health_views.__file__).read_text()
-    assert source.count('context["fresh"] = freshness(request)[0]') == 1
-    extra = {
-        "campaign_id": None,
-        "pause": None,
-        "debug_actor": None,
-        "accept_actor": None,
-        "refused_attempt": None,
-    }
-    assert "fresh" not in system_health_views._context(health(), extra, loaded={})
+    assert "freshness" not in source and 'context["fresh"]' not in source
     template = (
         Path(system_health_views.__file__).parent
         / "templates/stewardship/system-health.html"
     ).read_text()
-    assert "{% if fresh %} data-health-fresh{% endif %}" in template
+    assert "data-health-fresh" not in template
 
 
 @pytest.mark.parametrize(
@@ -3036,63 +3114,35 @@ def test_a_sentence_links_its_tile_only_off_the_page(kind, tile, link, following
     assert f'#health-{tile}">{link}</a>' in home
 
 
-# One problem of every registry kind, as Home lists them (#1214).
 MAILER = Subject("mail-dispatch", "mail")
-HOME_SUBJECTS = {
-    "sender_halted": (MAILER,),
-    "sender_outage": (MAILER,),
-    "not_running": (Subject("worker", "source"),),
-    "not_reported": (Subject("scheduler"),),
-    "debug_logging": (Subject("web", "main"),),
-}
 
 
-def home_line(kind):
-    """Home's line for one problem of ``kind``, as Home draws it."""
-    problem = Problem(
-        kind,
-        subjects=HOME_SUBJECTS.get(kind, ()),
-        at=NOW,
-        count=1 if kind == "refusal_unrecorded" else 0,
-    )
-    return problem, render_to_string(
+@pytest.mark.parametrize("kind", sorted(BLOCKS_PAGE))
+def test_a_problem_that_blocks_the_page_keeps_its_own_line_on_home(kind):
+    """A problem that keeps System health from opening is not counted on
+    Home (#1673): its line shows the registry's icon and state word beside
+    the page's sentence, and links nothing, since the page cannot open."""
+    problem = Problem(kind, at=NOW)
+    line = render_to_string(
         "stewardship/system-health-home-line.html", {"problem": problem}
     )
-
-
-@pytest.mark.parametrize("kind", sorted(REGISTRY))
-def test_a_home_line_shows_its_state_and_links_its_tile_once(kind):
-    """Each Home line shows the registry's icon and state word beside the
-    page's sentence, and links its problem's tile exactly once: by the
-    sentence's own link when it has one, else by "See … in System health"."""
-    problem, line = home_line(kind)
     severity = REGISTRY[kind][1]
-    assert problem.severity == severity
     assert f'data-severity="{severity}"' in line
     assert f"level-icon-{severity}" in line
     word = {"warning": "Warning", "error": "Error"}[severity]
     assert f'<span class="status-word">{word}</span>' in line
     assert ("notice-error" in line) is (severity == "error")
-    anchor = f'href="/admin/system/health/#health-{REGISTRY[kind][0]}"'
-    # An unreadable backup key keeps System health from opening, so its
-    # line links no tile at all.
-    assert line.count(anchor) == (kind != "backup_key_unchecked"), line
-    assert line.count('href="/admin/system/health/"') == 0
-    own = f"See {problem.tile_name} in System health" in line
-    assert own is problem.tile_link
+    assert "System health cannot be shown" in line
+    assert "<a " not in line
 
 
-def test_home_words_and_tiles_for_a_split_process_problem():
-    """A stopped installer alone is a warning; with a mail sender the line
-    links the Mail tile, its first, and is an error."""
+def test_severity_and_tiles_for_a_split_process_problem():
+    """A stopped installer alone is a warning on the Version tile; with a
+    mail sender it is an error, shown first on the Mail tile."""
     installer = Problem("not_running", (Subject("config-installer"),), NOW)
-    assert (installer.severity, installer.word, installer.tile) == (
-        "warning",
-        "Warning",
-        "version",
-    )
+    assert (installer.severity, installer.tiles) == ("warning", ("version",))
     both = replace(installer, subjects=(MAILER, Subject("config-installer")))
-    assert (both.severity, both.tile, both.tile_name) == ("error", "mail", "Mail")
+    assert (both.severity, both.tiles[0]) == ("error", "mail")
 
 
 def refresh_block(**context):
@@ -3118,60 +3168,24 @@ def refresh_block(**context):
     )
 
 
-def test_home_shows_a_listed_refresh_problem_once_and_keeps_its_links():
-    """#1214: with ``source_failed`` and ``source_late`` listed, Home's
-    refresh block leaves both notices out but keeps "See what went wrong"
-    and one Run a full refresh now. Without them both notices stay."""
-    listed = refresh_block(failed_listed=True, problems_listed=True, keep_action=True)
+def test_a_listed_refresh_problem_shows_once_and_keeps_its_link():
+    """#1214: with ``source_failed`` and ``source_late`` listed (System
+    health's ParishSoft refresh panel), the refresh block leaves both
+    notices out but keeps "See what went wrong". Without them both notices
+    stay, each once with Run a full refresh now."""
+    listed = refresh_block(failed_listed=True, problems_listed=True)
     assert "notice-error" not in listed
     assert "did not finish" not in listed and "minutes late" not in listed
     assert "See what went wrong" in listed
-    assert listed.count("Run a full refresh now") == 1
+    assert "Run a full refresh now" not in listed
     # Only the failure listed (the late refresh is not): the late notice
     # keeps the button, and the failure's plain line adds none.
-    failed = refresh_block(failed_listed=True, keep_action=True)
+    failed = refresh_block(failed_listed=True)
     assert failed.count("notice-error") == 1 and "minutes late" in failed
     assert failed.count("Run a full refresh now") == 1
     plain = refresh_block()
     assert plain.count("notice-error") == 2 and "did not finish" in plain
     assert plain.count("Run a full refresh now") == 1
-
-
-def test_only_a_listed_failure_gives_the_off_site_line_way():
-    """``health_listed``: each notice gives way only to its own listed
-    problem, and the off-site line only while it reports the failure."""
-    from parishkit.stewardship.accounts.admin_dashboard import health_listed
-    from parishkit.stewardship.accounts.backup_destination import OffsiteStatus
-
-    def offsite(kind):
-        """An off-site line of ``kind``."""
-        return OffsiteStatus(kind, "Words.", NOW, NOW, None)
-
-    listed = (
-        Problem("source_failed", at=NOW),
-        Problem("source_late", at=NOW),
-        Problem("backup_offsite_failed", at=NOW),
-    )
-    assert health_listed(listed, offsite("failed")) == {
-        "failed": True,
-        "late": True,
-        "offsite": True,
-        "offsite_unset": False,
-    }
-    # The incident is open, but the newest copy went through: the line no
-    # longer reports a failure, so it stays.
-    for kind in ("uploaded", "disabled", "none"):
-        assert health_listed(listed, offsite(kind))["offsite"] is False, kind
-    assert health_listed(listed, None)["offsite"] is False
-    # A failing off-site line with no listed problem stays too.
-    assert health_listed((), offsite("failed")) == {
-        "failed": False,
-        "late": False,
-        "offsite": False,
-        "offsite_unset": False,
-    }
-    # Off-site copies not set up (Production): the invitation gives way.
-    assert health_listed((Problem("offsite_missing"),), None)["offsite_unset"]
 
 
 def home_page(dashboard):
@@ -3200,29 +3214,65 @@ def home_page(dashboard):
     )
 
 
-def test_home_keeps_both_notices_for_a_viewer_without_system_health():
-    """A viewer who may not open System health gets no lines and no
-    ``health_listed``, so the failed refresh and the failed off-site copy
-    keep their own notices; a viewer with the lines sees each once."""
-    other = home_page({})
+def test_home_counts_problems_in_one_line_linking_system_health():
+    """Home shows only the count of System health problems, in the error
+    look when any is an error, linking System health (#1673); a viewer who
+    may not open System health gets the one ParishSoft line instead, and
+    neither sees the problem sentences, the refresh block or the off-site
+    line, which System health carries."""
+    other = home_page({"refresh_stale": True})
     assert "data-home-health" not in other
-    assert "did not finish." in other
-    assert "Copying the newest backup failed." in other
-    assert other.count("Run a full refresh now") == 1
+    assert "ParishSoft data may be out of date" in other
+    assert "The most recent full ParishSoft reload" not in other
+    assert "Copying the newest backup failed." not in other
+    assert "Run a full refresh now" not in other
     problems = (
         Problem("source_failed", at=NOW - timedelta(hours=1)),
         Problem("backup_offsite_failed", at=NOW),
     )
-    admin = home_page(
+    admin = home_page({"health_problems": problems, "health_severity": "warning"})
+    line = re.search(r"<li [^>]*data-home-health>.*?</li>", admin, re.S).group(0)
+    assert 'class="notice" data-home-health' in line
+    assert "2 system problems." in line
+    assert 'href="/admin/system/health/">See System health</a>' in line
+    assert "The most recent full ParishSoft reload" not in admin
+    assert "ParishSoft data may be out of date" not in admin
+    assert '<span class="status-word">Warning</span>' in line
+    errors = home_page({"health_problems": problems[:1], "health_severity": "error"})
+    assert 'class="notice notice-error" data-home-health' in errors
+    assert "1 system problem." in errors
+
+
+def test_home_states_a_problem_that_keeps_system_health_from_opening():
+    """While the backup key cannot be read, System health answers 503, so
+    Home shows that problem's own sentence, with no link, and the count
+    line for the other problems links nothing either (#1673)."""
+    page = home_page(
         {
-            "health_problems": problems,
-            "health_listed": {"failed": True, "late": False, "offsite": True},
+            "health_lines": [Problem("backup_key_unchecked")],
+            "health_problems": [Problem("source_failed", at=NOW)],
+            "health_severity": "warning",
         }
     )
-    assert admin.count("did not finish.") == 1
-    assert "Copying the newest backup failed." not in admin
-    assert admin.count("Run a full refresh now") == 1
-    assert admin.count("Off-site backups (Google Drive)") == 1
+    row = re.search(r'<ul class="home-alerts".*?</ul>', page, re.S).group(0)
+    assert 'data-problem="backup_key_unchecked"' in row
+    assert "so System health cannot be shown" in row
+    assert "1 system problem." in row
+    assert "<a " not in row
+    alone = home_page({"health_lines": [Problem("backup_key_unchecked")]})
+    assert 'data-problem="backup_key_unchecked"' in alone
+    assert "data-home-health" not in alone
+
+
+def test_every_home_problem_line_leads_with_its_state():
+    """Each Home line that reports a problem is a status indicator (#1673,
+    ui-conventions "Overview pages"): the failed tasks and out-of-date data
+    lines lead with the error icon and word."""
+    page = home_page({"refresh_stale": True, "failed_tasks": 2})
+    for marker in ("data-home-refresh", "data-home-failed-tasks"):
+        line = re.search(rf"<li [^>]*{marker}>.*?</li>", page, re.S).group(0)
+        assert "level-icon-error" in line, marker
+        assert '<span class="status-word">Error</span>' in line, marker
 
 
 @pytest.mark.parametrize(
@@ -3258,3 +3308,12 @@ def test_a_watch_stops_when_only_problems_waiting_cannot_clear_remain():
     assert health(problems=stuck).terminal
     for other in (Problem("backup_rpo_breach", at=NOW), Problem("backup_key_mismatch")):
         assert not health(problems=(*stuck, other)).terminal, other.kind
+
+
+def test_waiting_to_retry_counts_sent_mails_family_group():
+    """#1632: Waiting to retry counts and links Sent mail's Family group, so
+    the group must be exactly the Family purposes this panel is about."""
+    from parishkit.stewardship import system_health
+    from parishkit.stewardship.jobs.delivery_metadata import PURPOSE_GROUPS
+
+    assert PURPOSE_GROUPS["family"] == system_health.FAMILY_PURPOSES

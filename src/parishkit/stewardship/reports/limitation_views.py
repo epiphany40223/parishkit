@@ -1,11 +1,17 @@
-"""Admin/Staff Limitations report, with CSV, XLSX and PDF downloads (#247, #970).
+"""Admin/Staff Limitations worklist, with CSV, XLSX and PDF downloads (#247, #970).
 
 The report was "Talents and limitations" until talents were retired (#970);
 it keeps that report's audit actions (``talents_report_viewed`` and
 ``talents_report_exported``), so old and new System logs rows read alike.
+
+The page is the cannot-participate stream's review worklist (#1685; the
+shared ``components/review-worklist.html``): a row's Accept, Ignore, Back
+to review or Handled, and the bulk bar's, post to the page itself with the
+page's filters and table choices (``review_worklist.read_decision``), so
+the answer is the same page, refreshed in place, with a notice naming the
+answer. ``limitation_worklist`` builds the rows and records the decisions.
 """
 
-from dataclasses import replace
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
@@ -24,10 +30,17 @@ from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
+from parishkit.stewardship.pipeline import Stage
+from parishkit.stewardship.responses.census_review import KeyRebound
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.source.snapshot_names import current_snapshot
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web import dates
+from parishkit.stewardship.web.contracts import (
+    ErrorCode,
+    FieldError,
+    validation_response,
+)
 from parishkit.stewardship.web.exports import (
     DEFAULT_EXPORT_FORMAT,
     download_headers,
@@ -35,64 +48,50 @@ from parishkit.stewardship.web.exports import (
 )
 from parishkit.stewardship.web.refusals import with_status_code
 from parishkit.stewardship.web.responses import campaign_response
-from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
+from parishkit.stewardship.web.review_worklist import (
+    EVERY_STAGE,
+    REBOUND,
+    read_decision,
+    record,
+)
+from parishkit.stewardship.web.tables import paginate, table_parameters
 
+from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
+from .family_links import link_families
+from .limitation_worklist import (
+    SORTING,
+    LimitationDecisions,
+    WorklistQuery,
+    answer_rows,
+    at_stage,
+    worklist_page,
+)
 from .limitations import (
+    STAGES,
     LimitationsQuery,
     limitations_csv,
     limitations_pdf,
     limitations_report,
     limitations_xlsx,
+    row_count,
 )
+from .limitations import at_stage as file_at_stage
 from .read_admission import admit_report_read
 
-# The page's two tables page and sort independently, so their table
-# parameters carry these prefixes.
-MEMBERS, FAMILIES = "members_", "families_"
-
-
-def _text(value):
-    """Case-insensitive text sort key; a missing value sorts as empty."""
-    return (value or "").casefold()
-
-
-# The report is complete in memory (the selection does not page it), so every
-# column sorts here, and the SQL order stays the tiebreak (Python's sort is
-# stable). Times sort newest first on their first click.
-MEMBER_SORTING = Sorting.by_column(
-    {
-        "member": lambda row: _text(row["member_name"]),
-        # A proposed Member has no DUID; those rows sort after the others.
-        "member_duid": lambda row: (row["member_duid"] is None, row["member_duid"]),
-        "family": lambda row: (_text(row["family_name"]), row["family_duid"]),
-        "duid": lambda row: row["family_duid"],
-        "cannot_serve": lambda row: bool(row["cannot_serve"]),
-        "latest": lambda row: row["submitted_at"],
-    },
-    default="family",
-    descending_first={"cannot_serve", "latest"},
-)
-FAMILY_SORTING = Sorting.by_column(
-    {
-        "family": lambda row: _text(row["family_name"]),
-        "duid": lambda row: row["family_duid"],
-        "latest": lambda row: row["submitted_at"],
-    },
-    default="family",
-    descending_first={"latest"},
-)
+# The download's Stage values: the worklist's own choices.
+FILE_STAGES = frozenset({*(stage.value for stage in STAGES), EVERY_STAGE})
 
 
 def paging_values(parameters):
-    """Remove and return both tables' page/size/sort values from the form.
+    """Remove and return the table's page/size/sort values from the form.
 
     ``parameters`` is a mutable QueryDict. The values only choose what the
     screen shows, so they never reach the SQL filters or a download; each
     must be a single value that ``paginate`` accepts.
     """
     values = {}
-    for name in table_parameters(MEMBERS) | table_parameters(FAMILIES):
+    for name in table_parameters():
         found = parameters.pop(name, None)
         if found is None:
             continue
@@ -100,31 +99,8 @@ def paging_values(parameters):
             raise ValueError("Table choices must be single values.")
         values[name] = found[0]
     # Refuse a bad choice now, as a 400, not later while rendering the page.
-    for prefix, sorting in ((MEMBERS, MEMBER_SORTING), (FAMILIES, FAMILY_SORTING)):
-        paginate([], values, prefix=prefix, sorting=sorting)
+    paginate([], values, sorting=SORTING)
     return values
-
-
-def tables(result, query, paging, action):
-    """Sort and page both tables as private POST tables (web/tables.py).
-
-    Each table's navigator and headings carry the private filters and the
-    other table's current choices, so paging one never resets the other.
-    """
-    filters = list(query.form_values().items())
-    shown = {}
-    for prefix, rows, sorting in (
-        (MEMBERS, result["members"], MEMBER_SORTING),
-        (FAMILIES, result["families"], FAMILY_SORTING),
-    ):
-        other = [
-            (key, value) for key, value in paging.items() if not key.startswith(prefix)
-        ]
-        table = paginate(
-            rows, paging, prefix=prefix, carry=filters + other, sorting=sorting
-        )
-        shown[prefix] = replace(table, method="post", action=action)
-    return shown[MEMBERS], shown[FAMILIES]
 
 
 FORMATS = {
@@ -211,7 +187,10 @@ def _respond(request, campaign_id, *, export, render):
     """Shared admission, purge protection, audit and failure handling.
 
     ``render(result, query, extra)`` returns the bytes; for a download,
-    ``extra`` holds the format and display timezone chosen on the page.
+    ``extra`` holds the format, display timezone and Stage chosen on the
+    page; for the page, its table choices, its worklist filters and the
+    notice of the decision it posted, which is recorded first, in its own
+    work transaction, so the page that answers shows its result.
 
     Both the page and a download read on the web connection under the
     interactive campaign read guard. A download is not a stored export file:
@@ -232,16 +211,50 @@ def _respond(request, campaign_id, *, export, render):
             parameters = request.POST.copy()
             parameters.pop("csrfmiddlewaretoken", None)
             extra = {}
-            if not export:
-                extra["paging"] = paging_values(parameters)
             if export:
                 fmt = parameters.pop("format", [DEFAULT_EXPORT_FORMAT])
-                zone = parameters.pop("timezone", ["UTC"])
-                if len(fmt) != 1 or len(zone) != 1:
+                # The browser's zone, posted unasked, or an explicit
+                # timezone from an older tab (#1679).
+                chosen = parameters.pop("timezone", [None])
+                browser = parameters.pop("browser_timezone", [None])
+                stage = parameters.pop("stage", [EVERY_STAGE])
+                if (
+                    len(fmt) != 1
+                    or len(chosen) != 1
+                    or len(browser) != 1
+                    or len(stage) != 1
+                    or stage[0] not in FILE_STAGES
+                ):
                     raise ValueError("Invalid Limitations export choice.")
-                extra = export_choice(fmt[0], zone[0])
-            query = LimitationsQuery.parse(parameters)
+                extra = export_choice(
+                    fmt[0], dates.download_zone(chosen[0], browser[0])
+                ) | {"stage": stage[0]}
+                query = LimitationsQuery.parse(parameters)
+            else:
+                decision = read_decision(parameters)
+                extra["paging"] = paging_values(parameters)
+                if "stage" not in parameters:
+                    # The worklist opens on To review (review pipeline spec,
+                    # "Review worklist").
+                    parameters["stage"] = Stage.TO_REVIEW.value
+                extra["worklist"] = WorklistQuery.parse(parameters)
+                query = extra["worklist"].limitations
+                if decision is not None:
+                    extra["notice"] = record(
+                        LimitationDecisions(service.store, campaign_id),
+                        principal,
+                        decision,
+                    )
+        except KeyRebound:
+            # The same drawn form was sent again with other choices (its
+            # first answer was lost): nothing was recorded, and a reload
+            # draws fresh forms with fresh keys.
+            return validation_response(
+                [FieldError(ErrorCode.STALE)], status=409, refusal=REBOUND
+            )
         except ValueError:
+            # A malformed form, or a decision the answer does not take (a
+            # reopening with no note): a 400, nothing recorded.
             return _error(campaign_id, status=400)
         # What the audit records: the parsed choices, and the snapshot once
         # the read has named it.
@@ -287,7 +300,7 @@ def _respond(request, campaign_id, *, export, render):
             result = limitations_report(campaign_id, query, principal)
             if current_snapshot() == before:
                 snapshot = before
-            count = len(result["members"]) + len(result["families"])
+            count = row_count(result)
             return iter((render(result, query, extra),))
 
         response = campaign_response(
@@ -359,26 +372,42 @@ def export_body(campaign_id, result, fmt, zone):
 
 @require_http_methods(["GET", "POST"])
 def report(request, campaign_id):
-    """Default GET shows everything; search and Show filters use POST."""
+    """The default GET shows the answers To review; filters and decisions POST."""
 
     def render(result, query, extra):
-        """The native report page."""
-        members, families = tables(
-            result,
-            query,
+        """The stream's review worklist: one table, redrawn in place."""
+        action = reverse("admin:limitations_report")
+        worklist_query = extra["worklist"]
+        shown, counts = at_stage(answer_rows(result), worklist_query.stage)
+        table = paginate(
+            shown,
             extra["paging"],
-            reverse("admin:limitations_report"),
+            carry=list(worklist_query.form_values().items()),
+            sorting=SORTING,
+        )
+        # Each shown Family name opens its Timeline (#1570): one read of the
+        # page's Family record ids.
+        link_families(campaign_id, table.rows)
+        # Other campaign work holds the campaign: the page offers no actions,
+        # as the service would refuse them, and says why.
+        mutable = True
+        try:
+            admit_campaign(campaign_id, mutating=True)
+        except PermissionError:
+            mutable = False
+        worklist, table = worklist_page(
+            counts, worklist_query, table, action, mutable=mutable
         )
         return render_to_string(
             "stewardship/limitations-report.html",
-            result
-            | {
-                "members_table": members,
-                "families_table": families,
+            {
+                "worklist": worklist,
+                "table": table,
                 "campaign_id": campaign_id,
-                "query": query,
-                "query_fields": query.form_values(),
-                "export_timezones": sorted(timezone_names()),
+                "query": worklist_query,
+                "query_fields": worklist_query.form_values(),
+                "notice": extra.get("notice"),
+                "mutable": mutable,
             },
             request=request,
         ).encode()
@@ -392,7 +421,16 @@ def export(request, campaign_id):
     """Download the filtered report as CSV, XLSX or PDF, rendered on request."""
 
     def render(result, query, extra):
-        """The chosen file format, with times in the chosen timezone."""
-        return export_body(campaign_id, result, extra["format"], extra["zone"])
+        """The chosen file format, with times in the chosen timezone.
+
+        The file lists the answers at the page's Stage (#1685), as its
+        table does.
+        """
+        return export_body(
+            campaign_id,
+            file_at_stage(result, extra["stage"]),
+            extra["format"],
+            extra["zone"],
+        )
 
     return _respond(request, campaign_id, export=True, render=render)

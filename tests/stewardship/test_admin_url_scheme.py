@@ -14,7 +14,7 @@ from uuid import UUID
 import pytest
 from django.http import Http404
 from django.test import RequestFactory
-from django.urls import Resolver404, resolve, reverse
+from django.urls import NoReverseMatch, Resolver404, resolve, reverse
 
 from parishkit.stewardship.accounts import admin_navigation as navigation
 from parishkit.stewardship.admin_urls import (
@@ -98,16 +98,22 @@ def test_moved_routes_follow_the_scheme(pattern):
 
 @pytest.mark.parametrize(
     "name",
-    sorted(name for name, page in navigation.PAGES.items() if page.section in MOVED),
+    sorted(
+        name
+        for name, page in navigation.PAGES.items()
+        if navigation.SECTION_PATHS.get(page.section) in MOVED
+    ),
 )
 def test_every_moved_page_reverses_under_its_group(name):
-    """Each page's URL is /admin/<group>/…/ for its menu group."""
+    """Each page's URL is /admin/<segment>/…/ for its menu group: Review work
+    shares Reports and queries' ``reports`` segment (R39 finding 4)."""
     arguments = {
         parameter: "parishsoft" if parameter == "target" else TASK
         for parameter in navigation.route_parameters()[name]
     }
     url = reverse(f"admin:{name}", kwargs=arguments)
-    assert url.startswith(f"/admin/{navigation.PAGES[name].section}/")
+    segment = navigation.SECTION_PATHS[navigation.PAGES[name].section]
+    assert url.startswith(f"/admin/{segment}/")
     assert url.endswith("/")
 
 
@@ -192,10 +198,6 @@ SLASHLESS_EXPECTED = {
     "/admin/system/source-form": "/admin/system/source-form/",
     "/admin/system/integrations": "/admin/system/integrations/",
     "/admin/system/integrations/parishsoft": "/admin/system/integrations/parishsoft/",
-    f"/admin/system/key-changes/{T}": f"/admin/system/key-changes/{T}/",
-    f"/admin/system/key-changes/{T}/selection": (
-        f"/admin/system/key-changes/{T}/selection/"
-    ),
     "/admin/system/background": "/admin/system/background/",
     f"/admin/system/background/{T}": f"/admin/system/background/{T}/",
     "/admin/system/logs": "/admin/system/logs/",
@@ -240,22 +242,14 @@ SLASHLESS_EXPECTED = {
     ),
     "/admin/campaign/go-live": "/admin/campaign/go-live/",
     "/admin/campaign/go-live/families": "/admin/campaign/go-live/families/",
-    f"/admin/campaign/go-live/cleanup/{T}": f"/admin/campaign/go-live/cleanup/{T}/",
-    f"/admin/campaign/go-live/cleanup/{T}/links": (
-        f"/admin/campaign/go-live/cleanup/{T}/links/"
-    ),
-    f"/admin/campaign/go-live/cleanup/{T}/links/{T}/confirmation": (
-        f"/admin/campaign/go-live/cleanup/{T}/links/{T}/confirmation/"
-    ),
+    "/admin/campaign/go-live/preparing": "/admin/campaign/go-live/preparing/",
+    "/admin/campaign/go-live/confirmation": "/admin/campaign/go-live/confirmation/",
     "/admin/campaign/production": "/admin/campaign/production/",
-    "/admin/campaign/production/cancellation": (
-        "/admin/campaign/production/cancellation/"
-    ),
     "/admin/mail/controls": "/admin/mail/controls/",
-    "/admin/mail/family-progress": "/admin/mail/family-progress/",
+    "/admin/mail/queue": "/admin/mail/queue/",
     "/admin/mail/family-history": "/admin/mail/family-history/",
-    "/admin/mail/outgoing": "/admin/mail/outgoing/",
-    f"/admin/mail/outgoing/{T}": f"/admin/mail/outgoing/{T}/",
+    "/admin/mail/sent": "/admin/mail/sent/",
+    f"/admin/mail/sent/{T}": f"/admin/mail/sent/{T}/",
     "/admin/mail/refusals": "/admin/mail/refusals/",
     f"/admin/mail/refusals/{T}": f"/admin/mail/refusals/{T}/",
     "/admin/mail/family-portal": "/admin/mail/family-portal/",
@@ -268,22 +262,23 @@ SLASHLESS_EXPECTED = {
     "/admin/users/sessions": "/admin/users/sessions/",
     "/admin/users/automation": "/admin/users/automation/",
     "/admin/users/automation/approval": "/admin/users/automation/approval/",
-    # Responses and reports pages without their trailing slash (NAV-11).
+    # Review work and Reports and queries pages without their trailing slash
+    # (NAV-11).
     "/admin/reports": "/admin/reports/",
     "/admin/reports/responses": "/admin/reports/responses/",
-    "/admin/reports/participation": "/admin/reports/participation/",
     "/admin/reports/comparison": "/admin/reports/comparison/",
     "/admin/reports/financial": "/admin/reports/financial/",
+    "/admin/reports/financial/pledges": "/admin/reports/financial/pledges/",
     "/admin/reports/limitations": "/admin/reports/limitations/",
     "/admin/reports/census": "/admin/reports/census/",
+    "/admin/reports/census/update-parishsoft": (
+        "/admin/reports/census/update-parishsoft/"
+    ),
     "/admin/reports/information": "/admin/reports/information/",
     f"/admin/reports/information/{T}": f"/admin/reports/information/{T}/",
     "/admin/reports/ministries": "/admin/reports/ministries/",
     f"/admin/reports/ministries/follow-up/{T}": (
         f"/admin/reports/ministries/follow-up/{T}/"
-    ),
-    "/admin/reports/ministries/follow-up/roster": (
-        "/admin/reports/ministries/follow-up/roster/"
     ),
     "/admin/reports/families": "/admin/reports/families/",
     f"/admin/reports/families/{T}": f"/admin/reports/families/{T}/",
@@ -318,6 +313,14 @@ OLD_ADDRESSES = (
     f"/admin/configuration/requests/{T}",
     # Mail and Family portal (NAV-8).
     "/admin/deliveries",
+    # Outgoing mail, renamed Sent mail (#1562), with its email pages.
+    "/admin/mail/outgoing/",
+    f"/admin/mail/outgoing/{T}/",
+    f"/admin/mail/outgoing/{T}/resolution/",
+    # Family email progress, replaced by Mail queue (#1562), and its fragment.
+    "/admin/mail/family-progress/",
+    "/admin/mail/family-progress",
+    "/admin/mail/family-progress/status/",
     f"/admin/deliveries/{T}/resolve",
     "/admin/deliveries/family-sends",
     "/admin/family-portal",
@@ -334,6 +337,12 @@ OLD_ADDRESSES = (
     f"/admin/reports/{T}/participation/export",
     f"/admin/reports/{T}/families/",
     f"/admin/reports/{T}/families/{T}/",
+    # Participation, merged into the Response dashboard (#1537), and its
+    # export actions.
+    "/admin/reports/participation/",
+    "/admin/reports/participation",
+    "/admin/reports/participation/exports/",
+    "/admin/reports/participation/exact-exports/",
     f"/admin/reports/{T}/ministries/follow-up/{T}/update",
     # Campaign images' separate review pages: reviews happen on the page
     # itself now (#750).
@@ -386,9 +395,16 @@ def test_every_slashless_form_is_listed_once_and_expected():
 # have no slashless form (slashless.SLASHLESS's rule): Delete scheduled emails
 # answers only the list's confirmation dialog (#878), as Delete user does
 # (#952), the Import Ministry leaders review answers only the leaders
-# table's form (#952 slice 6), and Delete email templates only the Pages and
-# emails tables' dialog (#879).
-POSTED_ONLY = {"schedule_delete", "user_delete", "user_leader_import", "content_delete"}
+# table's form (#952 slice 6), the Email Ministry leaders review only its
+# table's form and dialog (#1592), and Delete email templates only the Pages
+# and emails tables' dialog (#879).
+POSTED_ONLY = {
+    "schedule_delete",
+    "user_delete",
+    "user_leader_import",
+    "user_leader_emails",
+    "content_delete",
+}
 
 
 def test_every_moved_page_has_its_slashless_form():
@@ -456,15 +472,35 @@ def test_test_email_pages_come_before_the_content_editor():
 
 
 def test_the_go_live_chain_names_no_campaign():
-    """Each go-live step sits under the one before it, with no campaign id."""
-    cleanup = reverse("admin:go_live_cleanup", args=[TASK])
-    links = reverse("admin:go_live_links", args=[TASK])
-    confirmation = reverse("admin:production_confirmation", args=[TASK, TASK])
+    """Each go-live step sits under Go live, with no campaign id.
+
+    No step names a request or a preparation either (#1585 slices 3 and
+    4): the retired Testing cleanup, Prepare Family links and old Confirm
+    Production addresses are gone, with no redirect, as is the Cancel
+    go-live page (slice 5), now a dialog on Production activation.
+    """
     assert reverse("admin:go_live") == "/admin/campaign/go-live/"
-    assert cleanup.startswith("/admin/campaign/go-live/") and links.startswith(cleanup)
-    assert confirmation.startswith(links) and confirmation.endswith("/confirmation/")
-    withdrawal = reverse("admin:production_withdrawal")
-    assert withdrawal.startswith(reverse("admin:production_progress"))
+    assert reverse("admin:go_live_prepare") == "/admin/campaign/go-live/preparing/"
+    assert reverse("admin:go_live_confirm") == ("/admin/campaign/go-live/confirmation/")
+    for retired in ("go_live_cleanup", "go_live_links"):
+        with pytest.raises(NoReverseMatch):
+            reverse(f"admin:{retired}", args=[TASK])
+    with pytest.raises(NoReverseMatch):
+        reverse("admin:production_confirmation", args=[TASK, TASK])
+    with pytest.raises(NoReverseMatch):
+        reverse("admin:production_withdrawal")
+    for path in (
+        f"/admin/campaign/go-live/cleanup/{TASK}/",
+        f"/admin/campaign/go-live/cleanup/{TASK}/links/",
+        f"/admin/campaign/go-live/cleanup/{TASK}",
+        f"/admin/campaign/go-live/cleanup/{TASK}/links/{TASK}/confirmation/",
+        f"/admin/campaign/go-live/cleanup/{TASK}/links/{TASK}/confirmation",
+        "/admin/campaign/production/cancellation/",
+        "/admin/campaign/production/cancellation",
+    ):
+        with pytest.raises(Resolver404):
+            resolve(path)
+    assert reverse("admin:production_progress") == "/admin/campaign/production/"
 
 
 @pytest.mark.parametrize(
@@ -516,10 +552,9 @@ def test_report_actions_and_records_resolve_to_their_own_routes():
     for path, name in (
         ("/admin/reports/families/exports/", "family_directory_export"),
         ("/admin/reports/families/search/", "find_family"),
-        (f"/admin/reports/families/{T}/", "family_timeline"),
+        (f"/admin/reports/families/{T}/", "timeline"),
         ("/admin/reports/information/exports/", "information_export"),
         (f"/admin/reports/information/{T}/", "information_item"),
-        (f"/admin/reports/information/{T}/record/", "information_update"),
         ("/admin/reports/ministries/", "ministry_report"),
         (f"/admin/reports/ministries/follow-up/{T}/", "ministry_followup_item"),
         (f"/admin/reports/exports/{T}/", "report_export"),
@@ -531,8 +566,8 @@ def test_report_actions_and_records_resolve_to_their_own_routes():
     ):
         assert resolve(path).url_name == name, path
     names = [pattern.name for pattern in reports.patterns]
-    assert names.index("family_directory_export") < names.index("family_timeline")
-    assert names.index("find_family") < names.index("family_timeline")
+    assert names.index("family_directory_export") < names.index("timeline")
+    assert names.index("find_family") < names.index("timeline")
     assert names.index("weekly_digest_manual") < names.index("weekly_digest_snapshot")
 
 
@@ -556,9 +591,9 @@ def test_old_digest_addresses_are_gone():
 def test_old_response_list_addresses_are_gone():
     """The response list pages are 404, not redirected (#933, #864).
 
-    The dashboard's "Lists of Families" links open the family directory's
-    presets instead; the old addresses, with or without their trailing
-    slash or download suffix, resolve to nothing.
+    The family directory's presets replace them (the dashboard's former
+    "Lists of Families" panel is gone, #1537); the old addresses, with or
+    without their trailing slash or download suffix, resolve to nothing.
     """
     for key in ("submitted", "started", "not-opened", "more-than-once", "data-quality"):
         for old in (
@@ -570,22 +605,27 @@ def test_old_response_list_addresses_are_gone():
                 resolve(old)
 
 
-def test_new_digest_emails_link_their_emailed_report_pages():
-    """New emails link the Emailed reports addresses, which open the reports."""
+def test_new_digest_emails_link_their_report_pages():
+    """The weekly email links its Emailed reports address; the daily the dashboard.
+
+    The daily email links the Response dashboard instead of its own saved
+    copy (#1532), which stays reachable from Emailed reports.
+    """
     from types import SimpleNamespace
 
+    from parishkit.stewardship.reports.daily_digest import response_dashboard_url
     from parishkit.stewardship.reports.links import report_url
 
     sent = SimpleNamespace(snapshot_id=TASK)
-    for document, name in (
-        (DailyDigestDocument, "daily_digest_snapshot"),
-        (WeeklyDigestDocument, "weekly_digest_snapshot"),
-    ):
-        path = document.report_path.fget(sent)
-        assert resolve(path).url_name == name, path
-        assert path == reverse(f"admin:{name}", args=[TASK])
-        assert path.startswith("/admin/reports/emailed/")
-        assert report_url("https://parish.example", path).endswith(path)
+    path = WeeklyDigestDocument.report_path.fget(sent)
+    assert resolve(path).url_name == "weekly_digest_snapshot", path
+    assert path == reverse("admin:weekly_digest_snapshot", args=[TASK])
+    assert path.startswith("/admin/reports/emailed/")
+    assert report_url("https://parish.example", path).endswith(path)
+    assert not hasattr(DailyDigestDocument, "report_path")
+    url = response_dashboard_url("https://parish.example", "production")
+    assert url == "https://parish.example/admin/reports/responses/"
+    assert resolve("/admin/reports/responses/").url_name == "response_dashboard"
 
 
 def test_every_export_shares_one_page():

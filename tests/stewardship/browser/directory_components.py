@@ -10,10 +10,10 @@ from django.urls import reverse
 
 from parishkit.stewardship.reports.directories import (
     CHECKS,
+    CODE_MESSAGE,
     DIRECTORY_SORTING,
     INACTIVE,
     MISSING_NAME,
-    MODES,
     REACH,
     REASONS,
     RESPONSES,
@@ -21,11 +21,17 @@ from parishkit.stewardship.reports.directories import (
     head_email_groups,
     response_columns,
 )
-from parishkit.stewardship.reports.directory_documents import export_headings
-from parishkit.stewardship.reports.directory_views import page_address
-from parishkit.stewardship.reports.response_dashboard import DIRECTORY_PRESETS
+from parishkit.stewardship.reports.directory_views import (
+    FIELD_IDS,
+    FIELD_LINES,
+    page_address,
+)
 from parishkit.stewardship.source.family_names import family_heads_name
+from parishkit.stewardship.web.filter_errors import FilterError, error_context
 from parishkit.stewardship.web.tables import report_table
+
+from ..test_directories import RESPONSE_LIST_PRESETS
+from ..test_family_link import STAFF as VIEWER
 
 
 def _table(rows, total, mailing, query=None):
@@ -113,19 +119,16 @@ def components(context, admin):
         "total": 51,
         "mutable": True,
         "request_key": UUID(int=81),
-        "export_timezones": ("UTC", "America/Detroit"),
     }
     # The one directory page without and with its mailing columns.
     code_list = {
         "mailing": False,
         "query_fields": query.form_values() | {"mailing": "no"},
-        "export_headings": export_headings(postal=False, reach="any"),
         "table": _table(values["table_rows"], 51, "no"),
     }
     mailing = {
         "mailing": True,
         "query_fields": query.form_values() | {"mailing": "yes"},
-        "export_headings": export_headings(postal=True, reach="any"),
         "unreachable_total": 2,
         "column_count": 9,
         "unreachable_url": reverse("admin:family_directory") + "?reach=neither",
@@ -209,13 +212,8 @@ def components(context, admin):
         "date_columns": dates,
         "count_columns": counts,
         "column_count": 7 + len(dates) + len(counts) + 1,
-        "export_headings": export_headings(
-            postal=False, reach="any", dates=dates, counts=counts, checks=True
-        ),
         "table": _table([listed, gone, faded], 3, "no", responding),
         "total": 3,
-        # The code list with response columns asks for a zone (#1127).
-        "export_asks_zone": True,
     }
     pages = {
         "/directory-responses": values | code_list | responses,
@@ -238,12 +236,35 @@ def components(context, admin):
         | mailing
         | {"table": _table([], 0, "yes"), "total": 0},
     }
+    # A malformed Exact Family code the server refused at its field (#1332):
+    # the form shows what was sent, with the code marked and the message in
+    # the gate's hint row, and the results are those for no filters.
+    sent = DirectoryQuery(search="Example", exact_code="ABCD-EFG", phone="yes")
+    pages["/directory-refused-code"] = (
+        values
+        | code_list
+        | {
+            "query": DirectoryQuery(),
+            "query_fields": DirectoryQuery().form_values() | {"mailing": "no"},
+            "table": _table(values["table_rows"], 51, "no", DirectoryQuery()),
+            "page_address": reverse("admin:family_directory"),
+        }
+        | error_context(
+            FilterError("exact_code", CODE_MESSAGE, sent), FIELD_IDS, FIELD_LINES
+        )
+        | {
+            "filter_query": sent,
+            "filter_sizes": {"directory-filters": CODE_MESSAGE},
+        }
+    )
     pages.update(preset_pages(values | code_list, invited))
     return {
         path: (
             "text/html",
             render_to_string(
-                "stewardship/directory.html", context | {"admin_chrome": admin} | data
+                "stewardship/directory.html",
+                # The viewer may open each Family's Timeline (#1570's link).
+                context | {"admin_chrome": admin, "request": VIEWER} | data,
             ),
         )
         for path, data in pages.items()
@@ -259,12 +280,17 @@ def preset_pages(values, counted):
     check choices, its response columns and one Family with those values.
     Each preset is served in Production and, as a Testing dashboard links
     it, with ``mode=testing``; both as an Administrator sees them while the
-    campaign has a rehearsal, with the Responses shown switch.
+    campaign has a rehearsal, with the Responses shown switch. The bare
+    Testing and Production views (``mode`` alone) are served too: Clear
+    filters' answer, which keeps the Testing choice, and the switch's
+    answer from there (#1651).
     """
     pages = {}
     for preset in (
-        *DIRECTORY_PRESETS.values(),
-        *(preset | {"mode": "testing"} for preset in DIRECTORY_PRESETS.values()),
+        *RESPONSE_LIST_PRESETS.values(),
+        *(preset | {"mode": "testing"} for preset in RESPONSE_LIST_PRESETS.values()),
+        {"mode": "testing"},
+        {"mode": "production"},
     ):
         query = DirectoryQuery.parse(QueryDict(urlencode(preset)))
         testing = query.mode == "testing"
@@ -289,15 +315,10 @@ def preset_pages(values, counted):
             + len(dates)
             + len(counts)
             + int(checks),
-            "modes": MODES,
             "can_test": True,
             "testing_responses": testing,
-            "export_headings": export_headings(
-                postal=False, reach="any", dates=dates, counts=counts, checks=checks
-            ),
             "table": _table([row], 1, "no", query),
             "total": 1,
-            "export_asks_zone": query.responses == "yes",
             "page_address": page_address(
                 reverse("admin:family_directory"), query, postal=False
             ),

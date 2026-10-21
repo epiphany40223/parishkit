@@ -1,0 +1,766 @@
+"""Sent mail's recipient reads, filters and every kind of email (#1562).
+
+Frozen migration 0116 adds ``stewardship_delivery_ids_for_address_v1`` (the
+emails meant for one address, through the GIN index
+``outbox_render_intended_lower``) and
+``stewardship_delivery_page_recipients_v1`` (the addresses of a page's
+Administrator reports and notices). These tests check what each returns and
+refuses, that the index serves the address read, the file's DO block, and
+Sent mail's Recipient, Purpose, Delivery, date and mode filters through the
+real page, including operational notices, which no campaign owns.
+"""
+
+import re
+from datetime import timedelta
+from pathlib import Path
+from urllib.parse import urlencode
+from uuid import uuid4
+from zoneinfo import ZoneInfo
+
+import pytest
+from django.db import DatabaseError, connection, transaction
+from django.test.utils import CaptureQueriesContext
+
+from parishkit.stewardship.accounts.models import PortalUser
+from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.jobs.delivery_reads import (
+    administrator_names,
+    read_listing,
+    with_recipients,
+)
+from parishkit.stewardship.jobs.operational_content import IncidentKind, IncidentLevel
+from parishkit.stewardship.jobs.operational_models import OperationalRecipient
+from parishkit.stewardship.jobs.operational_policy import IncidentPolicy
+from parishkit.stewardship.jobs.operational_storage import record_observation
+from parishkit.stewardship.jobs.outbox_models import OutboxMessage
+from parishkit.stewardship.jobs.outbox_storage import create_message
+from parishkit.stewardship.jobs.outbox_validation import DeliveryIdentity
+
+from ..policy_factory import address, user
+from ..test_outbox_validation import rendering
+from .auth_builders import signed_in
+from .campaign_builders import change as change_policy
+from .response_builders import activate_response_service
+from .test_background_grants_postgresql import task_login
+from .test_operational_fanout_postgresql import consume, schedule
+from .test_outbox_postgresql import permit
+from .user_builders import add_rules, convert, users
+
+pytestmark = pytest.mark.django_db(transaction=True)
+
+FROZEN = (
+    Path(__file__).resolve().parents[3]
+    / "src/parishkit/stewardship/schema/migrations/0116_sent_mail_recipients.sql"
+).read_text(encoding="utf-8")
+CHECK = FROZEN[FROZEN.index("DO $check$") :]
+ADDRESS_FUNCTION = "public.stewardship_delivery_ids_for_address_v1(text, uuid)"
+PAGE_FUNCTION = "public.stewardship_delivery_page_recipients_v1(uuid[], uuid)"
+BY_ADDRESS = "SELECT * FROM stewardship_delivery_ids_for_address_v1(%s,%s)"
+BY_PAGE = (
+    "SELECT message_id, address FROM "
+    "stewardship_delivery_page_recipients_v1(%s::uuid[],%s)"
+)
+MEMBER_NAMES = (
+    "SELECT message_id, name FROM "
+    "stewardship_delivery_page_member_names_v1(%s::uuid[],%s)"
+)
+NAMES_FROZEN = (
+    Path(__file__).resolve().parents[3]
+    / "src/parishkit/stewardship/schema/migrations/0145_page_member_names.sql"
+).read_text(encoding="utf-8")
+NAMES_CHECK = NAMES_FROZEN[NAMES_FROZEN.index("DO $check$") :]
+NAMES_FUNCTION = "public.stewardship_delivery_page_member_names_v1(uuid[], uuid)"
+# A Family's two heads, stored with capitals as ParishSoft may give them.
+HEADS = ("First.Head@Example.org", "second@example.org")
+
+
+def family_message(harness, *, mode="production", purpose="initial"):
+    """A Family email to ``HEADS`` with no attempt yet; returns its id.
+
+    In Testing mode it is routed to the Testing recipient, as the real
+    preparation routes it.
+    """
+    family = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=1)
+    status = create_message(
+        identity=DeliveryIdentity(
+            scope_id=harness.campaign.pk,
+            campaign_id=harness.campaign.pk,
+            family_id=family.pk,
+            semantic_key=uuid4(),
+            mode=mode,
+            routing="testing_override" if mode == "testing" else "production",
+            purpose=purpose,
+        ),
+        render=rendering(
+            configuration_id=harness.campaign.active_configuration.configuration_id,
+            intended_recipients=HEADS,
+            routed_recipients=("testing@example.org",) if mode == "testing" else HEADS,
+        ),
+        actor_id=uuid4(),
+        correlation_id=uuid4(),
+        command_id=uuid4(),
+        admit=permit,
+    )
+    return status.message_id
+
+
+def notices(harness):
+    """One operational notice to each current Administrator, as the real
+    scheduler and worker allocate it; returns {address: recipient}."""
+    record_observation(
+        IncidentKind.STORAGE_INTEGRITY,
+        level=IncidentLevel.CRITICAL,
+        policy=IncidentPolicy(),
+    )
+    (identifier,) = schedule()
+    assert consume(identifier, harness.service.store)
+    return {each.address: each for each in OperationalRecipient.objects.all()}
+
+
+def named_users(store):
+    """Convert the sign-in rules to users (#952) and add a named Administrator.
+
+    The converted admin@example.org keeps the Name the upgrade gave it, or
+    none; returns that Name.
+    """
+    convert(store)
+    add_rules(store, user("morgan@example.org", name="Morgan Administrator"))
+    return users(store)["admin@example.org"][0]
+
+
+def call_as(service, sql, parameters, *, exact=True):
+    """Call a definer read as ``service``'s login; its rows or SQLSTATE."""
+    with task_login(service, exact=exact):
+        try:
+            with transaction.atomic(), connection.cursor() as cursor:
+                cursor.execute(sql, parameters)
+                return cursor.fetchall()
+        except DatabaseError as error:
+            return error.__cause__.sqlstate
+
+
+def sent_mail(browser, *, link=False, **query):
+    """Sent mail as the web login serves it for ``query``: (status, HTML).
+
+    A query with a Recipient is posted, as the page's filter form posts it
+    (#1562: the Recipient is private filter state); any other is a link
+    (a GET), as is every query when ``link`` is set.
+    """
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        if "recipient" in query and not link:
+            token = browser.cookies["pk_admin_csrf"].value
+            response = browser.post(
+                "/admin/mail/sent/", {"csrfmiddlewaretoken": token, **query}
+            )
+        else:
+            response = browser.get("/admin/mail/sent/?" + urlencode(query))
+    return response.status_code, response.content.decode()
+
+
+def region(html, element_id):
+    """The markup of the element ``element_id`` opens, up to its next div end."""
+    start = html.index(f'id="{element_id}"')
+    return html[start : html.index("</div>", start)]
+
+
+def shown_mode(html):
+    """The mode whose Production / Testing segment is current (#1575)."""
+    match = re.search(
+        r'<button type="submit" name="mode" value="(\w+)" aria-current="page">', html
+    )
+    return match and match.group(1)
+
+
+def listed(html, ids):
+    """The ids in ``ids`` whose email page Sent mail's ``html`` links."""
+    return {each for each in ids if f'href="/admin/mail/sent/{each}/"' in html}
+
+
+def test_the_address_read_finds_the_emails_meant_for_an_address(
+    response_service, google
+):
+    """In any case, for an Administrator only; nothing else of the rendering,
+    and never the Testing recipient a Testing email was routed to."""
+    # Testing mail is admitted before the campaign goes live, Production
+    # mail after.
+    testing = family_message(response_service, mode="testing")
+    harness = activate_response_service(response_service)
+    signed_in()
+    admin = PortalUser.objects.get(email="admin@example.org").pk
+    production = family_message(harness)
+    for typed in ("first.head@example.org", "FIRST.HEAD@EXAMPLE.ORG"):
+        found = call_as(ServiceRole.WEB, BY_ADDRESS, (typed, admin))
+        assert sorted(found) == sorted([(production,), (testing,)])
+    assert call_as(ServiceRole.WEB, BY_ADDRESS, ("testing@example.org", admin)) == []
+    assert call_as(ServiceRole.WEB, BY_ADDRESS, ("nobody@example.org", admin)) == []
+    # Malformed input is refused, not read.
+    for bad in ("no-at-sign", "", "x" * 255 + "@example.org"):
+        assert call_as(ServiceRole.WEB, BY_ADDRESS, (bad, admin)) == "22023"
+
+
+def test_both_reads_refuse_all_but_an_administrator_on_the_web_login(
+    response_service, google
+):
+    """Staff, an unknown or missing actor, other logins, and a login holding
+    the web grants without being the web login are refused (42501)."""
+    harness = activate_response_service(response_service)
+    signed_in()
+    admin = PortalUser.objects.get(email="admin@example.org").pk
+    message_id = family_message(harness)
+    rule = address("staff@example.org", ("staff",))
+    change_policy(
+        harness.service.store,
+        harness.service.store.active(),
+        uuid4(),
+        [{"operation": "add", "section": "login_rules", **rule}],
+    )
+    google[0].update(email="staff@example.org", sub="synthetic-staff")
+    signed_in()
+    staff = PortalUser.objects.get(email="staff@example.org").pk
+    for sql, value in (
+        (BY_ADDRESS, "second@example.org"),
+        (BY_PAGE, [message_id]),
+        (MEMBER_NAMES, [message_id]),
+    ):
+        for actor in (staff, uuid4(), None):
+            assert call_as(ServiceRole.WEB, sql, (value, actor)) == "42501"
+        for service in (ServiceRole.WORKER, ServiceRole.MAIL_DISPATCH):
+            assert call_as(service, sql, (value, admin)) == "42501"
+        assert call_as(ServiceRole.WEB, sql, (value, admin), exact=False) == "42501"
+
+
+def test_the_page_read_returns_only_administrator_email_addresses(
+    response_service, google
+):
+    """A notice's address comes back; a Family email's never does; a list
+    longer than any page is refused."""
+    harness = activate_response_service(response_service)
+    recipients = list(notices(harness).values())
+    signed_in()
+    admin = PortalUser.objects.get(email="admin@example.org").pk
+    ids = [recipient.outbox_id for recipient in recipients]
+    rows = call_as(ServiceRole.WEB, BY_PAGE, (ids, admin))
+    assert sorted(rows) == sorted(
+        (recipient.outbox_id, recipient.address) for recipient in recipients
+    )
+    assert call_as(ServiceRole.WEB, BY_PAGE, ([uuid4()] * 501, admin)) == "22023"
+
+
+def test_a_family_email_address_is_never_returned_by_the_page_read(
+    response_service, google
+):
+    """The Family's name stands for it on the list (#1562 decision 4)."""
+    harness = activate_response_service(response_service)
+    signed_in()
+    admin = PortalUser.objects.get(email="admin@example.org").pk
+    message_id = family_message(harness)
+    assert call_as(ServiceRole.WEB, BY_PAGE, ([message_id], admin)) == []
+
+
+def test_the_index_serves_the_address_read(response_service):
+    """With sequential scans priced out, the read's predicate uses the
+    expression index, so it never needs to read every rendering."""
+    harness = activate_response_service(response_service)
+    family_message(harness)
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL enable_seqscan = off")
+        cursor.execute(
+            "EXPLAIN SELECT r.message_id FROM stewardship_outbox_render r "
+            "WHERE (lower((r.intended_recipients)::text))::jsonb "
+            "@> jsonb_build_array(lower(%s))",
+            ["second@example.org"],
+        )
+        plan = "\n".join(row[0] for row in cursor.fetchall())
+    assert "outbox_render_intended_lower" in plan
+
+
+def test_the_check_passes_on_the_installed_reads():
+    """A migrated database has both reads and the index as 0116 declares."""
+    with connection.cursor() as cursor:
+        cursor.execute(CHECK)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        f"DROP FUNCTION {ADDRESS_FUNCTION}",
+        f"DROP FUNCTION {PAGE_FUNCTION}",
+        "DROP INDEX public.outbox_render_intended_lower",
+        f"ALTER FUNCTION {ADDRESS_FUNCTION} SECURITY INVOKER",
+        f"ALTER FUNCTION {PAGE_FUNCTION} SECURITY INVOKER",
+        f"ALTER FUNCTION {PAGE_FUNCTION} SET search_path TO public",
+        f"ALTER FUNCTION {ADDRESS_FUNCTION} VOLATILE",
+        f"GRANT EXECUTE ON FUNCTION {ADDRESS_FUNCTION} TO PUBLIC",
+        f"GRANT EXECUTE ON FUNCTION {PAGE_FUNCTION} TO PUBLIC",
+        # An index over the raw (case-sensitive) recipients is not the one.
+        "DROP INDEX public.outbox_render_intended_lower; "
+        "CREATE INDEX outbox_render_intended_lower ON "
+        "public.stewardship_outbox_render USING gin "
+        "(intended_recipients)",
+        # Nor is the same expression with the default operator class.
+        "DROP INDEX public.outbox_render_intended_lower; "
+        "CREATE INDEX outbox_render_intended_lower ON "
+        "public.stewardship_outbox_render USING gin "
+        "(((lower((intended_recipients)::text))::jsonb))",
+    ],
+)
+def test_the_check_refuses_a_missing_or_different_read(change):
+    """Without either read or the index, or with any declared attribute
+    changed, the DO block raises, so the migration would not commit."""
+    with (
+        pytest.raises(DatabaseError, match="0116"),
+        transaction.atomic(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(change)
+        cursor.execute(CHECK)
+
+
+def test_sent_mail_filters_by_recipient_purpose_delivery_and_mode(
+    response_service, google
+):
+    """Each filter narrows the real page, and a Production system shows
+    Production email by default."""
+    # Testing mail is admitted before the campaign goes live, Production
+    # mail after.
+    testing = family_message(response_service, mode="testing")
+    harness = activate_response_service(response_service)
+    browser, _ = signed_in()
+    production = family_message(harness)
+    reminder = family_message(harness, purpose="reminder")
+    ids = {production, reminder, testing}
+    status, html = sent_mail(browser)
+    assert status == 200
+    assert listed(html, ids) == {production, reminder}
+    # An address in any case, a DUID, and a delivery ID.
+    status, html = sent_mail(browser, recipient="FIRST.head@example.ORG")
+    assert status == 200 and listed(html, ids) == {production, reminder}
+    assert 'value="FIRST.head@example.ORG"' in html
+    status, html = sent_mail(browser, recipient="1", mode="testing")
+    assert status == 200 and listed(html, ids) == {testing}
+    status, html = sent_mail(browser, recipient=str(reminder))
+    assert status == 200 and listed(html, ids) == {reminder}
+    status, html = sent_mail(browser, recipient="nobody@example.org")
+    assert status == 200 and listed(html, ids) == set()
+    # Purpose, and the grouped Delivery choices (all three are queued).
+    status, html = sent_mail(browser, purpose="reminder")
+    assert status == 200 and listed(html, ids) == {reminder}
+    for state, shown in (
+        ("still_sending", {production, reminder}),
+        ("needs_attention", set()),
+        ("not_delivered", set()),
+    ):
+        status, html = sent_mail(browser, state=state)
+        assert status == 200 and listed(html, ids) == shown, state
+    # The mode choices post the applied filters, the Recipient too, and
+    # start again at page 1; the page's address keeps only the linkable
+    # filters, never the Recipient (#1562).
+    status, html = sent_mail(
+        browser, purpose="reminder", page="1", recipient="first.head@example.org"
+    )
+    assert status == 200
+    modes = region(html, "delivery-mode")
+    assert '<input type="hidden" name="purpose" value="reminder">' in modes
+    assert '<button type="submit" name="mode" value="testing">' in modes
+    assert '<input type="hidden" name="mode"' not in modes
+    assert 'name="recipient" value="first.head@example.org"' in modes
+    assert 'name="page"' not in modes
+    assert shown_mode(modes) == "production"
+    (address,) = re.findall(r'<a href="([^"]*)" data-page-address hidden>', html)
+    assert "purpose=reminder" in address
+    assert "recipient" not in address and "first.head" not in address
+    assert "page=" not in address
+    # A link (a GET) never carries a Recipient: it is refused, unechoed.
+    status, html = sent_mail(browser, link=True, recipient="first.head@example.org")
+    assert status == 400 and "first.head" not in html
+    # Refused filters answer 400, never a wider list.
+    for query in (
+        {"recipient": "1,2"},
+        {"recipient": "a@b@c"},
+        {"purpose": "newsletter"},
+        {"mode": "all"},
+        {"state": "nothing"},
+    ):
+        assert sent_mail(browser, **query)[0] == 400, query
+
+
+def test_a_malformed_recipient_is_refused_at_the_field(response_service, google):
+    """A malformed Recipient (R40b, #1562: digits and commas that are no
+    DUID) draws Sent mail again,
+    answered 400, rather than an error page: the filter form shows what was
+    sent, the Recipient marked with the message in its hint row and the
+    summary, and the list is the one for no filters in the mode sent. A
+    malformed field structure keeps the error page."""
+    testing = family_message(response_service, mode="testing")
+    harness = activate_response_service(response_service)
+    browser, _ = signed_in()
+    production = family_message(harness)
+    reminder = family_message(harness, purpose="reminder")
+    status, html = sent_mail(
+        browser, recipient="1,2", purpose="reminder", state="needs_attention"
+    )
+    assert status == 400
+    assert "Delivery action unavailable" not in html
+    assert '<form id="table-filters"' in html
+    field = re.search(r'<input id="delivery-recipient"[^>]*>', html).group(0)
+    assert 'value="1,2"' in field and 'aria-invalid="true"' in field
+    assert 'aria-describedby="delivery-filters_error"' in field
+    message = (
+        "Enter a name, a whole Family DUID, one email address or a delivery ID, "
+        "or clear it."
+    )
+    assert html.count(message) >= 3  # the hint, the line and the summary
+    assert '<option value="needs_attention" selected>' in html
+    assert '<option value="reminder" selected>' in html
+    ids = {production, reminder, testing}
+    assert listed(html, ids) == {production, reminder}
+    assert shown_mode(region(html, "delivery-mode")) == "production"
+    (address,) = re.findall(r'<a href="([^"]*)" data-page-address hidden>', html)
+    assert "1,2" not in address and "state=" not in address
+    # The mode sent is kept: Testing lists the Testing email.
+    status, html = sent_mail(browser, recipient="1,2", mode="testing")
+    assert status == 400 and listed(html, ids) == {testing}
+    # A repeated field is structural, so it keeps the error page.
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        token = browser.cookies["pk_admin_csrf"].value
+        response = browser.post(
+            "/admin/mail/sent/",
+            {"csrfmiddlewaretoken": token, "recipient": ["1,2", "1"]},
+        )
+    assert response.status_code == 400
+    assert "Delivery action unavailable" in response.content.decode()
+
+
+def test_sent_mail_dates_are_days_in_the_browser_zone(response_service, google):
+    """From and Through bound When in the zone the form carries; a day
+    without a known zone, or Through before From, is refused."""
+    harness = activate_response_service(response_service)
+    browser, _ = signed_in()
+    message_id = family_message(harness)
+    changed = OutboxMessage.objects.get(pk=message_id).updated_at
+    zone = "Pacific/Kiritimati"  # UTC+14: the day differs from UTC's.
+    day = changed.astimezone(ZoneInfo(zone)).date()
+    for start, end, shown in (
+        (day, day, True),
+        (day, None, True),
+        (None, day, True),
+        (day - timedelta(days=3), day, True),
+    ):
+        query = {"zone": zone}
+        if start:
+            query["start"] = start.isoformat()
+        if end:
+            query["end"] = end.isoformat()
+        status, html = sent_mail(browser, **query)
+        assert status == 200
+        assert bool(listed(html, {message_id})) is shown, query
+    for start, end in (
+        (day + timedelta(days=1), None),
+        (None, day - timedelta(days=1)),
+    ):
+        query = {"zone": zone}
+        query |= {"start": start.isoformat()} if start else {"end": end.isoformat()}
+        status, html = sent_mail(browser, **query)
+        assert status == 200 and not listed(html, {message_id}), query
+    for query in (
+        {"start": day.isoformat()},
+        {"start": day.isoformat(), "zone": "Mars/Olympus"},
+        {
+            "start": day.isoformat(),
+            "end": (day - timedelta(days=1)).isoformat(),
+            "zone": zone,
+        },
+        {"start": "20261001", "zone": zone},
+    ):
+        assert sent_mail(browser, **query)[0] == 400, query
+
+
+def test_reports_and_notices_name_their_administrator(response_service, google):
+    """Operational notices are listed (#1562), each named by its
+    Administrator's Users-page Name, else address, and open their own page,
+    which offers no resolution: no campaign owns them."""
+    harness = activate_response_service(response_service)
+    admin_name = named_users(harness.service.store)
+    recipients = notices(harness)
+    assert {"admin@example.org", "morgan@example.org"} <= set(recipients)
+    browser, _ = signed_in()
+    status, html = sent_mail(browser, purpose="operational")
+    assert status == 200
+    named = recipients["morgan@example.org"].outbox_id
+    assert listed(html, {named}) == {named}
+    # Recipient posts that Administrator's address, never a link (#1562).
+    assert (
+        '<input type="hidden" name="recipient" value="morgan@example.org">'
+        '<input type="hidden" name="mode" value="production">'
+    ) in html
+    assert f'id="recipient-{named}">Morgan Administrator</button>' in html
+    assert "?recipient=" not in html
+    # The converted Administrator shows the Name the upgrade gave, or the
+    # address when it gave none.
+    assert f">{admin_name or 'admin@example.org'}</button></form></td>" in html
+    # Sorting by Recipient orders the Administrators' emails by what it
+    # shows, the Name or else the address, in both directions (#1562).
+    shown = {
+        each.outbox_id: (
+            "Morgan Administrator" if address == "morgan@example.org" else None
+        )
+        or (admin_name if address == "admin@example.org" else None)
+        or address
+        for address, each in recipients.items()
+    }
+    expected = sorted(shown, key=lambda message: shown[message].casefold())
+    for sort, order in (("name", expected), ("-name", expected[::-1])):
+        status, html = sent_mail(browser, purpose="operational", sort=sort)
+        assert status == 200
+        place = {
+            message: html.index(f'href="/admin/mail/sent/{message}/"')
+            for message in shown
+        }
+        assert sorted(shown, key=place.get) == order, sort
+    assert "Operational notice" in html
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        own = browser.get(f"/admin/mail/sent/{named}/")
+    assert own.status_code == 200
+    page = own.content.decode()
+    assert "Administrator email" in page
+    # A notice belongs to no campaign: nothing to answer or send (#1563).
+    assert 'id="outcome-heading"' in page
+    assert 'name="action"' not in page
+    # By address, in any case: that Administrator's notice only.
+    status, html = sent_mail(browser, recipient="Morgan@Example.org")
+    assert status == 200
+    assert listed(html, {each.outbox_id for each in recipients.values()}) == {named}
+
+
+def test_a_testing_system_shows_testing_email_by_default(response_service, google):
+    """Before Production is activated the system is in Testing mode, so the
+    page (and every link into it) lists Testing email by default (#1562)."""
+    testing = family_message(response_service, mode="testing")
+    browser, _ = signed_in()
+    status, html = sent_mail(browser)
+    assert status == 200 and listed(html, {testing}) == {testing}
+    assert shown_mode(html) == "testing"
+    status, html = sent_mail(browser, state="delivery_unknown")
+    assert status == 200 and shown_mode(html) == "testing"
+    status, html = sent_mail(browser, mode="production")
+    assert status == 200 and listed(html, {testing}) == set()
+
+
+def test_recipient_names_take_one_read_and_one_query(response_service, google):
+    """However many rows, the page's Administrator names cost one definer read
+    and one query of the current users; a name matches in any case, and an
+    address with no user entry keeps no name."""
+    harness = activate_response_service(response_service)
+    admin_name = named_users(harness.service.store)
+    notices(harness)
+    signed_in()
+    admin = PortalUser.objects.get(email="admin@example.org").pk
+    assert administrator_names({"MORGAN@example.org", "gone@example.org"}) == {
+        "morgan@example.org": "Morgan Administrator"
+    }
+    with task_login(ServiceRole.WEB, exact=True):
+        rows = read_listing({}, actor=admin)["rows"]
+        with CaptureQueriesContext(connection) as queries:
+            named = with_recipients(rows, admin)
+    # The definer read runs in its own transaction block (BEGIN or a
+    # savepoint around it); only the two reads are queries.
+    assert len([q for q in queries if q["sql"].startswith("SELECT")]) == 2
+    by_address = {row["recipient_address"]: row["recipient_name"] for row in named}
+    assert by_address["morgan@example.org"] == "Morgan Administrator"
+    assert by_address["admin@example.org"] == (admin_name or None)
+
+
+def test_a_person_without_a_users_page_name_takes_a_parishsoft_name(
+    response_service, google
+):
+    """An email to a person whose address has no Users-page Name (here a
+    sign-in rule from before users, which has none) is named by the
+    ParishSoft Member listing that address (Administrator decision
+    2026-10-20, #1562), in the Users page's default-Name order, with one
+    Member-name read for the page; an address no Member lists keeps the
+    address."""
+    from parishkit.stewardship.accounts.users_upgrade import member_names
+
+    harness = activate_response_service(response_service)
+    add_rules(
+        harness.service.store,
+        address("valid@example.org"),
+        address("nobody.listed@example.org"),
+    )
+    notices(harness)
+    signed_in()
+    admin = PortalUser.objects.get(email="admin@example.org").pk
+    with task_login(ServiceRole.WEB, exact=True):
+        # The Users page's own read ranks the same names; its first is ours.
+        (expected, *_) = member_names()["valid@example.org"]
+        rows = read_listing({}, actor=admin)["rows"]
+        with CaptureQueriesContext(connection) as queries:
+            named = with_recipients(rows, admin)
+        # The address read, the users and the Member names.
+        assert len([q for q in queries if q["sql"].startswith("SELECT")]) == 3
+    by_address = {row["recipient_address"]: row["recipient_name"] for row in named}
+    assert by_address["valid@example.org"] == expected
+    assert by_address["nobody.listed@example.org"] is None
+
+
+def test_the_member_name_read_names_only_emails_to_people(response_service, google):
+    """It returns one name for a notice whose address a Member lists, none
+    for a Family email or an unlisted address, and refuses a list longer
+    than any page."""
+    harness = activate_response_service(response_service)
+    add_rules(harness.service.store, address("valid@example.org"))
+    recipients = notices(harness)
+    signed_in()
+    admin = PortalUser.objects.get(email="admin@example.org").pk
+    family = family_message(harness)
+    listed = recipients["valid@example.org"].outbox_id
+    ids = [recipient.outbox_id for recipient in recipients.values()] + [family]
+    rows = call_as(ServiceRole.WEB, MEMBER_NAMES, (ids, admin))
+    assert [message for message, _ in rows] == [listed]
+    assert rows[0][1]
+    assert call_as(ServiceRole.WEB, MEMBER_NAMES, ([family], admin)) == []
+    too_many = [uuid4() for _ in range(501)]
+    assert call_as(ServiceRole.WEB, MEMBER_NAMES, (too_many, admin)) == "22023"
+    assert call_as(ServiceRole.WEB, MEMBER_NAMES, (None, admin)) == "22023"
+
+
+def test_the_member_name_check_block_refuses_an_older_install():
+    """0145's DO block passes on the installation, and refuses it with the
+    function missing, made an invoker, executable by PUBLIC, or without its
+    caller or Administrator check."""
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(NAMES_CHECK)
+    with connection.cursor() as cursor:
+        cursor.execute(f"SELECT pg_get_functiondef('{NAMES_FUNCTION}'::regprocedure)")
+        body = cursor.fetchone()[0]
+    caller = "IF session_user<>'pk_stewardship_web' AND NOT pg_has_role(session_user,"
+    assert body.count(caller) == 1
+    administrator = (
+        "public.stewardship_export_authorized_v1(actor_uuid,true) IS NOT TRUE"
+    )
+    assert body.count(administrator) == 1
+    for statements in (
+        [f"DROP FUNCTION {NAMES_FUNCTION}"],
+        [f"ALTER FUNCTION {NAMES_FUNCTION} SECURITY INVOKER"],
+        [f"GRANT EXECUTE ON FUNCTION {NAMES_FUNCTION} TO PUBLIC"],
+        [
+            body.replace(
+                caller, "IF false AND (true OR pg_has_role(session_user,"
+            ).replace("'USAGE') THEN", "'USAGE')) THEN", 1)
+        ],
+        [body.replace(administrator, "false")],
+    ):
+        with (
+            pytest.raises(DatabaseError, match="0145"),
+            transaction.atomic(),
+            connection.cursor() as cursor,
+        ):
+            for statement in statements:
+                cursor.execute(statement)
+            cursor.execute(NAMES_CHECK)
+
+
+def test_a_name_finds_families_and_people_ignoring_case(response_service, google):
+    """Recipient text that is no DUID, address or delivery ID is a name
+    (#1849): a Family email matches by part of its Family's ParishSoft name,
+    an email to a person by part of the name Recipient shows, in any case;
+    a name nobody has lists nothing."""
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+    from parishkit.stewardship.source.snapshot_names import snapshot_family_names
+
+    harness = activate_response_service(response_service)
+    named_users(harness.service.store)
+    recipients = notices(harness)
+    browser, _ = signed_in()
+    family = family_message(harness)
+    snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
+    name = snapshot_family_names(snapshot, [1])[1]
+    surname = name.split(",")[0]
+    morgan = recipients["morgan@example.org"].outbox_id
+    ids = {family, morgan}
+    for typed, shown in (
+        (surname.upper(), {family}),
+        (surname[1:-1].lower(), {family}),
+        ("MORGAN admin", {morgan}),
+        ("organ", {morgan}),
+        ("No such name anywhere", set()),
+    ):
+        status, html = sent_mail(browser, recipient=typed)
+        assert status == 200, typed
+        assert listed(html, ids) == shown, typed
+        assert f'value="{typed}"' in html
+
+
+def test_a_production_family_recipient_opens_its_timeline(response_service, google):
+    """A Production Family email's Recipient is the shared Family-name link
+    to that Family's Timeline (#1562, #1570), its record id read once for
+    the page however many rows; a Testing email's Family keeps the in-place
+    recipient filter, since the Timeline shows only Production records."""
+    from django.utils.html import escape
+
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+    from parishkit.stewardship.source.snapshot_names import snapshot_family_names
+    from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
+
+    from .family_link_checks import link_reads, timeline_link
+
+    testing = family_message(response_service, mode="testing")
+    harness = activate_response_service(response_service)
+    browser, _ = signed_in()
+    emails = {family_message(harness), family_message(harness, purpose="reminder")}
+    snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
+    name = snapshot_family_names(snapshot, [1], NAME_NOT_RECORDED)[1]
+    assert name and name != NAME_NOT_RECORDED
+    with CaptureQueriesContext(connection) as queries:
+        status, html = sent_mail(browser)
+    assert status == 200 and listed(html, emails) == emails
+    assert len(link_reads(queries)) == 1
+    link = timeline_link(harness.campaign, 1, name)
+    assert html.count(f"<td>{link}</td>") == 2
+    # No in-place recipient filter for these rows: the link replaces it.
+    assert 'name="recipient" value="1"' not in html
+    assert "recipient-link" not in html
+    status, html = sent_mail(browser, mode="testing")
+    assert status == 200 and listed(html, {testing}) == {testing}
+    assert link not in html
+    assert (
+        '<input type="hidden" name="recipient" value="1">'
+        '<input type="hidden" name="mode" value="testing">'
+    ) in html
+    assert f">{escape(name)}</button></form></td>" in html
+
+
+@pytest.mark.parametrize("missing", ["record", "name"])
+def test_a_production_family_without_a_timeline_keeps_the_filter(
+    response_service, google, monkeypatch, missing
+):
+    """A Production Family email keeps the in-place recipient filter when
+    its Family has no Timeline link to draw (#1562): the current campaign
+    has no record of the Family, or the latest ParishSoft data no longer
+    has it (the shared link would draw only its badge)."""
+    from parishkit.stewardship.accounts.templatetags.stewardship import source_status
+    from parishkit.stewardship.jobs import delivery_views
+
+    harness = activate_response_service(response_service)
+    browser, _ = signed_in()
+    email = family_message(harness)
+    if missing == "record":
+        monkeypatch.setattr(delivery_views, "family_record_ids", lambda *_: {})
+    else:
+        named = delivery_views.with_family_names
+        monkeypatch.setattr(
+            delivery_views,
+            "with_family_names",
+            lambda *args: [row | {"family_name": None} for row in named(*args)],
+        )
+    status, html = sent_mail(browser)
+    assert status == 200 and listed(html, {email}) == {email}
+    assert "/admin/reports/families/" not in html.split("<tbody>")[1]
+    assert (
+        '<input type="hidden" name="recipient" value="1">'
+        '<input type="hidden" name="mode" value="production">'
+    ) in html
+    assert f'id="recipient-{email}"' in html
+    if missing == "name":
+        assert f">{source_status('missing')}</button></form></td>" in html

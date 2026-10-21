@@ -42,21 +42,25 @@ def test_financial_mobile_keyboard_and_accessibility(
         })).violations.map(({id,impact}) => ({id,impact}))""")
             == []
         )
-    # One row the Family submitted itself (No) and one Staff entered (Yes).
+    # One row the Family submitted itself (no chip) and one Staff entered.
     page.goto(component_origin + "/financial-unproven")
-    assert page.get_by_role("cell", name="No", exact=True).count() == 1
-    assert page.get_by_role("cell", name="Yes", exact=True).count() == 1
+    assert page.get_by_text("Entered by Staff", exact=True).count() == 1
     page.goto(component_origin + "/financial-report")
     assert page.get_by_text("Example <Family>", exact=False).count() == 1
-    assert page.get_by_text("Stock <gift>", exact=False).count() == 1
+    # Other text is in its method's tip (#1544), still escaped.
+    assert page.get_by_text("Another way: Stock <gift>", exact=True).count() == 1
     assert page.get_by_role("cell", name="$1,234.50", exact=True).count() == 1
-    # Entered by Staff (#794): a column with Yes or No for each response.
-    assert page.get_by_role("columnheader", name="Entered by Staff").count() == 1
-    # The sample Family's current pledge was entered by Staff.
-    assert page.get_by_role("cell", name="Yes", exact=True).count() == 1
-    assert page.get_by_role("cell", name="No", exact=True).count() == 0
-    assert page.get_by_text("$102.88", exact=False).count() == 1
-    assert page.locator("[data-summary=annual-total]").inner_text() == "$62,959.50"
+    # Entered by Staff (#794) is the Latest response cell's Staff chip
+    # (#1544), not a column of its own.
+    assert page.get_by_role("columnheader", name="Entered by Staff").count() == 0
+    assert page.get_by_text("Entered by Staff", exact=True).count() == 1
+    # The installment shows its unit short and its frequency in full to a
+    # screen reader (#1544).
+    assert page.get_by_role("cell", name="$102.88 monthly", exact=True).count() == 1
+    assert (
+        page.locator("[data-stat=annual-total] .stat-value").inner_text()
+        == "$62,959.50"
+    )
     assert page.get_by_text("contributions through June 30, 2026", exact=False).count()
     # The share filter offers escaped labels and keeps the current choice.
     assert page.get_by_label("Share method", exact=True).input_value() == ONLINE
@@ -75,26 +79,30 @@ def test_financial_mobile_keyboard_and_accessibility(
     # through the SQL selection.
     assert page.locator("th[aria-sort=ascending]").inner_text().startswith("Family")
     assert page.locator("th button.sort-link").count() == 4
-    # The complete export is offered beside the page, with its own controls,
-    # in a disclosure that starts closed (#227).
-    page.get_by_text("Export complete results").click()
-    assert page.get_by_role("button", name="Queue complete export").count() == 1
-    assert page.get_by_label("Export format").input_value() == "xlsx"
-    assert page.get_by_label("Export timezone").count() == 1
-    # While the campaign cannot accept work every export control is disabled.
+    # The complete export is the row of export buttons below the table
+    # (#1679), XLSX first, with no format menu and no zone question.
+    row = page.get_by_role("group", name="Export complete results")
+    assert row.locator(".export-buttons button").all_inner_texts() == [
+        "Export XLSX",
+        "Export CSV",
+        "Export PDF",
+    ]
+    assert page.get_by_label("Export format").count() == 0
+    assert page.get_by_label("Export timezone").count() == 0
+    # While the campaign cannot accept work every export button is disabled.
     page.goto(component_origin + "/financial-gated")
-    page.get_by_text("Export complete results").click()
-    assert page.get_by_role("button", name="Queue complete export").is_disabled()
-    assert page.get_by_label("Export format").is_disabled()
-    assert page.get_by_label("Export timezone").is_disabled()
+    for name in ("Export XLSX", "Export CSV", "Export PDF"):
+        assert page.get_by_role("button", name=name).is_disabled()
     page.goto(component_origin + "/financial-last")
     assert page.get_by_role("button", name="Next", exact=True).count() == 0
     assert page.get_by_role("button", name="Previous", exact=True).count() == 2
     # Unproven giving is explained and shown as unavailable, never as zero.
     page.goto(component_origin + "/financial-unproven")
     visible(page.get_by_text("Unavailable does not mean zero", exact=False))
-    assert page.get_by_role("cell", name="Unavailable", exact=True).count() == 2
-    assert page.get_by_role("cell", name="$0.00", exact=True).count() == 1
+    # Both ParishSoft sums in the one cell, each named (#1544).
+    both = "Pledged Unavailable Contributed Unavailable"
+    assert page.get_by_role("cell", name=both, exact=True).count() == 1
+    assert page.get_by_role("cell", name="$0", exact=True).count() == 1
     assert page.get_by_text("Status unavailable", exact=False).count() >= 1
     assert page.get_by_text("None chosen", exact=True).count() == 1
     page.goto(component_origin + "/financial-empty")
@@ -146,20 +154,17 @@ def test_financial_filters_and_pages_post_privately(page, component_origin):
     # which it would otherwise interrupt (#623).
     visible(page.get_by_text("Filtered", exact=True))
 
-    # The export carries the applied filters, the chosen format and the
-    # one-time key. The fixture does not offer the browser's zone
-    # (America/Los_Angeles), so the export timezone stays UTC.
+    # The export carries the applied filters, the clicked format, the
+    # browser's zone (America/Los_Angeles), unasked, and the one-time key.
     page.goto(component_origin + "/financial-report")
-    page.get_by_text("Export complete results").click()
-    page.get_by_label("Export format").select_option("pdf")
     page.route(
         "**" + reverse("admin:financial_export"),
         lambda route: route.fulfill(body="Queued"),
     )
     with page.expect_request(lambda request: request.method == "POST") as sent:
-        page.get_by_role("button", name="Queue complete export").click()
+        page.get_by_role("button", name="Export PDF").click()
     body = sent.value.post_data
-    assert "format=pdf" in body and "browser_timezone=UTC" in body
+    assert "format=pdf" in body and "browser_timezone=America%2FLos_Angeles" in body
     assert "search=Example" in body and "request_key=" in body
     assert "page=" not in body and sent.value.url.endswith(
         reverse("admin:financial_export")
@@ -169,36 +174,167 @@ def test_financial_filters_and_pages_post_privately(page, component_origin):
 def test_financial_columns_lead_with_family_and_name_the_parishsoft_year(
     page, component_origin
 ):
-    """The downloads' columns in their order; the ParishSoft year has a tip.
+    """The page's shorter columns in order; the ParishSoft year has a tip.
 
-    Family first, then Latest and First response, then Entered by Staff
-    last (#794), with no version or reference column (#932, decisions B1
-    and E1). The page shows ParishSoft status as a badge in the Family cell
-    (#1216), so its table has one column fewer than a download, whose
-    ParishSoft status column follows Family.
+    Family first, then Family DUID in its own column (ui-conventions), and
+    Latest response last. The ParishSoft heading names Pledged, then
+    Contributed, as its cells stack them. First response and Entered by
+    Staff are left to
+    the downloads, whose columns are unchanged (#1544); Latest response
+    shows its day alone with the Staff chip.
     """
     from parishkit.stewardship.reports.financial_documents import headings
-    from parishkit.stewardship.source.source_status import STATUS_HEADING
 
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + "/financial-report")
-    shown = page.locator("[data-table-region] table thead th").all_inner_texts()
-    download = headings("2025-07-01", "2026-06-30")
-    # A download's status column sits right after Family; the page has none.
-    assert download[:2] == ("Family", STATUS_HEADING)
-    expected = download[:1] + download[2:]
+    head = page.locator("[data-table-region] table thead")
+    assert head.locator("tr").count() == 1
     # A sortable heading or a tip's "i" button adds text after the name.
-    assert len(shown) == len(expected)
+    shown = head.locator("th").all_inner_texts()
+    expected = [
+        "Family",
+        "Family DUID",
+        "Annual pledge",
+        "Installment",
+        "Share methods",
+        "ParishSoft (2025–2026)",
+        "Latest response",
+    ]
+    assert len(shown) == len(expected), shown
     assert all(
         text.startswith(name) for text, name in zip(shown, expected, strict=True)
-    )
-    # Latest and First response precede Entered by Staff, one time each;
-    # the sample row's current pledge was entered by Staff.
+    ), shown
+    # Each line's own name, then its "i" tip. Read the name from its text
+    # node, not innerText: the "i" can wrap under the name, and Linux WebKit
+    # then drops the space between them ("Pledgedi") where other engines
+    # keep it.
+    lines = head.locator("th").nth(5).locator(".stack-line")
+    names = lines.evaluate_all("ls => ls.map((l) => l.firstChild.textContent.trim())")
+    assert names == ["Pledged", "Contributed"]
+    tips = [
+        line.get_by_role("button", name="More information", exact=True).count()
+        for line in lines.all()
+    ]
+    assert tips == [1, 1]
+    # The downloads keep First response and Entered by Staff (#1544).
+    download = headings("2025-07-01", "2026-06-30")
+    assert download[-2:] == ("First response", "Entered by Staff")
     row = page.locator("[data-table-region] table tbody tr").first
-    assert row.locator("td").last.inner_text() == "Yes"
-    assert row.locator("td").nth(-2).locator("time").count() == 1
-    assert row.locator("td").nth(-3).locator("time").count() == 1
+    latest = row.locator("td").last
+    assert latest.locator("time").count() == 1
+    # The day alone, compact, in the browser's zone: no clock time.
+    assert latest.locator("time").inner_text() == "Sep 19, 2026"
+    assert latest.get_by_text("Staff", exact=True).is_visible()
     assert "Version" not in row.inner_text()
+
+
+# Whether any cell of the results table's body wraps to a second line: the
+# client rectangles of each cell's content must all share one line (every
+# rectangle starts above every other one's bottom). A cell that stacks two
+# values (.stack-line, #1544) is checked one stacked line at a time.
+# Returns the offending cells' text with each row's height.
+WRAPPED = """() => {
+    const rows = [...document.querySelectorAll("[data-table-region] table tbody tr")];
+    const wrapped = [];
+    for (const row of rows) {
+        for (const cell of row.children) {
+          const lines = cell.querySelectorAll(".stack-line");
+          for (const unit of lines.length ? lines : [cell]) {
+            const range = document.createRange();
+            range.selectNodeContents(unit);
+            // Not a 1px screen-reader span.
+            const rects = [...range.getClientRects()].filter((r) => r.width > 1);
+            const top = Math.max(...rects.map((r) => r.top));
+            const bottom = Math.min(...rects.map((r) => r.bottom));
+            if (rects.length && top >= bottom) wrapped.push(unit.innerText);
+          }
+        }
+    }
+    return [wrapped, rows.map((row) => row.getBoundingClientRect().height)];
+}"""
+# The results table's scroll box: its visible and full widths.
+BOX_WIDTHS = """() => {
+    const box = document.querySelector("[data-table-region] .table-scroll");
+    return [box.clientWidth, box.scrollWidth];
+}"""
+
+
+@pytest.mark.parametrize("path", ["/financial-report", "/financial-typical"])
+def test_rows_stay_one_line_and_scroll_in_their_box_on_a_phone(
+    page, component_origin, path
+):
+    """No row wraps at laptop width, and a phone scrolls the table (#1544).
+
+    At 1280 px every cell is on one line, except that the ParishSoft cell
+    stacks Contributed under Pledged, one line each, so each row is two
+    short lines tall; a table wider than the space beside the Admin menu
+    (the typical rows, by about 50-60 px) scrolls in its own box, never the
+    page. At 320 px the rows keep that shape and the table scrolls in its
+    box, a focusable region.
+    """
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + path)
+    wrapped, heights = page.evaluate(WRAPPED)
+    assert wrapped == [], wrapped
+    # The two stacked ParishSoft lines plus the cell padding (about 63 px),
+    # well under three lines of text.
+    assert heights and max(heights) < 72, heights
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    page.set_viewport_size({"width": 320, "height": 900})
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    wrapped, _ = page.evaluate(WRAPPED)
+    assert wrapped == [], wrapped
+    visible_width, full_width = page.evaluate(BOX_WIDTHS)
+    assert full_width > visible_width
+    # The box is a focusable region, so a keyboard can scroll it.
+    box = page.locator("[data-table-region] .table-scroll")
+    assert box.get_attribute("tabindex") == "0"
+    assert box.get_attribute("role") == "region"
+
+
+def test_share_methods_show_the_first_chip_and_a_plus_chip_with_all_of_them(
+    page, component_origin
+):
+    """The first share method is a chip; "+N" opens every method (#1544).
+
+    The "+1" chip is a toggletip button, reached and opened by keyboard,
+    named by its visible text, whose bubble lists each method in order with
+    any Other text; opening it never moves or resizes the table's box. A
+    lone method with Other text keeps its "i" tip with that text.
+    """
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + "/financial-report")
+    cell = page.locator("[data-table-region] table tbody tr").first.locator("td").nth(3)
+    assert cell.locator(".status-badge").all_inner_texts() == ["Online <giving>"]
+    button = cell.locator(".toggletip-button")
+    assert button.count() == 1
+    assert button.evaluate("b => b.firstChild.textContent") == "+1"
+    assert page.get_by_role("button", name="+1 more share method", exact=True).count()
+    bubble = cell.locator(".toggletip-bubble")
+    assert bubble.is_hidden()
+    before = page.evaluate(TABLE_BOX)
+    button.focus()
+    page.keyboard.press("Enter")
+    visible(bubble)
+    assert bubble.locator(".toggletip-line").all_inner_texts() == [
+        "Online <giving>",
+        "Another way: Stock <gift>",
+    ]
+    # Within a hundredth of a pixel: Firefox can return the same position
+    # with float noise (2070.61669921875 vs 2070.616668701172), while any
+    # real move or resize is at least a whole pixel.
+    assert page.evaluate(TABLE_BOX) == pytest.approx(before, abs=0.01)
+    page.keyboard.press("Escape")
+    assert bubble.is_hidden()
+    # A Family with one method that has Other text: its chip and an "i" tip.
+    page.goto(component_origin + "/financial-typical")
+    rows = page.locator("[data-table-region] table tbody tr")
+    cell = rows.nth(2).locator("td").nth(3)
+    assert cell.locator(".status-badge").all_inner_texts() == ["Other"]
+    button = cell.get_by_role("button", name="More information", exact=True)
+    button.click()
+    visible(cell.locator(".toggletip-bubble"))
+    assert cell.locator(".toggletip-bubble").inner_text() == "Other: Payroll gift"
 
 
 # The results table's scroll box (not a chart's exact-values table, #720),
@@ -239,7 +375,10 @@ def test_heading_tips_float_without_moving_the_table(
     bubble = page.locator(f"#financial-source-{column}-tip")
     visible(bubble)
     assert "July 1, 2025" in bubble.inner_text()
-    assert page.evaluate(TABLE_BOX) == before
+    # Within a hundredth of a pixel: Firefox can return the same position
+    # with float noise (2070.61669921875 vs 2070.616668701172), while any
+    # real move or resize is at least a whole pixel.
+    assert page.evaluate(TABLE_BOX) == pytest.approx(before, abs=0.01)
     # The whole bubble is drawn inside the viewport, beside its button.
     inside = bubble.evaluate(
         """b => { const r = b.getBoundingClientRect();
@@ -449,7 +588,7 @@ def test_applied_filters_redraw_the_summary_charts_in_place(page, component_orig
         lambda route: route.fulfill(body=answer, content_type="text/html"),
     )
     page.get_by_role("button", name="Apply filters").click()
-    expect(page.locator("[data-summary=families]")).to_have_text("4")
+    expect(page.locator("[data-stat=families] .stat-value")).to_have_text("4")
     expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(2)
     eventually(page, FITTED)
     assert page.evaluate("window.__financialMarker") == 1
@@ -459,6 +598,48 @@ def test_applied_filters_redraw_the_summary_charts_in_place(page, component_orig
     assert frequency.locator("svg .role-mark text").all_text_contents()[0] == (
         "1 (25%)"
     )
+    assert_clean(page, errors)
+
+
+def test_a_reload_after_apply_shows_the_same_view(page, component_origin):
+    """Apply posts privately; the address bar then names the view (#1586).
+
+    The answer's hidden data-page-address (only the closed choices: here
+    Frequency, the sort and the rows per page) replaces the address, so a
+    browser reload asks for that address by GET, never sending the POST
+    again, and draws the same view, the filtered summary included.
+    """
+    from playwright.sync_api import expect
+
+    errors = watch(page)
+    route = reverse("admin:financial_report")
+    address = route + "?frequency=monthly&sort=pledge_desc&size=100"
+    answer = page.request.get(component_origin + "/financial-filtered").text()
+    page.goto(component_origin + route)
+    expect(page.locator("[data-stat=families] .stat-value")).to_have_text("51")
+    page.route(
+        lambda url: url.endswith(route),
+        lambda sent: (
+            sent.fulfill(body=answer, content_type="text/html")
+            if sent.request.method == "POST"
+            else sent.fallback()
+        ),
+    )
+    page.get_by_label("Search Family name or Family DUID").fill("Private name")
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Apply filters").click()
+    assert "search=Private+name" in sent.value.post_data
+    expect(page.locator("[data-stat=families] .stat-value")).to_have_text("4")
+    expect(page).to_have_url(component_origin + address)
+    assert "Private" not in page.url
+    # The reload is the address's GET: no POST is sent again.
+    methods = []
+    page.on("request", lambda request: methods.append(request.method))
+    with page.expect_navigation():
+        page.reload()
+    expect(page.locator("[data-stat=families] .stat-value")).to_have_text("4")
+    expect(page).to_have_url(component_origin + address)
+    assert "POST" not in methods and "GET" in methods
     assert_clean(page, errors)
 
 
@@ -558,8 +739,82 @@ def test_fixing_the_other_end_and_applying_clears_the_mark(page, component_origi
         line.querySelector("li").textContent = "stale";
     }""")
     page.get_by_role("button", name="Apply filters").click()
-    expect(page.locator("[data-summary=families]")).to_have_text("4")
+    expect(page.locator("[data-stat=families] .stat-value")).to_have_text("4")
     assert_cleared(page)
+    assert_clean(page, errors)
+
+
+# Each refused range's page, its reserved line, the end the reader edits
+# with a value still out of order, and the message the server and the
+# gate's hint both say (#1469).
+REFUSED_RANGES = {
+    "/financial-refused": ("pledge-range", "#pledge-max", "200", AT_MOST),
+    "/financial-refused-first": (
+        "first-response-dates",
+        "#first-end",
+        "2026-10-31",
+        "Enter a first response Through date no earlier than its From date, "
+        "or clear it.",
+    ),
+    "/financial-refused-latest": (
+        "latest-response-dates",
+        "#latest-end",
+        "2026-10-31",
+        "Enter a latest response Through date no earlier than its From date, "
+        "or clear it.",
+    ),
+}
+# The offsets of Apply, every range's message line, the zone note and the
+# hint row from the filter form's top, and the hint row's height (#1469).
+# The error summary above the form comes and goes with the mark, so places
+# are measured within the form.
+FILTER_PLACES = """() => {
+  const form = document.getElementById("table-filters");
+  const top = (node) =>
+    node.getBoundingClientRect().top - form.getBoundingClientRect().top;
+  const hint = document.getElementById("financial-filter-hint");
+  return [
+    top(form.querySelector("[type=submit]")),
+    ...[...form.querySelectorAll(".field-error-line")].map(top),
+    top(document.getElementById("financial-zone-help")),
+    top(hint),
+    hint.getBoundingClientRect().height,
+  ];
+}"""
+
+
+@pytest.mark.parametrize("path", list(REFUSED_RANGES))
+def test_refused_range_says_it_once_and_hands_back_the_hint(
+    page, component_origin, path
+):
+    """A refused range's message is said once, at its line (#1469).
+
+    While the server's message shows, the gate's hint in the same words is
+    held hidden (visibility only); an edit that leaves the range out of
+    order clears the server's mark, and the gate's own hint shows the
+    reason again, still once. Neither moves Apply, the lines, the zone note
+    or the hint row.
+    """
+    from playwright.sync_api import expect
+
+    line, end, value, message = REFUSED_RANGES[path]
+    errors = watch(page)
+    page.goto(component_origin + path)
+    expect(page.locator(f"#{line}_error")).to_have_text(message)
+    expect(page.locator(f"#{line}_error")).to_be_visible()
+    hint = page.locator("#financial-filter-hint")
+    assert hint.evaluate("node => getComputedStyle(node).visibility") == "hidden"
+    assert page.locator("#table-filters").inner_text().count(message) == 1
+    before = page.evaluate(FILTER_PLACES)
+    page.locator(end).fill(value)
+    page.locator(end).blur()
+    expect(page.locator(f"#{line}_error")).to_be_hidden()
+    expect(page.locator("[data-error-summary]")).to_have_count(0)
+    expect(hint).to_have_text(message)
+    expect(hint).to_be_visible()
+    assert page.locator("#table-filters").inner_text().count(message) == 1
+    assert page.get_by_role("button", name="Apply filters").is_disabled()
+    assert page.evaluate(FILTER_PLACES) == pytest.approx(before, abs=0.5)
     assert_clean(page, errors)
 
 

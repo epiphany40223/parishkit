@@ -342,7 +342,9 @@ def test_empty_content_editor_can_start_from_the_default(auth_service, google):
     assert b"Personal prayer" in started.content
     assert b"Start from the default text" not in started.content
     # The form posts to the clean path; a POST accepts no query string.
-    assert f'<form method="post" action="{path}"'.encode() in started.content
+    assert f'<form id="content-form" method="post" action="{path}"'.encode() in (
+        started.content
+    )
     assert browser.get(path + "?start=other").status_code == 400
     assert browser.get(catalog + "?start=default").status_code == 400
     assert ConfigurationChangeRequest.objects.count() == requests
@@ -363,7 +365,7 @@ def test_configured_content_editor_can_reset_to_the_default(auth_service, google
     mine = post(browser, path, values(store, html="<p>Mine</p>"))
     apply(store, post(browser, path, {"action": "confirm", "preview": token(mine)}))
     listing = browser.get(catalog).content.decode()
-    assert "Family welcome</a> — Customized" in listing
+    assert "Family welcome</a> — Edited" in listing
     saved = browser.get(path)
     assert b"Reset to the default text" in saved.content
     assert b"Start from the default text" not in saved.content
@@ -850,7 +852,7 @@ def test_catalog_lists_who_sends_each_email_and_offers_delete_when_unused(
     def row(identifier):
         """The table row whose Edit opens ``identifier``'s editor."""
         at = page.index(f"/email/initial/{identifier}/")
-        return page[page.rindex("<tr>", 0, at) : page.index("</tr>", at)]
+        return page[page.rindex("<tr", 0, at) : page.index("</tr>", at)]
 
     rows = {identifier: row(identifier) for identifier in (used["id"], spare["id"])}
     assert f"({used['id'][:8]})" in page and f"({spare['id'][:8]})" in page

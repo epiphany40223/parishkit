@@ -465,6 +465,28 @@ def test_dirty_population_promotes(tmp_path, monkeypatch):
     assert not CampaignCredentialState.objects.get().population_dirty
 
 
+def test_a_waiting_added_member_link_promotes(tmp_path, monkeypatch):
+    """An added Member link waiting to be recorded (#1670; a New Member just
+    marked Entered by hand) makes the quick update promote, so the link is
+    recorded; the end-to-end case is in test_added_member_links_postgresql."""
+    from parishkit.stewardship.responses import added_members
+
+    asked = []
+
+    def waiting(snapshot_id, *, campaign_id):
+        """Answer that a link waits, recording what was asked."""
+        asked.append((snapshot_id, campaign_id))
+        return False
+
+    def quick(refreshes):
+        """Arm the check only for the quick update."""
+        monkeypatch.setattr(added_members, "added_members_current", waiting)
+
+    full, delta, *_ = full_then_quick(tmp_path, monkeypatch, quick=quick)
+    assert delta.state == "promoted"
+    assert asked == [(full.pk, FamilyCampaign.objects.get().campaign_id)]
+
+
 def test_population_naming_another_snapshot_promotes(tmp_path, monkeypatch):
     """Evidence that names any snapshot but the current one is rebuilt."""
     refreshes = Refreshes(tmp_path, monkeypatch)

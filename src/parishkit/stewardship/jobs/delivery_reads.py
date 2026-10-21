@@ -1,4 +1,4 @@
-"""Outgoing mail and refused address reads, moved out of the delivery views.
+"""Sent mail and refused address reads, moved out of the delivery views.
 
 The Admin pages (``jobs.delivery_views``) and the Admin automation command
 line (``delivery list``, ``delivery show``, ``delivery refusals`` and
@@ -10,6 +10,7 @@ page's query (a ``QueryDict``); repeated, unknown or malformed options are
 refused (``ValueError``) as on the page.
 """
 
+import re
 from datetime import timedelta
 from uuid import uuid4
 
@@ -22,7 +23,10 @@ from parishkit.stewardship.web.tables import Sorting, bounded_count, read_window
 from .delivery_metadata import (
     DELIVERY_SORTING,
     FIELDS,
+    MODES,
+    PURPOSES,
     family_duid,
+    listed_messages,
     listing,
     messages,
     with_name_keys,
@@ -30,7 +34,7 @@ from .delivery_metadata import (
 
 # Every Refused addresses column but Email sorts on the server; the default
 # keeps the old Family DUID, then address, order. Family (name) sorts as
-# Outgoing mail's does: surname, then the whole shown name, then Family DUID
+# Sent mail's does: surname, then the whole shown name, then Family DUID
 # (so each Family's addresses stay together) and address, read from the latest
 # ParishSoft data (delivery_metadata.with_name_keys), with Families that
 # data no longer has last in both directions. id has no column (the
@@ -51,15 +55,6 @@ REFUSAL_SORTING = Sorting.by_column(
     descending_first={"refused"},
     tiebreak=("id",),
 )
-# What each action offered on one delivery's page is called there.
-ACTION_LABELS = {
-    "note": _("Save evidence note"),
-    "accept": _("Confirm delivery using external evidence"),
-    "confirm_unsent": _("Record that the provider did not send it (no resend)"),
-    "resend": _("Authorize potentially duplicate resend"),
-    "retry_failed": _("Retry failed delivery"),
-    "retry_unsent": _("Retry delivery not accepted by the provider"),
-}
 
 
 def parse_window(parameters, allowed, sorting=None):
@@ -78,8 +73,56 @@ def parse_window(parameters, allowed, sorting=None):
     )
 
 
-def read_listing(parameters):
-    """Outgoing mail: one filtered page of messages, never their content.
+# Sent mail's filters (#1562), as query parameters: the Recipient text,
+# the Purpose and Delivery choices, the From and Through days with the
+# browser zone they are in, the mode and a Family email send.
+LISTING_FILTERS = {
+    "state",
+    "recipient",
+    "purpose",
+    "start",
+    "end",
+    "zone",
+    "mode",
+    "send",
+}
+
+
+def day_bounds(values):
+    """Sent mail's From and Through days as UTC bounds on When (#1562).
+
+    Returns ``(since, until)``: the instant ``start`` begins and the instant
+    the day after ``end`` begins, in the browser zone ``zone`` names, or
+    None for a blank day. A malformed day, a Through before From, or a day
+    without a known zone raises ``ValueError`` (``UnknownZone`` for the
+    zone), so a filter is never read in another zone than the reader's.
+    """
+    from datetime import date
+
+    from parishkit.stewardship.web.dates import browser_day_start
+
+    days = []
+    for name in ("start", "end"):
+        text = values.get(name, "")
+        try:
+            # Only the date control's own spelling, as System logs reads it.
+            if text and not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", text):
+                raise ValueError
+            days.append(date.fromisoformat(text) if text else None)
+        except ValueError:
+            raise ValueError("Use whole dates for From and Through.") from None
+    start, end = days
+    if start and end and end < start:
+        raise ValueError("Through must not be before From.")
+    zone = values.get("zone", "")
+    return (
+        browser_day_start(start, zone) if start else None,
+        browser_day_start(end + timedelta(days=1), zone) if end else None,
+    )
+
+
+def read_listing(parameters, *, actor=None, default_mode=None):
+    """Sent mail: one filtered page of messages, never their content.
 
     Returns ``values`` (the validated filters), ``window``, ``rows``,
     ``has_next``, ``total`` (a ``bounded_count``), ``send`` (the described
@@ -89,17 +132,27 @@ def read_listing(parameters):
     None before the first ParishSoft sync). A malformed or
     unknown send is refused rather than ignored, so a filtered link never
     silently lists every email instead (#432).
+
+    ``actor`` is the admitted Administrator, whom the address filter's
+    definer read names. ``mode`` defaults to the named send's mode, else to
+    ``default_mode``: Production on the page; both modes (None) on the
+    command line, as before (#1562).
     """
     from .send_history import SendKey, describe
 
-    values, window = parse_window(parameters, {"state", "q", "send"}, DELIVERY_SORTING)
-    state, query = values.get("state", "all"), values.get("q", "")
+    values, window = parse_window(parameters, LISTING_FILTERS, DELIVERY_SORTING)
+    state, query = values.get("state", "all"), values.get("recipient", "")
+    purpose = values.get("purpose", "all")
     send = described = None
     if "send" in values:
         send = SendKey.parse(values["send"])
         described = describe(send)
         if described is None:
             raise ValueError("Unknown Family email send.")
+    mode = values.get("mode") or (send.mode if send else default_mode)
+    if mode not in (None, *MODES):
+        raise ValueError("Invalid delivery filter.")
+    since, until = day_bounds(values)
     snapshot = current_snapshot()
     window, rows, has_next, total = listing(
         window,
@@ -108,9 +161,15 @@ def read_listing(parameters):
         sort=values["sort"],
         send=send,
         snapshot=snapshot,
+        purpose=purpose,
+        mode=mode,
+        since=since,
+        until=until,
+        actor=actor,
     )
     return dict(
-        values=values | {"state": state, "q": query},
+        values=values
+        | {"state": state, "recipient": query, "purpose": purpose, "mode": mode},
         window=window,
         rows=rows,
         has_next=has_next,
@@ -132,14 +191,14 @@ def with_family_names(rows, snapshot, key="family__family_duid"):
 
     ``family_name`` is the directory's surname-and-heads name from
     ``snapshot`` (the one the list was sorted by), read by
-    ``snapshot_family_names`` as the Family timeline names a Family ("Name
+    ``snapshot_family_names`` as the Timeline names a Family ("Name
     not recorded in ParishSoft" for a blank surname, #1216), or None for an
     Administrator report and for a Family that snapshot lacks.
     The email itself stores no name, so the names are read for the shown
     page only: at most two small queries (its Families and their heads),
     however many rows. The command line's ``delivery list`` does not read
     them. ``key`` names each row's Family DUID: an email's
-    ``family__family_duid`` on Outgoing mail, a refusal's ``family_duid`` on
+    ``family__family_duid`` on Sent mail, a refusal's ``family_duid`` on
     Refused addresses (#935).
     """
     from parishkit.stewardship.source.snapshot_names import snapshot_family_names
@@ -183,7 +242,7 @@ def recording_message():
 def with_refusal_counts(rows):
     """Each listed email with how many of its refused addresses are unresolved.
 
-    Outgoing mail marks such an email ("1 address refused", #935): a refused
+    Sent mail marks such an email ("1 address refused", #935): a refused
     address does not fail an email another address accepted, so without the
     mark a Delivered email would hide that one head of household never got
     it. Each address counts once: a retry that is refused again records a
@@ -293,6 +352,157 @@ def _definer_rows(sql, parameters):
         if getattr(error.__cause__, "sqlstate", None) != "42501":
             raise
         return None
+
+
+def address_deliveries(address, actor_id):
+    """The ids of the emails meant for ``address``, for Sent mail (#1562).
+
+    Read through ``stewardship_delivery_ids_for_address_v1`` (frozen
+    migration 0116), which compares in lower case over the renderings'
+    intended recipients, through their index, and returns nothing else.
+    Raises ``PermissionError`` when it refuses ``actor_id`` (see
+    ``_definer_rows``): the page then answers with its denial.
+    """
+    rows = _definer_rows(
+        "SELECT * FROM public.stewardship_delivery_ids_for_address_v1(%s,%s)",
+        (address, actor_id),
+    )
+    if rows is None:
+        raise PermissionError("Email recipients require an Administrator.")
+    return [row[0] for row in rows]
+
+
+def administrator_names(addresses):
+    """The Users-page Name of each address, lower-cased, that has one (#1562).
+
+    Reads the current configuration's users (``AddressRule``) in one query.
+    An address with no entry there (a former Administrator, or a Ministry
+    leader with no user entry), or whose entry has no Name, is left out,
+    so the page shows the address itself.
+    """
+    from django.db.models import Subquery
+    from django.db.models.functions import Lower
+
+    from parishkit.stewardship.accounts.policy_models import AddressRule
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+
+    wanted = {address.lower() for address in addresses}
+    if not wanted:
+        return {}
+    active = SystemConfiguration.objects.values("active_configuration_id")[:1]
+    return dict(
+        AddressRule.objects.filter(configuration_id=Subquery(active))
+        .annotate(lowered=Lower("email"))
+        .filter(lowered__in=wanted, name__gt="")
+        .values_list("lowered", "name")
+    )
+
+
+# The most ids one call of stewardship_delivery_page_recipients_v1 takes.
+PAGE_RECIPIENTS_LIMIT = 500
+
+
+def administrator_addresses(ids, actor_id):
+    """``{message id: address}`` for emails with no Family (#1562, #1592).
+
+    Read through ``stewardship_delivery_page_recipients_v1`` (frozen
+    migration 0116), one call per ``PAGE_RECIPIENTS_LIMIT`` ids: a page
+    makes one, the Recipient sort one per 500 such emails. A report, a
+    notice or a Ministry leader email goes to one address; the first is
+    kept. Raises
+    ``PermissionError`` when the read refuses ``actor_id``.
+    """
+    ids = list(ids)
+    addresses = {}
+    for start in range(0, len(ids), PAGE_RECIPIENTS_LIMIT):
+        found = _definer_rows(
+            "SELECT message_id, address FROM "
+            "public.stewardship_delivery_page_recipients_v1(%s::uuid[],%s)",
+            (ids[start : start + PAGE_RECIPIENTS_LIMIT], actor_id),
+        )
+        if found is None:
+            raise PermissionError("Email recipients require an Administrator.")
+        for message_id, address in found:
+            addresses.setdefault(message_id, address)
+    return addresses
+
+
+def member_names(ids, actor_id):
+    """``{message id: name}``: a ParishSoft Member's name for each email.
+
+    Read through ``stewardship_delivery_page_member_names_v1`` (frozen
+    migration 0145, #1562), one call per ``PAGE_RECIPIENTS_LIMIT`` ids: for
+    each email with no Family, the one name of a Member whose contact
+    record in the current ParishSoft data lists its address, in the Users
+    page's default-Name order (a Member of an active Family first, then a
+    head of household, then by name and Member DUID). An email no Member's
+    address matches is left out. Raises ``PermissionError`` when the read
+    refuses ``actor_id``.
+    """
+    ids = list(ids)
+    names = {}
+    for start in range(0, len(ids), PAGE_RECIPIENTS_LIMIT):
+        found = _definer_rows(
+            "SELECT message_id, name FROM "
+            "public.stewardship_delivery_page_member_names_v1(%s::uuid[],%s)",
+            (ids[start : start + PAGE_RECIPIENTS_LIMIT], actor_id),
+        )
+        if found is None:
+            raise PermissionError("Email recipients require an Administrator.")
+        names.update(found)
+    return names
+
+
+def person_names(addresses, actor_id):
+    """``{message id: name}`` Sent mail shows for each email to a person.
+
+    ``addresses`` maps each email's id to its address
+    (``administrator_addresses``). The name is the address's Users-page
+    Name (``administrator_names``), else, by Administrator decision
+    (2026-10-20, #1562), a ParishSoft Member's name for it
+    (``member_names``), read only for the emails whose address has no
+    Users-page Name; an email with neither is left out, so the page shows
+    the address itself.
+    """
+    users = administrator_names(addresses.values())
+    unnamed = [
+        key for key, address in addresses.items() if address.lower() not in users
+    ]
+    members = member_names(unnamed, actor_id) if unnamed else {}
+    named = {key: users.get(address.lower()) for key, address in addresses.items()}
+    return {
+        key: named[key] or members[key]
+        for key in addresses
+        if named[key] or key in members
+    }
+
+
+def with_recipients(rows, actor_id):
+    """Each listed email with whom it is for, for Sent mail's Recipient (#1562).
+
+    A Family email is named by its Family (``with_family_names``). An email
+    with no Family (a report or notice, sent to one Administrator address,
+    or a Ministry leader's sign-in email, to one leader's address) gains
+    ``recipient_address``, read for the shown page through
+    ``stewardship_delivery_page_recipients_v1`` (frozen migration 0116),
+    and ``recipient_name``, its name (``person_names``: the Users-page
+    Name, else a ParishSoft Member's) or None: one definer read and one
+    query, however many rows (and the Member-name read when an address has
+    no Users-page Name), and none when the page lists only Family emails.
+    Raises ``PermissionError`` when a read refuses ``actor_id``.
+    """
+    addresses = administrator_addresses(
+        [row["id"] for row in rows if row["family_id"] is None], actor_id
+    )
+    names = person_names(addresses, actor_id)
+    return [
+        row
+        | {
+            "recipient_address": addresses.get(row["id"]),
+            "recipient_name": names.get(row["id"]),
+        }
+        for row in rows
+    ]
 
 
 def email_recipients(message_id, actor_id, state):
@@ -542,7 +752,7 @@ def offered_actions(state, task_state, *, campaign_state, can_resolve, can_retry
     task's (None without one); ``can_resolve`` is the campaign's export
     admission and ``can_retry`` the message's resend admission
     (``stewardship_delivery_retry_admitted_v1``). The bulk actions on
-    Outgoing mail (``delivery_bulk``) select by these same rules, so a bulk
+    Sent mail (``delivery_bulk``) select by these same rules, so a bulk
     action never touches a message whose own page would not offer it.
     """
     actions = ["note"] if campaign_state != "archived" and can_resolve else []
@@ -561,18 +771,177 @@ def offered_actions(state, task_state, *, campaign_state, can_resolve, can_retry
     return actions
 
 
+# The question each state's outcome panel asks (#1563), as (choice,
+# action) pairs in the page's order: each answer is exactly one existing
+# resolution action. Not sure it arrived asks "What did you find?" ("It
+# was sent", "It was not sent" then "Send it again?" Yes or No, "I can't
+# tell yet"); Failed asks "Send it again?"; a still-sending email whose
+# background task failed offers only "Try again now".
+QUESTIONS = {
+    "delivery_unknown": (
+        ("sent", "accept"),
+        ("resend", "resend"),
+        ("not_sent", "confirm_unsent"),
+        ("unsure", "note"),
+    ),
+    "permanent_failure": (("send_again", "retry_failed"), ("keep_failed", "note")),
+    "pending": (("try_again", "retry_unsent"),),
+    "retry_wait": (("try_again", "retry_unsent"),),
+}
+# The actions that send the email again, whose refusal the page explains by
+# the admission condition that failed (retry_refusal).
+SENDING_ACTIONS = frozenset({"resend", "retry_failed", "retry_unsent"})
+# Why an answer is unavailable, in the order the codes are checked (#1563;
+# admin-portal spec, Resolution questions). The last five explain a refused
+# send only.
+UNAVAILABLE_REASONS = {
+    "no_campaign": _("Notices belong to no campaign, so they can't be resolved here."),
+    "archived": _("The campaign is archived, so its email can't be changed."),
+    "held": _(
+        "Other campaign work (a restore review, or a cleanup, purge or go-live "
+        "step) is under way, so this email can't be resolved until it "
+        "finishes or is cancelled."
+    ),
+    "task_running": _(
+        "This email's background task has not finished, so it can be "
+        "answered once it has."
+    ),
+    "campaign_ended": _("The campaign has ended, so it is not sent again."),
+    "family_responded": _("The Family has already responded, so it is not sent again."),
+    "family_unreachable": _(
+        "The Family can no longer be emailed (ParishSoft no longer gives it a "
+        "usable address, or it left the campaign)."
+    ),
+    "paused": _("Campaign email is paused; it can be sent again once mail is resumed."),
+    "not_admitted": _(
+        "Sending it again is not available right now. It needs the campaign "
+        "to be open, campaign email not paused, up-to-date ParishSoft data, "
+        "and no other email already covering this one."
+    ),
+}
+
+
+def email_outcome(state, refused):
+    """Which outcome panel one email's page shows (#1563).
+
+    ``refused`` says the email's delivery recorded unresolved refused
+    addresses: a delivered email with one still needs the Administrator,
+    who checks and clears it.
+    """
+    if state == "delivered":
+        return "needs_resolution" if refused else "delivered"
+    if state == "cancelled":
+        return "cancelled"
+    if state in {"delivery_unknown", "permanent_failure"}:
+        return "needs_resolution"
+    return "still_sending"
+
+
+def question_choices(state, task_state, actions, *, blocked, refusal):
+    """The answers an email's outcome panel offers, with why any is unavailable.
+
+    Returns ``[{"choice", "action", "unavailable"}]`` in the page's order
+    (``QUESTIONS``); ``unavailable`` is None for an answer whose action is
+    offered now (it is in ``actions``, from ``offered_actions``, so the
+    page never offers what the server would refuse) or else a key of
+    ``UNAVAILABLE_REASONS``. ``blocked`` is the reason nothing can be
+    changed (no campaign, archived, held) or None; ``refusal`` is why the
+    resend admission refused a send (``retry_refusal``), or None. A
+    still-sending email asks nothing until its background task has failed,
+    as before.
+    """
+    if state in {"pending", "retry_wait"} and task_state != "failed":
+        return []
+    rows = []
+    for choice, action in QUESTIONS.get(state, ()):
+        if action in actions:
+            reason = None
+        elif blocked:
+            reason = blocked
+        elif task_state != "failed":
+            reason = "task_running"
+        else:
+            # Every other answer is offered whenever the campaign accepts
+            # changes and the task failed, so only a send can be refused here.
+            reason = refusal or "not_admitted"
+        rows.append(dict(choice=choice, action=action, unavailable=reason))
+    return rows
+
+
+def retry_refusal(message):
+    """Which condition refuses sending ``message`` again, for its page (#1563).
+
+    Called only after ``stewardship_delivery_retry_admitted_v1`` refused,
+    so the admitted or refused answer is always the server's own; this only
+    names a likely cause, and returns None (the generic reason) when none of
+    these explains it. One query of columns the web login reads, in the
+    order the page names them: a Production invitation or reminder whose
+    campaign is no longer scheduled or active or whose end has passed
+    (``campaign_ended``), or whose Family has responded
+    (``family_responded``); a Production Family email whose Family is no
+    longer active, eligible and deliverable (``family_unreachable``); or
+    Production campaign email paused, which fences every send but the
+    resend of a delivery that may have arrived (``paused``). Testing mail
+    is never diagnosed: its admission follows the rehearsal instead.
+    A campaign with no active configuration reads as not ended: the
+    answer then names the generic reason rather than "campaign ended".
+    """
+    if message["mode"] != "production":
+        return None
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT c.state IN ('scheduled','active')"
+            " AND COALESCE(p.ends_at>now_at, true),"
+            " f.effective_submission_id IS NOT NULL,"
+            " f.active AND f.email_eligible AND f.email_deliverable,"
+            " c.delivery_paused"
+            " FROM stewardship_campaign c"
+            " CROSS JOIN LATERAL (SELECT stewardship_campaign_now_v1() AS now_at) n"
+            " LEFT JOIN stewardship_campaign_configuration p"
+            " ON p.id=c.active_configuration_id"
+            " LEFT JOIN stewardship_family_campaign f ON f.id=%s"
+            " WHERE c.id=%s",
+            (message["family_id"], message["campaign_id"]),
+        )
+        found = cursor.fetchone()
+    if found is None:
+        return None
+    open_now, responded, reachable, paused = found
+    invitation = message["purpose"] in {"initial", "reminder"}
+    for reason, holds in (
+        ("campaign_ended", invitation and not open_now),
+        ("family_responded", invitation and responded),
+        ("family_unreachable", message["family_id"] is not None and not reachable),
+        ("paused", paused and message["state"] != "delivery_unknown"),
+    ):
+        if holds:
+            return reason
+    return None
+
+
 def read_detail(message_id, parameters):
     """One delivery: its metadata, history, latest task, notes and actions.
 
     The history's upper version is pinned to the message read, so a page
     and its history agree. ``actions`` are the resolutions the page offers
     now, in its order; ``retry_unavailable`` says a retry would be offered
-    but the campaign's resend admission refuses it. ``held`` are the
-    decisions (not the bare note) the page would offer but other campaign
-    work holds now (the export admission refuses; never for an archived
-    campaign, which accepts no change at all), so the page shows them
-    unavailable with why (#1331). Raises ``OutboxMessage.DoesNotExist`` for
-    an unknown message.
+    but the campaign's resend admission refuses it. ``refused`` are the
+    email's unresolved refused addresses (``email_refusals``).
+
+    The outcome panel (#1563): ``outcome`` (``email_outcome``) and
+    ``choices``, its question's answers with why any is unavailable
+    (``question_choices``): nothing can be changed for a notice
+    (``no_campaign``), on an archived campaign, or while other campaign
+    work holds it (``held``, the export admission refusing, #1331); a
+    refused send is named by ``retry_refusal``. ``paused`` says campaign
+    email is paused and ``last_attempt_at`` is when the provider was last
+    asked to send it (None before any attempt). Raises
+    ``OutboxMessage.DoesNotExist`` for an unknown message.
+
+    Every email Sent mail lists opens here, operational and security
+    notices and Ministry leader emails too (#1562). Those belong to no
+    campaign, and every resolution and its admission is a campaign's, so
+    they offer nothing and their admission is not read.
     """
     from parishkit.stewardship.campaigns.models import Campaign
 
@@ -581,7 +950,7 @@ def read_detail(message_id, parameters):
     from .outbox_models import OutboxEvent
 
     window = parse_window(parameters, set())[1]
-    message = messages().values(*FIELDS).get(pk=message_id)
+    message = listed_messages().values(*FIELDS, "not_before").get(pk=message_id)
     events, events_following = window.rows(
         OutboxEvent.objects.filter(
             message_id=message_id, version__lte=message["version"]
@@ -595,40 +964,56 @@ def read_detail(message_id, parameters):
         .values("id", "state", "version", "retry_sequence")
         .first()
     )
-    campaign = Campaign.objects.only("state").get(pk=message["campaign_id"])
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT stewardship_export_admitted_v1(%s,true), "
-            "stewardship_delivery_retry_admitted_v1(%s)",
-            (message["campaign_id"], message_id),
+    resolvable = message["purpose"] in PURPOSES and message["campaign_id"]
+    campaign_state, can_resolve, can_retry = "archived", False, False
+    paused = False
+    if resolvable:
+        campaign_state, paused = (
+            Campaign.objects.filter(pk=message["campaign_id"])
+            .values_list("state", "delivery_paused")
+            .get()
         )
-        can_resolve, can_retry = cursor.fetchone()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT stewardship_export_admitted_v1(%s,true), "
+                "stewardship_delivery_retry_admitted_v1(%s)",
+                (message["campaign_id"], message_id),
+            )
+            can_resolve, can_retry = cursor.fetchone()
     actions = offered_actions(
         message["state"],
         task and task["state"],
-        campaign_state=campaign.state,
+        campaign_state=campaign_state,
         can_resolve=can_resolve,
         can_retry=can_retry,
     )
-    held = []
-    if not can_resolve and campaign.state != "archived":
-        # What the page would offer once the campaign work finishes. The
-        # resend admission also refuses while campaign work holds the
-        # campaign, so the retry is held with the rest, named by the same
-        # notice, rather than drawn apart with a reason that misses the
-        # real blocker.
-        held = offered_actions(
-            message["state"],
-            task and task["state"],
-            campaign_state=campaign.state,
-            can_resolve=True,
-            can_retry=True,
-        )[1:]
     notes, notes_following = window.rows(
         DeliveryResolution.objects.filter(message_id=message_id)
         .order_by("-created_at", "-id")
         .values("created_at", "action", "evidence_note")
     )
+    refused = email_refusals(message_id)
+    task_state = task and task["state"]
+    retry_unavailable = bool(
+        resolvable
+        and task
+        and task["state"] == "failed"
+        and not can_retry
+        and message["state"]
+        in {"delivery_unknown", "permanent_failure", "pending", "retry_wait"}
+    )
+    blocked = (
+        "no_campaign"
+        if not resolvable
+        else "archived"
+        if campaign_state == "archived"
+        else "held"
+        if not can_resolve
+        else None
+    )
+    # The cause is looked up only for a send the admission refused, and
+    # only on a page that would otherwise offer it.
+    refusal = retry_refusal(message) if retry_unavailable and blocked is None else None
     return dict(
         delivery=message,
         events=events,
@@ -637,14 +1022,26 @@ def read_detail(message_id, parameters):
         window=window,
         has_next=events_following or notes_following,
         actions=actions,
-        held=held,
-        retry_unavailable=bool(
-            task
-            and task["state"] == "failed"
-            and not can_retry
-            and message["state"]
-            in {"delivery_unknown", "permanent_failure", "pending", "retry_wait"}
+        retry_unavailable=retry_unavailable,
+        refused=refused,
+        # The outcome panel (#1563): which one, its answers, whether
+        # campaign email is paused (a still-sending email waits for
+        # resume) and when the provider was last asked to send it.
+        outcome=email_outcome(message["state"], bool(refused)),
+        choices=question_choices(
+            message["state"],
+            task_state,
+            actions,
+            blocked=blocked,
+            refusal=refusal,
         ),
+        paused=paused,
+        last_attempt_at=OutboxEvent.objects.filter(
+            message_id=message_id, action="submit", version__lte=message["version"]
+        )
+        .order_by("-version")
+        .values_list("created_at", flat=True)
+        .first(),
     )
 
 
@@ -670,7 +1067,7 @@ def _long_retry():
 
 
 def read_sending_holds(now):
-    """Why Family email is waiting on a sending limit, for Outgoing mail (#382 M3a).
+    """Why Family email is waiting on a sending limit, for Sent mail (#382 M3a).
 
     Returns None when nothing is, else ``daily_limit`` (a running mail
     sender waits for this server's daily limit), ``gmail_until`` (a running

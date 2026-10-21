@@ -34,6 +34,13 @@ existing service identity, driven by the operator script::
   schedules all in the future, readiness's refresh and sample, chosen-Family
   Testing sends, then Testing sign-ins and submissions with their rehearsal
   codes. It stops short of go-live.
+- ``refresh`` (web): for ``fake-parishsoft refresh`` (#1780), the Admin's
+  full ParishSoft refresh against the fake, after the operator changed its
+  data, waited on until it and the work it causes have finished. Refused
+  unless the deployment reads the fake ParishSoft.
+- ``pledge-period`` (web, read-only): the current campaign's pledge fund and
+  financial period start, which ``fake-parishsoft pledge`` uses as its
+  defaults so a pledge edit lands where the refresh reads giving.
 
 Every step refuses unless the admitted deployment is LOCAL, before opening
 any connection. Every wait has a limit; on expiry the seeder logs which
@@ -79,6 +86,8 @@ STEPS = (
     "measure",
     "credentials",
     "testing",
+    "refresh",
+    "pledge-period",
 )
 # The rehearsal steps that need --due-at.
 DUE_STEPS = frozenset({"reminder", "measure"})
@@ -1022,6 +1031,8 @@ def run_step(request, configuration):
         "reminder": reminder_step,
         "measure": measure_step,
         "testing": testing_step,
+        "refresh": refresh_step,
+        "pledge-period": pledge_period_step,
     }[request.step](request, configuration)
 
 
@@ -1289,7 +1300,7 @@ def prepare_step(request, configuration):
     receipts
     meet readiness; then the real go-live flow runs under the Admin session,
     each verify followed at once by its act: readiness and cleanup, link
-    preparation, a fresh sign-in, and the Production confirmation, whose
+    preparation, a new sign-in, and the Production confirmation, whose
     worker task activates the campaign as ``scheduled`` because the start is
     still in the future.
     """
@@ -1357,9 +1368,6 @@ def prepare_step(request, configuration):
         campaign=campaign, portal_eligible=True, email_eligible=True
     ).exists():
         raise SeedRefused("No Portal-eligible Family with an email was found.")
-    # Sending needs a fresh sign-in (five minutes); the waits above may have
-    # used it up, so step up again, as an Admin would on the page.
-    seed_web.sign_in_admin(web, request.admin_email)
     seed_web.sample_mail(
         web, service, campaign.pk, _initial_revision(service, campaign)
     )
@@ -1370,7 +1378,6 @@ def prepare_step(request, configuration):
     )
     settle(since)
     # 3. The real go-live: readiness and cleanup.
-    seed_web.sign_in_admin(web, request.admin_email)
     status = seed_web.start_go_live(web, service, campaign.pk)
     transition_id = status.request_id
 
@@ -1385,8 +1392,8 @@ def prepare_step(request, configuration):
 
     timed("cleanup", "the Testing cleanup to complete", cleaned)
     settle(since)
-    # Link preparation, then a fresh sign-in (confirmation needs one after
-    # cleanup) and the Production confirmation.
+    # Link preparation, then a new sign-in (no longer required since #1547)
+    # and the Production confirmation.
     seed_web.prepare_links(web, service, campaign.pk, transition_id)
 
     def prepared():
@@ -1416,7 +1423,6 @@ def prepare_step(request, configuration):
         .order_by("-created_at")
         .first()
     )
-    seed_web.sign_in_admin(web, request.admin_email)
     seed_web.confirm_production(
         web, service, campaign.pk, transition_id, preparation.pk
     )
@@ -1547,8 +1553,6 @@ def import_leader_user(request, web, service):
         LOGGER.warning("no ParishSoft Ministry leader without a user to import")
         return None
     since = datetime.now(UTC) - timedelta(minutes=1)
-    # The Apply needs a fresh sign-in; the refresh wait may have aged it.
-    seed_web.sign_in_admin(web, request.admin_email)
     seed_web.import_leader(web, service, leaders, email)
     wait_until(
         "the leader import to be installed",
@@ -1579,6 +1583,71 @@ def finish_step(request, configuration):
         "step": "finish",
         "refresh_wait_seconds": round(waited, 1),
         "leader_user": import_leader_user(request, web, service),
+    }
+
+
+def refresh_step(request, configuration):
+    """``fake-parishsoft refresh`` (#1780): a full refresh of the fake's data.
+
+    The same request the Refresh from ParishSoft page makes, as the seeded
+    Administrator, so the promotion and everything it triggers (the review
+    pipeline's refresh checks included) run through their real code. It is
+    refused before any connection unless the deployment reads the fake
+    ParishSoft: after ``deploy --parishsoft real`` this would read the real
+    API, which a local edit cannot have changed.
+    """
+    from parishkit.parishsoft_http_worker import LOCAL_SOURCE_BASE_URL
+
+    if configuration.parishsoft_base_url is not None:
+        raise SeedRefused("The deployment does not read the fake ParishSoft.")
+    configure_web_process(configuration)
+    from parishkit.stewardship.deployment import recorded_parishsoft_base_url
+
+    if recorded_parishsoft_base_url() != LOCAL_SOURCE_BASE_URL:
+        raise SeedRefused("The deployment does not read the fake ParishSoft.")
+    since = datetime.now(UTC) - timedelta(minutes=1)
+    web = admin(request)
+    service = seed_web.admin_runtime()
+    receipt = seed_web.request_full_refresh(web, service)
+    started = time.monotonic()
+    wait_until(
+        "the full ParishSoft refresh to succeed",
+        lambda: task_root_finished(receipt.task_root_id, "the full refresh"),
+    )
+    # A promoted Family's missed Reminders are coalesced by the real
+    # reconciliation, as in the seed's finish step; that is not a failure.
+    settle(since, tolerate=frozenset({"coalesced"}))
+    return {
+        "step": "refresh",
+        "task": str(receipt.task_root_id),
+        "refresh_wait_seconds": round(time.monotonic() - started, 1),
+    }
+
+
+def pledge_period_step(request, configuration):
+    """The current campaign's first pledge fund and its period start (#1780).
+
+    Read-only. These are what the refresh's giving window reads
+    (``source.windows.refresh_window``), so ``fake-parishsoft pledge``
+    defaults to them. Refused when there is no campaign or it collects no
+    pledges.
+    """
+    configure_web_process(configuration)
+    from parishkit.stewardship.source.windows import refresh_window
+
+    campaign = current_campaign()
+    window = refresh_window(
+        campaign_id=campaign.pk,
+        state=campaign.state,
+        values=campaign.active_configuration.values,
+    )
+    if not window.periods or not window.periods[0].funds:
+        raise SeedRefused("The campaign collects no pledges; give fund= and start=.")
+    period = window.periods[0]
+    return {
+        "step": "pledge-period",
+        "fund": period.funds[0],
+        "start": period.start.isoformat(),
     }
 
 
@@ -1894,8 +1963,6 @@ def testing_step(request, configuration):
     )
     settle(since)
     revision = _initial_revision(service, campaign)
-    # Sending needs a fresh sign-in (five minutes); the waits may have aged it.
-    seed_web.sign_in_admin(web, request.admin_email)
     seed_web.sample_mail(web, service, campaign.pk, revision)
     timed(
         "sample_mail",
@@ -1915,7 +1982,6 @@ def testing_step(request, configuration):
     chosen = testing_families(campaign)
     if not chosen:
         raise SeedRefused("No Portal-eligible Family with an email was found.")
-    seed_web.sign_in_admin(web, request.admin_email)
     try:
         tickets = seed_web.family_tests(
             web, service, campaign.pk, revision, [duid for duid, _ in chosen]

@@ -57,7 +57,8 @@ class Transition:
     actor: str
     guards: frozenset[str]
     modes: frozenset[Mode]
-    reauthentication: bool = False
+    # An Administrator's transition is explicitly confirmed. Since #1547 no
+    # transition asks for a recent sign-in.
     confirmation: bool = False
 
 
@@ -74,7 +75,6 @@ def _transition(
         actor,
         frozenset(guards),
         frozenset(modes),
-        admin,
         admin,
     )
 

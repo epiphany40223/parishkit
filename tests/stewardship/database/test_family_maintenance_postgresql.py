@@ -6,7 +6,7 @@ from django.test import Client
 from parishkit.stewardship.accounts import family_maintenance
 from parishkit.stewardship.audit.models import AuditEvent
 
-from .auth_builders import signed_in
+from .auth_builders import signed_in, stale_sign_in
 from .leader_builders import grant_role
 from .test_security_events_postgresql import home
 from .user_builders import web
@@ -138,21 +138,20 @@ def test_a_message_with_an_email_address_is_refused(auth_service, google):
     assert not maintenance(family("get", "/"))
 
 
-def test_changing_the_switch_needs_a_fresh_sign_in(auth_service, google, monkeypatch):
-    """A session outside the fresh window must confirm with Google again."""
-    from parishkit.stewardship.accounts import sessions
+def test_an_old_sign_in_changes_the_switch(auth_service, google):
+    """A sign-in older than five minutes closes the Family portal (#1547).
 
+    The close button is available, described only by its own hint.
+    """
     browser, _ = signed_in()
-    monkeypatch.setattr(sessions, "FRESH_SECONDS", -1)
-    # The page shows both change buttons unavailable, named by the sign-in
-    # step (#563); a submit anyway is still refused.
-    page = browser.get(ROUTE)
-    assert b'aria-describedby="maintenance-close-hint maintenance-fresh-reason"' in (
-        page.content
-    )
+    stale_sign_in()
+    with web():
+        page = browser.get(ROUTE)
+    assert b'aria-describedby="maintenance-close-hint"' in page.content
+    assert b"maintenance-fresh-reason" not in page.content
     response = change(browser, "close")
-    assert response.status_code == 403
-    assert events() == []
+    assert response.status_code == 302
+    assert events() == ["family_maintenance_started"]
 
 
 def reader(auth_service, google, role):

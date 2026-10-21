@@ -18,8 +18,7 @@ from .restore_review_components import (
     RESEND_PREVIEW,
     REVIEWING,
     SETTLED,
-    STALE,
-    STEP_UP,
+    SIGNED_OUT,
     SUPERSEDED,
     TESTING,
 )
@@ -100,7 +99,7 @@ def test_review_pages_are_accessible_at_phone_and_desktop_widths(
         LISTED,
         GROUP_PREVIEW,
         RELEASE_PREVIEW,
-        STEP_UP,
+        SIGNED_OUT,
         SUPERSEDED,
         BLOCKED,
     ):
@@ -187,11 +186,12 @@ def test_a_note_is_required_before_settling(page, component_origin):
 
 
 def test_refusals_answer_inside_the_region(page, component_origin):
-    """A stale sign-in offers the step-up in place; a change is explained."""
+    """An ended session says to sign in again in place; a change is
+    explained."""
     _routed(
         page,
         component_origin,
-        {"release-preview": (403, STEP_UP), "group-preview": (409, CHANGED)},
+        {"release-preview": (403, SIGNED_OUT), "group-preview": (409, CHANGED)},
         start=REVIEWING,
     )
     page.goto(component_origin + PAGE)
@@ -204,17 +204,16 @@ def test_refusals_answer_inside_the_region(page, component_origin):
     expect(region.get_by_text("Something changed since you looked")).to_be_visible()
     assert _top(resend) == pytest.approx(before[1], abs=1)
     release.click()
-    expect(region.get_by_text("this step needs a Google sign-in")).to_be_visible()
-    expect(region.get_by_role("button", name="Confirm with Google")).to_be_visible()
+    alert = region.locator('p[role="alert"][data-restore-refused="signed_out"]')
+    expect(alert).to_contain_text("Your sign-in has ended")
+    expect(alert).to_contain_text("Nothing was changed.")
+    expect(alert.get_by_role("link", name="Sign in again")).to_be_visible()
     # The refusal is drawn after the controls, so none of them moved.
     after = (_top(release), _top(resend))
     assert after == pytest.approx(before, abs=1)
-    # The sign-in is stale now, so the redrawn decisions wait for it,
-    # named by the refusal's own step-up sentence (#1331).
-    expect(release).to_be_disabled()
-    expect(resend).to_be_disabled()
-    assert "restore-fresh-reason" in resend.get_attribute("aria-describedby")
-    expect(region.locator("#restore-fresh-reason")).to_have_count(1)
+    # No sign-in gate holds the redrawn decisions (#1547).
+    expect(release).to_be_enabled()
+    expect(resend).to_be_enabled()
     assert kept()
 
 
@@ -380,30 +379,3 @@ def test_closing_a_preview_at_the_foot_keeps_the_page_height(
     )
     focused = page.evaluate_handle("document.activeElement")
     assert "Check again for emails" in focused.text_content()
-
-
-def test_a_sign_in_that_ages_during_a_preview_moves_nothing(page, component_origin):
-    """Cancel answered after the sign-in has aged draws the step-up notice
-    last in the region, so no control above it moves (#1331)."""
-    _routed(
-        page,
-        component_origin,
-        {"group-preview": (200, GROUP_PREVIEW), "cancel": (200, STALE)},
-        start=REVIEWING,
-    )
-    page.goto(component_origin + PAGE)
-    kept = _not_reloaded(page)
-    region = page.locator(REGION)
-    assume = region.get_by_role("button", name="Assume these were sent", exact=True)
-    check = region.get_by_role(
-        "button", name="Check again for emails that may have gone out"
-    )
-    before = (_top(assume.first), _top(assume.nth(1)), _top(check))
-    assume.first.click()
-    region.get_by_role("button", name="Cancel").click()
-    expect(region.locator("#restore-fresh-reason")).to_be_visible()
-    expect(assume.first).to_be_disabled()
-    assert (_top(assume.first), _top(assume.nth(1)), _top(check)) == pytest.approx(
-        before, abs=1
-    )
-    assert kept()

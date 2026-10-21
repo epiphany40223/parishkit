@@ -29,7 +29,7 @@ class DeploymentProfile(StrEnum):
 
     Development and test are plain HTTP on loopback with no proxy. LOCAL is the
     production-shaped laptop environment (#476): HTTPS through one Caddy hop,
-    synthetic data, no real provider. New code that distinguishes LOCAL must
+    synthetic data by default, and no real mail. New code that distinguishes LOCAL must
     test ``is LOCAL`` or ``behind_proxy``, never ``!= DEVELOPMENT``, which
     would silently change meaning as profiles are added.
     """
@@ -70,6 +70,55 @@ def recorded_profile():
         return DeploymentProfile(settings.STEWARDSHIP_DEPLOYMENT_PROFILE)
     except (AttributeError, ValueError, ImproperlyConfigured):
         raise ConfigError("The deployment profile is unavailable.") from None
+
+
+def recorded_parishsoft_base_url():
+    """The ParishSoft base URL this process's deployment chose (#1399).
+
+    ``profile_settings`` records the deployment's ``parishsoft_base_url``
+    only when it differs from the profile's default, so an absent value is
+    that default (the fake in LOCAL, the real API elsewhere). The value is
+    checked against the recorded profile again, so the fake can never be
+    reached outside LOCAL whatever the settings say.
+    """
+    from django.conf import settings
+
+    # Lazy: the helper module imports requests and parishkit.parishsoft, which
+    # the healthcheck and argument-registration paths must not load.
+    from parishkit.parishsoft_http_worker import admitted_base_url, default_base_url
+
+    profile = recorded_profile().value
+    value = getattr(settings, "STEWARDSHIP_PARISHSOFT_BASE_URL", None)
+    try:
+        return admitted_base_url(
+            profile, default_base_url(profile) if value is None else value
+        )
+    except ValueError:
+        raise ConfigError("The ParishSoft base URL is not admitted.") from None
+
+
+def recorded_mail_redirect():
+    """The mail redirect this process's deployment set (#1399), or None.
+
+    ``profile_settings`` records ``mail_redirect`` only when it is set, which
+    the loader admits only in the local profile. It is checked against the
+    recorded profile again here, so a redirect can never reach a helper
+    request from any other profile whatever the settings say: the parent
+    refuses to send instead (a ConfigError).
+    """
+    from django.conf import settings
+
+    value = getattr(settings, "STEWARDSHIP_MAIL_REDIRECT", None)
+    if value is None:
+        return None
+    from .mail_catcher import redirect_address
+
+    try:
+        if recorded_profile() is not DeploymentProfile.LOCAL:
+            raise ValueError
+        return redirect_address(value)
+    except ValueError:
+        raise ConfigError("The mail redirect is not admitted.") from None
 
 
 class ServiceRole(StrEnum):
@@ -203,8 +252,20 @@ LOCAL_SMTP_LATENCY_MAX_MS = 5000
 # docs/guides/stewardship-member-requests.md#parishsoft-publication). While
 # it is off the publish worker refuses before it takes the source lease or
 # makes any ParishSoft call. "1" (or ``parishsoft_publication: true`` in the
-# deployment YAML) on the worker turns it on.
+# deployment YAML) on the worker turns it on. The local profile admits it
+# only while it reads the local fake (#1884): pk-local may read the real
+# ParishSoft (#1399) but never writes to it.
 PARISHSOFT_PUBLICATION_VARIABLE = "PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION"
+# The ParishSoft base URL (#1399): the real API or, in the local profile
+# only, the local fake (``parishsoft_http_worker.BASE_URLS``). Unset means
+# the profile's default, the fake in LOCAL and the real API elsewhere, so
+# only a LOCAL deployment that chose the real API ever records a value.
+PARISHSOFT_BASE_URL_VARIABLE = "PARISHKIT_STEWARDSHIP_PARISHSOFT_BASE_URL"
+# The forced mail redirect (#1399): one address, the developer's Testing
+# recipient, that replaces every envelope recipient of every message a LOCAL
+# deployment sends (``mail_catcher.envelope``). Unset (the default) sends to
+# the routed recipients; any value is refused outside the local profile.
+MAIL_REDIRECT_VARIABLE = "PARISHKIT_STEWARDSHIP_MAIL_REDIRECT"
 
 
 @dataclass(frozen=True)
@@ -236,6 +297,10 @@ class DeploymentConfiguration:
     # How long a finished export stays downloadable, and a failed one
     # retryable (#1398; reports.export_window), in whole minutes.
     export_download_window_minutes: int = 60
+    # None is the profile's default; see PARISHSOFT_BASE_URL_VARIABLE.
+    parishsoft_base_url: str | None = None
+    # None sends to the routed recipients; see MAIL_REDIRECT_VARIABLE.
+    mail_redirect: str | None = None
 
 
 def _mapping(value: object, keys: set[str] | frozenset[str], label: str) -> dict:
@@ -423,6 +488,8 @@ def load_deployment(
             "local_smtp_latency_ms",
             "parishsoft_publication",
             "export_download_window_minutes",
+            "parishsoft_base_url",
+            "mail_redirect",
         },
         "deployment",
     )
@@ -730,13 +797,65 @@ def load_deployment(
     window = _integer(
         window, "export_download_window_minutes", MINIMUM_MINUTES, MAXIMUM_MINUTES
     )
+    base_url = select("PARISHSOFT_BASE_URL", None)
+    if base_url in (None, ""):
+        base_url = deployment.get("parishsoft_base_url")
+    if base_url is not None:
+        # Lazy for the same reason as in recorded_parishsoft_base_url: only a
+        # named base URL needs the helper's (provider-importing) rule.
+        from parishkit.parishsoft_http_worker import (
+            admitted_base_url,
+            default_base_url,
+        )
+
+        try:
+            admitted_base_url(profile.value, base_url)
+        except ValueError:
+            raise ConfigError(
+                "parishsoft_base_url must be the ParishSoft API or, in the local "
+                "profile only, the local fake"
+            ) from None
+        if base_url == default_base_url(profile.value):
+            # The default is recorded as unset, so naming it renders nothing.
+            base_url = None
+    if publication and profile is DeploymentProfile.LOCAL:
+        # pk-local may read the real ParishSoft (#1399) but never writes to
+        # it; publication is admitted only while it reads the fake (#1884).
+        # The shared rule decides, and every publication session and helper
+        # request applies it again. Lazy, as above.
+        from parishkit.parishsoft_http_worker import (
+            contact_put_admitted,
+            default_base_url,
+        )
+
+        chosen = default_base_url(profile.value) if base_url is None else base_url
+        if not contact_put_admitted(profile.value, chosen):
+            raise ConfigError(
+                "parishsoft_publication is refused in the local profile unless "
+                "it reads the local fake ParishSoft"
+            )
+    redirect = select("MAIL_REDIRECT", None)
+    if redirect in (None, ""):
+        # Empty means unset, as for the switches above.
+        redirect = deployment.get("mail_redirect")
+    if redirect is not None:
+        from .mail_catcher import redirect_address
+
+        try:
+            redirect = redirect_address(redirect)
+        except ValueError:
+            raise ConfigError("mail_redirect must be one email address") from None
+        if profile is not DeploymentProfile.LOCAL:
+            # Redirecting a real deployment's mail would silently withhold it
+            # from every Family; only the laptop environment may redirect.
+            raise ConfigError("mail_redirect is admitted only in the local profile")
     supplied_keys = set(explicit) | {
         key for key in env if key.startswith("PARISHKIT_STEWARDSHIP_")
     }
     if supplied_keys - consumed_keys:
         raise ConfigError("unknown deployment environment or CLI override")
-    # Production only: LOCAL holds synthetic data, so weaker limits there are
-    # a developer's choice, not an operational warning.
+    # Production only: LOCAL is a laptop reached only on localhost, so weaker
+    # limits there are a developer's choice, not an operational warning.
     if profile is DeploymentProfile.PRODUCTION:
         limits.warn_if_weaker()
     return DeploymentConfiguration(
@@ -761,4 +880,6 @@ def load_deployment(
         latency,
         publication,
         window,
+        base_url,
+        redirect,
     )

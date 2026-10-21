@@ -161,7 +161,7 @@ def signed_in(client=None, **fields):
     """Complete ordinary HTTP login against only the synthetic Google boundary.
 
     Passing an already signed-in ``client`` signs in again from that browser,
-    which is a step-up when the Google account is the session's own.
+    which issues a new session in place of the old one (#1547).
     """
     client = client or Client(enforce_csrf_checks=True)
     query = start(client, **fields)
@@ -189,7 +189,8 @@ def unguarded():
 
 
 def stale_sign_in():
-    """Make the live Admin sign-ins six minutes old, past the fresh window.
+    """Make the live Admin sign-ins six minutes old, older than the retired
+    five-minute step-up window, which no action asks for since #1547.
 
     Shifting the application clock forward instead would record session
     activity in the future, which the SQL session guard refuses (#306).

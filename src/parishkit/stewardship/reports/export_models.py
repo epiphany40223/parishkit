@@ -178,7 +178,7 @@ class FamilyTestNamesSnapshot(ImmutableRecord):
 class TimelineExportSnapshot(ImmutableRecord):
     """One Family's timeline as its page showed it, captured when requested.
 
-    The page builds the timeline in Python (``family_timeline.read_timeline``),
+    The page builds the timeline in Python (``timelines.read_timeline``),
     so the web captures that same read into ``document`` and SQL checks
     everything around it (migration 0063): an Administrator requester, an
     admitted campaign, the Family's campaign, the document's closed shape and
@@ -452,6 +452,39 @@ class ExportRequest(ImmutableRecord):
             models.Index(
                 fields=("comparison_snapshot",), name="export_comparison_snapshot"
             ),
+        ]
+
+
+class ParticipationExportSnapshot(ImmutableRecord):
+    """The Response dashboard's Summary, frozen when its export is requested.
+
+    The page reads the statistics and the funnel in Python, so the web
+    captures that same read (``participation_summary.capture``) into
+    ``document`` in the request's own transaction, and SQL checks
+    everything around it (frozen migration 0142, #1557): one capture per
+    participation request, by its requester, from the web, before any
+    attempt, and the document's closed shape. Unlike the other captures it
+    names its request (the request is made first), and a deferred check
+    requires one on every participation request but a latest-data handoff.
+    """
+
+    request = models.OneToOneField(
+        ExportRequest, on_delete=models.PROTECT, related_name="summary_snapshot"
+    )
+    campaign = models.ForeignKey(
+        "stewardship_campaigns.Campaign", on_delete=models.PROTECT, db_index=False
+    )
+    actor_id = models.UUIDField(editable=False)
+    correlation_id = models.UUIDField(editable=False)
+    document = models.JSONField()
+
+    class Meta:
+        db_table = "stewardship_participation_export_snapshot"
+        indexes = [
+            models.Index(
+                fields=("correlation_id",), name="participation_export_correl"
+            ),
+            models.Index(fields=("campaign",), name="participation_export_campaign"),
         ]
 
 

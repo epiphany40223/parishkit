@@ -22,15 +22,14 @@
     the backup was requested, and the line under the button follows its
     progress (#1317).
   - ``refused``: why the step was refused, marked data-review-refusal so
-    the dialog shows it as drawn, with the shared step-up for a stale
-    sign-in, which returns to System health.
+    the dialog shows it as drawn.
 {% endcomment %}{% if backup_now.preview %}{% with preview=backup_now.preview %}<div data-review-answer data-review-done="{% translate 'Backup requested.' %}">
 <p id="backup-review-summary">{% if preview.offsite %}{% translate "This asks the server to take one backup soon, of the same kind as the scheduled ones, and to copy it off-site to Google Drive." %}{% else %}{% translate "This asks the server to take one backup soon, of the same kind as the scheduled ones; off-site copies are not set up, so it stays on the server only." %}{% endif %}</p>
-{% if preview.held %}<p class="notice">{% translate "A Family email send is in progress, so the backup will wait until the send finishes." %} <a href="{% url 'admin:family_email_progress' %}">{% translate "Family email progress" %}</a></p>{% endif %}
+{% if preview.held %}<p class="notice">{% translate "A Family email send is in progress, so the backup will wait until the send finishes." %} <a href="{% url 'admin:mail_queue' %}">{% translate "Mail queue" %}</a></p>{% endif %}
 <input type="hidden" name="key" value="{{ preview.key }}" data-review-preview>
 </div>{% endwith %}
 {% elif backup_now.requested %}{% include 'stewardship/system-health-backup-now.html' %}
-{% else %}<div data-review-refusal>{% if backup_now.refused == "reauthenticate" %}{% url 'admin:system_health' as here %}{% translate "taking a backup now" as step_up_action %}{% translate "Nothing was requested." as step_up_outcome %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action outcome=step_up_outcome next=here marker="backup-refused" marker_value="reauthenticate" %}
+{% else %}<div data-review-refusal>{% if backup_now.refused == "signed_out" %}{% translate "Nothing was requested." as signed_out_outcome %}{% include 'stewardship/components/signed-out-refusal.html' with marker="backup-refused" outcome=signed_out_outcome %}
 {% elif backup_now.refused == "busy" %}<p data-backup-refused="busy">{% translate "A backup is already requested, or a restore is under review, so no other can be requested now. The line under the button says when it was requested." %}</p>
 {% elif backup_now.refused == "denied" %}<p data-backup-refused="denied">{% translate "The server refused this backup request, so nothing was requested. System logs record why; ask the server operator to check the database grants." %}</p>
 {% else %}<p data-backup-refused="invalid">{% if backup_now.refusal_text %}{{ backup_now.refusal_text }}{% else %}{% translate "That request could not be read. Nothing was requested; try again." %}{% endif %}</p>{% endif %}</div>{% endif %}

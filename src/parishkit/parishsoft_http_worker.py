@@ -11,8 +11,9 @@ it exits when stdin closes or its parent process disappears.
 
 It is read-only unless its key frame also carries ``"contact_writes": true``,
 which only the census publication session sends (#528, BG-09). Such a
-helper additionally admits the one Member contact PUT; every other helper
-refuses any PUT frame, whatever its parent asks.
+helper additionally admits the one Member contact PUT, but in a ``local``
+request only to the local fake (``contact_put_admitted``, #1884); every
+other helper refuses any PUT frame, whatever its parent asks.
 """
 
 import json
@@ -29,26 +30,72 @@ from parishkit.parishsoft import DEFAULT_API_BASE_URL
 
 MAX_REQUEST_BYTES = 65536
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
-# Every request names the deployment profile it was made under. The helper
-# starts with an empty environment and cannot learn the profile itself; the
-# field decides the one base URL the allowlist admits.
-REQUEST_FIELDS = frozenset({"method", "url", "parameters", "timeout", "profile"})
+# Every request names the deployment profile it was made under and the one
+# ParishSoft base URL its deployment chose. The helper starts with an empty
+# environment and cannot learn either itself; the two fields decide the one
+# base URL the allowlist admits.
+REQUEST_FIELDS = frozenset(
+    {"method", "url", "parameters", "timeout", "profile", "base_url"}
+)
 # The profiles a request may name (the stewardship DeploymentProfile values; a
-# test keeps the two aligned) and the one base URL each may reach. The local
-# laptop environment's fake ParishSoft is reachable only from a ``local``
-# request, and a ``local`` request reaches nothing else; every other profile
-# reaches only the real API. This shared module owns the mapping so the helper
-# stays independent of the application's deployment code.
+# test keeps the two aligned). This shared module owns the base-URL rule so
+# the helper stays independent of the application's deployment code.
 PROFILES = frozenset({"development", "test", "production", "local"})
 LOCAL_PROFILE = "local"
 LOCAL_SOURCE_BASE_URL = "http://fake-parishsoft:8080/api/v2"
+# The only two ParishSoft base URLs a request may name (#1399): the real API,
+# in every profile, and the local laptop environment's fake, only in a
+# ``local`` request. The deployment's ``parishsoft_base_url`` setting picks
+# one; ``default_base_url`` is the choice when it is unset.
+BASE_URLS = frozenset({DEFAULT_API_BASE_URL, LOCAL_SOURCE_BASE_URL})
 
 
-def admitted_base_url(profile):
-    """The one base URL a request made under ``profile`` may contact."""
+def _profile(profile):
+    """Return ``profile`` if it is one of the helper's profile names."""
     if type(profile) is not str or profile not in PROFILES:
         raise ValueError("Invalid bounded source profile.")
-    return LOCAL_SOURCE_BASE_URL if profile == LOCAL_PROFILE else DEFAULT_API_BASE_URL
+    return profile
+
+
+def default_base_url(profile):
+    """The base URL a profile reaches when its deployment names none.
+
+    The fake in LOCAL and the real API in every other profile, which is what
+    each profile reached before the setting existed.
+    """
+    if _profile(profile) == LOCAL_PROFILE:
+        return LOCAL_SOURCE_BASE_URL
+    return DEFAULT_API_BASE_URL
+
+
+def admitted_base_url(profile, base_url):
+    """The one base URL a request made under ``profile`` may contact.
+
+    ``base_url`` is the deployment's choice. It must be one of the two
+    ``BASE_URLS``, and the fake is admitted only for a ``local`` request, so
+    a Production helper refuses it even if a parent passed it.
+    """
+    if (
+        type(base_url) is not str
+        or base_url not in BASE_URLS
+        or (base_url == LOCAL_SOURCE_BASE_URL and _profile(profile) != LOCAL_PROFILE)
+    ):
+        raise ValueError("Invalid bounded source base URL.")
+    _profile(profile)
+    return base_url
+
+
+def contact_put_admitted(profile, base_url):
+    """Whether a request under ``profile`` to ``base_url`` may send the PUT.
+
+    The one rule for ParishSoft writes (#1884), applied by the deployment
+    loader, the publication session and every helper request. Outside LOCAL
+    it admits every admitted base URL, as before. A ``local`` request may
+    write only to the local fake, never to the real API, so pk-local can run
+    census publication end to end while it cannot reach a real record.
+    """
+    base_url = admitted_base_url(profile, base_url)
+    return profile != LOCAL_PROFILE or base_url == LOCAL_SOURCE_BASE_URL
 
 
 class InvalidSourceResponse(ValueError):
@@ -78,13 +125,14 @@ CONTACT_WRITES = re.compile(r"members/[1-9][0-9]{0,17}/contact")
 def validate_request(value, *, contact_writes=False):
     """Reject arbitrary origins/methods, redirects, large input and extra options.
 
-    ``contact_writes`` admits the Member contact PUT too; only a helper
-    started for census publication passes it.
+    ``contact_writes`` admits the Member contact PUT too, where
+    ``contact_put_admitted`` allows it (in a ``local`` request, only to
+    the fake); only a helper started for census publication passes it.
     """
     if type(value) is not dict or set(value) != REQUEST_FIELDS | {"api_key"}:
         raise ValueError("Invalid bounded source request.")
     method, url = value["method"], value["url"]
-    prefix = admitted_base_url(value["profile"]) + "/"
+    prefix = admitted_base_url(value["profile"], value["base_url"]) + "/"
     if type(url) is not str or not url.startswith(prefix):
         raise ValueError("Invalid bounded source endpoint.")
     endpoint = url[len(prefix) :]
@@ -92,7 +140,11 @@ def validate_request(value, *, contact_writes=False):
         (method == "POST" and endpoint in READ_POSTS)
         or (method == "GET" and READ_GETS.fullmatch(endpoint))
         or (
+            # A LOCAL deployment may read the real ParishSoft (#1399) but
+            # never writes to it, whatever its parent asks; it writes only
+            # to the local fake (#1884).
             contact_writes is True
+            and contact_put_admitted(value["profile"], value["base_url"])
             and method == "PUT"
             and CONTACT_WRITES.fullmatch(endpoint)
         )

@@ -55,6 +55,14 @@ from .task_wording import (
 # The region of Refresh from ParishSoft that shows the run it requested
 # (accounts.refresh_views); its status poll asks for that page's wording.
 REFRESH_RUN = "refresh-run"
+# The region of Update ParishSoft that shows the check it requested
+# (reports.census_publication_views, #528); its poll asks for that page's
+# wording, and for a check refused for an unconfirmed contact read.
+PUBLICATION_CHECK = "publication-check"
+# The region of Update ParishSoft that shows its newest plan and that plan's
+# update run (#1688); the run's status poll asks for that page's wording
+# (?view=update).
+UPDATE_RUN = "publication-plan"
 
 
 def _error(code, status):
@@ -113,9 +121,13 @@ def _read_once(request, identifier, *, counts_only, audit):
             instant = database_now()
             if counts_only:
                 data, count = {"as_of": instant, "counts": _counts(instant)}, 0
-                from .delivery_metadata import unknown_count
+                from .delivery_metadata import mode_split, uncertain_by_mode
 
-                data["delivery_unknown"] = unknown_count()
+                # The status bar's two counts (#1576): this mode's and the
+                # other mode's, each what its Sent mail link lists.
+                unknown = mode_split(uncertain_by_mode(), configuration.mode)
+                data["delivery_unknown"] = unknown["count"]
+                data["delivery_unknown_other"] = unknown["other"]
             else:
                 data, count = (
                     _listing(window, state, task_type, sort, instant)
@@ -219,7 +231,7 @@ TASK_NAMES = {
     "campaign_boundary": _("Campaign start or end"),
     "campaign_mail_test": _("Campaign test email"),
     "census_publication_preflight": _("Checking census changes against ParishSoft"),
-    "census_publication": _("Publishing census changes to ParishSoft"),
+    "census_publication": _("Updating ParishSoft with census changes"),
     "daily_digest_prepare": _("Preparing the daily Admin report"),
     "daily_digest_finalize": _("Finishing the daily Admin report"),
     "weekly_digest_prepare": _("Preparing the weekly Admin report"),
@@ -240,6 +252,7 @@ TASK_NAMES = {
     "report_facts": _("Updating report figures"),
     "report_fact_verification": _("Checking report figures"),
     "security_prepare": _("Preparing a security alert email"),
+    "leader_email_prepare": _("Preparing Ministry leader emails"),
 }
 
 
@@ -346,13 +359,48 @@ def task_status(request, task_id):
     """
     # Refresh from ParishSoft polls with ?view=refresh (#521): the region
     # there sits in its own page region and has no history or Retry panel
-    # below it, so it is worded for that page. Any other query is ignored.
-    region = {"region_id": REFRESH_RUN} if request.GET.get("view") == "refresh" else {}
+    # below it, so it is worded for that page. Update ParishSoft's check
+    # polls with ?view=publication (#528) and its update run with
+    # ?view=update (#1688), each for its own wording. Any other query is
+    # ignored.
+    view = request.GET.get("view")
+    region = {"region_id": REFRESH_RUN} if view == "refresh" else {}
     # The region shows no history, so history paging does not apply here.
     request.GET = QueryDict()
     result, context = _task_read(request, task_id)
     if context is None:
         return result
+    if view == "load" and context["is_refresh"]:
+        # Load ParishSoft data, the Campaign setup step (#1404 PR 5), polls
+        # with ?view=load for its own live region: the refresh's stage boxes
+        # instead of the task's status panel. Only a succeeded run asks
+        # whether the campaign has its Families (one query, once).
+        from parishkit.stewardship.accounts import campaign_wizard
+
+        task = context["task"]
+        families = (
+            task["state"] == "succeeded"
+            and campaign_wizard.current_campaign_has_families()
+        )
+        response = render(
+            request,
+            "stewardship/campaign-load-status.html",
+            campaign_wizard.load_status(task, families=families),
+        )
+        return _finish_html(request, result, response, task_id, audit=False)
+    if view == "update":
+        # Update ParishSoft's run (#1688), worded for that page's plan region.
+        region = {"region_id": UPDATE_RUN, "update_run": True}
+    if view == "publication":
+        # Read the audit table only now: _task_read has checked that the
+        # viewer may see this task (#528).
+        from parishkit.stewardship.reports.census_publication import read_unconfirmed
+
+        region = {
+            "region_id": PUBLICATION_CHECK,
+            "publication_check": True,
+            "read_unconfirmed": read_unconfirmed(task_id),
+        }
     response = render(
         request, "stewardship/background-task-status.html", context | region
     )

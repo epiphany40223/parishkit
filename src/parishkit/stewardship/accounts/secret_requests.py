@@ -18,6 +18,7 @@ from django.core.exceptions import ValidationError
 from django.db import connection, transaction
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.runtime_grants import AUTOMATION_SECRET_TARGETS
 from parishkit.stewardship.service_boundaries import ALLOWED_SECRETS
 from parishkit.stewardship.storage import (
     StaleRecordError,
@@ -120,17 +121,29 @@ def stage_secret_request(
     candidate_fingerprint=None,
     provider_settings=None,
     admit=None,
+    automation_session_id=None,
 ):
     """Record a trusted, already sealed staging reference with exact retry identity.
 
-    ARC-04/ARC-06 own fresh authentication and may choose a shorter staging TTL;
+    ARC-04/ARC-06 own authentication and may choose a shorter staging TTL;
     this storage layer enforces ordering and a hard 24-hour lifetime ceiling.
     An identical retry returns the original state, including after expiry/cleanup.
     A server-selected lifetime starts at first intake, never at form rendering;
     retries reuse that durable deadline rather than extending the reservation.
+    ``automation_session_id`` names the automation session a command-line
+    request is made through (None from a browser); the SQL guards then
+    require that session live at intake and at the staged-to-testing step
+    (#1763), and it is part of the retry identity.
     """
     _identifiers(request_id, staging_reference, actor_id, correlation_id)
     _target(target)
+    if automation_session_id is not None:
+        _identifiers(automation_session_id)
+        # Only the key-replacement targets take an automation session's
+        # request; the SQL state guard would leave any other staged (and
+        # its target reserved) until it expired.
+        if target not in AUTOMATION_SECRET_TARGETS:
+            raise ConfigError("This credential cannot be replaced from a session.")
     if provider_settings is not None:
         provider_settings = validated_context(target, provider_settings)
         if sealed_candidate is None:
@@ -185,6 +198,7 @@ def stage_secret_request(
         expires_at=expires_at,
         expected_fingerprint=expected_fingerprint,
         required_consumers=sorted(required_consumers),
+        automation_session_id=automation_session_id,
     )
     with _transaction():
         if admit is not None and (not callable(admit) or admit() is not True):

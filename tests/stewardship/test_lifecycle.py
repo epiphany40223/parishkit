@@ -67,7 +67,7 @@ def test_transition_registry_rejects_unlisted_sources(state, action):
     rule = TRANSITIONS[action]
     assert transition_audit_event(action) == "campaign_" + action.value
     if rule.actor == "administrator":
-        assert rule.reauthentication and rule.confirmation
+        assert rule.confirmation
 
 
 def test_activation_withdrawal_close_and_reopen_races():
@@ -316,7 +316,7 @@ def test_guard_actor_and_mode_contract():
         assert rule.actor == actor
         assert rule.modes == frozenset(Mode(mode) for mode in modes.split())
         assert rule.guards == frozenset(guards.split())
-        assert rule.reauthentication == rule.confirmation == (actor == "administrator")
+        assert rule.confirmation == (actor == "administrator")
 
 
 def test_overdue_boundaries_preserve_order_without_reopening_access():

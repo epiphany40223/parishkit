@@ -4,6 +4,12 @@
    labels right-aligned up to the colon and the values left-aligned. The
    script places it beside the inspected date and keeps it inside the chart. */
 .digest-figure { position: relative; }
+/* The hover guide line (#1536): a faint vertical line at the inspected
+   date, over every panel of the image. It is drawn over the figure, never
+   in the flow, so it moves nothing, and a print never shows it. */
+.digest-guide { position: absolute; width: 0; border-left: 1px solid var(--ink); opacity: 0.5; pointer-events: none; }
+.digest-guide:not(.digest-guide-open) { display: none; }
+@media print { .digest-guide { display: none; } }
 .digest-tip { position: absolute; z-index: 1; pointer-events: none; padding: 0.5rem 0.75rem; background: var(--paper); color: var(--ink); border: 1px solid var(--control-border); border-radius: var(--radius-small); box-shadow: 0 2px 8px rgb(0 0 0 / 18%); font-size: 1rem; line-height: 1.4; white-space: nowrap; }
 .digest-tip-date { margin: 0 0 0.25rem; font-size: 0.875rem; font-weight: 600; color: var(--muted); }
 /* Override the page-wide dl/dt/dd grid in ui-v1.css, whose gap and minimum

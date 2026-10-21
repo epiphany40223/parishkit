@@ -1,9 +1,12 @@
-"""Home's Next steps and Today line, signed in for real (ADM-12.21, NAV-18).
+"""Home's Next steps, signed in for real (ADM-12.21, NAV-18).
 
-The steps follow the viewer's own menu: each is a link only while the menu
-offers its page and otherwise names the menu's reason. The Today count rides
-on Home's Family participation statement, and the test email's revision is
-read only for an Administrator on a Testing draft.
+Home is the Administrator's (#1726): Staff and Ministry leaders sign in to
+My review work instead, which ``test_review_work_postgresql`` and
+``test_my_ministries_postgresql`` cover. The steps follow the viewer's own
+menu: each is a link only while the menu offers its page and otherwise names
+the menu's reason. Since #1673 each step is a link card and the 24-hour
+response count is a Responses tile, riding on Home's Family participation
+statement; the test email's revision is read only on a Testing draft.
 """
 
 import re
@@ -21,10 +24,8 @@ from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.responses.models import Submission
 
 from ..content_factory import content
-from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import add_draft, change
-from .leader_builders import make_leader
 from .test_background_grants_postgresql import task_login
 from .test_ministry_exports_postgresql import leader
 from .test_ministry_reports_postgresql import actor, setup
@@ -40,59 +41,26 @@ def panel(body):
 
 
 def steps(html):
-    """Each step's text, tags stripped, in order."""
+    """Each step card's text, tags stripped and spaces collapsed, in order."""
     return [
-        re.sub(r"<[^>]+>", "", item)
-        for item in re.findall(r"<li data-next-step>(.*?)</li>", html, re.S)
+        " ".join(re.sub(r"<[^>]+>", " ", item).split())
+        for item in re.findall(r"<li [^>]*data-link-card>(.*?)</li>", html, re.S)
     ]
 
 
-def sign_in(store, google, role):
-    """Sign in as ``role`` on the current draft; return the browser."""
-    if role == "ministry_leader":
-        make_leader(store, Campaign.objects.get(), "reader@example.org")
-        google[0]["email"] = "reader@example.org"
-    elif role == "staff":
-        rule = address("reader@example.org", roles=("staff",))
-        change(
-            store,
-            store.active(),
-            uuid4(),
-            [{"operation": "add", "section": "login_rules", **rule}],
-        )
-        google[0]["email"] = "reader@example.org"
-    browser, response = signed_in()
-    assert response.status_code == 302
-    return browser
+def recent_tile(body):
+    """The Responses panel's past-24-hours value (#1673), or None."""
+    found = re.search(
+        rb'data-stat="recent"><span class="stat-label">[^<]*</span> '
+        rb'<span class="stat-value">([^<]*)</span>',
+        body,
+    )
+    return found[1].decode() if found else None
 
 
-@pytest.mark.parametrize(
-    ("role", "expected"),
-    [
-        (
-            "administrator",
-            [
-                # The Campaign setup stepper's way back in (#1404): adding
-                # the invitation completed Pages and emails.
-                "Continue campaign setup: Dates and mail schedules",
-                "Campaign settings",
-                "Pages and emails",
-                "Dates and mail schedules",
-                "Preview and test email",
-                "Go-live readiness",
-                "Response dashboard",
-            ],
-        ),
-        ("staff", ["Response dashboard", "Participation"]),
-        # Ministry requests carries the follow-up queue's open count (#1133).
-        ("ministry_leader", ["Ministry requests — 0 open"]),
-    ],
-)
-def test_testing_draft_offers_each_roles_next_steps(
-    auth_service, google, role, expected
-):
-    """A Testing draft's Next steps, by role, each linking the viewer's menu
-    entry; the Administrator's test email opens the initial invitation."""
+def test_testing_draft_offers_the_setup_next_steps(auth_service, google):
+    """A Testing draft's Next steps, each linking the Administrator's menu
+    entry; the test email opens the initial invitation."""
     store = auth_service.store
     add_draft(store, store.active(), uuid4())
     # The initial invitation's email, which Preview and test email opens.
@@ -100,19 +68,27 @@ def test_testing_draft_offers_each_roles_next_steps(
     invitation = content(owner, kind="email", slot="initial")
     patch = [{"operation": "add", "section": "content", **invitation}]
     assert change(store, store.active(), uuid4(), patch).state == "applied"
-    browser = sign_in(store, google, role)
+    browser, response = signed_in()
+    assert response.status_code == 302
     body = browser.get("/admin/").content
     html = panel(body)
-    assert html, "Home shows Next steps on a current campaign"
-    assert steps(html) == expected
-    if role == "administrator":
-        assert ContentVersion.objects.filter(record_id=invitation["id"]).exists()
-        assert f'href="/admin/campaign/content/test/{invitation["id"]}/"' in html
-        assert 'href="/admin/campaign/settings/"' in html
-    # Only those who read campaign reports get the response count.
-    assert ("Today: 0 Families responded in the past 24 hours." in html) == (
-        role != "ministry_leader"
-    )
+    assert steps(html) == [
+        # The Campaign setup stepper's way back in (#1404): the draft has no
+        # Families yet, so Load ParishSoft data, step 2 (PR 5), is the first
+        # step not done.
+        "Continue campaign setup: Load ParishSoft data",
+        "Campaign settings",
+        "Pages and emails",
+        "Dates and mail schedules",
+        "Preview and test email",
+        "Go live",
+    ]
+    assert ContentVersion.objects.filter(record_id=invitation["id"]).exists()
+    assert f'href="/admin/campaign/content/test/{invitation["id"]}/"' in html
+    assert 'href="/admin/campaign/settings/"' in html
+    # The response count is a tile, not a Today line (#1673).
+    assert "Families responded" not in html and "Today:" not in html
+    assert recent_tile(body) == "0"
     # The panel comes after every other panel on Home.
     assert b"<section" not in body[body.index(b"data-next-steps") :]
 
@@ -126,9 +102,10 @@ def test_no_current_campaign_shows_no_next_steps(auth_service, google):
     assert b"No campaign yet" in body or b"no current campaign" in body
 
 
-def test_active_campaign_steps_counts_and_today(response_service, google):
-    """On an active campaign, an Administrator's steps carry the open counts
-    and Today counts the Families who responded in the past 24 hours."""
+def test_active_campaign_steps_and_counts(response_service, google):
+    """On an active campaign, an Administrator's step cards carry the open
+    counts and a Responses tile counts the Families who responded in the
+    past 24 hours."""
     harness = setup(response_service)
     browser, _, _, _ = leader(harness, google, roles=("administrator",))
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -136,16 +113,19 @@ def test_active_campaign_steps_counts_and_today(response_service, google):
     assert response.status_code == 200
     html = panel(body)
     listed = steps(html)
-    assert [step.split(" — ")[0] for step in listed] == [
-        "Response dashboard",
+    assert [re.sub(r" \d.*", "", step) for step in listed] == [
+        "Census changes",
+        "Ministry requests to enter by hand",
         "Additional information",
         "Ministry requests",
-        "Family email progress",
-        "Outgoing mail",
+        "Mail queue",
+        "Sent mail",
     ]
+    # No request is resolved yet, so nothing waits to be entered (#1590).
+    assert "Ministry requests to enter by hand 0 to enter by hand" in listed
     # The follow-up request the harness made is open in the queue.
-    assert "Ministry requests — 2 open" in listed
-    assert 'href="/admin/mail/outgoing/"' in html
+    assert "Ministry requests 2 open" in listed
+    assert 'href="/admin/mail/sent/"' in html
     since = database_now() - timedelta(hours=24)
     recent = (
         Submission.objects.filter(
@@ -156,28 +136,13 @@ def test_active_campaign_steps_counts_and_today(response_service, google):
         .count()
     )
     assert recent >= 1
-    noun = "Family" if recent == 1 else "Families"
-    verb = f"Today: {recent} {noun} responded in the past 24 hours."
-    assert verb in html
-
-
-def test_ministry_leader_today_line_counts_their_open_requests(
-    response_service, google
-):
-    """A leader's Today line sums My Ministries; Next steps link the queue."""
-    harness = setup(response_service)
-    browser, _, _, _ = leader(harness, google)
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response, body = read(browser, "/admin/")
-    assert response.status_code == 200
-    html = panel(body)
-    assert "Today: 1 open request in your Ministries." in html
-    assert "Families responded" not in html
-    assert [step.split(" — ")[0] for step in steps(html)] == ["Ministry requests"]
+    assert recent_tile(body) == str(recent)
+    assert "Today:" not in html
 
 
 def test_status_read_leaves_the_home_only_values_out(response_service):
-    """The command line's status read computes neither Today nor the test email."""
+    """The command line's status read computes neither the 24-hour count nor
+    the test email."""
     harness = setup(response_service)
     principal = actor(harness, ("administrator",), ())
     configuration = SystemConfiguration.objects.select_related(
@@ -191,3 +156,40 @@ def test_status_read_leaves_the_home_only_values_out(response_service):
     assert "recent" not in status["families"] and "recent" in home["families"]
     # An active campaign admits no test email from Home.
     assert "test_email" not in home
+
+
+def test_active_families_with_a_response_leave_out_an_inactive_family(
+    response_service,
+):
+    """Home's "Active Families with a response" tile (#1673) counts only
+    active Families: a Family made inactive (and so no longer eligible, as
+    the table's constraint requires) keeps its response in the all-Families
+    count but leaves this one."""
+    from django.db.models import F
+
+    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+
+    harness = setup(response_service)
+    principal = actor(harness, ("administrator",), ())
+    configuration = SystemConfiguration.objects.select_related(
+        "active_configuration"
+    ).get()
+    configuration.current_campaign = harness.campaign
+    rows = FamilyCampaign.objects.filter(campaign=harness.campaign)
+    answered = rows.filter(active=True, first_live_submission_id__isnull=False)
+    before = answered.count()
+    assert before >= 1
+    rows.filter(pk=answered.values("pk")[:1]).update(
+        active=False, portal_eligible=False, version=F("version") + 1
+    )
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        home = summary(principal, configuration, database_now(), home=True)
+    families = home["families"]
+    assert families["active_responded"] == before - 1
+    assert (
+        families["responded"]
+        == rows.filter(first_live_submission_id__isnull=False).count()
+    )
+    assert families["responded"] == families["active_responded"] + 1
+    tile = next(t for t in home["family_tiles"] if t.key == "responded")
+    assert tile.text == str(before - 1)

@@ -70,7 +70,10 @@ store again. No installer can claim any request in this increment.
 
 ## Remaining integration
 
-ARC-04/ADM-03 own current Admin, CSRF, and fresh Google reauthentication checks.
+ARC-04/ADM-03 own current Admin and CSRF checks. Since #1547 no check asks for a
+recent sign-in; a request made through an automation session records that
+session and still needs it live, at intake and at the staged-to-testing step
+(#1763). A browser request records no session and gets no such check.
 ARC-06/OPS-02 own target-key sealing, shorter operational TTL policy, orphan cleanup,
 target-isolated storage/queues/mounts/permissions, and service identity grants.
 DAT-01/ARC-06 still need validated/tested/installed checkpoints, expected-prior

@@ -29,11 +29,12 @@
 #   seed-testing HOST_SCRIPT            switch to the post-setup snapshot and move it to
 #                                       real time: a Testing-mode draft campaign
 #   wipe                                remove the containers and the root (marker required)
-#   deploy TAG SCHEMA_CHANGE HOST_SCRIPT [BULK LATENCY]
+#   deploy TAG SCHEMA_CHANGE HOST_SCRIPT [BULK LATENCY [PARISHSOFT]]
 #                                       upgrade the running deployment to TAG with the
 #                                       scripted upgrade's host half in local mode (OPS-10.10);
 #                                       BULK on|off|keep and LATENCY ms|keep choose what it
-#                                       renders for BG-12's rehearsal
+#                                       renders for BG-12's rehearsal, PARISHSOFT
+#                                       real|fake|keep which ParishSoft it reads (#1399)
 #   rollback HOST_SCRIPT                its image-only rollback to the image deploy replaced
 #   seed RESPONSE_SCALE                 seed the campaign through the local seeder's
 #                                       phases under the fake clock (OPS-10.07)
@@ -52,6 +53,8 @@
 #   finish-setup                        after the browser wizard: acknowledge its frozen
 #                                       attempt's credentials (runbook step 5)
 #   sign-in EMAIL                       print a local test sign-in link (OPS-10.08)
+#   fake-parishsoft WORDS...            change or show the fake ParishSoft's data, or
+#                                       run the Admin's full refresh of it (#1780)
 #   ca                                  print Caddy's local root certificate
 #
 # Safety rules (local-environment specification, "Operator script"): every
@@ -162,6 +165,23 @@ clock_mode() {
     esac
 }
 
+# The sentinel OAuth client's ID (runtime_web.LOCAL_OAUTH_SENTINEL; a test
+# pins this copy to it).
+OAUTH_SENTINEL_ID=local-environment-sentinel.invalid
+
+refuse_real_oauth_client() {
+    # A real Google OAuth client cannot run under the fake clock: web refuses
+    # to start with one (runtime_web.admit_google_clock, #1399). Refuse before
+    # anything starts or stops under the override, so the developer gets this
+    # message instead of a web that will not start. Only a parsable client
+    # document other than the sentinel is refused.
+    local id
+    id=$(jq -r '.client_id // empty' "$root/credentials/google_oauth/credential" 2>/dev/null || true)
+    if [ -n "$id" ] && [ "$id" != "$OAUTH_SENTINEL_ID" ]; then
+        refuse "A real Google OAuth client is installed, and this deployment runs under the fake clock, which it cannot use; reinstall the sentinel OAuth client first (guide: Signing in with Google)."
+    fi
+}
+
 initial_files() {
     # The initial topology, plus the fake-clock override when the marker says
     # fake: the install steps and the stores then run under the fake clock
@@ -172,6 +192,7 @@ initial_files() {
     if [ "$mode" = fake ]; then
         [ -f "$services/compose.faketime.json" ] ||
             refuse "Clock mode is fake but $services/compose.faketime.json is missing."
+        refuse_real_oauth_client
         printf -- '-f\n%s\n' "$services/compose.faketime.json"
     fi
 }
@@ -256,6 +277,7 @@ compose_files() {
     if [ "$mode" = fake ]; then
         [ -f "$services/compose.faketime.json" ] ||
             refuse "Clock mode is fake but $services/compose.faketime.json is missing."
+        refuse_real_oauth_client
         printf -- '-f\n%s\n' "$services/compose.faketime.json"
     fi
 }
@@ -445,9 +467,14 @@ ENV
 
     step "Provisioning the runtime root"
     install -d -o 10001 -g 10001 -m 0700 "$root"
+    # Census publication (#1884) is on from the start: a new deployment reads
+    # the fake ParishSoft, the only one pk-local may write to. An operational
+    # switch, so it reaches the service documents but not the provisioning
+    # record; every deploy renders it again (stewardship-upgrade-host.sh).
     "${isolated[@]}" \
         --mount "type=bind,source=$root,target=$root" \
         --mount "type=bind,source=$yaml,target=/run/operator.yaml,readonly" \
+        -e PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION=1 \
         "$IMAGE" provision-runtime --config /run/operator.yaml --image "$IMAGE" | tail -1
     # The marker can only be written now: provisioning requires an empty
     # root. From here on every destructive command recognizes this root.
@@ -461,9 +488,10 @@ ENV
         "$IMAGE" collect-static --destination "$root/cache/static" | tail -1
 
     step "Installing the sentinel OAuth client and the fake-ParishSoft configuration"
-    # The sentinel has the client document's shape and no real client; LOCAL
-    # admits only it once OPS-10.05 lands, and an image without that rule
-    # accepts it as an ordinary client document.
+    # The sentinel has the client document's shape and no real client, so a
+    # new deployment has no Google sign-in; only LOCAL admits it. A developer
+    # may later replace it with a real localhost-only client (#1399; the
+    # guide's "Signing in with Google").
     image_constant parishkit.stewardship.runtime_web LOCAL_OAUTH_DOCUMENT \
         '{"client_id": "local-environment-sentinel.invalid", "client_secret": "local-environment-sentinel-not-a-secret"}' |
         private_file "$root/credentials/google_oauth/credential"
@@ -958,7 +986,7 @@ switch_to() {
     # the stop is reported by the EXIT trap with the whole restore that
     # recovers (the deployment record stays truthful throughout).
     local name=$1 host_script=$2 dir="$snapshots/$1" plan snap_image clock
-    local run_image run_previous bulk latency
+    local run_image run_previous bulk latency parishsoft
     check_name "$name"
     require_marker
     load_env
@@ -1010,6 +1038,17 @@ switch_to() {
         bulk=$(jq -r '.deployment.bulk_family_send // false' "$services/worker.yaml")
         if [ "$bulk" = true ]; then bulk=on; else bulk=off; fi
         latency=$(jq -r '.deployment.local_smtp_latency_ms // 0' "$services/worker.yaml")
+        # The ParishSoft choice (#1399): unset is the fake, and the only
+        # other value the host half renders is the real API.
+        parishsoft=$(jq -r '.deployment.parishsoft_base_url // empty' "$services/worker.yaml")
+        case "$parishsoft" in
+            "") parishsoft=fake ;;
+            https://ps-fs-external-api-prod.azurewebsites.net/api/v2) parishsoft=real ;;
+            *) refuse "The running ParishSoft base URL is not the real API; refusing." ;;
+        esac
+        # The mail redirect (#1399) is carried over too: unset is "off".
+        redirect=$(jq -r '.deployment.mail_redirect // empty' "$services/worker.yaml")
+        redirect=${redirect:-off}
         step "Switching to the $name snapshot (taken on $snap_image): restoring it whole, then upgrading it to $run_image"
         phase=stopped
         stop_services
@@ -1022,6 +1061,7 @@ switch_to() {
         [ "$clock" = normal ] || build_faketime_images
         start_services --force-recreate
         export PARISHKIT_LOCAL_BULK_FAMILY_SEND=$bulk PARISHKIT_LOCAL_SMTP_LATENCY_MS=$latency
+        export PARISHKIT_LOCAL_PARISHSOFT=$parishsoft PARISHKIT_LOCAL_MAIL_REDIRECT=$redirect
         # The host half reports its own failures; the trap adds the recovery.
         phase="" phase_advice=""
         trap - EXIT
@@ -1122,11 +1162,13 @@ cmd_deploy() {
     # the local differences the host half's header lists (specification,
     # "Operator script"). load_env exported the deployment's debug-logging
     # setting, which the host half keeps. BULK and LATENCY (BG-12's
-    # rehearsal) reach the host half as the two local-mode variables it
-    # reads; "keep" carries the current value over.
+    # rehearsal), PARISHSOFT and MAIL_REDIRECT (#1399) reach the host half as
+    # the local-mode variables it reads; "keep" carries the current value over.
     local tag=$1 schema_change=$2 host_script=$3 previous
     export PARISHKIT_LOCAL_BULK_FAMILY_SEND=${4:-keep}
     export PARISHKIT_LOCAL_SMTP_LATENCY_MS=${5:-keep}
+    export PARISHKIT_LOCAL_PARISHSOFT=${6:-keep}
+    export PARISHKIT_LOCAL_MAIL_REDIRECT=${7:-keep}
     require_marker
     load_env
     [ -f "$host_script" ] || refuse "No uploaded upgrade host script at $host_script; refusing."
@@ -1222,6 +1264,7 @@ web_oneoff_command() {
         jq -r '.services.web.tmpfs[] | "--tmpfs", .' "$services/compose.json")
     mode=$(clock_mode)
     if [ "$mode" = fake ]; then
+        refuse_real_oauth_client
         file="$services/compose.faketime.json"
         web_image=$(jq -r '.services.web.image' "$file")
         while IFS= read -r line; do options+=("$line"); done < <(
@@ -1383,6 +1426,8 @@ cmd_seed() {
     printf 'normal\n' >"$clock_dir/mode"
     chown 10001:10001 "$clock_dir/mode" "$clock_dir/offset"
     # The late-added Family is served from now on (specification, "Fake configuration").
+    # stop_services above stopped the fake too, so no contact PUT it records
+    # in this file (#1884) can land between the read and the rewrite.
     jq --arg at "$(date -u +%FT%TZ)" '.release_at = $at' "$root/run/local/fake-parishsoft.json" |
         private_file "$root/run/local/fake-parishsoft.json"
     start_services --force-recreate
@@ -1704,6 +1749,7 @@ select_configured() {
     mode=$(clock_mode)
     dcc=(docker compose -f "$services/compose.json")
     if [ "$mode" = fake ]; then
+        refuse_real_oauth_client
         dcc+=(-f "$services/compose.faketime.json")
     fi
     dcc+=(-p "$project")
@@ -1802,6 +1848,115 @@ cmd_finish_setup() {
     finish_setup "$(jq -r '.requests.parishsoft // empty' <<<"$seed_result")" \
         "$(jq -r '.requests.google_workspace // empty' <<<"$seed_result")"
     echo "Setup complete in $(( $(date -u +%s) - began ))s."
+}
+
+reads_fake_parishsoft() {
+    # Succeeds only when every service document can be read and none names
+    # a ParishSoft base URL (#1399's default: the fake). After `deploy
+    # --parishsoft real` the worker reads the real API, which a fake edit
+    # cannot change and a refresh must never be aimed at from here. A
+    # document jq cannot read fails closed: callers run this under `||`,
+    # where errexit does not apply, so each failure returns explicitly.
+    local file value found=0
+    for file in "$services"/*.yaml; do
+        [ -f "$file" ] || continue
+        found=1
+        value=$(jq -r '.deployment.parishsoft_base_url // empty' "$file") || return 1
+        [ -z "$value" ] || return 1
+    done
+    [ "$found" = 1 ]
+}
+
+fake_parishsoft_pledge_defaults() {
+    # fake_parishsoft_pledge_defaults WORDS...: for a `pledge` edit without
+    # fund= or start=, print the current campaign's pledge fund and period
+    # start as those options (the seeder's read-only pledge-period step), so
+    # the pledge lands where the refresh reads giving. Prints nothing when
+    # both were given. It runs under `||` (errexit is off), so every
+    # failure is checked explicitly.
+    local word fund=0 start=0 value
+    for word in "$@"; do
+        case "$word" in fund=*) fund=1 ;; start=*) start=1 ;; esac
+    done
+    [ "$fund" = 0 ] || [ "$start" = 0 ] || return 0
+    [ "$(setup_completed)" = t ] || refuse "The setup wizard has not completed; give fund= and start= for the pledge."
+    seed_now=$(date -u +%FT%TZ) seed_scale=1
+    seed_step 600 pledge-period web web.yaml >&2 ||
+        refuse "Could not read the campaign's pledge fund and period (see above); give fund= and start=."
+    if [ "$fund" = 0 ]; then
+        value=$(jq -er .fund <<<"$seed_result" 2>/dev/null) ||
+            refuse "Could not read the campaign's pledge fund and period (see above); give fund= and start=."
+        printf 'fund=%s\n' "$value"
+    fi
+    if [ "$start" = 0 ]; then
+        value=$(jq -er .start <<<"$seed_result" 2>/dev/null) ||
+            refuse "Could not read the campaign's pledge fund and period (see above); give fund= and start=."
+        printf 'start=%s\n' "$value"
+    fi
+}
+
+cmd_fake_parishsoft() {
+    # fake-parishsoft WORDS... (#1780): change the fake ParishSoft's data,
+    # show it, or run the Admin's full refresh of it. Every form refuses
+    # unless this is a marked pk-local root whose deployment reads the fake
+    # and has the fake's configuration file; Production has neither.
+    local file="$root/run/local/fake-parishsoft.json" new line defaults status
+    local -a words=("$@")
+    require_marker
+    load_env
+    [ -f "$file" ] || refuse "No fake ParishSoft configuration at $file; refusing."
+    reads_fake_parishsoft ||
+        refuse "This deployment reads the real ParishSoft (deploy --parishsoft real), or a service document is unreadable; fake-parishsoft refuses. Deploy with --parishsoft fake first."
+    case "${1-}" in
+        "" | -h | --help | help)
+            refuse "fake-parishsoft needs a command; see tools/stewardship-local.sh --help" ;;
+        refresh)
+            [ $# -eq 1 ] || refuse "fake-parishsoft refresh takes no arguments"
+            [ "$(setup_completed)" = t ] || refuse "The setup wizard has not completed; there is nothing to refresh yet."
+            select_compose
+            seed_now=$(date -u +%FT%TZ) seed_scale=1
+            seed_step 1500 refresh web web.yaml
+            echo "Full ParishSoft refresh finished: $seed_result" ;;
+        show)
+            "${isolated[@]}" -i "$IMAGE" fake-parishsoft-edit "$@" <"$file" ;;
+        *)
+            # Everything that can refuse runs before the file is written, so
+            # a refusal leaves the file and the running fake in step.
+            select_compose
+            if [ "$1" = pledge ]; then
+                # A command substitution, not a process substitution, so a
+                # refusal inside it ends this command too.
+                defaults=$(fake_parishsoft_pledge_defaults "$@") || exit 1
+                while IFS= read -r line; do
+                    [ -z "$line" ] || words+=("$line")
+                done <<<"$defaults"
+            fi
+            # The fake stops before its file is read (#1884): it records each
+            # contact PUT that Update ParishSoft sends in this file, so a PUT
+            # answered while the edit runs would be lost when the new
+            # document replaces the file. A stopped fake answers no PUT (the
+            # write fails as unavailable, as in any ParishSoft outage); a
+            # refusal starts it again unchanged.
+            step "Stopping the fake ParishSoft for the edit"
+            "${dc[@]}" stop fake-parishsoft 2>&1 | quiet
+            # The image checks the edit against the generated parish and
+            # prints the new document; nothing is written unless it is one.
+            status=0
+            new=$("${isolated[@]}" -i "$IMAGE" fake-parishsoft-edit "${words[@]}" <"$file") || status=$?
+            if [ "$status" -ne 0 ] || ! jq -e 'type == "object" and has("seed")' >/dev/null <<<"$new"; then
+                "${dc[@]}" start fake-parishsoft 2>&1 | quiet
+                wait_until 120 "the fake ParishSoft to turn healthy" all_healthy fake-parishsoft
+                [ "$status" -eq 0 ] || exit "$status"
+                refuse "The edit command did not answer with a configuration document; nothing was changed."
+            fi
+            printf '%s\n' "$new" | private_file "$file"
+            # A container keeps a bind mount on the inode it started with,
+            # and private_file replaces the file, so the service is recreated.
+            step "Recreating the fake ParishSoft with the new data"
+            "${dc[@]}" up --detach --no-deps --force-recreate fake-parishsoft 2>&1 | quiet
+            wait_until 120 "the fake ParishSoft to turn healthy" all_healthy fake-parishsoft
+            echo "The fake ParishSoft now serves the edit; run 'fake-parishsoft refresh' (or Refresh from ParishSoft in the Admin portal) for the application to read it." ;;
+    esac
 }
 
 cmd_sign_in() {
@@ -1919,7 +2074,7 @@ cmd_spike() {
 # Long-running commands keep their whole log on the VM under /var/log, as
 # the upgrade script does; the short ones print only their answer.
 case "$command" in
-    build|up|snapshot|snapshot-delete|snapshot-restore|reset|wipe|seed|seed-testing|wizard|finish-setup|start|down|deploy|rollback|rehearse|spike)
+    build|up|snapshot|snapshot-delete|snapshot-restore|reset|wipe|seed|seed-testing|wizard|finish-setup|start|down|deploy|rollback|rehearse|spike|fake-parishsoft)
         # STEWARDSHIP_LOG_DIR lets the tests run this half without /var/log.
         log=${STEWARDSHIP_LOG_DIR:-/var/log}/stewardship-local-$command-$(date -u +%Y%m%dT%H%M%SZ).log
         exec > >(tee -a "$log") 2>&1
@@ -1943,7 +2098,8 @@ case "$command" in
     reset) cmd_reset "${1:?reset needs NAME}" ;;
     wipe) cmd_wipe ;;
     deploy)
-        [ $# -eq 3 ] || [ $# -eq 5 ] || refuse "deploy needs TAG SCHEMA_CHANGE HOST_SCRIPT [BULK LATENCY]"
+        [ $# -eq 3 ] || [ $# -eq 5 ] || [ $# -eq 6 ] || [ $# -eq 7 ] ||
+            refuse "deploy needs TAG SCHEMA_CHANGE HOST_SCRIPT [BULK LATENCY [PARISHSOFT [MAIL_REDIRECT]]]"
         cmd_deploy "$@" ;;
     rehearse) [ $# -eq 4 ] || refuse "rehearse needs DUE_IN SEND_ONLY TIMEOUT LABEL"; cmd_rehearse "$@" ;;
     spike) [ $# -eq 5 ] || refuse "spike needs FAMILIES SOURCES DURING_SEND WAIT LABEL"; cmd_spike "$@" ;;
@@ -1952,6 +2108,7 @@ case "$command" in
     wizard) cmd_wizard ;;
     finish-setup) cmd_finish_setup ;;
     sign-in) cmd_sign_in "${1:?sign-in needs EMAIL}" ;;
+    fake-parishsoft) cmd_fake_parishsoft "$@" ;;
     ca) cmd_ca ;;
     *) refuse "unknown VM command: $command" ;;
 esac

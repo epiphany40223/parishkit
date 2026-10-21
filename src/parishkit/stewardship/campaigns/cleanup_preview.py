@@ -92,7 +92,7 @@ def _sort_name(source_id, *, surname_only=False):
 
     NULL without a source snapshot or for a Family missing from it, so the
     table's nulls-last ordering lists those unnamed rows after every named
-    one in both directions, as Outgoing mail does. A blank surname sorts as
+    one in both directions, as Sent mail does. A blank surname sorts as
     the shown "Name not recorded in ParishSoft" (#1216).
     """
     if source_id is None:

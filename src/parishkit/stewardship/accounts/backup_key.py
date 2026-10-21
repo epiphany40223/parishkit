@@ -16,11 +16,6 @@ proof and never reaches the page source. The change itself is an ordinary
 configuration request: its intake audit is written in the same transaction,
 the configuration installer applies it, and the activation records a
 security event that every Administrator is told about.
-
-Starting a change and confirming it both need a Google sign-in from the
-last five minutes. A proved change whose sign-in went stale while the
-Administrator was at the key machine is kept in the session (a proved
-public key only) across the Google step-up, then reviewed.
 """
 
 import base64
@@ -56,7 +51,6 @@ from parishkit.stewardship.web.refusals import (
 from . import admin_navigation
 from .admin_editing import confirm, editable_configuration, form_action, sign_preview
 from .request_admission import historical_record_id
-from .sessions import FreshAuthenticationRequired, require_fresh
 
 TARGET = "backup_key"
 LABEL = _("Backup encryption key")
@@ -65,8 +59,7 @@ PROOF_SALT = "stewardship-backup-key-proof-v1"
 # Long enough to reach the key machine, short enough that a stolen page or
 # session is not a standing authority to change the key.
 PROOF_SECONDS = 900
-# Where a proved change waits across the Google step-up (see module docs).
-RESUME_KEY = "stewardship-backup-key-resume"
+
 # A pasted key or typed code is short, and a signed intent a few hundred
 # characters; anything longer is not one.
 MAX_FIELD = 200
@@ -264,11 +257,6 @@ def _patch(configuration, record, text):
 
 def _render(request, configuration, *, status=200, **context):
     """The key page: the key in use, and whichever step of a change is next."""
-    try:
-        require_fresh(request, record=False)
-        fresh = True
-    except FreshAuthenticationRequired:
-        fresh = False
     # Pasting and proving a new key are the first step of the change (#196).
     admin_navigation.place(request, flow="change", step="edit")
     # A refusal shows at its field and in the page's error summary, which
@@ -288,7 +276,6 @@ def _render(request, configuration, *, status=200, **context):
             "label": LABEL,
             "breadcrumb_label": LABEL,
             "current": key_status(configuration),
-            "fresh": fresh,
             "errors": errors,
             **context,
         },
@@ -309,8 +296,16 @@ def _field(request, name, limit=MAX_FIELD):
     return value
 
 
-def _review(request, service, configuration, actor, text):
-    """Show the proved change for confirmation: old and new key IDs."""
+def review_change(service, configuration, actor, text):
+    """The review of a proved key: ``(before, after, token)``.
+
+    ``before`` is the fingerprint of the key in use (None when it is not
+    known yet), ``after`` the proved key's and ``token`` the signed preview
+    the confirmation takes. The resulting configuration is built first, so
+    a change the configuration refuses is refused here. The page's review
+    and ``pk-admin integration backup-key preview`` both call this, so they
+    cannot drift.
+    """
     record = configured_key(configuration)
     patch = _patch(configuration, record, text)
     base = service.store.active()
@@ -319,7 +314,19 @@ def _review(request, service, configuration, actor, text):
     from .request_patch import build_candidate
 
     build_candidate(base, patch, candidate_id=uuid4())
-    current = key_status(configuration)
+    token = sign_preview(
+        actor=actor, configuration=configuration, patch=patch, salt=SALT
+    )
+    return (
+        key_status(configuration).fingerprint,
+        parse_public_key(text).fingerprint,
+        token,
+    )
+
+
+def _review(request, service, configuration, actor, text):
+    """Show the proved change for confirmation: old and new key IDs."""
+    before, after, token = review_change(service, configuration, actor, text)
     admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
@@ -332,70 +339,30 @@ def _review(request, service, configuration, actor, text):
             "changes": [
                 {
                     "label": _("Key fingerprint"),
-                    "before": current.fingerprint or _("Not known yet"),
-                    "after": parse_public_key(text).fingerprint,
+                    "before": before or _("Not known yet"),
+                    "after": after,
                 }
             ],
-            "preview": sign_preview(
-                actor=actor, configuration=configuration, patch=patch, salt=SALT
-            ),
+            "preview": token,
         },
     )
-
-
-def _fresh(request):
-    """Whether the Administrator signed in with Google in the last five minutes."""
-    try:
-        require_fresh(request, record=False)
-    except FreshAuthenticationRequired:
-        return False
-    return True
-
-
-def _step_up(request, configuration):
-    """Ask for the Google step-up and come back to review a proved change."""
-    return _render(request, configuration, proved=True, next=request.path)
-
-
-def _resume(request, service, configuration, actor):
-    """Review a change proved before the step-up, once it is fresh again.
-
-    The session holds only the signed intent of a proved change, whose key
-    is therefore a real public key. It is used once; a stale or foreign one
-    is dropped and the page starts over.
-    """
-    intent = request.session.get(RESUME_KEY)
-    if not _fresh(request):
-        return _step_up(request, configuration)
-    del request.session[RESUME_KEY]
-    try:
-        text = proved_key(load_intent(actor, configuration, intent))
-    except (ValueError, PermissionError, StaleRecordError, signing.BadSignature):
-        return _render(request, configuration)
-    return _review(request, service, configuration, actor, text)
 
 
 def backup_key_page(request, service, actor):
     """Show the key page, or take one step of a key change.
 
-    - GET shows the key in use and the field for a new public key, or
-      resumes a proved change after the Google step-up.
-    - ``challenge`` checks the pasted key and shows its sealed code. It needs
-      a recent Google sign-in, so the step-up happens before the offline work.
-    - ``preview`` checks the typed code and shows the change to confirm; if
-      the sign-in went stale meanwhile, it asks for the step-up first.
-    - ``confirm`` needs a recent sign-in again and records the configuration
-      request, like any settings change.
+    - GET shows the key in use and the field for a new public key.
+    - ``challenge`` checks the pasted key and shows its sealed code.
+    - ``preview`` checks the typed code and shows the change to confirm.
+    - ``confirm`` records the configuration request, like any settings
+      change.
     """
     configuration = editable_configuration(service)
     if request.method != "POST":
-        if isinstance(request.session.get(RESUME_KEY), str):
-            return _resume(request, service, configuration, actor)
         return _render(request, configuration)
     action = request.POST.get("action")
     if action == "confirm":
         form_action(request.POST, preview_fields=set())
-        require_fresh(request)
         return confirm(
             request,
             service,
@@ -407,7 +374,6 @@ def backup_key_page(request, service, actor):
         allowed = {"action", "csrfmiddlewaretoken", "public_key"}
         if set(request.POST) - allowed:
             raise unexpected_fields(request.POST, allowed=allowed)
-        require_fresh(request)
         status = key_status(configuration)
         try:
             recipient = check_new_key(_field(request, "public_key"), status)
@@ -440,7 +406,4 @@ def backup_key_page(request, service, actor):
                 "backup-prove printed it."
             ),
         )
-    if not _fresh(request):
-        request.session[RESUME_KEY] = intent
-        return _step_up(request, configuration)
     return _review(request, service, configuration, actor, text)

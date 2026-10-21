@@ -397,7 +397,16 @@ def _carried(carry):
     return tuple((name, value) for name, value in carry if value)
 
 
-def paginate(rows, parameters, *, prefix="", default=50, carry=(), sorting=None):
+def paginate(
+    rows,
+    parameters,
+    *,
+    prefix="",
+    default=50,
+    carry=(),
+    sorting=None,
+    sizes=PAGE_SIZES,
+):
     """Sort and slice ``rows`` by the page/size/sort values in ``parameters``.
 
     ``parameters`` is an already-validated mapping of single values (see
@@ -407,9 +416,11 @@ def paginate(rows, parameters, *, prefix="", default=50, carry=(), sorting=None)
     empty error. ``carry`` lists (name, value) pairs, such as search filters,
     that every navigator link must keep. ``sorting`` (a ``Sorting`` whose
     ``orders`` are key functions) sorts the whole list before slicing.
+    ``sizes`` lists the rows-per-page choices the table offers (the
+    Response dashboard's daily table adds 5, #1537).
     """
     rows = list(rows)
-    size = _size(parameters, prefix, default, PAGE_SIZES, True)
+    size = _size(parameters, prefix, default, sizes, True)
     token = None
     if sorting is not None:
         token = sorting.parse(parameters, prefix)
@@ -427,6 +438,7 @@ def paginate(rows, parameters, *, prefix="", default=50, carry=(), sorting=None)
         carried=_carried(carry),
         sorting=sorting,
         sort=token,
+        sizes=sizes,
     )
 
 

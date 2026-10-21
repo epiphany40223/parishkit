@@ -148,9 +148,9 @@ def test_export_commands_are_in_place(
 ):
     """Retry export and Cancel export post once (a double click included),
     follow the view's redirect back and swap the status panel in. The button
-    is gone then, so focus falls back to Refresh status just below the panel
-    rather than up to the page heading, and the address is the redirect's,
-    with the panel's fragment."""
+    is gone then, so focus falls back into the panel (the page has no
+    Refresh status link, #1586) rather than up to the page heading, and the
+    address is the redirect's, with the panel's fragment."""
     open_marked(page, component_origin, address)
     hold_polls(page, component_origin, address)
     posts = count_requests(page, "POST", post)
@@ -161,7 +161,9 @@ def test_export_commands_are_in_place(
     stayed(page, offset)
     visible(page.locator("#export-status").get_by_text(shown, exact=False))
     hidden(page.get_by_role("button", name=name, exact=True))
-    focused(page.get_by_role("link", name="Refresh status"))
+    assert page.evaluate(
+        "document.getElementById('export-status').contains(document.activeElement)"
+    )
     assert posts == [component_origin + post]
     assert page.url.startswith(component_origin + address + "?")
     assert page.url.endswith("#export-status")
@@ -205,90 +207,116 @@ def test_refused_export_retry_is_shown_once(page, component_origin):
     assert posts == [component_origin + EXPORT_REFUSED_RETRY]
 
 
-# Each resolution: its button, its message, the email's state line once it
-# is recorded, and what the Testing recipient's line then says it got.
+# Each answer of the question (#1563): the radio buttons that reveal it, its
+# form's choice, its button, its message, the email's state line once it is
+# recorded, and what the Testing recipient's line then says it got.
 RESOLUTIONS = [
     (
         "note",
-        "Save evidence note",
-        "Evidence note saved.",
+        ("I can't tell yet",),
+        "unsure",
+        "Save note",
+        "Note saved.",
         "Not sure it arrived",
         "not sure it arrived",
     ),
     (
         "accept",
-        "Confirm delivery using external evidence",
-        "Delivery confirmed.",
+        ("It was sent",),
+        "sent",
+        "Mark as delivered",
+        "Marked as delivered.",
         "Delivered",
         "delivered",
     ),
     (
         "confirm_unsent",
-        "Record that the provider did not send it (no resend)",
+        ("It was not sent", "No"),
+        "not_sent",
+        "Record as not sent",
         "Recorded as not sent.",
         "Failed",
         "not delivered",
     ),
     (
         "resend",
-        "Authorize potentially duplicate resend",
-        "Resend authorized.",
+        ("It was not sent", "Yes"),
+        "resend",
+        "Send it again",
+        "Sending it again.",
         None,
         "not delivered yet",
     ),
 ]
 
 
-def resolution_form(page, name):
-    """The resolution form whose button is named ``name``."""
-    return page.locator("#delivery-resolve form").filter(
-        has=page.get_by_role("button", name=name, exact=True)
+def answer(page, radios, choice):
+    """Choose ``radios`` in turn; the answer form they reveal."""
+    for name in radios:
+        page.get_by_role("radio", name=name, exact=True).check()
+    return page.locator(f"#answer-{choice}")
+
+
+def landed_on_outcome(page):
+    """No reload, and focus on the outcome panel's heading, in view: the
+    answer redrew the panel the reader was answering in (#1563)."""
+    from playwright.sync_api import expect  # imported late: collection needs no browser
+
+    expect(page.locator(LIVE)).not_to_have_text("")
+    assert page.evaluate(MARKED) == "kept"
+    heading = page.locator("#outcome-heading")
+    focused(heading)
+    assert heading.evaluate(
+        "node => { const box = node.getBoundingClientRect();"
+        " return box.bottom > 0 && box.top < document.documentElement.clientHeight; }"
     )
 
 
-@pytest.mark.parametrize("action, name, message, state, outcome", RESOLUTIONS)
+@pytest.mark.parametrize(
+    "action, radios, choice, name, message, state, outcome", RESOLUTIONS
+)
 def test_resolutions_are_in_place(
-    page, component_origin, action, name, message, state, outcome
+    page, component_origin, action, radios, choice, name, message, state, outcome
 ):
-    """Each resolution posts once (the resend, the riskiest, double-clicked)
-    and follows the view's redirect back: the state and recipient lines,
-    history, evidence and forms are swapped in where the reader is, so no
-    line keeps a stale outcome. Focus goes to the evidence heading, below
-    the forms, where the decision is now listed: the fresh form, if still
-    offered, waits for a new note."""
+    """Each answer posts once (the resend, the riskiest, double-clicked) and
+    follows the view's redirect back: the outcome panel, the state and
+    recipient lines, history and evidence are swapped in without a reload,
+    so no line keeps a stale outcome. Focus goes to the outcome panel's
+    heading, which names what the email is now."""
     open_marked(page, component_origin, DELIVERY[action])
     posts = count_requests(page, "POST", RESOLVE[action])
-    form = resolution_form(page, name)
+    form = answer(page, radios, choice)
     form.locator("textarea").fill("Checked the Sent folder")
     if action == "resend":
         form.get_by_role("checkbox").check()
     button = form.get_by_role("button", name=name, exact=True)
-    offset = wheel_to(page, button)
+    wheel_to(page, button)
     if action == "resend":
         button.dblclick()
     else:
         button.click()
     announced(page, message)
-    stayed(page, offset)
+    landed_on_outcome(page)
     routed = page.locator("#delivery-state #email-routed")
     visible(routed.get_by_text(f"testing@example.org ({outcome})"))
     if outcome != "not sure it arrived":
         assert "not sure it arrived" not in routed.inner_text()
     evidence = page.locator("#delivery-evidence")
-    focused(evidence.get_by_role("heading", name="Admin evidence and decisions"))
     visible(evidence.get_by_text(SAVED_NOTE).first)
     if state:
         visible(
             page.locator("#delivery-state > p").first.get_by_text(state, exact=False)
         )
     if action == "note":
-        # Still offered, at the new version, emptied and waiting again.
-        fresh = resolution_form(page, name)
+        # Still asked, at the new version, emptied, closed and waiting again.
+        fresh = page.locator(f"#answer-{choice}")
         has_value(fresh.locator("textarea"), "")
         has_value(fresh.locator("[name=expected_version]"), "5")
+        assert not page.get_by_role("radio", name=radios[0], exact=True).is_checked()
+        answer(page, radios, choice)
         assert fresh.get_by_role("button", name=name, exact=True).is_disabled()
     else:
-        # The decision settled the email: only the note is still offered.
+        # The answer settled the question: its button is gone.
         hidden(page.get_by_role("button", name=name, exact=True))
     assert posts == [component_origin + RESOLVE[action]]
 
@@ -301,10 +329,10 @@ def test_note_disclosure_stays_open_after_a_note(page, component_origin):
     posts = count_requests(page, "POST", RESOLVE["note_only"])
     page.get_by_text("Add a note to this email's history").click()
     page.locator("#evidence-note").fill("Checked the Sent folder")
-    button = page.get_by_role("button", name="Save evidence note", exact=True)
+    button = page.get_by_role("button", name="Save note", exact=True)
     offset = wheel_to(page, button)
     button.click()
-    announced(page, "Evidence note saved.")
+    announced(page, "Note saved.")
     stayed(page, offset)
     assert page.locator("#delivery-note-disclosure").evaluate("node => node.open")
     has_value(page.locator("#evidence-note"), "")
@@ -317,9 +345,9 @@ def test_stale_resolution_is_shown_once(page, component_origin):
     never swallowed, and is not sent again."""
     open_marked(page, component_origin, DELIVERY["stale"])
     posts = count_requests(page, "POST", RESOLVE["stale"])
-    form = resolution_form(page, "Save evidence note")
+    form = answer(page, ("I can't tell yet",), "unsure")
     form.locator("textarea").fill("Checked the Sent folder")
-    button = form.get_by_role("button", name="Save evidence note", exact=True)
+    button = form.get_by_role("button", name="Save note", exact=True)
     wheel_to(page, button)
     button.click()
     visible(page.get_by_role("heading", name="Delivery action unavailable"))
@@ -329,14 +357,15 @@ def test_stale_resolution_is_shown_once(page, component_origin):
 
 
 def test_paging_keeps_a_note_being_typed(page, component_origin):
-    """The resolution forms are a region only their own answers replace
+    """The outcome panel is a region only its own answers replace
     (data-in-place-own): Next page swaps the history and evidence in place
-    and keeps the note the reader is typing."""
+    and keeps the note the reader is typing, and its answer chosen."""
     open_marked(page, component_origin, DELIVERY["note"])
-    form = resolution_form(page, "Save evidence note")
+    form = answer(page, ("I can't tell yet",), "unsure")
     form.locator("textarea").fill("Half-written note")
     page.locator("#delivery-history").get_by_role("link", name="Next page").click()
     announced(page, "Next page shown.")
     visible(page.locator("#delivery-evidence").get_by_text("Earlier evidence"))
     has_value(form.locator("textarea"), "Half-written note")
+    assert page.get_by_role("radio", name="I can't tell yet", exact=True).is_checked()
     assert page.evaluate(MARKED) == "kept"

@@ -275,11 +275,10 @@ EMAILS = {
         # The compiled report adds the report day and parish (#720):
         # "Annual campaign — daily report, November 2, 2026 (Example Parish)".
         "{{ campaign_name }} — daily report",
-        # The subject names the campaign, parish and day (#720), and the figures
-        # describe the end of the previous day (#723), so one short line. It
-        # no longer says Testing responses are left out (#1016): a Production
-        # report never had them, and a Testing report says it is Testing.
-        "<p>Here is yesterday’s report.</p>",
+        # No intro (#1532): the compiled report opens with "Here is
+        # yesterday’s report; all data is as of …", so a default intro would
+        # say it twice. An Administrator may still write one.
+        "",
     ),
     "weekly_digest": DefaultEmail(
         "{{ campaign_name }} — weekly report",
@@ -335,9 +334,13 @@ RETIRED_EMAILS = {
     "initial": (_older_salutation(EMAILS["initial"]),),
     "reminder": (_older_salutation(EMAILS["reminder"]),),
     "confirmation": (_confirmation(_GIVE_ONLINE_PLEDGE),),
-    # The report defaults before #720 (subjects and intros), and the intro
-    # before #1016, which also said Testing responses are never included.
+    # The report defaults before #720 (subjects and intros), the intro
+    # before #1016, which also said Testing responses are never included,
+    # and the intro before #1532, which the compiled opening line replaced.
     "daily_digest": (
+        DefaultEmail(
+            "{{ campaign_name }} — daily report", "<p>Here is yesterday’s report.</p>"
+        ),
         DefaultEmail(
             "{{ campaign_name }} — daily report",
             "<p>Here is yesterday’s report. Testing responses are never included.</p>",

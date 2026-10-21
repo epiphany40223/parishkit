@@ -23,7 +23,6 @@ from uuid import uuid4
 import pytest
 from django.db import DatabaseError, connection, transaction
 
-from parishkit.stewardship.accounts import sessions
 from parishkit.stewardship.accounts.automation_models import AutomationSession
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.audit.models import AuditEvent
@@ -31,7 +30,7 @@ from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.debug_switch_models import DebugOffSwitch
 
 from ..policy_factory import address
-from .auth_builders import signed_in, unguarded
+from .auth_builders import signed_in, stale_sign_in, unguarded
 from .automation_builders import paired
 from .campaign_builders import change
 from .test_admin_test_sample_cli_postgresql import runner
@@ -152,23 +151,17 @@ def test_a_switch_cleared_by_someone_else_is_stale(auth_service, google):
     assert post(browser, action="debug_allow_cancel").status_code == 400
 
 
-def test_a_stale_sign_in_gets_the_google_step_up(auth_service, google, monkeypatch):
-    """Answered in the dialog: the step-up form, returning to this page."""
+def test_an_old_sign_in_allows_debug_logging_again(auth_service, google):
+    """A sign-in older than five minutes clears the switch at once (#1547)."""
     switch = set_switch()
     browser, _ = signed_in()
-    monkeypatch.setattr(sessions, "FRESH_SECONDS", -1)
-    for values in (
-        {"action": "debug_allow_preview"},
-        {"action": "debug_allow_confirm", "key": str(switch.pk)},
-    ):
-        response = post(browser, **values)
-        assert response.status_code == 403
-        body = response.content.decode()
-        assert "<div data-review-refusal>" in body
-        assert 'data-debug-allow-refused="reauthenticate"' in body
-        assert 'name="next" value="/admin/system/health/"' in body
+    stale_sign_in()
+    preview = post(browser, action="debug_allow_preview")
+    assert preview.status_code == 200
+    confirmed = post(browser, action="debug_allow_confirm", key=key_of(preview))
+    assert confirmed.status_code == 200
     switch.refresh_from_db()
-    assert switch.cleared_at is None
+    assert switch.cleared_at is not None
 
 
 def test_only_an_administrator_may_allow_debug_logging(auth_service, google):
@@ -242,12 +235,13 @@ def refused(message):
         yield
 
 
-def test_the_guard_admits_only_a_fresh_administrators_clear_in_testing(
+def test_the_guard_admits_only_a_live_administrators_clear_in_testing(
     auth_service, google
 ):
     """The SQL boundary holds without the page: Production, the wrong kind,
-    a stale or unknown Administrator, and rewriting who set it are refused;
-    the clear time is the database's; it is cleared once."""
+    an idle or unknown Administrator, and rewriting who set it are refused;
+    a sign-in hours old on a live session is admitted (#1547); the clear
+    time is the database's; it is cleared once."""
     browser, _ = signed_in()
     session = PortalSession.objects.order_by("-authenticated_at").first()
     actor = session.principal_id
@@ -261,7 +255,7 @@ def test_the_guard_admits_only_a_fresh_administrators_clear_in_testing(
             web_clear(switch, None, cleared_by="operator")
         with refused("only as an Administrator"):
             web_clear(switch, None)
-        with refused("requires fresh Administrator authentication"):
+        with refused("requires a live Administrator session"):
             web_clear(switch, uuid4())
         # Its column grant already refuses the rest of the row.
         with refused("permission denied"):
@@ -269,17 +263,18 @@ def test_the_guard_admits_only_a_fresh_administrators_clear_in_testing(
     # With every column granted, the guard still keeps who set it.
     with web_with("UPDATE"), refused("keeps who set it"):
         web_clear(switch, actor, actor_id=uuid4())
-    # A stale sign-in is refused too.
+    # A session signed in three hours ago and idle for more than an hour is
+    # refused.
     with unguarded():
         PortalSession.objects.filter(pk=session.pk).update(
-            authenticated_at=session.authenticated_at - timedelta(minutes=10)
+            authenticated_at=now() - timedelta(hours=3),
+            last_activity_at=now() - timedelta(minutes=61),
         )
-    with web_clearing(), refused("requires fresh Administrator authentication"):
+    with web_clearing(), refused("requires a live Administrator session"):
         web_clear(switch, actor)
+    # Active again, with that sign-in three hours old: any age is admitted.
     with unguarded():
-        PortalSession.objects.filter(pk=session.pk).update(
-            authenticated_at=session.authenticated_at
-        )
+        PortalSession.objects.filter(pk=session.pk).update(last_activity_at=now())
     with web_clearing():
         assert web_clear(switch, actor, cleared_at=now() - timedelta(days=1)) == 1
         with refused("cleared once"):
@@ -312,8 +307,8 @@ def test_debug_logging_is_allowed_again_from_the_command_line(admin):
     code, refused_document, _ = debug_allow(admin, secret, "--yes")
     assert code == 1 and refused_document["error"]["code"] == "stale_version"
     switch = set_switch()
-    # The session's sign-in is ten minutes old: only the automation session
-    # stands in for a fresh one.
+    # The session's sign-in is ten minutes old: a live session's sign-in may
+    # be of any age (#1547).
     older = row.authenticated_at - timedelta(minutes=10)
     with unguarded():
         AutomationSession.objects.filter(pk=row.pk).update(authenticated_at=older)
@@ -348,8 +343,12 @@ def test_debug_logging_is_allowed_again_from_the_command_line(admin):
 
 
 def test_the_migration_check_passes_and_refuses_the_old_guard():
-    """0088's DO block passes as installed, and raises with 0078's guard
-    (the definition an upgrade replaces) or a drifted one; all rolled back."""
+    """0088's DO block passes with 0088's guard, and raises with 0078's guard
+    (the definition an upgrade replaces) or a drifted one; all rolled back.
+
+    0114 (#1547) later replaces the guard, so each transaction first puts
+    0088's own body back.
+    """
     old = (MIGRATIONS / "0078_debug_off_switch.sql").read_text(encoding="utf-8")
     start = old.index("CREATE FUNCTION public.stewardship_debug_off_switch_guard_v1(")
     guard = old[start : old.index("END $$;", start) + len("END $$;")].replace(
@@ -365,6 +364,7 @@ def test_the_migration_check_passes_and_refuses_the_old_guard():
     once = "IF OLD.cleared_at IS NOT NULL OR NEW.cleared_at IS NULL THEN"
     assert web_only in current and once in current
     with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(current)
         cursor.execute(CHECK)
         transaction.set_rollback(True)
     for change_sql in (
@@ -383,8 +383,10 @@ def test_the_migration_check_passes_and_refuses_the_old_guard():
             pytest.raises(DatabaseError, match="0088"),
             transaction.atomic(),
         ):
+            cursor.execute(current)
             cursor.execute(change_sql)
             cursor.execute(CHECK)
     with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(current)
         cursor.execute(CHECK)
         transaction.set_rollback(True)

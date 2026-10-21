@@ -161,7 +161,8 @@ ADM-06 retains the broader campaign-control UI. Gate 3 remains closed.
   result resets the consecutive-failure count; local unobserved outcomes do
   not. No result can shorten an existing pause. Deterministic shared
   TLS/configuration/protocol faults (SYSTEMIC) stop the run immediately and
-  stay stopped until the mail worker restarts, since waiting cannot fix them.
+  stay stopped until the mail worker restarts or an Administrator clears the
+  halt, since waiting cannot fix them.
   The pause is process-local; the stop is container-wide, shared through a
   marker file (see [two mail consumers](#two-mail-consumers)). The durable
   record of both is BG-10's `mail_provider_failed` incident, which the same
@@ -280,7 +281,22 @@ The processes share what must be shared and keep the rest per process:
 - **A configuration or credential fault (SYSTEMIC).** This stops sending
   until the mail worker restarts, in both processes: the process that sees
   it tells the other through a marker file in the container, and the
-  container's next start clears it. The other process may already have one
+  container's next start clears it. The marker names the halt (a new
+  identity and its kind, before or after `DATA`), created only when none
+  exists, so both processes share one halt. From its idle loop (about every
+  30 seconds, never during a send) each process records the halt in the
+  database and looks for an Administrator's clear signal for it
+  (`pk-admin system mail-clear`, and System health's **Clear the halt**;
+  see [clear a halted mail sender](../specs/stewardship/admin-portal/spec.md#clear-a-halted-mail-sender)).
+  A process that finds one lifts its own halt only, removes the marker only
+  while it still names that halt (renaming it aside first, so it never
+  removes a marker the other process has just created), and sends one
+  probe email per consumer, as after an outage pause; a fault still there
+  halts again under a new identity. The main process also runs the mailbox
+  check the clear needs, only while a process in the container is halted
+  (as it sees itself, or as a `mail-dispatch` status record says),
+  through the private provider-check helper, which signs in and sends
+  nothing. The other process may already have one
   message in flight, so such a fault can affect up to two messages (one per
   process) instead of one. What happened to each depends on when the fault
   struck. A fault before the `DATA` command was sent (for example while
@@ -408,10 +424,10 @@ hours before its due time, so only sending is left at the due time
 ([preparing ahead](../specs/stewardship/background-processing/spec.md#preparing-ahead-of-the-due-time),
 BG-12). What an operator sees during that lead window:
 
-- Outgoing mail lists each prepared reminder as pending. Its delivery task
+- Sent mail lists each prepared reminder as pending. Its delivery task
   waits for the due time; nothing is sent before it, and the dispatch guard
   refuses a message whose occurrence is not yet due in any case.
-- The send progress panel shows the reminder as upcoming (within an hour
+- The Mail queue's Family send panel shows the reminder as upcoming (within an hour
   of its due time), not as a send in progress, and due-work health ignores
   it until it is due.
 - Scheduled delta refreshes wait while the reminders are being prepared,

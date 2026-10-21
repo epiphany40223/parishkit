@@ -4,11 +4,13 @@ The page renders ``system_health.read_health`` as a dashboard (#1214): the
 overall status line, then one tile per area, each with its state, its
 problems and its panel content. live-status-v1.js re-reads the status
 fragment every 10 seconds while the page is open (pausing while the tab is
-hidden), so a problem that starts or ends appears by itself. Only opening
-the page is audited (``system_health_viewed``); the fragment records nothing
-and never renews the Administrator's idle time. Neither read takes the
-work-order lock or any data lock; the only lock is the brief one the first
-sign-in check takes on the reader's own session row.
+hidden), so a problem that starts or ends appears by itself; the two
+page-load tiles are checked again by the fragment about every 5 minutes
+(#1790). Only opening the page is audited (``system_health_viewed``); the
+fragment records nothing and never renews the Administrator's idle time.
+Neither read takes the work-order lock or any data lock; the only lock is
+the brief one the first sign-in check takes on the reader's own session
+row.
 """
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -50,16 +52,20 @@ from parishkit.stewardship.web.refusals import (
 
 from .admin_editing import editable_configuration
 from .authentication import runtime
-from .branding_context import local_environment
 from .content_views import resave_recommended
 from .policy import Capability, allows
 from .runtime_models import SystemConfiguration
-from .sessions import authenticated_admin, freshness
+from .sessions import authenticated_admin
 from .source_form_views import source_form_summary
 
 # How often the open page re-reads the status, in ms (the specification's
 # 10 seconds). Watching stops after live-status-v1.js's usual hour.
 POLL_MILLISECONDS = 10_000
+# How often the open page asks the fragment to check the two page-load tiles
+# again (``?slow=1``), in ms: each check reads every Family or every saved
+# page and email, so it runs at most every 5 minutes, not on every poll
+# (#1790).
+RECHECK_MILLISECONDS = 300_000
 
 
 def _principal(request, store, *, final=False, activity=False):
@@ -115,7 +121,10 @@ def _context(health, extra, *, loaded):
         "debug_actor": extra["debug_actor"],
         "accept_actor": extra["accept_actor"],
         "refused_attempt": extra["refused_attempt"],
+        # Clear the halt (ADM-13 PR 4b): None unless a mail sender is halted.
+        "clear_halt": extra.get("clear_halt"),
         "poll_interval": POLL_MILLISECONDS,
+        "recheck_interval": RECHECK_MILLISECONDS,
     }
 
 
@@ -124,6 +133,27 @@ def _status_url(loaded):
     url = reverse("admin:system_health_status")
     query = loaded_query(loaded)
     return f"{url}?{urlencode({'loaded': query})}" if query else url
+
+
+def _loaded_reads(service, extra):
+    """Run the two page-load checks: ``(states, context)``.
+
+    Families the form cannot open (#774) and the content to re-save (#838)
+    each read every Family or every saved page and email, so only opening
+    the page and the fragment's slow recheck (``?slow=1``, #1790) run them,
+    never an ordinary poll. ``states`` are the tiles' states for the
+    dashboard, ``context`` the answers and summaries the templates draw.
+    """
+    source_form = source_form_summary(extra["campaign_id"])
+    resave = resave_summary(service, extra["campaign_id"])
+    context = {
+        "source_form_count": source_form,
+        "resave": resave,
+        # Their summaries and states, chosen in one place (#1214).
+        "source_form_tile": source_form_tile(source_form),
+        "resave_tile": resave_tile(resave),
+    }
+    return loaded_states(source_form, resave), context
 
 
 def _read(request, template, *, page):
@@ -135,45 +165,40 @@ def _read(request, template, *, page):
     rendered withholds it. Only the page is audited, with the number of
     problems it showed.
 
-    The fragment accepts one query key, ``loaded``: the page-load tiles'
-    states, which it counts into the overall line (``parse_loaded`` ignores
-    anything else in it). The page accepts none.
+    The fragment accepts two query keys. ``loaded`` carries the page-load
+    tiles' states, which an ordinary poll counts into the overall line
+    (``parse_loaded`` ignores anything else in it). ``slow=1`` asks it to
+    check those tiles again instead (#1790): the answer carries their
+    copies and the address with their new states. Either way the fragment
+    stays passive: no audit row, no renewed idle time. The page accepts
+    no key.
     """
     try:
-        query = filters(request.GET, allowed=set() if page else {"loaded"})
+        query = filters(request.GET, allowed=set() if page else {"loaded", "slow"})
+        if query.get("slow", "1") != "1":
+            raise ValueError("slow takes only 1.")
         service = runtime()
         actor = _principal(request, service.store, activity=page)
         found = read_health(service.store)
         if found is None:
             return _error(ErrorCode.UNAVAILABLE, 503)
         health, extra = found
-        if page:
-            # Families the form cannot open (#774): on page load only, never
-            # in the polled status, so the poll never pays for the scan.
-            source_form = source_form_summary(extra["campaign_id"])
-            # Content to re-save (#838): likewise on page load only.
-            resave = resave_summary(service, extra["campaign_id"])
-            loaded = loaded_states(source_form, resave)
-            context = _context(health, extra, loaded=loaded)
-            context["source_form_count"] = source_form
-            context["resave"] = resave
-            # Their summaries and states, chosen in one place (#1214).
-            context["source_form_tile"] = source_form_tile(source_form)
-            context["resave_tile"] = resave_tile(resave)
+        if page or "slow" in query:
+            loaded, reads = _loaded_reads(service, extra)
+            context = _context(health, extra, loaded=loaded) | reads
+            # Later polls echo these states (live-status-v1.js follows a
+            # fresh data-live-url).
             context["status_url"] = _status_url(loaded)
-            # Whether the sign-in is recent now, fixed for the page's life:
-            # it picks Accept this change once's offered or step-up form,
-            # and no poll changes it (#1159, #1331 item 18). A sign-in that
-            # ages later gets the step-up answer when the form is sent.
-            context["fresh"] = freshness(request)[0]
+        else:
+            context = _context(health, extra, loaded=parse_loaded(query.get("loaded")))
+            # An ordinary poll has no fresh page-load reads, so it draws no
+            # copies of those tiles; the page keeps the last ones.
+            context["loaded_echoed"] = True
+        if page:
             # The Admin chrome reuses this instant instead of reading the clock.
             request._stewardship_display_now = health.checked_at
             response = render(request, template, context)
         else:
-            context = _context(health, extra, loaded=parse_loaded(query.get("loaded")))
-            # The step-up notice's LOCAL wording, which a full page render
-            # gets from its context processor (#619).
-            context |= local_environment(request)
             # The fragment needs no Admin chrome, so it skips the context
             # processors (and their queries) a full page render runs.
             response = HttpResponse(render_to_string(template, context))
@@ -246,11 +271,16 @@ _ACTION_FIELDS = {
     "debug_off_confirm": {"action", "key"},
     "debug_allow_preview": {"action"},
     "debug_allow_confirm": {"action", "key"},
+    # Clear the halt (PR 4b, named clear_*): the preview, Check again and
+    # Confirm, which carries the preview's signed binding.
+    "clear_preview": {"action"},
+    "clear_check": {"action", "token"},
+    "clear_confirm": {"action", "token"},
 }
 # What a refusal is answered with (HTTP status; the words are the region's,
 # or the review dialog fragment's).
 _REFUSALS = {
-    "reauthenticate": 403,
+    "signed_out": 403,
     "busy": 409,
     "invalid": 400,
     "denied": 403,
@@ -262,6 +292,7 @@ _REGIONS = (
     ("accept_", "accept"),
     ("debug_off_", "debug_off"),
     ("debug_allow_", "debug_off"),
+    ("clear_", "clear"),
 )
 # The actions confirmed in the shared review dialog (UX conventions, "A
 # confirmation when Review would only repeat the page", #1356), by their
@@ -279,7 +310,7 @@ def _step(action, request, service):
     """Run one action step; return what its region shows.
 
     Previews and confirmations go to ``system_health``'s service functions,
-    which check the Administrator and the fresh sign-in themselves. Cancel
+    which check the Administrator and the live session themselves. Cancel
     only closes the preview, so it only rechecks the Administrator.
     """
     from uuid import UUID
@@ -301,6 +332,8 @@ def _step(action, request, service):
             request, service, token=request.POST.get("token", "")
         )
         return {"requested": row, "created": created, "refresh": refresh}
+    if action in {"clear_preview", "clear_check", "clear_confirm"}:
+        return _clear_step(action, request, service)
     if action == "debug_allow_preview":
         preview = health_actions.preview_debug_allow(request, service.store)
         return {"allow": True, "preview": preview}
@@ -326,6 +359,26 @@ def _step(action, request, service):
     return None
 
 
+def _clear_step(action, request, service):
+    """One of Clear the halt's steps (ADM-13 PR 4b), through the service
+    functions ``pk-admin system mail-clear-preview`` and ``system
+    mail-clear`` share (``mail_halt_clear``). None needs a recent sign-in
+    (#1547). The preview asks mail dispatch for a mailbox check when it
+    needs one; Check again asks for a new one; Confirm records the clear
+    signal for the halt the preview's binding names."""
+    from parishkit.stewardship import mail_halt_clear
+
+    if action == "clear_preview":
+        _, preview = mail_halt_clear.preview_clear(request, service.store)
+        return {"preview": preview}
+    if action == "clear_check":
+        return {"preview": mail_halt_clear.check_again(request, service.store)}
+    row, created = mail_halt_clear.clear_halt(
+        request, service.store, token=request.POST.get("token", "")
+    )
+    return {"cleared": row, "created": created}
+
+
 def _act(request):
     """An action's step, posted to the System health page itself.
 
@@ -338,12 +391,11 @@ def _act(request):
     The step's result goes to the template as ``backup_now``, ``accept`` or
     ``debug_off`` (where an Allow debug logging again step's result is
     marked ``allow``). A step
-    the server refuses for a reason the reader can act on (a stale sign-in,
-    a request already live or a switch already set or already cleared, Allow
+    the server refuses for a reason the reader can act on (a session that
+    ended, a request already live or a switch already set or already cleared, Allow
     debug logging again in Production, a malformed form) is
     answered the same way, the region saying why, with a status ui-v1.js
-    treats as refused; the stale sign-in offers the "Confirm with Google"
-    step-up, which returns to this page. Anything else (not an
+    treats as refused (an ended session is ``signed_out``). Anything else (not an
     Administrator, the system unavailable) is the usual closed refusal. No
     step records a page view; confirming records the action's audit event
     (``backup_requested``, ``source_drop_accepted``,
@@ -354,11 +406,12 @@ def _act(request):
     """
     from parishkit.config import ConfigError
     from parishkit.stewardship import system_health as health_actions
+    from parishkit.stewardship.mail_halt_clear import ClearRefused
     from parishkit.stewardship.storage import StaleRecordError
 
     from .admin_editing import error_response
     from .integration_views import ERRORS
-    from .sessions import FreshAuthenticationRequired
+    from .sessions import SignInEnded
     from .setup_views import _closed
 
     action = request.POST.get("action", "")
@@ -375,17 +428,22 @@ def _act(request):
                 raise unexpected_fields()
             _closed(request, _ACTION_FIELDS[action])
             result = _step(action, request, service)
-        except FreshAuthenticationRequired:
-            result = {"refused": "reauthenticate"}
+        except SignInEnded:
+            # The session ended between admission and the guard's write.
+            result = {"refused": "signed_out"}
         except health_actions.DebugAllowProduction:
             # Only the server operator clears the switch in Production.
             result = {"refused": "production"}
-        except health_actions.ActionRefused:
-            # The database refused it for a reason a new sign-in would not
-            # fix; the service function logged why.
+        except (health_actions.ActionRefused, ClearRefused):
+            # The database refused it for a reason signing in again would
+            # not fix; the service function logged why.
             result = {"refused": "denied"}
-        except StaleRecordError:
+        except StaleRecordError as error:
             result = {"refused": "busy"}
+            if region == "clear":
+                # Clear the halt says which check no longer holds, in the
+                # service function's own plain words (mail_halt_clear.REASONS).
+                result["refusal_text"] = str(error)
         except ConfigError:
             # A ValueError too, but the system's configuration, not the
             # form: the outer handler answers it as unavailable (503).
@@ -404,14 +462,15 @@ def _act(request):
             return _error(ErrorCode.UNAVAILABLE, 503)
         health, extra = found
         # Only the action's region is used, so the answer skips the
-        # page-load tiles' reads; they show as Working in the discarded rest.
-        # A review dialog's action answers with its fragment instead, whose
-        # result draws the region again.
+        # page-load tiles' reads; they show as Working in the discarded rest,
+        # which draws no copies of them (loaded_echoed) that a status region
+        # could take. A review dialog's action answers with its fragment
+        # instead, whose result draws the region again.
         response = render(
             request,
             _DIALOG_ANSWERS.get((region, allow), "stewardship/system-health.html"),
             _context(health, extra, loaded={})
-            | {"status_url": _status_url({}), region: result},
+            | {"status_url": _status_url({}), "loaded_echoed": True, region: result},
             status=status,
         )
         if status != 200:

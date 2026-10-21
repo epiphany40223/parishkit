@@ -27,7 +27,9 @@ deployed consumer and reads only the credential that consumer already mounts:
 | `backup_drive` | `backup-worker` (`docker compose run`) | The Workspace key, acting as `--delegated-email` with the Drive scope, can write to and trash in the folder at `--folder-link` | `--send` uploads the newest complete local backup set, tagged as this deployment's like a real copy (it also reads the database, as the backup login) |
 
 The result is one JSON line, `{"target": ..., "credential": "valid" |
-"invalid" | "unavailable", "sent": true | false}` (plus `redirect_uri` for
+"invalid" | "mismatch" | "unavailable", "sent": true | false}` (`mismatch`
+only for ParishSoft: the key works but sees a different organization than
+`--organization-id`; plus `redirect_uri` for
 the OAuth client), and exit `0`; `backup_drive` instead prints
 `{"target": "backup_drive", "accepted": true, "copied_set": ...}` or
 `"accepted": false` with a `reason` category and its plain-language
@@ -39,10 +41,22 @@ address or provider error text is printed.
 In the [local environment](stewardship-local-environment.md) the command
 runs the same checks against what is installed there
 ([#1399](https://github.com/epiphany40223/parishkit/issues/1399)):
-ParishSoft against the fake service, the mailbox against the mail catcher,
-the sentinel OAuth client, and a test Slack token. A `--send-to` is refused
-there, because the send path takes only a Google service account, which the
-local environment still refuses. The local environment's
+ParishSoft against the fake service (or the real API, when the deployment
+chose it with `deploy --parishsoft real`), the mailbox against the mail catcher
+(or a test mailbox's real key beside the mail redirect, which needs the
+normal clock), the sentinel OAuth client (or a real localhost-only one, which
+needs the normal clock), and a test Slack token. A `--send-to` is refused
+there without a mail redirect, before the key is read; with one and a real
+key, its one recipient is the redirect address, never the address given.
+`backup_drive` runs only on the same terms as a real key (a mail redirect,
+the normal clock) and is refused before it reads anything otherwise.
+`parishsoft_contact` runs only while the deployment reads the fake, the one
+ParishSoft a local deployment may write to; with `deploy --parishsoft real`
+it is refused before the tenant check. On the fake, give the test Member a
+`pager` (or `fax`) first with a `fake-parishsoft` edit, since the generated
+parish leaves both unset; the marker and restore writes are recorded in the
+fake's edits list like any other write.
+The local environment's
 [safety guarantees](../specs/stewardship/local-environment/spec.md#safety-guarantees)
 say what each check can reach.
 
@@ -54,9 +68,11 @@ The credential installers already validate each provider credential in an
 endpoint-restricted session: exact-tenant organization validation for
 ParishSoft, a token refresh and an SMTP `AUTH XOAUTH2` for Google Workspace,
 and `auth.test` for Slack, and one classification turns each check's result
-or exception into `valid`, `invalid` or `unavailable` (a rejected key or a
-malformed credential file is invalid; an outage or an unexplained failure is
-unavailable, never a rejection). The smoke command runs that same
+or exception into `valid`, `invalid`, `mismatch` or `unavailable` (a
+rejected key or a malformed credential file is invalid; a ParishSoft key for
+another organization is a mismatch, refused for good like an invalid key,
+[#1492](https://github.com/epiphany40223/parishkit/issues/1492); an outage or
+an unexplained failure is unavailable, never a rejection). The smoke command runs that same
 classification on the mounted credential file, so a passing smoke check
 means what a passing installation means, and no second validation code path
 can drift. It runs
@@ -88,10 +104,11 @@ public origin. The command prints the URI the deployment expects,
 ## Member contact round trip
 
 Census publication (#528) writes a Member with ParishSoft's v2 Member
-contact PUT, which replaces all fifteen `MemberContactUpdateRequestModel`
-fields at once. The publish worker must therefore read all fifteen right
-before each PUT, and which ParishSoft read returns them is not yet
-confirmed: the publication gateway's read refuses with `read_unconfirmed`,
+contact PUT, a partial update that changes only the
+`MemberContactUpdateRequestModel` fields it is sent (#1600). The publish
+worker reads the Member right before each PUT, to check each changed field
+for a conflict, and again after it, to verify the write; which ParishSoft
+read returns those fields is not yet confirmed: the publication gateway's read refuses with `read_unconfirmed`,
 and the `parishsoft_publication` switch stays off
 ([ParishSoft publication](stewardship-member-requests.md#parishsoft-publication)).
 The `parishsoft_contact` target settles that against one test Member,
@@ -113,13 +130,16 @@ docker compose ... exec -T worker pk-stewardship smoke \
   parishioner, with a birth date, a gender, at least two email addresses
   and the home, mobile and work phones filled in. A blank encoding field
   is listed in `unsettled`: the run says nothing about how ParishSoft
-  stores it.
+  stores it. The chosen marker field (`pager` by default, or `fax`) must
+  hold a phone number too: the API cannot clear a value, so a blank one
+  could not be put back and `--send` refuses it
+  (`refused_blank_marker_field`).
 - **Note that Member's current values in ParishSoft first,** at least the
   chosen field and the fields listed below. The tool never prints a value,
   so a restore that fails can only be finished by hand from your note.
 - **Run it when no refresh or publication is running.** It takes no source
-  lease, and its restore writes all fifteen fields back as first read, so
-  an edit made to that Member during the run (up to a few minutes) is
+  lease, and its restore writes the chosen field back as first read, so
+  an edit made to that field during the run (up to a few minutes) is
   reverted.
 - With `exec -T`, Ctrl-C at the host may not reach the process in the
   container. Let a run finish.
@@ -144,30 +164,39 @@ docker compose ... exec -T worker pk-stewardship smoke \
   - `encoder_matches_read`: whether the publication encoder, given the
     value as read, produces exactly the same text (or `unreadable`); a
     false one means the encoder or the read mapping must change before
-    publication can verify a write;
+    publication can verify a write; it is null for a field
+    publication never writes: `pager`, `fax` and `gender`. Gender is By
+    hand: the live test of 2026-10-17 found that a one-character `gender`
+    PUT is accepted but never changes the Member, an unknown code gives
+    HTTP 500, and reads return the code (`M`), not the word (#1603). Its
+    shape is still reported, as a record of what the read returns;
   - `sendable`: whether the value as read satisfies the recorded PUT
     schema (type, length, a strict `YYYY-MM-DD` date).
 
   It also lists `unsendable`, `unsettled` (blank encoding fields),
   `markers_present` (fields already holding a marker) and the record's
   top-level key names.
-- **Round trip (`--send`).** It is refused unless the probe found all
-  fifteen fields, every one `sendable` as read, and no marker. If
-  ParishSoft returns birth or death dates as date-times
-  (`1970-01-02T00:00:00`), the date field is not `sendable` and `--send`
-  refuses that Member with `refused_unsendable`. That probe output is
-  itself the evidence: the follow-up change must add a read-to-PUT
-  conversion before any round trip, or publication, can write such a
-  Member. Otherwise it sends the
-  payload exactly as read with the chosen field set to a fixed marker in
-  Family display form (`(555) 555-0199` for `pager`, the default;
+- **Round trip (`--send`).** Like publication, every PUT body holds only
+  the one field it changes: the v2 contact PUT is a partial update, which
+  leaves every field it is not sent unchanged (#528, #1600). The run is
+  refused unless the probe read the chosen field
+  (`refused_marker_field_unread`), found a non-blank value in it
+  (`refused_blank_marker_field`), found that value `sendable` as read
+  (`refused_unsendable`), and found no marker. Other fields need not be
+  read or `sendable`, since nothing sends them; they are only reported.
+  If ParishSoft returns birth or death dates as date-times
+  (`1970-01-02T00:00:00`), the probe lists the date field as not
+  `sendable`. That probe output is itself the evidence: the follow-up
+  change must add a read-to-PUT conversion before publication can verify
+  such a Member's dates. Otherwise it sends a one-field body setting the
+  chosen field to a fixed marker in Family display form (`(555) 555-0199` for `pager`, the default;
   `(555) 555-0198` for `fax`), so a provider that normalizes phones fails
   confirmation. It reads back and compares **every top-level key** of the
   record, not just the fifteen, apart from the audit stamps that change on
   every write (`dateModified`, `modifiedDate`, `lastModifiedDate`,
   `modifiedBy`, `lastModifiedBy`; reported as `volatile_changed`). It
-  prints that marker result to standard error, then puts the original
-  back, whatever happened: after a failed marker PUT (including a request
+  prints that marker result to standard error, then sends a one-field
+  body putting the original value back, whatever happened: after a failed marker PUT (including a request
   helper that would not stop, `drain_failed`) it first waits 15 seconds,
   since a timed-out PUT may land late. The restore is retried after 5, 15
   and 30 seconds until a read matches the first one. Ctrl-C is ignored

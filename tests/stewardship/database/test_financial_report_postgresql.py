@@ -32,16 +32,12 @@ from parishkit.stewardship.reports.financial import (
     financial_page,
     giving_proof,
 )
-from parishkit.stewardship.reports.financial_documents import HEADINGS
 from parishkit.stewardship.responses.models import SubmissionReceiptOccurrence
 from parishkit.stewardship.source.leases import release_source
 from parishkit.stewardship.source.models import SourceCurrent
 from parishkit.stewardship.source.snapshot_names import snapshot_family_names
 from parishkit.stewardship.source.snapshots import promote_snapshot
-from parishkit.stewardship.source.source_status import (
-    NAME_NOT_RECORDED,
-    STATUS_HEADING,
-)
+from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 
 from ..financial_factory import record
 from ..test_financial_answers import CHECK, OPTIONS, OTHER
@@ -431,7 +427,7 @@ def test_campaign_without_the_module_is_denied_and_unlinked(response_service, go
         response, body = get(browser, route)
         assert response.status_code == 409
         assert b"does not include Financial stewardship" in body
-        response, body = get(browser, reverse("admin:participation"))
+        response, body = get(browser, reverse("admin:response_dashboard"))
         assert response.status_code == 200 and route.encode() not in body
 
 
@@ -492,8 +488,12 @@ def test_source_totals_respect_fund_window_and_giving_cutoff(response_service):
     # into them, not displayed beside them, so no text scan could catch it.
 
 
-def test_several_families_summary_order_and_pages(response_service):
-    """The summary covers every match, never the page; money stays with its Family."""
+def test_several_families_summary_order_and_pages(response_service, google):
+    """The summary covers every match, never the page; money stays with its Family.
+
+    The page's Timeline links (#1570) are one Family record read, however
+    many rows the page shows.
+    """
     harness = response_service
     financial_source(
         harness,
@@ -638,6 +638,40 @@ def test_several_families_summary_order_and_pages(response_service):
     assert [row["family_duid"] for row in complete["rows"]] == by_name
     assert all(row["pledge_total"] is None for row in complete["rows"])
 
+    # The Timeline links: one FamilyCampaign read per page, never one per
+    # row, for a three-row page as for a one-row page. (The whole statement
+    # count is not compared: an audit check that runs on some requests only
+    # makes it vary.)
+    from django.test.utils import CaptureQueriesContext
+
+    route = reverse("admin:financial_report")
+    browser, login = signed_in()
+    assert login.status_code == 302
+
+    def counted(values):
+        """One page for the posted ``values``, its links and the SQL it ran."""
+        with (
+            task_login(ServiceRole.WEB, exact=True, reconnect=True),
+            CaptureQueriesContext(connection) as queries,
+        ):
+            response, body = search(browser, route, values)
+        assert response.status_code == 200
+        links = body.count(b'<th scope="row" class="nowrap"><a href="')
+        return links, [query["sql"] for query in queries.captured_queries]
+
+    def link_reads(statements):
+        """The statements that read the page's Family record ids."""
+        return [
+            sql
+            for sql in statements
+            if 'FROM "stewardship_family_campaign"' in sql and "family_duid" in sql
+        ]
+
+    every, all_rows = counted({"sort": "name"})
+    one, one_row = counted({"search": "zETa"})
+    assert (every, one) == (3, 1)
+    assert len(link_reads(all_rows)) == len(link_reads(one_row)) == 1
+
 
 def test_native_page_filters_privately_and_denies_leaders(
     response_service, google, monkeypatch, caplog
@@ -655,33 +689,60 @@ def test_native_page_filters_privately_and_denies_leaders(
     years = reported["metadata"]["comparison_years"].encode()
     assert years
     # The surname alone ("Example") also appears in unrelated page text, so
-    # match the Family's row header rather than the bare name.
-    name = b'<th scope="row">' + name + b"</th>"
+    # match the Family's row header rather than the bare name. The name opens
+    # the Family's Timeline by its opaque campaign record id (#1570).
+    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+
+    family = FamilyCampaign.objects.get(
+        campaign=harness.campaign, family_duid=reported["rows"][0]["family_duid"]
+    )
+    timeline = reverse("admin:timeline", args=[family.pk]).encode()
+    name = (
+        b'<th scope="row" class="nowrap"><a href="'
+        + timeline
+        + b'">'
+        + name
+        + b"</a></th>"
+    )
     route = reverse("admin:financial_report")
     browser, login = signed_in()
     assert login.status_code == 302
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = get(browser, route)
         assert response.status_code == 200 and response["Cache-Control"] == "no-store"
-        assert name in body and b"$1,234.50" in body and b"$102.88" in body
-        assert b"$1,200.00" in body and b"$100.00" in body
-        # The ParishSoft headings name the comparison period's years, and
-        # each has a toggletip with the period's dates.
-        for heading in (b"ParishSoft pledged", b"ParishSoft contributed"):
-            assert heading + b" (" + years + b")" in body
+        # Whole dollars on the page; a screen reader hears the cents (#1544).
+        assert name in body and b'aria-hidden="true">$1,235</span>' in body
+        assert b'<span class="visually-hidden">$1,234.50</span>' in body
+        assert b'<span aria-hidden="true">$103</span>' in body
+        assert b"</span>$1,200</span>" in body and b"</span>$100</span>" in body
+        # The ParishSoft heading names the comparison period's years, and
+        # its stacked Pledged and Contributed lines each have a toggletip
+        # with the period's dates (#1544).
+        assert b"ParishSoft (" + years + b')<span class="stack-line">' in body
         assert b'aria-controls="financial-source-pledged-tip"' in body
         assert b'aria-controls="financial-source-contributed-tip"' in body
         # Each tip's button is described by its bubble, not its whole heading.
         assert b'aria-describedby="financial-source-pledged-tip"' in body
-        # The page has the downloads' columns in their order (decisions B1
-        # and E1, #932): Family leads, First response follows Latest response.
-        # The files split ParishSoft status out of the page's Family cell,
-        # where its badge sits beside the name (#1216).
+        # The page's shorter columns in order (#1544): Family leads, then
+        # Family DUID; one ParishSoft heading names its stacked Pledged and
+        # Contributed lines. First response and Entered by Staff are left to
+        # the downloads.
         head = body[body.index(b"Current live pledges by Family</caption>") :]
         head = head[: head.index(b"</thead>")]
-        shown = [heading for heading in HEADINGS if heading != STATUS_HEADING]
-        assert head.count(b'scope="col"') == len(shown)
-        places = [head.index(heading.encode()) for heading in shown]
+        shown = [
+            "Family",
+            "Family DUID",
+            "Annual pledge",
+            "Installment",
+            "Share methods",
+            "ParishSoft",
+            "Pledged",
+            "Contributed",
+            "Latest response",
+        ]
+        assert head.count(b"<tr>") == 1 and head.count(b'scope="col"') == 7
+        assert b"First response" not in head and b"Entered by Staff" not in head
+        places = [head.index(b">" + heading.encode()) for heading in shown]
         assert places == sorted(places)
         assert b">Version<" not in body
         assert b'datetime=""' not in body and b"?search=" not in body
@@ -693,6 +754,32 @@ def test_native_page_filters_privately_and_denies_leaders(
         assert b"No matching pledges." in body and b"$1,234.50" not in body
         _, body = search(browser, route, {"pledge_min": "1234.50", "share": CHECK})
         assert name in body and b'value="1234.50"' in body
+        # The answer names its view's own address with only the closed
+        # choices (#1586): the pledge range stays private.
+        address = f"{route}?share={CHECK}".encode()
+        assert b'<a href="' + address + b'" data-page-address hidden>' in body
+        # A reload asks for that address by GET, which draws the same view.
+        response, body = get(browser, f"{route}?share={CHECK}&sort=pledge&size=25")
+        assert response.status_code == 200 and name in body
+        assert f'<option value="{CHECK}" selected>'.encode() in body
+        assert b'<option value="25" selected>' in body
+        assert b'aria-sort="ascending"' in body
+        response, body = get(browser, f"{route}?amount=zero")
+        assert response.status_code == 200 and name not in body
+        assert b"No matching pledges." in body
+        # Only those closed values: a private field, a page, a value outside
+        # its set or a repeated one is refused.
+        for query in (
+            "amount=zero&pledge_min=1",
+            "page=2",
+            "amount=some",
+            "size=250",
+            "amount=zero&amount=any",
+        ):
+            assert get(browser, f"{route}?{query}")[0].status_code == 400
+        # A POST's filters never mix with an address's: a query string on
+        # a CSRF POST is refused.
+        assert search(browser, f"{route}?amount=zero", {})[0].status_code == 400
         for invalid in ({"sort": "random"}, {"extra": "x"}):
             seen = len(refusals())
             response, body = search(browser, route, invalid)
@@ -754,7 +841,7 @@ def test_native_page_filters_privately_and_denies_leaders(
         for invalid in ({"sort": "annual_pledge"}, {"size": "250"}, {"size": "all"}):
             assert search(browser, route, invalid)[0].status_code == 400
         # The campaign reports page offers the entry only with the module enabled.
-        _, body = get(browser, reverse("admin:participation"))
+        _, body = get(browser, reverse("admin:response_dashboard"))
         assert route.encode() in body
 
     # Two different routes to the same recovery page. The shared guard answers

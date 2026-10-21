@@ -44,10 +44,23 @@ NAMESPACE = "admin"
 
 @dataclass(frozen=True)
 class Section:
-    """A menu group: a collapsible group in the sidebar and the second breadcrumb."""
+    """A menu group: a collapsible group in the sidebar and the second breadcrumb.
+
+    ``segment`` is the first URL segment after ``/admin/`` of the group's
+    pages (admin-portal spec, "URL scheme"); it is the key unless the group
+    shares another group's segment. Review work keeps its pages under
+    ``/admin/reports/``, where they were before the group was split from
+    Reports and queries (R39 finding 4), so no address changes.
+    """
 
     key: str
     label: str
+    segment: str | None = None
+
+    @property
+    def path(self):
+        """The group's URL segment: ``segment``, or the key itself."""
+        return self.segment or self.key
 
 
 @dataclass(frozen=True)
@@ -63,6 +76,11 @@ class Page:
     ``entry`` names the menu entry a page outside the menu only redirects to
     (a report root): it is linked only while the viewer's menu offers that
     entry, because the page checks the same capability (#457 L3).
+
+    ``step_of`` names the menu entry of the guided page this page is one
+    step of (the Go live page's Prepare step, #1585): it has that page's
+    name, marks that entry current as the page itself, and its trail does
+    not repeat the name.
     """
 
     section: str | None
@@ -70,6 +88,7 @@ class Page:
     parent: str | None = None
     linkable: bool = True
     entry: str | None = None
+    step_of: str | None = None
 
 
 @dataclass(frozen=True)
@@ -96,18 +115,22 @@ class Placement:
     step: str | None = None
 
 
-# The menu groups, in the order a campaign runs: set it up, send it, read the
-# responses, then the parish data, users and system pages that change rarely.
-# Home sits above them (admin-portal spec, "Menu groups").
+# The menu groups, in the order a campaign runs: set it up, send it, review
+# the responses and read the reports, then the parish data, users and system
+# pages that change rarely. Home sits above them (admin-portal spec, "Menu
+# groups"). Review work comes before Reports and queries, because reviewing
+# is the daily work while a campaign runs (R39 finding 4).
 SECTIONS = (
     Section("campaign", _("Campaign setup")),
     Section("mail", _("Mail and Family portal")),
-    Section("reports", _("Responses and reports")),
+    Section("review", _("Review work"), segment="reports"),
+    Section("reports", _("Reports and queries")),
     Section("parish", _("Parish data")),
     Section("users", _("Users and access")),
     Section("system", _("System")),
 )
 SECTION_LABELS = {section.key: section.label for section in SECTIONS}
+SECTION_PATHS = {section.key: section.path for section in SECTIONS}
 
 # Every Admin HTML page, keyed by URL name. Menu entries are listed in MENU
 # below; a page without a parent that is not a menu entry (a redirect, a
@@ -170,29 +193,26 @@ PAGES = {
     # shares that page's name.
     "artwork_upload": Page("campaign", _("Campaign images"), "artwork_settings"),
     "reminder_workgroup": Page("campaign", _(REMINDER_WORKGROUP_NAME)),
-    "go_live": Page("campaign", _("Go-live readiness")),
+    "go_live": Page("campaign", _("Go live")),
     "go_live_families": Page("campaign", _("Testing submissions"), "go_live"),
-    "go_live_cleanup": Page("campaign", _("Testing cleanup"), "go_live"),
-    "go_live_links": Page("campaign", _("Prepare Family links"), "go_live_cleanup"),
-    "production_confirmation": Page(
-        "campaign", _("Confirm Production"), "go_live_links"
-    ),
-    # A menu entry of its own, available once Production is confirmed.
+    # The Go live page's Prepare and Confirm Production steps (#1585): the
+    # same page as Check, so each has its name and marks its menu entry,
+    # and its trail is the group, then Go live, never one crumb per step.
+    "go_live_prepare": Page("campaign", _("Go live"), step_of="go_live"),
+    "go_live_confirm": Page("campaign", _("Go live"), step_of="go_live"),
+    # A menu entry of its own, available once Production is confirmed: the
+    # Go live page's Activation step, whose Cancel go-live (formerly Withdraw
+    # from Production) is a review dialog there (#1585 slice 5).
     "production_progress": Page("campaign", _("Production activation")),
-    # Cancel go-live (formerly Withdraw from Production) is offered only on
-    # Production activation, so its trail runs through that page. The name
-    # avoids a clash with the after-archive Return to Testing (decision 9).
-    "production_withdrawal": Page(
-        "campaign", _("Cancel go-live"), "production_progress"
-    ),
     # Mail and Family portal
     "delivery_control": Page("mail", _("Pause and resume mail")),
-    # Watching a launch or reminder send (#413): a sidebar entry of its own,
-    # beside Pause and resume mail, so it is found without knowing where it is.
-    "family_email_progress": Page("mail", _("Family email progress")),
+    # Every email waiting to go out, with the launch or reminder send's
+    # progress (#413, #1562): a sidebar entry of its own, beside Pause and
+    # resume mail, so it is found without knowing where it is.
+    "mail_queue": Page("mail", _("Mail queue")),
     # The permanent record of every send (#432), listed beside the live panel.
     "family_email_sends": Page("mail", _("Family email history")),
-    "deliveries": Page("mail", _("Outgoing mail")),
+    "deliveries": Page("mail", _("Sent mail")),
     "delivery": Page("mail", _("Mail message"), "deliveries"),
     "delivery_refusals": Page("mail", _("Refused addresses"), "deliveries"),
     "delivery_refusal": Page("mail", _("Refused address"), "delivery_refusals"),
@@ -202,18 +222,21 @@ PAGES = {
     # entry: it matters only after a restore, so Home links to it while any
     # hold is undecided.
     "held_emails": Page("mail", _("Held emails")),
-    # Responses and reports. Every report is a menu entry of its own. The
+    # Reports and queries. Every report is a menu entry of its own. The
     # reports root only redirects to the current campaign's report (or shows
     # that there is none), so it stands alone, outside the menu.
-    "reports": Page("reports", _("Participation"), entry="participation"),
-    "participation": Page("reports", _("Participation")),
+    "reports": Page("reports", _("Response dashboard"), entry="response_dashboard"),
     "campaign_comparison": Page("reports", _("Campaign comparison")),
     "financial_report": Page("reports", _("Financial stewardship")),
-    "limitations_report": Page("reports", _("Limitations")),
-    "census_changes": Page("reports", _("Census changes")),
+    # Review work: each stream's review worklist (review pipeline spec).
+    "limitations_report": Page("review", _("Limitations")),
+    "census_changes": Page("review", _("Census changes")),
+    # Not a menu entry: Census changes links to it (#528, ADM-09; renamed
+    # from Publish to ParishSoft by #1688).
+    "update_parishsoft": Page("review", _("Update ParishSoft"), "census_changes"),
     "response_dashboard": Page("reports", _("Response dashboard")),
-    "information_queue": Page("reports", _("Additional information")),
-    "information_item": Page("reports", _("Information request"), "information_queue"),
+    "information_queue": Page("review", _("Additional information")),
+    "information_item": Page("review", _("Information request"), "information_queue"),
     "report_export": Page("reports", _("Report export"), "reports"),
     # The reports sent by email, listed on Emailed reports (ADM-12.17), and
     # Send a weekly report now, its Administrator action.
@@ -228,15 +251,16 @@ PAGES = {
     "daily_digest_snapshot": Page("reports", _("Daily report"), "emailed_reports"),
     # Ministry requests is the follow-up queue (#1133); Ministry follow-up,
     # once a page of its own, was merged into it.
-    "ministry_report": Page("reports", _("Ministry requests")),
-    "ministry_followup_item": Page(
-        "reports", _("Follow-up request"), "ministry_report"
-    ),
-    # Resolved Ministry joins and leaves to enter in ParishSoft by hand (#528).
-    "ministry_roster": Page("reports", _("Roster changes to enter"), "ministry_report"),
+    "ministry_report": Page("review", _("Ministry requests")),
+    "ministry_followup_item": Page("review", _("Follow-up request"), "ministry_report"),
+    # The financial stream's review worklist and manual report (#1686), a
+    # menu entry of its own in Review work, in the Administrator's order
+    # (R39 finding 1).
+    "pledges_to_enter": Page("review", _("Pledges")),
     "family_directory": Page("reports", _("Active parishioner family directory")),
-    # One Family's summary and timeline (#477), opened from its directory row.
-    "family_timeline": Page("reports", _("Family timeline"), "family_directory"),
+    # One Family's summary and timeline (#477; the Timeline since #1570),
+    # opened from every Family name the shared family_link tag draws.
+    "timeline": Page("reports", _("Timeline"), "family_directory"),
     # Parish data
     "parish_settings": Page("parish", _("Parish settings")),
     "branding_settings": Page("parish", _("Parish logos")),
@@ -270,6 +294,11 @@ PAGES = {
     "user_leader_import": Page(
         "users", _("Import Ministry leaders"), "users", linkable=False
     ),
+    # Answers only the Email Ministry leaders table's review and its Apply
+    # (#1592).
+    "user_leader_emails": Page(
+        "users", _("Email Ministry leaders"), "users", linkable=False
+    ),
     # Every live interactive Admin session, each with Sign out (#953).
     "signed_in_sessions": Page("users", _("Signed-in sessions")),
     # The Administrator's own automation sessions (ADM-11), and the approval
@@ -283,22 +312,6 @@ PAGES = {
     "source_form": Page("system", _("Families the form cannot open"), "system_health"),
     "integrations": Page("system", _("Integrations")),
     "integration_settings": Page("system", _("Integration"), "integrations"),
-    # A key's status and its Finish switching page sit under the integration
-    # the key belongs to; their views supply the target the routes lack. The
-    # status is readable only by the Administrator who saved the key, so
-    # Finish switching (open to every Administrator) never runs through it.
-    # Finish switching is a one-time review that needs a fresh Google
-    # sign-in, so a switch's status page names it but returns to the
-    # integration.
-    "credential_status": Page(
-        "system", _("Key replacement status"), "integration_settings"
-    ),
-    "select_credential": Page(
-        "system",
-        _("Finish switching to the new key"),
-        "integration_settings",
-        linkable=False,
-    ),
     "background": Page("system", _("Background work")),
     "background_task_page": Page("system", _("Background task"), "background"),
     "logs": Page("system", _("System logs")),
@@ -350,7 +363,7 @@ STRUCTURE_FIXED = _(
 )
 ALREADY_LIVE = _("Only a draft campaign can go live; this one already has")
 NOT_CONFIRMED = _(
-    "Production has not been confirmed for this campaign; start at Go-live readiness"
+    "Production has not been confirmed for this campaign; start at Go live"
 )
 PRODUCTION_ONLY = _("Available in Production mode")
 NO_SOURCE_DATA = _("ParishSoft data has not been downloaded yet")
@@ -439,7 +452,7 @@ def _structural(module_reason):
 
 
 def _draft(state):
-    """Go-live readiness: only a draft campaign can go live."""
+    """Go live: only a draft campaign can go live."""
     if not state.campaign:
         return NO_CAMPAIGN
     if state.campaign.state != "draft":
@@ -506,20 +519,22 @@ MENU = (
     Entry("production_progress", _ADMIN, _confirmed),
     # Mail and Family portal
     Entry("delivery_control", _ADMIN, _production),
-    Entry("family_email_progress", _ADMIN, _campaign),
+    # Always available: notices and Ministry leader emails need no campaign.
+    Entry("mail_queue", _ADMIN),
     Entry("family_email_sends", _ADMIN, _campaign),
     Entry("deliveries", _ADMIN),
     Entry("family_portal", _ADMIN),
     Entry("presence", _ADMIN),
-    # Responses and reports
+    # Review work, in the Administrator's order (R39 finding 1).
+    Entry("census_changes", Capability.VIEW_CENSUS, CENSUS),
+    Entry("ministry_report", Capability.MINISTRY_REPORT, MINISTRY, scoped=True),
+    Entry("pledges_to_enter", Capability.FINANCIAL_DETAIL, FINANCIAL),
+    Entry("information_queue", Capability.ADDITIONAL_FOLLOWUP, _downloaded(_campaign)),
+    Entry("limitations_report", Capability.CAMPAIGN_REPORT, MINISTRY),
+    # Reports and queries
     Entry("response_dashboard", Capability.CAMPAIGN_REPORT, _campaign),
-    Entry("participation", Capability.CAMPAIGN_REPORT, _campaign),
     Entry("campaign_comparison", Capability.CAMPAIGN_REPORT, _campaign),
     Entry("financial_report", Capability.FINANCIAL_DETAIL, FINANCIAL),
-    Entry("limitations_report", Capability.CAMPAIGN_REPORT, MINISTRY),
-    Entry("census_changes", Capability.VIEW_CENSUS, CENSUS),
-    Entry("information_queue", Capability.ADDITIONAL_FOLLOWUP, _downloaded(_campaign)),
-    Entry("ministry_report", Capability.MINISTRY_REPORT, MINISTRY, scoped=True),
     Entry("family_directory", Capability.FAMILY_CODES, _downloaded(_campaign)),
     # Staff see its daily reports; Send a weekly report now is on the page.
     Entry("emailed_reports", Capability.CAMPAIGN_REPORT),
@@ -694,6 +709,13 @@ NON_PAGES = frozenset(
         "branding_asset",
         # The Campaign comparison's download form (#1018), a POST.
         "campaign_comparison_export",
+        # The figures status the Response dashboard and Campaign comparison
+        # poll (#1586), a fragment.
+        "response_dashboard_status",
+        # The passive statuses of the parts the Information request page and
+        # Users could not read (#1863), fragments.
+        "information_contacts_status",
+        "user_leaders_status",
         # A Campaign setup step's Continue (#1404), a POST that redirects.
         "campaign_step_continue",
         "content_plain_text",
@@ -705,10 +727,13 @@ NON_PAGES = frozenset(
         "delivery_refusal_clear",
         "dismiss_credential_result",
         "delivery_resolve",
-        "family_email_progress_status",
+        "mail_queue_status",
         # The header's presence count, polled at the old presence address.
         "presence_count",
-        "family_timeline_export",
+        # Dates and mail schedules' Add these schedules and continue (#1404
+        # PR 6), a POST answered with the change's status.
+        "schedule_suggested",
+        "timeline_export",
         "family_directory_export",
         # Open form's hand-off (#529): a POST that opens the Family form.
         "family_open_form",
@@ -722,21 +747,22 @@ NON_PAGES = frozenset(
         "past_campaign_archive",
         "financial_export",
         "information_export",
-        "information_update",
         "integration_status",
         "login",
         "logout",
         "logs_export",
         "limitations_export",
         "census_changes_export",
+        # Update ParishSoft's confirmation and Run again (#1688): POSTs that
+        # answer the review dialog with a fragment.
+        "update_parishsoft_confirmation",
+        "update_parishsoft_retries",
         "maintenance",
         "ministry_followup_export",
         "ministry_followup_update",
-        "ministry_followup_bulk",
         "ministry_followup_roster",
-        "ministry_roster_export",
-        "ministry_roster_bulk",
         "ministry_packet",
+        "pledges_to_enter_export",
         # The ParishSoft refresh schedule editor's live check (#632), a
         # fragment the settings page reads.
         "refresh_schedule_check",
@@ -746,7 +772,6 @@ NON_PAGES = frozenset(
         # New and Edit scheduled email's test of an unsaved edit (#446), a
         # POST the page script makes.
         "schedule_email_test",
-        "report_exact_create",
         "report_export_cancel",
         "report_export_create",
         "report_export_download",
@@ -782,6 +807,8 @@ NON_PAGES = frozenset(
         # status fragment.
         "system",
         "system_health_status",
+        # Data to fix in ParishSoft polls its counts region (#1859).
+        "parishsoft_fixes_status",
     }
 )
 
@@ -807,15 +834,6 @@ FLOWS = {
         ("choose", _("Choose Families")),
         ("review", _("Review")),
         ("send", _("Send and follow")),
-    ),
-    # Going live: check readiness, clean up Testing data, prepare Family
-    # links, confirm Production, then follow its activation.
-    "go_live": (
-        ("readiness", _("Check readiness")),
-        ("cleanup", _("Testing cleanup")),
-        ("links", _("Family links")),
-        ("confirm", _("Confirm Production")),
-        ("activate", _("Activation")),
     ),
     # A report export: request it from a report, wait for it, download it.
     "export": (
@@ -924,7 +942,7 @@ def _link(name, arguments, offered=None):
     A menu page is linked only when the sidebar offers that exact URL: the
     sidebar already greys out entries their page would refuse (Share options
     once the campaign is locked, Campaign images for an archived campaign,
-    Go-live readiness after the draft), so a trail or "Return to" link
+    Go live after the draft), so a trail or "Return to" link
     reuses that decision instead of repeating it (#196). A page standing for
     an entry (``Page.entry``) is linked only while that entry is offered. None
     skips the check.
@@ -1039,10 +1057,12 @@ def build(match, items, placed=None):
     the view's optional ``Placement``.
     """
     name, chain, arguments = _resolved(match, placed)
+    # A step of a guided page marks that page's entry (``Page.step_of``).
+    step_of = PAGES[name].step_of if name in PAGES else None
     current_item = next(
         (
             entry_name
-            for entry_name in reversed(chain)
+            for entry_name in reversed(chain + [step_of] if step_of else chain)
             if any(entry[1] == entry_name for entry in items)
         ),
         None,
@@ -1059,7 +1079,7 @@ def build(match, items, placed=None):
                 # "page" for the page itself; "true" when the entry is only
                 # the nearest listed ancestor of the page being viewed.
                 "current": (
-                    ("page" if item.name == name else "true")
+                    ("page" if item.name in {name, step_of} else "true")
                     if item.name == current_item
                     else None
                 ),

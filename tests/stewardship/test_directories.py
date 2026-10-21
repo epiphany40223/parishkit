@@ -31,6 +31,23 @@ from parishkit.stewardship.reports.directories import (
     selection_parameters,
 )
 
+from .test_family_link import STAFF
+
+# The directory's closed link presets for each list of Families (reports
+# spec, "Response filters"), which the Response dashboard's Lists of
+# Families panel linked to until #1537 removed it; saved links still open.
+RESPONSE_LIST_PRESETS = {
+    "submitted": {"response": "submitted", "responses": "yes", "sort": "submitted"},
+    "started": {"response": "started", "responses": "yes"},
+    "not-opened": {"response": "never-opened", "responses": "yes"},
+    "more-than-once": {
+        "response": "more-than-once",
+        "responses": "yes",
+        "sort": "submissions_desc",
+    },
+    "data-quality": {"check": "anything"},
+}
+
 
 def test_directory_filters_preserve_private_post_state():
     """Friendly codes canonicalize; page state never becomes identifying URLs."""
@@ -306,6 +323,8 @@ def test_open_form_follows_the_mode_and_keeps_the_code_out_of_urls(testing):
                 ]
             ),
             "query": DirectoryQuery(),
+            # A viewer who may open the Timeline (#1570's shared link).
+            "request": STAFF,
         },
     )
     action = (
@@ -321,7 +340,7 @@ def test_open_form_follows_the_mode_and_keeps_the_code_out_of_urls(testing):
     # heads its row (#932).
     assert (
         '<th scope="row"><a href="'
-        f'{reverse("admin:family_timeline", args=[UUID(int=81)])}">'
+        f'{reverse("admin:timeline", args=[UUID(int=81)])}">'
         "Example, Anna and John</a></th>"
     ) in html
     assert '<th scope="row">Codeless</th>' in html
@@ -578,12 +597,11 @@ def test_page_address_keeps_only_link_safe_presets():
         LINK_PRESETS,
         page_address,
     )
-    from parishkit.stewardship.reports.response_dashboard import DIRECTORY_PRESETS
 
     route = reverse("admin:family_directory")
     assert page_address(route, DirectoryQuery(), postal=False) == route
-    # Each dashboard link's own query comes back unchanged.
-    for preset in DIRECTORY_PRESETS.values():
+    # Each list's link query comes back unchanged.
+    for preset in RESPONSE_LIST_PRESETS.values():
         query = DirectoryQuery.parse(QueryDict(urlencode(preset)))
         address = page_address(route, query, postal=False)
         assert QueryDict(address.partition("?")[2]).dict() == preset
@@ -728,12 +746,14 @@ def test_testing_selection_pins_the_active_rehearsal(monkeypatch):
 def test_testing_view_is_labelled_and_leaves_out_production_responses(testing):
     """A Testing view says so and drops Responded, which reads Production.
 
-    The switch itself is drawn only when offered (``can_test``): Staff and
-    an Administrator with no rehearsal get a hidden Production field.
+    The switch itself (a binary choice above the Filters panel, #1535) is
+    drawn only when offered (``can_test``), and the filter form then carries
+    the mode shown as a hidden field, so Apply filters keeps it; Staff and
+    an Administrator with no rehearsal get neither.
     """
     from uuid import UUID
 
-    from parishkit.stewardship.reports.directories import MODES
+    query = DirectoryQuery(mode="testing" if testing else "production")
 
     def page(**context):
         """The directory page with one Family row."""
@@ -743,7 +763,6 @@ def test_testing_view_is_labelled_and_leaves_out_production_responses(testing):
                 "campaign_id": UUID(int=80),
                 "metadata": {"source_generation": 1},
                 "total": 1,
-                "modes": MODES,
                 "table": _table(
                     [
                         {
@@ -754,17 +773,27 @@ def test_testing_view_is_labelled_and_leaves_out_production_responses(testing):
                         }
                     ]
                 ),
-                "query": DirectoryQuery(mode="testing" if testing else "production"),
+                "query": query,
+                "query_fields": query.form_values() | {"mailing": "no"},
+                "report_url": "/families/",
                 "testing_responses": testing,
             }
             | context,
         )
 
     offered = page(can_test=True)
-    assert '<select id="directory-mode" name="mode"' in offered
+    assert '<div class="segmented-choice" id="directory-mode" role="group"' in offered
     assert 'id="directory-mode-tip"' in offered
+    assert '<select id="directory-mode"' not in offered
     selected = "testing" if testing else "production"
-    assert f'<option value="{selected}" selected>' in offered
+    assert (
+        f'<button type="submit" name="mode" value="{selected}" aria-current="page">'
+        in offered
+    )
+    assert offered.count('aria-current="page"') == 1
+    filters = offered.split('id="table-filters"')[1].split("</form>")[0]
+    assert filters.count('name="mode"') == 1
+    assert f'<input type="hidden" name="mode" value="{selected}">' in filters
     hidden = page(can_test=False)
     assert 'id="directory-mode"' not in hidden
     # No hidden stand-in either: an in-place answer drawn after the

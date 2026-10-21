@@ -31,9 +31,10 @@ LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
     SELECT id,depth FROM chain
 $$;
 
-CREATE FUNCTION stewardship_ministry_revision_guard_v1() RETURNS trigger
+CREATE FUNCTION public.stewardship_ministry_revision_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
-DECLARE target stewardship_ministry_request%ROWTYPE; campaign uuid;
+DECLARE target stewardship_ministry_request%ROWTYPE; campaign uuid; asked jsonb;
+    reopen boolean; ticked boolean; undo boolean; confirmed boolean; operational boolean;
 BEGIN
     IF TG_OP<>'INSERT' THEN
         RAISE EXCEPTION 'Ministry follow-up history is immutable' USING ERRCODE='23514';
@@ -42,41 +43,112 @@ BEGIN
     SELECT * INTO target FROM stewardship_ministry_request WHERE id=NEW.request_id FOR UPDATE;
     SELECT campaign_id INTO campaign FROM stewardship_submission
         WHERE id=target.submission_id AND mode='live';
-    -- Closed, cancelled and superseded requests are immutable. A successor
-    -- created by the Family invalidates every form bound to this request.
+    -- Cancelled and superseded requests are immutable, and a successor
+    -- created by the Family invalidates every form bound to this request. A
+    -- resolved or closed request changes only by going back to review, or,
+    -- one the parish added, by being withdrawn (#1684), below.
+    reopen := target.state IN ('resolved','closed_no_response');
+    -- Authority follows the request's current Ministry: the one an Edit
+    -- carried forward, once edited (#1684).
     IF target.id IS NULL OR campaign IS NULL
-       OR target.state NOT IN ('new','assigned','in_progress')
-       OR NOT stewardship_ministry_followup_authorized_v1(NEW.actor_id,target.ministry_duid)
+       OR (target.state NOT IN ('new','assigned','in_progress') AND NOT reopen)
+       OR NOT stewardship_ministry_followup_authorized_v1(NEW.actor_id,
+           coalesce(target.reviewed_ministry_duid,target.ministry_duid))
        OR NOT stewardship_export_admitted_v1(campaign,true)
        OR NEW.expected_version IS DISTINCT FROM target.version
        OR NEW.expected_version>=9223372036854775807
        OR length(NEW.notes)>5000 OR length(NEW.contact_notes)>2000
+       OR length(NEW.decision_note)>2000
     THEN RAISE EXCEPTION 'Ministry follow-up change lacks current authority/version'
         USING ERRCODE='23514'; END IF;
     -- Attribution time is database-owned, so a contact cannot postdate its record.
     NEW.created_at:=statement_timestamp();
+    SELECT cc.values->'ministry_duids' INTO asked FROM stewardship_campaign c
+        JOIN stewardship_campaign_configuration cc ON cc.id=c.active_configuration_id
+        WHERE c.id=campaign;
+    SELECT e.entered INTO ticked FROM stewardship_ministry_roster_entry e
+        WHERE e.request_id=target.id ORDER BY e.sequence DESC LIMIT 1;
+    -- Back to review of a terminal step (#1840): a resolved request kept
+    -- resolved, with its outcome and Edit, undoes Entered in ParishSoft or
+    -- a Confirmed refresh check at its version; a Staff member or
+    -- Administrator only (never a Ministry leader), with a note.
+    undo := reopen AND NEW.state='resolved';
+    confirmed := EXISTS (SELECT 1 FROM stewardship_refresh_check k
+        WHERE k.request_id=target.id AND k.item_version=target.version
+          AND k.outcome='confirmed');
+    operational := coalesce((stewardship_ministry_scope_v1(NEW.actor_id)->'operational')
+        ='true'::jsonb,false);
     IF (NEW.assignee_id IS NOT NULL AND NOT
             stewardship_ministry_followup_authorized_v1(NEW.assignee_id,target.ministry_duid))
        OR (NEW.outcome='joined' AND target.action<>'join')
        OR (NEW.outcome='leave_confirmed' AND target.action<>'leave')
        OR NEW.contact_at>NEW.created_at
+       -- Back to review: In progress with nothing carried forward, never
+       -- while Staff ticked it Entered in ParishSoft or a refresh check
+       -- Confirmed a person's decision (that step is undone first, by the
+       -- undo below, keeping the decision), with a note when it reopens an
+       -- ignored request, and by Staff with a note when it undoes a
+       -- refresh's resolution (#1840). A request the parish added is
+       -- withdrawn (cancelled) instead.
+       OR (reopen AND NOT undo
+           AND (NEW.state<>CASE WHEN target.parish_added THEN 'cancelled' ELSE 'in_progress' END
+           OR NEW.outcome IS NOT NULL OR NEW.reviewed_ministry_duid IS NOT NULL
+           OR NEW.contact_channel IS NOT NULL OR coalesce(ticked,false)
+           OR (confirmed AND target.resolution_source_id IS NULL)
+           OR (target.resolution_source_id IS NOT NULL
+               AND (NEW.decision_note !~ '\S' OR NOT operational))
+           OR (target.outcome NOT IN ('joined','leave_confirmed') AND NEW.decision_note !~ '\S')))
+       -- The undo of Entered in ParishSoft or Confirmed (above): the
+       -- decision as it stands, a person's (no refresh resolution), and a
+       -- tick or a Confirmed check to undo.
+       OR (undo AND (target.state<>'resolved'
+           OR target.outcome NOT IN ('joined','leave_confirmed')
+           OR NEW.outcome IS DISTINCT FROM target.outcome
+           OR NEW.reviewed_ministry_duid IS DISTINCT FROM target.reviewed_ministry_duid
+           OR NEW.contact_channel IS NOT NULL
+           OR target.resolution_source_id IS NOT NULL
+           OR NOT (coalesce(ticked,false) OR confirmed)
+           OR NEW.decision_note !~ '\S' OR NOT operational))
+       OR (NOT reopen AND NEW.state='cancelled')
+       -- Edit: Accept with another of the campaign's Ministries carried
+       -- forward, which the actor may also follow up (a leader edits only
+       -- into a Ministry they lead).
+       -- (The undo keeps the Edit it had, checked above.)
+       OR (NEW.reviewed_ministry_duid IS NOT NULL AND NOT undo AND (NEW.state<>'resolved'
+           OR NEW.outcome IS DISTINCT FROM
+               CASE WHEN target.action='join' THEN 'joined' ELSE 'leave_confirmed' END
+           OR NEW.reviewed_ministry_duid=target.ministry_duid
+           OR NOT coalesce(asked @> to_jsonb(NEW.reviewed_ministry_duid),false)
+           OR NOT stewardship_ministry_followup_authorized_v1(NEW.actor_id,NEW.reviewed_ministry_duid)
+           -- Never a second current request about one Member and Ministry.
+           OR EXISTS (SELECT 1 FROM stewardship_ministry_request other
+               JOIN stewardship_submission history ON history.id=other.submission_id
+               JOIN stewardship_submission own ON own.id=target.submission_id
+               WHERE other.id<>target.id AND history.family_id=own.family_id
+                 AND history.campaign_id=own.campaign_id AND history.mode='live'
+                 AND other.entity_kind=target.entity_kind
+                 AND other.entity_key=target.entity_key
+                 AND NEW.reviewed_ministry_duid IN (other.ministry_duid,
+                     other.reviewed_ministry_duid)
+                 AND other.state NOT IN ('cancelled','superseded'))))
     THEN RAISE EXCEPTION 'Ministry follow-up change is not valid for this request'
         USING ERRCODE='23514'; END IF;
     RETURN NEW;
 END $$;
 
-CREATE FUNCTION stewardship_ministry_revision_effect_v1() RETURNS trigger
+CREATE FUNCTION public.stewardship_ministry_revision_effect_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE target stewardship_ministry_request%ROWTYPE; campaign uuid;
 BEGIN
     SELECT * INTO target FROM stewardship_ministry_request WHERE id=NEW.request_id;
     SELECT campaign_id INTO campaign FROM stewardship_submission WHERE id=target.submission_id;
     -- The request guard proved the exact projection when it advanced this
-    -- version. A later version in this transaction has its own revision.
+    -- version, the Ministry an Edit carries forward included (#1684). A
+    -- later version in this transaction has its own revision.
     IF target.version<=NEW.expected_version
        OR (target.version=NEW.expected_version+1
-           AND ROW(target.state,target.outcome,target.assignee_id)
-               IS DISTINCT FROM ROW(NEW.state,NEW.outcome,NEW.assignee_id))
+           AND ROW(target.state,target.outcome,target.assignee_id,target.reviewed_ministry_duid)
+               IS DISTINCT FROM ROW(NEW.state,NEW.outcome,NEW.assignee_id,NEW.reviewed_ministry_duid))
        OR NOT EXISTS(SELECT 1 FROM stewardship_audit_event a
            JOIN stewardship_audit_context c ON c.event_id=a.id
            WHERE a.event_type='ministry_request_updated' AND a.subject_id=NEW.id
@@ -142,17 +214,19 @@ WITH selected AS MATERIALIZED (
     -- ParishSoft (#1217) does not keep one listed (#1219), as it is never
     -- counted or listed under it.
     -- Staff and Administrators still get it where they list such requests:
-    -- by id, and with the presence filters 'gone' and 'any'.
+    -- by id, and with the presence filters 'gone' and 'any'. The Ministry an
+    -- Edit carried forward (#1684) counts as the request's too.
     CROSS JOIN LATERAL (
         SELECT n.duid,true FROM jsonb_array_elements_text(x.values->'ministry_duids') n(duid)
         UNION
-        SELECT DISTINCT r.ministry_duid::text,false
+        SELECT DISTINCT d.duid::text,false
         FROM stewardship_submission s
         JOIN stewardship_ministry_request r ON r.submission_id=s.id
         JOIN stewardship_family_campaign f ON f.id=s.family_id
-        WHERE s.campaign_id=x.id AND s.mode='live'
+        CROSS JOIN LATERAL (VALUES (r.ministry_duid),(r.reviewed_ministry_duid)) d(duid)
+        WHERE s.campaign_id=x.id AND s.mode='live' AND d.duid IS NOT NULL
           AND r.state NOT IN ('cancelled','superseded')
-          AND NOT x.values->'ministry_duids' @> to_jsonb(r.ministry_duid)
+          AND NOT x.values->'ministry_duids' @> to_jsonb(d.duid)
           AND (r.entity_kind<>'member'
               OR (operational AND (request_uuid IS NOT NULL
                   OR coalesce(filters->>'presence','current') IN ('gone','any')))
@@ -165,14 +239,40 @@ WITH selected AS MATERIALIZED (
     WHERE n.duid::bigint BETWEEN 1 AND 2147483647
       AND (operational OR n.duid::bigint=ANY(ministry_scope::bigint[]))
 ), requests AS MATERIALIZED (
-    SELECT r.*,s.submitted_at,f.family_duid,m.name AS ministry_name,m.in_campaign,
-        row_number() OVER (PARTITION BY s.family_id,r.entity_kind,r.entity_key,
-            r.ministry_duid ORDER BY s.family_version DESC,r.id) AS revision
-    FROM source x
-    JOIN stewardship_submission s ON s.campaign_id=x.id AND s.mode='live'
-    JOIN stewardship_ministry_request r ON r.submission_id=s.id
-    JOIN ministries m ON m.duid=r.ministry_duid
-    JOIN stewardship_family_campaign f ON f.id=s.family_id
+    -- A request is in the reader's scope by the Family's Ministry or by the
+    -- one an Edit carried forward (#1684), so the leaders of both see it.
+    -- Its latest version is found across every request first, so scope
+    -- never changes which version is latest. A Ministry outside the
+    -- reader's scope is still named, from the same snapshot.
+    SELECT q.*,
+        coalesce(m.name,(SELECT coalesce(nullif(btrim(p.canonical::jsonb->>'name'),''),
+                'Unavailable Ministry')
+            FROM stewardship_snapshot_ministry sm
+            JOIN stewardship_source_ministry p ON p.id=sm.payload_id
+            WHERE sm.snapshot_id=x.source_id AND sm.source_key=q.ministry_duid::text),
+            'Unavailable Ministry') AS ministry_name,
+        coalesce(m.in_campaign,
+            x.values->'ministry_duids' @> to_jsonb(q.ministry_duid)) AS in_campaign,
+        CASE WHEN q.reviewed_ministry_duid IS NOT NULL THEN coalesce(e.name,
+            (SELECT coalesce(nullif(btrim(p.canonical::jsonb->>'name'),''),
+                'Unavailable Ministry')
+            FROM stewardship_snapshot_ministry sm
+            JOIN stewardship_source_ministry p ON p.id=sm.payload_id
+            WHERE sm.snapshot_id=x.source_id
+              AND sm.source_key=q.reviewed_ministry_duid::text),
+            'Unavailable Ministry') END AS reviewed_ministry_name
+    FROM (
+        SELECT r.*,s.submitted_at,f.family_duid,
+            row_number() OVER (PARTITION BY s.family_id,r.entity_kind,r.entity_key,
+                r.ministry_duid ORDER BY s.family_version DESC,r.id) AS revision
+        FROM source x
+        JOIN stewardship_submission s ON s.campaign_id=x.id AND s.mode='live'
+        JOIN stewardship_ministry_request r ON r.submission_id=s.id
+        JOIN stewardship_family_campaign f ON f.id=s.family_id
+    ) q CROSS JOIN source x
+    LEFT JOIN ministries m ON m.duid=q.ministry_duid
+    LEFT JOIN ministries e ON e.duid=q.reviewed_ministry_duid
+    WHERE m.duid IS NOT NULL OR e.duid IS NOT NULL
 ), named AS MATERIALIZED (
     -- A Member is named "Last, first" (UX conventions, "Family and Member
     -- names", #932), so the name sort orders by surname; the search also
@@ -214,7 +314,8 @@ WITH selected AS MATERIALIZED (
     WHERE CASE WHEN request_uuid IS NOT NULL THEN r.id=request_uuid ELSE
         ((filters->>'history')='all' OR (r.revision=1
             AND r.state NOT IN ('cancelled','superseded')))
-        AND ((filters->>'ministry')='' OR r.ministry_duid::text=(filters->>'ministry'))
+        AND ((filters->>'ministry')='' OR r.ministry_duid::text=(filters->>'ministry')
+            OR r.reviewed_ministry_duid::text=(filters->>'ministry'))
         AND ((filters->>'action')='any' OR r.action=(filters->>'action'))
         AND ((filters->>'state')='any' OR r.state=(filters->>'state')
             OR ((filters->>'state')='unresolved'
@@ -244,6 +345,7 @@ WITH selected AS MATERIALIZED (
         OR position(lower((filters->>'search')) IN lower(member_name))>0
         OR position(lower((filters->>'search')) IN lower(member_search_name))>0
         OR position(lower((filters->>'search')) IN lower(ministry_name))>0
+        OR position(lower((filters->>'search')) IN lower(coalesce(reviewed_ministry_name,'')))>0
 ), page AS MATERIALIZED (
     SELECT *,row_number() OVER (ORDER BY
         CASE WHEN (filters->>'sort')='name' THEN lower(member_name) END,
@@ -255,6 +357,7 @@ WITH selected AS MATERIALIZED (
     SELECT r.ordinal,r.id,r.version,r.ministry_duid,r.ministry_name,r.in_campaign,r.member_name,
         r.entity_kind,r.action,r.state,r.outcome,r.assignee_id,r.submitted_at,
         r.cannot_serve,r.member_status,
+        r.reviewed_ministry_duid,r.reviewed_ministry_name,r.parish_added,r.added_in_place_of_id,
         r.resolved_at,r.resolution_source_id IS NOT NULL AS source_resolved,
         r.revision=1 AS latest,
         r.state IN ('new','assigned','in_progress') AS open,

@@ -81,7 +81,7 @@ class Action(StrEnum):
     SOURCE_FALLBACK = "source_fallback_requested"
     BACKGROUND_VIEWED = "background_viewed"
     DELIVERY_VIEWED = "delivery_viewed"
-    # One Outgoing mail bulk retry or "confirm all not sent" (#382 M4); each
+    # One Sent mail bulk retry or "confirm all not sent" (#382 M4); each
     # message it resolves also has its own resolution audit event.
     DELIVERY_BULK_RESOLVED = "delivery_bulk_resolved"
     DAILY_DIGEST_VIEWED = "daily_digest_viewed"
@@ -101,6 +101,7 @@ class Action(StrEnum):
     CAMPAIGN_ARCHIVE_EXPORTED = "campaign_archive_exported"
     INFORMATION_VIEWED = "information_viewed"
     INFORMATION_UPDATED = "information_updated"
+    LIMITATION_REVIEWED = "limitation_reviewed"
     MINISTRY_FOLLOWUP_VIEWED = "ministry_followup_viewed"
     # The queue's Export these requests download (#1157).
     MINISTRY_FOLLOWUP_EXPORTED = "ministry_followup_exported"
@@ -116,6 +117,13 @@ class Action(StrEnum):
     CENSUS_CHANGES_VIEWED = "census_changes_viewed"
     CENSUS_CHANGES_EXPORTED = "census_changes_exported"
     CENSUS_CHANGE_UPDATED = "census_change_updated"
+    # Migration 0113 (#1596) re-marked open census changes the live API test
+    # showed publication cannot carry as By hand; count: how many. Written
+    # once, by the migration, as a system event with no subject.
+    CENSUS_HANDLING_CORRECTED = "census_handling_corrected"
+    # The baseline refresh re-evaluation's Not seen start (#1689): written
+    # once, by migration 0132, as a system event with no subject.
+    REFRESH_CHECKS_STARTED = "refresh_checks_started"
     MINISTRY_ROSTER_ENTERED = "ministry_roster_entered"
     # Publication to ParishSoft (#528, DAT-09.01): a preflight's plan (count:
     # its entities), an Administrator's confirmation (count: entities to
@@ -136,8 +144,20 @@ class Action(StrEnum):
     CENSUS_PUBLICATION_SWITCHED_OFF = "census_publication_switched_off"
     CENSUS_PUBLICATION_READ_UNCONFIRMED = "census_publication_read_unconfirmed"
     CENSUS_PUBLICATION_REFUSED = "census_publication_refused"
+    # The final full refresh an update run requested once its plan updated a
+    # Member (#1688); the subject is the refresh command, so System logs
+    # says the refresh followed an update.
+    CENSUS_PUBLICATION_REFRESH_REQUESTED = "census_publication_refresh_requested"
+    # Someone opened Update ParishSoft (#528, ADM-09; #1688); count: plan rows.
+    CENSUS_PUBLICATION_VIEWED = "census_publication_viewed"
     ROSTER_CHANGES_VIEWED = "roster_changes_viewed"
     ROSTER_CHANGES_EXPORTED = "roster_changes_exported"
+    # Pledges (#1686): opening and downloading it (count: rows),
+    # and one decision on a Family's pledge, whose subject is its
+    # stewardship_pledge_review row; no event holds an amount.
+    PLEDGES_TO_ENTER_VIEWED = "pledges_to_enter_viewed"
+    PLEDGES_TO_ENTER_EXPORTED = "pledges_to_enter_exported"
+    PLEDGE_REVIEW_UPDATED = "pledge_review_updated"
     RESPONSE_DASHBOARD_VIEWED = "response_dashboard_viewed"
     # The lists of Families behind the response funnel (#477): one event type
     # per list, so the audit names the list without a new context field. The
@@ -177,6 +197,8 @@ class Action(StrEnum):
     # kind ``operator``; both name the switch as the subject (the operator's
     # definer returns the id it cleared, #1229).
     DEBUG_LOGGING_ALLOWED = "debug_logging_allowed"
+    # Clear the halt (ADM-13 PR 4a); the subject is the clear signal.
+    MAIL_HALT_CLEARED = "mail_halt_cleared"
     # Accept this change once (ADM-13 PR 5b); the subject is the acceptance.
     SOURCE_DROP_ACCEPTED = "source_drop_accepted"
     PRESENCE_VIEWED = "family_presence_viewed"
@@ -198,9 +220,19 @@ class Action(StrEnum):
     USER_LEADERS_LISTED = "user_leaders_listed"
     USER_LEADERS_IMPORT_REQUESTED = "user_leaders_import_requested"
     USER_LEADER_IMPORTED = "user_leader_imported"
+    # Email Ministry leaders (#1592), both recorded by SQL: each review read
+    # (``count`` is the Ministry leader users answered) and each Apply's
+    # request (its subject; ``count`` is the leaders emailed), never an
+    # address.
+    USER_LEADER_EMAILS_REVIEWED = "user_leader_emails_reviewed"
+    USER_LEADER_EMAILS_REQUESTED = "user_leader_emails_requested"
     SECURITY_EVENT_ACKNOWLEDGED = "security_event_acknowledged"
     CRITICAL_EVENTS_ACKNOWLEDGED = "critical_events_acknowledged"
     CREDENTIAL_RESULT_DISMISSED = "credential_result_dismissed"
+    # A ParishSoft key change refused because the key sees another
+    # organization (#1495); the subject is the key change request. Recorded
+    # by the target installer with the request's failure, never with values.
+    CREDENTIAL_KEY_ORGANIZATION_MISMATCH = "credential_key_organization_mismatch"
     FAMILY_MAINTENANCE_STARTED = "family_maintenance_started"
     FAMILY_MAINTENANCE_ENDED = "family_maintenance_ended"
     HOSTED_FILE_UPLOADED = "hosted_file_uploaded"
@@ -229,8 +261,8 @@ class Action(StrEnum):
     AUTOMATION_SESSION_ENDED = "automation_session_ended"
     AUTOMATION_SESSION_REFUSED = "automation_session_refused"
     AUTOMATION_NOTICES_ACKNOWLEDGED = "automation_notices_acknowledged"
-    # An automation session stood in for a recent Google sign-in on a
-    # fresh-gated action (ADM-11 PR 5), in that action's transaction.
+    # An automation session ran a privileged action (ADM-11 PR 5), in that
+    # action's transaction. The name is historical (#1547).
     AUTOMATION_FRESH_GATE = "automation_fresh_gate"
     # Admin automation commands that change state (ADM-11): one event per
     # change, admin_cmd_<area>_<verb>, whose subject is the automation
@@ -241,6 +273,10 @@ class Action(StrEnum):
     ADMIN_CMD_PARISH_CONFIRM = "admin_cmd_parish_confirm"
     # artwork remove: Campaign images' Apply of a removal (ADM-11 PR 10).
     ADMIN_CMD_ARTWORK_REMOVE = "admin_cmd_artwork_remove"
+    # branding preview and confirm: Parish logos' upload Review and its
+    # review dialog's Apply (#1865).
+    ADMIN_CMD_BRANDING_PREVIEW = "admin_cmd_branding_preview"
+    ADMIN_CMD_BRANDING_CONFIRM = "admin_cmd_branding_confirm"
     # content confirm: Pages and emails' Delete of unused emails (ADM-11 PR 10).
     ADMIN_CMD_CONTENT_CONFIRM = "admin_cmd_content_confirm"
     # integration confirm: an integration settings page's Apply (ADM-11 PR 10).
@@ -253,13 +289,23 @@ class Action(StrEnum):
     ADMIN_CMD_INTEGRATION_KEY_FINISH_SWITCHING = (
         "admin_cmd_integration_key_finish_switching"
     )
+    # integration key replace: a settings page's Save with a new key pasted.
+    ADMIN_CMD_INTEGRATION_KEY_REPLACE = "admin_cmd_integration_key_replace"
+    # integration backup-key confirm: the Backup encryption key page's Confirm.
+    ADMIN_CMD_INTEGRATION_BACKUP_KEY_CONFIRM = (
+        "admin_cmd_integration_backup_key_confirm"
+    )
     # workgroup confirm: the No-reminders WorkGroup page's Apply (ADM-11 PR 10).
     ADMIN_CMD_WORKGROUP_CONFIRM = "admin_cmd_workgroup_confirm"
     # campaign confirm: Campaign settings' Apply (ADM-11 PR 10).
     ADMIN_CMD_CAMPAIGN_CONFIRM = "admin_cmd_campaign_confirm"
+    # campaign create: Create the campaign's Apply (#1899).
+    ADMIN_CMD_CAMPAIGN_CREATE = "admin_cmd_campaign_create"
     # campaign shares-confirm: Share options' Apply (ADM-11 PR 10).
     ADMIN_CMD_CAMPAIGN_SHARES_CONFIRM = "admin_cmd_campaign_shares_confirm"
     ADMIN_CMD_USERS_IMPORT_LEADERS = "admin_cmd_users_import_leaders"
+    # users email-leaders --confirm: Email Ministry leaders' Apply (#1622).
+    ADMIN_CMD_USERS_EMAIL_LEADERS = "admin_cmd_users_email_leaders"
     # The operator's cancellation of a stuck live end-date change (#944).
     ADMIN_CMD_CONFIG_REQUEST_CANCEL = "admin_cmd_config_request_cancel"
     ADMIN_CMD_TASK_RETRY = "admin_cmd_task_retry"
@@ -292,6 +338,15 @@ class Action(StrEnum):
     ADMIN_CMD_PORTAL_MAINTENANCE_SET = "admin_cmd_portal_maintenance_set"
     # send confirm: Pause and resume mail's Confirm (ADM-11 PR 7b, #463).
     ADMIN_CMD_SEND_CONFIRM = "admin_cmd_send_confirm"
+    # The Go live page's actions (ADM-11 PR 12, #1809): Start go-live, a
+    # step's Retry, Refresh and prepare again, Stop go-live, Confirm
+    # Production and Cancel go-live.
+    ADMIN_CMD_GO_LIVE_START = "admin_cmd_go_live_start"
+    ADMIN_CMD_GO_LIVE_RETRY = "admin_cmd_go_live_retry"
+    ADMIN_CMD_GO_LIVE_REFRESH_AGAIN = "admin_cmd_go_live_refresh_again"
+    ADMIN_CMD_GO_LIVE_STOP = "admin_cmd_go_live_stop"
+    ADMIN_CMD_GO_LIVE_CONFIRM = "admin_cmd_go_live_confirm"
+    ADMIN_CMD_GO_LIVE_CANCEL = "admin_cmd_go_live_cancel"
     # system backup-now: System health's Take a backup now (ADM-13 PR 3b).
     ADMIN_CMD_SYSTEM_BACKUP_NOW = "admin_cmd_system_backup_now"
     # system debug-off: System health's Turn off debug logging (ADM-13 PR 6b).
@@ -300,6 +355,8 @@ class Action(StrEnum):
     ADMIN_CMD_SYSTEM_REFRESH_ACCEPT = "admin_cmd_system_refresh_accept"
     # system debug-allow: System health's Allow debug logging again (PR 6c).
     ADMIN_CMD_SYSTEM_DEBUG_ALLOW = "admin_cmd_system_debug_allow"
+    # system mail-clear: System health's Clear the halt (PR 4a).
+    ADMIN_CMD_SYSTEM_MAIL_CLEAR = "admin_cmd_system_mail_clear"
     # files delete and files rename: the Hosted files page's row actions.
     ADMIN_CMD_FILES_DELETE = "admin_cmd_files_delete"
     ADMIN_CMD_FILES_RENAME = "admin_cmd_files_rename"
@@ -320,9 +377,9 @@ class Action(StrEnum):
     # events acknowledge: Home's security event and critical-problem
     # acknowledgements, with the page's own event in the same transaction.
     ADMIN_CMD_EVENTS_ACKNOWLEDGE = "admin_cmd_events_acknowledge"
-    # census resolve: a Census changes row's Record outcome (#528, #463).
+    # census resolve: a Census changes row's outcome (#528, #463).
     ADMIN_CMD_CENSUS_RESOLVE = "admin_cmd_census_resolve"
-    # census review: an Automatic row's Review (#528, ADM-09).
+    # census review: an Automatic row's review (#528, ADM-09).
     ADMIN_CMD_CENSUS_REVIEW = "admin_cmd_census_review"
     # followup update and followup bulk: a Ministry follow-up request's Save
     # and the queue's bulk outcome (#463 PR 11a).
@@ -334,6 +391,25 @@ class Action(StrEnum):
     # census resolve-conflict: an Automatic Conflict's Use the Family's value
     # anyway (#1434, ADM-09.03).
     ADMIN_CMD_CENSUS_RESOLVE_CONFLICT = "admin_cmd_census_resolve_conflict"
+    # census update-check, update-confirm and update-rerun: Update
+    # ParishSoft's Check ParishSoft, Update and Run again (#1755).
+    ADMIN_CMD_CENSUS_UPDATE_CHECK = "admin_cmd_census_update_check"
+    ADMIN_CMD_CENSUS_UPDATE_CONFIRM = "admin_cmd_census_update_confirm"
+    ADMIN_CMD_CENSUS_UPDATE_RERUN = "admin_cmd_census_update_rerun"
+    # followup roster-entered and followup roster-bulk: a resolved request's
+    # Entered in ParishSoft tick and a bulk Entered by hand;
+    # followup information-update: an Additional information item's Save
+    # (#463 PR 11b).
+    ADMIN_CMD_FOLLOWUP_ROSTER_ENTERED = "admin_cmd_followup_roster_entered"
+    ADMIN_CMD_FOLLOWUP_ROSTER_BULK = "admin_cmd_followup_roster_bulk"
+    ADMIN_CMD_FOLLOWUP_INFORMATION_UPDATE = "admin_cmd_followup_information_update"
+    # information decide and limitations decide: a worklist decision, one
+    # item or in bulk (#1735).
+    ADMIN_CMD_INFORMATION_DECIDE = "admin_cmd_information_decide"
+    ADMIN_CMD_LIMITATIONS_DECIDE = "admin_cmd_limitations_decide"
+    # pledges decide: a Pledges decision, one pledge or in bulk
+    # (#1733).
+    ADMIN_CMD_PLEDGES_DECIDE = "admin_cmd_pledges_decide"
 
 
 # Closed field identifiers are operational metadata, never census values.
@@ -536,6 +612,10 @@ FIELDS = {
         # answers who exported what without its request row: closed words.
         "report",
         "format",
+        # A report view the open page made by itself to bring newer figures
+        # in (#1620): always true when present; a reader's own view has no
+        # such key. Mirrored in stewardship_safe_context_v1.
+        "automatic",
     },
 }
 
@@ -947,6 +1027,7 @@ def sanitize(kind, values):
             "exact_code_used",
             "ministry_operational",
             "directory_response_columns",
+            "automatic",
         }:
             valid = type(value) is bool
             safe[key] = value

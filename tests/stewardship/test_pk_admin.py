@@ -1090,6 +1090,7 @@ def test_the_streaming_list_names_every_streaming_command():
         "export_census",
         "export_limitations",
         "export_roster",
+        "followup_export",
     } <= streaming
 
 
@@ -1115,7 +1116,8 @@ def test_the_prompting_list_names_every_prompting_command():
     assert "delivery_bounce-report" in prompting
     assert "portal_maintenance_set" in prompting
     assert "files_delete" in prompting and "files_rename" not in prompting
-    assert "census_resolve" in prompting
+    # Every census outcome can be undone (#1840), so it asks nothing.
+    assert "census_resolve" not in prompting
     assert "portal_maintenance" not in prompting
 
 
@@ -1479,6 +1481,581 @@ def test_an_interrupted_prompt_leaves_no_writer_at_the_terminal(host, tmp_path):
                     os.killpg(process.pid, signal.SIGKILL)
                 pytest.fail("a process of the run (the input writer) was left behind")
             time.sleep(0.1)
+    finally:
+        os.close(terminal)
+        os.close(controller)
+
+
+# ``integration key replace`` (ADM-11 PR 10): the key reaches the command only
+# on the line after the preamble, never as an argument or a file.
+KEY = b"xoxb-synthetic-wrapper-key\n"
+REPLACE = ("integration", "key", "replace", "slack", "--expected-version", "v")
+
+
+def key_line(value):
+    """The tagged line the wrapper must send for a key of ``value`` bytes."""
+    import base64
+
+    return b"pk-admin-secret/1 " + base64.b64encode(value) + b"\n"
+
+
+def preamble():
+    """The session preamble of ``host.session()``'s file."""
+    return f"pk-admin-session/1 {'a' * 43} {host_digest()}\n".encode()
+
+
+def key_file(tmp_path, value=KEY, mode=0o600):
+    """A key file outside the session directory."""
+    path = tmp_path / "slack.key"
+    path.write_bytes(value)
+    path.chmod(mode)
+    return path
+
+
+def no_work_left(host):
+    """The run's work directory (where the input FIFO lived) is gone."""
+    return not list(Path(host.environment["TMPDIR"]).glob("pk-admin.*"))
+
+
+def test_a_key_file_is_sent_after_the_preamble_and_never_as_an_argument(host, tmp_path):
+    """The command line names --secret-stdin, not the path; standard input
+    is the preamble, then the one tagged base64 line."""
+    host.answer({"ok": True})
+    host.session()
+    path = key_file(tmp_path)
+    result = host.run(*REPLACE, "--secret-file", str(path), "--yes")
+    assert result.returncode == 0, result.stderr
+    calls = host.calls()
+    assert "--secret-stdin" in calls and "--secret-file" not in calls
+    assert str(path) not in calls and not any(KEY.strip().decode() in a for a in calls)
+    assert host.stdin() == preamble() + key_line(KEY)
+    assert KEY not in result.stdout + result.stderr
+    assert no_work_left(host)
+
+
+def test_the_wrappers_key_limit_is_the_pages():
+    """KEY_LIMIT is the key field's limit, MAX_FILE_BYTES."""
+    from parishkit.stewardship.accounts.key_files import MAX_FILE_BYTES
+
+    [limit] = re.findall(r"^KEY_LIMIT=(\d+)$", WRAPPER.read_text(), re.M)
+    assert int(limit) == MAX_FILE_BYTES
+
+
+@pytest.mark.parametrize("problem", ["group", "link", "fifo", "missing", "large"])
+def test_a_key_file_that_is_not_a_private_regular_file_is_refused(
+    host, tmp_path, problem
+):
+    """Exit 2 before anything runs, without blocking on a FIFO."""
+    from parishkit.stewardship.accounts.key_files import MAX_FILE_BYTES
+
+    host.session()
+    path = key_file(tmp_path)
+    if problem == "group":
+        path.chmod(0o640)
+    elif problem == "link":
+        link = tmp_path / "link.key"
+        link.symlink_to(path)
+        path = link
+    elif problem == "fifo":
+        path.unlink()
+        os.mkfifo(path, 0o600)
+    elif problem == "missing":
+        path.unlink()
+    else:
+        path.write_bytes(b"k" * (MAX_FILE_BYTES + 1))
+    result = host.run(*REPLACE, "--secret-file", str(path), "--yes")
+    assert result.returncode == 2, result.stderr
+    assert host.calls() is None
+
+
+def test_a_file_at_the_limit_is_sent(host, tmp_path):
+    """Exactly the page's limit passes the wrapper (the command checks too)."""
+    from parishkit.stewardship.accounts.key_files import MAX_FILE_BYTES
+
+    host.answer({"ok": True})
+    host.session()
+    value = b"k" * MAX_FILE_BYTES
+    result = host.run(*REPLACE, "--secret-file", str(key_file(tmp_path, value)))
+    assert result.returncode == 0, result.stderr
+    assert host.stdin() == preamble() + key_line(value)
+
+
+def test_a_piped_key_needs_yes_and_is_sent_whole(host):
+    """Piped --secret-stdin: refused without --yes before anything is read;
+    with it, everything piped (one byte over the limit at most) is the key."""
+    host.session()
+    result = host.run(*REPLACE, "--secret-stdin", stdin=KEY)
+    assert result.returncode == 2 and host.calls() is None
+    assert b"--yes" in result.stderr
+    host.answer({"ok": True})
+    result = host.run(*REPLACE, "--secret-stdin", "--yes", stdin=KEY)
+    assert result.returncode == 0, result.stderr
+    assert host.stdin() == preamble() + key_line(KEY)
+    assert "--secret-stdin" in host.calls()
+    assert no_work_left(host)
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ("whoami", "--secret-stdin", "--yes"),
+        (*REPLACE, "--secret-stdin", "--secret-stdin", "--yes"),
+        (*REPLACE, "--secret-file", "/k", "--secret-stdin", "--yes"),
+        (*REPLACE, "--secret-file=/k", "--yes"),
+        (*REPLACE, "--secret-file"),
+        (*REPLACE, "--changes", "-", "--secret-stdin", "--yes"),
+    ],
+)
+def test_misused_key_options_are_refused(host, arguments):
+    """Only this command takes a key, once, as PATH or standard input, and
+    standard input then carries nothing else."""
+    host.session()
+    result = host.run(*arguments, stdin=KEY)
+    assert result.returncode == 2, result.stderr
+    assert host.calls() is None
+
+
+def test_a_key_typed_at_a_terminal_is_not_echoed_and_the_answer_follows(host):
+    """Echo goes off while the key is read (to Ctrl-D) and comes back for
+    the prompt's one answer line; the terminal shows no key."""
+    import select
+    import termios
+
+    host.answer({"ok": True})
+    host.session()
+    controller, terminal = pty.openpty()
+    try:
+        process = subprocess.Popen(
+            [str(WRAPPER), *REPLACE, "--secret-stdin"],
+            env=host.environment,
+            stdin=terminal,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        # Typed only once the wrapper says echo is off.
+        assert b"it is not shown" in process.stderr.readline()
+        assert not termios.tcgetattr(terminal)[3] & termios.ECHO
+        os.write(controller, b"typed-key\n\x04yes\n")
+        _, errors = process.communicate(timeout=20)
+        assert process.returncode == 0, errors
+        assert termios.tcgetattr(terminal)[3] & termios.ECHO
+        shown = b""
+        while select.select([controller], [], [], 0.2)[0]:
+            try:
+                chunk = os.read(controller, 4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            shown += chunk
+        assert b"typed-key" not in shown
+        assert host.stdin() == preamble() + key_line(b"typed-key\n") + b"yes\n"
+    finally:
+        os.close(terminal)
+        os.close(controller)
+
+
+def read_terminal_until(controller, needle, timeout=20):
+    """Everything the terminal shows up to and including ``needle``.
+
+    Fails the test if ``needle`` does not appear within ``timeout`` seconds,
+    so a wrapper (or an orphaned key reader) that swallows input cannot hang
+    the suite.
+    """
+    import select
+    import time
+
+    shown = b""
+    deadline = time.monotonic() + timeout
+    while needle not in shown:
+        left = deadline - time.monotonic()
+        if left <= 0:
+            pytest.fail(f"{needle!r} never appeared; the terminal showed {shown!r}")
+        if select.select([controller], [], [], left)[0]:
+            try:
+                chunk = os.read(controller, 4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            shown += chunk
+    return shown
+
+
+@contextlib.contextmanager
+def interactive_shell(host, tmp_path, pgrep="present"):
+    """An interactive bash (job control on) whose controlling terminal is a
+    fresh pty; yields the pty's controller once the first prompt shows.
+
+    ``pgrep="missing"`` puts a pgrep that finds nothing first on PATH. The
+    shell is the test's own and is always ended, so nothing it started is
+    left behind.
+    """
+    import fcntl
+    import termios
+
+    if shutil.which("bash") is None:
+        pytest.skip("bash is not installed")
+    if pgrep == "missing":
+        stub = tmp_path / "bin" / "pgrep"
+        stub.write_text("#!/bin/sh\nexit 1\n")
+        stub.chmod(0o755)
+
+    def controlling():
+        """Make the pty the shell's controlling terminal (job control)."""
+        fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+
+    controller, terminal = pty.openpty()
+    try:
+        shell = subprocess.Popen(
+            ["bash", "--norc", "--noprofile", "-i"],
+            env={
+                **host.environment,
+                "PS1": "PROMPT$ ",
+                "HISTFILE": str(tmp_path / "history"),
+            },
+            stdin=terminal,
+            stdout=terminal,
+            stderr=terminal,
+            start_new_session=True,
+            preexec_fn=controlling,
+        )
+    except BaseException:
+        os.close(controller)
+        os.close(terminal)
+        raise
+    try:
+        read_terminal_until(controller, b"PROMPT$ ")
+        yield controller
+    finally:
+        # The controller goes first: a process whose terminal holds unread
+        # output can block in exit (macOS drains a closing terminal), and a
+        # hangup discards it.
+        os.close(controller)
+        shell.kill()
+        shell.wait(timeout=20)
+        os.close(terminal)
+
+
+def shell_after_the_run(controller):
+    """What the shell shows for ``history`` once the wrapper has returned,
+    proving the next line reaches the shell (no key reader is left)."""
+    os.write(controller, b"history; echo DONE-$((40 + 2))\n")
+    return read_terminal_until(controller, b"DONE-42")
+
+
+@pytest.mark.parametrize("pgrep", ["present", "missing"])
+def test_a_key_pasted_after_the_command_ended_never_reaches_the_shell(
+    host, tmp_path, pgrep
+):
+    """A refusal before the key is read (here Staff, ``denied``) ends the
+    command at once, long before a person pastes. Run from an interactive
+    shell, the wrapper keeps echo off and the terminal until the key is read
+    to Ctrl-D and discarded, so a key pasted only after the command ended is
+    not shown, not run as a command and not in the shell's history, and no
+    key reader is left behind to swallow the next line (with pgrep or, by
+    its PID, without)."""
+    import time
+
+    host.answer({"error": {"code": "denied"}}, status=1)
+    host.session()
+    # The command reads only the preamble, then refuses.
+    host.environment["FAKE_DOCKER_LINES"] = "1"
+    with interactive_shell(host, tmp_path, pgrep) as controller:
+        command = " ".join([str(WRAPPER), *REPLACE, "--secret-stdin"])
+        os.write(controller, command.encode() + b"\n")
+        shown = read_terminal_until(controller, b"the key is discarded")
+        assert b'"denied"' in shown
+        # The person pastes only now, well after the command ended.
+        time.sleep(0.5)
+        os.write(controller, b"xoxb-SECRETPASTE-123\n")
+        time.sleep(0.3)
+        os.write(controller, b"\x04")
+        shown += read_terminal_until(controller, b"PROMPT$ ")
+        shown += shell_after_the_run(controller)
+        assert b"SECRETPASTE" not in shown
+        assert b"not found" not in shown and b"Terminated" not in shown
+        assert host.stdin() == preamble()
+        assert no_work_left(host)
+
+
+def paste(controller, lines):
+    """Type ``lines`` one at a time, as a terminal delivers a paste, from a
+    background thread; returns the started thread.
+
+    A write waits while the terminal's input queue is full (a non-blocking
+    write would drop the rest of the line), so the test reads the
+    terminal's output meanwhile: if a broken wrapper let the paste reach the
+    shell, its echo and errors would otherwise fill the terminal and block
+    both sides.
+    """
+    import threading
+
+    def write():
+        """Write every line whole."""
+        for line in lines:
+            os.write(controller, line)
+
+    thread = threading.Thread(target=write, daemon=True)
+    thread.start()
+    return thread
+
+
+@pytest.mark.parametrize("pgrep", ["present", "missing"])
+def test_a_paste_over_the_limit_never_reaches_the_shell(host, tmp_path, pgrep):
+    """The key reader stops one byte past 128 KiB, mid-paste. The rest of a
+    larger paste (200 lines of 720 bytes) is read to Ctrl-D with echo off
+    and discarded, so none of it is shown, run or kept in history; the
+    command gets the limit plus one byte and refuses it, and the next line
+    reaches the shell."""
+    from parishkit.stewardship.accounts.key_files import MAX_FILE_BYTES
+
+    host.answer({"error": {"code": "invalid_change"}}, status=1)
+    host.session()
+    # The command reads the preamble and the key line, then refuses.
+    host.environment["FAKE_DOCKER_LINES"] = "2"
+    # A slow writer: parsing dd's count is delayed, so the command could
+    # refuse the key and end before the wrapper decides to drain the paste
+    # unless the key line is held back until that decision is made.
+    real_sed = shutil.which("sed")
+    slow = tmp_path / "bin" / "sed"
+    slow.write_text(
+        f'#!/bin/sh\ncase "$*" in *bytes*) sleep 1;; esac\nexec {real_sed} "$@"\n'
+    )
+    slow.chmod(0o755)
+    line = b"OVERSIZEPASTE-" + b"k" * 705 + b"\n"
+    pasted = line * 200
+    assert len(line) == 720 and len(pasted) > MAX_FILE_BYTES + 1
+    with interactive_shell(host, tmp_path, pgrep) as controller:
+        command = " ".join([str(WRAPPER), *REPLACE, "--secret-stdin"])
+        os.write(controller, command.encode() + b"\n")
+        shown = read_terminal_until(controller, b"it is not shown")
+        typing = paste(controller, [line] * 200)
+        shown += read_terminal_until(controller, b"the key is discarded")
+        typing.join(timeout=20)
+        assert not typing.is_alive()
+        assert b"longer than 128 KiB" in shown
+        os.write(controller, b"\x04")
+        shown += read_terminal_until(controller, b"PROMPT$ ")
+        shown += shell_after_the_run(controller)
+        assert b"OVERSIZEPASTE" not in shown
+        assert b"not found" not in shown and b"Terminated" not in shown
+        assert host.stdin() == preamble() + key_line(pasted[: MAX_FILE_BYTES + 1])
+        assert no_work_left(host)
+
+
+def test_a_key_file_that_cannot_be_read_is_named(host, tmp_path):
+    """The key reader's standard error is quiet, so when it fails on the key
+    file the wrapper itself says the file could not be read."""
+    host.answer({"error": {"code": "usage"}}, status=2)
+    host.session()
+    real = shutil.which("head")
+    stub = tmp_path / "bin" / "head"
+    stub.write_text(f'#!/bin/sh\n[ "$1" = -c ] && exit 1\nexec {real} "$@"\n')
+    stub.chmod(0o755)
+    path = key_file(tmp_path)
+    result = host.run(*REPLACE, "--secret-file", str(path), "--yes")
+    assert result.returncode == 2, result.stderr
+    assert f"pk-admin: {path} could not be read".encode() in result.stderr
+    assert no_work_left(host)
+
+
+def test_a_quit_while_a_key_is_typed_restores_echo_and_cleans_up(host):
+    """Ctrl-\\ (QUIT) is an interruption like Ctrl-C: exit 131, echo back
+    on, the work directory gone."""
+    import signal
+    import termios
+
+    host.answer({"ok": True})
+    host.session()
+    controller, terminal = pty.openpty()
+    try:
+        process = subprocess.Popen(
+            [str(WRAPPER), *REPLACE, "--secret-stdin"],
+            env=host.environment,
+            stdin=terminal,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        assert b"it is not shown" in process.stderr.readline()
+        assert not termios.tcgetattr(terminal)[3] & termios.ECHO
+        process.send_signal(signal.SIGQUIT)
+        process.communicate(timeout=20)
+        assert process.returncode == 131
+        assert termios.tcgetattr(terminal)[3] & termios.ECHO
+        assert no_work_left(host)
+    finally:
+        os.close(terminal)
+        os.close(controller)
+
+
+def test_a_run_with_a_key_dumps_no_core(host, tmp_path):
+    """The wrapper sets the core size limit to 0 for a run that carries a
+    key, so no process of it can dump key bytes, whatever the limit it
+    started with. It does so before the key is opened. Once this process's
+    hard limit is 0 (an in-process command run earlier lowers it), it
+    cannot be raised to show the wrapper lowering it, so only the order is
+    checked then."""
+    import resource
+
+    text = WRAPPER.read_text()
+    assert text.index("    ulimit -c 0") < text.index('command exec 3<"$key_file"')
+    _, hard = resource.getrlimit(resource.RLIMIT_CORE)
+    if hard == 0:
+        return
+
+    def allow_cores():
+        """Start the wrapper with core dumps allowed."""
+        resource.setrlimit(resource.RLIMIT_CORE, (hard, hard))
+
+    host.answer({"ok": True})
+    host.session()
+    docker = tmp_path / "bin" / "docker"
+    docker.write_text(
+        '#!/usr/bin/env bash\nulimit -c > "$FAKE_DOCKER_ARGS"\ncat >/dev/null\n'
+    )
+    result = subprocess.run(
+        [str(WRAPPER), *REPLACE, "--secret-file", str(key_file(tmp_path)), "--yes"],
+        env=host.environment,
+        capture_output=True,
+        check=False,
+        timeout=20,
+        preexec_fn=allow_cores,
+    )
+    assert result.returncode == 0, result.stderr
+    assert Path(host.environment["FAKE_DOCKER_ARGS"]).read_text() == "0\n"
+
+
+# The Backup encryption key's steps (ADM-11 PR 10): the new public key and
+# the proof code reach the command the same way, on their own tagged lines.
+PUBLIC_KEY = b"q83vEjRWeJCrze8SNFZ4kKvN7xI0VniQq83vEjRWeHg=\n"
+CHALLENGE = ("integration", "backup-key", "challenge")
+PREVIEW = ("integration", "backup-key", "preview", "--intent", "i")
+
+
+def tagged_line(tag, value):
+    """The tagged line the wrapper must send for ``value``."""
+    import base64
+
+    return tag + b" " + base64.b64encode(value) + b"\n"
+
+
+def test_a_public_key_file_is_sent_on_its_own_line(host, tmp_path):
+    """The container sees --public-key-stdin, never the path or the key."""
+    host.answer({"ok": True})
+    host.session()
+    path = key_file(tmp_path, PUBLIC_KEY)
+    result = host.run(*CHALLENGE, "--public-key-file", str(path))
+    assert result.returncode == 0, result.stderr
+    calls = host.calls()
+    assert "--public-key-stdin" in calls and "--public-key-file" not in calls
+    assert str(path) not in calls
+    assert not any(PUBLIC_KEY.strip().decode() in a for a in calls)
+    assert host.stdin() == preamble() + tagged_line(
+        b"pk-admin-public-key/1", PUBLIC_KEY
+    )
+    assert no_work_left(host)
+
+
+def test_a_piped_code_needs_no_yes(host):
+    """The preview does not prompt, so its piped code is sent as given."""
+    host.answer({"ok": True})
+    host.session()
+    result = host.run(*PREVIEW, "--code-stdin", stdin=b"ABCD-EFGH-JKMN\n")
+    assert result.returncode == 0, result.stderr
+    assert "--code-stdin" in host.calls()
+    assert host.stdin() == preamble() + tagged_line(
+        b"pk-admin-proof/1", b"ABCD-EFGH-JKMN\n"
+    )
+
+
+def test_a_code_file_is_sent_and_an_oversized_one_refused(host, tmp_path):
+    """--code-file becomes --code-stdin; over the page's field limit is
+    refused before anything runs."""
+    host.answer({"ok": True})
+    host.session()
+    path = key_file(tmp_path, b"ABCDEFGHJKMN\n")
+    result = host.run(*PREVIEW, "--code-file", str(path))
+    assert result.returncode == 0, result.stderr
+    calls = host.calls()
+    assert "--code-stdin" in calls and str(path) not in calls
+    assert host.stdin() == preamble() + tagged_line(
+        b"pk-admin-proof/1", b"ABCDEFGHJKMN\n"
+    )
+    path.write_bytes(b"A" * 201)
+    result = host.run(*PREVIEW, "--code-file", str(path))
+    assert result.returncode == 2 and b"limit" in result.stderr
+
+
+def test_the_wrappers_field_limit_is_the_pages():
+    """FIELD_LIMIT is the Backup encryption key page's field limit."""
+    from parishkit.stewardship.accounts.backup_key import MAX_FIELD
+
+    [limit] = re.findall(r"^FIELD_LIMIT=(\d+)$", WRAPPER.read_text(), re.M)
+    assert int(limit) == MAX_FIELD
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        (*CHALLENGE, "--public-key-stdin"),
+        (*CHALLENGE, "--code-stdin"),
+        (*CHALLENGE, "--secret-stdin", "--yes"),
+        (*CHALLENGE, "--public-key-file=/k"),
+        (*CHALLENGE, "--public-key-file"),
+        (*PREVIEW, "--public-key-file", "/k"),
+        (*PREVIEW, "--code-stdin", "--code-file", "/k"),
+        (*REPLACE, "--code-stdin", "--yes"),
+        (*REPLACE, "--public-key-file", "/k", "--yes"),
+        ("integration", "backup-key", "confirm", "--token", "-", "--code-stdin"),
+    ],
+)
+def test_misused_backup_key_options_are_refused(host, arguments):
+    """Each value goes only to its own command, once, from a path or (the
+    code only) standard input; the container's --public-key-stdin is not
+    the operator's to give."""
+    host.session()
+    result = host.run(*arguments, stdin=b"x\n")
+    assert result.returncode == 2, result.stderr
+    assert host.calls() is None
+
+
+def test_a_code_typed_at_a_terminal_is_not_echoed(host):
+    """Echo goes off while the code is read (to Ctrl-D) and comes back."""
+    import select
+    import termios
+
+    host.answer({"ok": True})
+    host.session()
+    controller, terminal = pty.openpty()
+    try:
+        process = subprocess.Popen(
+            [str(WRAPPER), *PREVIEW, "--code-stdin"],
+            env=host.environment,
+            stdin=terminal,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        line = process.stderr.readline()
+        assert b"paste the code" in line and b"it is not shown" in line
+        assert not termios.tcgetattr(terminal)[3] & termios.ECHO
+        os.write(controller, b"TYPED-CODE-1\n\x04")
+        _, errors = process.communicate(timeout=20)
+        assert process.returncode == 0, errors
+        assert termios.tcgetattr(terminal)[3] & termios.ECHO
+        shown = b""
+        while select.select([controller], [], [], 0.2)[0]:
+            try:
+                chunk = os.read(controller, 4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            shown += chunk
+        assert b"TYPED-CODE" not in shown
+        assert host.stdin() == preamble() + tagged_line(
+            b"pk-admin-proof/1", b"TYPED-CODE-1\n"
+        )
     finally:
         os.close(terminal)
         os.close(controller)

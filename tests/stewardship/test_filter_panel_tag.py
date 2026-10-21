@@ -9,6 +9,7 @@ import pytest
 from django.template import Context, Template, TemplateSyntaxError
 
 from parishkit.stewardship.accounts.templatetags.stewardship import applied_filters
+from parishkit.stewardship.reports.census_changes import CensusQuery
 from parishkit.stewardship.reports.directories import DirectoryQuery
 from parishkit.stewardship.reports.information import InformationQuery
 
@@ -46,10 +47,41 @@ def test_count_ignores_defaults_sort_page_and_zone():
 def test_count_reads_each_report_query_s_own_defaults():
     """A report's default view is unfiltered even when its default narrows it."""
     assert applied_filters(DirectoryQuery()) == 0
-    assert applied_filters(DirectoryQuery(search="Example", mode="testing")) == 2
+    # Responses shown (mode) is a page mode outside the panel (#1535).
+    assert applied_filters(DirectoryQuery(search="Example", mode="testing")) == 1
     # "Current actionable requests" is Additional information's normal list.
     assert applied_filters(InformationQuery()) == 0
     assert applied_filters(InformationQuery(disposition="all")) == 1
+
+
+def test_applied_filters_is_also_the_template_filter():
+    """Census changes' empty table and its panel count the same filters (#227).
+
+    "Work to do" is the page's normal list, and the browser zone is not a
+    filter, so neither counts.
+    """
+    assert applied_filters(CensusQuery(zone="America/Detroit")) == 0
+    assert applied_filters(CensusQuery(status="all")) == 1
+    assert applied_filters(CensusQuery(status="all", history="yes")) == 2
+    assert (
+        render("{{ query|applied_filters }}", query=CensusQuery(route="automatic"))
+        == "1"
+    )
+
+
+def test_template_filter_ignores_whole_field_names():
+    """The directory's empty row leaves out named fields (#1828).
+
+    A comma-separated argument names whole fields: "responses" ignores the
+    response-columns choice but never the Response filter whose name it
+    contains.
+    """
+    columns = DirectoryQuery(responses="yes")
+    both = DirectoryQuery(responses="yes", response="submitted", reach="mail")
+    assert render('{{ q|applied_filters:"responses" }}', q=columns) == "0"
+    assert render('{{ q|applied_filters:"responses" }}', q=both) == "2"
+    assert render('{{ q|applied_filters:"reach,responses" }}', q=both) == "1"
+    assert applied_filters(both, ("reach",)) == 2
 
 
 def test_panel_starts_closed_with_nothing_applied():
@@ -122,6 +154,26 @@ def test_open_word_opens_the_panel_by_default_only_when_given():
     assert closed.startswith('<details class="filter-panel" data-filter-panel><')
 
 
+def test_fixed_word_draws_an_always_open_box():
+    """Census changes passes ``fixed`` (#1682): a titled box, no disclosure.
+
+    Its heading names the box and carries the same synced count, so an
+    in-place Apply updates it as it does a panel's summary.
+    """
+    html = render(
+        "{% filterpanel query fixed %}x{% endfilterpanel %}",
+        query=CensusQuery(status="all"),
+    )
+    assert html == (
+        '<section class="filter-panel" data-filter-panel'
+        ' aria-labelledby="table-filters-heading">'
+        '<h2 id="table-filters-heading">Filters: '
+        '<span id="table-filters-applied" data-table-sync>1 applied</span></h2>'
+        "x</section>"
+    )
+    assert "<details" not in html
+
+
 # Django comments, tags and variables, removed before the panel's markup is
 # parsed: they may sit inside a start tag ({% if %} selected{% endif %}).
 TEMPLATE_SYNTAX = re.compile(
@@ -157,28 +209,33 @@ def panel_cells(name):
     source = (TEMPLATES / name).read_text(encoding="utf-8")
     body = source.split("{% filterpanel", 1)[1].split("{% endfilterpanel %}", 1)[0]
     body = body.split("%}", 1)[1]
-    # The Apply button is the {% button %} tag; keep its place as markup.
-    body = re.sub(r"{% button .*?%}", "<button>", body)
-    body = body.replace("{% endbutton %}", "</button>")
+    # Apply filters and Clear filters are the shared component (#1651), one
+    # cell of the grid; keep its place as markup.
+    body = re.sub(
+        r'{% include "stewardship/components/filter-actions.html".*?%}',
+        '<div id="filter-actions"></div>',
+        body,
+    )
     parser = PanelCells()
     parser.feed(TEMPLATE_SYNTAX.sub("", body))
     return parser
 
 
-@pytest.mark.parametrize("name", ["information.html", "financial-report.html"])
+@pytest.mark.parametrize("name", ["financial-report.html"])
 def test_each_panel_filter_is_one_grid_cell(name):
     """Every label and its control share one div, a cell of the panel's grid.
 
     The open panel's form is a grid (#1411, ui-v1.css): a label or control
     left loose in the form would take a cell of its own and split the
     field. A range fieldset is one cell, its two ends a div each; Apply
-    follows the last field, and only full-row notes come after it, so Apply
-    can share the last row of fields.
+    filters and Clear filters (one cell) follow the last field, and only
+    full-row notes come after them, so they can share the last row of
+    fields.
     """
     parser = panel_cells(name)
     assert parser.labels
     for label, ancestors in parser.labels:
         assert ancestors in (["form", "div"], ["form", "fieldset", "div"]), label
     tags = [tag for tag, _id in parser.children]
-    after = tags[tags.index("button") + 1 :]
+    after = tags[parser.children.index(("div", "filter-actions")) + 1 :]
     assert after and set(after) == {"p"}, parser.children

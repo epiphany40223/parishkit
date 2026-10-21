@@ -154,43 +154,48 @@ def test_a_revoke_names_exactly_one_session(two_admins, google):  # noqa: F811
     assert mine.revoked_at is None and other.revoked_at is None
 
 
-def test_approving_from_access_first_asks_for_a_fresh_sign_in(auth_service, google):
-    """A stale sign-in sees Confirm with Google and an unavailable button."""
+def test_approving_from_access_needs_no_recent_sign_in(auth_service, google):
+    """An old sign-in sees the Approve a session link, never a step-up (#1547)."""
     browser, _ = signed_in()
     stale_sign_in()
     page = browser.get(ACCESS)
-    assert b"Confirm with Google" in page.content
-    assert (
-        b'<button type="button" disabled aria-describedby="approve-unavailable">'
-        b"Approve a session</button>" in page.content
-    )
-    assert b'href="/admin/users/automation/approval/"' not in page.content
+    assert b"Confirm with Google" not in page.content
+    assert b'href="/admin/users/automation/approval/"' in page.content
+    assert b"approve-unavailable" not in page.content
 
 
 def test_the_notices_region_is_always_there_and_acknowledges_in_place(
     two_admins,  # noqa: F811
     google,
 ):
-    """Empty or not, the region renders; notices read plainly; ack is per person."""
+    """Empty or not, the region renders on Automation access; notices read
+    plainly; ack is per person; Home shows only their count (#1673)."""
     browser, _ = signed_in()
-    home = browser.get("/admin/")
-    assert b'id="automation-notices" data-in-place-region' in home.content
-    assert b"Automation notices" not in home.content
+    page = browser.get(ACCESS)
+    assert b'id="automation-notices" data-in-place-region' in page.content
+    assert b"Automation notices" not in page.content
+    assert b"data-home-automation" not in browser.get("/admin/").content
     paired(two_admins)
-    home = browser.get("/admin/")
-    assert b"An automation session was approved" in home.content
-    assert b"launch &lt;assistant&gt;" in home.content
+    page = browser.get(ACCESS)
+    assert b"An automation session was approved" in page.content
+    assert b"launch &lt;assistant&gt;" in page.content
+    home = browser.get("/admin/").content
+    assert b"1 automation notice to acknowledge." in home
+    assert b'href="/admin/users/automation/#automation-notices"' in home
+    assert b"An automation session was approved" not in home
     notice = AutomationNotice.objects.get()
     response = post(browser, "/admin/users/automation/notices/", notice=notice.pk)
     assert response.status_code == 302
-    assert response["Location"] == "/admin/#automation-notices"
-    home = browser.get("/admin/")
-    assert b'id="automation-notices" data-in-place-region' in home.content
-    assert b"An automation session was approved" not in home.content
+    assert response["Location"] == "/admin/users/automation/#automation-notices"
+    page = browser.get(ACCESS)
+    assert b'id="automation-notices" data-in-place-region' in page.content
+    assert b"An automation session was approved" not in page.content
+    assert b"data-home-automation" not in browser.get("/admin/").content
     claims, _ = google
     claims.update(sub="other-subject", email="other@example.org")
     other, _ = signed_in(Client(enforce_csrf_checks=True))
-    assert b"An automation session was approved" in other.get("/admin/").content
+    assert b"An automation session was approved" in other.get(ACCESS).content
+    assert b"1 automation notice to acknowledge." in other.get("/admin/").content
     post(other, "/admin/users/automation/notices/", notice="all")
     assert AutomationNoticeAcknowledgement.objects.count() == 2
 
@@ -202,4 +207,5 @@ def test_staff_see_neither_page_nor_notices(two_admins, google):  # noqa: F811
     claims.update(sub="staff-subject", email="staff@example.org")
     staff, _ = signed_in(Client(enforce_csrf_checks=True))
     assert staff.get(ACCESS).status_code == 403
-    assert b"automation-notices" not in staff.get("/admin/").content
+    home = staff.get("/admin/").content
+    assert b"automation-notices" not in home and b"data-home-automation" not in home

@@ -42,7 +42,7 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     from parishkit.stewardship.runtime_grants import (
         ADDRESS_RETRY_OPEN_FUNCTION,
         ADDRESS_RETRY_TOKEN_FUNCTION,
-        AUTOMATION_FRESH_FUNCTION,
+        AUTOMATION_REQUEST_FUNCTION,
         DEBUG_OFF_FUNCTION,
         EXPORT_DISCARD_FUNCTION,
         FAMILY_LOGIN_FUNCTION,
@@ -62,30 +62,38 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     }
     # Web also reads the 24-hour Family mail count and when it falls below the
     # Family limit for System health (ADM-13, #530),
-    # checks a secret request's automation sign-in (ADM-11 PR 5) and reads a
+    # checks that a secret request's named automation session is live (#1763)
+    # and reads a
     # user's role-derived Ministry scope (#922), the users upgrade
     # preview's identities and Member names, New user's Name lookup and the
-    # Users page's ParishSoft leaders without a user (#952) and, for an
+    # Users page's ParishSoft leaders without a user (#952) and its Email
+    # Ministry leaders review's leader users, Ministries and open request
+    # counts (#1592; no address, no parishioner data) and, for an
     # Administrator, one email's recipient addresses (#1024) and each one's
     # latest outcome and any follow-up retry (#806) and records a reported
-    # bounce (#806 slice 4), and the campaign comparison report's aggregates
-    # (#1018).
+    # bounce (#806 slice 4), the campaign comparison report's aggregates
+    # (#1018), and Sent mail's emails for one address and its page's
+    # Administrator addresses (#1562).
     assert runtime_functions(ServiceRole.WEB) == {
         FAMILY_LOGIN_FUNCTION,
         "stewardship_family_daily_sends_v1()",
         "stewardship_family_daily_resume_v1()",
-        AUTOMATION_FRESH_FUNCTION,
+        AUTOMATION_REQUEST_FUNCTION,
         LEADER_SCOPE_FUNCTION,
         "stewardship_portal_identities_v1()",
         "stewardship_member_names_v1()",
         "stewardship_member_names_for_v1(text, text, uuid)",
         "stewardship_leaders_without_user_v1(text, uuid)",
+        "stewardship_leader_emails_v1(text, uuid)",
         "stewardship_delivery_recipients_v1(uuid, uuid)",
         "stewardship_campaign_comparison_v1(uuid, date, numeric[], uuid)",
         "stewardship_campaign_archive_renewal_v1(uuid, uuid, integer)",
         "stewardship_delivery_recipient_outcomes_v1(uuid, uuid)",
         "stewardship_delivery_address_retries_v1(uuid, uuid)",
         "stewardship_report_recipient_bounce_v1(uuid, uuid, text, uuid, text)",
+        "stewardship_delivery_ids_for_address_v1(text, uuid)",
+        "stewardship_delivery_page_recipients_v1(uuid[], uuid)",
+        "stewardship_delivery_page_member_names_v1(uuid[], uuid)",
         DEBUG_OFF_FUNCTION,
     }
     # The worker's definer routines purge ended Admin sessions (ADM-11),
@@ -109,6 +117,10 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         "stewardship_source_snapshot_analyze_v1(uuid)",
         # The publication plans' audit answer (0087, #528).
         "stewardship_publication_audited_v1(text, uuid, uuid, jsonb)",
+        # The pledges a refresh re-evaluates (0135, #1747), v1's successor.
+        "stewardship_pledge_refresh_items_v2(uuid, uuid, uuid)",
+        # The added Members a promotion may link (0141, #1670).
+        "stewardship_added_member_candidates_v1(uuid, uuid)",
         DEBUG_OFF_FUNCTION,
     }
     assert runtime_functions("download") == {LEADER_SCOPE_FUNCTION}

@@ -1,5 +1,14 @@
-"""Admin-only, passive readiness evidence before any irreversible cleanup."""
+"""The Go live page's Check step and Testing submissions.
 
+Check (#1585 slice 2) shows passive readiness evidence and starts go-live
+from the shared review dialog: the irreversible Testing cleanup and attempt
+1, whose progress the Prepare step shows (go_live_prepare_views, #1585
+slice 3).
+"""
+
+from uuid import UUID, uuid4
+
+from django.core import signing
 from django.core.exceptions import ObjectDoesNotExist
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
@@ -12,22 +21,40 @@ from parishkit.stewardship.campaigns.cleanup_preview import (
     cleanup_families,
 )
 from parishkit.stewardship.campaigns.domain import Percentage
+from parishkit.stewardship.campaigns.production_models import (
+    ProductionTransitionRequest,
+)
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.admission import _scope
+from parishkit.stewardship.jobs.campaign_mail_values import document_parish
 from parishkit.stewardship.source.readiness import source_readiness
+from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import PageWindow, expected_version, filters
-from parishkit.stewardship.web.refusals import UserFacingGone, unexpected_fields
+from parishkit.stewardship.web.refusals import (
+    UserFacingGone,
+    refused_step,
+    unexpected_fields,
+)
 from parishkit.stewardship.web.tables import window_table
 
-from . import admin_navigation
+from . import admin_navigation, go_live_check
+from .activation_progress import _sign as sign_links_control
+from .activation_progress import control as links_control
 from .admin_caller import AdminCaller
 from .admin_editing import editable_configuration, principal
 from .authentication import runtime
-from .go_live_commands import start_cleanup, verify_preview
-from .go_live_inputs import collect_inputs, recent_cleanup_requests
-from .go_live_progress import control, progress
+from .content_forms import sample_render
+from .content_models import ContentVersion
+from .go_live_check import remember_check
+from .go_live_commands import SALT as COMMAND_SALT
+from .go_live_commands import (
+    configured_origin,
+    origin_check,
+    start_cleanup,
+    verify_preview,
+)
+from .go_live_inputs import collect_inputs
 from .integration_views import ERRORS, _checked
-from .sessions import freshness
 from .setup_views import _closed, error_response
 
 PROBLEMS = {
@@ -55,6 +82,11 @@ PROBLEMS = {
     ),
     "full_refresh_stale": _(
         "The last full refresh is too old. Run another full refresh."
+    ),
+    # Confirm Production after the attempt's refresh hold ended (#1585).
+    "go_live_hold_ended": _(
+        "ParishSoft refreshes resumed while this waited. Refresh and prepare "
+        "again on the Prepare step."
     ),
     "testing_delivery_unresolved": _(
         "Wait for or resolve all unfinished and uncertain Testing deliveries."
@@ -95,117 +127,531 @@ PROBLEMS = {
     "family_test_mail_pending": _("Wait for the pending Family email test to finish."),
     "campaign_closed": _("The campaign closing instant has passed. Review its dates."),
 }
+# The page that fixes each readiness problem, by its Admin URL name; a
+# problem that only needs waiting (a running test or refresh, other
+# campaign work) has none. Test emails link to each email's own page.
+FIXES = {
+    "initial_schedule_required": "schedule_settings",
+    "page_reference_unavailable": "content_catalog",
+    "mail_template_unavailable": "schedule_settings",
+    "ministry_mapping_unavailable": "campaign_settings",
+    "financial_mapping_incomplete": "campaign_settings",
+    "integration_configuration_incomplete": "integrations",
+    "admin_recipient_required": "users",
+    "tenant_unavailable": "integrations",
+    "full_refresh_required": "source_refresh",
+    "source_scope_changed": "source_refresh",
+    "full_refresh_stale": "source_refresh",
+    "testing_delivery_unresolved": "deliveries",
+    "production_delivery_unresolved": "deliveries",
+    "campaign_work_held": "background",
+    "parishsoft_check_required": "integrations",
+    "google_workspace_check_required": "integrations",
+    "slack_check_required": "integrations",
+    "family_email_unsendable": "content_catalog",
+    "campaign_closed": "schedule_settings",
+}
+
+
+# Every Check step action, by its form's ``action``, with its other fields.
+_CHECK_FIELDS = {
+    "verify": set(),
+    "review": set(),
+    "confirm": {"preview_token"},
+    "retry_stop": {"control"},
+}
+# The Start go-live dialog's refusals (go-live-start-review.html) and their
+# statuses; the refusal log records each by its key (``refused_step``).
+_START_REFUSALS = {
+    "started": 409,
+    "stopping": 409,
+    "stop_failed": 409,
+    "closed": 409,
+    "changed": 409,
+    "origin_unverified": 409,
+}
+# How often the Check step re-reads itself while nothing is running: the
+# readiness checks change only when the Administrator fixes something.
+_IDLE_INTERVAL_MS = 30000
+# The longest the shared watcher follows a page (live-status-v1.js).
+_WATCH_MS = 3 * 60 * 60 * 1000
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
-def readiness(request, campaign_id):
-    """GET does not send mail, create cleanup intent or extend login idle time."""
+def check(request, campaign_id):
+    """The Go live page's Check step (#1585): passive GET, every POST in place.
+
+    GET draws the step from durable state and the session's kept public web
+    address check, so a reload returns to the same state; it sends no mail,
+    creates no cleanup intent and does not extend the sign-in's idle time.
+    Each POST answers a redirect to this address or to the step in
+    progress, or a fragment of the Start go-live dialog, never a page:
+
+    - ``verify`` runs the DNS and origin check, keeps its result in the
+      session (``go_live_check.remember_check``) and redirects here.
+    - ``review`` answers the Start go-live dialog's review, holding the
+      signed preview Apply posts, or a refusal the dialog shows as drawn.
+    - ``confirm`` (Apply, the acknowledgement that cleanup cannot be undone)
+      runs the public web address check again, starts Testing cleanup and
+      redirects to the step in progress.
+    - ``retry_stop`` retries the failed disposal of a stopped go-live's
+      Family links and redirects here.
+    """
     try:
         filters(request.GET, allowed=set())
         service = runtime()
-        verified, token = None, None
-        if request.method == "POST":
-            action = request.POST.get("action")
-            _closed(
-                request,
-                {"action", "preview_token", "acknowledge"}
-                if action == "cleanup"
-                else {"action"},
-            )
-            if action == "cleanup":
-                status = start_cleanup(
-                    request,
-                    service,
-                    campaign_id,
-                    preview_token=request.POST.get("preview_token", ""),
-                    acknowledge=request.POST.get("acknowledge") == "yes",
-                )
-                return _checked(
-                    request,
-                    service,
-                    HttpResponseRedirect(
-                        reverse("admin:go_live_cleanup", args=[status.request_id])
-                    ),
-                )
-            if action != "verify":
-                # No sources: an unknown action value, not an unexpected field.
-                raise unexpected_fields()
-            preview, verified, token = verify_preview(request, service, campaign_id)
-        else:
+        if request.method != "POST":
             _closed(request, set())
-            preview = collect_inputs(
-                AdminCaller.from_request(request), service, campaign_id
+            context = _check_context(request, service, campaign_id)
+            response = render(request, "stewardship/go-live-check.html", context)
+            return _checked(request, service, response)
+        action = request.POST.get("action")
+        if action not in _CHECK_FIELDS:
+            # No sources: an unknown action value, not an unexpected field.
+            raise unexpected_fields()
+        _closed(request, {"action", *_CHECK_FIELDS[action]})
+        if action in {"review", "confirm"}:
+            return _start(request, service, campaign_id, action)
+        if action == "verify":
+            actor = principal(request, service)
+            inputs, verified, _token = verify_preview(request, service, campaign_id)
+            origin, profile = configured_origin()
+            remember_check(
+                request,
+                campaign_id,
+                actor.identity,
+                inputs,
+                verified,
+                origin,
+                profile.value,
             )
-        counts = preview.families.counts
-        # The first step of going live (#196).
-        admin_navigation.place(request, flow="go_live", step="readiness")
-        response = render(
-            request,
-            "stewardship/go-live-readiness.html",
-            {
-                "preview": preview,
-                "campaign": preview.campaign,
-                "problems": [PROBLEMS[code] for code in preview.problems],
-                "counts": counts,
-                "email_eligibility": Percentage(counts.email_eligible, counts.active),
-                "no_email": Percentage(counts.no_eligible_email, counts.active),
-                "inventory": sorted(preview.cleanup.inventory.counts.items()),
-                "origin_verified": verified,
-                "cleanup_token": token,
-                # Starting cleanup needs a recent Google sign-in (#547): until
-                # then the page offers the step-up instead of the Start button.
-                "fresh": token is not None and freshness(request)[0],
-                "cleanup_requests": recent_cleanup_requests(campaign_id),
-            },
+        else:
+            _retry_stop(request, service, campaign_id, request.POST.get("control", ""))
+        return _checked(
+            request, service, HttpResponseRedirect(reverse("admin:go_live"), status=303)
         )
-        return _checked(request, service, response)
     except ObjectDoesNotExist:
         return error_response(LookupError("Readiness configuration is unavailable."))
     except ERRORS as error:
         return error_response(error)
 
 
-@require_http_methods(["GET", "HEAD", "POST"])
-def cleanup_status(request, campaign_id, request_id):
-    """Passive progress and exact signed controls never expose direct deletion."""
-    try:
-        filters(request.GET, allowed=set())
-        _closed(request, {"control"})
-        service = runtime()
-        if request.method == "POST":
-            control(
-                request,
-                service,
-                campaign_id,
-                request_id,
-                token=request.POST.get("control", ""),
-            )
-            return _checked(
-                request,
-                service,
-                HttpResponseRedirect(
-                    reverse("admin:go_live_cleanup", args=[request_id])
-                ),
-            )
-        context = progress(request, service, campaign_id, request_id)
-        status = context["status"]
-        context["completion"] = Percentage(
-            status.processed_count, status.inventory_total
+def _retry_stop(request, service, campaign_id, token):
+    """Retry stopping go-live: retry the failed disposal ``token`` names, once.
+
+    A forged control is refused (``BadSignature``, a 400). When the control
+    names the failure Check shows now, the links page's own control is
+    minted now and the disposal retried through its owner, which re-checks
+    the Administrator, the request and the task version. Otherwise it was
+    already retried (a resend after a lost answer) or has finished: nothing
+    is done, and Check shows how it stands now. Returns whether a retry was
+    asked for.
+    """
+    actor = principal(request, service)
+    signing.Signer(salt=go_live_check.RETRY_SALT).unsign_object(token)
+    stopped = go_live_check.progress(request, service, campaign_id)
+    if stopped.state != "stop_failed" or token != stopped.retry:
+        return False
+    preparation, task = stopped.failed
+    links_control(
+        request,
+        service,
+        campaign_id,
+        stopped.request.pk,
+        token=sign_links_control(
+            actor, stopped.request, "retry_cleanup", preparation=preparation, task=task
+        ),
+    )
+    return True
+
+
+def _check_context(request, service, campaign_id):
+    """The Check step's template context, read now (``go_live_check``)."""
+    stage = go_live_check.progress(request, service, campaign_id)
+    context = {"stage": stage}
+    if stage.state == "idle":
+        caller = AdminCaller.from_request(request)
+        preview = collect_inputs(caller, service, campaign_id)
+        actor = principal(request, service, passive=True)
+        verified = go_live_check.kept_check(
+            request, campaign_id, actor.identity, preview
         )
-        # The page follows itself (live-status-v1.js) until cleanup settles.
-        context["live_pending"] = status.state in {
-            "cleanup_queued",
-            "cleanup_running",
-            "cleanup_retry_wait",
-        } or (context["cancelling"] and status.state != "cancelled")
-        # The second step of going live (#196).
-        admin_navigation.place(request, flow="go_live", step="cleanup")
-        response = render(request, "stewardship/go-live-cleanup.html", context)
-        return _checked(request, service, response)
-    except ObjectDoesNotExist:
-        return error_response(LookupError("Cleanup request is unavailable."))
-    except ERRORS as error:
-        return error_response(error)
+        state = go_live_check.check_state(
+            preview.problems, preview.target_state, verified
+        )
+        counts = preview.families.counts
+        context |= {
+            "preview": preview,
+            "campaign": preview.campaign,
+            "problems": _problems(preview),
+            "counts": counts,
+            "email_eligibility": Percentage(counts.email_eligible, counts.active),
+            "no_email": Percentage(counts.no_eligible_email, counts.active),
+            "inventory": sorted(preview.cleanup.inventory.counts.items()),
+            "origin_verified": verified,
+            "warnings": _warnings(),
+        }
+    else:
+        state = stage.state
+        context["campaign"] = stage.request.campaign
+    context |= {
+        "state": state,
+        "wizard": go_live_check.bar(state),
+        # Work that moves by itself is followed closely; otherwise the step
+        # only re-reads now and then, for a fix made in another tab.
+        "live_interval": None
+        if state in {"started", "stopping"}
+        else _IDLE_INTERVAL_MS,
+        "live_limit": _WATCH_MS,
+    }
+    return context
+
+
+def _warnings():
+    """What Check warns about without blocking: the last backup and debug logging.
+
+    ``backup_at`` is when the newest backup completed (None before any);
+    ``debug`` whether this process logs debug detail, which System health
+    can turn off.
+    """
+    from parishkit.stewardship.jobs.backup_models import BackupRun
+    from parishkit.stewardship.observability import debug_logging_enabled
+
+    return {
+        "backup_at": BackupRun.objects.order_by("-completed_at", "-id")
+        .values_list("completed_at", flat=True)
+        .first(),
+        "debug": debug_logging_enabled(),
+    }
+
+
+def _problems(preview):
+    """Each readiness problem as ``{"text", "links"}``, in order.
+
+    ``links`` are ``(url, label)`` pairs for the pages that fix it: none for
+    a problem that only needs waiting, and for a missing test email one per
+    selected Family email, named by its subject rather than a number
+    (#1585), each opening its Preview and test email page.
+    """
+    lines = []
+    for code in preview.problems:
+        if code == "family_test_mail_required":
+            links = [
+                (
+                    reverse("admin:campaign_mail", args=[template]),
+                    _("Preview and send a test of “%(subject)s”")
+                    % {"subject": subject},
+                )
+                for template, subject in _family_emails(preview)
+            ]
+        else:
+            name = FIXES.get(code)
+            links = (
+                [(reverse(f"admin:{name}"), admin_navigation.PAGES[name].label)]
+                if name
+                else []
+            )
+        lines.append({"text": PROBLEMS[code], "links": links})
+    return lines
+
+
+def _family_emails(preview):
+    """The selected Family emails as ``(record id, subject)``, by subject.
+
+    The subject names the email the Administrator wrote, as Pages and
+    emails lists it, but rendered with the campaign's own values as the
+    Preview and test email page shows it (#1846), never the raw template
+    with its ``{{ placeholders }}``. A revision without a usable subject
+    falls back to "Family email". Only ``preview.configuration`` is read,
+    so a caller without a campaign (the confirm step) can use it too.
+    """
+    templates = preview.configuration.family_templates
+    # A revision ID repeats in every applied configuration's projection, so
+    # take each one's newest row: the configuration Check is reading.
+    subjects = {}
+    for row in (
+        ContentVersion.objects.filter(record_id__in=templates)
+        .select_related("configuration")
+        .order_by("-configuration__created_at")
+    ):
+        subjects.setdefault(row.record_id, _rendered_subject(row))
+    return sorted(
+        (
+            (template, subjects.get(UUID(str(template))) or _("Family email"))
+            for template in templates
+        ),
+        key=lambda item: str(item[1]),
+    )
+
+
+def _rendered_subject(row):
+    """One email revision's subject with the campaign's values filled in.
+
+    Uses the same render as the Preview and test email page, from the
+    parish and campaign in the revision's own configuration. A render
+    failure (a malformed template) yields None rather than breaking the
+    whole Check page, which is where such a problem is found.
+    """
+    document = row.configuration.canonical_document
+    campaign = next(
+        (
+            record["values"]
+            for record in document["sections"]["campaigns"]
+            if record["id"] == str(row.campaign_id)
+        ),
+        None,
+    )
+    try:
+        return sample_render(
+            {"subject": row.subject, "html": "", "text": ""},
+            parish=document_parish(document),
+            campaign=campaign,
+        )["subject"]
+    except Exception:  # noqa: BLE001 -- any bad template falls back to the name
+        return None
+
+
+def _start(request, service, campaign_id, action):
+    """The Start go-live dialog's Review (``review``) or Apply (``confirm``).
+
+    Review re-reads readiness and answers the dialog's review with a signed
+    preview of these exact inputs, or a refusal; Apply re-reads readiness,
+    runs the public web address check again and starts Testing cleanup from
+    that preview, redirecting to the step in progress. The kept check
+    (``go_live_check.kept_check``) only redraws the page on a reload and
+    gates Review: a DNS record can change after it without changing the
+    inputs digest, so Apply never trusts it, and a failure there is refused
+    in the dialog with the check's reason. The preview's age never refuses
+    Apply: the signature is checked and the binding signed again, so the
+    dialog may stay open as long as nothing it shows changes.
+    ``start_cleanup`` then repeats every check under the work lock.
+    """
+    if action == "confirm":
+        return _apply_start(request, service, campaign_id)
+    try:
+        actor = principal(request, service)
+        stage = go_live_check.progress(request, service, campaign_id)
+        if stage.state != "idle":
+            return _in_progress(request, service, actor, stage)
+        inputs = collect_inputs(AdminCaller.from_request(request), service, campaign_id)
+        if inputs.target_state == "closed":
+            return _start_answer(request, service, {"refused": "closed"})
+        verified = go_live_check.kept_check(
+            request, campaign_id, actor.identity, inputs
+        )
+        if inputs.problems or verified is not True:
+            return _start_answer(request, service, {"refused": "changed"})
+        origin, profile = configured_origin()
+        token = signing.dumps(
+            {
+                "actor": str(actor.identity),
+                "campaign": str(campaign_id),
+                "key": str(uuid4()),
+                "digest": inputs.digest,
+                "origin": origin,
+                "profile": profile.value,
+            },
+            salt=COMMAND_SALT,
+        )
+        return _start_answer(
+            request, service, {"preview": inputs, "token": token, "stage": stage}
+        )
+    except StaleRecordError:
+        # The inputs moved under the work lock, or another Start won: say
+        # which.
+        stage = go_live_check.progress(request, service, campaign_id)
+        if stage.state != "idle":
+            return _in_progress(request, service, principal(request, service), stage)
+        return _start_answer(request, service, {"refused": "changed"})
+
+
+def _apply_start(request, service, campaign_id):
+    """The Start go-live dialog's Apply, through ``start_reviewed``.
+
+    The session-kept public web address check gates it, and a failed check
+    run again at Apply is kept as failed, so the reloaded step offers the
+    check again; both stay with the page, as callbacks.
+    """
+
+    def kept(actor, inputs):
+        """The session's kept check for these exact inputs."""
+        return go_live_check.kept_check(request, campaign_id, actor.identity, inputs)
+
+    def failed(actor, inputs, origin, profile):
+        """Keep the failed check, so the reloaded step offers it again."""
+        remember_check(
+            request, campaign_id, actor.identity, inputs, False, origin, profile.value
+        )
+
+    refusal = start_reviewed(
+        request,
+        service,
+        campaign_id,
+        request.POST.get("preview_token", ""),
+        kept=kept,
+        failed=failed,
+    )
+    if refusal is None:
+        # Started now, or already by this Administrator: the step in
+        # progress, which is always Prepare.
+        return _checked(
+            request,
+            service,
+            HttpResponseRedirect(reverse("admin:go_live_prepare"), status=303),
+        )
+    refused, stage = refusal
+    start = {"refused": refused}
+    if stage is not None:
+        start["stage"] = stage
+    return _start_answer(request, service, start)
+
+
+def start_reviewed(
+    caller, service, campaign_id, preview_token, *, kept=None, failed=None, record=None
+):
+    """Start go-live from a reviewed preview: the Start go-live dialog's Apply.
+
+    Request-free, so the page and ``pk-admin go-live start`` share it
+    (#1809). In order: the same preview again (a resend after a lost
+    answer) starts nothing more, its key making it happen once; go-live
+    not idle is refused by what it is doing (``_in_progress_refusal``); a
+    closed campaign, any readiness problem, a ``kept`` check (the page's
+    session-kept public web address check, ``kept(actor, inputs)``) that
+    is not True, or a changed inputs digest is refused; the public web
+    address check runs again (``failed(actor, inputs, origin, profile)``
+    hears of a failure) and its failure is refused. Only then does
+    ``start_cleanup`` start Testing cleanup and attempt 1, re-reading every
+    input under the work lock; ``record`` is its hook for the command
+    line's own event, in that transaction.
+
+    Returns None once go-live is started (now, or already by this
+    Administrator), else ``(refused, stage)``: the Start go-live dialog's
+    refusal key and, for a go-live in progress, the Check stage that says
+    what it is doing. A tampered or foreign preview is ``BadSignature``.
+    """
+    actor = principal(caller, service)
+    binding = _binding(preview_token)
+    try:
+        if _sent_before(campaign_id, binding):
+            _started(caller, service, campaign_id, binding, record=record)
+            return None
+        stage = go_live_check.progress(caller, service, campaign_id)
+        if stage.state != "idle":
+            return _in_progress_refusal(actor, stage)
+        inputs = collect_inputs(caller, service, campaign_id)
+        if inputs.target_state == "closed":
+            return "closed", None
+        if (
+            inputs.problems
+            or (kept is not None and kept(actor, inputs) is not True)
+            or binding.get("digest") != inputs.digest
+        ):
+            return "changed", None
+        origin, profile = configured_origin()
+        if not origin_check(origin, profile):
+            if failed is not None:
+                failed(actor, inputs, origin, profile)
+            return "origin_unverified", None
+        _started(caller, service, campaign_id, binding, record=record)
+        return None
+    except StaleRecordError:
+        # Lost to another Start, or the inputs moved under the work lock:
+        # say which.
+        stage = go_live_check.progress(caller, service, campaign_id)
+        if stage.state != "idle":
+            return _in_progress_refusal(principal(caller, service), stage)
+        return "changed", None
+
+
+def _in_progress_refusal(actor, stage):
+    """The refusal of a Start made while go-live is not idle, or None.
+
+    Go-live this Administrator started (in another tab, say) is no refusal
+    (None): the step in progress opens. Another Administrator's is the
+    "started" refusal; a stop still running or failed is refused in that
+    state's own words. Returns ``(refused, stage)`` otherwise.
+    """
+    if stage.state == "started" and stage.request.initiated_by_id == actor.identity:
+        return None
+    return stage.state, stage
+
+
+def _in_progress(request, service, actor, stage):
+    """Answer a Review made while go-live is not idle, by what it is doing.
+
+    Go-live this Administrator started (in another tab, say) is no refusal:
+    the answer redirects to the step in progress, which the dialog opens
+    (``data-review-redirects``). Otherwise the refusal of
+    ``_in_progress_refusal``, in that state's own words.
+    """
+    refusal = _in_progress_refusal(actor, stage)
+    if refusal is None:
+        return _checked(
+            request, service, HttpResponseRedirect(stage.in_progress_url, status=303)
+        )
+    return _start_answer(request, service, {"refused": refusal[0], "stage": stage})
+
+
+def _binding(token):
+    """The Start go-live preview Apply posted, signature checked, age not.
+
+    A tampered or foreign preview is refused (``BadSignature``, a 400).
+    """
+    binding = signing.loads(token, salt=COMMAND_SALT)
+    if type(binding) is not dict:
+        raise ValueError("Invalid go-live preview.")
+    return binding
+
+
+def _sent_before(campaign_id, binding):
+    """Whether the preview ``binding`` already started a go-live request."""
+    try:
+        key = UUID(str(binding.get("key")))
+    except ValueError:
+        return False
+    return ProductionTransitionRequest.objects.filter(
+        campaign_id=campaign_id, request_key=key
+    ).exists()
+
+
+def _started(caller, service, campaign_id, binding, *, record=None):
+    """Start go-live from Apply's preview ``binding``.
+
+    ``start_cleanup`` begins attempt 1 in the same transaction, so the
+    go-live producer has work from that moment (background-processing
+    spec, "Go-live sequencing"). A replay begins nothing more and records
+    nothing.
+
+    The binding is signed again, so its five-minute lifetime never reaches
+    the Administrator; the DNS and origin check it once bounded has just
+    run again (``start_reviewed``), and ``start_cleanup`` still re-reads and
+    compares every input it binds under the work lock.
+    """
+    return start_cleanup(
+        caller,
+        service,
+        campaign_id,
+        preview_token=signing.dumps(binding, salt=COMMAND_SALT),
+        acknowledge=True,
+        attempt=True,
+        record=record,
+    )
+
+
+def _start_answer(request, service, start):
+    """Draw the Start go-live dialog's fragment; a refusal with its status."""
+    status = _START_REFUSALS.get(start.get("refused"), 200)
+    response = render(
+        request,
+        "stewardship/go-live-start-review.html",
+        {"start": start},
+        status=status,
+    )
+    if status != 200:
+        # The answer carries its own explanation; keep it as rendered.
+        response.stewardship_safe_error = True
+        refused_step(response, start["refused"])
+    return _checked(request, service, response)
 
 
 @require_http_methods(["GET", "HEAD"])
@@ -222,37 +668,12 @@ def testing_families(request, campaign_id):
         # Kept on the work lock: passive admission and the cleanup inventory
         # run inside this block and refuse under a read-only snapshot.
         with work_transaction():
-            principal(request, service, passive=True)
-            configuration = editable_configuration(service)
-            scope = _scope(campaign_id)
-            if (
-                scope.campaign is None
-                or configuration.current_campaign_id != campaign_id
-                or configuration.mode != "testing"
-                or scope.campaign.state != "draft"
-            ):
-                # Not a permission problem: signing in again cannot help, so
-                # refuse with a plain 410 notice rather than the generic 403
-                # "sign in again" page (#867). Go-live readiness, the only page
-                # that links here, itself renders only for the Testing draft.
-                raise UserFacingGone(
-                    _("Testing submissions are only available before go-live."),
-                    fix=_(
-                        "Going live removes the Testing submissions. Live "
-                        "responses are under Responses and reports."
-                    ),
-                )
-            source = source_readiness(scope)
-            source_id = (
-                source.current_id
-                if source.reason in {"ready", "full_refresh_stale"}
-                else None
-            )
+            scope, source_id = testing_scope(request, service, campaign_id)
             window, rows, has_next, total = cleanup_families(
                 campaign_id, source_id=source_id, window=window, sort=sort
             )
-        # The Testing Families list is part of checking readiness (#196).
-        admin_navigation.place(request, flow="go_live", step="readiness")
+        # A sub-page of Go live's Check step: its trail leads back there,
+        # and it draws no step indicator (one step bar per page, #1585).
         response = render(
             request,
             "stewardship/go-live-families.html",
@@ -271,3 +692,40 @@ def testing_families(request, campaign_id):
         return _checked(request, service, response)
     except ERRORS as error:
         return error_response(error)
+
+
+def testing_scope(caller, service, campaign_id):
+    """Admit passively and find the Testing draft's scope and source snapshot.
+
+    Shared by Testing submissions and ``pk-admin go-live families``
+    (#1809), inside the caller's work transaction (passive admission and
+    the cleanup inventory refuse under a read-only snapshot). Returns
+    ``(scope, source_id)``: the source snapshot whose names the list shows,
+    or None when no usable refresh has promoted. A campaign that is not the
+    current Testing draft is ``UserFacingGone``.
+    """
+    principal(caller, service, passive=True)
+    configuration = editable_configuration(service)
+    scope = _scope(campaign_id)
+    if (
+        scope.campaign is None
+        or configuration.current_campaign_id != campaign_id
+        or configuration.mode != "testing"
+        or scope.campaign.state != "draft"
+    ):
+        # Not a permission problem: signing in again cannot help, so refuse
+        # with a plain 410 notice rather than the generic 403 "sign in
+        # again" page (#867). Go live's Check step, the only page that links
+        # here, itself renders only for the Testing draft.
+        raise UserFacingGone(
+            _("Testing submissions are only available before go-live."),
+            fix=_(
+                "Going live removes the Testing submissions. Live "
+                "responses are under Review work and Reports and queries."
+            ),
+        )
+    source = source_readiness(scope)
+    source_id = (
+        source.current_id if source.reason in {"ready", "full_refresh_stale"} else None
+    )
+    return scope, source_id

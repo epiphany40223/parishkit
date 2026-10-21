@@ -2,10 +2,9 @@
 
 Preview, then confirm, in the shared review dialog (#1356): the preview is a
 one-sentence confirmation, Apply's answer draws the region again, and a
-refusal is a fragment the dialog shows as drawn; a stale sign-in gets the
-"Confirm with Google" step-up; a repeated confirmation returns the
-first request; one request at a time; Administrators only; the audit event
-names the request.
+refusal is a fragment the dialog shows as drawn; a sign-in of any age
+takes one (#1547); a repeated confirmation returns the first request; one
+request at a time; Administrators only; the audit event names the request.
 """
 
 import re
@@ -13,13 +12,12 @@ from uuid import uuid4
 
 import pytest
 
-from parishkit.stewardship.accounts import sessions
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.backup_models import BackupRequest
 
 from ..policy_factory import address
-from .auth_builders import signed_in
+from .auth_builders import signed_in, stale_sign_in
 from .campaign_builders import change
 from .test_background_grants_postgresql import task_login
 
@@ -93,19 +91,17 @@ def test_preview_then_confirm_records_one_request_and_its_audit(auth_service, go
     assert "and is waiting for the server" in page
 
 
-def test_a_stale_sign_in_gets_the_google_step_up(auth_service, google, monkeypatch):
-    """Answered in the dialog: the step-up form, returning to this page."""
+def test_an_old_sign_in_takes_a_backup_without_a_step_up(auth_service, google):
+    """A sign-in older than five minutes previews and confirms at once
+    (#1547): the request's guard binds the live session, not its age."""
     browser, _ = signed_in()
-    monkeypatch.setattr(sessions, "FRESH_SECONDS", -1)
-    for values in ({"action": "preview"}, {"action": "confirm", "key": str(uuid4())}):
-        response = post(browser, **values)
-        assert response.status_code == 403
-        body = response.content.decode()
-        assert "<div data-review-refusal>" in body
-        assert 'data-backup-refused="reauthenticate"' in body
-        assert 'id="backup-now"' not in body
-        assert 'name="next" value="/admin/system/health/"' in body
-    assert BackupRequest.objects.count() == 0
+    stale_sign_in()
+    preview = post(browser, action="preview")
+    assert preview.status_code == 200
+    confirmed = post(browser, action="confirm", key=key_of(preview))
+    assert confirmed.status_code == 200
+    assert 'id="backup-now"' in confirmed.content.decode()
+    assert BackupRequest.objects.count() == 1
 
 
 def test_only_an_administrator_may_request_a_backup(auth_service, google):
@@ -224,18 +220,18 @@ def test_a_simultaneous_double_click_returns_the_first_request(auth_service, goo
     ("message", "refused"),
     [
         (
-            "A backup request requires fresh Administrator authentication",
-            "reauthenticate",
+            "A backup request requires a live Administrator session",
+            "signed_out",
         ),
         ("permission denied for table stewardship_backup_request", "denied"),
     ],
 )
-def test_only_the_fresh_sign_in_refusal_offers_the_step_up(
+def test_only_the_ended_session_refusal_says_sign_in_again(
     auth_service, google, monkeypatch, caplog, message, refused
 ):
-    """The guard's fresh sign-in refusal gets "Confirm it's you"; any other
-    permission refusal (a missing grant) is said plainly and logged, since a
-    new sign-in would not help."""
+    """The guard's live-session refusal (its message kept from before #1547)
+    says the sign-in ended; any other permission refusal (a missing grant) is
+    said plainly and logged, since signing in again would not help."""
     from django.db import DatabaseError
 
     class Refusal(Exception):

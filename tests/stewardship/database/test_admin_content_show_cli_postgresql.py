@@ -60,7 +60,7 @@ def test_a_saved_page_and_email_open_as_on_the_editor(admin):
         "slot": "welcome",
         "name": "Family welcome",
         "revision_id": welcome["id"],
-        "state": "custom",
+        "state": "edited",
         "resave": None,
         "from_default": False,
         # A page has no subject, plain text or banner choice in the editor.

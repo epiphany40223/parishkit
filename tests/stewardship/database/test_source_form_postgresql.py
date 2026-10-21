@@ -3,6 +3,8 @@
 from uuid import uuid4
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
@@ -12,6 +14,7 @@ from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import change
+from .family_link_checks import link_reads, timeline_link
 from .response_builders import response_source
 from .test_report_workspace_postgresql import read as get
 from .test_source_families_postgresql import prepare, promote
@@ -48,9 +51,12 @@ def test_the_list_follows_the_snapshot_and_never_shows_a_value(
     snapshot, claim = prepare(data)
     promote(snapshot, claim, harness.campaign, harness.rings)
     # A new snapshot is a new cache key: the list follows it at once.
-    response, body = get(browser, LIST)
+    with CaptureQueriesContext(connection) as queries:
+        response, body = get(browser, LIST)
     assert response.status_code == 200
     assert b"1 Family cannot open the Family form" in body
+    # The name opens the Family's Timeline (#1570): one record id read.
+    assert len(link_reads(queries)) == 1
     assert (
         f'<td class="numeric">{family}</td><td class="numeric">3</td>'
         "<td>First name</td>"
@@ -58,7 +64,8 @@ def test_the_list_follows_the_snapshot_and_never_shows_a_value(
     # The surname alone, never "Surname, heads": a head's name is a Member
     # value and may be the refused one (here, Member 3's first name).
     family_name = family_display_name(data.families[1], NAME_NOT_RECORDED)
-    assert f'<th scope="row">{family_name}</th>'.encode() in body
+    link = timeline_link(harness.campaign, family, family_name)
+    assert f'<th scope="row">{link}</th>'.encode() in body
     assert b"<td>Last name</td>" in body
     assert b"private" not in body and b"x" * 101 not in body
     _, body = get(browser, HEALTH)

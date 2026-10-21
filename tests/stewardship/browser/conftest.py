@@ -67,6 +67,7 @@ from parishkit.stewardship.accounts.share_forms import (
     default_share_options,
 )
 from parishkit.stewardship.campaigns.domain import Percentage
+from parishkit.stewardship.jobs.delivery_metadata import mode_split
 from parishkit.stewardship.jobs.views import EVENT_SORTING, TASK_SORTING
 from parishkit.stewardship.reports.chart_assets import VENDORED
 from parishkit.stewardship.source.data_age import Connection
@@ -113,16 +114,16 @@ from .directory_components import open_form_posts
 from .emailed_components import components as emailed_components
 from .family_test_components import components as family_test_components
 from .family_test_components import posts as family_test_posts
-from .family_timeline_components import components as family_timeline_components
 from .financial_components import components as financial_components
 from .find_family_components import POSTS as FIND_FAMILY_POSTS
 from .find_family_components import components as find_family_components
 from .followup_components import POSTS as FOLLOWUP_POSTS
 from .followup_components import components as followup_components
+from .go_live_components import action_answer as go_live_action
 from .go_live_components import components as go_live_components
-from .go_live_components import posts as go_live_posts
 from .go_live_families_components import components as go_live_families_components
 from .held_emails_components import components as held_emails_components
+from .home_overview_components import components as home_overview_components
 from .home_steps_components import components as home_steps_components
 from .hosted_file_components import IMAGE_TOKEN
 from .hosted_file_components import POSTS as HOSTED_FILE_POSTS
@@ -148,11 +149,13 @@ from .live_status_components import POSTS as LIVE_STATUS_POSTS
 from .live_status_components import components as live_status_components
 from .log_components import components as log_components
 from .menu_components import components as menu_components
-from .my_ministries_components import components as my_ministries_components
 from .not_found_components import components as not_found_components
 from .past_campaign_components import POSTS as PAST_CAMPAIGN_POSTS
 from .past_campaign_components import components as past_campaign_components
 from .pause_components import components as pause_components
+from .pledges_components import components as pledges_components
+from .publication_components import POSTS as PUBLICATION_POSTS
+from .publication_components import components as publication_components
 from .refresh_schedule_components import components as refresh_schedule_components
 from .reminder_workgroup_components import POSTS as WORKGROUP_POSTS
 from .reminder_workgroup_components import components as workgroup_components
@@ -160,8 +163,8 @@ from .report_components import SLOW_GETS as REPORT_SLOW_GETS
 from .report_components import components as report_components
 from .response_dashboard_components import components as dashboard_components
 from .restore_review_components import components as restore_review_components
-from .roster_components import POSTS as ROSTER_POSTS
-from .roster_components import components as roster_components
+from .review_work_components import components as review_work_components
+from .review_worklist_components import components as review_worklist_components
 from .schedule_list_components import POSTS as SCHEDULE_LIST_POSTS
 from .schedule_list_components import components as schedule_list_components
 from .security_components import POSTS as SECURITY_POSTS
@@ -173,13 +176,17 @@ from .settings_components import components as settings_components
 from .setup_back_path_components import components as setup_back_path_components
 from .setup_live_components import POSTS as SETUP_LIVE_POSTS
 from .setup_live_components import components as setup_live_components
+from .setup_order_components import POSTS as SETUP_ORDER_POSTS
+from .setup_order_components import REDIRECTS as SETUP_ORDER_REDIRECTS
+from .setup_order_components import components as setup_order_components
 from .signed_in_components import POSTS as SIGNED_IN_POSTS
 from .signed_in_components import components as signed_in_components
 from .source_form_components import components as source_form_components
-from .step_up_components import components as step_up_components
 from .stepper_components import POSTS as STEPPER_POSTS
 from .stepper_components import components as stepper_components
 from .system_health_components import components as system_health_components
+from .tabs_components import components as tabs_components
+from .timeline_components import components as timeline_components
 from .upload_defaults_components import components as upload_defaults_components
 from .upload_defaults_components import posts as upload_defaults_posts
 from .user_components import POSTS as USER_POSTS
@@ -270,7 +277,6 @@ def finishing_context(**status):
         status
         | finishing(status)
         | {
-            "next": "/admin/setup/cancel",
             "status_url": SETUP_FINISHING_STATUS,
             "confirmed_ago": waited_words(
                 status["server_now"] - status["confirmed_at"]
@@ -792,26 +798,11 @@ def component_origin():
             },
         ),
         (
-            "/credential-selection",
-            "credential-selection",
-            {
-                "label": "ParishSoft",
-                "before": "a" * 64,
-                "receipt": {"pk": uuid4(), "resulting_fingerprint": "b" * 64},
-                "preview": "synthetic-selection-intent",
-                "selected": False,
-                "changes": [
-                    {"label": "Slack channel ID", "before": "C0123", "after": "C0456"}
-                ],
-            },
-        ),
-        (
             "/backup-key",
             "backup-key",
             {
                 "label": "Backup encryption key",
                 "current": KeyStatus("installed", "0123456789abcdef", backup_at=NOW),
-                "fresh": False,
                 "key_error": "This is not a backup public key.",
             },
         ),
@@ -821,32 +812,11 @@ def component_origin():
             {
                 "label": "Backup encryption key",
                 "current": KeyStatus("configured", "0123456789abcdef"),
-                "fresh": True,
                 "new_fingerprint": "fedcba9876543210",
                 # A real challenge line is one unbroken 87-character word.
                 "challenge": "PKBKP1:" + "A" * 80,
                 "intent": "synthetic-intent",
                 "code_error": "That code does not match.",
-            },
-        ),
-        (
-            "/credential-status",
-            "credential-status",
-            {
-                "receipt": {"request_id": uuid4(), "state": "awaiting_ack"},
-                "pending": True,
-                # A key's status sits under its integration (#196).
-                "admin_chrome": admin
-                | {
-                    "breadcrumbs": [
-                        {"label": "Home", "url": "/home"},
-                        {"label": "System", "url": "/integrations"},
-                        {"label": "Integrations", "url": "/integrations"},
-                        {"label": "ParishSoft", "url": "/integration-settings"},
-                        {"label": "Key replacement status", "url": None},
-                    ],
-                    "back": {"label": "ParishSoft", "url": "/integration-settings"},
-                },
             },
         ),
         (
@@ -1354,6 +1324,15 @@ def component_origin():
                 "testing_recipient": "testing@example.org",
                 "candidate_digest": "a" * 64,
                 "document": '{"sections": {"campaigns": []}}',
+                # The tests come before Review (#1476), which shows them.
+                "readiness": [
+                    {
+                        "label": "Test email",
+                        "accepted": True,
+                        "url": "/admin/setup/mail-test",
+                    }
+                ],
+                "tests_accepted": True,
                 "samples": [
                     {
                         "label": "Family welcome",
@@ -1573,6 +1552,20 @@ def component_origin():
                 "saved": True,
             },
         ),
+        # The Slack token's step, whose key rule the shared case table runs
+        # through every engine (#1577).
+        (
+            "/setup-credential-slack",
+            "setup-credential",
+            {
+                "draft": setup_draft,
+                "form": SetupCredentialForm("slack"),
+                "target": "slack",
+                "label": "Slack",
+                "step_label": "Slack bot token",
+                "saved": False,
+            },
+        ),
         # A current ParishSoft key may be kept; changing the organization
         # needs the key again (#563).
         (
@@ -1615,7 +1608,6 @@ def component_origin():
                 "confirm": True,
                 "sendable": False,
                 "unavailable": "Only 1 more Family test may be requested now.",
-                "fresh": True,
                 "refresh_url": "/family-tests-check",
             },
         ),
@@ -2120,35 +2112,6 @@ def component_origin():
             },
         ),
         (
-            "/go-live-steps",
-            "production-progress",
-            {
-                "campaign": {
-                    "pk": uuid4(),
-                    "state": "scheduled",
-                    "active_configuration": {"name": "Sample campaign"},
-                },
-                "receipt": {"created_at": NOW},
-                "demand": None,
-                # The last of the five go-live steps, the longest indicator.
-                "admin_chrome": admin
-                | {
-                    "breadcrumbs": [
-                        {"label": "Home", "url": "/home"},
-                        {"label": "Campaign setup", "url": "/campaign-settings"},
-                        {"label": "Production activation", "url": None},
-                    ],
-                    "flow_steps": [
-                        {"label": "Check readiness", "state": "done"},
-                        {"label": "Testing cleanup", "state": "done"},
-                        {"label": "Family links", "state": "done"},
-                        {"label": "Confirm Production", "state": "done"},
-                        {"label": "Activation", "state": "current"},
-                    ],
-                },
-            },
-        ),
-        (
             "/background",
             "background",
             background | {"table": background_table(PageWindow(1, 50), True)},
@@ -2210,7 +2173,12 @@ def component_origin():
             "text/html",
             render_to_string(
                 f"stewardship/{template}.html",
-                context | {"admin_chrome": admin | {"delivery_unknown": 1}} | extra,
+                context
+                | {
+                    "admin_chrome": admin
+                    | {"delivery_unknown": mode_split({"production": 1}, "production")}
+                }
+                | extra,
             ),
         )
     responses.update(digest_components(context, admin))
@@ -2218,35 +2186,34 @@ def component_origin():
     responses.update(report_components(context, admin))
     responses.update(information_components(context, admin))
     responses.update(log_components(context, admin))
-    # Family portal availability while open (#563): with a recent sign-in,
-    # and without one, when both change buttons wait for it.
-    for path, fresh in (("/family-portal", True), ("/family-portal-stale", False)):
-        responses[path] = (
-            "text/html",
-            render_to_string(
-                "stewardship/family-portal-maintenance.html",
-                context
-                | {
-                    "admin_chrome": admin,
-                    "state": SimpleNamespace(
-                        closed=False, message="", since=None, actor_id=None
-                    ),
-                    "message_limit": 500,
-                    "fresh": fresh,
-                },
-            ),
-        )
+    # Family portal availability while open (#563).
+    responses["/family-portal"] = (
+        "text/html",
+        render_to_string(
+            "stewardship/family-portal-maintenance.html",
+            context
+            | {
+                "admin_chrome": admin,
+                "state": SimpleNamespace(
+                    closed=False, message="", since=None, actor_id=None
+                ),
+                "message_limit": 500,
+            },
+        ),
+    )
     responses.update(directory_components(context, admin))
     responses.update(followup_components(context, admin))
     responses.update(source_form_components(context, admin))
     responses.update(data_to_fix_components(context, admin))
     responses.update(go_live_families_components(context, admin))
-    responses.update(roster_components(context, admin))
+    responses.update(review_worklist_components(context, admin))
+    responses.update(pledges_components(context, admin))
     responses.update(financial_components(context, admin))
     responses.update(weekly_components(context, admin))
     responses.update(chart_components(context, admin))
     responses.update(dashboard_components(context, admin))
-    responses.update(family_timeline_components(context, admin))
+    responses.update(timeline_components(context, admin))
+    responses.update(tabs_components(context, admin))
     responses.update(find_family_components(context, admin))
     responses.update(user_components(context, admin))
     responses.update(security_components(context, admin))
@@ -2264,6 +2231,7 @@ def component_origin():
     responses.update(branding_components(context, admin))
     responses.update(limitations_components(context, admin))
     responses.update(census_components(context, admin))
+    responses.update(publication_components(context, admin))
     responses.update(comparison_components(context, admin))
     responses.update(past_campaign_components(context, admin))
     responses.update(workgroup_components(context, admin))
@@ -2277,6 +2245,9 @@ def component_origin():
     responses.update(setup_back_path_components(context, admin, NOW, SETUP_LOAD_STATUS))
     responses.update(in_place_commands_components(context, admin))
     responses.update(campaign_test_components(context, admin))
+    responses.update(
+        setup_order_components(context, admin, NOW, SETUP_MAIL_STATUS, setup_draft)
+    )
     responses.update(backup_test_components(context, admin))
     responses.update(family_test_components(context, admin))
     responses.update(upload_defaults_components(context, admin))
@@ -2284,11 +2255,11 @@ def component_origin():
     responses.update(campaign_settings_components(context, admin))
     responses.update(campaign_create_components(context, admin))
     responses.update(menu_components(context, admin))
-    responses.update(my_ministries_components(context, admin))
+    responses.update(review_work_components(context, admin))
     responses.update(home_steps_components(context, admin))
+    responses.update(home_overview_components(context, admin))
     responses.update(automation_components(context, admin))
     responses.update(signed_in_components(context, admin))
-    responses.update(step_up_components(context, admin))
     responses.update(stepper_components(context, admin))
     responses.update(refresh_schedule_components(context, admin, NOW))
     responses.update(integration_dialog_components(context, admin, NOW))
@@ -2306,7 +2277,7 @@ def component_origin():
         | AUTOMATION_POSTS
         | SIGNED_IN_POSTS
         | FOLLOWUP_POSTS
-        | ROSTER_POSTS
+        | PUBLICATION_POSTS
         | INFORMATION_POSTS
         | FIND_FAMILY_POSTS
         | SECURITY_POSTS
@@ -2315,6 +2286,7 @@ def component_origin():
         | SETTINGS_POSTS
         | INTEGRATION_DIALOG_POSTS
         | STEPPER_POSTS
+        | SETUP_ORDER_POSTS
         | CAMPAIGN_SETTINGS_POSTS
         | CAMPAIGN_CREATE_POSTS
         | SCHEDULE_LIST_POSTS
@@ -2327,7 +2299,6 @@ def component_origin():
         | open_form_posts(context, admin)
         | family_test_posts(context, admin)
         | upload_defaults_posts()
-        | go_live_posts()
         | PAST_CAMPAIGN_POSTS
         | {
             f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),
@@ -2349,7 +2320,6 @@ def component_origin():
         ("family-login-v1.js", "application/javascript"),
         ("digest-v1.js", "application/javascript"),
         ("report-v1.js", "application/javascript"),
-        ("information-export-v1.js", "application/javascript"),
         ("users-v2.js", "application/javascript"),
         ("phone-v1.js", "application/javascript"),
         ("live-status-v1.js", "application/javascript"),
@@ -2438,9 +2408,17 @@ def component_origin():
             sorted (``automation_components.canonical``), so a page may send
             its state in any order. Automation access's race tests (#621)
             and the participation report's zone race test (#519) get some
-            answers after a pause.
+            answers after a pause, and ``setup_order_components.REDIRECTS``
+            answer with a redirect.
             """
             path = self.path if self.path in responses else canonical(self.path)
+            if path in SETUP_ORDER_REDIRECTS:
+                # A page address the real view redirects (#1505); Playwright
+                # cannot fulfil a redirect from a route on every engine.
+                self.send_response(302)
+                self.send_header("Location", SETUP_ORDER_REDIRECTS[path])
+                self.end_headers()
+                return
             if path in AUTOMATION_SLOW_GETS | REPORT_SLOW_GETS:
                 time.sleep(1.5)
             kind, body = responses.get(path, ("text/plain", ""))
@@ -2471,7 +2449,20 @@ def component_origin():
             """
             # Read the body before answering: closing the connection with
             # an unread request body can reset it before the answer arrives.
-            self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            # Go live's Check step posts every action to its own address,
+            # answered by the posted action (#1585).
+            answer = go_live_action(self.path, body, responses)
+            if answer is not None:
+                status, location, page = answer
+                self.send_response(status)
+                if location:
+                    self.send_header("Location", location)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Security-Policy", CSP)
+                self.end_headers()
+                self.wfile.write(page.encode())
+                return
             if self.path == "/redirect-to-login":
                 self.send_response(303)
                 self.send_header("Location", "/login")
@@ -2502,7 +2493,7 @@ def component_origin():
         Each HTTP/1.0 response closes its connection, so a page opens one
         connection per asset at once. With the default backlog of 5 the
         kernel reset the overflow now and then (net::ERR_CONNECTION_RESET), a
-        script such as information-export-v1.js never ran, and tests that
+        script such as a report's never ran, and tests that
         depend on it failed intermittently.
         """
 

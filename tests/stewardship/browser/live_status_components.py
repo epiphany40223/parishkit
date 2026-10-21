@@ -1,10 +1,11 @@
-"""Live-status pages at their real addresses, for in-place Refresh and Dismiss.
+"""Live-status pages at their real addresses, for their updates and Dismiss.
 
-#519 PR 7a and 7b: each page's Refresh link and an integration's Dismiss
-re-read the page itself, so the page is served where its controls lead. A test
-answers the re-read with another of these pages (a route), so the fresh
-region differs; the integration's Dismiss is answered by the fixture server
-with a real Post/Redirect/Get redirect (``POSTS``).
+#519 PR 7a and 7b, #1586: each page updates itself by re-reading itself (or
+its passive status), and an integration's Dismiss re-reads the page, so the
+page is served where those reads lead. A test answers a read with another of
+these pages (a route), so the fresh region differs; the integration's Dismiss
+is answered by the fixture server with a real Post/Redirect/Get redirect
+(``POSTS``).
 """
 
 from datetime import timedelta
@@ -17,11 +18,7 @@ from django.urls import reverse
 from parishkit.stewardship.accounts.integration_credentials import CredentialSummary
 from parishkit.stewardship.accounts.integration_forms import IntegrationForm
 from parishkit.stewardship.campaigns.domain import Percentage
-from parishkit.stewardship.jobs.send_progress_views import (
-    GIVE_UP_MILLISECONDS,
-    POLL_MILLISECONDS,
-    _announcement,
-)
+from parishkit.stewardship.jobs.queue_wait import QueueWait
 from parishkit.stewardship.jobs.task_wording import phase_words
 from parishkit.stewardship.jobs.views import EVENT_SORTING
 from parishkit.stewardship.source.data_age import Connection
@@ -30,27 +27,32 @@ from parishkit.stewardship.web.contracts import PageWindow
 from parishkit.stewardship.web.tables import window_table
 
 from .automation_components import canonical
-from .send_progress_components import _send
-from .step_up_components import render
+from .family_test_components import family_tests_page
+from .send_progress_components import _send, queue_values
 
 REQUEST, RUNNING = UUID(int=700), UUID(int=703)
-CREDENTIAL = reverse("admin:credential_status", args=[REQUEST])
-# A key change still being installed when its page opens, so its watcher
-# is already running when Refresh replaces the region.
-CREDENTIAL_RUNNING = reverse("admin:credential_status", args=[RUNNING])
-PROGRESS = reverse("admin:family_email_progress")
-# The passive status the progress page polls while a send runs.
+# A configuration change still being applied when its page opens, so the
+# page watches it from the start (#1568 moved these from the retired Key
+# replacement status page).
+CHANGE_RUNNING = reverse("admin:configuration_request", args=[RUNNING])
+PROGRESS = reverse("admin:mail_queue")
+# The passive status the Mail queue polls while a send runs.
 PROGRESS_STATUS = "/live-progress-status"
 FAMILY_TESTS = reverse("admin:campaign_mail_families", args=[UUID(int=702)])
+# The same page while a Family test is on its way, so it watches itself
+# until a read brings the settled tests.
+FAMILY_TESTS_PENDING = "/live-family-tests-pending"
 INTEGRATION = reverse("admin:integration_settings", args=["parishsoft"])
 DISMISS = reverse("admin:dismiss_credential_result", args=["parishsoft"])
 # A ParishSoft refresh's task page and the passive status it polls (#869).
 TASK_RUN = UUID(int=869)
 TASK_PAGE = reverse("admin:background_task_page", args=[TASK_RUN])
 TASK_STATUS = reverse("admin:background_task_status", args=[TASK_RUN])
+# The finished run's page with its history sorted by Action.
+TASK_FINISHED_BY_ACTION = "/live-task-finished-by-action"
 # A report export and a latest-data export, and a configuration change's
-# status, whose Refresh links re-read them in place (#519 PR 7b). The two
-# exports share one address form (the view draws whichever the job is).
+# status, which update themselves (#519 PR 7b, #1586). The two exports share
+# one address form (the view draws whichever the job is).
 EXPORT = reverse("admin:report_export", args=[UUID(int=720)])
 EXACT = reverse("admin:report_export", args=[UUID(int=721)])
 CHANGE = reverse("admin:configuration_request", args=[UUID(int=722)])
@@ -78,11 +80,18 @@ KEEP = "/live-keep"
 KEEP_STATUS = "/live-keep/status"
 KEEP_EMPTY = "/live-keep-empty"
 KEEP_EMPTY_STATUS = "/live-keep-empty/status"
-# The fixture server's answers to Dismiss and Refresh now (status, Location,
-# body).
+# A queued export's answer, as the create views give it (#1778): a redirect
+# to its status address, pending (test_export_in_place.py).
+EXPORT_QUEUED = "/live-export-queued"
+# A queued export waiting behind a ParishSoft refresh, with its queue-wait
+# sentence (#340).
+EXPORT_WAITING = "/live-export-waiting"
+# The fixture server's answers to Dismiss and Refresh now and the queued
+# export (status, Location, body).
 POSTS = {
     DISMISS: (303, INTEGRATION + "?dismissed=1", ""),
     REFRESH: (303, REFRESH_REQUESTED + "#refresh-run", ""),
+    EXPORT_QUEUED: (302, EXPORT_PENDING, ""),
 }
 
 
@@ -121,50 +130,24 @@ def components(context, admin):
     now = context["server_now"]
     page = context | {"admin_chrome": admin}
 
-    def credential(state, pending, request=REQUEST):
-        """The key replacement status page of ``request`` in ``state``."""
-        return render_to_string(
-            "stewardship/credential-status.html",
-            page
-            | {
-                "receipt": {"request_id": request, "state": state},
-                "pending": pending,
-                "admin_chrome": admin
-                | {"back": {"label": "ParishSoft", "url": INTEGRATION}},
-            },
-        )
-
-    def progress(template="family-email-progress", **counts):
-        """Family email progress for a running send with these counts, which
+    def progress(template="mail-queue", **counts):
+        """The Mail queue for a running Family send with these counts, which
         the page watches through PROGRESS_STATUS."""
-        send = _send(now, **counts)
         return render_to_string(
             f"stewardship/{template}.html",
-            page
-            | {
-                "status_url": PROGRESS_STATUS,
-                "campaign": SimpleNamespace(pk=UUID(int=413)),
-                "testing": False,
-                "paused": False,
-                "send": send,
-                "upcoming": False,
-                "follow": True,
-                "announcement": _announcement(send),
-                "poll_interval": POLL_MILLISECONDS,
-                "give_up": GIVE_UP_MILLISECONDS,
-            },
+            page | queue_values(_send(now, **counts)) | {"status_url": PROGRESS_STATUS},
         )
 
-    def family_tests(items):
-        """Send to chosen Families with these recent tests, none pending."""
-        return render(
-            "family-tests",
+    def family_tests(items, pending=False):
+        """Send to chosen Families with these recent tests, one of them on
+        its way while ``pending``."""
+        return family_tests_page(
             context,
             admin,
             confirm=False,
             families=[],
             items=items,
-            refresh=False,
+            refresh=pending,
             refresh_url=FAMILY_TESTS,
         )
 
@@ -195,10 +178,10 @@ def components(context, admin):
             f"stewardship/{template}.html", refresh_values(state, steps, sort=sort)
         )
 
-    def export(state, mutable=True, expires_at=None):
+    def export(state, mutable=True, expires_at=None, wait=None):
         """A participation export's page in ``state``; while ``mutable`` is
         false, other campaign work holds its commands. ``expires_at`` is a
-        ready file's window end."""
+        ready file's window end, and ``wait`` a queued one's QueueWait."""
         job = SimpleNamespace(
             pk=UUID(int=720),
             format="xlsx",
@@ -218,6 +201,7 @@ def components(context, admin):
                     "expires_at": expires_at.isoformat() if expires_at else None,
                 },
                 "mutable": mutable,
+                "wait": wait,
                 "retry_key": UUID(int=723),
                 "report_url": "/participation",
                 "report_name": "Participation",
@@ -250,13 +234,14 @@ def components(context, admin):
             },
         )
 
-    def change(state):
-        """Change status for a Parish settings change in ``state``."""
+    def change(state, request=None):
+        """Change status for a Parish settings change ``request`` in ``state``."""
+        request = request or UUID(int=722)
         return render_to_string(
             "stewardship/configuration-request.html",
             page
             | {
-                "receipt": {"state": state, "request_id": UUID(int=722)},
+                "receipt": {"state": state, "request_id": request},
                 "admin_chrome": admin
                 | {"back": {"label": "Parish settings", "url": "/parish-settings"}},
             },
@@ -361,18 +346,14 @@ def components(context, admin):
     )
     tested = [{"duid": 1234, "label": "Sent", "created_at": now - timedelta(minutes=1)}]
     pages = {
-        CREDENTIAL: credential("failed", False),
-        "/live-credential-pending": credential("awaiting_ack", True),
-        "/live-credential-applied": credential("applied", False),
-        CREDENTIAL_RUNNING: credential("awaiting_ack", True, RUNNING),
-        "/live-running-pending": credential("awaiting_ack", True, RUNNING),
-        "/live-running-applied": credential("applied", False, RUNNING),
+        CHANGE_RUNNING: change("staged", RUNNING),
+        "/live-running-pending": change("staged", RUNNING),
+        "/live-running-applied": change("applied", RUNNING),
         PROGRESS: progress(),
         "/live-progress-later": progress(sent=900, remaining=180),
-        PROGRESS_STATUS: progress(
-            "family-email-progress-status", sent=900, remaining=180
-        ),
+        PROGRESS_STATUS: progress("mail-queue-status", sent=900, remaining=180),
         FAMILY_TESTS: family_tests([]),
+        FAMILY_TESTS_PENDING: family_tests([], pending=True),
         "/live-family-tests-later": family_tests(tested),
         INTEGRATION: integration(failed),
         INTEGRATION + "?dismissed=1": integration(None),
@@ -394,14 +375,23 @@ def components(context, admin):
         EXPORT_EXPIRING: export("ready", expires_at=now + EXPORT_WINDOW_LEFT),
         EXPORT_ENDED: export("ready", expires_at=now - timedelta(seconds=1)),
         EXPORT_PENDING: export("queued"),
+        EXPORT_WAITING: export(
+            "queued",
+            wait=QueueWait(
+                since=now - timedelta(minutes=3),
+                waited="3 minutes",
+                blocker="a ParishSoft refresh",
+                blocker_started=now - timedelta(minutes=4),
+            ),
+        ),
         EXACT: exact("failed"),
         "/live-exact-ready": exact("succeeded", export_id=UUID(int=725)),
         CHANGE: change("staged"),
         "/live-change-applied": change("applied"),
     }
-    # Refresh task re-reads the task page with its history's view (#519 PR
-    # 7b): as first shown, and once sorted by Action, each read finds the
-    # run finished, sorted as it was asked.
+    # The task page's quiet re-read when its run ends keeps its history's
+    # view (#869, #1586): as first shown, and once sorted by Action, each
+    # read finds the run finished, sorted as it was asked.
     shown = refresh_values("running", running)["history"]
     action = shown.sort_target("action")
     by_action = refresh_values("running", running, sort=action)["history"]
@@ -415,5 +405,7 @@ def components(context, admin):
         canonical(TASK_PAGE + "?" + by_action.current_query): refresh_task(
             "succeeded", finished, sort=action
         ),
+        # The same, for a test to answer any read of the sorted page with.
+        TASK_FINISHED_BY_ACTION: refresh_task("succeeded", finished, sort=action),
     }
     return {path: ("text/html", body) for path, body in pages.items()}

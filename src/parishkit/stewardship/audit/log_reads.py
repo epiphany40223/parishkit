@@ -59,9 +59,10 @@ EXPORT_TITLE = "System logs"
 EXPORT_PRIVACY = "Sensitive system record. Share only with authorized recipients."
 # Each read (the screen's page and count, or an export) may run at most this
 # long in PostgreSQL: the interactive page-view limit the campaign read
-# guards use. Text search has no index (#536), so on a very large log a
-# broad search could otherwise hold a web worker; it is stopped, recorded
-# and answered with the page's unavailable message instead.
+# guards use. A search for a short phrase (under three letters or digits)
+# has no index (#765), so on a very large log it could otherwise hold a web
+# worker; it is stopped, recorded and answered with the page's unavailable
+# message instead.
 READ_SECONDS = DEFAULT_LIMITS.interactive_seconds
 # The download's columns: JSON Lines keys (a program-readable format, so
 # snake_case), each with its plain CSV and XLSX heading (#966): the page's

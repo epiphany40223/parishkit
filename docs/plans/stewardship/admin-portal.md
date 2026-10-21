@@ -5,7 +5,9 @@ Task status: [Administration portal checklist](../../tasks/stewardship/admin-por
 This plan implements the
 [administration portal specification](../../specs/stewardship/admin-portal/spec.md).
 All routes, partial endpoints, job status, exports, and destructive workflows
-remain below `/admin/` and apply server-side authorization.
+remain below `/admin/` and apply server-side authorization. Since
+[#1547](https://github.com/epiphany40223/parishkit/issues/1547) no Admin
+action checks how long ago the Admin signed in; there is no step-up.
 
 ## Work packages
 
@@ -86,6 +88,68 @@ remain below `/admin/` and apply server-side authorization.
    when an end-date shortening would strand future Family mail.
 6. Add form/request tests for hidden stray values, pending/mismatched config,
    locking, cloning exclusions, preview privacy, and schedule races.
+7. **Shared schedule preview (post-launch,
+   [#1129](https://github.com/epiphany40223/parishkit/issues/1129)).** One
+   [schedule preview](../../specs/stewardship/ui-conventions/spec.md#schedule-previews)
+   component for the refresh schedule's
+   [seven-day list](../../specs/stewardship/admin-portal/spec.md#seven-day-preview)
+   and the [mail schedule review](../../specs/stewardship/admin-portal/spec.md#dates-and-mail-schedules)'s
+   send times. No slice changes the schema, a send, a refresh or a signed
+   preview: the component only draws what the evaluators already compute.
+   It follows draft PR #1511 (the last shared `HH:MM` and weekday helpers),
+   whose `refresh_schedule_grid` change the first slice builds on.
+   - **7a, specification (docs only).** The ui-conventions section, the
+     feature specs' adoption paragraphs, this item and its checklist.
+   - **7b, the component and the refresh list.** `occurrence_preview`
+     (`Occurrence`, `Day`, `build`) with unit tests of grouping across
+     both daylight-saving days in a browser zone and a schedule zone,
+     covered times placed by their `day`, a window of whole days that
+     keeps today's earlier times, the count limit, the zone-less ungrouped
+     list, both shifted-line wordings, and each state;
+     `components/occurrences.html` in both layouts with a render test of
+     each state; the `data-other-zone-time` filler in `date-format-v1.js`,
+     replacing the refresh script's `data-browser-time`; open days kept by
+     date. The refresh editor's `preview_context` builds its days through
+     `build` (grouped, schedule zone, seven `Day` records with their counts
+     and grid `cells`) and the grid reads the same days. A render
+     comparison against the base shows the same days, counts, lines
+     (today's earlier times included, unmarked) and struck reasons. The
+     guard test lists `schedule-summary.html` and `clone-preview.html` as
+     still hand-drawn. Browser tests of the editor in three engines with
+     `--require-no-skips`. No pk-local check: nothing is added or moved.
+   - **7c, the mail schedule review.** A from-now helper beside
+     `preview_slots` (from `SchedulePlan.next_slot`, so no history is
+     scanned) lists the next five sends after the database's now.
+     `schedule_changes.describe` takes an optional zone: with the posted
+     `zone` it builds the sides through `build` (compact, browser zone),
+     and with none (Campaign settings' end-date review through
+     `campaign_end_date.py`, and the command line) it lists them
+     ungrouped and never refuses. Each digest line names its day in words
+     (a daily digest its reported day, a weekly digest its send day), and
+     the paused notice comes from the delivery pause.
+     `schedule-summary.html` draws the include and drops its own list,
+     its daylight-saving sentence and its digest-date sentence.
+     `admin_reads.schedule_entry` (`schedule show`) and `schedule preview`
+     use the same helper, so their `resolved` and `more` keep their shape
+     and list the same sends from now. Tests: the review's context and
+     render for a dated email, both digests, a passed send (empty), a
+     paused campaign, a zone-less review, and a send on a
+     daylight-saving day with the browser and campaign zones equal and
+     different; update `test_schedule_views_postgresql`'s signed-preview
+     test (it asserts the rendered `resolved_slots` instants and the
+     always-on sentence "not a list of who will receive it") and check
+     `test_admin_schedule_cli_postgresql` (it checks only the first `due_at`'s form, and the 2054 fixture
+     campaign makes from-now equal from-start there); the review dialog in
+     three engines. The guard keeps only `clone-preview.html`, which the
+     server refuses until
+     [#145](https://github.com/epiphany40223/parishkit/issues/145)
+     removes it. Administrator check on pk-local before merge (the
+     review's send times look different).
+
+   Later #1129 slices, not planned here: a live preview on New and Edit
+   scheduled email before Review, the Basic and Advanced shell for mail
+   schedules, and the Campaign calendar's refresh times (#469), each
+   drawn by this component.
 
 ### ADM-05: Production transition and pre-start withdrawal
 
@@ -96,7 +160,7 @@ remain below `/admin/` and apply server-side authorization.
    campaign go-live gate, progress/retry/cancel UI, and BG-03 batched cleanup.
    Invalidate rehearsal credentials/sessions at gate acquisition and include
    their sensitive detail in cleanup readiness and final activation checks.
-3. Implement fresh-auth typed final confirmation and the short atomic
+3. Implement typed final confirmation and the short atomic
    draft-to-scheduled/direct-active transition with commit-time boundary check.
    Direct activation inserts only the durable catch-up demand/task and version
    guards; BG-04 materializes overdue work asynchronously. Show active campaign
@@ -122,7 +186,7 @@ remain below `/admin/` and apply server-side authorization.
    old-link invalidation/manual-code fallback, and atomically activate the
    current restore-epoch generation after manifest rechecks. Do not send
    replacement mail or resolve holds implicitly.
-2. Implement delivery pause/resume with fresh authentication, impact counts,
+2. Implement delivery pause/resume with impact counts,
    pre-provider recheck, held message visibility, coalescing, and post-close
    receipt/digest resolution.
 3. Implement closed-campaign end-date extension/readiness/reopen directly to
@@ -136,7 +200,7 @@ remain below `/admin/` and apply server-side authorization.
    explicit reasoned skip resolutions with coverage preview and safe work
    cancellation. Recheck the shared inventory transactionally at archive/Return.
 5. Test restore/pause/reopen/archive races, held messages, inconsistent state,
-   successor denial, and audit/reauthentication; include final-day/weekly mail
+   successor denial, and audit; include final-day/weekly mail
    not yet due, failed/unknown delivery, stale coverage, and durable skips across
    scheduler retries, schedule revisions, and unarchive/reopen.
 
@@ -207,6 +271,46 @@ slices of #952 are tracked on that issue.
 5. Test Staff view-only behavior, Admin-only API publication, stale plans,
    subset sessions, and every outcome.
 
+The [Update ParishSoft](../../specs/stewardship/reports/spec.md#update-parishsoft)
+page ([#528](https://github.com/epiphany40223/parishkit/issues/528); Publish
+to ParishSoft until [#1688](https://github.com/epiphany40223/parishkit/issues/1688))
+is delivered in these slices, each its own pull request with publication
+left switched off:
+
+1. **Already in ParishSoft at the check** (forward migration 0112, the number
+   assigned to it centrally): the derived-proposal guard's worker branch
+   for `pending|failed → resolved_upstream` backed by a Production-mode
+   plan's `already_in_parishsoft` field row, the confirmation guard
+   checking such rows at their next version, the preflight marking them,
+   and `matches_confirmed` leaving out exactly the rows this check marked
+   (the
+   [data workflow](../../specs/stewardship/data/spec.md#review-and-publication),
+   step 4). Its PostgreSQL tests include the guard's same-transaction
+   check (the plan row's `xmin` or `transaction_timestamp()`), refusing a
+   plan committed earlier, and a test against the old guard definitions.
+2. **The page, read and check**: the Census changes link (unavailable while
+   switched off), the page's off and Testing states, Check ParishSoft with
+   its in-place status, the plan table and counts, and
+   `census_publication_viewed`.
+3. **Confirm and run**, built with the rename to Update ParishSoft by
+   [#1688](https://github.com/epiphany40223/parishkit/issues/1688): Update
+   in the review dialog, the run's in-place status and per-Member outcomes,
+   Run again, the final full refresh, the refusal codes, the newest-plan
+   check shared with the command line, and the update audit types moved
+   into the ParishSoft refreshes group, renamed "ParishSoft refreshes and
+   updates" ([activity groups](../../specs/stewardship/admin-portal/spec.md#activity-groups));
+   the rename updates every test that names the old label.
+4. **Command-line parity**: `pk-admin census update-check`,
+   `update-plan`, `update-confirm` and `update-rerun`, with `census review
+   --decision accepted`
+   ([#1755](https://github.com/epiphany40223/parishkit/issues/1755)).
+
+Slice 2 needs no schema, so it was delivered first.
+
+Turning publication on is not a slice: it follows the human `--send` smoke
+evidence on #528, a reviewed change replacing the gateway's
+`read_unconfirmed`, and the Administrator's decision.
+
 ### ADM-10: Exceptional campaign purge web workflow
 
 1. Build `/admin/operations/purge/` eligibility selection and durable request
@@ -224,7 +328,7 @@ slices of #952 are tracked on that issue.
    dependent invalidation without uploading secrets or arbitrary attachments.
    Add asynchronous **Revalidate selected backup**, preserving the immutable
    backup and independent recovery expiry under the canonical purge workflow.
-4. Require fresh authentication, exact campaign name and generated phrase, then
+4. Require the exact campaign name and generated phrase, then
    queue the idempotent purge worker after atomic prerequisite recheck.
 5. Expose safe pre-delete rollback, resumable deletion, cleanup retry, terminal
    tombstone, and CRITICAL failure behavior without offering forbidden rollback.
@@ -277,6 +381,8 @@ the tests; items here only name them.
    guards (four session-bound fresh-gate guards and two secret request
    guards), plus any ADM-13 System health guard already installed, accept a full-scope automation session, caller-aware freshness
    checks, the confirmation prompt and `--yes`. Security-focused review.
+   (#1547 later removed the sign-in age checks; the automation acceptance,
+   prompt and notices stay.)
 7. **PR 6, refresh and Testing sends.** Refresh, sample and chosen-Family
    tests.
 8. **PR 7, delivery controls.** Pause, resume, closed-campaign resolution and
@@ -322,7 +428,7 @@ placement table, the other specs that name those URLs, and the guides.
 | ADM-12.13 | NAV-10 | Campaign setup URLs, part B (go-live chain, test email, Campaign Ministries) | A |
 | ADM-12.14 | NAV-11 | Report URLs, including response lists | C |
 | ADM-12.15 | NAV-12 | Export and digest URLs | C |
-| ADM-12.16 | NAV-13 | Optional: trailing slash on sign-in, setup and maintenance | Last |
+| ADM-12.16 | (dropped) | Not built: sign-in, setup and maintenance keep their addresses (#522) | — |
 | ADM-12.17 | NAV-14 | Emailed reports page | C |
 | ADM-12.18 | (dropped) | Not built: the Users revamp (#952) replaces the planned Portal users split | — |
 | ADM-12.19 | NAV-16 | Ways back (#521): test-email origin, Return links, linked messages | Serial |
@@ -336,7 +442,7 @@ NAV-10 (NAV-9 needs NAV-4 and NAV-6); lane B runs NAV-5a and NAV-7;
 lane C runs NAV-5b, NAV-11, NAV-12, NAV-14 and then NAV-19 (which also needs
 NAV-1), after the in-flight report work in #553, #567, #559 and #477 PR 5
 merges; lane D runs NAV-8. NAV-16 (after NAV-10 and NAV-11) to NAV-18 come at
-the end, and NAV-13 is last and optional.
+the end. NAV-13 was optional and is dropped (#522).
 
 ### ADM-13: System health page
 
@@ -397,12 +503,23 @@ of 2026-10-04 are recorded in the specification.
    reads, including the backups panel's size and version columns, and the
    backup login's request updates), request mode and the backup lock, the
    panel's size, version and request state, and the runbook steps; **3b**
-   the Take a backup now button with its preview, fresh sign-in, audit
+   the Take a backup now button with its preview, audit
    event and command or pending exemption.
 5. **PR 4, clear a halted mail sender.** Halt identities, the clear signal
    and the mailbox check request with their guards (migration), the check
    in `mail-dispatch`, the consumers reading the signal, and the dispatch
    guide and mail-provider outage runbook updates. Security-focused review.
+   It lands in two parts (2026-10-17): **4a** the halt identities in the
+   marker, the halt record, the clear signal and the mailbox check request
+   with their guards and grants (frozen migration 0115), the consumers
+   recording halts and reading the signal, the check in `mail-dispatch`,
+   `mail_halt_cleared`, `system mail-clear-preview` and `system mail-clear`,
+   and the guide and runbook updates, with security and concurrency
+   reviews (it touches the send path, so it ships only on a night without
+   scheduled reminders); **4b** the Clear the halt button in the Mail tile,
+   its preview and in-place mailbox check, and the banner's
+   acknowledgement of the halt's `mail_provider_failed` entries. Neither
+   needs a recent sign-in (#1547).
 6. **PR 5, accept a large ParishSoft change once.** The one-time acceptance
    and its guard, and the example Families table with its deletion
    (migration), the drop check honoring the acceptance, the manifest
@@ -426,7 +543,7 @@ of 2026-10-04 are recorded in the specification.
    the read and clear definers (frozen migration 0078), the in-process
    override and children's environment, and `debug-off-clear`; **6b** the
    web's grants (no migration: grants are `database-grants`'), the button
-   with its preview, fresh sign-in, audit event and `system debug-off`,
+   with its preview, audit event and `system debug-off`,
    the operator clear's `debug_logging_allowed` event, the panel's
    who-and-when line and the runbook updates; **6c** Allow debug logging
    again (Testing only; the guard change is frozen migration 0088, with the
@@ -467,4 +584,4 @@ tracked on #530.
 - Long-running or external work returns durable status instead of blocking a web
   request.
 - Lifecycle, publication, restore, and purge mutations are transactional,
-  reauthenticated where specified, confirmed, and replayable from audit.
+  confirmed, and replayable from audit.

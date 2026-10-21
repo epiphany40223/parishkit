@@ -7,7 +7,7 @@ from parishkit.stewardship.jobs.delivery_metadata import STATE_LABELS
 
 register = template.Library()
 # Outbox states use the shared plain words (STATE_LABELS), the same table the
-# Family timeline reads, so one email reads alike a click apart (#589).
+# Timeline reads, so one email reads alike a click apart (#589).
 # Attempt-history actions below describe events, not outcomes, and keep
 # their own wording.
 LABELS = STATE_LABELS | {
@@ -18,6 +18,16 @@ LABELS = STATE_LABELS | {
     "weekly_digest": _("Weekly Administrator report"),
     "receipt": _("Submission receipt"),
     "family_test": _("Selected-Family test"),
+    "operational": _("Operational notice"),
+    "security_event": _("Security notice"),
+    "leader_email": _("Ministry leader email"),
+    # Sent mail's grouped Delivery choices (#1562, STATE_GROUPS).
+    "needs_attention": _("Needs attention"),
+    "needs_review": _("Not sure it arrived — review needed"),
+    # Sent mail's grouped Purpose choice (PURPOSE_GROUPS, #1632).
+    "family": _("Family invitations and reminders"),
+    "not_delivered": _("Not delivered"),
+    "still_sending": _("Still sending"),
     "production": _("Production"),
     "testing": _("Testing"),
     "note": _("Evidence note"),

@@ -8,7 +8,13 @@ from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.schema_primitives import text
 from parishkit.stewardship.web.admin_forms import AdminForm, AdminFormSet
-from parishkit.stewardship.web.content import validate_share_label
+from parishkit.stewardship.web.content import SHARE_PLACEHOLDERS, validate_share_label
+from parishkit.stewardship.web.field_rules import (
+    SPACE,
+    FieldRule,
+    RuleField,
+    placeholder_text_pattern,
+)
 
 DEFAULT_LABELS = (
     "{{ pronoun }} will have my bank send a check (or this is already set up)",
@@ -19,6 +25,26 @@ DEFAULT_LABELS = (
     "An IRA distribution directly sent to {{ parish_name }}",
     "Offertory envelopes (the parish will have these sent to you)",
     "Other",
+)
+
+
+# A label's characters and placeholders, checked by the browser and the
+# server alike (#1577): what text() and validate_share_label admit, with no
+# control character (C0, DEL or C1) anywhere, and the spaces around it that
+# the field strips first (a tab among them).
+_CONTROLS = "".join(map(chr, [*range(0x20), *range(0x7F, 0xA0)]))
+SHARE_LABEL = FieldRule(
+    name="share_label",
+    pattern=(
+        rf"[{SPACE}]*{placeholder_text_pattern(SHARE_PLACEHOLDERS, _CONTROLS)}"
+        rf"[{SPACE}]*"
+    ),
+    message=_(
+        "Use visible text and parish_name, pronoun, campaign_year, "
+        "financial_period, financial_start or financial_end placeholders."
+    ),
+    code="invalid_label",
+    empty=_("Enter a label for each option, or tick its Delete box."),
 )
 
 
@@ -37,24 +63,24 @@ class ShareOptionForm(AdminForm):
     id = forms.UUIDField(
         required=False, widget=forms.HiddenInput(attrs={"data-change-setting": True})
     )
-    label = forms.CharField(label=_("Option label"), max_length=1024)
+    label = RuleField(SHARE_LABEL, label=_("Option label"), max_length=1024)
     free_text = forms.BooleanField(
         label=_("Include a free-text response"), required=False
     )
 
     def clean_label(self):
-        """Share labels admit only non-private Parish/pronoun substitutions."""
+        """Share labels admit only non-private Parish/pronoun substitutions.
+
+        The field's rule (SHARE_LABEL) has refused what these refuse, in
+        the same words; they stay the authority.
+        """
         value = self.cleaned_data["label"]
         try:
             text(value, 1024)
             validate_share_label(value)
         except ValueError:
             raise forms.ValidationError(
-                _(
-                    "Use visible text and parish_name, pronoun, campaign_year, "
-                    "financial_period, financial_start or financial_end placeholders."
-                ),
-                code="invalid_label",
+                SHARE_LABEL.message, code=SHARE_LABEL.code
             ) from None
         return value
 
@@ -155,7 +181,9 @@ def share_action(parameters):
         "options-MAX_NUM_FORMS",
     }
     total = parameters.get("options-TOTAL_FORMS", "")
-    if parameters.get("action") == "preview" and (
+    # A direct save (#1404 PR 4) posts the same rows as a Review.
+    rows = parameters.get("action") in {"preview", "save"}
+    if rows and (
         not total.isascii()
         or not total.isdecimal()
         or len(total) > 3
@@ -165,7 +193,7 @@ def share_action(parameters):
         raise ValueError("Invalid share option count.")
     fields.update(
         f"options-{index}-{name}"
-        for index in range(int(total) if parameters.get("action") == "preview" else 0)
+        for index in range(int(total) if rows else 0)
         for name in ("id", "label", "free_text", "ORDER", "DELETE")
     )
-    return form_action(parameters, preview_fields=fields)
+    return form_action(parameters, preview_fields=fields, direct=True)

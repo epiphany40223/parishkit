@@ -1,15 +1,17 @@
 """App-local Celery task boundary exercises the actual durable dispatcher."""
 
+import logging
 from uuid import uuid4
 
 import pytest
 
 from parishkit.stewardship.deployment import ServiceRole, ValkeyConfiguration
 from parishkit.stewardship.jobs.broker import HINT_TASK, build_broker, consume_hint
-from parishkit.stewardship.jobs.dispatch import Handler, WorkQueue
+from parishkit.stewardship.jobs.dispatch import Handler, RecoveryPlan, WorkQueue
 from parishkit.stewardship.jobs.models import TaskRun
+from parishkit.stewardship.observability import Event, FailureKind
 
-from .test_dispatch_postgresql import queued
+from .test_dispatch_postgresql import expired_task, queued
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -157,3 +159,68 @@ def test_each_worker_process_refuses_the_other_process_queue(source_process):
             else ROLE_QUEUES[ServiceRole.WORKER] - SOURCE_QUEUES,
         )
     assert not calls and TaskRun.objects.get(pk=task.run_id).state == "queued"
+
+
+def refusal_lines(caplog, task, handler):
+    """Consume one real hint for ``task``; its (level, failure_kind) lines (#1659)."""
+    from parishkit.logging import STRUCTURED_EXTRA_FIELD
+
+    runtime = build_broker(
+        endpoint=ValkeyConfiguration("valkey", 6379, 0, None),
+        password="synthetic-password",
+        service=ServiceRole.WORKER,
+        handlers={"dispatch_probe": handler},
+    )
+    with caplog.at_level(logging.INFO, logger="parishkit.stewardship"):
+        runtime.app.tasks[HINT_TASK].run(str(task.run_id))
+    return [
+        (record.levelno, getattr(record, STRUCTURED_EXTRA_FIELD)["failure_kind"])
+        for record in caplog.records
+        if record.msg == Event.TASK_FAILED
+    ]
+
+
+def test_a_refused_effect_is_info_and_leaves_the_task_running(caplog):
+    """A halt landing between claim and effect is routine; the lease recovers it."""
+
+    def execute(context):
+        """Reach the effect, which the handler now refuses."""
+        with context.effect():
+            pytest.fail("A refused effect must not run.")
+
+    handler = Handler(
+        WorkQueue.GENERAL, lambda action, status: action != "effect", execute
+    )
+    task = queued()
+    lines = refusal_lines(caplog, task, handler)
+    assert lines == [(logging.INFO, FailureKind.TASK_NOT_ADMITTED)]
+    assert TaskRun.objects.get(pk=task.run_id).state == "running"
+
+
+def test_a_refused_completion_is_still_an_error(caplog):
+    """Completing against the handler's own evidence is a fault, not a hold."""
+    handler = Handler(
+        WorkQueue.GENERAL,
+        lambda action, status: action != "complete",
+        lambda context: context.transition("complete"),
+    )
+    task = queued()
+    lines = refusal_lines(caplog, task, handler)
+    assert lines == [(logging.ERROR, FailureKind.TASK_TRANSITION_REFUSED)]
+    assert TaskRun.objects.get(pk=task.run_id).state == "running"
+
+
+def test_a_refused_recovery_is_still_an_error(caplog):
+    """A recovery plan the handler's admission refuses keeps its ERROR line."""
+    handler = Handler(
+        WorkQueue.GENERAL,
+        lambda action, status: action != "recovery_retry",
+        lambda context: None,
+        recover=lambda status: RecoveryPlan("recovery_retry", 30),
+    )
+    task = expired_task()
+    lines = refusal_lines(caplog, task, handler)
+    assert lines == [(logging.ERROR, FailureKind.TASK_TRANSITION_REFUSED)]
+    # The recovery pass is one transaction, so its lease expiry rolled back
+    # with the refused plan: the expired run is left for the next pass.
+    assert TaskRun.objects.get(pk=task.run_id).state == "running"

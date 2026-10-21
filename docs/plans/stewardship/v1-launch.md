@@ -233,3 +233,34 @@ After the write-back, resume the overall plan with cut items 2, 3 and 4 and
 the remainders of reduced items 6 and 7 before preparing the 2027 campaign,
 then item 1. Each returns through the ordinary delivery cycle and its
 original gate. Remove its row from this document when it is complete.
+
+## Tracking post-launch work
+
+Stewardship follow-up work is tracked on the
+[Stewardship roadmap project board](https://github.com/orgs/epiphany40223/projects/1).
+Its Status field (Todo / In Progress / Done) shows what is being worked on, and
+its Timeframe field mirrors the issue's `timing: …` label. A closed issue moves
+to Done automatically.
+
+Labels:
+
+- `stewardship`: every Stewardship backlog issue.
+- `timing: pre-launch`: had to land before the v1 launch (2026-10-03), after
+  the code and schema freezes (both Friday 2026-10-02).
+- `timing: post-launch priority`: first in line after launch.
+- `timing: after launch`: must land after the v1 launch.
+- `timing: after campaign`: must wait until the current campaign is complete
+  (architecture decisions and large simplifications).
+- `bug` / `enhancement`: kind of change.
+
+Conventions:
+
+- Every Stewardship issue has the `stewardship` label plus one `timing: …`
+  label, and is added to the board with a Status and a Timeframe.
+- Before starting follow-up work, find or create its issue. Each issue is
+  self-contained: problem, findings, decided approach, rejected approaches,
+  constraints and acceptance criteria, so anyone, including a future AI agent
+  session, can pick it up without the original conversation.
+- PRs link their issue with `Closes #N` (or `Refs #N` for partial progress).
+- Keep host addresses, deployment identifiers and credentials out of issues;
+  this repository is public.

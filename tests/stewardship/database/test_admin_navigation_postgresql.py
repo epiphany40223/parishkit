@@ -30,13 +30,7 @@ from .test_taskrun_postgresql import act, new
 
 pytestmark = pytest.mark.django_db(transaction=True)
 STEPS = ["Make changes", "Review", "Apply"]
-GO_LIVE = [
-    "Check readiness",
-    "Testing cleanup",
-    "Family links",
-    "Confirm Production",
-    "Activation",
-]
+GO_LIVE = ["Check", "Prepare", "Confirm Production", "Activation"]
 
 
 @pytest.mark.parametrize("role", ["administrator", "staff", "ministry_leader"])
@@ -86,7 +80,9 @@ def test_navigation_and_testing_banner_match_current_capabilities(
     assert b"Postal outreach" not in body
     assert body.count(b'id="session-warning"') == 1
     assert body.count(b'id="session-expired"') == 1
-    assert (b"Family participation" in body) == (role != "ministry_leader")
+    # Staff and Ministry leaders land on My review work instead (#1690).
+    assert (b"Family participation" in body) == (role == "administrator")
+    assert (b"<h1>My review work</h1>" in body) == (role != "administrator")
     # Pages and emails, and Dates and mail schedules, are first-class entries.
     assert (b"Pages and emails" in body) == (role == "administrator")
     assert (b"Dates and mail schedules" in body) == (role == "administrator")
@@ -283,14 +279,16 @@ def test_background_pagination_preserves_filtered_scope(auth_service, google):
 
 
 def test_dashboard_failure_links_open_the_html_task_page(auth_service, google):
-    """A dashboard navigation link must not strand the Admin on a JSON response."""
+    """Home counts the failure and links Background work filtered to failed
+    tasks (#1673); the task's page is HTML, never a JSON response."""
     task = act(act(new(), "claim"), "permanent_failure")
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB):
         response = browser.get("/admin/")
         assert response.status_code == 200
+        assert b"1 background task failed in the past 24 hours." in response.content
+        assert b'href="/admin/system/background/?state=failed"' in response.content
         path = f"/admin/system/background/{task.run_id}/"
-        assert f'href="{path}"'.encode() in response.content
         detail = browser.get(path)
         assert detail.status_code == 200
         assert detail["Content-Type"].startswith("text/html")
@@ -402,20 +400,22 @@ def test_critical_event_warning_is_persistent_and_admin_only(auth_service, googl
 # The Administrator's count with a campaign fell by one: the campaign and its
 # configuration are now read together (admin_context._current_campaign).
 # The deliberate additions are the open counts' query (#585), paid only by
-# a viewer whose menu links Additional information or Ministry follow-up,
+# a viewer whose menu links Census changes (#1590), Additional information or
+# Ministry follow-up,
 # and whether ParishSoft data has been downloaded (#1242), paid only by a
 # viewer whose menu needs it: Administrators (Ministries) and Staff with a
 # campaign (the directory). These fixtures promote no ParishSoft capture,
-# so Additional information is greyed out and Administrators and Staff with
-# the draft no longer pay for open counts. A Ministry leader exists only in
+# so Additional information is greyed out; Administrators and Staff with the
+# draft pay for the open counts again since Census changes is counted (the
+# draft includes the census). A Ministry leader exists only in
 # a campaign that asks about Ministries (#922), so the leader's draft has
 # the Ministry module and a promoted source, a page NAV-1 never measured
 # for leaders: its count is today's, including the open counts' query.
 CHROME_QUERIES = {
     ("administrator", False): (4, 5),
-    ("administrator", True): (7, 7),
+    ("administrator", True): (7, 8),
     ("staff", False): (2, 2),
-    ("staff", True): (4, 5),
+    ("staff", True): (4, 6),
     ("ministry_leader", True): (7, 7),
 }
 # Not menu cost: since #456 the Administrator's chrome also reads whether an

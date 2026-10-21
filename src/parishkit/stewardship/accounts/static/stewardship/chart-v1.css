@@ -92,3 +92,8 @@
   max-height: 7em;
   text-align: left;
 }
+
+/* A tooltip is for the pointer on the screen; a printed page never shows it. */
+@media print {
+  #vg-tooltip-element { display: none; }
+}

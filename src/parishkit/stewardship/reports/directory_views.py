@@ -32,8 +32,12 @@ from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
-from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web.filter_errors import (
+    FilterError,
+    error_context,
+    refused,
+)
 from parishkit.stewardship.web.refusals import with_status_code
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import report_table
@@ -42,7 +46,6 @@ from .directories import (
     CHECKS,
     DIRECTORY_SORTING,
     FIND_MINIMUM,
-    MODES,
     PAGE_SIZE,
     REACH,
     REASONS,
@@ -56,12 +59,18 @@ from .directories import (
     staff_entered,
     testing_codes_context,
 )
-from .directory_documents import export_headings, head_names
+from .directory_documents import head_names
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .read_admission import admit_report_read
 from .report_paging import carried_filters, clamp_query, pop_page_size
 from .response_dashboard import rehearsal_epoch
+
+# The element id of the filter field a refusal can be shown at (#1332),
+# and the reserved line it is described by: the complete gate's hint row
+# after Apply, which shows the message over the gate's hint.
+FIELD_IDS = {"exact_code": "exact-code"}
+FIELD_LINES = {"exact_code": "directory-filters"}
 
 
 def _principal(request, store, *, read_only=False):
@@ -78,8 +87,9 @@ def _principal(request, store, *, read_only=False):
 
 # Closed, non-private values a link may carry (GET): the reach presets (such
 # as "no campaign mail can reach"), the mailing-columns preset and, for the
-# response dashboard's "Lists of Families" links (#933), the Response and
-# ParishSoft data to check choices, the response columns, the sort and the
+# family directory's response presets (#933; the Response dashboard no longer
+# links them), the Response and ParishSoft data to check choices, the
+# response columns, the sort and the
 # mode (Testing links are admitted for Administrators only). Each is a
 # closed vocabulary ``DirectoryQuery.parse`` checks; search text and exact
 # codes stay POST only.
@@ -125,17 +135,6 @@ def mailing_option(parameters):
     if len(values) != 1 or values[0] not in {"yes", "no"}:
         raise ValueError("Invalid mailing-columns choice.")
     return values[0] == "yes"
-
-
-def export_asks_zone(query, postal):
-    """Whether the export form asks for a time zone (#1127).
-
-    Only the code list with response columns has exact times in its rows
-    (invitation delivered, link followed, form opened, submitted). The code
-    list without them and the postal mail merge have none, so their form
-    sends the browser's zone unasked for the file's frame times.
-    """
-    return query.responses == "yes" and not postal
 
 
 def _audit(principal, campaign_id, *, postal, outcome, count, total, query):
@@ -216,8 +215,17 @@ def _column_count(postal, dates, counts, checks, *, testing=False):
 
 @require_http_methods(["GET", "POST"])
 def directory(request, campaign_id):
-    """Recheck roles/scope through rendering and streaming; audit after guard close."""
-    finish, handed_off = None, False
+    """Recheck roles/scope through rendering and streaming; audit after guard close.
+
+    A malformed Exact Family code (``FilterError``, #1332) draws the page
+    again, answered 400, with the values sent in the filter form, the error
+    at the code field and in the summary, and the results, export and links
+    for no filters. The sort and the mailing-columns choice sent are kept:
+    neither is refused, and the choice picks the columns and the export's
+    kind. The audit then ends denied.
+    Every other refusal of the filters keeps the error page.
+    """
+    finish, handed_off, refusal = None, False, None
     try:
         service = runtime()
         principal = _principal(request, service.store)
@@ -235,7 +243,19 @@ def directory(request, campaign_id):
         postal = mailing_option(parameters)
         # The selection pages 50 rows at a time, so that is the only size.
         pop_page_size(parameters, (PAGE_SIZE,), default=PAGE_SIZE)
-        query = DirectoryQuery.parse(parameters)
+        try:
+            query = DirectoryQuery.parse(parameters)
+        except FilterError as error:
+            # Every closed choice was accepted before the code was checked,
+            # so the sort sent is one the selection knows. The mode sent is
+            # still admitted: a reader may not ask for Testing responses
+            # even on a refused page. It is kept in the query too, so the
+            # mode choice agrees with the filter form's hidden mode field.
+            refusal = error
+            admit_mode(principal, error.query.mode)
+            query = DirectoryQuery.parse(
+                {"sort": error.query.sort, "mode": error.query.mode}
+            )
         admit_mode(principal, query.mode)
         admit_report_read(campaign_id)
         _audit(
@@ -255,12 +275,16 @@ def directory(request, campaign_id):
             if finalized:
                 return
             finalized = True
+            outcome = Outcome.SUCCEEDED if completed else Outcome.FAILED
+            if completed and refusal is not None:
+                # The page was shown, but not for the filters asked for.
+                outcome = Outcome.DENIED
             try:
                 _audit(
                     principal,
                     campaign_id,
                     postal=postal,
-                    outcome=Outcome.SUCCEEDED if completed else Outcome.FAILED,
+                    outcome=outcome,
                     count=count,
                     total=total,
                     query=query,
@@ -349,7 +373,6 @@ def directory(request, campaign_id):
                     "reaches": REACH,
                     "responses": RESPONSES,
                     "checks": CHECKS,
-                    "modes": MODES,
                     "can_test": can_test,
                     "testing_responses": query.mode == "testing",
                     "date_columns": dates,
@@ -368,13 +391,6 @@ def directory(request, campaign_id):
                     "staff_entered": staff_entered(
                         campaign_id, [row["family_id"] for row in report["rows"]]
                     ),
-                    "export_headings": export_headings(
-                        postal=postal,
-                        reach=query.reach,
-                        dates=dates,
-                        counts=counts,
-                        checks=query.check != "any",
-                    ),
                     # In Testing the link keeps the mode it was drawn in.
                     "unreachable_url": reverse("admin:family_directory")
                     + "?reach=neither"
@@ -382,10 +398,17 @@ def directory(request, campaign_id):
                     "rehearsal": report.get("rehearsal"),
                     "mutable": mutable,
                     "request_key": uuid4(),
-                    "export_timezones": sorted(timezone_names()),
-                    "export_asks_zone": export_asks_zone(query, postal),
                 }
             )
+            if refusal is not None:
+                # The filter form shows what was sent (filter_query;
+                # otherwise query), not what the results use (none). The
+                # hint row keeps the message's height once it clears on the
+                # first edit (filter_line), so nothing moves.
+                context |= error_context(refusal, FIELD_IDS, FIELD_LINES) | {
+                    "filter_query": refusal.query,
+                    "filter_sizes": {FIELD_LINES[refusal.field]: refusal.message},
+                }
             return iter(
                 (
                     render_to_string(
@@ -406,6 +429,10 @@ def directory(request, campaign_id):
             # this report its safe recovery navigation, never private contents.
             return _error(campaign_id, status=503)
         handed_off = response.status_code == 200 and response.streaming
+        if handed_off and refusal is not None:
+            # The refusal was known before the response was made, so its
+            # status is set before any byte is sent.
+            refused(response)
         return response
     except (PermissionError, ObjectDoesNotExist):
         return denial()
@@ -421,7 +448,7 @@ def directory(request, campaign_id):
 
 
 def _finder(request, store, *, read_only=False):
-    """A viewer who may open the directory page and the Family timeline."""
+    """A viewer who may open the directory page and the Timeline."""
     principal = _principal(request, store, read_only=read_only)
     if not allows(principal, Capability.CAMPAIGN_REPORT):
         raise PermissionError("Find a Family is unavailable.")
@@ -436,7 +463,7 @@ def find_family(request, campaign_id):
     here (CSRF-protected, so the text never enters a URL, a log line or the
     browser history) and shows the answer under the box. The viewer must be
     able to open both the directory page, whose search this runs, and the
-    Family timeline each result opens: Administrators and Staff. Both are
+    Timeline each result opens: Administrators and Staff. Both are
     rechecked inside the campaign read guard, as the directory does, and the
     search is audited as a directory view (search used, row counts; never
     the text). Refusals answer with an empty body and the status alone; the

@@ -1,4 +1,10 @@
-"""Private native Ministry follow-up queue, history and optimistic editing."""
+"""Ministry requests: the review worklist, request pages and their edits.
+
+The queue page is the Ministry stream's review worklist (#1684,
+``ministry_worklist``), whose decisions post to the page itself and are
+recorded by ``workflows.review``; each request's own page keeps its
+follow-up form, contact attempts and history.
+"""
 
 from dataclasses import replace
 from urllib.parse import urlencode
@@ -6,7 +12,7 @@ from uuid import UUID, uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
-from django.http import HttpResponse, QueryDict
+from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -22,7 +28,6 @@ from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
-from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 from parishkit.stewardship.time_entry import (
     TimeEntryError,
@@ -39,23 +44,16 @@ from parishkit.stewardship.web.contracts import (
 )
 from parishkit.stewardship.web.dates import UnknownZone, browser_instant
 from parishkit.stewardship.web.filter_errors import error_context, refused
-from parishkit.stewardship.web.refusals import Refusal, with_status_code
+from parishkit.stewardship.web.refusals import Refusal, with_codes, with_status_code
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
+from parishkit.stewardship.web.review_worklist import read_decision, record
 from parishkit.stewardship.web.tables import (
     PAGE_SIZES,
-    paginate,
-    report_table,
-    table_parameters,
 )
 from parishkit.stewardship.workflows.followup import (
-    BULK_ACTIONS,
-    MAX_BULK,
-    BulkStale,
     FollowupRefusal,
-    MemberNotInSource,
     WorkflowChange,
-    apply_bulk_outcome,
     authorize_ministry,
     outcomes_for,
     update_request,
@@ -65,6 +63,11 @@ from parishkit.stewardship.workflows.models import (
     STAFF_STATES,
     MinistryRequest,
 )
+from parishkit.stewardship.workflows.review import (
+    DecisionRefusal,
+    MinistryDecisions,
+    undo_entered,
+)
 from parishkit.stewardship.workflows.roster import (
     can_tick,
     mark,
@@ -72,7 +75,6 @@ from parishkit.stewardship.workflows.roster import (
     set_roster_entered,
 )
 
-from .chart_specs import ministry_followup
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .information import parse_page
@@ -83,26 +85,28 @@ from .ministries import (
     reads_every_ministry,
     unscoped,
 )
-from .ministry_contacts import request_contacts
+from .ministry_contacts import current_ministry, request_contacts
 from .ministry_exports import MAX_PACKET_MINISTRIES
 from .ministry_followup import (
     CHANNELS,
     EXPORT_PDF_LIMIT,
-    FILTER_OUTCOMES,
     HISTORY_STATES,
-    NOT_IN_SOURCE,
-    SORTING,
     STATES,
     FollowupQuery,
     can_follow_up,
     followup_history,
     followup_page,
-    request_totals,
     valid_ministry,
+)
+from .ministry_worklist import (
+    WorklistQuery,
+    for_reader,
+    read_rows,
+    row_name,
+    worklist_context,
 )
 from .read_admission import admit_report_read
 from .report_paging import (
-    clamp_query,
     next_open,
     pop_navigation,
     queue_token,
@@ -112,33 +116,31 @@ from .report_paging import (
 )
 
 TEMPLATE = "stewardship/ministry-followup.html"
+# The queue page, the review worklist (#1684).
+QUEUE_TEMPLATE = "stewardship/ministry-requests.html"
 FORMER = "Former portal user"
 # The name this queue's views are remembered under (report_paging.py).
 QUEUE = "ministry_followup"
 # The filters a link may carry (#533, #1133): one Ministry, and with it the
-# queue's own closed Request and Status values. Never the search.
-LINK_FILTERS = frozenset({"ministry", "action", "state"})
+# worklist's own closed Request and Stage values (#1684). Never the search.
+LINK_FILTERS = frozenset({"ministry", "kind", "stage"})
 # Rows per read while finding the next open request (the selection takes any
 # LIMIT, so the largest page size keeps the scan to a few reads).
 SCAN_SIZE = max(PAGE_SIZES)
 
 
 def _recalled(request, campaign_id, token):
-    """The remembered queue view's filters, or the default queue's.
+    """The remembered worklist view, or the default one.
 
     A token that is unknown here (another sign-in, an older view, or values a
-    later release no longer accepts) shows the default queue, not an error.
+    later release no longer accepts, such as the follow-up queue's Status
+    and Outcome before #1684) shows the default worklist, not an error.
     """
     values = recall_queue(request, QUEUE, campaign_id, token)
     try:
-        return FollowupQuery.parse(values) if values is not None else FollowupQuery()
+        return WorklistQuery.parse(values) if values is not None else WorklistQuery()
     except ValueError:
-        return FollowupQuery()
-
-
-def _view_values(query):
-    """What a queue view remembers: its filters, sort, page and page size."""
-    return query.form_values() | {"page": str(query.page), "size": query.size}
+        return WorklistQuery()
 
 
 def _principal(request, store, *, read_only=False):
@@ -154,7 +156,7 @@ def _principal(request, store, *, read_only=False):
 def _linked_ministry(value, principal):
     """A Ministry number from a link (#533), checked against this person's scope.
 
-    Links from Home's My Ministries panel and the counts on Ministry
+    Links from a leader's My review work (#1690) and the counts on Ministry
     requests (#1133) open the queue for one Ministry by GET, so Back and
     reload work; only closed values may travel in a URL (search stays
     private POST state). A malformed number is a 400; a
@@ -277,64 +279,7 @@ FIELD_IDS = {
     "contact_date": "contact-date",
     "contact_time": "contact-time",
 }
-# The same fields' ids in the queue's bulk outcome dialog
-# (ministry-followup-bulk-fields.html), which has no outcome or notes field.
-BULK_FIELD_IDS = {
-    "contact_date": "bulk-contact-date",
-    "contact_time": "bulk-contact-time",
-}
 ACTIONS = {"join": _("join"), "leave": _("leave")}
-# What each bulk outcome is called on its button (#1131), by its posted
-# "kind:outcome" value (BULK_ACTIONS).
-BULK_NAMES = {
-    "join:joined": _("Joined"),
-    "join:declined": _("Declined"),
-    "leave:leave_confirmed": _("Left"),
-    "leave:declined": _("Stayed"),
-}
-# Why the bulk buttons of one kind are unavailable (ui-v1.js
-# wireSelection's data-kind-hint-<kind>, shown in the bulk bar's reserved
-# reason line): only requests of one kind are ticked, or both kinds are.
-BULK_KIND_HINTS = {
-    "join": _("Left and Stayed are for requests to leave."),
-    "leave": _("Joined and Declined are for requests to join."),
-    "mixed": _(
-        "Tick only requests to join, or only requests to leave, to record an outcome."
-    ),
-}
-
-
-def bulk_actions():
-    """The queue's bulk outcome buttons and the dialog text each one sets.
-
-    Each button opens the one shared confirmation dialog (#879), which takes
-    its title, body and announcement from the button (ui-v1.js). ``kind``
-    makes a button available only while every ticked request is of that
-    kind (Administrator, 2026-10-13), so the dialog always acts on every
-    ticked request; the server checks every request's kind itself
-    (apply_bulk_outcome).
-    """
-    actions = []
-    for kind, outcome in BULK_ACTIONS:
-        value = f"{kind}:{outcome}"
-        values = {"name": BULK_NAMES[value], "label": outcome_label(outcome, kind)}
-        actions.append(
-            {
-                "value": value,
-                "kind": kind,
-                "label": _("Mark as %(name)s") % values,
-                "title_one": _("Mark {name} as %(label)s?") % values,
-                "title_many": _("Mark {count} requests as %(label)s?") % values,
-                "done_one": _("Marked {name} as %(label)s.") % values,
-                "done_many": _("Marked {count} requests as %(label)s.") % values,
-                "body": _(
-                    "Each request is resolved as %(label)s, with its own entry "
-                    "in its follow-up history."
-                )
-                % values,
-            }
-        )
-    return actions
 
 
 # The submitted fields a refused page shows again.
@@ -415,20 +360,66 @@ def packet_context(error, choices):
 def queue_response(request, campaign_id, *, packet):
     """Ministry requests drawn again for a refused Follow-up packet (#1332).
 
-    ``packet`` is the ``FilterError`` for the packet's boxes. The queue is
-    the default view (the packet's form carries no queue filters), and the
-    page answers 400 with the refusal's code.
+    ``packet`` is the ``FilterError`` for the packet's boxes. The worklist
+    is the default view (the packet's form carries no worklist filters), and
+    the page answers 400 with the refusal's code.
     """
     return _page_response(request, campaign_id, packet=packet)
 
 
-def _page_response(request, campaign_id, *, request_id=None, refusal=None, packet=None):
+def _queue_query(request, principal, parameters):
+    """The worklist view a queue request asks for (#534, #1133, #1684).
+
+    A query string carries either the token of a remembered view ("Return
+    to Ministry requests", #534) or closed link filters: one Ministry, from
+    a leader's My review work (#1690) or with a request type and stage from
+    a count on By Ministry (#1133), or a Stage alone, from a Staff card of
+    My review work (#1818) or Home's Ministry requests to enter by hand
+    card (R39 finding 2). Search and every other
+    filter stay private POST state (``parameters``, the POST body less any
+    decision's fields). A Ministry leader's view of Staff's update phase
+    reads as their Accepted (``for_reader``).
+    """
+    if request.GET:
+        if request.method != "GET":
+            raise ValueError("Search and filters require a POST body.")
+        values = filters(request.GET, allowed={"queue", *LINK_FILTERS})
+        if "queue" not in values and ("ministry" in values or set(values) == {"stage"}):
+            # Remembered below like any view, so its token keeps these
+            # filters on each request page, Save and next and the way back
+            # to the worklist. The parse checks the closed values; a
+            # Ministry is then checked against scope.
+            query = WorklistQuery.parse(values)
+            if query.ministry:
+                _linked_ministry(query.ministry, principal)
+            return for_reader(query, principal)
+        if values.keys() == {"queue"}:
+            return _recalled(request, None, queue_token(values["queue"]))
+        raise ValueError("Use a queue token or a Ministry.")
+    if parameters is None:
+        return WorklistQuery()
+    return for_reader(WorklistQuery.parse(parameters), principal)
+
+
+def _page_response(
+    request,
+    campaign_id,
+    *,
+    request_id=None,
+    refusal=None,
+    packet=None,
+    parameters=None,
+    notice=None,
+):
     """Guard every data query, template render and byte; audit response completion.
 
-    With a refusal, the request page is shown again in place (status 400)
-    with an error summary and the submitted values, instead of an error page.
-    With a refused Follow-up packet (``packet``), the queue's default view
-    is shown again (status 400) with the error at the packet's boxes.
+    The queue page is the review worklist; ``parameters`` are its POST
+    body's view fields and ``notice`` the answer to a decision just
+    recorded (``queue``). With a refusal, the request page is shown again in
+    place (status 400) with an error summary and the submitted values,
+    instead of an error page. With a refused Follow-up packet (``packet``),
+    the worklist's default view is shown again (status 400) with the error
+    at the packet's boxes.
     """
     finish, handed_off = None, False
     try:
@@ -446,39 +437,20 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None, packe
                 response["Cache-Control"] = "no-store"
                 return response
             if packet is not None:
-                # The packet's POST body is not a queue view: the default.
-                query = FollowupQuery.parse(QueryDict())
-            elif request.GET:
-                # A query string carries either the token of a remembered
-                # view ("Return to Ministry follow-up", #534) or one
-                # Ministry: from Home's My Ministries panel (#533), or with
-                # a request type and status from a count on Ministry
-                # requests (#1133). Search and every other filter stay
-                # private POST state.
-                if request.method != "GET":
-                    raise ValueError("Search and filters require a POST body.")
-                values = filters(request.GET, allowed={"queue", *LINK_FILTERS})
-                if "ministry" in values and "queue" not in values:
-                    # Remembered below like any view, so its token keeps
-                    # these filters on each request page, Save and next and
-                    # the way back to the queue. The parse checks the closed
-                    # values; the Ministry is then checked against scope.
-                    query = FollowupQuery.parse(values)
-                    _linked_ministry(query.ministry, principal)
-                elif values.keys() == {"queue"}:
-                    query = _recalled(
-                        request, campaign_id, queue_token(values["queue"])
-                    )
-                else:
-                    raise ValueError("Use a queue token or a Ministry.")
+                # The packet's POST body is not a worklist view: the default.
+                query = WorklistQuery()
+            elif request.GET and set(request.GET) == {"queue"}:
+                query = _recalled(
+                    request,
+                    campaign_id,
+                    queue_token(filters(request.GET, allowed={"queue"})["queue"]),
+                )
             else:
-                parameters = request.POST.copy()
-                parameters.pop("csrfmiddlewaretoken", None)
-                query = FollowupQuery.parse(parameters)
+                query = _queue_query(request, principal, parameters)
             history_page = 1
             # Remembered before the response streams: the session is saved
             # once the view returns.
-            token = remember_queue(request, QUEUE, campaign_id, _view_values(query))
+            token = remember_queue(request, QUEUE, campaign_id, query.view_values())
             queue_view, history_only = query, False
         else:
             values = filters(request.GET, allowed={"page", "queue"})
@@ -531,99 +503,123 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None, packe
             principal = fresh
             admit_report_read(campaign_id)
 
+        def mutable_now():
+            """Whether other campaign work leaves edits open (the work gate)."""
+            try:
+                admit_campaign(campaign_id, mutating=True)
+            except PermissionError:
+                return False
+            return True
+
+        def queue_content():
+            """The worklist page, its By Ministry counts and its packet."""
+            mutable = mutable_now()
+            # The worklist reads an empty campaign as empty for Staff and
+            # Administrators; its By Ministry read cross-checks that (#1133).
+            result = read_rows(campaign_id, query, principal, empty=True)
+            context = dict(
+                worklist_context(
+                    campaign_id,
+                    query,
+                    principal,
+                    result,
+                    token=token,
+                    mutable=mutable,
+                    action=reverse("admin:ministry_report"),
+                ),
+                **_overview(campaign_id, principal),
+                campaign_id=campaign_id,
+                mutable=mutable,
+                notice=notice,
+                queue_token=token,
+                # Admin and Staff see the roster link; a leader never does.
+                can_tick=can_tick(principal),
+                # The help about Ministries removed from the campaign is for
+                # Staff and Administrators (#1135). A leader never meets one:
+                # a leader leads only Ministries the campaign asks about (#922).
+                campaign_marks=allows(principal, Capability.MINISTRY_FOLLOWUP),
+                # Export these requests (#1157): the applied view's filters,
+                # search and sort.
+                export_fields=query.form_values(),
+                export_pdf_limit=EXPORT_PDF_LIMIT,
+            )
+            if packet is not None:
+                context |= packet_context(packet, context["packet_choices"])
+            return iter(
+                (render_to_string(QUEUE_TEMPLATE, context, request=request).encode(),)
+            )
+
         def content():
             """All lazy SQL and rendering stay within the response-owned barrier."""
-            nonlocal query, shown_ministry
-            # The queue page reads an empty campaign as empty for Staff and
-            # Administrators; its By Ministry read cross-checks that (#1133).
-            empty = request_id is None
-            result = followup_page(
-                campaign_id, query, principal, request_id=request_id, empty=empty
-            )
-            # A page past the end of the queue shows its last page, as on
-            # every other Admin table; one open request is not paged.
-            moved = (
-                None
-                if request_id
-                else clamp_query(query, result["total"], query.page_size)
-            )
-            if moved is not None:
-                query = moved
-                result = followup_page(campaign_id, query, principal, empty=empty)
-            # The roster tick (#528): read for the shown rows only, so the
-            # frozen queue selection is unchanged.
+            nonlocal shown_ministry
+            if request_id is None:
+                return queue_content()
+            result = followup_page(campaign_id, query, principal, request_id=request_id)
+            # The roster tick (#528), for the request shown.
             marks = roster_marks(row["id"] for row in result["rows"])
             for row in result["rows"]:
                 mark(row, marks)
-            mutable = True
+            mutable = mutable_now()
 
             def actionable(row):
                 """An open request whose Member ParishSoft still lists (#1217)."""
                 return row["open"] and not row["source_mark"]
 
-            try:
-                admit_campaign(campaign_id, mutating=True)
-            except PermissionError:
-                mutable = False
-            item = result["rows"][0] if request_id else None
+            item = result["rows"][0]
             # Named before the contacts are read, so a failed read's audit
-            # event still carries the request's Ministry.
-            if item:
-                shown_ministry = item["ministry_duid"]
+            # event still carries the request's Ministry: the one its
+            # contacts are read under (#1718).
+            shown_ministry = current_ministry(item)
             # The Member's contact details (#1157), read for this one request
             # through the same scoped SQL the Ministry lists used. An in-place
             # history page swaps only the history, so it skips them.
             contact = (
                 request_contacts(campaign_id, principal, [item]).get(item["id"])
-                if item and not history_only
+                if not history_only
                 else None
             )
             # Save and next opens the next open request after this one in
-            # the remembered queue, found now under this guarded read (#534).
+            # the remembered worklist view, found now under this guarded
+            # read (#534); its open requests are the view's To review.
             following = (
                 next_open(
                     lambda number: followup_page(
                         campaign_id,
-                        replace(queue_view, page=number, size=str(SCAN_SIZE)),
+                        replace(
+                            queue_view.open_query(), page=number, size=str(SCAN_SIZE)
+                        ),
                         principal,
                     )["rows"],
                     SCAN_SIZE,
                     request_id,
                     actionable,
                 )
-                if item and actionable(item) and mutable and not history_only
+                if actionable(item) and mutable and not history_only
                 else None
             )
             # The form's values: the request's own, or what was just submitted.
-            form = (
-                dict(
-                    {key: "" for key in FORM_FIELDS},
-                    expected_version=str(item["version"]),
-                    state=item["state"],
-                    notes=item["notes"] or "",
-                )
-                if item
-                else {}
+            form = dict(
+                {key: "" for key in FORM_FIELDS},
+                expected_version=str(item["version"]),
+                state=item["state"],
+                notes=item["notes"] or "",
             )
-            if item and refusal is not None:
+            if refusal is not None:
                 form.update(
                     (key, request.POST.get(key, ""))
                     for key in FORM_FIELDS
                     if key in request.POST
                 )
-            error = (
-                _refusal_error(refusal, request.POST)
-                if item and refusal is not None
-                else {}
-            )
-            history, more_history = (
-                followup_history(request_id, history_page) if item else ([], False)
-            )
+            error = _refusal_error(refusal, request.POST) if refusal is not None else {}
+            history, more_history = followup_history(request_id, history_page)
             # Past edits keep showing an assignment they recorded before
             # follow-up assignment was removed (#552); new edits record none.
             labels = _labels(
                 [row.actor_id for row in history] + [row.assignee_id for row in history]
             )
+            names = {
+                ministry["duid"]: ministry["name"] for ministry in result["ministries"]
+            }
             for row in history:
                 row.actor_label = labels.get(str(row.actor_id), FORMER)
                 row.assignee_label = (
@@ -632,39 +628,20 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None, packe
                 row.state_label = HISTORY_STATES[row.state]
                 row.outcome_label = outcome_label(row.outcome, item["action"])
                 row.channel_label = CHANNELS.get(row.contact_channel, "")
-            # The queue's shared navigator and sortable headings, as
-            # private POST forms back to the queue (web/tables.py).
-            table = report_table(
-                result["rows"],
-                number=query.page,
-                size=query.page_size,
-                total=result["total"],
-                carry=[
-                    (key, value)
-                    for key, value in query.form_values().items()
-                    if key != "sort"
-                ],
-                sorting=SORTING,
-                sort=query.sort,
-                action=reverse("admin:ministry_report"),
-            )
+                # An Edit's Ministry (#1684), by the name the reader's scope
+                # gives it, else the request's own reviewed name.
+                row.reviewed_label = (
+                    names.get(row.reviewed_ministry_duid)
+                    or item.get("reviewed_ministry_name")
+                    or ""
+                    if row.reviewed_ministry_duid
+                    else ""
+                )
             context = dict(
                 result,
-                # The totals, the By Ministry counts and the packet (#1133):
-                # the queue's own page only, not a request's.
-                **(
-                    {}
-                    if request_id
-                    else _overview(campaign_id, query, principal, result)
-                ),
                 campaign_id=campaign_id,
                 query=query,
-                table=table,
                 mutable=mutable,
-                # The Status choice for Members no longer in ParishSoft lists
-                # only requests nothing can be recorded for, so it has no
-                # selection column or bulk bar at all (#1217).
-                gone_view=query.state == NOT_IN_SOURCE,
                 item=item,
                 contact=contact,
                 queue_token=token,
@@ -676,15 +653,7 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None, packe
                 roster_key=uuid4(),
                 # Admin and Staff see and set the tick; a leader never sees it.
                 can_tick=can_tick(principal),
-                # The help about Ministries removed from the campaign is for
-                # Staff and Administrators (#1135). A leader never meets one:
-                # a leader leads only Ministries the campaign asks about (#922).
                 campaign_marks=allows(principal, Capability.MINISTRY_FOLLOWUP),
-                # The Status choice listing requests for Members no longer in
-                # ParishSoft (#1217) is for Staff and Administrators too.
-                not_in_source=NOT_IN_SOURCE
-                if allows(principal, Capability.MINISTRY_FOLLOWUP)
-                else None,
                 states=STATES,
                 staff_states=[(key, STATES[key]) for key in STAFF_STATES],
                 # Only Resolved takes a chosen outcome (change_values), and
@@ -692,9 +661,7 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None, packe
                 resolved_outcomes=[
                     (key, outcome_label(key, item["action"]))
                     for key in outcomes_for(item["action"])
-                ]
-                if item
-                else [],
+                ],
                 form=form,
                 errors=[error] if error else [],
                 # The refused fields, marked in error with the message beside
@@ -703,28 +670,8 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None, packe
                 # The page checks a contact time as it is typed, with the
                 # server's own words for a time in the future (#592).
                 future_message=REFUSALS["contact_future"][0],
-                # The Outcome filter always uses the combined labels (both
-                # meanings of declined, #1132): the filter form is kept in
-                # place on Apply (data-table-sync), so per-kind option text
-                # would go stale when the Request filter changes.
-                outcomes=FILTER_OUTCOMES,
                 channels=CHANNELS,
-                # Bulk outcomes (#1131): one replay key per rendering of the
-                # queue, sent with the selection, and the remembered view's
-                # address, which the dialog redraws the table from once the
-                # outcome is recorded, keeping its filters, sort and page.
-                bulk_key=uuid4(),
-                refresh_url=with_queue(reverse("admin:ministry_report"), token),
-                bulk_actions=bulk_actions(),
-                bulk_kind_hints=BULK_KIND_HINTS,
-                # Export these requests (#1157): the applied queue view's
-                # filters, search and sort, and the time zone choices.
-                export_fields=query.form_values(),
-                export_timezones=sorted(timezone_names()),
-                export_pdf_limit=EXPORT_PDF_LIMIT,
             )
-            if packet is not None:
-                context |= packet_context(packet, context["packet_choices"])
             return iter(
                 (render_to_string(TEMPLATE, context, request=request).encode(),)
             )
@@ -766,27 +713,28 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None, packe
             finish(False)
 
 
-# What each By Ministry count applies to the table (#1133): the queue's own
-# link filters (LINK_FILTERS) with closed values, so the table shows exactly
-# the requests counted. Join requests and Leave requests count every current
-# request of that kind, whatever its status, so they choose Any status;
-# Unresolved is the queue's default status with either request, the Home
-# panel's address.
+# What each By Ministry count applies to the worklist (#1133, #1684): its
+# own link filters (LINK_FILTERS) with closed values, so the worklist shows
+# exactly the requests counted. Join requests and Leave requests count every
+# current request of that kind, whatever its stage, so they choose Every
+# stage; Unresolved is To review, the worklist's default, with either
+# request: the Home panel's address.
 COUNT_FILTERS = {
-    "joining": {"action": "join", "state": "any"},
-    "leaving": {"action": "leave", "state": "any"},
+    "joining": {"kind": "join", "stage": "all"},
+    "leaving": {"kind": "leave", "stage": "all"},
     "unresolved": {},
 }
 
 
 def count_links(principal, summary):
-    """The addresses one By Ministry row's counts apply to the table (#1133).
+    """The addresses one By Ministry row's counts apply to the worklist (#1133).
 
     A count links only when it is not zero and the reader may follow up
-    that Ministry, the check the queue itself makes on the link: a Ministry
-    leader gets links only for the Ministries they lead. The address carries
-    only the Ministry number and closed filter values, never a search; the
-    template adds the table's fragment, the region the page redraws.
+    that Ministry, the check the worklist itself makes on the link: a
+    Ministry leader gets links only for the Ministries they lead. The
+    address carries only the Ministry number and closed filter values, never
+    a search; the template adds the table's fragment, the region the page
+    redraws.
     """
     if not allows(principal, Capability.MINISTRY_FOLLOWUP, ministry_id=summary["duid"]):
         return {}
@@ -798,25 +746,22 @@ def count_links(principal, summary):
     }
 
 
-def _overview(campaign_id, query, principal, result):
-    """Ministry requests' parts above and below the queue table (#1133).
+def _overview(campaign_id, principal):
+    """Ministry requests' parts below the worklist (#1133).
 
-    The totals and their Follow-up progress chart follow the applied view
-    (``request_totals``). By Ministry and the packet's choices are every
-    Ministry in the reader's scope, read once through the Ministry report's
-    own scoped selection and cross-check (``ministry_page``), whatever the
-    filters show: By Ministry is how a reader picks one. Each By Ministry
-    count is a link that applies its Ministry and request to the table.
+    By Ministry and the packet's choices are every Ministry in the reader's
+    scope, read once through the Ministry report's own scoped selection and
+    cross-check (``ministry_page``), whatever the filters show: By Ministry
+    is how a reader picks one. Each By Ministry count is a link that applies
+    its Ministry and request to the worklist. The totals and the Follow-up
+    progress chart are gone (#1676): a review worklist has none (#1684).
     """
-    totals = request_totals(campaign_id, query, principal, result["total"], empty=True)
     summaries = ministry_page(campaign_id, MinistryQuery(), principal, every=True)[
         "summaries"
     ]
     for summary in summaries:
         summary["count_links"] = count_links(principal, summary)
     return {
-        "totals": totals,
-        "followup_chart": ministry_followup(totals),
         "by_ministry": summaries,
         # The "Not in ParishSoft data" and campaign marks, for Staff and
         # Administrators only (#1135).
@@ -833,11 +778,65 @@ def _overview(campaign_id, query, principal, result):
 
 @require_http_methods(["GET", "POST"])
 def queue(request, campaign_id):
-    """Ministry requests (#1133): the follow-up queue with its overview.
+    """Ministry requests (#1133): the review worklist (#1684) and its overview.
 
     Default GET is safe; private filtering and pagination use native POST.
+    A POST carrying a decision (a row icon, the bulk bar or Add) records it
+    first and answers with the page redrawn from the same view, its notice
+    saying what was recorded (``web.review_worklist``).
     """
-    return _page_response(request, campaign_id)
+    if request.method != "POST":
+        return _page_response(request, campaign_id)
+    parameters = request.POST.copy()
+    parameters.pop("csrfmiddlewaretoken", None)
+    try:
+        decision = read_decision(parameters)
+    except ValueError:
+        return _error(campaign_id)
+    notice = None
+    if decision is not None:
+        notice = _decide(request, campaign_id, decision)
+        if not isinstance(notice, str):
+            return notice
+    return _page_response(request, campaign_id, parameters=parameters, notice=notice)
+
+
+def _decide(request, campaign_id, decision):
+    """Record one worklist decision; its notice, or the refusal response.
+
+    A race is the notice's to say (``record``). A request outside the
+    reader's scope is denied like any unknown one; an Add the reader can
+    correct is refused in its dialog, in plain words with its code; a
+    malformed decision is the plain 400 page; an outage is 503.
+    """
+    try:
+        if campaign_id is None:
+            raise ValueError("No current campaign.")
+        service = runtime()
+        principal = _principal(request, service.store)
+        if request.GET:
+            raise ValueError("Ministry decisions require a POST body.")
+        decisions = MinistryDecisions(
+            service.store,
+            campaign_id,
+            namer=lambda request_id: _row_name(campaign_id, principal, request_id),
+        )
+        return record(decisions, principal, decision)
+    except DecisionRefusal as refusal:
+        return with_codes(
+            validation_response(
+                [FieldError(ErrorCode.INVALID)],
+                status=400,
+                refusal=Refusal(refusal.message),
+            ),
+            refusal.code,
+        )
+    except (PermissionError, ObjectDoesNotExist):
+        return denial()
+    except (*SAFE_FAILURES, StorageInvariantError):
+        return _error(campaign_id, status=503)
+    except ValueError:
+        return _error(campaign_id)
 
 
 @require_GET
@@ -1063,25 +1062,25 @@ def update(request, campaign_id, request_id):
 def roster(request, campaign_id, request_id):
     """Set or clear one resolved request's Entered in ParishSoft tick (#528).
 
-    The answer is the page the tick was drawn on, Post/Redirect/Get, so it
-    refreshes in place: the request's own page (keeping its queue token), or
-    Roster changes to enter (``return_to=roster``), which keeps the list's
-    own Show, sort, page and page size from the tick form, so the reader
-    stays where they were. A tick someone else changed first is a conflict:
-    on the request page a 409, as a stale follow-up save is; on the list,
-    the list again with a notice (``changed=1``), so the reader never leaves
-    it.
+    The answer is the request's own page, Post/Redirect/Get, keeping its
+    queue token, so it refreshes in place. A tick someone else changed first
+    is a conflict (409), as a stale follow-up save is. Roster changes to
+    enter records its marks through its own worklist since #1687; clearing
+    a mistaken mark is this page's, and is Back to review of Entered by
+    hand (#1840): its dialog posts the required note, and it is recorded
+    as the worklist's undo is (``review.undo_entered``).
     """
-    # Lazy: the list's module reads the follow-up selection from this one.
-    from .ministry_roster_views import SHOW
-    from .ministry_roster_views import SORTING as ROSTER_SORTING
-
-    view_fields = {"show", "ministry", *table_parameters()}
 
     def work(store, actor):
         """Validate the closed form, record the tick and name the answer."""
+        parameters = request.POST.copy()
+        # The undo's note may be longer than a filter input (2,000
+        # characters, checked by the service), so it is read on its own.
+        notes = parameters.pop("note", None)
+        if notes is not None and len(notes) != 1:
+            raise ValueError("The note is sent once.")
         values = filters(
-            request.POST,
+            parameters,
             allowed={
                 "sequence",
                 "entered",
@@ -1089,40 +1088,37 @@ def roster(request, campaign_id, request_id):
                 "return_to",
                 "queue",
                 "csrfmiddlewaretoken",
-                *view_fields,
             },
         )
-        back = values.get("return_to", "item")
-        if values.get("entered") not in {"yes", "no"} or back not in {"item", "roster"}:
-            raise ValueError("Invalid roster tick.")
-        view = {key: values[key] for key in sorted(view_fields) if key in values}
-        if view.get("show", "todo") not in SHOW or (
-            view.get("ministry") and not valid_ministry(view["ministry"])
+        if (
+            values.get("entered") not in {"yes", "no"}
+            or values.get("return_to", "item") != "item"
         ):
-            raise ValueError("Invalid roster list choice.")
-        # Refuse a bad sort, page or size now, as the list itself would.
-        paging = {
-            key: value for key, value in view.items() if key not in {"show", "ministry"}
-        }
-        paginate([], paging, sorting=ROSTER_SORTING)
+            raise ValueError("Invalid roster tick.")
         token = queue_token(values.get("queue", ""))
         _in_campaign(campaign_id, [request_id])
-        listed = reverse("admin:ministry_roster")
-        try:
+        sequence = expected_version(values.get("sequence", ""))
+        key = UUID(values.get("request_key", ""))
+        if values["entered"] == "yes":
+            if notes is not None:
+                raise ValueError("The mark takes no note.")
             set_roster_entered(
                 store,
                 actor,
                 request_id,
-                sequence=expected_version(values.get("sequence", "")),
-                entered=values["entered"] == "yes",
-                request_key=UUID(values.get("request_key", "")),
+                sequence=sequence,
+                entered=True,
+                request_key=key,
             )
-        except StaleRecordError:
-            if back != "roster":
-                raise
-            return f"{listed}?{urlencode(view | {'changed': '1'})}"
-        if back == "roster":
-            return f"{listed}?{urlencode(view)}" if view else listed
+        else:
+            undo_entered(
+                store,
+                actor,
+                request_id,
+                sequence=sequence,
+                note=notes[0] if notes else "",
+                request_key=key,
+            )
         return with_queue(
             reverse("admin:ministry_followup_item", args=[request_id]), token
         )
@@ -1130,79 +1126,11 @@ def roster(request, campaign_id, request_id):
     return _mutation(request, campaign_id, request_id, work)
 
 
-# What a refused bulk outcome says in its dialog (#1131). Each names the one
-# request it is about, by the names the queue row shows, read from the
-# scoped selection; nothing submitted is echoed.
-BULK_STALE = _(
-    "%(row)s changed after this list was shown (someone else may have "
-    "recorded follow-up on it), so nothing was saved."
-)
-BULK_KIND = _(
-    "%(row)s is a request to %(action)s, so %(outcome)s doesn't apply to it. "
-    "Nothing was saved."
-)
-BULK_GONE = _(
-    "%(row)s is for a Member no longer in ParishSoft, or inactive or deceased "
-    "there, so nothing can be recorded for it. Nothing was saved."
-)
-BULK_FIX = _("Cancel, then reload the list and try again.")
-
-
-def _bulk_selection(parameters):
-    """The chosen requests: ``request`` values ``<uuid>:<version>``, as a dict.
-
-    Each is a request id with the version its row showed, so every request
-    is checked against its own version. At most one page (MAX_BULK), no
-    request twice; anything else is a malformed form.
-    """
-    values = parameters.getlist("request")
-    if not 1 <= len(values) <= MAX_BULK:
-        raise ValueError("Choose between one and a page of requests.")
-    chosen = {}
-    for value in values:
-        identity, separator, version = value.partition(":")
-        if not separator or len(value) > 64:
-            raise ValueError("Invalid follow-up selection.")
-        chosen[UUID(identity)] = expected_version(version)
-    if len(chosen) != len(values):
-        raise ValueError("A request was chosen twice.")
-    return chosen
-
-
-def bulk_values(parameters):
-    """Strict closed grammar of the bulk outcome dialog's POST.
-
-    The button's "kind:outcome" (one of BULK_ACTIONS), the page's bulk
-    key, the chosen
-    requests and the optional contact attempt the dialog applies to each
-    (as on a request's own form, _contact_values).
-    """
-    single = {"outcome", "bulk_key", "contact_channel"}
-    optional = {"contact_date", "contact_time", "contact_zone", "contact_notes"}
-    keys = set(parameters) - {"csrfmiddlewaretoken", "request"}
-    if not single <= keys <= single | optional or any(
-        len(parameters.getlist(key)) != 1 for key in keys
-    ):
-        raise ValueError("Invalid follow-up form.")
-    kind, _separator, outcome = parameters["outcome"].partition(":")
-    if (kind, outcome) not in BULK_ACTIONS:
-        raise ValueError("Invalid bulk outcome.")
-    contact = _contact_values(parameters)
-    return dict(
-        versions=_bulk_selection(parameters),
-        action=kind,
-        outcome=outcome,
-        bulk_key=UUID(parameters["bulk_key"]),
-        # The state, outcome and notes are set per request by the service.
-        change=WorkflowChange(state="new", outcome=None, notes="", **contact),
-    )
-
-
 def _row_name(campaign_id, principal, request_id):
-    """A request as its queue row names it ("Member — Ministry"), or None.
+    """A request as its worklist row names it (``row_name``), or None.
 
     Read through the scoped selection, so only a request the person may see
-    is named; any failure falls back to a refusal that names no row.
+    is named; any failure falls back to a notice that names no row.
     """
     try:
         with transaction.atomic():
@@ -1214,92 +1142,4 @@ def _row_name(campaign_id, principal, request_id):
             )["rows"][0]
     except (DatabaseError, *SAFE_FAILURES, StorageInvariantError, IndexError):
         return None
-    return f"{row['member_label']} — {row['ministry_name']}"
-
-
-def _bulk_refusal(status, message, fields=()):
-    """A refusal the dialog shows (ui-v1.js refusalText).
-
-    With ``fields`` (form field names), each error names that field's id in
-    the dialog, so the dialog shows the message at those fields (#1332);
-    otherwise it shows it below its buttons.
-    """
-    code = ErrorCode.STALE if status == 409 else ErrorCode.INVALID
-    errors = [FieldError(code, BULK_FIELD_IDS[name]) for name in fields]
-    return validation_response(
-        errors or [FieldError(code)],
-        status=status,
-        refusal=Refusal(message, BULK_FIX if status == 409 else None),
-    )
-
-
-@require_POST
-def bulk(request, campaign_id):
-    """Record one outcome for the requests chosen on the queue (#1131).
-
-    The shared confirmation dialog posts the chosen rows (each with its
-    version), the outcome and an optional contact attempt, without a page
-    load. All or none: a request outside the person's Ministries is denied
-    (403); one that changed since the page was read, or whose Member is no
-    longer in ParishSoft (#1217, both 409), or one of the other kind (400)
-    is named in the refusal the dialog shows; a contact attempt is checked
-    as on a request's own form. Success answers 204, and the dialog redraws
-    the table from the remembered view.
-    """
-    try:
-        service = runtime()
-        principal = _principal(request, service.store)
-        if request.GET:
-            raise ValueError("Follow-up edits require a POST body.")
-        parameters = request.POST.copy()
-        values = bulk_values(parameters)
-        _in_campaign(campaign_id, list(values["versions"]))
-        apply_bulk_outcome(service.store, principal.identity, **values)
-        response = HttpResponse(status=204)
-        response["Cache-Control"] = "no-store"
-        return response
-    except (BulkStale, MemberNotInSource) as error:
-        # Both are conflicts with the list as shown; a leader never gets a
-        # row name for a request whose Member left ParishSoft (#1217).
-        row = _row_name(campaign_id, principal, error.request_id)
-        if row is None:
-            return _error(campaign_id, status=409)
-        message = BULK_GONE if isinstance(error, MemberNotInSource) else BULK_STALE
-        return _bulk_refusal(409, message % {"row": row})
-    except StaleRecordError:
-        return _error(campaign_id, status=409)
-    except (PermissionError, ObjectDoesNotExist):
-        return denial()
-    except (*SAFE_FAILURES, StorageInvariantError):
-        return _error(campaign_id, status=503)
-    except FollowupRefusal as refusal:
-        if refusal.code == "outcome_kind" and "request_id" in refusal.details:
-            row = _row_name(campaign_id, principal, refusal.details["request_id"])
-            if row is None:
-                return _error(campaign_id)
-            return _bulk_refusal(
-                400,
-                BULK_KIND
-                % {
-                    "row": row,
-                    "action": ACTIONS[refusal.details["action"]],
-                    # The batch's own label (a leave batch's declined
-                    # reads Stayed), not the refused request's.
-                    "outcome": outcome_label(
-                        refusal.details["outcome"], refusal.details["kind"]
-                    ),
-                },
-            )
-        if refusal.code not in REFUSALS or refusal.code == "outcome_kind":
-            return _error(campaign_id)
-        refused = _refusal_error(refusal, request.POST)
-        # A missing time zone cannot be fixed in Date or Time, so it is
-        # shown below the dialog's buttons (#1332).
-        fields = [
-            name
-            for name in refused["fields"]
-            if name in BULK_FIELD_IDS and refusal.code != "contact_zone"
-        ]
-        return _bulk_refusal(400, refused["message"], fields)
-    except ValueError:
-        return _error(campaign_id)
+    return row_name(row)

@@ -59,11 +59,12 @@ CASES = {
     # availability, Campaign mail can reach and Include mailing columns.
     "filter-bar": ("/family-directory", ".filter-bar .toggletip-button:visible", 3),
     # The directory as an Administrator sees a Testing preset, which adds the
-    # Responses shown switch and its toggletip (#933).
+    # Responses shown switch (#933; a binary choice above the filter bar
+    # since #1535) and its toggletip.
     "filter-bar-testing": (
         reverse("admin:family_directory")
         + "?response=submitted&responses=yes&sort=submitted&mode=testing",
-        ".filter-bar .toggletip-button:visible",
+        "#directory-mode .toggletip-button, .filter-bar .toggletip-button:visible",
         4,
     ),
 }

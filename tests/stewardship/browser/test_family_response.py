@@ -10,6 +10,7 @@ from parishkit.stewardship.responses.census import (
     FAMILY_FIELDS,
     blank_address,
     country_choices,
+    us_region_choices,
     us_regions,
 )
 from parishkit.stewardship.responses.inputs import MEMBER_FIELDS
@@ -147,6 +148,7 @@ def form_payload(*, testing=False):
             "address_limits": dict(ADDRESS_LIMITS),
             "countries": country_choices(),
             "us_regions": sorted(us_regions()),
+            "us_region_choices": us_region_choices(),
         },
         "members": [
             {

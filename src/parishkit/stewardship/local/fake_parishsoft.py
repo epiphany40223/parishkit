@@ -1,26 +1,33 @@
-"""Stand-in for ParishSoft's v2 read API, serving the synthetic parish.
+"""Stand-in for ParishSoft's v2 API, serving the synthetic parish.
 
 The fake lets the unmodified source loaders run in the LOCAL environment:
 setup loading, full and delta refreshes, giving and household reads all go
 through their real code against this server. It is a standard-library HTTP
 server with no dependency beyond the package, implements only the read
-endpoints the application uses (see "Endpoint contract" in
-docs/specs/stewardship/local-environment/spec.md), has no control or write
-endpoint, injects no faults, and answers 401 with an empty body to any
-request without the fixed ``LOCAL_PARISHSOFT_KEY``.
+endpoints the application uses plus the one Member contact PUT census
+publication sends (see "Endpoint contract" and "Fake ParishSoft writes" in
+docs/specs/stewardship/local-environment/spec.md), has no control endpoint,
+injects no faults, and answers 401 with an empty body to any request without
+the fixed ``LOCAL_PARISHSOFT_KEY``.
 
-It reads its configuration file once at start. Apart from one comparison of
-the current time with ``release_at`` (which decides whether the late-added
-Family is served yet), every response depends only on that file's contents,
-and ordering within every collection is stable across pages and calls.
+It reads its configuration file once at start, including any operator edits
+to the generated parish (``fake_edits``). An accepted contact PUT is
+recorded as one more edit and written back to that file (#1884), so it
+survives restarts. Apart from one comparison of the current time with
+``release_at`` (which decides whether the late-added Family is served yet),
+every response depends only on that file's contents, and ordering within
+every collection is stable across pages and calls.
 """
 
+import copy
 import json
 import logging
 import math
+import os
 import re
 import sys
-from dataclasses import dataclass
+import threading
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -30,6 +37,8 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.deployment import DeploymentProfile, load_deployment
 
 from . import LOCAL_PARISHSOFT_KEY
+from .fake_contact import contact_edit
+from .fake_edits import MAXIMUM_EDITS, EditError, apply_edit, apply_edits, rederive
 from .synthetic_parish import MAXIMUM_FAMILIES, generate
 
 LOGGER = logging.getLogger(__name__)
@@ -58,13 +67,18 @@ class _Reply(Exception):
 
 @dataclass(frozen=True)
 class FakeConfiguration:
-    """The file ``up`` writes: seed, Family count, anchor date and release instant."""
+    """The file ``up`` writes: seed, Family count, anchor date and release instant.
+
+    ``edits`` is the operator's optional list of changes to the generated
+    parish (``fake_edits``, #1780), replayed in order when the fake starts.
+    """
 
     seed: int
     families: int
     anchor_date: date
     release_at: datetime | None
     change_feed: str = DEFAULT_CHANGE_FEED
+    edits: tuple = ()
 
     @classmethod
     def parse(cls, document):
@@ -72,7 +86,7 @@ class FakeConfiguration:
         if (
             type(document) is not dict
             or not set(document) >= CONFIGURATION_FIELDS
-            or not set(document) <= CONFIGURATION_FIELDS | {"change_feed"}
+            or not set(document) <= CONFIGURATION_FIELDS | {"change_feed", "edits"}
         ):
             raise ValueError("The fake ParishSoft configuration has unexpected fields.")
         change_feed = document.get("change_feed", DEFAULT_CHANGE_FEED)
@@ -96,7 +110,17 @@ class FakeConfiguration:
             release = datetime.fromisoformat(release)
             if release.tzinfo is None or release.utcoffset() is None:
                 raise ValueError("The fake ParishSoft release instant needs a zone.")
-        return cls(seed, families, date.fromisoformat(anchor), release, change_feed)
+        edits = document.get("edits", [])
+        if type(edits) is not list or len(edits) > MAXIMUM_EDITS:
+            raise ValueError("The fake ParishSoft edits list is invalid.")
+        return cls(
+            seed,
+            families,
+            date.fromisoformat(anchor),
+            release,
+            change_feed,
+            tuple(edits),
+        )
 
     @classmethod
     def read(cls, path):
@@ -209,29 +233,50 @@ class FakeParishSoft:
     """Request handling for one configuration, independent of the HTTP server.
 
     ``handle`` takes a method, a path (with or without query string), the
-    decoded JSON body for POST requests and the request headers, and returns
-    ``(status, body bytes)``. Tests call it directly; the HTTP handler and the
-    in-process transport adapters are thin wrappers around it. ``now`` is
-    injectable so tests can move past ``release_at`` without waiting.
+    decoded JSON body for POST and PUT requests and the request headers, and
+    returns ``(status, body bytes)``. Tests call it directly; the HTTP handler
+    and the in-process transport adapters are thin wrappers around it. ``now``
+    is injectable so tests can move past ``release_at`` without waiting.
+    ``record(edits)`` stores the whole edits list after a contact PUT adds
+    one (the command writes it to the configuration file); without it the
+    fake refuses every PUT, so a fake that cannot keep a write never takes
+    one.
     """
 
-    def __init__(self, configuration, *, parish=None, now=None):
-        """Generate the parish once; both release views are precomputed."""
+    def __init__(self, configuration, *, parish=None, now=None, record=None):
+        """Generate the parish once and apply the operator's edits.
+
+        Both release views are precomputed from the edited parish, so every
+        response reflects the edits; an edit the parish cannot take raises
+        ``ValueError`` and the fake does not start.
+        """
         if not isinstance(configuration, FakeConfiguration):
             raise TypeError("A FakeConfiguration is required.")
         self.configuration = configuration
-        self.parish = parish or generate(
-            configuration.seed, configuration.families, configuration.anchor_date
+        self.parish = apply_edits(
+            parish
+            or generate(
+                configuration.seed, configuration.families, configuration.anchor_date
+            ),
+            configuration.edits,
         )
         self.organization_id = self.parish.organization_id
         self.now = now or (lambda: datetime.now(UTC))
-        # With ``release_at: null`` the released view is never reachable.
-        self.views = {False: _View(self.parish, False, None, configuration.change_feed)}
-        if configuration.release_at is not None:
-            self.views[True] = _View(
-                self.parish, True, configuration.release_at, configuration.change_feed
-            )
+        self.record = record
+        # One contact PUT at a time: each replaces the parish and its views.
+        self._write_lock = threading.Lock()
+        self.views = self._views(self.parish)
         self._routes = self._build_routes()
+
+    def _views(self, parish):
+        """Both release views of ``parish``; one only with ``release_at: null``."""
+        configuration = self.configuration
+        views = {False: _View(parish, False, None, configuration.change_feed)}
+        if configuration.release_at is not None:
+            views[True] = _View(
+                parish, True, configuration.release_at, configuration.change_feed
+            )
+        return views
 
     def released(self):
         """Whether the late-added Family is served: the fake's one clock read."""
@@ -260,10 +305,14 @@ class FakeParishSoft:
                     continue
                 if method not in verbs:
                     raise _Reply(405)
-                parameters = body if method == "POST" else query
+                parameters = body if method in ("POST", "PUT") else query
                 if type(parameters) is not dict:
                     raise _Reply(400)
                 value = verbs[method](parameters, *map(int, match.groups()))
+                if method == "PUT":
+                    # A successful write answers with no body, as the real
+                    # contact PUT may.
+                    return 200, b""
                 return 200, json.dumps(value, separators=(",", ":")).encode("utf-8")
             raise _Reply(404)
         except _Reply as reply:
@@ -290,6 +339,7 @@ class FakeParishSoft:
             (f"families/{_IDENTIFIER}", {"GET": self._family}),
             (f"families/{_IDENTIFIER}/member/list", {"GET": self._household}),
             (f"members/{_IDENTIFIER}", {"GET": self._member}),
+            (f"members/{_IDENTIFIER}/contact", {"PUT": self._contact_put}),
         ]
         return [(re.compile(pattern), verbs) for pattern, verbs in routes]
 
@@ -434,6 +484,57 @@ class FakeParishSoft:
             raise _Reply(404)
         return row
 
+    # -- The one write ----------------------------------------------------------
+
+    def _contact_put(self, body, identifier):
+        """Apply and record one Member contact PUT (#1884); see ``fake_contact``.
+
+        The new edit is applied to a copy of the parish, the whole edits list
+        is stored through ``record``, and only then do the parish and views
+        the fake serves change, so a refused or unstored write changes
+        nothing. A Member the fake does not serve is a 404 and a body or
+        value it cannot take a 400. A write past the edits list's bound, or
+        a failure to store it, is a 503, which the publish worker treats as
+        a write that may not have happened (``write_unavailable``): the
+        payload is fine, the fake just cannot keep it.
+
+        Each write deep-copies and re-derives the whole parish, so it costs
+        time in the parish's size (small at the default 100 Families, a
+        noticeable delay per Member on a parish of thousands). That cost is
+        accepted for pk-local: it keeps a refused write from changing anything.
+        """
+        with self._write_lock:
+            if identifier not in self.view().member_by_id:
+                raise _Reply(404)
+            if self.record is None:
+                raise _Reply(400)
+            edits = self.configuration.edits
+            if len(edits) >= MAXIMUM_EDITS:
+                LOGGER.warning(
+                    "fake-parishsoft refused a contact write: its %s edits are "
+                    "used up; run 'fake-parishsoft undo' or 'fake-parishsoft "
+                    "clear' to free some",
+                    MAXIMUM_EDITS,
+                )
+                raise _Reply(503)
+            parish = copy.deepcopy(self.parish)
+            try:
+                edit = contact_edit(identifier, body, parish)
+                apply_edit(parish, edit)
+            except EditError:
+                raise _Reply(400) from None
+            rederive(parish)
+            edits = (*edits, edit)
+            try:
+                self.record(list(edits))
+            except OSError:
+                LOGGER.warning("fake-parishsoft could not record a contact write")
+                raise _Reply(503) from None
+            self.configuration = replace(self.configuration, edits=edits)
+            self.parish = parish
+            self.views = self._views(parish)
+        LOGGER.info("fake-parishsoft recorded a contact write: Member %s", identifier)
+
 
 class _Handler(BaseHTTPRequestHandler):
     """Translate HTTP to ``FakeParishSoft.handle``; nothing else is served."""
@@ -487,11 +588,38 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         self._answer("POST")
 
+    def do_PUT(self):
+        """The one write, the Member contact PUT; every other path refuses it."""
+        self._answer("PUT")
+
     def _refuse(self):
-        """Every other method is refused; the fake has no write surface."""
+        """Every other method is refused; the fake has no other write surface."""
         self._send(405, b"")
 
-    do_PUT = do_PATCH = do_DELETE = do_HEAD = do_OPTIONS = _refuse
+    do_PATCH = do_DELETE = do_HEAD = do_OPTIONS = _refuse
+
+
+def file_recorder(path):
+    """``record(edits)`` for the fake's own configuration file (#1884).
+
+    The document is read once, here, and each call writes it back with the
+    new edits list. The write is in place, not a rename: the file is the
+    service's one bind mount, which a rename cannot replace. It is fsynced
+    before the PUT is answered, so an answered write survives a restart.
+    """
+    path = Path(path)
+    document = json.loads(path.read_text(encoding="utf-8"))
+
+    def record(edits):
+        """Write the document with ``edits`` back to the file, in place."""
+        data = (json.dumps({**document, "edits": edits}, indent=2) + "\n").encode()
+        with path.open("r+b") as stream:
+            stream.write(data)
+            stream.truncate()
+            stream.flush()
+            os.fsync(stream.fileno())
+
+    return record
 
 
 def start_server(fake, *, host="127.0.0.1", port=0):
@@ -549,7 +677,7 @@ def execute_fake_parishsoft(args):
     try:
         configuration = FakeConfiguration.read(args.fake_config)
         port = DEFAULT_PORT if args.port is None else _int(args.port, low=1, high=65535)
-        fake = FakeParishSoft(configuration)
+        fake = FakeParishSoft(configuration, record=file_recorder(args.fake_config))
     except (OSError, ValueError, _Reply):
         print(
             "ERROR: the fake ParishSoft configuration is unreadable or invalid",

@@ -372,6 +372,64 @@ def test_only_the_main_mail_process_clears_the_stop_marker(tmp_path, monkeypatch
     assert isinstance(companions[1], Unstarted) and companions[1].closed
 
 
+def test_each_mail_consumers_idle_pass_runs_the_halt_step(tmp_path, monkeypatch):
+    """ADM-13 PR 4a: both consumers record and lift their halt when idle;
+    only the main process runs a mailbox check, with its credential path,
+    profile and lease check; then the status record is written, at once
+    when the pass lifted the halt."""
+    from parishkit.stewardship import installer_health, runtime_background
+    from parishkit.stewardship.jobs import mail_halt, processes
+
+    monkeypatch.setattr(installer_health, "MAIL_SYSTEMIC_STOP", tmp_path / "stop")
+    monkeypatch.setattr(installer_health, "publish_heartbeat", Mock())
+    monkeypatch.setattr(
+        "parishkit.stewardship.consumer_runtime.publish_single_process_receipts",
+        Mock(),
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.credential_runtime.acknowledge_rotations", Mock()
+    )
+    monkeypatch.setattr(runtime_process, "MailConsumer", Mock())
+    order = []
+    lifted = [False]
+
+    def idle(**values):
+        """Record the halt step's arguments; answer whether it lifted."""
+        order.append(("halt", values))
+        return lifted[0]
+
+    monkeypatch.setattr(mail_halt, "idle", idle)
+    monkeypatch.setattr(
+        "parishkit.stewardship.service_status.ServiceStatusReporter.report",
+        lambda self, connect=False, now=False: order.append(("status", connect, now)),
+    )
+    monkeypatch.setattr(
+        runtime_background,
+        "configure_background",
+        lambda config, *, stop, heartbeat, queues=None: Mock(receipts={}),
+    )
+
+    def serve(broker, *, lease, stop, heartbeat, idle=None, **kwargs):
+        """Run one idle pass, as the consumer's timer would."""
+        order.clear()
+        idle()
+        return 0
+
+    monkeypatch.setattr(processes, "serve_consumer", serve)
+    configuration = _at(tmp_path)
+    for mail, lifted[0] in ((True, False), (False, False), (True, True), (False, True)):
+        lease = Mock()
+        assert runtime_process.serve_background(configuration, lease, mail=mail) == 0
+        (step, values), status = order
+        assert step == "halt" and status == ("status", True, lifted[0])
+        assert values["main"] is (not mail)
+        assert values["profile"] is configuration.profile
+        assert values["check"] == lease.check
+        assert values["credential_path"] == configuration.secrets.get(
+            "google_workspace"
+        )
+
+
 def test_timeout_entries_are_written_one_at_a_time_per_process(monkeypatch):
     """#370 L3: one private timeout-log connection per process at most."""
     import threading

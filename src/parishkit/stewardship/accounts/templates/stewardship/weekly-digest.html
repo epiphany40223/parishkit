@@ -13,12 +13,12 @@
 <dt>{% translate "Corrections" %}</dt><dd>{{ correction_count|number }}</dd>
 </dl>
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Responses included up to number" %}</dt><dd>{{ snapshot.submission_watermark|number }}</dd></dl></details>
-{% if not total %}<p>{% translate "No new requests needing follow-up, and no corrections, arrived in the period this report covers. Whether the report email was delivered is shown under Outgoing mail." %}</p>{% endif %}
+{% if not total %}<p>{% translate "No new requests needing follow-up, and no corrections, arrived in the period this report covers. Whether the report email was delivered is shown under Sent mail." %}</p>{% endif %}
 {# The requests and their page links are one region; Previous and Next page refresh it in place (ui-v1.js, a[data-in-place], #519), and the "Page 2 of 5" line (.table-count) is announced. #}
 <div id="weekly-report-page" data-in-place-region>
 {% for row in rows %}
 <section class="panel">
-<h2>{{ row.value.family_name }} — {% translate "Family DUID" %} {{ row.value.family_duid|duid }}</h2>
+{# The shared Family-name link (#1570): the saved name opens the Family's Timeline. #}<h2>{% family_link row.family_id row.value.family_name %} — {% translate "Family DUID" %} {{ row.value.family_duid|duid }}</h2>
 <p>{% translate "Submitted" %}: <time datetime="{{ row.value.submitted_at|date:'c' }}" data-local-instant>{{ row.value.submitted_at|date:'c' }}</time></p>
 <dl><dt>{% translate "Status at capture" %}</dt><dd>{{ row.captured }}</dd>
 <dt>{% translate "Current status" %}</dt><dd>{{ row.current }}</dd></dl>

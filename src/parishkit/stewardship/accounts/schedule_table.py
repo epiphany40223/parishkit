@@ -1,14 +1,16 @@
 """The scheduled emails table on Dates and mail schedules (#448, #878).
 
-The page lists every saved schedule in one short table, opening in the order
-the schedule forms already use (``schedule_forms.schedule_order``); its When
-heading sorts it the other way round (``SORTING``). On the list, an editable
-row links to its Edit scheduled email page and offers Delete; on the
-date-change review each table row is paired with its form, so a click opens
-that schedule's editor in place. This module only describes the saved
-schedules for display: what each one is, when it sends, its status and its
-last send, and which of them are read-only. It never changes what the forms
-post or how the server validates, previews and applies a schedule change.
+The page lists every saved schedule in one short table. The rows are
+described in the order the schedule forms already use
+(``schedule_forms.schedule_order``), which numbers the reminders; the list's
+When heading sorts them by when they next send, or the reverse (``SORTING``,
+#1652). On the list, an editable row links to its Edit scheduled email page
+and offers Delete; on the date-change review each table row is paired with
+its form, so a click opens that schedule's editor in place. This module only
+describes the saved schedules for display: what each one is, when it sends,
+its status and its last send, and which of them are read-only. It never
+changes what the forms post or how the server validates, previews and
+applies a schedule change.
 
 Status comes from the counts-only ``schedule_preview.work_summary`` (the
 same aggregate the review page reads), keyed by schedule ID, so the page
@@ -45,14 +47,22 @@ STATUS_LABELS = {
     # One send of a digest whose time has passed (the Campaign calendar,
     # #469); the list's digest row itself always repeats.
     "passed": _("Past"),
+    # One send of a digest that it skips (#1658, the Campaign calendar).
+    "skipped": _("Skipped"),
+    # A suggested schedule Dates and mail schedules proposes in the campaign
+    # wizard (#1404 PR 6), listed but not saved.
+    "suggested": _("Not saved yet"),
 }
 # A schedule in one of these states has run, is running, or has work
 # prepared ahead of its time: it sent its email, failed to, or settled every
 # Family without one of its own. Moving it would make a new
 # revision and plan the send again, so the page shows it read-only; the
 # server still blocks changes to work in progress on its own. "passed" is
-# one past send of a digest on the Campaign calendar, shown read-only too.
-PAST = frozenset({"preparing", "sending", "sent", "failed", "done", "passed"})
+# one past send of a digest on the Campaign calendar, and "skipped" one it
+# skips (#1658), shown read-only too.
+PAST = frozenset(
+    {"preparing", "sending", "sent", "failed", "done", "passed", "skipped"}
+)
 
 
 @dataclass(frozen=True)
@@ -65,7 +75,10 @@ class ScheduleRow:
     open: after a refused preview, an editor with an error or an unsaved
     change stays open so the reader sees it. ``email`` is the readable name
     of the email it sends (``schedule_forms.email_names``), and ``position``
-    its place in sending order, which the When heading sorts by.
+    its place in sending order, which breaks ties in the When heading's sort.
+    ``slot`` is one digest send's slot key on the Campaign calendar
+    (#1658), which its Edit link names (``?send=``) so Delete can skip
+    that send alone.
     """
 
     id: str
@@ -81,6 +94,7 @@ class ScheduleRow:
     delivered: int = 0
     failed: int = 0
     open: bool = False
+    slot: str | None = None
 
     @property
     def status_label(self):
@@ -98,6 +112,15 @@ class ScheduleRow:
         return self.kind in DIGESTS
 
     @property
+    def movable(self):
+        """Whether the Campaign calendar offers Move… for this send (#1521).
+
+        Only a dated Family send that has not run and whose time has not
+        passed without sending: a digest is one repeating schedule.
+        """
+        return not self.read_only and not self.digest and self.status != "missed"
+
+    @property
     def last_send(self):
         """Whether a Family send has results to summarize and link to."""
         return not self.digest and bool(self.delivered or self.failed)
@@ -109,15 +132,32 @@ class ScheduleRow:
 
     @property
     def edit_url(self):
-        """This schedule's Edit scheduled email page, or None when read-only."""
-        return (
-            None if self.read_only else reverse("admin:schedule_edit", args=[self.id])
-        )
+        """This schedule's Edit scheduled email page, or None when read-only.
+
+        A digest send on the Campaign calendar names its slot (#1658).
+        """
+        if self.read_only:
+            return None
+        url = reverse("admin:schedule_edit", args=[self.id])
+        return f"{url}?send={self.slot}" if self.slot else url
 
 
-# The When heading sorts by sending order (the rows' own order) or its
-# reverse. Sending order is the default and the first click.
-SORTING = Sorting.by_column({"when": lambda row: row.position}, default="when")
+def when(row):
+    """The When heading's sort key: the moment the row next sends (#1652).
+
+    A dated send sorts at its send time and a digest at its next send, the
+    time its When cell shows, so a digest falls among the dated sends rather
+    than after them all. Rows at one moment keep sending order (``position``:
+    the Initial invitation first, then the saved ID). A digest with no more
+    sends this campaign has no key and so lists last either way.
+    """
+    moment = row.due or row.next_due
+    return None if moment is None else (moment, row.position)
+
+
+# The When heading sorts chronologically or the reverse; chronological is the
+# default and the first click. Reminder numbers stay in sending order.
+SORTING = Sorting.by_column({"when": when}, default="when")
 
 
 def status(kind, due, counts, now):

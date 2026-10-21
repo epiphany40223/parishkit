@@ -122,7 +122,7 @@ def outcomes_as(service, message_id, actor_id, *, exact=True):
 def page(browser, message_id):
     """The Mail message page's HTML as the web login serves it."""
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response = browser.get(f"/admin/mail/outgoing/{message_id}/")
+        response = browser.get(f"/admin/mail/sent/{message_id}/")
     assert response.status_code == 200
     return response.content.decode()
 

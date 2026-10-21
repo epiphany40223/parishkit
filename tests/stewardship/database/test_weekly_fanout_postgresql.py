@@ -317,19 +317,27 @@ def test_a_funnel_only_change_does_not_fail_the_coverage_recheck(
         claim, _ = captured(live_response_service)
         page, contents = detached(claim)
         counted = page.recipients[0].document.funnel
-        assert counted.submitted_again == 0
+        submitted = counted.stage("submitted")
 
         def changed(*args):
             """A different funnel, as a backfill between load and retain gives."""
             calls.append(args)
-            return replace(counted, submitted_again=5)
+            return replace(
+                counted,
+                stages=tuple(
+                    replace(stage, count=stage.count + 5)
+                    if stage.key == "submitted"
+                    else stage
+                    for stage in counted.stages
+                ),
+            )
 
         calls = []
         monkeypatch.setattr(weekly_fanout, "digest_funnel", changed)
         assert retain(claim, page, contents).phase == "complete"
         assert calls == []
         text = WeeklyDigestRecipient.objects.get().text
-        assert "Submitted more than once: 0 (" in text
+        assert f"\nSubmitted: {submitted:,} (" in text
 
 
 def test_a_testing_weekly_fanout_counts_no_funnel(response_service, monkeypatch):

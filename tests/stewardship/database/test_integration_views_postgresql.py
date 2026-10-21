@@ -74,9 +74,8 @@ def save_key(browser, candidate, page=None, **fields):
     )
 
 
-def status_url(row):
-    """The key change's details page."""
-    return f"/admin/system/key-changes/{row.pk}/"
+# The settings page's passive status line, a key change's only status (#1568).
+STATUS = URL + "status/"
 
 
 def edit(store, **values):
@@ -697,8 +696,7 @@ def test_replacement_seals_once_and_real_web_cannot_read_ciphertext(
         page = browser.get(URL)
         response = save_key(browser, SECRET, page)
         assert response.status_code == 302, response.content
-        row = SecretReplacementRequest.objects.get()
-        progress = browser.get(status_url(row))
+        progress = browser.get(STATUS)
         assert progress.status_code == 200
         assert progress["Cache-Control"] == "no-store"
         assert SECRET.encode() not in progress.content
@@ -755,10 +753,13 @@ def test_private_form_errors_and_csrf_never_stage_or_redisplay(
     assert not SecretReplacementRequest.objects.exists()
 
 
-def test_stale_configuration_and_authentication_deny_secret_intake(
+def test_stale_configuration_denies_secret_intake_and_an_old_sign_in_saves(
     auth_service, google, handoff, monkeypatch
 ):
-    """Old forms do not bind credentials to changed settings or renew authentication."""
+    """Old forms do not bind credentials to changed settings (#1547).
+
+    A sign-in older than five minutes still saves the key from a current page.
+    """
     browser, _ = signed_in()
     page = browser.get(URL)
     version = auth_service.store.active()
@@ -777,9 +778,11 @@ def test_stale_configuration_and_authentication_deny_secret_intake(
         ],
     )
     assert save_key(browser, SECRET, page).status_code == 409
-    stale_sign_in()
-    assert save_key(browser, SECRET).status_code == 403
     assert not SecretReplacementRequest.objects.exists()
+    stale_sign_in()
+    response = save_key(browser, SECRET)
+    assert (response.status_code, response["Location"]) == (302, URL)
+    assert SecretReplacementRequest.objects.count() == 1
 
 
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])
@@ -799,11 +802,7 @@ def test_integrations_and_secrets_are_admin_only(auth_service, google, role):
     )
     google[0]["email"] = "reader@example.org"
     browser, _ = signed_in()
-    for url in (
-        INDEX,
-        URL,
-        "/admin/system/key-changes/" + str(uuid4()) + "/",
-    ):
+    for url in (INDEX, URL, STATUS):
         assert browser.get(url).status_code == 403
     # The refresh schedule's live check needs the page's own permission.
     assert post(browser, URL + "schedule-check/", {}).status_code == 403
@@ -831,69 +830,47 @@ def test_missing_handoff_and_unknown_targets_fail_closed(auth_service, google):
     # key with nothing to switch to it, which stopped mail (#307 M1).
     for target in ("parishsoft", "google_workspace", "slack", "email"):
         assert browser.get(f"{INDEX}{target}/credential/").status_code == 404
-    assert (
-        browser.get("/admin/system/key-changes/" + str(uuid4()) + "/").status_code
-        == 404
-    )
+    # The key change pages are gone, with no redirect (#1568).
+    for page in ("", "selection/"):
+        address = f"/admin/system/key-changes/{uuid4()}/{page}"
+        assert browser.get(address).status_code == 404
 
 
-def test_credential_status_follows_live_and_never_renews_idle(
+def test_a_key_change_is_followed_live_and_never_renews_idle(
     auth_service, google, handoff
 ):
-    """The self-updating status page is a passive read: polling it cannot keep
-    an otherwise idle login alive, and it stays pending until installed."""
+    """The settings page's status line is a passive read: polling it cannot
+    keep an otherwise idle login alive, and it stays pending until the key
+    is installed. It links no separate status page (#1568)."""
     browser, _ = signed_in()
     assert save_key(browser, SECRET).status_code == 302
-    location = status_url(SecretReplacementRequest.objects.get())
+    page = browser.get(URL).content
+    assert b"This page updates by itself." in page and b'name="candidate"' not in page
     session = PortalSession.objects.get(revoked_at__isnull=True)
     activity = session.last_activity_at
     for _ in range(3):
-        progress = browser.get(location)
+        progress = browser.get(STATUS)
         assert progress.status_code == 200
-        assert b'data-live-status="credential"' in progress.content
+        assert b'data-live-status="integration"' in progress.content
         assert b"data-live-pending" in progress.content
-        assert b"live-status-v1.js" in progress.content
-    # The key's status sits under its integration and leads back there (#196).
-    assert f'<li><a href="{URL}">ParishSoft</a></li>'.encode() in progress.content
-    assert f'<a href="{URL}">Return to ParishSoft</a>'.encode() in progress.content
+        assert b"Installing the new key" in progress.content
+        assert b"key-changes" not in progress.content
+        assert SECRET.encode() not in progress.content
     session.refresh_from_db()
     assert session.last_activity_at == activity
 
 
-def test_settings_changes_need_a_fresh_sign_in(auth_service, google):
-    """A stale sign-in can neither review nor confirm an integration change (#547).
+def test_an_old_sign_in_reviews_and_confirms_settings(auth_service, google):
+    """A sign-in older than five minutes reviews and confirms a change (#1547).
 
-    The step-up page returns to the settings page and nothing is queued. Once
-    fresh, the reviewed form confirms exactly one request, and posting it
-    again returns that same request.
+    The reviewed form confirms exactly one request, and posting it again
+    returns that same request.
     """
     browser, _ = signed_in()
-    review = post(browser, URL, edit(auth_service.store))
-    preview = hidden(review, "preview")
     stale_sign_in()
-    for values in (edit(auth_service.store), {"action": "confirm", "preview": preview}):
-        refused = browser.post(
-            URL,
-            values | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value},
-            HTTP_ACCEPT="text/html",
-        )
-        assert refused.status_code == 403
-        page = refused.content.decode()
-        assert "Confirm with Google" in page and "Nothing was done" in page
-        assert f'name="next" value="{URL}"' in page
-    # Removing an integration asks the same, before its review.
-    removed = browser.post(
-        INDEX + "slack/",
-        {
-            "action": "remove",
-            "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
-        },
-        HTTP_ACCEPT="text/html",
-    )
-    assert removed.status_code == 403
-    assert f'name="next" value="{INDEX}slack/"' in removed.content.decode()
-    assert not ConfigurationChangeRequest.objects.exists()
-    signed_in(browser)
+    review = post(browser, URL, edit(auth_service.store))
+    assert review.status_code == 200
+    preview = hidden(review, "preview")
     confirmed = post(browser, URL, {"action": "confirm", "preview": preview})
     assert confirmed.status_code == 302
     again = post(browser, URL, {"action": "confirm", "preview": preview})
@@ -940,34 +917,18 @@ def test_the_review_dialog_shows_public_settings_only(auth_service, google, hand
     assert not SecretReplacementRequest.objects.exists()
 
 
-def test_a_stale_sign_in_is_refused_in_the_review_dialog(auth_service, google):
-    """The review dialog's Save, Apply and Remove with a stale sign-in are
-    refused with the step-up drawn for the dialog (403, data-review-refusal),
-    whose Confirm with Google returns to the settings page (#547, #750).
-    Nothing is reviewed or queued, and the refusal log records why."""
-    from .test_admin_refusal_log_postgresql import entries
-
+def test_an_old_sign_in_reviews_and_applies_in_the_dialog(auth_service, google):
+    """The review dialog's Save and Apply admit a sign-in older than five
+    minutes (#1547): Save answers with the review, Apply queues one request."""
     browser, _ = signed_in()
-    preview = hidden(post(browser, URL, edit(auth_service.store)), "preview")
     stale_sign_in()
-    for url, values in (
-        (URL, edit(auth_service.store)),
-        (URL, {"action": "confirm", "preview": preview}),
-        (INDEX + "slack/", {"action": "remove"}),
-    ):
-        refused = fetch(browser, url, values)
-        assert refused.status_code == 403
-        text = refused.content.decode()
-        assert "<div data-review-refusal>" in text and "Confirm with Google" in text
-        assert f'name="next" value="{url}"' in text
-        assert "data-review-preview" not in text
-    assert not ConfigurationChangeRequest.objects.exists()
-    rows = entries()[-3:]
-    assert [row.context["reason"] for row in rows] == [
-        "fresh_authentication_required"
-    ] * 3
-    # Each with its closed code, as error_response's refusal would have.
-    assert [row.context["codes"] for row in rows] == [["denied"]] * 3
+    review = fetch(browser, URL, edit(auth_service.store))
+    assert review.status_code == 200 and b"data-review-answer" in review.content
+    confirmed = fetch(
+        browser, URL, {"action": "confirm", "preview": hidden(review, "preview")}
+    )
+    assert confirmed.status_code == 302
+    assert ConfigurationChangeRequest.objects.count() == 1
 
 
 def test_an_unchanged_save_is_refused_to_the_dialog(auth_service, google):
@@ -989,7 +950,8 @@ def test_a_key_from_a_script_still_takes_the_key_save_path(
     """A key posted by a script (as the dialog's would be) is still the
     key-save path, never a review: the sealed intake and its redirect back
     to the page, with the key never echoed. A value str.strip() keeps, such
-    as U+FEFF, is a key there, as the page script reads it (#750)."""
+    as U+FEFF, is a key there, as the page script reads it (#750), and the
+    key rule refuses it at the field (#1577), still never as a review."""
     browser, _ = signed_in()
     page = browser.get(URL)
     response = fetch(
@@ -998,9 +960,217 @@ def test_a_key_from_a_script_still_takes_the_key_save_path(
         edit(auth_service.store, organization_id="12345")
         | {"intent": hidden(page, "intent"), "candidate": pasted},
     )
-    assert (response.status_code, response["Location"]) == (302, URL)
-    assert SecretReplacementRequest.objects.count() == 1
     assert b"data-review-answer" not in response.content
+    if pasted == SECRET:
+        assert (response.status_code, response["Location"]) == (302, URL)
+        assert SecretReplacementRequest.objects.count() == 1
+    else:
+        assert response.status_code == 400
+        assert b"This does not look like a ParishSoft API key." in response.content
+        assert nothing_staged()
+
+
+def key_review(browser, page, **fields):
+    """Save with a key pasted, as the review dialog's script reviews it
+    (#1568): the page's form without the key, marked key_review."""
+    return fetch(
+        browser,
+        URL,
+        {
+            "action": "preview",
+            "base_digest": hidden(page, "base_digest"),
+            "organization_id": "12345",
+            "intent": hidden(page, "intent"),
+            "key_review": "yes",
+        }
+        | fields,
+    )
+
+
+def nothing_staged():
+    """No key request, sealed key or configuration request exists."""
+    return not (
+        SecretReplacementRequest.objects.exists()
+        or SealedCredentialStaging.objects.exists()
+        or ConfigurationChangeRequest.objects.exists()
+    )
+
+
+def test_a_key_is_confirmed_in_the_dialog_and_staged_by_apply(
+    auth_service, google, handoff
+):
+    """Save with a key pasted is a confirmation in the review dialog (#1568).
+
+    Its Review is posted without the key and stages, seals and records
+    nothing: the answer names the integration, lists the other setting
+    saved with it, says what happens next, and carries no field at all, so
+    no key, signed request or preview can reach the dialog. Apply posts the
+    page's own form, key included, to the unchanged key save: exactly one
+    sealed request and one selection request, and an answer (the page,
+    pending) that never echoes the key.
+    """
+    from parishkit.stewardship.accounts.integration_credentials import selection_key
+
+    browser, _ = signed_in()
+    with identity("pk_stewardship_web"):
+        page = browser.get(URL)
+        intent = hidden(page, "intent")
+        review = key_review(browser, page, organization_id="54321")
+        assert review.status_code == 200, review.content
+        text = unescape(review.content.decode())
+        assert "data-review-key " in text
+        assert 'data-review-title="Replace the ParishSoft key?"' in text
+        assert 'data-review-describedby="integration-review-summary"' in text
+        assert "ending in {tail}" in text
+        assert "The new key is checked with ParishSoft in the background." in text
+        line = re.search(r'<ul class="compact-review"[^>]*>.*?</ul>', text, re.S)
+        assert "12345" in line.group(0) and "54321" in line.group(0)
+        assert re.findall(r"<input\b", text) == []
+        for absent in (intent, 'name="candidate"', "a" * 64):
+            assert absent not in text
+        assert nothing_staged()
+        applied = fetch(
+            browser,
+            URL,
+            {
+                "action": "preview",
+                "base_digest": hidden(page, "base_digest"),
+                "organization_id": "54321",
+                "intent": intent,
+                "candidate": SECRET,
+            },
+        )
+        assert (applied.status_code, applied["Location"]) == (302, URL)
+        answer = browser.get(URL).content
+    row = SecretReplacementRequest.objects.get()
+    assert SealedCredentialStaging.objects.count() == 1
+    (selection,) = ConfigurationChangeRequest.objects.all()
+    assert selection.request_key == selection_key(row.pk)
+    assert b"Installing the new key" in answer
+    for content in (review.content, applied.content, answer):
+        assert SECRET.encode() not in content
+    assert SECRET not in json.dumps(list(AuditEvent.objects.values()), default=str)
+
+
+@pytest.mark.parametrize(
+    "fields", [{"candidate": SECRET}, {"key_review": "no"}, {"candidate": " x "}]
+)
+def test_a_key_review_never_takes_a_key(auth_service, google, handoff, fields):
+    """A Review marked key_review that carries a key (or is marked otherwise)
+    is refused as unexpected input, never staged, and the key never echoed."""
+    browser, _ = signed_in()
+    refused = key_review(browser, browser.get(URL), **fields)
+    assert refused.status_code == 400
+    assert SECRET.encode() not in refused.content
+    assert nothing_staged()
+
+
+def test_a_key_review_never_takes_an_uploaded_key(auth_service, google, handoff):
+    """A key's Review posted multipart with the key as a ``candidate`` file
+    part is refused like a pasted one (400), and the key never echoed."""
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    browser, _ = signed_in()
+    upload = SimpleUploadedFile("key.txt", SECRET.encode())
+    refused = key_review(browser, browser.get(URL), candidate=upload)
+    assert refused.status_code == 400
+    assert b"this page sent something the server did not expect" in refused.content
+    assert SECRET.encode() not in refused.content
+    assert nothing_staged()
+
+
+def test_a_key_review_waits_for_a_key_change_installing(auth_service, google, handoff):
+    """A second tab's key Review while the first tab's key is still
+    installing is refused in plain words (409), before its Apply could meet
+    the intake guard; only the first key is staged and nothing is echoed."""
+    browser, _ = signed_in()
+    with identity("pk_stewardship_web"):
+        first, second = browser.get(URL), browser.get(URL)
+        applied = fetch(
+            browser,
+            URL,
+            {
+                "action": "preview",
+                "base_digest": hidden(first, "base_digest"),
+                "organization_id": "12345",
+                "intent": hidden(first, "intent"),
+                "candidate": SECRET,
+            },
+        )
+        assert applied.status_code == 302, applied.content
+        refused = key_review(browser, second)
+    assert refused.status_code == 409, refused.content
+    assert b"A new key is already being installed." in refused.content
+    assert SECRET.encode() not in refused.content
+    assert SecretReplacementRequest.objects.count() == 1
+
+
+@pytest.mark.parametrize("refusal", ["schedule", "locked", "forged", "stale"])
+def test_a_key_review_refuses_before_apply(
+    auth_service, google, handoff, monkeypatch, refusal
+):
+    """A key's Review refuses what its save would (#1568). A key with a
+    refresh schedule change and a changed loaded organization are refused at
+    their field, the form drawn again (400) so the dialog stays shut; a
+    forged key request (400) and an out-of-date page (409) are the dialog's
+    refusals. Nothing is staged."""
+    if refusal == "schedule":
+        apply_rules_schedule(auth_service.store)
+    if refusal == "locked":
+        monkeypatch.setattr(
+            "parishkit.stewardship.accounts.integration_views.loaded_organization",
+            lambda: 12345,
+        )
+    browser, _ = signed_in()
+    requests = set(ConfigurationChangeRequest.objects.values_list("pk", flat=True))
+    with identity("pk_stewardship_web"):
+        page = browser.get(URL)
+        fields = {
+            "schedule": shown(page.content.decode()) | {"skips-0-at": "07:00"},
+            "locked": {"organization_id": "54321"},
+            "forged": {"intent": "forged"},
+            "stale": {"base_digest": "b" * 64},
+        }[refusal]
+        response = key_review(browser, page, **fields)
+    assert response.status_code == {"stale": 409}.get(refusal, 400), response.content
+    form = b'id="integration-form"' in response.content
+    assert form is (refusal in {"schedule", "locked"})
+    if refusal == "schedule":
+        assert b"a new key and a refresh schedule change" in response.content
+    if refusal == "locked":
+        assert b"can&#x27;t change after ParishSoft data has been loaded" in (
+            response.content
+        )
+    assert not SecretReplacementRequest.objects.exists()
+    assert not SealedCredentialStaging.objects.exists()
+    assert set(ConfigurationChangeRequest.objects.values_list("pk", flat=True)) == (
+        requests
+    )
+
+
+def test_the_parishsoft_key_sits_between_the_organization_and_the_schedule(
+    auth_service, google, handoff
+):
+    """ParishSoft's form draws the organization ID, the new key, then the
+    refresh schedule editor, Save, and the schedule's outlook after the
+    form, so the key never splits the schedule's entry from its display
+    (#1568). The form reviews a pasted key without it (data-review-key)."""
+    browser, _ = signed_in()
+    page = browser.get(URL).content.decode()
+    places = [
+        page.index(marker)
+        for marker in (
+            'name="organization_id"',
+            'name="candidate"',
+            'name="rules-TOTAL_FORMS"',
+            'id="refresh-schedule-status"',
+            'id="integration-outcome"',
+            'id="refresh-schedule-outlook"',
+        )
+    ]
+    assert places == sorted(places)
+    assert 'data-review-key="candidate"' in page
+    assert "data-review-native" not in page
 
 
 def test_spaces_the_server_strips_are_no_key(auth_service, google, handoff):
@@ -1018,23 +1188,22 @@ def test_spaces_the_server_strips_are_no_key(auth_service, google, handoff):
     assert not SecretReplacementRequest.objects.exists()
 
 
-def test_a_sign_in_gone_stale_under_the_work_lock_is_refused_in_the_dialog(
-    auth_service, google, monkeypatch
-):
-    """Apply's fresh sign-in is checked again under the work lock (#547): a
-    sign-in that passes the page's first check but not that one is refused
-    to the dialog with the step-up notice (403) and nothing is queued."""
-    from parishkit.stewardship.accounts import integration_views
+def test_a_malformed_new_key_is_refused_at_its_field(auth_service, google, handoff):
+    """Save with a new key its rule refuses (a space inside, #1577) draws the
+    page again (400) with the rule's words at the key field, the key never
+    echoed and nothing staged."""
+    from parishkit.stewardship.accounts.integration_forms import KEY_RULES
 
     browser, _ = signed_in()
-    preview = hidden(post(browser, URL, edit(auth_service.store)), "preview")
-    stale_sign_in()
-    # Only the view's own first check passes; confirm_intent's recheck,
-    # under the work lock, still sees the stale sign-in.
-    monkeypatch.setattr(integration_views, "require_fresh", lambda *a, **k: None)
-    refused = fetch(browser, URL, {"action": "confirm", "preview": preview})
-    assert refused.status_code == 403
-    text = refused.content.decode()
-    assert "<div data-review-refusal>" in text and "Confirm with Google" in text
-    assert f'name="next" value="{URL}"' in text
-    assert not ConfigurationChangeRequest.objects.exists()
+    page = browser.get(URL)
+    refused = fetch(
+        browser,
+        URL,
+        edit(auth_service.store)
+        | {"intent": hidden(page, "intent"), "candidate": "SYNTHETIC KEY"},
+    )
+    assert refused.status_code == 400
+    text = unescape(refused.content.decode())
+    assert str(KEY_RULES["parishsoft"].message) in text
+    assert "SYNTHETIC KEY" not in text
+    assert nothing_staged()

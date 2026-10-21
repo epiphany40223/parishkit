@@ -28,6 +28,14 @@ The browser checks need no database:
   page whose import posts to ``IMPORT_CONFIRM``, which answers as Import
   selected does when every ticked leader is imported: a confirmation
   (#1356) for one leader.
+- ``LIST``'s third table, Email Ministry leaders (#1592), lists
+  ``EMAIL_ROWS``: one leader never emailed, one emailed and delivered. Its
+  Email selected posts to ``EMAILS``, which answers with the
+  review of two leaders' emails in Testing with one skipped; the dialog's
+  Apply posts there too. ``LIST_EMAILS`` is ``LIST`` whose regions redraw
+  from ``EMAILED``, where the never-emailed leader's email is queued;
+  ``EMAILS_UNAVAILABLE`` has no current campaign with Ministries, so the
+  section says so in place of the table.
 - ``NEW``: New user. Its Email lookup posts to ``NAMES``, which answers two
   ParishSoft names; ``NEW_TAKEN``'s posts to ``NAMES_TAKEN``, which answers
   that the address is already a user. Review posts to ``REVIEW_POST``, which
@@ -57,11 +65,21 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 from django import forms
 from django.template.loader import render_to_string
 
+from parishkit.stewardship.accounts.leader_email_views import NO_CAMPAIGN
+from parishkit.stewardship.accounts.leader_email_views import PREFIX as EMAIL_PREFIX
+from parishkit.stewardship.accounts.leader_emails import (
+    EMAIL_SORTING,
+    LeaderFacts,
+)
+from parishkit.stewardship.accounts.leader_emails import (
+    SKIP_REASONS as EMAIL_SKIP_REASONS,
+)
 from parishkit.stewardship.accounts.leader_import import (
     LEADER_SORTING,
     SKIP_REASONS,
     ministries_label,
 )
+from parishkit.stewardship.accounts.leader_import_views import LEADERS as UNREAD
 from parishkit.stewardship.accounts.leader_import_views import PREFIX as LEADER_PREFIX
 from parishkit.stewardship.accounts.user_changes import plan_changes, saved_users
 from parishkit.stewardship.accounts.user_reads import USER_SORTING, user_list
@@ -73,6 +91,8 @@ from parishkit.stewardship.accounts.user_views import (
     review_lines,
     table_rows,
 )
+from parishkit.stewardship.jobs.leader_email_content import LeaderMinistry
+from parishkit.stewardship.web.part_status import part_status
 from parishkit.stewardship.web.tables import paginate
 
 from ..policy_factory import user
@@ -108,10 +128,21 @@ EDIT_OWN = "/user-edit-own"
 # The signed-in Administrator the pages are drawn for.
 READER = "admin@example.org"
 IMPORT = "/users/leaders/import"
+# The Users page whose leaders could not be read (#1863), and its
+# notice's status answers: ready after the reader's own view, and still
+# waiting for newer ParishSoft data.
+LEADERS_UNREAD = "/users-leaders-unread"
+LEADERS_READY = "/users-leaders-ready"
+LEADERS_WAITING = "/users-leaders-waiting"
 # Users whose import answers a confirmation (#1356): every ticked leader is
 # imported, nobody skipped.
 LIST_CONFIRM = "/users-import-confirm"
 IMPORT_CONFIRM = "/users/leaders/import-confirm"
+# Email Ministry leaders (#1592).
+EMAILS = "/users/leader-emails"
+LIST_EMAILS = "/users-emails"
+EMAILED = "/users-emailed"
+EMAILS_UNAVAILABLE = "/users-emails-unavailable"
 LONG_EMAIL = "a-very-long-address-for-the-parish-office-staff@stewardship.example.org"
 LONG_NAME = "Montgomery-Fitzwilliam, Bartholomew Alexander Christopher"
 SUGGESTED = ["Smith, Ann", "Smith, Bob"]
@@ -145,6 +176,39 @@ LEADERS = [
         ["Choir", "Food pantry", "Lectors", "Ushers", "Youth ministry"],
     ),
     leader_row("cy.young@example.org", "Young, Cy", 903, ["Ushers"]),
+]
+
+
+def email_row(email, name, *, login=None, emailed=None, label="Never"):
+    """One Email Ministry leaders row as ``leader_emails.leader_rows`` shapes it."""
+    return {
+        "email": email,
+        "name": name,
+        "last_login": login,
+        "last_emailed": emailed,
+        "emailed_label": label,
+    }
+
+
+EMAIL_ROWS = [
+    email_row("leader@example.org", "Leader, Lee"),
+    email_row(
+        "cy.young@example.org",
+        "Young, Cy",
+        login=MOMENT,
+        emailed=MOMENT,
+        label="Delivered",
+    ),
+]
+# EMAIL_ROWS once the never-emailed leader's email is queued.
+QUEUED_ROWS = [
+    email_row(
+        "leader@example.org",
+        "Leader, Lee",
+        emailed=MOMENT,
+        label="Still sending (queued)",
+    ),
+    EMAIL_ROWS[1],
 ]
 
 
@@ -184,9 +248,20 @@ def _list(
     delete=DELETE,
     leaders=LEADERS,
     import_url=IMPORT,
+    emails=EMAIL_ROWS,
+    emails_unavailable=None,
+    leaders_status=None,
 ):
-    """The Users page for ``records``, sorted by ``sort``, with ``leaders``."""
+    """The Users page for ``records``, sorted by ``sort``, with ``leaders`` and
+    the Email Ministry leaders rows ``emails``; ``leaders_status`` instead
+    says the leaders could not be read (#1863)."""
     rows = user_list(records, IDENTITIES)
+    email_table = paginate(
+        emails,
+        {f"{EMAIL_PREFIX}sort": "name"},
+        prefix=EMAIL_PREFIX,
+        sorting=EMAIL_SORTING,
+    )
     leader_table = paginate(
         leaders,
         {f"{LEADER_PREFIX}sort": "name"},
@@ -215,7 +290,19 @@ def _list(
                 "leaders_unreachable": 2 if leaders else 0,
                 "import_url": import_url,
                 "apply_url": APPLY,
-            },
+                "emails": email_table,
+                "emails_unavailable": emails_unavailable,
+                "emails_url": EMAILS,
+            }
+            | (
+                {
+                    "leaders": None,
+                    "leaders_unavailable": True,
+                    "leaders_status": leaders_status,
+                }
+                if leaders_status
+                else {}
+            ),
         ),
     )
 
@@ -332,6 +419,41 @@ def components(context, admin):
             "confirmation": True,
         },
     )
+    email_review = render_to_string(
+        "stewardship/user-leader-emails.html",
+        {
+            "emailed": [
+                {
+                    "email": "leader@example.org",
+                    "name": "Leader, Lee",
+                    "facts": LeaderFacts(
+                        "leader@example.org",
+                        (
+                            LeaderMinistry(4, "Choir", 2, 1),
+                            LeaderMinistry(9, "Food pantry", 0, 0),
+                        ),
+                    ),
+                },
+                {
+                    "email": "cy.young@example.org",
+                    "name": "Young, Cy",
+                    "facts": LeaderFacts(
+                        "cy.young@example.org", (LeaderMinistry(5, "Ushers", 0, 3),)
+                    ),
+                },
+            ],
+            "skipped": [
+                {
+                    "email": "ann.jones@example.org",
+                    "reason": "no_ministry",
+                    "reason_label": EMAIL_SKIP_REASONS["no_ministry"],
+                }
+            ],
+            "remaining": 0,
+            "testing_recipient": "test@example.org",
+            "preview": "synthetic-preview",
+        },
+    )
     status = render_to_string(
         "stewardship/configuration-request.html",
         values | {"receipt": {"request_id": uuid4(), "state": "applied"}},
@@ -346,7 +468,10 @@ def components(context, admin):
         f"{LIST}?users_size=50&users_sort=-role": _list(values, records, sort="-role"),
         f"{LIST}?users_size=50&users_sort=email": _list(values, records),
         DELETED: _list(values, [ADMIN, SECOND, STAFF], refresh=DELETED),
-        SINGLE: _list(values, [ADMIN], refresh=SINGLE, leaders=[]),
+        SINGLE: _list(values, [ADMIN], refresh=SINGLE, leaders=[], emails=[]),
+        LIST_EMAILS: _list(values, records, refresh=EMAILED),
+        EMAILED: _list(values, records, refresh=EMAILED, emails=QUEUED_ROWS),
+        EMAILS_UNAVAILABLE: _list(values, records, emails_unavailable=NO_CAMPAIGN),
         NEW: _entry(values, records),
         NEW_TAKEN: _entry(values, records, names_url=NAMES_TAKEN),
         EDIT: _entry(values, records, record=LEADER, post=EDIT_REVIEW),
@@ -360,6 +485,26 @@ def components(context, admin):
         PENDING: ("text/html", pending),
         LIST_PENDING: _list(values, records, delete=DELETE_PENDING),
         LIST_CONFIRM: _list(values, records, import_url=IMPORT_CONFIRM),
+        LEADERS_UNREAD: _list(
+            values,
+            records,
+            refresh=LEADERS_UNREAD,
+            leaders_status=part_status(UNREAD, shown=3, retry=True),
+        ),
+        LEADERS_READY: (
+            "text/html",
+            render_to_string(
+                "stewardship/components/part-status.html",
+                {"part_status": part_status(UNREAD, shown=3, ready=True)},
+            ),
+        ),
+        LEADERS_WAITING: (
+            "text/html",
+            render_to_string(
+                "stewardship/components/part-status.html",
+                {"part_status": part_status(UNREAD, shown=3, retry=True)},
+            ),
+        ),
     }
     POSTS.update(
         {
@@ -420,6 +565,7 @@ def components(context, admin):
             ),
             IMPORT: (200, None, leader_review),
             IMPORT_CONFIRM: (200, None, leader_confirm),
+            EMAILS: (200, None, email_review),
         }
     )
     return responses

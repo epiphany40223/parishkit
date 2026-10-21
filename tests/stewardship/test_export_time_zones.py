@@ -1,12 +1,12 @@
-"""Downloads ask for a time zone only when their rows hold action times (#1127).
+"""No download asks for a time zone (#1679, replacing #1127's rule).
 
-The ui-conventions "Downloaded files" rule: a download whose rows hold exact
-times of actions (submissions, log entries, staff actions, deliveries) asks
-for a time zone; any other download asks nothing, its form sends the
-browser's zone unasked (``data-browser-zone``), and the server falls back to
-the parish's time zone rather than refusing a missing or unknown one. The
-template guard below reviews every export form; a new form with a zone field
-fails it until it is listed here.
+The ui-conventions "Downloaded files" rule (Time zones): every export row
+posts the browser's zone unasked (``browser_timezone``), and the server
+falls back to the parish's time zone rather than refusing a missing or
+unknown one, since the reader was never asked. An explicit ``timezone``
+(System logs' "Times in", a tab opened before #1679) is still accepted and
+checked as before. The template side (which rows post which zone, and the
+one page with a zone choice) is guarded in test_export_actions.py.
 """
 
 import re
@@ -20,112 +20,36 @@ from django.test import RequestFactory
 
 import parishkit.stewardship.accounts as accounts
 from parishkit.stewardship.reports import (
+    census_change_views,
     directory_export_views,
-    exact_ui,
     export_ui,
+    financial_export_views,
+    information_export_views,
     ministry_export_views,
+    ministry_followup_exports,
+    timeline_views,
 )
 from parishkit.stewardship.reports.directories import DirectoryQuery
+from parishkit.stewardship.reports.financial import FinancialQuery
+from parishkit.stewardship.reports.information import InformationQuery
 from parishkit.stewardship.reports.workspace import ReportQuery
-from parishkit.stewardship.web.dates import unasked_zone
+from parishkit.stewardship.web import dates
+from parishkit.stewardship.web.dates import download_zone, unasked_zone
 
 # The parish's time zone the views fall back to, standing in for the
 # active configuration's (web.dates.parish_zone).
 PARISH = "America/Indiana/Indianapolis"
 TEMPLATES = Path(accounts.__file__).parent / "templates" / "stewardship"
 
-# Every export form with a time zone field, by template and form action:
-# True asks (a visible menu), False sends the browser's zone unasked.
-ASKS = {
-    ("logs.html", "admin:logs_export"): True,
-    ("financial-report.html", "admin:financial_export"): True,
-    ("limitations-report.html", "admin:limitations_export"): True,
-    ("census-changes.html", "admin:census_changes_export"): True,
-    ("information.html", "admin:information_export"): True,
-    # Export these requests (#1157), which replaced one Ministry's joining
-    # and leaving exports: Last contact is an action time.
-    ("ministry-followup.html", "admin:ministry_followup_export"): True,
-    ("ministry-roster.html", "admin:ministry_roster_export"): True,
-    ("family-timeline.html", "export.url"): True,
-    ("ministry-packet.html", "admin:ministry_packet"): False,
-    ("participation.html", "admin:report_export_create"): False,
-    ("participation.html", "admin:report_exact_create"): False,
-    # Campaign days and dates, no action times (#1161).
-    ("campaign-comparison.html", "admin:campaign_comparison_export"): False,
-}
-# The Family directory asks only for the code list with response columns.
-CONDITIONAL = ("directory.html", "admin:family_directory_export")
-ZONE_MENU = re.compile(r'<select\b[^>]*\bname="(?:browser_)?timezone"')
 
-
-def export_forms():
-    """Each template form with a time zone field: {(template, action): body}."""
-    forms = {}
-    for path in sorted(TEMPLATES.glob("*.html")):
-        for body in re.findall(r"<form\b.*?</form>", path.read_text(), re.S):
-            if not (ZONE_MENU.search(body) or 'name="browser_timezone"' in body):
-                continue
-            action = re.search(r'action="(?:\{%\s*url\s*\'|\{\{\s*)([^\' }]+)', body)
-            forms[(path.name, action.group(1))] = body
-    return forms
-
-
-def test_every_export_form_is_reviewed():
-    """A new zone field fails until it is listed as asking or not."""
-    assert set(export_forms()) == set(ASKS) | {CONDITIONAL}
-
-
-@pytest.mark.parametrize("form", sorted(ASKS), ids="{0[0]}:{0[1]}".format)
-def test_a_form_asks_for_a_zone_only_with_action_times(form):
-    """The listed forms show a zone menu; the rest send the browser's zone."""
-    body = export_forms()[form]
-    if ASKS[form]:
-        assert ZONE_MENU.search(body)
-    else:
-        assert not ZONE_MENU.search(body)
-        # The browser's zone: filled by ui-v1.js, or (participation) the
-        # zone report-v1.js drew the page in.
-        assert re.search(
-            r'<input type="hidden" name="browser_timezone" '
-            r'(?:data-browser-zone|value="\{\{ query\.timezone \}\}")',
-            body,
-        )
-
-
-def test_the_participation_page_asks_for_no_zone():
-    """Its report options carry the zone the page was drawn in, hidden."""
-    page = (TEMPLATES / "participation.html").read_text()
-    assert not ZONE_MENU.search(page)
-    assert re.search(r'<input type="hidden" name="timezone"[^>]*data-report-zone', page)
-
-
-def test_the_directory_asks_only_with_response_columns():
-    """The zone slot is a menu with response columns, else the browser's zone.
-
-    It is its own data-table-sync node, so each applied page redraws it.
-    """
-    body = export_forms()[CONDITIONAL]
-    slot = re.search(
-        r'<div id="directory-export-zone" data-table-sync[^>]*>'
-        r"\{% if export_asks_zone %\}(.*?)\{% else %\}(.*?)\{% endif %\}</div>",
-        body,
-        re.S,
+def test_the_response_dashboard_asks_for_no_zone():
+    """Its region carries the zone the page was drawn in (#1535, #1537)."""
+    page = (TEMPLATES / "response-dashboard.html").read_text()
+    assert not re.search(r'<select\b[^>]*\bname="(?:browser_)?timezone"', page)
+    assert re.search(
+        r'data-report-options data-report-zone="\{\{ query\.timezone \}\}"', page
     )
-    asked, unasked = slot.groups()
-    assert ZONE_MENU.search(asked)
-    assert unasked == '<input type="hidden" name="browser_timezone" data-browser-zone>'
-    assert len(ZONE_MENU.findall(body)) == 1
-
-
-@pytest.mark.parametrize(
-    "responses, postal, asks",
-    [("yes", False, True), ("no", False, False), ("yes", True, False)],
-)
-def test_the_directory_view_asks_by_its_file(responses, postal, asks):
-    """Only the code list with response columns has times in its rows."""
-    from parishkit.stewardship.reports.directory_views import export_asks_zone
-
-    assert export_asks_zone(DirectoryQuery(responses=responses), postal) is asks
+    assert "zone_value=query.timezone" in page
 
 
 @pytest.mark.parametrize(
@@ -189,7 +113,6 @@ def test_the_packet_takes_the_browsers_zone_unasked(monkeypatch, zone, expected)
 def _directory(monkeypatch, *, responses, zone):
     """Post a directory export with these response columns and ``zone``."""
     calls = _queued(monkeypatch, directory_export_views, "create_directory_export")
-    monkeypatch.setattr(directory_export_views, "require_fresh", Mock())
     monkeypatch.setattr(directory_export_views, "family_runtime", Mock())
     monkeypatch.setattr(
         directory_export_views,
@@ -216,10 +139,11 @@ def test_a_directory_without_response_columns_needs_no_zone(monkeypatch, zone):
     assert calls[0]["browser_timezone"] == "Asia/Tokyo"
 
 
-def test_a_directory_with_response_columns_asks_for_its_zone(monkeypatch):
-    """With response columns the zone is required and passed on as chosen."""
-    response, calls = _directory(monkeypatch, responses="yes", zone=None)
-    assert response.status_code == 400 and not calls
+@pytest.mark.parametrize("zone", [None, "", "Etc/Unknown"])
+def test_a_directory_with_response_columns_needs_no_zone(monkeypatch, zone):
+    """Its rows hold action times, but it no longer asks either (#1679)."""
+    response, calls = _directory(monkeypatch, responses="yes", zone=zone)
+    assert response.status_code == 303 and calls[0]["browser_timezone"] == PARISH
     response, calls = _directory(monkeypatch, responses="yes", zone="Asia/Tokyo")
     assert response.status_code == 303
     assert calls[0]["browser_timezone"] == "Asia/Tokyo"
@@ -229,7 +153,6 @@ def test_a_directory_with_response_columns_asks_for_its_zone(monkeypatch):
     "module, service, field",
     [
         (export_ui, "create_export", ("fact_set_id", str(uuid4()))),
-        (exact_ui, "create_exact_export", ("population_scope", "historical")),
     ],
 )
 @pytest.mark.parametrize(
@@ -253,3 +176,118 @@ def test_the_participation_page_falls_back_to_utc():
     query = ReportQuery.parse(QueryDict("timezone=Not/AZone"))
     assert query.timezone == "UTC" and query.timezone_explicit
     assert ReportQuery.parse(QueryDict("timezone=Asia/Tokyo")).timezone == "Asia/Tokyo"
+
+
+@pytest.mark.parametrize(
+    "chosen, browser, expected",
+    [
+        (None, "Asia/Tokyo", "Asia/Tokyo"),
+        (None, None, PARISH),
+        (None, "Etc/Unknown", PARISH),
+        ("UTC", "Asia/Tokyo", "UTC"),
+        # An explicit choice is returned as given for the caller's own check.
+        ("Mars/Olympus", "Asia/Tokyo", "Mars/Olympus"),
+    ],
+)
+def test_a_download_zone_is_the_choice_else_the_browsers(
+    monkeypatch, chosen, browser, expected
+):
+    """``timezone`` wins when posted; otherwise the browser's, else the parish's."""
+    monkeypatch.setattr(dates, "parish_zone", lambda: PARISH)
+    assert download_zone(chosen, browser) == expected
+
+
+def _form(values):
+    """``values`` as the posted form a download view reads."""
+    data = QueryDict(mutable=True)
+    for key, value in values.items():
+        data[key] = value
+    return data
+
+
+def _census(values):
+    """The Census changes download's parsed format and zone for ``values``."""
+    return census_change_views._choices(_form(values), export=True)
+
+
+@pytest.mark.parametrize(
+    "values, expected",
+    [
+        ({"browser_timezone": "Asia/Tokyo"}, "Asia/Tokyo"),
+        ({}, PARISH),
+        ({"browser_timezone": "Etc/Unknown"}, PARISH),
+        ({"timezone": "UTC", "browser_timezone": "Asia/Tokyo"}, "UTC"),
+    ],
+)
+def test_the_direct_downloads_take_the_browsers_zone(monkeypatch, values, expected):
+    """Census changes and Ministry requests: never refused for a zone the
+    reader was not asked for; an explicit one still wins."""
+    monkeypatch.setattr(dates, "parish_zone", lambda: PARISH)
+    assert str(_census({"format": "csv"} | values)["zone"]) == expected
+    _query, _fmt, zone = ministry_followup_exports._choices(
+        _form({"format": "csv"} | values)
+    )
+    assert str(zone) == expected
+
+
+def test_an_explicit_unknown_zone_is_still_refused(monkeypatch):
+    """A posted ``timezone`` keeps its strict check (an old tab, pk-admin)."""
+    monkeypatch.setattr(dates, "parish_zone", lambda: PARISH)
+    with pytest.raises(ValueError):
+        _census({"format": "csv", "timezone": "Mars/Olympus"})
+    with pytest.raises(ValueError):
+        ministry_followup_exports._choices(
+            _form({"format": "csv", "timezone": "Mars/Olympus"})
+        )
+
+
+@pytest.mark.parametrize(
+    "module, service, query",
+    [
+        (financial_export_views, "create_financial_export", FinancialQuery),
+        (information_export_views, "create_information_export", InformationQuery),
+    ],
+)
+@pytest.mark.parametrize(
+    "zone, expected", [(None, PARISH), ("bad/zone", PARISH), ("Asia/Tokyo", None)]
+)
+def test_the_queued_report_exports_need_no_zone(
+    monkeypatch, module, service, query, zone, expected
+):
+    """Financial stewardship and Additional information no longer ask (#1679)."""
+    calls = _queued(monkeypatch, module, service)
+    monkeypatch.setattr(module, "admit_report_read", Mock(), raising=False)
+    values = query().form_values() | {"format": "csv", "request_key": str(uuid4())}
+    values.pop("page", None)
+    if zone is not None:
+        values["browser_timezone"] = zone
+    response = module.create(_post(values), uuid4())
+    assert response.status_code == 303
+    assert calls[0]["browser_timezone"] == (expected or zone)
+
+
+@pytest.mark.parametrize(
+    "zone, expected", [(None, PARISH), ("bad/zone", PARISH), ("Asia/Tokyo", None)]
+)
+def test_the_timeline_export_needs_no_zone(monkeypatch, zone, expected):
+    """The Family timeline no longer asks for its zone either (#1679)."""
+    from parishkit.stewardship.reports import timeline_exports
+
+    calls = []
+    monkeypatch.setattr(dates, "parish_zone", lambda: PARISH)
+    monkeypatch.setattr(timeline_views, "runtime", Mock())
+    monkeypatch.setattr(timeline_views, "_principal", Mock())
+    monkeypatch.setattr(timeline_views, "_full", lambda principal: True)
+    monkeypatch.setattr(timeline_views, "admit_report_read", Mock())
+    monkeypatch.setattr(
+        timeline_exports,
+        "create_timeline_export",
+        lambda *args, **values: calls.append(values) or Mock(),
+    )
+    monkeypatch.setattr(export_ui, "_redirect", lambda *args: HttpResponse(status=303))
+    values = {"format": "csv", "request_key": str(uuid4())}
+    if zone is not None:
+        values["browser_timezone"] = zone
+    response = timeline_views.export(_post(values), uuid4(), uuid4())
+    assert response.status_code == 303
+    assert calls[0]["browser_timezone"] == (expected or zone)

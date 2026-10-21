@@ -1,4 +1,4 @@
-"""Outgoing mail's sending limit note, without a database (#382 M3a)."""
+"""Sent mail's sending limit note, without a database (#382 M3a)."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -14,7 +14,7 @@ from parishkit.stewardship.jobs.family_mail_dispatch import (
 NOW = datetime(2026, 10, 9, 15, 0, tzinfo=UTC)
 
 
-def note(**holds):
+def note(on_queue=False, **holds):
     """Render the note for ``holds`` (None draws nothing)."""
     values = dict(
         daily_limit=False,
@@ -25,7 +25,7 @@ def note(**holds):
     )
     return render_to_string(
         "stewardship/delivery-holds.html",
-        {"holds": values | holds if holds else None},
+        {"holds": values | holds if holds else None, "on_queue": on_queue},
     )
 
 
@@ -70,3 +70,11 @@ def test_one_throttled_email_and_a_hold_without_a_time():
     assert "1 Family email is waiting longer than usual" in html
     assert "<time" not in html
     assert "daily limit for Family email" not in html
+
+
+def test_the_mail_queue_names_its_own_columns():
+    """On the Mail queue the note points at Queued and Waiting to retry (#1562)."""
+    html = note(on_queue=True, throttled=2)
+    assert "counted below as Queued or Waiting to retry" in html
+    assert "show below as Still sending" not in html
+    assert "show below as Still sending" in note(throttled=2)

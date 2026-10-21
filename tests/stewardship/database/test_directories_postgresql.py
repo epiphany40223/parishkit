@@ -218,25 +218,33 @@ def test_mailing_columns_merge_postal_outreach_into_the_directory(
         # reachable by email, is not listed, whatever reach was asked for.
         # The select shows that reach, locked, but the page keeps the reach
         # the reader chose (sent in its hidden field and the export's query),
-        # so turning the mailing columns off brings it back.
+        # so turning the mailing columns off brings it back. That hidden
+        # field is marked data-filter, so Clear filters drops it with the
+        # other filters (#1651).
         def mailing(**values):
             """The page with mailing columns on and these filters."""
             return search(browser, route, {"mailing": "yes"} | values)
 
-        for own, (response, body) in (
-            ("any", read(browser, route + "?mailing=yes")),
-            ("email", mailing(reach="email")),
-            ("neither", mailing(reach="neither")),
-            ("any", mailing(reason="deliverable")),
-            ("mail", mailing(reach="mail")),
+        # The empty row says why (#1828): with mailing columns and no other
+        # filter (the overridden reach is not one), no Family needs a postal
+        # invitation; with another filter, Clear filters is the next step.
+        postal = b"No active Family needs a postal invitation:"
+        filtered = b"No Families match these filters. Select Clear filters"
+        for own, empty, (response, body) in (
+            ("any", postal, read(browser, route + "?mailing=yes")),
+            ("email", postal, mailing(reach="email")),
+            ("neither", postal, mailing(reach="neither")),
+            ("any", filtered, mailing(reason="deliverable")),
+            ("mail", postal, mailing(reach="mail")),
         ):
-            assert response.status_code == 200 and b"No matching Families." in body
+            assert response.status_code == 200 and empty in body
+            assert (filtered if empty == postal else postal) not in body
             assert harness.code.encode() not in body
             assert b'<option value="mail" selected>' in body
             assert b'aria-describedby="directory-reach-tip" disabled>' in body
             assert (
                 f'<input type="hidden" name="reach" value="{own}" '
-                'data-locked-own="directory-reach">'
+                'data-locked-own="directory-reach" data-filter>'
             ).encode() in body
             assert f'<input type="hidden" name="reach" value="{own}">'.encode() in body
             assert b'<input type="hidden" name="mailing" value="yes">' in body
@@ -244,12 +252,21 @@ def test_mailing_columns_merge_postal_outreach_into_the_directory(
             # toggletips and the About panel (pk-local batch 5).
             assert b"lock-reason" not in body and b"directory-mailing-help" not in body
             assert b"Set by Include mailing columns." not in body
+        # Without mailing columns a filter that matches no Family names
+        # Clear filters too, whether or not the response columns are on.
+        for values in (
+            {"search": "No such Family"},
+            {"reason": "no_head", "responses": "yes"},
+        ):
+            response, body = search(browser, route, values)
+            assert response.status_code == 200 and filtered in body
+            assert b"No active Families in the ParishSoft data yet." not in body
         # Without mailing columns the same filter finds the Family, without
         # the mailing columns.
         response, body = search(browser, route, {"reach": "email"})
         assert response.status_code == 200 and harness.code.encode() in body
         assert b'<option value="email" selected>' in body
-        assert b'data-locked-own="directory-reach" disabled>' in body
+        assert b'data-locked-own="directory-reach" data-filter disabled>' in body
         assert b'aria-describedby="directory-reach-tip">' in body
         assert b"Addressee" not in body and b"<td>1 Example Street<br>" not in body
         # The page is named for who it lists (#870), and the population
@@ -563,16 +580,51 @@ def test_archived_directory_keeps_its_retained_source(response_service, google):
 def test_directory_unavailability_and_invalid_filters_are_private(
     live_response_service, google, monkeypatch
 ):
-    """The new route uses shared read admission and never reflects private errors."""
+    """The new route uses shared read admission and never reflects private errors.
+
+    A malformed Exact Family code is refused at its field (#1332): the page
+    is drawn again (400, ``invalid``) with the filters sent in the form only,
+    the code field marked, the message in the gate's hint row and the
+    summary, and the Families for no filters; the code sent is never in a
+    link, the export or the page address. A structural refusal keeps the
+    error page, which echoes nothing.
+    """
     from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
     from parishkit.stewardship.reports import directory_views
+    from parishkit.stewardship.reports.directories import CODE_MESSAGE
 
     harness = live_response_service
     browser, _ = signed_in()
     route = reverse("admin:family_directory")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response, body = search(browser, route, {"exact_code": "private!invalid"})
-        assert response.status_code == 400 and b"private!invalid" not in body
+        sent = {"exact_code": "private!<b>", "search": "Nobody", "sort": "duid_desc"}
+        response, body = search(browser, route, sent)
+        assert response.status_code == 400
+        assert response.stewardship_codes == ("invalid",)
+        assert response["Cache-Control"] == "no-store"
+        body = body.decode()
+        form = body[body.index('<form id="table-filters"') :]
+        form = form[: form.index("</form>")]
+        code = re.search(r'<input id="exact-code" [^>]*>', form).group(0)
+        assert 'value="private!&lt;b&gt;" aria-invalid="true"' in code
+        assert 'aria-describedby="directory-filters_error"' in code
+        assert 'value="Nobody"' in form
+        message = str(CODE_MESSAGE)
+        assert (
+            f'<ul class="errorlist" id="directory-filters_error"><li>{message}</li>'
+        ) in form
+        assert f'<a href="#exact-code">{message}</a>' in body
+        # Outside the form: the Families for no filters, in the sort sent,
+        # with nothing sent carried by the export, the pages or the address.
+        rest = body.replace(form, "")
+        assert "private!" not in rest and "Nobody" not in rest
+        assert "Example, Member" in rest
+        assert 'name="sort" value="duid_desc"' in rest
+        assert directory_outcomes()[-2:] == ["started", "denied"]
+        # A structural refusal beside it keeps the error page.
+        response, body = search(browser, route, sent | {"phone": "maybe"})
+        assert response.status_code == 400 and b"private!" not in body
+        assert b'id="table-filters"' not in body
         assert response["Cache-Control"] == "no-store"
 
         def unavailable(*args, **kwargs):
@@ -688,7 +740,7 @@ def test_reach_filter_finds_families_no_campaign_mail_can_reach(
 
 
 def test_reach_preset_link_and_dashboard_readiness(live_response_service, google):
-    """?reach=neither is the only accepted GET filter; the dashboard counts it."""
+    """?reach=neither is the only accepted GET filter; Home no longer counts it."""
     harness = live_response_service
     data = response_source()
     data.members[3]["emailAddress"] = ""
@@ -710,9 +762,9 @@ def test_reach_preset_link_and_dashboard_readiness(live_response_service, google
         assert read(browser, route + "?reach=sometimes")[0].status_code == 400
         assert read(browser, route + "?reach=neither&search=x")[0].status_code == 400
         home = browser.get("/admin/").content
-    assert (
-        b"Reaching every Family" in home and (route + "?reach=neither").encode() in home
-    )
+    # Home no longer shows the count (#1673); Data to fix in ParishSoft and
+    # this preset carry it.
+    assert b"Reaching every Family" not in home
 
 
 def test_testing_notice_links_the_test_page_only_for_administrators(
@@ -755,6 +807,65 @@ def test_testing_notice_links_the_test_page_only_for_administrators(
         assert b"Try the Family form" not in body
         assert test_url.encode() not in body
         assert b"ask an Administrator for a test invitation" in body
+
+
+def test_staff_testing_mode_with_a_bad_code_is_refused_without_echo(
+    response_service, google
+):
+    """Staff sending Testing mode with a bad Exact Family code get a bare 403.
+
+    The mode is admitted before the code refusal is drawn (#1332), so the
+    refused-code page (400) never reaches a principal who may not see
+    Testing, and nothing they sent is echoed.
+    """
+    harness = response_service
+    store = harness.service.store
+    staff = address("staff@example.org", roles=("staff",))
+    change(
+        store,
+        store.active(),
+        uuid4(),
+        [{"operation": "add", "section": "login_rules", **staff}],
+    )
+    google[0].update(email="staff@example.org", sub="synthetic-staff")
+    browser, login = signed_in()
+    assert login.status_code == 302
+    route = reverse("admin:family_directory")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = search(
+            browser, route, {"exact_code": "private!<b>", "mode": "testing"}
+        )
+        assert response.status_code == 403
+        assert b"private!" not in body and b"exact-code" not in body
+
+
+def test_refused_code_page_in_testing_keeps_the_mode_choice_and_form_in_step(
+    response_service, google
+):
+    """The refused Exact Family code page shows one mode in both places (#1535).
+
+    An Administrator in Testing sends a malformed code. The segmented
+    Responses-shown pair is drawn from the page's query and the filter form's
+    hidden ``mode`` from what was sent; both must say Testing.
+    """
+    browser, _ = signed_in()
+    route = reverse("admin:family_directory")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = search(
+            browser, route, {"exact_code": "private!<b>", "mode": "testing"}
+        )
+    assert response.status_code == 400
+    body = body.decode()
+    assert (
+        '<button type="submit" name="mode" value="testing" aria-current="page">' in body
+    )
+    assert (
+        '<button type="submit" name="mode" value="production" aria-current="page">'
+        not in body
+    )
+    form = body[body.index('<form id="table-filters"') :]
+    form = form[: form.index("</form>")]
+    assert '<input type="hidden" name="mode" value="testing">' in form
 
 
 def test_family_name_is_the_surname_not_a_first_name_mailing_name(
@@ -1315,3 +1426,33 @@ def test_testing_without_a_rehearsal_is_refused_not_shown_as_production(
         assert response.status_code == 409
         assert b"That Testing rehearsal is no longer active" in response.content
     assert not ExportRequest.objects.exists()
+
+
+def test_unfiltered_empty_directory_says_no_data_has_loaded(
+    response_service, google, monkeypatch
+):
+    """With no active Family and no filter, the empty row names the refresh (#1828).
+
+    The real selection runs; only its rows are dropped, as if a ParishSoft
+    refresh had loaded no active Family.
+    """
+    from parishkit.stewardship.reports import directory_views
+
+    real = directory_views.directory_page
+
+    def empty(*args, **kwargs):
+        """The real page with its Families removed."""
+        report = real(*args, **kwargs)
+        return report | {"rows": [], "total": 0}
+
+    monkeypatch.setattr(directory_views, "directory_page", empty)
+    browser, _ = signed_in()
+    route = reverse("admin:family_directory")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read(browser, route)
+    assert response.status_code == 200
+    assert b"No active Families in the ParishSoft data yet." in body
+    assert b"Refresh from ParishSoft" in body
+    # The filtered and mailing messages are for other cases.
+    assert b"No Families match these filters" not in body
+    assert b"No active Family needs a postal invitation" not in body

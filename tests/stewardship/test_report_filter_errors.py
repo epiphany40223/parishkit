@@ -4,7 +4,6 @@ import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
@@ -24,7 +23,18 @@ from parishkit.stewardship.audit.log_rows import FIELD_MESSAGES as LOG_MESSAGES
 from parishkit.stewardship.audit.log_views import FIELD_IDS as LOG_IDS
 from parishkit.stewardship.audit.log_views import FIELD_LINES as LOG_LINES
 from parishkit.stewardship.audit.log_views import field_ids, refusal_sizes
-from parishkit.stewardship.reports import information_views, ministry_export_views
+from parishkit.stewardship.reports import ministry_export_views
+from parishkit.stewardship.reports.directories import (
+    CODE_MESSAGE,
+    DIRECTORY_SORTING,
+    DirectoryQuery,
+)
+from parishkit.stewardship.reports.directory_views import (
+    FIELD_IDS as DIRECTORY_IDS,
+)
+from parishkit.stewardship.reports.directory_views import (
+    FIELD_LINES as DIRECTORY_LINES,
+)
 from parishkit.stewardship.reports.financial import (
     DATES,
     FIELD_MESSAGES,
@@ -35,16 +45,6 @@ from parishkit.stewardship.reports.information import (
     FIELD_MESSAGES as INFORMATION_MESSAGES,
 )
 from parishkit.stewardship.reports.information import InformationQuery
-from parishkit.stewardship.reports.information_views import (
-    CONFIRM_MESSAGE,
-    unconfirmed_context,
-)
-from parishkit.stewardship.reports.information_views import (
-    FIELD_IDS as INFORMATION_IDS,
-)
-from parishkit.stewardship.reports.information_views import (
-    FIELD_LINES as INFORMATION_LINES,
-)
 from parishkit.stewardship.reports.ministry_export_views import (
     PACKET_MESSAGE,
     TOO_MANY,
@@ -54,7 +54,6 @@ from parishkit.stewardship.reports.ministry_export_views import (
 )
 from parishkit.stewardship.reports.ministry_exports import MAX_PACKET_MINISTRIES
 from parishkit.stewardship.reports.ministry_followup_views import packet_context
-from parishkit.stewardship.responses.information import ClearUnconfirmed
 from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.filter_errors import (
     FilterError,
@@ -62,6 +61,7 @@ from parishkit.stewardship.web.filter_errors import (
     line_sizes,
     refused,
 )
+from parishkit.stewardship.web.tables import report_table
 
 TEMPLATE = (
     Path(__file__).parents[2]
@@ -237,11 +237,10 @@ def test_refused_answers_400_kept_and_logged_as_invalid():
     assert not hasattr(response, "stewardship_errors")
 
 
-# The Additional information queue's date filters (#1332, second slice).
-INFORMATION = (
-    Path(__file__).parents[2]
-    / "src/parishkit/stewardship/accounts/templates/stewardship/information.html"
-).read_text()
+# The Additional information selection's date filters (#1332, second
+# slice). Its page is the review worklist since #1685, which refuses a bad
+# date with its error page, as Census changes does; the selection still
+# names each date's field for an export or a command.
 ZONE = "America/New_York"
 
 
@@ -292,58 +291,6 @@ def test_information_zone_refusal_keeps_its_own_page():
     with pytest.raises(UnknownZone) as caught:
         InformationQuery.parse({"start": "2026-01-01", "zone": ""})
     assert not isinstance(caught.value, FilterError)
-
-
-def test_information_messages_are_the_page_hints_and_fields_exist():
-    """The server's words are the hints the browser shows first, at real ids.
-
-    The start's hint is on its cell (the zone check replaces an input's
-    own hint); the end's own hint and its order hint, which the zone check
-    restores, are both the end's message. Each field passes its zone note
-    through the mark tag, and the dates' line is drawn once.
-    """
-    assert set(INFORMATION_IDS) == set(INFORMATION_MESSAGES) == set(INFORMATION_LINES)
-    hints = {}
-    for field, element in INFORMATION_IDS.items():
-        cell = re.search(
-            rf'<div(?: data-missing-hint="[^"]*")?><label for="{element}">.*?</div>',
-            INFORMATION,
-        ).group(0)
-        tag = re.search(rf'<input id="{element}" [^>]*>', cell).group(0)
-        assert f'name="{field}"' in tag and "aria-describedby" not in tag
-        assert (
-            f'{{% filter_mark filter_error "{field}" "information-zone-help" %}}' in tag
-        )
-        hints[field] = re.findall(
-            r"data-(?:missing|order)-hint=\"{% translate '([^']*)' %}\"", tag
-        ) or re.findall(r"data-missing-hint=\"{% translate '([^']*)' %}\"", cell)
-    assert hints["start"] == [str(INFORMATION_MESSAGES["start"])]
-    assert hints["end"] == [str(INFORMATION_MESSAGES["end"])] * 2
-    assert INFORMATION.count('{% filter_line filter_error "submitted-dates" ') == 1
-    assert "{% filterpanel applied|default:query %}" in INFORMATION
-
-
-def test_information_mark_keeps_the_zone_note():
-    """Both dates keep their zone note, then the line, in one attribute."""
-    error = FilterError("end", "Fix it.", InformationQuery(), pair="start")
-    context = error_context(error, INFORMATION_IDS, INFORMATION_LINES)
-    source = "".join(
-        f'<input id="{field}"'
-        f'{{% filter_mark filter_error "{field}" "information-zone-help" %}}>'
-        for field in ("start", "end")
-    )
-    marked = (
-        ' aria-invalid="true"'
-        ' aria-describedby="information-zone-help submitted-dates_error">'
-    )
-    assert render(source, **context) == (
-        '<input id="start"' + marked + '<input id="end"' + marked
-    )
-    assert render(source) == (
-        '<input id="start" aria-describedby="information-zone-help">'
-        '<input id="end" aria-describedby="information-zone-help">'
-    )
-    assert context["errors"] == [{"field_id": "end", "message": "Fix it."}]
 
 
 # System logs (#1332, third slice): nothing ticked, the identifiers and the
@@ -529,9 +476,8 @@ def test_log_nothing_ticked_under_an_audit_only_activity_says_tick_audit():
         assert refusal_sizes(caught.value) == {"log-filters": message}
 
 
-# Ministry requests' Follow-up packet limit and an Additional information
-# item's confirmation (#1332, fourth slice): forms, not filters, refused at
-# their field with the same pieces.
+# Ministry requests' Follow-up packet limit (#1332, fourth slice): a form,
+# not a filter, refused at its field with the same pieces.
 PACKET = (
     Path(__file__).parents[2]
     / "src/parishkit/stewardship/accounts/templates/stewardship/ministry-packet.html"
@@ -659,86 +605,136 @@ def test_packet_limit_draws_the_queue_for_a_person_json_for_a_script(
         assert "at most 200" in json.loads(response.content)["refusal"]["message"]
 
 
-def test_confirm_refusal_draws_the_item_again_with_what_was_sent(monkeypatch):
-    """A Save refused for its confirmation shows the item, not an error page."""
-    drawn = []
-    monkeypatch.setattr(information_views, "runtime", Stub)
-    monkeypatch.setattr(information_views, "_principal", lambda *_: Stub)
-    monkeypatch.setattr(
-        information_views.AdditionalInformationItem.objects,
-        "filter",
-        lambda **_: SimpleNamespace(exists=lambda: True),
-    )
+DIRECTORY = (
+    Path(__file__).parents[2]
+    / "src/parishkit/stewardship/accounts/templates/stewardship/directory.html"
+).read_text()
 
-    def refuse(*args, **kwargs):
-        """The service's refusal: completion cleared, not confirmed."""
-        raise ClearUnconfirmed("Confirm clearing the completed follow-up.")
 
-    monkeypatch.setattr(information_views, "update_information", refuse)
-    monkeypatch.setattr(
-        information_views,
-        "_page_response",
-        lambda request, campaign, *, item_id, sent: (
-            drawn.append((item_id, sent)) or HttpResponse("item", status=400)
-        ),
-    )
-    request = RequestFactory().post(
-        "/update",
+@pytest.mark.parametrize("code", ["ABC", "ABCD-EFG1", "ÀBCDEFGH", "A" * 129])
+def test_directory_code_rule_names_its_field(code):
+    """A malformed Exact Family code is refused at its field, with the query
+    as sent (its closed choices all accepted) and the field hint's words."""
+    with pytest.raises(FilterError) as caught:
+        DirectoryQuery.parse(
+            {
+                "exact_code": code,
+                "search": "Example",
+                "sort": "duid_desc",
+                "phone": "yes",
+            }
+        )
+    error = caught.value
+    assert error.fields == ("exact_code",) and error.message == CODE_MESSAGE
+    assert error.query.exact_code == code and error.query.search == "Example"
+    assert error.query.sort == "duid_desc" and error.query.phone == "yes"
+    # Still a ValueError: the export and pk-admin refuse it as before.
+    assert isinstance(error, ValueError)
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"exact_code": "ABC", "sort": "random"},
+        {"exact_code": "ABC", "phone": "maybe"},
+        {"exact_code": "ABC", "extra": "x"},
+        {"exact_code": "ABC", "search": "x" * 201},
+        {"exact_code": "ABC", "page": "0"},
+    ],
+)
+def test_directory_structural_refusals_keep_the_error_page(values):
+    """A refusal no field can show stays a plain ValueError, even with a
+    malformed code beside it: the structural rules are checked first."""
+    with pytest.raises(ValueError) as caught:
+        DirectoryQuery.parse(values)
+    assert not isinstance(caught.value, FilterError)
+
+
+def test_directory_message_is_the_hint_and_the_field_is_wired():
+    """The server's words are the code field's hint; the field carries the
+    mark tag and the gate's hint row draws the one message line."""
+    assert set(DIRECTORY_IDS) == set(DIRECTORY_LINES) == {"exact_code"}
+    tag = re.search(r'<input id="exact-code" [^>]*>', DIRECTORY).group(0)
+    assert f"data-missing-hint=\"{{% translate '{CODE_MESSAGE}' %}}\"" in tag
+    assert '{% filter_mark filter_error "exact_code" %}' in tag
+    assert "aria-describedby" not in tag
+    assert DIRECTORY.count('{% filter_line filter_error "directory-filters" ') == 1
+    assert (
+        '<div class="hint-row-messages"><p class="help" id="directory-filter-hint"'
+        ' data-complete-hint="reserve"></p>{% filter_line filter_error'
+        ' "directory-filters" filter_sizes %}</div></form>'
+    ) in DIRECTORY
+
+
+def directory_html(**context):
+    """The directory page for an empty selection, with ``context`` added."""
+    return render_to_string(
+        "stewardship/directory.html",
         {
-            "expected_version": "3",
-            "request_key": str(UUID(int=9)),
-            "notes": "Typed <note>",
-            "follow_up_needed": "yes",
-            "queue": "",
-        },
+            "campaign_id": UUID(int=80),
+            "metadata": {"source_generation": 1},
+            "total": 0,
+            "table": report_table(
+                [],
+                number=1,
+                size=50,
+                total=0,
+                carry=(),
+                sorting=DIRECTORY_SORTING,
+                sort="name",
+                action="/admin/directory/",
+                sizes=(50,),
+            ),
+            "query": DirectoryQuery(),
+            "query_fields": DirectoryQuery().form_values(),
+        }
+        | context,
     )
-    item = UUID(int=8)
-    response = information_views.update.__wrapped__(request, UUID(int=7), item)
-    assert response.status_code == 400
-    ((shown, sent),) = drawn
-    assert shown == item and sent["expected_version"] == 3
-    assert sent["followed_up"] is False and sent["confirm_clear"] is False
-    assert sent["follow_up_needed"] is True and sent["notes"] == "Typed <note>"
-    assert isinstance(ClearUnconfirmed("x"), ValueError)
 
 
-def test_unconfirmed_context_shows_what_was_sent_at_the_box():
-    """The box is marked, the Save hint row shows and is sized to the message."""
-    sent = {
-        "expected_version": 3,
-        "request_key": UUID(int=9),
-        "follow_up_needed": True,
-        "followed_up": False,
-        "confirm_clear": False,
-        "notes": "Typed",
-    }
-    context = unconfirmed_context(sent, {"submitted-dates": "Dates."})
-    assert context["sent"] == {
-        "expected_version": 3,
-        "follow_up_needed": True,
-        "followed_up": False,
-        "notes": "Typed",
-    }
-    assert context["filter_error"]["fields"] == ("confirm_clear",)
-    assert context["errors"] == [
-        {"field_id": "information-confirm-clear", "message": CONFIRM_MESSAGE}
-    ]
-    assert context["filter_sizes"] == {
-        "submitted-dates": "Dates.",
-        "information-save": CONFIRM_MESSAGE,
-    }
+def test_refused_directory_shows_what_was_sent_with_the_mark():
+    """The form shows the filters sent; the results' fields, none.
 
-
-def test_confirm_message_is_the_page_hint_and_the_box_is_marked():
-    """The server's words are the gate's hint; the box and line are wired."""
-    cell = re.search(r'<div data-show-when="followed_up!=yes".*?</div>', INFORMATION)
-    cell = cell.group(0)
-    assert f"data-missing-hint=\"{{% translate '{CONFIRM_MESSAGE}' %}}\"" in cell
+    The code field is marked and described by the hint row's message line,
+    which is sized to it; the panel counts only the mailing-columns choice
+    kept, and the
+    export carries none of the values sent.
+    """
+    sent = DirectoryQuery(search="Adams", exact_code='AB"<x', phone="yes")
+    error = FilterError("exact_code", CODE_MESSAGE, sent)
+    html = directory_html(
+        **error_context(error, DIRECTORY_IDS, DIRECTORY_LINES),
+        filter_query=sent,
+        mailing=True,
+        filter_sizes={"directory-filters": CODE_MESSAGE},
+    )
+    form = html[html.index('<form id="table-filters"') : html.index("</form>")]
+    assert 'value="Adams"' in form and 'value="AB&quot;&lt;x"' in form
+    assert '<option value="yes" selected>' in form
+    assert 'name="mailing" value="yes" checked' in form
+    tag = re.search(r'<input id="exact-code" [^>]*>', form).group(0)
+    assert 'aria-invalid="true" aria-describedby="directory-filters_error"' in tag
+    message = str(CODE_MESSAGE)
     assert (
-        '<input type="checkbox" id="information-confirm-clear" name="confirm_clear"'
-        ' value="yes"{% filter_mark filter_error "confirm_clear" %}>'
-    ) in cell
-    assert INFORMATION.count('{% filter_line filter_error "information-save" ') == 1
+        f'<span class="field-error-size" aria-hidden="true">{message}</span>'
+        f'<ul class="errorlist" id="directory-filters_error"><li>{message}</li></ul>'
+    ) in form
+    assert f'<a href="#exact-code">{message}</a>' in html
+    # Only the mailing-columns choice, kept, is counted.
+    assert ">1 applied<" in html and "data-filter-panel open" in html
+    export = html[html.index('<form id="table-export"') :]
+    assert "Adams" not in export and "AB&quot;" not in export
+
+
+def test_unrefused_directory_draws_no_mark_and_an_empty_line():
+    """An ordinary page has no mark and a hidden line that takes no room."""
+    html = directory_html(query=DirectoryQuery(exact_code="ABCDEFGH"), mailing=True)
+    tag = re.search(r'<input id="exact-code" [^>]*>', html).group(0)
+    assert 'value="ABCDEFGH"' in tag
+    assert "aria-invalid" not in tag and "aria-describedby" not in tag
+    assert 'name="mailing" value="yes" checked' in html
     assert (
-        '<div class="hint-row-messages"><p class="help" id="information-save-hint"'
-    ) in INFORMATION
+        '<div class="field-error-line"><span class="field-error-size"'
+        ' aria-hidden="true"></span><ul class="errorlist" id="directory-filters_error"'
+        " hidden><li></li></ul></div></div></form>"
+    ) in html

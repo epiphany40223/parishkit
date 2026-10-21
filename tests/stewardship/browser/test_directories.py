@@ -1,12 +1,12 @@
 """Three-engine private native directories and accessible contacts."""
 
-import re
+from urllib.parse import urlencode
 from uuid import UUID
 
 import pytest
 from django.urls import reverse
 
-from .waits import same_place, visible
+from .waits import eventually, has_text, same_place, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -25,6 +25,20 @@ def page_box(locator):
         " return {x: r.x, y: r.y + scrollY, width: r.width, height: r.height}; }"
     )
     return {key: round(value, 2) for key, value in box.items()}
+
+
+def contact_summary(page, names):
+    """Return the Contact details summary for a Family (#1654).
+
+    The visible text is just "Contact details"; the Family's names follow in
+    visually hidden text so the accessible name still begins with the visible
+    label (label-in-name) and stays distinguishable between rows.
+    """
+    summary = page.locator("summary", has_text=f"Contact details for {names}")
+    assert summary.evaluate("el => el.firstChild.textContent") == "Contact details"
+    assert summary.locator(".visually-hidden").text_content() == f" for {names}"
+    assert summary.text_content() == f"Contact details for {names}"
+    return summary
 
 
 @pytest.mark.parametrize("width", [320, 1280])
@@ -54,9 +68,8 @@ def test_directories_are_accessible_and_keep_filters_in_post(
     page.goto(component_origin + "/family-directory")
     visible(page.get_by_text("ABCDEFGH", exact=True))
     assert page.locator("Family").count() == 0
-    page.get_by_text(
-        "Contact details for Example <Family>, Example Head", exact=True
-    ).click()
+    summary = contact_summary(page, "Example <Family>, Example Head")
+    summary.click()
     visible(page.get_by_role("link", name="head@example.org", exact=True))
     visible(page.get_by_text("1 Example Street", exact=False))
     search = page.get_by_label(
@@ -166,23 +179,27 @@ def test_complete_directory_export_controls_are_private_native_and_gated(
     try:
         page = context.new_page()
         page.goto(component_origin + "/family-directory")
-        # The export controls are collapsed until asked for.
-        assert not page.get_by_label("Export format").is_visible()
-        page.get_by_text("Export complete results").click()
-        # A code list without response columns has no times in its rows, so
-        # it asks for no zone and sends the browser's unasked (#1127).
+        # The export row (#1679) is shown below the table, with no format
+        # menu and no zone question: the browser's zone is sent unasked.
+        assert page.get_by_label("Export format").count() == 0
         assert page.get_by_label("Export timezone").count() == 0
-        visible(page.get_by_text("51 estimated matching Families", exact=False))
+        # No count line above the buttons (R37).
+        assert page.get_by_text("estimated matching", exact=False).count() == 0
         page.get_by_label(
             "Search by Family name, any member's name, DUID, envelope number or address"
         ).fill("Unsaved private edit")
-        page.get_by_label("Export format").select_option("xlsx")
         page.route(
             "**" + reverse("admin:family_directory_export"),
-            lambda route: route.fulfill(body="Export queued"),
+            lambda route: route.fulfill(
+                body="file",
+                headers={"Content-Disposition": 'attachment; filename="families.xlsx"'},
+            ),
         )
-        with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Queue complete export").click()
+        with (
+            page.expect_request(lambda request: request.method == "POST") as sent,
+            page.expect_download() as download,
+        ):
+            page.get_by_role("button", name="Export XLSX").click()
         assert (
             "search=Example" in sent.value.post_data
             and "format=xlsx" in sent.value.post_data
@@ -194,13 +211,11 @@ def test_complete_directory_export_controls_are_private_native_and_gated(
             and "Unsaved" not in sent.value.post_data
         )
         assert "?" not in sent.value.url and "Example" not in sent.value.url
-        # Let the routed answer finish loading before the next navigation,
-        # which it would otherwise interrupt (#623).
-        visible(page.get_by_text("Export queued", exact=True))
+        # The file downloads in place (#1778), before the next navigation.
+        assert download.value.suggested_filename == "families.xlsx"
         page.goto(component_origin + "/directory-gated")
-        assert page.get_by_role(
-            "button", name="Queue complete export", include_hidden=True
-        ).is_disabled()
+        for name in ("Export XLSX", "Export CSV", "Export PDF"):
+            assert page.get_by_role("button", name=name).is_disabled()
     finally:
         context.close()
 
@@ -274,9 +289,7 @@ def test_contact_details_show_each_heads_email(
     # The Family name's timeline link (#590) is separate from the pane.
     timeline = page.get_by_role("link", name="Example, Anna, Ben and John", exact=True)
     assert timeline.get_attribute("href").endswith(f"/{UUID(int=82)}/")
-    page.get_by_text(
-        "Contact details for Example, Anna, Ben and John", exact=True
-    ).click()
+    contact_summary(page, "Example, Anna, Ben and John").click()
     emails = page.locator("dd.head-emails")
     visible(emails)
     link = emails.get_by_role("link", name="anna@example.org", exact=True)
@@ -370,42 +383,28 @@ def test_mailing_columns_page_draws_reach_locked(page, component_origin):
     assert page_box(reach) == before
 
 
-def test_export_time_zone_follows_the_applied_response_columns(page, component_origin):
-    """Only the code list with response columns asks for a time zone (#1127).
-
-    Applying Include response columns brings the export's time zone field
-    in; applying without them takes it away again, and the browser's zone
-    is then sent unasked. The field is the last of its row with its help in
-    a toggletip, so the format menu and the Queue button do not move within
-    the export options (no layout shift); a re-sort keeps the zone the reader
-    chose. The columns line above the form
-    lists more columns with the response columns, so positions are compared
-    within the options fieldset.
+def test_the_export_row_never_asks_for_a_zone(page, component_origin):
+    """No directory file asks for a time zone (#1679), the code list with
+    response columns included: applying Include response columns adds no
+    field and moves no export button (no layout shift), and the browser's
+    zone is sent unasked, once.
     """
     from playwright.sync_api import expect
 
     page.goto(component_origin + "/family-directory")
-    page.get_by_text("Export complete results").click()
-    zone = page.get_by_label("Export timezone")
-    options = page.locator("#table-export fieldset")
-    controls = (
-        page.get_by_label("Export format"),
-        page.get_by_role("button", name="Queue complete export"),
-        # The format help's "i" button (#1158), beside the format label.
-        page.locator("#table-export .toggletip-button").first,
-    )
+    buttons = page.locator("#directory-export-buttons button")
 
     def boxes():
-        """Where the export options' controls sit within their fieldset.
+        """Where the export buttons sit, relative to their row.
 
-        One flat list, so callers compare it with a sub-pixel tolerance:
-        Firefox can lay the same box out a few hundred-thousandths of a
-        pixel apart after a redraw, which no reader sees as a shift.
+        One flat list, compared with a sub-pixel tolerance: Firefox can lay
+        the same box out a few hundred-thousandths of a pixel apart after a
+        redraw, which no reader sees as a shift.
         """
-        frame = options.bounding_box()
+        frame = page.locator("#table-export .export-actions").bounding_box()
         return [
             value
-            for box in (item.bounding_box() for item in controls)
+            for box in (buttons.nth(index).bounding_box() for index in range(3))
             for value in (
                 box["x"] - frame["x"],
                 box["y"] - frame["y"],
@@ -414,38 +413,20 @@ def test_export_time_zone_follows_the_applied_response_columns(page, component_o
             )
         ]
 
-    def apply(fixture):
-        """Apply the filters, answered with the ``fixture`` page."""
-        page.unroute("**/families/")
-        page.route(
-            "**/families/",
-            lambda route: route.fulfill(
-                response=route.fetch(url=component_origin + fixture, method="GET")
-            ),
-        )
-        page.get_by_role("button", name="Apply filters").click()
-
-    assert zone.count() == 0
     before = boxes()
-    page.get_by_label("Include response columns").check()
-    apply("/directory-responses")
-    visible(zone)
-    assert page.locator("#table-export input[name=responses]").input_value() == "yes"
-    assert boxes() == pytest.approx(before, abs=0.5)
-    # A re-sort redraws the zone slot with the rows; the form is marked
-    # data-keep-choices, so the zone the reader chose is put back.
-    zone.select_option("America/Detroit")
-    zone.evaluate("node => { node.dataset.drawn = 'before'; }")
-    page.get_by_role("button", name=re.compile(r"^Family \(sort")).click()
-    expect(page.locator("#directory-export-timezone:not([data-drawn])")).to_have_count(
-        1
+    page.route(
+        "**/families/",
+        lambda route: route.fulfill(
+            response=route.fetch(
+                url=component_origin + "/directory-responses", method="GET"
+            )
+        ),
     )
-    expect(zone).to_have_value("America/Detroit")
-    page.get_by_label("Include response columns").uncheck()
-    apply("/family-directory")
-    expect(zone).to_have_count(0)
+    page.get_by_label("Include response columns").check()
+    page.get_by_role("button", name="Apply filters").click()
+    expect(page.locator("#table-export input[name=responses]")).to_have_value("yes")
+    assert page.get_by_label("Export timezone").count() == 0
     assert boxes() == pytest.approx(before, abs=0.5)
-    # The browser's zone goes unasked, once.
     hidden = page.locator("#table-export input[name=browser_timezone]")
     assert hidden.count() == 1 and hidden.input_value() == page.evaluate(
         "Intl.DateTimeFormat().resolvedOptions().timeZone"
@@ -453,52 +434,28 @@ def test_export_time_zone_follows_the_applied_response_columns(page, component_o
 
 
 @pytest.mark.parametrize("width", [320, 1280])
-def test_export_format_help_is_a_toggletip(page, component_origin, width):
-    """The format's dates-and-money help opens beside its label (#1158).
+def test_export_buttons_have_no_dates_explanation(page, component_origin, width):
+    """The export is its row of buttons only (#1538, #1679).
 
-    As a line under the menu, the help wrapped into a tall narrow column in
-    the filter bar's short cell. As a toggletip the cell stays one field
-    tall, the menu is still described by the full help, and opening the tip
-    moves no control in the export options.
+    The dates-and-money explanation (#221, #1158) was removed from every
+    export: each button keeps its label as its accessible name, and the row
+    stays one button tall on a desktop and wraps on a phone without widening
+    the page.
     """
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/family-directory")
-    page.get_by_text("Export complete results").click()
-    menu = page.get_by_label("Export format")
-    visible(menu)
-    assert menu.get_attribute("aria-describedby") == "directory-format-tip"
-    tip = page.locator("#directory-format-tip")
-    assert tip.is_hidden() and "ISO 8601" in tip.text_content()
-    assert "$ sign" in tip.text_content()
-    assert page.locator("#table-export p.help", has_text="ISO 8601").count() == 0
-    cell = page.locator("#table-export .filter-bar > div.short").first
-    # A label row and a menu (about 6rem); the old help line made it 15+ lines.
-    assert cell.bounding_box()["height"] < 8 * 16
-    controls = page.locator("#table-export :is(label, select, button)")
-
-    options = page.locator("#table-export fieldset")
-
-    def boxes():
-        """Where every export label and control sits within the options.
-
-        Relative to the fieldset, since opening the tip may scroll the page.
-        """
-        frame = options.bounding_box()
-        found = (controls.nth(i).bounding_box() for i in range(controls.count()))
-        return [
-            (box["x"] - frame["x"], box["y"] - frame["y"], box["width"], box["height"])
-            for box in found
-            if box
-        ]
-
-    before = boxes()
-    button = page.locator("#table-export .toggletip-button").first
-    button.click()
-    visible(tip)
-    # Linux Firefox may report the same place a ten-thousandth of a pixel apart.
-    assert same_place(boxes(), before)
-    page.keyboard.press("Escape")
-    assert tip.is_hidden()
+    row = page.locator("#table-export .export-actions")
+    visible(row)
+    assert "ISO 8601" not in page.locator("#table-export").text_content()
+    xlsx = page.get_by_role("button", name="Export XLSX")
+    assert xlsx.get_attribute("aria-describedby") is None
+    height = xlsx.bounding_box()["height"]
+    assert 24 <= height < 44
+    if width == 1280:
+        assert row.bounding_box()["height"] < 2 * height
+    assert page.evaluate(
+        "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
+    )
 
 
 @pytest.mark.parametrize("width", [320, 375, 1280])
@@ -551,3 +508,62 @@ def test_filter_bar_tips_sit_beside_their_labels(page, component_origin, width):
     # Linux Firefox may report the same place a ten-thousandth of a pixel apart.
     assert same_place(boxes(), before)
     page.keyboard.press("Escape")
+
+
+def test_responses_shown_carries_the_applied_filters(page, component_origin):
+    """The Responses shown segments (#1535) carry the filters the page shows.
+
+    An in-place Apply filters redraws them with the filters it applied;
+    choosing Production then posts those filters privately with the mode
+    once, back on the first page, without a reload, and the filter form
+    shows what that answer applied and carries Production.
+    """
+    directory = reverse("admin:family_directory")
+
+    # The directory presets the Response dashboard used to link (#1561
+    # removed them from the page with its Lists of Families panel).
+    presets = {
+        "submitted": {"response": "submitted", "responses": "yes", "sort": "submitted"},
+        "started": {"response": "started", "responses": "yes"},
+    }
+
+    def preset(key, **extra):
+        """A directory preset's address, as the response dashboard links it."""
+        return f"{directory}?{urlencode(presets[key] | extra)}"
+
+    answers = [
+        page.request.get(component_origin + preset("started", mode="testing")).text(),
+        page.request.get(component_origin + preset("started")).text(),
+    ]
+    posts = []
+
+    def answer(route):
+        """Answer each POST with the next page, in order."""
+        posts.append(route.request.post_data)
+        route.fulfill(body=answers[len(posts) - 1], content_type="text/html")
+
+    page.goto(component_origin + preset("submitted", mode="testing"))
+    page.evaluate("document.querySelector('h1').dataset.mark = 'kept'")
+    page.route("**/families/", answer)
+    production = "#directory-mode form[data-in-place=mode-production]"
+    assert page.locator(f"{production} input[name=response]").input_value() == (
+        "submitted"
+    )
+    page.get_by_label("Response", exact=True).select_option("started")
+    page.get_by_role("button", name="Apply filters").click()
+    eventually(
+        page,
+        f"() => document.querySelector('{production} input[name=response]')"
+        ".value === 'started'",
+    )
+    page.get_by_role("group", name="Responses shown", exact=True).get_by_role(
+        "button", name="Production"
+    ).click()
+    has_text(page.locator("#directory-mode [aria-current=page]"), "Production")
+    assert len(posts) == 2
+    sent = dict(pair.split("=", 1) for pair in posts[1].split("&"))
+    assert posts[1].count("mode=") == 1 and sent["mode"] == "production"
+    assert sent["response"] == "started" and "page" not in sent
+    assert page.locator("#table-filters input[name=mode]").input_value() == "production"
+    assert page.get_by_label("Response", exact=True).input_value() == "started"
+    assert page.evaluate("document.querySelector('h1').dataset.mark") == "kept"

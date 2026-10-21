@@ -288,24 +288,25 @@ def test_create_is_step_one_of_the_campaign_wizard(page, component_origin):
     stepper = page.locator("#campaign-stepper")
     current = stepper.locator(".setup-stepper-current")
     visible(current)
-    assert current.inner_text() == "Step 1 of 7: Campaign settings"
+    assert current.inner_text() == "Step 1 of 8: Campaign settings"
     assert stepper.locator(".setup-stepper-count").inner_text() == (
-        "0 of 7 steps completed"
+        "0 of 8 steps completed"
     )
     later = stepper.locator(".setup-track [data-step-unavailable]")
-    assert later.count() == 6
+    assert later.count() == 7
     labels = [
+        "Load ParishSoft data",
         "Share options",
         "Pages and emails",
         "Dates and mail schedules",
         "Campaign images",
         "Preview and test email",
-        "Go-live readiness",
+        "Go live",
     ]
     for index, label in enumerate(labels):
         assert later.nth(index).get_attribute("aria-disabled") == "true"
         assert later.nth(index).get_attribute("data-tip") == (
-            f"Step {index + 2} of 7: {label} — "
+            f"Step {index + 2} of 8: {label} — "
             "Not available yet: Create the campaign first."
         )
     address = page.url

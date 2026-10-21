@@ -39,7 +39,7 @@ date-gating rule above; every other resulting state shows its ordinary no-
 campaign, before-start, or ended page.
 
 Staff can also open the Family form for a Family through
-[Open form](../reports/spec.md#family-timeline), which posts a single-use
+[Open form](../reports/spec.md#open-form), which posts a single-use
 hand-off to `/family/assisted` and signs that tab in as the Family.
 
 Manual credential generation, canonicalization, and generic denial follow the
@@ -249,9 +249,38 @@ When census is enabled, show:
 - structured mailing address plus "same as home"; and
 - "opt out of all parish emails."
 
-Addresses contain line 1, optional line 2, city/locality, region/state,
-postal code, and country. Validation is country-aware and does not require a US
-state/ZIP for international addresses.
+Addresses contain country, line 1, optional line 2, city/locality,
+region/state, and postal code, in that order (#1777). Country comes first and
+defaults to United States, because it decides how the rest of the address is
+asked for:
+
+- **United States.** State is a drop-down of exactly the regions the server
+  accepts: the US states, the District of Columbia, the territories, and the
+  military AA, AE and AP. Each choice shows a readable name with its code, such
+  as "Kentucky (KY)", and submits the code. The postal field is labelled "ZIP
+  code" and takes five digits or ZIP+4.
+- **Any other country.** State is free text labelled "State, province or
+  region", and the postal field is labelled "Postal code". Both are optional
+  and are checked only as bounded single lines.
+
+Changing Country switches these controls in place, without moving the page,
+and loses nothing typed: the region text and the US selection are each kept
+while the other is showing, also after Review and Edit, so switching back
+restores them. Typed region text the drop-down offers, as a code or a name
+("ky", "Ky.", "Kentucky"), carries over to it on switching to United States.
+A US region the list does not offer, such as free text from parish records,
+stays shown and selected rather than being dropped, and its check asks the
+Family to "Choose a state from the list.", as the server's refusal of a US
+region it does not accept says too (#1785). The Admin census address editor
+asks for an address the same way
+([Census changes](../reports/spec.md#automatic-census-review)).
+
+A country on its own never makes an address nonblank: an address whose other
+fields are all empty is still "Not provided", even though Country shows a
+country (United States unless the Family chose another). An address that has
+other parts but no country shows no country selected, and its check asks for
+one. The US rule is the parish's, not ParishSoft's (which stores any text);
+the server and database apply the same checks whatever the browser shows.
 
 The email-opt-out answer becomes a manual census proposal for the parish's
 source systems. It does not alter mail from this campaign. Because reminders go
@@ -275,6 +304,19 @@ shown to Families. For a non-terminal Member, census fields are:
   Separated, or Widowed; and
 - primary spoken language: English, Spanish, or Other with required text.
 
+ParishSoft reads a Member's gender as a one-character code. The form shows `M`,
+`F` and `U` (any case, outer spaces ignored) as Male, Female and Unspecified,
+and keeping that word is no change: the answer stores ParishSoft's code, the
+same baseline the database's submission guard reads, so no proposal is made.
+Choosing a different word is an ordinary change. Any other source text, such
+as an unknown code, still shows as the current record, and a blank is never
+read as Unspecified. The Ministry follow-up page and its exports show the
+same words for an existing Member's code
+([#1621](https://github.com/epiphany40223/parishkit/issues/1621)); the Admin
+Census changes page and its downloads intentionally keep ParishSoft's raw code,
+which Staff enter By hand. This decoding only reads; it writes nothing to
+ParishSoft.
+
 The normalized internal model distinguishes a ParishSoft blank marital value
 from an accidentally omitted browser field while mapping explicit Unknown to
 the supported blank on manual/API processing.
@@ -285,6 +327,12 @@ of a recorded date requests a blank date through the normal Admin-reviewed
 change workflow. The control and review summary must explain that it requests
 removal of any recorded birth date, not describe it as merely withholding an
 answer from this campaign. It never clears the source record automatically.
+While "Birth date is unknown" is ticked, the birth-date field is cleared and
+greyed out (disabled, so it is not sent), named by the always-visible help
+under the box, which says why; unticking turns the field back on, still empty
+and required ([conditional fields](../ui-conventions/spec.md#conditional-fields);
+[#1674](https://github.com/epiphany40223/parishkit/issues/1674)). The answer is
+one value, a date or Unknown, so a date is never sent with Unknown.
 
 Two mutually exclusive terminal choices precede the remaining fields:
 
@@ -301,7 +349,10 @@ Member terminal and still submit so Staff can resolve the household.
 When census is enabled, "Add a household member" creates a proposed Member with
 a local UUID and the same non-terminal census fields. The Family may remove a
 proposed Member before Submit. At least first/last names are required; unknown
-rules match existing Members.
+rules match existing Members. A proposed Member has no parish record to compare
+with, so its fields never say "Changed from parish records" or "Not available
+in parish records", neither on its page nor on Review; existing Members keep
+both ([#1675](https://github.com/epiphany40223/parishkit/issues/1675)).
 
 A proposed Member may select Ministries when Ministry stewardship is enabled.
 Those requests remain linked to the local proposed Member until Staff creates
@@ -319,6 +370,27 @@ memberships as well as join/leave choices. Hiding an existing membership or
 earlier request does not delete it or turn omission into a new
 leave/withdrawal action. Recheck the same rule at submission, including the
 linked stale-form reconfirmation requirement.
+
+Directly under each Member's "Ministry participation" heading, before the
+"cannot participate" checkbox and the continue, stop and join choices, a short
+plain notice that is always shown says: "If you choose to join a ministry
+or stop participating in one, that ministry's leaders will see this person's
+email address and phone numbers so they can follow up." When the campaign
+includes the service module, so the "cannot participate" checkbox is drawn,
+the notice adds a second sentence: "If the physical limitations box below
+is checked, they are not shared." That sentence is there because checking
+that box stops every current Ministry, yet while the Family's latest response
+has it checked, every request of that Member, earlier ones included, keeps
+ParishSoft's publish flags (Administrator decision, 2026-10-18, on
+[#1591](https://github.com/epiphany40223/parishkit/issues/1591), applied per
+Member). Without the
+service module there is no box, so the notice has only the first sentence. The
+notice comes before the checkbox so Families and screen readers meet it before
+any Ministry choice. It is shown once per Member page, never per Ministry, and
+describes the
+[leader contact rule](../reports/spec.md#ministry-change-summary) for a
+standing request
+([#1625](https://github.com/epiphany40223/parishkit/issues/1625)).
 
 Current memberships appear first (with no visible heading; screen readers get
 a "Current ministries" heading), each stating its choice once as "Continue in
@@ -339,11 +411,12 @@ unresolved choice cancels/supersedes its workflow while retaining history.
 
 ### Cannot participate in ministries
 
-Above the Ministry choices, each Member may check "Because of physical
-limitations, I/we cannot participate in any ministries at this time." While
-checked, every current Ministry is set to "Stop participating in this
-ministry", every join choice is cleared, and the Ministry choices and the
-join-more-ministries disclosure are disabled for pointer, keyboard and
+Inside the "Ministry participation" section, after the leader contact
+sentence and above the Ministry choices, each Member may check "Because of
+physical limitations, I/we cannot participate in any ministries at this
+time." While checked, every current Ministry is set to "Stop participating
+in this ministry", every join choice is cleared, and the Ministry choices
+and the join-more-ministries disclosure are disabled for pointer, keyboard and
 assistive technology alike. Unchecking restores the Family's own earlier
 choices. The server rejects a response in which such a Member continues or
 joins any Ministry. This answer is recorded with the response and is never
@@ -520,6 +593,9 @@ A valid Family may return during the campaign using the same code/token. The
 form is built from the current source snapshot merged with the latest effective
 live response according to the [effective-value rules](../data/spec.md#effective-value-merge).
 All prior Family proposals still differing from source are visibly marked.
+From the release with #1705's last slice, a live form instead shows the
+result of the parish's review, with the same markers and no new wording
+([reviewed Family form](../review-pipeline/spec.md#reviewed-family-form)).
 
 The new final submission is a complete replacement effective answer, not a
 partial patch, while the old immutable version remains in history. Current

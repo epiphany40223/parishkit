@@ -10,16 +10,33 @@ go-live started, and only with its ``campaign_setup_step_reviewed`` audit
 event (schema/migrations/0105_campaign_setup_review.sql).
 """
 
+from uuid import UUID
+
 from django.db import models
 
 from parishkit.stewardship.storage import ImmutableRecord
 
 # The steps a Continue may record: those completed by a page's own change.
-# Load ParishSoft data, Preview and test email and Go-live readiness have a
+# Load ParishSoft data, Preview and test email and Go live have a
 # check of their own instead (Families loaded, a test accepted, going live).
 REVIEW_STEPS = ("settings", "share_options", "content", "schedules", "images")
 # A Pages and emails item key: one page or email slot, such as page:welcome.
 ITEM_PATTERN = r"^(page|email):[a-z][a-z0-9_]{0,47}$"
+
+
+def item_key(kind, slot, record_id=None):
+    """The ``item`` key of one Pages and emails item (#1404 PR 6b).
+
+    ``kind`` and ``slot`` name the page or mail type; ``record_id`` is the
+    saved revision the list shows (None for an empty page, or for the
+    confirmation email listed from a retired closing note alone). The
+    revision's id without hyphens is part of the key, so a Kept as is mark
+    belongs to the exact text that was reviewed: one email of a mail type
+    never marks the others, and a later save (a new revision) is not marked.
+    Every slot fits ``ITEM_PATTERN`` (test_campaign_wizard checks them all).
+    """
+    key = f"{kind}:{slot}"
+    return f"{key}_{UUID(str(record_id)).hex}" if record_id else key
 
 
 class CampaignSetupReview(ImmutableRecord):

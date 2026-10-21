@@ -4,6 +4,15 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.web.admin_forms import AdminForm
+from parishkit.stewardship.web.field_rules import (
+    EMAIL,
+    SPACE,
+    EmailRuleField,
+    FieldRule,
+    RuleField,
+    apply,
+    char_class,
+)
 from parishkit.stewardship.web.sender_name_field import SenderNameField
 
 from . import field_tips, setup_help
@@ -33,6 +42,61 @@ MISSING_HINTS = {
     "target": _("Paste the Google Drive folder link."),
 }
 
+# A Slack channel ID, checked by the browser and the server alike (#1577);
+# spaces around it are admitted, as the server strips them.
+SLACK_CHANNEL = FieldRule(
+    name="slack_channel_id",
+    pattern=rf"[{SPACE}]*[CG][A-Z0-9]{{1,63}}[{SPACE}]*",
+    message=MISSING_HINTS["channel_id"],
+    code="invalid",
+)
+
+# A pasted API key or bot token as its installer reads one
+# (source.credentials, integration_candidates.slack_candidate): 1 to 4096
+# printable ASCII characters, so no spaces inside. The key fields strip the
+# spaces around a pasted one first, so only spaces is no key (blank keeps
+# the saved one, or the required rule asks for one). Checked by the browser
+# and the server alike (#1577), in the setup step's words for a key it
+# can't use.
+_KEY_TEXT = rf"[{SPACE}]*({char_class(((0x21, 0x7E),))}{{1,4096}}[{SPACE}]*)?"
+KEY_RULES = {
+    "parishsoft": FieldRule(
+        name="parishsoft_key",
+        pattern=_KEY_TEXT,
+        message=_(
+            "This does not look like a ParishSoft API key. Paste the key exactly "
+            "as ParishSoft provided it, on one line with no spaces."
+        ),
+        code="invalid_credential",
+    ),
+    "slack": FieldRule(
+        name="slack_token",
+        pattern=_KEY_TEXT,
+        message=_(
+            "This does not look like a Slack bot token. Paste the Bot User OAuth "
+            "Token, which starts with xoxb-, on one line with no spaces."
+        ),
+        code="invalid_credential",
+    ),
+}
+
+
+def rule_key(field, target, empty=None):
+    """Give a single-line key field its target's rule, if it has one.
+
+    ``empty`` is what the complete gate says while a required key is empty;
+    a target without a rule (the Google service-account JSON) keeps it as
+    the field's hint. Returns the rule, or None.
+    """
+    rule = KEY_RULES.get(target)
+    if rule is None:
+        if empty:
+            field.widget.attrs["data-missing-hint"] = empty
+        return None
+    apply(field, rule.worded(rule.message, empty=empty))
+    return rule
+
+
 # What the browser checks of an off-site folder link (#1330), leniently: a
 # bare folder ID or any https link on drive.google.com, as folder_id_from_url
 # reads them (case-blind scheme and host, spaces around it). The server
@@ -40,6 +104,15 @@ MISSING_HINTS = {
 FOLDER_LINK_PATTERN = (
     r"\s*([A-Za-z0-9_\-]{10,200}|[Hh][Tt][Tt][Pp][Ss]:\/\/([^\/?#]*@)?"
     r"[Dd][Rr][Ii][Vv][Ee]\.[Gg][Oo][Oo][Gg][Ll][Ee]\.[Cc][Oo][Mm]([:\/?#].*)?)\s*"
+)
+
+# Why the ParishSoft organization ID is locked once its data is loaded
+# (#1492): the one line shown under its label, and the why in its tip.
+ORGANIZATION_LOCKED = _("Locked: ParishSoft data for this organization is loaded.")
+ORGANIZATION_LOCKED_TIP = _(
+    "The loaded Families, Members, ministries and giving belong to this "
+    "organization, and every refresh must read the same one, so its ID can no "
+    "longer change. A new API key must be a key for this organization."
 )
 
 
@@ -55,7 +128,7 @@ class IntegrationForm(AdminForm):
 
         ``loaded_organization`` is the ParishSoft organization ID whose data
         is already loaded, or None before the first load. Once data is
-        loaded, the organization ID is shown read-only and a different value
+        loaded, the organization ID is shown disabled and a different value
         is refused: every later refresh must read that same organization, so
         a changed ID would stop them all (see ``source.requests``).
         ``stored`` are the integration's stored settings: ParishSoft's
@@ -73,11 +146,17 @@ class IntegrationForm(AdminForm):
                 max_value=2**31 - 1,
             )
             if loaded_organization is not None:
-                self.fields["organization_id"].widget.attrs["readonly"] = True
-                self.fields["organization_id"].help_text = _(
-                    "ParishSoft data for this organization is already loaded, "
-                    "so its ID can no longer change."
-                )
+                # Drawn disabled where it stands (ui-conventions, Prerequisite
+                # gates and Conditional fields): not focusable, not sent, and
+                # still showing the loaded ID, which Django's disabled field
+                # takes as its value. A posted value is still refused when it
+                # differs (clean_organization_id). The one-line reason is the
+                # field's visible hint, which the Administrator asked for
+                # (#1492), and the why is in its tip.
+                field = self.fields["organization_id"]
+                field.disabled = True
+                field.initial = loaded_organization
+                field_tips.add(field, ORGANIZATION_LOCKED_TIP, ORGANIZATION_LOCKED)
             else:
                 # Before the first load, explain the value as setup does.
                 self.fields["organization_id"].help_text = setup_help.CREDENTIALS[
@@ -89,12 +168,16 @@ class IntegrationForm(AdminForm):
                 self.data if self.is_bound else None, stored=stored or {}
             )
         elif target == "google_workspace":
-            self.fields["delegated_email"] = forms.EmailField(
-                label=_("Delegated mailbox"), max_length=254
+            self.fields["delegated_email"] = EmailRuleField(
+                EMAIL.worded(MISSING_HINTS["delegated_email"]),
+                label=_("Delegated mailbox"),
+                max_length=254,
             )
         elif target == "email":
-            self.fields["sender"] = forms.EmailField(
-                label=_("From address"), max_length=254
+            self.fields["sender"] = EmailRuleField(
+                EMAIL.worded(MISSING_HINTS["sender"]),
+                label=_("From address"),
+                max_length=254,
             )
             self.fields["sender_name"] = SenderNameField(
                 help_text=_(
@@ -102,13 +185,15 @@ class IntegrationForm(AdminForm):
                     "Parish name."
                 )
             )
-            self.fields["reply_to"] = forms.EmailField(
-                label=_("Reply-to address"), max_length=254
+            self.fields["reply_to"] = EmailRuleField(
+                EMAIL.worded(MISSING_HINTS["reply_to"]),
+                label=_("Reply-to address"),
+                max_length=254,
             )
         elif target == "slack":
-            self.fields["channel_id"] = forms.RegexField(
+            self.fields["channel_id"] = RuleField(
+                SLACK_CHANNEL,
                 label=_("Slack channel ID"),
-                regex=r"^[CG][A-Z0-9]{1,63}$",
                 max_length=64,
                 help_text=_(
                     "The ID (not the name) of the Slack channel for alerts, for "
@@ -139,12 +224,11 @@ class IntegrationForm(AdminForm):
                 self.fields[name].help_text = text
         # The page's complete gate (#563) holds Save while a required field
         # is empty or malformed; each says what it waits for. The channel ID
-        # is checked in the browser by the same rule as the server's.
+        # is checked in the browser by the same rule as the server's
+        # (SLACK_CHANNEL).
         for name, hint in MISSING_HINTS.items():
             if name in self.fields:
                 self.fields[name].widget.attrs["data-missing-hint"] = hint
-        if "channel_id" in self.fields:
-            self.fields["channel_id"].widget.attrs["pattern"] = "[CG][A-Z0-9]{1,63}"
         if "target" in self.fields:
             self.fields["target"].widget.attrs["pattern"] = FOLDER_LINK_PATTERN
         field_tips.shorten(
@@ -208,8 +292,19 @@ class IntegrationForm(AdminForm):
         return settings
 
     def clean_organization_id(self):
-        """Refuse a different organization once its ParishSoft data is loaded."""
+        """Refuse a different organization once its ParishSoft data is loaded.
+
+        The locked field is disabled, so the browser sends nothing and its
+        value is the loaded ID; a request that posts another value anyway is
+        refused rather than quietly ignored.
+        """
         value = self.cleaned_data["organization_id"]
+        posted = self.data.get(self.add_prefix("organization_id"))
+        if self.loaded_organization is not None and posted not in (None, ""):
+            try:
+                value = int(str(posted).strip())
+            except ValueError:
+                value = None
         if self.loaded_organization is not None and value != self.loaded_organization:
             raise forms.ValidationError(
                 _(
@@ -256,9 +351,11 @@ KEY_FIELDS = {
         _(
             "Paste a new key only to replace the current one, for example after "
             "creating a new key in ParishSoft. It is checked against the "
-            "organization ID above. Leave this blank to keep the current key, "
-            "which is never shown. A new key can't be saved together with a "
-            "refresh schedule change: save the schedule change first."
+            "organization ID above. It must be a key for the organization above; "
+            "a key for another organization is refused. Leave this blank to keep "
+            "the current key, which is never shown. A new key can't be saved "
+            "together with a refresh schedule change: "
+            "save the schedule change first."
         ),
     ),
     "google_workspace": (
@@ -330,9 +427,9 @@ class InlineCredentialForm(AdminForm):
                 else SecretInput(target)
             ),
         )
-        if missing:
-            # The complete gate's hint names what Save is waiting for.
-            self.fields["candidate"].widget.attrs["data-missing-hint"] = missing
+        # The complete gate's hint names what Save is waiting for: the
+        # missing key, or the key rule's words for one it can't use (#1577).
+        self.key_rule = rule_key(self.fields["candidate"], target, missing)
         self.order_fields(["candidate", "intent"])
         field_tips.shorten(
             self,
@@ -340,3 +437,10 @@ class InlineCredentialForm(AdminForm):
             if required
             else {"candidate": _("Leave blank to keep the current key.")},
         )
+
+    def clean_candidate(self):
+        """A pasted key follows its rule (#1577); blank keeps the current key."""
+        value = self.cleaned_data["candidate"]
+        if value and self.key_rule is not None:
+            self.key_rule.check(value)
+        return value

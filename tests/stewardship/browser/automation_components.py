@@ -11,13 +11,12 @@ address. Automation access is rendered through the
 view's own ``access_context`` for every query its headings and "Include
 ended sessions" box lead to, two choices deep, so sorting and the box
 refresh in place exactly as on the server (#621). The approval page is
-served in each of its states: a stale sign-in, code entry, the review and
-the approved result.
+served in each of its states: code entry, the review and the approved
+result. The LOCAL sign-in page is served at its real address too.
 """
 
 import re
 from datetime import UTC, datetime, timedelta
-from types import SimpleNamespace
 from urllib.parse import urlencode
 from uuid import UUID
 
@@ -31,7 +30,9 @@ NOW = datetime(2026, 10, 4, 15, tzinfo=UTC)
 ACCESS = reverse("admin:automation_access")
 APPROVAL = reverse("admin:automation_approval")
 NOTICES = reverse("admin:automation_notices")
-HOME = reverse("admin:index")
+# Automation access with the notices region (#1673: the notices left Home).
+# Not a real address: Automation access's own paths are its sort pages.
+NOTICES_PAGE = "/automation-notices-page"
 LOCAL_SIGN_IN = "/admin/local/sign-in"
 OWN = UUID(int=701)
 OTHER = UUID(int=702)
@@ -42,7 +43,7 @@ POSTS = {
     # Revoking while ended sessions are shown keeps them shown (#621).
     REVOKE + "?ended=yes": (303, ACCESS + "?ended=yes&revoked=1", ""),
     REVOKE + "?live_sort=label": (303, ACCESS + "?live_sort=label&revoked=1", ""),
-    NOTICES: (303, HOME + "?cleared=1", ""),
+    NOTICES: (303, NOTICES_PAGE + "?cleared=1", ""),
 }
 
 
@@ -96,14 +97,15 @@ def _revoked(query):
     return ACCESS + "?" + "&".join(filter(None, (query, "revoked=1")))
 
 
-def _access_page(context, admin, query, *, own_live=True, fresh=True, refresh=None):
+def _access_page(context, admin, query, *, own_live=True, refresh=None, notices=None):
     """Automation access for one query, built by the view's own context.
 
     The own session ("launch <assistant>", the older of the two live ones)
     is live, or revoked by its owner after the revoke test's post. Sorting
     the live table by Administrator therefore changes its order, and so does
     sorting the ended table by label. ``refresh``, when given, replaces the
-    page's own address as the one the Revoke dialog redraws from.
+    page's own address as the one the Revoke dialog redraws from;
+    ``notices``, when given, are this Administrator's automation notices.
     """
     state = views._access_state(QueryDict(query))
     own = _session(
@@ -135,9 +137,10 @@ def _access_page(context, admin, query, *, own_live=True, fresh=True, refresh=No
             ),
         ] + ([] if own_live else [own])
     page = views.access_context(state, ME, everyone, ended)
-    page["fresh"] = fresh
     if refresh:
         page["refresh_url"] = refresh
+    if notices is not None:
+        page["notices"] = notices
     html = render_to_string(
         "stewardship/automation-access.html",
         context | {"admin_chrome": admin} | page,
@@ -205,44 +208,18 @@ def components(context, admin):
             )
             assert 'name="revoked"' in html
             responses[canonical(_revoked(shown))] = ("text/html", html)
-    responses["/automation-access-stale"] = (
-        "text/html",
-        _access_page(context, admin, "", fresh=False)[0],
-    )
-    # LOCAL has no Google: the step-up names the laptop command and records
-    # this page's return path for the local sign-in (#613).
-    local = context | {"local_environment": True}
-    state = views._access_state(QueryDict(""))
-    responses["/automation-access-stale-local"] = (
-        "text/html",
-        render_to_string(
-            "stewardship/automation-access.html",
-            local
-            | {"admin_chrome": admin}
-            | views.access_context(state, ME, [], [])
-            | {"fresh": False},
-        ),
-    )
+    # LOCAL's sign-in page, which the laptop command's link opens (#613).
     responses[LOCAL_SIGN_IN] = (
         "text/html",
-        render_to_string("stewardship/local-sign-in.html", local),
+        render_to_string(
+            "stewardship/local-sign-in.html", context | {"local_environment": True}
+        ),
     )
 
-    def home(rows):
-        """The dashboard with the automation notices region (empty or not)."""
-        return render_to_string(
-            "stewardship/home.html",
-            context
-            | {"admin_chrome": admin}
-            | {
-                "configuration": SimpleNamespace(mode="testing"),
-                "dashboard": {
-                    "campaign": None,
-                    "refreshed_at": None,
-                    "automation_notices": {"total": len(rows), "rows": rows},
-                },
-            },
-        )
+    def notices_page(rows):
+        """Automation access with the notices region (empty or not)."""
+        notices = {"total": len(rows), "rows": rows}
+        return _access_page(context, admin, "", notices=notices)[0]
 
     notice = {
         "id": UUID(int=703),
@@ -252,9 +229,12 @@ def components(context, admin):
         "created_at": NOW,
     }
     refused = notice | {"id": UUID(int=704), "kind": "refused", "label": None}
-    responses[HOME] = ("text/html", home([notice]))
-    responses[HOME + "?two=1"] = ("text/html", home([notice, refused]))
-    responses[HOME + "?cleared=1"] = ("text/html", home([]))
+    responses[NOTICES_PAGE] = ("text/html", notices_page([notice]))
+    responses[NOTICES_PAGE + "?two=1"] = (
+        "text/html",
+        notices_page([notice, refused]),
+    )
+    responses[NOTICES_PAGE + "?cleared=1"] = ("text/html", notices_page([]))
 
     def approval(**extra):
         """The approval page in one state."""
@@ -264,7 +244,6 @@ def components(context, admin):
             | {"admin_chrome": admin}
             | {
                 "back": ACCESS,
-                "next": APPROVAL,
             }
             | extra,
         )
@@ -276,20 +255,11 @@ def components(context, admin):
         "days": 30,
         "host_digest": "0123456789ab" + "c" * 52,
     }
-    responses[APPROVAL] = ("text/html", approval(state="enter", fresh=True))
-    responses["/automation-approval-stale"] = (
-        "text/html",
-        approval(state="enter", fresh=False),
-    )
-    responses["/automation-approval-stale-local"] = (
-        "text/html",
-        approval(state="enter", fresh=False, local_environment=True),
-    )
+    responses[APPROVAL] = ("text/html", approval(state="enter"))
     responses["/automation-approval-review"] = (
         "text/html",
         approval(
             state="review",
-            fresh=True,
             code="ABCD-EFGH",
             pending=pending,
             scope_label="Full",

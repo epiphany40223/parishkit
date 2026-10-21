@@ -28,9 +28,10 @@ import requests
 from parishkit.parishsoft_http_worker import (
     MAX_REQUEST_BYTES,
     MAX_RESPONSE_BYTES,
-    PROFILES,
     REQUEST_FIELDS,
     InvalidSourceResponse,
+    admitted_base_url,
+    contact_put_admitted,
     validate_request,
 )
 
@@ -318,23 +319,30 @@ class BoundedSourceSession:
     Neither callback can be provided by an HTTP request or broker payload.
     """
 
-    def __init__(self, *, before_request, check, profile, on_timeout=None):
+    def __init__(self, *, before_request, check, profile, base_url, on_timeout=None):
         """Require concrete owning hooks; an absent fence must not default to allow.
 
         ``profile`` is the deployment profile name (one of the helper's
-        ``PROFILES``) every request frame carries, so the helper, which cannot
-        read the profile itself, admits exactly that profile's base URL.
+        ``PROFILES``) and ``base_url`` the deployment's chosen ParishSoft base
+        URL. Every request frame carries both, so the helper, which cannot read
+        either itself, admits exactly that one base URL, and only if the
+        profile may reach it.
         ``on_timeout(seconds, elapsed)`` is told, just after the helper is
         killed, that a request exceeded its deadline, so the owner can record
         it.
         """
         if not callable(before_request) or not callable(check):
             raise TypeError("Bounded source transport requires owning callbacks.")
-        if type(profile) is not str or profile not in PROFILES:
-            raise TypeError("Bounded source transport requires a deployment profile.")
+        try:
+            admitted_base_url(profile, base_url)
+        except ValueError:
+            raise TypeError(
+                "Bounded source transport requires a profile and its base URL."
+            ) from None
         if on_timeout is not None and not callable(on_timeout):
             raise TypeError("A source timeout observer must be callable.")
         self.profile = profile
+        self.base_url = base_url
         self.on_timeout = on_timeout
         self.headers = requests.structures.CaseInsensitiveDict()
         self.before_request = before_request
@@ -371,6 +379,7 @@ class BoundedSourceSession:
                     "api_key": self.headers.get("x-api-key"),
                     "timeout": timeout,
                     "profile": self.profile,
+                    "base_url": self.base_url,
                 },
                 contact_writes=self._helper.contact_writes,
             )
@@ -422,15 +431,26 @@ class BoundedPublicationSession(BoundedSourceSession):
     census publication gateway (``stewardship.responses.publication_gateway``)
     constructs it, and a test pins that; the refresh's session has no PUT and
     its helper refuses one. The write itself is used only by the BG-09 worker,
-    which refuses unless publication is switched on.
+    which refuses unless publication is switched on. A LOCAL deployment
+    builds one only for the local fake (#1884): it may read the real
+    ParishSoft (#1399) but never writes to it.
     """
 
-    def __init__(self, *, before_request, check, profile, on_timeout=None):
+    def __init__(self, *, before_request, check, profile, base_url, on_timeout=None):
         """Bind the owning hooks, as the read session does, with writes admitted."""
+        # An invalid profile or base URL is not a write question: the read
+        # session's own check below refuses it.
+        with suppress(ValueError):
+            if not contact_put_admitted(profile, base_url):
+                raise TypeError(
+                    "ParishSoft publication in the local profile writes only "
+                    "to the local fake."
+                )
         super().__init__(
             before_request=before_request,
             check=check,
             profile=profile,
+            base_url=base_url,
             on_timeout=on_timeout,
         )
         self._helper = _SourceHelper(contact_writes=True)

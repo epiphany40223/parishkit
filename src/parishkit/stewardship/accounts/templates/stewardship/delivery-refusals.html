@@ -5,13 +5,13 @@
 {% aboutpage "refused-addresses" %}<p>{% translate "A refused address is one the mail service rejected permanently, so the system stops sending campaign email to it for that Family. Check that the mailbox works again before clearing a refusal. Clearing does not send any email." %}</p>
 <p>{% translate "Each row shows when the address was refused, the Family's name from the latest ParishSoft data (as in the Active parishioner family directory) and, in its own column, the Family DUID. Select the address to check it and clear the refusal. In the Email column, Open email shows the email whose delivery recorded the refusal; that email may still show Delivered, because another address of the Family accepted it." %}</p>
 <p>{% translate "An address marked Bounce reported was not refused by the mail service: an Administrator reported, on the email's page, that the email bounced there. It is set aside and cleared the same way." %}</p>
-<p>{% translate "On Outgoing mail, each email with a refused address that is still being skipped is marked, and the mark leads here, showing only that Family's refused addresses. The Family and Family DUID columns both sort, and either keeps each Family's addresses together; Families the latest ParishSoft data no longer has sort last." %}</p>{% endaboutpage %}
-<p><a href="{% url 'admin:deliveries' %}">{% translate "See all outgoing mail" %}</a></p>
+<p>{% translate "On Sent mail, each email with a refused address that is still being skipped is marked, and the mark leads here, showing only that Family's refused addresses. The Family and Family DUID columns both sort, and either keeps each Family's addresses together; Families the latest ParishSoft data no longer has sort last." %}</p>{% endaboutpage %}
+<p><a href="{% url 'admin:deliveries' %}">{% translate "See all sent mail" %}</a></p>
 <form id="table-filters" data-table-sync method="get" class="filter-bar">
   <div class="short"><label for="family-duid">{% translate "Exact Family DUID" %}</label>
   <input id="family-duid" name="duid" value="{{ query }}" inputmode="numeric" maxlength="25"></div>
   {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
-  {% button type="submit" %}{% translate "Show refusals" %}{% endbutton %}
+  {% include "stewardship/components/filter-actions.html" %}
 </form>
 {% translate "Refused address pages" as navigator_label %}
 <div id="{{ table.anchor }}" data-table-region>
@@ -29,7 +29,7 @@
   <tbody>
   {% for refusal in table.rows %}<tr>
     <td class="nowrap"><time datetime="{{ refusal.created_at|instant }}" data-local-instant data-compact>{{ refusal.created_at|instant }}</time></td>
-    <th scope="row">{% if refusal.family_name %}{{ refusal.family_name }}{% else %}{% source_status "missing" %}{% endif %}</th>
+    {# The shared Family-name link (#1570): the name opens its Timeline; a Family the current ParishSoft data no longer has shows only the shared mark (ui-conventions, #1216). #}<th scope="row">{% family_link refusal.family_id refusal.family_name %}</th>
     <td class="numeric nowrap">{{ refusal.family_duid|duid }}</td>
     <td><a href="{% url 'admin:delivery_refusal' refusal.id %}">{{ refusal.address }}</a>{% if refusal.kind == 'reported_bounce' %} <span class="cell-detail">{% translate "Bounce reported" %}</span>{% endif %}</td>
     <td class="nowrap">{% if refusal.message_id %}<a href="{% url 'admin:delivery' refusal.message_id %}">{% translate "Open email" %}</a>{% else %}—{% endif %}</td>

@@ -41,7 +41,7 @@ POSTS = {}
 USED, SPARE, OTHER = (str(uuid4()) for _ in range(3))
 
 
-def _reminder(identifier, subject, short_id, *, used_by=(), state="custom"):
+def _reminder(identifier, subject, short_id, *, used_by=(), state="edited"):
     """One Reminder table row, shaped as ``content_views.catalog_entries`` builds it."""
     return {
         "id": identifier,
@@ -92,7 +92,7 @@ def _page(values, reminders, *, refresh_url, delete_url=DELETE):
             "pk": uuid4(),
             "active_configuration": {"name": "Sample campaign"},
         },
-        "pages": [{"label": "Welcome", "url": "/content-edit", "state": "custom"}],
+        "pages": [{"label": "Welcome", "url": "/content-edit", "state": "edited"}],
         "emails": [
             _email("Reminder", "reminder", reminders),
             _email(

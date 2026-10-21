@@ -287,8 +287,8 @@ placeholder family beside the existing named placeholders (`PLACEHOLDER` in
   confirmations and their closing note, and Family tests. Any other
   leftover `{{`, `}}`, `{%`, `%}`, `{#` or `#}` is still refused.
 - File placeholders are refused in email subjects and share-option labels,
-  where a link has no use, and in the daily and weekly Admin digest
-  templates (with inline images), since the library is for parishioners.
+  where a link has no use, and in report email introductions
+  (with inline images), since the library is for parishioners.
 - `render_template` expands them in the same pass as named placeholders. It
   resolves each slug to the absolute link from one library lookup per render
   and escapes the result like any other substitution. A slug with no file at
@@ -420,7 +420,7 @@ path `/files/<token>` appears, in any of:
    that is not yet in a terminal state. For the Family outbox that means
    `pending`, `submitting`, `retry_wait` or `delivery_unknown`, including
    messages held by a delivery pause. It also covers campaign email tests and
-   digest messages still waiting to send. Scheduled emails that are not
+   report email messages still waiting to send. Scheduled emails that are not
    rendered yet are covered by item 1, because their template revisions live
    in the active configuration.
 
@@ -548,8 +548,7 @@ placeholder reference mentions `{{ file.<slug> }}` and links to this page.
   and `token`, which is all that expanding a placeholder needs. The scheduler
   and every other login read nothing. A test renders a file link and an inline
   hosted image under each of these real logins.
-- Every action is a CSRF-protected POST. Fresh Google authentication is not
-  required, matching content and artwork edits, which also do not require it.
+- Every action is a CSRF-protected POST.
 - Audit events (new `Action` values in `audit/schemas.py`, with the `ACTION`
   context gaining closed fields `file_slug`, `previous_file_slug`,
   `file_kind`, `file_size` and `file_fingerprint`, mirrored in

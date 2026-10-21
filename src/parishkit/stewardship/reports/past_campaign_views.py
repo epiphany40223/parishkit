@@ -26,10 +26,10 @@ campaigns page"):
   the shared confirmation dialog posts as ``<year>:<version>``; it leaves a
   tombstone and redirects back.
 - ``archive`` (POST, ``archive/``) is This campaign's archive's Download
-  campaign archive (#1018 part (a)): with a Google sign-in within five
-  minutes it queues the current campaign's archive workbook
-  (``archive_exports.create_archive_export``) and answers with the export's
-  status page; a stale sign-in gets the step-up page, which returns here.
+  campaign archive (#1018 part (a)): it queues the current campaign's
+  archive workbook (``archive_exports.create_archive_export``) and answers
+  with a redirect to the export's status address, which the page follows
+  in place to download the file (#1778).
 
 Every route needs an Administrator (``CONFIGURE`` and ``FINANCIAL_DETAIL``);
 the service checks again. Every answer is ``no-store``. Note texts appear
@@ -550,21 +550,12 @@ def remove(request):
 
 @require_http_methods(["POST"])
 def archive(request):
-    """Queue the current campaign's archive workbook and show its status page.
+    """Queue the current campaign's archive workbook; redirect to its status.
 
     The form posts only its one-time ``request_key``. The file holds each
-    Family's giving, so, as for the financial export, it needs a Google
-    sign-in within the last five minutes (#547): a stale one gets the
-    step-up page, which returns to Past campaigns, and nothing is queued.
-    A download unavailable now (or a reused form) redraws the page, whose
-    section says why, with 409.
+    Family's giving. A download unavailable now (or a reused form) redraws
+    the page, whose section says why, with 409.
     """
-    from parishkit.stewardship.accounts import admin_navigation
-    from parishkit.stewardship.accounts.admin_editing import step_up_response
-    from parishkit.stewardship.accounts.sessions import (
-        FreshAuthenticationRequired,
-        require_fresh,
-    )
     from parishkit.stewardship.web.admin_routes import _current_campaign_id
 
     from .export_services import ExportRequestBound
@@ -589,13 +580,6 @@ def archive(request):
         if campaign_id is None:
             return _render(request, actor, {}, status=409)
         admit_report_read(campaign_id)
-        try:
-            require_fresh(request)
-        except FreshAuthenticationRequired:
-            return step_up_response(
-                reverse("admin:past_campaigns"),
-                admin_navigation.PAGES["past_campaigns"].label,
-            )
         try:
             result = create_archive_export(
                 runtime().store,

@@ -16,7 +16,7 @@ their Redis-named transport/URL scheme because that is the protocol adapter's
 name. PostgreSQL, not Valkey, remains authoritative for schedules, outbox
 messages, job state, every Admin and Family session, and application data.
 Valkey holds only broker, cache, and rate-limiter state, plus the single-use,
-one-minute [Open form](../reports/spec.md#family-timeline) hand-off; its
+one-minute [Open form](../reports/spec.md#open-form) hand-off; its
 restart or eviction never invalidates an authenticated session (a lost
 hand-off only means choosing Open form again).
 Valkey is selected for its BSD-3-Clause licensing and Redis-protocol
@@ -262,7 +262,7 @@ only active/lookup-only keys and cannot authenticate using a reservation.
 ## Identity and session security
 
 Staff entering a response for a Family sign in to the Family form through
-the [Open form](../reports/spec.md#family-timeline) hand-off at
+the [Open form](../reports/spec.md#open-form) hand-off at
 `/family/assisted`, never with an Admin session in the Family namespace.
 
 Administration authentication uses Google through django-allauth with OAuth
@@ -274,10 +274,9 @@ are disabled. The only exception is the
 [local test sign-in](../local-environment/spec.md#local-test-sign-in), which
 exists only in the LOCAL deployment profile. An
 [automation session](../admin-automation/spec.md#automation-sessions) is not
-an authentication exception: an Administrator approves it from an Admin
-session that signed in with Google within five minutes, and it then acts as
-that Administrator, including for
-[fresh-gated actions](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line),
+an authentication exception: an Administrator approves it from a live Admin
+session, and it then acts as that Administrator, including for
+[privileged commands](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line),
 until it expires (at most 30 days) or is revoked.
 
 If an external account rename/deactivation leaves no usable Admin login, an
@@ -393,39 +392,26 @@ another tab, revoked, or the Admin's access removed) ends the countdown at once
 and shows the same dialog without blaming inactivity. A changed role is not an
 ended session: the status read still reports the deadlines, and the next page
 the Admin opens applies the new role. A failed status read (a server error or
-no connection) keeps the countdown going. Privileged operations such
-as Production transition, campaign reopening, ParishSoft publication, secret
-replacement, and purge require fresh Google re-authentication no older than
-five minutes, as do Family-directory, mail-merge and financial exports,
-integration setting changes and starting Testing cleanup ([#547](https://github.com/epiphany40223/parishkit/issues/547)),
-pausing and resuming mail, withdrawing Production, closing the Family portal
-for maintenance, backup-key changes and approving an automation session. There are two exceptions. One is a full-scope
-[automation session](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line),
-which an Administrator approved with a fresh sign-in and which stands in for it
-for the actions listed there. The other is the unfinished initial-setup
-wizard's credential pages, which accept a sign-in up to 60 minutes old (the
-idle timeout's length) for the setup attempt's original session only
-([setup wizard](../admin-portal/spec.md#bootstrap-and-first-admin-wizard),
-[#1402](https://github.com/epiphany40223/parishkit/issues/1402)).
+no connection) keeps the countdown going.
 
-Fresh authentication is a step-up of the current session, not a new login.
-When a privileged action finds the session's verified Google instant too old,
-the Admin page offers **Confirm with Google**, which posts to the ordinary
-sign-in with the current page as its return path; a form whose address
-accepts only a submission (an export) returns to the page the form came from
-instead, so nothing is posted again. That return path is
-accepted only as a same-origin `/admin/` page path; anything else returns to
-the Admin home page. If the browser still holds a live, authorized session
-for the same Google account, the callback advances that session's verified
-instant in place (never backwards and never past the database clock),
-records activity and a step-up audit event, rotates the CSRF secret, and
-returns to that page. The session key, lifetime and session-bound work, such
-as the initial setup wizard, are unchanged. A different Google account, or a
-revoked, idle or expired session, gets a new session as at first login. Keeping
-the key does not create session fixation: every initial login already
-replaced any pre-login key with a new server-issued one, and step-up changes
-neither the principal nor its authority, which is re-derived from current
-policy on every request.
+No Admin action checks how long ago the session signed in with Google
+([#1547](https://github.com/epiphany40223/parishkit/issues/1547)). Google
+ignores `max_age` and never returns `auth_time`, so such a check proved only
+that the browser still held a live Google session, usually a one-click
+pass-through; it did not stop someone at an unattended, unlocked computer, and
+the session cookie it would guard against is already HttpOnly and Secure,
+stored server-side only as a hash, and bounded by the idle and absolute
+timeouts. Privileged operations such as Production transition, campaign
+reopening, ParishSoft publication, secret replacement, purge, exports, mail
+pause and resume, Production withdrawal, maintenance closure, backup-key
+changes and automation session approval are instead protected by the
+server-side role and permission checks, CSRF protection, the session timeouts,
+their preview and explicit confirmation, and their audit event. Their SQL
+guards still bind each effect to a live, unrevoked, non-idle session of the
+acting Admin and record that session's verified Google sign-in instant as
+audit evidence, but they no longer check its age. The login asks Google for
+account selection (`prompt=select_account`) and nothing else; every
+successful sign-in issues a new session and opens the Admin home page.
 
 Passive presence heartbeat and ordinary background polling never refresh idle
 expiry. The sole setup exception is the first-Admin wizard's correlated staged-
@@ -460,14 +446,14 @@ by the Admin portal
 Notification delivery is not part of the activation
 transaction and cannot erase or delay its audit evidence.
 
-The no-reauthentication role-change policy is an explicit accepted product risk
+The role-change policy (no extra confirmation step) is an explicit accepted product risk
 favoring low-friction role maintenance. Its controls are detective, not
 preventive: a compromised Admin session can create persistent
 access before notification is acted upon. The durable event and preexisting-
 Admin notification for Administrator grants, CSRF/current-role checks,
 complete audit, and last-Admin guard are the selected compensating controls;
-implementations must not imply they provide the same protection as fresh
-authentication.
+implementations must not imply they prevent a misused live session from
+granting access.
 
 Cookies are `Secure` in production, `HttpOnly`, `SameSite=Lax`, narrowly
 scoped, and rotated at login/privilege transition. Family and administration
@@ -494,7 +480,7 @@ unchanged and keep Django's own storage.
 
 ## Family credential security
 
-[Open form](../reports/spec.md#family-timeline)'s hand-off at
+[Open form](../reports/spec.md#open-form)'s hand-off at
 `/family/assisted` signs in through the ordinary code sign-in below; it
 creates, replaces and cancels no code or link.
 
@@ -719,7 +705,7 @@ concurrent Family sessions:
 
 - ordinary cached pages should have a p95 server response below two seconds;
 - filtered report first pages should return below three seconds;
-- long polls, publication, digests, exports, purge, and backups are always
+- long polls, publication, report emails, exports, purge, and backups are always
   asynchronous, except a small CSV rendered on request from the rows of the
   page it is downloaded from (see
   [campaign read guards](../data/spec.md#campaign-read-guards)); and
@@ -733,7 +719,7 @@ execution capacity defined by the
 The default participation graph meets these targets through immutable
 `CampaignDailyFactSet` materialization keyed by its exact source/submission/
 scope/timezone inputs. Source promotions and live submissions enqueue
-idempotent rebuild hints. Web, export, and digest rendering share those facts;
+idempotent rebuild hints. Web, export, and report email rendering share those facts;
 no request performs one independent corpus aggregation per campaign day.
 
 Database indexes cover campaign/Family DUID, normalized email/domain, code

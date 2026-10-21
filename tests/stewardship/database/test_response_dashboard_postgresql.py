@@ -1,4 +1,4 @@
-"""The response dashboard over HTTP, read as the restricted web login (#477).
+"""The Response dashboard over HTTP, read as the restricted web login (#477, #1537).
 
 The campaign is the response-metrics ``funnel`` fixture (a Testing campaign
 dated from the database clock, with the corpus Family signed in through its
@@ -19,7 +19,7 @@ from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.credential_models import RehearsalEpoch
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.observability import Event
-from parishkit.stewardship.reports import response_dashboard
+from parishkit.stewardship.reports import workspace_views
 
 from ..policy_factory import address
 from .auth_builders import signed_in
@@ -32,10 +32,17 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 def tiles(body):
-    """The stage tiles' counts, in funnel order, from the rendered page."""
+    """The Summary's Families by stage counts, in funnel order (#1537)."""
+    stages = re.search(
+        rb'<ul class="stat-tiles" aria-label="Families by stage">.*?</ul>', body, re.S
+    )
+    if stages is None:
+        return []
     return [
         int(value)
-        for value in re.findall(rb'<span class="stat-value">(\d+)</span>', body)
+        for value in re.findall(
+            rb'<span class="stat-value">(\d+)</span>', stages.group(0)
+        )
     ]
 
 
@@ -61,18 +68,33 @@ def test_dashboard_for_admin_and_staff_in_both_modes(
         assert tiles(body) == [0, 0, 0, 0, 0]
         assert b"Production" in body
         # The mode link names the dashboard region as its fragment (#519).
-        testing = route + "?mode=testing#response-dashboard"
-        assert b'href="' + testing.encode() + b'"' in body
-        assert b'id="response-funnel-spec"' in body
-        assert b'id="response-activity-spec"' in body
+        testing = route + "?scope=historical&amp;page=1&amp;mode=testing"
+        assert b'href="' + testing.encode() + b'#response-dashboard"' in body
+        # No funnel chart: the tiles give its figures (#1537).
+        assert b"response-funnel" not in body
+        # The fixture's ParishSoft inputs give no statistics, so the
+        # Production view still shows Families by stage and says the other
+        # rows and panels are unavailable, rather than refusing the page
+        # (#1537); the activity chart is gone.
+        assert b'id="production-unavailable"' in body
+        # They come back by themselves: the figures status keeps watching
+        # beside the line at its slow retry pace (#1586).
+        assert b"appear here by themselves" in body
+        assert b'data-live-interval="60000"' in body and b"retry=1" in body
+        assert b'aria-label="Active population"' not in body
+        assert b'id="response-activity-spec"' not in body
         # The rehearsal's sign-in, form and submission are Testing evidence.
         response, body = get(admin, route + "?mode=testing")
         assert response.status_code == 200
         assert tiles(body) == [0, 1, 1, 1, 1]
         assert b"Testing rehearsal" in body and b"never counted in Production" in body
+        # The Production-only panels are left out, saying why.
+        assert b'id="production-only"' in body
+        assert b'aria-label="Active population"' not in body
+        # An old bookmark's activity grain still loads, and is ignored.
         response, body = get(admin, route + "?mode=testing&grain=day")
-        assert response.status_code == 200 and b"Response activity by day" in body
-        for invalid in ("?mode=live", "?grain=week", "?search=x"):
+        assert response.status_code == 200 and b"Response activity" not in body
+        for invalid in ("?mode=live", "?size=7", "?search=x"):
             assert get(admin, route + invalid)[0].status_code == 400
     assert (
         AuditEvent.objects.filter(
@@ -111,7 +133,7 @@ def test_dashboard_for_admin_and_staff_in_both_modes(
         assert b"never counted in Production" not in body
         # A fault while shaping the page is the report's 503, not a 400 about
         # the reader's options, and the view is audited as failed.
-        monkeypatch.setattr(response_dashboard, "page_context", broken)
+        monkeypatch.setattr(workspace_views, "funnel_panels", broken)
         caplog.clear()
         assert get(admin, route)[0].status_code == 503
         assert any(

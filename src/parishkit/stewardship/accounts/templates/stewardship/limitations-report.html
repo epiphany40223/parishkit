@@ -2,48 +2,13 @@
 {% block title %}{% translate "Limitations" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Limitations" %}</h1>
-{% aboutpage "limitations-report" %}<p>{% translate "Members who said they cannot participate in any ministries, and Families who said they cannot attend Mass or prayer services. Each Family's current live response is used; a later submission replaces the earlier one, and Testing responses are excluded. These answers are kept here; they are never written to ParishSoft." %}</p>
-<p>{% translate "Family DUID is the Family's ID number in ParishSoft, shown in its own column so you can sort or copy it." %}</p>{% endaboutpage %}
-<p><a href="{% url 'admin:participation' %}">{% translate "Participation" %}</a></p>
-<div id="limitations-summary" data-table-sync><h2>{% translate "Summary" %}</h2>
-<dl>
-<dt>{% translate "Cannot participate in ministries" %}</dt><dd>{{ summary.cannot_serve|number }}</dd>
-<dt>{% translate "Families that cannot attend Mass" %}</dt><dd>{{ summary.cannot_attend|number }}</dd>
-</dl></div>
-{# Two short filters fit one row, so they need no Filters panel (#227). #}<form id="table-filters" data-table-sync method="post" action="{% url 'admin:limitations_report' %}" class="filter-bar">{% csrf_token %}
-<div><label for="limitations-search">{% translate "Search name or Family DUID" %}</label><input id="limitations-search" name="search" maxlength="200" value="{{ query.search }}"></div>
-<div class="fit"><label for="limitations-filter">{% translate "Show" %}</label><select id="limitations-filter" name="show"><option value="any">{% translate "Everything" %}</option><option value="cannot_serve"{% if query.show == 'cannot_serve' %} selected{% endif %}>{% translate "Cannot participate in ministries" %}</option><option value="cannot_attend"{% if query.show == 'cannot_attend' %} selected{% endif %}>{% translate "Families that cannot attend Mass" %}</option></select></div>
-{% for name, value in members_table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}{% for name, value in families_table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
-{% button type="submit" %}{% translate "Apply filters" %}{% endbutton %}</form>
-<details class="export-panel"><summary id="limitations-export-heading">{% translate "Download (CSV, XLSX or PDF)" %}</summary>
-<form id="table-export" data-table-sync method="post" action="{% url 'admin:limitations_export' %}">{% csrf_token %}
-{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
-<label for="limitations-format">{% translate "Format" %}</label><select id="limitations-format" name="format">{% export_format_options "csv" "xlsx" "pdf" %}</select>
-<label for="limitations-timezone">{% translate "Timezone" %}</label><select id="limitations-timezone" name="timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
-{% button type="submit" %}{% translate "Download with these filters" %}{% endbutton %}</form></details>
-<script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
-<h2>{% translate "Members who cannot participate in ministries" %}</h2>
-<div id="{{ members_table.anchor }}" data-table-region>
-{% translate "Member pages" as members_label %}{% include "stewardship/table-navigator.html" with table=members_table label=members_label %}
-<div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Members who cannot participate in ministries' %}"><table>
-<caption>{% translate "Members who cannot participate in ministries" %}</caption><thead><tr>{% translate "Member" as heading %}{% sort_heading members_table "member" heading %}{% translate "Member DUID" as heading %}{% sort_heading members_table "member_duid" heading "numeric" %}{% translate "Family" as heading %}{% sort_heading members_table "family" heading %}{% translate "Family DUID" as heading %}{% sort_heading members_table "duid" heading "numeric" %}{% translate "Cannot participate in ministries" as heading %}{% sort_heading members_table "cannot_serve" heading %}{% translate "Latest response" as heading %}{% sort_heading members_table "latest" heading %}</tr></thead><tbody>
-{% for row in members_table.rows %}<tr>
-<th scope="row">{{ row.member_name }}{% if row.proposed %}<br>{% translate "Proposed household member" %}{% endif %}</th>
-<td class="numeric">{% if row.member_duid is not None %}{{ row.member_duid|duid }}{% endif %}</td>
-{# A Family the current ParishSoft data no longer has shows only the shared mark (ui-conventions, #1216). #}<td>{% if row.family_name is None %}{% source_status "missing" %}{% else %}{{ row.family_name }}{% endif %}</td>
-<td class="numeric">{{ row.family_duid|duid }}</td>
-<td>{% if row.cannot_serve %}{% translate "Yes" %}{% endif %}</td>
-<td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant data-compact>{{ row.submitted_at|date:'c' }}</time></td></tr>
-{% empty %}<tr><td colspan="6">{% if query.search or query.show == 'cannot_attend' %}{% translate "No Members match these filters. Clear the Search name or Family DUID box, or set Show to “Everything”." %}{% else %}{% translate "No Member has said they cannot participate in any ministries. A Member is listed here once their Family's live response says so." %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
-{% include "stewardship/table-navigator.html" with table=members_table label=members_label %}
-</div>
-<h2>{% translate "Families that cannot attend Mass or prayer services" %}</h2>
-<div id="{{ families_table.anchor }}" data-table-region>
-{% translate "Family pages" as families_label %}{% include "stewardship/table-navigator.html" with table=families_table label=families_label %}
-<div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Families that cannot attend Mass or prayer services' %}"><table>
-<caption>{% translate "Families that cannot attend Mass or prayer services" %}</caption><thead><tr>{% translate "Family" as heading %}{% sort_heading families_table "family" heading %}{% translate "Family DUID" as heading %}{% sort_heading families_table "duid" heading "numeric" %}{% translate "Latest response" as heading %}{% sort_heading families_table "latest" heading %}</tr></thead><tbody>
-{% for row in families_table.rows %}<tr><th scope="row">{% if row.family_name is None %}{% source_status "missing" %}{% else %}{{ row.family_name }}{% endif %}</th><td class="numeric">{{ row.family_duid|duid }}</td><td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant data-compact>{{ row.submitted_at|date:'c' }}</time></td></tr>
-{% empty %}<tr><td colspan="3">{% if query.search or query.show == 'cannot_serve' %}{% translate "No Families match these filters. Clear the Search name or Family DUID box, or set Show to “Everything”." %}{% else %}{% translate "No Family has said it cannot attend Mass or prayer services. A Family is listed here once its live response says so." %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
-{% include "stewardship/table-navigator.html" with table=families_table label=families_label %}
-</div>
+{% aboutpage "limitations-report" %}<p>{% translate "Members who said they cannot participate in any ministries, and Families who said they cannot attend Mass or prayer services, reviewed by Staff. Review each answer first: Accept it when the office will act on it (it is then To handle), or Ignore it when nothing needs doing. Once the office has acted on an accepted answer, mark it Handled. Each Family's current live response is used, and Testing responses are excluded. These answers are kept here; they are never written to ParishSoft." %}</p>
+<p>{% translate "Stage, first among the filters, chooses which answers the table lists, with how many are at each stage; To review is shown first. A decision holds while the Family keeps its answer; if the Family later answers the other way, its row goes, and if it gives the answer again, the row is To review again." %}</p>
+<p>{% translate "Each row's actions are the small icons in its last column; point at one, or focus it, to see what it does. The decision in force is drawn filled; to change it, choose Back to review (the arrow turning back). Sending an ignored answer back to review needs a note saying why. An answer marked Handled by mistake can be undone the same way: Back to review, with a note saying why, returns it to To handle and keeps its history." %}</p>
+<p>{% translate "To decide several answers at once, tick them and choose Accept, Ignore, Back to review or Handled above the table; the confirmation names how many answers it records, and you can add one note for all of them. The selection covers the answers on this page only. Each button is available only while every ticked answer offers it. If someone else changed one of them first, nothing is recorded and the list shows its current stage." %}</p>
+<p>{% translate "Family DUID is the Family's ID number in ParishSoft, shown in its own column so you can sort or copy it. Member and Member DUID are blank for a Family's own answer; a Member the Family added on the form shows New Member. Last decision shows who made the latest decision, when, and the note they left. The download below the table saves the answers the filters show." %}</p>
+<p>{% translate "A Family that said it cannot contribute financially is listed too, with its stage on Pledges, while Show is everything. It is decided on Pledges, not here, so it cannot be ticked and has no icons: its Open in Pledges link opens Pledges at its stage." %}</p>{% endaboutpage %}
+<p><a href="{% url 'admin:response_dashboard' %}">{% translate "Response dashboard" %}</a></p>
+{% if not mutable %}<p class="notice">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so answers cannot be decided until it finishes or is cancelled. You can still read and download the list." %}</p>{% endif %}
+{% include "stewardship/components/review-worklist.html" %}
 {% endblock %}

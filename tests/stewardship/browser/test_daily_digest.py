@@ -34,6 +34,23 @@ def assert_tip_layout(page, tip, image):
     assert inner["x"] + inner["width"] <= outer["x"] + outer["width"] + 1
 
 
+def guide_share(guide, image):
+    """Where the hover guide line (#1536) crosses the image, as a share of
+    its width, after checking it runs down the image's plot and is hidden
+    from assistive technology."""
+    assert guide.is_visible()
+    assert guide.get_attribute("aria-hidden") == "true"
+    outer, line = image.bounding_box(), guide.bounding_box()
+    assert (
+        outer["y"]
+        < line["y"]
+        < line["y"] + line["height"]
+        < outer["y"] + outer["height"]
+    )
+    assert line["height"] > outer["height"] / 2
+    return (line["x"] - outer["x"]) / outer["width"]
+
+
 @pytest.mark.parametrize("width", [320, 1280])
 def test_chart_pointer_and_keyboard_preserve_exact_values(
     page, component_origin, axe_source, width
@@ -72,8 +89,13 @@ def test_chart_pointer_and_keyboard_preserve_exact_values(
     ]
     assert tip.locator("dd").all_inner_texts() == ["3", "1", "$3,235"]
     assert_tip_layout(page, tip, image)
+    # A faint line marks the inspected date across the plot: Nov 2, the last
+    # of the three dates, sits in the right part of the image.
+    guide = page.locator("[data-digest-guide]")
+    assert guide_share(guide, image) > 0.6
     page.mouse.move(0, 0)
     assert tip.is_hidden()
+    assert guide.is_hidden()
     # Keyboard users see the same tooltip, and Escape dismisses it. Opening
     # or closing it never moves the slider (on a phone it sits under the
     # chart, in space reserved for it).
@@ -84,9 +106,12 @@ def test_chart_pointer_and_keyboard_preserve_exact_values(
     assert tip.is_visible()
     assert tip.locator(".digest-tip-date").inner_text() == "Oct 31, 2026"
     assert_tip_layout(page, tip, image)
+    # The slider moves the guide line too: Oct 31 is the first date.
+    assert guide_share(guide, image) < 0.4
     assert slider.evaluate(offset) == resting
     page.keyboard.press("Escape")
     assert tip.is_hidden()
+    assert guide.is_hidden()
     assert slider.evaluate(offset) == resting
     assert not errors
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
@@ -235,7 +260,9 @@ def test_the_saved_report_shows_the_response_funnel(
     assert "Email invites sent" in text and "40%" in text
     assert "Compared with email invites sent" in text
     assert "Link followed" not in text and "mail-scanner" not in text
-    assert "Submitted more than once" in text and "7 (2% of Submitted)" in text
+    # No side figures (#1532).
+    assert "more than once" not in text and "of Submitted" not in text
+    expect(funnel.locator("dl")).to_have_count(0)
     assert "already responded" not in text and "Families at each stage" not in text
     assert "without a delivered invitation" not in text
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
@@ -270,7 +297,7 @@ def test_the_saved_comparison_section_draws_its_charts(
         "Families responded by campaign day",
         "Annual pledges by campaign day",
     ]
-    figures = section.locator(".digest-comparison-figures")
+    figures = section.get_by_role("list", name="Headline figures")
     assert "Last year on day 3: 30 (↑ 20% more)" in figures.inner_text()
     assert "Last year on day 3: Withheld" in figures.inner_text()
     section.get_by_text("Exact values").first.click()
@@ -279,6 +306,102 @@ def test_the_saved_comparison_section_draws_its_charts(
     assert table.locator("th").first.inner_text() == "Day"
     link = section.get_by_role("link", name="Open the Campaign comparison report")
     assert link.get_attribute("href") == "/admin/reports/comparison/?day=3"
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
+    assert_clean(page, errors)
+
+
+# Each Campaign totals tile's value, how far its text runs past the tile's
+# border box (0 when inside), how many lines it takes and its height in
+# rem. The text is measured on a range: a tile is a flex column, so the
+# value's element is stretched to the tile's width (test_response_dashboard).
+# The range holds only the value's own text ("—" for an unknown value), not
+# its toggletip, whose hidden tip text would count as more lines.
+TOTALS_FIT = """() => [...document.querySelectorAll(
+    '[data-digest-totals] .stat-tile[data-stat]')].map((tile) => {
+  const value = tile.querySelector('.stat-value');
+  const outer = tile.getBoundingClientRect();
+  const range = document.createRange();
+  range.selectNodeContents(value.firstChild);
+  const inner = range.getBoundingClientRect();
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+  return {
+    key: tile.dataset.stat,
+    overflow: Math.max(0, outer.left - inner.left, inner.right - outer.right),
+    lines: new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size,
+    height: Math.round(value.getBoundingClientRect().height / rem * 100) / 100,
+  };
+})"""
+
+
+@pytest.mark.parametrize("width", [320, 375, 768, 1280])
+def test_the_saved_report_draws_its_totals_as_tiles_that_fit(
+    page, component_origin, axe_source, width
+):
+    """The Campaign totals are stat tiles that fit at every width (#1639).
+
+    With four-digit counts and a seven-figure pledge total each value stays
+    on one line inside its tile, the page never scrolls sideways, and the
+    tiles read as the email's figures: the Families count with its "out of"
+    line and share bar.
+    """
+    from playwright.sync_api import expect
+
+    from .test_charts import assert_clean, watch
+    from .test_components import axe_violations
+
+    page.set_viewport_size({"width": width, "height": 900})
+    errors = watch(page)
+    page.goto(component_origin + "/daily-digest-wide")
+    totals = page.get_by_role("list", name="Campaign totals")
+    tiles = totals.locator(".stat-tile")
+    expect(tiles).to_have_count(3)
+    expect(tiles.locator(".stat-value")).to_have_text(
+        ["1,234", "1,088", "$1,234,567.89"]
+    )
+    responded = totals.locator("[data-stat=responded]")
+    expect(responded.locator(".stat-detail")).to_have_text("out of 2,345 (52.6%)")
+    expect(responded.locator("progress")).to_have_attribute("max", "2345")
+    expect(totals.locator("progress")).to_have_count(1)
+    assert page.locator("[data-digest-totals] dl").count() == 0
+    drawn = page.evaluate(TOTALS_FIT)
+    assert [tile["key"] for tile in drawn] == ["responded", "first", "pledges"]
+    assert all(
+        (tile["overflow"], tile["lines"], tile["height"]) == (0, 1, 2.1)
+        for tile in drawn
+    ), drawn
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
+    assert_clean(page, errors)
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_an_unknown_saved_total_reads_a_dash_with_its_reason(
+    page, component_origin, axe_source, width
+):
+    """A pledge total the email read "Unavailable" is "—" on the page, with
+    a toggletip saying why, and still fits (#1639)."""
+    from playwright.sync_api import expect
+
+    from .test_charts import assert_clean, watch
+    from .test_components import axe_violations
+
+    page.set_viewport_size({"width": width, "height": 900})
+    errors = watch(page)
+    page.goto(component_origin + "/daily-digest-unknown")
+    pledges = page.locator("[data-digest-totals] [data-stat=pledges]")
+    expect(pledges.locator(".stat-value")).to_contain_text("—")
+    assert "Unavailable" not in page.locator("[data-digest-totals]").inner_text()
+    button = pledges.get_by_role("button")
+    expect(button).to_have_accessible_description(
+        "The total is added up only when every responding Family's pledge "
+        "amount is known."
+    )
+    drawn = page.evaluate(TOTALS_FIT)
+    assert all(
+        (tile["overflow"], tile["lines"], tile["height"]) == (0, 1, 2.1)
+        for tile in drawn
+    ), drawn
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
     assert_clean(page, errors)

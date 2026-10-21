@@ -636,8 +636,16 @@ def test_constants_match_the_specification():
     )
     # The BG-12 rehearsal's two steps (local/rehearsal.py) follow the seed's,
     # then finish-setup's read-only lookup (#1355), then the Testing snapshot's
-    # step, which the operator script looks for.
-    assert seeder.STEPS[7:] == ("reminder", "measure", "credentials", "testing")
+    # step, which the operator script looks for, then fake-parishsoft
+    # refresh's step (#1780).
+    assert seeder.STEPS[7:] == (
+        "reminder",
+        "measure",
+        "credentials",
+        "testing",
+        "refresh",
+        "pledge-period",
+    )
     assert sorted(seeder.FATAL_OCCURRENCE_STATES) == [
         "coalesced",
         "delivery_unknown",
@@ -970,11 +978,9 @@ def test_the_testing_step_runs_its_parts_in_order(monkeypatch):
         "the configuration change request to be installed",
         "refresh",
         "the full ParishSoft refresh to succeed",
-        "sign_in",
         "sample",
         "the Initial email sample to be accepted",
         "the active rehearsal epoch",
-        "sign_in",
         "family_tests",
         "the chosen-Family Testing sends to be delivered",
         "driver",

@@ -40,7 +40,8 @@ class Unavailable(Exception):
 class NotAvailable(Exception):
     """The record the command names does not exist (``not_available``, exit 1).
 
-    A missing task, an unknown campaign, or no current campaign at all. Only
+    A missing task, an unknown campaign, no current campaign at all, or the
+    first campaign can't be created now. Only
     this, never a bare ``LookupError``, is reported as ``not_available``.
     """
 
@@ -298,7 +299,7 @@ def read_status(caller, service, *, audit=True):
     from .accounts.presence import active_count
     from .audit.schemas import Action
     from .campaigns.work_locks import read_transaction
-    from .jobs.delivery_metadata import unknown_count
+    from .jobs.delivery_metadata import mode_split, uncertain_by_mode, unknown_count
     from .jobs.task_reads import counts
 
     def step():
@@ -315,7 +316,15 @@ def read_status(caller, service, *, audit=True):
                 # them for this Administrator.
                 notices = open_notices(actor, limit=0)["total"]
             if allows(actor, Capability.BACKGROUND_WORK):
-                tasks = counts(now) | {"delivery_unknown": unknown_count()}
+                # delivery_unknown is every mode's uncertain campaign emails,
+                # as before; delivery_review and delivery_review_other are the
+                # status bar's two "review needed" counts (#1576).
+                review = mode_split(uncertain_by_mode(), config.mode)
+                tasks = counts(now) | {
+                    "delivery_unknown": unknown_count(),
+                    "delivery_review": review["count"],
+                    "delivery_review_other": review["other"],
+                }
             if allows(actor, Capability.CONFIGURE):
                 presence = {"count": active_count(config, now)}
         model = Status.build(config, data, now, tasks, presence, notices)
@@ -470,22 +479,34 @@ def _send_counts(sent):
 
 
 @dataclass(frozen=True)
-class SendProgressRead(ReadModel):
-    """The Family send in progress, or the most recent one; counts only.
+class MailQueueRead(ReadModel):
+    """The Mail queue (#1562): queued emails by kind, and the Family send.
 
-    A watch stops once no send is in progress and none is about to start.
+    ``counts`` holds the four headline figures and ``kinds`` one row per
+    ``mail_queue.QUEUE_PURPOSES`` kind, in that order, each with the same
+    four counts, all for the operating ``mode``; ``other_mode_queued`` counts the other
+    mode's queued emails. ``send`` is the Family send panel's document (the
+    send in progress, or the most recent one). A watch stops once nothing
+    is queued, no send is in progress and none is about to start.
     """
 
     campaign_id: UUID | None
     mode: str
     paused: bool
+    counts: dict
+    other_mode_queued: int
+    kinds: list
     upcoming: bool
     send: dict | None
 
     @property
     def terminal(self):
-        """Nothing is sending and nothing is about to start."""
-        return not (self.send and self.send["active"]) and not self.upcoming
+        """Nothing is queued, nothing is sending and nothing is about to start."""
+        return (
+            not any(self.counts.values())
+            and not (self.send and self.send["active"])
+            and not self.upcoming
+        )
 
 
 @dataclass(frozen=True)
@@ -504,7 +525,7 @@ def send_row(row):
     """One ``send_history.SendRow`` as counts, states, identifiers and instants.
 
     ``send`` is the send's key (``definition:revision:mode:cycle``), the
-    value Outgoing mail's ``send`` filter takes.
+    value Sent mail's ``send`` filter takes.
     """
     return {
         "send": row.listed.key.token,
@@ -523,26 +544,34 @@ def send_row(row):
     }
 
 
-def read_send_progress(caller, service, *, audit=True):
-    """``send progress``: Family email progress (``send_reads.read_progress``).
+def read_mail_queue(caller, service, *, audit=True):
+    """``mail queue``: the Mail queue page (``send_reads.read_mail_queue``).
 
     Audited as the page (``delivery_viewed``), never on a watch's polls.
     """
     from .accounts.policy import Capability
     from .audit.schemas import Action
-    from .jobs.send_reads import audited_count, read_progress
+    from .jobs.mail_queue import COLUMNS
+    from .jobs.send_reads import audited_count
+    from .jobs.send_reads import read_mail_queue as read_queue_page
 
     def step():
         """Admit, read in the page's snapshot, recheck and audit."""
         actor = _admit(caller, service.store, Capability.BACKGROUND_WORK)
-        data = read_progress()
+        data = read_queue_page()
         if data is None:
             raise Unavailable("A restore is under review.")
-        sent = data["send"]
-        model = SendProgressRead(
+        sent, queue = data["send"], data["queue"]
+        model = MailQueueRead(
             campaign_id=data["campaign"].pk if data["campaign"] else None,
-            mode="testing" if data["testing"] else "production",
+            mode=queue.mode,
             paused=data["paused"],
+            counts={name: queue.column(name) for name in COLUMNS},
+            other_mode_queued=queue.other_mode_queued,
+            kinds=[
+                {"purpose": kind.purpose} | dict(zip(COLUMNS, kind.counts, strict=True))
+                for kind in queue.kinds
+            ],
             upcoming=data["upcoming"],
             send=None if sent is None else _send_counts(sent),
         )
@@ -551,7 +580,7 @@ def read_send_progress(caller, service, *, audit=True):
             if _restore_review():
                 raise Unavailable("A restore is under review.")
             if audit:
-                _audit(Action.DELIVERY_VIEWED, current, count=audited_count(sent))
+                _audit(Action.DELIVERY_VIEWED, current, count=audited_count(queue))
         return model
 
     return _held(step)
@@ -634,6 +663,8 @@ def schedule_entry(row, campaign):
         "template_version": values["template_version"],
         # A daily digest's Compared with past campaigns section (#1018).
         "comparison": values.get("comparison", False),
+        # A digest's skipped sends (#1658), empty when none.
+        "skip_dates": values.get("skip_dates", []),
         "resolved": [{"key": slot.key, "due_at": slot.due_at} for slot in page.slots],
         "more": not page.exhausted,
     }
@@ -836,14 +867,15 @@ def _page_read(caller, service, actor, campaign_id, read):
 
 @dataclass(frozen=True)
 class GoLiveReadiness(ReadModel):
-    """Go-live readiness for the current Testing draft: codes and counts only.
+    """Go live readiness for the current Testing draft: codes and counts only.
 
     ``problems`` are the stored codes the page translates; ``checks_passed``
     is true when there are none (the public web address check and cleanup
-    still follow, in PR 12). ``version`` is the preview's binding digest,
-    which changes whenever anything the preview counts changes. The Admin
-    report recipients and the Testing Families are never shown: the
-    Families are an export (PR 12).
+    still follow: ``go-live preview`` and ``go-live start``). ``version``
+    is the preview's binding digest, which changes whenever anything the
+    preview counts changes. The Admin report recipients and the Testing
+    Families are never shown: the Families are ``go-live families``, a
+    streamed file.
     """
 
     campaign_id: UUID
@@ -928,7 +960,7 @@ class GoLiveReadiness(ReadModel):
 
 
 def read_go_live_readiness(caller, service, campaign_id):
-    """``go-live readiness``: the Go-live readiness page's read, without its forms.
+    """``go-live readiness``: the Go live page's Check step read, without its forms.
 
     Through ``go_live_inputs.collect_inputs`` under the work lock, as the
     page. The page records no view event, so neither does this. The

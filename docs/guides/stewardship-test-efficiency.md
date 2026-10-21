@@ -446,11 +446,26 @@ Packing was expected to cut the PostgreSQL group from about 185
 runner-minutes (#625) to about 100. By October 2026 the suite had grown, and
 fourteen partitions on five jobs used about 135 to 150 runner-minutes per
 full run; sixteen on six jobs should stay near 150. Check a change to the
-packing or the count against a dispatched `CI (jobs: all)` run: the six jobs'
+packing or the count against a dispatched `CI (jobs: all)` run: the jobs'
 times and runner-minutes, each partition's and the baseline's margin to its
 deadline, and, for runner-minutes, a week of ordinary PR runs. To retune,
 change `PARTITIONS_PER_JOB`; `tests/stewardship/test_quality_ci.py` then names the job
 matrix and the `postgres-N`/`valkey-N` service pairs `ci.yml` must declare.
+
+Sixteen partitions then neared their deadline
+([#1529](https://github.com/epiphany40223/parishkit/issues/1529)). In five
+full runs on 2026-10-17 the slowest partition took 1,620 to 1,757 s against
+1,800 s, and two partitions were killed at it. Every partition carried about
+the same hint-seconds and the three on one runner finished within about 10%
+of each other, but the same load took 825 s on one runner and 1,757 s on
+another, so better placement could not help. Each partition also has about
+175 s of fixed collection and schema cost. The count is now twenty-two, on
+eight jobs, which projects the slowest observed partition to about
+(1,757 - 175) x 16/22 + 175, or 1,330 s, 26% under the deadline. That is two
+more concurrent runners, eight of the account's twenty, and only a few more
+runner-minutes for their setup and the new partitions' fixed cost. Test maps
+record their count, so until the first full run at twenty-two publishes a
+map, test selection runs the whole PostgreSQL group.
 
 ## Transient infrastructure failures
 

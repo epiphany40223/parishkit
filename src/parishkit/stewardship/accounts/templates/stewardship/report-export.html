@@ -7,14 +7,11 @@
   The live region is what live-status-v1.js refreshes in place while the export is
   queued or running (it re-reads this passive page, which never extends the
   login session). When the file becomes ready while the page watches, the
-  download starts once by itself. Refresh status re-reads the panel (and the
-  campaign-work notice) in place (ui-v1.js, a[data-in-place], #519); a file it
-  finds ready waits for Download, as on an ordinary load, and live-status-v1.js
-  watches a fresh panel that is still pending.
+  download starts once by itself. The page has no Refresh link (#1586).
   Retry export and Cancel export post in place too (form[data-in-place],
   #519): each view redirects back to this page, whose panel is swapped in.
-  The button is usually gone then, so focus falls back to Refresh status
-  just below (data-in-place-fallback) rather than up to the page heading. A
+  The button is usually gone then, so focus falls back to the panel's
+  first heading, else the panel itself. A
   refusal is the fixed error page, which draws no panel, so it is shown
   whole.
   A ready file's Download form names its window's end
@@ -32,15 +29,14 @@
   <p class="export-state export-state-ready" role="status">{% translate "Your file is ready." %}</p>
   <form method="post" action="{% url 'admin:report_export_download' job.pk %}" data-live-autosubmit{% if status.expires_at %} data-download-until="{{ status.expires_at }}"{% endif %}>{% csrf_token %}{% button type="submit" variant="large" %}{% translate "Download export" %}{% endbutton %}</form>
   {% if status.expires_at %}<p class="help export-window" data-download-window><span data-window-open>{% translate "Ready to download until" %} <time datetime="{{ status.expires_at }}" data-local-instant>{{ status.expires_at }}</time>.</span><span id="export-expired" data-window-ended data-window-off>{% translate "This download expired at" %} <time datetime="{{ status.expires_at }}" data-local-instant>{{ status.expires_at }}</time>. {% blocktranslate trimmed %}Export it again from <a href="{{ report_url }}">{{ report_name }}</a>.{% endblocktranslate %}</span></p>{% endif %}
-  <p class="help">{% translate "Sensitive parish report: download only to a trusted device and share only with authorized recipients." %}</p>
 {% elif status.state == 'queued' or status.state == 'running' or status.state == 'retry_wait' %}
-  <p class="export-state export-state-pending" role="status"><span class="spinner" aria-hidden="true"></span> {% if status.state == 'retry_wait' %}{% translate "Trying again in a moment…" %}{% elif wait %}{% include 'stewardship/queue-wait.html' %}{% else %}{% translate "Preparing your file…" %}{% endif %}</p>
+  <p class="export-state export-state-pending" role="status">{% include "stewardship/components/spinner.html" %} {% if status.state == 'retry_wait' %}{% translate "Trying again in a moment…" %}{% elif wait %}{% include 'stewardship/queue-wait.html' %}{% else %}{% translate "Preparing your file…" %}{% endif %}</p>
   <p class="help">{% translate "This usually takes a few seconds. This page updates by itself and the download starts when the file is ready." %}</p>
 {% elif status.state == 'failed' or status.state == 'abandoned' %}
   <p class="notice notice-error export-state" role="alert">{% translate "The file could not be created. Try again; if it fails again, check System logs or ask your system administrator." %}</p>
-  <form method="post" action="{% url 'admin:report_export_retry' job.pk %}#export-status" data-in-place="export-retry" data-in-place-fallback="refresh" data-in-place-message="{% translate 'Export retry started.' %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ retry_key }}">{% button type="submit" enabled=mutable aria-describedby=mutable|yesno:",export-locked" %}{% translate "Retry export" %}{% endbutton %}</form>
+  <form method="post" action="{% url 'admin:report_export_retry' job.pk %}#export-status" data-in-place="export-retry" data-in-place-message="{% translate 'Export retry started.' %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ retry_key }}">{% button type="submit" enabled=mutable aria-describedby=mutable|yesno:",export-locked" %}{% translate "Retry export" %}{% endbutton %}</form>
 {% endif %}
-{% if can_cancel %}<form method="post" action="{% url 'admin:report_export_cancel' job.pk %}#export-status" data-in-place="export-cancel" data-in-place-fallback="refresh" data-in-place-message="{% translate 'Export cancel requested.' %}">{% csrf_token %}{% button type="submit" variant="secondary" enabled=mutable aria-describedby=mutable|yesno:",export-locked" %}{% translate "Cancel export" %}{% endbutton %}</form>{% endif %}
+{% if can_cancel %}<form method="post" action="{% url 'admin:report_export_cancel' job.pk %}#export-status" data-in-place="export-cancel" data-in-place-message="{% translate 'Export cancel requested.' %}">{% csrf_token %}{% button type="submit" variant="secondary" enabled=mutable aria-describedby=mutable|yesno:",export-locked" %}{% translate "Cancel export" %}{% endbutton %}</form>{% endif %}
 {% if status.expires_at and status.state == 'failed' %}<p class="help">{% translate "Retry is available until" %} <time datetime="{{ status.expires_at }}" data-local-instant>{{ status.expires_at }}</time>.</p>{% endif %}
 </section></div>
 {% if testing_codes %}<p class="notice" data-testing-codes>{% translate "These are the live codes; they work only after go-live." %} {% if testing_codes_administrator %}{% translate "To try the Family form now, send yourself a test invitation." %}{% else %}{% translate "To try the Family form now, ask an Administrator for a test invitation." %}{% endif %}{% if family_test_url %} <a href="{{ family_test_url }}">{% translate "Try the Family form as a chosen Family" %}</a>{% endif %}</p>{% endif %}
@@ -48,7 +44,7 @@
   The parent crumb is the way back (navigation rule 3), so "Return to" is
   drawn only when its link differs from the crumb's: the directory and
   participation exports return with the filters the export used (#1345).
-{% endcomment %}<p><a href="{% url 'admin:report_export' job.pk %}#export-status" data-in-place="refresh" data-in-place-message="{% translate 'Status refreshed.' %}">{% translate "Refresh status" %}</a>{% if report_url != admin_chrome.back.url %} · <a href="{{ report_url }}">{% blocktranslate %}Return to {{ report_name }}{% endblocktranslate %}</a>{% endif %}</p>
+{% endcomment %}{% if report_url != admin_chrome.back.url %}<p><a href="{{ report_url }}">{% blocktranslate %}Return to {{ report_name }}{% endblocktranslate %}</a></p>{% endif %}
 <div id="export-lock" data-in-place-region>{% if not mutable %}<p class="notice" id="export-locked">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so new exports, cancelling and retrying are unavailable until it finishes or is cancelled; going live can take days. Files that are ready can still be downloaded." %}</p>{% endif %}</div>
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary>
 <dl><dt>{% translate "Format" %}</dt><dd>{{ job.format|upper }}</dd>

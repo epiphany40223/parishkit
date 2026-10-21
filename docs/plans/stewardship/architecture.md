@@ -164,8 +164,9 @@ phase without treating absent product validation as completed configuration.
 ### ARC-07: Application-level privacy and audit primitives
 
 1. Provide audited service wrappers for configuration-change requests, applied
-   role changes, sealed secret replacement, code-bearing reports, privileged
-   reauthentication, and destructive confirmation.
+   role changes, sealed secret replacement, code-bearing reports, and
+   destructive confirmation (no sign-in age check since
+   [#1547](https://github.com/epiphany40223/parishkit/issues/1547)).
 2. Define approved redaction schemas for request, task, email, source, provider,
    and exception context; reject secret-bearing structured payload fields.
 3. Add optimistic-concurrency helpers and stable machine-readable validation

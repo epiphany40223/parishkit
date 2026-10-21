@@ -30,6 +30,22 @@
 #       overwriting) and print only its path, size and sha256.
 #   pk-admin exports clean
 #       Delete every fetched export file (and any interrupted fetch).
+#   pk-admin [--session NAME] integration key replace TARGET \
+#            --expected-version V (--secret-file PATH | --secret-stdin) [--yes]
+#       Send a new integration key to the command after the preamble, never
+#       as an argument. --secret-file reads a regular file owned by you
+#       with no group or other permissions; --secret-stdin reads standard
+#       input to its end (Ctrl-D at the start of a line), with echo off at
+#       a terminal, and needs --yes when piped. At most 128 KiB. At a
+#       terminal the wrapper never returns before the key is read to its
+#       end: if the command ends first, what is still pasted is discarded.
+#   pk-admin [--session NAME] integration backup-key challenge \
+#            --public-key-file PATH
+#   pk-admin [--session NAME] integration backup-key preview --intent TOKEN \
+#            (--code-file PATH | --code-stdin)
+#       Send the new backup public key, or the code backup-prove printed,
+#       after the preamble in the same way (at most 200 bytes); a piped
+#       --code-stdin needs no --yes, as the preview does not prompt.
 #
 # Session files live in ${PARISHKIT_ROOT:-/opt/parishkit}/run/admin-automation
 # (or --session-dir), a directory owned by you with mode 0700; each file is
@@ -60,9 +76,10 @@
 # an export that is not ready; 3 when a fetched file does not match its
 # size and digest (it is deleted; fetch again); 127 when docker, or
 # pk-stewardship inside the web container, is not found (126 when it cannot
-# run), as the shell and docker report; 130, 143 or 129 when interrupted by
-# INT (Ctrl-C), TERM or HUP. An interrupted `--watch` is stopped inside the
-# web container too; any other command there runs to its end.
+# run), as the shell and docker report; 130, 131, 143 or 129 when interrupted
+# by INT (Ctrl-C), QUIT (Ctrl-\), TERM or HUP. An interrupted `--watch` is
+# stopped inside the web container too; any other command there runs to its
+# end.
 #
 # Standard input is forwarded to the command after the preamble only when
 # the command line has a `-` input; a command that prompts gets exactly one
@@ -77,6 +94,12 @@ set +x
 set -eu
 
 TAG="pk-admin-session/1"
+# The page's limit on a key, in bytes (accounts.key_files.MAX_FILE_BYTES),
+# and on the Backup encryption key page's public key and code fields
+# (accounts.backup_key.MAX_FIELD); a test keeps each equal. The tags of the
+# lines that carry them are in secret_row below.
+KEY_LIMIT=131072
+FIELD_LIMIT=200
 ROOT=${PARISHKIT_ROOT:-/opt/parishkit}
 
 refuse() {
@@ -123,7 +146,7 @@ valid_name() {
 }
 
 # Stop a process and its descendants, deepest first; without pgrep, only the
-# process itself. Called only from the traps, so shellcheck sees it as unused
+# process itself. Called from the traps, so shellcheck sees it as unused
 # (SC2329) or, before 0.10, unreachable (SC2317).
 # shellcheck disable=SC2317,SC2329
 stop_tree() {
@@ -131,6 +154,17 @@ stop_tree() {
         stop_tree "$child"
     done
     kill "$1" 2>/dev/null || true
+}
+
+# Stop the input writer's key reader (`head`, its PID in key-reader), so
+# nothing is left reading the key's terminal or pipe; the process tree walk
+# finds it too, but needs pgrep. Called from the traps, so shellcheck sees
+# it as unused or unreachable.
+# shellcheck disable=SC2317,SC2329
+stop_key_reader() {
+    if [ -n "${work:-}" ] && [ -s "$work/key-reader" ]; then
+        kill "$(cat "$work/key-reader")" 2>/dev/null || :
+    fi
 }
 
 session_dir=""
@@ -464,7 +498,7 @@ await() {
 # says so. Called only from the traps below.
 # shellcheck disable=SC2317,SC2329
 interrupted() {
-    trap : HUP INT TERM
+    trap : HUP INT QUIT TERM
     # A closed standard error pipe (`2>&1 | jq`) must fail a write, not end
     # the wrapper before its cleanup.
     trap '' PIPE
@@ -521,11 +555,13 @@ interrupted() {
     fi
     if [ -n "$writer" ]; then
         kill "$writer" 2>/dev/null || :
+        stop_key_reader
     fi
     exit "$1"
 }
 trap 'interrupted 129' HUP
 trap 'interrupted 130' INT
+trap 'interrupted 131' QUIT
 trap 'interrupted 143' TERM
 
 if [ "$1" = login ] && [ "${2:-}" = start ]; then
@@ -562,7 +598,7 @@ esac
 # Commands that stream a file to standard output, as AREA_VERB words
 # separated by spaces. Their bytes are never written to a terminal: redirect
 # standard output to a file.
-STREAMING="logs_export export_download export_census export_limitations export_roster"
+STREAMING="logs_export export_download export_census export_limitations export_roster followup_export export_pledges go-live_families"
 # The work file the command's document is read from (see `reports`).
 documents=output
 for command in $STREAMING; do
@@ -600,7 +636,147 @@ fi
 # Every catalog command with `prompts` is listed, except one that accepts
 # only `--yes` (YES_ONLY in tests/stewardship/test_pk_admin.py, which checks
 # this list).
-PROMPTING="test_sample test_families digest_weekly-request export_financial export_directory export_postal export_archive delivery_resend delivery_refusal-clear delivery_bounce-report portal_maintenance_set files_delete history_confirm history_remove system_backup-now system_debug-off system_debug-allow system_refresh-accept export_family-timeline census_resolve integration_confirm integration_key_finish-switching send_confirm followup_bulk"
+PROMPTING="integration_backup-key_confirm integration_key_replace test_sample test_families digest_weekly-request export_financial export_directory export_postal export_archive delivery_resend delivery_refusal-clear delivery_bounce-report portal_maintenance_set files_delete history_confirm history_remove system_backup-now system_debug-off system_debug-allow system_refresh-accept system_mail-clear export_family-timeline integration_confirm integration_key_finish-switching send_confirm followup_bulk followup_roster-bulk users_email-leaders go-live_start go-live_refresh-again go-live_stop go-live_confirm go-live_cancel census_update-confirm census_update-rerun"
+
+# Commands that take a value the wrapper reads itself: an integration key,
+# a new backup public key or a backup key proof code. The value is never an
+# argument: `--X-file PATH` (replaced by `--X-stdin` in the command line the
+# container sees) or `--X-stdin` makes the wrapper send it after the
+# preamble as one line, `<tag> <base64>`. Its bytes pass only through pipes
+# (`head -c`, `base64`, `tr`) into the input FIFO, never through a shell
+# variable, an argument, the environment or a file. secret_row prints, for a
+# command's full name joined by `_`, its file option, its standard input
+# option (`-` when there is none: a public key is read from a file only, and
+# `--public-key-stdin` is the container's alone), the line's tag, the page's
+# limit in bytes and the value's name in messages (the rest of the line);
+# nothing for any other command.
+secret_row() {
+    case $1 in
+        integration_key_replace)
+            echo "--secret-file --secret-stdin pk-admin-secret/1 $KEY_LIMIT key" ;;
+        integration_backup-key_challenge)
+            echo "--public-key-file - pk-admin-public-key/1 $FIELD_LIMIT public key" ;;
+        integration_backup-key_preview)
+            echo "--code-file --code-stdin pk-admin-proof/1 $FIELD_LIMIT code" ;;
+    esac
+}
+key_source=""
+key_option=""
+key_file=""
+taking=no
+first=yes
+for argument in "$@"; do
+    if [ "$first" = yes ]; then
+        set --
+        first=no
+    fi
+    if [ "$taking" = yes ]; then
+        key_file=$argument
+        taking=no
+        continue
+    fi
+    case $argument in
+        --public-key-stdin)
+            refuse "write --public-key-file PATH"
+            ;;
+        --secret-file | --secret-stdin | --public-key-file | --code-file | --code-stdin)
+            [ -z "$key_source" ] || refuse "give the value once: one --...-file PATH or --...-stdin"
+            key_option=$argument
+            case $argument in
+                *-file)
+                    key_source="file"
+                    taking=yes
+                    argument=${argument%-file}-stdin
+                    ;;
+                *) key_source=stdin ;;
+            esac
+            ;;
+        --secret-file=* | --secret-stdin=* | --public-key-file=* | --code-file=* | --code-stdin=*)
+            refuse "write ${argument%%=*} with no ="
+            ;;
+    esac
+    set -- "$@" "$argument"
+done
+[ "$taking" = no ] || refuse "$key_option needs a path"
+if [ -n "$key_source" ]; then
+    # No core dump of this run or its children (`head`, `base64`) can hold
+    # key bytes, whatever the account's default. POSIX leaves `ulimit -c`
+    # undefined, but dash, bash and busybox sh have it.
+    # shellcheck disable=SC3045
+    ulimit -c 0 2>/dev/null || :
+fi
+yes_given=no
+for argument in "$@"; do
+    case $argument in
+        --yes) yes_given=yes ;;
+    esac
+done
+# Whether the command prompts: its first two or three words, joined by `_`,
+# are in PROMPTING.
+prompts() {
+    for command in $PROMPTING; do
+        if [ "$command" = "$1${2:+_$2}" ] || [ "$command" = "$1${2:+_$2}${3:+_$3}" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+key_tag=""
+key_limit=""
+key_noun=""
+if [ -n "$key_source" ]; then
+    row=$(secret_row "$1${2:+_$2}${3:+_$3}")
+    row_file=""
+    row_stdin=""
+    if [ -n "$row" ]; then
+        # The last name takes the rest of the line (a name of two words).
+        read -r row_file row_stdin key_tag key_limit key_noun <<EOF
+$row
+EOF
+    fi
+    if [ -z "$row" ] || { [ "$key_option" != "$row_file" ] && [ "$key_option" != "$row_stdin" ]; }; then
+        refuse "this command takes no $key_option"
+    fi
+    for argument in "$@"; do
+        [ "$argument" != - ] || refuse "standard input carries the $key_noun; give no - input"
+    done
+fi
+if [ "$key_source" = stdin ] && [ ! -t 0 ] && [ "$yes_given" = no ] && prompts "$@"; then
+    # Checked before anything is read: the same input cannot also answer.
+    refuse "a piped $key_option needs --yes"
+fi
+if [ "$key_source" = file ]; then
+    # Refuse anything but a regular file before opening it, so opening a
+    # FIFO cannot block; then open it once (`command exec`, so a failed
+    # open refuses rather than ends the shell) and check the open
+    # descriptor, not the path, so the file read is the file checked. sh
+    # has no O_NOFOLLOW: a symbolic link or FIFO swapped in between the path
+    # checks and the open is followed, or blocks the open; that needs write
+    # access to the key's directory, and what is read must still pass the
+    # descriptor's checks (your own private regular file).
+    if [ -L "$key_file" ] || [ ! -f "$key_file" ] || [ -p "$key_file" ]; then
+        refuse "$key_file is not a regular file"
+    fi
+    { command exec 3<"$key_file"; } 2>/dev/null || refuse "$key_file cannot be read"
+    [ -f /dev/fd/3 ] || refuse "$key_file is not a regular file"
+    # Owner, permission bits and size of the open file: GNU stat on the
+    # host, BSD stat for developers' machines.
+    info=$(stat -L -c '%u %a %s' /dev/fd/3 2>/dev/null \
+        || stat -L -f '%u %Lp %z' /dev/fd/3 2>/dev/null) \
+        || refuse "$key_file cannot be checked"
+    owner=${info%% *}
+    rest=${info#* }
+    mode=${rest%% *}
+    size=${rest#* }
+    [ "$owner" = "$(id -u)" ] || refuse "$key_file must be owned by you"
+    case $mode in
+        *[1-7]? | *[1-7]) refuse "$key_file must not be readable or writable by group or others" ;;
+    esac
+    case $size in
+        '' | *[!"$DIGITS"]*) refuse "$key_file cannot be checked" ;;
+    esac
+    [ "$size" -le "$key_limit" ] || refuse "$key_file is larger than the limit ($key_limit bytes)"
+fi
 
 # Forward this standard input after the preamble only for a `-` input; a
 # prompting command run from a terminal gets one answer line (see the
@@ -612,16 +788,15 @@ for argument in "$@"; do
     fi
 done
 prompt=no
-if [ -t 0 ]; then
-    for command in $PROMPTING; do
-        if [ "$command" = "$1${2:+_$2}" ] || [ "$command" = "$1${2:+_$2}${3:+_$3}" ]; then
-            prompt=yes
-        fi
-    done
+if [ -t 0 ] && prompts "$@"; then
+    prompt=yes
 fi
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/pk-admin.XXXXXX")
-trap 'rm -rf "$work"' EXIT
+# A terminal whose echo was turned off for a key gets it back on every exit
+# path, an interruption's included (its handler ends with `exit`).
+tty_state=""
+trap 'if [ -n "$tty_state" ]; then stty "$tty_state" 2>/dev/null || :; fi; rm -rf "$work"' EXIT
 
 # A watch (`--watch SECONDS` or `--watch=SECONDS`, the number optionally
 # signed with `+`, before any `--`) gets a
@@ -672,20 +847,82 @@ if (exec 3<&0) 2>/dev/null; then
 else
     exec 4</dev/null
 fi
+if [ "$key_source" = stdin ]; then
+    # The key is read from standard input (descriptor 3, as a key file is).
+    exec 3<&4
+    if [ -t 0 ]; then
+        # Typed or pasted at a terminal: never echoed, or refused.
+        tty_state=$(stty -g 2>/dev/null) || refuse "the terminal's echo cannot be turned off"
+        stty -echo 2>/dev/null || refuse "the terminal's echo cannot be turned off"
+        printf 'pk-admin: paste the %s, then press Ctrl-D at the start of a line (twice in mid-line); it is not shown\n' "$key_noun" >&2
+    fi
+fi
 {
     printf '%s %s %s\n' "$TAG" "$secret" "$host_digest"
+    if [ -n "$key_source" ]; then
+        # One byte over the limit at most, so the command can refuse a key
+        # that is too long; base64 may wrap its output, so newlines go.
+        # `head` runs as its own job so the wrapper can stop it by its PID
+        # (key-reader) even without pgrep, and key-read marks that it read
+        # the key to its end (see the end of the run). `head` ends at the
+        # limit, not at Ctrl-D, so `dd` (which copies without changing a
+        # byte) counts what it passed: over the limit at a terminal, the
+        # rest of the paste is still unread, so key-read goes and the end of
+        # the run reads it to Ctrl-D with echo off, never leaving it for the
+        # shell. Draining here instead would need a second Ctrl-D whenever
+        # the key fits.
+        printf '%s ' "$key_tag"
+        {
+            head -c "$((key_limit + 1))" <&3 &
+            printf '%s\n' "$!" >"$work/key-reader"
+            # The PID goes once head has ended, so no later kill can hit a
+            # reused one. A read error (status 1, not a signal's 128+) is
+            # reported by the wrapper, since this standard error is quiet.
+            wait "$!" && reader=0 || reader=$?
+            printf '%s\n' "$reader" >"$work/key-status"
+            if [ "$reader" -eq 0 ]; then
+                : >"$work/key-read"
+            fi
+            rm -f "$work/key-reader"
+        } | LC_ALL=C dd 2>"$work/key-count" | base64 | tr -d '\n'
+        # dd's summary starts "N bytes" (GNU, BSD and busybox alike).
+        count=$(sed -n 's/^\([0-9][0-9]*\) bytes.*/\1/p' "$work/key-count")
+        if [ -n "$tty_state" ] && [ "${count:-0}" -gt "$key_limit" ]; then
+            : >"$work/key-long"
+            rm -f "$work/key-read"
+        fi
+        # The key line ends only now: the command cannot finish (and the
+        # wrapper cannot check key-read) before the over-limit decision above
+        # is made, however slow the count's sed is. LC_ALL=C keeps dd's
+        # summary in English.
+        printf '\n'
+        if [ -n "$tty_state" ] && [ -e "$work/key-read" ]; then
+            # Echo back on for the prompt's answer.
+            stty "$tty_state" <&4 2>/dev/null || :
+            printf '\n' >&5
+        fi
+    fi
     if [ "$forward" = yes ]; then
         cat <&4
-    elif [ "$prompt" = yes ]; then
+    elif [ "$prompt" = yes ] && [ ! -e "$work/key-long" ]; then
         # One answer line, at most 256 bytes, sent after the preamble while
-        # the command waits at its prompt; nothing else is read.
+        # the command waits at its prompt; nothing else is read (nor after
+        # a key over the limit, which the command refuses: the rest of the
+        # paste is no answer).
         if IFS= read -r answer <&4 && [ "${#answer}" -le 256 ]; then
             printf '%s\n' "$answer"
         fi
     fi
-} >"$work/input" &
+    # Standard error is quiet (descriptor 5 is the real one): a shell
+    # reports a stopped pipeline ("Terminated"), and head a terminal it can
+    # no longer read, both noise once the wrapper has stopped the writer.
+} >"$work/input" 5>&2 2>/dev/null &
 writer=$!
 exec 4<&-
+# The key file (or standard input's copy) is the writer's alone now.
+if [ -n "$key_source" ]; then
+    exec 3<&-
+fi
 
 # Stream the command's output as it comes, keeping a copy to decide whether
 # the session file must go; the command's own exit status is kept aside.
@@ -697,15 +934,42 @@ started=yes
         exec -T ${token:+-e PK_ADMIN_RUN=$token} web \
         pk-stewardship admin "$@" --config "$web_config" --session-stdin \
         <"$work/input" && status=0 || status=$?
-    printf '%s\n' "$status" >"$work/status"
+    # Quiet: after an interruption the EXIT trap may already have removed
+    # the work directory.
+    { printf '%s\n' "$status" >"$work/status"; } 2>/dev/null
 } | tee "$work/output" &
 running=$!
 wait "$running" || true
 running=""
 status=$(cat "$work/status")
-kill "$writer" 2>/dev/null || true
+stop_tree "$writer"
+stop_key_reader
 wait "$writer" 2>/dev/null || true
+writer=""
 secret=""
+if [ -n "$tty_state" ] && [ ! -e "$work/key-read" ]; then
+    # The command ended (refused, its session ended, docker or the web
+    # container missing) before the key was read to its end, perhaps before
+    # the operator has even pasted it. Giving the terminal back now would
+    # put the paste into the shell, its history and its screen, so echo
+    # stays off and the rest of the key is read here, to Ctrl-D, and
+    # discarded; only then does the EXIT trap turn echo back on.
+    stty -echo 2>/dev/null || :
+    if [ "$key_limit" = "$KEY_LIMIT" ]; then limit_text="128 KiB"; else limit_text="$key_limit bytes"; fi
+    if [ -e "$work/key-long" ]; then
+        printf 'pk-admin: the %s is longer than %s (see above); finish any paste and press Ctrl-D at the start of a line; the %s is discarded\n' "$key_noun" "$limit_text" "$key_noun" >&2
+    else
+        printf 'pk-admin: the command ended before it read the %s (see above); finish any paste and press Ctrl-D at the start of a line; the %s is discarded\n' "$key_noun" "$key_noun" >&2
+    fi
+    cat >/dev/null || :
+fi
+if [ "$key_source" = file ]; then
+    # The key reader's own failure (not a stop by signal, 128 and up).
+    reader=$(cat "$work/key-status" 2>/dev/null) || reader=0
+    if [ "${reader:-0}" -ne 0 ] && [ "$reader" -lt 128 ]; then
+        printf 'pk-admin: %s could not be read\n' "$key_file" >&2
+    fi
+fi
 
 remove_file() {
     rm -f "$file"

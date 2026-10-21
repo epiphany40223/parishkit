@@ -1,8 +1,9 @@
-"""Home's Next steps table and Today line, without a database (NAV-18).
+"""Home's Next steps table, without a database (NAV-18).
 
-The admin-portal spec's "Home page" table chooses the steps by campaign state
-and role; each step is the viewer's own menu entry, so it is a link only
-while the menu offers it and keeps the menu's reason while greyed out.
+The admin-portal spec's "Home page" table chooses the steps by campaign
+state. Home is the Administrator's (#1726); each step is their own menu
+entry, so it is a link only while the menu offers it and keeps the menu's
+reason while greyed out.
 """
 
 from types import SimpleNamespace
@@ -14,6 +15,7 @@ from django.urls import reverse
 
 from parishkit.stewardship.accounts import admin_navigation as navigation
 from parishkit.stewardship.accounts import home_steps
+from parishkit.stewardship.jobs.delivery_metadata import mode_split
 
 ALL = frozenset(entry.name for entry in navigation.MENU)
 
@@ -34,6 +36,13 @@ def menu(names=ALL, greyed=(), counts=None):
             "reason": navigation.NO_CAMPAIGN if name in greyed else None,
             "count": counts.get(name),
         }
+        # Ministry requests carries its To enter by hand count for Home
+        # (admin_context.ENTRY_COUNT, R39 finding 2).
+        | (
+            {"entry_count": counts.get("ministry_entry")}
+            if name == "ministry_report"
+            else {}
+        )
         for name in names
     }
 
@@ -65,33 +74,19 @@ def test_campaign_state_follows_the_spec_rows(row, mode, go_live, expected):
     assert home_steps.campaign_state(row, mode, go_live=go_live) == expected
 
 
-def test_role_is_the_highest_held():
-    """An Administrator reads the Administrator column, a Staff member Staff's."""
-    assert home_steps.role({"administrator", "staff"}) == "administrator"
-    assert home_steps.role({"staff", "ministry_leader"}) == "staff"
-    assert home_steps.role({"ministry_leader"}) == "ministry_leader"
-    assert home_steps.role(set()) is None
-
-
-def test_testing_draft_steps_by_role():
-    """The Testing row: an Administrator's setup pages, Staff's reports."""
+def test_testing_draft_steps():
+    """The Testing row: the campaign's setup pages; Home's Family
+    participation tiles link the Response dashboard instead (#1673)."""
     revision = uuid4()
-    admin = home_steps.next_steps(
-        "testing", "administrator", menu(), test_email=revision
-    )
+    admin = home_steps.next_steps("testing", menu(), test_email=revision)
     assert labels(admin) == [
         "Campaign settings",
         "Pages and emails",
         "Dates and mail schedules",
         "Preview and test email",
-        "Go-live readiness",
-        "Response dashboard",
+        "Go live",
     ]
     assert admin[3].url == reverse("admin:campaign_mail", args=[revision])
-    staff = home_steps.next_steps("testing", "staff", menu())
-    assert labels(staff) == ["Response dashboard", "Participation"]
-    leader = home_steps.next_steps("testing", "ministry_leader", menu())
-    assert labels(leader) == ["Ministry requests"]
 
 
 def test_steps_follow_the_viewers_menu():
@@ -101,72 +96,174 @@ def test_steps_follow_the_viewers_menu():
     names = ALL - {"go_live"}
     steps = home_steps.next_steps(
         "testing",
-        "administrator",
         menu(names, greyed={"content_catalog"}),
         test_email=uuid4(),
     )
-    assert "Go-live readiness" not in labels(steps)
+    assert "Go live" not in labels(steps)
     by_label = {step.label: step for step in steps}
     for name in ("Pages and emails", "Preview and test email"):
         assert by_label[name].url is None
         assert by_label[name].reason == navigation.NO_CAMPAIGN
-    without = home_steps.next_steps("testing", "administrator", menu())
+    without = home_steps.next_steps("testing", menu())
     assert "Preview and test email" not in labels(without)
 
 
+# The four lists Staff work through at campaign end (#1590), while the
+# campaign runs and after it closes. The Response dashboard is linked from
+# Home's Family participation tiles instead (#1673).
+WORK = [
+    "Census changes",
+    "Ministry requests to enter by hand",
+    "Additional information",
+    "Ministry requests",
+]
+
+
+def split(count, other, mode="production"):
+    """The chrome's split uncertain count (``delivery_metadata.mode_split``)."""
+    return mode_split(
+        {mode: count, "testing" if mode == "production" else "production": other},
+        mode,
+    )
+
+
+def test_mail_problems_link_each_mode_separately():
+    """The operating mode's count links that mode; the other mode's has its
+    own link and is never added in, also when only the other mode has some
+    (#1576)."""
+    entries = menu()
+
+    def sent(steps):
+        """The Sent mail step (#1590 added steps before it)."""
+        return next(step for step in steps if step.label == "Sent mail")
+
+    both = sent(home_steps.next_steps("active", entries, mail_unknown=split(2, 3)))
+    assert both.url == "/deliveries/?state=needs_review&mode=production"
+    assert both.count == 2
+    assert both.other.url == "/deliveries/?state=needs_review&mode=testing"
+    assert (both.other.count, str(both.other.note), str(both.other.more)) == (
+        3,
+        "in Testing",
+        "may not have arrived",
+    )
+    only = sent(home_steps.next_steps("active", entries, mail_unknown=split(0, 1)))
+    assert (only.url, only.count) == ("/deliveries/", None)
+    assert only.other.url == "/deliveries/?state=needs_review&mode=testing"
+    testing = sent(
+        home_steps.next_steps(
+            "active",
+            entries,
+            mail_unknown=split(0, 4, mode="testing"),
+        )
+    )
+    assert testing.other.url == ("/deliveries/?state=needs_review&mode=production")
+    assert str(testing.other.note) == "in Production"
+
+
 def test_active_and_paused_steps_carry_the_open_counts():
-    """The queues show their open counts; Outgoing mail filters to the emails
+    """The queues show their open counts; Sent mail filters to the emails
     that may not have arrived while there are some; paused mail comes first."""
-    entries = menu(counts={"information_queue": 3, "ministry_report": 0})
-    active = home_steps.next_steps("active", "administrator", entries, mail_unknown=2)
-    assert labels(active) == [
-        "Response dashboard",
-        "Additional information",
-        "Ministry requests",
-        "Family email progress",
-        "Outgoing mail",
-    ]
-    assert (active[1].count, str(active[1].note)) == (3, "open")
-    assert (active[2].count, str(active[2].note)) == (0, "open")
-    assert active[4].url == "/deliveries/?state=delivery_unknown"
-    assert (active[4].count, str(active[4].note)) == (2, "may not have arrived")
-    quiet = home_steps.next_steps("active", "administrator", entries, mail_unknown=0)
-    assert (quiet[4].url, quiet[4].count) == ("/deliveries/", None)
-    paused = home_steps.next_steps("paused", "administrator", entries)
+    entries = menu(
+        counts={
+            "census_changes": 4,
+            "ministry_entry": 6,
+            "information_queue": 3,
+            "ministry_report": 0,
+        }
+    )
+    active = home_steps.next_steps("active", entries, mail_unknown=split(2, 0))
+    assert labels(active) == [*WORK, "Mail queue", "Sent mail"]
+    assert (active[0].url, active[0].count, str(active[0].note)) == (
+        "/census_changes/",
+        4,
+        "to do",
+    )
+    assert (active[1].url, active[1].count, str(active[1].note)) == (
+        "/ministry_report/?stage=to_enter_by_hand",
+        6,
+        "to enter by hand",
+    )
+    assert (active[2].count, str(active[2].note)) == (3, "open")
+    assert (active[3].count, str(active[3].note)) == (0, "open")
+    assert active[5].url == "/deliveries/?state=needs_review&mode=production"
+    assert (active[5].count, str(active[5].note)) == (2, "may not have arrived")
+    assert active[5].other is None
+    for idle in (
+        home_steps.next_steps("active", entries, mail_unknown=split(0, 0)),
+        home_steps.next_steps("active", entries),
+    ):
+        assert (idle[5].url, idle[5].count, idle[5].other) == (
+            "/deliveries/",
+            None,
+            None,
+        )
+    # A to-enter count the chrome could not read shows the link with no number.
+    unread = home_steps.next_steps("active", menu())[1]
+    assert (unread.url, unread.count, unread.note) == (
+        "/ministry_report/?stage=to_enter_by_hand",
+        None,
+        None,
+    )
+    paused = home_steps.next_steps("paused", entries)
     assert labels(paused)[0] == "Pause and resume mail"
     assert labels(paused)[1:] == labels(active)
-    assert labels(home_steps.next_steps("paused", "staff", entries)) == [
-        "Response dashboard",
-        "Additional information",
-        "Ministry requests",
-    ]
-    leader = home_steps.next_steps("active", "ministry_leader", entries)
-    assert labels(leader) == ["Ministry requests"]
 
 
 def test_greyed_queue_shows_no_count():
     """A greyed queue entry names its reason and no count, as the menu does."""
     entries = menu(greyed={"information_queue"}, counts={"information_queue": 4})
-    step = home_steps.next_steps("active", "staff", entries)[1]
+    step = home_steps.next_steps("active", entries)[2]
+    assert step.label == "Additional information"
     assert (step.url, step.note) == (None, None)
     assert step.reason == navigation.NO_CAMPAIGN
 
 
+def test_to_enter_step_follows_ministry_requests():
+    """Ministry requests to enter by hand follows Ministry requests' menu
+    entry (R39 finding 2, which folded Roster changes to enter into it):
+    greyed with its reason, and left out when the menu has none."""
+    greyed = menu(greyed={"ministry_report"}, counts={"ministry_entry": 3})
+    step = home_steps.next_steps("closed", greyed)[1]
+    assert (step.label, step.url, step.note) == (
+        "Ministry requests to enter by hand",
+        None,
+        None,
+    )
+    assert step.reason == navigation.NO_CAMPAIGN
+    without = menu(ALL - {"ministry_report"})
+    assert "Ministry requests to enter by hand" not in labels(
+        home_steps.next_steps("closed", without)
+    )
+
+
 def test_closed_and_activating_steps():
-    """The closed row offers the reports; activation, its progress and mail."""
-    assert labels(home_steps.next_steps("closed", "administrator", menu())) == [
-        "Participation",
-        "Emailed reports",
+    """The closed row offers the campaign-end work lists with their counts
+    (#1590) and Emailed reports. Activation lists its progress and mail."""
+    entries = menu(
+        counts={
+            "census_changes": 2,
+            "ministry_entry": 0,
+            "information_queue": 1,
+            "ministry_report": 5,
+        }
+    )
+    closed = home_steps.next_steps("closed", entries)
+    assert labels(closed) == [*WORK, "Emailed reports"]
+    assert [(step.count, str(step.note)) for step in closed[0:4]] == [
+        (2, "to do"),
+        (0, "to enter by hand"),
+        (1, "open"),
+        (5, "open"),
     ]
-    assert labels(home_steps.next_steps("activating", "administrator", menu())) == [
+    assert labels(home_steps.next_steps("activating", menu())) == [
         "Production activation",
-        "Outgoing mail",
+        "Sent mail",
     ]
-    assert home_steps.next_steps(None, "administrator", menu()) == []
+    assert home_steps.next_steps(None, menu()) == []
 
 
 def test_draft_in_production_preparation_leads_with_go_live_readiness():
-    """Home lists Go-live readiness first while a draft is being prepared."""
+    """Home lists Go live first while a draft is being prepared."""
     entries = menu()
     context = {
         "admin_chrome": {
@@ -177,25 +274,18 @@ def test_draft_in_production_preparation_leads_with_go_live_readiness():
         "principal": SimpleNamespace(roles={"administrator"}),
         "dashboard": {"campaign": campaign("draft")},
     }
-    assert labels(home_steps.home(context)["steps"]) == [
-        "Go-live readiness",
+    assert labels(home_steps.home(context)) == [
+        "Go live",
         "Production activation",
-        "Outgoing mail",
+        "Sent mail",
     ]
     context["dashboard"] = {"campaign": campaign("scheduled")}
-    assert labels(home_steps.home(context)["steps"])[0] == "Production activation"
+    assert labels(home_steps.home(context))[0] == "Production activation"
 
 
-def test_today_counts_by_role():
-    """Administrators and Staff count recent responses; a leader, open requests."""
-    assert home_steps.today({"families": {"recent": 4}}) == {"responded": 4}
-    mine = {"ministries": [{"join": 2, "leave": 1}, {"join": 0, "leave": 3}]}
-    assert home_steps.today({"my_ministries": mine}) == {"requests": 6}
-    assert home_steps.today({"families": {"active": 9}}) == {}
-
-
-def test_home_returns_nothing_without_a_campaign_or_chrome():
-    """No current campaign: the campaign panel says what to do instead."""
+def test_home_returns_nothing_without_a_campaign_chrome_or_administrator():
+    """No current campaign: the campaign panel says what to do instead. Only
+    an Administrator is shown Home (#1726), so no one else gets steps."""
     principal = SimpleNamespace(roles={"administrator"})
     configuration = SimpleNamespace(mode="testing")
     chrome = {"sections": [{"items": list(menu().values())}]}
@@ -208,19 +298,23 @@ def test_home_returns_nothing_without_a_campaign_or_chrome():
     assert home_steps.home(context) is None
     assert home_steps.home({**context, "admin_chrome": {}}) is None
     context["dashboard"] = {"campaign": campaign("draft"), "families": {"recent": 1}}
-    result = home_steps.home(context)
-    assert labels(result["steps"])[0] == "Campaign settings"
-    assert result["today"] == {"responded": 1}
+    assert labels(home_steps.home(context))[0] == "Campaign settings"
+    for roles in ({"staff"}, {"staff", "ministry_leader"}, {"ministry_leader"}):
+        other = context | {"principal": SimpleNamespace(roles=roles)}
+        assert home_steps.home(other) is None
 
 
 def test_template_links_available_steps_and_names_greyed_ones():
-    """The panel links what the menu offers, writes the reason for the rest,
-    and leads with the Today line."""
-    entries = menu(greyed={"ministry_report"}, counts={"information_queue": 5})
+    """The panel's link cards link what the menu offers, with the count large
+    and what it means, and write the reason for the rest (#1673)."""
+    entries = menu(
+        greyed={"ministry_report"},
+        counts={"information_queue": 5, "census_changes": 2},
+    )
     context = {
         "admin_chrome": {
             "sections": [{"items": list(entries.values())}],
-            "delivery_unknown": 1,
+            "delivery_unknown": split(1, 2),
         },
         "configuration": SimpleNamespace(mode="production"),
         "principal": SimpleNamespace(roles={"administrator"}),
@@ -228,12 +322,53 @@ def test_template_links_available_steps_and_names_greyed_ones():
     }
     html = render_to_string("stewardship/home-next-steps.html", context)
     assert "data-next-steps" in html and ">Next steps</h2>" in html
-    assert "Today: 1 Family responded in the past 24 hours." in html
-    assert '<a href="/information_queue/">Additional information</a> — 5 open' in html
-    assert f"Ministry requests — {navigation.NO_CAMPAIGN}" in html
+    assert "data-today" not in html
+
+    def card(url, label, count, note, look):
+        """A linked card's markup, as components/link-cards.html draws it."""
+        return (
+            f'<li class="link-card {look}" data-link-card><a href="{url}">'
+            f'<span class="link-card-label">{label}</span> '
+            f'<span class="link-card-count">{count}</span> '
+            f'<span class="link-card-note">{note}</span></a></li>'
+        )
+
     assert (
-        '<a href="/deliveries/?state=delivery_unknown">Outgoing mail</a>'
-        " — 1 may not have arrived"
+        card(
+            "/information_queue/",
+            "Additional information",
+            5,
+            "open",
+            "link-card-attention",
+        )
+        in html
+    )
+    assert (
+        card("/census_changes/", "Census changes", 2, "to do", "link-card-attention")
+        in html
+    )
+    # Ministry requests to enter by hand is greyed with Ministry requests'
+    # menu reason (R39 finding 2).
+    for label in ("Ministry requests to enter by hand", "Ministry requests"):
+        assert (
+            f'<li class="link-card link-card-off" data-link-card>'
+            f'<span class="link-card-label">{label}</span> '
+            f'<span class="link-card-note">{navigation.NO_CAMPAIGN}</span></li>'
+        ) in html
+    # Sent mail's other mode has some too: a second, small link at the
+    # card's end, whose hidden words finish its name (#1576).
+    production = card(
+        "/deliveries/?state=needs_review&amp;mode=production",
+        "Sent mail",
+        1,
+        "may not have arrived",
+        "link-card-attention link-card-split",
+    ).removesuffix("</li>")
+    assert (
+        f"{production} "
+        '<a class="link-card-other" '
+        'href="/deliveries/?state=needs_review&amp;mode=testing">2 in Testing'
+        '<span class="visually-hidden"> may not have arrived</span></a></li>'
     ) in html
     context["dashboard"] = {"campaign": None}
     assert "data-next-steps" not in render_to_string(

@@ -12,6 +12,10 @@
   let accepted = false, submissionAttempted = false;
   let uncertainSubmission = false;
   let separateMailing = null;
+  // Per address: the country shown and both region controls' values, kept
+  // outside the answer so a rebuilt form (Review, then Edit) shows the same
+  // choice for a blank address and restores the hidden region (#1777).
+  let addressDrafts = {};
   let requests = {}, initialRequests = {};
   // Ministry and pledge choices set aside while "cannot participate" or
   // "cannot contribute" is checked, restored when it is unchecked again.
@@ -120,6 +124,7 @@
   function clear() {
     form = answers = initial = null;
     separateMailing = null;
+    addressDrafts = {};
     requests = initialRequests = {};
     conflicts.clear();
     // The expired screen empties the form without heading(); drop any height
@@ -323,7 +328,9 @@
   function conflictChoice(path, input, parent, apply = null) {
     const conflict = conflicts.get(path);
     if (!conflict) return;
-    input.disabled = conflict.choice === undefined;
+    // An unresolved conflict holds the field; once chosen, the field's own
+    // state stands (a chosen birth-date Unknown keeps the date greyed).
+    if (conflict.choice === undefined) input.disabled = true;
     const group = node("fieldset", null, parent, {"data-conflict": path});
     node("legend", "Choose which value to keep before continuing", group);
     [["Use my edit", conflict.edited], ["Use updated records", conflict.refreshed]].forEach(([label, value], index) => {
@@ -332,8 +339,8 @@
       radio.checked = conflict.choice === index;
       wrapper.append(document.createTextNode(" " + label + ": " + (value || "Blank")));
       radio.addEventListener("change", () => {
-        if (apply) apply(value); else input.value = value;
         input.disabled = false;
+        if (apply) apply(value); else input.value = value;
         conflict.choice = index;
         input.dispatchEvent(new Event("input"));
         // Keep both values available while arrows/mouse change the selection.
@@ -389,7 +396,10 @@
         const label = document.querySelector('label[for="' + (id || input.id) + '"]');
         const link = node("a", (label?.textContent || "Field") + ": " + text, item, {href: "#" + (id || input.id)});
         link.addEventListener("click", (event) => {
-          event.preventDefault(); showPage(pageOf(input), {focus: false}); input.focus();
+          // Look the field up again: an address region's id moves to the
+          // control for the country now chosen (#1777).
+          const target = document.getElementById(id || input.id) || input;
+          event.preventDefault(); showPage(pageOf(target), {focus: false}); target.focus();
         });
         const error = node("p", text, null, {id: errorId});
         input.after(error);
@@ -689,13 +699,17 @@
         const label = node("label", null, group);
         unknown = node("input", null, label, {type: "checkbox", id: id + "-unknown"});
         label.append(document.createTextNode(" Birth date is unknown"));
-        node("p", "Choosing Unknown requests removal of any recorded birth date, subject to parish review.", group, {id: id + "-unknown-help", class: "muted"});
+        // Always shown, so ticking the box moves nothing (#1674). It is also
+        // the visible reason the greyed birth-date field names.
+        node("p", "Choosing Unknown clears and turns off the birth date field. " +
+          "It requests removal of any recorded birth date, subject to parish review.", group,
+          {id: id + "-unknown-help", class: "muted"});
         unknown.setAttribute("aria-describedby", id + "-unknown-help");
+        input.setAttribute("aria-describedby", input.getAttribute("aria-describedby") + " " + id + "-unknown-help");
         unknown.disabled = conflicts.has(path);
         unknown.addEventListener("change", () => {
           input.value = "";
-          input.readOnly = unknown.checked;
-          input.required = !unknown.checked;
+          unknownState();
           input.dispatchEvent(new Event("input"));
           validateField(input, {...definition, required: !unknown.checked});
         });
@@ -714,11 +728,16 @@
           if (language.value === "other") input.focus();
         });
       }
+      function unknownState() {
+        // A ticked Unknown greys the empty birth-date field (disabled, so it
+        // is neither typed in nor validated); unticked, it is required again.
+        input.disabled = unknown.checked;
+        input.required = !unknown.checked;
+      }
       function setValue(value) {
         if (unknown) {
           unknown.checked = value === "unknown";
-          input.readOnly = unknown.checked;
-          input.required = !unknown.checked;
+          unknownState();
           input.value = unknown.checked ? "" : value;
         } else input.value = definition.kind === "phone" ? Phone.format(value) : value;
         if (language) {
@@ -743,7 +762,10 @@
         if (["first_name", "last_name"].includes(definition.name)) retitle("member-" + member.id, memberName(member, index));
         const changed = definition.changed || (definition.kind === "phone" ? !Phone.same(value, original) :
           canonical(value, definition.name) !== canonical(original, definition.name));
+        // A proposed Member has no parish record, so comparing with one only
+        // marks every field (#1675); the empty line keeps its place.
         status.textContent = definition.conflict ? "Your requested change is awaiting parish review." :
+          member.proposed ? "" :
           changed ? "Changed from parish records." : !definition.available ? "Not available in parish records." : "";
       }
       input.addEventListener("input", () => { update(); input.setCustomValidity(""); });
@@ -987,7 +1009,8 @@
     });
   }
   function limitationEditor(member, parent) {
-    // "Cannot participate", above the Ministry choices it locks.
+    // "Cannot participate", inside the Ministry panel after the contact
+    // notice and above the Ministry choices it locks.
     if (!form.service) return;
     const entry = serviceEntry(member), prefix = "service-" + member.id;
     const lockId = prefix + "-cannot-serve";
@@ -1018,9 +1041,19 @@
       }
       return;
     }
-    limitationEditor(member, parent);
     const panel = node("section", null, parent, {class: "panel ministry-panel"});
     node("h4", "Ministry participation", panel);
+    // Asking to join or stop is consent to be contacted (#1591, #1625): say
+    // so once, before every choice, as plain always-present text (no
+    // tooltip, nothing that appears on click and moves the controls). The
+    // "cannot participate" checkbox, just below, stops every Ministry but
+    // is not consent: while the Family's latest response has it checked,
+    // none of the Member's requests share, earlier ones included
+    // (Administrator, 2026-10-18, #1591). The notice says so, but only
+    // when that box is drawn (the service module is on).
+    node("p", "If you choose to join a ministry or stop participating in one, that ministry's leaders will see this person's email address and phone numbers so they can follow up." +
+      (form.service ? " If the physical limitations box below is checked, they are not shared." : ""), panel);
+    limitationEditor(member, panel);
     const choices = ministryChoices(member), current = ministryCurrent(member);
     const locked = Boolean(form.service && serviceEntry(member).cannot_serve);
     // Read with the "cannot participate" checkbox through aria-describedby.
@@ -1598,9 +1631,27 @@
     const section = node("section", null, editor, {id: "household-section", tabindex: "-1", "aria-label": "Family census"});
     const controls = new Map(), validators = [];
     let reviewRequested = false;
-    const labels = {line1: "Address line 1", line2: "Address line 2",
-      city: "City or locality", region: "State, province or region",
-      postal_code: "ZIP or postal code", country: "Country"};
+    // Country comes first (#1777): it decides how State and the postal code
+    // are asked for. A US address picks its State from the codes the server
+    // accepts; any other country types a region. showCountry() swaps them.
+    const labels = {country: "Country", line1: "Address line 1", line2: "Address line 2",
+      city: "City or locality", region: "State, province or region", postal_code: "Postal code"};
+    const usLabels = {region: "State", postal_code: "ZIP code"};
+    const usCodes = new Set(form.household.us_regions);
+    const plainRegion = (text) => text.trim().toUpperCase().replace(/\./g, "").replace(/\s+/g, " ");
+    const usNames = new Map(form.household.us_region_choices.map(([code, title]) =>
+      [plainRegion(title.slice(0, -(code.length + 3))), code]));
+    // The US code for region text: the code itself, ignoring case and outer
+    // spaces as the server does. Leniently (when a typed region carries over
+    // to the drop-down) also a listed name or a code with periods ("Ky.").
+    function usCode(text, lenient = false) {
+      const typed = text.trim().toUpperCase();
+      if (usCodes.has(typed)) return typed;
+      if (!lenient) return "";
+      const plain = plainRegion(typed);
+      return usCodes.has(plain) ? plain : usNames.get(plain) || "";
+    }
+    const textParts = ["line1", "line2", "city", "region", "postal_code"];
     function status(definition, output) {
       const changed = definition.changed || canonical(answers.family[definition.name], definition.name) !==
         canonical(initial.family[definition.name], definition.name);
@@ -1625,10 +1676,80 @@
       const output = node("p", "", group, {id: "family-" + name + "-status", class: "muted"});
       const inputs = {};
       const touched = new Set();
+      // An address's region has two controls for one place: the US State
+      // drop-down and the free-text region. Both carry the region's id, and
+      // only the one for the selected country is in the page, so the label,
+      // error lines, server error links and page checks all find it; the
+      // other keeps its value while out of the page, so switching back
+      // restores it. (Moving an id between two attached controls instead
+      // leaves WebKit naming the wrong one by the label.)
+      let regionList = null, regionText = null, regionLabel = null, postalLabel = null;
+      // Put the region control for the selected country in the page, and
+      // set the region and postal labels to match. ``carry`` (only when the
+      // Family changes Country) lets typed region text the drop-down offers
+      // carry over to it; a repaint never changes what the answer holds.
+      function showCountry(carry = false) {
+        const us = inputs.country.value === "US";
+        const [active, idle] = us ? [regionList, regionText] : [regionText, regionList];
+        if (!active.isConnected) {
+          // A server error line belongs to the control taken out: it goes
+          // with it, and that control stops pointing at it.
+          const serverError = document.getElementById(idle.id + "-error");
+          if (serverError) {
+            serverError.remove();
+            idle.setAttribute("aria-describedby", idle.getAttribute("aria-describedby").split(" ")
+              .filter((reference) => reference !== serverError.id).join(" "));
+          }
+          idle.replaceWith(active);
+        }
+        idle.setCustomValidity("");
+        idle.setAttribute("aria-invalid", "false");
+        // A typed region the drop-down offers carries over to it.
+        const typed = carry && usCode(regionText.value, true);
+        if (us && !regionList.value && typed) regionList.value = typed;
+        regionLabel.textContent = us ? usLabels.region : labels.region;
+        postalLabel.textContent = us ? usLabels.postal_code : labels.postal_code;
+        inputs.region = active;
+      }
+      // Copy the shown controls into the answer. A country on its own never
+      // makes an address nonblank: the default United States is recorded
+      // only once another part is entered.
+      function readAddress() {
+        const address = answers.family[name];
+        textParts.forEach((key) => { address[key] = inputs[key].value; });
+        address.country = textParts.some((key) => address[key].trim()) ? inputs.country.value : "";
+      }
+      // Draw the answer into the controls and clear their checks.
       function repaint() {
+        if (name !== "email_opt_out") {
+          // Draw an assigned address (a copy, a restore or a chosen record)
+          // without changing it. Only a blank address shows a default
+          // country (the last one chosen, else United States); one with
+          // parts but no country shows none, so its "complete this field"
+          // error matches what the Family sees. A mailing copy shows home's.
+          const value = answers.family[name], country = value.country.toUpperCase();
+          const copy = name === "mailing_address" && answers.family.mailing_same_as_home;
+          const draft = addressDrafts[copy ? "home_address" : name] || {};
+          inputs.country.value = country || (textParts.some((key) => value[key].trim()) ? "" : draft.country || "US");
+          const us = inputs.country.value === "US", listed = us ? value.region : draft.list || "";
+          const code = usCode(listed);
+          regionList.querySelector("[data-unlisted]")?.remove();
+          if (!code && listed.trim()) {
+            // A US region the list does not offer (parish records take any
+            // text) stays selectable, never silently dropped, also while
+            // another country shows; its check asks the Family to choose
+            // from the list.
+            regionList.insertBefore(node("option", listed, null, {value: listed, "data-unlisted": ""}),
+              regionList.options[1]);
+          }
+          regionList.value = code || listed;
+          regionText.value = us ? draft.text || "" : value.region;
+          showCountry();
+        }
         Object.entries(inputs).forEach(([component, input]) => {
           const value = answers.family[name];
-          input.value = name === "email_opt_out" ? value === null ? "" : String(value) : value[component];
+          if (name === "email_opt_out") input.value = value === null ? "" : String(value);
+          else if (!["country", "region"].includes(component)) input.value = value[component];
           input.setCustomValidity("");
           const explanation = document.getElementById(input.id + "-constraint");
           if (explanation) { explanation.textContent = ""; explanation.hidden = true; }
@@ -1650,50 +1771,69 @@
           status(definition, output);
         });
       } else {
-        Object.entries(labels).forEach(([component, label]) => {
+        Object.entries(labels).forEach(([component, text]) => {
           const id = "family-" + name + "-" + component;
-          node("label", label, group, {for: id});
-          const input = node(component === "country" ? "select" : "input", null, group,
-            {id, autocomplete: "off", "aria-describedby": output.id + " " + id + "-constraint"});
-          const error = node("p", "", group, {id: id + "-constraint"});
-          error.hidden = true;
+          const label = node("label", text, group, {for: id});
+          const attributes = {id, autocomplete: "off", "aria-describedby": output.id + " " + id + "-constraint"};
+          const pair = [];
           if (component === "country") {
-            node("option", "Select a country", input, {value: ""});
-            form.household.countries.forEach(([code, title]) => node("option", title, input, {value: code}));
+            pair.push(node("select", null, group, attributes));
+            // Shown only for an address with parts but no country; never offered.
+            node("option", "Select a country", pair[0], {value: "", disabled: "", hidden: ""});
+            form.household.countries.forEach(([code, title]) => node("option", title, pair[0], {value: code}));
           } else {
+            if (component === "region") {
+              // Both region controls share the id and the one error line; the
+              // text one starts out of the page (showCountry swaps them).
+              regionLabel = label;
+              regionList = node("select", null, group, attributes);
+              node("option", "Select a state", regionList, {value: ""});
+              form.household.us_region_choices.forEach(([code, title]) => node("option", title, regionList, {value: code}));
+              pair.push(regionList);
+            }
+            if (component === "postal_code") postalLabel = label;
+            const input = node("input", null, component === "region" ? null : group, attributes);
             input.type = "text";
             input.maxLength = form.household.address_limits[component];
+            if (component === "region") regionText = input;
+            pair.push(input);
           }
-          inputs[component] = input;
-          input.addEventListener("input", () => {
-            answers.family[name][component] = input.value;
-            if (name === "mailing_address") separateMailing = structuredClone(answers.family[name]);
-            input.setCustomValidity("");
-            validate();
-            document.getElementById("family-mailing_same_as_home")?.setCustomValidity("");
-            status(definition, output);
-            if (name === "home_address" && answers.family.mailing_same_as_home) {
-              answers.family.mailing_address = structuredClone(answers.family.home_address);
-              controls.get("mailing_address").repaint();
-            }
+          const error = node("p", "", group, {id: id + "-constraint"});
+          error.hidden = true;
+          inputs[component] = pair[0];
+          pair.forEach((input) => {
+            input.addEventListener("input", () => {
+              if (component === "country") showCountry(true);
+              readAddress();
+              addressDrafts[name] = {country: inputs.country.value, list: regionList.value, text: regionText.value};
+              if (name === "mailing_address") separateMailing = structuredClone(answers.family[name]);
+              input.setCustomValidity("");
+              validate();
+              document.getElementById("family-mailing_same_as_home")?.setCustomValidity("");
+              status(definition, output);
+              if (name === "home_address" && answers.family.mailing_same_as_home) {
+                answers.family.mailing_address = structuredClone(answers.family.home_address);
+                controls.get("mailing_address").repaint();
+              }
+            });
+            input.addEventListener("blur", () => { touched.add(component); validate(); });
+            if (input.tagName === "SELECT") input.addEventListener("change", () => { touched.add(component); validate(); });
           });
-          input.addEventListener("blur", () => { touched.add(component); validate(); });
-          if (component === "country") input.addEventListener("change", () => { touched.add(component); validate(); });
         });
       }
       function validate() {
         if (name === "email_opt_out") return;
         const value = Object.fromEntries(Object.entries(answers.family[name]).map(
           ([key, text]) => [key, text.normalize("NFC").trim()]));
-        const nonblank = Object.values(value).some(Boolean), usa = value.country === "US";
+        const nonblank = Object.values(value).some(Boolean), usa = value.country.toUpperCase() === "US";
         Object.entries(inputs).forEach(([key, input]) => {
           let error = /[\u0000-\u001f\u007f\u0085\u2028\u2029]/.test(value[key]) ? "Use a single line of text." : "";
           if (nonblank && ["line1", "city", "country"].includes(key) && !value[key]) error = "Complete this address field.";
           if (nonblank && usa && key === "region" && !form.household.us_regions.includes(value.region.toUpperCase())) {
-            error = "Enter a US state, territory or military abbreviation.";
+            error = "Choose a state from the list.";
           }
           if (nonblank && usa && key === "postal_code" && !/^\d{5}(-\d{4})?$/.test(value.postal_code)) {
-            error = "Enter a five-digit ZIP or ZIP+4 code.";
+            error = "Enter a five-digit ZIP code or ZIP+4.";
           }
           input.setCustomValidity(error);
           const show = touched.has(key) || reviewRequested;
@@ -2242,7 +2382,8 @@
           "Unknown — request parish review of removing any recorded birth date" :
           (definition.kind === "phone" ? Phone.format(value) :
             definition.kind === "date" && value ? calendarDate(value) : value) || "Not provided", list);
-        if (changed) {
+        // A proposed Member's values are all new, as its panel already says (#1675).
+        if (changed && !member.proposed) {
           display.classList.add("changed");
           node("span", " — Changed from parish records", display);
         }

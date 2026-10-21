@@ -192,6 +192,8 @@ def status():
             "retry_wait": 0,
             "abandoned": 0,
             "delivery_unknown": 0,
+            "delivery_review": 0,
+            "delivery_review_other": 0,
         },
         {"count": 3},
         4,
@@ -515,6 +517,7 @@ def system_health():
         send_active=False,
         planning_held=False,
         retry_waiting=2,
+        retry_waiting_other=0,
         next_retry_at=NOW,
         daily_sent=1612,
         daily_limit=1600,
@@ -613,6 +616,8 @@ GOLDEN = {
                 "retry_wait": 0,
                 "abandoned": 0,
                 "delivery_unknown": 0,
+                "delivery_review": 0,
+                "delivery_review_other": 0,
             },
             "presence": {"count": 3},
         },
@@ -705,6 +710,7 @@ GOLDEN = {
             "send_active": False,
             "planning_held": False,
             "retry_waiting": 2,
+            "retry_waiting_other": 0,
             "next_retry_at": iso(NOW),
             "daily_sent": 1612,
             "daily_limit": 1600,
@@ -767,11 +773,22 @@ GOLDEN = {
             },
         },
     ),
-    "send progress": (
-        lambda: admin_reads.SendProgressRead(
+    "mail queue": (
+        lambda: admin_reads.MailQueueRead(
             CAMPAIGN,
             "production",
             False,
+            dict.fromkeys(("queued", "sending", "retry_wait", "paused"), 0),
+            0,
+            [
+                {
+                    "purpose": "initial",
+                    "queued": 0,
+                    "sending": 0,
+                    "retry_wait": 0,
+                    "paused": 0,
+                }
+            ],
             False,
             admin_reads._send_counts(progress(counts())),
         ),
@@ -779,6 +796,17 @@ GOLDEN = {
             "campaign_id": str(CAMPAIGN),
             "mode": "production",
             "paused": False,
+            "counts": {"queued": 0, "sending": 0, "retry_wait": 0, "paused": 0},
+            "other_mode_queued": 0,
+            "kinds": [
+                {
+                    "purpose": "initial",
+                    "queued": 0,
+                    "sending": 0,
+                    "retry_wait": 0,
+                    "paused": 0,
+                }
+            ],
             "upcoming": False,
             "send": FINISHED_SEND,
         },
@@ -830,6 +858,7 @@ GOLDEN = {
                     "subject": "Campaign invitation",
                     "template_version": TEMPLATE,
                     "comparison": False,
+                    "skip_dates": [],
                     "resolved": [
                         {
                             "key": "once",
@@ -1017,6 +1046,7 @@ ALLOWED = {
         "send_active",
         "planning_held",
         "retry_waiting",
+        "retry_waiting_other",
         "next_retry_at",
         "daily_sent",
         "daily_limit",
@@ -1128,6 +1158,8 @@ ALLOWED = {
         "retry_wait",
         "abandoned",
         "delivery_unknown",
+        "delivery_review",
+        "delivery_review_other",
         "presence",
         "count",
     },
@@ -1164,7 +1196,20 @@ ALLOWED = {
         "at",
         *TASK_MEMBERS,
     },
-    "send progress": {"campaign_id", "mode", "paused", "upcoming", "send"}
+    "mail queue": {
+        "campaign_id",
+        "mode",
+        "paused",
+        "counts",
+        "queued",
+        "sending",
+        "retry_wait",
+        "other_mode_queued",
+        "kinds",
+        "purpose",
+        "upcoming",
+        "send",
+    }
     | SEND_MEMBERS,
     "send history": {
         "campaign_id",
@@ -1203,6 +1248,7 @@ ALLOWED = {
         "subject",
         "template_version",
         "comparison",
+        "skip_dates",
         "resolved",
         "key",
         "due_at",
@@ -1358,20 +1404,27 @@ def test_sections_the_reader_cannot_see_are_none():
         assert document[name] is None, name
 
 
-def test_when_a_send_watch_stops():
-    """A running send keeps a watch going; a finished one or none stops it."""
-    running = progress(counts(remaining=5, recent=5, last_settled_at=None))
-    model = admin_reads.SendProgressRead(
-        CAMPAIGN, "production", False, False, admin_reads._send_counts(running)
+def queue_read(send=None, *, upcoming=False, queued=0):
+    """A ``mail queue`` document with ``queued`` emails waiting, else empty."""
+    tally = {"queued": queued, "sending": 0, "retry_wait": 0, "paused": 0}
+    return admin_reads.MailQueueRead(
+        CAMPAIGN, "production", False, tally, 0, [], upcoming, send
     )
+
+
+def test_when_a_mail_queue_watch_stops():
+    """A running send or a queued email keeps a watch going; nothing stops it."""
+    running = progress(counts(remaining=5, recent=5, last_settled_at=None))
+    model = queue_read(admin_reads._send_counts(running))
     assert model.to_document()["send"]["rate_per_minute"] == float(Decimal("0.3"))
     assert not model.terminal
-    finished = GOLDEN["send progress"][0]()
+    finished = GOLDEN["mail queue"][0]()
     assert finished.terminal
-    assert admin_reads.SendProgressRead(None, "testing", False, False, None).terminal
-    # A Production send about to start keeps the watch going.
-    soon = admin_reads.SendProgressRead(None, "production", False, True, None)
-    assert not soon.terminal
+    assert queue_read().terminal
+    # A Production send about to start keeps the watch going, and so does a
+    # queued email of any kind (#1562).
+    assert not queue_read(upcoming=True).terminal
+    assert not queue_read(queued=1).terminal
 
 
 def test_task_show_stops_once_the_task_is_terminal():

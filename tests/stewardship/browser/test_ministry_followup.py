@@ -2,35 +2,32 @@
 
 import json
 from datetime import UTC, datetime
+from uuid import UUID
 
 import pytest
 from django.http import QueryDict
 from django.urls import reverse
 
-from parishkit.stewardship.reports.ministry_followup_views import (
-    BULK_KIND_HINTS,
-    bulk_values,
-    change_values,
-)
+from parishkit.stewardship.reports.ministry_followup_views import change_values
 from parishkit.stewardship.reports.report_paging import pop_navigation
 
 from .followup_components import (
-    BULK_CLOSED,
-    BULK_CLOSED_QUEUE,
-    BULK_JOIN,
-    BULK_KEY,
-    BULK_LEAVE,
-    BULK_POST,
-    BULK_QUEUE,
+    DECIDED,
+    DECIDED_NOTICE,
     GONE_ITEM,
     GONE_QUEUE,
+    LEADER_STAGES,
+    REQUEST,
+    REQUESTS,
+    STAGES,
 )
-from .test_components import axe_violations
-from .test_family_response import expect
-from .waits import available, eventually, greyed, has_text, hidden, same_place, visible
+from .test_table_sorting import fulfil_post_with
+from .waits import available, greyed, has_text, hidden, visible
 
 # The instant every follow-up fixture shows (followup_components.py).
 FIXTURE = datetime(2026, 9, 19, 15, 4, tzinfo=UTC)
+# The review worklist's rows (#1684): its table, in the shared region.
+ROWS = "#table table tbody tr"
 
 
 def posted(body):
@@ -111,10 +108,11 @@ def test_followup_mobile_keyboard_and_accessibility(
     assert choices == ["New", "In progress", "Resolved", "Closed: no response"]
     # A past edit's recorded assignment stays readable in history.
     visible(page.get_by_text("assigned to leader@example.org", exact=False))
-    # Closed outcomes are permanent: history remains, the form does not.
+    # A decided request's history remains, the form does not; its decision
+    # changes on Ministry requests (Back to review, #1684).
     page.goto(component_origin + "/followup-closed")
     assert page.get_by_role("button", name="Save follow-up").count() == 0
-    visible(page.get_by_text("Closed outcomes are permanent", exact=False))
+    visible(page.get_by_text("This request is decided", exact=False))
     page.goto(component_origin + "/followup-item-gated")
     assert page.get_by_role("button", name="Save follow-up").is_disabled()
 
@@ -281,12 +279,12 @@ def test_followup_filters_post_privately(page, component_origin):
     """Identifying filters submit only in a POST body, never the URL."""
     page.goto(component_origin + "/followup-queue")
     page.get_by_label("Search Member or Ministry name").fill("Private name")
-    page.get_by_label("Status").select_option("in_progress")
+    page.get_by_label("Stage").select_option("ignored")
     page.route("**/reports/ministries/", lambda route: route.fulfill(body="Filtered"))
     with page.expect_request(lambda request: request.method == "POST") as sent:
         page.get_by_role("button", name="Apply filters").click()
     assert "search=Private+name" in sent.value.post_data
-    assert "state=in_progress" in sent.value.post_data
+    assert "stage=ignored" in sent.value.post_data
     assert "assignee" not in sent.value.post_data
     assert "ministry=9" in sent.value.post_data
     assert "Private" not in sent.value.url and "?" not in sent.value.url
@@ -409,7 +407,7 @@ def test_followup_sort_heading_posts_privately(page, component_origin):
     default order (newest first) has no column to show it (#1064), so no
     heading is marked sorted."""
     page.goto(component_origin + "/followup-queue")
-    assert page.locator("#followup-table thead th[aria-sort]").count() == 0
+    assert page.locator("#table thead th[aria-sort]").count() == 0
     page.route("**/reports/ministries/", lambda route: route.fulfill(body="Sorted"))
     # "Member" alone would also match the Member DUID heading.
     member = page.locator("th[data-sort-column='member']")
@@ -432,7 +430,11 @@ def test_clipped_name_tip_never_swallows_the_next_tap(browser_engine, component_
     try:
         page = context.new_page()
         page.goto(component_origin + "/followup-all")
-        name = page.locator("#followup-table tbody tr").nth(1).locator(".cell-clamp")
+        name = page.locator(ROWS).nth(1).locator(".cell-clamp")
+        # The Ministry name now opens the request's page (R38 finding 13),
+        # and a tap on a link opens it as it shows the tip; the tip itself is
+        # what this checks, so its link is set aside.
+        name.evaluate("node => node.closest('a').removeAttribute('href')")
         name.tap()
         tip = page.locator(".admin-tip.is-shown")
         expect(tip).to_have_text(name.text_content())
@@ -462,10 +464,10 @@ def test_clipped_name_tip_never_swallows_the_next_tap(browser_engine, component_
 
 
 def test_followup_columns_follow_the_shared_order(page, component_origin):
-    """The queue's columns follow the shared order (#932): the Member leads
-    and the Member DUID has its own column (a Member added on the form reads
-    New Member). By Administrator decision (#1064) there is no Ministry DUID
-    or Submitted column.
+    """The worklist's columns follow the shared order (#932, #1684): the
+    Member leads and the Member DUID has its own column (a Member added on
+    the form reads New Member), then the Ministry and Last contact, then the
+    review worklist's own. No Ministry DUID.
     A Ministry name too long even for two lines (#1136) ends in an
     ellipsis on its second line, joins the tab order and shows whole in a
     tip on keyboard focus, and never widens the page."""
@@ -473,20 +475,24 @@ def test_followup_columns_follow_the_shared_order(page, component_origin):
 
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + "/followup-all")
-    headings = page.locator("#followup-table thead th").all_inner_texts()
+    headings = page.locator("#table thead th").all_inner_texts()
     # A sort heading's text also holds its button's arrow and hint lines. The
-    # selection box for bulk outcomes leads (#1131), as the shared order puts
+    # selection box for bulk decisions leads (#1131), as the shared order puts
     # it.
     assert [text.split("\n")[0].strip() for text in headings] == [
         "",
         "Member",
         "Member DUID",
         "Ministry",
-        "Request",
-        "Status",
         "Last contact",
+        "Family's answer",
+        "Reviewer's value",
+        "Stage",
+        "Submitted",
+        "Last decision",
+        "Actions",
     ]
-    rows = page.locator("#followup-table tbody tr")
+    rows = page.locator(ROWS)
     first, second = (rows.nth(n).locator("th, td") for n in (0, 1))
     assert first.nth(1).inner_text() == "Example <Member>"
     assert first.nth(2).inner_text() == "12345"
@@ -498,281 +504,42 @@ def test_followup_columns_follow_the_shared_order(page, component_origin):
     short = first.nth(3).locator(".cell-clamp")
     height = name.bounding_box()["height"]
     assert abs(height - 2 * short.bounding_box()["height"]) <= 2, height
-    assert name.get_attribute("tabindex") == "0"
-    # The short name in the first row fits, so it stays out of the tab order.
+    # The Ministry cell is the request's link (R38 finding 13), so the
+    # keyboard reaches a clipped name through it: neither name joins the tab
+    # order itself, and focus on the link shows the clipped one's tip.
+    assert name.get_attribute("tabindex") is None
     assert short.get_attribute("tabindex") is None
-    name.focus()
+    link = name.locator("xpath=ancestor::a[1]")
+    link.focus()
     expect(page.locator(".admin-tip.is-shown")).to_have_text(name.text_content())
-    # A resize keeps focus on the name and its tip shown beside it.
+    # A resize keeps focus on the link and the name's tip shown beside it.
     page.set_viewport_size({"width": 1100, "height": 900})
-    assert name.evaluate("e => document.activeElement === e")
+    assert link.evaluate("e => document.activeElement === e")
     expect(page.locator(".admin-tip.is-shown")).to_have_count(1)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-
-
-def bulk_dialog(page):
-    """The follow-up queue's bulk outcome dialog (#1131)."""
-    return page.locator("dialog#followup-bulk-dialog")
-
-
-def bulk_page(page, component_origin):
-    """Open the bulk outcome queue; fail on script errors; mark against reloads."""
-    page.set_viewport_size({"width": 1280, "height": 900})
-    page.goto(component_origin + BULK_QUEUE)
-    # The totals' chart (#1133) is drawn after load; measure once it is.
-    expect(page.locator("[data-chart][data-chart-state=pending]")).to_have_count(0)
-    failures = []
-    page.on("pageerror", lambda error: failures.append(str(error)))
-    page.evaluate("window.notReloaded = true")
-    return failures
-
-
-def tick(page, request):
-    """Tick one request's selection box on the queue."""
-    page.locator(f"input[data-select-row][value^='{request}:']").check()
-
-
-# The pageshow a back/forward restore fires; the selection is worked out
-# again then (test_conditional_restore.py).
-RESTORE = "window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))"
-BULK_NAMES = ["Mark as Joined", "Mark as Declined", "Mark as Left", "Mark as Stayed"]
-
-
-def bulk_gate(page):
-    """Each bulk button's availability, and the visible reason line's text.
-
-    A disabled button must name the visible line in aria-describedby; an
-    available one must not.
-    """
-    hint = page.locator("[data-selection-hint]")
-    hint_id = hint.get_attribute("id")
-    shown = hint.evaluate("e => !e.hasAttribute('data-cleared')")
-    states = []
-    for name in BULK_NAMES:
-        button = page.get_by_role("button", name=name, exact=True)
-        described = (button.get_attribute("aria-describedby") or "").split()
-        assert (hint_id in described) == (button.is_disabled() and shown), name
-        states.append(button.is_enabled())
-    return states, hint.text_content() if shown else ""
-
-
-def test_bulk_outcome_buttons_follow_the_kind_of_the_ticked_requests(
-    page, component_origin
-):
-    """Each bulk button is for one kind of request (Administrator,
-    2026-10-13): with only joins ticked, Left and Stayed are unavailable,
-    with only leaves, Joined and Declined, and with both kinds, all four;
-    the reserved reason line says why each time, nothing moves, and ticks
-    restored by the back/forward cache are worked out again on pageshow."""
-    failures = bulk_page(page, component_origin)
-    assert page.locator(f"input[value^='{BULK_CLOSED}:']").count() == 0
-    buttons = page.locator(".bulk-bar [data-bulk-action]")
-    assert buttons.all_inner_texts() == BULK_NAMES
-    # Page positions, not window ones: ticking a box below the fold (the
-    # totals and By Ministry sit above the table, #1133) scrolls it in.
-    # Compared with same_place: Linux Firefox's fractional scroll offset
-    # adds ~0.00003 px of float noise to an unmoved box.
-    place = """node => {
-      const box = node.getBoundingClientRect();
-      return [box.x + scrollX, box.y + scrollY, box.width, box.height];
-    }"""
-    before = [buttons.nth(i).evaluate(place) for i in range(buttons.count())]
-    table_top = page.locator("#followup-table").evaluate(place)
-    states, line = bulk_gate(page)
-    assert states == [False] * 4 and "Tick open requests on this page" in line
-    tick(page, BULK_JOIN)
-    assert bulk_gate(page) == ([True, True, False, False], BULK_KIND_HINTS["join"])
-    tick(page, BULK_LEAVE)
-    assert bulk_gate(page) == ([False] * 4, BULK_KIND_HINTS["mixed"])
-    page.locator(f"input[data-select-row][value^='{BULK_JOIN}:']").uncheck()
-    assert bulk_gate(page) == ([False, False, True, True], BULK_KIND_HINTS["leave"])
-    # Ticking never moves a control or the table (no layout shift).
-    assert same_place(
-        [buttons.nth(i).evaluate(place) for i in range(buttons.count())], before
-    )
-    assert same_place(page.locator("#followup-table").evaluate(place), table_top)
-    # A restored selection without change events: the join instead.
-    page.evaluate(
-        f"""() => {{
-        document.querySelector("input[value^='{BULK_LEAVE}:']").checked = false;
-        document.querySelector("input[value^='{BULK_JOIN}:']").checked = true;
-        {RESTORE};
-    }}"""
-    )
-    assert bulk_gate(page) == ([True, True, False, False], BULK_KIND_HINTS["join"])
-    assert not failures
-
-
-def test_bulk_outcome_records_the_ticked_requests_in_place(
-    page, component_origin, axe_source
-):
-    """Bulk outcomes (#1131): Mark as Joined names the one ticked join, with
-    no skipped rows to explain; the optional contact attempt gates Record
-    outcome until complete; recording posts the request with its own version
-    and the button's kind, then redraws the table in place without a
-    reload."""
-    failures = bulk_page(page, component_origin)
-    joined = page.get_by_role("button", name="Mark as Joined")
-    tick(page, BULK_JOIN)
-    available(joined)
-    joined.click()
-    dialog = bulk_dialog(page)
-    visible(dialog)
-    assert dialog.locator("h2").inner_text() == (
-        "Mark Joining <Member> — Example <Ministry> as Joined the Ministry?"
-    )
-    assert dialog.get_attribute("aria-describedby") == "followup-bulk-dialog-body"
-    assert dialog.locator("[data-confirm-skipped]").count() == 0
-    assert page.evaluate("document.activeElement.textContent.trim()") == "Cancel"
-    assert axe_violations(page, axe_source) == []
-    record = dialog.get_by_role("button", name="Record outcome")
-    available(record)
-    for label in ("Date", "Time", "What happened (optional)"):
-        greyed(dialog.get_by_label(label, exact=True))
-    dialog.get_by_label("How").select_option("phone")
-    hint_line = dialog.locator("#bulk-complete-hint")
-    eventually(page, "document.querySelector('#bulk-complete-hint').textContent !== ''")
-    assert record.is_disabled()
-    assert "Enter the date and time" in hint_line.inner_text()
-    dialog.get_by_label("Date", exact=True).fill("2026-09-19")
-    dialog.get_by_label("Time", exact=True).fill("3:04 PM")
-    dialog.get_by_label("What happened (optional)").fill("Left a <message>")
-    available(record)
-    posted = []
-
-    def answer(route):
-        """Record the dialog's POST and answer as the bulk view does."""
-        posted.append(route.request.post_data or "")
-        route.fulfill(status=204, body="")
-
-    page.route(component_origin + BULK_POST, answer)
-    record.click()
-    hidden(dialog)
-    visible(
-        page.locator(
-            "main > [role=status]",
-            has_text="Marked Joining <Member> — Example <Ministry> as Joined the "
-            "Ministry.",
-        )
-    )
-    # The table is redrawn from the remembered view: the join is resolved.
-    visible(
-        page.locator(
-            "#followup-table tbody tr", has_text="Joining <Member>"
-        ).get_by_text("Resolved: Joined the Ministry")
-    )
-    assert page.locator(f"input[value^='{BULK_JOIN}:']").count() == 0
-    assert page.evaluate("window.notReloaded === true")
-    form = QueryDict(posted[0])
-    assert form.getlist("request") == [f"{BULK_JOIN}:3"]
-    values = bulk_values(form)
-    assert (values["action"], values["outcome"]) == ("join", "joined")
-    assert values["bulk_key"] == BULK_KEY
-    assert values["versions"] == {BULK_JOIN: 3}
-    assert values["change"].contact_channel == "phone"
-    assert values["change"].contact_notes == "Left a <message>"
-    assert values["change"].contact_at is not None
-    # The redrawn region carries a fresh bulk key for the next action.
-    assert page.locator("input[name=bulk_key]").input_value() != str(BULK_KEY)
-    # The redrawn table's selection is wired again: the leave's box gates.
-    tick(page, BULK_LEAVE)
-    assert bulk_gate(page) == ([False, False, True, True], BULK_KIND_HINTS["leave"])
-    assert not failures
-
-
-def test_bulk_outcome_dialog_fields_reset_on_each_open(page, component_origin):
-    """Reopening the dialog clears an earlier contact attempt; a leave's
-    declined is named Stayed in the Ministry."""
-    failures = bulk_page(page, component_origin)
-    tick(page, BULK_LEAVE)
-    page.get_by_role("button", name="Mark as Left").click()
-    dialog = bulk_dialog(page)
-    visible(dialog)
-    dialog.get_by_label("How").select_option("email")
-    dialog.get_by_role("button", name="Cancel").click()
-    hidden(dialog)
-    page.get_by_role("button", name="Mark as Stayed").click()
-    visible(dialog)
-    assert dialog.locator("h2").inner_text() == (
-        "Mark Leaving <Member> — Example <Ministry> as Stayed in the Ministry?"
-    )
-    assert "Stayed in the Ministry" in dialog.inner_text()
-    assert dialog.get_by_label("How").input_value() == ""
-    available(dialog.get_by_role("button", name="Record outcome"))
-    assert not failures
-
-
-def test_a_refused_bulk_outcome_names_the_row_inside_the_dialog(page, component_origin):
-    """A stale request refuses the whole batch: the server's words show below
-    the buttons, which do not move, and nothing is redrawn."""
-    failures = bulk_page(page, component_origin)
-    message = (
-        "Joining <Member> — Example <Ministry> changed after this list was "
-        "shown (someone else may have recorded follow-up on it), so nothing "
-        "was saved."
-    )
-
-    def refuse(route):
-        """Answer as the bulk view does for a request that changed."""
-        route.fulfill(
-            status=409,
-            content_type="application/json",
-            body=json.dumps(
-                {"refusal": {"message": message, "fix": "Cancel, then reload."}}
-            ),
-        )
-
-    page.route(component_origin + BULK_POST, refuse)
-    tick(page, BULK_JOIN)
-    page.get_by_role("button", name="Mark as Declined").click()
-    dialog = bulk_dialog(page)
-    assert dialog.locator("h2").inner_text() == (
-        "Mark Joining <Member> — Example <Ministry> as Declined / no longer interested?"
-    )
-    record = dialog.get_by_role("button", name="Record outcome")
-    # Measured where the reader sees it: the dialog scrolls inside the window
-    # on a short screen, and the click scrolls the button into view first.
-    record.scroll_into_view_if_needed()
-    box = record.bounding_box()
-    record.click()
-    error = dialog.locator("[data-confirm-error]")
-    visible(error)
-    assert message in error.inner_text()
-    assert same_place(record.bounding_box(), box) and record.is_disabled()
-    assert page.locator("input[data-select-row]:checked").count() == 1
-    dialog.get_by_role("button", name="Cancel").click()
-    hidden(dialog)
-    assert page.evaluate("window.notReloaded === true")
-    assert not failures
 
 
 def test_members_no_longer_in_parishsoft_are_marked_with_nothing_to_record(
     page, component_origin
 ):
-    """Staff's one Status choice (#1217) lists requests for Members no longer
-    in ParishSoft, each marked beside the name with #1216's phrase, with no
-    selection column or bulk bar, so no empty column is left and the rows
-    stay one line; its request page says exactly why and has no form. A
-    Ministry leader is not offered the choice."""
+    """Staff's Members choice (#1217) lists requests for Members no longer in
+    ParishSoft, each marked beside the name with #1216's phrase and offering
+    no action, so the rows stay one line; its request page says exactly why
+    and has no form. A Ministry leader is not offered the choice."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + "/followup-queue")
-    status = page.get_by_label("Status")
-    assert status.locator("option").all_inner_texts()[-1] == (
-        "Members no longer in ParishSoft"
-    )
+    members = page.get_by_label("Members")
+    assert members.locator("option").all_inner_texts() == [
+        "In ParishSoft",
+        "No longer in ParishSoft",
+    ]
     assert page.locator("[data-source-status]").count() == 0
-    plain = page.locator("#followup-table tbody tr").first.bounding_box()["height"]
     page.goto(component_origin + "/followup-leader")
-    assert "Members no longer in ParishSoft" not in (
-        page.get_by_label("Status").locator("option").all_inner_texts()
-    )
+    assert page.get_by_label("Members").count() == 0
     page.goto(component_origin + GONE_QUEUE)
-    assert page.get_by_label("Status").input_value() == "not_in_parishsoft"
-    selection = page.locator(".select-col, [data-select-row], [data-select-all]")
-    assert selection.count() == 0
-    assert page.locator(".bulk-bar, [data-bulk-action]").count() == 0
-    headings = page.locator("#followup-table thead th").all_inner_texts()
-    assert headings[0].startswith("Member")
+    assert page.get_by_label("Members").input_value() == "gone"
+    assert page.locator("[data-select-row]").count() == 0
+    assert page.locator(f"{ROWS} .table-actions button").count() == 0
     marks = page.locator("[data-source-status]")
     assert marks.count() == 2
     # #1216's phrases, shown whole, so a reader cannot take them for a
@@ -783,11 +550,12 @@ def test_members_no_longer_in_parishsoft_are_marked_with_nothing_to_record(
         mark = marks.nth(index)
         visible(mark)
         assert mark.inner_text() == phrase
-    # The mark sits beside the name on the same line: no row grows.
-    for box in page.locator("#followup-table tbody tr").evaluate_all(
+    # The mark sits beside the name on the same line, so a long name cut
+    # short and a short one take the same height.
+    heights = page.locator(ROWS).evaluate_all(
         "rows => rows.map((row) => row.getBoundingClientRect().height)"
-    ):
-        assert abs(box - plain) < 1
+    )
+    assert max(heights) - min(heights) < 1
     page.goto(component_origin + GONE_ITEM)
     notice = page.locator("#followup-not-in-source")
     visible(notice)
@@ -795,108 +563,210 @@ def test_members_no_longer_in_parishsoft_are_marked_with_nothing_to_record(
         "Inactive in ParishSoft: ParishSoft marks this Member inactive."
     )
     assert page.get_by_role("button", name="Save follow-up").count() == 0
-    assert page.get_by_text("This request is closed", exact=False).count() == 0
+    assert page.get_by_text("This request is decided", exact=False).count() == 0
     visible(page.get_by_text("Left a <private> voicemail", exact=True).first)
 
 
-def test_a_queue_page_with_no_open_request_says_why_nothing_can_be_ticked(
-    page, component_origin
-):
-    """Rows but none selectable (#1332): the reserved line says why every
-    bulk button is unavailable, and each button names it."""
+def worklist_row(page, request_id):
+    """One request's row on the worklist."""
+    return page.locator(f"#requests-row-{request_id}")
+
+
+def icon_named(page, request_id, label):
+    """A row's icon whose accessible name starts with ``label``."""
+    return worklist_row(page, request_id).locator(f"button[aria-label^='{label} ']")
+
+
+def test_each_stage_shows_its_decision_on_the_icons(page, component_origin):
+    """Staff see every stage with the pipeline's words (#1684): To review
+    offers Accept, Edit and Ignore; an accepted request is To enter by hand
+    with Accept selected and Back to review and Entered by hand offered;
+    once entered, the mark is selected and Back to review undoes it (#1840);
+    an ignored one names its outcome; an edited one and an added one say
+    so; a confirmed one offers only Back to review."""
     page.set_viewport_size({"width": 1280, "height": 900})
-    page.goto(component_origin + BULK_CLOSED_QUEUE)
-    assert page.locator("input[data-select-row]").count() == 0
-    assert bulk_gate(page) == (
-        [False] * 4,
-        "No request on this page has an outcome to record.",
-    )
-
-
-FUTURE_REFUSAL = (
-    "The contact attempt's date and time can't be in the future. "
-    "If they aren't, check your computer's clock."
-)
-
-
-def refused_at_fields(page, component_origin):
-    """Open Mark as Joined with a contact attempt the server refuses at Date
-    and Time (as the bulk view does for a future time by its clock), and
-    return the dialog, the Date and Time fields and Record outcome."""
-
-    def refuse(route):
-        """Answer as the bulk view does for a contact attempt in the future."""
-        route.fulfill(
-            status=400,
-            content_type="application/json",
-            body=json.dumps(
-                {
-                    "errors": [
-                        {"code": "invalid", "field_id": "bulk-contact-date"},
-                        {"code": "invalid", "field_id": "bulk-contact-time"},
-                    ],
-                    "refusal": {"message": FUTURE_REFUSAL, "fix": None},
-                }
-            ),
+    page.goto(component_origin + STAGES)
+    stage = page.get_by_label("Stage")
+    assert stage.locator("option").all_inner_texts() == [
+        "To review (1)",
+        "To enter by hand (3)",
+        "Entered by hand (1)",
+        "Ignored (1)",
+        "Confirmed (1)",
+        "Every stage (7)",
+    ]
+    for label in ("Accept", "Edit", "Ignore"):
+        assert icon_named(page, REQUEST, label).get_attribute("aria-pressed") in (
+            "false",
+            None,
         )
+    accepted = UUID(int=120)
+    chosen = icon_named(page, accepted, "Accept")
+    assert chosen.get_attribute("aria-pressed") == "true"
+    assert chosen.get_attribute("title") == (
+        "Accepted; choose Back to review to change it"
+    )
+    visible(icon_named(page, accepted, "Send"))
+    visible(icon_named(page, accepted, "Mark"))
+    has_text(worklist_row(page, accepted).locator(".stage-chip"), "To enter by hand")
+    entered = UUID(int=121)
+    assert icon_named(page, entered, "Mark").get_attribute("aria-pressed") == "true"
+    visible(icon_named(page, entered, "Send"))
+    ignored = worklist_row(page, UUID(int=122))
+    has_text(ignored.locator(".stage-chip"), "Ignored")
+    assert "Stayed in the Ministry" in ignored.inner_text()
+    edited = worklist_row(page, UUID(int=123))
+    assert "Accepted (edited)" in edited.inner_text()
+    # The edited Ministry is in the Reviewer's value column itself (R38
+    # finding 11), not only somewhere in the row.
+    headings = [
+        node.inner_text().strip() for node in page.locator("#table thead th").all()
+    ]
+    cells = edited.locator(":scope > th, :scope > td")
+    assert cells.nth(headings.index("Reviewer's value")).inner_text().strip() == (
+        "Join Another Ministry"
+    )
+    added = worklist_row(page, UUID(int=124))
+    assert "Added by the parish" in added.inner_text()
+    confirmed = worklist_row(page, UUID(int=125))
+    has_text(confirmed.locator(".stage-chip"), "Confirmed")
+    offered = [
+        node.get_attribute("data-row-action")
+        for node in confirmed.locator(".table-actions button").all()
+        if node.get_attribute("aria-pressed") != "true"
+    ]
+    assert offered == ["back_to_review"]
+    visible(page.locator(".bulk-bar").get_by_role("button", name="Add"))
 
-    page.route(component_origin + BULK_POST, refuse)
-    tick(page, BULK_JOIN)
-    page.get_by_role("button", name="Mark as Joined").click()
-    dialog = bulk_dialog(page)
-    visible(dialog)
-    dialog.get_by_label("How").select_option("phone")
-    date = dialog.get_by_label("Date", exact=True)
-    time = dialog.get_by_label("Time", exact=True)
-    date.fill("2026-09-19")
-    time.fill("3:04 PM")
-    record = dialog.get_by_role("button", name="Record outcome")
+
+def test_back_to_review_undoes_entered_by_hand_with_a_note(page, component_origin):
+    """On an Entered by hand row, Back to review's dialog says the mark is
+    undone and the request goes back to To enter by hand, and Record waits
+    for the required note; it posts the decision and the note, in place
+    (#1840)."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + STAGES)
+    page.evaluate("window.notReloaded = true")
+    sent = []
+
+    def choose(request):
+        """Keep the body; answer with a page after a decision."""
+        sent.append(request.post_data)
+        return DECIDED
+
+    fulfil_post_with(page, "**/reports/ministries/", component_origin, choose)
+    entered = UUID(int=121)
+    icon_named(page, entered, "Send").click()
+    dialog = page.locator("#requests-decide-dialog")
+    has_text(
+        dialog.locator("[data-confirm-body]"),
+        "Entered by hand is undone: the item goes back to To enter by hand, with "
+        "its decision kept. Say why.",
+    )
+    record = dialog.get_by_role("button", name="Record")
+    assert record.is_disabled()
+    dialog.get_by_label("Note (required)").fill("Not typed yet")
     available(record)
     record.click()
-    # The answer has arrived once the message shows at the fields.
-    visible(dialog.locator("#bulk-contact-error"))
-    return dialog, date, time, record
+    has_text(page.locator("#requests-notice"), DECIDED_NOTICE)
+    hidden(dialog)
+    body = QueryDict(sent[0])
+    assert body["decide"] == "back_to_review" and body["note"] == "Not typed yet"
+    assert body.getlist("item") == [str(entered)]
+    assert page.evaluate("window.notReloaded") is True
 
 
-def test_a_refused_bulk_contact_time_is_shown_at_the_fields(page, component_origin):
-    """A contact date and time refusal names its fields (#1332): the message
-    fills the fields' error line, not the box below the buttons; Date and
-    Time are marked; Record outcome waits, naming the line, until the form
-    changes, which clears the mark (and never marks the button invalid)."""
-    failures = bulk_page(page, component_origin)
-    dialog, date, time, record = refused_at_fields(page, component_origin)
-    line = dialog.locator("#bulk-contact-error")
-    visible(line)
-    assert line.inner_text().strip() == FUTURE_REFUSAL
-    assert dialog.locator("[data-confirm-error]").is_hidden()
-    for field in (date, time):
-        assert field.get_attribute("aria-invalid") == "true"
-        assert "bulk-contact-error" in field.get_attribute("aria-describedby").split()
-    assert record.is_disabled()
-    assert "bulk-contact-error" in record.get_attribute("aria-describedby").split()
-    time.fill("3:05 PM")
-    hidden(line)
-    assert date.get_attribute("aria-invalid") == "false"
-    available(record)
-    assert "bulk-contact-error" not in (record.get_attribute("aria-describedby") or "")
-    assert record.get_attribute("aria-invalid") is None
+def test_a_leader_never_sees_the_update_phase(page, component_origin):
+    """A Ministry leader's Stage choices hold Accepted, not To enter by hand
+    or Entered by hand, and an entered request reads Accepted with no mark
+    (#1160); a leader has no Add (#1684)."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + LEADER_STAGES)
+    options = page.get_by_label("Stage").locator("option").all_inner_texts()
+    assert options == [
+        "To review (1)",
+        "Accepted (4)",
+        "Ignored (1)",
+        "Confirmed (1)",
+        "Every stage (7)",
+    ]
+    entered = worklist_row(page, UUID(int=121))
+    has_text(entered.locator(".stage-chip"), "Accepted")
+    assert "Entered by hand" not in page.locator(ROWS).all_inner_texts()[2]
+    assert page.get_by_role("button", name="Add").count() == 0
+    assert page.locator("button[aria-label^='Mark ']").count() == 0
+
+
+def test_accept_records_in_place(page, component_origin):
+    """Accept asks in the shared dialog naming the request, posts its fields
+    with the worklist's view to Ministry requests itself, and the answer is
+    the page redrawn in place with its notice."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + REQUESTS)
+    page.evaluate("window.notReloaded = true")
+    sent = []
+
+    def choose(request):
+        """Keep the body; answer with the page after the Accept."""
+        sent.append(request.post_data)
+        return DECIDED
+
+    fulfil_post_with(page, "**/reports/ministries/", component_origin, choose)
+    icon_named(page, REQUEST, "Accept").click()
+    dialog = page.locator("#requests-decide-dialog")
+    has_text(dialog.locator("h2"), "Accept Example <Member> — Example <Ministry>?")
+    has_text(page.get_by_label("Stage").locator("option").first, "To review (2)")
+    dialog.get_by_role("button", name="Record").click()
+    has_text(page.locator("#requests-notice"), DECIDED_NOTICE)
+    hidden(dialog)
+    body = QueryDict(sent[0])
+    assert body["decide"] == "accept" and body["item"] == str(REQUEST)
+    assert body["version"] == "3" and body["stage"] == "to_review"
+    # Accepted, the request leaves the To review view, and the Stage
+    # choices' counts follow the answer in place (#1684).
+    has_text(
+        page.get_by_label("Stage").locator("option").nth(1), "To enter by hand (1)"
+    )
+    assert page.get_by_label("Stage").input_value() == "to_review"
+    assert worklist_row(page, REQUEST).count() == 0
     assert page.evaluate("window.notReloaded === true")
-    assert not failures
 
 
-def test_choosing_no_contact_attempt_after_a_field_refusal_frees_record(
-    page, component_origin
-):
-    """Choosing "No contact attempt to record" after a refusal at Date and
-    Time greys them without an event on them; Record outcome still comes
-    back, with the message gone and no stale reason named."""
-    failures = bulk_page(page, component_origin)
-    dialog, date, _time, record = refused_at_fields(page, component_origin)
-    assert record.is_disabled()
-    dialog.get_by_label("How").select_option("")
-    hidden(dialog.locator("#bulk-contact-error"))
-    greyed(date)
-    available(record)
-    assert "bulk-contact-error" not in (record.get_attribute("aria-describedby") or "")
-    assert record.get_attribute("aria-invalid") is None
-    assert not failures
+def test_edit_offers_another_ministry(page, component_origin):
+    """Edit opens the request's own Ministry list (never its own Ministry);
+    Save waits until one is chosen."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + REQUESTS)
+    icon_named(page, REQUEST, "Edit").click()
+    dialog = page.locator("dialog[open]")
+    choice = dialog.get_by_label("Reviewer's value: the Ministry meant")
+    assert choice.locator("option").all_inner_texts() == [
+        "Choose a Ministry",
+        "Another Ministry",
+    ]
+    save = dialog.get_by_role("button", name="Save")
+    assert save.is_disabled()
+    choice.select_option("12")
+    available(save)
+
+
+def test_add_asks_for_the_member_ministry_and_request(page, component_origin):
+    """Staff's Add opens its dialog: the Member DUID, a campaign Ministry,
+    Join or Leave and the optional ignored request it replaces."""
+    from playwright.sync_api import expect
+
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + STAGES)
+    page.locator(".bulk-bar").get_by_role("button", name="Add").click()
+    dialog = page.locator("#requests-add-dialog")
+    visible(dialog)
+    add = dialog.get_by_role("button", name="Add")
+    assert add.is_disabled()
+    dialog.get_by_label("Member DUID of the Member to add").fill("12345")
+    dialog.get_by_label("Ministry to add").select_option("12")
+    dialog.get_by_label("Request to add").select_option("join")
+    replaced = dialog.get_by_label("Added in place of (optional)")
+    # The choices follow the Ministry and Request chosen; wait for them, as
+    # Firefox fills them a moment later.
+    expect(replaced).to_contain_text("Ignored <Member>")
+    available(add)

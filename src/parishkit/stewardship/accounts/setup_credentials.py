@@ -6,8 +6,11 @@ from uuid import UUID, uuid4
 from django.db.models import F
 
 from parishkit.config import ConfigError
-from parishkit.stewardship.campaigns.work_locks import work_transaction
-from parishkit.stewardship.deployment import recorded_profile
+from parishkit.stewardship.campaigns.work_locks import (
+    require_work_order,
+    work_transaction,
+)
+from parishkit.stewardship.deployment import recorded_mail_redirect, recorded_profile
 from parishkit.stewardship.mail_catcher import MailTransport, workspace_transport
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.web.contracts import check_version
@@ -17,14 +20,10 @@ from .handoff_discovery import public_handoff
 from .integration_candidates import slack_candidate, workspace_info
 from .metrics_credentials import credential_receipt
 from .provider_context import validated_context, workspace_scope
-from .sessions import (
-    SETUP_FRESH_SECONDS,
-    authenticated_admin,
-    database_now,
-    require_fresh,
-)
+from .sessions import authenticated_admin, database_now
 from .setup_drafts import _owned
 from .setup_models import SetupAttempt, SetupDraftSection
+from .setup_notification_models import SetupSlackDelivery
 from .setup_policy import SetupState
 from .setup_secret_models import SetupSealedCredential
 from .setup_staging import _expiry, _status
@@ -84,21 +83,27 @@ def _context(attempt, target, organization_id):
     return validated_context(target, values)
 
 
-def admit_candidate(target, candidate, profile):
+def admit_candidate(target, candidate, profile, *, redirect):
     """Parse a Workspace or Slack candidate under the deployment profile (#476).
 
-    This is the web intake's half of the Workspace two-way refusal, repeated
-    by the isolated installer's provider check. The Workspace candidate must
-    be the mail-catcher document in LOCAL and a Google service account
-    anywhere else. A Slack token is parsed the same way in every profile
-    (#1399): LOCAL may hold a test token, so pk-local runs Production's Slack
-    code. Every refusal is a ConfigError, so the pages show their one generic
-    format message and never echo the candidate.
+    This is the web intake's half of the Workspace transport rule, repeated
+    by the isolated installer's provider check. The Workspace candidate may
+    be the mail-catcher document only in LOCAL; a Google service account is
+    admitted in every other profile and, in LOCAL, only beside the
+    deployment's mail ``redirect`` on the normal clock (#1399,
+    ``mail_catcher.admit_real_workspace``). A Slack token is parsed the same
+    way in every profile (#1399): LOCAL may hold a test token, so pk-local
+    runs Production's Slack code. Every refusal is a ConfigError, so the
+    pages show their one generic format message and never echo the
+    candidate.
     """
     if target == "slack":
         slack_candidate(candidate)
-    elif workspace_transport(candidate, profile) is MailTransport.GMAIL:
-        # Outside LOCAL the candidate must be a well-formed service account,
+    elif (
+        workspace_transport(candidate, profile, redirect=redirect)
+        is MailTransport.GMAIL
+    ):
+        # Anything but the mail catcher must be a well-formed service account,
         # exactly as before the mail catcher existed.
         workspace_info(candidate)
 
@@ -130,7 +135,7 @@ def stage_credential(
     expected_version,
     organization_id=None,
 ):
-    """Seal in memory after fresh original-login admission and exact-version checks.
+    """Seal in memory after original-login admission and exact-version checks.
 
     Replacing a candidate is allowed only while collecting; the same target row
     and attempt both advance versions. A running source load freezes this
@@ -145,8 +150,6 @@ def stage_credential(
     with work_transaction():
         actor, attempt = _owned(request, service, attempt_id)
         check_version(attempt, expected_version)
-        # The setup window (#1402); SQL enforces the same 60 minutes.
-        require_fresh(request, within=SETUP_FRESH_SECONDS)
         if (
             attempt.state != SetupState.COLLECTING
             or _expiry(attempt, database_now()) is not None
@@ -166,12 +169,19 @@ def stage_credential(
                 ) from None
         else:
             try:
-                admit_candidate(target, candidate, recorded_profile())
+                admit_candidate(
+                    target,
+                    candidate,
+                    recorded_profile(),
+                    redirect=recorded_mail_redirect(),
+                )
             except ConfigError:
                 raise ValueError("The credential has an invalid format.") from None
+        # A token discarded by turning Slack off stays as a scrubbed
+        # tombstone; a new one is a new row (#1499).
         row = (
             SetupSealedCredential.objects.defer("ciphertext")
-            .filter(attempt=attempt, target=target)
+            .filter(attempt=attempt, target=target, scrubbed_at=None)
             .first()
         )
         identifier = row.pk if row is not None else uuid4()
@@ -221,3 +231,33 @@ def stage_credential(
         authenticated_admin(request, store=service.store, activity=True)
         attempt.refresh_from_db()
         return _status(attempt), _receipt(row)
+
+
+def discard_slack(attempt, *, actor_id):
+    """Discard a collecting attempt's staged Slack token and queued test (#1499).
+
+    The caller (``setup_drafts.save_sections``) holds the work order and
+    has just saved the attempt's Slack step off and bumped its version, so
+    setup continues as if Slack had never been on: the token's ciphertext
+    and channel are scrubbed now rather than at expiry (the SQL guard
+    admits this only for the owner while the saved Slack step is off), and
+    a test still waiting for the Slack installer is cancelled, so nothing
+    is posted. A test already handed to Slack keeps its recorded result.
+    Turning Slack on again stages a new token and needs a new test.
+    """
+    require_work_order()
+    context = dict(correlation_id=current_correlation(), version=F("version") + 1)
+    SetupSealedCredential.objects.filter(
+        attempt=attempt, target="slack", scrubbed_at=None
+    ).update(
+        ciphertext=None,
+        settings={},
+        scrubbed_at=database_now(),
+        actor_id=actor_id,
+        **context,
+    )
+    # The cancel guard admits only a test that is no longer live, with no
+    # actor (a system outcome), as the stale-test sweep records it.
+    SetupSlackDelivery.objects.filter(attempt=attempt, state="queued").update(
+        state="cancelled", finished_at=database_now(), actor_id=None, **context
+    )

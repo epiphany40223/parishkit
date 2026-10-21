@@ -363,7 +363,7 @@ def reason_of(error):
     """The closed reason code an exception carries for the refusal log, or None.
 
     Only a ``TypedRefusal`` (the ``web.refusals`` types, ``AccessDenied``
-    and a missing fresh sign-in) carries its own; a tampered or foreign
+    and an ended session) carries its own; a tampered or foreign
     signed value is ``bad_signature``. Anything else has none, and the log
     records it as ``unclassified`` with its class name (#1403).
     """
@@ -471,15 +471,15 @@ def with_codes(response, *codes):
     return response
 
 
-# The marker on a 200 answer that is a refusal drawn in place: the step-up
-# notice an action's region shows instead of its result (#1403).
+# The marker on a 200 answer that is a refusal drawn in place: the notice
+# an action's region shows instead of its result (#1403).
 IN_PLACE = "stewardship_refused_in_place"
 
 # The reason each refused-step key of an in-place region means (Restore
 # review, Held emails, System health): the region words the key for people,
 # the refusal log records the reason with the key as its code.
 STEP_REASONS = {
-    "reauthenticate": "fresh_authentication_required",
+    "signed_out": "denied",
     "changed": "stale_page",
     "busy": "stale_page",
     "denied": "denied",
@@ -488,6 +488,40 @@ STEP_REASONS = {
     "needs_holds": "release_refused",
     "superseded": "resend_refused",
     "held_elsewhere": "resend_refused",
+    # The Go live page's Start go-live (#1585): another Administrator's
+    # Start applied first, a stop is still running or failed, or the
+    # campaign closed since the check; or the public web address check run
+    # again at Apply failed, which is the deployment's state, not the input.
+    "started": "stale_page",
+    "stopping": "stale_page",
+    "stop_failed": "stale_page",
+    "closed": "stale_page",
+    "origin_unverified": "configuration",
+    # Its Stop go-live (#1585 slice 3): go-live was stopped, or Production
+    # confirmed, since the step was drawn.
+    "stopped": "stale_page",
+    "confirmed": "stale_page",
+    # Its Confirm Production (#1585 slice 4): the target, the hold, the
+    # Family links or readiness changed since the step was drawn. The typed
+    # word missing (``typed``) is an incomplete form the page gates.
+    "target": "stale_page",
+    "hold_ended": "stale_page",
+    "moved": "stale_page",
+    "problems": "stale_page",
+    # The same inputs, but emails fell due since the Review, so the counts
+    # it showed are no longer the ones Apply would confirm.
+    "due": "stale_page",
+    "typed": "unexpected_fields",
+    # Production activation's Cancel go-live (#1585 slice 5): the reason
+    # missing is an incomplete form the dialog gates; mail being sent (or
+    # uncertain, or needing recovery) blocks it until resolved; live
+    # delivery was paused, or another Administrator cancelled, since the
+    # page was drawn. A start that passed is "started" and a changed count
+    # "changed", as above.
+    "no_reason": "unexpected_fields",
+    "blocking": "send_work_blocks",
+    "paused": "stale_page",
+    "cancelled": "stale_page",
 }
 
 

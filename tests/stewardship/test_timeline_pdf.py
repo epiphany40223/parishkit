@@ -6,24 +6,26 @@ line on every page, every Summary line and the code, one tile per kind of
 line, and every timeline line's day, time, words and detail.
 """
 
+import io
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
 
 from parishkit.stewardship.reports import pdf_design, timeline_pdf
-from parishkit.stewardship.reports.family_timeline import (
+from parishkit.stewardship.reports.timeline_documents import timeline_document
+from parishkit.stewardship.reports.timeline_reviews import WORDS as review_words
+from parishkit.stewardship.reports.timelines import (
     Email,
     Engagement,
     Submitted,
     email_name,
     events,
 )
-from parishkit.stewardship.reports.timeline_documents import timeline_document
 from parishkit.stewardship.web import dates
 
 from .test_file_design import Recorder, assert_framed, assert_inside, frames
-from .test_timeline_exports import PAYLOAD, REQUESTED
+from .test_timeline_exports import CAMPAIGN, PAYLOAD, REQUESTED
 
 START = datetime(2054, 10, 1, 13, 0, tzinfo=UTC)
 LINES = (
@@ -53,6 +55,7 @@ def document(count=8, *, step=timedelta(hours=7), code="ABCD-EFGH", **more):
         PAYLOAD | {"events": lines} | more,
         code=code,
         parish_name="Sample Parish",
+        campaign_name=CAMPAIGN,
         requested_at=REQUESTED,
         timezone="America/New_York",
     )
@@ -69,9 +72,10 @@ def test_every_page_carries_the_frame_the_family_and_the_columns(monkeypatch):
     pages = drawn_pages(monkeypatch, report)
     assert len(pages) > 1
     assert_framed(pages, "Family timeline", PRIVACY)
-    identity = "Example · Family DUID 42 · Envelope number 7 · Production"
+    identity = "Family DUID 42 · Envelope number 7"
     for drawn in pages:
-        assert identity in drawn
+        assert "Example" in drawn and identity in drawn
+        assert "Sample Parish · Stewardship 2055".upper() in drawn
         assert {"When", "What happened", "Details"} <= set(drawn)
         assert any(value.startswith("Requested ") for value in drawn)
 
@@ -80,7 +84,8 @@ def test_a_missing_family_s_identity_line_says_not_in_parishsoft(monkeypatch):
     """The line under the title reads the shared words in place of the
     blank name, as the page's heading shows its badge (#1216)."""
     report = document(family=PAYLOAD["family"] | {"name": None})
-    identity = "Not in ParishSoft · Family DUID 42 · Envelope number 7 · Production"
+    assert timeline_pdf.family_heading(report.metadata) == "Not in ParishSoft"
+    identity = "Family DUID 42 · Envelope number 7"
     assert timeline_pdf.identity_line(report.metadata) == identity
     # It is part of the identity line, never a summary card of its own.
     assert "ParishSoft status" in timeline_pdf.NOT_CARDS
@@ -195,7 +200,7 @@ def test_the_body_stays_between_the_header_and_the_footer(count):
 
 
 def test_every_line_the_page_builds_has_a_known_marker():
-    """Each kind of line ``family_timeline.events`` makes maps to a marker.
+    """Each kind of line ``timelines.events`` makes maps to a marker.
 
     A line this module did not know would get the neutral "other" marker;
     this keeps the page's words and the PDF's kinds in step.
@@ -216,6 +221,8 @@ def test_every_line_the_page_builds_has_a_known_marker():
         sign_ins=[START, (START + minute, True)],
         forms=[START],
         engagement=Engagement(START, "census", START + minute, START + minute),
+        # Every word a review line can carry (#1774).
+        reviews=[(START, word, "") for word in sorted(review_words)],
     )
     kinds = {str(line.what): timeline_pdf.kind_of(line.what) for line in lines}
     assert "other" not in kinds.values(), kinds
@@ -251,3 +258,58 @@ def test_the_export_renders_csv_and_xlsx_through_the_shared_renderer():
     assert output.getvalue().startswith(b"PK")
     with pytest.raises(ValueError):
         timeline_pdf.render_timeline(document(), io.BytesIO(), format="html")
+
+
+def drawn_styles(monkeypatch, report):
+    """Every string drawn in ``report``'s PDF, with its type size and face."""
+    drawn = []
+    text = pdf_design.Canvas.text
+
+    def record(canvas, x, y, value, size, face="regular", *args, **kwargs):
+        """Collect each drawn string with its style."""
+        drawn.append((value, size, face))
+        return text(canvas, x, y, value, size, face, *args, **kwargs)
+
+    monkeypatch.setattr(pdf_design.Canvas, "text", record)
+    timeline_pdf.timeline_pdf(report, io.BytesIO())
+    return drawn
+
+
+def test_the_family_name_is_a_heading_on_every_page(monkeypatch):
+    """The Family's name is the page's subject heading: bold, larger than
+    the detail lines and the body, smaller only than the title (#1841)."""
+    report = document(60)
+    count = len(drawn_pages(monkeypatch, report))
+    styles = drawn_styles(monkeypatch, report)
+    headings = [style for style in styles if style[0] == "Example"]
+    assert len(headings) == count > 1
+    assert set(headings) == {("Example", pdf_design.SUBJECT_SIZE, "bold")}
+    assert pdf_design.DETAIL_SIZE < pdf_design.SUBJECT_SIZE < pdf_design.TITLE_SIZE
+    assert pdf_design.BODY_SIZE < pdf_design.SUBJECT_SIZE
+    identity = [size for value, size, _ in styles if value.startswith("Family DUID")]
+    assert set(identity) == {pdf_design.DETAIL_SIZE}
+
+
+@pytest.mark.parametrize(
+    ("mode", "word"), [("production", None), ("testing", "Testing rehearsal")]
+)
+def test_only_a_testing_pdf_names_its_mode(monkeypatch, mode, word):
+    """No page of a Production file says "Production"; a Testing capture's
+    line under the heading still says it is a rehearsal (#1841)."""
+    report = document(mode=mode)
+    drawn = [value for page in drawn_pages(monkeypatch, report) for value in page]
+    assert not any("Production" in value for value in drawn)
+    line = timeline_pdf.identity_line(report.metadata)
+    assert line == " · ".join(
+        filter(None, ("Family DUID 42 · Envelope number 7", word))
+    )
+    assert line in drawn
+
+
+def test_the_subject_heading_moves_the_body_down():
+    """The frame's body starts below the Family heading, never under it."""
+    report = document()
+    frame = timeline_pdf.timeline_frame(report)
+    bare = pdf_design.PdfFrame.for_document(report, details=frame.details)
+    assert frame.subject_lines == ["Example"]
+    assert frame.body_top == bare.body_top + pdf_design.SUBJECT_PITCH

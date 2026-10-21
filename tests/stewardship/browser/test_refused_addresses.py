@@ -1,6 +1,6 @@
-"""Outgoing mail and Refused addresses lead to each other (#935).
+"""Sent mail and Refused addresses lead to each other (#935).
 
-Outgoing mail marks each email with an unresolved refused address and counts
+Sent mail marks each email with an unresolved refused address and counts
 them in its link line; Refused addresses names each Family beside its own
 Family DUID column and links the email that recorded the refusal; and a
 refused address's page links both and clears it in place. The page is
@@ -31,10 +31,10 @@ def test_outgoing_mail_marks_emails_with_refused_addresses(page, component_origi
     assert first.get_attribute("href") == "/admin/mail/refusals/?duid=12345"
     second = rows.nth(1).get_by_role("link", name="1 address refused")
     assert second.get_attribute("href") == "/admin/mail/refusals/?duid=4021"
-    # The Administrator report has no refused address.
+    # The Administrator's report has no refused address.
     assert "refused" not in rows.nth(2).inner_text()
-    # The mark is a second line of the State cell, under the state.
-    state = rows.nth(0).locator("td").nth(4)
+    # The mark is a second line of the Delivery cell, under the state.
+    state = rows.nth(0).locator("td").nth(3)
     assert state.inner_text().split("\n") == [
         "Not sure it arrived",
         "2 addresses refused",
@@ -47,7 +47,7 @@ def test_outgoing_mail_marks_emails_with_refused_addresses(page, component_origi
 
 
 def test_link_line_stays_on_screen_with_the_about_panel_open(page, component_origin):
-    """An Administrator who keeps Outgoing mail's About panel open still sees
+    """An Administrator who keeps Sent mail's About panel open still sees
     the link line on a laptop screen (#938): the panel's long help opens
     below the heading, and the links sit above it, so the help cannot push
     them below the fold. Visible is not enough; the link must be inside the
@@ -57,10 +57,10 @@ def test_link_line_stays_on_screen_with_the_about_panel_open(page, component_ori
     viewport = {"width": 1280, "height": 720}
     page.set_viewport_size(viewport)
     page.goto(component_origin + "/deliveries-names")
-    page.evaluate("localStorage.setItem('pk-about-page:outgoing-mail', 'open')")
+    page.evaluate("localStorage.setItem('pk-about-page:sent-mail', 'open')")
     page.reload()
     page.evaluate("document.fonts.ready.then(() => true)")
-    panel = page.locator("details[data-about-page='outgoing-mail']")
+    panel = page.locator("details[data-about-page='sent-mail']")
     expect(panel).to_have_attribute("open", "")
     # The open help really is long enough to reach past the window.
     help_box = panel.locator(".about-page-body").bounding_box()
@@ -68,7 +68,7 @@ def test_link_line_stays_on_screen_with_the_about_panel_open(page, component_ori
     assert page.evaluate("scrollY") == 0
     for name in (
         "Review refused addresses (3 unresolved)",
-        "Watch Family email progress",
+        "See the mail queue",
         "See Family email history",
     ):
         box = page.get_by_role("link", name=name).bounding_box()
@@ -86,7 +86,7 @@ def test_link_line_stays_on_screen_with_the_about_panel_open(page, component_ori
 def test_without_refusals_the_link_line_is_unchanged(page, component_origin):
     """No count and no mark while nothing is refused, but the link itself is
     always there and visible: an Administrator reaches Refused addresses
-    from Outgoing mail whether or not anything is refused."""
+    from Sent mail whether or not anything is refused."""
     from playwright.sync_api import expect
 
     page.goto(component_origin + "/deliveries")
@@ -124,11 +124,11 @@ def test_refused_addresses_name_the_family_and_link_the_email(page, component_or
     address = row.get_by_role("link", name="head@example.org")
     assert address.get_attribute("href") == REFUSAL
     email = row.get_by_role("link", name="Open email")
-    assert email.get_attribute("href").startswith("/admin/mail/outgoing/")
+    assert email.get_attribute("href").startswith("/admin/mail/sent/")
     # Browser-local time: noon UTC in the fixture browser's Los Angeles.
     expect(row.locator("time").first).to_contain_text("5:00 AM")
-    back = page.get_by_role("link", name="See all outgoing mail")
-    assert back.get_attribute("href") == "/admin/mail/outgoing/"
+    back = page.get_by_role("link", name="See all sent mail")
+    assert back.get_attribute("href") == "/admin/mail/sent/"
 
 
 def test_a_refused_address_names_its_family_and_links_the_email(page, component_origin):
@@ -139,7 +139,7 @@ def test_a_refused_address_names_its_family_and_links_the_email(page, component_
     family = page.get_by_role("link", name="See this Family's refused addresses")
     assert family.get_attribute("href") == "/admin/mail/refusals/?duid=12345"
     email = page.get_by_role("link", name="Open the email that recorded this refusal")
-    assert email.get_attribute("href").startswith("/admin/mail/outgoing/")
+    assert email.get_attribute("href").startswith("/admin/mail/sent/")
 
 
 def test_clearing_waits_for_the_note_and_the_confirmation(page, component_origin):

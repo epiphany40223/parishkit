@@ -86,8 +86,6 @@ CONVERTED_PAGES = {
     "/clone-preview": "Copied content",
     "/presence": "Families with the Family form open",
     "/weekly-manual": "not a retry of a previous email",
-    "/credential-status": "Key replacement status",
-    "/credential-selection": "This integration is stopped until you finish",
     "/source-refresh": "Refresh now",
     "/backup-key": "Never give this server the private key.",
     "/delivery-refusal": "Clearing removes only this refusal",
@@ -101,7 +99,7 @@ CONVERTED_PAGES = {
     "/setup": "Cancel permanently ends this attempt",
     "/setup-source-progress": "Downloaded from ParishSoft",
     "/delivery-pause": "Current live-mail inventory",
-    "/go-live": "This preview has not changed the campaign",
+    "/go-live": "The campaign becomes active at once",
 }
 
 
@@ -177,11 +175,11 @@ def open_page(page, url):
 
 # report-v1.js's condition for replacing the page with a timezone in its URL.
 REPLACES_ITSELF = """() => {
-  const field = document.querySelector("[data-report-options] input[data-report-zone]");
-  if (!field || new URL(location.href).searchParams.has("timezone")) return false;
+  const options = document.querySelector("[data-report-options][data-report-zone]");
+  if (!options || new URL(location.href).searchParams.has("timezone")) return false;
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const shown = document.querySelector("input[name=browser_timezone]")?.value
-    ?? field.getAttribute("value");
+    ?? options.getAttribute("data-report-zone");
   return Boolean(zone) && zone !== "Etc/Unknown" && zone !== shown;
 }"""
 

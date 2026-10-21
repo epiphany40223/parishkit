@@ -8,11 +8,21 @@ and [ADM-05 implementation package](../plans/stewardship/admin-portal.md#adm-05-
 control this increment; the [automated delivery cycle](../plans/stewardship/overall.md#automated-phase-delivery-cycle)
 controls validation, reviews and protected delivery.
 
+> **Historical.** This guide records how the server side was built and
+> reviewed. The separate withdrawal page it describes (later Cancel
+> go-live), with its tick box and five-minute preview, was replaced by the
+> Cancel go-live dialog on Production activation, the last step of the
+> four-step
+> [Go live page](../specs/stewardship/admin-portal/spec.md#go-live-page)
+> ([#1585](https://github.com/epiphany40223/parishkit/issues/1585)), which
+> reuses the old page's server-side owners. The operator's procedure is the launch
+> runbooks' [Production activation](stewardship-launch-runbooks.md#production-activation).
+
 ## Increment boundary
 
-Deliver the current-Admin pre-start withdrawal workflow: fresh Google
-authentication, reason and irreversible-cleanup acknowledgement; exact future
-live-work inventory; safe cancellation and blockers; atomic return to draft and
+Deliver the current-Admin pre-start withdrawal workflow: a live Admin session
+(any sign-in age since #1547), reason and irreversible-cleanup
+acknowledgement; exact future live-work inventory; safe cancellation and blockers; atomic return to draft and
 Testing with structural unlock, readiness invalidation and immutable audit.
 Reject after start even when the boundary worker is delayed. Preserve all prior
 Testing cleanup and activation history. Repeated go-live must use a new complete
@@ -39,7 +49,7 @@ deployment, release or retained database deletion are part of this increment.
 
 The native current-Admin workflow binds its reason, irreversible-cleanup consent,
 campaign/runtime versions and exact work inventory into a five-minute signed
-preview. Fresh Google authentication and independent SQL checks gate the final
+preview. A live Admin session and independent SQL checks gate the final
 immutable receipt. One transaction cancels safely unsent scheduled work through
 the shared reconciliation owner, changes Production/scheduled to Testing/draft,
 unlocks structural edits and invalidates readiness. Unknown acceptance (including

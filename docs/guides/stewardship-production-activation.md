@@ -25,8 +25,8 @@ catch-up handoff, boundary races or integrated Gate 3 review.
 
 ## Following activation and withdrawal outcome
 
-An Admin can finish a cleaned-up campaign's go-live process with fresh Google
-authentication and explicit typed confirmation. Prepare inactive Family links
+An Admin can finish a cleaned-up campaign's go-live process with explicit typed
+confirmation (any sign-in age since #1547). Prepare inactive Family links
 as bounded background work before the short final transaction; never enumerate
 Families or construct their messages while holding final activation locks.
 Preserve stable manual Family codes. Select the prepared generation atomically
@@ -71,7 +71,11 @@ irreversible; a later go-live attempt needs fresh evidence and cleanup.
 Historical: this guide, including its later checkpoint sections, describes
 the inactive-link preparation increment as it stood when it was written,
 before final confirmation and withdrawal were delivered by later pull
-requests (#60 and #61). Status statements below are as of that time. The
+requests (#60 and #61). Status statements below are as of that time. Its
+Prepare Family links page was later replaced by the
+[Go live page's](../specs/stewardship/admin-portal/spec.md#go-live-page)
+Prepare step, where the system prepares the links by itself
+([#1585](https://github.com/epiphany40223/parishkit/issues/1585)). The
 operator's activation procedure is the launch runbooks'
 [Production activation](stewardship-launch-runbooks.md#production-activation).
 

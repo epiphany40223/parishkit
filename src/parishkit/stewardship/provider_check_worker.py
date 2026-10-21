@@ -20,7 +20,10 @@ from google.auth.exceptions import RefreshError
 from parishkit.config import ConfigError
 from parishkit.email.google_workspace import xoauth2_string
 from parishkit.parishsoft import ParishSoftAPIError, ParishSoftConfig
-from parishkit.parishsoft_source import CoherentParishSoftClient
+from parishkit.parishsoft_source import (
+    CoherentParishSoftClient,
+    SourceOrganizationMismatch,
+)
 from parishkit.parishsoft_transport import ExactSourceResponse
 from parishkit.retry import RetryError, RetryPolicy
 
@@ -35,13 +38,21 @@ from .accounts.key_files import MAX_FILE_BYTES
 from .accounts.provider_context import validated_context
 from .deployment import DeploymentProfile
 from .local import source_base_url
-from .mail_catcher import MailTransport, open_mail_catcher, workspace_transport
+from .mail_catcher import (
+    MailTransport,
+    open_mail_catcher,
+    request_redirect,
+    workspace_transport,
+)
 from .source.credentials import SourceCredential
 
 MAX_INPUT = MAX_FILE_BYTES * 2 + 4096
 MAX_RESPONSE = 65536
-OUTCOMES = frozenset({"valid", "invalid", "unavailable"})
-REQUEST_FIELDS = frozenset({"target", "settings", "candidate", "profile"})
+# "mismatch" (#1492): a ParishSoft key that authenticates but sees another
+# organization than the one configured. Like "invalid" it is permanent, so it
+# is never retried, but it has its own word so the smoke check names it.
+OUTCOMES = frozenset({"valid", "invalid", "mismatch", "unavailable"})
+REQUEST_FIELDS = frozenset({"target", "settings", "candidate", "profile", "base_url"})
 FIXED_ENDPOINTS = frozenset(
     {
         ("POST", GOOGLE_TOKEN_URI),
@@ -50,20 +61,21 @@ FIXED_ENDPOINTS = frozenset(
 )
 
 
-def endpoints(profile=None):
+def endpoints(profile=None, base_url=None):
     """The exact endpoints a check may contact under one deployment profile.
 
     Without a profile (the mail deliverers' token exchanges) only the Google
     and Slack endpoints are reachable and no ParishSoft URL at all. With one,
-    the ParishSoft organization search is reachable at exactly the profile's
-    one base URL: the fake's for a ``local`` request, the real API's for every
-    other. The helper has no environment and learns the profile only from its
+    the ParishSoft organization search is reachable at exactly one base URL:
+    the deployment's ``parishsoft_base_url`` choice (``base_url``; None is the
+    profile's default), which may be the fake only for a ``local`` request
+    (#1399). The helper has no environment and learns both only from its
     request.
     """
     if profile is None:
         return FIXED_ENDPOINTS
     return FIXED_ENDPOINTS | {
-        ("POST", source_base_url(profile) + "/organizations/search")
+        ("POST", source_base_url(profile, base_url) + "/organizations/search")
     }
 
 
@@ -72,17 +84,21 @@ class CheckSession(requests.Session):
 
     Delivery modules construct it with no arguments as their default session
     factory for Google token exchanges; only the provider-check and smoke
-    paths, which may reach ParishSoft, bind a deployment profile.
+    paths, which may reach ParishSoft, bind a deployment profile. A check
+    also carries the request's mail ``redirect`` (#1399), which the
+    Workspace check needs before it may reach Google from LOCAL.
     """
 
-    def __init__(self, profile=None):
-        """Bind the session to the request's profile and its endpoint allowlist."""
+    def __init__(self, profile=None, base_url=None, redirect=None):
+        """Bind the session to the request's profile, base URL and allowlist."""
         super().__init__()
         if profile is not None and not isinstance(profile, DeploymentProfile):
             raise ValueError("A provider check requires a deployment profile.")
         self.trust_env = False
         self.profile = profile
-        self.endpoints = endpoints(profile)
+        self.redirect = redirect
+        self.base_url = None if profile is None else source_base_url(profile, base_url)
+        self.endpoints = endpoints(profile, self.base_url)
 
     def request(self, method, url, **kwargs):
         """Forbid redirects/proxies; the subprocess parent supplies a hard timeout."""
@@ -124,7 +140,7 @@ def _parishsoft(value, settings, session):
             credential.api_key,
             Path("."),
             cache_enabled=False,
-            api_base_url=source_base_url(session.profile),
+            api_base_url=session.base_url,
             timeout=10,
         ),
         organization_id=settings["organization_id"],
@@ -143,14 +159,18 @@ def _workspace(value, settings, session):
     The transport follows the document and the request's profile (#476,
     ``mail_catcher.workspace_transport``): the mail-catcher document is valid
     only for a LOCAL request and is checked by reaching Mailpit; a Google
-    service account is invalid for a LOCAL request and is otherwise checked
-    against Google and Gmail as before. The session carries the request's
-    profile; a check with none is a defect, not a verdict.
+    service account is checked against Google and Gmail as before, and in a
+    LOCAL request only beside a mail redirect on the normal clock (#1399),
+    else it is invalid before Google is contacted. The session carries the
+    request's profile and redirect; a check with no profile is a defect, not
+    a verdict.
     """
     if session.profile is None:
         raise ValueError("A Workspace check requires a deployment profile.")
     try:
-        transport = workspace_transport(value, session.profile)
+        transport = workspace_transport(
+            value, session.profile, redirect=session.redirect
+        )
     except ConfigError:
         return False
     if transport is MailTransport.MAIL_CATCHER:
@@ -248,35 +268,49 @@ def decode_request(raw):
     if type(raw) is not bytes or len(raw) > MAX_INPUT:
         raise ValueError("Invalid provider check request.")
     request = json.loads(raw.decode("utf-8"), object_pairs_hook=_object)
-    if type(request) is not dict or set(request) != REQUEST_FIELDS:
+    # ``mail_redirect`` rides beside the profile only when a LOCAL deployment
+    # sets one (#1399), so every other request is exactly as before.
+    if type(request) is not dict or set(request) - {"mail_redirect"} != REQUEST_FIELDS:
         raise ValueError("Invalid provider check request.")
     settings = validated_context(request["target"], request["settings"])
     value = base64.b64decode(request["candidate"], validate=True)
     if not 0 < len(value) <= MAX_FILE_BYTES:
         raise ValueError("Invalid provider check candidate.")
-    if type(request["profile"]) is not str:
+    if type(request["profile"]) is not str or type(request["base_url"]) is not str:
         raise ValueError("Invalid provider check profile.")
-    return request["target"], settings, value, DeploymentProfile(request["profile"])
+    profile = DeploymentProfile(request["profile"])
+    # Refused here, as "invalid", when the profile may not reach the base URL.
+    base_url = source_base_url(profile, request["base_url"])
+    # Refused here too beside any profile but ``local``.
+    redirect = request_redirect(request, profile)
+    return request["target"], settings, value, profile, base_url, redirect
 
 
 def check_request(raw):
     """Return a fixed classification; transport outages are not rejected credentials."""
     try:
-        target, settings, value, profile = decode_request(raw)
+        target, settings, value, profile, base_url, redirect = decode_request(raw)
     except (ValueError, TypeError, ConfigError, RecursionError):
         return "invalid"
-    return classify(target, value, settings, profile=profile)
+    return classify(
+        target, value, settings, profile=profile, base_url=base_url, redirect=redirect
+    )
 
 
-def classify(target, value, settings, *, profile):
+def classify(target, value, settings, *, profile, base_url=None, redirect=None):
     """Run one provider check in the restricted session and name its outcome.
 
     The installer's helper and the human-run smoke command share this
-    ladder, so "valid", "invalid" and "unavailable" mean the same in both.
-    ``profile`` selects the endpoints the check may reach.
+    ladder, so "valid", "invalid", "mismatch" and "unavailable" mean the
+    same in both. ``profile`` and ``base_url`` (the deployment's ParishSoft
+    choice; None is the profile's default) select the endpoints the check
+    may reach, and ``redirect`` (the deployment's mail redirect, #1399)
+    whether a real Workspace key may be checked from LOCAL. "mismatch" is a
+    ParishSoft key whose organization is not the configured one: permanent,
+    never a temporary outage (#1492).
     """
     try:
-        with CheckSession(profile) as session:
+        with CheckSession(profile, base_url, redirect) as session:
             check = {
                 "parishsoft": _parishsoft,
                 "google_workspace": _workspace,
@@ -287,13 +321,21 @@ def classify(target, value, settings, *, profile):
     except (ConfigError, CryptographicError):
         # Closed candidate parsers reject malformed private bytes locally.
         return "invalid"
+    except SourceOrganizationMismatch:
+        # Checked before the generic failures below: it is a kind of
+        # incomplete source collection, but no retry can ever pass it.
+        return "mismatch"
     except ParishSoftAPIError as error:
         return "invalid" if error.status_code in {401, 403} else "unavailable"
+    except RetryError as error:
+        # One attempt only, but the shared client may still wrap its failure.
+        if isinstance(error.last_exception, SourceOrganizationMismatch):
+            return "mismatch"
+        return "unavailable"
     except (
         CredentialValidationUnavailable,
         requests.ConnectionError,
         requests.Timeout,
-        RetryError,
         OSError,
         smtplib.SMTPServerDisconnected,
     ):

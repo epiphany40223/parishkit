@@ -108,7 +108,9 @@ def test_write_only_form_real_csrf_staging_and_cancellation(setup_http, google):
         kept = post(
             browser, URL, {"candidate": "", "organization_id": "1", "version": version}
         )
-        assert kept.status_code == 302 and kept["Location"] == "/admin/setup/source"
+        # Load parish data is blocked until the Parish profile is saved too,
+        # so Save and continue opens that step needing work (#1476).
+        assert kept.status_code == 302 and kept["Location"] == "/admin/setup/parish"
         assert SetupSealedCredential.objects.get().version == staged
         moved = post(
             browser, URL, {"candidate": "", "organization_id": "2", "version": version}
@@ -127,6 +129,29 @@ def test_write_only_form_real_csrf_staging_and_cancellation(setup_http, google):
         assert response.status_code == 302, response.content
     row.refresh_from_db()
     assert row.ciphertext is None and row.scrubbed_at is not None
+
+
+def test_a_key_follows_its_rule_at_the_field(setup_http, google):
+    """A key with a space inside is refused at its field in the key rule's
+    words, nothing staged (#1577); spaces around a pasted key are stripped,
+    so the sealed key is the key itself."""
+    from parishkit.stewardship.accounts.integration_forms import KEY_RULES
+
+    private = publish("parishsoft")
+    with web_login():
+        browser = started()
+        version = str(SetupAttempt.objects.get().version)
+        values = {"organization_id": "1", "version": version}
+        refused = post(browser, URL, values | {"candidate": "two words"})
+        assert refused.status_code == 400
+        message = str(KEY_RULES["parishsoft"].message).encode()
+        assert message in refused.content.replace(b"&#x27;", b"'")
+        assert b'aria-invalid="true"' in refused.content
+        assert not SetupSealedCredential.objects.exists()
+        padded = post(browser, URL, values | {"candidate": f" {CANDIDATE.decode()} "})
+        assert padded.status_code == 302, padded.content
+    row = SetupSealedCredential.objects.get()
+    assert private.open(row.pk, row.ciphertext) == CANDIDATE
 
 
 def test_a_stale_saved_key_must_be_entered_again(setup_http, google):
@@ -163,11 +188,11 @@ def test_a_stale_saved_key_must_be_entered_again(setup_http, google):
         assert b"Enter it again so it matches the current settings" in kept.content
 
 
-def test_a_saved_key_on_a_blocked_step_says_why_not_stale(setup_http, google):
-    """A saved Slack token after Slack is turned off names that reason.
+def test_turning_slack_off_discards_the_saved_token(setup_http, google):
+    """After Slack is turned off its token is discarded (#1499).
 
-    The step is unavailable, not stale, so the page must not tell the
-    Administrator the token was entered for settings they have since changed.
+    The page names the prerequisite and no saved credential, and it never
+    tells the Administrator the token was entered for changed settings.
     """
     publish("slack")
     slack = "/admin/setup/credentials/slack"
@@ -187,7 +212,7 @@ def test_a_saved_key_on_a_blocked_step_says_why_not_stale(setup_http, google):
         assert post(browser, "/admin/setup/slack", off).status_code == 302
         page = browser.get(slack)
         assert page.status_code == 200
-        assert b"A Slack notifications credential is saved." in page.content
+        assert b"credential is saved" not in page.content
         assert b"Turn on Slack notifications and save the Slack channel first." in (
             page.content
         )
@@ -238,59 +263,13 @@ def test_other_login_and_missing_handoff_fail_without_persisting(setup_http, goo
         assert not SetupSealedCredential.objects.exists()
 
 
-def test_lapsed_freshness_offers_step_up_that_keeps_the_same_draft(setup_http, google):
-    """A page shows Confirm with Google; confirming returns to the same setup.
-
-    Setup's credential pages accept a sign-in up to an hour old (#1402), so
-    the lapsed sign-in here is 61 minutes old.
-    """
+@pytest.mark.parametrize("minutes", [30, 61, 180])
+def test_an_old_sign_in_opens_and_saves_a_credential_page(setup_http, google, minutes):
+    """A sign-in of any age opens and saves a setup credential page (#1547)."""
     import time
 
     publish("parishsoft")
-    google[0]["auth_time"] = int(time.time()) - 61 * 60
-    with web_login():
-        browser = started()
-        attempt = SetupAttempt.objects.get()
-        page = browser.get(
-            URL, HTTP_ACCEPT="text/html,*/*;q=0.8", HTTP_SEC_FETCH_MODE="navigate"
-        )
-        assert page.status_code == 403
-        assert page["Content-Type"].startswith("text/html")
-        assert page["Cache-Control"] == "no-store"
-        body = page.content.decode()
-        assert "Confirm with Google" in body
-        assert 'action="/admin/login"' in body
-        assert f'name="next" value="{URL}"' in body
-        script = browser.get(URL, HTTP_ACCEPT="application/json")
-        assert script.status_code == 403
-        assert script.json()["errors"][0]["code"] == "denied"
-        del google[0]["auth_time"]
-        _, response = signed_in(browser, next=URL)
-        assert response["Location"] == URL
-        assert browser.get(URL).status_code == 200
-        response = post(
-            browser,
-            URL,
-            {
-                "candidate": CANDIDATE.decode(),
-                "organization_id": "1",
-                "version": str(SetupAttempt.objects.get().version),
-            },
-        )
-        assert response.status_code == 302, response.content
-    assert SetupAttempt.objects.get().pk == attempt.pk
-    assert PortalSession.objects.count() == 1
-    assert SetupSealedCredential.objects.get().attempt_id == attempt.pk
-
-
-def test_a_sign_in_from_the_last_hour_opens_and_saves_a_credential_page(
-    setup_http, google
-):
-    """A 30-minute-old sign-in needs no step-up during setup (#1402)."""
-    import time
-
-    publish("parishsoft")
-    google[0]["auth_time"] = int(time.time()) - 30 * 60
+    google[0]["auth_time"] = int(time.time()) - minutes * 60
     with web_login():
         browser = started()
         page = browser.get(URL)

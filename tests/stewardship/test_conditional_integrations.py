@@ -18,6 +18,7 @@ from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts import integration_views
 from parishkit.stewardship.accounts.integration_forms import (
+    KEY_RULES,
     InlineCredentialForm,
     IntegrationForm,
 )
@@ -64,16 +65,18 @@ def field(html, name):
 
 
 def test_a_slack_key_is_required_only_while_slack_is_not_set_up():
-    """Not set up, the token is required with set-up wording and a missing hint;
-    once set up, a blank token keeps the current one."""
+    """Not set up, the token is required with set-up wording and an empty
+    hint (a malformed one says the key rule's words, #1577); once set up, a
+    blank token keeps the current one."""
     setup = InlineCredentialForm("slack", initial={"intent": "x"}, required=True)
     candidate = setup.fields["candidate"]
     assert candidate.required and candidate.label == "Slack bot token"
     assert "Leave this blank" not in str(candidate.help_text)
     assert (
-        candidate.widget.attrs["data-missing-hint"]
+        candidate.widget.attrs["data-empty-hint"]
         == "Paste the Slack bot token to set up Slack."
     )
+    assert candidate.widget.attrs["data-missing-hint"] == KEY_RULES["slack"].message
     refused = InlineCredentialForm(
         "slack", {"intent": "x", "candidate": ""}, required=True
     )
@@ -81,7 +84,7 @@ def test_a_slack_key_is_required_only_while_slack_is_not_set_up():
     assert refused.errors["candidate"] == ["Paste the Slack bot token to set up Slack."]
     replace = InlineCredentialForm("slack", {"intent": "x", "candidate": ""})
     assert replace.is_valid()
-    assert "data-missing-hint" not in replace.fields["candidate"].widget.attrs
+    assert "data-empty-hint" not in replace.fields["candidate"].widget.attrs
 
 
 def test_the_parishsoft_key_says_it_is_not_saved_with_a_schedule_change():
@@ -113,7 +116,7 @@ def test_a_slack_page_not_set_up_requires_its_token():
     html = settings_page("slack", credential=credential)
     candidate = field(html, "candidate")
     assert " required" in candidate
-    assert 'data-missing-hint="Paste the Slack bot token to set up Slack."' in candidate
+    assert 'data-empty-hint="Paste the Slack bot token to set up Slack."' in candidate
 
 
 def test_test_access_is_unavailable_with_why_until_workspace_mail_is_set_up():
@@ -133,17 +136,19 @@ def test_test_access_is_unavailable_with_why_until_workspace_mail_is_set_up():
 
 
 def test_test_access_is_unavailable_with_why_in_the_local_environment(monkeypatch):
-    """LOCAL never reaches Google Drive, so Test access is drawn disabled and
-    named by that reason even with Workspace mail set up, never offered and
-    then refused (#519, #563); the page's context says so from the same
-    check the view's refusal uses."""
+    """Where LOCAL does not reach Google Drive (no mail redirect, or the fake
+    clock, #1399), Test access is drawn disabled and named by that reason
+    even with Workspace mail set up, never offered and then refused (#519,
+    #563); the page's context says so from the same check the view's
+    refusal uses."""
     html = settings_page("backup", workspace_configured=True, drive_in_local=True)
     button = tag(html, r"<button[^>]*>(?=Test access)")
     assert "disabled" in button and 'type="button"' in button
     assert 'value="test"' not in button
     assert 'aria-describedby="backup-test-reason"' in button
     reason = tag(html, r'<span class="help" id="backup-test-reason">[^<]*')
-    assert "not available in the local environment" in reason
+    assert "not available in this local environment" in reason
+    assert "deploy --mail-redirect" in reason
     monkeypatch.setattr(integration_views, "_drive_in_local", lambda: True)
     monkeypatch.setattr(integration_views, "backup_state", lambda *args: {})
     request = Value(portal_session=Value(principal_id="0" * 32))

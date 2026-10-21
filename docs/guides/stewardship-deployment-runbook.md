@@ -158,8 +158,10 @@ either resumes with the same inputs or refuses; none deletes or adopts data.
 3. Follow the numbered steps of
    [First database and application startup](stewardship-runtime.md#first-database-and-application-startup)
    with `compose-initial.json` and a fixed project name: dependencies,
-   `database-roles`, bootstrap `prepare`, `migration`, `database-grants`,
-   bootstrap `import`, then the online services. Start `caddy` last, once the
+   `database-roles` (which also installs the
+   [text search extension](#text-search-extension-765)), bootstrap
+   `prepare`, `migration`, `database-grants`, bootstrap `import`, then the
+   online services. Start `caddy` last, once the
    DNS record resolves; it publishes 80 and 443 and obtains the certificate.
 4. Check the deployment with `pk-stewardship health --config WEB_CONFIG`
    inside the web container, as
@@ -235,8 +237,8 @@ mailing the whole parish:
 4. Check the daily and weekly Admin reports and a manual weekly report at the
    Testing mailbox (they show zero participation: they count only live
    answers), the reports and exports pages (which exclude Testing answers by
-   design), and the Production readiness page's list of Testing submissions.
-5. Before Production readiness, move the start date back to its real date,
+   design), and the Go live page's Testing submissions list.
+5. Before going live, move the start date back to its real date,
    send the fictional sample test again (any configuration change voids the
    earlier one as readiness evidence), and wait until every Testing message
    has finished (delivered, failed or cancelled): readiness requires it, and
@@ -550,7 +552,9 @@ sequence with the commands that exist.
    `database-grants` requires, installs and admits, with this release's
    operational log writer guard in place. Then skip both commands; every
    service still verifies the schema and its own grants when it starts. On
-   anything else, including an error, run both:
+   anything else, including an error, first install the
+   [text search extension](#text-search-extension-765) as the database
+   superuser (it changes nothing when already installed), then run both:
    `run --rm migration`, which applies forward migrations with the schema
    owner, and `run --rm database-provision database-grants --config PROVISION_CONFIG --confirm-deployment UUID`,
    which installs new runtime grants. On a deployment that has completed
@@ -743,6 +747,39 @@ roll back. Every step is timed, and the log is also kept on the host as
 `/var/log/stewardship-upgrade-TIMESTAMP.log`, with the backup's result
 appended to `/var/log/stewardship-backup.log`.
 
+After a successful upgrade or rollback it prunes old release images (#1661,
+the operations specification's
+[Production upgrades](../specs/stewardship/operations/spec.md#production-upgrades)
+rules) with
+[`tools/stewardship-prune-images.sh`](../../tools/stewardship-prune-images.sh),
+uploaded and run the same way. Only images of `STEWARDSHIP_IMAGE_REPO` are
+candidates; it keeps every image a container uses, the release just
+started, the replaced release the run reported, and the
+`STEWARDSHIP_KEEP_RELEASES` newest others (default 4), removes the rest by
+image ID, then clears Docker's build cache (`STEWARDSHIP_KEEP_BUILD_CACHE=1`
+keeps it). It prints each image removed or kept and the space freed, and
+keeps that log on the host as `/var/log/stewardship-prune-TIMESTAMP.log`.
+For now `STEWARDSHIP_PRUNE` defaults to `dry-run`, which lists what it would
+remove and removes nothing: the first real prune happens only after the
+Administrator has reviewed one Production dry-run log, and then a one-line
+follow-up (#1671) makes `on` the default. Until then
+`STEWARDSHIP_PRUNE=on` removes; `STEWARDSHIP_PRUNE=off` skips pruning.
+It prunes only when the host half's last line reports the replaced release
+as a digest of `STEWARDSHIP_IMAGE_REPO`; when that line is missing,
+reworded or empty, it warns and removes nothing. A re-run with the digest
+already running replaced the release with itself, so the release before it
+is not known by name; that run says so and skips pruning, and the next
+upgrade prunes. A failed lookup of what to keep (other than an image that
+is simply not on the host) stops the pruning before anything is removed. A
+pruning failure prints a warning and the upgrade still exits 0. To preview
+or prune without an upgrade, run it on the
+host directly (`--keep N`, `--protect IMAGE`, `--dry-run`,
+`--keep-build-cache`; its header lists them):
+
+```sh
+ssh HOST bash -s -- --dry-run < tools/stewardship-prune-images.sh
+```
+
 It does not do everything an upgrade may need. The one-time steps a
 release may require before its grants run, the
 [worker connection limit](#worker-connection-limit-339) and the
@@ -752,7 +789,9 @@ advisory check answers `f` for such a release and `database-grants` would
 refuse after `web` stopped. It does not read the release notes for you,
 check the host's disk space or registry login, or repeat a runtime
 fallback (it refuses one instead). The operational log writer guard is
-among the things the upgrade check itself verifies.
+among the things the upgrade check itself verifies. It does install the
+[text search extension](#text-search-extension-765) before every migration
+it runs, since that step is safe to repeat.
 
 The [operator helper scripts](stewardship-operator-scripts.md) cover the
 steps around it: `tools/stewardship-ops/release.sh` publishes a release
@@ -1144,6 +1183,43 @@ What to watch after deploying it:
 - The container uses roughly one more Python process's memory (about 150 to
   250 MB), plus a second helper while sending.
 
+### Text search extension (#765)
+
+The release with migration file 0117 adds trigram indexes for the System
+logs text search, which need PostgreSQL's `pg_trgm` extension. It ships
+with the pinned PostgreSQL image, but creating an extension needs CREATE on
+the database, which no service login holds, so the migration login cannot
+install it: the operator superuser (`pk_stewardship_operator`) does. Without
+it, the migration refuses with `permission denied to create extension
+"pg_trgm"` and applies nothing.
+
+- A fresh installation needs nothing: `database-roles` installs it.
+- The [scripted upgrade](#scripted-upgrade), the local environment's deploy
+  and `tools/stewardship-dev-deploy.sh` install it before every migration
+  they run.
+- A manual upgrade runs this in step 4, before `migration`:
+
+```sh
+docker compose -f COMPOSE -p PROJECT exec -T postgres \
+  psql -U pk_stewardship_operator -d DATABASE -v ON_ERROR_STOP=1 \
+  -c "CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public"
+```
+
+It is safe to repeat and changes nothing once installed. The extension
+lives in the `public` schema, so a database restore (which empties and
+reloads `public` from the dump) drops it and re-creates it with the dump, and
+a restore of a set from before this release leaves it out. A rollback to an
+earlier image after the migration ran is a database restore anyway (the
+schema changed). Building the six indexes takes about half a minute at
+2,000,000 entries per log, and about a second at Production's size in
+October 2026, while nothing writes.
+
+What to watch after deploying it: a System logs search for a word of three
+or more letters or digits answers in milliseconds instead of reading every
+entry in the date range; shorter words read the entries as before.
+
+Each log write now also updates the four new indexes; at Production's rate (tens of thousands of audit events a month and about a hundred operational rows) this is negligible, and the only visible effect would be a rare insert that flushes a GIN index's pending list.
+
 ### Refresh schedule modes (#1122)
 
 The release that gives the ParishSoft refresh schedule editor Basic and
@@ -1246,6 +1322,10 @@ newer release had is neither started nor reported. The required backup
 before `web` stops runs in the current image, whose schema it matches. If
 the previous image's `retarget-image` refuses, the cause is the deployment
 field case above; the script leaves the maintenance page up and says so.
+The previous release's image is normally still on the host, since the
+[scripted upgrade](#scripted-upgrade)'s image pruning keeps the replaced
+release and the newest few others; if it was removed, the rollback's pull
+fetches it again.
 The rollback has not yet been rehearsed on a host; that is tracked in
 issue #460 and belongs on the
 [local laptop environment](../specs/stewardship/local-environment/spec.md)

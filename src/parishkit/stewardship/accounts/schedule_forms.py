@@ -17,6 +17,7 @@ from parishkit.stewardship.campaigns.configuration import (
 from parishkit.stewardship.wall_clock import weekday_choices
 from parishkit.stewardship.web.admin_forms import AdminForm, AdminFormSet
 from parishkit.stewardship.web.dates import UnknownZone
+from parishkit.stewardship.web.field_rules import ERROR_LINE_TEMPLATE
 from parishkit.stewardship.web.presentation import parish_date
 from parishkit.stewardship.web.time_entry_fields import FlexibleTimeField
 
@@ -63,6 +64,38 @@ ZONE_MISSING = _(
     "Your browser didn't report a time zone, so this send time can't be "
     "read. Check your computer's time zone setting, then try again."
 )
+
+
+def send_window_attrs():
+    """The send date's attributes for the page script's window check (#1787).
+
+    On the pages that take send times in the browser's time zone, ui-v1.js
+    checks as they are typed that a send date and time fall within the
+    campaign dates, by the rule ``ScheduleSet._field_errors`` applies, and
+    refuses at the date with ``OUTSIDE_WINDOW``'s own words; ``{window}``
+    stands for the campaign dates, which the script writes as
+    ``window_text`` does (the dates may be edited on the same page).
+    """
+    return {
+        "data-send-window": "",
+        "data-window-message": str(OUTSIDE_WINDOW) % {"window": "{window}"},
+    }
+
+
+def saved_send_attrs(values, moment):
+    """A saved dated send's attributes for the window check (#1787).
+
+    A row posted with the date and time the page showed for it keeps its
+    saved campaign-local values (``schedule_local.to_campaign``), so the
+    server judges its saved date, not the shown one read again in a
+    (possibly proposed) campaign zone. ``moment`` is the saved send's
+    instant (``schedule_local.instant``), which the page shows; the script
+    compares the row's fields with it to tell such a row. A digest (no
+    date) has nothing to judge.
+    """
+    if not values.get("date"):
+        return {}
+    return {"data-saved-date": values["date"], "data-saved-at": moment}
 
 
 def window_text(campaign):
@@ -521,6 +554,11 @@ class ScheduleForm(AdminForm):
         self.fields["time"].keep(self.initial.get("time"))
         if browser_times:
             self.fields["time"].help_text = BROWSER_TIME_HELP
+            # The browser's window check (#1787) says its refusal in the
+            # date's reserved error line, so a message coming or going moves
+            # nothing below it.
+            self.fields["date"].template_name = ERROR_LINE_TEMPLATE
+            self.fields["date"].widget.attrs.update(send_window_attrs())
         fixed = self.initial.get("kind") if self.initial.get("id") else None
         if fixed:
             self.fields["kind"].disabled = True
@@ -666,12 +704,20 @@ class ScheduleSet(AdminFormSet):
         a legacy saved time with seconds (#631) is kept in that zone too: the
         saved row is found by the row's posted ID, not its position, so a
         reordered or forged post never borrows another row's seconds (clean
-        refuses such identities anyway).
+        refuses such identities anyway). A saved dated row also carries its
+        saved date and moment for the send date's window check, bound or
+        not (``saved_send_attrs``, #1787).
         """
         form = super()._construct_form(i, **kwargs)
         form.schedule_moment = None
         if not self.browser_times or i >= len(self.previous):
             return form
+        # The page drew row i from the i-th saved schedule, bound or not.
+        saved = self.previous[i]["values"]
+        moment = schedule_local.instant(saved, self.saved_timezone, self.now)
+        form.fields["date"].widget.attrs.update(
+            saved_send_attrs(saved, moment.isoformat())
+        )
         if form.is_bound:
             posted = form.data.get(form.add_prefix("id"))
             saved = next(
@@ -692,9 +738,7 @@ class ScheduleSet(AdminFormSet):
                 kept = None  # Refused in clean, with ZONE_MISSING.
             form.fields["time"].keep(kept)
         else:
-            form.schedule_moment = schedule_local.instant(
-                self.previous[i]["values"], self.saved_timezone, self.now
-            ).isoformat()
+            form.schedule_moment = moment.isoformat()
         return form
 
     @property
@@ -1044,6 +1088,12 @@ class ScheduleSet(AdminFormSet):
         # existed (#1018) is unchanged when its row is posted back as shown.
         if data.get("comparison"):
             values["comparison"] = True
+        # A digest keeps the sends it skips (#1658) on every later revision:
+        # a skipped past send has no fulfillment, so a revision without it
+        # would plan that send again as missed. Only a skip adds a date
+        # (digest_skips.apply); no form field changes them.
+        if previous and previous.get("skip_dates") and data["kind"] == previous["kind"]:
+            values["skip_dates"] = previous["skip_dates"]
         return values
 
     def patch(self):

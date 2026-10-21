@@ -221,8 +221,6 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/integration-preview",
         "/backup-key",
         "/backup-key-proof",
-        "/credential-status",
-        "/credential-selection",
         "/branding-settings",
         "/hosted-files",
         "/hosted-file-unavailable",
@@ -611,6 +609,69 @@ def test_admin_stay_signed_in_renews_and_closes_the_dialog(page, component_origi
     expect(dialog).to_be_hidden()
 
 
+HEADING_SIZES = """() => {
+    const main = document.querySelector('main');
+    const probe = document.createElement('div');
+    probe.innerHTML = '<h2>a</h2><h3>b</h3><fieldset class="panel"><legend>c'
+        + '</legend></fieldset><fieldset><legend>d</legend></fieldset>'
+        + '<div class="notice"><h2>e</h2></div><table><caption>f</caption>'
+        + '</table>';
+    main.append(probe);
+    const size = (selector) => parseFloat(
+        getComputedStyle(probe.querySelector(selector)).fontSize);
+    const sizes = {
+        h2: size(':scope > h2'), h3: size(':scope > h3'),
+        panelLegend: size('fieldset.panel > legend'),
+        legend: size('fieldset:not(.panel) > legend'),
+        noticeHeading: size('.notice h2'), caption: size('caption'),
+        root: parseFloat(getComputedStyle(document.documentElement).fontSize),
+    };
+    probe.remove();
+    return sizes;
+}"""
+
+
+def test_section_and_card_headings_take_the_heading_tokens(page, component_origin):
+    """Every section and card heading is drawn at its heading token (#732)."""
+    from parishkit.stewardship.web.design_tokens import HEADINGS
+
+    page.goto(component_origin + "/home")
+    sizes = page.evaluate(HEADING_SIZES)
+    rem = sizes.pop("root")
+    expected = {
+        "h2": HEADINGS["heading-2"],
+        "panelLegend": HEADINGS["heading-2"],
+        "h3": HEADINGS["heading-3"],
+        "noticeHeading": HEADINGS["heading-3"],
+        "legend": HEADINGS["card-heading"],
+        "caption": HEADINGS["card-heading"],
+    }
+    for name, token in expected.items():
+        assert abs(sizes[name] - float(token[:-3]) * rem) <= 0.5, (name, sizes)
+
+
+def test_session_dialog_is_the_shared_dialog_card(page, component_origin):
+    """The inactivity warning has the panel corners and a section heading."""
+    from playwright.sync_api import expect
+
+    from parishkit.stewardship.web.design_tokens import HEADINGS, RADII
+
+    page.clock.install(time=NOW)
+    page.goto(component_origin + "/home")
+    page.clock.fast_forward(56 * 60 * 1000)
+    dialog = page.locator("dialog.session-dialog")
+    expect(dialog).to_be_visible()
+    rem = page.evaluate(
+        "parseFloat(getComputedStyle(document.documentElement).fontSize)"
+    )
+    radius = dialog.evaluate("(el) => parseFloat(getComputedStyle(el).borderRadius)")
+    heading = dialog.locator("h2:visible").first.evaluate(
+        "(el) => parseFloat(getComputedStyle(el).fontSize)"
+    )
+    assert abs(radius - float(RADII["radius"][:-3]) * rem) <= 0.5
+    assert abs(heading - float(HEADINGS["heading-2"][:-3]) * rem) <= 0.5
+
+
 def test_admin_dialog_defers_to_activity_in_another_tab(page, component_origin):
     """A passive status read showing a later deadline suppresses the warning."""
     from playwright.sync_api import expect
@@ -892,7 +953,9 @@ def test_admin_presence_poll_is_passive_and_shows_service_failure(
     expect(page.locator("[data-presence-unavailable]")).to_have_js_property(
         "hidden", False
     )
-    assert page.locator("[data-presence-count]").inner_text() == "1,234"
+    # The failure sentence takes the pill's place (#1643), but the last good
+    # count stays in the page; it is never overwritten with zero.
+    assert page.locator("[data-presence-count]").text_content() == "1,234"
 
 
 def axe_violations(page, axe_source):
@@ -1156,30 +1219,25 @@ def test_flow_steps_and_return_link_orient_a_configuration_change(
 
 @pytest.mark.parametrize("width", [390, 1280])
 def test_go_live_steps_wrap_without_overflow(page, component_origin, axe_source, width):
-    """All five go-live steps fit a phone by wrapping, never scrolling (#196)."""
+    """All four Go live steps fit a phone, never scrolling (#196): Production
+    activation's step bar while initial mail is prepared (#1585 slice 5)."""
+    from playwright.sync_api import expect
+
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/go-live-steps")
-    steps = page.get_by_role("list", name="Steps")
+    steps = page.get_by_role("list", name="Go live steps")
     visible(steps)
-    assert steps.locator("li").count() == 5
-    assert steps.get_by_role("link").count() == 0
+    assert steps.locator("li").count() == 4
     current = steps.locator('[aria-current="step"]')
-    assert current.count() == 1 and "Activation" in current.inner_text()
-    for item in steps.locator("li").all():
-        visible(item)
+    assert current.count() == 1
+    expect(page.locator(".setup-stepper-current")).to_have_text(
+        "Step 4 of 4: Activation"
+    )
+    expect(page.locator(".setup-stepper-count")).to_have_text("3 of 4 steps completed")
+    # No numbered flow list beside it: one step indicator per page.
+    assert page.locator(".flow-steps").count() == 0
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
-
-
-@pytest.mark.parametrize("width", [390, 1280])
-def test_key_status_returns_to_its_integration(page, component_origin, width):
-    """A key's status names its integration in the trail and leads back (#196)."""
-    page.set_viewport_size({"width": width, "height": 900})
-    page.goto(component_origin + "/credential-status")
-    trail = page.get_by_role("navigation", name="Breadcrumb")
-    visible(trail.get_by_role("link", name="ParishSoft"))
-    visible(page.get_by_role("link", name="Return to ParishSoft"))
-    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
 
 @pytest.mark.parametrize("width", [390, 1280])

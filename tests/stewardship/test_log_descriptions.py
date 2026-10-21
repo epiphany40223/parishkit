@@ -39,7 +39,9 @@ def _direct_types_in_source():
 
     Python owners pass ``event_type="..."``; the Admin session owner passes
     its ending ``reason`` through as the type (``reason="..."`` or
-    ``_revoke(row, now, "...")``). SQL triggers insert literals into
+    ``_revoke(row, now, "...")``); a refusal class's ``reason = "denied"``
+    names a refusal, not a type, so only snake_case words with at least one
+    underscore count there. SQL triggers insert literals into
     ``stewardship_audit_event``, sometimes schema-qualified as ``public.``;
     there, only snake_case words with at least one underscore are type-shaped,
     which skips column values such as 'parish'. Prefix-built types (a literal
@@ -49,7 +51,7 @@ def _direct_types_in_source():
     for path in PACKAGE.rglob("*.py"):
         found |= set(re.findall(r'event_type="([a-z][a-z0-9_]*)"', path.read_text()))
     sessions = (PACKAGE / "accounts" / "sessions.py").read_text()
-    found |= set(re.findall(r'\breason\s*=\s*"([a-z][a-z0-9_]*)"', sessions))
+    found |= set(re.findall(r'\breason\s*=\s*"([a-z][a-z0-9]*_[a-z0-9_]*)"', sessions))
     found |= set(re.findall(r'_revoke\([^)]*"([a-z][a-z0-9_]*)"\)', sessions))
     for path in (PACKAGE / "schema").glob("*.sql"):
         for insert in re.findall(

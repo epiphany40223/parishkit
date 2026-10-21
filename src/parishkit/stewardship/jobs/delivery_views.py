@@ -1,13 +1,15 @@
 """Admin-only mail metadata and evidence forms; private payloads never serialize."""
 
 from contextlib import contextmanager
+from dataclasses import replace
+from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
 from django.conf import settings
 from django.core import signing
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, IntegrityError, transaction
-from django.http import HttpResponse
+from django.http import HttpResponse, QueryDict
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -28,11 +30,20 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
+from parishkit.stewardship.reports.family_links import (
+    family_record_ids,
+    link_families,
+)
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import (
     MESSAGES,
     ErrorCode,
     expected_version,
+)
+from parishkit.stewardship.web.filter_errors import (
+    FilterError,
+    error_context,
+    refused,
 )
 from parishkit.stewardship.web.refusals import (
     annotate,
@@ -47,14 +58,22 @@ from parishkit.stewardship.web.tables import (
 
 from . import delivery_bulk
 from .delivery_admin import clear_recipient_refusal, report_recipient_bounce
-from .delivery_metadata import DELIVERY_SORTING, STATES
+from .delivery_metadata import (
+    DELIVERY_SORTING,
+    PURPOSE_CHOICES,
+    RECIPIENT_PATTERN,
+    RECIPIENT_REFUSAL,
+    STATES,
+    recipient_scope,
+)
 from .delivery_reads import (
-    ACTION_LABELS,
+    LISTING_FILTERS,
     REFUSAL_SORTING,
+    UNAVAILABLE_REASONS,
     bounce_panel,
     current_snapshot,
     email_recipients,
-    email_refusals,
+    parse_window,
     read_detail,
     read_listing,
     read_refusal,
@@ -62,6 +81,7 @@ from .delivery_reads import (
     read_sending_holds,
     unresolved_refusals,
     with_family_names,
+    with_recipients,
     with_refusal_counts,
 )
 from .delivery_resolution import resolve_delivery
@@ -248,47 +268,271 @@ def _previous(request, window):
     return values.urlencode()
 
 
-@require_http_methods(["GET", "HEAD", "POST"])
-@sensitive_post_parameters("note")
-def delivery_list(request):
-    """Search exact operational identifiers without fetching message content.
+# Sent mail's Recipient is private filter state (#1562): an email address
+# or a Family DUID names a person, and ui-conventions keeps such a value out
+# of every URL. It travels only in POST bodies: the filter form, the table's
+# navigator and headings, the Production / Testing choice, the row Recipient
+# links and the bulk actions. Its other filters may be linked.
+PRIVATE_FILTERS = {"recipient"}
+TABLE_FIELDS = {"page", "size", "sort"}
+RECIPIENT_IN_LINK = _(
+    "Recipient is never put in a link. Enter it in the Recipient filter instead."
+)
 
-    A POST is one of the page's bulk actions (#382 M4, ``_bulk``): it is
-    answered with this page, whose bulk review region shows the preview,
-    the result or the refusal in place.
+
+def _listing_parameters(request):
+    """Where Sent mail's filters come from for this request (#1562).
+
+    A GET (a bookmark, or a link from another page) carries only the
+    filters a link may carry; one naming a Recipient is refused, without
+    echoing it. A bulk action posts to the page's address, so its filters
+    are that address's, plus the Recipient its form carries. Any other POST
+    is the page's own filter form or table control: every filter is in its
+    body, and it never comes with a query string. Raises ``ValueError``.
     """
-    bulk, status = _bulk(request) if request.method == "POST" else ({}, 200)
+    if request.method != "POST":
+        if PRIVATE_FILTERS & set(request.GET):
+            raise ValueError(RECIPIENT_IN_LINK)
+        return request.GET
+    if "action" in request.POST:
+        parameters = request.GET.copy()
+        if PRIVATE_FILTERS & set(parameters):
+            raise ValueError(RECIPIENT_IN_LINK)
+        if request.POST.get("recipient"):
+            parameters["recipient"] = request.POST["recipient"]
+        return parameters
+    if request.GET:
+        raise ValueError("Invalid delivery filter.")
+    parameters = request.POST.copy()
+    parameters.pop("csrfmiddlewaretoken", None)
+    return parameters
+
+
+# Where Sent mail shows a Recipient refused at its field (#1562): the
+# field's element id, and the gate's hint row that shows the message.
+FIELD_IDS = {"recipient": "delivery-recipient"}
+FIELD_LINES = {"recipient": "delivery-filters"}
+# What a page refused at the Recipient still reads: the view choices (the
+# mode, the browser zone) and the table's sort and size, not the filters.
+REFUSED_KEEPS = ("mode", "zone", "sort", "size")
+
+
+def _recipient_refusal(parameters):
+    """A ``FilterError`` when Sent mail's Recipient is unusable, else None.
+
+    A malformed Recipient (digits and commas that are no whole Family
+    DUID, or an "@" that is no one address; any other text is a name,
+    #1849) is a rule the reader fixes at that one field
+    (UX conventions, Field errors and live checks), so the page is drawn
+    again with the error there, not replaced by an error page. Every
+    structural rule (an unknown or repeated field, a sort or size the table
+    does not take) is checked first and still raises a plain ``ValueError``.
+    """
+    values, _window = parse_window(parameters, LISTING_FILTERS, DELIVERY_SORTING)
+    try:
+        recipient_scope(values.get("recipient", ""))
+    except ValueError:
+        return FilterError("recipient", RECIPIENT_REFUSAL, parameters)
+    return None
+
+
+def _carried(parameters):
+    """The applied filters every table control and mode choice posts again."""
+    return [
+        (name, value)
+        for name, value in parameters.items()
+        if name not in TABLE_FIELDS and value
+    ]
+
+
+def _page_address(request, parameters, table):
+    """This view's address with only the filters a link may carry (#536).
+
+    Never the Recipient and never the page number: ui-v1.js puts it in the
+    address bar after each in-place answer (data-page-address), so a reload
+    or bookmark keeps the linkable filters, the sort and the size.
+    """
+    fields = [
+        (name, value)
+        for name, value in _carried(parameters)
+        if name not in PRIVATE_FILTERS
+    ] + table.view_fields
+    return f"{request.path}?{urlencode(fields)}"
+
+
+def _mode_fields(parameters, table):
+    """The fields each Production / Testing segment posts, by name.
+
+    Sent mail's mode choice is the shared segmented pair (#1575), each
+    segment a small POST form: these keep the applied filters (the
+    Recipient too, private filter state that never reaches a URL), size and
+    sort, and start again at page 1, as a new filter does. The component
+    leaves out the applied ``mode``; each segment's button sends its own.
+    """
+    return dict(_carried(parameters) + table.view_fields)
+
+
+def _recipient_fields(row, mode):
+    """The fields that list everything a row's recipient was sent (#1562).
+
+    A Family email's recipient is its Family (by DUID), any other email's
+    its one address (an Administrator's, or a Ministry leader's); the form
+    keeps the mode shown and posts them, so neither reaches a URL. None
+    when the address is unknown. A Production Family email the current
+    campaign has a record of links its Family's Timeline instead
+    (``_with_timelines``); the template then leaves these fields unused.
+    """
+    duid = row["family__family_duid"]
+    recipient = str(duid) if duid else row.get("recipient_address")
+    if not recipient:
+        return None
+    return [("recipient", recipient), ("mode", mode)]
+
+
+def _with_timelines(rows):
+    """Each row with ``timeline_family_id``, for its Recipient's Timeline link.
+
+    A Production Family email gets its Family's record in the current
+    campaign, the one the Timeline address serves (#1570), or None when
+    that campaign has no record of the Family; every other email gets None
+    and keeps the in-place recipient filter (#1562): a Testing email, since
+    the Timeline shows only Production records, and an email to a person,
+    who has no Timeline yet. One read of the page's record ids, none when
+    the page lists no Production Family email. The email's own
+    ``family_id`` is its own campaign's record, so it is left as it is.
+    """
+    ids = family_record_ids(
+        None,
+        (row["family__family_duid"] for row in rows if row["mode"] == "production"),
+    )
+    return [
+        row
+        | {
+            "timeline_family_id": ids.get(row["family__family_duid"])
+            if row["mode"] == "production"
+            else None
+        }
+        for row in rows
+    ]
+
+
+@require_http_methods(["GET", "HEAD", "POST"])
+@sensitive_post_parameters("note", "recipient")
+def delivery_list(request):
+    """Sent mail: every email, filtered by exact or closed choices (#1562).
+
+    Never fetches message content: the address of an email to a person (an
+    Administrator's report or notice, a Ministry leader's sign-in email)
+    comes from a definer read that returns only addresses. A POST naming an
+    ``action`` is one of the page's bulk actions (#382 M4, ``_bulk``): it is
+    answered with this page, whose bulk review region shows the preview,
+    the result or the refusal in place. Any other POST reads the page with
+    the filters in its body (``_listing_parameters``).
+    """
+    bulk, status = ({}, 200)
+    if request.method == "POST" and "action" in request.POST:
+        bulk, status = _bulk(request)
     if isinstance(bulk, HttpResponse):
         return bulk
     # The refusal behind a refused bulk action, for the refusal log only.
     refusal = bulk.pop("_refusal", None)
+    # A Recipient refused at its field, which load notes (#1562).
+    field_refusal = []
 
     def load(actor):
-        """Capture one filtered page without reading any private message payload."""
-        data = read_listing(request.GET)
+        """Capture one filtered page without reading any private message payload.
+
+        The page shows the system's current operating mode's email (Testing
+        before Production is activated) unless its filters name a mode (or
+        a send, whose mode it shows). A Recipient refused at its field
+        (``_recipient_refusal``) lists the emails for no filters, in the
+        mode, sort and size sent, while the filter form shows what was sent.
+        """
+        sent = _listing_parameters(request)
+        parameters = sent
+        # A bulk action's form carries the Recipient already applied, so
+        # only a hand-built one can bring a malformed one; it is refused by
+        # read_listing's error page as before, never as a refused filter
+        # beside an action that ran.
+        problem = None if "action" in request.POST else _recipient_refusal(sent)
+        if problem is not None:
+            field_refusal.append(problem)
+            parameters = QueryDict(mutable=True)
+            for name in REFUSED_KEEPS:
+                if sent.get(name):
+                    parameters[name] = sent[name]
+        data = read_listing(
+            parameters,
+            actor=actor.identity,
+            default_mode=SystemConfiguration.objects.values_list(
+                "mode", flat=True
+            ).first(),
+        )
         values = data["values"]
-        return dict(
-            table=_table(
-                request,
-                data["window"],
+        # The filter form shows what was sent on a refused page, as typed.
+        form = (
+            values
+            if problem is None
+            else {"state": "all", "purpose": "all"}
+            | {name: value for name, value in sent.items() if value}
+        )
+        rows = _with_timelines(
+            with_recipients(
                 with_refusal_counts(with_family_names(data["rows"], data["snapshot"])),
+                actor.identity,
+            )
+        )
+        table = replace(
+            window_table(
+                data["window"],
+                [
+                    row | {"recipient_fields": _recipient_fields(row, values["mode"])}
+                    for row in rows
+                ],
                 data["has_next"],
+                carry=_carried(parameters),
                 total=data["total"],
                 sorting=DELIVERY_SORTING,
                 sort=values["sort"],
             ),
+            method="post",
+            action=request.path,
+        )
+        context = dict(
+            table=table,
+            page_address=_page_address(request, parameters, table),
             states=STATES,
-            selected_state=values["state"],
-            query=values["q"],
+            selected_state=form["state"],
+            purposes=PURPOSE_CHOICES,
+            selected_purpose=form["purpose"],
+            recipient=form.get("recipient", ""),
+            recipient_pattern=RECIPIENT_PATTERN,
+            recipient_hint=RECIPIENT_REFUSAL,
+            start=form.get("start", ""),
+            end=form.get("end", ""),
+            zone=values.get("zone", ""),
+            mode=values["mode"],
+            mode_fields=_mode_fields(parameters, table),
             send=data["send"],
             holds=read_sending_holds(database_now()),
             # The link line's count (#935), drawn once per page load.
             refusal_count=unresolved_refusals().count(),
             bulk_overview=delivery_bulk.overview(),
             **bulk,
-        ), len(data["rows"])
+        )
+        if problem is not None:
+            # The error at the field and in the summary; the hint row keeps
+            # the message's height once it clears on the first edit.
+            context |= error_context(problem, FIELD_IDS, FIELD_LINES) | {
+                "filter_sizes": {FIELD_LINES[problem.field]: problem.message}
+            }
+        return context, len(data["rows"])
 
     response = _page(request, "stewardship/deliveries.html", load, status=status)
+    if field_refusal and response.status_code == 200:
+        # This page drawn again for a Recipient refused at its field: a
+        # 400 refusal the in-place Apply swaps in, keeping the form.
+        refused(response)
     # Only the bulk region's own refusal: a page that answered with a
     # refusal of its own (its 400 error page) keeps that one's reason.
     if (
@@ -314,10 +558,12 @@ BULK_REFUSALS = {
 }
 # The fields each bulk action posts besides the CSRF token, as (required,
 # optional): the checks below refuse any other, and the refusal log counts
-# them (#1444).
+# them (#1444). Each may carry the applied Recipient, which is private
+# filter state and never in the address the forms post to, so the answer's
+# list keeps it (#1562).
 _BULK_FIELDS = {
-    "preview": ({"action", "kind", "purpose", "note"}, {"checked"}),
-    "confirm": ({"action", "preview", "note"}, set()),
+    "preview": ({"action", "kind", "purpose", "note"}, {"checked", "recipient"}),
+    "confirm": ({"action", "preview", "note"}, {"recipient"}),
 }
 
 
@@ -411,13 +657,32 @@ def _available():
         raise ObjectDoesNotExist("Delivery pages are withheld.")
 
 
-# The retry offered_actions (delivery_reads) gives each retryable state.
-RETRY_ACTIONS = {
-    "delivery_unknown": "resend",
-    "permanent_failure": "retry_failed",
-    "pending": "retry_unsent",
-    "retry_wait": "retry_unsent",
-}
+def outcome_context(data):
+    """The outcome panel's part of the Mail message page's context (#1563).
+
+    ``data`` is ``read_detail``'s answer (its ``outcome``, ``choices``,
+    ``actions``, ``paused`` and ``last_attempt_at``). ``choices`` maps each
+    answer the question offers by its choice, with a fresh command id (used
+    only by an available answer's form) and its unavailable reason's words;
+    ``choice_rows`` lists the same answers in the page's order, whose reasons
+    the question says once each. ``note_command`` is the closed "Add a note"
+    form's command id while the note is offered but no answer offers it,
+    else None.
+    """
+    choices = {
+        row["choice"]: row
+        | {"id": uuid4(), "reason": UNAVAILABLE_REASONS.get(row["unavailable"])}
+        for row in data["choices"]
+    }
+    asks_note = any(row["action"] == "note" for row in data["choices"])
+    return dict(
+        outcome=data["outcome"],
+        choices=choices,
+        choice_rows=list(choices.values()),
+        paused=data["paused"],
+        last_attempt_at=data["last_attempt_at"],
+        note_command=uuid4() if "note" in data["actions"] and not asks_note else None,
+    )
 
 
 @require_safe
@@ -428,14 +693,14 @@ def delivery_detail(request, message_id):
         """Pin history's upper version to the selected message observation.
 
         The page names the email by its purpose and its Family's name (from
-        the latest ParishSoft data, as Outgoing mail reads it), its
+        the latest ParishSoft data, as Sent mail reads it), its
         recipient addresses (read for ``actor`` through the definer function,
         #1024) and the refused addresses its delivery recorded (#1015).
-        ``commands`` are the offered resolutions; ``decisions`` says whether
-        any of them changes the email (anything but a bare evidence note),
-        which decides whether the page shows the "Resolve this email" section
-        or only the closed note form. ``bounce`` is the "Report a bounced
-        address" panel (#806 slice 4), or None where it does not apply.
+        ``outcome`` and ``choices`` are its outcome panel and the answers
+        its question offers (#1563); ``note_command`` is the closed "Add a
+        note" form's command id while the note is offered but no question
+        offers it. ``bounce`` is the "Report a bounced address" panel (#806
+        slice 4), or None where it does not apply.
         """
         data = read_detail(message_id, request.GET)
         window = data["window"]
@@ -447,32 +712,11 @@ def delivery_detail(request, message_id):
             bounce=bounce_panel(
                 delivery, recipients, can_change="note" in data["actions"]
             ),
-            refused=email_refusals(message_id),
+            refused=data["refused"],
             events=data["events"],
             task=data["task"],
             notes=data["notes"],
-            retry_unavailable=data["retry_unavailable"],
-            # The retry the page would offer, shown unavailable with why
-            # while the resend admission refuses it (#563).
-            retry_label=ACTION_LABELS[RETRY_ACTIONS[delivery["state"]]]
-            if data["retry_unavailable"]
-            else None,
-            # Decisions other campaign work holds now, shown unavailable,
-            # named by the notice that says why (#1331).
-            held=[
-                dict(action=action, label=ACTION_LABELS[action])
-                for action in data["held"]
-            ],
-            # An unavailable retry, or a held decision, is a decision too: it
-            # is shown, greyed, in the "Resolve this email" section where it
-            # would sit (#563).
-            decisions=(data["retry_unavailable"] and bool(data["actions"]))
-            or bool(data["held"])
-            or any(action != "note" for action in data["actions"]),
-            commands=[
-                dict(action=action, label=ACTION_LABELS[action], id=uuid4())
-                for action in data["actions"]
-            ],
+            **outcome_context(data),
             next_query=_next(request, window, data["has_next"]),
             previous_query=_previous(request, window),
         ), len(data["events"]) + len(data["notes"])
@@ -491,7 +735,14 @@ def refusal_list(request):
             table=_table(
                 request,
                 data["window"],
-                with_family_names(data["rows"], data["snapshot"], key="family_duid"),
+                # Each Family name opens its Timeline in the current
+                # campaign (#1570): one read of the page's record ids.
+                link_families(
+                    None,
+                    with_family_names(
+                        data["rows"], data["snapshot"], key="family_duid"
+                    ),
+                ),
                 data["has_next"],
                 total=data["total"],
                 sorting=REFUSAL_SORTING,
@@ -512,10 +763,17 @@ def refusal_detail(request, refusal_id):
         with the Family's name from the latest ParishSoft data (#935)."""
         data = read_refusal(refusal_id, request.GET)
         duid = data["refusal"].family_duid
-        named = with_family_names(
-            [dict(family_duid=duid)], current_snapshot(), key="family_duid"
+        named = link_families(
+            None,
+            with_family_names(
+                [dict(family_duid=duid)], current_snapshot(), key="family_duid"
+            ),
         )
-        return data | {"family_name": named[0]["family_name"]}, 1
+        # The name opens the Family's Timeline in the current campaign (#1570).
+        return data | {
+            "family_name": named[0]["family_name"],
+            "family_id": named[0]["family_id"],
+        }, 1
 
     return _page(request, "stewardship/delivery-refusal.html", load, subject=refusal_id)
 
@@ -584,9 +842,9 @@ def bounce_report(request, message_id):
     The Mail message page's in-place form; an explicit current-Admin command
     that never runs in a GET. It needs the address, a note and the tick, as
     the page's gate does, and answers with the page again (Post/Redirect/
-    Get), whose bounce panel lists the report. No fresh sign-in, as for
-    Clear verified refusal: the report only sets an address aside, touches
-    no credential, and clearing undoes it.
+    Get), whose bounce panel lists the report. As for Clear verified
+    refusal, the report only sets an address aside, touches no credential,
+    and clearing undoes it.
     """
     try:
         service = runtime()

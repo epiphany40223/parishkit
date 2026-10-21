@@ -5,6 +5,7 @@ from datetime import timedelta
 import pytest
 from django.db import IntegrityError, connection, transaction
 from django.db.models import F
+from django.test.utils import CaptureQueriesContext
 
 from parishkit.stewardship.accounts.presence import visible_sessions
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
@@ -18,6 +19,7 @@ from ..test_source_corpus import source
 from .auth_builders import signed_in, unguarded
 from .campaign_builders import campaign_clock
 from .credential_builders import populate
+from .family_link_checks import link_reads
 from .leader_builders import grant_role
 from .test_background_grants_postgresql import task_login
 from .test_family_auth_postgresql import family_service as family_service
@@ -202,6 +204,27 @@ def test_admin_poll_does_not_refresh_admin_idle(family_service, google):
     assert row.last_activity_at == before
 
 
+@pytest.mark.parametrize(
+    "path", [ADMIN + "?size=50&sort=-heartbeat", "/admin/system/background/?state=all"]
+)
+def test_periodic_page_rereads_do_not_refresh_admin_idle(family_service, google, path):
+    """Families on the form now and Background work update themselves (#1586):
+    every 30 seconds ui-v1.js re-reads the page's own address in place, a GET
+    marked X-Requested-With: fetch. An open page re-reading itself can never
+    keep an idle sign-in alive."""
+    from parishkit.stewardship.accounts.models import PortalSession
+
+    browser, _ = signed_in()
+    row = PortalSession.objects.get(revoked_at__isnull=True)
+    before = row.last_activity_at
+    for _ in range(2):
+        response = browser.get(path, HTTP_X_REQUESTED_WITH="fetch")
+        assert response.status_code == 200
+        assert b"data-reread-every" in response.content
+    row.refresh_from_db()
+    assert row.last_activity_at == before
+
+
 # A Ministry leader leads through a ParishSoft role (#922), which this
 # fixture's synthetic population has none of; the capability matrix
 # (test_policy.py) shows leaders hold no presence capability either.
@@ -320,7 +343,16 @@ def test_real_web_grants_support_family_presence_and_admin_names(
         # The web role also reads the heads, so the Family is named as on the
         # Family codes directory: "Surname, Heads" (#232).
         assert response.json()["sessions"][0]["name"] == "Example, Member"
-        assert b"Example, Member" in admin.get(ADMIN).content
+        # The JSON answer keeps its fields: the record id is the page's only.
+        assert "family_id" not in response.json()["sessions"][0]
+        # The name opens the Family's Timeline (#1570) by the session row's
+        # own Family record id, so the page reads no record ids.
+        with CaptureQueriesContext(connection) as queries:
+            html = admin.get(ADMIN).content
+        family_id = FamilySession.objects.values_list("family_id", flat=True).get()
+        link = f'<th scope="row"><a href="/admin/reports/families/{family_id}/">'
+        assert (link + "Example, Member</a></th>").encode() in html
+        assert link_reads(queries) == []
 
 
 def test_header_count_poll_never_fetches_family_names(family_service, google):

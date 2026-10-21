@@ -7,9 +7,7 @@ an inline report image must not enable arbitrary images in Family templates.
 """
 
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime, time, timedelta
-from html import escape
-from io import BytesIO
+from datetime import date, datetime, time
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -17,12 +15,9 @@ from parishkit.email.base import InlineImage
 from parishkit.stewardship.source.data_age import DataAge
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.dates import format_date
-from parishkit.stewardship.web.digest_content import CHART_ID, EMAIL_CHART_WIDTH
-from parishkit.stewardship.web.report_markup import BLUE, STYLES, TRACK, button
+from parishkit.stewardship.web.digest_content import CHART_ID
 
-from .charts import render_participation
-from .digest_comparison import render_images, section_html, section_text, withheld
-from .digest_funnel import TESTING_NOTE, figure_rows, funnel_text, stage_rows
+from .digest_comparison import withheld
 from .links import report_url
 from .participation import ParticipationDocument
 from .response_metrics import ResponseMetrics
@@ -140,14 +135,23 @@ class DailyDigestDocument:
         )
 
     @property
-    def report_path(self):
-        """Select a protected snapshot; this identity is not a bearer credential."""
-        # Its Emailed reports address (NAV-12); the old digest address
-        # is gone, with no redirect (#864). Imported here so the document
-        # module itself stays free of Django.
-        from django.urls import reverse
+    def opening(self):
+        """The email's one opening line: what the report is and its as-of moment.
 
-        return reverse("admin:daily_digest_snapshot", args=[self.snapshot_id])
+        For example "Here is yesterday’s report; all data is as of the end of
+        October 16, 2026 (EDT)." (#1532). A recovery digest names the dates
+        it covers instead of "yesterday". The saved report page keeps the
+        plain ``as_of`` sentence, since it is not "yesterday" when read later.
+        """
+        first, last = self.covered_dates[0], self.covered_dates[-1]
+        report = (
+            "Here is yesterday’s report"
+            if first == last
+            else f"Here is the report for {format_date(first)} through "
+            f"{format_date(last)}"
+        )
+        # "All data is as of …." continues the sentence in lower case.
+        return f"{report}; a{self.as_of[1:]}"
 
 
 @dataclass(frozen=True, repr=False)
@@ -220,9 +224,21 @@ def source_age_line(age, timezone, *, zone=True):
     return f"{data} {line}"
 
 
-def _report_url(document, public_origin):
-    """Append only our protected route to the runtime's validated public origin."""
-    return report_url(public_origin, document.report_path)
+# The label of the email's links to the Response dashboard (#1532).
+DASHBOARD_LABEL = "Open the Response dashboard"
+
+
+def response_dashboard_url(public_origin, mode):
+    """The Response dashboard's address on the public origin (#1532).
+
+    The one place the daily email names the dashboard's route, so a later
+    move of the page changes only this function. A Testing digest links the
+    dashboard's Testing view, where its funnel is (``TESTING_NOTE``).
+    """
+    from django.urls import reverse
+
+    url = report_url(public_origin, reverse("admin:response_dashboard"))
+    return url + "?mode=testing" if mode == "testing" else url
 
 
 def comparison_url(section, public_origin):
@@ -235,45 +251,6 @@ def comparison_url(section, public_origin):
 
     path = report_url(public_origin, reverse("admin:campaign_comparison"))
     return f"{path}?day={int(section['day'])}"
-
-
-# The one comparison figure (#728): the parish-wide total, plainly labelled.
-ALL_FAMILIES_COMPARISON = "Last year's pledges (all Families)"
-
-
-def statistics_cards(statistics):
-    """Format the active population's cards; an absent observation is never zero.
-
-    With giving enabled, the cards end with the current annual pledges and the
-    all-Families comparison total (#728). The comparison figure is not a
-    subtotal of these Families: it covers every Family in the ParishSoft data.
-    """
-    active = statistics.active
-    labels = [
-        "Active Families",
-        "Active Members",
-        "Families with eligible email",
-        "Families with deliverable email",
-        "Families that have responded",
-    ]
-    values = (
-        [
-            f"{active.families:,}",
-            f"{active.active_members:,}",
-            active.proportion("eligible_email"),
-            active.proportion("deliverable_email"),
-            active.proportion("responses"),
-        ]
-        if active
-        else ["Unavailable"] * len(labels)
-    )
-    if statistics.financial_enabled:
-        labels += ["Current annual pledges", ALL_FAMILIES_COMPARISON]
-        values += [
-            active.annual_pledge.display if active else "Unavailable",
-            statistics.comparison_pledge_all.display,
-        ]
-    return tuple(zip(labels, values, strict=True))
 
 
 # One label for the card, the table column and the spec (#721).
@@ -314,271 +291,57 @@ def participation_row(day, *, financial_enabled):
     return tuple(cells)
 
 
-# The day-by-day table shows at least this many of the latest campaign days.
-TABLE_DAYS = 7
-
-
-def digest_rows(document):
-    """Show the last week and every day in a missed range, never a bounded page.
-
-    A recovery digest's covered range can be longer than a week; all of it is
-    shown. The chart above the table always has the whole campaign.
-    """
-    chart = document.participation
-    first = min(
-        document.covered_dates[0], chart.last_date - timedelta(days=TABLE_DAYS - 1)
-    )
-    return tuple(
-        participation_row(day, financial_enabled=chart.financial_enabled)
-        for day in chart.days
-        if day.local_date >= first
-    )
-
-
-def _style(name):
-    """One compiler-owned inline style attribute from the validator's closed set."""
-    return f' style="{STYLES[name]}"'
-
-
-def _segment(width, colour):
-    """One coloured cell of a bar; ``&nbsp;`` keeps Outlook from collapsing it."""
-    return f'<td width="{width}%" bgcolor="{colour}"{_style("segment")}>&nbsp;</td>'
-
-
-def bar(part, whole):
-    """A progress bar of table cells: a filled share and a grey remainder.
-
-    Table cells with ``bgcolor`` and percentage widths are the one bar that
-    every mail program draws, Outlook for Windows included, and it survives
-    image blocking. A non-zero share narrower than 1% still draws a 1% sliver,
-    so it never looks like zero. Returns "" when there is nothing to compare
-    against, so an unavailable figure never draws as an empty bar.
-    """
-    if not whole or part is None:
-        return ""
-    # A non-zero share keeps a 1% sliver; an incomplete one never looks full.
-    filled = round(100 * part / whole)
-    if part:
-        filled = max(1, filled if part >= whole else min(99, filled))
-    cells = _segment(filled, BLUE) if filled else ""
-    cells += _segment(100 - filled, TRACK) if filled < 100 else ""
-    return (
-        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'border="0"{_style("track")}><tbody><tr>{cells}</tr></tbody></table>'
-    )
-
-
-def report_day_bars(document):
-    """Pair each report-day card with what its bar measures, if anything.
-
-    Families that have responded are drawn against the Families they are out
-    of; the day's first submissions against the campaign's busiest day so far,
-    stated beside the number. Pledges have no end-of-day target (the
-    comparison pledges are a live figure, #721), so they have no bar.
-    """
-    chart = document.participation
-    day = document.report_day
-    available = [entry for entry in chart.days if entry.population_available]
-    peak = max((entry.first_responses for entry in available), default=0)
-    # Bars follow each card's identity, not its position in the list.
-    measures = {
-        RESPONDED_LABEL: (day.cumulative_responses, day.cohort_denominator, ""),
-        FIRST_LABEL: (
-            day.first_responses,
-            peak,
-            f" (busiest day: {peak:,})" if peak else "",
-        ),
-    }
-    bars = []
-    for label, value in report_day_cards(document):
-        part, whole, note = measures.get(label, (None, None, ""))
-        if not day.population_available:
-            part, note = None, ""
-        bars.append((label, value, bar(part, whole), note))
-    return tuple(bars)
-
-
-def funnel_html(document, plain):
-    """The response funnel section of the email, or "" when there is none.
-
-    One row per stage like the campaign totals (no charts since #1370):
-    the stage (with its note),
-    a bar of its share of email invites sent, and its count and share; then
-    the figures reported beside it (``figure_rows``), drawn the same way
-    against their own whole, which their share names. A Testing digest says
-    where the funnel is.
-    """
-    if document.funnel is None:
-        if document.mode == "testing":
-            return f"<p{_style('caption')}>{plain(TESTING_NOTE)}</p>"
-        return ""
-    metrics = document.funnel
-    invited = metrics.stage("invited")
-    rows = [
-        (f"{label} ({note.lower()})" if note else label, count, invited, portion)
-        for label, count, portion, note in stage_rows(metrics)
-    ]
-    figures = figure_rows(metrics)
-    html = f"<h2{_style('heading')}>Response funnel</h2>"
-    # The stages, then the side figures as their own table so they read as
-    # a group; every row has the same three cells.
-    for group in (rows, figures):
-        html += (
-            '<table role="presentation" width="100%" cellpadding="0" '
-            f'cellspacing="0" border="0"{_style("rows")}><tbody>'
-        )
-        html += "".join(
-            f'<tr><td width="34%"{_style("label")}>{plain(label)}</td>'
-            f'<td width="40%"{_style("bar")}>{bar(count, whole)}</td>'
-            f'<td width="26%" align="right"{_style("value")}>'
-            f"<strong>{plain(f'{count:,}')}</strong>{plain(f' ({portion})')}"
-            "</td></tr>"
-            for label, count, whole, portion in group
-        )
-        html += "</tbody></table>"
-    return html
-
-
-def chart_alt(document):
-    """Alt text that carries the chart's key numbers, not a picture description."""
-    chart = document.participation
-    totals = " ".join(
-        f"{label}: {value}." for label, value in report_day_cards(document)
-    )
-    return (
-        f"Daily participation chart, {format_date(chart.first_date)} to "
-        f"{format_date(chart.last_date)}. {totals} Exact values follow in the "
-        "table."
-    )
+# The Daily digest's blocks, in its order (report-emails spec, "Block
+# registry"); Compared with past campaigns draws only when the schedule has
+# it on and a past campaign is imported.
+DAILY_BLOCKS = (
+    "campaign_totals",
+    "response_funnel",
+    "participation_charts",
+    "day_by_day",
+    "compared_with_past_campaigns",
+)
 
 
 def render_daily_digest(document, *, public_origin, charts=True):
     """Compile an accessible image/text report using the existing chart renderer.
 
     Every data-dependent HTML value is escaped; the only image and link markup
-    comes from this compiler. The source document is reused without recapturing
-    current state. A later owner may prepend sanitized parish-authored prose
-    and the mandatory Testing banner, but cannot replace these required facts.
+    comes from the report compiler and its blocks. The source document is reused without
+    recapturing current state. A later owner may prepend sanitized
+    parish-authored prose and the mandatory Testing banner, but cannot
+    replace these required facts.
+
+    Visuals come first (#720): the opening line with a Response dashboard
+    link beside it (#1532), then the campaign totals with their bars, the
+    funnel, the chart, the day-by-day table and a Response dashboard button,
+    then any comparison section. The subject names the parish, campaign and
+    report day (see render_digest_envelope), so the body has no header or
+    small print.
 
     ``charts`` False withholds every server-drawn chart (#477): through
     ``digest_comparison.withheld``, the comparison section's. The
     participation chart, drawn in process, always stays.
     """
+    # The blocks read this module's labels and document, so the compiler is
+    # imported here rather than at the top, where it would be circular.
+    from .report_blocks.compiler import compile_report
+
     if not isinstance(document, DailyDigestDocument):
         raise TypeError("Daily digest rendering requires an immutable document.")
     if not charts:
         document = replace(document, comparison=withheld(document.comparison))
-    # Pin the snapshot configuration's style, not the worker's active one.
-    with dates.using(document.date_format):
-        return _render_daily_digest(
-            document, public_origin=public_origin, charts=charts
-        )
-
-
-def _render_daily_digest(document, *, public_origin, charts=True):
-    """Compile the report body; the caller has pinned the parish date format.
-
-    Visuals come first (#720): the as-of line, then one line per campaign
-    total with its bar, the chart, the day-by-day table and the report link.
-    The subject names the parish, campaign and report day (see
-    render_digest_envelope), so the body has no header or small print. Every
-    value is escaped; every attribute comes from this compiler and the
-    validator's closed set.
-    """
-    chart = document.participation
-    url = _report_url(document, public_origin)
-    headings = ["Campaign date", "First submissions", "Cumulative participation"]
-    if chart.financial_enabled:
-        headings.append(PLEDGE_HEADING)
-    totals = report_day_bars(document)
-    rows = digest_rows(document)
-    # Say each fact once (#720): the as-of line is the report-day definition
-    # (#721) and the only place that names the time zone. A recovery digest
-    # also says which days it covers. The ParishSoft connection line is on
-    # the saved report page, not in the email.
-    first, last = document.covered_dates[0], document.covered_dates[-1]
-    as_of = document.as_of
-    if first != last:
-        as_of = f"Covers {format_date(first)} through {format_date(last)}. {as_of}"
-    # Match weekly display normalization; retained observations remain exact.
-    # The strict HTML compiler boundary rejects NBSP parser rewrites.
-    as_of, alt = (" ".join(label.split()) for label in (as_of, chart_alt(document)))
-    text = as_of
-    text += "\n\n" + "\n".join(f"{label}: {value}" for label, value, _b, _n in totals)
-    if document.funnel is not None:
-        text += "\n\n" + funnel_text(document.funnel)
-    elif document.mode == "testing":
-        text += "\n\n" + TESTING_NOTE
-    text += "\n\n" + " | ".join(headings)
-    text += "\n" + "\n".join(" | ".join(row) for row in rows)
-    text += "\n\nOpen this exact report (staff login required): " + url
-    section = document.comparison
-    if section is not None:
-        link = comparison_url(section, public_origin)
-        text += "\n\n" + section_text(section, link)
-
-    def plain(value):
-        """Escape a text node; canonical HTML leaves quotes literal there."""
-        return escape(value, quote=False)
-
-    # Prominent (#1016): body size and colour, not the muted caption style.
-    html = f"<p{_style('as-of')}>{plain(as_of)}</p>"
-    html += f"<h2{_style('heading')}>Campaign totals</h2>"
-    html += (
-        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'border="0"{_style("rows")}><tbody>'
-    )
-    html += "".join(
-        f'<tr><td width="34%"{_style("label")}>{plain(label)}</td>'
-        f'<td width="40%"{_style("bar")}>{bar_html}</td>'
-        f'<td width="26%" align="right"{_style("value")}>'
-        f"<strong>{plain(value)}</strong>{plain(note)}</td></tr>"
-        for label, value, bar_html, note in totals
-    )
-    html += "</tbody></table>"
-    html += funnel_html(document, plain)
-    html += f"<h2{_style('heading')}>Daily participation</h2>"
-    html += (
-        f'<img src="cid:{CHART_ID}" alt="{escape(alt, quote=True)}" '
-        f'width="{EMAIL_CHART_WIDTH}"'
-        f"{_style('image')}>"
-    )
-    html += (
-        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'border="0"{_style("table")}><caption{_style("table-caption")}>'
-        "Day by day</caption><thead><tr>"
-    )
-    html += "".join(
-        f'<th scope="col" align="{"left" if index == 0 else "right"}"'
-        f"{_style('th')}>{plain(label)}</th>"
-        for index, label in enumerate(headings)
-    )
-    html += "</tr></thead><tbody>"
-    html += "".join(
-        "<tr>"
-        + "".join(
-            f'<td align="{"left" if index == 0 else "right"}"{_style("td")}>'
-            f"{plain(value)}</td>"
-            for index, value in enumerate(row)
-        )
-        + "</tr>"
-        for row in rows
-    )
-    html += "</tbody></table>"
-    html += button(url, "Open this exact report")
-    images = ()
-    if section is not None:
-        # The section follows the report it compares (#1018 slice 7), with
-        # its charts from the chart engine's server renderer.
-        html += section_html(section, link)
-        images = tuple(InlineImage(data, name) for name, data in render_images(section))
-    stream = BytesIO()
-    render_participation(chart, stream, format="png", email=True)
+    # The participation chart is now drawn before the comparison charts (the
+    # old compiler drew it last). If both fail, its error surfaces instead of
+    # the comparison's ChartRenderError; the outcome is the same, since a
+    # failing participation chart fails the withheld retry too.
+    report = compile_report(document, DAILY_BLOCKS, public_origin=public_origin)
+    (chart,) = (image for image in report.images if image.content_id == CHART_ID)
     return DailyDigestContent(
-        document.title,
-        html,
-        text,
-        InlineImage(stream.getvalue(), CHART_ID),
-        images,
+        report.subject,
+        report.html,
+        report.text,
+        chart,
+        tuple(image for image in report.images if image.content_id != CHART_ID),
         charts_withheld=not charts,
     )

@@ -19,7 +19,7 @@ from ..accounts import (
     restore_review_views,
 )
 from ..accounts.group_root_views import group_root
-from ..jobs import delivery_views, send_history_views, send_progress_views
+from ..jobs import delivery_views, mail_queue_views, send_history_views
 from ..web.admin_routes import current_campaign
 
 patterns = [
@@ -30,34 +30,33 @@ patterns = [
         current_campaign(delivery_control_views.control),
         name="delivery_control",
     ),
+    # Every email waiting to go out, with the Family send panel (#1562); it
+    # replaced Family email progress (mail/family-progress/), which is gone
+    # with no redirect (#864).
+    path("mail/queue/", mail_queue_views.mail_queue, name="mail_queue"),
     path(
-        "mail/family-progress/",
-        send_progress_views.family_email_progress,
-        name="family_email_progress",
-    ),
-    path(
-        "mail/family-progress/status/",
-        send_progress_views.family_email_progress_status,
-        name="family_email_progress_status",
+        "mail/queue/status/",
+        mail_queue_views.mail_queue_status,
+        name="mail_queue_status",
     ),
     path(
         "mail/family-history/",
         send_history_views.family_email_sends,
         name="family_email_sends",
     ),
-    path("mail/outgoing/", delivery_views.delivery_list, name="deliveries"),
+    path("mail/sent/", delivery_views.delivery_list, name="deliveries"),
     path(
-        "mail/outgoing/<uuid:message_id>/",
+        "mail/sent/<uuid:message_id>/",
         delivery_views.delivery_detail,
         name="delivery",
     ),
     path(
-        "mail/outgoing/<uuid:message_id>/resolution/",
+        "mail/sent/<uuid:message_id>/resolution/",
         delivery_views.resolution_command,
         name="delivery_resolve",
     ),
     path(
-        "mail/outgoing/<uuid:message_id>/bounce-report/",
+        "mail/sent/<uuid:message_id>/bounce-report/",
         delivery_views.bounce_report,
         name="delivery_bounce_report",
     ),

@@ -18,6 +18,7 @@ from psycopg import sql
 
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.responses.contact_schema import sendable
 from parishkit.stewardship.responses.models import (
     ProposedChange,
     PublicationEntity,
@@ -90,11 +91,25 @@ class FakeGateway:
         self.closed = True
 
     def write_member_contact(self, member_id, payload, *, timeout):
-        """Store the full payload, as the contact PUT replaces the record."""
+        """Apply a partial update, as the live v2 contact PUT does (#528).
+
+        Fields left out are kept and ``null`` is ignored. A body naming a
+        field outside the request model, holding ``""``, or holding any value
+        the recorded PUT schema refuses (``contact_schema.sendable``) is
+        refused (HTTP 400, so ``write_rejected``) and changes nothing.
+        """
         self.writes.append((member_id, dict(payload)))
         if self.write_errors:
             raise ContactGatewayError(self.write_errors.pop(0))
-        self.records[member_id] = dict(payload)
+        if (
+            not set(payload) <= set(MEMBER_CONTACT_FIELDS)
+            or "" in payload.values()
+            or not all(sendable(key, value) for key, value in payload.items())
+        ):
+            raise ContactGatewayError("write_rejected")
+        self.records[member_id].update(
+            {key: value for key, value in payload.items() if value is not None}
+        )
         if self.crash_after_write:
             raise Crash
 
@@ -123,6 +138,10 @@ class FakeExecution:
     def maintain_source(self, claim):
         """No renewal thread is needed within these short tests."""
         return nullcontext()
+
+    def progress(self, current, total, *, phase=None):
+        """Keep each progress count the run reports, in order."""
+        self.__dict__.setdefault("counts", []).append((current, total))
 
 
 def as_owner(statement, params=()):
@@ -201,18 +220,23 @@ def proposal(row):
 
 
 def test_publish_writes_verifies_and_marks_published(confirmed):
-    """One PUT of the planned full payload, verified by a fresh read, records
+    """One PUT of only the changed field, verified by a fresh read, records
     published and moves the change pending -> queued -> published; the lease
     is released and the audit holds a word and a count only."""
     state = confirmed
     before = state.first.version
+    original = dict(state.gateway.records[state.first.entity_key])
     result = run(state)
     assert (result.published, result.invalidated, result.failed_attempts) == (1, 0, 0)
     (written,) = state.gateway.writes
-    assert written == (state.first.entity_key, state.planned)
-    assert written[1]["firstName"] == encode_member_value(
-        "first_name", state.first.submitted_value
-    )
+    # Exactly the one changed field: nothing as read, no blank echoes (#1600).
+    changed = encode_member_value("first_name", state.first.submitted_value)
+    assert written == (state.first.entity_key, {"firstName": changed})
+    assert written[1] == state.planned
+    # Every field the PUT left out is still what was read.
+    assert state.gateway.records[state.first.entity_key] == original | {
+        "firstName": changed
+    }
     # Read before the PUT, then once more to verify it.
     assert state.gateway.reads == [state.first.entity_key] * 2
     assert results(state.entity) == [("published", "")]
@@ -312,11 +336,117 @@ def test_a_verify_mismatch_is_a_failure_then_the_next_read_invalidates(confirmed
 
     state.gateway.write_member_contact = normalizing
     assert run(state).invalidated == 1
+    # No retry after a mismatch (#1604): the closing read invalidates.
+    assert len(state.gateway.writes) == 1
     assert results(state.entity) == [
         ("failed", "verify_mismatch"),
         ("invalidated", ""),
     ]
     assert proposal(state.first)[0] == "failed"
+
+
+def test_a_put_accepted_but_not_applied_is_never_published(confirmed):
+    """ParishSoft accepting the PUT and keeping the old value (as it does with
+    ``null``, #528) fails verification. Another attempt would send the same
+    body again, so exactly one PUT is sent (#1604): one ``verify_mismatch``
+    is recorded, the entity is invalidated and the change is never recorded
+    published."""
+    state = confirmed
+    original = dict(state.gateway.records[state.first.entity_key])
+
+    def ignoring(member_id, payload, *, timeout):
+        """Accept the body and change nothing."""
+        state.gateway.writes.append((member_id, dict(payload)))
+
+    state.gateway.write_member_contact = ignoring
+    result = run(state)
+    assert (result.published, result.invalidated) == (0, 1)
+    assert result.failed_attempts == 1
+    assert state.gateway.writes == [(state.first.entity_key, state.planned)]
+    assert results(state.entity) == [
+        ("failed", "verify_mismatch"),
+        ("invalidated", ""),
+    ]
+    assert proposal(state.first)[0] == "failed"
+    assert state.gateway.records[state.first.entity_key] == original
+
+
+def test_a_resumed_run_sends_no_put_after_a_recorded_mismatch(confirmed):
+    """A crash between the recorded ``verify_mismatch`` and the closing read
+    must not cost another PUT when the entity is resumed (#1604)."""
+    state = confirmed
+
+    def ignoring(member_id, payload, *, timeout):
+        """Accept the body and change nothing."""
+        state.gateway.writes.append((member_id, dict(payload)))
+
+    def die_on_closing_read():
+        """Crash on the third read: before PUT, read back, then the close."""
+        if len(state.gateway.reads) == 3:
+            raise Crash
+
+    state.gateway.write_member_contact = ignoring
+    state.gateway.on_read = die_on_closing_read
+    with pytest.raises(Crash):
+        run(state)
+    assert results(state.entity) == [("failed", "verify_mismatch")]
+    assert len(state.gateway.writes) == 1
+    state.gateway.on_read = None
+    drained()
+    result = run(state)
+    assert result.invalidated == 1
+    assert len(state.gateway.writes) == 1
+    assert results(state.entity) == [
+        ("failed", "verify_mismatch"),
+        ("invalidated", ""),
+    ]
+
+
+def test_a_put_that_lands_after_its_mismatch_is_published_without_a_retry(
+    confirmed,
+):
+    """A PUT that shows up only after its read back is still recorded.
+
+    The read back mismatches, so the PUT is not sent again (#1604); the
+    entity is then closed, and the closing read finds the planned record
+    and records it published, still with one PUT.
+    """
+    state = confirmed
+    gateway = state.gateway
+    pending = []
+
+    def late(member_id, payload, *, timeout):
+        """Accept the body but apply it only after the next read."""
+        gateway.writes.append((member_id, dict(payload)))
+        pending.append((member_id, payload))
+
+    def land_after_read_back():
+        """Apply the held write once the worker's read back has answered."""
+        if pending and len(gateway.reads) > 2:
+            member_id, payload = pending.pop()
+            gateway.records[member_id].update(payload)
+
+    gateway.write_member_contact = late
+    gateway.on_read = land_after_read_back
+    result = run(state)
+    assert (result.published, result.failed_attempts) == (1, 1)
+    assert gateway.writes == [(state.first.entity_key, state.planned)]
+    assert results(state.entity) == [
+        ("failed", "verify_mismatch"),
+        ("published", ""),
+    ]
+    assert proposal(state.first)[0] == "published"
+
+
+def test_the_fake_refuses_what_the_live_put_refuses(confirmed):
+    """The fake is held to the recorded schema, so tests cannot lean on it."""
+    gateway = confirmed.gateway
+    key = confirmed.first.entity_key
+    before = dict(gateway.records[key])
+    for body in ({"homePhone": "555-0101"}, {"salutation": "X"}, {"nickName": ""}):
+        with pytest.raises(ContactGatewayError, match="write_rejected"):
+            gateway.write_member_contact(key, body, timeout=1)
+    assert gateway.records[key] == before
 
 
 def test_a_crash_after_the_put_is_recovered_without_a_second_put(confirmed):

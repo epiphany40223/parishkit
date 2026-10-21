@@ -22,9 +22,12 @@ from pathlib import Path
 
 import pytest
 
+from parishkit.parishsoft import DEFAULT_API_BASE_URL
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools" / "stewardship-upgrade.sh"
 HOST = ROOT / "tools" / "stewardship-upgrade-host.sh"
+PRUNE = ROOT / "tools" / "stewardship-prune-images.sh"
 REPO = "ghcr.io/example/stewardship"
 OFFICIAL_REPO = "ghcr.io/epiphany40223/parishkit/stewardship"
 UUID = "00000000-0000-4000-8000-000000000000"
@@ -61,8 +64,8 @@ def executable_stub(bin_dir, name, body):
 
 
 def test_both_halves_parse():
-    """`bash -n` accepts the local script and the uploaded host script."""
-    for script in (SCRIPT, HOST):
+    """`bash -n` accepts the local script and the uploaded host scripts."""
+    for script in (SCRIPT, HOST, PRUNE):
         assert subprocess.run(["bash", "-n", str(script)]).returncode == 0, script
         assert os.access(script, os.X_OK), script
         assert script.read_text().startswith("#!/usr/bin/env bash\n"), script
@@ -77,7 +80,7 @@ def test_shellcheck_is_clean():
             pytest.fail("the CI runner lacks shellcheck")
         pytest.skip("shellcheck is not installed")
     result = subprocess.run(
-        ["shellcheck", "-s", "bash", str(SCRIPT), str(HOST)],
+        ["shellcheck", "-s", "bash", str(SCRIPT), str(HOST), str(PRUNE)],
         capture_output=True,
         text=True,
     )
@@ -175,11 +178,17 @@ def test_a_rollback_refuses_the_schema_change_override(tmp_path):
     result, calls, _ = run_local(
         tmp_path / "zero", "--rollback", env={"STEWARDSHIP_SCHEMA_CHANGE": "0"}
     )
+    # Only the host half: this stand-in reports no replaced release, so the
+    # image pruning (#1661) is skipped.
     assert result.returncode == 0 and len(calls) == 1
 
 
 def test_a_valid_digest_uploads_the_host_script_once(tmp_path):
-    """One ssh call, the arguments in order, the host half on its stdin."""
+    """One host-half ssh call, the arguments in order, the host half on its stdin.
+
+    This stand-in reports no replaced release, so the image pruning
+    (#1661), which test_prune_images_script.py pins, is skipped.
+    """
     image = f"{OFFICIAL_REPO}@sha256:" + "d" * 64
     result, calls, stdin = run_local(tmp_path)
     assert result.returncode == 0, result.stderr
@@ -336,7 +345,7 @@ case "$*" in
         else json "${FAKE_OFFSITE:-uploaded}"; fi ;;
     *" retarget-image --config "*)
         [ -z "$FAKE_RETARGET_FAIL" ] || { echo "retarget refused" >&2; exit 1; }
-        bulk=false batch=20 latency="" window="" minutes=""
+        bulk=false batch=20 latency="" window="" minutes="" publication=false
         for arg in "$@"; do
             case "$arg" in
                 PARISHKIT_STEWARDSHIP_BULK_FAMILY_SEND=1) bulk=true ;;
@@ -346,6 +355,20 @@ case "$*" in
                 PARISHKIT_STEWARDSHIP_BULK_SEND_BATCH=*) batch=${arg#*=} ;;
                 PARISHKIT_STEWARDSHIP_LOCAL_SMTP_LATENCY_MS=*)
                     latency=', "local_smtp_latency_ms": '"${arg#*=}" ;;
+                PARISHKIT_STEWARDSHIP_PARISHSOFT_BASE_URL=*)
+                    # FAKE_RETARGET_NO_PARISHSOFT: a retarget that lost it.
+                    [ -n "$FAKE_RETARGET_NO_PARISHSOFT" ] ||
+                        latency="$latency"', "parishsoft_base_url": "'"${arg#*=}"'"' ;;
+                PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION=1)
+                    # FAKE_RETARGET_NO_PUBLICATION: a retarget that lost it.
+                    [ -n "$FAKE_RETARGET_NO_PUBLICATION" ] || {
+                        publication=true
+                        latency="$latency"', "parishsoft_publication": true'
+                    } ;;
+                PARISHKIT_STEWARDSHIP_MAIL_REDIRECT=*)
+                    # FAKE_RETARGET_NO_REDIRECT: a retarget that lost it.
+                    [ -n "$FAKE_RETARGET_NO_REDIRECT" ] ||
+                        latency="$latency"', "mail_redirect": "'"${arg#*=}"'"' ;;
             esac
         done
         echo '{"services": {"web": {"image": "'"$last"'"}}}' >"$FAKE_COMPOSE"
@@ -360,7 +383,8 @@ case "$*" in
             echo "$doc"' "bulk_send_batch": '"$batch$latency$window"'}}' \
                 >"$(dirname "$FAKE_COMPOSE")/$role.yaml"
         done
-        # web.yaml keeps its other inputs; only the window is re-rendered.
+        # web.yaml keeps its other inputs; only the window and the
+        # publication switch are re-rendered.
         web="$(dirname "$FAKE_COMPOSE")/web.yaml"
         key=.deployment.export_download_window_minutes
         if [ -n "$minutes" ]; then
@@ -368,7 +392,13 @@ case "$*" in
         else
             jq "del($key)" "$web" >"$web.new"
         fi
-        mv "$web.new" "$web"
+        key=.deployment.parishsoft_publication
+        if [ "$publication" = true ]; then
+            jq "$key = true" "$web.new" >"$web"
+        else
+            jq "del($key)" "$web.new" >"$web"
+        fi
+        rm -f "$web.new"
         touch "$FAKE_STATE/retargeted" ;;
     *" --rm -T migration migrate --config "*" --users-upgrade-base")
         if [ -n "$FAKE_BASE_FAIL" ]; then
@@ -409,6 +439,12 @@ case "$*" in
     *" upgrade-users "*"--operation-id "*)
         [ -z "$FAKE_USERS_FAIL" ] || { echo "upgrade refused" >&2; exit 1; }
         echo '{"users_upgrade_applied": true}' ;;
+    *"CREATE EXTENSION IF NOT EXISTS pg_trgm"*)
+        if [ -n "$FAKE_EXTENSION_FAIL" ]; then
+            echo 'ERROR:  permission denied to create extension "pg_trgm"' >&2
+            exit 1
+        fi
+        echo "CREATE EXTENSION" ;;
     *"database-grants"*)
         if [ -n "$FAKE_GRANTS_FAIL" ]; then
             # The cause, then an empty last line, as a real traceback ends.
@@ -704,6 +740,60 @@ def test_an_upgrade_with_the_override_runs_migration_and_grants(tmp_path):
     assert retarget < migration < first(calls, "database-grants")
     assert migration < first(calls, "up --detach --wait web")
     assert "running migration and grants: the check answered: f" in output
+
+
+def test_the_operator_installs_the_text_search_extension_before_migrating(tmp_path):
+    """pg_trgm (#765) is installed as the superuser right before the
+    migration, only when step 4 migrates; a refusal stops the run with the
+    maintenance page up and nothing migrated."""
+    install = "psql -U pk_stewardship_operator -d stewardship -At -v ON_ERROR_STOP=1 "
+    calls, output, _ = run_host(tmp_path, "upgrade", noop="f", schema_change="1")
+    extension = first(
+        calls, "CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public"
+    )
+    assert install in calls[extension] and " exec -T postgres " in calls[extension]
+    assert (
+        first(calls, " retarget-image ") < extension < first(calls, "--rm -T migration")
+    )
+    assert "pg_trgm is installed" in output
+    # The users upgrade installs it before its base migration too.
+    calls, _, _ = run_host(
+        tmp_path / "users", "upgrade", noop="f", schema_change="1", env=USERS
+    )
+    assert first(calls, "pg_trgm") < first(calls, "--users-upgrade-base")
+    # A release that migrates nothing never touches it.
+    calls, _, _ = run_host(tmp_path / "current", "upgrade")
+    assert not any("pg_trgm" in call for call in calls)
+    calls, output, _ = run_host(
+        tmp_path / "refused",
+        "upgrade",
+        noop="f",
+        status=1,
+        schema_change="1",
+        extension_fail=True,
+    )
+    refused = 'ERROR:  permission denied to create extension "pg_trgm"'
+    assert f"Could not install the pg_trgm extension: {refused}" in output
+    assert not any(" migration" in call for call in calls)
+    assert "caddy serves the maintenance page" in output
+    # A hung install is killed under its own limit and logged: what ran,
+    # the limit and the elapsed time; nothing migrates, the page stays up.
+    calls, output, _ = run_host(
+        tmp_path / "hung",
+        "upgrade",
+        noop="f",
+        status=1,
+        schema_change="1",
+        timeout="CREATE EXTENSION",
+    )
+    killed = next(call for call in calls if call.startswith("timeout "))
+    assert killed.startswith("timeout --kill-after=10 60 docker compose ")
+    assert "TIMEOUT: installing the pg_trgm extension killed after " in output
+    assert "(limit 60s)" in output
+    assert not any(" migration" in call for call in calls)
+    assert "caddy serves the maintenance page" in output
+    log = next((tmp_path / "hung" / "logs").glob("stewardship-upgrade-*.log"))
+    assert "TIMEOUT: installing the pg_trgm extension killed after " in log.read_text()
 
 
 def test_a_failed_backup_abandons_before_web_stops(tmp_path):
@@ -1280,10 +1370,236 @@ def test_local_mode_refuses_an_unclear_rehearsal_choice(tmp_path, name, value):
 
 def test_production_mode_never_reads_the_rehearsal_choices(tmp_path):
     """Eight arguments: the switch carries over and no latency is rendered."""
-    calls, output, _ = run_host(tmp_path, "upgrade", bulk=False, env=REHEARSAL)
+    env = REHEARSAL | {"PARISHKIT_LOCAL_PARISHSOFT": "real"}
+    calls, output, _ = run_host(tmp_path, "upgrade", bulk=False, env=env)
     retarget = calls[first(calls, " retarget-image ")]
     assert "BULK_FAMILY_SEND" not in retarget and "LATENCY" not in retarget
+    assert "PARISHSOFT" not in retarget and "ParishSoft" not in output
     assert "latency" not in output and f"Upgraded to {TARGET} in" in output
+
+
+# Which ParishSoft pk-local reads (#1399): the fake unless the caller chose
+# the real API, carried over like the latency and dropped from a rollback.
+REAL_PARISHSOFT = "PARISHKIT_STEWARDSHIP_PARISHSOFT_BASE_URL=" + DEFAULT_API_BASE_URL
+
+
+def rendered_real_parishsoft(root):
+    """The running worker document already reads the real ParishSoft API."""
+    path = root / "config" / "services" / "worker.yaml"
+    document = json.loads(path.read_text())
+    document["deployment"]["parishsoft_base_url"] = DEFAULT_API_BASE_URL
+    path.write_text(json.dumps(document))
+
+
+# Census publication (#1884): rendered with the fake, never with the real API
+# and never into a rollback.
+PUBLICATION = "PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION=1"
+
+
+def test_local_mode_renders_the_chosen_parishsoft(tmp_path):
+    """real renders the real API; keep carries it; fake and rollback drop it.
+    Publication is on with the fake, except in a rollback (#1884)."""
+    calls, output, _ = run_host(
+        tmp_path / "real",
+        "upgrade",
+        profile="local",
+        env={"PARISHKIT_LOCAL_PARISHSOFT": "real"},
+    )
+    retarget = calls[first(calls, " retarget-image ")]
+    assert REAL_PARISHSOFT in retarget and PUBLICATION not in retarget
+    assert "reading the real ParishSoft API (never writing)" in output
+    assert "Update ParishSoft" not in output
+    assert "NOT healthy" not in output
+    calls, output, _ = run_host(
+        tmp_path / "keep", "upgrade", profile="local", prepare=rendered_real_parishsoft
+    )
+    retarget = calls[first(calls, " retarget-image ")]
+    assert REAL_PARISHSOFT in retarget and PUBLICATION not in retarget
+    assert "NOT healthy" not in output
+    for mode, env, publication in (
+        ("upgrade", {"PARISHKIT_LOCAL_PARISHSOFT": "fake"}, True),
+        ("rollback", {}, False),
+    ):
+        calls, output, _ = run_host(
+            tmp_path / mode,
+            mode,
+            profile="local",
+            prepare=rendered_real_parishsoft,
+            env=env,
+        )
+        retarget = calls[first(calls, " retarget-image ")]
+        assert "PARISHSOFT_BASE_URL" not in retarget
+        assert (PUBLICATION in retarget) is publication
+        assert "NOT healthy" not in output
+    assert "not carried into a rollback (it reads the fake)" in output
+    assert "Update ParishSoft is not carried into a rollback" in output
+    # The fake is still not rendered at all; publication is.
+    calls, output, _ = run_host(tmp_path / "default", "upgrade", profile="local")
+    retarget = calls[first(calls, " retarget-image ")]
+    assert "PARISHSOFT_BASE_URL" not in retarget and PUBLICATION in retarget
+    assert "Update ParishSoft writes to the fake ParishSoft only" in output
+
+
+def test_local_mode_reports_a_publication_switch_the_retarget_lost(tmp_path):
+    """The post-check names the publication switch it did not find rendered."""
+    _, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        profile="local",
+        status=1,
+        env={"FAKE_RETARGET_NO_PUBLICATION": "1"},
+    )
+    assert "NOT healthy" in output
+    assert "worker: ParishSoft publication is false, not true" in output
+    assert "web: ParishSoft publication is false, not true" in output
+
+
+def test_local_mode_reports_a_parishsoft_choice_the_retarget_lost(tmp_path):
+    """The post-check names the ParishSoft base URL it did not find rendered."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        profile="local",
+        status=1,
+        env={"PARISHKIT_LOCAL_PARISHSOFT": "real", "FAKE_RETARGET_NO_PARISHSOFT": "1"},
+    )
+    assert "NOT healthy" in output
+    assert (
+        f"worker: ParishSoft base URL is 'the fake', not '{DEFAULT_API_BASE_URL}'"
+        in output
+    )
+
+
+def test_local_mode_warns_about_the_real_api_under_the_fake_clock(tmp_path):
+    """Faked processes check ParishSoft's certificate against a past date."""
+    env = {"PARISHKIT_LOCAL_PARISHSOFT": "real"}
+    _, output, _ = run_host(
+        tmp_path / "fake", "upgrade", profile="local", clock="fake", env=env
+    )
+    assert "WARNING: the real ParishSoft API under the fake clock" in output
+    _, output, _ = run_host(tmp_path / "normal", "upgrade", profile="local", env=env)
+    assert "WARNING" not in output
+
+
+def test_local_mode_refuses_an_unclear_parishsoft_choice(tmp_path):
+    """An unknown choice, or a rendered URL that is not the real API, is
+    refused before anything stops."""
+
+    def other(root):
+        path = root / "config" / "services" / "worker.yaml"
+        document = json.loads(path.read_text())
+        document["deployment"]["parishsoft_base_url"] = "https://other.example"
+        path.write_text(json.dumps(document))
+
+    for name, prepare, env in (
+        ("choice", None, {"PARISHKIT_LOCAL_PARISHSOFT": "production"}),
+        ("rendered", other, {}),
+    ):
+        calls, output, _ = run_host(
+            tmp_path / name,
+            "upgrade",
+            profile="local",
+            status=1,
+            prepare=prepare,
+            env=env,
+        )
+        assert "refusing" in output
+        assert not any(" stop " in call for call in calls)
+
+
+# The forced mail redirect (#1399): carried over like the ParishSoft choice,
+# "off" removes it, and a rollback drops it (a real key is then refused).
+REDIRECT = "PARISHKIT_STEWARDSHIP_MAIL_REDIRECT=jeff@example.org"
+
+
+def rendered_redirect(root):
+    """The running worker document already carries a mail redirect."""
+    path = root / "config" / "services" / "worker.yaml"
+    document = json.loads(path.read_text())
+    document["deployment"]["mail_redirect"] = "jeff@example.org"
+    path.write_text(json.dumps(document))
+
+
+def test_local_mode_renders_the_mail_redirect(tmp_path):
+    """An address renders it; keep carries it; off and rollback drop it."""
+    calls, output, _ = run_host(
+        tmp_path / "set",
+        "upgrade",
+        profile="local",
+        env={"PARISHKIT_LOCAL_MAIL_REDIRECT": "jeff@example.org"},
+    )
+    assert REDIRECT in calls[first(calls, " retarget-image ")]
+    assert "every message goes only to the mail redirect jeff@example.org" in output
+    assert "NOT healthy" not in output
+    calls, output, _ = run_host(
+        tmp_path / "keep", "upgrade", profile="local", prepare=rendered_redirect
+    )
+    assert REDIRECT in calls[first(calls, " retarget-image ")]
+    assert "NOT healthy" not in output
+    for mode, env in (
+        ("upgrade", {"PARISHKIT_LOCAL_MAIL_REDIRECT": "off"}),
+        ("rollback", {}),
+    ):
+        calls, output, _ = run_host(
+            tmp_path / mode, mode, profile="local", prepare=rendered_redirect, env=env
+        )
+        assert "MAIL_REDIRECT" not in calls[first(calls, " retarget-image ")]
+        assert "NOT healthy" not in output
+    assert "mail redirect is not carried into a rollback" in output
+    # Unchanged from before the setting: nothing is rendered by default.
+    calls, _, _ = run_host(tmp_path / "default", "upgrade", profile="local")
+    assert "MAIL_REDIRECT" not in calls[first(calls, " retarget-image ")]
+
+
+def test_local_mode_reports_a_redirect_the_retarget_lost(tmp_path):
+    """The post-check names the mail redirect it did not find rendered."""
+    _, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        profile="local",
+        status=1,
+        env={
+            "PARISHKIT_LOCAL_MAIL_REDIRECT": "jeff@example.org",
+            "FAKE_RETARGET_NO_REDIRECT": "1",
+        },
+    )
+    assert "NOT healthy" in output
+    assert "worker: mail redirect is 'unset', not 'jeff@example.org'" in output
+
+
+@pytest.mark.parametrize(
+    "value", ["Jeff <jeff@example.org>", "a@example.org,b@example.org", "nobody"]
+)
+def test_local_mode_refuses_an_unclear_redirect(tmp_path, value):
+    """Anything but one plain address is refused before anything stops."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        profile="local",
+        status=1,
+        env={"PARISHKIT_LOCAL_MAIL_REDIRECT": value},
+    )
+    assert "The mail redirect must be one plain email address; refusing." in output
+    assert not any(" stop " in call for call in calls)
+
+
+def test_production_mode_never_reads_the_redirect(tmp_path):
+    """Production renders no redirect whatever the caller's environment says."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        env={"PARISHKIT_LOCAL_MAIL_REDIRECT": "jeff@example.org"},
+    )
+    assert "MAIL_REDIRECT" not in calls[first(calls, " retarget-image ")]
+    assert "redirect" not in output and f"Upgraded to {TARGET} in" in output
+
+
+def test_host_half_names_the_real_parishsoft_api():
+    """The host half's copy of the real API's base URL is the package's."""
+    assert (
+        f"parishsoft_api={DEFAULT_API_BASE_URL}\n"
+        in (ROOT / "tools" / "stewardship-upgrade-host.sh").read_text()
+    )
 
 
 # ---------------------------------------------------------------------------

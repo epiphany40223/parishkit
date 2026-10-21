@@ -1,0 +1,48 @@
+{% load i18n %}{% comment %}
+The Email Ministry leaders review (#1592; leader_email_views.user_leader_emails),
+drawn in the shared review dialog on Users (UX conventions, "Review
+dialog", #750), never as a page of its own: the Email Ministry leaders
+table's Email selected posts without a page load and ui-v1.js
+moves this fragment's content into the dialog's body. It is a full review,
+since the page does not show what each email will say: each leader who will
+be emailed, with their Ministries in the campaign and each one's open
+requests, read now, then anyone skipped and why. In Testing it says that
+every email goes to the Testing recipient instead. The signed review
+(data-review-preview) is what the dialog's Apply posts back, which records
+one request; once recorded the page's regions are redrawn in place and the
+section's status line starts with data-review-done. With nobody left to
+email there is no review to apply, so the dialog offers only Cancel. A
+review lasts fifteen minutes, as every review does.
+{% endcomment %}<div data-review-answer data-review-done="{% translate 'Emails queued.' %}">
+<h3 id="leader-emails-title">{% if emailed %}{% blocktranslate count count=emailed|length %}{{ count }} email{% plural %}{{ count }} emails{% endblocktranslate %}{% else %}{% translate "Nobody to email" %}{% endif %}</h3>
+{% if emailed %}<p>{% translate "Each leader below gets one email saying they can sign in, which address to sign in with, and the open requests in their Ministries, as listed. It names no parishioner." %}</p>
+{% if testing_recipient %}<p class="notice" id="leader-emails-testing">{% blocktranslate with recipient=testing_recipient %}Testing mode: every email goes to the Testing recipient, {{ recipient }}, instead of the leader.{% endblocktranslate %}</p>{% endif %}
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="leader-emails-caption">
+<table class="data-table leader-emails-review">
+  <caption id="leader-emails-caption" class="visually-hidden">{% translate "Emails to send" %}</caption>
+  <thead><tr><th scope="col">{% translate "Name" %}</th><th scope="col">{% translate "Email" %}</th><th scope="col">{% translate "Ministries and open requests" %}</th></tr></thead>
+  <tbody>
+  {% for item in emailed %}<tr>
+    <th scope="row"><span class="cell-ellipsis" title="{{ item.name }}">{{ item.name }}</span></th>
+    <td><span class="cell-ellipsis" title="{{ item.email }}">{{ item.email }}</span></td>
+    <td><ul>{% for line in item.facts.lines %}<li>{{ line.name }}: {{ line.counts }}</li>{% endfor %}</ul></td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% if remaining %}<p class="notice">{% blocktranslate count count=remaining %}One Apply emails at most 100 leaders, so {{ count }} more chosen leader is left for another Apply.{% plural %}One Apply emails at most 100 leaders, so {{ count }} more chosen leaders are left for another Apply.{% endblocktranslate %}</p>{% endif %}
+{% else %}<p>{% translate "None of the chosen leaders can be emailed now. Cancel, then reload the page to see the current list." %}</p>{% endif %}
+{% if skipped %}<h3 id="leader-emails-skipped-title">{% translate "Skipped" %}</h3>
+<p>{% translate "These were chosen but get no email." %}</p>
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="leader-emails-skipped-caption">
+<table class="data-table">
+  <caption id="leader-emails-skipped-caption" class="visually-hidden">{% translate "Skipped" %}</caption>
+  <thead><tr><th scope="col">{% translate "Email" %}</th><th scope="col">{% translate "Why" %}</th></tr></thead>
+  <tbody>
+  {% for item in skipped %}<tr><th scope="row"><span class="cell-ellipsis" title="{{ item.email }}">{{ item.email }}</span></th><td>{{ item.reason_label }}</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>{% endif %}
+{% if preview %}<p>{% translate "Nothing is sent until you choose Apply. Each Apply sends again, so check Last emailed first." %}</p>
+<input type="hidden" name="preview" value="{{ preview }}" data-review-preview>{% endif %}
+</div>

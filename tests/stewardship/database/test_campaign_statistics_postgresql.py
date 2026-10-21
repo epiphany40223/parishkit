@@ -370,7 +370,7 @@ def test_archived_financial_observation_does_not_follow_a_new_global_source(
 
         browser, _ = signed_in()
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            response, body = read(browser, reverse("admin:participation"))
+            response, body = read(browser, reverse("admin:response_dashboard"))
             assert response.status_code == 200
             assert b"Archived campaign" in body and b"$11,199.00" in body
             # An archived campaign that is still current is reported.

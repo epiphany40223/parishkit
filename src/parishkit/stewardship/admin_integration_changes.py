@@ -8,9 +8,9 @@ page's form and salt) and ``admin_editing.confirm_intent``, so the page and
 the command line cannot drift:
 
 - ``integration preview TARGET`` admits as the page's post does (recording
-  activity, so it needs a full-scope session), stands in for the page's
-  recent sign-in with the live session (``require_fresh``, #547; a preview
-  records no notice), binds the change document to the page's own
+  activity, so it needs a full-scope session), passes the page's privileged
+  check with the live session (``sign_in_instant``, #547; a preview records
+  no notice), binds the change document to the page's own
   ``IntegrationForm`` in one read snapshot and prints the page's review
   with ``preview.token``, the same signed binding the page embeds. With
   ``--remove`` it is the page's Remove review instead. It changes nothing
@@ -18,7 +18,7 @@ the command line cannot drift:
 - ``integration confirm TARGET`` takes that token (or one the page signed:
   tokens are bound to the Administrator, not the channel) and records the
   configuration request exactly as the page's **Apply** does, with the
-  page's fresh gate under the work lock (which records the
+  page's privileged check under the work lock (which records the
   ``automation_fresh_gate`` event and ``fresh_gated`` notice). In the
   request's own durable transaction it records one
   ``admin_cmd_integration_confirm`` event whose subject is the automation
@@ -54,7 +54,6 @@ and "an unchanged schedule keeps its stored keys exactly".
 """
 
 import json
-import re
 from dataclasses import dataclass
 
 from django.db import DatabaseError
@@ -68,6 +67,7 @@ from .admin_changes import (
     unexpected_problem,
 )
 from .admin_reads import NotAvailable, ReadModel, _held, _recheck, config_request
+from .wall_clock import is_hhmm
 
 CHANGES_LIMIT = 64_000
 # The refresh schedule document's members (the stored ``refresh_rules``
@@ -138,16 +138,6 @@ def _schedule_problem(field, message, code="invalid"):
     return _problem(f"{SCHEDULE}{field}", {"code": code, "message": message})
 
 
-def _hhmm(value):
-    """Whether ``value`` is ``HH:MM`` text the page's time field reads as is."""
-    return (
-        isinstance(value, str)
-        and re.fullmatch(r"[0-9]{2}:[0-9]{2}", value) is not None
-        and int(value[:2]) < 24
-        and int(value[3:]) < 60
-    )
-
-
 def _row_problems(rows, scope, shapes, noun):
     """The problems of one list of schedule rows, in fixed words.
 
@@ -167,7 +157,7 @@ def _row_problems(rows, scope, shapes, noun):
             message = f"This is not a {noun}."
         elif "kind" in row and row["kind"] not in ("full", "quick"):
             message = 'Give kind as "full" or "quick".'
-        elif not all(_hhmm(row[name]) for name in set(row) & TIME_MEMBERS):
+        elif not all(is_hhmm(row[name]) for name in set(row) & TIME_MEMBERS):
             message = 'Give each time as quoted HH:MM text, such as "02:00".'
         # Exactly an int: 60.0 equals a step but the form would echo it, and
         # a bool is an int subclass.
@@ -485,7 +475,7 @@ def preview_integration(
 ):
     """``integration preview``: an integration settings page's review.
 
-    Admits as the page's post does, passes the page's fresh gate with the
+    Admits as the page's post does, passes the page's privileged check with the
     live full-scope session, then, in one read snapshot, checks the version
     (another one is ``stale_version``) and builds the page's own review of
     the change document and, for ParishSoft, the ``refresh_schedule``
@@ -503,7 +493,7 @@ def preview_integration(
     from .accounts.integration_forms import LABELS
     from .accounts.integration_views import review_removal
     from .accounts.policy import Capability
-    from .accounts.sessions import require_fresh
+    from .accounts.sessions import sign_in_instant
     from .campaigns.work_locks import read_transaction
     from .storage import StaleRecordError
 
@@ -518,13 +508,13 @@ def preview_integration(
     fields = {} if remove or changes is None else parse_settings(changes, target)
 
     def step():
-        """Pass the fresh gate, then check and review in one snapshot."""
-        # The page asks for a recent sign-in before its review (#547); the
+        """Pass the privileged check, then check and review in one snapshot."""
+        # The page checks the session before its review (#547); the
         # session's FOR SHARE lock needs a writable transaction, so it is
         # checked just before the read-only snapshot. A preview has no
         # command type, so it records no notice.
         with transaction.atomic():
-            require_fresh(caller)
+            sign_in_instant(caller)
         with read_transaction():
             configuration = editable_configuration(service)
             if configuration.active_configuration.digest != expected_version:
@@ -634,7 +624,7 @@ def confirm_integration(caller, service, target, *, token, context):
     Admits as the page does, then ``confirm_intent`` checks the token with
     the page's salt for ``target`` (expired or out of date is
     ``stale_version``, altered or another target's ``invalid``, another
-    Administrator's ``denied``), passes the page's fresh gate again under
+    Administrator's ``denied``), passes the page's privileged check again under
     the work lock and records the request with
     ``admin_cmd_integration_confirm`` (and, for Slack, the policy notice)
     in its own durable transaction. The configuration must be editable
@@ -702,7 +692,7 @@ def confirm_integration(caller, service, target, *, token, context):
             current_scope=lambda service: (editable_configuration(service), None),
             attach=attach,
             # Checked again under the work lock, as the page's Apply (#547).
-            fresh=True,
+            privileged=True,
         )
     except signing.BadSignature:
         # Altered, or signed for another integration or page (an expired

@@ -15,12 +15,13 @@ from parishkit.stewardship.accounts.templatetags.delivery import (
 )
 from parishkit.stewardship.jobs.delivery_metadata import (
     OUTCOMES,
-    PURPOSES,
+    PURPOSE_CHOICES,
+    STATE_GROUPS,
     STATE_LABELS,
     STATES,
 )
 from parishkit.stewardship.jobs.models import TASK_STATES
-from parishkit.stewardship.reports import family_timeline
+from parishkit.stewardship.reports import timelines
 
 TEMPLATES = Path(accounts.__file__).parent / "templates" / "stewardship"
 
@@ -45,23 +46,29 @@ def test_provider_outcomes_keep_their_action_label():
 def test_every_delivery_purpose_has_a_label():
     """No purpose falls back to the generic unknown-value label."""
     fallback = str(delivery_label("no-such-internal-value"))
-    for purpose in PURPOSES:
+    for purpose in PURPOSE_CHOICES:
         assert str(delivery_label(purpose)) != fallback, purpose
     assert str(delivery_label("weekly_digest")) == "Weekly Administrator report"
+    assert str(delivery_label("security_event")) == "Security notice"
 
 
 def test_delivery_states_use_the_family_timeline_words():
-    """Outgoing mail names each state with the timeline's outcome (#589).
+    """Sent mail names each state with the timeline's outcome (#589).
 
-    The Family timeline and the delivery labels read one table, and every
+    The Timeline and the delivery labels read one table, and every
     state's label starts with its plain outcome; "Still sending" adds where
     the email is, so a retry stays visible.
     """
-    assert family_timeline.OUTCOMES is OUTCOMES
-    for state in STATES[1:]:
+    assert timelines.OUTCOMES is OUTCOMES
+    for state in STATES[1 + len(STATE_GROUPS) :]:
         assert str(delivery_label(state)).startswith(str(OUTCOMES[state])), state
     assert [str(delivery_label(state)) for state in STATES] == [
         "All",
+        # Sent mail's grouped choices (#1562).
+        "Needs attention",
+        "Not sure it arrived — review needed",  # #1576
+        "Not delivered",
+        "Still sending",
         "Not sure it arrived",
         "Failed",
         "Still sending (queued)",
@@ -95,8 +102,8 @@ STATE_PAGES = (
     "admin-status.html",
     "admin-banners.html",
     "delivery-control.html",
-    "family-email-progress.html",
-    "family-email-progress-status.html",
+    "mail-queue.html",
+    "family-send-progress.html",
     "family-email-sends.html",
     "family-email-sends-table.html",
 )
@@ -112,8 +119,8 @@ OLD_NAMES = (
 
 
 def test_state_counts_use_the_plain_words_elsewhere():
-    """The status bar, pause pages and Family email progress and sends say
-    "Not sure it arrived", the Outgoing mail filter's word, never the old
+    """The status bar, pause pages, the Mail queue and Family email history say
+    "Not sure it arrived", the Sent mail filter's word, never the old
     names one click away from it (#678)."""
     for name in STATE_PAGES:
         source = (TEMPLATES / name).read_text()
@@ -126,7 +133,7 @@ def test_state_counts_use_the_plain_words_elsewhere():
 
 
 def test_test_email_results_use_the_shared_words():
-    """Test-email results read like the same result on Outgoing mail (#678).
+    """Test-email results read like the same result on Sent mail (#678).
 
     A chosen-Family test is an outbox message, so it uses the outbox labels
     as they are; setup's test states map to their nearest outbox words, and

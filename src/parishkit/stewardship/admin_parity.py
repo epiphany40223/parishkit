@@ -6,8 +6,9 @@ inventory" and "Rules for new Admin actions"):
 
 - ``command``: the commands that cover the route, all in the catalog now;
   ``owed`` names the pull request that adds the rest of a partly covered
-  route (``go_live`` reads today, its preview and confirmation come in PR 12);
-- ``pending``: the pull request that will add its commands, which it names;
+  route (``branding_settings`` reads today, its logo uploads are owed);
+- ``pending``: the pull request that will add its commands, which it names
+  (an ADM-11 pull request, or a feature's own later slice, "#528 slice 4");
 - ``permanent``: web-only by nature, with the reason;
 - ``deferred``: waiting on a decision, which it names.
 
@@ -56,6 +57,11 @@ def permanent(reason):
     return Parity("permanent", (reason,))
 
 
+def deferred(decision):
+    """Routes waiting on a decision, which ``decision`` names."""
+    return Parity("deferred", (decision,))
+
+
 SESSION_CHROME = (
     "browser sign-in and session chrome; the session commands cover automation"
 )
@@ -90,8 +96,10 @@ LEDGER = {
     "session_renew": permanent(SESSION_CHROME),
     "maintenance": permanent("the status page the access gate shows"),
     "held_emails": permanent(
-        "held-email decisions need a fresh Google sign-in in the browser, "
-        "which the decision guard checks (migration 0017)"
+        "held-email decisions belong to a restore review (the maintenance "
+        "page, also web-only) and its follow-up after release, each with a "
+        "preview, a required note and an exact-count check; a command for "
+        "them would be a new feature"
     ),
     # The human side of the automation interface (the specification's action
     # inventory): approving, listing and revoking sessions, and acknowledging
@@ -126,6 +134,9 @@ LEDGER = {
     "schedule_new": command("schedule preview", "schedule confirm"),
     "schedule_edit": command("schedule show", "schedule preview", "schedule confirm"),
     "schedule_delete": command("schedule preview", "schedule confirm"),
+    # The campaign wizard's suggested schedules (#1404 PR 6) are three
+    # ordinary schedules, which a schedule change document adds.
+    "schedule_suggested": command("schedule preview", "schedule confirm"),
     # A test of New and Edit scheduled email's unsaved email text (#446):
     # the command line takes no unsaved text; ``test sample`` tests a saved
     # email, and the content commands save text to test.
@@ -147,16 +158,22 @@ LEDGER = {
     ),
     # The live end-date check validates what ``schedule preview`` reviews.
     "campaign_end_date_check": command("schedule preview"),
-    # The command line has no first-campaign path yet: ``campaign confirm``
-    # edits the current campaign and refuses any added one. When PR 10 adds
-    # one, it must admit the first campaign only through
-    # ``single_campaign.first_campaign_admitted`` (and
-    # ``refuse_campaign_creation(first=True)``), as this page does.
-    "campaign_create": pending("PR 10", "campaign create-preview", "campaign create"),
-    "campaign_clone": pending("PR 10", "campaign clone"),
-    # A Campaign setup step's Continue (#1404) only records the browser
-    # stepper's "kept as is" and opens the next step page; the command line
-    # applies settings directly and has no stepper to complete.
+    # Create the campaign's Review and Apply (#1899): the first campaign
+    # only, admitted through the page's own ``_admitted`` and ``_scope``
+    # (``single_campaign.first_campaign_admitted``) and confirmed with
+    # ``first_campaign=True``, as the page does.
+    "campaign_create": command("campaign create-preview", "campaign create"),
+    # Copy campaign refuses every request before reading anything until
+    # #145 (navigation rule 10), so a command could only repeat that
+    # refusal; #145 decides whether copying comes back.
+    "campaign_clone": deferred(
+        "#145, the single-campaign change, which retires or restores Copy campaign"
+    ),
+    # A Campaign setup step's Continue (#1404), and Pages and emails'
+    # editor's Keep as is and go back (one item, #1404 PR 6b), only record
+    # the browser stepper's "kept as is" and open the next step page (or
+    # Pages and emails); the command line applies settings directly and has
+    # no stepper to complete.
     "campaign_step_continue": permanent(
         "the browser Campaign setup stepper's own progress; the command line "
         "has no stepper"
@@ -198,32 +215,46 @@ LEDGER = {
     "artwork_settings": command(
         "artwork show", "artwork remove-preview", "artwork remove"
     ),
-    # Applying logos is owed with the uploads: staged logos belong to the
-    # sign-in that uploaded them, and each pk-admin run is its own sign-in,
-    # so a command cannot apply logos staged in the browser (#463).
-    "branding_settings": command("branding show", owed="PR 10"),
+    # The upload with its review and the dialog's Apply (#1865). Staged
+    # logos belong to the sign-in that uploaded them, which for pk-admin is
+    # the automation session, so branding confirm applies the logos its own
+    # session's branding preview staged, never the browser's.
+    "branding_settings": command(
+        "branding show", "branding preview", "branding confirm"
+    ),
     "hosted_file_upload": permanent(UPLOAD),
     "artwork_upload": permanent(UPLOAD),
     "branding_asset": permanent(IMAGES),
-    # Production transition and withdrawal.
-    # The verified preview with the DNS check and cleanup come in PR 12.
-    "go_live": command("go-live readiness", owed="PR 12"),
-    "go_live_families": pending("PR 12", "go-live families"),
-    "go_live_cleanup": pending(
-        "PR 12", "go-live cleanup-status", "go-live cleanup-retry"
+    # Production transition and withdrawal: the four-step Go live page
+    # (#1585), its actions added by PR 12 (#1809) and named after the
+    # page's labels; ``go-live retry`` retries whichever failed task the
+    # current step offers a Retry for (a stop on Check, a box on Prepare,
+    # mail preparation on Production activation).
+    "go_live": command(
+        "go-live readiness", "go-live preview", "go-live start", "go-live retry"
     ),
-    "go_live_links": pending("PR 12", "go-live links", "go-live links-status"),
-    "production_confirmation": pending(
-        "PR 12", "go-live confirm-preview", "go-live confirm"
+    "go_live_families": command("go-live families"),
+    "go_live_prepare": command(
+        "go-live status",
+        "go-live retry",
+        "go-live refresh-again",
+        "go-live stop",
     ),
-    # The page's "Retry failed mail preparation" control comes in PR 12.
-    "production_progress": command("go-live progress", owed="PR 12"),
-    "production_withdrawal": pending(
-        "PR 12", "go-live withdraw-preview", "go-live withdraw"
+    "go_live_confirm": command(
+        "go-live confirm-preview",
+        "go-live confirm",
+        "go-live stop",
+        "go-live refresh-again",
+    ),
+    "production_progress": command(
+        "go-live progress",
+        "go-live retry",
+        "go-live cancel-preview",
+        "go-live cancel",
     ),
     # Family email history and Pause and resume mail.
-    "family_email_progress": command("send progress"),
-    "family_email_progress_status": command("send progress"),
+    "mail_queue": command("mail queue"),
+    "mail_queue_status": command("mail queue"),
     "family_email_sends": command("send history"),
     # Its read, and its pause, resume and resolution previews and their
     # confirmation (PR 7b, #463).
@@ -257,7 +288,9 @@ LEDGER = {
     # The aggregate report reads (PR 8c): counts and summaries only; the
     # rows behind them are the Family-level exports (PR 8e and 8f).
     "reports": command("report list"),
-    "participation": command("report participation"),
+    # The figures status the Response dashboard and Campaign comparison poll
+    # (#1586): the dashboard's own report status.
+    "response_dashboard_status": command("report participation"),
     # The Campaign comparison page (#1018): its figures for a day.
     "campaign_comparison": command("report comparison"),
     # Its download form (#1018, slice 6): the same capture and export.
@@ -265,7 +298,17 @@ LEDGER = {
     "daily_digest_chart": permanent(IMAGES),
     "daily_digest_download": permanent(IMAGES),
     "financial_report": command("report financial"),
-    "limitations_report": command("report limitations"),
+    # Pledges (#1686, #1733): counts only, as its rows name
+    # Families and their pledges; its decisions go through the page's own
+    # PledgeDecisions service, and its rows with their ids and versions are
+    # export pledges --format jsonl's.
+    "pledges_to_enter": command("report pledges", "pledges decide"),
+    "pledges_to_enter_export": command("export pledges"),
+    # Limitations (#1685, #1735): counts by stage only, as its rows name
+    # Families and Members; its decisions go through the page's own
+    # LimitationDecisions service, and its rows with their ids and versions
+    # are export limitations --format jsonl's.
+    "limitations_report": command("report limitations", "limitations decide"),
     # Counts only (#463): its rows name Families and Members, so they are
     # export census's. A row's Entered in ParishSoft, Ignore and Reopen post
     # here too (#528): census resolve; so does an Automatic row's Review
@@ -279,53 +322,91 @@ LEDGER = {
         "census edit",
         "census resolve-conflict",
     ),
-    "information_queue": command("report information"),
-    # One Family's submission and its follow-up history: read with the
-    # follow-up commands, as the Ministry follow-up items are, which print
-    # only the item's state and history; its content is Family-level and
-    # comes through ``export information``.
-    "information_item": pending("PR 11", "followup"),
+    # Update ParishSoft (#528, ADM-09; #1688): its check and plan, Update
+    # and Run again (#1755), renamed from #528's fourth slice (decision 7:
+    # update, not publish), through the page's own checks and services.
+    "update_parishsoft": command("census update-check", "census update-plan"),
+    "update_parishsoft_confirmation": command("census update-confirm"),
+    "update_parishsoft_retries": command("census update-rerun"),
+    # Additional information's review worklist (#1685) posts its decisions
+    # to the page itself: ``information decide`` (#1735), through the page's
+    # own InformationDecisions service, with ``information list`` the rows'
+    # ids, versions and stages. The retired request Save's ``followup
+    # information-update`` (#463 PR 11b) stays here until #1688 renames the
+    # commands; ``followup information-show`` reads one request.
+    "information_queue": command(
+        "report information",
+        "information list",
+        "information decide",
+        "followup information-show",
+        "followup information-update",
+    ),
+    # One Family's submission and its follow-up history: ``followup
+    # information-show`` (#463 PR 11b), which prints only the item's state
+    # and history, as the Ministry follow-up items are read; its content is
+    # Family-level and comes through ``export information``.
+    "information_item": command("followup information-show"),
+    # Its Contact details' passive status (#1863): no data of its own.
+    "information_contacts_status": command("followup information-show"),
     # Ministry requests (#1133) is the follow-up queue with the summary's
     # By Ministry counts. ``report ministry`` prints those counts, and
     # ``export ministry`` writes one Ministry's join or leave list, the file
     # the retired Members joining and leaving pages offered (#1157); the
-    # queue itself is ``followup list``'s (#463 PR 11a).
-    "ministry_report": command("report ministry", "export ministry", "followup list"),
+    # queue itself is ``followup list``'s (#463 PR 11a). Its review worklist
+    # (#1684) posts its bulk decisions to the page itself, where the
+    # retired bulk outcome address's ``followup bulk`` now belongs, until
+    # #1688 renames the commands. Its To enter by hand Stage holds the
+    # roster changes to enter since Roster changes to enter was folded into
+    # it (R39 finding 2): ``report roster`` counts them, ``export roster``
+    # writes their file and ``followup roster-bulk`` is its bulk Entered by
+    # hand.
+    "ministry_report": command(
+        "report ministry",
+        "export ministry",
+        "followup list",
+        "followup bulk",
+        "report roster",
+        "export roster",
+        "followup roster-bulk",
+    ),
     # A packet of the chosen Ministries' Members and contacts: an export.
     "ministry_packet": command("export ministry-packet"),
-    "response_dashboard": command("report responses"),
+    # The Response dashboard shows the funnel and, since #1537, the
+    # statistics and daily table that were Participation's.
+    "response_dashboard": command("report responses", "report participation"),
     "family_directory": command("export directory", "export postal"),
-    # The one-Family timeline is Family-level, so it is a file only: the
-    # page's export form (PR 8g) and ``export family-timeline``.
-    "family_timeline": command("export family-timeline"),
-    "family_timeline_export": command("export family-timeline"),
+    # A Family's Timeline (#1570) is Family-level, so it is a file only:
+    # the page's export form (PR 8g) and ``export family-timeline``.
+    "timeline": command("export family-timeline"),
+    "timeline_export": command("export family-timeline"),
     "family_open_form": permanent(
         "Open form signs this browser in to the Family form for a Family on "
         "the phone; a browser hand-off by nature (#529)"
     ),
     # The header's Find a Family box (#561) runs the directory's search.
     "find_family": permanent(NAME_SEARCH),
-    # Creating a financial export is fresh-gated (#547): the command calls
-    # the caller-aware require_fresh, as the page's view does.
+    # Creating a financial export is privileged (#547): the command calls
+    # the caller-aware sign_in_instant, as the page's view does.
     "financial_export": command("export financial"),
     # The page's download, through the page's own writer.
     "limitations_export": command("export limitations"),
     # The page's download, and JSON Lines with each change's id and version.
     "census_changes_export": command("export census"),
     "information_export": command("export information"),
-    # Both directory exports are fresh-gated (#547), as above.
+    # Both directory exports are privileged (#547), as above.
     "family_directory_export": command("export directory", "export postal"),
     # The export lifecycle (PR 8b): the status page and its buttons, and the
-    # Participation page's export form. The download's grant is issued and
-    # consumed inside ``export download``.
-    "report_export_create": command("export create"),
-    # The export pages also serve an exact request (report_exact_create's
-    # redirect), whose commands are the export exact ones (PR 8h).
+    # Response dashboard's export form. The download's grant is issued and
+    # consumed inside ``export download``. The latest-data export lost its
+    # page form with #1537; its command stays, beside the page's one export
+    # form, as the other way to export the daily figures.
+    "report_export_create": command("export create", "export exact create"),
+    # The export pages also serve an exact request (made by ``export exact
+    # create``), whose commands are the export exact ones (PR 8h).
     "report_export": command("export status", "export exact status"),
     "report_export_cancel": command("export cancel", "export exact cancel"),
     "report_export_retry": command("export retry", "export exact retry"),
     "report_export_download": command("export download"),
-    "report_exact_create": command("export exact create"),
     # The digests (PR 8d): the retained reports an emailed digest links to,
     # and the manual weekly report.
     "daily_digest_snapshot": command("digest daily"),
@@ -349,8 +430,11 @@ LEDGER = {
     # (in Testing) Allow debug logging again post to the page; ``system
     # backup-now``, ``system refresh-accept-preview`` with ``system
     # refresh-accept``, ``system debug-off`` and ``system debug-allow`` are
-    # their commands (each row's guard admits a full-scope automation session
-    # as the fresh sign-in), and ``system health`` shows their progress.
+    # their commands (each row's guard binds the command session as it does a
+    # browser session), and ``system health`` shows their progress.
+    # Clear the halt's commands, ``system mail-clear-preview`` and ``system
+    # mail-clear``, come first (ADM-13 PR 4a); its button posts here with
+    # PR 4b. Neither needs a recent sign-in (#1547).
     "system_health": command(
         "system health",
         "system backup-now",
@@ -358,12 +442,15 @@ LEDGER = {
         "system refresh-accept",
         "system debug-off",
         "system debug-allow",
+        "system mail-clear-preview",
+        "system mail-clear",
     ),
     "system_health_status": command("system health"),
     # Families the form cannot open (#774): counts and DUIDs only.
     "source_form": command("report source-form"),
     # Data to fix in ParishSoft (#1011): its section counts only.
     "parishsoft_fixes": command("report data-to-fix"),
+    "parishsoft_fixes_status": command("report data-to-fix"),
     # Operations.
     "background": command("task list"),
     "background_tasks": command("task list"),
@@ -400,45 +487,46 @@ LEDGER = {
     "user_name_suggestions": command("users preview"),
     # The leaders table and its import review (#952 slice 6).
     "user_leader_import": command("users import-leaders"),
+    # The leaders section's passive status (#1863): no data of its own.
+    "user_leaders_status": command("users import-leaders"),
+    # Email Ministry leaders (#1592): its review and Apply (#1622).
+    "user_leader_emails": command("users email-leaders"),
     # Home's Acknowledge buttons; events list reads what they acknowledge.
     "security_event_acknowledge": command("events list", "events acknowledge"),
     "critical_events_acknowledge": command("events list", "events acknowledge"),
-    "information_update": pending("PR 11", "followup"),
     # A Ministry request's page and its Save (#463 PR 11a).
     "ministry_followup_item": command("followup show"),
     "ministry_followup_update": command("followup show", "followup update"),
-    # Bulk outcomes on the queue (#1131): followup bulk (#463 PR 11a).
-    "ministry_followup_bulk": command("followup list", "followup bulk"),
-    # Export these requests (#1157): the queue's filtered set with contacts.
-    "ministry_followup_export": pending("PR 11", "followup export"),
-    # The roster Entered in ParishSoft tick and its list (#528).
-    "ministry_followup_roster": pending("PR 11", "followup roster-entered"),
-    # Counts only (#463): its rows name Members, so they are export roster's.
-    "ministry_roster": command("report roster"),
-    # The page's download, through the page's own writer.
-    "ministry_roster_export": command("export roster"),
-    # The list's bulk Mark entered in ParishSoft (#879).
-    "ministry_roster_bulk": pending("PR 11", "followup roster-entered"),
+    # Export these requests (#1157): the queue's filtered set with contacts,
+    # through the page's own writer (#463 PR 11c).
+    "ministry_followup_export": command("followup export"),
+    # The roster Entered in ParishSoft tick and its list (#528), one at a
+    # time or in bulk (#463 PR 11b).
+    "ministry_followup_roster": command("followup show", "followup roster-entered"),
     # Integrations and credentials.
     "integrations": command("integration list"),
-    # The settings page as it opens, its Save, its Remove and the backup
-    # folder check (#463); the key replacement is still owed.
+    # The settings page as it opens, its Save, its Remove, the backup
+    # folder check, its Save with a new key and the Backup encryption key's
+    # three steps (#463).
     "integration_settings": command(
         "integration show",
         "integration preview",
         "integration confirm",
         "integration backup-probe",
-        owed="PR 10",
-    ),
-    "integration_status": command("integration status"),
-    # The ParishSoft page's live refresh schedule check (#632).
-    "refresh_schedule_check": command("integration schedule-preview"),
-    "credential_status": command("integration key status"),
-    "dismiss_credential_result": command("integration dismiss"),
-    "select_credential": command(
+        "integration key replace",
+        # Finish switching to the new key, in the page's review dialog (#1568).
         "integration key finish-switching-preview",
         "integration key finish-switching",
+        "integration backup-key challenge",
+        "integration backup-key preview",
+        "integration backup-key confirm",
     ),
+    # The settings page's status line, which is also a key change's status
+    # (#1568).
+    "integration_status": command("integration status", "integration key status"),
+    # The ParishSoft page's live refresh schedule check (#632).
+    "refresh_schedule_check": command("integration schedule-preview"),
+    "dismiss_credential_result": command("integration dismiss"),
     # The first-Admin setup wizard.
     **{
         name: permanent(SETUP)

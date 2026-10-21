@@ -3,7 +3,10 @@
 from io import BytesIO
 
 from django.urls import reverse
+from django.utils.translation import gettext as _
 from PIL import Image
+
+from parishkit.stewardship.web.stat_tiles import UNKNOWN, shown
 
 from .chart_specs import whole_dollars as tooltip_dollars
 from .charts import (
@@ -12,7 +15,13 @@ from .charts import (
     PLOT_LAYOUT,
     participation_limits,
 )
-from .daily_digest import PLEDGE_HEADING, participation_row, report_day_cards
+from .daily_digest import (
+    FIRST_LABEL,
+    PLEDGE_HEADING,
+    RESPONDED_LABEL,
+    participation_row,
+    report_day_cards,
+)
 from .digest_comparison import data_line
 from .digest_funnel import funnel_context
 
@@ -30,11 +39,12 @@ def snapshot_context(document, *, mode, chart_url, download_url, plot=PLOT_LAYOU
     return {
         "comparison": section,
         "comparison_line": data_line(section) if section else "",
+        "comparison_tiles": saved_tiles(section) if section else [],
         "comparison_url": comparison_path(section) if section else "",
         **participation_context(chart, plot=plot),
         "document": document,
         "mode": mode,
-        "cards": report_day_cards(document),
+        "total_tiles": total_tiles(document),
         # The response funnel at the end of the report day, counted again
         # from the same durable timestamps the email used (#477); no charts
         # (#1370), even for a digest whose email still had them.
@@ -42,6 +52,85 @@ def snapshot_context(document, *, mode, chart_url, download_url, plot=PLOT_LAYOU
         "chart_url": chart_url,
         "download_url": download_url,
     }
+
+
+# Each Campaign totals figure's stable tile key (its ``data-stat`` hook).
+TOTAL_KEYS = {
+    RESPONDED_LABEL: "responded",
+    FIRST_LABEL: "first",
+    PLEDGE_HEADING: "pledges",
+}
+
+
+def total_tiles(document):
+    """The saved report's Campaign totals as stat tiles (#1639).
+
+    Each value is the email's own text (``report_day_cards``, the table's
+    last row), so ``shown`` keeps it word for word, with two differences
+    the tiles need (ui-conventions "Stat tiles"). The email's "Unavailable"
+    reads "—" with its reason; the report day's availability flags, never
+    the text, say which values are unknown. And "10 out of 93 (10.8%)" is
+    split at " out of ": the count is the value, which must fit one line of
+    a tile, and "out of 93 (10.8%)" its explanation line, as on Home, with
+    a share bar against the Families it is out of, like the email's bar.
+    """
+    day = document.report_day
+    # Why a figure is unknown: the report day had no ParishSoft data, or a
+    # responding Family's pledge amount is not known, so the pledges are not
+    # added up (``calculations.calculate_participation``).
+    no_data = _(
+        "The ParishSoft data for this day was not available, so this figure "
+        "is not known."
+    )
+    tiles = []
+    for label, value in report_day_cards(document):
+        known, reason = day.population_available, no_data
+        if label == PLEDGE_HEADING and day.population_available:
+            known = day.pledge_available
+            reason = _(
+                "The total is added up only when every responding Family's "
+                "pledge amount is known."
+            )
+        text, details, share = value, (), None
+        if label == RESPONDED_LABEL and known:
+            # The split relies on out_of()'s English wording; a translated
+            # sentence finds no separator and stays whole as the value.
+            count, between, rest = value.partition(" out of ")
+            if between:
+                text, details = count, (between.lstrip() + rest,)
+            share = (day.cumulative_responses, day.cohort_denominator)
+        tiles.append(
+            shown(
+                TOTAL_KEYS[label],
+                label,
+                text if known else UNKNOWN,
+                unknown_reason="" if known else reason,
+                details=details,
+                share=share,
+            )
+        )
+    return tiles
+
+
+def saved_tiles(section):
+    """The saved Compared with past campaigns figures as stat tiles (#1540).
+
+    The section stores each figure as the email showed it (label, value
+    text, comparison lines), so each tile takes that text word for word
+    (``shown``); nothing is formatted again. The section stores no reason
+    for a figure that read "—", so its toggletip says it was not available.
+    """
+    missing = _("This figure was not available on the report day.")
+    return [
+        shown(
+            f"figure-{index}",
+            figure["label"],
+            figure["value"],
+            unknown_reason=missing if figure["value"] == UNKNOWN else "",
+            details=figure["lines"],
+        )
+        for index, figure in enumerate(section["tiles"], start=1)
+    ]
 
 
 def comparison_path(section):
@@ -97,7 +186,7 @@ def chart_layout(chart):
 def participation_table_context(chart):
     """The exact daily table's rows and headings, as every page shows them.
 
-    The live Participation page needs only these: its chart is drawn in the
+    The live Response dashboard needs only these: its chart is drawn in the
     browser (#720), so it has no image to hit-test.
     """
     rows = [

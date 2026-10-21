@@ -12,9 +12,10 @@ from contextlib import ExitStack
 from functools import partial
 from uuid import UUID, uuid4
 
-from django.db import transaction
+from django.db import connection, transaction
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.audit.schemas import Action
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.observability import installer_request
 from parishkit.stewardship.service_boundaries import (
@@ -23,7 +24,10 @@ from parishkit.stewardship.service_boundaries import (
 )
 
 from .credential_database import admit_consumer_database, admit_installer_database
-from .credential_errors import CredentialValidationUnavailable
+from .credential_errors import (
+    CredentialOrganizationMismatch,
+    CredentialValidationUnavailable,
+)
 from .credential_files import CredentialFiles
 from .credential_handoff import PrivateHandoff
 from .cryptography import CryptographicError
@@ -36,6 +40,28 @@ from .secret_models import (
     SecretReplacementRequest,
 )
 from .secret_requests import _now, _receipt, _transaction, _transition
+
+
+def _record_mismatch(request_id, correlation_id):
+    """Record that this key change failed on a ParishSoft organization mismatch.
+
+    A plain column INSERT with no RETURNING: the installer's role may insert
+    audit events (its request history already does) but never read them, so
+    the ORM's create, which reads trigger-set columns back, cannot be used.
+    The ownership trigger attributes the event, as for the history events.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO public.stewardship_audit_event"
+            "(id,actor_id,correlation_id,event_type,subject_id) "
+            "VALUES (%s,NULL,%s,%s,%s)",
+            [
+                uuid4(),
+                correlation_id,
+                Action.CREDENTIAL_KEY_ORGANIZATION_MISMATCH.value,
+                request_id,
+            ],
+        )
 
 
 class CredentialInstaller:
@@ -83,17 +109,36 @@ class CredentialInstaller:
             raise ConfigError("Credential request is unavailable.")
         return row
 
-    def _advance(self, identifier, old_state, state, *, reason=None, fingerprint=None):
-        """A checkpoint and its redacted audit commit together, never around file IO."""
+    def _advance(
+        self,
+        identifier,
+        old_state,
+        state,
+        *,
+        reason=None,
+        fingerprint=None,
+        mismatch=False,
+    ):
+        """A checkpoint and its redacted audit commit together, never around file IO.
+
+        ``mismatch`` marks a failure whose cause was a ParishSoft key for
+        another organization (#1495). The request's own state stays
+        ``failed``, as for any refused key; the cause is one value-free audit
+        event about the request, committed with the transition, which the
+        settings page reads to name that cause.
+        """
         with _transaction():
             row = self._read(identifier)
             if row.state != old_state:
                 return row
             if fingerprint is not None:
                 row.resulting_fingerprint = fingerprint
+            correlation = uuid4()
             _transition(
-                row, state, actor_id=None, correlation_id=uuid4(), reason=reason
+                row, state, actor_id=None, correlation_id=correlation, reason=reason
             )
+            if mismatch:
+                _record_mismatch(row.pk, correlation)
             if state == "awaiting_ack":
                 SealedCredentialStaging.objects.filter(
                     request_id=identifier, ciphertext__isnull=False
@@ -105,7 +150,7 @@ class CredentialInstaller:
     def _candidate(self, row):
         """Test only the exact sealed intake, with no private error text escaping."""
         staged = SealedCredentialStaging.objects.get(request_id=row.pk)
-        valid = False
+        valid = mismatch = False
         try:
             value = self.files.private.open(row.pk, staged.ciphertext)
             value.decode("utf-8")
@@ -122,6 +167,10 @@ class CredentialInstaller:
             # Retain testing state and sealed input; the owning loop retries
             # with its bounded backoff until the request's ordinary expiry.
             raise CredentialValidationUnavailable() from None
+        except CredentialOrganizationMismatch:
+            # Refused for good, as a rejected key is, but its cause is kept
+            # so the page can say which refusal applied (#1495).
+            mismatch = True
         except Exception:
             # Provider exceptions can contain the supplied credential. The public
             # outcome is only failed, and the previous file has not been changed.
@@ -145,7 +194,9 @@ class CredentialInstaller:
                 # credential. Preserve sealed input for the target's next pass.
                 raise CredentialValidationUnavailable() from None
         if not valid:
-            return self._advance(row.pk, "testing", "cleanup_pending", reason="failed")
+            return self._advance(
+                row.pk, "testing", "cleanup_pending", reason="failed", mismatch=mismatch
+            )
         self.files.prepare(
             request_id=row.pk,
             candidate=staged.ciphertext,

@@ -42,6 +42,7 @@ from parishkit.stewardship.reports import (
     limitations,
     ministry_roster_views,
     pdf_design,
+    pledge_review_views,
 )
 from parishkit.stewardship.reports.census_changes import (
     CensusQuery,
@@ -50,6 +51,7 @@ from parishkit.stewardship.reports.census_changes import (
     census_xlsx,
     select,
 )
+from parishkit.stewardship.reports.charts import render_participation
 from parishkit.stewardship.reports.comparison_documents import render_comparison
 from parishkit.stewardship.reports.directory_rendering import (
     address_blocks,
@@ -80,6 +82,8 @@ from .test_ministry_followup_exports import document as followup_requests
 from .test_ministry_packets import item as member
 from .test_ministry_packets import packet
 from .test_participation_rendering import document as participation
+from .test_participation_rendering import summary as participation_summary
+from .test_pledge_review import pledge_row
 from .test_roster import roster_row
 from .test_timeline_exports import document as timeline
 
@@ -117,10 +121,11 @@ ROUTED_PAGE_DOWNLOADS = routed_page_downloads(get_resolver().url_patterns)
 # has a case (its CSV and XLSX; JSON Lines has no columns).
 PAGE_EXCEPTIONS = frozenset()
 # The cases whose PDF is not a table of their columns, each a recorded
-# reason in the UX spec's Downloaded files section: the participation PDF is
-# the chart, the postal mail merge's PDF is address labels (checked by value
-# in its case) and System logs has no PDF. Every other case must have one.
-NO_PDF_TABLE = frozenset({"participation", "postal_outreach", "system_logs"})
+# reason in the UX spec's Downloaded files section: the postal mail merge's
+# PDF is address labels (checked by value in its case) and System logs has
+# no PDF. Every other case must have one; the participation PDF's tables
+# follow its chart since #1557.
+NO_PDF_TABLE = frozenset({"postal_outreach", "system_logs"})
 # Every other registered page download is a case below of the same name, so
 # a new page download fails the guard until it is checked or excepted.
 PAGE_CASES = tuple(sorted(set(PAGE_DOWNLOADS) - PAGE_EXCEPTIONS))
@@ -297,15 +302,33 @@ def shared_case(monkeypatch, document, renderer=render_information):
 
 
 def case_participation(monkeypatch):
-    """Participation: CSV and XLSX tables; its PDF and PNG are the chart."""
-    value = participation()
+    """Participation: the Response dashboard's two sections in every format.
+
+    The XLSX has a sheet per section and the PDF a table per section (with
+    the chart between them); the CSV is one table, a Section column and
+    then each section's columns in order (#1557; UX conventions,
+    "Downloaded files"), so each section is checked against its own slice
+    of the CSV header.
+    """
+    from parishkit.stewardship.reports.participation_summary import (
+        COLUMNS as SUMMARY_COLUMNS,
+    )
+
+    value = replace(participation(), summary=participation_summary())
     output = io.BytesIO()
     participation_csv(value, output)
-    headers = csv_headers(output.getvalue())
+    [header] = csv_headers(output.getvalue())
     output = io.BytesIO()
     participation_xlsx(value, output)
     sheets, labels = xlsx_headers(output.getvalue())
-    return headers[0], headers, sheets, None, labels
+    seen = pdf_capture(monkeypatch, lambda: render(render_participation, value, "pdf"))
+    summary, daily = sheets
+    assert header == ["Section", *summary, *daily]
+    width = 1 + len(SUMMARY_COLUMNS)
+    return [
+        (summary, [header[1:width]], [summary], seen["tables"][0], labels),
+        (daily, [header[width:]], [daily], seen["tables"][1], labels),
+    ]
 
 
 def case_additional_information(monkeypatch):
@@ -449,7 +472,7 @@ def case_census_changes(monkeypatch):
 
 
 def case_ministry_roster(monkeypatch):
-    """Roster changes to enter (#528)."""
+    """The roster list's file (#528)."""
     zone = ZoneInfo("America/Chicago")
     rows = [roster_row()]
     headers = csv_headers(ministry_roster_views.roster_csv(rows, zone))
@@ -457,6 +480,21 @@ def case_ministry_roster(monkeypatch):
     seen = pdf_capture(
         monkeypatch,
         lambda: ministry_roster_views.roster_pdf(
+            rows, zone, parish="P", campaign="C", as_of=SUBMITTED
+        ),
+    )
+    return headers[0], headers, sheets, seen["table"], labels
+
+
+def case_pledges_to_enter(monkeypatch):
+    """Pledges (#1686)."""
+    zone = ZoneInfo("America/Chicago")
+    rows = [pledge_row()]
+    headers = csv_headers(pledge_review_views.pledges_csv(rows, zone))
+    sheets, labels = xlsx_headers(pledge_review_views.pledges_xlsx(rows, zone))
+    seen = pdf_capture(
+        monkeypatch,
+        lambda: pledge_review_views.pledges_pdf(
             rows, zone, parish="P", campaign="C", as_of=SUBMITTED
         ),
     )
@@ -605,8 +643,8 @@ def test_every_format_carries_the_same_columns(monkeypatch, name):
     """CSV header == XLSX header == PDF columns, with no internal field.
 
     ``None`` for the PDF means it is not a table of these columns: the
-    participation chart, the postal labels (checked in their case) and
-    System logs, which has no PDF. Only a recorded case may have none.
+    postal labels (checked in their case) and System logs, which has no
+    PDF. Only a recorded case may have none.
     """
     results = CASES[name](monkeypatch)
     for headings, headers, sheets, pdf, labels in (

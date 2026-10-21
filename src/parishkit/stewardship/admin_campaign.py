@@ -29,10 +29,10 @@ its form (``_settings_form``, ``CampaignSettingsForm``), its Review
   durable transaction it also records one ``admin_cmd_campaign_confirm``
   event. A repeat returns the original request and records nothing new.
 
-None is fresh-gated or prompts, as the page asks for no recent sign-in and
-its Apply is the reviewed token. Only the current campaign is edited, as
-the page's address names no other; creating or copying a campaign stays
-refused (#145).
+None is privileged or prompts, as its Apply is the reviewed token. Only the
+current campaign is edited, as the page's address names no other. The first
+campaign is created by ``admin_campaign_create`` (Create the campaign);
+copying a campaign stays refused (#145).
 
 The change document (default, pending Administrator confirmation) has the
 shape of ``campaign show``'s ``settings`` member, keyed by the page's form

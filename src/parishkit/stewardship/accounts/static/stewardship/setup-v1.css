@@ -29,31 +29,29 @@
 }
 .setup-back:hover { background: var(--accent-soft); color: var(--accent-strong); }
 .setup-continue:hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--paper); }
-/* Source-load progress: parts of the load and each downloaded collection.
-   The status word always carries the meaning; the mark only reinforces it. */
-.setup-load-phases, .setup-load-collections { list-style: none; margin: 0 0 1rem; padding: 0; }
-.setup-load-phases { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); }
-.setup-load-phases li, .setup-load-collections li {
+/* Source-load progress: each downloaded collection (the parts of the load
+   are stage boxes, .stage-boxes in ui-v1.css). The status word always
+   carries the meaning; the mark (a bullet, the working spinner or a
+   check) only reinforces it. */
+.setup-load-collections { list-style: none; margin: 0 0 1rem; padding: 0; }
+.setup-load-collections li {
   display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
   gap: 0 .75rem; padding: .45rem .6rem .45rem 2rem; position: relative;
   border-bottom: 1px solid var(--border);
 }
-.setup-load-phases li { border: 1px solid var(--border); border-radius: var(--radius-small); }
-.setup-load-phases li::before, .setup-load-collections li::before {
+.setup-load-collections li::before {
   position: absolute; left: .55rem; top: .5rem; width: 1rem; text-align: center;
   font-weight: 700; content: "\2022"; color: var(--muted);
 }
 .setup-load-done::before { content: "\2713" !important; color: var(--accent) !important; }
-.setup-load-active::before { content: "\25B8" !important; color: var(--ink) !important; }
+/* The active collection shows the working spinner (components/spinner.html,
+   ui-conventions "Working spinner") in its mark's slot, as an In progress
+   stage box does, so nothing moves when it comes or goes (#1847). */
+.setup-load-active::before { content: none !important; }
+.setup-load-collections li > .spinner { --spinner-ink: currentColor; position: absolute; left: calc(.55rem + (1rem - 1em) / 2); top: calc(.5rem + (1.6em - 1em) / 2); top: calc(.5rem + (1lh - 1em) / 2); }
 .setup-load-active { background: var(--accent-soft); font-weight: 600; }
 .setup-load-waiting .setup-load-label { color: var(--muted); }
 .setup-load-status { font-size: .925rem; font-variant-numeric: tabular-nums; }
-/* Finishing setup: a step waiting on the server operator, or one that failed. */
-.setup-load-operator::before { content: "\23F8" !important; color: var(--ink) !important; }
-.setup-load-operator { background: var(--warning-bg); border-color: var(--warning-border) !important; }
-.setup-load-failed::before { content: "\2715" !important; color: var(--error-ink) !important; }
-.setup-load-failed { border-color: var(--error-border) !important; background: var(--error-bg); font-weight: 600; }
-.setup-load-phases li p { margin: .25rem 0 0; font-size: .925rem; }
 .setup-load-result {
   margin-block: 0 1.5rem; padding: 1rem 1.25rem; border: 2px solid var(--accent);
   border-radius: var(--radius); background: var(--accent-soft);

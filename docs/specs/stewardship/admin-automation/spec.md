@@ -33,11 +33,12 @@ last open questions; no decision remains open.
 5. **Fresh-gated and irreversible actions** (the
    [fresh-gated actions](#fresh-gated-actions-from-the-command-line), such as
    the final Production confirmation and pre-start withdrawal, and the
-   irreversible Testing cleanup): no browser step-up and no per-action browser
-   approval. A full-scope session may run them; the command line asks for
+   irreversible Testing cleanup): no per-action browser approval (and, since
+   [#1547](https://github.com/epiphany40223/parishkit/issues/1547), no page
+   needs a recent sign-in either). A full-scope session may run them; the command line asks for
    confirmation at the prompt, which `--yes` skips. Every action is audited
    under the approving Administrator.
-6. **Emergency pause:** no step-up either, as in 5.
+6. **Emergency pause:** no per-action browser approval either, as in 5.
 7. **Secret replacement:** browser-only for now (reversed by decision 15).
 8. **Family-level personal data:** only in owner-only export files from a
    full-scope session; terminal output shows counts and summaries only.
@@ -75,8 +76,8 @@ last open questions; no decision remains open.
     session, and the wrapper exits 2 when `/etc/machine-id` is missing (see
     [session file](#session-file)).
 19. **Role grants need no fresh sign-in** (#383): the portal keeps its
-    low-friction role changes without a fresh Google sign-in, and sessions
-    follow the portal.
+    low-friction role changes, and sessions follow the portal. Since #1547 no
+    Admin action needs a recent sign-in.
 
 ## Purpose and scope
 
@@ -98,7 +99,7 @@ This interface gives them:
   scope allows, including the fresh-gated ones, without the Administrator at a
   browser, for at most 30 days;
 - **safeguards:** previews, version checks and the database guards wherever
-  the page has them, a confirmation prompt for fresh-gated and irreversible
+  the page has them, a confirmation prompt for privileged (fresh-gated) and irreversible
   actions, and notices to every Administrator when a session is approved and
   when it takes such an action;
 - **readable state:** versioned JSON documents for status and progress, and a
@@ -117,7 +118,7 @@ locks as the page; the throughput work is
   that feeds it the session file. There is no HTTP JSON API and no MCP server
   in this work (see [interface choice](#interface-choice)).
 - Commands act through an **automation session**: a durable database record,
-  approved by one Administrator in a freshly signed-in browser, that lives up
+  approved by one Administrator in a signed-in browser, that lives up
   to 30 days. Its secret stays in an owner-only file on the host; the database
   keeps only its SHA-256 digest (see [automation sessions](#automation-sessions)).
 - Each invocation opens a short-lived **command session**, an ordinary Admin
@@ -126,11 +127,12 @@ locks as the page; the throughput work is
 - Commands use the **web's restricted SQL login** and a narrow, web-equivalent
   Django assembly with the web's signing keyring, so every SQL guard and grant
   applies as for the page.
-- **Fresh-gated actions accept a full-scope automation session** in place of a
-  recent Google sign-in, including integration key and backup key
-  replacement. Six SQL guards and the Python freshness checks change to
-  say so explicitly, and each ADM-13 System health guard includes the same
-  clause when it is built; only the one-time setup wizard stays browser-only (see
+- **Fresh-gated (privileged) actions accept a full-scope automation session**,
+  including integration key and backup key replacement; only the one-time
+  setup wizard stays browser-only. No action checks a sign-in's age
+  ([#1547](https://github.com/epiphany40223/parishkit/issues/1547)), so the
+  session does not stand in for anything: each SQL guard binds the row to a
+  live session of the actor, which a command session is (see
   [SQL guards that accept automation sessions](#sql-guards-that-accept-automation-sessions)).
 - Previews become **preview and confirm commands** carrying the same signed
   tokens as the page; the typed value or acknowledgement the page asks for is
@@ -171,11 +173,11 @@ What it does guarantee:
   approved the session, and every state-changing command is in the audit trail,
   marked as coming from that automation session, next to the domain records it
   produced.
-- **A recent sign-in behind each session.** The database refuses to create a
-  session unless the approving browser session belongs to an Administrator and
-  signed in with Google within the last five minutes. SQL proves that recent
-  sign-in; that the Administrator actually clicked **Approve** rests on the
-  page's CSRF-protected form, as for every other Admin action.
+- **A live Administrator sign-in behind each session.** The database refuses
+  to create a session unless the approving browser session is a live Google
+  sign-in of an Administrator (of any age, since #1547). That the
+  Administrator actually clicked **Approve** rests on the page's
+  CSRF-protected form, as for every other Admin action.
 - **No new network exposure.** Nothing new listens on the public origin except
   the approval and access pages, which are ordinary authenticated Admin pages.
 - **A useless database copy.** The database stores only a digest of each
@@ -225,12 +227,7 @@ accepted this (decision 13): someone holding the file on the host could make
 the same changes through a Django shell, without any notice at all.
 
 Host access already exposes the installed credentials themselves, so replacing
-them adds little an intruder lacked (decision 15). One side effect is
-accepted: the secret request guards' automation clause is keyed by principal
-and sign-in instant, and the approving browser session shares that instant,
-so for the session's life (up to 30 days) that browser session would also
-pass those two SQL checks; Python's `require_fresh` still refuses it once its
-own five-minute window has passed. It cannot run the setup
+them adds little an intruder lacked (decision 15). It cannot run the setup
 wizard, purge a campaign, act as anyone but its Administrator, extend its own
 lifetime, approve a new session (approval needs a Google sign-in in the
 browser), or print credentials. A read-only session can read status and
@@ -239,8 +236,8 @@ progress, counts and summaries, and nothing else.
 ### Mitigations
 
 - **Administrators only, approved in the browser.** Only an Administrator can
-  approve a session, and only from a browser session that signed in with
-  Google within five minutes; the SQL guard on the session table enforces both.
+  approve a session, and only from a live, Google-signed-in browser session;
+  the SQL guard on the session table enforces both.
 - **Bounded lifetime.** At most 30 days, requested at pairing; the approver can
   shorten it, never lengthen it. The command line warns on standard error when
   a session has less than 72 hours left.
@@ -345,9 +342,10 @@ one Administrator until it expires or ends. It is a delegation from a
 Google-authenticated Admin session, not a new way to sign in; the Google-only
 rule in
 [identity and session security](../architecture/spec.md#identity-and-session-security)
-stands. In LOCAL, where Google sign-in is replaced by the
-[local test sign-in](../local-environment/spec.md#local-test-sign-in), the
-approval page accepts that sign-in's step-up exactly as other Admin pages do.
+stands. In LOCAL, where the
+[local test sign-in](../local-environment/spec.md#local-test-sign-in) stands
+in for Google sign-in or sits beside it, the approval page accepts that
+sign-in exactly as other Admin pages do.
 
 ### Session records
 
@@ -362,8 +360,8 @@ a table is now required):
   - `principal_id`: the approving Administrator, as whom every command acts;
   - `approving_session_id`: the browser `PortalSession` that approved it (an
     opaque UUID, kept after that row is cleaned up);
-  - `authenticated_at`: that browser session's Google sign-in instant, at most
-    five minutes before approval;
+  - `authenticated_at`: that browser session's Google sign-in instant, kept as
+    audit evidence (any age since #1547);
   - `expires_at`: at most 30 days after approval;
   - `scope`: `read_only` or `full`;
   - `label`: 1 to 64 printable characters describing the session (for example
@@ -426,14 +424,11 @@ Pairing has two steps, so an agent gets the code at once and can relay it:
    built from the route by name, never written out) and
    `expires_at`, and exits 0.
 3. The Administrator opens the link in a browser signed in to the portal. The
-   page requires the Administrator role and fresh Google authentication (the
-   ordinary [step-up](../architecture/spec.md#identity-and-session-security)).
-   A sign-in older than five minutes is never refused: the page renders its
-   **Confirm with Google** step and keeps **Continue** and **Approve**
-   unavailable until the sign-in is fresh, as the backup key page does. It
+   page requires the Administrator role and a live Admin session; it checks no
+   sign-in age ([identity and session security](../architecture/spec.md#identity-and-session-security),
+   [#1547](https://github.com/epiphany40223/parishkit/issues/1547)). It
    then asks for the user code. Code entry has no attempt limit (applying
-   decision 12's rationale): only an Administrator who just signed in with
-   Google reaches the field, a wrong code identifies no pairing record, and
+   decision 12's rationale): only a signed-in Administrator reaches the field, a wrong code identifies no pairing record, and
    because `--expect-email` is required, a correct guess can only approve a
    pairing that expects the guesser's own email. The code's ten-minute life
    and 40 bits of entropy suffice, and no Valkey failure can block approval.
@@ -458,8 +453,8 @@ Pairing has two steps, so an agent gets the code at once and can relay it:
    UUID and `authenticated_at`, records `automation_session_approved` and
    creates the approval [notice](#notifications). The SQL guard refuses the
    insert unless the approving session is live, belongs to the principal, is
-   not a command session, signed in within five minutes, and the principal is
-   an Administrator. The pairing record is left as it is: `wait` recognizes
+   not a command session, and the principal is an Administrator; the
+   sign-in's age is not checked. The pairing record is left as it is: `wait` recognizes
    the approval by the new session row's secret digest.
 6. **Wait.** `pk-admin login wait --name <name> [--timeout SECONDS]` (default
    and maximum ten minutes, bounded by the pairing record's expiry) runs
@@ -585,7 +580,10 @@ its command session at most once a minute, as a heartbeat, so the 60-minute
 idle checks hold while the process lives. At exit the command sets the command
 session's `revoked_at` directly, without an audit event (the automation
 session's events carry the attribution); a crashed process leaves a row that
-idles out and is cleaned up as usual.
+idles out and is cleaned up as usual. Where a page ties staged work to the
+sign-in that made it (Parish logos' staged uploads), the command line's
+sign-in is the automation session, not one command session, so a later
+command of the same automation session can finish it (#1865).
 
 If the principal's roles or Ministries change while a command runs, ordinary
 admission on the web would rotate the session. For a command session it
@@ -729,9 +727,8 @@ the row:
 
 A scope never adds a capability. Read-only is enforced in the seam, not only
 by the command dispatcher: for an automation caller with read-only scope,
-`authenticated_admin(activity=True)`, `admit_admin_action` and `require_fresh`
-all refuse. The SQL guards that accept automation in place of a fresh sign-in
-also require `full`.
+`authenticated_admin(activity=True)`, `admit_admin_action` and `sign_in_instant`
+all refuse.
 
 ### Revocation and listing
 
@@ -764,8 +761,8 @@ The source of truth is `stewardship_automation_session`.
   request naming no session, several, or a malformed one is refused, and a
   session that has already ended is left as it is. There is no bulk revoke.
   The list stays off the Users page, which lists only who may sign in
-  (#952). Approving a new session from this page first asks
-  for a fresh sign-in, as the approval page does.
+  (#952). Approving a new session from this page works as the approval
+  page does.
 - `pk-stewardship admin sessions` lists the caller's own sessions, with the
   page's filter and sort (`--include-ended`, `--sort`).
 
@@ -787,8 +784,8 @@ effect at the next command or guard.
   secret; it never accepts a browser session key, so a copied browser cookie
   cannot drive it.
 - **Approval.** Refused for a non-Administrator, from a command session (the
-  SQL guard checks `stewardship_automation_login`), without a fresh sign-in,
-  and for a mismatched expected email.
+  SQL guard checks `stewardship_automation_login`), from a browser session
+  that is no longer live, and for a mismatched expected email.
 
 ### Notifications
 
@@ -809,7 +806,14 @@ and a role rule and cannot carry them, so the
 
 The Admin dashboard shows every unacknowledged notice, with the session label
 escaped as text, to every current Administrator until that Administrator
-acknowledges it; acknowledging affects only one's own view.
+acknowledges it; acknowledging affects only one's own view. Since
+[#1673](https://github.com/epiphany40223/parishkit/issues/1673) the list,
+with its Acknowledge and Acknowledge all controls, is on the Automation
+access page, where the sessions it names can be revoked; Home, the Admin
+dashboard, shows each Administrator only the count, "N automation notices to
+acknowledge", linking that list
+([Home page](../admin-portal/spec.md#home-page)). "The dashboard" in the
+fixed alert texts below means that line and the list it opens.
 
 **Email and Slack** use the existing operational alert path rather than a new
 mail purpose. That path is bound in SQL to operational incidents: the outbox
@@ -854,7 +858,7 @@ them unnotified; the Administrator accepted that (decision 13).
 | --- | --- | --- |
 | Session approved | Yes | `automation_approved` |
 | Production confirmation, withdrawal or Testing cleanup through a session | Yes | `automation_irreversible` |
-| Other fresh-gated action through a session (pause, resume, resolution, chosen-Family test, Family portal maintenance, Testing cleanup's sign-in, a Family-code, mail-merge or financial export) | Yes | No |
+| Other fresh-gated action through a session (pause, resume, resolution, chosen-Family test, Family portal maintenance, starting Testing cleanup, a Family-code, mail-merge or financial export) | Yes | No |
 | A session changes user rules, replaces an integration key or the backup key, or changes Slack or other notification settings | Yes | `automation_policy_change`, observed when the session submits the change, before the configuration installer applies it; dispatch re-checks Administrator status, so an Administrator the change removes is not reached |
 | Refused use (an unknown secret, first per host digest per hour; host mismatch; web misuse) | Yes | `automation_refused` |
 | Session ended by revocation, role loss, recovery or restore | Yes | No |
@@ -862,12 +866,14 @@ them unnotified; the Administrator accepted that (decision 13).
 Every event also appears in the [system logs](../admin-portal/spec.md#logs).
 Nothing carries the secret, digests or Family data.
 
-A row applies once a command can take its action. On `main` no command yet
-confirms Production, withdraws, runs Testing cleanup (PR 12) or replaces a
-key (PR 10), so nothing records an `irreversible` notice or observes
-`automation_irreversible` yet. `users confirm`'s high-impact changes and
-`integration confirm`'s Slack changes and removals record the
-`policy_change` notice and observe `automation_policy_change`; the
+A row applies once a command can take its action. `go-live start` (Testing
+cleanup), `go-live confirm` (the Production confirmation) and `go-live
+cancel` (the pre-start withdrawal, Cancel go-live) record the `irreversible`
+notice and observe `automation_irreversible` (PR 12).
+`users confirm`'s high-impact changes, `integration confirm`'s Slack changes
+and removals, `integration key finish-switching`, `integration key
+replace` and `integration backup-key confirm` record the `policy_change`
+notice and observe `automation_policy_change`. The
 [delivery plan](#delivery-plan) says which commands have landed.
 
 ### High-impact changes
@@ -881,9 +887,8 @@ as the portal (decision 13):
 - demoting or deleting another Administrator.
 
 Each also creates an `automation_policy_change` notice, as does any key
-replacement and any change to Slack or other notification settings. The portal
-asks for no fresh sign-in for these changes (decision 19, #383), so a session
-needs none either.
+replacement and any change to Slack or other notification settings. These
+changes keep the portal's low-friction role maintenance (decision 19, #383).
 
 ## Running a command
 
@@ -962,14 +967,15 @@ needs no database: it checks the preamble's form and prints the catalog.
 A command prints exactly one JSON document to standard output, unless it
 runs with `--watch`, is `login start` (whose document has `final` false) or
 streams a file (`logs export`, `export census`, `export limitations`,
-`export roster`, and `export download --stream` from PR 8b),
+`export roster`, `followup export`, and `export download --stream` from
+PR 8b),
 which writes the file's bytes alone to standard output and its one document,
 success or failure, to standard error:
 
 ```json
 {
   "schema": "pk-admin/1",
-  "command": "send progress",
+  "command": "mail queue",
   "correlation_id": "<uuid>",
   "ok": true,
   "final": true,
@@ -992,6 +998,15 @@ success or failure, to standard error:
   [posted on #621](https://github.com/epiphany40223/parishkit/issues/621#issuecomment-6024219079),
   pending Administrator confirmation). Every later change of meaning needs
   `pk-admin/2`, except where an entry here records otherwise.
+- A documented exception: the census commands print the review decision
+  stored as `approved` as `accepted`, and `census review` takes `--decision
+  accepted` in its place, with no alias
+  ([decision 7](../review-pipeline/spec.md#decisions),
+  [#1755](https://github.com/epiphany40223/parishkit/issues/1755); see
+  [reports and exports](#reports-and-exports)). This is the one enumeration
+  given in the pipeline's words rather than its stored value, and it stayed
+  on `pk-admin/1`, with a changelog entry, because its only readers are
+  Administrator-run assistants.
 - A documented exception: `delivery list --sort` changed meaning in #931
   (the Family DUID token `recipient` became `duid`, `name` was added, and
   the default moved from `-created` to `-changed`) and stayed on
@@ -1001,7 +1016,17 @@ success or failure, to standard error:
   addresses, aliases or redirects
   ([#864](https://github.com/epiphany40223/parishkit/issues/864)). The
   command follows the page it mirrors, so a version bump would only carry
-  a legacy form the Administrator declined.
+  a legacy form the Administrator declined. The same holds for `delivery
+  list`'s filters in
+  [#1562](https://github.com/epiphany40223/parishkit/issues/1562):
+  `--search` became `--recipient` (which also takes an email address) and
+  stayed on `pk-admin/1`. So did `send progress`, which became `mail queue`
+  in the same issue, with no alias: its document keeps `campaign_id`,
+  `mode`, `paused`, `upcoming` and `send` unchanged and adds the queue's
+  counts, with a changelog entry.
+- A documented exception: the `content` commands' state value `custom`
+  was renamed `edited` (#1404) and stayed on `pk-admin/1`, with a guide
+  changelog entry, for the same reasons as the #931 exception above.
 - Output never contains credentials, session secrets or digests, Family
   access tokens, cipher material or exception text. Family-level personal data
   follows [personal data on the command line](#personal-data-on-the-command-line).
@@ -1030,7 +1055,7 @@ inside the command session's 60-minute idle limit. A watch stops when:
 - the process receives SIGINT (exit 7, `watch_interrupted`, with the last
   state and no traceback). `docker exec` forwards no signal, so the host
   wrapper starts a watch with a random token in its environment
-  (`PK_ADMIN_RUN`), and on INT, TERM or HUP sends SIGINT, through a second
+  (`PK_ADMIN_RUN`), and on INT, QUIT, TERM or HUP sends SIGINT, through a second
   `docker compose exec`, to the container process whose environment holds
   that token. It starts that stop before anything else, reports its
   failure (waiting at most 10 seconds), and, after INT only, waits at most
@@ -1039,7 +1064,7 @@ inside the command session's 60-minute idle limit. A watch stops when:
   client and the stop command run in their own sessions (`setsid -w`, where
   it works), so the terminal's SIGINT, on which `docker compose` exits at
   once, cannot cut that document or a second Ctrl-C the stop off. It then
-  stops its own processes and exits 130, 143 or 129
+  stops its own processes and exits 130, 131, 143 or 129
   ([#598](https://github.com/epiphany40223/parishkit/issues/598)). Only a
   watch, a passive read, is signalled; any other interrupted command runs
   to its end in the container, so a write never becomes an unknown outcome;
@@ -1071,11 +1096,14 @@ On failure `ok` is false and `error` holds `code`, the same user-facing
 `message` the page would show (never exception text or paths), the request key
 or receipt when one exists.
 Field errors reuse the closed `web.contracts.ErrorCode` values with
-server-owned field identifiers.
+server-owned field identifiers. A command that answers with one of its
+page's own refusals may add `reason`, the page's closed reason code (the
+[Update ParishSoft commands](#update-parishsoft-commands) do), and takes the
+exit code it gives that refusal before the table below applies.
 
 Exceptions map in this order, and the first match wins. Order matters:
-`StartupBusy` subclasses `ConfigError`, and `FreshAuthenticationRequired` and
-`UserFacingDenied` subclass `PermissionError`.
+`StartupBusy` subclasses `ConfigError`, and `UserFacingDenied` subclasses
+`PermissionError`.
 
 | Exception | Exit |
 | --- | --- |
@@ -1084,8 +1112,8 @@ Exceptions map in this order, and the first match wins. Order matters:
 | Usage errors, other `ConfigError` raised during admission, credential receipt mismatch | 2 |
 | Confirmation declined, or end of input at the prompt | 4 |
 | Automation session missing, ended, expired or revoked, a host mismatch, a command session ended by a role change, or pairing not finished, including `UserFacingDenied` for an ended session | 5 |
-| `PermissionError` (including `FreshAuthenticationRequired`), `ValueError`, `StaleRecordError`, other `ConfigError` raised by a domain function, and a database guard's refusal (SQLSTATE class 23, 42501 or P0001) that its command does not map otherwise, as `denied` | 1 |
-| `admin_reads.NotAvailable` (an unknown task or campaign, or no current campaign), and `ObjectDoesNotExist` from a command that changes nothing, as `not_available`; a bare `LookupError` or `KeyError` is a bug (`internal`) | 1 |
+| `PermissionError`, `ValueError`, `StaleRecordError`, other `ConfigError` raised by a domain function, and a database guard's refusal (SQLSTATE class 23, 42501 or P0001) that its command does not map otherwise, as `denied` | 1 |
+| `admin_reads.NotAvailable` (an unknown task or campaign, no current campaign, or the first campaign can't be created now), and `ObjectDoesNotExist` from a command that changes nothing, as `not_available`; a bare `LookupError` or `KeyError` is a bug (`internal`) | 1 |
 | Any error after a durable commit (for example an export queued but its download failed), or an unexpected error in a state-changing command | 6 |
 | An unexpected error in a read | 3, with `internal`; retry at most once, then report it |
 
@@ -1151,8 +1179,7 @@ so a capability denial is a refusal after admission.
   the durable entry once the session's Administrator is known: `command`,
   the catalog name, in place of `route`, with `codes`, `fields` and
   `reason`. Its level follows the reason, as on the page: `denied` is
-  WARNING, except `FreshAuthenticationRequired`, which has reason
-  `fresh_authentication_required` and is INFO; `invalid`, `stale_version`
+  WARNING; `invalid`, `stale_version`
   and `not_available` are INFO unless their reason is a server-state one.
   The values are found as the page finds them. `reason` is the refusal's
   own closed reason (`web.refusals.reason_of`), else `unexpected_fields`
@@ -1220,9 +1247,15 @@ activity (`activity=True`) as a page action does.
 
 ### Fresh-gated actions from the command line
 
-On the page these actions need a Google sign-in within the last five minutes.
-From PR 5 on, a **full-scope, live automation session** stands in for that
-sign-in, with no browser step:
+The name is historical: before
+[#1547](https://github.com/epiphany40223/parishkit/issues/1547) these
+actions needed a Google sign-in within the last five minutes on the page.
+No Admin action checks a sign-in's age any more (see
+[identity and session security](../architecture/spec.md#identity-and-session-security)),
+so "fresh-gated" now simply means a privileged command, and the catalog's
+`fresh_gated` field, the `automation_fresh_gate` event and the `fresh_gated`
+notice keep their names for compatibility. A **full-scope, live automation
+session** runs these commands, with no browser step:
 
 - the delivery controls: pause (including the emergency pause), resume and
   closed-campaign resolution;
@@ -1233,12 +1266,15 @@ sign-in, with no browser step:
 - integration key replacement, finish switching and the backup key change
   (see [secret replacement](#secret-replacement));
 - the [System health](../admin-portal/spec.md#health-actions) actions
-  (ADM-13): take a backup now, clear a halted mail sender, accept a large
-  ParishSoft change once, and turn off debug logging. None of them is built
-  yet (ADM-13 PR 3 to PR 6), so PR 5's migration amended no ADM-13 guard,
-  and each action's SQL guard accepts `stewardship_automation_fresh_v1` from
-  the start (see
-  [shared rules for health actions](../admin-portal/spec.md#shared-rules-for-health-actions));
+  (ADM-13): take a backup now, accept a large ParishSoft change once, and
+  turn off debug logging. None of them was built before PR 5 (ADM-13 PR 3
+  to PR 6), so PR 5's migration amended no ADM-13 guard, and each action's
+  SQL guard accepts `stewardship_automation_fresh_v1` from the start (see
+  [shared rules for health actions](../admin-portal/spec.md#shared-rules-for-health-actions)).
+  Clearing a halted mail sender (ADM-13 PR 4a) came after the recent
+  sign-in requirement was removed
+  ([#1547](https://github.com/epiphany40223/parishkit/issues/1547)), so it
+  is not on this list: its guard needs only a live session;
 - the code and financial reads and files
   ([#547](https://github.com/epiphany40223/parishkit/issues/547)): creating
   a Family-directory, mail-merge, Family timeline or financial export,
@@ -1248,90 +1284,50 @@ sign-in, with no browser step:
   ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) part (a));
 - integration setting changes (PR 10's `integration confirm`, including
   removing an integration) and starting Testing cleanup (PR 12's `go-live
-  cleanup`)
+  start`)
   ([#547](https://github.com/epiphany40223/parishkit/issues/547)).
 
-The #547 actions have no SQL freshness check (only Python's `require_fresh`),
-except Testing cleanup, whose guard only requires the recorded instant to equal
-the live session's `authenticated_at`, which a command session's
-`require_fresh` returns; none needs an SQL change. Their commands stay
-functional with no extra hold, and keep the audit and notices below.
+In Python, `sign_in_instant` (in `accounts.sessions`) takes the caller. For a
+web caller it returns the admitted session's Google sign-in instant, whatever
+its age. For an automation caller it locks the automation session row
+(`FOR SHARE`), requires it live and `full`, records the
+[audit event and notice](#notifications), and returns the command session's
+`authenticated_at`, which the domain function writes into its record as the
+page writes its session's sign-in instant. A read-only or no-longer-live
+session is refused (`denied`). Each command reuses the service below its view,
+so it runs the view's check rather than skipping it.
 
-Since [#547](https://github.com/epiphany40223/parishkit/issues/547) Testing
-cleanup is fresh-gated on the page, and records that fresh instant; it is also
-irreversible and asks for an acknowledgement, and prompts like the other
-fresh-gated actions. The first design's per-action browser approval for
-cleanup, confirmation and withdrawal is removed.
-
-In Python, `require_fresh` takes the caller. For a web caller it is unchanged.
-Until PR 5 it refuses every automation caller outright. From PR 5, for an
-automation caller it locks the automation session row (`FOR SHARE`), requires
-it live and `full`, and returns the command session's `authenticated_at`,
-which the domain function writes into its record as the page writes the fresh
-instant. The call sites that accept automation are `campaign_family_test`,
-both in `delivery_control_commands`, both in `withdrawal_commands`, the Family
-portal maintenance switch, `confirmation_commands`, the `require_fresh`
-call in `confirmation_views` (in `_fresh_after_cleanup`), and the #547 sites:
-`directory_export_views.create`,
-`financial_export_views.create`, `integration_views.integration_settings`
-(previews, removals and confirmations of settings) and
-`go_live_commands.start_cleanup`. Each command reuses the service below its
-view, so it adapts the view's check rather than skipping it.
-
-The Production confirmation also requires, in Python, a sign-in after cleanup
-finished: `confirmation_commands` refuses when the fresh instant precedes the
-cleanup's `complete` event, and the confirmation view's
-`_fresh_after_cleanup` shows step-up guidance on the same comparison. For an
-automation caller both treat the post-cleanup requirement as met (the view's
-logic moves to the service layer in PR 12), matching the
-[SQL change](#sql-guards-that-accept-automation-sessions).
+Testing cleanup is also irreversible and asks for an acknowledgement, and
+prompts like the other fresh-gated actions. The Production confirmation needs
+only completed cleanup, not a sign-in after it. The first design's per-action
+browser approval for cleanup, confirmation and withdrawal is removed.
 
 ### SQL guards that accept automation sessions
 
-The page's fresh sign-in is also enforced in SQL. Each of these guards admits
-a row only when a live `stewardship_portal_session` for the actor has
-`authenticated_at` equal to the row's recorded instant **and** within the last
-five minutes:
-
-| Guard (baseline file) | Protects |
-| --- | --- |
-| `stewardship_delivery_control_guard_v1` (`delivery_control.sql`) | Pause, resume and resolution commands |
-| `stewardship_family_mail_test_guard_v1` (`family_mail_tests.sql`) | Chosen-Family test sends |
-| `stewardship_production_confirmation_guard_v1` (`production_confirmation.sql`) | The Production confirmation; it also requires the sign-in to follow cleanup's completion |
-| `stewardship_production_withdrawal_guard_v1` (`production_withdrawal.sql`) | Pre-start withdrawal |
-
-Each changes so that the five-minute clause becomes "within the last five
-minutes **or** `stewardship_automation_fresh_v1(login.id, actor)`", keeping
-every other clause (the live, unrevoked, unexpired session, 60-minute activity,
-equality with the recorded instant, the Administrator check). For the
-Production confirmation, the post-cleanup clause is likewise satisfied by an
-automation session instead of a sign-in after cleanup: the confirmation prompt
-and the [notices](#notifications) replace it, as decided.
-
-`stewardship_automation_fresh_v1(login uuid, actor uuid)`, a `SECURITY
-INVOKER` function, returns true only when a `stewardship_automation_login` row
-links that session to an automation session whose principal is `actor`, whose
-scope is `full`, which is [live](#session-records) (unrevoked, unexpired,
-principal an enabled Administrator, no later recovery), and whose
-`authenticated_at` equals the command session's. It is new, created by the
-first migration.
-
-These guards' other callers are unaffected: a browser session has no link row,
-so for it the predicate is exactly today's. The changes follow the
-[post-launch schema policy](../operations/spec.md#post-launch-schema-policy):
-a new forward migration whose frozen SQL file re-creates the four functions
-with `CREATE OR REPLACE`, copied verbatim from the edited baseline files, and
-ends with a `DO` block that raises unless each installed body contains the
-automation clause. Tests run each changed guard against both its old and new
-definition, proving the old refuses an automation command session and the new
-admits it while still refusing a read-only, revoked, expired or
-non-Administrator session.
-
-Nothing else needs a guard change. Testing cleanup's guard
-(`go_live.sql`) and the production cleanup checks (`production.sql`) compare
-the recorded instant with a live session's `authenticated_at` without a
-five-minute window, and the 60-minute activity checks throughout the schema
-are met by the command session.
+Each SQL guard for these actions admits a row only when a live
+`stewardship_portal_session` of the actor (unrevoked, unexpired, active in the
+last 60 minutes) has, where the guard binds one, `authenticated_at` equal to
+the row's recorded instant, whatever its age. When that session is a command
+session (it has a `stewardship_automation_login` row), its automation session
+must also be live and full scope (`stewardship_automation_fresh_v1(login,
+actor)`), so a read-only, revoked or expired automation session is refused in
+SQL as well as in Python. Before #1547 the guards instead required the
+instant to be within the last five minutes or that live full-scope
+automation session; frozen migration 0114
+(`stewardship_accounts.0027_no_sign_in_age`) re-created the thirteen guards
+without the age clause, under the
+[post-launch schema policy](../operations/spec.md#post-launch-schema-policy).
+The command-session rule holds in every one of them, restore decisions and
+staged setup credentials included. The secret request guards keep their
+own tie to the automation session (see [secret replacement](#secret-replacement)).
+Frozen migration 0123 (`stewardship_accounts.0028_sign_in_leftovers`,
+[#1550](https://github.com/epiphany40223/parishkit/issues/1550)) dropped
+`stewardship_automation_fresh_principal_v1(principal, instant)`, which no
+guard called after 0114, with its grants. It also made an Admin session's
+sign-in instant (`authenticated_at`) immutable: only the retired step-up
+sign-in moved it, and a new sign-in issues a new session. The recorded
+sign-in columns stay, as audit evidence that several guards still bind to
+the live session.
 
 ### Secret replacement
 
@@ -1339,51 +1335,103 @@ Integration key replacement and the backup encryption key change run from the
 command line (decision 15) through the same service functions, validation,
 sealing, confirmation and audit as the portal, and the same
 [credential installer protocol](../../../guides/stewardship-credential-installers.md),
-unchanged. The database and `require_fresh` side below is built (PR 5a);
-the commands and the wrapper's secret input come with PR 10 and are not
-built yet.
+unchanged. The database and `sign_in_instant` side below is built (PR 5a),
+and so are `integration key replace`, the backup key commands and the
+wrapper's secret input
+([#463](https://github.com/epiphany40223/parishkit/issues/463)).
 
-- **Reading a secret file.** `--secret-file <path>` first refuses a path that
-  is not a regular file (`test -f` and not `test -p`), so opening a FIFO
-  cannot block, then opens the file once (`exec 3<"$path"`), checks the open
-  descriptor, not the path (`stat -L /dev/fd/3`: a regular file owned by the
-  wrapper's account with no group or other permissions, 0600 or stricter),
-  and reads only descriptor 3, so the file cannot be swapped between the
-  check and the read. Any failed check exits 2. The value is never an
-  argument. The wrapper's `stat`, `base64` and `/dev/fd` usage is GNU and
-  Linux only, like the deployment host.
+- **Which commands.** The wrapper's `secret_row` table names, for each
+  command that takes a value it reads itself, the file option, the
+  standard input option, the line's tag and the page's limit:
+  `integration key replace` (`--secret-file`, `--secret-stdin`,
+  `pk-admin-secret/1`, 128 KiB), `integration backup-key challenge`
+  (`--public-key-file` only, `pk-admin-public-key/1`, 200 bytes) and
+  `integration backup-key preview` (`--code-file`, `--code-stdin`,
+  `pk-admin-proof/1`, 200 bytes; the page's field limit,
+  `backup_key.MAX_FIELD`). It accepts each option only for its command,
+  only once, and never with a `-` input: standard input then carries the
+  value. In the command line the container sees, `--X-file PATH` becomes
+  `--X-stdin`, so the path never reaches it either; `--public-key-stdin` is
+  the container's alone and refused from the operator. The rest of this
+  section says "key" for any of the three values; a piped value needs
+  `--yes` only for a command that prompts.
+- **Reading a secret file.** `--secret-file PATH` first refuses a path that
+  is a symbolic link or not a regular file (`test -L`, `test -f` and not
+  `test -p`), so opening a FIFO cannot block, then opens the file once
+  (`command exec 3<"$path"`, so a failed open is a refusal), checks the open
+  descriptor, not the path (`test -f /dev/fd/3` and `stat -L` of
+  `/dev/fd/3`: a regular file owned by the wrapper's account with no group
+  or other permissions, 0600 or stricter, and no larger than the page's
+  limit), and reads only descriptor 3, so the file read is the file
+  checked. Any failed check exits 2. The value is never an argument. POSIX
+  `sh` has no `O_NOFOLLOW`, so a symbolic link swapped in between the path
+  checks and the open is followed (what is read must still pass the
+  descriptor's checks), and a FIFO swapped in blocks the open; both need
+  write access to the key's directory, which the operator guide says to
+  keep private. The wrapper reads GNU `stat` on
+  the host and BSD `stat` on developers' machines, as it does for the
+  session directory.
 - **Reading standard input.** `--secret-stdin` from a terminal turns echo off
-  (restored by a `trap` on every exit path) and reads until Ctrl-D, so a
-  multi-line Google Workspace service-account JSON can be pasted. Piped
-  `--secret-stdin` requires `--yes`, checked before anything is read, because
-  the same input cannot also answer the prompt. The operator guide warns
-  against `echo <key> |` and other forms that leave the value in shell
-  history or the process list.
+  (refusing with exit 2 if it cannot; restored by the `EXIT` trap on every
+  exit path, an interruption's included) and reads until Ctrl-D, so a
+  multi-line Google Workspace service-account JSON can be pasted; echo comes
+  back on for the prompt's one answer line. At a terminal the wrapper never
+  returns before the key is read to its end: if the command ends first (a
+  refusal such as Staff's `denied`, an ended session, the web container or
+  docker missing), the operator may still be pasting, and a returned shell
+  would run the key as a command and keep it in its history. So the
+  wrapper stops the writer's key reader (`head`, by its recorded PID, so
+  without pgrep too), keeps echo off, says that the command ended and that
+  what is pasted is discarded, reads the terminal to Ctrl-D and discards
+  it, and only then exits. A paste longer than the limit is treated the
+  same way: the key reader stops one byte past it (`dd` counts what it
+  passed), so the rest of the paste is read to Ctrl-D with echo off and
+  discarded, and the command refuses the key. Reading the key before the command runs instead
+  would need somewhere to hold it while the command starts, and the value
+  never goes into a variable or a file, while the pipes cannot hold a
+  key of the page's limit. Canonical-mode terminals bound one input line
+  (1024 bytes on macOS, 4096 on Linux), so a Google Workspace JSON key,
+  whose `private_key` line is longer, is given with `--secret-file` on
+  macOS. Piped `--secret-stdin` requires
+  `--yes`, checked before anything is read, because the same input cannot
+  also answer the prompt. The operator guide warns against `echo <key> |`
+  and other forms that leave the value in shell history or the process list.
 - **Passing it in.** The wrapper sends the value as one line after the
-  preamble, `pk-admin-secret/1 <base64>`, by piping the source straight into
-  `base64 -w0` (never `$(cat …)` or a shell variable), with the size limit
-  enforced by `head -c` on the way in; the value passes only through pipes
-  and shell builtins, never through an argument or the environment. It runs
-  without `xtrace` and with `ulimit -c 0`; the command sets `RLIMIT_CORE` to 0
-  before reading. Both the wrapper (on the raw bytes) and the command (after
-  decoding) refuse a value over the page's size limit, and the command also
-  refuses a value containing NUL or empty after normalization. The operator
-  guide explains that Ctrl-D ends input at the start of a line (or twice
-  mid-line).
-- **Normalizing.** The command decodes the value and normalizes it exactly as
-  the page's `InlineCredentialForm` does: UTF-8 decoding, and surrounding
-  whitespace stripped for every target except `google_workspace`, whose JSON
-  is kept as given. It then validates and seals it in process as the
-  receiving view does and drops the plain value; it never writes it to
-  output, logs, exceptions or the audit trail.
-- **Commands.** `integration key replace --target parishsoft|google_workspace|slack`
-  (`google_workspace` holds the mail key; Slack's token and channel go
-  together, as on the page) runs the page's validation, prints the safe
-  fingerprint and what will change, prompts, and submits the sealed request.
+  preamble, `pk-admin-secret/1 <base64>`, by piping descriptor 3 through
+  `head -c` (the page's limit plus one byte) into `base64` and `tr -d '\n'`
+  (never `$(cat …)` or a shell variable), into the input FIFO the wrapper
+  already writes the preamble to; the value passes only through pipes, never
+  through an argument, the environment or a file (a FIFO holds no data on
+  disk), so the work directory never holds it. The wrapper runs without
+  `xtrace` and with its core size limit at 0 (`ulimit -c 0`, for `head` and
+  `base64` too), and the command sets `RLIMIT_CORE` to 0 before reading, as for
+  every command. The wrapper refuses a file over the limit; piped or typed
+  input is bounded by `head -c`, and the command refuses a decoded value over
+  the limit. A line that is not the wrapper's (missing, mistagged, not
+  base64, too long) is a usage error (exit 2) that names no part of it. The
+  operator guide explains that Ctrl-D ends input at the start of a line (or
+  twice mid-line).
+- **Normalizing.** The command decodes the value and normalizes it with the
+  page's own `InlineCredentialForm`: UTF-8 decoding (other bytes are
+  `invalid` at `key`), a NUL refused, and surrounding whitespace stripped
+  for every target except `google_workspace`, whose JSON is kept as given.
+  An empty key is `required` at `key` (on the page, blank keeps the current
+  key). A Google Workspace or Slack key then gets the page's format check
+  under the deployment profile (`admit_candidate`). It is sealed in process
+  as the receiving view does and the plain value dropped; it is never
+  written to output, logs, exceptions or the audit trail.
+- **Commands.** `integration key replace TARGET --expected-version V
+  (--secret-file PATH | --secret-stdin) [--changes JSON] [--yes]`
+  (`parishsoft`, `google_workspace` or `slack`; `google_workspace` holds the
+  mail key; Slack's token and channel go together, as on the page) runs the
+  page's validation, prints what will change (never the key or its
+  fingerprint), prompts, and submits the sealed request; see
+  [Integrations and credentials](#integrations-and-credentials).
   `integration key status --watch` follows staged, testing, installing and
   acknowledged progress, and `integration key finish-switching-preview`
-  and `integration key finish-switching` are the page's **Finish switching
-  to the new key** (`select_credential`), the confirmation prompting.
+  and `integration key finish-switching` are the settings page's **Finish
+  switching to the new key** confirmation (its review dialog, #1568), the
+  confirmation prompting.
   A failed or expired change leaves the old key installed, as on the
   page. Dismissing a finished change's line is `integration dismiss`; the
   status and Finish switching commands are described in
@@ -1397,72 +1445,66 @@ built yet.
   The paths are host paths the container cannot read: the wrapper reads the
   public key file and the proof code (file or terminal) exactly as it reads a
   secret, and sends each after the preamble on its own tagged base64 line,
-  `pk-admin-public-key/1 <base64>` and `pk-admin-proof/1 <base64>`.
-  Its configuration request has no SQL freshness check (only Python's
-  `require_fresh`), so it needs no SQL change.
+  `pk-admin-public-key/1 <base64>` and `pk-admin-proof/1 <base64>`. A
+  value over the page's 200-byte field limit, or not UTF-8, is `invalid` at
+  `public_key` or `code`, never quoting it.
+  Its configuration request records the session's sign-in instant through
+  `sign_in_instant`, as the page does, and needs no SQL change. See
+  [Integrations and credentials](#integrations-and-credentials) for each
+  step.
 - **Setup wizard credentials** stay with the one-time first-Admin wizard,
   which is a permanent exemption (see [setup wizard](#setup-wizard)); its
   offline counterpart is `pk-stewardship bootstrap`. As defense in depth,
   `setup_credentials` refuses an automation caller outright.
 
-Every call site that today requires a fresh browser sign-in for these flows
-(`integration_credentials`, `integration_selection_views`,
-`integration_views`, `backup_key`, and `admit_admin_action` for
-`SECRET_REPLACEMENT`) uses the caller-aware `require_fresh`, so a full-scope
-session stands in for the sign-in as for the other
+Every call site of these flows (`integration_credentials`,
+`integration_selection_views`, `integration_views`, `backup_key`, and
+`admit_admin_action` for `SECRET_REPLACEMENT`) records the sign-in instant
+through the caller-aware `sign_in_instant`, so a full-scope session runs them
+as it runs the other
 [fresh-gated actions](#fresh-gated-actions-from-the-command-line).
 `DESTRUCTIVE_CONFIRMATION` has no caller today; a later workflow that uses it
 decides in its own specification whether automation may.
 
-Two secret request guards check the sign-in instant recorded on the request,
-not a session row, and gain an automation clause in the
-[PR 5 migration](#schema-impact); every existing condition stays, including
-the setup-install branch and the rule about empty required consumers:
+A request made through an automation session records that session in
+`stewardship_secret_request.automation_session_id` (frozen migration 0125,
+[#1763](https://github.com/epiphany40223/parishkit/issues/1763)); a browser
+request records none (NULL, as every request made before 0125 does). Python
+sets it only for an automation caller, from the admitted caller, never from
+the request's input. Two secret request guards check it:
+`stewardship_sealed_intake_admission_v1` (on insert of a
+`stewardship_secret_request`) and `stewardship_secret_state_v2` (at the
+staged-to-testing step, run as the target's installer login
+`pk_stewardship_credential_<target>`). For a request that names a session,
+both call `stewardship_automation_request_live_v1(session, requested_by,
+instant)` (`SECURITY DEFINER`, granted to the web and the parishsoft,
+google_workspace and slack installer logins, never to PUBLIC): the session
+must be live, of full scope, the requester's and hold the request's recorded
+sign-in instant. So a request made through an automation session that was
+revoked or expired before the installer's test does not move to testing (it
+expires and is cleaned up), and that session can stage no other. Only the web
+or the schema owner may insert a request that names a session, and only those
+three targets take one; any other login or target is refused. A request that
+names no session gets no automation check, so a browser session's key
+replacements never depend on the automation sessions it approved. The
+recorded sign-in instant may be of any age (#1547). Intake checks a named
+session whatever the required consumers; staged-to-testing still refuses
+empty required consumers, and every other condition stays. A setup install's
+request names no session, so 0114's skip of the automation check for a live
+setup install is gone with the check it skipped. The named session cannot
+change after intake. Python's check (`sign_in_instant`) still requires the
+live full-scope session at submission, under the intake lock and again under
+the work lock.
 
-- `stewardship_sealed_intake_admission_v1`, on insert of a
-  `stewardship_secret_request` by the web login, refuses a recorded instant
-  older than five minutes by the clock. It also admits an instant for which
-  `stewardship_automation_fresh_principal_v1(requested_by, instant)` is true.
-- `stewardship_secret_state_v2`, at the staged-to-testing step, refuses a
-  recorded instant more than five minutes before the request's own
-  `created_at`. That step runs as the target's installer login
-  (`pk_stewardship_credential_<target>`), so it gains the same alternative
-  through the same function.
-
-`stewardship_automation_fresh_principal_v1(principal uuid, instant
-timestamptz) RETURNS boolean` is true only when a live, full-scope automation
-session of that principal has exactly that `authenticated_at`, and false
-otherwise: its body is a single `EXISTS` over `public.`-qualified tables and
-functions, it is not `STRICT`, and it never returns NULL. Because the
-installer logins can read no automation table, and their admission
-(`admit_installer_database` through `admit_grants`) refuses unlisted definer
-routines and extra grants, it is a `SECURITY DEFINER` function owned by the
-schema owner with a fixed `search_path` (`pg_catalog, public, pg_temp`).
-
-- **Privileges.** The migration revokes it from `PUBLIC` (`REVOKE ALL ON
-  FUNCTION … FROM PUBLIC`, as for `stewardship_family_login_v1`). `EXECUTE` is
-  not granted by the migration: it comes from `provision_grants` through
-  `runtime_functions(role, target)` in the `database-grants` step. PR 5 adds
-  the function to `runtime_functions(ServiceRole.WEB)` (otherwise web
-  admission, which checks the granted functions, would fail) and makes
-  `runtime_functions` target-aware so the three credential installer targets
-  (`parishsoft`, `google_workspace`, `slack`) each get it.
-  `admit_installer_database` passes
-  `functions=runtime_functions(ServiceRole.CREDENTIAL_INSTALLER, target)` to
-  `admit_grants`. Admission tests cover the web and each installer login. The
-  deploy order is the migration, then `database-grants`, then service start.
-- **Calling it.** PostgreSQL checks `EXECUTE` when an expression is
-  initialized, even in an untaken `CASE` branch, so each guard calls it in its
-  own statement reached only on the web or installer path that needs it, and
-  tests it as `NOT coalesce(stewardship_automation_fresh_principal_v1(…),
-  false)`.
-- **Revoked mid-flight.** If the session is revoked or expires between
-  submission and the installer's test, the staged-to-testing step is refused.
-  The installer logs a failure on each pass, retrying with its usual backoff
-  of at most 60 seconds, until the staging lifetime (one hour) expires; that
-  target's installer queue is blocked until then. The request then expires,
-  the old key stays installed, and `integration key status` and the page show
-  the change as expired.
+Before #1547 the guards refused an instant older than five minutes unless
+`stewardship_automation_fresh_principal_v1(requested_by, instant)` admitted a
+live full-scope automation session with that instant. Migration 0114 removed
+the age check and called `stewardship_automation_instant_ended_v1(requested_by,
+instant)` instead, which refused an instant once every full-scope automation
+session holding it had ended. Because an automation session records its
+approving browser's sign-in instant, that also refused the browser session's
+own requests until the Administrator signed in again; 0125 replaced it with
+the named session and dropped it.
 
 The setup guards (`stewardship_setup_install_binding_v1`,
 `stewardship_setup_secret_guard_v1`) do not change.
@@ -1510,7 +1552,8 @@ Administrator who is now Staff) is `denied` with no prompt, never
 `invalid`, `stale_version` or `not_available`, and learns nothing of the
 state the prompt would describe. The capability is the action's own, so a
 command Staff may run (`export financial`, `export directory`, `export
-postal`, `export family-timeline`, `census resolve`, `followup bulk`) still prompts Staff;
+postal`, `export family-timeline`, `followup bulk`,
+`followup roster-bulk`) still prompts Staff;
 the action then admits again as its page's post does.
 
 ### Audit attribution
@@ -1534,22 +1577,23 @@ new context keys:
   invocation's correlation ID, and context `outcome` only. Because the session
   row is kept, this event identifies the channel, label and approver
   permanently.
-- **Fresh gates.** When an automation session stands in for a fresh
-  sign-in (from PR 5b), the state-changing command records one
+- **Fresh gates.** When an automation session runs a
+  [fresh-gated (privileged) action](#fresh-gated-actions-from-the-command-line)
+  (from PR 5b), the state-changing command records one
   `automation_fresh_gate` event (the Administrator as actor, the automation
   session as subject, context `outcome` only) and its dashboard notice
   (`fresh_gated`, or `irreversible` with the `automation_irreversible`
   incident for the Production confirmation and pre-start withdrawal), in
-  the action's own transaction, so an action whose fresh sign-in an
-  automation session supplied is told apart from one a browser supplied. A
-  read, a preview or a page's passive check (`require_fresh(...,
-  record=False)`) records neither. One per invocation and kind: a notice of
+  the action's own transaction, so a privileged action an automation session
+  ran is told apart from one a browser ran. A read, a preview or a passive
+  check (`sign_in_instant(..., record=False)`) records neither. One per invocation and kind: a notice of
   the same kind for the session and the invocation's correlation ID already
   recorded suppresses a second, so an irreversible gate after a fresh-gated
-  one still records its own notice and incident. Testing cleanup's fresh
-  gate (#547, in `go_live_commands.start_cleanup`) is not marked
+  one still records its own notice and incident. Testing cleanup's gate
+  (#547, in `go_live_commands.start_cleanup`) is not marked
   irreversible, so it records `fresh_gated`; its `irreversible` notice and
-  incident are recorded by the cleanup command itself (PR 12).
+  incident are recorded by the cleanup command itself (`go-live start`'s
+  `record` hook, in the same transaction, PR 12).
 - **Read commands** record exactly the view events the page records (for
   example `delivery_viewed`, `system_logs_viewed`), and
   no others.
@@ -1660,7 +1704,7 @@ host_digest)` is the only command-line constructor; it performs the
 [command session](#command-sessions) admission. It is called only from
 `admin_cli`, which a test enforces. It never rotates and never touches CSRF.
 
-`principal`, `authenticated_admin`, `require_fresh`,
+`principal`, `authenticated_admin`, `sign_in_instant`,
 `admit_admin_action` and the domain command functions take the caller, and
 every existing check stays in them. Views keep form parsing and rendering
 only; command modules keep every rule.
@@ -1671,7 +1715,7 @@ Logic that lives in views moves to service modules in the PR that first needs
 it, in its own commit, with existing view tests unchanged except for call
 signatures:
 
-- **PR 1:** `sessions.authenticated_admin`, `require_fresh`,
+- **PR 1:** `sessions.authenticated_admin`, `sign_in_instant`,
   `privileged_actions.admit_admin_action` and `_actor`,
   `admin_editing.principal`.
 - **PR 3a:** the home summary's caller use (`admin_dashboard.observe`);
@@ -1687,10 +1731,10 @@ signatures:
 - **PR 4:** the schedule preview and confirm from `schedule_views._preview`
   and its POST handling; configuration request status from
   `ministry_views.configuration_request`.
-- **PR 5:** the automation branch of `require_fresh` at every call site listed
+- **PR 5:** the automation branch of `sign_in_instant` at every call site listed
   under [fresh-gated actions](#fresh-gated-actions-from-the-command-line) and
   [secret replacement](#secret-replacement), including the post-cleanup check
-  in `confirmation_commands`.
+  in `confirmation_commands` (removed by #1547).
 - **PR 6a:** the refresh request and the page's read from `refresh_views`
   (`request_manual_refresh`, `read_refresh_page`).
 - **PR 6b:** the sample test page's list as `campaign_mail.recent_tests`.
@@ -1699,7 +1743,7 @@ signatures:
   read, `send controls`, moved the page's status into a request-free
   `delivery_control_commands.controls`, which the page now calls. The
   previews and `confirm` already took the caller through `principal` and
-  `require_fresh`, so the controls needed only `confirm`'s optional
+  `sign_in_instant`, so the controls needed only `confirm`'s optional
   `record` hook, which the page does not pass. The
   maintenance switch (PR 7a) needed none: `family_maintenance.current_state`
   and `set_closed` were already request-free, and the command adds the
@@ -1712,7 +1756,8 @@ signatures:
   read with its stored file's receipt (`export_services.export_state`).
 - **PR 8c to 8h:** report reads and the Family-level exports from the
   report and export views; for `digest list`, the Emailed reports page's
-  lists as `emailed_views.listing`. `report source-form` needed none: the
+  lists as `emailed_views.listing` (both replaced by `report-email` in
+  #1786). `report source-form` needed none: the
   page's admission and `blocked_families` were already request-free.
 - **PR 9a:** `delivery_views.preparation_retry` and
   `export_views.retry_cleanup_command`, with the delivery views' admission and
@@ -1746,6 +1791,11 @@ signatures:
   pages' profile, catalog and campaign-target reads were already
   request-free; `branding show` moved the logo page's current-logo query
   into `branding_slots.current_assets`, which the page now calls.
+  `branding preview` moved the upload's staging (after the page's field
+  checks) into `branding_views.stage_upload`, which the page now calls,
+  and adds a `record` callback to `branding_staging.stage_branding`;
+  a staged upload's owning sign-in is `branding_staging.sign_in`, which
+  is the request's own portal session on the web, unchanged (#1865).
   `parish preview` moved the parish page's review (after form validation)
   into `parish_views.review_change`, which the page's Review now calls.
   `integration list`, `integration show` and `integration status` moved the
@@ -1762,7 +1812,14 @@ signatures:
   its transaction. `integration key status` and the Finish switching
   commands needed none: they call the pages' own `secret_request_status`,
   `_selectable`, `_selection` and `_changes` (which now also names each
-  setting's stored field).
+  setting's stored field). `integration key replace` moved the Save with a
+  key's request-free tail into `integration_views.sign_key_intent` (the key
+  field's signed intent), `key_intent` and `stage_key`, which the page now
+  calls; `save_credential` takes an `attach` callback for the selection
+  request's transaction and checks the caller's session first in its own
+  transaction without recording it; `admit_admin_action` and
+  `sealed_secret_request` take the caller's authority runtime (the web's
+  when left out).
   `workgroup preview` moved the No-reminders WorkGroup page's review into
   `reminder_workgroup_views.review_change`, which the page's Review now
   calls (`workgroup show` needed none: the page's campaign check and
@@ -1772,6 +1829,10 @@ signatures:
   live and Ministries reviews, each returning the review instead of a
   response), and `campaign confirm` its Apply routing into
   `campaign_views.confirm_route`; the page now calls both.
+  `campaign create-preview` and `campaign create` (#1899) needed none:
+  Create the campaign's admission, form, Review and Apply recheck
+  (`campaign_create_views._admitted`, `creation_form`, `creation_review`,
+  `_scope`) were already request-free.
   `campaign shares-preview` moved Share options' review (after the page's
   version and formset checks) into `option_editing.review_options`, which
   the page's Review now calls; `campaign shares-confirm` needed none, as
@@ -1782,12 +1843,28 @@ signatures:
   Chairperson actions). The event acknowledgements moved each view's
   transaction into a request-free `acknowledge_now` in
   `security_event_views` and `critical_event_views`, which the views now
-  call.
-- **PR 12:** `go_live_commands` and `go_live_views.testing_families`, cleanup
-  retry and cancel, the link preparation controls in `activation_views.links`,
-  `confirmation_views._fresh_after_cleanup`, `confirmation_commands`, the
-  Production preparation retry (`confirmation_progress.retry`) and
-  `withdrawal_commands`.
+  call. PR 11b's roster tick and information follow-up needed none: the
+  commands call the pages' own admissions and services
+  (`set_roster_entered`, `mark_many_entered`, `update_information`) and
+  the information page's request-free `information_page` and
+  `information_history`. PR 11c's `followup export` moved the queue
+  download's read and writer into a request-free
+  `ministry_followup_exports.export_body` and its file name into
+  `export_file_name`, which the page's view now calls.
+- **PR 12:** the Go live page's actions. The three review dialogs' Apply
+  moved into request-free functions the views now call and the commands
+  call too: `go_live_views.start_reviewed` (Start go-live, whose
+  session-kept check and its failure memo stay with the view as
+  callbacks), `go_live_confirm_views.apply_review` (Confirm Production) and
+  `confirmation_views.review_cancel` and `apply_cancel` (Cancel go-live).
+  Their owners (`go_live_commands.start_cleanup`,
+  `confirmation_commands.confirm`, `withdrawal_commands.withdraw`) gained a
+  `record` hook for the command's own event. The Prepare step's controls
+  (`go_live_prepare_views._retry`, `_again`, `_stop`), Check's retry of a
+  failed stop (`go_live_views._retry_stop`) and the Production preparation
+  retry (`confirmation_progress.retry_shown`, which now takes a caller)
+  already took one. The Testing submissions list reads
+  `cleanup_preview.cleanup_families`, as its page does.
 
 ### Read models
 
@@ -1814,10 +1891,10 @@ From PR 3, where the route-parity test lands:
   and tests through both paths, or with an exemption recorded in the
   [action inventory](#action-inventory); this includes new actions on an
   existing page, not only new URL names;
-- a new fresh-gated action states whether automation may run it; if so, it
-  uses `require_fresh` and its SQL guard uses
-  `stewardship_automation_fresh_v1`; if not, its specification says how it
-  refuses an automation caller;
+- a new privileged (fresh-gated) action states whether automation may run
+  it; if so, it records the sign-in instant through `sign_in_instant` and its
+  SQL guard binds the row to a live session of the actor; if not, its
+  specification says how it refuses an automation caller;
 - the route-parity test lists every `admin:` URL name and fails when one has
   neither a command nor an exemption in `admin_parity.LEDGER`, or when an
   entry names no route. Exemptions are **permanent** (web-only
@@ -1898,10 +1975,10 @@ checks that every other ledger route is named here.
 | `login`, `logout`, `session_status`, `session_renew` | Permanent: browser sign-in and session chrome; `login start`, `login wait`, `logout`, `whoami`, `sessions` and `commands` cover the automation side (PR 2) |
 | `signed_in_sessions` (list and Sign out, new, #953) | Permanent: browser session chrome; the operator's offline recovery signs everyone out |
 | `maintenance` | Permanent: the status page the access gate shows |
-| `campaign_step_continue` ([#1404](https://github.com/epiphany40223/parishkit/issues/1404)) | Permanent: the browser [Campaign setup stepper](../admin-portal/spec.md#create-the-campaign)'s own progress (a step kept as is, then the next step page); the command line applies settings directly and has no stepper |
-| `held_emails` ([#757](https://github.com/epiphany40223/parishkit/issues/757)) | Permanent: held-email decisions need a fresh Google sign-in in the browser, which the decision guard checks (migration 0017) |
+| `campaign_step_continue` ([#1404](https://github.com/epiphany40223/parishkit/issues/1404)) | Permanent: the browser [Campaign setup stepper](../admin-portal/spec.md#create-the-campaign)'s own progress (a step kept as is, then the next step page, or one Pages and emails item kept as is, then Pages and emails, #1404 PR 6b); the command line applies settings directly and has no stepper |
+| `held_emails` ([#757](https://github.com/epiphany40223/parishkit/issues/757)) | Permanent: held-email decisions belong to a restore review (the `maintenance` page, also web-only) and its follow-up after release, each with a preview, a required note and an exact-count check; a command for them would be a new feature ([#1762](https://github.com/epiphany40223/parishkit/issues/1762)) |
 | `automation_access`, `automation_approval`, `automation_sessions` (revoke) and `automation_notices` (acknowledgement) (new) | Permanent: these pages are the human side of the interface (PR 2); `sessions` takes the page's filter and sort for one's own sessions (#621) |
-| `response_dashboard` ([#517](https://github.com/epiphany40223/parishkit/issues/517)) | `report responses` with counts (PR 8c) |
+| `response_dashboard` ([#517](https://github.com/epiphany40223/parishkit/issues/517)), `response_dashboard_status` (the figures status the open page polls, [#1586](https://github.com/epiphany40223/parishkit/issues/1586)) | `report responses` with counts (PR 8c), and `report participation` for the statistics and daily table it absorbed from Participation ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)) |
 
 The inventory's `status presence` is folded into `status` as its
 `presence.count`, because a word cannot be both a command and an area in
@@ -1916,6 +1993,17 @@ that background work holds while mail is sent, is `stale_version`. Its
 `version` is the applied configuration's digest, the base a schedule change
 (PR 4) is previewed against. Its `series` lists the campaign's remembered
 reminder series, each with its rule and the reminders it holds.
+
+Each schedule's `resolved` (at most five UTC send times, with `more` when
+there are others) lists its first sends from the campaign's start, as does
+each side of `schedule preview`. Once the mail review adopts the shared
+[schedule preview](../ui-conventions/spec.md#schedule-previews)
+([#1129](https://github.com/epiphany40223/parishkit/issues/1129), ADM-04
+slice 7c), both commands list the next sends after the database's now
+instead, through the one from-now helper beside `preview_slots` that the
+page uses, so the page, `schedule show` and `schedule preview` agree. The
+keys and their shape stay; a passed send is no longer listed. The command
+line has no browser zone, so its sends are not grouped by day.
 
 ### Source refresh
 
@@ -1953,19 +2041,19 @@ none.
 
 | URL names | Command or exemption |
 | --- | --- |
-| `schedule_settings`, `schedule_new`, `schedule_edit`, `schedule_delete` | `schedule show` (PR 3a); `schedule preview`, `schedule confirm` (PR 4): a change document adds, changes or deletes the same schedules. Its `series` entries (#469) edit or delete a remembered reminder series; Edit scheduled email offers the same "this and following" and "the whole series" for a time or email change, while a new rule or deleting a series is the command line's alone for now |
+| `schedule_settings`, `schedule_new`, `schedule_edit`, `schedule_delete`, `schedule_suggested` | `schedule show` (PR 3a); `schedule preview`, `schedule confirm` (PR 4): a change document adds, changes or deletes the same schedules (the campaign wizard's suggested schedules, #1404 PR 6a, are three ordinary schedules a change document adds). Its `series` entries (#469) edit or delete a remembered reminder series; Edit scheduled email offers the same "this and following" and "the whole series" for a time or email change, while a new rule or deleting a series is the command line's alone for now |
 | `schedule_calendar` | `schedule show` (PR 3a): the read-only Campaign calendar (#469) draws the saved schedules and campaign dates that `schedule show` lists |
 | `campaign_end_date_check` | `schedule preview` (PR 4): Campaign settings' no-save live check of a live campaign's end date answers what a preview of that end date would refuse |
 | `configuration_request` | `config request show --watch` (PR 4); `config request cancel` ([#944](https://github.com/epiphany40223/parishkit/pull/944)), an operator recovery with no page button |
-| `campaign_settings`, `campaign_create`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), Campaign settings' read, Review and Apply, a live campaign's Ministries included (#1119); `campaign create-preview`, `campaign create` and `campaign clone` (PR 10); until #145, creating or copying a campaign is refused, except the first campaign through [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142) ([navigation rule 10](../ui-conventions/spec.md#navigation-rules)): commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, will get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
+| `campaign_settings`, `campaign_create`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), Campaign settings' read, Review and Apply, a live campaign's Ministries included (#1119); `campaign create-preview`, `campaign create` ([#1899](https://github.com/epiphany40223/parishkit/issues/1899)), [Create the campaign](../admin-portal/spec.md#create-the-campaign)'s Review and Apply for the first campaign (#142); `campaign_clone` is deferred on #145: until then creating or copying a campaign is refused, except the first campaign ([navigation rule 10](../ui-conventions/spec.md#navigation-rules)), and Copy campaign refuses every request before reading anything, so a command could only repeat that refusal. Commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
 | `share_settings` | `campaign shares`, `campaign shares-preview`, `campaign shares-confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), Share options' read, Review and Apply |
 | `reminder_workgroup` (its review and apply, #750) | `workgroup show`, `workgroup preview`, `workgroup confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
 | `content_catalog`, `content_edit`, `content_revision`, `content_delete`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content history`, `content preview` (the Delete and the plain-text preview), `content confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the editor's Review and Apply (PR 10) |
 | `parish_settings`, `ministries` | `parish show`, `parish preview`, `parish confirm`, `ministries list` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); Ministries changes nothing since [#1267](https://github.com/epiphany40223/parishkit/issues/1267) |
 | `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list`, `files delete`, `files rename` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
 | `artwork_settings` (its upload and removal reviews, #750) | `artwork show`, `artwork remove-preview`, `artwork remove` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); uploads are `artwork_upload`'s, below |
-| `branding_settings`: **Apply** in its review dialog (#750) | `branding show` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); applying logos comes with the uploads below: staged logos belong to the sign-in that uploaded them, and each `pk-admin` run is its own sign-in, so a command cannot apply logos staged in the browser |
-| `hosted_file_upload`, `artwork_upload`, `branding_settings` uploads | Pending: file uploads; a later PR may accept `--file` |
+| `branding_settings` (its upload, review dialog and **Apply**, #750) | `branding show`, `branding preview`, `branding confirm` ([#1865](https://github.com/epiphany40223/parishkit/issues/1865)); the preview takes the image on standard input |
+| `hosted_file_upload`, `artwork_upload` | Pending: file uploads; a later PR may accept the file on standard input, as `branding preview` does |
 | `branding_asset` | Permanent: image previews and bytes for the browser |
 
 Every configuration change still becomes a configuration request that the
@@ -1974,8 +2062,8 @@ the page's request status does. See
 [campaign configuration](../admin-portal/spec.md#campaign-configuration).
 
 `schedule preview` and `schedule confirm` take `--campaign` as
-`schedule show` does. The Dates and mail schedules page asks for no fresh sign-in and
-no typed value, so neither command is fresh-gated or prompts, and neither
+`schedule show` does. The Dates and mail schedules page is not a privileged
+action and asks for no typed value, so neither command is fresh-gated or prompts, and neither
 waits for PR 5. `schedule preview` admits as the page's form post does,
 recording activity, so it needs a full-scope session although it changes
 nothing. It takes `--expected-version` (the `version` of `schedule show`,
@@ -1987,9 +2075,12 @@ values, as a schedule saves them; when the same document changes
 `window.timezone`, they are in the proposed zone, and a saved schedule the
 document leaves alone keeps its wall-clock time in that zone. A saved schedule named by `id` keeps what the
 document leaves out, `delete` removes it, an entry without `id` adds one,
-and saved schedules it does not name stay unchanged; a daily digest's
-`comparison` is the page's Include Compared with past campaigns checkbox,
-which `schedule show` lists too. A `repeat` entry
+and saved schedules it does not name stay unchanged. Report emails are not
+schedules of these commands: `pk-admin report-email` reviews and applies
+them, including a report's `comparison` block and a single send's `skip`
+([#1786](https://github.com/epiphany40223/parishkit/issues/1786),
+[report emails command line](../report-emails/spec.md#command-line)), and
+`schedule show` and `schedule preview` no longer list them. A `repeat` entry
 ([#469](https://github.com/epiphany40223/parishkit/issues/469)) takes a
 repeat rule, a `time` and a `template_version` and adds one ordinary
 reminder per date the rule gives, expanded by the server's copy of the
@@ -2126,7 +2217,7 @@ lists the fields.
 are the page's row actions (#947), through its own
 `hosted_file_uses.delete_many` and `rename`, admitted as the page's POST
 (`CONFIGURE`, recording activity), so they need a full-scope session. The
-page asks for no recent sign-in, so neither is fresh-gated and neither
+page's action is not privileged, so neither is fresh-gated and neither
 creates an automation notice. `files delete` takes one to 100 distinct
 IDs, refuses before its prompt any that is in use (the page offers Delete
 only for unused files), prompts because a deletion cannot be undone, and
@@ -2151,7 +2242,7 @@ record none. Both read the current campaign, as the pages do; none is
 `not_available`. `content list` prints the applied configuration's
 `version` (the base a content change is previewed against) and, in the
 page's order, each Family page's slot, name, text state (`empty`,
-`default` or `custom`) and re-save notice, and each mail type's emails
+`default` or `edited`) and re-save notice, and each mail type's emails
 with their id, subject, excerpt, the schedules that send them, whether
 they can be deleted, text state and re-save notice. As on the page,
 background work holding the campaign is `stale_version`. `content
@@ -2212,8 +2303,8 @@ the page's work transaction, reads the page's pinned state and campaign
 check (`content_views._content_campaign`), checks the version (another is
 `stale_version`) and builds the page's own removal
 (`content_delete_views.review_deletion`). As on the page, `--delete`
-names one or more `content list` email revisions (invitation, reminder or
-Admin digest), each once; an email that cannot be deleted (the
+names one or more `content list` email revisions (invitation or
+reminder), each once; an email that cannot be deleted (the
 confirmation email, one a schedule still sends, an unknown id), a
 repeated id, or a configuration the removal would make invalid is
 `invalid` at `delete` with the page's words; background work holding the
@@ -2231,8 +2322,8 @@ configuration request as the page's Delete does, through
 campaign and scope (`campaign_views._scope`), with
 `admin_cmd_content_confirm` in the request's own transaction; a repeat
 returns the original request. Both need a full-scope session; neither is
-fresh-gated nor prompts, as the page asks for no recent sign-in and the
-reviewed token stands in for its dialog. Each checks the role first
+fresh-gated nor prompts, as the page's action is not privileged and the
+reviewed token replaces its dialog. Each checks the role first
 (#1341). The editor's own Review and Apply join these verbs in a later
 slice. The two modes, `--delete` repeated for several emails, no prompt,
 the `deleting` and `plain_text` fields, the plain-text mode needing a
@@ -2257,11 +2348,63 @@ page's salt (bound to the current campaign and the slot, so another slot's
 token is `invalid`) and removal scope, with `admin_cmd_artwork_remove` in
 the request's own transaction; a repeat returns the original request.
 Both need a full-scope session, as the page's requests record activity;
-neither is fresh-gated nor prompts, as the page asks for no recent sign-in
+neither is fresh-gated nor prompts, as the page's action is not privileged
 and shows no confirmation dialog: the reviewed token is the confirmation,
 and a removal deletes nothing (the image stays in the activated
 configurations' history). The command shapes are defaults, pending
 Administrator confirmation.
+
+`branding preview - [--size SIZE] --expected-version …` and `branding
+confirm --bundle ID --token …` are Parish logos' upload with its review
+dialog and the dialog's **Apply** (#750, #1062,
+[#1865](https://github.com/epiphany40223/parishkit/issues/1865)), as
+`parish preview` and `parish confirm` are Parish settings' Review and
+Apply. The preview reads one image from standard input after the preamble
+(at most the page's 5 MB; the wrapper forwards it for the `-` input, as
+for `history preview -`) and admits as the page's upload does
+(`CONFIGURE`, recording activity). It binds the image to the page's own
+form (`branding_views.LogoUploadForm`): without `--size` it is Basic, one
+image made into all four sizes; `--size large|menu|icon|favicon` is
+Advanced for that one size, the others keeping their current images, as
+on the page (one size per run, as standard input carries one file). It
+stages the sizes through the page's own `branding_views.stage_upload`
+(`branding_staging.stage_branding`), with `admin_cmd_branding_preview` in
+the transaction that makes them ready (so the event means the logos were
+staged; a later review refusal is logged as the command's refusal), then, as the page's dialog does,
+reads the staged upload before the configuration and builds the page's own
+review (`branding_views._review`). The form's refusals (an image too
+large, unsupported or animated, a size outside its rules) are `invalid`
+at `branding.logo` or `branding.<size>` with the page's words; another
+version is `stale_version`, before anything is staged; settings that
+changed between staging and review are `stale_version` too; media storage
+that cannot be used is `unavailable`. A refusal after staging leaves only
+an unapplied upload, which expires within a day as the page's do, so a
+new preview is always safe. It prints `version`, `bundle` (the staged
+upload), `mode` (`basic` or `advanced`), `logos` (each size in the page's
+order with its label, the staged image's stored facts and `changed`,
+whether this upload changes it) and `preview.token`, the page's own signed
+binding (its salt, bound to the bundle); never image bytes. `branding
+confirm` records the configuration request as the dialog's Apply does,
+through `admin_editing.confirm_intent` with the page's salt and staged-upload
+scope (`branding_views._scope`), with `admin_cmd_branding_confirm` in the
+request's own transaction; a repeat returns the original request. Another
+bundle's token is `invalid`. Staged logos belong to the sign-in that
+uploaded them (`branding_staging.sign_in`, recorded as the bundle's
+`session_id`): in the browser that is the portal session, and on the
+command line it is the automation session, not the short-lived command
+session of one run (see [Command sessions](#command-sessions)), so
+`branding confirm` applies what the same automation session's `branding
+preview` staged for the upload's whole day, even after the maintenance
+task has removed the preview's command session. Logos staged in the browser or by another automation
+session, even the same Administrator's, are `not_available`, as the page
+refuses another sign-in's upload; expired ones are `stale_version`. Both
+need a full-scope session; neither is fresh-gated nor prompts, as the
+page's upload and Apply are not privileged and show no confirmation
+dialog: the reviewed token is the confirmation. The command shapes,
+`--size` and one size per run are defaults, pending Administrator
+confirmation. The
+[operator guide](../../../guides/stewardship-admin-automation.md#parish-logos)
+lists the fields.
 
 `workgroup show`, `workgroup preview (--name … | --clear)
 --expected-version …` and `workgroup confirm --token …` are the
@@ -2294,8 +2437,7 @@ records the configuration request as the page's Apply does, through
 `admin_editing.confirm_intent` with the page's salt and scope, with
 `admin_cmd_workgroup_confirm` in the request's own transaction; a repeat
 returns the original request. The preview and confirm need a full-scope
-session; none is fresh-gated or prompts, as the page asks for no recent
-sign-in and shows no confirmation dialog: the reviewed token is the
+session; none is fresh-gated or prompts, as the page's action is not privileged and shows no confirmation dialog: the reviewed token is the
 confirmation. A `--name` that is blank once trimmed is `invalid` before
 anything else (turning the exclusion off takes `--clear`), so an unset
 shell variable cannot silently clear it. Once the change is applied,
@@ -2349,11 +2491,50 @@ archived campaign as the page does), a Ministries token with the page's
 change; it adds `admin_cmd_campaign_confirm` in the request's own
 transaction, and a repeat returns the original request. The preview and
 confirm need a full-scope session; neither is fresh-gated or prompts, as
-the page asks for no recent sign-in and its Apply is the reviewed token.
+the page's action is not privileged and its Apply is the reviewed token.
 The inventory's placeholder `campaign ministries` folded into `campaign
 preview` when #1119 made the page one editor. The document shape and
 `kind` are defaults, pending Administrator confirmation. The
 [operator guide](../../../guides/stewardship-admin-automation.md#campaign-settings)
+lists the fields.
+
+`campaign create-preview --changes … --expected-version …` and `campaign
+create --token …` are [Create the campaign](../admin-portal/spec.md#create-the-campaign)'s
+Review and its review dialog's Apply (#1899): they add the deployment's
+first campaign, and nothing else, through the page's own pieces
+(`campaign_create_views._admitted`, `_scope`, `creation_form`,
+`creation_review` and `SALT`). Both are Administrators only (`CONFIGURE`)
+and need a full-scope session; neither is fresh-gated or prompts, as the
+page asks for no recent sign-in and its Apply is the reviewed token.
+`campaign create-preview` admits as the page's Review post does (recording
+activity) and, in the page's work transaction, checks the page's
+admission first: once any campaign exists, or while the system is not in
+Testing mode, no ParishSoft data is loaded or background campaign work
+holds the configuration, it is `not_available` (the page's 409 is no
+stale version: no newer version admits it).
+It then binds the change document (`{"campaign": {...}}`, `campaign
+preview`'s shape and field names) to the page's form. A field the
+document leaves out takes the value the page's form opens with (the
+parish's time zone, Census and Additional information ticked, the
+default Ministry leader roles, everything else blank), so the document
+must name at least the name and dates. The form's field errors are
+`invalid` at `campaign.<field>`, a candidate the configuration refuses
+is `invalid`, and another version is `stale_version`. It prints
+`version`, `settings` (every field as posted, in `campaign show`'s
+shape), `content` (the number of default pages and emails the campaign
+starts with) and `preview.token`, the page's own signed binding, so a
+token from either channel confirms on the other; it records nothing.
+`campaign create` records the configuration request as the dialog's
+Apply does, through `admin_editing.confirm_intent` with the page's salt,
+`_scope` (admission rechecked under the work lock; refused as
+`not_available`) and `first_campaign`; it adds `admin_cmd_campaign_create`
+in the request's own transaction, and a repeat returns the original
+request, even once the campaign exists, as on the page. It prints
+`created` and `request`; once the request is applied, `refresh start`
+loads the campaign's Families, as the page's status offers. The command
+names and the document shape are defaults, pending Administrator
+confirmation. The
+[operator guide](../../../guides/stewardship-admin-automation.md#create-the-campaign)
 lists the fields.
 
 `parish show`, `ministries list`, `branding show` and `campaign shares
@@ -2399,7 +2580,7 @@ whole); a version other than the applied one is `stale_version`.
 does, with `admin_cmd_parish_confirm` in the request's own transaction; a
 repeat returns the original request. Both need a full-scope session, as
 the page's posts record activity; neither is fresh-gated nor prompts, as
-the page asks for no recent sign-in. The command shapes are defaults,
+the page's action is not privileged. The command shapes are defaults,
 pending Administrator confirmation.
 
 `campaign shares-preview --expected-version … --changes … [--campaign ID]`
@@ -2429,7 +2610,7 @@ or an unknown campaign fails its signature as `invalid`, as the page's
 Apply does. `campaign shares-confirm` records the request
 with `admin_cmd_campaign_shares_confirm` in its own transaction, and a
 repeat returns the original request. Both need a full-scope session;
-neither is fresh-gated nor prompts, as the page asks for no recent sign-in
+neither is fresh-gated nor prompts, as the page's action is not privileged
 and its Apply is the reviewed token. The names, the explicit `delete` list
 and `--campaign` defaulting to the current campaign are defaults, pending
 Administrator confirmation.
@@ -2438,32 +2619,25 @@ Administrator confirmation.
 
 | URL names | Command or exemption |
 | --- | --- |
-| `go_live` | `go-live readiness` (PR 3b); `go-live preview` with the DNS check, `go-live cleanup --token …` (PR 12) |
-| `go_live_families` | `go-live families`, an export (PR 12) |
-| `go_live_cleanup` | `go-live cleanup-status --watch`, `go-live cleanup-retry`, `go-live cleanup-cancel` (PR 12) |
-| `go_live_links` | `go-live links`, `go-live links-status --watch`, `go-live links-retry`, `go-live links-cancel` (cancel or discard the preparation) (PR 12) |
-| `production_confirmation` | `go-live confirm-preview`, `go-live confirm --token …` (PR 12) |
-| `production_progress` | `go-live progress --watch` (PR 3b); the page's **Retry failed mail preparation** (PR 12) |
-| `production_withdrawal` | `go-live withdraw-preview --reason …`, `go-live withdraw --token …` (PR 12) |
+| `go_live` | `go-live readiness` (PR 3b); `go-live preview` (Check readiness and public web address: the DNS check, printing the start token) and `go-live start --token …` (Start go-live) (PR 12); `go-live retry` also retries a failed stop (Retry stopping go-live) |
+| `go_live_families` | `go-live families`, a streamed file (PR 12) |
+| `go_live_prepare` | `go-live status --watch` (the step's three boxes), `go-live retry` (a failed box's Retry, which retries the same task and changes no data), `go-live refresh-again` (Refresh and prepare again, which starts a new attempt) and `go-live stop` (Stop go-live) (PR 12) |
+| `go_live_confirm` | `go-live confirm-preview` (the Confirm Production dialog's review) and `go-live confirm --token …` (its Apply); its Stop go-live is `go-live stop` and its Refresh and prepare again `go-live refresh-again` (PR 12) |
+| `production_progress` | `go-live progress --watch` (PR 3b); `go-live retry` (mail preparation's **Retry**), and `go-live cancel-preview --reason …` and `go-live cancel --token …` (the Cancel go-live dialog's review and Apply) (PR 12) |
 
-Cleanup, cleanup cancel, link preparation discard, confirmation and withdrawal
-ask at the [prompt](#command-line-confirmation) unless `--yes` is given. See
+The rows follow the four-step
+[Go live page](../admin-portal/spec.md#go-live-page) of
+[#1585](https://github.com/epiphany40223/parishkit/issues/1585), which
+replaced the readiness, Testing cleanup, Family links, final confirmation and
+Cancel go-live pages; the cleanup and links commands planned for those pages
+retired with them. See
 [Production transition](../admin-portal/spec.md#production-transition).
-These steps matter again only for the next campaign. The go-live redesign in
-[#462](https://github.com/epiphany40223/parishkit/issues/462) changes them to
-match the [Go live page](../admin-portal/spec.md#go-live-page):
-`go-live readiness` and `go-live preview` as today (the preview runs the DNS
-check and prints the start token); `go-live start --token …` (Start
-go-live); `go-live status --watch` (the Preparing step); `go-live retry`
-(a failed stage's Retry, which retries the same task and changes no data);
-`go-live refresh-again` (Refresh and prepare again, which starts a new
-attempt); `go-live confirm-preview` and `go-live confirm --token …` (Confirm
-Production); and `go-live stop` (Stop go-live). Start, refresh-again,
-confirm and stop ask at the [prompt](#command-line-confirmation) unless
-`--yes` is given. The cleanup and links commands retire with their pages.
-The URL-name rows above change with the slices that rename the pages, since
-`test_admin_page_names` checks them against the code. PR 12 follows
-whichever flow is current.
+These steps matter again only for the next campaign. The command names
+follow the page's labels (`go-live cancel` for Cancel go-live, formerly
+withdraw); the URL-name rows change with the pages, since
+`test_admin_page_names` checks them against the code. PR 12
+([#1809](https://github.com/epiphany40223/parishkit/issues/1809)) added
+every action.
 
 `go-live readiness` and `go-live progress` read the current campaign, or the
 campaign `--campaign` names, as `schedule show` does. Neither page records a
@@ -2479,19 +2653,168 @@ not the current Production campaign (a Testing draft included) is `denied`
 problems as their stored codes and never the Admin report recipients.
 A `go-live progress` watch stops once there is no initial mail to prepare,
 once preparation is complete, or once its task has stopped: a failed task
-changes nothing until the page's retry, which the document reports as
-`retry_available` without its signed control. The **Retry failed mail
-preparation** control was missing from this inventory; it is assigned to
-PR 12 (default, pending Administrator confirmation).
+changes nothing until **Retry** (`go-live retry`), which the document
+reports as `retry_available` without its signed control.
+
+The action commands (PR 12) act on the current campaign only, as the Go live
+page does; no current campaign is `not_available`. Each runs the request-free
+function the page's own view runs, with the command's caller, so every rule
+the page and its owners enforce applies unchanged: the go-live gate, the
+public web address check run again before anything starts or reaches
+Families, the SQL cleanup, confirmation and withdrawal guards, the reason,
+the pre-start-only and not-while-paused rule of Cancel go-live, and the
+request keys that make each action happen once. A preview and its confirming
+command mirror the page's review dialog: the preview records what it showed
+in a signed (not encrypted) token; the confirming command builds it all
+again, refuses when anything it showed changed (`stale_version`), and only
+then mints the owner's 5-minute token itself, so no command is refused for
+its preview's age (default, pending Administrator confirmation). A step
+that is not in the state an action needs, a control the page does not offer
+now, and a change found under the owners' locks are all `stale_version`:
+read `go-live status` (or `go-live progress`) and act again. An altered token
+is `invalid` before any prompt; another Administrator's token is `denied`.
+Start, refresh-again, stop, confirm and cancel ask at the
+[prompt](#command-line-confirmation) unless `--yes` is given, after the role
+check and the token's signature check and before any transaction; the
+prompt repeats the page dialog's own sentences and counts. Every
+state-changing command records its `admin_cmd_go_live_<verb>` event in the
+action's own transaction, so nothing is recorded when the action is not.
+
+- **`go-live preview`** is Check readiness and public web address: it runs
+  the DNS and origin check outside any transaction, then reads readiness as
+  `go-live readiness` does, and prints `campaign_id`, `origin_verified`,
+  `startable` (no readiness problem and the check passed), `readiness`
+  (`go-live readiness`'s document) and `preview.token`, the Start go-live
+  dialog's own signed preview (null unless `startable`), so a token from
+  either channel starts on the other. It records activity as the page's
+  post does, so it needs a full-scope session, and records no event.
+- **`go-live start --token T`** is the Start go-live dialog's Apply, and the
+  prompt is the acknowledgement that Testing cleanup cannot be undone. Before
+  the prompt it refuses another Administrator's token (`denied`), another
+  Administrator's go-live or a stop still running or failed, and a changed
+  readiness (`stale_version`). The same token again, or go-live this
+  Administrator already started, is no refusal and asks nothing: it starts
+  nothing more (`created` false), and since nothing was asked, a new request
+  it would begin is refused and rolled back. Then, as the dialog does: a
+  closed campaign, any readiness problem or a changed inputs digest is
+  `stale_version`; the public web address check runs again, and its failure
+  is `stale_version`. Only then is cleanup started, with attempt 1, by
+  `start_cleanup`, which re-reads everything under the work lock. It is
+  [fresh-gated](#fresh-gated-actions-from-the-command-line) (the
+  `automation_fresh_gate` event and `fresh_gated` notice) and irreversible
+  (the `irreversible` notice and `automation_irreversible` incident, which
+  its `record` hook adds with `admin_cmd_go_live_start`). It prints
+  `created`, `request_id` and `status`, `go-live status`'s document after
+  the commit.
+- **`go-live status`** is the Prepare step's read, for any session, passive
+  and recording nothing; `--watch` follows it until it is no longer
+  `running` and Check's stop is no longer `stopping`. It prints `campaign_id`, `state` (`running`, `failed`, `again`,
+  `ready`, `closed`, `stopped`, `not_started` or `confirmed`), `reason` (the
+  page's cause code for `running`, `failed` and `again`), `request_id`,
+  `boxes` (each `key`: `cleanup`, `refresh`, `links`, and its `state`),
+  `done`, `total`, `preparation` and `max_preparations` (the detail line's
+  counts), `prepared_id`, `failed_at`, `stop_kind`, `stopped_by_other`, the
+  offered actions `retry_available`, `again_available`, `stop_available`
+  and `confirm_available` (never their signed controls), and `stopping`,
+  Check's stop still running or failed (`state` `stopping` or
+  `stop_failed`, `kind`, `done`, `total`, `retry_available`), else null.
+- **`go-live retry`** retries the one failed task the current step offers a
+  **Retry** for, through the page's own control minted now: on Production
+  activation, mail preparation (`confirmation_progress.retry_shown`); on
+  Prepare, failed cleanup, link preparation or the discard of earlier links
+  (the Prepare step's `_retry`); on Check, the failed discard of a stopped
+  go-live's links (Retry stopping go-live, `go_live_views._retry_stop`). It
+  changes no data and does not prompt, as the page's Retry has no dialog.
+  Nothing to retry is `not_available`, so an exact repeat starts no second
+  retry. It prints `step` (`activation`, `prepare` or `check`), `retried`
+  (`mail_preparation`, `cleanup`, `links`, `links_discard` or
+  `stop`) and `status` (`go-live progress`'s document for `activation`,
+  else `go-live status`'s).
+- **`go-live refresh-again`** is Refresh and prepare again, on Prepare and on
+  Confirm Production after the refresh hold ended: it begins the next
+  attempt, a full ParishSoft refresh after which new Family links are
+  prepared; it does not delete Testing data again. **`go-live stop`** is
+  Stop go-live: it discards the Family links and stops Testing cleanup, in
+  one transaction through their owners; Testing data already deleted is not
+  restored. Each reads the step, prompts with the page's words, then acts
+  only if the step still offers the same control (the page's own unchanged
+  check) and prints `status` (`go-live status`'s document after the commit;
+  refresh-again also `attempt`, the attempt it began).
+- **`go-live confirm-preview`** is the Confirm Production dialog's Review:
+  the step must be `ready`. It prints `campaign_id`, `request_id`,
+  `preparation_id`, `target_state` (`active` or `scheduled`), `starts_at`,
+  `start_passed`,
+  `reprepared`, `counts` (the counts the confirmation binds:
+  `active_families`, `eligible_families`, `no_email_families`,
+  `family_messages`, `daily_messages`, `weekly_messages`,
+  `coalesced_slots`) and `preview.token`, the dialog's own binding, signed
+  without a time. It records activity as the page's post does and records
+  no event.
+- **`go-live confirm --token T`** is its Apply. The prompt asks for the typed
+  word `Production`, as the dialog does (`--yes` answers it). Then the
+  dialog's checks, in its order: the same token again opens nothing new
+  (`created` false); the step must still be ready on the same links; the
+  public web address check runs again; the preview is built again and its
+  problems, target, inputs digest and counts must match the token's (counts
+  change when a send falls due since the review). Only then is the
+  confirmation token minted and Production confirmed by
+  `confirmation_commands.confirm`, which passes `sign_in_instant`
+  irreversibly (the `irreversible` notice and `automation_irreversible`
+  incident) and records `admin_cmd_go_live_confirm` through its `record`
+  hook. It prints `created`, `confirmation_id`, `target_state` and
+  `progress`, `go-live progress`'s document after the commit.
+- **`go-live cancel-preview --reason TEXT|-`** is the Cancel go-live dialog's
+  Review with its reason (more than spaces, at most 2,000 characters, else
+  `invalid`). Cancel go-live is available only for a scheduled campaign
+  before its start, while live delivery is not paused, and only once;
+  otherwise `stale_version`. It prints `campaign_id`, `confirmation_id`,
+  the `reason`, `inventory` (`occurrences`, `cancellable`, `messages`,
+  `failed`, `delivered` and `blocking`, the counts the dialog shows),
+  `cancellable` (nothing blocks it) and `preview.token` (null when mail
+  blocks it: resolve that mail first, as the dialog says), which binds the
+  dialog's own review binding and the reason, signed without a time. It
+  records activity as the page's post does and records no event.
+- **`go-live cancel --token T`** is its Apply. The prompt is the
+  acknowledgement that deleted Testing data is not restored. Then the
+  dialog's checks: the same token again cancels nothing new (`created`
+  false); the cancellation is built again with the review's request key
+  and must still be available, on the same confirmation, with the same
+  counts and nothing blocking. Only then is its intent minted and go-live
+  cancelled by `withdrawal_commands.withdraw`, which passes
+  `sign_in_instant` irreversibly and records `admin_cmd_go_live_cancel`
+  through its `record` hook. It prints `created`, `withdrawal_id` and
+  `campaign_id`; the campaign is a Testing draft again, and Check starts
+  over from readiness.
+- **`go-live families`** streams the Testing submissions list (each
+  Testing Family's `duid` and `name`, by DUID) as CSV to standard output,
+  with its document (`campaign_id`, `count`, `file_name`, `content_type`,
+  `size`, `sha256`) on standard error, as other streamed files are. Only
+  the current Testing draft has one (else `stale_version`). Any session may
+  run it; the page records no event, so neither does the command.
 
 ### Family email sends and delivery controls
 
 | URL names | Command or exemption |
 | --- | --- |
-| `family_email_progress`, `family_email_progress_status` | `send progress --watch` (PR 3a) |
+| `mail_queue`, `mail_queue_status` | `mail queue --watch` ([#1562](https://github.com/epiphany40223/parishkit/issues/1562); replaced `send progress`, PR 3a; see below) |
 | `family_email_sends` | `send history` (PR 3a) |
 | `delivery_control` | `send controls` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the page's read (any session; no event, as the page's read records none; see below); `send pause-preview`, `send resume-preview`, `send resolve-preview` and `send confirm --token …` (PR 7b; see below) |
 | `family_portal` | `portal maintenance show` (any session; no event, as the page's read records none), `portal maintenance set --state closed\|open [--message TEXT\|-]` (PR 7a; see below) |
+
+`mail queue` is the [Mail queue](../admin-portal/spec.md#mail-queue) page's
+read, through the same request-free function (`jobs.send_reads`), and
+records the page's `delivery_viewed` event on its first read only, as the
+page does. Its document holds the operating `mode`, whether live delivery
+is `paused`, the current `campaign_id` (null with none), the four
+headline counts as `counts` (`queued`, `sending`, `retry_wait`, `paused`),
+`other_mode_queued`, and `kinds`: one row per row of the page's By kind
+table (a purpose kept only for past emails has none), in that order, with the
+same four counts. `send` and `upcoming` are the Family send panel's
+document, exactly as `send progress` printed them. With `--watch`, the read
+is terminal once nothing is queued in the operating mode, no Family send
+is in progress and none is about to start. It replaced `send progress` in
+[#1562](https://github.com/epiphany40223/parishkit/issues/1562) with no
+alias (see [output documents](#output-documents)).
 
 `portal maintenance show` returns `closed`, `since`, `message` (the
 Administrator's own note Families see) and `closed_by_id`, the closing
@@ -2500,7 +2823,7 @@ Administrator's id rather than the email address the page shows.
 [fresh-gated](#fresh-gated-actions-from-the-command-line): it checks the
 note with the page's `clean_message` first (`invalid`, with no prompt),
 always asks at the [prompt](#command-line-confirmation) with the page's
-notices, then, in one transaction, passes `require_fresh` (the
+notices, then, in one transaction, passes `sign_in_instant` (the
 `automation_fresh_gate` event and notice), calls the page's `set_closed`
 (`family_maintenance_started` or `family_maintenance_ended`, the
 Administrator as actor) and records `admin_cmd_portal_maintenance_set`. It
@@ -2526,9 +2849,8 @@ or closed) follows the page's nesting: `pause_available`,
 `resume_available` and `resolve_available` are false without it; the
 Resolve held messages choices (`resolution`) are null unless
 `resolve_available`; and `family_recovery` and `report_recovery` (the
-overdue Admin digests) are null unless the campaign is also paused. The
-page's fresh sign-in hint is browser chrome and the fingerprints a preview
-binds are internal, so neither prints. The
+overdue report emails) are null unless the campaign is also paused. The
+fingerprints a preview binds are internal, so they do not print. The
 [operator guide](../../../guides/stewardship-admin-automation.md#pause-and-resume-mail)
 lists the fields.
 
@@ -2546,8 +2868,8 @@ being handed to the mail service or not sure it arrived. They add no send
 path: a resume or a release lets held mail go through the ordinary delivery
 workers, as the page's does. The previews need a full-scope session, as
 the page's preview posts record activity, and record no event; `--type` is
-the Resolve held messages form's message types (`receipt`, `daily_digest`,
-`weekly_digest`), which Release and Cancel need and Clear refuses (a usage
+the Resolve held messages form's message types (`receipt` and `report`, the
+report emails, which replaced `daily_digest` and `weekly_digest` in #1786), which Release and Cancel need and Clear refuses (a usage
 error, as the form cannot send either). Each prints `action`, `campaign_id`, the
 `reason`, `expires_at`, the bound `inventory` as `send controls` prints it,
 a resume's `plan` (`before_start` or `family`, with `family_recovery` and
@@ -2563,7 +2885,7 @@ the [prompt](#command-line-confirmation) (`--yes` answers it), naming the
 action, the reason, the counts and the page's own caution for that
 preview (for a resolution, with each type's follow-up coverage), after the role check and the token's signature check (an
 altered token is `invalid` before the prompt). The page's `confirm` then
-passes `require_fresh` in its own transaction (`automation_fresh_gate` and
+passes `sign_in_instant` in its own transaction (`automation_fresh_gate` and
 the `fresh_gated` notice) and records the control, whose effect records
 the page's own events (`campaign_pause` or `campaign_resume`; for a
 resolution `delivery_held_<decision>`, with `campaign_resume` when it ends
@@ -2578,7 +2900,7 @@ read after the commit.
 There is no separate "cancel" action today. Stopping a send is the delivery
 pause, and closing work is the closed-campaign resolution. See
 [live delivery pause](../admin-portal/spec.md#live-delivery-pause) and
-[Family email progress](../admin-portal/spec.md#family-email-progress).
+[Mail queue](../admin-portal/spec.md#mail-queue).
 
 ### Testing sends
 
@@ -2628,8 +2950,8 @@ campaign that is not the current Testing draft, is `denied`. `test families
 that these real Families' names and codes will be sent to the Testing
 recipient.") at the [prompt](#command-line-confirmation) before any
 transaction, then runs the page's `request_tests` in the delivery pages'
-command scope, where the session stands in for the fresh sign-in
-([fresh-gated actions](#fresh-gated-actions-from-the-command-line)) and
+command scope, where the session runs it as a
+[fresh-gated action](#fresh-gated-actions-from-the-command-line) and
 leaves the `automation_fresh_gate` event and notice. It records
 `admin_cmd_test_families` only for a new key, and a repeat, from either
 channel, returns the original tickets (`id`, `sequence`, `state`,
@@ -2662,8 +2984,8 @@ Families table also shows each Family's status)
 ([#932](https://github.com/epiphany40223/parishkit/issues/932)). The rows
 hold no times, so `--timezone` is optional: it sets the file's capture and
 request times, which otherwise use the parish's time zone
-([time zone question](../ui-conventions/spec.md#downloaded-files),
-[#1127](https://github.com/epiphany40223/parishkit/issues/1127)). `--timezone`
+([Time zones rule](../ui-conventions/spec.md#downloaded-files),
+[#1679](https://github.com/epiphany40223/parishkit/issues/1679)). `--timezone`
 and `--format` need `--names` (`usage` otherwise); without `--request-key` the new key is written to standard error
 first. Unlike the plain review, it changes state: it admits as a form post
 (recording activity) and runs in the export commands' scope, and records the
@@ -2686,29 +3008,29 @@ deleted when the export ends, so nothing regenerates it.
 | URL names | Command or exemption |
 | --- | --- |
 | `reports` | `report list` (PR 8c) |
-| `participation` | `report participation` (PR 8c) |
 | `campaign_comparison` | `report comparison [--day N]` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) slice 3, [campaign history](../campaign-history/spec.md#command-line)): aggregates only, with the small-count protection |
 | `campaign_comparison_export` | `export comparison [--day N] --format F [--timezone Z]` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) slice 6, [downloads](../campaign-history/spec.md#downloads-and-sharing)): the page's download form, through the same capture (`comparison_exports.read_capture`) and service (`create_comparison_export`), with the page's `campaign_comparison_exported` and `admin_cmd_export_comparison`; without `--timezone` the file's request time uses the parish's time zone ([#1161](https://github.com/epiphany40223/parishkit/issues/1161)) |
-| `daily_digest_chart`, `daily_digest_download` | Permanent: PNG images; the data is in the matching report or digest read |
-| `financial_report`, `limitations_report`, `information_queue` | `report financial`, `report limitations`, `report information`: summaries and counts (PR 8c; `report limitations` was `report talents` until #970); Family-level rows only as exports (PR 8e, PR 8h for limitations) |
-| `information_item` | One Family's submission and its follow-up history: `followup …` (PR 11), with the Ministry follow-up items; it prints only the item's state and history, and the submission's content comes through `export information` (PR 8e) |
+| `daily_digest_chart`, `daily_digest_download` | Permanent: PNG images; the data is in the matching report or `report-email copy` read |
+| `financial_report`, `limitations_report`, `information_queue` | `report financial`, `report limitations`, `report information`: summaries and counts (PR 8c; `report limitations` was `report talents` until #970), by worklist stage with `--stage` ([#1735](https://github.com/epiphany40223/parishkit/issues/1735)); Family-level rows only as exports (PR 8e, PR 8h for limitations). The worklists' decisions ([#1685](https://github.com/epiphany40223/parishkit/issues/1685)) are `limitations decide` and `information decide`, through the pages' own `LimitationDecisions` and `InformationDecisions` services; `information list` prints the requests' ids, versions, stages and actions, never their content ([#1735](https://github.com/epiphany40223/parishkit/issues/1735)) |
+| `pledges_to_enter`, `pledges_to_enter_export` ([#1686](https://github.com/epiphany40223/parishkit/issues/1686)) | `report pledges` (counts by stage), `pledges decide` and `export pledges` ([#1733](https://github.com/epiphany40223/parishkit/issues/1733)), through the page's own read, `PledgeDecisions` service and `export_body`; the rows with their ids and versions only as `export pledges --format jsonl`, as for `export census` |
+| `information_item`, `information_contacts_status` (its Contact details' passive status, [#1863](https://github.com/epiphany40223/parishkit/issues/1863)) | One Family's submission and its follow-up history: `followup information-show ITEM_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see [users and follow-up](#users-and-follow-up)); it prints only the item's state and history, and the submission's content comes through `export information` (PR 8e) |
 | `ministry_report` | `report ministry`, and `report ministry --ministry DUID --requests join\|leave` for one Ministry's join or leave count (PR 8c); rows only as exports (PR 8e). The Members joining and leaving pages (`ministry_joiners`, `ministry_leavers`) were retired ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)); the commands stay, and `export ministry`, which writes one Ministry's join or leave list, now covers this summary, whose counts it lists. Since [#1133](https://github.com/epiphany40223/parishkit/issues/1133) the page is one Ministry requests page with the follow-up queue: its By Ministry counts are `report ministry`'s summary, and its queue is `followup list` (PR 11a) |
 | `ministry_packet` | A packet of Members' contacts, so export only: `export ministry-packet` (PR 8e) |
 | `past_campaign_archive` | `export archive` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) part (a), [archive export](../campaign-history/spec.md#download-campaign-archive)): Past campaigns' Download campaign archive, through the same service (`create_archive_export`), with the page's `campaign_archive_exported` and `admin_cmd_export_archive`; [fresh-gated](#fresh-gated-actions-from-the-command-line) |
-| `financial_export`, `information_export` | `export financial`, `export information` (PR 8e); `export financial` is [fresh-gated](#fresh-gated-actions-from-the-command-line). `export ministry` still captures one Ministry's join or leave list, whose page form (`ministry_export`) was retired with the lists (#1157) |
+| `financial_export`, `information_export` | `export financial`, `export information` (PR 8e; `--stage` as the worklist's export pane, [#1735](https://github.com/epiphany40223/parishkit/issues/1735)); `export financial` is [fresh-gated](#fresh-gated-actions-from-the-command-line). `export ministry` still captures one Ministry's join or leave list, whose page form (`ministry_export`) was retired with the lists (#1157) |
 | `family_directory`, `family_directory_export` | Export only: `export directory`, the Family-code directory, for the current campaign only until #145 (PR 8f); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
 | `family_directory`, `family_directory_export` with mailing columns | Export only: `export postal`, the mail merge (PR 8f); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
 | `find_family` | Permanent: a search by name; the command line takes no text that names a Family, and `export directory` is the file. This follows the pending "no search" default (PR 8e); if the Administrator allows searches, it becomes `--filter search=` on `export directory` |
-| `family_timeline`, `family_timeline_export` | One Family's timeline, so export only: the page's new export form and `export family-timeline FAMILY_RECORD_ID` (PR 8g, migration 0063); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
+| `timeline`, `timeline_export` | One Family's Timeline (#1570), so export only: the page's export form and `export family-timeline FAMILY_RECORD_ID` (PR 8g, migration 0063); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
 | `family_open_form` (new, #529) | Permanent: Open form signs this browser in to the Family form for a Family on the phone, a browser hand-off by nature; Families' responses are read through `report responses` and the directory exports with its Response filters |
-| `limitations_export` | `export limitations [--show S] [--format F] [--timezone Z]` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)): the page's download through the page's own writer (`limitation_views.export_body`), with #752's audit fields |
-| `census_changes`, `census_changes_export` | `report census`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export census` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command is `census resolve PROPOSAL_ID --action entered\|ignored\|reopened` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), through the same `census_resolution` service. An Automatic row's Review (Approve, Ignore, Back to To review; ADM-09) posts there too; its command is `census review PROPOSAL_ID --decision approved\|ignored\|unreviewed` ([#528](https://github.com/epiphany40223/parishkit/issues/528)), through the same `census_review` service. The Review's Edit value and Clear edit (ADM-09.04) are `census edit PROPOSAL_ID --value TEXT\|- \| --clear`, and its Use the Family's value anyway (ADM-09.03) is `census resolve-conflict PROPOSAL_ID` ([#1434](https://github.com/epiphany40223/parishkit/issues/1434)), through the same service |
-| `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_download` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export download --stream` (PR 8b; `report_export_regenerate` and `export regenerate` were removed by [#1398](https://github.com/epiphany40223/parishkit/issues/1398)); an exact request's status, cancel and retry, which these pages also serve, are `export exact status --watch`, `export exact cancel` and `export exact retry` (PR 8h) |
-| `report_exact_create` | `export exact create` (PR 8h); the handed-off file through `export fetch` |
-| `daily_digest_snapshot` | `digest daily SNAPSHOT_ID` (PR 8d) |
-| `weekly_digest_snapshot`, `weekly_digest_item` | `digest weekly SNAPSHOT_ID`: each item's identifier and states; an item's text stays on the page (PR 8d) |
-| `weekly_digest_manual` | `digest weekly-request` (PR 8d) |
-| `emailed_reports` | `digest list [--requested KEY]`: the Emailed reports page's lists, ids and dates only (PR 8d follow-up) |
+| `limitations_export` | `export limitations [--stage S] [--show S] [--format F] [--timezone Z]` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)): the page's download through the page's own writer (`limitation_views.export_body`), with #752's audit fields; `--format jsonl` adds each answer's item id, version and actions for `limitations decide` ([#1735](https://github.com/epiphany40223/parishkit/issues/1735)) |
+| `census_changes`, `census_changes_export` | `report census`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export census` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command is `census resolve PROPOSAL_ID --action entered\|ignored\|reopened` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), through the same `census_resolution` service. An Automatic row's Review (Accept, Ignore, Back to To review; ADM-09) posts there too; its command is `census review PROPOSAL_ID --decision accepted\|ignored\|unreviewed` ([#528](https://github.com/epiphany40223/parishkit/issues/528); `accepted` since [#1755](https://github.com/epiphany40223/parishkit/issues/1755)), through the same `census_review` service. The Review's Edit value and Clear edit (ADM-09.04) are `census edit PROPOSAL_ID --value TEXT\|- \| --clear`, and its Use the Family's value anyway (ADM-09.03) is `census resolve-conflict PROPOSAL_ID` ([#1434](https://github.com/epiphany40223/parishkit/issues/1434)), through the same service |
+| `update_parishsoft`, `update_parishsoft_confirmation`, `update_parishsoft_retries` ([#528](https://github.com/epiphany40223/parishkit/issues/528), [#1688](https://github.com/epiphany40223/parishkit/issues/1688)) | `census update-check`, `census update-plan`, `census update-confirm` and `census update-rerun` ([#1755](https://github.com/epiphany40223/parishkit/issues/1755)): the [Update ParishSoft](../reports/spec.md#update-parishsoft) page's Check ParishSoft, plan, Apply and Run again, through the page's own checks and the same `publication_tasks` services; see [the commands](#update-parishsoft-commands) |
+| `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_download` | `export create` (and `export exact create`, the latest-data export, whose page form [#1537](https://github.com/epiphany40223/parishkit/issues/1537) removed), `export status --watch`, `export cancel`, `export retry`, `export download --stream` (PR 8b; `report_export_regenerate` and `export regenerate` were removed by [#1398](https://github.com/epiphany40223/parishkit/issues/1398)); an exact request's status, cancel and retry, which these pages also serve, are `export exact status --watch`, `export exact cancel` and `export exact retry` (PR 8h) |
+| `report_emails`, `report_email_edit` | `report-email list`, `report-email show`, `report-email preview`, `report-email confirm`, `report-email render`, `report-email send-test`, `report-email send-now` ([#1786](https://github.com/epiphany40223/parishkit/issues/1786), [report emails](../report-emails/spec.md#command-line)) |
+| `report_email_send`, `daily_digest_snapshot`, `weekly_digest_snapshot`, `weekly_digest_item` | `report-email sends`, `report-email copy SEND`: each block's figures, each request's identifier and states; a request's text stays on the page (#1786; replaced `digest daily` and `digest weekly`, PR 8d) |
+| `weekly_digest_manual` | `digest weekly-request`: current until Report emails delivery PR 5 retires it, no redirect (#1786) |
+| `emailed_reports` | `digest list [--requested KEY]`: current until Report emails delivery PR 5 retires it, no redirect (#1786) |
 | `logs`, `logs_export` | `logs list`, `logs export` (PR 8a) |
 | `past_campaigns`, `past_campaign_review`, `past_campaign_import`, `past_campaign_removal` | `history list`, `history preview -`, `history confirm`, `history remove` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018), [campaign history](../campaign-history/spec.md#command-line)): the Past campaigns page's list, Review (the workbook on standard input), Apply and Remove. The commands came first (slice 2), listed in `admin_parity.AHEAD_OF_PAGE` until the page (slice 4); that list is empty now |
 
@@ -2749,7 +3071,10 @@ events through the page's audit function; where the page's event counts
 the rows it displayed, the command's counts 0. A read the page answers
 with 503 (its database, guard or inputs failing, or a value it could not
 shape) is `unavailable` (exit 3, retry). `report participation` prints the `fact_set_id` that
-`export create --fact-set` takes. Reading the current campaign only (no
+`export create --fact-set` takes. `report list` lists the Response
+dashboard twice, once per command (`report responses` and `report
+participation`), since the page shows both reads
+([#1537](https://github.com/epiphany40223/parishkit/issues/1537)). Reading the current campaign only (no
 `--campaign` until #145), the summaries without search or filtered rows,
 and the stored keys for share options are defaults, pending
 Administrator confirmation; the
@@ -2764,11 +3089,14 @@ then the shared report read (current campaign, `admit_report_read`, the
 campaign read guard and the session recheck), the page's `CensusQuery`
 with every filter but the search (`--status`, `--history`, `--route`,
 `--kind`, and `--start`, `--end` and `--zone` as `report information`
-takes them) and the page's `census_changes`. The filters are parsed once
+takes them; the page no longer offers the dates, which these commands keep,
+[#1888](https://github.com/epiphany40223/parishkit/issues/1888)) and the
+page's `census_changes`. The filters are parsed once
 the reader is admitted, so a refused one is `invalid` after the session
 recheck. Its rows name Families and Members with their contact details, so
 it prints counts only: the rows the filters keep, by route and by kind,
-and the page's summary by status key. It records the page's
+and every change of the campaign by status key (the counts the Status
+filter's choices show). It records the page's
 `census_changes_viewed` with a `count` of 0, and `report list` offers it,
 as the menu does. The
 [operator guide](../../../guides/stewardship-admin-automation.md#reports)
@@ -2777,18 +3105,24 @@ lists the fields.
 `census resolve PROPOSAL_ID --action entered|ignored|reopened
 --expected-version VERSION [--note TEXT|-] [--request-key KEY]`
 ([#463](https://github.com/epiphany40223/parishkit/issues/463)) is a Census
-changes row's Record outcome
+changes row's Mark entered in ParishSoft, Ignore and Reopen
 ([#528](https://github.com/epiphany40223/parishkit/issues/528)): full scope,
-keyed, and not fresh-gated, as the page asks for no recent sign-in. Entered
-in ParishSoft cannot be undone and the page asks first, so `--action
-entered` [prompts by default](#mitigations) (or takes `--yes`; `--note -`
-then needs `--yes`); Ignore and Reopen ask nothing, as on the page. It admits as the page's post does (`census_change_views._principal`,
+keyed, and not fresh-gated, as the page's action is not privileged. Reopen
+also undoes a terminal outcome (Entered by hand, Entered incorrectly,
+Confirmed, Updated in ParishSoft, Already in ParishSoft) as the page's Back
+to review does
+([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
+[#1840](https://github.com/epiphany40223/parishkit/issues/1840)), so no action asks first any more, and it takes no `--yes`
+([#1893](https://github.com/epiphany40223/parishkit/issues/1893): the
+Administrator removed it, with no backwards compatibility, so a script that
+still passes it is a usage error, exit 2). It admits as the page's post does (`census_change_views._principal`,
 recording activity), then in the page's command scope
 (`task_retries.command_scope`, that admission repeated around the effect)
 checks the current campaign as the page does (`admit_report_read`), finds
 the Live change in it (any other is `not_available`) and calls the page's
 `census_resolution.resolve_census_change`, which checks the action's
-capability (Reopen is the Administrator's), the version and the row's
+capability (reopening an Ignore is the Administrator's; undoing a terminal
+outcome, with its required note, is Staff's too), the version and the row's
 state, and records `census_change_updated`. In the same transaction the
 command records `admin_cmd_census_resolve`, only for a new key: the key is
 the page's `request_key`, so a repeat with the same intent returns the
@@ -2803,10 +3137,10 @@ ids, versions and times and the change's state (`version`, `decision`,
 version come from `export census --format jsonl` (`proposal_id`,
 `version`), as described below.
 
-`census review PROPOSAL_ID --decision approved|ignored|unreviewed
+`census review PROPOSAL_ID --decision accepted|ignored|unreviewed
 --expected-version VERSION [--note TEXT|-] [--request-key KEY]`
 ([#528](https://github.com/epiphany40223/parishkit/issues/528)) is an
-Automatic row's Review on the same page (Approve, Ignore, Back to To review;
+Automatic row's Review on the same page (Accept, Ignore, Back to To review;
 [Automatic census review](../reports/spec.md#automatic-census-review)): full
 scope, keyed, not fresh-gated, and never prompting, because every review can
 be changed again until publication of the change starts and the page asks
@@ -2816,16 +3150,29 @@ are `denied` before the note is read, then runs exactly as `census resolve`
 does (the same admission, command scope, campaign check, Live-change lookup
 and key handling) but calls the page's
 `census_review.review_census_change`. Every rule is therefore the page's, in
-Python and in its SQL guard: an Automatic change only, open only (`pending`,
-`conflict` or `failed`; never `queued` for publication nor final), a
-decision different from the current one, and no Approve of a Conflict; any
-of them is `invalid`. The service records `census_change_updated`, and the
+Python and in its SQL guard: a census change the worklist lists (since
+[#1683](https://github.com/epiphany40223/parishkit/issues/1683), By hand
+ones too), open only (`pending`, `conflict` or `failed`; never `queued` for
+publication nor final), a decision different from the current one, a note
+to send an ignored change back to review, and no Accept of a Conflict
+(`census resolve-conflict` decides one); any of them is `invalid`. The service records `census_change_updated`, and the
 command `admin_cmd_census_review` in the same transaction, only for a new
 key. A changed version or the racing second review is `stale_version`. It
 prints the review's ids, decision, version and time and the change's state,
 never the note, Family, Member or value. No preview token is used: the
 page's own protection is the version and the request key, which the command
 takes too.
+
+The census commands speak the
+[review pipeline](../review-pipeline/spec.md#decisions)'s words (decision 7,
+[#1755](https://github.com/epiphany40223/parishkit/issues/1755)): the
+review decision is `accepted`, never `approved`, with no alias. Only what
+the command line takes and prints changes; the stored decision stays
+`approved` ("words change, stored values do not"). So `census review
+--decision accepted` records an `approved` review, and every `decision` the
+census commands print (a review's, and the change's state in `proposal`)
+and `export census --format jsonl`'s `reviews` say `accepted` where the
+database holds `approved`.
 
 `census edit PROPOSAL_ID --expected-version VERSION (--value TEXT|- |
 --clear) [--note TEXT|-] [--request-key KEY]`
@@ -2859,37 +3206,71 @@ ids, version and time and whether an edit is now set (`edited`);
 the value, the note, the Family or the Member. Standard input carries only
 one of `--value -` and `--note -`.
 
-The digest commands (PR 8d) read a retained report an emailed digest
-links to from its stored snapshot, through its page's own functions
-(`digest_views.retained_document`, `weekly_views.retained_context`), never
-the email's markup, inside the same campaign read guard, and record the
-page's `daily_digest_viewed` or `weekly_digest_viewed`. `digest daily`
-also prints the digest's retained
-[Compared with past campaigns](../campaign-history/spec.md#digest-section)
-section, without its chart specifications. `digest daily`
-admits as the daily report page (report readers) and `digest weekly` as
-the weekly one (Administrators); both are any-scope reads. `digest weekly`
-prints each selected item's identifier and captured and current
-disposition, never a Family's text. `digest weekly-request` is the Send a
-weekly report now page's form (`request_manual_report`) in the page's
-command scope, keyed by its `command_id`: the same database rules (a
-digest still in progress or awaiting review is `stale_version`, as the
-page's 409), the same `weekly_manual_requested` event and task, and
-`admin_cmd_digest_weekly_request` when it creates the request. The page's
-ticked acknowledgement is asked at the
-[prompt](#command-line-confirmation) (or given by `--yes`); without it the
-command exits 4 (`confirmation_required`). `digest list` is the Emailed
-reports page: through the page's own `emailed_views.listing`, the current
-campaign's newest ready daily reports and, for an Administrator, weekly
-reports (`weekly` is null for any other reader, who sees only the daily
-list on the page), by snapshot id and date only, whether
-`digest weekly-request` is available, and with `--requested` the page's
-`?requested=` request (its task and, once captured, its report). It admits
-as the page does (any session) and, as the page's read, records no event.
-Leaving out the weekly row's request key and a null `weekly` are defaults,
-pending Administrator confirmation. The
-[operator guide](../../../guides/stewardship-admin-automation.md#digests)
-lists the fields.
+`report pledges [--stage to_review|conflict|to_enter_by_hand|entered_by_hand|entered_incorrectly|confirmed|ignored|all]`
+([#1733](https://github.com/epiphany40223/parishkit/issues/1733)) counts
+[Pledges](../reports/spec.md#pledges) as `report census`
+counts Census changes: the page's admission (`pledge_review_views._principal`:
+Administrators and Staff, never a Ministry leader), passive so any session
+scope reads, the shared report read, and the page's `pledge_rows` without a
+search. A campaign without Financial stewardship is `not_available`. Each row
+names a Family and its pledge, so it prints counts only: `matching` (the
+rows at `--stage`, To review by default, as on the page), `total`, and
+`stages`, every pledge by stage including zeros. It records the page's
+`pledges_to_enter_viewed` with a `count` of 0, and `report list` offers it,
+as the menu does. `export pledges` takes the same `--stage` with `--format
+csv|xlsx|pdf|jsonl` and `--timezone`, streamed as `export census` is: CSV,
+XLSX and PDF are the page's own file (`pledge_review_views.export_body`);
+`jsonl` is the command's own format, the files' columns under fixed keys plus
+`item_id`, `version` and `actions` (the decisions the reader may record on
+the row now, empty while other campaign work holds the campaign), the same
+recorded exception as `export census`'s. It records the page's
+`pledges_to_enter_exported` with the rows in the file, and no `admin_cmd_*`
+event.
+
+`pledges decide --action accept|edit|ignore|back_to_review|entered_by_hand
+--item ID:VERSION [--item ...] [--amount TEXT --frequency F] [--note TEXT|-]
+[--request-key KEY]`
+([#1733](https://github.com/epiphany40223/parishkit/issues/1733)) is a
+Pledges row's action or its bulk bar: full scope, keyed and not
+fresh-gated. Every action can be changed again, Entered by hand too
+([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
+[#1840](https://github.com/epiphany40223/parishkit/issues/1840)), so none asks first and none takes `--yes` ([#1893](https://github.com/epiphany40223/parishkit/issues/1893));
+`back_to_review` of a terminal stage needs `--note`, as on the page. It checks the page's admission first, so a
+Ministry leader is `denied` before any input, and refuses a choice
+the page could not post (more than 100 pledges, an Edit of more than one, a
+note over 2,000 characters, or an Edit value the Family form would refuse)
+before any transaction. In the page's command scope it checks the current
+campaign as the page does (one without Financial stewardship is
+`not_available`), finds every item as a Live response of it (any other is
+`not_available`), and builds the `WorklistDecision` the page would
+post (one item with the key itself, several as the bulk bar with each item's
+key derived from it) for the page's `pledge_review.PledgeDecisions`, so every
+rule is the page's, in Python and in the SQL guard of the
+[financial stream](../review-pipeline/spec.md): the role, the item's version,
+the actions its stage offers, a note to reopen an ignored pledge or to undo
+a terminal stage, and an Edit's amount and frequency checked as the Family form checks them. All or
+none: an item someone decided first, or that the Family answered again since,
+is `stale_version`; anything else refused is `invalid`, an Edit value at its
+option (`amount`, `frequency`) with the service's static reason, never the
+value. The service records `pledge_review_updated` for each row, with the
+session's user as the actor, and the command `admin_cmd_pledges_decide` once
+in the same transaction, only for a new key: a repeat with the same
+pledges, decision and Edit value returns the recorded rows (`created`
+false), and any other use of the key (other pledges, another decision or
+another value; matched against the key itself and each pledge's key
+derived from it) is `invalid`, so one key never records two decisions. It prints each recorded row's `id`,
+`item_id`, `sequence`, `action`, `decision`, `entered` and `created_at`,
+never the amount, the note or the Family.
+
+The report email commands
+([#1786](https://github.com/epiphany40223/parishkit/issues/1786)) are
+defined with the page in the
+[report emails command line](../report-emails/spec.md#command-line). They
+replaced the digest commands of PR 8d (`digest list`, `digest daily`,
+`digest weekly` and `digest weekly-request`), which are removed with no
+aliases; `report-email copy` reads the saved copies those commands read,
+through the same page functions (`digest_views.retained_document`,
+`weekly_views.retained_context`) for a copy made before the conversion.
 
 The Family-level export commands (PR 8e) are the export forms of the
 financial report, the information queue and the Ministry report (its
@@ -2899,7 +3280,7 @@ plus `admin_cmd_export_<kind>` when it created one. Each admits as its
 page's form post does, with the page's capability, so it needs a full-scope
 session. Creating a financial export is one of the
 [fresh-gated actions](#fresh-gated-actions-from-the-command-line), so
-`export financial` calls the caller-aware `require_fresh` once admitted.
+`export financial` calls the caller-aware `sign_in_instant` once admitted.
 The rows reach only the file, fetched with `export fetch`; the command
 prints the `export status` document. Filters are the page's, given as
 `--filter NAME=VALUE`, read once the reader is admitted, as on the page; a
@@ -2929,7 +3310,7 @@ is not current, or a key rotation holding the key lock, is `unavailable`
 the file, never in this process. `--filter` refuses a search and an exact
 Family code, which would put a name or a code in the shell's history. Both
 are [fresh-gated](#fresh-gated-actions-from-the-command-line), as
-`export financial` is: each asks at the prompt, then calls `require_fresh`
+`export financial` is: each asks at the prompt, then calls `sign_in_instant`
 inside its export lock, for a repeated key too, as the page does.
 `--filter mode=testing` exports the campaign's Testing rehearsal, as the
 directory's [Testing switch](../reports/spec.md#response-filters) does
@@ -2943,9 +3324,12 @@ service also refuses a non-Administrator, so a Staff member could not
 export Testing through it even if one could reach it. With no active
 rehearsal the command is `stale_version` (the page's 409) and nothing is
 made.
-The exact daily export commands (PR 8h) are the Participation page's
-exact-export form and its status page, through the page's own services
-(`reports.exact_services`): `export exact create` freezes the current
+The exact daily export commands (PR 8h) are the latest-data export and its
+status page, through the services the page used
+(`reports.exact_services`); since
+[#1537](https://github.com/epiphany40223/parishkit/issues/1537) the Response
+dashboard offers no latest-data form, so `export exact create` is the only
+way to request one. `export exact create` freezes the current
 campaign's inputs (`--scope`, `--format`, `--timezone`, keyed), `export
 exact status` is the status page's passive read with no view event, as the
 page records none, `--watch` following it until the calculation has handed
@@ -2964,7 +3348,7 @@ PR 8h's second part) is the Limitations report's in-memory download,
 streamed as `export census` is, with the same document (`campaign_id`,
 `file_name`, `content_type`, `format`, `timezone`, `size`, `sha256`,
 `count`) on standard error. It needs a full-scope session and is neither
-prompting nor fresh-gated, as the page asks for no recent sign-in. It
+prompting nor fresh-gated, as the page's action is not privileged. It
 admits as the download does (`limitation_views._principal` with `export`:
 `CAMPAIGN_REPORT` and `REPORT_EXPORT`, so Administrators and Staff, never a
 Ministry leader), passively and then recording activity as the download's
@@ -2976,20 +3360,104 @@ page's own `limitation_views.export_body` (both of which the page now
 calls), so its files are the page's; it has no command-only format, as no
 command acts on a row. It records the page's `talents_report_exported`
 (the name kept from Talents and limitations, #970) with the page's count
-(the Member and Family rows in the file) and #752's audit fields
+(the Member and Family rows the read returned, before the download's
+Stage keeps the file's rows, as the page counts them since #1685) and the
+audit fields of #752
 (`search_used`, always false, `report_filter` and, when no refresh promoted
 another snapshot during the read, `snapshot_id`), and no `admin_cmd_*`
-event. The name, `--show` without the search and the absent JSON Lines are
+event. The name and `--show` without the search are
 defaults pending Administrator confirmation; the
 [operator guide](../../../guides/stewardship-admin-automation.md#limitations-download)
 lists them.
+
+**Additional information and Limitations decisions.** [#1735](https://github.com/epiphany40223/parishkit/issues/1735) brings the two review worklists of
+[#1685](https://github.com/epiphany40223/parishkit/issues/1685) to the command line, as
+[#1733](https://github.com/epiphany40223/parishkit/issues/1733) does Pledges to enter, through each page's own pieces so
+the two cannot drift.
+
+- **Counts by stage.** `report limitations [--stage
+  to_review|to_handle|ignored|handled|all]` reads the page's
+  `limitations_report` as before and, through the page's own
+  `limitations.at_stage`, prints `cannot_serve` and `cannot_attend` at the
+  stage (`all`, the default, keeps the earlier summary), with `stage` and
+  `stages`, every answer by stage, zeros included. `report information
+  --stage to_review|to_handle|ignored|handled|history|all [--start --end
+  --zone]` (the dates are the command's own; the page has none, #1888)
+  counts the worklist instead of the old queue filters (combining
+  it with `--disposition`, `--needed` or `--completed` is `invalid`):
+  `matching` is the requests at the stage, as the page's
+  `information_worklist.requests` places them, and `stages` every stage's
+  count, History's too; without `--stage` the command is unchanged and
+  both are null. Both record their page's view events, as before.
+- **Files.** `export limitations` takes the page's download Stage
+  (`--stage`, Every stage by default, as the page's own download) and
+  `--format jsonl`, the command's own format as `export census`'s: one
+  object per answer, the CSV's cells under fixed keys with the answer's
+  `kind`, plus `item_id` (the page's answer id, `m<Family DUID>-<Member
+  DUID>`, `p<Family DUID>-<local id>` or `f<Family DUID>`), `version` and
+  `actions` (the decisions the reader may record now, empty while other
+  campaign work holds the campaign). `export information --stage S` queues
+  the page's complete export with the follow-up filters the worklist's
+  export pane posts for that Stage
+  (`information_worklist.EXPORT_FILTERS`, and its `sort=name` unless a
+  `--filter sort=` is given); the stage and a `--filter` for
+  `disposition`, `needed` or `completed` together are `invalid`.
+- **Information ids.** `information list [--stage S] [--start --end
+  --zone]` is the Additional information worklist's rows as identifiers
+  only, as `followup information-show` prints one request: each request's
+  `item_id`, `version`, `stage`, `decision`, `disposition`,
+  `submitted_at`, `decided_at` and `actions`, never the Family, its words
+  or the Staff notes. It admits passively with the page's
+  `information_views._principal`, reads through the shared report read and
+  the page's `requests`, and records the page's `information_viewed`
+  (started, then succeeded or failed). The content stays on the page and
+  in `export information`.
+- **Decisions.** `limitations decide` and `information decide` take
+  `--action accept|ignore|back_to_review|handled`, `--item ID:VERSION`
+  (up to 100, each once), `--note TEXT|-` and `--request-key`. Each
+  checks its page's admission first (a Ministry leader is `denied` before
+  any input or prompt) and refuses before any prompt a choice the page
+  could not post (too many items, a malformed item id, a note over 2,000
+  characters or with text the page refuses). Every action can be changed
+  again, Handled too
+  ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
+  [#1840](https://github.com/epiphany40223/parishkit/issues/1840)), so none asks first and none takes `--yes` ([#1893](https://github.com/epiphany40223/parishkit/issues/1893));
+  `back_to_review` of a Handled item needs `--note`, as on the page. In the page's command
+  scope it checks the current campaign as the page does, finds every item
+  in it (a request that is not a Live one of the campaign, or an answer
+  whose Family is not in it, is `not_available`), and builds the
+  `WorklistDecision` the page would post (one item with the key itself,
+  several as the bulk bar, each item's key derived from it) for the
+  page's `InformationDecisions` or `LimitationDecisions`, so every rule is
+  the page's, in Python and in the SQL guard of migration 0126: the role,
+  the version, the actions the stage offers, and a new note to reopen an
+  Ignored item (`invalid` at `note` otherwise), as the page's Back to
+  review asks for one. All or none: an item someone decided first, or
+  that the Family answered again since, is `stale_version`. The service
+  records `information_updated` or `limitation_reviewed` for each item,
+  with the session's user as the actor, and the command
+  `admin_cmd_information_decide` or `admin_cmd_limitations_decide` once
+  in the same transaction, only for a new key: a repeat with the same
+  items and decision returns the recorded rows (`created` false), and any
+  other use of the key (other items or another decision, matched against
+  the key itself and each item's key derived from it) is `invalid`, so
+  one key never records two decisions. `information decide` prints each
+  revision's `id`, `item_id`, `expected_version`, `decision`,
+  `follow_up_needed`, `followed_up` and `created_at`; `limitations
+  decide` prints each review's `id`, `kind`, `expected_version`,
+  `decision` and `created_at` in the order the items were given, without
+  the item id, which names the Family's DUID. Neither prints a note.
+
+`followup information-update` keeps its follow-up flags until #1688
+renames the commands; `information decide` is the worklist's Ignore,
+which the flags cannot record.
 
 `export census` ([#463](https://github.com/epiphany40223/parishkit/issues/463))
 is the Census changes page's in-memory download, streamed as `logs export`
 is: the file alone on standard output, its document (`campaign_id`,
 `file_name`, `content_type`, `format`, `timezone`, `size`, `sha256`,
 `count`) on standard error. It needs a full-scope session and is neither
-prompting nor fresh-gated, as the page asks for no recent sign-in. It
+prompting nor fresh-gated, as the page's action is not privileged. It
 admits as the download does (`census_change_views._principal` with
 `export`: the census capability and `REPORT_EXPORT`, so Administrators and
 Staff, never a Ministry leader), passively and then recording activity as
@@ -3017,16 +3485,20 @@ defaults pending Administrator confirmation; the
 lists them.
 
 `export family-timeline FAMILY_RECORD_ID [--mode production|testing]` (PR
-8g) is the Family timeline page's new export form, the
+8g) is the Timeline page's export form, the
 [timeline export](../reports/spec.md#timeline-export) of its frozen
 migration: the same service (`timeline_exports.create_timeline_export`), the
-same record, `export_requested` and `admin_cmd_export_family_timeline`, for
-an Administrator only, as the page. The id is the Family's campaign record
-id, the opaque id in the page's address; a Family of another campaign is
+same record, `export_requested` and `admin_cmd_export_family_timeline`,
+with the page's role check (Administrators and Staff since #1799; an
+automation session is an Administrator's). The id is the Family's campaign
+record id, the opaque id in the page's address; a Family of another campaign is
 `not_available`. The file can hold the Family's code, so it is
 [fresh-gated](#fresh-gated-actions-from-the-command-line), as on its page:
-it asks at the prompt, then calls `require_fresh` in the export lock. The
-file is fetched with `export fetch`.
+it asks at the prompt, then calls `sign_in_instant` in the export lock. The
+file is fetched with `export fetch`. The page shows Production records only
+since [#1570](https://github.com/epiphany40223/parishkit/issues/1570), so
+`--mode testing` is refused as `invalid` (exit 1) and `--mode production`,
+the default, is kept for scripts that pass it.
 
 The export lifecycle commands work on any report export the Administrator
 may see, through the functions the export pages use
@@ -3038,7 +3510,7 @@ window, so there is no `export regenerate`; it was removed with the page's
 Regenerate ([#1398](https://github.com/epiphany40223/parishkit/issues/1398)).
 `export status` admits passively
 like the status page (any session) and records nothing, as the page
-records nothing. `export create` (the Participation page's form, for the
+records nothing. `export create` (the Response dashboard's form, for the
 generation its `--fact-set` names), `export comparison` (the Campaign
 comparison page's download form, for the current campaign on `--day`),
 `export cancel` and `export retry` admit as the pages' form posts do, so
@@ -3055,23 +3527,124 @@ above and `--fact-set` naming the generation). The
 [operator guide](../../../guides/stewardship-admin-automation.md#report-exports)
 lists the fields and refusals.
 
+#### Update ParishSoft commands
+
+The [Update ParishSoft](../reports/spec.md#update-parishsoft) page's
+four steps are commands
+([#528](https://github.com/epiphany40223/parishkit/issues/528),
+[#1755](https://github.com/epiphany40223/parishkit/issues/1755)).
+They were specified as `publish-*`; decision 7 of the
+[review pipeline](../review-pipeline/spec.md#decisions) renames them
+`update-*`, with no aliases. Each checks the Administrator's
+`PUBLISH_CENSUS` first, so Staff are `denied` before anything is read, then
+runs the page's own checks and service; the writes run in the page's
+command scope (the work transaction, the command session's row locked and
+the admission repeated around the effect). While the
+`parishsoft_publication` setting is off (the command line reads the web
+service's own setting, from the same deployment file) every one of them is
+`not_available` with the page's `publication_off`, and nothing is queued.
+The page's reason code travels in the document as `error.reason`, and in
+the refusal log as on the page: a plan that changed, expired or was
+superseded (`publication_plan_changed`, `publication_plan_expired`,
+`publication_plan_superseded`) is `stale_version`; nothing to check, nothing
+to write or every Member finished (`publication_nothing_approved`,
+`publication_nothing_to_write`, `publication_finished`) is `invalid`; any
+other reason (the switch off, Testing mode, a held campaign, an update
+running, stopped or still writing these changes, a check under way) is
+`not_available`. Once the page's checks pass, a request key one of these
+commands already used for another plan, other counts or another
+Administrator is `invalid`. A repeat of a request key that already
+confirmed or retried the named plan returns what it recorded, even once a
+newer check exists, so a key recovers an unknown outcome (exit 6); a new
+key acts only on the newest plan. They print ids, versions, counts, outcomes and times, never a
+value, name or note; the values stay in `export census`.
+
+None of them takes `--watch`: a [watch](#watching-progress) is a passive
+read, the only kind the host wrapper may interrupt. Each write prints its
+task, which `task show TASK_ID --watch` follows; `census update-plan` then
+shows the plan or the run's outcomes.
+
+- `census update-check [--request-key KEY]` is Check ParishSoft:
+  `request_preflight`, keyed (a version 4 UUID, as the page's), so a repeat
+  with the same key returns the same check and records nothing new. It is
+  not fresh-gated and does not prompt, as the page asks nothing. Like the
+  page's button, a new key passes the page's gate first
+  (`census_publication.check_gate`): something Ready to update, no update
+  run unfinished or stopped, and the campaign free; the command checks this
+  itself, because the preflight service does not. It prints `created`, the
+  `request_key` and the preflight `task` (`id`, `state`), and records
+  `admin_cmd_census_update_check` with the service's
+  `census_publication_preflight_requested`.
+- `census update-plan [PLAN_ID]` reads the current campaign's newest plan,
+  or the one named (another campaign's or an unknown one is
+  `not_available`), through the page's own read
+  (`census_publication.plan_view`) under the campaign read guard, from a
+  session of any scope: what waits (`waiting`), whether Check ParishSoft is
+  available (`check`, with its reason), whether a check is under way, and
+  the plan (null before the first check): its id, who checked (their
+  user id) and when, whether it was made in Testing mode, its counts, when
+  its hour to be confirmed in ends and whether it has, whether it is
+  confirmed, its latest run task's id and state, whether the final refresh
+  is still running, and what the page offers (`update`, `rerun` or
+  nothing, with its reason when unavailable and the Members a rerun would
+  try). It lists one row per field row the page's table shows (proposal id
+  and the version the plan recorded, field, Member DUID and outcome, which
+  once run is the Member's result), and how many the table leaves out. It
+  records the page's `census_publication_viewed` with the number of rows.
+- `census update-confirm PLAN_ID [--request-key KEY]` is Update's Apply.
+  Before prompting it refuses a plan that is not the campaign's newest
+  (`stale_version`, `publication_plan_superseded`), through the page's own
+  helper (`census_publication.newest_plan_check`), since no service or SQL
+  guard checks it, and then whatever the page would not offer
+  (`census_publication.offer`). It prompts
+  ([command-line confirmation](#command-line-confirmation)) with the plan's
+  counts and the page's sentences, answered `yes`, then, in its command
+  scope, checks the same again, refuses counts that differ from those it
+  asked about (`publication_plan_changed`), and calls `confirm_and_publish`
+  with those counts and the command session's sign-in. It is
+  [fresh-gated](#fresh-gated-actions-from-the-command-line): a full-scope,
+  live automation session runs it, as the confirmation's SQL guard
+  (migration 0087, without the sign-in age since 0114) accepts. The
+  service records `census_publication_confirmed`, and the command
+  `admin_cmd_census_update_confirm` in the same transaction, once per key;
+  a repeat with the same key returns the same confirmation and run. A
+  database refusal is worded as the page words it
+  (`census_publication.confirm_refusal`). It prints `created`, the
+  `request_key`, the `plan_id`, the `confirmation` (`id`, `created_at` and
+  the counts) and the run `task`.
+- `census update-rerun PLAN_ID [--request-key KEY]` is Run again:
+  `rerun_publication`, keyed by the request key as its command id. As on
+  the page it applies only when the plan's run task ended without
+  completing and a Member has no final outcome; a Failed Member is finished
+  and needs a new `update-check`. It prompts with the number of Members
+  the run did not finish, as the page's dialog asks, and records
+  `admin_cmd_census_update_rerun` with the service's
+  `census_publication_rerun_requested`; a repeat with the same key returns
+  the same retry. It prints `created`, the `request_key`, the `plan_id` and
+  the retry's `task`.
+
+`update-confirm` and `update-rerun` are prompting commands and join the
+host wrapper's `PROMPTING` list. The three new `admin_cmd_*` types join the
+other update types in their
+[activity group](../admin-portal/spec.md#activity-groups).
+
 ### Operations
 
 | URL names | Command or exemption |
 | --- | --- |
 | `background`, `background_tasks`, `background_task` | `task list`, `task show` (PR 3a) |
-| `retry_family_preparation`, `retry_daily_digest`, `retry_weekly_digest`, `retry_export_cleanup` | `task retry` (PR 9a) |
+| `retry_family_preparation`, `retry_report_email` (which replaced `retry_daily_digest` and `retry_weekly_digest`, #1786), `retry_export_cleanup` | `task retry` (PR 9a) |
 | `deliveries`, `delivery`, `delivery_resolve` | `delivery list`, `delivery show`, `delivery resolve` (PR 9b), `delivery resend` (PR 9c) |
 | `delivery_refusals`, `delivery_refusal`, `delivery_refusal_clear` | `delivery refusals`, `delivery refusal-show` (PR 9b), `delivery refusal-clear` (PR 9c) |
 | `delivery_bounce_report` (#806 slice 4) | `delivery bounce-report` ([#1211](https://github.com/epiphany40223/parishkit/issues/1211)) |
 | `system`, `system_health`, `system_health_status` (ADM-13) | `system health`, `system health --watch`, counts and states only |
 | `system_health` POST, Take a backup now (ADM-13 PR 3b) | `system backup-now [--request-key UUID]` (fresh-gated, always prompts); its progress is `system health` `backup_request`, with `--watch` |
-| `system_mail_check`, `system_mail_clear` (ADM-13) | `system mail-clear-preview` (starts the mailbox check and waits for it), `system mail-clear --token …` |
+| `system_health` POST, Clear the halt (ADM-13 PR 4a, its button in 4b) | `system mail-clear-preview` (the page's preview: the halt, the waiting and unsettled `delivery_unknown` Family emails by count and message id, whether delivery is paused, and the mailbox check, which it requests when none is live and waits up to two minutes for; with `preview.token` while the halt can be cleared), `system mail-clear --token …` (always prompts; no recent sign-in, #1547); its effect is `system health`'s mail senders, with `--watch` |
 | `system_health` POST, Accept this change once (ADM-13 PR 5b, 5c) | `system refresh-accept-preview` (the page's preview: every recorded count, the example Family DUIDs without names, and `preview.token`), `system refresh-accept --token …` (fresh-gated, always prompts with the page's tick box); its effect is `system health`'s `drop_acceptance`, with `--watch` |
 | `system_health` POST, Turn off debug logging (ADM-13 PR 6b) | `system debug-off [--request-key UUID]` (fresh-gated, always prompts); its effect is `system health`'s `debug_switch` and each process's `debug_logging`, with `--watch` |
 | `system_health` POST, Allow debug logging again (ADM-13 PR 6c, Testing only) | `system debug-allow [--switch UUID]` (fresh-gated, always prompts, refused in Production); its effect is `system health`'s `debug_switch` |
 | `source_form` ([#774](https://github.com/epiphany40223/parishkit/issues/774)) | `report source-form`, counts and DUIDs only ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the host's `pk-stewardship source-form-check` lists the same Families |
-| `parishsoft_fixes` ([#1011](https://github.com/epiphany40223/parishkit/issues/1011)) | `report data-to-fix`, section counts only, as [Data to fix in ParishSoft](../admin-portal/spec.md#data-to-fix-command-and-downloads) describes |
+| `parishsoft_fixes` ([#1011](https://github.com/epiphany40223/parishkit/issues/1011)), `parishsoft_fixes_status` (its passive status fragment, [#1859](https://github.com/epiphany40223/parishkit/issues/1859)) | `report data-to-fix`, section counts only, as [Data to fix in ParishSoft](../admin-portal/spec.md#data-to-fix-command-and-downloads) describes |
 
 `report source-form` is System health's Families the form cannot open
 list, through the page's own functions (`source_form_views._principal`,
@@ -3105,31 +3678,29 @@ lists the fields.
 `system health` covers the page, its fragment and `/admin/system/`
 (ADM-13 PR 2b), and `system backup-now` (ADM-13 PR 3b) is Take a backup
 now: it shows the page's preview at the prompt, records the request with
-the page's `request_backup` (the request's guard admits the session as the
-fresh sign-in) and records `backup_requested` and
+the page's `request_backup` (the request's guard admits the command session) and records `backup_requested` and
 `admin_cmd_system_backup_now`. `system debug-off` (ADM-13 PR 6b) is Turn off
 debug logging, the same way: the page's preview at the prompt, the switch
-set with the page's `turn_off_debug` (the switch's guard admits the session
-as the fresh sign-in), recording `debug_logging_turned_off` and
+set with the page's `turn_off_debug` (the switch's guard admits the command
+session), recording `debug_logging_turned_off` and
 `admin_cmd_system_debug_off`. `system refresh-accept-preview` and `system
 refresh-accept` (ADM-13 PR 5b) are Accept this change once, as `artwork
 remove-preview` and `artwork remove` are their page's review and Apply: the
 preview prints the page's counts, its example Families' DUIDs (never their
 names, PR 5c) and its signed binding, and changes and records nothing; the confirmation takes that token, prompts with the counts
 that fell too far and the page's tick box, records the acceptance with the
-page's `accept_change` (the acceptance's guard admits the session as the
-fresh sign-in) and asks for a full refresh, recording `source_drop_accepted`
+page's `accept_change` (the acceptance's guard admits the command session) and asks for a full refresh, recording `source_drop_accepted`
 and `admin_cmd_system_refresh_accept`. The other ADM-13 rows name routes and
 `admin_cmd_system_debug_off`. `system debug-allow` (ADM-13 PR 6c) is
 Allow debug logging again, in Testing only: the page's preview at the
 prompt (refused before it in Production or while no switch is set), the
 switch cleared with the page's `allow_debug` (the guard admits the
-session as the fresh sign-in), recording `debug_logging_allowed` naming
+command session), recording `debug_logging_allowed` naming
 the switch and `admin_cmd_system_debug_allow`. `--switch` names the switch
 cleared, so a repeat returns it. The other ADM-13 rows name routes and
 commands that do not exist yet: each action, its route and its command land together in their
 own ADM-13 pull request (PR 3 to PR 6); ADM-11 PR 5, which lets automation
-pass the fresh-sign-in check, has landed. The ADM-13 action routes will be
+run fresh-gated actions, has landed. The ADM-13 action routes will be
 POSTs to the [System health](../admin-portal/spec.md#health-actions) page,
 `system_health_status` is its passive status fragment, and `system`
 (`/admin/system/`) only redirects to it.
@@ -3138,7 +3709,7 @@ POSTs to the [System health](../admin-portal/spec.md#health-actions) page,
 **Retry**, through the page's own functions in `jobs.task_retries`; the
 task's stored type selects which of the four retries runs, and a task the
 page offers no retry for, or an unknown task, is `not_available`. No retry
-page asks for a fresh sign-in or a typed value, so it waits for no PR 5. It
+is a privileged action or asks for a typed value, so it waits for no PR 5. It
 admits as the page's form post does (`BACKGROUND_WORK`, recording activity,
 so it needs a full-scope session) and runs in the page's command scope (the
 work transaction, the command session's row locked, the Administrator
@@ -3158,19 +3729,30 @@ services' own correlation ID, not the invocation's; the command event and
 the run's `retry_command_id` (the key) join them.
 
 The delivery commands (PR 9b) read through `jobs.delivery_reads`, the
-functions the Outgoing mail and Refused addresses pages use, and record the
+functions the Sent mail and Refused addresses pages use, and record the
 pages' `delivery_viewed` event. Their documents follow [personal data on the
 command line](#personal-data-on-the-command-line): a delivery has its
 metadata only (no recipient address, Family DUID or Family id; a
 `delivery list` row adds `refused`, the count of its unresolved refused
-addresses that Outgoing mail marks, from the page's own query, #1004), a
+addresses that Sent mail marks, from the page's own query, #1004), a
 resolution note only its time and action, and a refusal only its id, time,
-resolution and the source version to verify; a DUID is accepted as search input. A
-DUID-filtered read still links that Family to its delivery or refusal facts
+resolution and the source version to verify; a DUID, an email address, a
+delivery ID or part of a name is accepted as `delivery list --recipient`
+input, never echoed in the document
+([#1562](https://github.com/epiphany40223/parishkit/issues/1562)). A
+DUID- or address-filtered read still links that Family to its delivery or refusal facts
 (counts, states, times); that is intended, for sessions only Administrators
 approve, as on the pages. `delivery show` lists in `actions` what the page
 offers: `resend` is `delivery resend` (PR 9c), and each other action is a
-`delivery resolve` action. A check or uniqueness refusal from the database
+`delivery resolve` action. It also reports the page's question model
+([#1563](https://github.com/epiphany40223/parishkit/issues/1563)):
+`outcome` (`delivered`, `still_sending`, `needs_resolution` or
+`cancelled`, as the [outcome panel](../admin-portal/spec.md#outcome-panel)
+picks it) and `choices`, each answer the panel offers with its `choice`,
+the `action` it maps to and `unavailable`, the reason code that
+[resolution questions](../admin-portal/spec.md#resolution-questions)
+lists (null when the answer is allowed), so a script can follow the same
+questions; an allowed choice's action is always in `actions`. A check or uniqueness refusal from the database
 (SQLSTATE 23514 or 23505) during `task retry`, `delivery resolve`,
 `delivery resend` or `delivery refusal-clear` is `stale_version`, as the
 pages answer 409. The refusal's detail is its own verb,
@@ -3215,8 +3797,7 @@ address](../admin-portal/spec.md#mail-message-page) (#806 slice 4). The
 page's tick ("I saw a bounce message for this address from this email") is
 asked at the prompt, as for `delivery refusal-clear`: a report is not
 fresh-gated and clearing undoes it, so the prompt follows the page's
-acknowledgement, not irreversibility. It admits as the page's post does (no
-fresh sign-in) and calls the page's `report_recipient_bounce` in the same
+acknowledgement, not irreversibility. It admits as the page's post does and calls the page's `report_recipient_bounce` in the same
 command scope, so the service's Administrator check, the web-only definer
 `stewardship_report_recipient_bounce_v1` and the refusal guard decide as for
 the page, keyed by its `command_id` (the refusal's id) and recording
@@ -3239,17 +3820,18 @@ unknown email `not_available`, and a key used with another intent `invalid`.
 | `users` | `users list` (#952 slice 2); its Apply is `users confirm` (#952 slice 5); the interim page's Upgrade preview panel was `users preview-upgrade` (#952 slice 2), which stays |
 | `user_new`, `user_edit`, `user_delete` | `users preview`, `users confirm` (#952 slice 5): a change document adds, changes or deletes users, including the [high-impact changes](#high-impact-changes) |
 | `user_name_suggestions` | Covered by `users preview` (#952 slice 5): a new user in the change document without a `name` gets the [default from ParishSoft](../admin-portal/spec.md#name-from-parishsoft), which the preview shows; the other suggested Member names are only counted, under the [personal data](#personal-data-on-the-command-line) rule. Each such lookup is audited and counts toward the Administrator's 60 lookups an hour; past that the preview is `unavailable`. The lookup definer checks the command session itself, so a session it refuses (ended, begun before a recovery, or no longer an Administrator's) is `session_ended` |
-| `user_leader_import` | `users import-leaders --preview`, `users import-leaders --confirm` (#952 leaders slice) |
+| `user_leader_import`, `user_leaders_status` (the leaders section's passive status, [#1863](https://github.com/epiphany40223/parishkit/issues/1863)) | `users import-leaders --preview`, `users import-leaders --confirm` (#952 leaders slice) |
+| `user_leader_emails` | `users email-leaders --preview`, `users email-leaders --confirm` ([#1622](https://github.com/epiphany40223/parishkit/issues/1622)) |
 | `user_rules`, `rule_apply`, `rule_base`, `rule_request` | Retired by #952: removed with the rule tables and autosave when the users commands land; no rule commands are built |
 | `chair_confirmations`, `chair_reviews`, `assignments` | Retired by #922: removed with Ministry assignments and Chairperson flows; no commands are built |
 | `security_event_acknowledge`, `critical_events_acknowledge` | `events list`, `events acknowledge` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); see below |
 | `ministry_followup_item` | `followup show REQUEST_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11a; see below) |
 | `ministry_followup_update` | `followup update REQUEST_ID` (PR 11a; see below); follow-up has no assignment ([#552](https://github.com/epiphany40223/parishkit/issues/552)) |
 | `ministry_followup_bulk` | `followup bulk` (PR 11a; see below), the queue's bulk outcome ([#1131](https://github.com/epiphany40223/parishkit/issues/1131)), through the same `workflows.followup` service |
-| `information_update` | `followup …` (PR 11), with the Family information follow-up |
-| `ministry_followup_export` | The queue's Export these requests ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)), the follow-up queue's filtered set with each Member's contact details: `followup export` (PR 11) |
-| `ministry_followup_roster`, `ministry_roster_bulk` | A resolved join or leave's Entered in ParishSoft tick ([#528](https://github.com/epiphany40223/parishkit/issues/528)), one at a time or several from Roster changes to enter ([#879](https://github.com/epiphany40223/parishkit/issues/879)): `followup roster-entered REQUEST_ID --set\|--clear` (PR 11), through the same `workflows.roster` service |
-| `ministry_roster`, `ministry_roster_export` | Roster changes to enter ([#528](https://github.com/epiphany40223/parishkit/issues/528)): `report roster`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export roster [--show S] [--ministry DUID] [--format F] [--timezone Z]` (PR 8g, [#463](https://github.com/epiphany40223/parishkit/issues/463)), the page's download through the page's own writer (`ministry_roster_views.export_body`) |
+| `information_update` | Retired by [#1685](https://github.com/epiphany40223/parishkit/issues/1685): the request page has no Save, and decisions are made on the Additional information worklist. `followup information-update ITEM_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see below) stays, through the same `responses.information` service, until #1688 renames the commands; the worklist's own decisions are `information decide` ([#1735](https://github.com/epiphany40223/parishkit/issues/1735)) |
+| `ministry_followup_export` | The queue's Export these requests ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)), the follow-up queue's filtered set with each Member's contact details: `followup export [FILTERS] [--format F] [--timezone Z]` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11c; see below), the page's download through the page's own writer (`ministry_followup_exports.export_body`) |
+| `ministry_followup_roster` | A resolved join or leave's Entered in ParishSoft tick ([#528](https://github.com/epiphany40223/parishkit/issues/528)), one at a time or several from Ministry requests' To enter by hand Stage ([#879](https://github.com/epiphany40223/parishkit/issues/879); Roster changes to enter, where they were, was folded into Ministry requests in R39): `followup roster-entered REQUEST_ID --set\|--clear` and `followup roster-bulk` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see below), through the same `workflows.roster` service |
+| `ministry_report` (roster rows) | Ministry requests' To enter by hand and Entered by hand Stages, which replaced Roster changes to enter (R39): `report roster`, counts, and its Entered by hand marks through `followup roster-bulk` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export roster [--show S] [--ministry DUID] [--format F] [--timezone Z]` (PR 8g, [#463](https://github.com/epiphany40223/parishkit/issues/463)), written by `ministry_roster_views.export_body`, the retired page's writer |
 
 The users commands (#952) call the same service functions as the
 [Users page](../admin-portal/spec.md#portal-user-management), with its
@@ -3290,6 +3872,38 @@ checks, audit and alerts:
   listing is audited and a session the definer refuses is `session_ended`.
   The confirmation records `admin_cmd_users_import_leaders` and the page's
   import audit events.
+- `users email-leaders --preview` is the
+  [Email Ministry leaders](../admin-portal/spec.md#email-ministry-leaders)
+  review: `--all` or repeated `--email` choose whom (one is required), and
+  it prints each leader who would be emailed with the Ministries and open
+  request counts the email states, who is skipped and why, the mode and,
+  in Testing, the page's note that every email goes to the Testing
+  recipient (whose address it does not print). `users email-leaders
+  --confirm --token …` is its Apply. Both run the page's own functions
+  (`leader_email_views.review_facts`, `review_plan`, `review_token` and
+  `apply_review`), so the review is signed with the page's salt and binding
+  and either channel applies the other's. The leaders' facts are read under
+  the command's own session, through the same definer, so each review is
+  audited by count and a session the definer refuses is `session_ended`.
+  The request's database guard decides as for the page (the web login, a
+  current Administrator, the reviewed configuration, campaign, mode and
+  Testing recipient, at most 100 addresses, each a Ministry leader user
+  leading one of the campaign's Ministries, mail not paused), and the
+  reviewed facts must match those it records. A changed or expired review
+  is `stale_version` (the guard's refusals included), paused mail
+  `not_available` for both, a review with no current campaign with
+  Ministries or an archived campaign `not_available`, and another
+  Administrator's review `denied`. Neither is fresh-gated, as the page's
+  review dialog asks for no recent sign-in. `--confirm` prompts, as every
+  other command that sends mail does (`send confirm`, `delivery resend`,
+  `test sample`): after the Administrator role is checked and before any
+  transaction it shows how many leaders are emailed and the mode, never an
+  address or name, and `--yes` answers it; `--preview` takes no `--yes`.
+  The review token binds the Testing recipient by digest only, since a
+  signed token is readable. The confirmation records
+  `admin_cmd_users_email_leaders` with the page's
+  `user_leader_emails_requested`, once: applying the same review again
+  returns the first request. No document names a parishioner.
 
 These need a full-scope session, except `users list` and
 `users preview-upgrade`; none is fresh-gated, as the page asks for no fresh
@@ -3313,7 +3927,7 @@ ID rather than address) and the banner's `alert_counts`, `summary` and
 most 500) is printed as `critical.token`. `events acknowledge` needs a
 full-scope session and admits as the page's post does, with the page's
 capability (`MANAGE_USERS` for `--security`, `SYSTEM_LOGS` for
-`--critical`); the pages ask for no recent sign-in and no confirmation, so
+`--critical`); the pages' actions are not privileged and no confirmation, so
 it is neither fresh-gated nor prompting, and creates no automation notice.
 It runs the views' request-free `acknowledge_now`, which records the page's
 `security_event_acknowledged` or `critical_events_acknowledged` and, through
@@ -3385,12 +3999,129 @@ filters) and history (`followup_history`), and its services
   `request`). An option that would have no effect is a usage error (exit
   2): `--outcome` without `--state resolved`, or `--contact-at` or
   `--contact-notes` without `--contact-channel`. Neither change is
-  fresh-gated, as the page asks for no recent sign-in.
+  fresh-gated, as the page's action is not privileged.
 
-The roster tick (`followup roster-entered`), the queue's export and Family
-information follow-up stay pending in PR 11. The names, options and fields
-are defaults pending Administrator confirmation; the
+The names, options and fields are defaults pending Administrator
+confirmation; the
 [operator guide](../../../guides/stewardship-admin-automation.md#ministry-follow-up)
+lists the fields.
+
+`followup export [--ministry DUID] [--action A] [--state S] [--outcome O]
+[--sort S] [--format csv|xlsx|pdf] [--timezone Z]`
+([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11c) is
+the queue's Export these requests
+([#1157](https://github.com/epiphany40223/parishkit/issues/1157)), streamed
+as `export roster` is, with the same document (`campaign_id`, `file_name`,
+`content_type`, `format`, `timezone`, `size`, `sha256`, `count`) on
+standard error. The page renders the file on request and never stores it,
+so, as for the other in-memory downloads, nothing is kept and there is no
+history, Regenerate or download window
+([#1398](https://github.com/epiphany40223/parishkit/issues/1398)). It
+needs a full-scope session and is neither prompting nor fresh-gated, as
+the page asks for no recent sign-in. It admits with the queue's own
+`ministry_followup_views._principal`, passively first, so a reader without
+the queue is refused before anything is read or built, then recording
+activity as the download's post does, and reads through the shared report
+read. The filters are `followup list`'s without the search (text naming
+Members would stay in shell history) and without the page and size (the
+file is the whole filtered set); `--state not_in_parishsoft` is not
+offered, as the page's export refuses it
+([#1217](https://github.com/epiphany40223/parishkit/issues/1217)).
+`--format` defaults to xlsx and `--timezone` to UTC. The choices are
+checked by the page's own `_choices` and the file is read and written by
+the page's own `export_body` (the queue's whole selection, the Members'
+contact details in the reader's scope, the page's document and writers),
+so its files are the page's. A Ministry DUID or time zone the page refuses
+is `invalid`, reported after the session recheck, with nothing recorded; a
+PDF of more requests than the page allows (1,000) is `invalid` at `format`
+with the page's words, recorded as the page records it (failed, with the
+count reached). It records the page's `ministry_followup_exported` (the
+count, the Ministry DUIDs in the file and whether the contacts were
+operational), and no `admin_cmd_*` event. Nothing of the file is logged.
+The name, its options and the document's fields are defaults pending
+Administrator confirmation; the
+[operator guide](../../../guides/stewardship-admin-automation.md#ministry-follow-up-download)
+lists them.
+
+`followup roster-entered`, `followup roster-bulk`, `followup
+information-show` and `followup information-update`
+([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b) are
+a resolved request's Entered in ParishSoft tick, the roster list's bulk
+mark (Ministry requests' To enter by hand Stage since R39), and an Additional information item's page and Save, through the
+pages' own pieces.
+
+- **Roster tick.** `followup roster-entered REQUEST_ID --set|--clear
+  --expected-version N` admits as the request page's tick does
+  (`ministry_followup_views._principal`) and then refuses a Ministry
+  leader at once (`denied`, as `workflows.roster.can_tick` does in the
+  service), so a leader learns nothing of a request. `N` is the tick's
+  current sequence, as `followup show` prints `roster.sequence` (0 before
+  any tick); the command passes the page's next sequence to
+  `set_roster_entered`, so a tick someone changed since is
+  `stale_version`. A request that takes no tick (only a join or leave a
+  person resolved as joined or leave confirmed does) is `invalid` at
+  `request`; a tick that already says so `invalid` at `set` or `clear`.
+  It asks nothing, as the page's tick does not. `--clear` is the request's
+  Back to review of the mark
+  ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
+  [#1840](https://github.com/epiphany40223/parishkit/issues/1840)) and needs `--note TEXT|-`, as the page's dialog does; without one
+  it is `invalid` at `note`. It records the undo through the page's
+  service (`workflows.review.undo_entered`); `--set` takes no note
+  (`invalid` at `note`), as the page's mark does not.
+- **Bulk mark.** `followup roster-bulk --request ID:VERSION ... [--yes]`
+  admits with the list's own `ministry_roster_views._principal`
+  (Administrators and Staff) before any input or prompt, refuses more than
+  250 requests or a request chosen twice before the prompt, and asks (or
+  takes `--yes`), as the list's confirmation dialog does. It calls
+  `mark_many_entered`, all or none; `VERSION` is each tick's current
+  sequence.
+  The operator finds the requests with `followup list --state resolved`
+  (`roster.eligible`, `roster.entered`, `roster.sequence`). That list shows
+  each Member and Ministry's newest request only, while Roster changes to
+  enter reads every request, so an older resolved request that a newer one
+  replaced can be missing from `followup list`: a known gap, handled on the
+  page or by `followup roster-entered` with the ID.
+- **Information item.** `followup information-show ITEM_ID [--page N]`
+  admits passively with the page's `information_views._principal`
+  (`ADDITIONAL_FOLLOWUP`, Staff and Administrators), reads through the
+  shared report read and the page's `information_page` and
+  `information_history`, and records the page's `information_viewed`
+  (started, then succeeded or failed). It prints the item's id, version,
+  disposition, instants, flags, replacement and completing account id,
+  and each history revision's flags, account ids and instants: never the
+  Family's name or DUID, its contact details (#1595), the submitted text
+  or the Staff notes.
+  `followup information-update ITEM_ID --expected-version N [--needed
+  yes|no] [--completed yes|no] [--confirm-clear] [--notes TEXT|-]` is the
+  item's Save through `responses.information.update_information`: a
+  left-out option keeps its current value, as the page's form opens
+  filled in (a repeat of a recorded key keeps its first revision's
+  values), notes are at most 5,000 characters with line breaks as the
+  browser counts them, and clearing a completed follow-up without
+  `--confirm-clear`, the page's confirmation box, is `invalid` at
+  `confirm_clear`. Its revision's review decision (#1685) follows the
+  flags: needed or completed is Accepted; neither keeps a To review or
+  Ignored item as it was; and clearing a To handle or Handled item sends it
+  back to review, so the command never ignores an item on its own. Taking
+  an Ignored item out of Ignored needs new `--notes` saying why, as the
+  page's Back to review does (`invalid` at `notes` otherwise); so does
+  clearing a completed follow-up, which undoes Handled
+  ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)).
+- **Keys, scope and audit.** The three changes need a full-scope session,
+  run in the page's command scope, and are not fresh-gated, as the pages'
+  actions are not privileged. An item or request that is not a Live one of
+  the current campaign is `not_available`. The key binds each entry or
+  revision as on the page (the bulk mark's per-request keys derive from
+  it), so a repeat returns what was recorded and records nothing, and the
+  key with another change is `invalid`. They record the services' own
+  events (`ministry_roster_entered` per entry, `information_updated`) and
+  `admin_cmd_followup_roster_entered`, `admin_cmd_followup_roster_bulk` or
+  `admin_cmd_followup_information_update` in the same transaction, once
+  for each run that recorded something.
+
+The names, options and fields are defaults pending Administrator
+confirmation; the
+[operator guide](../../../guides/stewardship-admin-automation.md#roster-tick-and-additional-information)
 lists the fields.
 
 `report roster [--show todo|all] [--ministry DUID]` is Roster changes to
@@ -3415,19 +4146,20 @@ PR 8g) is the list's in-memory download, streamed as `export limitations`
 is, with the same document (`campaign_id`, `file_name`, `content_type`,
 `format`, `timezone`, `size`, `sha256`, `count`) on standard error. It
 needs a full-scope session and is neither prompting nor fresh-gated, as the
-page asks for no recent sign-in. It admits with the page's own
+page's action is not privileged. It admits with the page's own
 `ministry_roster_views._principal`, passively first, so a reader without
 the page is refused before anything is read or built, then recording
 activity as the download's post does, and reads through the shared report
 read and `roster_rows` with `report roster`'s Show and Ministry choices.
 `--format` and `--timezone` are checked by the page's own
 `ministry_roster_views.export_choice` and written by the page's own
-`ministry_roster_views.export_body` (both of which the page now calls), so
-its files are the page's. A Ministry DUID, format or time zone the page
+`ministry_roster_views.export_body` (the writer of the retired Roster changes
+to enter page, folded into Ministry requests in R39), so its files are
+the retired page's. A Ministry DUID, format or time zone the page
 refuses is `invalid`, reported after the session recheck. It records the
 page's `roster_changes_exported` with the rows in the file, and no
-`admin_cmd_*` event; the row's Entered in ParishSoft tick stays owed to
-`followup roster-entered` (PR 11). The name, its options and the
+`admin_cmd_*` event; the row's Entered in ParishSoft tick is `followup
+roster-entered`'s and `followup roster-bulk`'s (PR 11b). The name, its options and the
 document's fields are defaults pending Administrator confirmation; the
 [operator guide](../../../guides/stewardship-admin-automation.md#roster-changes-download)
 lists them.
@@ -3439,10 +4171,10 @@ lists them.
 | `integrations`, `integration_settings`, `integration_status` | `integration list`, `integration show TARGET` and `integration status TARGET [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the pages' reads (any session; no event, as the pages' reads record none; see below); `integration preview TARGET` and `integration confirm TARGET` for the settings page's non-secret Save and its Remove ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below); `integration backup-probe [--folder LINK]` for the Off-site backups page's Test access ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below); `integration preview parishsoft` takes the [refresh schedule](../background-processing/spec.md#refresh-schedule) with the page's validation, and `integration schedule-preview` prints the page's [seven-day preview](../admin-portal/spec.md#seven-day-preview) and [cost and freshness summary](../admin-portal/spec.md#cost-and-freshness-summary), for a saved or a proposed schedule ([#632](https://github.com/epiphany40223/parishkit/issues/632)) |
 | `refresh_schedule_check` | `integration schedule-preview [--refresh-schedule DOCUMENT\|-]` ([#632](https://github.com/epiphany40223/parishkit/issues/632)): the ParishSoft page's no-save live check of the refresh schedule editor's rows, with the same validation, preview and cost summary (any session; no event, as the check records none; see below) |
 | `dismiss_credential_result` | `integration dismiss TARGET --request-id ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
-| `credential_status` | `integration key status TARGET [--request-id ID] [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
-| Key replacement through `integration_settings` | `integration key replace --target …` (PR 10; see [secret replacement](#secret-replacement)) |
-| `select_credential` | `integration key finish-switching-preview TARGET` and `integration key finish-switching TARGET` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
-| Backup encryption key change, through `integration_settings` with proof of possession | `integration backup-key challenge`, `integration backup-key preview`, `integration backup-key confirm` (PR 10) |
+| Key change status, the settings page's status line (`integration_status`; the separate `credential_status` page is retired, #1568) | `integration key status TARGET [--request-id ID] [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
+| Key replacement through `integration_settings` | `integration key replace TARGET` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see [secret replacement](#secret-replacement) and below) |
+| Finish switching through `integration_settings` (its review dialog; the separate `select_credential` page is retired, #1568) | `integration key finish-switching-preview TARGET` and `integration key finish-switching TARGET` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
+| Backup encryption key change, through `integration_settings` with proof of possession | `integration backup-key challenge`, `integration backup-key preview` and `integration backup-key confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see [secret replacement](#secret-replacement) and below) |
 
 The refresh schedule is given to `integration preview parishsoft` as
 `--refresh-schedule DOCUMENT` (`-` reads standard input), with or without
@@ -3560,7 +4292,7 @@ records nothing new, the fresh gate's trail included.
 change line's **Dismiss** (`parishsoft`, `google_workspace` or `slack`;
 `ID` is `integration show`'s `key.request_id`). Both need a full-scope
 session, as the pages' posts record activity, and an Administrator; neither
-page asks for a recent sign-in or a confirmation, so neither command is
+page action is privileged or asks for a confirmation, so neither command is
 fresh-gated or prompts. `integration backup-probe` queues the page's own
 check (`integration_views.queue_probe`) of the given link, or of the saved
 folder without `--folder`, as the Google Workspace mailbox user; the command
@@ -3581,8 +4313,9 @@ required integration not set up is `not_available`. It prints `target`,
 `request_id` and `dismissed`.
 
 `integration key status TARGET [--request-id ID] [--watch S]`
-(`parishsoft`, `google_workspace` or `slack`) is the **Key replacement
-status** page: any session of an Administrator reads it, and it records
+(`parishsoft`, `google_workspace` or `slack`) is the key change's status,
+which the settings page's status line shows (until #1568 it was the **Key
+replacement status** page): any session of an Administrator reads it, and it records
 nothing, as the page's read records nothing. As on the page, only the
 session Administrator's own key changes are read (`secret_request_status`),
 by default the latest for `TARGET`; another Administrator's, another
@@ -3594,9 +4327,10 @@ following the key change its first read found. As on the page, a change is
 no longer pending once the key is installed and acknowledged, even while
 its automatic switch is still queued; `integration status TARGET` shows
 whether that switch finished. `integration key finish-switching-preview
-TARGET` is the review on **Finish switching to the new key**: it needs a
-full-scope session, as the page records activity, stands in for the page's
-recent sign-in with it (a preview records no notice), and is offered only
+TARGET` is the review that **Finish switching to the new key** opens in
+the settings page's review dialog: it needs a
+full-scope session, as the page records activity, passes the page's
+fresh gate with it (a preview records no notice), and is offered only
 while the settings page's key change line is `unselected`; otherwise it is
 `not_available`. It runs the page's own `_selection`, candidate check and
 salt (bound to the key change), so a token from either channel confirms on
@@ -3628,6 +4362,94 @@ event and `fresh_gated` notice and, as it selects a new integration key, a
 [notifications](#notifications)). A repeat returns the original request and
 records nothing new.
 
+`integration key replace TARGET --expected-version V (--secret-file PATH |
+--secret-stdin) [--changes JSON] [--yes]` (`parishsoft`, `google_workspace`
+or `slack`) is a settings page's **Save** with a new key pasted, through the
+page's own pieces: the key arrives from the host wrapper on the line after
+the preamble (see [secret replacement](#secret-replacement)). It is full
+scope, fresh-gated and prompting. The Administrator check comes first, so
+Staff is `denied` before the key is read. Then, admitting as the page's
+post does and passing its sign-in instant with the live session (unrecorded:
+nothing is done yet), it binds `--changes` (the `integration preview`
+document, `{"settings": {...}}`, as literal JSON: standard input carries
+the key; omitted settings keep their applied value; no refresh schedule,
+which the page refuses with a key) to the page's `IntegrationForm`, and the
+key to its `InlineCredentialForm`, in one read snapshot. Another version is
+`stale_version`; a key change for `TARGET` still being checked or installed
+is `not_available` (the page hides its key field then); installer
+discovery not yet published is `unavailable`; each refused setting is
+`invalid` at `settings.<name>` and a refused key at `key`, in the page's
+words, never quoting it. Slack not yet set up is set up by its key, with
+`channel_id` in `--changes`. The prompt names the integration, says
+whether this sets it up or replaces its key, names the settings saved with
+it (never their values) and says the current key stays in use if the
+installer's check fails; `--yes` answers it. It then binds the forms again,
+verifies the signed intent as the page does (`integration_views.key_intent`)
+and stages through the page's `stage_key` and `save_credential`: sealed for
+the target installer's published handoff, staged under the SQL intake
+guard (`admit_admin_action` for `SECRET_REPLACEMENT`, which records the
+fresh gate's event and `fresh_gated` notice), then the selection request,
+whose durable transaction also records
+`admin_cmd_integration_key_replace` (subject: the automation session) and,
+as it selects a new integration key, a `policy_change` notice observing
+`automation_policy_change`. If the selection cannot be recorded, the staged
+key is cancelled, as on the page. Nothing is written directly: the
+target's installer checks the key with the provider and installs it, the
+consumer acknowledges it and the configuration installer switches to it,
+as for the page. It prints `version`, `target`, `name`, `setup`,
+`changes` (`field`, `before`, `after`: public settings only),
+`key_request_id` (which `integration key status --request-id ID --watch S`
+follows) and `request` (the selection, as `config request show`); never
+the key or its fingerprint. Each run is a new key change, with no
+`--request-key`: a repeat while the first is pending is `not_available`,
+and a later error is `outcome_unknown` naming the selection request.
+
+The Backup encryption key page's three steps run through the page's own
+pieces in `accounts.backup_key` (full scope, as the page's posts record
+activity; Administrators only, the role checked before the value's line is
+read, so Staff is `denied` before anything else; a read-only session is
+refused; the page has no step-up any more, #1547):
+
+- `integration backup-key challenge --public-key-file PATH` runs the page's
+  `check_new_key` and `start_proof` in one read snapshot: a private key
+  (the top bit set, or the private half of the key in use), a text that is
+  not one public key or the key already in use is `invalid` at
+  `public_key` in the page's words, never quoting the paste. It prints
+  `version`, `current` (the page's "Key in use": `source`, `fingerprint`,
+  `backup_at`), `fingerprint` (the new key's), `challenge` (the sealed code
+  line `pk-stewardship backup-prove` opens on the key machine) and
+  `intent`, the page's own signed intent, in which the pasted key is
+  encrypted under a server key exactly as in the page's hidden field
+  (valid fifteen minutes). It records nothing.
+- `integration backup-key preview --intent TOKEN (--code-file PATH |
+  --code-stdin)` runs the page's `finish_proof`: a code that does not
+  match is `invalid` at `code` in the page's words (the same intent may be
+  tried again); an expired intent, or one made before the settings
+  changed, is `stale_version`; an altered one is `invalid` at `intent`;
+  another Administrator's is `denied`. A match is reviewed by the page's
+  `review_change` (which the page's review also calls): it prints
+  `version`, `changes` (one row, `field` `fingerprint`, `before` (null
+  where the page says "Not known yet") and `after`) and `preview.token`.
+  It records nothing.
+- `integration backup-key confirm --token TOKEN|-` (fresh-gated and
+  prompting) refuses a token the page did not sign before the prompt. The
+  prompt names the old and new fingerprints, as the review shows them,
+  says every Administrator is told and that backups already made stay
+  sealed to the old key; `--yes` answers it (`--token -` needs it). It
+  then confirms through `admin_editing.confirm_intent` with the page's
+  salt, with the fresh gate under the work lock (its event and
+  `fresh_gated` notice), and in the request's durable transaction records
+  `admin_cmd_integration_backup_key_confirm` (subject: the automation
+  session) and a `policy_change` notice observing
+  `automation_policy_change`. The configuration installer applies it and
+  its activation records the `backup_key_replaced` security event, as for
+  the page. It prints `created` and `request`; a repeat returns the
+  original request and records nothing new, and a later error is
+  `outcome_unknown` naming the request.
+
+No private key, typed code or pasted text appears in any output, log or
+audit row; the fingerprints are printed only where the page shows them.
+
 Secret values never pass through command output. The backup destination is an
 `integration` target; backups themselves already run as `pk-stewardship
 backup`, and backup status is part of `status`.
@@ -3653,7 +4475,10 @@ uploads, with `pk-stewardship bootstrap` as its offline counterpart. See
   [rules for new Admin actions](#rules-for-new-admin-actions); whether their
   final confirmations may run from the command line is decided in each
   workflow's own specification.
-- **ParishSoft publication** (ADM-09) is not built; the same rule applies.
+- **Update ParishSoft** (ADM-09)'s final confirmation runs from the
+  command line, fresh-gated and prompting, as
+  [Update ParishSoft commands](#update-parishsoft-commands) says
+  ([#1755](https://github.com/epiphany40223/parishkit/issues/1755)).
 
 ## Existing operator commands
 
@@ -3761,7 +4586,8 @@ time:
      function body and the constraint contain the new values.
    - The **session guard** enforces the [pairing](#pairing) rules on insert:
      web login only; a live approving browser session of the principal that
-     signed in within five minutes and is not a command session; the
+     is not a command session (signed in within five minutes until migration
+     0114 removed the age check, #1547); the
      principal an Administrator; `expires_at` after `statement_timestamp()`
      and at most 30 days after it; scope and digest formats. On update it
      admits only `last_used_at` forward to at most now (web), and `revoked_at`
@@ -3812,16 +4638,25 @@ time:
    function-equality test checks each copy against the baseline, and the
    upgrade-parity test checks the catalog. The Production confirmation's
    post-cleanup clause still requires cleanup's `complete` event; an
-   automation session only replaces the sign-in after it. Admission
+   automation session only replaces the sign-in after it (migration 0114
+   later dropped the sign-in-after-cleanup and five-minute clauses; the
+   session-bound guards still call `stewardship_automation_fresh_v1` for a
+   command session, and the secret request guards called 0114's
+   `stewardship_automation_instant_ended_v1` instead of the principal
+   helper, until 0125 bound a request to its named automation session).
+   Admission
    (`admit_admin_action`) refuses an automation caller for
    `DESTRUCTIVE_CONFIRMATION`, which no workflow uses yet. As the
    [secret replacement](#secret-replacement) rules accept, the two secret
    request guards bind the principal and the recorded sign-in instant, not
    a session row: any live full-scope session of that Administrator with
-   that instant admits the request. The secret guards call the function
+   that instant admits the request (until frozen migration 0125, #1763,
+   bound a request to the automation session it names). The secret guards
+   call the function
    only for the logins granted it (the web or the schema owner at intake;
    the parishsoft, google_workspace and slack installers at testing), so
-   any other login keeps its plain refusal. `require_fresh` refuses an
+   any other login keeps its plain refusal (since 0125, any other login
+   that names a session is refused). `sign_in_instant` refuses an
    automation caller outside a transaction, since the row lock must last
    until the action commits. Telling an automation action apart in the
    audit trail (its `admin_cmd_*` event and the fresh-gated notice) comes
@@ -3852,7 +4687,7 @@ MUST prove:
   prints its pending document at once; `wait` can be repeated while pending;
   expiry clean-up (`pairing_abandoned`); single use; a wrong code refused
   without identifying any record; approval needs the Administrator role and
-  fresh authentication, refused for Staff and Ministry leaders, from a command
+  a live Admin session of any sign-in age, refused for Staff and Ministry leaders, from a command
   session and for a mismatched expected email; the approver can lower but not
   raise the scope and lifetime; the SQL guard refuses a direct insert that
   breaks any pairing rule; the approving session unchanged; the secret never
@@ -3898,15 +4733,14 @@ MUST prove:
   link rows, records `role_lost`, `user_removed` and `recovery` endings with
   their notices, resolves quiet automation incidents, and the session guard
   refuses any other ending from the worker;
-- **fresh gates:** before PR 5, `require_fresh` refuses every automation
-  caller; each of the four changed session-bound guards, run against its old
-  and its new definition, refuses an automation command session under the old
-  and admits a full-scope one under the new, and under the new still refuses
-  read-only, revoked, expired, non-Administrator and recovered sessions and
-  behaves exactly as before for browser sessions; the frozen file's `DO` block
-  fails against an unchanged guard; `require_fresh` admits a full-scope
-  automation caller at each listed call site, including the post-cleanup check,
-  which a browser session still must pass;
+- **fresh gates:** `sign_in_instant` admits a full-scope, live automation
+  caller at each listed call site, recording its event and notice, and
+  refuses a read-only or no-longer-live session (`denied`); each guard that
+  migration 0114 replaced, run against its old and its new definition,
+  admits a session whose sign-in is older than five minutes only under the
+  new, still refuses revoked, expired, idle and other actors' sessions, and
+  admits a command session; the frozen file's `DO` block fails against an
+  unchanged guard;
 - **confirmation:** each prompting command changes nothing on a wrong answer
   or end of input (exit 4), acts on the correct typed value, and acts with
   `--yes`; a prompting command with a `-` input and no `--yes` is refused;
@@ -3916,7 +4750,10 @@ MUST prove:
   descriptor, so a file swapped after opening is not read), piped
   `--secret-stdin` without `--yes`, and an oversize value, and the command
   refuses an oversize decoded value; terminal input restores echo on every
-  exit path and accepts multi-line JSON ending with Ctrl-D; the base64 line
+  exit path (QUIT included, exit 131) and accepts multi-line JSON ending
+  with Ctrl-D; a key pasted at a terminal only after the command ended is
+  neither shown, run nor kept in an interactive shell's history, with or
+  without pgrep; a run with a key has a core size limit of 0; the base64 line
   leaves the prompt input intact; normalization matches
   `InlineCredentialForm` per target; a FIFO or other non-regular path is
   refused before it is opened; a value with NUL or empty after normalization
@@ -3944,7 +4781,7 @@ MUST prove:
   `admin_cli`; every module moved onto the seam keeps its existing view
   tests, changed only in call signatures; a read-only automation caller is
   refused by `authenticated_admin(activity=True)`, `admit_admin_action` and
-  `require_fresh` directly, without the dispatcher;
+  `sign_in_instant` directly, without the dispatcher;
 - **parity:** for every command, the same capability denial, stale refusal
   and success as the page through the shared function, with the same domain
   audit events plus one `admin_cmd_*` event for state changes whose subject is
@@ -3981,13 +4818,15 @@ live campaign needs first: reading state, moving schedules, refreshing,
 testing and controlling sends. The go-live steps matter again only for the
 next campaign and come last. PR 1 to PR 3 go in order; later PRs depend on
 PR 3 and may land in any order, except that PR 6, PR 7, PR 10 and PR 12
-follow PR 5, which makes fresh-gated actions accept automation. PR 2 and PR 5
+follow PR 5, which makes fresh-gated actions accept automation. The PR
+entries keep the names of their time: `require_fresh` became
+`sign_in_instant` when #1547 removed the sign-in age checks. PR 2 and PR 5
 carry the schema changes, and PR 10 handles secrets; all three get
 security-focused reviews, and none is deployed to Production without the
 Administrator's approval of that deploy.
 
-On `main`, PR 0 to PR 7, PR 8a to PR 8f and PR 9 have landed; PR 8g,
-PR 10, PR 11 and PR 12 have not, so their commands are pending exemptions in
+On `main`, PR 0 to PR 7, PR 8a to PR 8f, PR 9 and PR 12 have landed;
+PR 8g, PR 10 and PR 11 have not, so their commands are pending exemptions in
 the [action inventory](#action-inventory), and the
 [ADM-11 checklist](../../../tasks/stewardship/admin-portal.md#adm-11-admin-automation-interface)
 records each landed part's evidence. `pk-stewardship admin commands` lists
@@ -4030,7 +4869,8 @@ exactly the commands that exist.
   **PR 8b:** the export lifecycle with streamed fetch (including the
   wrapper's `export fetch` and its tests). **PR 8c:** the aggregate report
   reads, and later `report source-form`. **PR 8d:** digests (`digest daily`, `digest weekly`,
-  `digest weekly-request`, and later `digest list`). **PR 8e:** the Family-level exports that
+  `digest weekly-request`, and later `digest list`; replaced by
+  `report-email` in #1786). **PR 8e:** the Family-level exports that
   create an export record without the Family keys (`export financial`,
   `export information`, `export ministry`, `export ministry-packet`).
   **PR 8f:** the Active parishioner family directory's exports (`export
@@ -4060,7 +4900,8 @@ exactly the commands that exist.
   branding confirmation, integration settings
   (`integration list`, `integration show` and `integration status`, then
   `integration preview` and `integration confirm`) with the
-  backup folder probe, and secret replacement: integration key replacement,
+  backup folder probe, and secret replacement: integration key replacement
+  (`integration key replace`),
   finish switching and the backup key change, with the wrapper's secret
   input.
 - **PR 11, users and follow-up:** users (including the
@@ -4070,11 +4911,13 @@ exactly the commands that exist.
   [users commands](#users-and-follow-up), which its slices land with their
   routes, ahead of the rest of PR 11; the event acknowledgements
   (`events list`, `events acknowledge`) land ahead of it too.
-- **PR 12, go-live and withdrawal:** the verified readiness preview, cleanup
-  with retry and cancel, link preparation with retry and cancel,
-  confirmation, the Production preparation retry and withdrawal; after
-  [#462](https://github.com/epiphany40223/parishkit/issues/462) if that has
-  landed.
+- **PR 12, go-live and Cancel go-live:** the
+  [Go live page's actions](#production-transition-and-withdrawal): the
+  verified readiness preview and Start go-live, the Prepare step's status,
+  retry, refresh-again and stop, Confirm Production, the Production
+  preparation retry and Cancel go-live
+  ([#1809](https://github.com/epiphany40223/parishkit/issues/1809)), and
+  the Testing submissions list as a streamed file.
 
 ## Decisions
 
@@ -4174,8 +5017,8 @@ items 16 to 19 last, closing every open question.
   pattern suggested in the issue, still rejected. Such a token is provisioned
   by host access alone, approved by no person, never expires, is tied to no
   one's role and is rotated only by reinstalling. An automation session
-  differs on each point: an Administrator approves it after a fresh Google
-  sign-in; it expires within 30 days; it is listed and revocable in the
+  differs on each point: an Administrator approves it from a Google-signed-in
+  browser session; it expires within 30 days; it is listed and revocable in the
   portal and ends when that Administrator loses the role; it acts as, and is
   attributed to, exactly one Administrator; and only its digest is stored.
 - **Per-action browser approval and step-up** (the first design): rejected by

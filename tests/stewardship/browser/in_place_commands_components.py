@@ -19,7 +19,10 @@ from uuid import UUID, uuid4
 from django.template.loader import render_to_string
 from django.urls import reverse
 
+from parishkit.stewardship.jobs.delivery_metadata import mode_split
+
 from .delivery_components import components as delivery_components
+from .delivery_components import panel
 
 
 def _export(number):
@@ -135,9 +138,16 @@ def components(context, admin):
     }
 
     # The Mail message page as delivery_components draws it, with one Admin
-    # note already recorded and the four resolutions offered.
+    # note already recorded and every answer of its question offered.
     base = {path: extra for path, _, extra in delivery_components(now)}["/delivery"]
-    note_only = [dict(id=uuid4(), action="note", label="Save evidence note")]
+    # What each state's page offers once an answer left the email in it
+    # (#1563): a delivered email only the note; a failed one Send it again;
+    # a resent one, queued with its new task, only the note.
+    after = {
+        "delivered": panel("delivered", ("note",)),
+        "permanent_failure": panel("permanent_failure", ("note", "retry_failed")),
+        "pending": panel("pending", ("note",), task="queued"),
+    }
 
     def delivery(action, **changes):
         """Email ``action``'s page, with ``changes`` to its email and page."""
@@ -147,15 +157,19 @@ def components(context, admin):
         values = base | {"delivery": email} | changes
         return render_to_string(
             "stewardship/delivery.html",
-            context | {"admin_chrome": admin | {"delivery_unknown": 1}} | values,
+            context
+            | {
+                "admin_chrome": admin
+                | {"delivery_unknown": mode_split({"production": 1}, "production")}
+            }
+            | values,
         )
 
     def recorded(action, state, outcome=None):
         """The page once ``action`` was recorded and left the email ``state``:
         the decision is the newest evidence and history entry, the Testing
-        recipient's line says ``outcome`` (else as before), and only the
-        evidence note is still offered (none for a note, which changes
-        nothing)."""
+        recipient's line says ``outcome`` (else as before), and the outcome
+        panel is the new state's (a note changes nothing)."""
         note = dict(action=action, created_at=now, evidence_note=SAVED_NOTE)
         event = dict(attempt=1, action=action, state=state, created_at=now)
         changes = {
@@ -169,7 +183,8 @@ def components(context, admin):
             ]
             changes["recipients"] = base["recipients"] | {"routed_rows": routed}
         if action != "note":
-            changes |= {"decisions": False, "commands": note_only}
+            changes |= after[state]
+            changes["delivery"]["finished_at"] = now
         return changes
 
     # The outcome labels as delivery_reads.recipient_rows words them.
@@ -198,13 +213,17 @@ def components(context, admin):
             )
         ],
     )
-    delivered = {"delivery": {"state": "delivered"}, "decisions": False}
+    delivered = {"delivery": {"state": "delivered", "finished_at": now}}
     responses[DELIVERY["note_only"]] = delivery(
-        "note_only", commands=note_only, **delivered
+        "note_only", **delivered, **after["delivered"]
     )
     responses[_stand_in(DELIVERY["note_only"], "resolved")] = delivery(
         "note_only",
-        **(recorded("note", "delivered") | {"decisions": False, "commands": note_only}),
+        **(
+            recorded("note", "delivered")
+            | after["delivered"]
+            | {"delivery": {"state": "delivered", "finished_at": now, "version": 5}}
+        ),
     )
     responses[DELIVERY["stale"]] = delivery("stale")
     return {path: ("text/html", html) for path, html in responses.items()}

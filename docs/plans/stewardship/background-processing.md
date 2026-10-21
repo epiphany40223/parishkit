@@ -202,8 +202,8 @@ both are tested.
 
 1. Execute only a confirmed, current ADM-10 purge request after independently
    rechecking the campaign work gate, quiescence, inventory, backup and matching
-   recovery-attestation evidence/freshness/dependency versions,
-   authentication freshness, and confirmation evidence.
+   recovery-attestation evidence/freshness/dependency versions, and
+   confirmation evidence.
    Commit closed read admission, expose drain progress, acquire DAT-02's
    exclusive read guard without holding campaign/global row locks, and recheck
    prerequisites before the first deletion batch. Timeout leaves all data

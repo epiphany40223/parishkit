@@ -14,6 +14,7 @@ import re
 import pytest
 
 from parishkit.stewardship.accounts.campaign_views import (
+    DATES_ALONE,
     LOCKED_CLOSED,
     LOCKED_LIVE,
     MINISTRIES_ALONE,
@@ -23,6 +24,7 @@ from .campaign_settings_components import (
     DRAFT,
     DRAFT_REFUSED,
     DRAFT_REVIEW,
+    DRAFT_SCHEDULED,
     ELSEWHERE,
     END_REFUSAL,
     LIVE,
@@ -355,3 +357,74 @@ def test_a_ministry_change_with_another_waits_with_the_reason(page, component_or
     hidden(hint)
     assert reviews == []
     assert not failures
+
+
+def test_dates_with_another_change_wait_while_schedules_exist(page, component_origin):
+    """A draft with mail schedules changes its dates and time zone on their
+    own (#1330 item 1): made with another change, Save waits with the
+    server's own words as its hint, and comes back once the other change is
+    undone. A draft without schedules is not held. Nothing is posted."""
+    from playwright.sync_api import expect
+
+    reviews = answer_reviews(
+        page, component_origin, DRAFT_REFUSED, 400, address=DRAFT_SCHEDULED
+    )
+    page.goto(component_origin + DRAFT_SCHEDULED)
+    failures = watch(page)
+    review = page.get_by_role("button", name="Save", exact=True)
+    hint = page.locator("#settings-complete-hint")
+    page.get_by_label("Campaign end date").fill("2054-11-15")
+    page.get_by_label("Campaign timezone").select_option("America/Chicago")
+    enabled(review)
+    name = page.get_by_label("Campaign name")
+    name.fill("Renamed campaign")
+    expect(review).to_be_disabled()
+    visible(hint)
+    assert hint.inner_text() == str(DATES_ALONE)
+    # Shown again from history, the page works the hold out again.
+    page.evaluate(RESTORE)
+    expect(review).to_be_disabled()
+    name.fill("Sample campaign")
+    enabled(review)
+    hidden(hint)
+    assert reviews == []
+    # Without schedules, the same change is one review.
+    page.goto(component_origin + DRAFT)
+    page.get_by_label("Campaign end date").fill("2054-11-15")
+    page.get_by_label("Campaign name").fill("Renamed campaign")
+    enabled(page.get_by_role("button", name="Save", exact=True))
+    assert not failures
+
+
+# A setting's whole block (its label row, any help and the control): the
+# <div> directly inside the form, a fieldset or a require-one group, and the
+# control's offset inside it.
+BLOCK = """(node) => {
+    let block = node.parentElement;
+    while (!block.parentElement.matches('form, fieldset, [data-require-one]')) {
+        block = block.parentElement;
+    }
+    return [block.getBoundingClientRect().height,
+            node.getBoundingClientRect().top - block.getBoundingClientRect().top];
+}"""
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+@pytest.mark.parametrize("name", ["name", "census", "additional_information"])
+def test_a_setting_is_as_tall_locked_as_open(page, component_origin, width, name):
+    """Locking or freeing a setting never changes its block's height, nor
+    where its control sits in the block: the locked label row's "i" tip
+    adds no height to the row (no layout shift, #1630). A freed setting is
+    redrawn in place, so any difference would move the settings below it."""
+    page.set_viewport_size({"width": width, "height": 900})
+    found = {}
+    for state, path in (("open", DRAFT), ("locked", LOCKED)):
+        page.goto(component_origin + path)
+        control = page.locator(f"#id_{name}")
+        assert control.is_disabled() == (state == "locked")
+        found[state] = control.evaluate(BLOCK)
+    assert same_place(found["locked"], found["open"], tolerance=0.01), (
+        name,
+        width,
+        found,
+    )

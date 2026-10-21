@@ -241,6 +241,8 @@ def render(rows, **extra):
             "sections": rows,
             "keys": [row["key"] for row in rows],
             "nothing_to_fix": all(row.get("count") == 0 for row in rows),
+            "total": data_to_fix_views.total(rows),
+            "uncounted": data_to_fix_views.uncounted(rows),
         }
         | extra,
     )
@@ -385,7 +387,7 @@ def _view(monkeypatch, principal, *, query="", current=None):
 
 
 def test_a_ministry_leader_gets_the_shared_denial(monkeypatch):
-    """403 from the shared denial, never Outgoing mail's error page."""
+    """403 from the shared denial, never Sent mail's error page."""
     from parishkit.stewardship.accounts.authentication import denial
 
     response = _view(monkeypatch, LEADER)
@@ -419,3 +421,139 @@ def test_an_unknown_parameter_is_a_typed_400(monkeypatch):
     response = _view(monkeypatch, STAFF, query="?other=1")
     assert response.status_code == 400
     assert [error.code for error in response.stewardship_errors] == [ErrorCode.INVALID]
+
+
+def test_the_counts_region_polls_the_passive_fragment():
+    """The data line and the blocks are one live status region, polled every
+    60 seconds from the status fragment and never told to reload (#1859)."""
+    from django.urls import reverse
+
+    html = render([_row(key, count=0) for key in ALL])
+    status = reverse("admin:parishsoft_fixes_status")
+    assert status == "/admin/parish/data-to-fix/status/"
+    assert (
+        f'<div data-live-status="data-to-fix" data-live-url="{status}" '
+        'data-live-interval="60000" data-live-pending '
+        'data-live-announce="Nothing to fix right now.">'
+    ) in html
+    region = html[html.index('data-live-status="data-to-fix"') :]
+    assert 'id="data-to-fix-data"' in region
+    assert region.count('class="panel data-to-fix-section"') == 4
+    # The page's own content, without the Admin layout's JavaScript-off
+    # notice (which must ask for a reload once JavaScript is on).
+    content = html[html.index("<h1>") : html.index("</section></div>")]
+    assert "reload" not in content.lower()
+    assert "reload" not in str(data_to_fix_views.FAILED).lower()
+
+
+def test_the_announced_sentence_is_the_total():
+    """One short sentence, read out only when it changes: the total."""
+    html = render([_row("refused_addresses", count=2, families=1)])
+    assert 'data-live-announce="2 problems to fix in ParishSoft."' in html
+    html = render([_row("census_changes", count=1)])
+    assert 'data-live-announce="1 problem to fix in ParishSoft."' in html
+
+
+def test_the_fragment_is_a_non_page_covered_by_the_command():
+    """The fragment has no menu entry or page of its own, and its parity is
+    the page's command."""
+    assert "parishsoft_fixes_status" in admin_navigation.NON_PAGES
+    assert LEDGER["parishsoft_fixes_status"].detail == ("report data-to-fix",)
+
+
+@pytest.mark.parametrize(
+    ("view", "activity"),
+    [("data_to_fix", True), ("data_to_fix_status", False)],
+    ids=["page", "fragment"],
+)
+def test_only_the_page_records_activity(monkeypatch, view, activity):
+    """Opening the page renews the sign-in; a poll of the fragment never
+    does. A Ministry leader is refused either way."""
+    from django.test import RequestFactory
+
+    from parishkit.stewardship.accounts.authentication import denial
+
+    seen = []
+
+    def admit(*args, **kwargs):
+        """Record the admission's options; admit a Ministry leader."""
+        seen.append(kwargs)
+        return LEADER
+
+    monkeypatch.setattr(
+        data_to_fix_views, "runtime", lambda: SimpleNamespace(store=None)
+    )
+    monkeypatch.setattr(data_to_fix_views, "authenticated_admin", admit)
+    response = getattr(data_to_fix_views, view)(RequestFactory().get("/x/"))
+    assert response.status_code == 403
+    assert response.content == denial().content
+    assert seen == [{"store": None, "activity": activity, "read_only": False}]
+
+
+def test_the_fragment_refuses_a_query_key(monkeypatch):
+    """Anything but a plain GET of the fragment is the closed invalid 400."""
+    from django.test import RequestFactory
+
+    from parishkit.stewardship.web.contracts import ErrorCode
+
+    monkeypatch.setattr(
+        data_to_fix_views, "authenticated_admin", lambda *args, **kwargs: STAFF
+    )
+    response = data_to_fix_views.data_to_fix_status(
+        RequestFactory().get("/admin/parish/data-to-fix/status/?other=1")
+    )
+    assert response.status_code == 400
+    assert [error.code for error in response.stewardship_errors] == [ErrorCode.INVALID]
+
+
+def test_an_uncounted_section_is_never_announced_as_fewer_problems():
+    """A section that could not count is said, not heard as a smaller total."""
+    failed = data_to_fix_views.FAILED
+    html = render([_row(key, reason=failed) for key in ALL])
+    assert 'data-live-announce="Some problems could not be counted right now."' in html
+    html = render(
+        [
+            _row("refused_addresses", count=3, families=2),
+            _row("census_changes", reason=failed),
+        ]
+    )
+    assert (
+        'data-live-announce="3 problems to fix in ParishSoft; '
+        'some could not be counted."' in html
+    )
+    # A section ruled out by the campaign's state is not a failure.
+    html = render([_row(key, reason="No current campaign.") for key in ALL])
+    assert 'data-live-announce="No problems counted right now."' in html
+
+
+@pytest.mark.parametrize(
+    "current", [None, RuntimeError], ids=["restore review", "database outage"]
+)
+def test_the_fragment_answers_an_outage_with_the_report_503(monkeypatch, current):
+    """A restore under review or a database outage is the report pages' 503
+    for a poll too, so the region keeps its counts and tries again."""
+    from django.db import DatabaseError
+    from django.test import RequestFactory
+
+    from parishkit.stewardship.web.report_errors import REPORT_UNAVAILABLE
+
+    failure = DatabaseError("down") if current is RuntimeError else None
+
+    def read(store):
+        """The configuration read's stand-in."""
+        if failure:
+            raise failure
+        return None
+
+    monkeypatch.setattr(
+        data_to_fix_views, "runtime", lambda: SimpleNamespace(store=None)
+    )
+    monkeypatch.setattr(
+        data_to_fix_views, "authenticated_admin", lambda *args, **kwargs: STAFF
+    )
+    monkeypatch.setattr(data_to_fix_views, "current", read)
+    response = data_to_fix_views.data_to_fix_status(
+        RequestFactory().get("/admin/parish/data-to-fix/status/")
+    )
+    assert response.status_code == 503
+    assert response.stewardship_refusal is REPORT_UNAVAILABLE

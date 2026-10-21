@@ -183,7 +183,14 @@ def load_web_application(configuration, lease):
             application = StaticFilesHandler(application)
         emit_started()
         return application
-    except Exception:
+    except Exception as error:
+        from .runtime_web import GoogleClockRefused
+
+        if isinstance(error, GoogleClockRefused):
+            # Fixed text naming the cause, with nothing from the client
+            # document (#1399): a LOCAL developer must see why web will not
+            # start. Production never runs under the fake clock.
+            raise GoogleClockRefused(str(error)) from None
         raise ConfigError(
             "Web worker admission failed; use operator health diagnostics."
         ) from None
@@ -368,6 +375,8 @@ def serve_credential_installer(configuration, lease):
                 configuration.credential_target,
                 check=lease.check,
                 profile=configuration.profile,
+                base_url=configuration.parishsoft_base_url,
+                redirect=configuration.mail_redirect,
             )
             if configuration.credential_target in TARGETS
             else None
@@ -410,6 +419,7 @@ def serve_credential_installer(configuration, lease):
                 run_pending_probes(
                     installer.files.path,
                     profile=configuration.profile,
+                    redirect=configuration.mail_redirect,
                     check=lease.check,
                 )
             )
@@ -555,6 +565,7 @@ def scheduler_producer(store, *, bulk=False, web_health=None):
     from .campaigns.digest_schedule_planning import DigestScheduleProducer
     from .campaigns.go_live_sequencing import GoLiveProducer
     from .campaigns.schedule_production import FamilyScheduleProducer
+    from .jobs.leader_email_owner import LEADER
     from .jobs.loop_settings import LoopSettings
     from .jobs.operational_collection import produce_collection
     from .jobs.operational_fanout import produce_fanout
@@ -621,6 +632,7 @@ def scheduler_producer(store, *, bulk=False, web_health=None):
             return (*operational, *finalization)
         operational += independent_producer(guard, produce_fanout, guard)
         operational += independent_producer(guard, produce_fanout, guard, SECURITY)
+        operational += independent_producer(guard, produce_fanout, guard, LEADER)
         operational += independent_producer(guard, produce_slack, guard)
         independent_producer(guard, recover_setup_mail)
         independent_producer(guard, recover_setup_slack)
@@ -943,8 +955,27 @@ def serve_background(configuration, lease, *, source=False, mail=False):
         status.report()
 
     def idle_status():
-        """Write the status record from an idle consumer (its own connection)."""
-        status.report(connect=True)
+        """Write the status record from an idle consumer (its own connection).
+
+        A mail consumer first records its Family mail halt and lifts it once
+        an Administrator has cleared it; the main process also runs a
+        mailbox check an Administrator asked for (ADM-13 PR 4a,
+        ``jobs.mail_halt``). Both happen before the record, so it reports
+        the sender's state after them. A pass that lifted the halt writes
+        the record at once, not when it is next due: System health's Mail
+        tile then follows the clear within one idle pass (#530).
+        """
+        lifted = False
+        if role is ServiceRole.MAIL_DISPATCH:
+            from .jobs import mail_halt
+
+            lifted = mail_halt.idle(
+                main=not mail,
+                credential_path=configuration.secrets.get("google_workspace"),
+                profile=configuration.profile,
+                check=lease.check,
+            )
+        status.report(connect=True, now=lifted)
 
     def stopping(signum, frame):
         """Signals request drainage; no provider work or SQL runs in this handler."""

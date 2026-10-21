@@ -41,6 +41,9 @@ def add_dispatch_grants(tables, columns):
     add_digest_dispatch_grants(tables, columns, private=True)
     add_weekly_dispatch_grants(tables, columns, private=True)
     add_receipt_reads(columns)
+    from .leader_email_grants import add_leader_email_dispatch_grants
+
+    add_leader_email_dispatch_grants(tables)
     # Re-rendering at dispatch resolves the campaign banner (#248): only an
     # image's identity and size, and whether its bundle is ready.
     columns.setdefault("stewardship_branding_asset", {}).setdefault(

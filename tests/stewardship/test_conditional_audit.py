@@ -20,11 +20,9 @@ from parishkit.stewardship.campaigns.restore_review import (
     ReviewState,
 )
 from parishkit.stewardship.jobs.delivery_reads import (
-    ACTION_LABELS,
     clear_blocked,
-    offered_actions,
+    question_choices,
 )
-from parishkit.stewardship.jobs.delivery_views import RETRY_ACTIONS
 
 TEMPLATES = (
     Path(__file__).parents[2]
@@ -44,47 +42,54 @@ def test_an_empty_aria_value_is_left_out():
     assert 'disabled data-server-disabled aria-describedby="why"' in refused
 
 
-@pytest.mark.parametrize(
-    "state", ["delivery_unknown", "permanent_failure", "pending", "retry_wait"]
-)
-def test_the_unavailable_retry_is_the_one_the_page_would_offer(state):
-    """RETRY_ACTIONS names the retry offered_actions gives each state."""
-    offered = offered_actions(
-        state, "failed", campaign_state="active", can_resolve=True, can_retry=True
-    )
-    assert RETRY_ACTIONS[state] in offered
-    assert RETRY_ACTIONS[state] in ACTION_LABELS
-
-
-def test_the_mail_message_page_shows_retry_unavailable_with_why():
-    """The retry stays in view, disabled, named by the notice that says why."""
-    html = render_to_string(
+def page(state, choices, **extra):
+    """The Mail message page for ``state`` with ``choices`` (read_detail's
+    rows, as the view hands them to the template, #1563)."""
+    rows = {
+        row["choice"]: row | {"id": uuid4(), "reason": f"why {row['unavailable']}"}
+        for row in choices
+    }
+    return render_to_string(
         "stewardship/delivery.html",
         {
-            "delivery": {"id": uuid4(), "state": "permanent_failure", "version": 1},
-            "commands": [{"action": "note", "label": "Save evidence note", "id": 1}],
-            "retry_unavailable": True,
-            "decisions": True,
-            "retry_label": "Retry failed delivery",
-        },
-    )
-    assert 'id="retry-unavailable"' in html
-    # In the Resolve this email section, after the offered forms.
-    section = html[html.index('id="resolve-heading"') :]
-    assert section.index("Save evidence note") < section.index("retry-unavailable")
-    assert (
-        'disabled aria-describedby="retry-unavailable">Retry failed delivery</button>'
-        in html
+            "delivery": {"id": uuid4(), "state": state, "version": 1},
+            "outcome": "needs_resolution",
+            "choices": rows,
+            "choice_rows": list(rows.values()),
+        }
+        | extra,
     )
 
 
-def test_delivery_confirms_wait_for_a_recent_sign_in():
-    """Without a recent sign-in each Confirm is drawn disabled, named by the
-    sign-in notice; with one it is the confirm form."""
+def test_the_mail_message_page_shows_send_again_unavailable_with_why():
+    """A refused retry stays in the question, its Yes disabled and named by
+    the reason that says why, with no form to send (#563, #1563)."""
+    html = page(
+        "permanent_failure",
+        question_choices(
+            "permanent_failure",
+            "failed",
+            ["note"],
+            blocked=None,
+            refusal="family_responded",
+        ),
+    )
+    assert re.search(
+        r'<input type="radio" name="retry" value="yes" disabled '
+        r'aria-describedby="reason-retry-family_responded">',
+        html,
+    )
+    assert 'id="reason-retry-family_responded"' in html
+    assert 'value="retry_failed"' not in html
+    assert '<input type="hidden" name="action" value="note">' in html
+
+
+def test_delivery_confirms_never_wait_for_a_sign_in():
+    """Each reviewed control's Confirm is its form, whatever the sign-in's
+    age (#1547): no sign-in notice names it."""
     text = (TEMPLATES / "delivery-control.html").read_text()
-    assert 'id="delivery-fresh-reason"' in text
-    assert "control_token and fresh" not in text
-    assert text.count('aria-describedby="delivery-fresh-reason"') == 3
+    assert "fresh" not in text.replace("refresh", "")
+    assert text.count('<input type="hidden" name="action" value="confirm">') == 3
 
 
 def test_the_weekly_report_in_progress_is_shown_unavailable():
@@ -109,10 +114,18 @@ def test_the_weekly_report_in_progress_is_shown_unavailable():
         # their export were retired (#1157), and the packet moved from the
         # summary page to its own include (#1133).
         ("ministry-packet.html", "ministry-export-locked", 1, 1),
-        ("participation.html", "participation-export-locked", 2, 1),
-        ("information.html", "information-locked", 4, 1),
-        # Save, Save and next, and (#1331) the bulk bar and both kinds of box.
-        ("ministry-followup.html", "followup-locked", 6, 1),
+        # The Response dashboard's export button (#1537), and its unavailable
+        # stand-in without a chart, which then names both reasons.
+        ("response-dashboard.html", "participation-export-locked", 2, 1),
+        # Additional information's notice (#1685): its worklist offers no
+        # decision while held, and its export pane's button names the notice.
+        ("information.html", "information-locked", 0, 1),
+        ("information-worklist-export.html", "information-locked", 1, 0),
+        # A request page's Save and Save and next (both of its branches).
+        ("ministry-followup.html", "followup-locked", 3, 1),
+        # The review worklist (#1684) draws no action while the page is held,
+        # so its notice is named by nothing.
+        ("ministry-requests.html", "followup-locked", 0, 1),
     ],
 )
 def test_locked_report_actions_name_the_notice_that_says_why(
@@ -129,7 +142,8 @@ def test_locked_report_actions_name_the_notice_that_says_why(
 def test_a_held_roster_tick_is_shown_unavailable_with_why(entered):
     """While other campaign work holds follow-up, the request page's Mark or
     Clear Entered in ParishSoft is drawn disabled, named by the locked
-    notice; otherwise it is the plain enabled button."""
+    notice; otherwise it is the plain enabled button. (Clear opens its
+    dialog, so it is no submit button and has no data-server-disabled.)"""
     label = "Clear Entered in ParishSoft" if entered else "Mark entered in ParishSoft"
     row = {
         "id": uuid4(),
@@ -141,8 +155,8 @@ def test_a_held_roster_tick_is_shown_unavailable_with_why(entered):
     template = "stewardship/roster-tick.html"
     held = render_to_string(template, context | {"mutable": False})
     assert re.search(
-        rf'<button[^>]*disabled data-server-disabled aria-describedby="followup-locked"'
-        rf"[^>]*>{label}</button>",
+        rf"<button[^>]*disabled(?: data-server-disabled)?"
+        rf' aria-describedby="followup-locked"[^>]*>{label}</button>',
         held,
     )
     open_ = render_to_string(template, context | {"mutable": True})
@@ -151,18 +165,17 @@ def test_a_held_roster_tick_is_shown_unavailable_with_why(entered):
 
 
 def test_participation_exports_without_their_data_are_shown_unavailable():
-    """With no chart, or no data for a new export, each export button is
-    drawn disabled, named by the sentence that says why."""
-    text = (TEMPLATES / "participation.html").read_text()
-    for reason, label in [
-        ("participation-chart-export-unavailable", "Generate export"),
-        ("participation-exact-export-unavailable", "Queue export with the latest data"),
-    ]:
-        assert text.count(f'id="{reason}"') == 1
-        assert (
-            f'{{% button type="submit" enabled=False aria-describedby="{reason}" %}}'
-            f'{{% translate "{label}" %}}'
-        ) in text
+    """With no chart the Response dashboard's export buttons are drawn
+    disabled, named by the sentence that says why, and also by the locked
+    notice while other campaign work holds exports."""
+    text = (TEMPLATES / "response-dashboard.html").read_text()
+    reason = "participation-chart-export-unavailable"
+    assert text.count(f'id="{reason}"') == 1
+    assert (
+        '{% export_actions "csv" "xlsx" "pdf" name="participation" '
+        "zone_value=query.timezone enabled=False describedby=export_allowed"
+        f'|yesno:"{reason},{reason} participation-export-locked" %}}'
+    ) in text
 
 
 def test_family_portal_message_error_is_shown_at_the_field():
@@ -172,7 +185,6 @@ def test_family_portal_message_error_is_shown_at_the_field():
         {
             "state": {"closed": False},
             "message_limit": 500,
-            "fresh": True,
             "message": "Write to a@b.org",
             "message_error": "The maintenance message cannot contain an email address.",
         },
@@ -196,11 +208,10 @@ def unavailable(html, label, reason):
     assert f'id="{reason}"' in html
 
 
-def test_testing_cleanup_without_a_recent_sign_in_is_unavailable():
-    """Start Testing cleanup is in view, named by the sign-in step (#1331)."""
-    text = (TEMPLATES / "go-live-readiness.html").read_text()
-    assert 'id="cleanup-fresh-reason"' in text
-    assert 'disabled=True aria-describedby="cleanup-fresh-reason"' in text
+def test_start_go_live_needs_no_recent_sign_in():
+    """Start go-live's dialog has no sign-in step to refuse with (#1547)."""
+    text = (TEMPLATES / "go-live-start-review.html").read_text()
+    assert "step-up" not in text and "reauthenticate" not in text
 
 
 def test_queue_without_a_weekly_schedule_is_unavailable():
@@ -212,43 +223,34 @@ def test_queue_without_a_weekly_schedule_is_unavailable():
 
 
 def test_held_decisions_on_the_mail_message_page_are_unavailable():
-    """While campaign work holds the email, its decisions are named by the
-    held notice, in the Resolve section, with no form to send (#1331)."""
-    held = [
-        dict(action="accept", label=ACTION_LABELS["accept"]),
-        dict(action="resend", label=ACTION_LABELS["resend"]),
-    ]
-    html = render_to_string(
-        "stewardship/delivery.html",
-        {
-            "delivery": {"id": uuid4(), "state": "delivery_unknown", "version": 1},
-            "commands": [],
-            "held": held,
-            "decisions": True,
-        },
+    """While campaign work holds the email, every answer is named by the held
+    notice, with no form to send (#1331, #1563)."""
+    html = page(
+        "delivery_unknown",
+        question_choices(
+            "delivery_unknown", "failed", [], blocked="held", refusal=None
+        ),
     )
-    section = html[html.index('id="resolve-heading"') :]
-    for command in held:
-        unavailable(section, command["label"], "delivery-held")
-    assert "<form" not in section.split("</section>")[0]
+    radios = re.findall(r'<input type="radio" name="found"[^>]*>', html)
+    assert len(radios) == 3
+    for radio in radios:
+        assert 'disabled aria-describedby="reason-found-held"' in radio
+    # The reason is said once, however many answers it holds.
+    assert html.count('id="reason-found-held"') == 1
+    assert "<form" not in html.split('id="delivery-state"')[0]
 
 
-def test_no_retry_panel_without_other_commands():
-    """With no command offered (an archived campaign), the unavailable retry
-    is not drawn on its own, so its reason never misnames the blocker; held
-    decisions carry the retry with the held notice instead (#1331)."""
-    html = render_to_string(
-        "stewardship/delivery.html",
-        {
-            "delivery": {"id": uuid4(), "state": "permanent_failure", "version": 1},
-            "commands": [],
-            "retry_unavailable": True,
-            "decisions": False,
-            "retry_label": "Retry failed delivery",
-        },
+def test_no_question_for_a_notice_without_a_campaign():
+    """A notice belongs to no campaign: each answer names that reason, and
+    nothing can be sent (#1562, #1563)."""
+    html = page(
+        "permanent_failure",
+        question_choices(
+            "permanent_failure", "failed", [], blocked="no_campaign", refusal=None
+        ),
     )
-    assert "retry-unavailable" not in html
-    assert 'id="resolve-heading"' not in html
+    assert html.count('id="reason-retry-no_campaign"') == 1
+    assert "<form" not in html.split('id="delivery-state"')[0]
 
 
 @pytest.mark.parametrize(
@@ -317,7 +319,7 @@ def _review(groups=(), needed=0):
 GROUP = HeldGroup(uuid4(), "initial", None, unreviewed=2, reachable=2)
 
 
-def _restore_page(review, *, fresh=True, refusal="", step=None):
+def _restore_page(review, *, refusal="", step=None):
     """The Restore review page as its view renders it."""
     return render_to_string(
         "stewardship/restore-review.html",
@@ -326,7 +328,6 @@ def _restore_page(review, *, fresh=True, refusal="", step=None):
             "step": step or {},
             "release_ready": not refusal,
             "release_refusal": refusal,
-            "fresh": fresh,
             "page_url": "/admin/maintenance",
         },
     )
@@ -339,33 +340,32 @@ def test_release_while_a_campaign_change_runs_is_unavailable_with_why():
     assert "a campaign change or a purge is still running" in html
 
 
-def test_restore_decisions_wait_for_a_recent_sign_in():
-    """Without a recent sign-in every decision and the release name the one
-    step-up notice; with one they are available (#1331)."""
-    stale = _restore_page(_review([GROUP]), fresh=False)
-    assert stale.count('id="restore-fresh-reason"') == 1
-    for label in ("Release the site", "Assume these were sent", "Send these again"):
-        unavailable(stale, label, "restore-fresh-reason")
-    fresh = _restore_page(_review([GROUP]))
-    assert "restore-fresh-reason" not in fresh
-    assert "data-step-up-notice" not in fresh
-    # A refused step's own step-up takes the id, after the panel's controls.
+def test_restore_decisions_need_no_recent_sign_in():
+    """Every decision and the release are available whatever the sign-in's age
+    (#1547); a step refused because the session ended says so after the
+    panel's controls."""
+    page = _restore_page(_review([GROUP]))
+    assert "restore-fresh-reason" not in page
+    for label in ("Assume these were sent", "Send these again"):
+        buttons = re.findall(rf"<button[^>]*>{label}</button>", page)
+        assert buttons and all(" disabled" not in button for button in buttons)
     refused = _restore_page(
-        _review([GROUP]),
-        fresh=False,
-        step={"refused": "reauthenticate", "panel": "release"},
+        _review([GROUP]), step={"refused": "signed_out", "panel": "release"}
     )
-    assert refused.count('id="restore-fresh-reason"') == 1
-    assert refused.index("Release the site") < refused.index('restore-fresh-reason"')
+    assert 'data-restore-refused="signed_out"' in refused
+    assert refused.index("Release the site") < refused.index(
+        'data-restore-refused="signed_out"'
+    )
 
 
-def test_held_email_decisions_wait_for_a_recent_sign_in():
-    """The Held emails page names its step-up notice the same way (#1331)."""
+def test_held_email_decisions_need_no_recent_sign_in():
+    """The Held emails page offers its decisions the same way (#1547)."""
     held = HeldEmails(groups=(GROUP,))
     html = render_to_string(
         "stewardship/held-emails.html",
-        {"held": held, "step": {}, "fresh": False, "page_url": "/held"},
+        {"held": held, "step": {}, "page_url": "/held"},
     )
-    assert html.count('id="restore-fresh-reason"') == 1
+    assert "restore-fresh-reason" not in html
     for label in ("Assume these were sent", "Send these again"):
-        unavailable(html, label, "restore-fresh-reason")
+        buttons = re.findall(rf"<button[^>]*>{label}</button>", html)
+        assert buttons and all(" disabled" not in button for button in buttons)

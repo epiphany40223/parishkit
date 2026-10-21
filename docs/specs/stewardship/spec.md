@@ -28,7 +28,7 @@ The application provides:
 - a Google-authenticated administration portal under `/admin/`;
 - a short, mobile-first Family response flow at `/`;
 - repeated atomic synchronization from ParishSoft;
-- personalized, scheduled Family email and administrative digests;
+- personalized, scheduled Family email and Administrator report emails;
 - live campaign reports and post-campaign workflows;
 - controlled ParishSoft contact-data write-back where the API supports it; and
 - durable, replayable operational and audit history.
@@ -75,6 +75,12 @@ Implementation tracking: [plans](../../plans/stewardship/README.md) and
 - [Local laptop environment](local-environment/spec.md): the
   production-shaped `local` profile in a Lima VM, with a mail catcher, fake
   ParishSoft, synthetic parish, seeded campaign and local test sign-in.
+- [Review pipeline](review-pipeline/spec.md): one stage model,
+  vocabulary and review worklist for every Family-submitted stream, from
+  baseline through review to ParishSoft update or manual handling.
+- [Report emails](report-emails/spec.md): Administrator-designed report
+  emails made of report blocks, sent once or repeating to chosen
+  recipients, which replaced the daily and weekly Admin digests.
 
 ## Terminology
 
@@ -191,8 +197,8 @@ while the Campaign is still exactly `archived` and is still the global current-
 campaign pointer, no other campaign is `draft`, `scheduled`, `active`, or
 `closed`, and it has no nonterminal `PurgeRequest` or conflicting campaign work.
 Once Return to Testing clears that pointer, the historical Campaign cannot be
-unarchived. The transition requires fresh Google authentication, explicit
-confirmation, and audit. It preserves the global mode and does not enable
+unarchived. The transition requires explicit
+confirmation and audit. It preserves the global mode and does not enable
 Family access or restart schedules; those effects require the distinct closed-
 campaign reopen workflow.
 
@@ -253,7 +259,7 @@ or delivery-unknown work blocks withdrawal until resolved. A race that has
 already moved the campaign to `active` is rejected. Previously deleted Testing
 responses and delivery details are not restored; a later Production transition
 must pass the complete readiness workflow again. Reopening a closed campaign
-likewise requires readiness validation, fresh Google authentication, explicit
+likewise requires readiness validation, explicit
 confirmation, and an audit event before its atomic transition to `active`.
 
 Successor-campaign preparation is intentionally sequential. The administration

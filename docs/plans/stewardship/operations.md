@@ -145,7 +145,7 @@ fresh-install, restart, ownership, failure or persistence checks.
    with manifest/digest/version/tenant/credential validation and destructive
    confirmation.
 2. Restore database/media/config, run permitted forward migrations, start in
-   Testing, invalidate all restored sessions/OAuth/reauthentication state, and
+   Testing, invalidate all restored sessions and OAuth state, and
    atomically set `restore_review_required` before exposing web routes.
    Initialize a fresh Family-link credential epoch, clear restored generation/
    rehearsal pointers, and fence old preparation work including inactive
@@ -166,7 +166,7 @@ fresh-install, restart, ownership, failure or persistence checks.
    including closed-Production, archived-current versus historical archived,
    ambiguous delivery choice, interruption, wrong tenant, missing key, and
    release race; reject restored Admin/Staff/leader/Family cookies and verify
-   fresh Google login plus maintenance queue isolation.
+   a new Google login plus maintenance queue isolation.
 
 ### OPS-07: Housekeeping and retention jobs
 
@@ -309,7 +309,7 @@ scripted Production upgrade (#460, #461).
    and digests stay unchanged. Add the `local-seed` steps under existing
    identities only (no superuser, no bypass, no new login or grant):
    - phase 1 at the Friday before the start configures dates and all
-     schedules, meets go-live readiness (full refresh, Family test mail,
+     schedules, meets the Go live checks (full refresh, Family test mail,
      provider-check receipts, no pending configuration request) and runs the
      real go-live through a real request with an `authenticated_admin`
      session;

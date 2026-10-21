@@ -114,7 +114,7 @@ def test_tip_shows_on_hover_beside_the_entry_after_a_short_delay(
     page.wait_for_timeout(300)
     visible(tip)
     # Moving onto another entry hides it at once.
-    _sidebar(page).get_by_role("link", name="Family email progress").hover()
+    _sidebar(page).get_by_role("link", name="Mail queue").hover()
     expect(tip).to_be_hidden(timeout=100)
     # Escape dismisses a hover tip without moving the pointer.
     entry.hover()
@@ -173,7 +173,7 @@ def test_tip_shows_on_tap_and_a_tap_elsewhere_dismisses_it(
         # (even where the tip is drawn) both hides the tip and opens it.
         entry.tap(force=True)
         visible(tip)
-        target = _sidebar(page).get_by_role("link", name="Family email progress")
+        target = _sidebar(page).get_by_role("link", name="Mail queue")
         href = target.get_attribute("href")
         with page.expect_navigation():
             target.tap()
@@ -224,7 +224,7 @@ def test_collapsed_groups_are_remembered_and_reopening_forgets_them(
     sidebar = _sidebar(page)
     group = sidebar.locator('details[data-menu-group="mail"]')
     title = group.locator("summary")
-    outgoing = sidebar.get_by_role("link", name="Outgoing mail")
+    outgoing = sidebar.get_by_role("link", name="Sent mail")
     # Every group starts open, and loading the page stores nothing.
     expect(group).to_have_attribute("open", "")
     visible(outgoing)
@@ -239,14 +239,14 @@ def test_collapsed_groups_are_remembered_and_reopening_forgets_them(
     assert _expanded(page, MAIL_TITLE) is False
     eventually(page, "() => localStorage.getItem('pk-admin-menu-group:mail')", "closed")
     page.reload()
-    hidden(_sidebar(page).get_by_role("link", name="Outgoing mail"))
+    hidden(_sidebar(page).get_by_role("link", name="Sent mail"))
     # Only the group key and its state are stored.
     assert page.evaluate("Object.keys(localStorage)") == ["pk-admin-menu-group:mail"]
     _sidebar(page).locator('details[data-menu-group="mail"] > summary').click()
     visible(outgoing)
     eventually(page, "() => localStorage.length", 0)
     page.reload()
-    visible(_sidebar(page).get_by_role("link", name="Outgoing mail"))
+    visible(_sidebar(page).get_by_role("link", name="Sent mail"))
     assert not failures
 
 

@@ -135,8 +135,12 @@ def test_list_settle_and_release_end_on_home(under_review):
     assert RestoreDeliveryHold.objects.filter(state="unreviewed").count() == 5
 
 
-def test_a_stale_sign_in_gets_the_step_up_in_place(under_review):
-    """Settling and releasing need a sign-in within five minutes."""
+def test_an_old_sign_in_finds_held_emails(under_review):
+    """A sign-in older than five minutes works the review (#1547).
+
+    Release stays unavailable for its own reason only, and finding the
+    emails that may have gone out proceeds.
+    """
     browser = under_review
     session = PortalSession.objects.order_by("-authenticated_at").first()
     with unguarded():
@@ -145,14 +149,10 @@ def test_a_stale_sign_in_gets_the_step_up_in_place(under_review):
         )
     with campaign_clock(NOW), task_login(ServiceRole.WEB, exact=True, reconnect=True):
         shown = browser.get(PAGE).content.decode()
-        refused = post(browser, action="release-preview")
-    # The page knows: Release is unavailable, named by the step-up (#1331).
+        found = post(browser, action="list")
     assert RELEASE_UNAVAILABLE.search(shown)
-    assert 'id="restore-fresh-reason"' in shown
-    assert 'aria-describedby="restore-release-reason restore-fresh-reason"' in shown
-    # A forged preview is still refused by the server.
-    assert refused.status_code == 403
-    assert b"Confirm with Google" in refused.content
+    assert "restore-fresh-reason" not in shown
+    assert found.status_code == 200 and b"Found 8 more emails" in found.content
     assert SystemConfiguration.objects.get().restore_review_required
 
 

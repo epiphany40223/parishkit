@@ -12,23 +12,32 @@ construction:
   Testing mode;
 - right before each PUT it reads the Member's contact record uncached,
   compares its SHA-256 with the confirmed ``read_sha256``, rebuilds the plan
-  from the current proposals and requires ``matches_confirmed``, then checks
+  from the current proposals and requires ``matches_confirmed`` (which
+  leaves out the changes the check marked *Already in ParishSoft*), then checks
   that the system is still in Production mode; any difference records
   ``invalidated`` without a write (a switch to Testing stops the whole run);
 - it queues the entity's written proposals (``pending|failed -> queued``)
   with their rows locked ``FOR NO KEY UPDATE`` in pk order, under the fence,
-  and reserves the lease's request window before every provider call;
-- after the PUT it reads the record back and requires the confirmed
-  ``planned_sha256`` before recording ``published`` and moving the
+  and reserves the lease's request window before every provider call; it
+  queues nothing, and invalidates the entity, when the current promoted
+  data no longer lists the Member, active and living, in a written
+  change's Family (#1738);
+- the PUT body holds only the fields to write (the contact PUT is a
+  partial update, #1600); after the PUT it reads the record back and
+  requires the confirmed ``planned_sha256`` (the record read with the writes
+  applied, so every field the PUT left alone is checked too) before
+  recording ``published`` and moving the
   proposals ``queued -> published``; anything else records ``failed`` with
   a sanitized word, and the entity is tried again (at most ``ATTEMPTS``
-  times in a run); a published entity is never written again;
+  times in a run), except after ``verify_mismatch``: a PUT that was
+  accepted but read back as something else is not sent again (#1604);
+  a published entity is never written again;
 - an entity whose proposals are queued and whose fresh read already equals
-  the planned payload (a crash after its PUT) is verified and recorded
+  the planned record (a crash after its PUT) is verified and recorded
   ``published`` without a second PUT;
 - when the run ends, every entity still unfinished is closed: one whose
   written proposals this plan queued (its PUT may have landed) is read back
-  first and recorded ``published`` if ParishSoft holds the planned payload;
+  first and recorded ``published`` if ParishSoft holds the planned record;
   any other is recorded ``invalidated`` and its queued proposals go back to
   ``failed`` (an attempt failed) or ``pending`` (none did), so a new
   preflight can plan them and they never block a later confirmation. Plans
@@ -70,7 +79,12 @@ from .publication_models import (
     PublicationEntity,
     PublicationOutcome,
 )
-from .publication_plans import matches_confirmed, record_outcome
+from .publication_plans import (
+    marked_upstream,
+    matches_confirmed,
+    record_outcome,
+    unlisted_changes,
+)
 
 # Write attempts per entity in one run (the spec's bounded shared retries).
 ATTEMPTS = 3
@@ -192,15 +206,26 @@ class _Entity:
     def queue(self):
         """Queue the written proposals; False, changing nothing, if any moved.
 
-        Every planned proposal must still be at its recorded version, or be
-        a write this plan already queued (a retry), so a decision, an
-        Administrator edit or a later Family response since the plan stops
-        the write.
+        Every planned proposal must still be at its recorded version, be a
+        write this plan already queued (a retry), or be one the plan's own
+        check marked *Already in ParishSoft* (``marked_upstream``), so a
+        decision, an Administrator edit or a later Family response since the
+        plan stops the write. So does a Member the current promoted data no
+        longer lists, active and living, in a written change's Family: a
+        refresh since the preflight keeps such a change open (rule 4), and
+        it must not reach a Member now in another household (#1738).
         """
         rows = self._locked(self.recorded)
-        if len(rows) != len(self.recorded) or not all(
-            row.version == self.recorded[row.pk] or self.queued_by_plan(row)
-            for row in rows
+        marked = marked_upstream(self.fields, rows)
+        if (
+            len(rows) != len(self.recorded)
+            or not all(
+                row.version == self.recorded[row.pk]
+                or self.queued_by_plan(row)
+                or row.pk in marked
+                for row in rows
+            )
+            or unlisted_changes(self.writes)
         ):
             return False
         self._move(
@@ -275,14 +300,29 @@ def _read(claim, gateway, item):
 
 
 def _attempt(execution, claim, gateway, item):
-    """One attempt on one entity: returns its final result, "failed" or "stop".
+    """One attempt on one entity: its final result, "failed", "mismatch" or "stop".
 
     "stop" means the system left Production mode; the caller invalidates
-    every remaining entity.
+    every remaining entity. "mismatch" is a failed attempt (recorded
+    ``failed`` with ``verify_mismatch``) that must not be retried: the PUT
+    was accepted and the read back answered, but ParishSoft does not hold
+    the planned record. Another attempt would learn nothing and send the
+    same body again (#1604), so the caller closes the entity instead.
     """
     execution.check()
     if not _production():
         return "stop"
+    rows = item.rows()
+    if not any(isinstance(row, _Unqueued) for row in rows) and unlisted_changes(
+        item.writes
+    ):
+        # The Member left a written change's Family since the preflight (a
+        # refresh kept the change, rule 4, #1738): no read of a Member now in
+        # another household, and no write. A change this plan already queued
+        # may have landed, so that entity is read back first as usual, and
+        # the queueing transaction checks the Member again.
+        _record(claim, item, "invalidated")
+        return "invalidated"
     try:
         fresh = _read(claim, gateway, item)
     except ContactGatewayError as error:
@@ -324,7 +364,7 @@ def _attempt(execution, claim, gateway, item):
             return "failed"
         if fresh is None or payload_digest(fresh) != item.entity.planned_sha256:
             _record(claim, item, "failed", "verify_mismatch")
-            return "failed"
+            return "mismatch"
     _record(claim, item, "published")
     return "published"
 
@@ -335,7 +375,7 @@ def _close(claim, gateway, item):
     An entity whose written proposals this plan queued may have had its PUT
     land before a crash, a stop or the end of its attempts. It is read back
     first (#1245 review note 3) and recorded ``published`` when ParishSoft
-    holds exactly the planned payload; otherwise, or if the read fails, it
+    holds exactly the planned record; otherwise, or if the read fails, it
     is ``invalidated``. An entity with nothing queued was never written, so
     it is invalidated without a read.
     """
@@ -411,18 +451,34 @@ def publish_plan(execution, plan_id, gateway, *, enabled):
             for entity in unfinished([pk for pk in expired if pk != plan_id]):
                 counts[_close(claim, gateway, _Entity(entity))] += 1
             stopped = plan_id in expired
-            for entity in unfinished([plan_id]):
+            entities = unfinished([plan_id])
+            # Update ParishSoft's status line counts the Members done
+            # ("3 of 5 Members done", #1688): a typed count, never a name.
+            execution.progress(0, len(entities))
+            for done, entity in enumerate(entities, start=1):
                 item = _Entity(entity)
-                for _ in range(ATTEMPTS):
+                # A resumed entity whose PUT was already accepted but read
+                # back wrong goes straight to the closing read: no more PUTs.
+                mismatched = PublicationOutcome.objects.filter(
+                    entity=entity, failure_kind="verify_mismatch"
+                ).exists()
+                for _ in range(0 if mismatched else ATTEMPTS):
                     if stopped:
                         break
                     result = _attempt(execution, claim, gateway, item)
                     if result == "stop":
                         stopped = True
+                    elif result == "mismatch":
+                        # A failed attempt, but no retry: the entity is closed
+                        # below (read back once more, then invalidated).
+                        counts["failed"] += 1
                     elif result in counts:
                         counts[result] += 1
+                    # Only a transport or write failure (where the PUT may not
+                    # have landed) is tried again.
                     if result != "failed":
                         break
+                execution.progress(done, len(entities))
             # Every entity this run did not finish is closed, so none is
             # left queued or blocking a later confirmation.
             for entity in unfinished([plan_id]):

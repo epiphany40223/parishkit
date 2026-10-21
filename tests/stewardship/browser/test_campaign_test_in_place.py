@@ -14,7 +14,15 @@ from uuid import UUID
 
 import pytest
 
-from .campaign_test_components import PAGE, REFUSED, SENT, SETTLED
+from .campaign_test_components import (
+    PAGE,
+    REFUSED,
+    SENT,
+    SETTLED,
+    WIZARD,
+    WIZARD_SENT,
+    WIZARD_SETTLED,
+)
 from .test_export_resolve_in_place import announced, open_marked, stayed, wheel_to
 from .test_in_place import MARKED, count_requests
 from .waits import focused, painted, visible
@@ -83,6 +91,57 @@ def test_send_shows_the_test_and_its_result_in_place(page, component_origin):
     expect(details).to_contain_text(
         "As of when this page was opened; reload the page to update."
     )
+
+
+def test_first_settled_test_shows_continue_in_place(page, component_origin):
+    """In Campaign setup, one Send is enough (#1583): Send's own answer is
+    drawn while the test is queued, so the step is not done and there is no
+    Continue yet. Once the test is accepted, the settled list's quiet
+    follow-up redraws the stepper and the action row too, so the step reads
+    Completed and Continue appears next to Back, without a reload, a second
+    POST or the action row moving."""
+    from playwright.sync_api import expect  # imported late: collection needs no browser
+
+    open_marked(page, component_origin, WIZARD)
+
+    def settle(route):
+        """Answer a poll of the pending page with the settled page; the
+        redirect Send follows (ui-v1.js marks its requests) goes through."""
+        if route.request.headers.get("x-requested-with") == "fetch":
+            route.continue_()
+            return
+        route.fulfill(response=route.fetch(url=component_origin + WIZARD_SETTLED))
+
+    page.route(lambda url: url.split("#")[0] == component_origin + WIZARD_SENT, settle)
+    posts = count_requests(page, "POST", WIZARD)
+    actions = page.locator("#campaign-step-actions")
+    back = actions.get_by_role("link", name="Back")
+    continuing = actions.locator("[data-campaign-continue]")
+    expect(continuing).to_have_count(0)
+    count = page.locator("#campaign-stepper .setup-stepper-count")
+    before = count.text_content()
+    button = page.get_by_role("button", name=NAME, exact=True)
+    button.click()
+    announced(page, "Test email requested.")
+    visible(page.locator("#campaign-test-pending"))
+    # Send's answer: the test is queued, so the step is not done yet.
+    expect(continuing).to_have_count(0)
+    # Where Back sits in the row, and the row's height: the pending notice
+    # above leaves as the test settles, so the row as a whole may move up.
+    row = actions.bounding_box()
+    spot = (back.bounding_box()["y"] - row["y"], row["height"])
+    expect(page.locator("#campaign-test-pending")).to_have_count(0, timeout=10000)
+    expect(continuing).to_have_text("Continue to Go live", timeout=10000)
+    # The step now counts as completed (one more than before).
+    expect(count).not_to_have_text(before)
+    # Continue joins Back in the row: the row keeps its height and Back
+    # stays where it was in it. Within a pixel: Firefox may report the same
+    # row at 44 one time and 44.00003 the next (train t17c).
+    row = actions.bounding_box()
+    now = (back.bounding_box()["y"] - row["y"], row["height"])
+    assert now == pytest.approx(spot, abs=1)
+    assert posts == [component_origin + WIZARD]
+    assert page.evaluate(MARKED) == "kept"
 
 
 def test_refused_send_is_shown_once(page, component_origin):

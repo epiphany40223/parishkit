@@ -66,6 +66,13 @@ ELSEWHERE = {
     # Home links it only while a restore left a held email undecided:
     # test_held_emails_page_postgresql.py.
     "held_emails",
+    # The Go live page's Prepare and Confirm Production steps (#1585) are
+    # linked only once go-live has started (Check's Continue to Prepare and
+    # the step bar, then Prepare's Continue to Confirm Production), which no
+    # crawl here starts: test_go_live_check_postgresql.py,
+    # test_go_live_prepare_postgresql.py and test_go_live_confirm_postgresql.py.
+    "go_live_prepare",
+    "go_live_confirm",
 }
 # Pages these fixtures cannot open, so a crumb linking one is trusted to the
 # registry's linkable flag instead of a 200, each with where it is rendered.
@@ -253,6 +260,20 @@ def _crawl(browser):
     return reached, refused
 
 
+@pytest.fixture(autouse=True)
+def publication_on(settings):
+    """Every crawl runs with updating ParishSoft switched on (#528, #1688).
+
+    Census changes links Update ParishSoft only while the switch is on;
+    switched off it greys the link out with its reason, yet the page still
+    opens by its address to say so (reports spec, "Updating switched
+    off"). Rule 1 asks for a link in at least one state the crawl renders,
+    so the crawls render the state that has the link, and so also check the
+    page's way back and its links.
+    """
+    settings.STEWARDSHIP_PARISHSOFT_PUBLICATION = True
+
+
 def _rule_one(browser, reached):
     """Names of parameterless pages the viewer may open that no link reaches.
 
@@ -369,7 +390,8 @@ def test_a_census_backed_campaign_is_navigable_without_naming_the_campaign(
         allocated(family_mail)
         browser = _sign_in(family_mail.service.store, google, role)
         reached = _check(browser, f"census {role}")
-    assert {"participation", "family_directory", "family_timeline"} <= reached
+    assert {"response_dashboard", "family_directory", "timeline"} <= reached
+    assert ("update_parishsoft" in reached) == (role == "administrator")
 
 
 @pytest.mark.parametrize("role", ROLES)
@@ -378,7 +400,8 @@ def test_no_current_campaign_is_navigable(auth_service, google, media, role):  #
     and every page that opens is still reached and has a way back."""
     browser = _sign_in(auth_service.store, google, role)
     reached = _check(browser, f"no campaign {role}")
-    assert "index" in reached and not {"campaign_settings", "participation"} & reached
+    assert "index" in reached
+    assert not {"campaign_settings", "response_dashboard"} & reached
 
 
 def test_a_ministry_leader_reaches_their_ministry_pages(auth_service, google, media):  # noqa: F811
@@ -403,9 +426,9 @@ def _go_live_in_production(auth_service, settings):
     go-live may switch the deployment to Production, so the mode is set
     directly, as the debug-banner test does; every request runs guarded.
     No Production confirmation is stored, so Production activation (which
-    the menu links in this state) and Cancel go-live answer "unavailable"
-    (``ALLOWED``); test_withdrawal_postgresql.py opens both after a real
-    confirmation. The Family web runtime is configured with the key rings
+    the menu links in this state) answers "unavailable" (``ALLOWED``);
+    test_withdrawal_postgresql.py opens it, and its Cancel go-live dialog,
+    after a real confirmation. The Family web runtime is configured with the key rings
     the capture was promoted with, as a deployment always has it, so the
     directory can show codes.
     """
@@ -440,9 +463,12 @@ def test_a_live_production_campaign_with_every_module_is_navigable(
     settings,
 ):
     """The pages the other states grey out open here and are crawled too:
-    Financial stewardship, Pause and resume mail and the Ministry pages."""
+    Financial stewardship, Pause and resume mail, the Ministry pages and
+    Update ParishSoft."""
     _go_live_in_production(auth_service, settings)
     browser = _sign_in(auth_service.store, google, role)
     reached = _check(browser, f"production {role}")
     assert {"financial_report", "ministry_report", "limitations_report"} <= reached
-    assert ("delivery_control" in reached) == (role == "administrator")
+    administrator = role == "administrator"
+    assert ("delivery_control" in reached) == administrator
+    assert ("update_parishsoft" in reached) == administrator

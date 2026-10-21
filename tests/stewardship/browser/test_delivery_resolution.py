@@ -14,15 +14,15 @@ pytestmark = pytest.mark.parametrize(
 def test_keyboard_resend_requires_evidence_and_explicit_duplicate_ack(
     page, component_origin
 ):
-    """Native validation and keyboard submission preserve closed form identity."""
+    """The question is answered from the keyboard, native validation holds
+    the resend until its note and tick, and the answer posts only its own
+    form's closed fields (#1563)."""
     page.goto(component_origin + "/delivery")
-    assert "acceptance-help" in page.locator("#evidence-accept").get_attribute(
-        "aria-describedby"
-    )
     assert "mark_unknown" not in page.locator("main").inner_text()
-    form = page.locator("form").filter(
-        has=page.locator('[name="action"][value="resend"]')
-    )
+    for name in ("It was not sent", "Yes"):
+        page.get_by_role("radio", name=name, exact=True).focus()
+        page.keyboard.press("Space")
+    form = page.locator("#answer-resend")
     form.locator("textarea").fill("Confirmed with the Family")
     assert not form.evaluate("form => form.checkValidity()")
     checkbox = form.get_by_role("checkbox")
@@ -30,11 +30,11 @@ def test_keyboard_resend_requires_evidence_and_explicit_duplicate_ack(
     page.keyboard.press("Space")
     assert form.evaluate("form => form.checkValidity()")
     page.route(
-        "**/admin/mail/outgoing/*/resolution/",
+        "**/admin/mail/sent/*/resolution/",
         lambda route: route.fulfill(status=200, body="Recorded"),
     )
     form.get_by_role("button").focus()
-    with page.expect_request("**/admin/mail/outgoing/*/resolution/") as sent:
+    with page.expect_request("**/admin/mail/sent/*/resolution/") as sent:
         page.keyboard.press("Enter")
     assert sent.value.method == "POST"
     fields = parse_qs(sent.value.post_data)
@@ -46,6 +46,7 @@ def test_keyboard_resend_requires_evidence_and_explicit_duplicate_ack(
         "note",
         "duplicate_acknowledged",
     }
+    assert fields["action"] == ["resend"]
     assert fields["duplicate_acknowledged"] == ["yes"]
     assert "Confirmed" not in sent.value.url
 
@@ -76,6 +77,8 @@ def test_warning_polls_durable_count_and_survives_unavailable_response(
                         active=0,
                     ),
                     "delivery_unknown": count[0],
+                    # The other mode's count, its own link (#1576).
+                    "delivery_unknown_other": 5 if count[0] == 1234 else 0,
                 }
             )
 
@@ -106,8 +109,16 @@ def test_warning_polls_durable_count_and_survives_unavailable_response(
         else:
             expect(warning).to_be_visible()
             expect(warning).to_contain_text("1,234")
+            other = warning.locator("[data-delivery-other]")
+            expect(other).to_be_visible()
+            expect(other).to_have_text("Not sure it arrived in Testing: 5")
+            expect(other).to_have_attribute(
+                "href", "/admin/mail/sent/?state=needs_review&mode=testing"
+            )
         if value == "bad":
-            assert page.locator("[data-background-total]").inner_text() == "0"
+            # The failure sentence covers the counts (#1643); the counts
+            # themselves still hold the last good total.
+            assert page.locator("[data-background-total]").text_content() == "0"
         if index == 0:
             warning.evaluate("""element => {
                 window.warningMutations = 0;
@@ -121,14 +132,53 @@ def test_warning_polls_durable_count_and_survives_unavailable_response(
     assert len(requests) == 5 and all(request.method == "GET" for request in requests)
 
 
+def test_other_mode_link_stays_put_when_this_mode_clears(page, component_origin):
+    """#1576 review: when the poll hides the operating mode's link, the other
+    mode's link, which comes first, keeps its place under the pointer."""
+    from playwright.sync_api import expect
+
+    page.clock.install(time=NOW)
+    here = [3]
+
+    def result(route):
+        """Counts with the other mode's 5 and this mode's current count."""
+        route.fulfill(
+            json={
+                "counts": dict.fromkeys(
+                    ("queued", "running", "retry_wait", "abandoned", "active"), 0
+                ),
+                "delivery_unknown": here[0],
+                "delivery_unknown_other": 5,
+            }
+        )
+
+    page.route("**/admin/background/counts", result)
+    page.goto(component_origin + "/delivery")
+    warning = page.locator("[data-delivery-warning]")
+    other = warning.locator("[data-delivery-other]")
+    mine = warning.locator("[data-delivery-here]")
+    with page.expect_response("**/admin/background/counts"):
+        page.clock.fast_forward(30000)
+    expect(mine).to_have_text("Not sure it arrived — review needed: 3")
+    expect(other).to_be_visible()
+    before = other.bounding_box()
+    other.hover()
+    here[0] = 0
+    with page.expect_response("**/admin/background/counts"):
+        page.clock.fast_forward(30000)
+    expect(mine).to_be_hidden()
+    expect(other).to_be_visible()
+    assert other.bounding_box() == before
+
+
 def test_email_page_names_the_email_and_reads_in_the_requested_order(
     page, component_origin
 ):
-    """#1015: the heading names the email by its type and Family, the
-    Family's name sits beside its DUID with the refused address, and the
-    page then reads attempt history, Technical details, the latest background
-    task, the resolution forms and the Admin evidence, in that order. The
-    browser title leaves the Family's name out."""
+    """#1015, #1563: the heading names the email by its type and Family, the
+    outcome panel and its question come first, then the Family's name
+    beside its DUID with the refused address, attempt history, Technical
+    details, the latest background task and the Admin evidence, in that
+    order. The browser title leaves the Family's name out."""
     page.goto(component_origin + "/delivery")
     heading = page.get_by_role("heading", level=1)
     assert heading.inner_text() == ("Initial invitation to Castellanos, Maximiliana")
@@ -138,28 +188,34 @@ def test_email_page_names_the_email_and_reads_in_the_requested_order(
     assert "Family: Castellanos, Maximiliana · Family DUID: 12345" in (text)
     refused = main.get_by_role("link", name="head@example.org")
     assert refused.get_attribute("href").startswith("/admin/mail/refusals/")
+    # The outcome panel comes first (#1563), then the details as before.
     order = [
+        "Not sure it arrived",
+        "What did you find?",
+        "Family: Castellanos",
         "Attempt history",
         "Technical details",
         "Latest background task",
-        "Resolve this email",
         "Admin evidence and decisions",
     ]
     places = [text.index(label) for label in order]
     assert places == sorted(places)
-    resolve = page.locator("section", has=page.locator("#resolve-heading"))
-    assert resolve.locator("form").count() == 4
+    assert page.locator("#delivery-resolve form").count() == 4
+    page.get_by_role("radio", name="It was sent", exact=True).check()
     assert (
-        page.locator("label[for=evidence-accept]").inner_text()
-        == "Why are you doing this? (saved in this email's history)"
+        page.locator("label[for=note-sent]").inner_text()
+        == "Where did you see that it was sent?"
     )
 
 
 def test_email_without_a_decision_keeps_its_note_form_closed(page, component_origin):
-    """#1015: with only the evidence note offered (nothing to decide), there
-    is no Resolve section; the note form waits in a closed disclosure."""
+    """#1015, #1563: a delivered email's panel says so and asks nothing; the
+    note form waits in a closed disclosure, and so does the history."""
     page.goto(component_origin + "/delivery-note-only")
-    assert page.locator("#resolve-heading").count() == 0
+    heading = page.locator("#outcome-heading")
+    assert heading.inner_text() == "Delivered"
+    assert page.locator("#delivery-resolve form").count() == 0
+    assert page.locator("main").get_by_role("radio").count() == 0
     disclosure = page.locator("details", has_text="Add a note to this email's history")
     assert disclosure.get_attribute("open") is None
     assert not page.locator("#evidence-note").is_visible()
@@ -167,7 +223,8 @@ def test_email_without_a_decision_keeps_its_note_form_closed(page, component_ori
     assert disclosure.locator("h3").count() == 0
     disclosure.locator("summary").click()
     assert page.locator("#evidence-note").is_visible()
-    assert "Not sure it arrived, which" not in page.locator("main").inner_text()
+    history = page.locator("#attempt-history-disclosure")
+    assert history.get_attribute("open") is None
 
 
 def test_email_page_shows_its_recipients_without_moving(page, component_origin):
@@ -199,8 +256,8 @@ def test_email_page_shows_its_recipients_without_moving(page, component_origin):
 
 def test_email_page_shows_what_each_address_got(page, component_origin):
     """#806: in Production each To: address is followed by what the latest
-    attempt recorded for it, and a line under them says how many addresses
-    an accepted attempt reached, before the attempt history."""
+    attempt recorded for it, and the outcome panel above them says how many
+    addresses an accepted attempt reached (#1563)."""
     page.goto(component_origin + "/delivery-partial")
     text = page.locator("main").inner_text()
     line = "To: head@example.org (delivered), spouse@example.org (refused for now)"
@@ -208,5 +265,6 @@ def test_email_page_shows_what_each_address_got(page, component_origin):
     # About panel, so only the count shows here.
     reached = "Delivered to 1 of 2 addresses."
     assert line in text and reached in text
-    assert text.index(line) < text.index(reached) < text.index("Attempt history")
+    # The count is the outcome panel's summary, above the addresses (#1563).
+    assert text.index(reached) < text.index(line) < text.index("Attempt history")
     assert "Testing mode sends it to" not in text

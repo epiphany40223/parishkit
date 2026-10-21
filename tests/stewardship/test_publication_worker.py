@@ -14,12 +14,14 @@ import pytest
 
 from parishkit.config import ConfigError
 from parishkit.parishsoft import DEFAULT_API_BASE_URL
+from parishkit.parishsoft_http_worker import LOCAL_SOURCE_BASE_URL
 from parishkit.parishsoft_transport import (
     BoundedPublicationSession,
     ExactSourceResponse,
     SourceTransportError,
 )
 from parishkit.stewardship.deployment import (
+    PARISHSOFT_BASE_URL_VARIABLE,
     PARISHSOFT_PUBLICATION_VARIABLE,
     load_deployment,
 )
@@ -73,10 +75,61 @@ def test_publication_is_off_by_default_and_needs_an_exact_switch(tmp_path):
         )
 
 
+REAL = DEFAULT_API_BASE_URL
+
+
+def test_local_publication_writes_only_to_the_fake(tmp_path):
+    """pk-local may read the real ParishSoft (#1399) but never writes to it;
+    with the fake, publication and its gateway are admitted (#1884)."""
+    local = {
+        "PARISHKIT_STEWARDSHIP_PROFILE": "local",
+        PARISHSOFT_PUBLICATION_VARIABLE: "1",
+    }
+    with pytest.raises(ConfigError, match="local profile unless it reads"):
+        load_deployment(environ=local | {PARISHSOFT_BASE_URL_VARIABLE: REAL})
+    with pytest.raises(ConfigError, match="local profile unless it reads"):
+        load_deployment(
+            config_file(
+                tmp_path,
+                {"parishsoft_publication": True, "parishsoft_base_url": REAL},
+            ),
+            environ={"PARISHKIT_STEWARDSHIP_PROFILE": "local"},
+        )
+    assert load_deployment(environ=local).parishsoft_publication is True
+    with pytest.raises(TypeError, match="local"):
+        ParishSoftContactGateway.open_operator(
+            Mock(api_key="SYNTHETIC-PRIVATE-KEY"),
+            profile="local",
+            base_url=REAL,
+            on_timeout=Mock(),
+        )
+    gateway = ParishSoftContactGateway.open_operator(
+        Mock(api_key="SYNTHETIC-PRIVATE-KEY"),
+        profile="local",
+        base_url=LOCAL_SOURCE_BASE_URL,
+        on_timeout=Mock(),
+    )
+    try:
+        assert gateway.base_url == LOCAL_SOURCE_BASE_URL
+    finally:
+        gateway.close()
+    # Outside LOCAL the fake cannot be named, so no gateway reaches it.
+    with pytest.raises(TypeError):
+        ParishSoftContactGateway.open_operator(
+            Mock(api_key="SYNTHETIC-PRIVATE-KEY"),
+            profile="production",
+            base_url=LOCAL_SOURCE_BASE_URL,
+            on_timeout=Mock(),
+        )
+
+
 def publication_session():
     """A publication session whose helper is never started here."""
     session = BoundedPublicationSession(
-        before_request=lambda seconds: None, check=lambda: None, profile="production"
+        before_request=lambda seconds: None,
+        check=lambda: None,
+        profile="production",
+        base_url=DEFAULT_API_BASE_URL,
     )
     session.headers["x-api-key"] = "SYNTHETIC-PRIVATE-KEY"
     return session
@@ -200,7 +253,8 @@ def test_only_the_gateway_builds_the_put_session_and_only_the_worker_writes():
         "stewardship/responses/contact_smoke.py",
     }
     # The raw probe read is the smoke check's alone: the worker's read must
-    # stay the refusing read_member_contact. The task-free opener and the
+    # stay read_member_contact, which refuses for the real API (only the
+    # local fake's read is defined, #1884). The task-free opener and the
     # smoke check itself (which writes without the publication switch) are
     # reached only from the human-run smoke command.
     assert owners["probe_member_record"] == {
@@ -248,10 +302,10 @@ def test_the_operator_gateway_needs_a_recorder_and_no_task():
     credential = Mock(api_key="SYNTHETIC-PRIVATE-KEY")
     with pytest.raises(TypeError, match="timeout recorder"):
         ParishSoftContactGateway.open_operator(
-            credential, profile="production", on_timeout=None
+            credential, profile="production", base_url=REAL, on_timeout=None
         )
     gateway = ParishSoftContactGateway.open_operator(
-        credential, profile="production", on_timeout=Mock()
+        credential, profile="production", base_url=REAL, on_timeout=Mock()
     )
     assert isinstance(gateway.session, BoundedPublicationSession)
     gateway.session.check()
@@ -264,10 +318,10 @@ def test_the_real_gateway_needs_a_timeout_recorder():
     credential = Mock(api_key="SYNTHETIC-PRIVATE-KEY")
     with pytest.raises(TypeError, match="timeout recorder"):
         ParishSoftContactGateway.open(
-            execution, credential, profile="production", on_timeout=None
+            execution, credential, profile="production", base_url=REAL, on_timeout=None
         )
     gateway = ParishSoftContactGateway.open(
-        execution, credential, profile="production", on_timeout=Mock()
+        execution, credential, profile="production", base_url=REAL, on_timeout=Mock()
     )
     assert gateway.session.on_timeout is not None
     assert gateway.session._helper.process is None

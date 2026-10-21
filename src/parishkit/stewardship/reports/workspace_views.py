@@ -1,44 +1,65 @@
-"""Admin/Staff live reports with exact fact selection and response-owned guards."""
+"""The Response dashboard (#1537): its Summary tiles and the daily chart.
 
-import json
+One page (``reports/responses/``, the current campaign) shows, top to
+bottom, one Summary panel of stat tiles (the current active population
+statistics, then Families by stage from ``response_dashboard``), and the
+daily participation chart and table with their export, each read under the
+page's one campaign read guard. Production is the default; an
+Administrator's Testing rehearsal view (``mode=testing``) shows the
+rehearsal's Families by stage only, since the statistics, the daily chart
+and the export count Production responses.
+"""
+
 from contextlib import ExitStack
-from uuid import uuid4
+from urllib.parse import urlencode
+from uuid import UUID, uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
-from django.utils.translation import gettext as _
+from django.urls import reverse
 from django.views.decorators.http import require_GET
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.accounts.sessions import authenticated_admin
+from parishkit.stewardship.accounts.sessions import authenticated_admin, passive_read
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
+from parishkit.stewardship.campaigns.domain import Money
 from parishkit.stewardship.campaigns.models import Campaign
-from parishkit.stewardship.observability import Event, emit_failure
-from parishkit.stewardship.source.catalog_names import fund_display_name
-from parishkit.stewardship.source.version_models import SnapshotFund
+from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
+from parishkit.stewardship.web.stat_tiles import tile
 from parishkit.stewardship.web.tables import paginate
 
-from .chart_specs import PROGRESS, participation_chart, population_progress
-from .daily_digest import statistics_cards
+from .chart_specs import participation_chart
 from .digest_presentation import participation_table_context
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES, _principal
 from .facts import FactUnavailable
 from .ministries import can_report, unscoped
+from .models import POPULATION_SCOPES
+from .money import MoneyAmount
+from .participation_summary import population_figures
 from .read_admission import admit_report_read
-from .selection import guarded_participation
+from .response_dashboard import _admit_mode, funnel_panels, read_metrics
+from .response_dashboard import _audit as _audit_funnel
+from .selection import guarded_participation, newest_figures
 from .statistics import StatisticsUnavailable, calculate_statistics
 from .statistics_selection import capture_statistics
-from .workspace import DAILY_SORTING, RenderedReport, ReportQuery
+from .workspace import (
+    DAILY_SIZE,
+    DAILY_SIZES,
+    DAILY_SORTING,
+    SCOPE_LABELS,
+    RenderedReport,
+    ReportQuery,
+)
 
 REPORTABLE = ("draft", "scheduled", "active", "closed", "archived")
 
@@ -54,13 +75,13 @@ def campaign_ids():
 
 @require_GET
 def index(request):
-    """Open the current campaign's Participation, or Ministry requests.
+    """Open the current campaign's Response dashboard, or Ministry requests.
 
-    ``/admin/reports/`` keeps its old meaning rather than opening the group's
-    first entry (admin-portal spec, "Menu groups"): Participation, or Ministry
-    requests for a viewer who may not open Participation (a Ministry leader),
-    which checks its own access. Default navigation is per request, never a
-    mutation of the current pointer.
+    ``/admin/reports/`` keeps its own meaning rather than opening the group's
+    first entry (admin-portal spec, "Menu groups"): the Response dashboard,
+    or Ministry requests for a viewer who may not open it (a Ministry
+    leader), which checks its own access. Default navigation is per
+    request, never a mutation of the current pointer.
     """
     try:
         service = runtime()
@@ -77,11 +98,11 @@ def index(request):
             "current_campaign_id", flat=True
         ).get()
         # Only the current campaign is reported until #145 (rule 10). With no
-        # current campaign the root still opens Participation, whose greyed
-        # page says why in the menu's words (#1128), rather than a page of
-        # its own that no link reaches (navigation rule 1).
+        # current campaign the root still opens the Response dashboard, whose
+        # greyed page says why in the menu's words (#1128), rather than a
+        # page of its own that no link reaches (navigation rule 1).
         if current not in choices:
-            response = redirect("admin:participation")
+            response = redirect("admin:response_dashboard")
         else:
             admit_report_read(current)
             response = redirect(query.url())
@@ -95,8 +116,15 @@ def index(request):
         return private_response("Invalid report filters.\n", status=400)
 
 
-def _audit(principal, campaign_id, outcome):
-    """Parish-owned references survive purge without copying reported values."""
+def _audit(principal, campaign_id, outcome, *, automatic=False):
+    """Parish-owned references survive purge without copying reported values.
+
+    ``automatic`` marks a view the open page made by itself to bring newer
+    figures in (#1620); a reader's own view records no such key.
+    """
+    context = {"outcome": outcome}
+    if automatic:
+        context["automatic"] = True
     # An audit append takes no row locks, so it need not join the
     # writers' work order; waiting there stalled report pages behind
     # every source promotion and installer.
@@ -111,23 +139,47 @@ def _audit(principal, campaign_id, outcome):
             parish_id=system.active_configuration.parish.pk,
             campaign_id=campaign_id,
             subject_id=campaign_id,
-            context={"outcome": outcome},
+            context=context,
         )
 
 
 @require_GET
-def participation(request, campaign_id):
-    """The Participation page, its daily chart drawn in the browser (#720)."""
+def dashboard(request, campaign_id):
+    """The Response dashboard of one campaign, read under the campaign guard.
+
+    The query is parsed first, so only a malformed address is a 400; a
+    fault while shaping the page is the report's 503. A Testing view is
+    for Administrators only, checked before anything is read and again
+    inside the guard. Every view records ``response_dashboard_viewed`` (the
+    funnel read) when it ends; a Production view also records
+    ``participation_viewed``, started and then succeeded or failed, since
+    only it reads the statistics and the daily chart. When those cannot be
+    read from their inputs, the page still shows the funnel, says the
+    other panels are unavailable, and records that read as failed.
+    """
     finish, handed_off = None, False
     try:
         service = runtime()
-        principal = _principal(request, service.store)
-        query = ReportQuery.parse(request.GET)
+        # The page's own re-read when newer figures are ready (#1586) is
+        # passive: it never extends the sign-in, though it is audited, and
+        # marked automatic (#1620). The header can only add that mark: every
+        # view is audited whatever the request sends.
+        automatic = passive_read(request)
+        principal = _principal(request, service.store, read_only=automatic)
+        try:
+            query = ReportQuery.parse(request.GET)
+        except ValueError:
+            return private_response("Invalid report filters.\n", status=400)
+        production = query.mode == "production"
+        _admit_mode(principal, query)
         identities = (campaign_id,)
         admit_report_read(campaign_id)
-        _audit(principal, campaign_id, Outcome.STARTED)
+        if production:
+            _audit(principal, campaign_id, Outcome.STARTED, automatic=automatic)
         finalized = False
         response_guard = None
+        # False once the statistics or daily facts could not be read.
+        participation_read = True
 
         def finish(completed):
             """Audit only server completion after the read-only transaction closes."""
@@ -135,39 +187,48 @@ def participation(request, campaign_id):
             if finalized:
                 return
             finalized = True
-            try:
-                _audit(
-                    principal,
-                    campaign_id,
-                    Outcome.SUCCEEDED if completed else Outcome.FAILED,
-                )
-            except (DatabaseError, StorageInvariantError) as error:
-                emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
+            audits = [(_audit_funnel, completed)]
+            if production:
+                audits.append((_audit, completed and participation_read))
+            for audit, succeeded in audits:
+                try:
+                    audit(
+                        principal,
+                        campaign_id,
+                        Outcome.SUCCEEDED if succeeded else Outcome.FAILED,
+                        automatic=automatic,
+                    )
+                except (DatabaseError, StorageInvariantError) as error:
+                    emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
 
         def authorize(guard):
             """Refresh roles and lifecycle inside all acquired campaign barriers."""
-            nonlocal response_guard
+            nonlocal response_guard, principal
             fresh = _principal(request, service.store, read_only=True)
             if fresh.identity != principal.identity:
                 raise PermissionError("Report access changed.")
+            _admit_mode(fresh, query)
+            principal = fresh
             for identifier in identities:
                 admit_report_read(identifier)
             response_guard = guard
 
         def content():
             """Prepare before headers and transfer generation protection to WSGI."""
+            nonlocal participation_read
             with ExitStack() as stack:
-                selected = stack.enter_context(
-                    guarded_participation(
-                        response_guard,
-                        campaign_id=campaign_id,
-                        population_scope=query.scope,
-                        browser_timezone=query.timezone,
+                metrics = read_metrics(campaign_id, query.mode)
+                participation, cause, shown = None, None, None
+                if production:
+                    participation, cause, shown = _participation(
+                        stack, response_guard, campaign_id, query
                     )
+                    participation_read = participation is not None
+                context = _page_context(
+                    campaign_id, query, participation, metrics, principal, cause, shown
                 )
-                context = _page_context(campaign_id, query, selected, principal)
                 payload = render_to_string(
-                    "stewardship/participation.html", context, request=request
+                    "stewardship/response-dashboard.html", context, request=request
                 ).encode()
                 response_guard.check()
                 return RenderedReport(payload, stack.pop_all())
@@ -180,6 +241,10 @@ def participation(request, campaign_id):
             content_type="text/html; charset=utf-8",
             on_close=finish,
         )
+        # Admission refused before streaming (busy or closing): the Admin
+        # report error page, as the other campaign reports answer.
+        if response.status_code == 503 and not response.streaming:
+            return report_unavailable()
         handed_off = response.status_code == 200 and response.streaming
         return response
     except (PermissionError, ObjectDoesNotExist):
@@ -188,11 +253,162 @@ def participation(request, campaign_id):
         return report_unavailable()
     except SAFE_FAILURES:
         return report_unavailable()
-    except ValueError:
-        return private_response("Invalid report filters.\n", status=400)
+    except ValueError as error:
+        # The page is built before the response starts, so a shaping fault
+        # lands here; the reader's options were already validated above.
+        emit_failure(error, event=Event.REPORT_SHAPING_FAILED)
+        return report_unavailable()
     finally:
         if finish is not None and not handed_off:
             finish(False)
+
+
+def _participation(stack, guard, campaign_id, query):
+    """The daily chart's selection and statistics, as ``(result, cause, shown)``.
+
+    The selection's generation protection joins ``stack``. Inputs that
+    cannot be read (``FactUnavailable``, ``StatisticsUnavailable``) leave
+    the funnel shown and these panels out (#1537), rather than refusing the
+    whole page; a database failure still ends it. ``result`` is then None and
+    ``cause`` is "facts" (the daily chart is not ready) or "statistics" (the
+    ParishSoft inputs are missing or unreadable). ``shown`` is the chart
+    generation the selection chose, or when it chose none or the facts could
+    not be read the newest one now (None when there is none): an
+    unavailable page's figures status re-reads the page once another
+    generation is ready (#1586). The
+    swallowed error is debug-logged, as ``report_unavailable`` does, so a
+    real code fault stays visible to a maintainer.
+    """
+    shown = None
+    try:
+        selected = stack.enter_context(
+            guarded_participation(
+                guard,
+                campaign_id=campaign_id,
+                population_scope=query.scope,
+                browser_timezone=query.timezone,
+            )
+        )
+        if selected.document is not None:
+            shown = selected.document.fact_set_id
+        return (
+            (selected, calculate_statistics(capture_statistics(campaign_id))),
+            None,
+            shown,
+        )
+    except FactUnavailable:
+        debug_swallowed("participation facts unavailable")
+        # The selection already passes over a busy generation, so facts
+        # that fail here seldom clear by themselves: compare with the
+        # newest generation now, so the page re-reads only once another is
+        # ready, never once a minute while nothing changed (#1586).
+        return None, "facts", _newest(campaign_id, query.scope)
+    except StatisticsUnavailable:
+        debug_swallowed("participation statistics unavailable")
+        if shown is None:
+            # No generation could be read: compare with the newest, for
+            # the same reason.
+            shown = _newest(campaign_id, query.scope)
+        return None, "statistics", shown
+
+
+def _newest(campaign_id, scope):
+    """The newest generation now, or None when there is none to name."""
+    try:
+        return newest_figures(campaign_id, scope)[0]
+    except FactUnavailable:
+        return None
+
+
+# The pages that show Participation figures, by the in-place region their
+# re-read names (the one holding the figures status, #1586).
+FIGURES_REGIONS = {
+    "dashboard": "response-dashboard",
+    "comparison": "comparison-report",
+}
+
+
+def figures_status(
+    view, scope, shown, updating, *, newer=False, follow=True, retry=False
+):
+    """The figures status region's context (report-figures-status.html).
+
+    ``view`` is the page (a FIGURES_REGIONS key), ``scope`` the population
+    scope its figures are for, ``shown`` the generation the page shows (None
+    when it shows none) and ``updating`` whether the newest figures are
+    still being prepared. ``newer`` (the status read's answer only) says a
+    newer generation than ``shown`` is ready, so the page re-reads itself.
+    ``follow`` False draws the notice but never watches it: a page that is
+    itself a refusal (a Campaign comparison day out of range) would only be
+    refused again by its own re-read. ``retry`` marks a page that could not
+    read its figures at all (the Response dashboard's unavailable line): the
+    region is watched at a fixed, slow pace (60 s, as each re-read it leads
+    to is an audited view) and shows no Updating notice, since the
+    unavailable line already says what is missing; its address carries
+    ``retry=1`` so each status answer keeps both (#1586).
+    """
+    fields = {"view": view, "scope": scope, "shown": shown or ""}
+    if retry:
+        fields["retry"] = "1"
+    return {
+        "figures_status": {
+            "view": view,
+            "region": FIGURES_REGIONS[view],
+            "updating": updating and not retry,
+            "retry": retry,
+            "newer": newer,
+            "follow": follow,
+            "url": reverse("admin:response_dashboard_status") + "?" + urlencode(fields),
+        }
+    }
+
+
+@require_GET
+def dashboard_status(request, campaign_id):
+    """Passive figures status an open report polls; never audited (#1586).
+
+    The Response dashboard and Campaign comparison audit every view, so
+    instead of re-reading themselves on a timer they poll this fragment: it
+    says only whether newer figures than the page's (``shown``) are ready
+    and whether the newest are still being prepared, never a figure. When
+    newer ones are ready, the page re-reads its own address once, passively
+    (UX conventions, "Pages that update themselves"). ``retry=1`` (its only
+    value) comes from a page that could not read its figures at all, and is
+    answered at that page's slow pace (``figures_status``). The read never
+    extends the sign-in.
+    """
+    try:
+        service = runtime()
+        _principal(request, service.store, read_only=True)
+        fields = request.GET
+        view = fields.get("view", "")
+        scope = fields.get("scope", "")
+        if (
+            set(fields) - {"view", "scope", "shown", "retry"}
+            or view not in FIGURES_REGIONS
+            or scope not in POPULATION_SCOPES
+            or fields.get("retry", "1") != "1"
+            # Only the dashboard draws an unavailable line.
+            or ("retry" in fields and view != "dashboard")
+        ):
+            raise ValueError("Invalid figures status options.")
+        shown = UUID(fields["shown"]) if fields.get("shown") else None
+        admit_report_read(campaign_id)
+        newest, updating = newest_figures(campaign_id, scope)
+    except (PermissionError, ObjectDoesNotExist):
+        return denial()
+    except (FactUnavailable, StorageInvariantError):
+        return report_unavailable()
+    except SAFE_FAILURES:
+        return report_unavailable()
+    except ValueError:
+        return private_response("Invalid report options.\n", status=400)
+    context = figures_status(
+        view, scope, shown, updating, newer=newest != shown, retry="retry" in fields
+    )
+    response = render(request, "stewardship/report-figures-status.html", context)
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 def daily_table(chart, presented, query):
@@ -207,8 +423,10 @@ def daily_table(chart, presented, query):
     table = paginate(
         list(zip(chart.days, presented["rows"], strict=True)),
         {"page": str(query.page), "size": query.size, "sort": query.sort},
+        default=int(DAILY_SIZE),
         carry=query.carried(),
         sorting=DAILY_SORTING,
+        sizes=DAILY_SIZES,
     )
     keys = ["date", "first", "participation", "pledge"]
     return {
@@ -218,87 +436,108 @@ def daily_table(chart, presented, query):
     }
 
 
-def fund_names(statistics):
-    """Each financial period's fund names, read from the statistics' snapshot.
-
-    The page names the funds, never their DUIDs (#1123). A fund that
-    snapshot lacks reads "Unavailable fund". None without financial periods.
-    """
-    financial = statistics.financial
-    if financial is None:
-        return None
-    wanted = set(financial.upcoming.funds) | set(financial.comparison.funds)
-    rows = (
-        SnapshotFund.objects.filter(
-            snapshot_id=statistics.source_id,
-            source_key__in=[str(duid) for duid in wanted],
-        ).values_list("source_key", "payload__canonical")
-        if statistics.source_id
-        else ()
-    )
-    names = {
-        int(key): fund_display_name(int(key), json.loads(text).get("name"))
-        for key, text in rows
-    }
-    return {
-        period: [
-            names.get(duid, _("Unavailable fund"))
-            for duid in getattr(financial, period).funds
-        ]
-        for period in ("upcoming", "comparison")
-    }
-
-
 def statistics_panel(statistics):
-    """The statistics panel's tiles and its progress chart (#720).
+    """The Summary panel's Active population row of stat tiles (#720, #1540).
 
-    The responded and email cards are drawn as progress bars against active
-    Families; the other cards stay tiles. Without an observation nothing is
-    drawn, and every card, those three included, is a tile reading
-    Unavailable.
+    The figures are ``participation_summary.population_figures``, which the
+    export's capture also reads (#1557): the active Families and Members,
+    and with giving enabled the two pledge totals (#728), so not a subtotal
+    of these Families. Without an observation every tile reads "—" with the
+    reason, never zero. The responded and email-reach counts are not shown
+    (#1537): the Families by stage row gives the responses, and ``report
+    participation`` still reports all three.
     """
-    progress = population_progress(statistics.active)
-    drawn = set(dict(PROGRESS)) if progress else set()
     return {
         "tiles": tuple(
-            card for card in statistics_cards(statistics) if card[0] not in drawn
-        ),
-        "progress": progress,
+            tile(
+                key,
+                label,
+                # A tile formats Money; the statistics hold exact cents.
+                Money(value.cents) if isinstance(value, MoneyAmount) else value,
+                unknown_reason="" if value is not None else reason,
+            )
+            for key, label, value, reason in population_figures(statistics)
+        )
     }
 
 
-def _page_context(campaign_id, query, selected, principal):
-    """Format detached shared observations; never recompute money in templates."""
+def scope_links(query):
+    """Each Chart population segment's address (#1535): this page with that
+    scope, the daily table back on its first page, its sort and size and
+    the zone kept."""
+    return {scope: query.url(page=1, scope=scope) for scope in SCOPE_LABELS}
+
+
+def mode_links(query):
+    """Each Production / Testing rehearsal segment's address (#1537).
+
+    This page in that mode, the daily table back on its first page, its
+    population, sort, size and the zone kept.
+    """
+    return {mode: query.url(page=1, mode=mode) for mode in ("production", "testing")}
+
+
+def _page_context(
+    campaign_id, query, participation, metrics, principal, cause=None, shown=None
+):
+    """Format detached shared observations; never recompute money in templates.
+
+    ``metrics`` is the funnel of the mode shown (None: a Testing view with
+    no rehearsal). ``participation`` is the daily chart's selection and the
+    statistics, read in Production only: None in a Testing view, which
+    shows no statistics, daily chart or export, or when they could not be
+    read, which the page says; ``cause`` ("facts" or "statistics") picks its
+    wording, and ``shown`` (the generation that read chose, if any) is what
+    the unavailable line's figures status compares newer figures with, so
+    the page brings them in by itself once they can be read (#1586).
+    """
     campaign = Campaign.objects.select_related("active_configuration").get(
         pk=campaign_id
     )
-    statistics = calculate_statistics(capture_statistics(campaign_id))
+    context = {
+        "campaign": campaign,
+        "query": query,
+        "testing": query.mode == "testing",
+        # Testing responses are shown to Administrators only (#477).
+        "can_test": "administrator" in principal.roles,
+        "mode_links": mode_links(query),
+        "metrics": None,
+        "participation_unavailable": query.mode == "production"
+        and participation is None,
+        "participation_cause": cause,
+    }
+    if metrics is not None:
+        context.update(funnel_panels(metrics))
+    if participation is None:
+        if context["participation_unavailable"]:
+            # The figures status stays beside the unavailable line, at its
+            # slow retry pace, so the page never asks for a reload (#1586).
+            context |= figures_status(
+                "dashboard", query.scope, shown, False, retry=True
+            )
+        return context
+    selected, statistics = participation
     mutable = True
     try:
         admit_campaign(campaign_id, mutating=True)
     except PermissionError:
         mutable = False
-    context = {
-        "campaign": campaign,
-        "query": query,
+    context |= {
+        "scope_links": scope_links(query),
         "selection": selected,
         "statistics": statistics,
         **statistics_panel(statistics),
-        "fund_names": fund_names(statistics),
         "export_key": uuid4(),
-        "exact_key": uuid4(),
-        "exact_row_count": max(
-            0,
-            (
-                selected.expected.through_date
-                - campaign.active_configuration.start_date
-            ).days
-            + 1,
-        )
-        if selected.expected is not None
-        else None,
         # No list of earlier exports: exports are point-in-time (#1398).
         "export_allowed": mutable,
+        # The chart's Updating status, which follows the newest figures
+        # (#1586).
+        **figures_status(
+            "dashboard",
+            query.scope,
+            selected.document.fact_set_id if selected.document is not None else None,
+            selected.updating,
+        ),
     }
     if selected.document is not None:
         context.update(participation_table_context(selected.document))

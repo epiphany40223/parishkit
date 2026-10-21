@@ -45,7 +45,14 @@ from parishkit.stewardship.web.design_tokens import CHART_COLORS, COLORS, hex6
 from parishkit.stewardship.web.presentation import number
 
 from .chart_assets import VEGA_LITE_SCHEMA
-from .chart_specs import WIDTH, ChartDocument, ChartTable
+from .chart_specs import (
+    WIDTH,
+    ChartDocument,
+    ChartTable,
+    hover_guide,
+    hover_param,
+    hovered,
+)
 from .comparison import band_label, money_text, share_text, value_text, years_label
 
 # The day-by-day charts' plot height in CSS pixels. Fixed, so the end
@@ -659,10 +666,7 @@ def day_chart(measure, comparison):
                 "x": {"field": "day", "type": "quantitative"},
                 "y": {"field": "value", "type": "quantitative"},
                 "color": encoding_series["color"],
-                "opacity": {
-                    "condition": {"param": "hover", "empty": False, "value": 1},
-                    "value": 0,
-                },
+                "opacity": hovered(1),
             },
         }
     )
@@ -699,39 +703,19 @@ def day_chart(measure, comparison):
     # Hovering: an invisible band one day wide and the plot's full height
     # for each day, drawn last so it lies over every mark, selects its day
     # (``hover``) and carries that day's tooltip listing every line
-    # (``day_tips``); the day's rule and points then show. Anywhere over the
+    # (``day_tips``); the day's guide line (``hover_guide``) and points then
+    # show. Anywhere over the
     # plot is some day's band, so no one has to find a thin line or a small
     # point, and a line, being one shape, could name just one of its days.
     # Bands, not Vega-Lite's "nearest" Voronoi cells: a cell's tooltip reads
     # the cell's own item, not the day's row, so an object tooltip there is
     # lost.
     tips = day_tips(measure, drawn, last_day)
-    hidden_until_hovered = {
-        "condition": {"param": "hover", "empty": False, "value": 0.5},
-        "value": 0,
-    }
     layers += [
+        hover_guide({"field": "day", "type": "quantitative"}, data=tips),
         {
             "data": {"values": tips},
-            "mark": {"type": "rule", "color": COLORS["ink"], "aria": False},
-            "encoding": {
-                "x": {"field": "day", "type": "quantitative"},
-                "opacity": hidden_until_hovered,
-            },
-        },
-        {
-            "data": {"values": tips},
-            "params": [
-                {
-                    "name": "hover",
-                    "select": {
-                        "type": "point",
-                        "fields": ["day"],
-                        "on": "pointerover",
-                        "clear": "pointerout",
-                    },
-                }
-            ],
+            "params": [hover_param("day")],
             # Clipped: the first and last days' half bands past the axis.
             "mark": {"type": "rect", "opacity": 0, "clip": True, "aria": False},
             "encoding": {

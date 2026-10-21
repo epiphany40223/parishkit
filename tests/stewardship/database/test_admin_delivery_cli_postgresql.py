@@ -2,7 +2,7 @@
 
 Process admission is replaced by the test's own Django assembly (the runner
 of test_admin_task_retry_cli_postgresql.py); everything after it is the
-real command line on the restricted web login, reading real Outgoing mail
+real command line on the restricted web login, reading real Sent mail
 and refused addresses through the pages' own functions and resolving a real
 uncertain delivery through the page's resolution form. A Family email's
 retry re-prepares it with the Family keys the command loads only for that
@@ -96,7 +96,7 @@ def test_list_and_show_read_outgoing_mail_without_recipients(
         assert row["purpose"] == "initial" and row["state"] == "delivery_unknown"
         assert not private(document)
         # The page's search takes a DUID as input; it is never printed.
-        code, found, _ = admin("delivery", "list", "--search", "1", secret=secret)
+        code, found, _ = admin("delivery", "list", "--recipient", "1", secret=secret)
         assert code == 0 and [r["id"] for r in found["result"]["deliveries"]] == [
             str(message.pk)
         ]
@@ -111,12 +111,15 @@ def test_list_and_show_read_outgoing_mail_without_recipients(
         assert views() == before + 3
         code, missing, _ = admin("delivery", "show", str(uuid4()), secret=secret)
         assert code == 1 and missing["error"]["code"] == "not_available"
-        code, bad, _ = admin("delivery", "list", "--search", "x", secret=secret)
+        # Any other text is part of a name (#1849); a malformed DUID is refused.
+        code, named, _ = admin("delivery", "list", "--recipient", "Zzqx", secret=secret)
+        assert code == 0 and named["result"]["deliveries"] == []
+        code, bad, _ = admin("delivery", "list", "--recipient", "1,2", secret=secret)
         assert code == 1 and bad["error"]["code"] == "invalid"
 
 
 def test_list_sorts_by_last_change_and_by_family_name(admin, response_service, google):
-    """#931: ``delivery list`` sorts as Outgoing mail does. The default is
+    """#931: ``delivery list`` sorts as Sent mail does. The default is
     ``-changed`` (the latest change first, not the newest email), ``name``
     orders by the Family's name, and the old ``recipient`` token is gone."""
     harness = activate_response_service(response_service)
@@ -139,6 +142,49 @@ def test_list_sorts_by_last_change_and_by_family_name(admin, response_service, g
     assert listed("--sort=-name") == ("-name", [example, empty])
     code, document, _ = admin("delivery", "list", "--sort", "recipient", secret=secret)
     assert code == 1 and document["error"]["code"] == "invalid"
+
+
+def test_list_takes_sent_mails_filters(admin, response_service, google):
+    """#1562: ``delivery list`` takes the page's Recipient (an address in any
+    case too), Purpose, Delivery groups, mode and days; the document echoes
+    every filter but the recipient, and names no recipient."""
+    harness = activate_response_service(response_service)
+    message = str(email(harness, address="Valid@Example.org").message_id)
+    _, secret, _ = paired(admin.service, scope="read-only")
+    today = OutboxMessage.objects.get(pk=message).updated_at.date().isoformat()
+
+    def listed(*options):
+        """The exit code and the listed ids, checking the document's privacy."""
+        code, document, _ = admin("delivery", "list", *options, secret=secret)
+        if code:
+            return code, document["error"]["code"]
+        assert not private(document)
+        return code, [row["id"] for row in document["result"]["deliveries"]]
+
+    assert listed("--recipient", "VALID@example.ORG") == (0, [message])
+    assert listed("--recipient", "other@example.org") == (0, [])
+    assert listed("--purpose", "reminder") == (0, [])
+    assert listed("--purpose", "initial", "--state", "still_sending") == (
+        0,
+        [message],
+    )
+    assert listed("--state", "needs_attention") == (0, [])
+    assert listed("--mode", "testing") == (0, [])
+    assert listed("--from", today, "--to", today, "--zone", "UTC") == (0, [message])
+    assert listed("--from", "2000-01-01", "--to", "2000-01-02") == (0, [])
+    assert listed("--from", "20001001") == (1, "invalid")
+    assert listed("--from", today, "--zone", "Mars/Olympus") == (1, "invalid")
+    code, document, _ = admin(
+        "delivery", "list", "--purpose", "initial", "--from", today, secret=secret
+    )
+    assert code == 0
+    result = document["result"]
+    assert (result["purpose"], result["mode"], result["start"], result["end"]) == (
+        "initial",
+        None,
+        today,
+        None,
+    )
 
 
 def test_resolve_accepts_external_evidence_once_per_key(
@@ -166,7 +212,7 @@ def test_resolve_accepts_external_evidence_once_per_key(
         assert code == 0 and again["result"]["created"] is False
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             response = browser.post(
-                f"/admin/mail/outgoing/{message.pk}/resolution/",
+                f"/admin/mail/sent/{message.pk}/resolution/",
                 {
                     "command_id": str(key),
                     "expected_version": str(message.version),
@@ -216,14 +262,14 @@ def test_refusals_are_listed_and_shown_without_the_address(
     """Refused addresses by id, kind and time, and the source version to verify.
 
     ``delivery list`` counts the email's unresolved refused addresses as
-    Outgoing mail marks them (#1004): the recording email 1, another 0.
+    Sent mail marks them (#1004): the recording email 1, another 0.
     """
     harness = activate_response_service(response_service)
     event = refused(harness)
     refusal = remember(event)
     other = email(harness, address="other@example.org")
     _, secret, _ = paired(admin.service, scope="read-only")
-    code, listed, _ = admin("delivery", "list", "--search", "1", secret=secret)
+    code, listed, _ = admin("delivery", "list", "--recipient", "1", secret=secret)
     assert code == 0, listed
     assert {r["id"]: r["refused"] for r in listed["result"]["deliveries"]} == {
         str(event.message_id): 1,
@@ -351,7 +397,7 @@ def test_family_retry_prepares_once_per_key_like_the_page(
         # The page's form with the same key is the same resolution.
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             response = browser.post(
-                f"/admin/mail/outgoing/{message.pk}/resolution/",
+                f"/admin/mail/sent/{message.pk}/resolution/",
                 {
                     "command_id": str(key),
                     "expected_version": str(retried),
@@ -398,7 +444,7 @@ def test_a_page_retry_leaves_the_command_line_stale(
         browser, secret, _ = paired(admin.service)
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             response = browser.post(
-                f"/admin/mail/outgoing/{message.pk}/resolution/",
+                f"/admin/mail/sent/{message.pk}/resolution/",
                 {
                     "command_id": str(uuid4()),
                     "expected_version": str(message.version),

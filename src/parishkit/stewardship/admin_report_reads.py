@@ -5,15 +5,16 @@ functions the page itself uses, and prints counts and aggregates only:
 
 - ``report list`` is the reports root: the current campaign and the reports
   the reader's Admin menu offers (``admin_context._navigation_items``);
-- ``report participation`` is the Participation page
-  (``guarded_participation`` and ``calculate_statistics``), with the
+- ``report participation`` is the Response dashboard's statistics and daily
+  table (``guarded_participation`` and ``calculate_statistics``), with the
   ``fact_set_id`` that ``export create --fact-set`` takes;
 - ``report comparison`` is the Campaign comparison page
   (``comparison_reads.read_comparison``) for its comparison day or
   ``--day N``, with the small-count protection of output that leaves the
   Admin portal (``comparison.outside_document``);
-- ``report responses`` is the response dashboard (``dashboard_context``'s
-  ``response_metrics``);
+- ``report responses`` is the Response dashboard's funnel
+  (``response_dashboard.read_metrics``), with the activity series and the
+  lists' lengths the page no longer shows (#1537);
 - ``report financial`` and ``report limitations`` are the summaries of the
   financial detail and Limitations reports (``financial_page``,
   ``limitations_report``), without their Family and Member rows;
@@ -48,15 +49,19 @@ from uuid import UUID
 from .admin_reads import NotAvailable, ReadModel, Unavailable, _held, _recheck
 
 # The report pages ``report list`` names, by URL name, with their commands.
+# The Response dashboard shows the stage counts (``report responses``, the
+# read its funnel chart once drew) and the statistics and daily table
+# (``report participation``) (#1537), so it has two, each listed as its own
+# row.
 REPORT_COMMANDS = {
-    "response_dashboard": "report responses",
-    "participation": "report participation",
-    "campaign_comparison": "report comparison",
-    "financial_report": "report financial",
-    "limitations_report": "report limitations",
-    "census_changes": "report census",
-    "information_queue": "report information",
-    "ministry_report": "report ministry",
+    "response_dashboard": ("report responses", "report participation"),
+    "campaign_comparison": ("report comparison",),
+    "financial_report": ("report financial",),
+    "pledges_to_enter": ("report pledges",),
+    "limitations_report": ("report limitations",),
+    "census_changes": ("report census",),
+    "information_queue": ("report information",),
+    "ministry_report": ("report ministry",),
 }
 
 
@@ -65,7 +70,7 @@ class ReportList(ReadModel):
     """The reports root: the campaign reports open on, and the reports offered.
 
     ``campaign_id`` is the current campaign when it can be reported, else
-    None (the root then opens Participation, greyed out). ``reports`` has
+    None (the root then opens the Response dashboard, greyed out). ``reports`` has
     one row per report the reader's Admin menu offers: ``command``, the
     report's ``page`` (its URL name) and ``available``, false while the menu
     greys it out (no current campaign, a module the campaign does not
@@ -78,7 +83,7 @@ class ReportList(ReadModel):
 
 @dataclass(frozen=True)
 class ParticipationReport(ReadModel):
-    """The Participation page: one generation's statistics and daily table.
+    """The Response dashboard's statistics and daily table (``report participation``).
 
     ``status`` is the page's: ``current``, ``updating`` (an older complete
     generation is shown while a newer one is prepared) or ``unavailable``
@@ -139,7 +144,7 @@ class ResponseReport(ReadModel):
     rehearsal (the page then shows no figures). Otherwise it holds the
     stage counts in funnel order, the three figures beside the funnel, the
     activity buckets at ``grain``, the Family email sends marked on them
-    (each by its Outgoing mail ``send`` token) and each list's length
+    (each by its Sent mail ``send`` token) and each list's length
     (``lists``; the data-quality list has none on the page either).
     """
 
@@ -176,22 +181,33 @@ class LimitationsReport(ReadModel):
     """The Limitations report's summary, without its rows (#970).
 
     ``cannot_serve`` counts Members who cannot participate in ministries and
-    ``cannot_attend`` Families who cannot attend Mass or prayer services.
+    ``cannot_attend`` Families who cannot attend Mass or prayer services,
+    both at the worklist ``stage`` (``all`` for every answer, #1735);
+    ``stages`` counts every answer by stage, zeros included.
     """
 
     campaign_id: UUID
     cannot_serve: int
     cannot_attend: int
+    stage: str
+    stages: dict
 
 
 @dataclass(frozen=True)
 class InformationReport(ReadModel):
-    """How many information queue items match the page's filters."""
+    """How many information queue items match the page's filters.
+
+    With a worklist ``stage`` (#1735), ``matching`` is the requests at it
+    and ``stages`` each stage's count, History's too; both are None
+    without one.
+    """
 
     campaign_id: UUID
     filters: dict
     source_as_of: str
     matching: int
+    stage: str | None = None
+    stages: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -494,12 +510,12 @@ def read_report_list(caller, service):
         )
         reports = [
             {
-                "command": REPORT_COMMANDS[item.name],
+                "command": command,
                 "page": item.name,
                 "available": item.reason is None,
             }
             for item in items
-            if item.name in REPORT_COMMANDS
+            for command in REPORT_COMMANDS.get(item.name, ())
         ]
         _recheck(caller, service.store, actor)
         return ReportList(campaign_id=current, reports=reports)
@@ -553,7 +569,7 @@ def day_rows(document):
 
 
 def participation_model(campaign_id, query, selection, statistics):
-    """The command's projection of the Participation page's read."""
+    """The command's projection of the Response dashboard's participation read."""
     document = selection.document
     days = day_rows(document)
     financial = statistics.financial_enabled
@@ -585,7 +601,7 @@ def participation_model(campaign_id, query, selection, statistics):
 
 
 def read_participation(caller, service, *, scope):
-    """``report participation``: the Participation page's generation and statistics.
+    """``report participation``: the Response dashboard's generation and statistics.
 
     ``scope`` is the page's option, parsed by the page's ``ReportQuery`` (a
     refusal is ``invalid``). Records the page's
@@ -669,11 +685,10 @@ def read_comparison(caller, service, *, day=None):
 # ----------------------------------------------------------- responses
 
 
-def response_model(campaign_id, query, context):
-    """The command's projection of the response dashboard's page context."""
+def response_model(campaign_id, query, metrics):
+    """The command's projection of the Response dashboard's funnel read."""
     from .reports.response_dashboard import list_counts
 
-    metrics = context["metrics"]
     if metrics is None:
         return ResponseReport(campaign_id=campaign_id, mode=query.mode, metrics=None)
     return ResponseReport(
@@ -715,11 +730,12 @@ def response_model(campaign_id, query, context):
 
 
 def read_responses(caller, service, *, mode, grain):
-    """``report responses``: the response dashboard, counts only.
+    """``report responses``: the Response dashboard's funnel, counts only.
 
-    ``mode`` and ``grain`` are the page's options, parsed by its
-    ``DashboardQuery``; Testing is for Administrators, as on the page.
-    Records the page's ``response_dashboard_viewed`` once the read ends.
+    ``mode`` and ``grain`` are parsed by ``DashboardQuery``; Testing is for
+    Administrators, as on the page. ``grain`` buckets the activity series,
+    which the page no longer draws (#1537). Records the page's
+    ``response_dashboard_viewed`` once the read ends.
     """
     from .admin_reads import query as parameters
     from .reports.response_dashboard import (
@@ -727,19 +743,21 @@ def read_responses(caller, service, *, mode, grain):
         _admit_mode,
         _audit,
         _principal,
-        dashboard_context,
+        at_grain,
+        chosen_grain,
+        read_metrics,
     )
 
     query = DashboardQuery.parse(parameters(mode=mode, grain=grain))
 
     def read(guard, actor, campaign_id):
-        """The page's one guarded read of the funnel, shaped as the page."""
+        """The page's one guarded read of the funnel, at the chosen grain."""
         # The page repeats its Testing rule inside the guard, too.
         _admit_mode(actor, query)
-        context = dashboard_context(
-            campaign_id, query, can_test="administrator" in actor.roles
-        )
-        return response_model(campaign_id, query, context), None
+        metrics = read_metrics(campaign_id, query.mode)
+        if metrics is not None:
+            metrics = at_grain(metrics, chosen_grain(metrics, query.grain))
+        return response_model(campaign_id, query, metrics), None
 
     return _report(
         caller,
@@ -837,21 +855,33 @@ def read_financial(caller, service):
 # --------------------------------------------------------- limitations
 
 
-def limitations_model(campaign_id, result):
-    """The command's projection of ``limitations_report``'s summary."""
-    summary = result["summary"]
+def limitations_model(campaign_id, result, stage="all"):
+    """The command's projection of ``limitations_report``'s summary.
+
+    The summary is of the answers at ``stage`` (the page's own
+    ``at_stage``); ``stages`` counts every answer by stage.
+    """
+    from .reports.limitations import STAGES, at_stage
+
+    counts = {choice.value: 0 for choice in STAGES}
+    for row in result.get("members", []) + result.get("families", []):
+        counts[row["placement"].stage.value] += 1
+    summary = at_stage(result, stage)["summary"]
     return LimitationsReport(
         campaign_id=campaign_id,
         cannot_serve=summary["cannot_serve"],
         cannot_attend=summary["cannot_attend"],
+        stage=stage,
+        stages=counts,
     )
 
 
-def read_limitations(caller, service):
+def read_limitations(caller, service, stage="all"):
     """``report limitations``: the Limitations report's summary (#970).
 
     Reads the page's ``limitations_report`` without filters
-    (``LimitationsQuery()``) and prints its summary only. Records the
+    (``LimitationsQuery()``) and prints its summary only, at the worklist
+    ``stage`` (#1735; ``all``, the default, is every answer). Records the
     page's ``talents_report_viewed`` once the read ends, with ``count`` 0
     (no Member or Family row is displayed) and the page's ``audit_choices``:
     the default filter and, when it held still during the read, the
@@ -863,6 +893,14 @@ def read_limitations(caller, service):
     from .reports.limitations import LimitationsQuery, limitations_report
     from .source.snapshot_names import current_snapshot
 
+    def admit(actor, campaign_id):
+        """The worklist's Stage check, before anything is recorded."""
+        from .admin_worklists import LIMITATION_STAGES
+
+        if stage not in LIMITATION_STAGES:
+            _recheck(caller, service.store, actor)
+            raise ValueError("Invalid Limitations stage.")
+
     def read(guard, actor, campaign_id):
         """The page's read, with the page's default filters."""
         Campaign.objects.only("pk").get(pk=campaign_id)
@@ -870,9 +908,11 @@ def read_limitations(caller, service):
         # As the page: the snapshot is named only when no refresh promoted
         # another between the statements of the read.
         before = current_snapshot()
-        result = limitations_report(campaign_id, query, actor)
+        # Only the summary is printed, so Pledges' rows are not read.
+        result = limitations_report(campaign_id, query, actor, contributions=False)
         snapshot = before if current_snapshot() == before else None
-        return limitations_model(campaign_id, result), audit_choices(query, snapshot)
+        model = limitations_model(campaign_id, result, stage)
+        return model, audit_choices(query, snapshot)
 
     return _report(
         caller,
@@ -887,6 +927,7 @@ def read_limitations(caller, service):
             0,
             values or audit_choices(LimitationsQuery(), None),
         ),
+        admit=admit,
         shaping=True,
     )
 
@@ -894,18 +935,22 @@ def read_limitations(caller, service):
 # --------------------------------------------------------- information
 
 
-def read_information(caller, service, filters):
+def read_information(caller, service, filters, stage=None):
     """``report information``: how many information items match the filters.
 
     ``filters`` are the queue's non-identifying filters (``disposition``,
     ``needed``, ``completed``, ``start``, ``end`` and the ``zone`` the days fall
     in, required with them (#558); None when not given),
     parsed by the page's ``InformationQuery`` (a refusal is ``invalid``).
+    With a worklist ``stage`` (#1735) the worklist's own read counts the
+    requests by stage instead (``read_information_stages``).
     Records the page's ``information_viewed``, started and then succeeded.
     """
     from .reports.information import InformationQuery, information_page
     from .reports.information_views import _audit, _principal
 
+    if stage is not None:
+        return read_information_stages(caller, service, filters, stage)
     query = InformationQuery.parse(
         {key: value for key, value in filters.items() if value is not None}
     )
@@ -937,6 +982,55 @@ def read_information(caller, service, filters):
         ),
         started=True,
     )
+
+
+def read_information_stages(caller, service, filters, stage):
+    """``report information --stage``: the worklist's requests, counted (#1735).
+
+    The worklist reads every request (``information_worklist.requests``)
+    with only the dates of ``filters``; the old queue's follow-up filters
+    stand for stages there, so naming one beside ``stage`` is ``invalid``.
+    ``matching`` is the requests at ``stage`` and ``stages`` every stage's
+    count, History's too. Records the page's ``information_viewed``.
+    """
+    from .admin_worklists import information_filters, information_query
+    from .reports.information_views import _audit, _principal
+    from .reports.information_worklist import STAGES, requests
+
+    if any(filters.get(name) is not None for name in FOLLOWUP_FILTERS):
+        raise ValueError("--stage replaces --disposition, --needed and --completed.")
+    query = information_query(
+        stage, {name: filters.get(name) for name in ("start", "end", "zone")}
+    )
+
+    def read(guard, actor, campaign_id):
+        """The worklist's placed rows, reduced to their counts."""
+        metadata, rows, counts = requests(campaign_id, query)
+        stages = [choice.value for choice in STAGES] + ["history"]
+        model = InformationReport(
+            campaign_id=campaign_id,
+            filters=information_filters(query),
+            source_as_of=_instant(metadata["source_as_of"]),
+            matching=len(rows),
+            stage=query.stage,
+            stages={choice: counts.get(choice, 0) for choice in stages},
+        )
+        return model, None
+
+    return _report(
+        caller,
+        service,
+        principal=_principal,
+        read=read,
+        audit=lambda actor, campaign_id, outcome, values: _audit(
+            actor, campaign_id, outcome
+        ),
+        started=True,
+    )
+
+
+# The old queue's follow-up filters, which a worklist Stage stands for.
+FOLLOWUP_FILTERS = ("disposition", "needed", "completed")
 
 
 # ------------------------------------------------------------ ministry

@@ -2,11 +2,14 @@
 
 The campaign is the response-metrics ``funnel`` fixture, as the timeline
 page's own tests use it: the corpus Family signs in, opens the form, gets
-past the first step and submits in Testing. Its timeline is exported from the
-page's form and from ``export family-timeline``; both make the same record
-and event, the real worker renders the file with the Family code for an
-Administrator, and the command's stream is the page's download byte for byte.
-The capture's SQL checks refuse what the web must never store.
+past the first step and submits in Testing, and, where a test needs
+Production lines, signs in live, opens the form and submits after the real
+activation. The Timeline shows Production records only (#1570), and so does
+its export. Its timeline is exported from the page's form and from ``export
+family-timeline``; both make the same record and event, the real worker
+renders the file with the Family code for an Administrator, and the
+command's stream is the page's download byte for byte. The capture's SQL
+checks refuse what the web must never store.
 """
 
 import io
@@ -70,6 +73,26 @@ def rehearsed_timeline(request):
     return harness, families
 
 
+def live_timeline(request):
+    """``rehearsed_timeline``, then the corpus Family's Production activity.
+
+    After the real activation it signs in live, opens the form and submits,
+    so its Production timeline (the only one the page shows, #1570) has a
+    sign-in, a form open and a submission.
+    """
+    from .campaign_builders import complete_empty_catchup
+    from .response_builders import activate_response_service
+    from .test_response_metrics_postgresql import live_login
+
+    harness, families = rehearsed_timeline(request)
+    harness = activate_response_service(harness)
+    complete_empty_catchup(harness.campaign, uuid4())
+    live = live_login(harness, 1)
+    open_form(live)
+    respond(live)
+    return live, families
+
+
 def requested():
     """Each ``export_requested`` event's context members, in order."""
     return [
@@ -107,17 +130,18 @@ def test_the_page_and_the_command_export_the_same_timeline(
     settings,
 ):
     """One record kind, one event, one file, from the page or the command."""
-    harness, families = rehearsed_timeline(request)
+    harness, families = live_timeline(request)
     family = families[1]
-    page = reverse("admin:family_timeline", args=[family])
+    page = reverse("admin:timeline", args=[family])
     browser, _ = signed_in()
     run = cli()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response, body = get(browser, page + "?mode=testing")
+        response, body = get(browser, page)
     assert response.status_code == 200 and b"Export this timeline" in body
     assert f'action="{page}exports/"'.encode() in body
+    # The form posts no mode: the export is of Production records (#1570).
+    assert b'name="mode"' not in body
     fields = {
-        "mode": "testing",
         "format": "csv",
         "browser_timezone": "UTC",
         "request_key": str(uuid4()),
@@ -134,19 +158,25 @@ def test_the_page_and_the_command_export_the_same_timeline(
         assert (
             post(browser, page + "exports/", fields | {"extra": "x"}).status_code == 400
         )
+        # A mode is no longer a field of the form, whatever its value.
+        for mode in ("production", "testing"):
+            assert (
+                post(browser, page + "exports/", fields | {"mode": mode}).status_code
+                == 400
+            )
     by_page = ExportRequest.objects.get(request_key=fields["request_key"])
-    # The export's trail runs through the Family's own timeline (#521), in
-    # the mode it was exported in, so no "Return to" link repeats it (#1345).
+    # The export's trail runs through the Family's own Timeline (#521), so
+    # no "Return to" link repeats it (#1345).
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         _, status = get(browser, reverse("admin:report_export", args=[by_page.pk]))
     trail = status[status.index(b'aria-label="Breadcrumb"') :]
     trail = trail[: trail.index(b"</nav>")]
     directory = reverse("admin:family_directory")
     assert f'<a href="{directory}">'.encode() in trail
-    crumb = f'<li><a href="{page}?mode=testing">Family timeline</a></li>'
-    assert crumb.encode() in trail
+    assert f'<li><a href="{page}">Timeline</a></li>'.encode() in trail
     assert b"Return to " not in status
-    argv = ("export", "family-timeline", str(family), "--mode", "testing")
+    assert by_page.parameters["mode"] == "production"
+    argv = ("export", "family-timeline", str(family))
     # The file can hold the Family's code, so the command is fresh-gated
     # (#547): it asks first, and unanswered nothing is made.
     gates = AuditEvent.objects.filter(event_type="automation_fresh_gate")
@@ -157,7 +187,7 @@ def test_the_page_and_the_command_export_the_same_timeline(
     argv = (*argv, "--yes")
     code, document = run(*argv, "--format", "csv", "--timezone", "UTC")
     assert code == 0, document
-    # The session stood in for the page's recent sign-in.
+    # The full-scope session's use is recorded once.
     assert gates.count() == 1
     by_command = ExportRequest.objects.get(pk=document["result"]["export"]["id"])
     for field in ("report", "campaign_id", "parameters", "format", "browser_timezone"):
@@ -215,6 +245,18 @@ def test_the_page_and_the_command_export_the_same_timeline(
         for value in row
     }
     assert code_text in cells and "Submitted a response" in cells
+    # The Timeline sheet opens with its title rows (#1841): the Family, its
+    # code and the campaign named in the request's configuration.
+    titles = load_workbook(io.BytesIO(sheet))["Timeline"]
+    assert [titles.cell(row, 1).value for row in range(1, 5)] == [
+        "Family",
+        "Family code",
+        "Campaign",
+        "Counted at",
+    ]
+    assert titles["B1"].value == name and titles["B2"].value == code_text
+    assert titles["B3"].value == harness.campaign.active_configuration.name
+    assert "Production" not in cells
     # The PDF is the infographic sheet (#926), rendered by the same worker.
     code, document = run(*argv, "--format", "pdf", "--timezone", "UTC")
     assert code == 0, document
@@ -225,6 +267,14 @@ def test_the_page_and_the_command_export_the_same_timeline(
 
     # The command's refusals: a read-only session, another campaign's or an
     # unknown Family, a mode the page does not offer.
+    code, document = run(
+        *argv, "--mode", "testing", "--format", "csv", "--timezone", "UTC"
+    )
+    assert code == 1 and document["error"]["code"] == "invalid", document
+    code, document = run(
+        *argv, "--mode", "production", "--format", "csv", "--timezone", "UTC"
+    )
+    assert code == 0, document
     reader = read_only_session(run.service)
     code, document = run(*argv, "--format", "csv", "--timezone", "UTC", secret=reader)
     assert code == 1 and document["error"]["code"] == "denied"
@@ -241,44 +291,38 @@ def test_the_page_and_the_command_export_the_same_timeline(
     assert code == 1 and document["error"]["code"] == "not_available", document
 
 
-def test_the_timeline_export_needs_a_fresh_sign_in(request, auth_service, google):
-    """A stale sign-in queues nothing and returns to the timeline (#547); after
-    the step-up the same form queues the export."""
+def test_an_old_sign_in_queues_the_timeline_export(request, auth_service, google):
+    """A sign-in older than five minutes queues the export (#1547)."""
     harness, families = rehearsed_timeline(request)
-    page = reverse("admin:family_timeline", args=[families[1]])
+    page = reverse("admin:timeline", args=[families[1]])
     browser, _ = signed_in()
     fields = {
-        "mode": "production",
         "format": "csv",
         "browser_timezone": "UTC",
         "request_key": str(uuid4()),
     }
     stale_sign_in()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        refused = post(browser, page + "exports/", fields, HTTP_ACCEPT="text/html")
-    assert refused.status_code == 403
-    body = refused.content.decode()
-    assert "Confirm with Google" in body and "Nothing was done" in body
-    assert f'name="next" value="{page}"' in body
-    # From the Testing rehearsal view, the step-up returns to that view.
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        testing = post(
-            browser,
-            page + "exports/",
-            fields | {"mode": "testing", "request_key": str(uuid4())},
-            HTTP_ACCEPT="text/html",
-        )
-    assert testing.status_code == 403
-    assert f'name="next" value="{page}?mode=testing"' in testing.content.decode()
-    assert not ExportRequest.objects.filter(report="family_timeline").exists()
-    signed_in(browser)
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert post(browser, page + "exports/", fields).status_code == 302
     assert ExportRequest.objects.filter(report="family_timeline").count() == 1
 
 
-def test_staff_get_no_timeline_export(request, auth_service, google):
-    """Staff see the summary only, so they get no form and the post is denied."""
+def test_staff_export_the_timeline_and_leaders_cannot(
+    request,
+    auth_service,
+    google,
+    reports_root,  # noqa: F811
+    settings,
+):
+    """Staff export the timeline they see (#1774, #1799): the form, the
+    post, the worker's file with the Family code and their download. A
+    Ministry leader is refused by the page and the post, and SQL's request
+    authorization (migration 0144) admits Staff's own request but not the
+    leader's reading of it."""
+    from parishkit.stewardship.accounts.policy_models import PortalUser
+
+    from .test_policy_postgresql import user
+
     harness, families = rehearsed_timeline(request)
     store = harness.service.store
     change(
@@ -290,29 +334,93 @@ def test_staff_get_no_timeline_export(request, auth_service, google):
                 "operation": "add",
                 "section": "login_rules",
                 **address("staff@example.org", roles=("staff",)),
-            }
+            },
+            {
+                "operation": "add",
+                "section": "login_rules",
+                **address("leader@example.org", roles=("ministry_leader",)),
+            },
         ],
     )
     google[0]["email"] = "staff@example.org"
     browser, _ = signed_in()
-    page = reverse("admin:family_timeline", args=[families[1]])
+    page = reverse("admin:timeline", args=[families[1]])
+    fields = {
+        "format": "xlsx",
+        "browser_timezone": "UTC",
+        "request_key": str(uuid4()),
+    }
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = get(browser, page)
-        assert response.status_code == 200 and b"Export this timeline" not in body
-        fields = {
-            "mode": "production",
-            "format": "csv",
-            "browser_timezone": "UTC",
-            "request_key": str(uuid4()),
+        assert response.status_code == 200 and b"Export this timeline" in body
+        assert f'action="{page}exports/"'.encode() in body
+        assert post(browser, page + "exports/", fields).status_code == 302
+    staff = PortalUser.objects.get(email="staff@example.org")
+    made = ExportRequest.objects.get(report="family_timeline")
+    assert made.requester_id == staff.pk and made.parameters["mode"] == "production"
+    capture = TimelineExportSnapshot.objects.get(pk=made.timeline_snapshot_id)
+    assert capture.actor_id == staff.pk
+    assert requested() == [requested()[0]]
+    # The worker writes the code into Staff's file (Staff hold FAMILY_CODES),
+    # and Staff download it from its status page.
+    render(harness, reports_root, made.pk)
+    family_row = FamilyCampaign.objects.get(pk=families[1])
+    code_text = harness.rings.general.decrypt(
+        family_row.code_ciphertext, context=code_context(family_row.pk)
+    ).decode()
+    status_page = reverse("admin:report_export", args=[made.pk])
+    download_page = reverse("admin:report_export_download", args=[made.pk])
+    with restricted_download_pool(settings):
+        response, sheet = search(browser, download_page, {})
+    assert response.status_code == 200
+    cells = {
+        value
+        for page_sheet in load_workbook(io.BytesIO(sheet)).worksheets
+        for row in page_sheet.values
+        for value in row
+    }
+    assert code_text in cells
+
+    # A Ministry leader may not open the page or post its form.
+    google[0].update(email="leader@example.org", sub="synthetic-leader")
+    leader_browser, login = signed_in()
+    assert login.status_code == 302
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert get(leader_browser, page)[0].status_code == 403
+        fields = fields | {"request_key": str(uuid4())}
+        assert post(leader_browser, page + "exports/", fields).status_code == 403
+        # Nor open or download Staff's export.
+        assert get(leader_browser, status_page)[0].status_code == 403
+    with restricted_download_pool(settings):
+        response, _ = search(leader_browser, download_page, {})
+    assert response.status_code == 403
+    assert ExportRequest.objects.filter(report="family_timeline").count() == 1
+    # SQL's request authorization: Staff's own request is Staff's and any
+    # Administrator's, never a Ministry leader's.
+    leader = PortalUser.objects.get(email="leader@example.org")
+    # The Administrator never signed in here; a seeded portal user holds
+    # the configured administrator rule.
+    admin = user("admin@example.org")
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT u.id, public.stewardship_export_request_authorized_v1(u.id, r) "
+            "FROM stewardship_export_request r, stewardship_portal_user u "
+            "WHERE r.id=%s AND u.id IN (%s,%s,%s)",
+            [made.pk, staff.pk, leader.pk, admin.pk],
+        )
+        assert dict(cursor.fetchall()) == {
+            staff.pk: True,
+            leader.pk: False,
+            admin.pk: True,
         }
-        assert post(browser, page + "exports/", fields).status_code == 403
-    assert not ExportRequest.objects.filter(report="family_timeline").exists()
 
 
 def test_the_capture_refuses_what_the_web_must_not_store(request, auth_service):
-    """SQL admits only a well-formed capture of an Administrator, and never
+    """SQL admits only a well-formed capture of an Administrator or Staff
+    (#1799), never a Ministry leader's or a Staff Testing capture, and never
     changes one."""
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+    from parishkit.stewardship.reports.response_dashboard import rehearsal_epoch
 
     from .test_policy_postgresql import user
 
@@ -382,16 +490,29 @@ def test_the_capture_refuses_what_the_web_must_not_store(request, auth_service):
         {**good, "summary": {**good["summary"], "submissions": "1"}},
         {**good, "summary": {**good["summary"], "last_email": {"name": "x"}}},
         # Another Family's DUID, the DUID as a string, and a document over
-        # the 128 KiB cap.
+        # the 1 MiB cap (#1799; 128 KiB before).
         {**good, "family": {**good["family"], "duid": family.family_duid + 1}},
         {**good, "family": {**good["family"], "duid": str(family.family_duid)}},
-        {**good, "events": [{"at": "x", "what": "x" * 131072, "detail": ""}]},
+        {**good, "events": [{"at": "x", "what": "x" * 1048576, "detail": ""}]},
     ):
         with pytest.raises(DatabaseError, match="Invalid timeline export"):
             insert(document=bad)
     with pytest.raises(DatabaseError, match="Invalid timeline export"):
         insert(values={**parameters, "mode": "testing"})
-    # Not an Administrator: an unknown user, or a real Staff member.
+    # A document over the old 128 KiB bound (#1799's review lines make a
+    # busy Family's longer) is admitted.
+    insert(
+        document={
+            **good,
+            "events": [{"at": "x", "what": "x" * 200, "detail": ""}] * 1000,
+        }
+    )
+    # A Testing capture of the active rehearsal is an Administrator's.
+    epoch = rehearsal_epoch(harness.campaign.pk)
+    assert epoch is not None
+    testing = {**parameters, "mode": "testing", "rehearsal_epoch_id": str(epoch)}
+    insert(document={**good, "mode": "testing"}, values=testing)
+    # Not an Administrator or Staff: an unknown user.
     with pytest.raises(DatabaseError, match="capture is unavailable"):
         insert(actor=uuid4())
     store = harness.service.store
@@ -404,13 +525,24 @@ def test_the_capture_refuses_what_the_web_must_not_store(request, auth_service):
                 "operation": "add",
                 "section": "login_rules",
                 **address("staff@example.org", roles=("staff",)),
-            }
+            },
+            {
+                "operation": "add",
+                "section": "login_rules",
+                **address("leader@example.org", roles=("ministry_leader",)),
+            },
         ],
     )
     staff = user("staff@example.org")
+    leader = user("leader@example.org")
     configuration = SystemConfiguration.objects.get().active_configuration_id
+    # A real Staff member's Production capture is admitted (#1799); their
+    # Testing capture and a Ministry leader's capture are not.
+    insert(actor=staff.pk)
+    with pytest.raises(DatabaseError, match="Invalid timeline export parameters"):
+        insert(actor=staff.pk, document={**good, "mode": "testing"}, values=testing)
     with pytest.raises(DatabaseError, match="capture is unavailable"):
-        insert(actor=staff.pk)
+        insert(actor=leader.pk)
     # The worker never captures, even for an Administrator.
     with pytest.raises(DatabaseError, match="capture is unavailable|permission denied"):
         insert(role=ServiceRole.WORKER)
@@ -441,12 +573,12 @@ def test_a_production_export_matches_its_page(
 ):
     """The file's lines are the page's, from a capture nothing may change or
     delete."""
-    from .test_family_timeline_postgresql import lines
+    from .test_timelines_postgresql import lines
 
     harness, families = rehearsed_timeline(request)
     # The Production view of an invited Family: whatever lines it has live.
     family = families[11]
-    page = reverse("admin:family_timeline", args=[family])
+    page = reverse("admin:timeline", args=[family])
     browser, _ = signed_in()
     run = cli()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -465,10 +597,10 @@ def test_a_production_export_matches_its_page(
     assert code == 0, document
     made = ExportRequest.objects.get(pk=document["result"]["export"]["id"])
     assert made.parameters["mode"] == "production"
-    # A Production export's timeline crumb carries no mode (#521).
+    # The export's crumb is the Family's Timeline (#521, #1570).
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         _, status = get(browser, reverse("admin:report_export", args=[made.pk]))
-    assert f'<li><a href="{page}">Family timeline</a></li>'.encode() in status
+    assert f'<li><a href="{page}">Timeline</a></li>'.encode() in status
     assert b"Return to " not in status
     capture = TimelineExportSnapshot.objects.get(pk=made.timeline_snapshot_id)
     # The file's lines are the page's, oldest first as the When heading sorts.
@@ -547,9 +679,8 @@ def test_a_family_of_another_campaign_is_refused(
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             response = post(
                 browser,
-                reverse("admin:family_timeline_export", args=[family.pk]),
+                reverse("admin:timeline_export", args=[family.pk]),
                 {
-                    "mode": "production",
                     "format": "csv",
                     "browser_timezone": "UTC",
                     "request_key": str(uuid4()),
@@ -649,8 +780,9 @@ def test_the_command_needs_a_live_administrator_session(
 ):
     """An ended session, or one whose user is now Staff, is exit 5; nothing made.
 
-    Automation sessions are Administrator-only: a principal who becomes Staff
-    has the session ended (``role_lost``), as Staff get no export on the page.
+    Automation sessions are Administrator-only by design: a principal who
+    becomes Staff has the session ended (``role_lost``), though Staff export
+    the timeline on the page (#1799).
     """
     from parishkit.stewardship.accounts import automation_sessions as automation
     from parishkit.stewardship.accounts.automation_models import AutomationSession
@@ -724,4 +856,55 @@ def test_migration_check_refuses_the_previous_authorization():
             cursor.execute(previous)
             cursor.execute(check)
         cursor.execute(check)
+        transaction.set_rollback(True)
+
+
+@pytest.mark.parametrize(
+    ("name", "earlier"),
+    [
+        ("stewardship_timeline_export_capture_v1", "0109_point_in_time_exports.sql"),
+        ("stewardship_export_request_guard_v1", "0109_point_in_time_exports.sql"),
+        (
+            "stewardship_export_request_authorized_v1",
+            "0084_campaign_archive_exports.sql",
+        ),
+    ],
+)
+def test_migration_0160_check_refuses_the_previous_definitions(name, earlier):
+    """0144's DO block (#1799) passes as installed and fails on each function's
+    previous body, the latest before it, which admits Administrators only."""
+    text = (MIGRATIONS / "0144_staff_timeline_export.sql").read_text(encoding="utf-8")
+    acl = text[text.index("SELECT set_config(") : text.index("), true);") + 9]
+    check = text[text.index("DO $check$") : text.index("$check$;") + len("$check$;")]
+    previous = _function((MIGRATIONS / earlier).read_text(encoding="utf-8"), name)
+    assert previous != _function(text, name)
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(acl)
+        cursor.execute(check)  # The installed definitions pass.
+        with pytest.raises(DatabaseError, match="Migration 0144"), transaction.atomic():
+            cursor.execute(previous)
+            cursor.execute(check)
+        cursor.execute(check)  # Rolled back to the installed definitions.
+        transaction.set_rollback(True)
+
+
+def test_migration_0160_check_refuses_changed_grants():
+    """0144's DO block fails when a replaced function's grants changed."""
+    text = (MIGRATIONS / "0144_staff_timeline_export.sql").read_text(encoding="utf-8")
+    acl = text[text.index("SELECT set_config(") : text.index("), true);") + 9]
+    check = text[text.index("DO $check$") : text.index("$check$;") + len("$check$;")]
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(acl)
+        cursor.execute(
+            "REVOKE ALL ON FUNCTION "
+            "public.stewardship_export_request_authorized_v1"
+            "(uuid, stewardship_export_request) FROM PUBLIC"
+        )
+        cursor.execute(
+            "GRANT EXECUTE ON FUNCTION "
+            "public.stewardship_export_request_authorized_v1"
+            "(uuid, stewardship_export_request) TO PUBLIC"
+        )
+        with pytest.raises(DatabaseError, match="Migration 0144"):
+            cursor.execute(check)
         transaction.set_rollback(True)

@@ -8,6 +8,9 @@ from parishkit.stewardship.workflows.models import MinistryRequest
 from .effective import RESOLVED_EXECUTIONS, census_submission, proposal_index
 
 ACTIONABLE_STATES = frozenset({"new", "assigned", "in_progress"})
+# A request with a decision: a person or a refresh resolved it, or it closed
+# with no response. A Family asking for it again leaves it as it is (#1684).
+DECIDED_STATES = frozenset({"resolved", "closed_no_response"})
 
 
 def request_index(submission):
@@ -104,6 +107,15 @@ def derive_ministry_requests(submission, validated):
                 for ministry in ministries:
                     identity = (entity, key, ministry)
                     old = previous.pop(identity, None)
+                    if old and old.state in DECIDED_STATES and old.action == action:
+                        # The Family asked again for a request already
+                        # decided (accepted, ignored or confirmed): it keeps
+                        # its decision and no second request is made, and its
+                        # worklist row says so (review pipeline, "Resubmission
+                        # while the setting is off", rule 1; #1684). The
+                        # submission's completeness guard admits the decided
+                        # request in this choice's place.
+                        continue
                     same = bool(
                         old and old.state in ACTIONABLE_STATES and old.action == action
                     )

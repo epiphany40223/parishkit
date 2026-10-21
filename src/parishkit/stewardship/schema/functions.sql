@@ -278,8 +278,9 @@ BEGIN
        OR NEW.predecessor_id IS NOT NULL THEN
         RETURN NEW;
     END IF;
-    -- Framework migration/permission metadata and the guarded initial download
-    -- policy are seeded by migrations, not evidence of an existing campaign.
+    -- Framework migration/permission metadata, the guarded initial download
+    -- policy and the refresh checks' start (#1689) are seeded by migrations,
+    -- not evidence of an existing campaign.
     -- All current and future application tables must otherwise be empty.
     FOR relation IN
         SELECT n.nspname, c.relname, c.relrowsecurity FROM pg_class c
@@ -288,7 +289,7 @@ BEGIN
           AND c.relkind IN ('r','p','f')
           AND NOT (n.nspname='public' AND c.relname IN (
               'django_migrations','django_content_type','auth_permission',
-              'stewardship_download_policy'))
+              'stewardship_download_policy', 'stewardship_refresh_check_start'))
         ORDER BY n.nspname, c.relname
     LOOP
         IF relation.relrowsecurity AND NOT (relation.nspname='public'
@@ -3429,6 +3430,8 @@ BEGIN
     IF slot !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN RETURN NULL; END IF;
     day:=slot::date;
     IF day<p.start_date OR day>p.end_date OR day::text<>slot THEN RETURN NULL; END IF;
+    -- A digest's skipped send (#1658) is no slot: nothing may plan it.
+    IF coalesce(v.values->'skip_dates' ? slot,false) THEN RETURN NULL; END IF;
     IF d.kind='weekly_digest' THEN
         IF extract(isodow FROM day)::integer-1<>(v.values->>'weekday')::integer THEN RETURN NULL; END IF;
     ELSIF d.kind='daily_digest' THEN
@@ -3674,7 +3677,11 @@ BEGIN
            OR EXISTS (SELECT 1 FROM stewardship_postclose_resolution resolved
                JOIN public.stewardship_postclose_current covered ON covered.id=resolved.id
                WHERE resolved.campaign_id=c.id AND resolved.mode=NEW.mode
-                   AND resolved.obligation_key='schedule:'||d.id::text||':'||NEW.slot) THEN
+                   AND resolved.obligation_key='schedule:'||d.id::text||':'||NEW.slot)
+           -- A digest's skipped send (#1658) is never planned, by any writer.
+           OR (d.kind IN ('daily_digest','weekly_digest') AND EXISTS (
+               SELECT 1 FROM stewardship_schedule_revision skipping WHERE skipping.id=NEW.revision_id
+                   AND coalesce(skipping.values->'skip_dates' ? NEW.slot,false))) THEN
             RAISE EXCEPTION 'Occurrence creation is not admitted' USING ERRCODE='23514'; END IF;
     ELSE
         IF session_user='pk_stewardship_scheduler' AND (
@@ -4355,18 +4362,11 @@ CREATE FUNCTION public.stewardship_portal_session_mutable_v1() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
             BEGIN
-                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."principal_id" IS DISTINCT FROM OLD."principal_id" OR NEW."session_id" IS DISTINCT FROM OLD."session_id" OR NEW."expires_at" IS DISTINCT FROM OLD."expires_at" OR (OLD."revoked_at" IS NOT NULL AND NEW."revoked_at" IS DISTINCT FROM OLD."revoked_at") THEN
+                -- The verified Google instant is fixed when the session is
+                -- issued: a new sign-in issues a new session (#1547), so
+                -- nothing advances it in place any more (#1550).
+                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."principal_id" IS DISTINCT FROM OLD."principal_id" OR NEW."session_id" IS DISTINCT FROM OLD."session_id" OR NEW."expires_at" IS DISTINCT FROM OLD."expires_at" OR NEW."authenticated_at" IS DISTINCT FROM OLD."authenticated_at" OR (OLD."revoked_at" IS NOT NULL AND NEW."revoked_at" IS DISTINCT FROM OLD."revoked_at") THEN
                     RAISE EXCEPTION 'Record identity and bindings are immutable'
-                        USING ERRCODE = '23514';
-                END IF;
-                -- Step-up reauthentication advances a live session's verified
-                -- Google instant in place. It never moves backwards, never past
-                -- this statement's clock, and never changes on a revoked row.
-                IF NEW."authenticated_at" IS DISTINCT FROM OLD."authenticated_at"
-                   AND (OLD."revoked_at" IS NOT NULL
-                        OR NEW."authenticated_at" < OLD."authenticated_at"
-                        OR NEW."authenticated_at" > statement_timestamp()) THEN
-                    RAISE EXCEPTION 'Session authentication may only advance to a verified past instant'
                         USING ERRCODE = '23514';
                 END IF;
                 -- #306 M2: activity renews the idle limit only up to this
@@ -5404,10 +5404,10 @@ BEGIN
                   WHERE later_sent.occurrence_id=later.id AND later_sent.disposition='delivered'))) THEN
         RAISE EXCEPTION 'A later reminder reached this Family or is on its way; assume this one sent'
             USING ERRCODE='23514'; END IF;
-    -- Settling a held email is an Administrator's decision made within five
-    -- minutes of a Google sign-in (migration 0017, #537).
+    -- Settling a held email is the decision of an Administrator whose
+    -- session is live (migration 0017, #537; any sign-in age, #1547).
     IF NOT public.stewardship_restore_decision_admitted_v1(NEW.actor_id,NEW.session_id,NEW.authenticated_at) THEN
-        RAISE EXCEPTION 'A restore decision requires fresh Administrator authentication' USING ERRCODE='42501'; END IF;
+        RAISE EXCEPTION 'A restore decision requires a live Administrator session' USING ERRCODE='42501'; END IF;
     RETURN NEW;
 END $$;
 
@@ -5572,7 +5572,7 @@ BEGIN
         IF r.restore_review_required AND NEW.backup_at IS NOT DISTINCT FROM r.restore_backup_at THEN
             RAISE EXCEPTION 'A restore review is already open for this backup' USING ERRCODE='23514'; END IF;
     ELSIF NEW.action='restore_release' THEN
-        -- A freshly signed-in Administrator releases the site after review.
+        -- An Administrator whose session is live releases the site after review.
         -- Refused while any email still needs a hold: the list must be found
         -- first, during the review, so every hold can still be decided (none
         -- is decided after release). Mode and campaign stay as restored.
@@ -5585,7 +5585,7 @@ BEGIN
            OR EXISTS (SELECT 1 FROM stewardship_campaign_work_gate WHERE state IN ('preparing','running')) THEN
             RAISE EXCEPTION 'This restore review cannot be released' USING ERRCODE='23514'; END IF;
         IF NOT public.stewardship_restore_decision_admitted_v1(NEW.actor_id,NEW.session_id,NEW.authenticated_at) THEN
-            RAISE EXCEPTION 'A restore decision requires fresh Administrator authentication' USING ERRCODE='42501'; END IF;
+            RAISE EXCEPTION 'A restore decision requires a live Administrator session' USING ERRCODE='42501'; END IF;
         IF EXISTS(SELECT 1 FROM public.stewardship_restore_hold_candidates_v1()) THEN
             RAISE EXCEPTION 'The held-email list is stale: find the held emails again before release'
                 USING ERRCODE='23514'; END IF;
@@ -5621,7 +5621,10 @@ BEGIN
             'sign_in_age_seconds',
             -- An export's report kind and file format (#1398), so the audit
             -- log answers who exported what without its request row.
-            'report','format']
+            'report','format',
+            -- A report view the open page made by itself to bring newer
+            -- figures in (#1620; audit.schemas): a boolean.
+            'automatic']
         WHEN 'boundary' THEN ARRAY['occurrence_id','kind','intended_unix_microseconds','actual_unix_microseconds','lag_microseconds','before_state','after_state']
         WHEN 'schedule' THEN ARRAY['definition_id','previous_revision_id','selected_revision_id','cancelled_messages','skipped_occurrences','failed_occurrences','delivered_slots']
         WHEN 'timeout' THEN ARRAY['task_id','task_type','attempt','limit_seconds','elapsed_seconds','what','helper','count','outcome']
@@ -5803,7 +5806,7 @@ BEGIN
             IF jsonb_typeof(value)<>'string' OR text_value!~'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN RETURN false; END IF;
         ELSIF key LIKE '%\_fingerprint' ESCAPE '\' THEN
             IF jsonb_typeof(value)<>'string' OR text_value!~'^[0-9a-f]{64}$' THEN RETURN false; END IF;
-        ELSIF key IN ('retryable','search_used','exact_code_used','ministry_operational','directory_response_columns') THEN
+        ELSIF key IN ('retryable','search_used','exact_code_used','ministry_operational','directory_response_columns','automatic') THEN
             IF jsonb_typeof(value)<>'boolean' THEN RETURN false; END IF;
         ELSIF key='directory_reason' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('any','no_head','no_address','invalid_address','provider_refused','deliverable') THEN RETURN false; END IF;
@@ -5997,47 +6000,31 @@ CREATE FUNCTION public.stewardship_sealed_intake_admission_v1() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
-DECLARE setup_install boolean := false; automation boolean := false;
+DECLARE live boolean := true;
 BEGIN
     IF TG_TABLE_NAME='stewardship_secret_request' THEN
-        IF NEW.required_consumers<>'[]'::jsonb
-           AND NEW.reauthenticated_at<statement_timestamp()-interval '5 minutes' THEN
-            -- An initial setup install is inserted by its target installer when
-            -- setup finishes, long after the setup session's sign-in; it relies
-            -- on the live frozen setup instead (as the staged->testing guard
-            -- does). Its request id is the owner's sealed setup credential id,
-            -- and the install binding does not exist yet. The setup query is a
-            -- separate statement, run only for the installer: privileges are
-            -- checked for every table a statement names, even in an unused
-            -- branch, and other roles cannot read these setup tables.
-            IF NEW.target IN ('parishsoft','google_workspace','slack')
-               AND current_user='pk_stewardship_credential_'||NEW.target THEN
-                setup_install := EXISTS (
-                    SELECT 1 FROM public.stewardship_setup_sealed_credential credential
-                    JOIN public.stewardship_setup_attempt attempt
-                        ON attempt.id=credential.attempt_id
-                        AND attempt.owner_id=NEW.requested_by_id
-                    JOIN public.stewardship_setup_config_intent intent
-                        ON intent.attempt_id=credential.attempt_id
-                    JOIN public.stewardship_setup_readiness_binding ready
-                        ON ready.intent_id=intent.id
-                    WHERE credential.id=NEW.id AND credential.target=NEW.target
-                        AND credential.scrubbed_at IS NULL
-                        AND public.stewardship_setup_install_ready_live_v1(ready.id));
-            ELSIF current_user='pk_stewardship_web' OR pg_has_role(current_user,
-                    (SELECT nspowner FROM pg_namespace WHERE nspname='public'),'USAGE') THEN
-                -- A request made through a live full-scope automation session
-                -- records that session's sign-in instant (ADM-11). A separate
-                -- statement, reached only by the web (which holds EXECUTE) or
-                -- the schema owner: EXECUTE is checked whenever an expression
-                -- is initialized, so any other role keeps the plain refusal.
-                automation := coalesce(public.stewardship_automation_fresh_principal_v1(
-                    NEW.requested_by_id,NEW.reauthenticated_at),false);
+        -- A request made through an automation session names it (#1763):
+        -- it must be a live, full-scope session of the requester holding
+        -- the recorded sign-in instant (ADM-11), so an ended session
+        -- stages nothing. A browser request names none and is not checked
+        -- here, whatever automation sessions its sign-in approved; its
+        -- sign-in may be of any age (#1547). Only the web (which holds
+        -- EXECUTE on the check) or the schema owner may name a session;
+        -- any other login naming one is refused. The call is its own
+        -- statement: EXECUTE is checked whenever an expression is
+        -- initialized.
+        IF NEW.automation_session_id IS NOT NULL THEN
+            IF current_user='pk_stewardship_web' OR pg_has_role(current_user,
+                (SELECT nspowner FROM pg_namespace WHERE nspname='public'),'USAGE') THEN
+                live := coalesce(public.stewardship_automation_request_live_v1(
+                    NEW.automation_session_id,NEW.requested_by_id,NEW.reauthenticated_at),false);
+            ELSE
+                live := false;
             END IF;
-            IF NOT setup_install AND NOT automation THEN
-                RAISE EXCEPTION 'Sealed intake requires fresh authentication'
-                    USING ERRCODE='23514';
-            END IF;
+        END IF;
+        IF NOT live THEN
+            RAISE EXCEPTION 'Sealed intake requires a live automation session'
+                USING ERRCODE='23514';
         END IF;
     ELSE
         IF NOT EXISTS(SELECT 1 FROM stewardship_secret_request
@@ -6132,7 +6119,7 @@ CREATE FUNCTION public.stewardship_secret_request_mutable_v1() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
             BEGIN
-                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."target" IS DISTINCT FROM OLD."target" OR NEW."staging_reference" IS DISTINCT FROM OLD."staging_reference" OR NEW."requested_by_id" IS DISTINCT FROM OLD."requested_by_id" OR NEW."reauthenticated_at" IS DISTINCT FROM OLD."reauthenticated_at" OR NEW."expires_at" IS DISTINCT FROM OLD."expires_at" OR NEW."expected_fingerprint" IS DISTINCT FROM OLD."expected_fingerprint" OR NEW."required_consumers" IS DISTINCT FROM OLD."required_consumers" OR (OLD."resulting_fingerprint" IS NOT NULL AND NEW."resulting_fingerprint" IS DISTINCT FROM OLD."resulting_fingerprint") OR (OLD."installed_at" IS NOT NULL AND NEW."installed_at" IS DISTINCT FROM OLD."installed_at") OR (OLD."acknowledged_at" IS NOT NULL AND NEW."acknowledged_at" IS DISTINCT FROM OLD."acknowledged_at") THEN
+                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."target" IS DISTINCT FROM OLD."target" OR NEW."staging_reference" IS DISTINCT FROM OLD."staging_reference" OR NEW."requested_by_id" IS DISTINCT FROM OLD."requested_by_id" OR NEW."reauthenticated_at" IS DISTINCT FROM OLD."reauthenticated_at" OR NEW."expires_at" IS DISTINCT FROM OLD."expires_at" OR NEW."expected_fingerprint" IS DISTINCT FROM OLD."expected_fingerprint" OR NEW."required_consumers" IS DISTINCT FROM OLD."required_consumers" OR NEW."automation_session_id" IS DISTINCT FROM OLD."automation_session_id" OR (OLD."resulting_fingerprint" IS NOT NULL AND NEW."resulting_fingerprint" IS DISTINCT FROM OLD."resulting_fingerprint") OR (OLD."installed_at" IS NOT NULL AND NEW."installed_at" IS DISTINCT FROM OLD."installed_at") OR (OLD."acknowledged_at" IS NOT NULL AND NEW."acknowledged_at" IS DISTINCT FROM OLD."acknowledged_at") THEN
                     RAISE EXCEPTION 'Record identity and bindings are immutable'
                         USING ERRCODE = '23514';
                 END IF;
@@ -6201,7 +6188,7 @@ CREATE FUNCTION public.stewardship_secret_state_v2() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
-DECLARE fresh boolean := true;
+DECLARE live boolean := true;
 BEGIN
     IF TG_OP='DELETE' THEN
         RAISE EXCEPTION 'Secret request history cannot be deleted' USING ERRCODE='23514';
@@ -6246,19 +6233,25 @@ BEGIN
         RAISE EXCEPTION 'Credential acknowledgement requires consumer evidence' USING ERRCODE='23514';
     END IF;
     IF OLD.state='staged' AND NEW.state='testing' THEN
-        IF NEW.reauthenticated_at<NEW.created_at-interval '5 minutes' AND NOT (CASE WHEN NEW.target IN ('parishsoft','google_workspace','slack') THEN public.stewardship_setup_install_live_v1(NEW.id) ELSE false END) THEN
-            fresh := false;
+        -- A request made through an automation session names it (#1763):
+        -- that session must still be live, of full scope, the requester's
+        -- and hold the recorded sign-in instant (ADM-11), so ending it
+        -- stops the credential it staged here. A browser request names
+        -- none and is not checked, whatever its sign-in approved; its
+        -- sign-in may be of any age (#1547). Only these targets'
+        -- installers hold EXECUTE on the check, so it is its own
+        -- statement, reached only for them; no other target takes an
+        -- automation session's request.
+        IF NEW.automation_session_id IS NOT NULL THEN
             IF NEW.target IN ('parishsoft','google_workspace','slack') THEN
-                -- A request made through a full-scope automation session
-                -- records its sign-in instant; the session must still be live
-                -- (ADM-11). Only these targets' installers hold EXECUTE on the
-                -- check, so it is its own statement, reached only for them.
-                fresh := coalesce(public.stewardship_automation_fresh_principal_v1(
-                    NEW.requested_by_id,NEW.reauthenticated_at),false);
+                live := coalesce(public.stewardship_automation_request_live_v1(
+                    NEW.automation_session_id,NEW.requested_by_id,NEW.reauthenticated_at),false);
+            ELSE
+                live := false;
             END IF;
         END IF;
         IF NEW.actor_id IS NOT NULL OR NEW.expires_at<=statement_timestamp()
-           OR NOT fresh
+           OR NOT live
            OR NEW.required_consumers='[]'::jsonb
            OR NOT EXISTS(SELECT 1 FROM stewardship_sealed_credential_staging WHERE request_id=NEW.id AND ciphertext IS NOT NULL) THEN
             RAISE EXCEPTION 'Credential testing requires a live sealed request' USING ERRCODE='23514';
@@ -7673,8 +7666,8 @@ BEGIN
         OR request.requested_by_id IS DISTINCT FROM attempt.owner_id
         OR request.actor_id IS DISTINCT FROM attempt.owner_id
         OR request.state IS DISTINCT FROM 'staged' OR request.version<>1
-        -- The installer copies the login's instant, but a concurrent step-up
-        -- may advance that session before this check; never a later claim.
+        -- The installer copies the login's instant, which never changes in
+        -- place (#1550); never a later claim.
         OR login.id IS NULL OR request.reauthenticated_at>login.authenticated_at
         OR request.expires_at>login.expires_at OR request.expires_at<=clock_timestamp()
         OR request.required_consumers IS DISTINCT FROM stewardship_credential_consumers_v1(NEW.target)
@@ -8494,8 +8487,8 @@ BEGIN
         CASE WHEN NEW.scrubbed_at IS NULL THEN 'changed' ELSE 'cancelled' END);
     IF NEW.scrubbed_at IS NULL THEN
         -- How old the setup session's Google sign-in was when the credential
-        -- was sealed (#1402): a later step-up in the same session overwrites
-        -- authenticated_at, so the age is recorded now. A separate statement,
+        -- was sealed (#1402), recorded as audit evidence when it is staged
+        -- (the instant never changes in place, #1550). A separate statement,
         -- run only for a staged credential: the scrubbing scheduler cannot
         -- read the session.
         SELECT greatest(0,floor(extract(epoch FROM clock_timestamp()-login.authenticated_at)))::bigint
@@ -8540,10 +8533,27 @@ BEGIN
             USING ERRCODE='23514';
     END IF;
     IF TG_OP='UPDATE' AND NEW.scrubbed_at IS NOT NULL THEN
-        IF attempt.state NOT IN ('expired','completed')
-           OR NEW.ciphertext IS NOT NULL OR NEW.actor_id IS NOT NULL
-           OR NEW.settings<>'{}'::jsonb
+        IF NEW.ciphertext IS NOT NULL OR NEW.settings<>'{}'::jsonb
            OR NEW.fingerprint IS DISTINCT FROM OLD.fingerprint THEN
+            RAISE EXCEPTION 'Setup credential scrub requires its terminal fence'
+                USING ERRCODE='23514';
+        END IF;
+        -- Turning Slack off during setup discards the staged Slack token at
+        -- once (#1499): only the web, for the attempt's owner, while it is
+        -- collecting and its saved Slack step is off. Every other scrub
+        -- needs the terminal fence, by the system.
+        IF attempt.state='collecting' THEN
+            IF current_user<>'pk_stewardship_web' OR NEW.target<>'slack'
+               OR NEW.actor_id IS DISTINCT FROM attempt.owner_id
+               OR NOT EXISTS (SELECT 1 FROM public.stewardship_setup_draft_section slack
+                    WHERE slack.attempt_id=attempt.id AND slack.step='slack'
+                        AND slack.scrubbed_at IS NULL
+                        AND slack.values->'enabled'='false'::jsonb) THEN
+                RAISE EXCEPTION 'Only a setup with Slack turned off discards its Slack token'
+                    USING ERRCODE='23514';
+            END IF;
+        ELSIF attempt.state NOT IN ('expired','completed')
+           OR NEW.actor_id IS NOT NULL THEN
             RAISE EXCEPTION 'Setup credential scrub requires its terminal fence'
                 USING ERRCODE='23514';
         END IF;
@@ -8562,9 +8572,12 @@ BEGIN
             AND login.principal_id=attempt.owner_id AND login.revoked_at IS NULL
             AND login.expires_at>stamp
             AND login.last_activity_at>stamp-interval '60 minutes'
-            -- Setup's credential steps accept a sign-in up to an hour old
-            -- (#1402), the hour inclusive, as the web's check is.
-            AND login.authenticated_at>=stamp-interval '60 minutes'
+            -- Any sign-in age (#1547); a command session still needs
+            -- its live full-scope automation session (ADM-11).
+            AND login.authenticated_at<=stamp
+            AND (NOT EXISTS (SELECT 1 FROM public.stewardship_automation_login command
+                     WHERE command.portal_session_id=login.id)
+                 OR public.stewardship_automation_fresh_v1(login.id,attempt.owner_id))
         JOIN public.stewardship_portal_user owner ON owner.id=attempt.owner_id
             AND NOT owner.disabled
         JOIN public.stewardship_address_rule rule ON rule.email=owner.email
@@ -9711,6 +9724,16 @@ BEGIN
             SELECT 1 FROM public.stewardship_ministry_request request
             WHERE request.submission_id=NEW.parent_id AND request.entity_kind='member'
               AND request.state IN ('new','assigned','in_progress')
+        ) OR EXISTS (
+            -- An Updated in ParishSoft change this promotion found
+            -- ParishSoft no longer holds (#1749): its conflict check, at
+            -- its version and in this snapshot, comes first; the census
+            -- guard then moves it to conflict at this pinned snapshot.
+            SELECT 1 FROM public.stewardship_proposed_change change
+            JOIN public.stewardship_refresh_check k ON k.proposal_id=change.id
+                AND k.item_version=change.version AND k.outcome='conflict'
+                AND k.snapshot_id=NEW.snapshot_id
+            WHERE change.submission_id=NEW.parent_id AND change.execution='published'
         ))
         OR NOT public.stewardship_response_source_owner_v1(NEW.snapshot_id)
     ) THEN
@@ -10405,6 +10428,7 @@ CREATE FUNCTION public.stewardship_task_type_login_v1(task_type text) RETURNS te
             'daily_digest_prepare',
             'family_mail_prepare',
             'family_mail_test',
+            'leader_email_prepare',
             'operational_collect',
             'operational_prepare',
             'operational_slack',

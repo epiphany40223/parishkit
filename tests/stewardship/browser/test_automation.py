@@ -9,13 +9,19 @@ place. Acknowledging the dashboard's automation notices acts in place
 reader's place kept and the change announced; an acknowledgement also sets
 the address to the redirect's page. Acknowledging the last notice still
 swaps, because the notices region is rendered even when empty. The approval
-page offers "Confirm with Google" with its controls unavailable while the
-sign-in is stale, and its review states what was asked in plain words.
+page's controls never wait for a sign-in (#1547), its review states what was
+asked in plain words, and LOCAL's sign-in page takes its link's token.
 """
 
 import pytest
 
-from .automation_components import ACCESS, APPROVAL, HOME, LOCAL_SIGN_IN, REVOKE
+from .automation_components import (
+    ACCESS,
+    APPROVAL,
+    LOCAL_SIGN_IN,
+    NOTICES_PAGE,
+    REVOKE,
+)
 from .waits import eventually, has_text, hidden, visible
 
 
@@ -56,10 +62,8 @@ def posts_to(page, part):
     [
         ACCESS,
         ACCESS + "?ended=yes",
-        "/automation-access-stale",
-        "/automation-access-stale-local",
         APPROVAL,
-        "/automation-approval-stale-local",
+        LOCAL_SIGN_IN,
         "/automation-approval-review",
     ],
 )
@@ -347,7 +351,7 @@ def test_revoking_a_session_asks_then_acts_in_place(page, component_origin, quer
 def test_acknowledging_the_last_notice_acts_in_place(page, component_origin):
     """The region empties in place; nothing reloads."""
     page.set_viewport_size({"width": 1280, "height": 900})
-    page.goto(component_origin + HOME)
+    page.goto(component_origin + NOTICES_PAGE)
     page.evaluate(MARK)
     region = page.locator("#automation-notices")
     contains(region, "An automation session was approved")
@@ -364,7 +368,7 @@ def test_acknowledging_the_last_notice_acts_in_place(page, component_origin):
 def test_acknowledge_all_acts_in_place_and_notices_read_plainly(page, component_origin):
     """Every notice is a plain sentence; Acknowledge all clears them in place."""
     page.set_viewport_size({"width": 1280, "height": 900})
-    page.goto(component_origin + HOME + "?two=1")
+    page.goto(component_origin + NOTICES_PAGE + "?two=1")
     page.evaluate(MARK)
     region = page.locator("#automation-notices")
     contains(region, "A command was turned away")
@@ -379,72 +383,38 @@ def test_acknowledge_all_acts_in_place_and_notices_read_plainly(page, component_
     assert page.evaluate(MARKED) == "kept"
 
 
-def step_up_returns_to(page, path):
-    """Assert the visible re-sign-in control posts to the login route with
-    ``next`` naming ``path``, so the sign-in comes back to that page."""
-    button = page.get_by_role("button", name="Confirm with Google")
-    assert button.count() == 1 and button.is_visible() and button.is_enabled()
-    form = page.locator("form").filter(has=button)
-    assert form.get_attribute("method") == "post"
-    assert form.get_attribute("action") == "/admin/login"
-    assert form.locator("input[name=next]").get_attribute("value") == path
-
-
 @pytest.mark.parametrize("width", [320, 1280])
-def test_a_stale_sign_in_offers_a_working_step_up(page, component_origin, width):
-    """Both stale pages show a visible re-sign-in control that returns to the
-    approval page; Continue, the code field and Approve a session wait."""
+def test_approval_never_waits_for_a_sign_in(page, component_origin, width):
+    """Whenever the Administrator signed in (#1547), Approve a session is an
+    ordinary link to the approval page, and the code field and Continue are
+    ready, Continue waiting only for a code."""
     page.set_viewport_size({"width": width, "height": 900})
-    page.goto(component_origin + "/automation-approval-stale")
-    step_up_returns_to(page, APPROVAL)
-    assert page.get_by_role("button", name="Continue").is_disabled()
-    assert page.get_by_role("textbox", name="User code").is_disabled()
-    page.goto(component_origin + "/automation-access-stale")
-    step_up_returns_to(page, APPROVAL)
-    assert page.get_by_role("button", name="Approve a session").is_disabled()
+    page.goto(component_origin + ACCESS)
+    approve = page.get_by_role("link", name="Approve a session")
+    visible(approve)
+    assert approve.get_attribute("href") == APPROVAL
+    page.goto(component_origin + APPROVAL)
+    code = page.get_by_role("textbox", name="User code")
+    assert code.is_enabled()
+    assert code.get_attribute("aria-describedby") is None
+    code.fill("ABCD-EFGH")
+    assert page.get_by_role("button", name="Continue").is_enabled()
 
 
-STORED_STEP_UP = "JSON.parse(localStorage.getItem('pk-local-step-up') || 'null')"
-
-
-@pytest.mark.parametrize(
-    "path,says",
-    [
-        ("/automation-approval-stale-local", "brings you back to this page"),
-        ("/automation-access-stale-local", "takes you to the approval page"),
-    ],
-)
-def test_the_local_step_up_returns_to_the_approval_page(
-    page, component_origin, path, says
-):
-    """LOCAL has no Google (#613): the page names the laptop command and where
-    the sign-in goes, records the approval page, and the local sign-in sends
-    it as "next", clearing it only when the form is submitted."""
-    page.goto(component_origin + path)
-    assert page.get_by_role("button", name="Confirm with Google").count() == 0
-    step_up = page.locator("[data-local-step-up]")
-    assert step_up.is_visible()
-    contains(step_up, "tools/stewardship-local.sh sign-in --email you@example.org")
-    contains(step_up, says)
-    assert page.evaluate(STORED_STEP_UP)["next"] == APPROVAL
+def test_the_local_sign_in_takes_the_token_from_its_link(page, component_origin):
+    """The laptop command's link carries the token in the fragment: the page
+    moves it into the form, enables Sign in and drops the fragment; without
+    one, Sign in stays unavailable with how to get a link."""
+    page.goto(component_origin + LOCAL_SIGN_IN)
+    assert page.get_by_role("button", name="Sign in").is_disabled()
+    visible(page.locator("#local-sign-in-missing"))
+    # A new document, as the opened link is, not a fragment-only change.
+    page.goto("about:blank")
     page.goto(component_origin + LOCAL_SIGN_IN + "#" + "t" * 43)
-    assert page.locator("#local-sign-in-next").get_attribute("value") == APPROVAL
-    # Opening the page keeps it: a link opened but not submitted keeps it.
-    assert page.evaluate(STORED_STEP_UP)["next"] == APPROVAL
-    with page.expect_navigation():
-        page.get_by_role("button", name="Sign in").click()
-    assert page.evaluate(STORED_STEP_UP) is None
-
-
-def test_an_old_local_step_up_is_not_used(page, component_origin):
-    """A return path recorded more than ten minutes ago is dropped."""
-    page.goto(component_origin + "/automation-approval-stale-local")
-    page.evaluate(
-        "localStorage.setItem('pk-local-step-up', JSON.stringify("
-        "{next: '/admin/', at: Date.now() - 11 * 60 * 1000}))"
-    )
-    page.goto(component_origin + LOCAL_SIGN_IN + "#" + "t" * 43)
-    assert page.locator("#local-sign-in-next").get_attribute("value") == ""
+    assert page.locator("#local-sign-in-token").input_value() == "t" * 43
+    assert page.get_by_role("button", name="Sign in").is_enabled()
+    hidden(page.locator("#local-sign-in-missing"))
+    assert page.evaluate("location.hash") == ""
 
 
 def test_the_review_states_the_request_plainly(page, component_origin):

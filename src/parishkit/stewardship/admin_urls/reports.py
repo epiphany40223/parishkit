@@ -1,13 +1,15 @@
-"""Responses and reports group URLs: every report page and its form actions.
+"""Review work and Reports and queries URLs: every report page and its form actions.
 
 Pages end in ``/`` and name no campaign: reports show the current campaign,
 so each route hands its unchanged view the current campaign's id
 (``current_campaign``). A report's form actions and downloads sit under it
 as nouns: an export is posted to the report's ``exports/`` collection, a
 follow-up is saved to its request's ``record/``, and the header's Find a
-Family box posts to ``families/search/``. ``/admin/reports/`` keeps its old
-meaning (Participation, or Ministry requests for a viewer who may not open
-Participation) instead of the group's first entry.
+Family box posts to ``families/search/``. ``/admin/reports/`` keeps its own
+meaning (the Response dashboard, or Ministry requests for a viewer who may
+not open it) instead of the group's first entry. The Response dashboard
+absorbed Participation (#1537); ``reports/participation/`` and its export
+actions are gone, with no redirect (#864).
 
 Records are addressed by their own id, which already names their campaign
 (NAV-12): every export, report or latest-data, shares one page at
@@ -21,16 +23,15 @@ from django.urls import path
 from ..accounts import assisted_entry
 from ..reports import (
     census_change_views,
+    census_publication_views,
     comparison_export_views,
     comparison_views,
     digest_views,
     directory_export_views,
     directory_views,
     emailed_views,
-    exact_ui,
     export_pages,
     export_ui,
-    family_timeline_views,
     financial_export_views,
     financial_views,
     information_export_views,
@@ -39,8 +40,8 @@ from ..reports import (
     ministry_export_views,
     ministry_followup_exports,
     ministry_followup_views,
-    ministry_roster_views,
-    response_dashboard,
+    pledge_review_views,
+    timeline_views,
     weekly_manual_views,
     weekly_views,
     workspace_views,
@@ -55,22 +56,24 @@ def _page(route, view, name, *extra):
 
 patterns = [
     path("reports/", workspace_views.index, name="reports"),
-    _page("reports/responses/", response_dashboard.dashboard, "response_dashboard"),
-    _page("reports/participation/", workspace_views.participation, "participation"),
+    _page("reports/responses/", workspace_views.dashboard, "response_dashboard"),
+    # The passive figures status the Response dashboard and Campaign
+    # comparison poll while they are open (#1586): whether newer figures are
+    # ready.
     _page(
-        "reports/participation/exports/",
+        "reports/responses/status/",
+        workspace_views.dashboard_status,
+        "response_dashboard_status",
+    ),
+    _page(
+        "reports/responses/exports/",
         export_ui.create,
         "report_export_create",
     ),
-    _page(
-        "reports/participation/exact-exports/",
-        exact_ui.create,
-        "report_exact_create",
-    ),
     # Past campaigns compared with the current one (#1018).
     _page("reports/comparison/", comparison_views.report, "campaign_comparison"),
-    # Its download form (#1018, slice 6): a POST answered with the export's
-    # status page.
+    # Its download form (#1018, slice 6): a POST answered with a redirect to
+    # the export's status address, which the page follows in place (#1778).
     _page(
         "reports/comparison/exports/",
         comparison_export_views.create,
@@ -81,6 +84,14 @@ patterns = [
         "reports/financial/exports/",
         financial_export_views.create,
         "financial_export",
+    ),
+    # Pledges (#1686): the financial stream's review worklist, whose
+    # decisions post to the page itself, and its CSV/XLSX/PDF download.
+    _page("reports/financial/pledges/", pledge_review_views.page, "pledges_to_enter"),
+    _page(
+        "reports/financial/pledges/exports/",
+        pledge_review_views.export,
+        "pledges_to_enter_export",
     ),
     _page("reports/limitations/", limitation_views.report, "limitations_report"),
     _page(
@@ -94,6 +105,26 @@ patterns = [
         census_change_views.export,
         "census_changes_export",
     ),
+    # Update ParishSoft (#528, ADM-09; renamed from Publish to ParishSoft by
+    # #1688, whose old address is gone with no redirect), linked from Census
+    # changes. Its Check ParishSoft posts to the page itself; Update's review
+    # and Apply post to its confirmation, and Run again's to its retries,
+    # each naming the plan and answering the review dialog.
+    _page(
+        "reports/census/update-parishsoft/",
+        census_publication_views.page,
+        "update_parishsoft",
+    ),
+    _page(
+        "reports/census/update-parishsoft/confirmation/",
+        census_publication_views.confirmation,
+        "update_parishsoft_confirmation",
+    ),
+    _page(
+        "reports/census/update-parishsoft/retries/",
+        census_publication_views.retries,
+        "update_parishsoft_retries",
+    ),
     _page("reports/information/", information_views.queue, "information_queue"),
     _page(
         "reports/information/exports/",
@@ -105,11 +136,16 @@ patterns = [
         information_views.detail,
         "information_item",
     ),
+    # The passive status a request page's Contact details poll when the
+    # ParishSoft data was replaced while it was read (#1863).
     _page(
-        "reports/information/<uuid:item_id>/record/",
-        information_views.update,
-        "information_update",
+        "reports/information/contacts/status/",
+        information_views.contacts_status,
+        "information_contacts_status",
     ),
+    # A request's Save (information_update) was retired, with no redirect
+    # (#1685): decisions are made on the Additional information worklist,
+    # which posts them to its own address.
     # The Members joining and leaving lists (joining/, leaving/) and their
     # export form (exports/) were retired, with no redirect (#1157): a
     # request's contact details are on its follow-up page, and the export is
@@ -124,13 +160,6 @@ patterns = [
         "reports/ministries/packets/",
         ministry_export_views.create_packet,
         "ministry_packet",
-    ),
-    # One outcome for the requests chosen on the queue (#1131), posted by
-    # its confirmation dialog.
-    _page(
-        "reports/ministries/follow-up/bulk/",
-        ministry_followup_views.bulk,
-        "ministry_followup_bulk",
     ),
     # Export these requests (#1157): the queue's filtered set as a file,
     # rendered on request. A request is a UUID, so "exports" is never one.
@@ -150,29 +179,13 @@ patterns = [
         "ministry_followup_update",
     ),
     # The Entered in ParishSoft tick of a resolved join or leave (#528) is a
-    # POST to its request's roster/, and Roster changes to enter, the list
-    # staff work from, sits beside the queue with its downloads under it.
+    # POST to its request's roster/. Staff mark them from Ministry requests'
+    # To enter by hand Stage: Roster changes to enter, the list once here,
+    # was folded into it with no redirect (R39 finding 2).
     _page(
         "reports/ministries/follow-up/<uuid:request_id>/roster/",
         ministry_followup_views.roster,
         "ministry_followup_roster",
-    ),
-    _page(
-        "reports/ministries/follow-up/roster/",
-        ministry_roster_views.page,
-        "ministry_roster",
-    ),
-    _page(
-        "reports/ministries/follow-up/roster/exports/",
-        ministry_roster_views.export,
-        "ministry_roster_export",
-    ),
-    # The list's bulk Mark entered in ParishSoft (#879), posted by its
-    # confirmation dialog.
-    _page(
-        "reports/ministries/follow-up/roster/marks/",
-        ministry_roster_views.bulk,
-        "ministry_roster_bulk",
     ),
     # The directory's fixed actions before its Family pages; a Family is a
     # UUID, so "exports" or "search" can never be taken for one (a unit test
@@ -186,8 +199,8 @@ patterns = [
     _page("reports/families/search/", directory_views.find_family, "find_family"),
     _page(
         "reports/families/<uuid:family_id>/",
-        family_timeline_views.family_timeline,
-        "family_timeline",
+        timeline_views.timeline,
+        "timeline",
     ),
     # Open form's hand-off (#529): a form action, posted only, so it has no
     # slashless form.
@@ -257,7 +270,7 @@ patterns = [
     ),
     _page(
         "reports/families/<uuid:family_id>/exports/",
-        family_timeline_views.export,
-        "family_timeline_export",
+        timeline_views.export,
+        "timeline_export",
     ),
 ]

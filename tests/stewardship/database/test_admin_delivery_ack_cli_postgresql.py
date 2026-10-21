@@ -1,6 +1,6 @@
 """``delivery resend`` and ``delivery refusal-clear`` (ADM-11 PR 9c).
 
-The two Outgoing mail actions whose pages ask for a ticked acknowledgement:
+The two Sent mail actions whose pages ask for a ticked acknowledgement:
 the command line asks for it at its prompt (or takes ``--yes``) before any
 transaction opens, then runs the page's own function in the page's command
 scope. Process admission is replaced by the test's own Django assembly (the
@@ -112,7 +112,7 @@ def test_resend_asks_then_sends_once_per_key(
             )
             assert code == 4, refused_doc
             assert refused_doc["error"]["code"] == "confirmation_required"
-            assert "duplicate risk" in err
+            assert "second copy" in err
             untouched()
         # A read-only session is refused before anything changes.
         _, reader, _ = paired(admin.service, scope="read-only")
@@ -163,7 +163,7 @@ def test_resend_asks_then_sends_once_per_key(
         # The page's form with the same key, box ticked: the same resolution.
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             response = browser.post(
-                f"/admin/mail/outgoing/{message.pk}/resolution/",
+                f"/admin/mail/sent/{message.pk}/resolution/",
                 {
                     "command_id": str(key),
                     "expected_version": str(version),
@@ -259,7 +259,7 @@ def test_a_page_resend_key_repeated_from_the_command_line(
         version, key = message.version, uuid4()
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             response = browser.post(
-                f"/admin/mail/outgoing/{message.pk}/resolution/",
+                f"/admin/mail/sent/{message.pk}/resolution/",
                 {
                     "command_id": str(key),
                     "expected_version": str(version),

@@ -1,4 +1,5 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
+{% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block title %}{% translate "Users" %}{% endblock %}
 {% block content %}{% comment %}
 The Users page (#952; user_views.users, admin-portal spec "Portal user
@@ -33,7 +34,8 @@ time zone (data-compact, date-format-v1.js), as other dense tables do
 <p>{% translate "Roles are levels, and each includes everything below it. A Ministry leader sees only the Ministries they lead in ParishSoft. Staff also see every Ministry. An Administrator can see and change everything, including this page." %}</p>
 <p>{% translate "New user adds someone; Edit changes a user's Name or role. Either shows what would change before you apply it, and nothing takes effect until the status says Applied. Delete asks first; the person can no longer sign in, and their open sessions end on their next request. To change an address, delete the user and add the new address." %}</p>
 <p>{% translate "A successful sign-in is one that was allowed and opened a session; a refused attempt is not counted. Times are shown in your computer's time zone." %}</p>
-<p>{% translate "Below the users, ParishSoft Ministry leaders without a user lists the people who lead one of this campaign's Ministries in ParishSoft but can't sign in yet. Import selected or Import all shows them as new Ministry leader users before anything is saved; anyone who became a user meanwhile is skipped. Import never changes an existing user." %}</p>{% endaboutpage %}
+<p>{% translate "Below the users, ParishSoft Ministry leaders without a user lists the people who lead one of this campaign's Ministries in ParishSoft but can't sign in yet. Import selected or Import all shows them as new Ministry leader users before anything is saved; anyone who became a user meanwhile is skipped. Import never changes an existing user." %}</p>
+<p>{% translate "Email Ministry leaders, at the foot of the page, sends each chosen Ministry leader user one email saying they can sign in, which address to sign in with, and how many requests are open in each Ministry they lead. It names no parishioner. Nothing is sent until you apply its review, and nothing is ever sent automatically, on import or on a schedule. Last emailed says when a leader was last emailed here and how that email has ended so far; Outgoing mail does not list these emails yet." %}</p>{% endaboutpage %}
 <p id="users-sign-in-activity"><a href="{% url 'admin:logs' %}?applied=yes&amp;audit=yes&amp;activity=sign_in">{% translate "See sign-in activity in System logs" %}</a></p>
 <p>{% button href=new_url %}{% translate "New user" %}{% endbutton %}</p>
 {% include "stewardship/components/review-outcome.html" with outcome_id="users-outcome" %}
@@ -83,15 +85,16 @@ reason line under the buttons says why as visible text, so ticking a row
 moves nothing. With no rows at all, both buttons are unavailable and the same
 line gives the empty-table reason (empty_hint), which Import all names
 (hint_id). If the leaders cannot be read, the section says so instead and the
-users table above stays usable. Leaders with no usable email are only
-counted, in a muted line.
+users table above stays usable, and the notice brings the leaders in by
+itself (#1863, components/part-status.html). Leaders with no usable email
+are only counted, in a muted line.
 {% endcomment %}
 {% translate "Leader pages" as leader_navigator_label %}
 {% include "stewardship/components/review-outcome.html" with outcome_id="leaders-outcome" %}
 <section id="{{ leaders.anchor|default:'leaders-table' }}" class="panel" data-table-region data-refresh-url="{{ refresh_url }}" aria-labelledby="leaders-table-title">
 <h2 id="leaders-table-title" tabindex="-1">{% translate "ParishSoft Ministry leaders without a user" %}</h2>
 <p class="help">{% translate "People ParishSoft lists as leaders of this campaign's Ministries who can't sign in yet. Importing makes each one a user with the role Ministry leader named as the Member column shows; you can change the Name later with Edit." %}</p>
-{% if leaders_unavailable %}<p class="notice notice-error" id="leaders-unavailable">{% translate "The ParishSoft Ministry leaders could not be read just now, so none can be imported. The users above are not affected. Reload the page to try again." %}</p>{% else %}
+{% if leaders_unavailable %}{% include "stewardship/components/part-status.html" with part_status=leaders_status %}{% else %}
 {% include "stewardship/table-navigator.html" with table=leaders label=leader_navigator_label %}
 <form method="post" action="{{ import_url }}" id="leader-import" data-review-open="leader-review" data-select-table data-missing-hint="{% translate 'Select at least one leader to use Import selected.' %}">{% csrf_token %}
   <div class="bulk-bar">
@@ -126,5 +129,60 @@ counted, in a muted line.
 {% include "stewardship/table-navigator.html" with table=leaders label=leader_navigator_label %}
 {% translate "Review Ministry leader import" as review_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="leader-review" title=review_title apply_url=apply_url outcome_id="leaders-outcome" fallback="leaders-table-title" %}
 {% if leaders_unreachable %}<p class="help" id="leaders-unreachable">{% blocktranslate count count=leaders_unreachable %}{{ count }} ParishSoft Ministry leader has no email address in ParishSoft, so can't sign in and isn't listed.{% plural %}{{ count }} ParishSoft Ministry leaders have no email address in ParishSoft, so can't sign in and aren't listed.{% endblocktranslate %}</p>{% endif %}{% endif %}
+</section>
+{% comment %}
+Email Ministry leaders (#1592; leader_email_views.emails_context,
+admin-portal spec "Email Ministry leaders"). A third table region, which
+ui-v1.js redraws with the others, listing every Ministry leader user with
+their Last emailed outcome. Its form posts the ticked addresses (or all of
+them) for the Email Ministry leaders review, which opens in the shared
+review dialog (#750, data-review-open): the review lists each leader with
+their Ministries and open requests, read now, and anyone skipped. The
+dialog's Apply posts the signed review back to the same address, which
+records one request; then the page's regions are redrawn in place and the
+section's status line says the emails were queued. The bulk bar is the
+shared one (table-selection.html): Email selected is a data-bulk-action,
+and the reserved reason line says why while nothing is ticked or there is
+nobody to email. With no current campaign with Ministries, or an archived
+one, the section says so in place of the table. Nothing here is ever sent
+automatically.
+{% endcomment %}
+{% translate "Ministry leader email pages" as emails_navigator_label %}
+{% include "stewardship/components/review-outcome.html" with outcome_id="emails-outcome" %}
+<section id="{{ emails.anchor|default:'emails-table' }}" class="panel" data-table-region data-refresh-url="{{ refresh_url }}" aria-labelledby="emails-table-title">
+<h2 id="emails-table-title" tabindex="-1">{% translate "Email Ministry leaders" %}</h2>
+<p class="help">{% translate "Send each chosen Ministry leader user one email saying they can sign in, which address to sign in with, and how many requests are open in the Ministries they lead. You review it first; nothing is sent automatically." %}</p>
+{% if emails_unavailable %}<p class="notice" id="emails-unavailable">{{ emails_unavailable }}</p>{% else %}
+{% include "stewardship/table-navigator.html" with table=emails label=emails_navigator_label %}
+<form method="post" action="{{ emails_url }}" id="leader-emails" data-review-open="emails-review" data-select-table data-missing-hint="{% translate 'Select at least one leader to use Email selected.' %}">{% csrf_token %}
+  <div class="bulk-bar">
+    {% button type="submit" variant="secondary" data-bulk-action %}{% translate "Email selected" %}{% endbutton %}
+    {% translate "Nobody to email: no user has the role Ministry leader." as emails_empty_hint %}{% include "stewardship/table-selection.html" with hint_id="emails-reason" empty_hint=emails_empty_hint %}
+  </div>
+  <div class="table-scroll" tabindex="0" role="region" aria-labelledby="emails-table-caption">
+  <table class="data-table leader-emails-table">
+    <caption id="emails-table-caption" class="visually-hidden">{% translate "Ministry leader users" %}</caption>
+    <thead><tr>
+      <th scope="col" class="select-col"><input type="checkbox" data-select-all aria-label="{% translate 'Select every Ministry leader on this page' %}"></th>
+      {% translate "Name" as heading %}{% sort_heading emails "name" heading %}
+      {% translate "Email" as heading %}{% sort_heading emails "email" heading %}
+      {% translate "Last successful sign-in" as heading %}{% sort_heading emails "last_login" heading %}
+      {% translate "Last emailed" as heading %}{% sort_heading emails "last_emailed" heading %}
+    </tr></thead>
+    <tbody>
+    {% for row in emails.rows %}<tr>
+      <td class="select-col"><input type="checkbox" name="email" value="{{ row.email }}" data-select-row aria-label="{% blocktranslate with name=row.name email=row.email %}Select {{ name }} ({{ email }}){% endblocktranslate %}"></td>
+      <th scope="row"><span class="cell-ellipsis" title="{{ row.name }}">{{ row.name }}</span></th>
+      <td><span class="cell-ellipsis" title="{{ row.email }}">{{ row.email }}</span></td>
+      <td class="nowrap">{% if row.last_login %}<time datetime="{{ row.last_login|instant }}" data-local-instant data-compact>{{ row.last_login|instant }}</time>{% else %}{% translate "Never" %}{% endif %}</td>
+      <td>{% if row.last_emailed %}<time datetime="{{ row.last_emailed|instant }}" data-local-instant data-compact>{{ row.last_emailed|instant }}</time> · {% endif %}{{ row.emailed_label }}</td>
+    </tr>{% empty %}<tr><td colspan="5">{% translate "No user has the role Ministry leader, so there is nobody to email. Import ParishSoft Ministry leaders above, or give a user that role." %}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+</form>
+{% include "stewardship/table-navigator.html" with table=emails label=emails_navigator_label %}
+{% translate "Review Ministry leader emails" as emails_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="emails-review" title=emails_title apply_url=emails_url outcome_id="emails-outcome" fallback="emails-table-title" %}
+{% endif %}
 </section>
 {% endblock %}

@@ -7,17 +7,13 @@ import pytest
 from .system_health_components import (
     ACCEPT_CHANGED,
     ACCEPT_DONE,
-    ACCEPT_FRESH,
     ACCEPT_LAPSED,
     ACCEPT_LATE,
-    ACCEPT_LOCAL_FRESH,
-    ACCEPT_LOCAL_STALE,
+    ACCEPT_OFFERED,
     ACCEPT_PAGE,
     ACCEPT_PREVIEW,
     ACCEPT_SETTLED,
     ACCEPT_STALE,
-    ACCEPT_STEP_UP,
-    ACCEPT_STEP_UP_LATE,
     ALLOW_CLEARED,
     ALLOW_CLEARED_STATUS,
     ALLOW_PAGE,
@@ -29,18 +25,19 @@ from .system_health_components import (
     BACKUP_PAGE,
     BACKUP_PREVIEW,
     BACKUP_REQUESTED,
-    BACKUP_STEP_UP,
+    BACKUP_SIGNED_OUT,
     DATED,
     DEBUG_LIVE,
     DEBUG_PAGE,
     DEBUG_PREVIEW,
     DEBUG_SET,
+    DEBUG_SIGNED_OUT,
     DEBUG_STATUS,
-    DEBUG_STEP_UP,
     DEBUG_TILE,
     HEALTHY,
     MAIL,
     PAGE,
+    RECHECK,
     STALE,
     STALE_STATUS,
     STATUS,
@@ -67,8 +64,9 @@ def background_counts(page):
     """Answer the header's Background work poll as the page drew it.
 
     The component server does not serve that endpoint, so the header's 30 s
-    poll fails and shows "Background status unavailable", which wraps the
-    header to a second row at 1280 px and moves the whole page down. The
+    poll fails and shows "Background status unavailable", which used to wrap
+    the header to a second row at 1280 px and move the whole page down (the
+    sentence now replaces the pill's text in place, #1643). The
     Not current tests wait about 30 s for three failed checks, so whether
     that line had appeared by the time they measured was a race (seen in
     all three engines in CI). The counts match the fixture's "1 (running:
@@ -87,6 +85,7 @@ def background_counts(page):
                     "active": 1,
                 },
                 "delivery_unknown": 0,
+                "delivery_unknown_other": 0,
             }
         ),
     )
@@ -111,7 +110,7 @@ NAMES = [
 TOPS = """() => [...document.querySelectorAll('[data-health-toggle]')]
     .map((b) => b.getBoundingClientRect().top + window.scrollY)"""
 # The overall line's shown form (the other is display: none), and the
-# fixed-height line that holds it and Refresh System health.
+# fixed-height line that holds it (there is no Refresh button, #1586).
 LINE = "#health-overall > span:visible"
 HOLDER = """() => {
     const box = document.querySelector('.health-line').getBoundingClientRect();
@@ -611,9 +610,9 @@ def test_the_page_says_when_it_is_not_current_and_recovers_in_place(
 ):
     """After three failed checks the line reads Not current with when it
     last checked, every tile turns Not current with its last known state,
-    nothing opens, closes or moves, and the announcer says so once.
-    Refresh System health checks again at once and brings the counted
-    states back."""
+    nothing opens, closes or moves, and the announcer says so once. The
+    page has no Refresh button (#1586): it keeps checking, and the first
+    check that works brings the counted states back."""
     page.set_viewport_size({"width": 1280, "height": 900})
     failures = []
 
@@ -625,8 +624,7 @@ def test_the_page_says_when_it_is_not_current_and_recovers_in_place(
     page.route(f"{component_origin}{STALE_STATUS}", fail)
     page.goto(component_origin + STALE)
     kept = _not_reloaded(page)
-    restart = page.get_by_role("button", name="Refresh System health")
-    expect(restart).to_be_hidden()
+    expect(page.get_by_role("button", name="Refresh System health")).to_have_count(0)
     _toggle(page, "backups").click()
     _away(page)
     line = page.evaluate(HOLDER)
@@ -642,7 +640,6 @@ def test_the_page_says_when_it_is_not_current_and_recovers_in_place(
     expect(last).to_have_text(
         page.evaluate("(stamp) => ParishDates.time(new Date(stamp))", stamp)
     )
-    expect(restart).to_be_visible()
     for tile in TILES:
         expect(_word(page, tile)).to_have_text("Not current")
         expect(
@@ -658,7 +655,8 @@ def test_the_page_says_when_it_is_not_current_and_recovers_in_place(
     )
     assert same_place(page.evaluate(HOLDER), line)
     assert same_place(page.evaluate(TOPS), tops)
-    # Current again, from the button, with the troubled state it reads.
+    # Current again, from the poll's own retry, with the troubled state it
+    # reads.
     # Count what the announcer is given: the sentence once, not twice.
     page.evaluate("""() => {
         window.announced = 0;
@@ -667,8 +665,7 @@ def test_the_page_says_when_it_is_not_current_and_recovers_in_place(
                 {childList: true, characterData: true, subtree: true});
     }""")
     page.unroute(f"{component_origin}{STALE_STATUS}")
-    restart.click()
-    expect(dashboard).not_to_have_attribute("data-not-current", "")
+    expect(dashboard).not_to_have_attribute("data-not-current", "", timeout=30000)
     expect(page.locator(LINE)).to_have_text("3 errors and 1 warning")
     expect(_word(page, "mail")).to_have_text("Error")
     expect(page.locator(ANNOUNCER)).to_have_text(
@@ -679,18 +676,17 @@ def test_the_page_says_when_it_is_not_current_and_recovers_in_place(
     expect(page.get_by_role("region", name="Backups details")).to_be_visible()
     # A poll never opens a tile, even one that turned Error.
     expect(_band(page, "mail")).to_be_hidden()
-    expect(restart).to_be_hidden()
     assert kept()
 
 
 # The fragment of the troubled page, whatever its ?loaded= says.
 TROUBLED_ROUTE = f"**{STATUS}*"
-# The line box and the restart button, in the viewport.
-RESTART = """() => {
+# The line box and the overall line's heading, in the viewport.
+INSIDE = """() => {
     const line = document.querySelector('.health-line').getBoundingClientRect();
-    const button = document.querySelector('.health-restart').getBoundingClientRect();
+    const said = document.querySelector('#health-overall').getBoundingClientRect();
     return {line: [line.left, line.top, line.right, line.bottom],
-            button: [button.left, button.top, button.right, button.bottom]};
+            said: [said.left, said.top, said.right, said.bottom]};
 }"""
 
 
@@ -699,9 +695,9 @@ def test_not_current_takes_over_troubled_tiles_and_the_line_fits(
     page, component_origin, width
 ):
     """Open Error and Warning bands, and their rows' notches, take the Not
-    current border and lose their start bars; the Not current line and its
-    button fit the line's fixed box, beside the menu too, so neither is cut
-    off nor overlaps the tiles."""
+    current border and lose their start bars; the Not current line fits the
+    line's fixed box, beside the menu too, so it is neither cut off nor
+    overlaps the tiles."""
     page.set_viewport_size({"width": width, "height": 900})
     page.route(
         TROUBLED_ROUTE,
@@ -731,20 +727,17 @@ def test_not_current_takes_over_troubled_tiles_and_the_line_fits(
             f"health-{tile}",
         )
         assert notch == neutral
-    box = page.evaluate(RESTART)
-    line, button = box["line"], box["button"]
-    assert line[0] <= button[0] and button[2] <= line[2]
-    assert line[1] <= button[1] and button[3] <= line[3]
+    box = page.evaluate(INSIDE)
+    line, said = box["line"], box["said"]
+    assert line[0] <= said[0] and said[2] <= line[2] + 1
+    assert line[1] <= said[1] and said[3] <= line[3] + 1
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
 
 
-def test_a_poll_that_gives_up_turns_not_current_and_refresh_starts_it_again(
-    page, component_origin
-):
-    """After an hour of watching the poll stops: the line turns Not current
-    with no other notice. Refresh System health starts a fresh watch that
-    checks at once, brings the counted state back, says it once, and keeps
-    polling."""
+def test_a_poll_past_its_hour_slows_down_and_stays_current(page, component_origin):
+    """After an hour of watching the poll slows to every 30 seconds rather
+    than stopping (#1586): the line stays current, with no notice, and
+    every later check still brings the page up to date."""
     page.clock.install()
     page.goto(component_origin + STEADY)
     kept = _not_reloaded(page)
@@ -754,23 +747,20 @@ def test_a_poll_that_gives_up_turns_not_current_and_refresh_starts_it_again(
     first = checked.get_attribute("datetime")
     page.clock.fast_forward(11_000)
     expect(checked).not_to_have_attribute("datetime", first)
-    page.clock.fast_forward(61 * 60 * 1000)
-    expect(dashboard).to_have_attribute("data-not-current", "")
-    expect(page.locator(".live-status-problem")).to_be_hidden()
-    expect(page.locator(ANNOUNCER)).to_contain_text("System health is not current")
-    expect(page.get_by_role("button", name="Refresh System health")).to_be_attached()
-    # The hour's jump also ends the component's Admin session, whose modal
-    # "Sign in again" dialog makes the rest of the page inert, so the button
-    # is clicked from script.
-    page.evaluate("document.querySelector('[data-live-restart]').click()")
-    expect(dashboard).not_to_have_attribute("data-not-current", "")
-    expect(page.locator(LINE)).to_have_text("All working")
-    expect(page.locator(ANNOUNCER)).to_have_text("System health: all working.")
-    # The fresh watch polls on.
     stamp = checked.get_attribute("datetime")
-    page.clock.fast_forward(11_000)
+    page.clock.fast_forward(61 * 60 * 1000)
     expect(checked).not_to_have_attribute("datetime", stamp)
     expect(dashboard).not_to_have_attribute("data-not-current", "")
+    expect(page.locator(".live-status-problem")).to_be_hidden()
+    # Ten seconds is no longer the pace; thirty is.
+    stamp = checked.get_attribute("datetime")
+    page.clock.fast_forward(11_000)
+    page.evaluate("() => true")  # One round trip after the clock jump.
+    assert checked.get_attribute("datetime") == stamp
+    page.clock.fast_forward(20_000)
+    expect(checked).not_to_have_attribute("datetime", stamp)
+    expect(dashboard).not_to_have_attribute("data-not-current", "")
+    expect(page.locator(LINE)).to_have_text("All working")
     assert kept()
 
 
@@ -786,8 +776,8 @@ def test_a_refused_check_turns_not_current_at_once(page, component_origin):
     dashboard = page.locator("[data-health-dashboard]")
     expect(dashboard).to_have_attribute("data-not-current", "", timeout=60000)
     expect(page.locator(".live-status-problem")).to_be_hidden()
-    box = page.evaluate(RESTART)
-    assert box["button"][3] <= box["line"][3]
+    box = page.evaluate(INSIDE)
+    assert box["said"][3] <= box["line"][3] + 1
 
 
 def _routed(page, component_origin, answers, shown=None):
@@ -1158,8 +1148,9 @@ def test_a_requested_backups_progress_follows_under_its_button(page, component_o
 
 
 def test_refusals_show_in_the_dialog(page, component_origin):
-    """A stale sign-in offers the step-up, a race says so; never raw JSON."""
-    _routed(page, component_origin, {"preview": (403, BACKUP_STEP_UP)})
+    """An ended session says to sign in again, a race says so; never raw
+    JSON."""
+    _routed(page, component_origin, {"preview": (403, BACKUP_SIGNED_OUT)})
     page.goto(component_origin + BACKUP_PAGE + "#health-backups")
     kept = _not_reloaded(page)
     page.locator("#backup-now").get_by_role(
@@ -1167,12 +1158,12 @@ def test_refusals_show_in_the_dialog(page, component_origin):
     ).click()
     dialog = _dialog(page, "Take a backup now?")
     error = dialog.locator("[data-confirm-error]")
-    expect(error.get_by_role("button", name="Confirm with Google")).to_be_visible()
-    expect(error).to_contain_text("For security, taking a backup now")
-    # Only the sentence is the alert, never the Confirm control with it.
-    expect(error.locator('p[role="alert"]')).to_contain_text("For security")
+    alert = error.locator('p[role="alert"][data-backup-refused="signed_out"]')
+    expect(alert).to_contain_text("Your sign-in has ended")
+    expect(alert).to_contain_text("Nothing was requested.")
+    expect(alert.get_by_role("link", name="Sign in again")).to_be_visible()
+    # Only the sentence is the alert, never the region around it.
     assert error.get_attribute("role") is None
-    assert error.locator('[role="alert"] button').count() == 0
     expect(dialog.get_by_role("button", name="Apply")).to_be_hidden()
     # The title first, as for any review, so the reader hears what it is.
     expect(dialog.locator("[data-review-title]")).to_be_focused()
@@ -1400,13 +1391,13 @@ def test_turning_off_debug_logging_updates_the_tile_and_both_buttons_at_once(
     assert kept()
 
 
-def test_a_stale_sign_in_offers_the_step_up_in_the_debug_dialog(page, component_origin):
-    """The shared "For security" notice and Confirm with Google, in the
-    dialog."""
+def test_an_ended_session_is_said_in_the_debug_dialog(page, component_origin):
+    """The shared signed-out sentence and its Sign in again link, in the
+    dialog (#1547)."""
     _routed(
         page,
         component_origin,
-        {"debug_off_preview": (403, DEBUG_STEP_UP)},
+        {"debug_off_preview": (403, DEBUG_SIGNED_OUT)},
         shown=DEBUG_PAGE,
     )
     page.goto(component_origin + BACKUP_PAGE)
@@ -1415,8 +1406,10 @@ def test_a_stale_sign_in_offers_the_step_up_in_the_debug_dialog(page, component_
     region.get_by_role("button", name="Turn off debug logging", exact=True).click()
     dialog = _dialog(page, "Turn off debug logging?")
     error = dialog.locator("[data-confirm-error]")
-    expect(error.get_by_role("button", name="Confirm with Google")).to_be_visible()
-    expect(error).to_contain_text("For security, turning off debug logging")
+    alert = error.locator('p[role="alert"][data-debug-off-refused="signed_out"]')
+    expect(alert).to_contain_text("Your sign-in has ended")
+    expect(alert).to_contain_text("Nothing was changed.")
+    expect(alert.get_by_role("link", name="Sign in again")).to_be_visible()
     expect(dialog.get_by_role("button", name="Apply")).to_be_hidden()
     assert kept()
     assert '"errors"' not in page.content()
@@ -2198,42 +2191,154 @@ def test_a_page_load_tiles_toggletip_moves_no_row(page, component_origin):
     button = band.locator(".toggletip-button")
     button.click()
     bubble = band.locator(".toggletip-bubble")
-    expect(bubble).to_contain_text("checked when the page opens")
+    expect(bubble).to_contain_text("checked about every 5 minutes")
+    expect(bubble).not_to_contain_text("Reload")
     expect(button).to_have_attribute("aria-expanded", "true")
     assert same_place(page.evaluate(TOPS), tops)
     assert same_place(band.bounding_box()["height"], height)
 
 
-@pytest.mark.parametrize("width", [320, 1280])
-def test_a_stale_sign_in_greys_accept_this_change_once(
-    page, component_origin, axe_source, width
-):
-    """#1331 item 18: on a page drawn with a stale sign-in, the offer shows
-    the shared step-up notice and greys its button, naming the notice; the
-    polled copy is the same whatever the sign-in, so a poll leaves both in
-    place."""
-    page.set_viewport_size({"width": width, "height": 900})
-    page.goto(component_origin + ACCEPT_STEP_UP)
-    region = page.locator("#accept-change")
-    notice = region.locator("[data-step-up-notice][data-accept-step-up]")
-    expect(notice).to_be_visible()
-    expect(notice).to_contain_text("accepting this change needs")
-    button = region.get_by_role("button", name="Accept this change once")
-    expect(button).to_be_disabled()
-    expect(button).to_have_attribute("aria-describedby", "accept-change-fresh-reason")
-    expect(page.locator("#accept-change-fresh-reason")).to_be_visible()
-    assert "needs a recent Google sign-in" not in region.inner_text()
-    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-    assert _axe(page, axe_source) == []
-    page.evaluate(
-        "document.querySelector('[data-accept-step-up]').dataset.kept = 'yes'"
+# The page-load tiles' slow recheck (#1790): the status reads, and how to
+# hide or show the tab (a test cannot hide a real one).
+SLOW = "slow=1"
+SHOWN = """(hidden) => {
+    Object.defineProperty(document, 'visibilityState',
+        {configurable: true, get: () => hidden ? 'hidden' : 'visible'});
+    document.dispatchEvent(new Event('visibilitychange'));
+}"""
+
+
+def _status_reads(page):
+    """Every status read the page sends, as a growing list of URLs."""
+    reads = []
+    page.on(
+        "request",
+        lambda request: (
+            reads.append(request.url) if f"{RECHECK}/status" in request.url else None
+        ),
     )
+    return reads
+
+
+def test_the_page_load_tiles_recheck_by_themselves_every_five_minutes(
+    page, component_origin
+):
+    """Ordinary polls echo the page-load tiles' states; the first poll after
+    5 minutes asks for a recheck (slow=1), whose answer changes the tile's
+    words, icon and the overall line in place, without opening the tile or
+    reloading the page. Later polls echo the new state, and the next
+    recheck waits another 5 minutes."""
+    page.clock.install()
+    reads = _status_reads(page)
+    page.goto(component_origin + RECHECK)
     _away(page)
+    kept = _not_reloaded(page)
+    expect(_word(page, "resave")).to_have_text("Working")
+    expect(page.locator(LINE)).to_have_text("All working")
+    tops = page.evaluate(TOPS)
     checked = page.locator("time[data-live-checked]")
     first = checked.get_attribute("datetime")
-    expect(checked).not_to_have_attribute("datetime", first, timeout=30000)
-    assert notice.get_attribute("data-kept") == "yes"
-    expect(button).to_be_disabled()
+    page.clock.fast_forward(11_000)
+    expect(checked).not_to_have_attribute("datetime", first)
+    assert reads and not any(SLOW in url for url in reads)
+    # Five minutes on, the next poll rechecks and the tile follows it.
+    page.clock.fast_forward(5 * 60 * 1000)
+    expect(_word(page, "resave")).to_have_text("Error")
+    expect(_said(page, "resave")).to_contain_text("1 email cannot be sent")
+    expect(page.locator(LINE)).to_contain_text("1 error")
+    assert sum(SLOW in url for url in reads) == 1
+    expect(_band(page, "resave")).to_be_hidden()
+    _toggle(page, "resave").click()
+    expect(_band(page, "resave").locator('[data-problem="resave"]')).to_have_attribute(
+        "data-severity", "error"
+    )
+    # Later polls echo the fresh state and ask for no recheck.
+    _away(page)
+    count = len(reads)
+    stamp = checked.get_attribute("datetime")
+    page.clock.fast_forward(11_000)
+    expect(checked).not_to_have_attribute("datetime", stamp)
+    later = reads[count:]
+    assert later and all("loaded=resave%3Aerror" in url for url in later)
+    assert not any(SLOW in url for url in later)
+    expect(_word(page, "resave")).to_have_text("Error")
+    expect(_band(page, "resave")).to_be_visible()
+    assert same_place(page.evaluate(TOPS)[:5], tops[:5])
+    assert kept()
+
+
+def test_a_hidden_tab_does_not_recheck_until_it_is_shown(page, component_origin):
+    """While the tab is hidden nothing is read, however long; once it is
+    shown again the page catches up at once, with the recheck that is due."""
+    page.clock.install()
+    reads = _status_reads(page)
+    page.goto(component_origin + RECHECK)
+    _away(page)
+    page.evaluate(SHOWN, True)
+    page.clock.fast_forward(6 * 60 * 1000)
+    page.evaluate("() => true")  # One round trip after the clock jump.
+    assert reads == []
+    page.evaluate(SHOWN, False)
+    expect(_word(page, "resave")).to_have_text("Error")
+    assert len(reads) == 1 and SLOW in reads[0]
+
+
+def test_a_failed_recheck_is_asked_for_again_on_the_next_poll(page, component_origin):
+    """A recheck answered 503 does not count: the next poll asks again,
+    not 5 minutes later, and that answer brings the tile up to date."""
+    page.clock.install()
+    reads = _status_reads(page)
+    refused = []
+
+    def once(route):
+        """Answer the first recheck 503, then let the server answer."""
+        if refused:
+            route.fallback()
+        else:
+            refused.append(route.request.url)
+            route.fulfill(status=503, body="")
+
+    page.route(f"**{RECHECK}/status?slow=1", once)
+    page.goto(component_origin + RECHECK)
+    _away(page)
+    page.clock.fast_forward(5 * 60 * 1000 + 1000)
+    for _ in range(50):  # Round trips until the refused recheck was sent.
+        if refused:
+            break
+        page.evaluate("() => true")
+    assert refused
+    expect(_word(page, "resave")).to_have_text("Working")
+    # The next poll asks again. (Tick until it is sent: the refused answer
+    # schedules it only once the page has read that answer.)
+    after = len(reads)
+    for _ in range(5):
+        page.clock.fast_forward(11_000)
+        page.evaluate("() => true")
+        if len(reads) > after:
+            break
+    expect(_word(page, "resave")).to_have_text("Error")
+    assert len(refused) == 1
+    assert SLOW in reads[after]
+
+
+def test_a_held_page_load_panel_catches_up_on_a_later_poll(page, component_origin):
+    """While the pointer is over the grid the recheck's panel copy waits
+    (the summary row follows at once); once the pointer leaves, the next
+    ordinary poll, which carries no copy, applies the recheck's."""
+    page.clock.install()
+    page.goto(component_origin + RECHECK)
+    _toggle(page, "resave").click()
+    band = _band(page, "resave")
+    expect(band).to_be_visible()
+    band.hover()
+    page.clock.fast_forward(5 * 60 * 1000 + 1000)
+    expect(_word(page, "resave")).to_have_text("Error")
+    expect(band.locator('[data-problem="resave"]')).to_have_count(0)
+    _away(page)
+    page.clock.fast_forward(11_000)
+    expect(band.locator('[data-problem="resave"]')).to_have_attribute(
+        "data-severity", "error"
+    )
 
 
 def _polls(page, count=2):
@@ -2244,60 +2349,22 @@ def _polls(page, count=2):
         expect(checked).not_to_have_attribute("datetime", first, timeout=30000)
 
 
-STEP_UP_KEY = "localStorage.getItem('pk-local-step-up')"
-
-
-def test_only_the_shown_step_up_records_a_return_path(page, component_origin):
-    """#1385: in LOCAL, Accept this change once's offer is drawn with and
-    without its step-up, and CSS shows one. With a recent sign-in the
-    hidden step-up copy writes no return path, on load or after a poll;
-    with a stale one the shown step-up records System health's address."""
-    page.goto(component_origin + ACCEPT_LOCAL_FRESH)
-    page.evaluate("localStorage.removeItem('pk-local-step-up')")
-    page.reload()
-    expect(page.get_by_role("button", name="Accept this change once")).to_be_enabled()
-    expect(page.locator("[data-local-step-up]")).to_be_hidden()
-    _polls(page, 1)
-    assert page.evaluate(STEP_UP_KEY) is None
-    page.goto(component_origin + ACCEPT_LOCAL_STALE)
-    visible(page.locator("#accept-change [data-local-step-up]"))
-    saved = page.evaluate(STEP_UP_KEY)
-    assert saved is not None and '"next":"/admin/system/health/"' in saved
-
-
-def test_a_page_drawn_fresh_never_turns_stale_on_a_poll(page, component_origin):
-    """The sign-in is judged once, when the page is drawn (#1159): polls
-    never bring the step-up notice to a fresh page; a sign-in that ages
-    later gets the step-up answer when the button is used."""
-    page.set_viewport_size({"width": 1280, "height": 900})
-    page.goto(component_origin + ACCEPT_FRESH)
+@pytest.mark.parametrize("width", [320, 1280])
+def test_accept_this_change_once_is_offered_and_polls_keep_it(
+    page, component_origin, axe_source, width
+):
+    """An open refusal's offer is one enabled button, whenever the
+    Administrator signed in (#1547): no sign-in notice names it, it fits
+    and passes axe, and polls bringing the same refusal leave it enabled."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + ACCEPT_OFFERED)
     region = page.locator("#accept-change")
     button = region.get_by_role("button", name="Accept this change once")
+    expect(button).to_have_count(1)
     expect(button).to_be_enabled()
-    expect(region.locator("[data-step-up-notice]")).to_be_hidden()
+    assert "sign-in" not in region.inner_text()
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert _axe(page, axe_source) == []
     _away(page)
     _polls(page)
     expect(button).to_be_enabled()
-    expect(region.locator("[data-step-up-notice]")).to_be_hidden()
-
-
-def test_a_step_up_form_swapped_in_by_a_poll_takes_the_pages_token(
-    page, component_origin
-):
-    """A poll that brings a refusal to a stale page swaps in the offer with
-    its step-up notice; the Confirm with Google form's empty CSRF field
-    takes the page's own token, so it posts a valid one."""
-    page.set_viewport_size({"width": 1280, "height": 900})
-    page.goto(component_origin + ACCEPT_STEP_UP_LATE)
-    region = page.locator("#accept-change")
-    expect(region.locator("[data-step-up-notice]")).to_have_count(0)
-    # The tile is Working, so closed; a poll never opens it.
-    _toggle(page, "source").click()
-    _away(page)
-    notice = region.locator("[data-step-up-notice][data-accept-step-up]")
-    expect(notice).to_be_visible(timeout=30000)
-    expect(
-        region.get_by_role("button", name="Accept this change once")
-    ).to_be_disabled()
-    token = notice.locator('form input[name="csrfmiddlewaretoken"]')
-    expect(token).to_have_value("component-token")

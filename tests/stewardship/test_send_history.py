@@ -2,7 +2,7 @@
 
 The counts come from the progress panel's statements (tested against
 PostgreSQL); here the send identifier a link carries, the listing order and
-reminder numbers, each count's Outgoing mail filter and the table the page
+reminder numbers, each count's Sent mail filter and the table the page
 renders are checked.
 """
 
@@ -233,7 +233,7 @@ def render(*rows, campaign=True):
 
 
 def test_a_finished_send_links_each_count_to_its_emails():
-    """Every non-zero linked count opens Outgoing mail filtered to it."""
+    """Every non-zero linked count opens Sent mail filtered to it."""
     html = render(row())
     token = f"{INVITATION}%3A{FIRST}%3Aproduction%3A1"
     for state, count in (
@@ -241,7 +241,7 @@ def test_a_finished_send_links_each_count_to_its_emails():
         ("permanent_failure", "4"),
         ("cancelled", "12"),
     ):
-        link = f'href="/admin/mail/outgoing/?send={token}&amp;state={state}"'
+        link = f'href="/admin/mail/sent/?send={token}&amp;state={state}"'
         assert re.search(re.escape(link) + f' aria-label="[^"]*">{count}</a>', html), (
             state
         )
@@ -325,7 +325,7 @@ def test_only_the_send_the_panel_shows_links_to_it():
     rows = send_history.mark_live([invitation, reminder], reminder.send.counts)
     assert [r.live for r in rows] == [False, True]
     html = render(*rows)
-    assert html.count('href="/admin/mail/family-progress/"') == 1
+    assert html.count('href="/admin/mail/queue/"') == 1
     assert html.count("In progress") == 2
     assert "455 to send" in html and "7 to send" in html
 

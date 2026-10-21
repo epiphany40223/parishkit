@@ -4,7 +4,8 @@ The Users page lists everyone who may sign in to the Admin portal. New user
 and Edit user (the user's opaque record ID) are pages; Delete answers the
 table's confirmation dialog and the Name lookup answers the New page's
 script, so neither has a slashless form; nor has the Import Ministry
-leaders review, which answers only the leaders table's POST (#952 slice 6).
+leaders review, which answers only the leaders table's POST (#952 slice 6),
+nor the Email Ministry leaders review and its Apply (#1592).
 The page names come from the admin-portal specification's placement table
 ("Page names and placement").
 The old Portal users addresses (``users/rules`` and its autosave routes)
@@ -13,7 +14,7 @@ are not kept (#864).
 
 from django.urls import path
 
-from ..accounts import leader_import_views, user_views
+from ..accounts import leader_email_views, leader_import_views, user_views
 
 patterns = [
     path("users/", user_views.users, name="users"),
@@ -31,6 +32,20 @@ patterns = [
         "users/leaders/import/",
         leader_import_views.user_leader_import,
         name="user_leader_import",
+    ),
+    # The leaders section's passive status while they cannot be read
+    # (#1863): never audited, never extends the sign-in.
+    path(
+        "users/leaders/status/",
+        leader_import_views.user_leaders_status,
+        name="user_leaders_status",
+    ),
+    # The Email Ministry leaders review answers that table's Email selected;
+    # its Apply posts here too and records the request (#1592).
+    path(
+        "users/leader-emails/",
+        leader_email_views.user_leader_emails,
+        name="user_leader_emails",
     ),
     path("users/<uuid:user_id>/edit/", user_views.user_edit, name="user_edit"),
 ]

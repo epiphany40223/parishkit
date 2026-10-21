@@ -86,10 +86,10 @@ class PortalSession(MutableRecord):
     expiring metadata explicitly before deleting the session. Historical audits
     keep only this record's opaque UUID, never the Django session key.
 
-    ``authenticated_at`` is the latest verified Google authentication for this
-    session. Step-up reauthentication by the same signed-in Admin advances it
-    in place, so session-bound work such as the setup draft survives; it never
-    moves backwards, and the SQL guard also refuses a future instant.
+    ``authenticated_at`` is the verified Google authentication for this
+    session, fixed when the session is issued (a new sign-in issues a new
+    session, #1547; nothing advances it in place since #1550). The SQL guard
+    also refuses a future instant on insert.
     """
 
     # The absolute deadline is fixed at issue; the SQL guard also refuses an
@@ -97,10 +97,10 @@ class PortalSession(MutableRecord):
     immutable_fields = MutableRecord.immutable_fields + (
         "principal_id",
         "session_id",
+        "authenticated_at",
         "expires_at",
     )
     write_once_fields = ("revoked_at",)
-    forward_only_fields = ("authenticated_at",)
 
     session = models.OneToOneField(
         "sessions.Session", on_delete=models.PROTECT, related_name="stewardship_portal"

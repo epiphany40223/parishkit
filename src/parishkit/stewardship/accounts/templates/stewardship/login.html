@@ -3,7 +3,11 @@
 {% block content %}<section class="flow panel">
   <h1>{% translate "Administration sign-in" %}</h1>
   {% if local_environment %}
-  <p>{% translate "Google sign-in is not available in the local laptop environment." %}</p>
+  {% if google_sign_in %}<p>{% translate "Use your authorized Google account, or a test sign-in link." %}</p>
+  <form method="post" action="{% url 'admin:login' %}">
+    {% csrf_token %}{% button type="submit" %}{% translate "Sign in with Google" %}{% endbutton %}
+  </form>
+  <p>{% translate "Or, for a test sign-in link:" %}</p>{% else %}<p>{% translate "Google sign-in is not available in the local laptop environment." %}</p>{% endif %}
   <ol><li>{% translate "On the laptop, run" %} <code>tools/stewardship-local.sh sign-in --email you@example.org</code></li>
   <li>{% translate "Open the printed link in this browser. The link works once, within 15 minutes of being printed." %}</li></ol>
   {% else %}

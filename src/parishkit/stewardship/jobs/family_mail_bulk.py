@@ -58,7 +58,7 @@ from .dispatch import _CLAIMABLE
 from .models import TaskRun
 from .ownership import TaskClaim, database_now, lock_task_claim
 from .phases import TaskPhase
-from .storage import _locked, _status, change_run
+from .storage import TaskNotAdmitted, _locked, _status, change_run
 
 LOG = logging.getLogger(__name__)
 DEBUG = logging.getLogger("parishkit.stewardship.debug")
@@ -205,7 +205,7 @@ def _claim(run_id, handler, worker_id, lease_seconds):
     claim = TaskClaim(status.run_id, status.fence, worker_id)
     # The effect admission Execution.effect() makes before any domain write.
     if handler.admit("effect", _status(lock_task_claim(claim))) is not True:
-        raise PermissionError("This task effect is not admitted.")
+        raise TaskNotAdmitted("This task effect is not admitted.")
     return claim, row.correlation_id
 
 
@@ -820,11 +820,14 @@ def delivery_bulk(
 
     def _observe(result):
         """React to one outcome as the single path does (circuit and limits)."""
-        if circuit.observe(result.health):
+        if circuit.observe(
+            result.health, uncertain=result.status is FamilyDeliveryStatus.UNKNOWN
+        ):
             if circuit.stopped:
                 LOG.critical(
                     "Family mail provider refused this configuration; further "
-                    "sending is stopped until the mail worker restarts."
+                    "sending is stopped until an Administrator clears the halt "
+                    "or the mail worker restarts."
                 )
             else:
                 LOG.log(

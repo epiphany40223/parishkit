@@ -6,7 +6,8 @@ with ParishSoft's v2 ``PUT /api/v2/members/{id}/contact``. It talks to a
 ``ContactGateway``: ``read_member_contact`` returns the record keyed by the
 request schema's fields (``publication.MEMBER_CONTACT_FIELDS``), leaving out
 any field the read lacks, or None when the Member is not there;
-``write_member_contact`` sends one full payload. Both raise
+``write_member_contact`` sends one PUT body holding only the fields to
+write (the PUT is a partial update, #528/#1600). Both raise
 ``ContactGatewayError`` with a fixed word, never provider text.
 
 CI uses an in-memory fake only. ``ParishSoftContactGateway`` is the real
@@ -17,6 +18,13 @@ it refuses with ``read_unconfirmed``. The worker reads before every write,
 so the real gateway can never reach its PUT until a confirmed read replaces
 that refusal and the human-run smoke test has written one test Member and
 read it back (docs/guides/stewardship-member-requests.md#parishsoft-publication).
+
+The one exception is the local fake ParishSoft (#1884), whose record shape
+this package defines (``stewardship.local.fake_contact``): for the fake's
+base URL, which only a LOCAL deployment can choose, the read is
+``GET members/{id}`` mapped onto the request schema's names, so pk-local
+runs the real worker, session and helper end to end against the fake. The
+real API's read stays refused.
 
 That smoke test (``responses.contact_smoke``) is the one other user of this
 gateway. It opens it with ``open_operator`` (no task owns a human's run) and
@@ -29,7 +37,7 @@ from typing import Protocol
 
 from django.db import connection
 
-from parishkit.parishsoft_http_worker import admitted_base_url
+from parishkit.parishsoft_http_worker import LOCAL_SOURCE_BASE_URL, admitted_base_url
 from parishkit.parishsoft_transport import (
     BoundedPublicationSession,
     SourceTransportError,
@@ -66,7 +74,7 @@ class ContactGateway(Protocol):
         """One Member's uncached contact record, or None when not found."""
 
     def write_member_contact(self, member_id, payload, *, timeout):
-        """Replace one Member's contact record with ``payload``."""
+        """Write the fields in ``payload``; ParishSoft leaves every other one."""
 
 
 def _member_id(value):
@@ -87,15 +95,19 @@ class ParishSoftContactGateway:
     """
 
     def __init__(self, session, *, profile):
-        """Bind one publication session and the profile's one base URL."""
+        """Bind one publication session and the one base URL it was opened for."""
         if not isinstance(session, BoundedPublicationSession):
             raise TypeError("ParishSoft publication requires its own session.")
         self.session = session
-        self.base_url = admitted_base_url(profile)
+        self.base_url = admitted_base_url(profile, session.base_url)
 
     @classmethod
-    def open(cls, execution, credential, *, profile, on_timeout):
+    def open(cls, execution, credential, *, profile, base_url, on_timeout):
         """Build the gateway for one running publish task.
+
+        ``base_url`` is the deployment's chosen ParishSoft base URL; the
+        session refuses a LOCAL profile with the real API, which it never
+        writes to (#1399); with the local fake it is admitted (#1884).
 
         ``on_timeout(limit, elapsed)`` records a request killed at its
         deadline (``source.transport.source_timeout_recorder``), so every
@@ -117,13 +129,14 @@ class ParishSoftContactGateway:
             before_request=before_request,
             check=execution.check,
             profile=profile,
+            base_url=base_url,
             on_timeout=on_timeout,
         )
         session.headers["x-api-key"] = credential.api_key
         return cls(session, profile=profile)
 
     @classmethod
-    def open_operator(cls, credential, *, profile, on_timeout):
+    def open_operator(cls, credential, *, profile, base_url, on_timeout):
         """Build the gateway for the human-run contact smoke check.
 
         No task owns that run, so there is no ownership to check; every call
@@ -134,13 +147,31 @@ class ParishSoftContactGateway:
             SimpleNamespace(check=lambda: None),
             credential,
             profile=profile,
+            base_url=base_url,
             on_timeout=on_timeout,
         )
 
     def read_member_contact(self, member_id, *, timeout):
-        """Refused until a GET returning all fifteen contact fields is confirmed."""
-        _member_id(member_id)
-        raise ContactGatewayError("read_unconfirmed")
+        """Refused until a GET returning all fifteen contact fields is confirmed.
+
+        Only the local fake's read is defined (#1884): its ``GET members/{id}``
+        Member object mapped onto the request schema's names. The fake's base
+        URL is admitted only for a LOCAL profile (checked when the gateway
+        was built), so Production always refuses here.
+        """
+        member_id = _member_id(member_id)
+        if self.base_url != LOCAL_SOURCE_BASE_URL:
+            raise ContactGatewayError("read_unconfirmed")
+        # Lazy: only a LOCAL deployment reading the fake ever needs it.
+        from parishkit.stewardship.local.fake_contact import contact_record
+
+        record = self._member_object(member_id, timeout)
+        if record is None:
+            return None
+        try:
+            return contact_record(record)
+        except ValueError:
+            raise ContactGatewayError("read_unavailable") from None
 
     def probe_member_record(self, member_id, *, timeout):
         """One Member's raw ``GET members/{id}`` record, or None when not found.
@@ -149,7 +180,15 @@ class ParishSoftContactGateway:
         record carries the fifteen PUT fields; it is not the publication
         read. Failures are fixed words, never provider text.
         """
-        url = f"{self.base_url}/members/{_member_id(member_id)}"
+        return self._member_object(_member_id(member_id), timeout)
+
+    def _member_object(self, member_id, timeout):
+        """``GET members/{id}`` as a dict, or None when not found.
+
+        Shared by the smoke check's probe and the local fake's contact read;
+        a failed or malformed answer is ``read_unavailable``.
+        """
+        url = f"{self.base_url}/members/{member_id}"
         try:
             response = self.session.get(url, timeout=timeout)
             if response.status_code == 404:

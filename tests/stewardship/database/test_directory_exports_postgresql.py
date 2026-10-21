@@ -230,7 +230,7 @@ def test_native_directory_exports_render_and_download(
         )
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             response, body = read(browser, route)
-            assert response.status_code == 200 and b"Queue complete export" in body
+            assert response.status_code == 200 and b"Export XLSX" in body
             assert (
                 browser.post(
                     reverse("admin:family_directory_export"), fields
@@ -424,7 +424,8 @@ def test_directory_export_staff_gates_and_service_boundaries(
         with pytest.raises(PermissionError):
             create_directory_export(store, actor, **(values | {"request_key": uuid4()}))
         response, body = read(browser, route + "?mailing=yes")
-        assert response.status_code == 200 and b"<fieldset disabled>" in body
+        assert response.status_code == 200
+        assert b'value="xlsx" disabled data-server-disabled' in body
         assert b"Other campaign work" in body
         assert (
             read(browser, reverse("admin:report_export", args=[request.pk]))[
@@ -535,15 +536,13 @@ def test_postal_mail_merge_leaves_out_families_without_a_mailing_address(
         for text in (
             b"Addressee",
             b"Mailing address",
-            b"Every listed Family is in the mail-merge file: the active "
-            b"Families with no deliverable head email and a usable mailing "
-            b"address.",
             b"<td>Member Example</td>",
             b'name="mailing" value="yes" checked',
             b'<input type="hidden" name="mailing" value="yes">',
-            b"ParishSoft DUID, Family, Addressee, Family heads,",
         ):
             assert text in body
+        # No column-list line above the export buttons (R37).
+        assert b"The file has these columns" not in body
         response = post(browser, reverse("admin:family_directory_export"), fields)
         assert response.status_code == 302
     request = ExportRequest.objects.get(request_key=fields["request_key"])
@@ -813,38 +812,18 @@ def test_retried_exports_read_current_head_emails_after_compaction(
     assert abs(details[HEAD_EMAILS_DETAIL] - as_of) < timedelta(milliseconds=1)
 
 
-def test_directory_export_needs_a_fresh_sign_in(live_response_service, google):
-    """A stale sign-in queues nothing and returns to the page the form came from.
+def test_an_old_sign_in_queues_a_directory_export(live_response_service, google):
+    """A sign-in older than five minutes queues exactly one export (#1547).
 
-    After the step-up the same form queues exactly one export, and posting it
-    again returns that export rather than a second one (#547).
+    Posting the same form again returns that export rather than a second one.
     """
     harness = live_response_service
     browser, _ = signed_in()
-    route = reverse("admin:family_directory")
     export = reverse("admin:family_directory_export")
     fields = DirectoryQuery(exact_code=harness.code).form_values() | dict(
         format="csv", browser_timezone="UTC", request_key=str(uuid4())
     )
     stale_sign_in()
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        for path, mailing, back in (
-            (export, "no", route),
-            (export, "yes", route + "?mailing=yes"),
-        ):
-            values = dict(fields)
-            values["mailing"] = mailing
-            refused = post(browser, path, values, HTTP_ACCEPT="text/html")
-            assert refused.status_code == 403
-            page = refused.content.decode()
-            assert "Confirm with Google" in page and "Nothing was done" in page
-            assert f'name="next" value="{back}"' in page
-            assert (
-                "you will then return to Active parishioner family directory." in page
-            )
-            assert harness.code not in page
-        assert not ExportRequest.objects.exists()
-    signed_in(browser)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         created = post(browser, export, fields)
         assert created.status_code == 302

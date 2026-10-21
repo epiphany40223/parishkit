@@ -37,7 +37,21 @@
 #     unset or "keep" carries the current value over, as Production does
 #     for the bulk switch. A rollback never renders the latency (the
 #     previous release may not know the setting, and its loader would refuse
-#     it after web had stopped). Production mode never reads either variable.
+#     it after web had stopped). Production mode never reads either variable;
+#   - the caller may choose which ParishSoft pk-local reads (#1399):
+#     PARISHKIT_LOCAL_PARISHSOFT=real|fake, unset or "keep" carrying the
+#     current choice over. Like the latency, a rollback never renders the
+#     real API (it falls back to the fake), and Production mode never reads
+#     the variable;
+#   - census publication (#1884) is rendered on while pk-local reads the
+#     fake ParishSoft, the only one it may write to, and off with the real
+#     API (the loader refuses it there). A rollback never renders it: a
+#     release before #1884 refuses it in the local profile;
+#   - the caller may set the forced mail redirect (#1399):
+#     PARISHKIT_LOCAL_MAIL_REDIRECT=ADDRESS|off, unset or "keep" carrying the
+#     current one over. A rollback never renders it: the previous release
+#     may not know it, and without it a real Workspace key is refused, so
+#     the rollback fails closed. Production mode never reads the variable.
 #
 # In both modes the export download window (#1398) is carried over, and
 # PARISHKIT_STEWARDSHIP_EXPORT_DOWNLOAD_WINDOW_MINUTES (15-240) changes it.
@@ -409,6 +423,68 @@ if [ "$profile" = local ]; then
         switches+=(-e "PARISHKIT_STEWARDSHIP_LOCAL_SMTP_LATENCY_MS=$latency")
         echo "    modeled SMTP latency ${latency} ms per message"
     fi
+    # Which ParishSoft pk-local reads (#1399): the fake (the default, not
+    # rendered) or the real API (parishkit.parishsoft.DEFAULT_API_BASE_URL;
+    # a test keeps the two equal). The deployment never writes to either.
+    parishsoft_api=https://ps-fs-external-api-prod.azurewebsites.net/api/v2
+    parishsoft=$(jq -r '.deployment.parishsoft_base_url // empty' "$services/worker.yaml")
+    case "${PARISHKIT_LOCAL_PARISHSOFT:-keep}" in
+        keep) ;;
+        real) parishsoft=$parishsoft_api ;;
+        fake) parishsoft="" ;;
+        *) echo "PARISHKIT_LOCAL_PARISHSOFT must be real, fake or keep; refusing." >&2; exit 1 ;;
+    esac
+    if [ -n "$parishsoft" ] && [ "$parishsoft" != "$parishsoft_api" ]; then
+        echo "The rendered ParishSoft base URL is not the real API; refusing." >&2
+        exit 1
+    fi
+    if [ "$mode" = rollback ] && [ -n "$parishsoft" ]; then
+        echo "    the real ParishSoft API is not carried into a rollback (it reads the fake); deploy --parishsoft real sets it again"
+        parishsoft=""
+    fi
+    if [ -n "$parishsoft" ]; then
+        switches+=(-e "PARISHKIT_STEWARDSHIP_PARISHSOFT_BASE_URL=$parishsoft")
+        echo "    reading the real ParishSoft API (never writing)"
+        # A faked process checks ParishSoft's certificate against a past
+        # date: it may refuse a renewed one and accept a recently expired one.
+        [ "$clock" != fake ] ||
+            echo "    WARNING: the real ParishSoft API under the fake clock; prefer a normal-clock deployment" >&2
+    fi
+    # Census publication (#1884): Update ParishSoft writes to the fake only.
+    # With the real API it stays off, and the loader would refuse it anyway.
+    publication=false
+    if [ -z "$parishsoft" ]; then
+        if [ "$mode" = rollback ]; then
+            echo "    Update ParishSoft is not carried into a rollback (the previous release may refuse it); the next deploy turns it on again"
+        else
+            publication=true
+            switches+=(-e "PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION=1")
+            echo "    Update ParishSoft writes to the fake ParishSoft only"
+        fi
+    fi
+    # The forced mail redirect (#1399): one bare address, the developer's
+    # Testing recipient. With it, a real Workspace key may send, but every
+    # message goes only to this address. Checked here with a plain pattern,
+    # before anything stops; the loader applies the full rule at the
+    # retarget.
+    redirect=$(jq -r '.deployment.mail_redirect // empty' "$services/worker.yaml")
+    case "${PARISHKIT_LOCAL_MAIL_REDIRECT:-keep}" in
+        keep) ;;
+        off) redirect="" ;;
+        *) redirect=$PARISHKIT_LOCAL_MAIL_REDIRECT ;;
+    esac
+    if [ -n "$redirect" ] && ! [[ $redirect =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$ ]]; then
+        echo "The mail redirect must be one plain email address; refusing." >&2
+        exit 1
+    fi
+    if [ "$mode" = rollback ] && [ -n "$redirect" ]; then
+        echo "    the mail redirect is not carried into a rollback (a real Workspace key is then refused); deploy --mail-redirect sets it again"
+        redirect=""
+    fi
+    if [ -n "$redirect" ]; then
+        switches+=(-e "PARISHKIT_STEWARDSHIP_MAIL_REDIRECT=$redirect")
+        echo "    every message goes only to the mail redirect $redirect"
+    fi
 fi
 
 # The users conversion's inputs (#952; header above), checked before anything
@@ -639,6 +715,29 @@ if [ "$mode" = upgrade ]; then
         echo "    skipped: the upgrade check answered t (schema and grants already match)"
     else
         echo "    running migration and grants: the check answered: $(head -3 <<<"$answer")"
+        # The System logs search's indexes (#765, migration file 0117) need
+        # pg_trgm, and creating an extension needs CREATE on the database,
+        # which only the operator superuser holds (runbook, Text search
+        # extension). IF NOT EXISTS leaves an installed one alone, so this
+        # runs before every migration; it takes well under a second. It runs
+        # in the running postgres service (not a one-off), so `timeout`
+        # alone limits it: an expired limit is logged with what ran, the
+        # limit and the elapsed time, and the run stops with the page up.
+        step "4. Text search extension (pg_trgm)"
+        started=$(date -u +%s)
+        rc=0
+        extension=$(timeout --kill-after=10 60 "${dc[@]}" exec -T postgres psql \
+            -U pk_stewardship_operator -d "$database" -At -v ON_ERROR_STOP=1 \
+            -c "CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public" 2>&1) || rc=$?
+        if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+            echo "TIMEOUT: installing the pg_trgm extension killed after $(( $(date -u +%s) - started ))s (limit 60s). The maintenance page" >&3
+            echo "    stays up." >&3
+            exit 1
+        elif [ "$rc" -ne 0 ]; then
+            echo "Could not install the pg_trgm extension: $(tail -3 <<<"$extension")" >&2
+            exit 1
+        fi
+        echo "    pg_trgm is installed"
         # Every step-4 command runs under a time limit in a named one-off
         # container (`oneoff`): a migration or conversion that hangs is
         # killed, container and all, the kill is logged and the run stops
@@ -783,6 +882,19 @@ done
 if [ "$profile" = local ]; then
     rendered=$(jq -r '.deployment.local_smtp_latency_ms // 0' "$services/mail-dispatch.yaml")
     [ "$rendered" = "$latency" ] || problems+=("mail-dispatch: SMTP latency is $rendered ms, not $latency")
+    rendered=$(jq -r '.deployment.parishsoft_base_url // empty' "$services/worker.yaml")
+    [ "$rendered" = "$parishsoft" ] || problems+=("worker: ParishSoft base URL is '${rendered:-the fake}', not '${parishsoft:-the fake}'")
+    # Both halves of publication: web gates Check ParishSoft, worker runs it.
+    for role in web worker; do
+        rendered=$(jq -r '.deployment.parishsoft_publication // false' "$services/$role.yaml")
+        [ "$rendered" = "$publication" ] || problems+=("$role: ParishSoft publication is $rendered, not $publication")
+    done
+    # Every role's document is rendered from the same inputs; the two mail
+    # senders are checked.
+    for role in worker mail-dispatch; do
+        rendered=$(jq -r '.deployment.mail_redirect // empty' "$services/$role.yaml")
+        [ "$rendered" = "$redirect" ] || problems+=("$role: mail redirect is '${rendered:-unset}', not '${redirect:-unset}'")
+    done
 fi
 version=$("${dc[@]}" exec -T web python -c 'import parishkit; print(parishkit.__version__)' 2>/dev/null || echo unknown)
 echo "    application version: $version"

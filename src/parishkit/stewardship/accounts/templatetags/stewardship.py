@@ -5,17 +5,16 @@ from datetime import date, time
 
 from django import template
 from django.urls import reverse
-from django.utils.html import conditional_escape, format_html, format_html_join
+from django.utils.html import conditional_escape, format_html
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _
 from django.utils.translation import ngettext
 
 from parishkit.stewardship.accounts import admin_navigation
-from parishkit.stewardship.accounts.sessions import SETUP_FRESH_SECONDS, freshness
 from parishkit.stewardship.campaigns import single_campaign
 from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAME
 from parishkit.stewardship.source.source_status import source_status_label
-from parishkit.stewardship.web import dates, presentation
+from parishkit.stewardship.web import dates, presentation, stat_tiles
 from parishkit.stewardship.web.buttons import portal_classes
 from parishkit.stewardship.web.exports import DEFAULT_EXPORT_FORMAT
 
@@ -33,36 +32,40 @@ for name in (
 
 
 @register.simple_tag
+def stat_tiles_row(labelledby="", label="", tiles_id=""):
+    """A stat-tile row's name attribute and toggletip id prefix (#1540).
+
+    Raises (see ``stat_tiles.row_name``) when the row has no name.
+    """
+    (attribute, value), prefix = stat_tiles.row_name(labelledby, label, tiles_id)
+    return {"name": format_html('{}="{}"', attribute, value), "prefix": prefix}
+
+
+# The direction arrows a comparison line starts its change with ("↑ 12.5%
+# more"); the words after them already say the direction.
+ARROWS = re.compile("([↑↓→])")
+
+
+@register.filter
+def arrows_hidden(text):
+    """``text`` escaped, with each direction arrow hidden from screen readers.
+
+    Stat tile lines such as "Last year on day 3: 30 (↑ 33.3% more)" carry
+    the direction in words too, so a screen reader announcing "up arrow"
+    only repeats it (#1637). The arrow stays visible.
+    """
+    return mark_safe(
+        ARROWS.sub(r'<span aria-hidden="true">\1</span>', str(conditional_escape(text)))
+    )
+
+
+@register.simple_tag
 def reminder_workgroup_name():
     """The displayed name of the campaign's reminder exclusion setting (#1061).
 
     Templates take it from its one source, so renaming it is one line.
     """
     return _(REMINDER_WORKGROUP_NAME)
-
-
-@register.simple_tag(takes_context=True)
-def fresh_sign_in(context, setup=False):
-    """Whether a step-up gated action would be admitted now (#1159).
-
-    ``{% fresh_sign_in as fresh %}`` lets a page show its "needs a sign-in
-    from the last five minutes" explanation only when the reader would be
-    asked to confirm, without each view computing it. It reuses the views'
-    own ``freshness`` check, so every page answers the same way. A context
-    without a request or a signed-in session is not fresh, so the hint shows.
-    ``setup=True`` applies the setup credential steps' one-hour window
-    (``SETUP_FRESH_SECONDS``, #1402) instead of five minutes.
-    It is presentation only: each gated command still calls ``require_fresh``,
-    and a sign-in that ages after the page is drawn gets that step-up answer,
-    which explains itself.
-    """
-    request = getattr(context, "request", None)
-    # The window is written inline so test_admin_caller's AST check can
-    # see that only the setup window is ever passed.
-    return (
-        request is not None
-        and freshness(request, SETUP_FRESH_SECONDS if setup else None)[0]
-    )
 
 
 @register.simple_tag
@@ -80,38 +83,82 @@ def step_tip_side(number, total):
     )
 
 
-@register.simple_tag
-def export_format_options(*formats, disabled=""):
-    """The ``<option>`` list of an export form's format menu (#1190).
+@register.inclusion_tag("stewardship/components/export-actions.html")
+def export_actions(
+    *formats,
+    name,
+    label="",
+    disabled="",
+    enabled=True,
+    describedby="",
+    own_order=False,
+    tip="",
+    tip_more="",
+    zone_choice=False,
+    zone_value=None,
+    sync=False,
+):
+    """One export's row of small "Export XLSX" … buttons (#1679, #1190).
 
-    ``formats`` are the form's offered values. The default
-    (``DEFAULT_EXPORT_FORMAT``, XLSX) comes first and is selected, and the
-    rest keep the given order, so no form picks its own default and a new
-    export cannot forget the rule. The PDF-first comparison and Ministry
-    packet forms are documents, not data, and keep their own menus.
+    Usage: ``{% export_actions "csv" "xlsx" "pdf" name="financial"
+    enabled=mutable %}`` inside the export's form. Each button posts its
+    own ``format``, so there is no format menu and no separate Download
+    button (ui-conventions "Downloaded files", Export actions).
 
-    ``disabled`` names one offered format that is shown but unavailable
-    (for example a PDF above its row limit); an empty value disables none.
-    A disabled default is not selected, so the browser falls back to the
-    first available option.
+    ``formats`` are the download's offered values. The default
+    (``DEFAULT_EXPORT_FORMAT``, XLSX) comes first and the rest keep the
+    given order, so no form picks its own default; ``own_order`` keeps the
+    given order for a document (the Campaign comparison's PDF summary, the
+    follow-up packet). ``name`` prefixes the row's element ids; ``label``
+    is the row's group name, telling apart two rows on one page.
+    ``disabled`` names one offered format shown but unavailable (Ministry
+    requests' PDF above its row limit); ``enabled=False`` makes every button
+    unavailable (other campaign work holds exports). ``describedby`` names
+    the element ids that describe every button (the line saying why, or a
+    complete gate's hint). ``tip`` is the toggletip text closing the row, and
+    ``tip_more`` an optional sentence added to it (the Family timeline's
+    "It includes the Family code."); a tip is only for what the buttons
+    cannot say, such as what the file leaves out, never the file's count,
+    scope or columns (ui-conventions "Downloaded files", Export actions).
+
+    Time zone (ui-conventions "Downloaded files", Time zones): the row posts
+    the browser's zone in a hidden ``browser_timezone`` field, which
+    ``ui-v1.js`` fills (``data-browser-zone``); ``zone_value`` posts that
+    value instead (the Response dashboard's drawn zone). ``zone_choice`` is
+    for a page that lets the reader view its times in UTC (System logs
+    only): a "Times in" menu of UTC and the browser's zone, which ``ui-v1.js``
+    adds and selects (``data-browser-timezone``), posted as ``timezone``.
+    ``sync`` makes the buttons a ``data-table-sync`` node, redrawn from each
+    applied view, for a row whose unavailable format follows the filters.
     """
+    if not formats or len(set(formats)) != len(formats):
+        raise template.TemplateSyntaxError("export_actions: name each format once.")
+    if disabled and disabled not in formats:
+        raise template.TemplateSyntaxError("export_actions: unknown disabled format.")
+    # A format's button label; any other is its value in capitals.
     labels = {"jsonl": _("JSON Lines")}
-    ordered = sorted(formats, key=lambda name: name != DEFAULT_EXPORT_FORMAT)
-    return format_html_join(
-        "",
-        '<option value="{}"{}{}>{}</option>',
-        (
-            (
-                name,
-                " selected"
-                if name == DEFAULT_EXPORT_FORMAT and name != disabled
-                else "",
-                " disabled" if name == disabled else "",
-                labels.get(name, name.upper()),
-            )
-            for name in ordered
-        ),
+    ordered = (
+        formats
+        if own_order
+        else sorted(formats, key=lambda value: value != DEFAULT_EXPORT_FORMAT)
     )
+    return {
+        "name": name,
+        "label": label or _("Export"),
+        "buttons": [
+            {
+                "value": value,
+                "label": labels.get(value, value.upper()),
+                "enabled": bool(enabled) and value != disabled,
+            }
+            for value in ordered
+        ],
+        "describedby": describedby,
+        "tip": " ".join(str(part) for part in (tip, tip_more) if part),
+        "zone_choice": zone_choice,
+        "zone_value": zone_value,
+        "sync": sync,
+    }
 
 
 @register.simple_tag
@@ -132,6 +179,70 @@ def source_status(status):
         status,
         _(label),
     )
+
+
+def _may_open_timeline(context):
+    """Whether the page's viewer may open a Family's Timeline (#1570).
+
+    Reads the principal the owning view admitted (``request.principal``), as
+    the Admin chrome does: Administrators and Staff hold ``CAMPAIGN_REPORT``,
+    Ministry leaders and Family sessions do not. Presentation only; the
+    Timeline view rechecks access itself. A page rendered with its request
+    carries it on the context (``RequestContext.request``; no context
+    processor adds a ``request`` variable); a fragment rendered from a plain
+    dict may pass it as ``request``.
+    """
+    from parishkit.stewardship.accounts.policy import Capability, Principal, allows
+
+    request = getattr(context, "request", None) or context.get("request")
+    principal = getattr(request, "principal", None)
+    return (
+        isinstance(principal, Principal)
+        and bool(principal.roles)
+        and allows(principal, Capability.CAMPAIGN_REPORT)
+    )
+
+
+@register.simple_tag(takes_context=True)
+def family_timeline_url(context, family_id):
+    """A Family's Timeline address, or "" when the page draws no link (#1570).
+
+    ``family_id`` is the Family's campaign record id (``FamilyCampaign.pk``);
+    without one (a Family with no campaign record yet) or for a viewer who
+    may not open the Timeline there is no link. ``family_link`` and Find a
+    Family's results share this one decision.
+    """
+    if not family_id or not _may_open_timeline(context):
+        return ""
+    return reverse("admin:timeline", args=[family_id])
+
+
+@register.simple_tag(takes_context=True)
+def family_link(context, family_id, name, active=None):
+    """A Family's name in an Admin table, linked to its Timeline (#1570).
+
+    Usage: ``{% family_link row.family_id row.display_name active=row.active %}``.
+    ``name`` is the shared surname-and-heads name, or None when the current
+    ParishSoft data no longer has the Family: the shared "Not in ParishSoft"
+    badge then stands alone in its place, never an empty link. A blank name
+    is treated the same, defensively: every source gives None for a missing
+    Family and a placeholder for a present one with no name, so blank should
+    not occur.
+    ``family_id`` None draws no link, for a page whose names must not open
+    the Timeline (a Testing-only list, or a name already linking its row's
+    own page). ``active`` False adds the
+    "Inactive in ParishSoft" badge after a known name, outside the link
+    (ui-conventions, #1216). The name links only when
+    ``family_timeline_url`` gives an address, so every table that names a
+    Family links it the same way, for the same viewers.
+    """
+    shown = conditional_escape(name) if name else source_status("missing")
+    href = family_timeline_url(context, family_id)
+    if href:
+        shown = format_html('<a href="{}">{}</a>', href, shown)
+    if name and active is False:
+        shown = format_html("{} {}", shown, source_status("inactive"))
+    return shown
 
 
 def _calendar(value):
@@ -250,7 +361,10 @@ class AboutPageNode(template.Node):
 
 # Query fields that order, page or place the results rather than filter them:
 # a report's sort, its page number and the browser's time zone.
-NOT_FILTERS = frozenset({"sort", "page", "zone"})
+# The family directory's Responses shown (``mode``) is a mode of the whole
+# page, drawn as a binary choice outside its Filters panel (#1535), so it
+# is not counted as one of the panel's filters either.
+NOT_FILTERS = frozenset({"sort", "page", "zone", "mode"})
 
 
 def applied_filters(query, ignore=()):
@@ -259,14 +373,27 @@ def applied_filters(query, ignore=()):
     A report's query is a frozen dataclass whose defaults are the page's
     unfiltered view (an Additional information default such as "Current
     actionable requests" is the page's normal list, so it does not count).
-    Sort, page and zone are left out (``NOT_FILTERS``), as is any field
+    Sort, page, zone and mode are left out (``NOT_FILTERS``), as is any field
     named in ``ignore``: one another choice currently overrides.
+
+    As a template filter, ``ignore`` is one comma-separated string
+    (``query|applied_filters:"reach,responses"``); it is split into names so
+    a field is matched whole, never as a substring ("response" is not
+    ignored by "responses").
     """
+    if isinstance(ignore, str):
+        ignore = tuple(ignore.split(","))
     return sum(
         getattr(query, name) != field.default
         for name, field in query.__dataclass_fields__.items()
         if name not in NOT_FILTERS and name not in ignore
     )
+
+
+# Also a template filter: an empty report table tells "nothing matches these
+# filters" from "nothing to show yet" with the panel's own count (#227), so
+# the message and the panel summary never disagree.
+register.filter("applied_filters", applied_filters)
 
 
 @register.tag
@@ -281,7 +408,10 @@ def filterpanel(parser, token):
     because the choice overrides it (mailing columns always use "By postal
     mail only", so the reader's own Campaign mail can reach is not applied,
     #951). A final bare ``open`` word opens the panel by default; only
-    the Family directory passes it (Administrator decision, #227). Otherwise
+    the Family directory passes it (Administrator decision, #227). A final
+    bare ``fixed`` word draws no disclosure at all: an always-open box
+    titled the same way, for a worklist whose filters are never hidden
+    (Census changes, Administrator decision, #1682). Otherwise
     the panel starts closed so the report's data
     comes first, and renders open whenever any filter is applied, so an
     applied filter is never hidden behind it, or a filter is refused at its
@@ -292,9 +422,10 @@ def filterpanel(parser, token):
     ``syncControls``).
     """
     bits = token.split_contents()
-    # A trailing bare ``open`` makes the panel open by default.
-    default_open = bits[-1] == "open"
-    if default_open:
+    # A trailing bare ``open`` makes the panel open by default, and a
+    # trailing bare ``fixed`` makes it an always-open box.
+    mode = bits[-1] if bits[-1] in {"open", "fixed"} else ""
+    if mode:
         bits.pop()
     if len(bits) not in (2, 3, 4):
         raise template.TemplateSyntaxError(
@@ -304,17 +435,17 @@ def filterpanel(parser, token):
     nodelist = parser.parse(("endfilterpanel",))
     parser.delete_first_token()
     return FilterPanelNode(
-        [parser.compile_filter(bit) for bit in bits[1:]], nodelist, default_open
+        [parser.compile_filter(bit) for bit in bits[1:]], nodelist, mode
     )
 
 
 class FilterPanelNode(template.Node):
     """Render the panel, open with its count when any filter is applied."""
 
-    def __init__(self, arguments, nodelist, default_open=False):
+    def __init__(self, arguments, nodelist, mode=""):
         self.arguments = arguments
         self.nodelist = nodelist
-        self.default_open = default_open
+        self.mode = mode
 
     def render(self, context):
         query, extra, overridden = (
@@ -328,18 +459,64 @@ class FilterPanelNode(template.Node):
             }
         else:
             label = _("none applied")
+        if self.mode == "fixed":
+            # The same title and synced count as a heading, so the box is
+            # named for screen readers as the disclosure's summary names it.
+            return format_html(
+                '<section class="filter-panel" data-filter-panel'
+                ' aria-labelledby="table-filters-heading">'
+                '<h2 id="table-filters-heading">{}: '
+                '<span id="table-filters-applied" data-table-sync>{}</span></h2>'
+                "{}</section>",
+                _("Filters"),
+                label,
+                self.nodelist.render(context),
+            )
         return format_html(
             '<details class="filter-panel" data-filter-panel{}>'
             '<summary>{}: <span id="table-filters-applied" data-table-sync>{}</span>'
             "</summary>{}</details>",
             mark_safe(" open")
-            if count or self.default_open or context.get("filter_error")
+            if count or self.mode == "open" or context.get("filter_error")
             else "",
             _("Filters"),
             label,
             # Template output is already escaped and marked safe.
             self.nodelist.render(context),
         )
+
+
+@register.simple_tag
+def whole_dollars(amount):
+    """A money cell's amount in whole dollars, its cents kept for screen readers.
+
+    Usage: ``{% whole_dollars row.annual %}`` with a ``MoneyAmount``. A
+    narrow table shows "$1,235" (ui-conventions "Table fit and row
+    height", #1544); when that rounds away cents, the rounded text is
+    hidden from screen readers and the exact "$1,234.50" is read instead,
+    so no one hears a figure the downloads do not have.
+    """
+    shown = amount.whole_display
+    if not amount.available or amount.cents % 100 == 0:
+        return shown
+    return format_html(
+        '<span aria-hidden="true">{}</span><span class="visually-hidden">{}</span>',
+        shown,
+        amount.display,
+    )
+
+
+@register.filter
+def share_lines(shares):
+    """A Financial row's share methods as the lines of its "+N" chip's tip.
+
+    Each chosen method by its label, with the Family's Other text after it
+    ("Other: Stock gift"), in the row's order (#1544).
+    """
+    return [
+        _("%(label)s: %(text)s") % share if share["text"] else share["label"]
+        for share in shares
+    ]
 
 
 @register.simple_tag
@@ -433,6 +610,7 @@ def table_actions(
     field="id",
     verb="delete",
     confirm_name=None,
+    caution=False,
 ):
     """One row's Actions cell in an action table (#879).
 
@@ -447,6 +625,9 @@ def table_actions(
     ``confirm_name`` is what the dialog's title and announcement call the
     row, when that needs more than ``name``
     (Users: the address with its Name and role); it defaults to ``name``.
+    ``caution`` marks the row's action ``data-confirm-caution``, for a
+    dialog whose caution is said only for marked rows (confirm-dialog.html
+    caution_marked; a scheduled email that has sent, R40b).
     Leave out an action the row does not offer; a row with none gets an
     empty cell.
     """
@@ -463,6 +644,7 @@ def table_actions(
         "verb": verb,
         "icon": TABLE_ACTION_VERBS[verb],
         "confirm_name": confirm_name or name,
+        "caution": bool(caution),
     }
 
 

@@ -33,11 +33,20 @@ from parishkit.stewardship.web.refusals import (
     with_default_code,
 )
 
-from . import admin_navigation, schedule_local, setup_help
-from .admin_editing import confirm, error_response, form_action, principal, sign_preview
+from . import admin_navigation, campaign_wizard, schedule_local, setup_help
+from .admin_editing import (
+    confirm,
+    direct_key,
+    error_response,
+    form_action,
+    principal,
+    sign_preview,
+    summary_errors,
+)
 from .artwork_views import artwork_patch
 from .authentication import runtime
 from .campaign_views import _scope, _state
+from .campaign_wizard_models import CampaignSetupReview, item_key
 from .content_defaults import default_initial
 from .content_forms import (
     EMAIL_LABELS,
@@ -203,16 +212,20 @@ def removal_reason(configuration, campaign, previous, note):
 
 
 def _content_state(record):
-    """Catalog status of one revision: "empty", "default" (unmodified) or "custom"."""
+    """Catalog status of one revision: "empty", "default" (unmodified) or "edited".
+
+    The page shows them as Empty, Default text and Edited (#1404 PR 6b
+    renamed Customized), and ``pk-admin content list`` prints the same words.
+    """
     if record is None:
         return "empty"
-    return "default" if matches_default(record["values"]) else "custom"
+    return "default" if matches_default(record["values"]) else "edited"
 
 
 def catalog_entries(configuration, campaign):
     """The Pages and emails list's rows: (pages, emails), without rendering.
 
-    Shared with ``resave_recommended``, so go-live readiness and System
+    Shared with ``resave_recommended``, so Go live and System
     health flag exactly the rows this list marks (#838).
     """
     records = _records(configuration, campaign.pk)
@@ -235,6 +248,10 @@ def catalog_entries(configuration, campaign):
                 "label": label,
                 "url": reverse("admin:content_edit", args=["page", slot]),
                 "state": _content_state(record),
+                # The campaign wizard's Kept as is key, and the row's element
+                # id its editor returns focus to (#1404 PR 6b).
+                "item": item_key("page", slot, record and record["id"]),
+                "row_id": f"content-page-{slot}",
                 "resave": stale_markup(record and record["values"]),
             }
         )
@@ -265,6 +282,8 @@ def catalog_entries(configuration, campaign):
                 # the confirmation email is a single entry, never deleted.
                 "deletable": slot in KINDS and not usage.get(row["id"]),
                 "state": _content_state({"values": values}),
+                "item": item_key("email", slot, row["id"]),
+                "row_id": f"content-email-{row['id']}",
                 "resave": stale_markup(values),
                 "test_url": reverse("admin:campaign_mail", args=[row["id"]]),
                 "url": reverse(
@@ -294,6 +313,9 @@ def catalog_entries(configuration, campaign):
                     "name": folded["subject"],
                     "deletable": False,
                     "state": _content_state({"values": folded}),
+                    "item": item_key("email", slot),
+                    # No saved revision: its editor returns to the heading.
+                    "row_id": f"email-{slot}-title",
                     "resave": stale_markup(folded),
                     "test_url": None,
                     "url": editor,
@@ -353,14 +375,51 @@ def resave_recommended(configuration, campaign):
     return flagged
 
 
+def catalog_items(configuration, campaign):
+    """The Kept as is keys of every item the Pages and emails list shows.
+
+    A mark is stored only for one of these (``campaign_wizard
+    .record_review``), so an item that was saved again or removed since its
+    editor was drawn is refused rather than marked.
+    """
+    pages, emails = catalog_entries(configuration, campaign)
+    return {page["item"] for page in pages} | {
+        revision["item"] for email in emails for revision in email["revisions"]
+    }
+
+
+def _kept_items(campaign):
+    """The Pages and emails items kept as is in the campaign wizard (#1404 PR 6b).
+
+    Marks exist only for a Testing draft (their table's guard), so any other
+    campaign is not read at all; the template shows them only while the
+    wizard applies.
+    """
+    if campaign.state != "draft":
+        return frozenset()
+    return frozenset(
+        CampaignSetupReview.objects.filter(campaign_id=campaign.pk, step="content")
+        .exclude(item="")
+        .values_list("item", flat=True)
+    )
+
+
 def _catalog(request, configuration, campaign):
     """List named page slots and independent email revisions for per-mail selection.
 
     The email tables are action tables (#879): their Delete dialogs post the
     applied configuration's digest to ``content_delete``, and the page
     redraws them in place from its own address once the change is applied.
+    Each row says whether it was kept as is in the campaign wizard
+    (``kept``), which the list shows in place of Default text (#1404 PR 6b).
     """
     pages, emails = catalog_entries(configuration, campaign)
+    kept = _kept_items(campaign)
+    for row in [
+        *pages,
+        *(revision for email in emails for revision in email["revisions"]),
+    ]:
+        row["kept"] = row["item"] in kept
     return render(
         request,
         "stewardship/content-catalog.html",
@@ -388,6 +447,9 @@ def _page(
     refusal=None,
     stale=None,
     folded=False,
+    summary=False,
+    keep=None,
+    save_focus="",
 ):
     """Never insert rejected user HTML into the visual editor without sanitizing it.
 
@@ -397,7 +459,21 @@ def _page(
     stale_markup result, shown as a "re-save recommended" notice (#832).
     ``folded`` says the confirmation email shows a retired receipt closing
     note folded in (#260), which previewing the form unchanged saves.
+    ``summary`` adds the form's error summary above the heading: a refused
+    direct save (#1404 PR 4b) is drawn into the page the reader is on,
+    which shows that summary (ui-v1.js showFieldErrors), while a refused
+    Preview changes is a page load that shows the errors in the form.
+    ``keep`` is the item's Kept as is key and the list row its return
+    focuses (``(item, row_id)``), or None when the editor opens no listed
+    item (a new email); inside the campaign wizard the action row then
+    offers Keep as is and go back while the form holds no change (#1404
+    PR 6b), but only on a change-gated form: one that offers saving what is
+    shown as it is has something to save. ``save_focus`` is the element
+    Pages and emails focuses after Save and go back (the page's row, or the
+    email's mail type heading, since a saved email is a new revision with a
+    row of its own).
     """
+    change_gate = not (form.is_bound or started or folded or stale is not None)
     try:
         visual = sanitize_html(form["html"].value() or "")
     except ValueError:
@@ -424,12 +500,13 @@ def _page(
             # what is shown as it is: the unsaved default text, a saved text
             # that needs re-saving, a confirmation email with a retired
             # closing note folded in, or a refused Preview drawn with its posts.
-            "change_gate": not (
-                form.is_bound or started or folded or stale is not None
-            ),
+            "change_gate": change_gate,
+            "keep_item": keep and change_gate and {"item": keep[0], "focus": keep[1]},
+            "save_focus": save_focus,
             # Post to the clean path: a "?start=default" GET must not carry its
             # query into the POST, which accepts no query parameters.
             "post_url": request.path,
+            "errors": summary_errors(form) if summary else [],
         },
         status=status,
     )
@@ -438,6 +515,23 @@ def _page(
         # The refusal log's code for this page's own refusal (#1444).
         with_default_code(response)
     return response
+
+
+def _keep(kind, slot, previous, note):
+    """The editor's listed item as ``_page``'s ``keep``, or None (#1404 PR 6b).
+
+    A page is always listed (empty or not); an email only once it has saved
+    text, or for the confirmation email a retired closing note alone, which
+    the list shows as that email. A new email has nothing to keep.
+    """
+    record_id = previous and previous["id"]
+    if kind == "page":
+        return item_key(kind, slot, record_id), f"content-page-{slot}"
+    if previous is not None:
+        return item_key(kind, slot, record_id), f"content-email-{record_id}"
+    if note is not None:
+        return item_key(kind, slot), f"email-{slot}-title"
+    return None
 
 
 def _shows_banner(campaign, kind, slot):
@@ -479,6 +573,7 @@ def _preview(
     salt,
     note,
     stale=None,
+    key=None,
 ):
     """Sign sanitized canonical bytes and disclose every affected mail schedule.
 
@@ -486,11 +581,20 @@ def _preview(
     editor showed folded into the body (receipt_note); the same request
     removes it, so the saved email alone carries that text from then on.
     ``stale`` keeps the saved text's re-save notice on a refused preview, so
-    the Admin still sees why the re-save is needed (#832).
+    the Admin still sees why the re-save is needed (#832). ``key`` is a
+    direct save's request key inside the campaign wizard (#1404 PR 4b,
+    ``admin_editing.direct_key``): the preview is signed with it and
+    returned as the signed token, which ``campaign_wizard.save_step``
+    confirms at once, instead of the Review content changes page. A refusal
+    is the page (status 400) either way, with its error summary for a
+    direct save.
     """
     configuration, fingerprint = state[0], state[-1]
+    direct = key is not None
     if not form.is_valid():
-        return _page(request, form, campaign, label, status=400, stale=stale)
+        return _page(
+            request, form, campaign, label, status=400, stale=stale, summary=direct
+        )
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
         raise stale_page()
     base = service.store.active()
@@ -519,13 +623,29 @@ def _preview(
                 status=400,
                 stale=stale,
                 refusal=error.refusal,
+                summary=direct,
             )
         if not patch:
             form.add_error(
                 None, ValidationError("No content has changed.", code="unchanged")
             )
-            return _page(request, form, campaign, label, status=400, stale=stale)
+            return _page(
+                request, form, campaign, label, status=400, stale=stale, summary=direct
+            )
         build_candidate(base, patch, candidate_id=uuid4())
+        if direct:
+            # Saved at once: no Review page to draw, so no samples to render.
+            token = sign_preview(
+                actor=actor,
+                configuration=configuration,
+                patch=patch,
+                salt=salt,
+                snapshot=fingerprint,
+                key=key,
+            )
+            if len(token) > 256_000:
+                raise ValueError("Content preview is too large.")
+            return token
         parish = document_parish(base.document())
         from parishkit.stewardship.jobs.receipt_preview import confirmation_block
 
@@ -572,7 +692,9 @@ def _preview(
                 code="candidate_refused",
             ),
         )
-        return _page(request, form, campaign, label, status=400, stale=stale)
+        return _page(
+            request, form, campaign, label, status=400, stale=stale, summary=direct
+        )
     admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
@@ -612,7 +734,15 @@ def _affected_rows(affected, campaign):
 
 @require_http_methods(["GET", "HEAD", "POST"])
 def content_settings(request, campaign_id, kind=None, slot=None, revision_id=None):
-    """Browse and edit content without installing YAML or accessing a real Family."""
+    """Browse and edit content without installing YAML or accessing a real Family.
+
+    An editor's POST is Preview changes (``preview``, answered with the
+    Review content changes page) or that page's Apply (``confirm``). Inside
+    the campaign wizard the editor posts ``save`` instead (#1404 PR 4b): the
+    same checks and signed preview, recorded at once by
+    ``campaign_wizard.save_step`` once the work transaction has ended, and
+    answered with the change's status, which the page follows.
+    """
     try:
         service = runtime()
         actor = principal(request, service)
@@ -627,6 +757,7 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
         )
         if (request.GET and not start) or request.FILES:
             raise ValueError("Invalid content parameters.")
+        action = None
         if request.method == "POST":
             fields = set(ContentForm.base_fields) - (
                 {"subject"} if kind == "page" else set()
@@ -634,11 +765,20 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
             # Only Family emails carry the campaign banner choice (#248).
             if kind == "email" and slot in BANNER_EMAILS:
                 fields.add("show_banner")
-            action = form_action(request.POST, preview_fields=fields)
+            action = form_action(request.POST, preview_fields=fields, direct=True)
             if kind is None:
                 raise ValueError("The catalog is read-only.")
             if action == "confirm":
                 return confirm(request, service, actor, salt=salt, current_scope=_scope)
+        # A direct save's key; a repeat of it is answered with its first
+        # change's status before the form is checked again (#1486).
+        key = direct_key(request.POST) if action == "save" else None
+        if key is not None and (
+            repeat := campaign_wizard.repeated_save(request, actor, key)
+        ):
+            repeat["Cache-Control"] = "no-store"
+            return repeat
+        saved = None
         with (
             read_transaction()
             if request.method in {"GET", "HEAD"}
@@ -687,6 +827,7 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                         salt,
                         note,
                         stale_markup(shown),
+                        key,
                     )
                     if request.method == "POST"
                     else _page(
@@ -702,8 +843,24 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                         # Only the saved text, not a default being started.
                         stale=None if start else stale_markup(shown),
                         folded=note is not None,
+                        keep=_keep(kind, slot, previous, note),
+                        save_focus=f"content-page-{slot}"
+                        if kind == "page"
+                        else f"email-{slot}-title",
                     )
                 )
+                if isinstance(response, str):
+                    saved, response = response, None
+        if saved is not None:
+            response = campaign_wizard.save_step(
+                request,
+                service,
+                actor,
+                token=saved,
+                salt=salt,
+                current_scope=_scope,
+                campaign_id=campaign_id,
+            )
         # Recheck access after the observation ends, so a GET's read-only
         # snapshot cannot hide a revocation committed while it rendered.
         if not allows(

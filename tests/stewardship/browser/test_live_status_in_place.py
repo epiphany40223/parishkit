@@ -1,20 +1,22 @@
-"""Live-status pages refresh in place, and Dismiss acts in place (#519 PR 7a).
+"""Live-status pages update themselves, and Dismiss acts in place (#519 PR
+7a, #1586).
 
 Each page is served at its real address (live_status_components), where its
-Refresh link and Dismiss form lead. A route answers a Refresh with a fresh
-version of the page, so the region visibly changes. Each test sets a mark
-outside every region, which only a full page load could lose.
+own reads and Dismiss form lead; none has a Refresh link. A route answers a
+read with a fresh version of the page, so the region visibly changes. Each
+test sets a mark outside every region, which only a full page load could
+lose.
 """
 
+import re
 import time
 
 import pytest
 
 from .live_status_components import (
-    CREDENTIAL,
-    CREDENTIAL_RUNNING,
+    CHANGE_RUNNING,
     DISMISS,
-    FAMILY_TESTS,
+    FAMILY_TESTS_PENDING,
     INTEGRATION,
     KEEP,
     KEEP_EMPTY,
@@ -62,74 +64,93 @@ def answer_reads(page, origin, address, *fixtures):
     return reads
 
 
-@pytest.mark.parametrize(
-    "address, fresh, link, message, shown",
-    [
-        (
-            PROGRESS,
-            "/live-progress-later",
-            "Refresh progress",
-            "Progress refreshed.",
-            "900",
-        ),
-        (
-            FAMILY_TESTS,
-            "/live-family-tests-later",
-            "Refresh status",
-            "Status refreshed.",
-            "Family DUID",
-        ),
-    ],
-)
-def test_refresh_links_reread_in_place(
-    page, component_origin, address, fresh, link, message, shown
-):
-    """Refresh re-reads the page once and swaps the status in place: no
-    reload, focus kept on the link, the refresh announced, and the fresh
-    counts or tests shown."""
+# A link or button that re-reads the page: its text starts "Refresh", other
+# than the actions that start a ParishSoft download (the Admin menu's
+# Refresh from ParishSoft, Refresh now). None is drawn on a converted page
+# (#1586).
+PAGE_REFRESH = re.compile(r"^\s*Refresh(?! from ParishSoft| now)")
+
+
+def refresh_controls(page):
+    """The page's links and buttons that would re-read the page itself."""
+    return page.locator("a, button").filter(has_text=PAGE_REFRESH)
+
+
+def test_mail_queue_updates_itself(page, component_origin):
+    """The Mail queue has no Refresh link (#1586) and brings its
+    passive status's fresh counts in by itself, at its fixed pace: no
+    reload, focus left where it was."""
     page.set_viewport_size(VIEWPORT)
-    page.goto(component_origin + address)
+    page.goto(component_origin + PROGRESS)
     page.evaluate(MARK)
-    reads = answer_reads(page, component_origin, address, fresh)
-    refresh = page.get_by_role("link", name=link, exact=True)
-    refresh.click()
-    has_text(page.get_by_role("status").filter(has_text=message), message)
-    visible(page.locator("main").get_by_text(shown).first)
+    assert refresh_controls(page).count() == 0
+    expect(page.locator("main").get_by_text("900").first).to_be_visible(timeout=15000)
     assert page.evaluate(MARKED) == "kept"
-    assert page.evaluate("document.activeElement.textContent") == link
+    assert page.evaluate("document.activeElement === document.body")
+
+
+def test_recent_family_tests_update_themselves(page, component_origin):
+    """While a Family test is on its way, the recent tests re-read the page
+    by themselves until it settles; the page has no Refresh link (#1586)."""
+    page.set_viewport_size(VIEWPORT)
+    reads = answer_reads(
+        page, component_origin, FAMILY_TESTS_PENDING, "/live-family-tests-later"
+    )
+    page.goto(component_origin + FAMILY_TESTS_PENDING)
+    page.evaluate(MARK)
+    assert refresh_controls(page).count() == 0
+    hidden(page.get_by_text("Sending Family tests…"))
+    assert page.evaluate(MARKED) == "kept"
+    assert page.evaluate("document.activeElement === document.body")
     assert len(reads) == 1
 
 
-def test_refreshed_pending_status_is_watched_again(page, component_origin):
-    """A Refresh that brings back a status still being worked on is watched
-    by live-status-v1.js again, so it finishes by itself: the first read
-    answers that the key is installed and waiting, the next poll that it is
-    confirmed, all without a reload."""
+def test_pending_status_updates_itself_then_stops(page, component_origin):
+    """A configuration change being applied is followed by itself to the
+    end: the first read finds it still applying, the next that it is
+    applied, all without a reload; watching then stops, with one status
+    line."""
     page.set_viewport_size(VIEWPORT)
-    page.goto(component_origin + CREDENTIAL)
-    page.evaluate(MARK)
-    visible(page.get_by_role("heading", name="Not applied"))
     reads = answer_reads(
         page,
         component_origin,
-        CREDENTIAL,
-        "/live-credential-pending",
-        "/live-credential-applied",
+        CHANGE_RUNNING,
+        "/live-running-pending",
+        "/live-running-applied",
     )
-    page.get_by_role("link", name="Refresh status").click()
-    has_text(
-        page.get_by_role("status").filter(has_text="Status refreshed."),
-        "Status refreshed.",
-    )
-    visible(page.get_by_text("Installed; waiting", exact=False))
-    visible(page.get_by_role("heading", name="Installed and confirmed"))
+    page.goto(component_origin + CHANGE_RUNNING)
+    page.evaluate(MARK)
+    assert refresh_controls(page).count() == 0
+    visible(page.get_by_role("heading", name="Applied: your change is saved"))
     assert page.evaluate(MARKED) == "kept"
     assert len(reads) == 2
-    # Watching stopped once the fresh status finished: no further reads.
+    # Watching stopped once the status finished: no further reads.
     page.wait_for_timeout(3000)
     assert len(reads) == 2
-    # One watcher, and so one status line, for the fresh region.
     assert page.locator(".live-status-problem").count() == 1
+
+
+def test_reload_while_pending_shows_the_same_page_and_keeps_updating(
+    page, component_origin
+):
+    """A browser reload while a configuration change is still pending
+    lands on the same address and status (the server draws it again), and
+    the page goes on updating by itself until it is applied (#1586,
+    #1568)."""
+    page.set_viewport_size(VIEWPORT)
+    # Unrouted, every read of the page finds the change still pending.
+    page.goto(component_origin + CHANGE_RUNNING)
+    visible(page.get_by_text("Applying your change", exact=False))
+    page.reload()
+    assert page.url == component_origin + CHANGE_RUNNING
+    visible(page.get_by_text("Applying your change", exact=False))
+    page.evaluate(MARK)
+    reads = answer_reads(
+        page, component_origin, CHANGE_RUNNING, "/live-running-applied"
+    )
+    visible(page.get_by_role("heading", name="Applied: your change is saved"))
+    assert page.evaluate(MARKED) == "kept"
+    assert len(reads) == 1
 
 
 def test_integration_dismiss_is_in_place(page, component_origin):
@@ -154,36 +175,10 @@ def test_integration_dismiss_is_in_place(page, component_origin):
     assert page.evaluate(FOCUSED, "main h1")
 
 
-def test_refresh_replaces_a_running_watcher(page, component_origin):
-    """A Refresh while the page is already watching a pending key change
-    leaves exactly one watcher: the old one stops with its region, so the
-    page reads its status once for the Refresh and once for the fresh
-    watcher's poll that finds it confirmed, then stops, with one status
-    line."""
-    page.set_viewport_size(VIEWPORT)
-    reads = answer_reads(
-        page,
-        component_origin,
-        CREDENTIAL_RUNNING,
-        "/live-running-pending",
-        "/live-running-applied",
-    )
-    page.goto(component_origin + CREDENTIAL_RUNNING)
-    page.evaluate(MARK)
-    page.get_by_role("link", name="Refresh status").click()
-    visible(page.get_by_role("heading", name="Installed and confirmed"))
-    assert page.evaluate(MARKED) == "kept"
-    # The Refresh's read, then the fresh watcher's one poll; the old
-    # watcher would have polled the page too had it kept running.
-    page.wait_for_timeout(4000)
-    assert len(reads) == 2, reads
-    assert page.locator(".live-status-problem").count() == 1
-
-
-def test_refresh_keeps_one_progress_poller(page, component_origin):
-    """Family email progress is watched for as long as a send runs. After a
-    Refresh, its status is still polled at the page's own pace by one
-    watcher: no two polls come closer together than half that pace."""
+def test_progress_keeps_one_poller(page, component_origin):
+    """The Mail queue is watched for as long as a send runs, at the
+    page's own pace, by one watcher: no two polls come closer together than
+    half that pace."""
     page.set_viewport_size(VIEWPORT)
     polls = []
     page.on(
@@ -195,12 +190,6 @@ def test_refresh_keeps_one_progress_poller(page, component_origin):
         ),
     )
     page.goto(component_origin + PROGRESS)
-    answer_reads(page, component_origin, PROGRESS, "/live-progress-later")
-    page.get_by_role("link", name="Refresh progress").click()
-    has_text(
-        page.get_by_role("status").filter(has_text="Progress refreshed."),
-        "Progress refreshed.",
-    )
     polls.clear()
     page.wait_for_timeout(16000)
     assert len(polls) >= 2, polls

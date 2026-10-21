@@ -1,32 +1,119 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship delivery %}{% comment %}One email's page (#1015). Object-named: the heading names the email by
-its type and its Family's heads ("Initial invitation to Morgan, Henry"),
-from the latest ParishSoft data as Outgoing mail reads it; the browser
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship delivery %}{% comment %}One email's page (#1015, #1563). Object-named: the heading names the
+email by its type and its Family's heads ("Initial invitation to Morgan,
+Henry"), from the latest ParishSoft data as Sent mail reads it; the browser
 title names only the type, so browser history does not keep the Family's
-name (as on the Family timeline). The page reads top to bottom: what the
-email is and whom it was for, its attempt history, the technical details
-and latest background task, then what can be done about it and the
-Admin evidence already recorded.{% endcomment %}
+name (as on the Timeline). The page first answers whether anything is left
+to do: the outcome panel (Delivered, Still sending, Needs resolution or Not
+sent (cancelled)) with its resolution question. Then what the email is and
+whom it was for, its attempt history, the technical details and latest
+background task, the bounce report and the note, both closed, and the Admin
+evidence already recorded.{% endcomment %}
 {% block title %}{{ delivery.purpose|delivery_label }}{% endblock %}
 {% block content %}
 <h1>{% if delivery.family_name %}{% blocktranslate trimmed with purpose=delivery.purpose|delivery_label name=delivery.family_name %}{{ purpose }} to {{ name }}{% endblocktranslate %}{% else %}{{ delivery.purpose|delivery_label }}{% endif %}</h1>
-{% aboutpage "mail-message" %}<p>{% translate "Each address shows what the latest attempt recorded for it. One email goes to all of a Family's addresses at once, and the provider can accept it for some while refusing others." %}</p>
+{% aboutpage "mail-message" %}<p>{% translate "The panel at the top says whether anything is left for you to do. A delivered email needs nothing. An email that is not sure to have arrived, or that failed, asks one question; each answer saves your note in this email's history and does exactly one thing." %}</p>
+<p>{% translate "Each address shows what the latest attempt recorded for it. One email goes to all of a Family's addresses at once, and the provider can accept it for some while refusing others." %}</p>
 <p>{% translate "When an invitation or reminder is accepted but an address is refused for now, the same email, with the same code and link, is tried again automatically for that address only, for about 17 hours; the address then shows “refused for now, trying again” or what that try did. An address shown as just “refused for now” is not sent this email again." %}</p>
-<p>{% translate "If a delivered email later bounces (a “delivery failed” reply arrives in the sending mailbox), report the address under Report a bounced address. It is then set aside for this Family, like an address the mail service refused, and listed on Refused addresses, where clearing it lets email go to it again. Reporting sends nothing and does not change the Family's code or link. The report shows in that panel at once; the Refused addresses line near the top shows it the next time the page is opened." %}</p>{% endaboutpage %}
-{# The email's state, Family and recipient lines are one region (#519): a resolution answered in place replaces them, so no line keeps a stale outcome ("not sure it arrived"). #}
+<p>{% translate "If a delivered email later bounces (a “delivery failed” reply arrives in the sending mailbox), report the address under Did this email bounce?. It is then set aside for this Family, like an address the mail service refused, and listed on Refused addresses, where clearing it lets email go to it again. Reporting sends nothing and does not change the Family's code or link. The report shows in that panel at once; the Refused addresses line shows it the next time the page is opened." %}</p>{% endaboutpage %}
+{% comment %}The outcome panel (#1563) is one region of its own
+(data-in-place-own): paging the history never replaces it, so a note being
+typed is kept. An answer posts in place: its view redirects back here, and
+the answer's form lists the regions it also changes (data-in-place-only):
+the state and recipient lines, the attempt history, the note disclosure, the
+bounce panel and the Admin evidence. Focus then goes to the panel's heading
+(data-in-place-focus), which names the new outcome. A refusal (a stale
+version's 409 and the other fixed error pages draw no region) is shown
+whole.{% endcomment %}
+<div id="delivery-resolve" data-in-place-region data-in-place-own>
+<section class="panel outcome-panel" aria-labelledby="outcome-heading" data-choice-scope>
+{% if outcome == "delivered" %}
+<h2 id="outcome-heading" tabindex="-1" data-in-place-focus>{% translate "Delivered" %}</h2>
+<p>{% translate "Delivered on" %} <time datetime="{{ delivery.finished_at|default:delivery.updated_at|instant }}" data-local-instant>{{ delivery.finished_at|default:delivery.updated_at|instant }}</time>.</p>
+{% include "stewardship/delivery-reached.html" %}
+<p class="help">{% translate "Delivered means the mail service accepted it; that does not prove it reached the inbox. Nothing is left to do." %}</p>
+{% elif outcome == "cancelled" %}
+<h2 id="outcome-heading" tabindex="-1" data-in-place-focus>{% translate "Not sent (cancelled)" %}</h2>
+<p>{% translate "This email was cancelled before it was sent, so nothing is left to do." %}</p>
+{% elif outcome == "still_sending" %}
+<h2 id="outcome-heading" tabindex="-1" data-in-place-focus>{% translate "Still sending" %}</h2>
+<p>{% if choices.try_again %}{% translate "The mail service did not accept it, and its background task stopped, so it is not tried again on its own." %}{% elif delivery.state == "retry_wait" %}{% translate "A temporary problem stopped the last try, so it waits to try again." %}{% if delivery.not_before %} {% translate "Next attempt:" %} <time datetime="{{ delivery.not_before|instant }}" data-local-instant>{{ delivery.not_before|instant }}</time>.{% endif %}{% elif delivery.state == "submitting" %}{% translate "It is being handed to the mail service now." %}{% else %}{% translate "It is queued, waiting its turn to be sent." %}{% endif %}</p>
+{% if paused %}<p class="notice">{% translate "Campaign email is paused, so it waits until mail is resumed on" %} <a href="{% url 'admin:delivery_control' %}">{% translate "Pause and resume mail" %}</a>.</p>{% endif %}
+{% with row=choices.try_again %}{% if row %}{% if row.unavailable %}<p class="notice" id="reason-try_again">{{ row.reason }}</p>
+<p>{% button type="button" disabled=True aria-describedby="reason-try_again" %}{% translate "Try again now" %}{% endbutton %}</p>
+{% else %}{% translate "Why try again now?" as prompt %}{% translate "Trying again." as message %}{% translate "Try again now" as label %}{% include "stewardship/delivery-answer.html" with panel="" prompt=prompt message=message label=label  extra="" %}{% endif %}{% endif %}{% endwith %}
+{% elif delivery.state == "delivery_unknown" %}
+<h2 id="outcome-heading" tabindex="-1" data-in-place-focus>{% translate "Not sure it arrived" %}</h2>
+<p>{% translate "The mail service did not confirm whether this email was sent. It is not retried automatically, because sending it again could give the recipient a second copy." %}</p>
+<p><strong>{% translate "What to check first:" %}</strong> {% blocktranslate trimmed with purpose=delivery.purpose|delivery_label %}look in the sending mailbox's Sent folder, or the Google Workspace email log search, for this {{ purpose }}{% endblocktranslate %}{% if recipients.routed %} {% translate "to" %} {{ recipients.routed|join:", " }}{% endif %}{% if last_attempt_at %}, {% translate "sent around" %} <time datetime="{{ last_attempt_at|instant }}" data-local-instant>{{ last_attempt_at|instant }}</time>{% endif %}.</p>
+<fieldset class="choice-question">
+<legend>{% translate "What did you find?" %}</legend>
+<div class="choice-options">
+<label><input type="radio" name="found" value="sent"{% if choices.sent.unavailable %} disabled aria-describedby="reason-found-{{ choices.sent.unavailable }}"{% endif %}> {% translate "It was sent" %}</label>
+<label><input type="radio" name="found" value="not_sent"{% if choices.not_sent.unavailable %} disabled aria-describedby="reason-found-{{ choices.not_sent.unavailable }}"{% endif %}> {% translate "It was not sent" %}</label>
+<label><input type="radio" name="found" value="unsure"{% if choices.unsure.unavailable %} disabled aria-describedby="reason-found-{{ choices.unsure.unavailable }}"{% endif %}> {% translate "I can't tell yet" %}</label>
+</div>
+{% for row in choice_rows %}{% if row.choice != "resend" and row.unavailable %}{% ifchanged row.unavailable %}<p class="help" id="reason-found-{{ row.unavailable }}">{{ row.reason }}</p>{% endifchanged %}{% endif %}{% endfor %}
+</fieldset>
+{# Every answer's fields share one reserved slot, so choosing never moves the button or what follows (#736). While no answer is allowed there is nothing to reserve. #}
+{% if not choices.sent.unavailable or not choices.unsure.unavailable %}<div class="choice-slot">
+<p class="help" data-choice-panel="found=">{% translate "Choose what you found to see what to enter." %}</p>
+{% if not choices.sent.unavailable %}{% translate "Where did you see that it was sent?" as prompt %}{% translate "Marked as delivered." as message %}{% translate "Mark as delivered" as label %}{% include "stewardship/delivery-answer.html" with row=choices.sent panel="found=sent" prompt=prompt message=message label=label  extra="" %}{% endif %}
+{% if not choices.not_sent.unavailable %}<div data-choice-panel="found=not_sent" data-choice-hidden inert>
+<fieldset class="choice-question">
+<legend>{% translate "Send it again?" %}</legend>
+<div class="choice-options">
+<label><input type="radio" name="again" value="yes"{% if choices.resend.unavailable %} disabled aria-describedby="reason-again"{% endif %}> {% translate "Yes" %}</label>
+<label><input type="radio" name="again" value="no"> {% translate "No" %}</label>
+</div>
+{% if choices.resend.unavailable %}<p class="help" id="reason-again">{{ choices.resend.reason }}</p>{% endif %}
+</fieldset>
+<div class="choice-slot">
+<p class="help" data-choice-panel="again=">{% translate "Choose whether to send it again." %}</p>
+{% if not choices.resend.unavailable %}{% translate "Why send it again?" as prompt %}{% translate "Sending it again." as message %}{% translate "Send it again" as label %}{% include "stewardship/delivery-answer.html" with row=choices.resend panel="again=yes" prompt=prompt message=message label=label acknowledge=True  extra="" %}{% endif %}
+{% translate "Where did you see that it was not sent?" as prompt %}{% translate "Recorded as not sent." as message %}{% translate "Record as not sent" as label %}{% translate "It is recorded as failed and not sent again; no address is set aside." as extra %}{% include "stewardship/delivery-answer.html" with row=choices.not_sent panel="again=no" prompt=prompt message=message label=label extra=extra %}
+</div>
+</div>{% endif %}
+{% if not choices.unsure.unavailable %}{% translate "What have you checked so far?" as prompt %}{% translate "Note saved." as message %}{% translate "Save note" as label %}{% translate "It stays Not sure it arrived." as extra %}{% include "stewardship/delivery-answer.html" with row=choices.unsure panel="found=unsure" prompt=prompt message=message label=label extra=extra %}{% endif %}
+</div>{% endif %}
+{% elif delivery.state == "permanent_failure" %}
+<h2 id="outcome-heading" tabindex="-1" data-in-place-focus>{% translate "Failed" %}</h2>
+<p>{% translate "The mail service refused this email, or it could not be sent after every automatic try; the attempt history below says which. It is not tried again on its own." %}</p>
+{% if refused %}<p>{% translate "Refused addresses (check each with the Family, then clear it on its page so email reaches it again):" %} {% for refusal in refused %}<a href="{% url 'admin:delivery_refusal' refusal.id %}">{{ refusal.address }}</a>{% if refusal.kind == 'reported_bounce' %} ({% translate "bounce reported" %}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+{% if choices %}<fieldset class="choice-question">
+<legend>{% translate "Send it again?" %}</legend>
+<div class="choice-options">
+<label><input type="radio" name="retry" value="yes"{% if choices.send_again.unavailable %} disabled aria-describedby="reason-retry-{{ choices.send_again.unavailable }}"{% endif %}> {% translate "Yes" %}</label>
+<label><input type="radio" name="retry" value="no"{% if choices.keep_failed.unavailable %} disabled aria-describedby="reason-retry-{{ choices.keep_failed.unavailable }}"{% endif %}> {% translate "No" %}</label>
+</div>
+{% for row in choice_rows %}{% if row.unavailable %}{% ifchanged row.unavailable %}<p class="help" id="reason-retry-{{ row.unavailable }}">{{ row.reason }}</p>{% endifchanged %}{% endif %}{% endfor %}
+</fieldset>
+{% if not choices.send_again.unavailable or not choices.keep_failed.unavailable %}<div class="choice-slot">
+<p class="help" data-choice-panel="retry=">{% translate "Choose whether to send it again." %}</p>
+{% if not choices.send_again.unavailable %}{% translate "Why send it again?" as prompt %}{% translate "Sending it again." as message %}{% translate "Send it again" as label %}{% include "stewardship/delivery-answer.html" with row=choices.send_again panel="retry=yes" prompt=prompt message=message label=label  extra="" %}{% endif %}
+{% if not choices.keep_failed.unavailable %}{% translate "Why leave it as failed?" as prompt %}{% translate "Note saved." as message %}{% translate "Save note" as label %}{% translate "It stays Failed." as extra %}{% include "stewardship/delivery-answer.html" with row=choices.keep_failed panel="retry=no" prompt=prompt message=message label=label extra=extra %}{% endif %}
+</div>{% endif %}{% endif %}
+{% else %}
+<h2 id="outcome-heading" tabindex="-1" data-in-place-focus>{% translate "Delivered, but an address was refused" %}</h2>
+{% include "stewardship/delivery-reached.html" %}
+<p>{% translate "The other addresses have this email, so it is not sent again. Check the address, then clear it on its Refused address page so future email reaches it:" %} {% for refusal in refused %}<a href="{% url 'admin:delivery_refusal' refusal.id %}">{{ refusal.address }}</a>{% if refusal.kind == 'reported_bounce' %} ({% translate "bounce reported" %}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+{% endif %}
+</section>
+</div>
+{# The email's state, Family and recipient lines are one region (#519): an answer applied in place replaces them, so no line keeps a stale outcome ("not sure it arrived"). #}
 <div id="delivery-state" data-in-place-region>
 <p>{{ delivery.purpose|delivery_label }} · {{ delivery.mode|delivery_label }} · {{ delivery.state|delivery_label }}</p>
 {% if delivery.family__family_duid %}<p>{% translate "Family:" %} {% if delivery.family_name %}{{ delivery.family_name }}{% else %}{% source_status "missing" %}{% endif %} · {% translate "Family DUID:" %} {{ delivery.family__family_duid|duid }}</p>
-{% else %}<p>{% translate "Administrator report" %}</p>{% endif %}
+{% elif delivery.purpose == "leader_email" %}<p>{% translate "Ministry leader email" %}</p>{% else %}<p>{% translate "Administrator email" %}</p>{% endif %}
 {# Whom the email is for, from its newest rendering (#1024; every address is a To: address). In Testing mode the provider is told to send it to the Testing recipient instead, which the second line names. Both are in the page as served, so nothing appears later and moves the page. #}
-{# Each routed address is followed by what the email's latest attempt recorded for it (#806): in Production on the To: line, in Testing mode on the Testing line, and, for an address refused for now, what the email's follow-up to it did since. When the email reached only some addresses, a line says how many; the About panel explains the labels and the automatic retry. #}
+{# Each routed address is followed by what the email's latest attempt recorded for it (#806): in Production on the To: line, in Testing mode on the Testing line, and, for an address refused for now, what the email's follow-up to it did since. When the email reached only some addresses, the outcome panel above says how many (#1563); the About panel explains the labels and the automatic retry. #}
 {% if recipients.intended %}<p id="email-recipients">{% translate "To:" %} {% for address, outcome in recipients.intended_rows %}{{ address }}{% if outcome %} ({{ outcome }}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
 {% if recipients.routed and recipients.routed != recipients.intended %}<p id="email-routed">{% translate "Testing mode sends it to:" %} {% for address, outcome in recipients.routed_rows %}{{ address }}{% if outcome %} ({{ outcome }}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
-{% if recipients.reached %}<p id="email-reached">{% blocktranslate trimmed count total=recipients.reached.1 with reached=recipients.reached.0 %}Delivered to {{ reached }} of {{ total }} address.{% plural %}Delivered to {{ reached }} of {{ total }} addresses.{% endblocktranslate %}</p>{% endif %}
-{% if refused %}<p>{% translate "Refused addresses:" %} {% for refusal in refused %}<a href="{% url 'admin:delivery_refusal' refusal.id %}">{{ refusal.address }}</a>{% if refusal.kind == 'reported_bounce' %} ({% translate "bounce reported" %}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+{# A failed or delivered email's outcome panel lists its refused addresses itself, so they are named once (#1563). #}
+{% if refused and delivery.state != "permanent_failure" and delivery.state != "delivered" %}<p>{% translate "Refused addresses:" %} {% for refusal in refused %}<a href="{% url 'admin:delivery_refusal' refusal.id %}">{{ refusal.address }}</a>{% if refusal.kind == 'reported_bounce' %} ({% translate "bounce reported" %}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
 </div>
-{# Attempts and Admin evidence share one page window: Previous and Next page refresh both regions in place (ui-v1.js, a[data-in-place], #519), whichever pager is used. The resolution forms sit between them in a region of their own that paging never replaces (data-in-place-own, below), so typed evidence is kept. #}
+{# Attempts and Admin evidence share one page window: Previous and Next page refresh both regions in place (ui-v1.js, a[data-in-place], #519), whichever pager is used. The outcome panel above and the note form below are regions of their own that paging never replaces (data-in-place-own), so typed notes are kept. Once the email is settled (delivered or cancelled) the history waits in a closed disclosure, which stays open across paging once opened (data-keep-open). #}
 <div id="delivery-history" data-in-place-region>
-<h2 id="attempt-history-heading">{% translate "Attempt history" %}</h2>
+{% if outcome == "delivered" or outcome == "cancelled" %}<details id="attempt-history-disclosure" data-keep-open><summary id="attempt-history-heading">{% translate "Attempt history" %}</summary>{% else %}<h2 id="attempt-history-heading">{% translate "Attempt history" %}</h2>{% endif %}
 {# One table, one short row per recorded change, newest first; When leads, as in every log table, heads each row and uses the dense tables' compact date (#934, Admin tables' column order). The heading above names it on screen, so its caption is only for screen readers. #}
 {% if events %}<div class="table-scroll" tabindex="0" role="region" aria-labelledby="attempt-history-heading"><table class="data-table whole-words"><caption class="visually-hidden">{% translate "Attempt history" %}</caption>
 <thead><tr><th scope="col">{% translate "When" %}</th><th scope="col" class="numeric">{% translate "Attempt" %}</th><th scope="col">{% translate "What happened" %}</th><th scope="col">{% translate "State" %}</th></tr></thead>
@@ -34,82 +121,30 @@ Admin evidence already recorded.{% endcomment %}
 </table></div>
 {% else %}<p>{% translate "No attempt history on this page." %}</p>{% endif %}
 <nav aria-label="{% translate 'Attempt history and evidence pages' %}">{% if previous_query %}<a href="?{{ previous_query }}#delivery-history" data-in-place="page-previous" data-in-place-fallback="page-next" data-in-place-message="{% translate 'Previous page shown.' %}">{% translate "Previous page" %}</a>{% endif %} {% if next_query %}<a href="?{{ next_query }}#delivery-history" data-in-place="page-next" data-in-place-fallback="page-previous" data-in-place-message="{% translate 'Next page shown.' %}">{% translate "Next page" %}</a>{% endif %}</nav>
+{% if outcome == "delivered" or outcome == "cancelled" %}</details>{% endif %}
 </div>
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Delivery ID" %}</dt><dd>{{ delivery.id }}</dd></dl></details>
-{% comment %}The task link, the uncertainty notice and the resolution forms
-are one region (#519). A resolution posts in place: its view redirects back
-here, and the form names the Admin evidence below, where the decision's note
-appears, and lists the regions it also changes (data-in-place-only): the
-state and recipient lines above, the attempt history, these forms (drawn at the new
-expected_version) and the bounce panel. Focus goes to the evidence
-heading, which names where the decision is now listed: the fresh form, if
-still offered, waits for a new note, so its button is unavailable
-(focusAfter's fallback to the region's first heading). This region is data-in-place-own, so paging the
-history never replaces it and evidence being typed is kept; the note
-disclosure keeps open (data-keep-open). A refusal (a stale version's 409 and
-the other fixed error pages draw no region) is shown whole.{% endcomment %}
-<div id="delivery-resolve" data-in-place-region data-in-place-own>
 {% if task %}<p><a href="{% url 'admin:background_task_page' task.id %}">{% translate "Latest background task" %}</a>: {{ task.state|delivery_task_label }}</p>{% endif %}
-{% if delivery.state == 'delivery_unknown' %}
-<aside class="notice">
-  <h2>{% translate "Not sure it arrived, which is not the same as failed" %}</h2>
-  <p>{% translate "Automatic retries have stopped. The mail service cannot tell us whether this email arrived, and sending it again could give the recipient a second copy. Check other evidence first, such as the sending mailbox's Sent folder or asking the recipient, then choose one of the actions below." %}</p>
-</aside>
-{% endif %}
-{% comment %}The forms show only when a decision is available (#1015): the
-"Resolve this email" section when an action other than a bare evidence note
-is offered, or a retry that is unavailable (#563), or decisions other
-campaign work holds (#1331); otherwise, when only the note is, a closed disclosure, since a
-note changes nothing about the email. In the disclosure its summary is the
-form's heading, so the form draws no h3 of its own there.{% endcomment %}
-{% if decisions %}<section aria-labelledby="resolve-heading"><h2 id="resolve-heading">{% translate "Resolve this email" %}</h2>
-<p>{% translate "These actions settle a delivery that failed or may not have arrived. Each needs a short note saying why; it is saved in this email's history and is not emailed to anyone." %}</p>
-{% elif commands %}<details id="delivery-note-disclosure" data-keep-open><summary>{% translate "Add a note to this email's history" %}</summary>
-{% endif %}
-{% for command in commands %}
-{# Each form waits for a note that is more than spaces (and, for a resend, the tick), as the server requires; the hint follows the button (#563). #}
-<form method="post" action="{% url 'admin:delivery_resolve' delivery.id %}#delivery-evidence"{% if decisions %} class="panel"{% endif %} data-require-complete data-in-place="delivery-resolve-{{ command.action }}" data-in-place-only="delivery-state delivery-history delivery-resolve bounce-report" data-in-place-message="{% if command.action == 'note' %}{% translate 'Evidence note saved.' %}{% elif command.action == 'accept' %}{% translate 'Delivery confirmed.' %}{% elif command.action == 'confirm_unsent' %}{% translate 'Recorded as not sent.' %}{% else %}{% translate 'Resend authorized.' %}{% endif %}">
-  {% csrf_token %}
-  <input type="hidden" name="command_id" value="{{ command.id }}">
-  <input type="hidden" name="expected_version" value="{{ delivery.version }}">
-  <input type="hidden" name="action" value="{{ command.action }}">
-  {% if decisions %}<h3>{{ command.label }}</h3>{% endif %}
-  {% if command.action == 'note' %}<label for="evidence-note">{% translate "Note to save in this email's history" %}</label>
-  <textarea id="evidence-note" name="note" maxlength="2000" required aria-describedby="help-note" data-missing-hint="{% translate 'Enter the note.' %}"></textarea>
-  {% else %}<label for="evidence-{{ command.action }}">{% translate "Why are you doing this? (saved in this email's history)" %}</label>
-  <textarea id="evidence-{{ command.action }}" name="note" maxlength="2000" required aria-describedby="help-{{ command.action }}{% if command.action == 'accept' %} acceptance-help{% elif command.action == 'confirm_unsent' %} unsent-help{% endif %}" data-missing-hint="{% translate 'Enter why you are doing this.' %}"></textarea>{% endif %}
-  <p id="help-{{ command.action }}" class="help">{% translate "Keep it brief. Do not include passwords, Family links, codes, or complete provider responses." %}</p>
-  {% if command.action == 'resend' %}<label><input type="checkbox" name="duplicate_acknowledged" value="yes" required data-acknowledgment data-missing-hint="{% translate 'Tick the box to accept the duplicate risk.' %}"> {% translate "The prior attempt may already have been delivered. I accept the duplicate risk and explicitly authorize another attempt." %}</label>{% endif %}
-  {% if command.action == 'accept' %}<p id="acceptance-help">{% translate "Use this only when external evidence confirms acceptance of this exact delivery, not merely because no error was reported." %}</p>{% endif %}
-  {% if command.action == 'confirm_unsent' %}<p id="unsent-help">{% translate "Use this only when the provider's own log shows this exact attempt was not sent. The delivery is recorded as failed and is not resent; no recipient is suppressed." %}</p>{% endif %}
-  {% button type="submit" aria-describedby="complete-hint-"|add:command.action %}{{ command.label }}{% endbutton %}<p class="help" id="complete-hint-{{ command.action }}" data-complete-hint hidden></p>
-</form>
-{% endfor %}
-{% if held %}{# While other campaign work holds the email, its decisions (the retry among them) stay in view, unavailable and named by why (#1331). #}<div class="panel"><p class="notice" id="delivery-held">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so this email can't be resolved until it finishes or is cancelled." %}</p>
-<p>{% for command in held %}{% button type="button" disabled=True aria-describedby="delivery-held" %}{{ command.label }}{% endbutton %}{% if not forloop.last %} {% endif %}{% endfor %}</p></div>{% endif %}
-{% if commands and retry_unavailable %}{# The retry stays where it would sit, unavailable and named by why (#563). #}<div class="panel"><h3>{{ retry_label }}</h3>
-<p class="notice" id="retry-unavailable">{% translate "Retry is not available right now. It needs the campaign to be open, campaign email not paused, up-to-date ParishSoft data, and no other email already covering this one." %}</p>
-<p>{% button type="button" disabled=True aria-describedby="retry-unavailable" %}{{ retry_label }}{% endbutton %}</p></div>{% endif %}
-{% if decisions %}</section>{% elif commands %}</details>{% endif %}
-</div>
 {% comment %}Report a bounced address (#806 slice 4): only for a Production
-Family email. It acts in place and replaces only its own region
-(data-in-place-only), so nothing above its button moves; the reports
-already recorded for this email are listed after the form, so a new one
-appears below the button. While a prerequisite is missing (the email is
-not delivered, the campaign accepts no changes, or every address is set
-aside) the button is shown unavailable with the reason (#563). Report
-waits for an address, a note that is more than spaces and the tick, as
-the server requires; the hint follows the button. After a report, focus
-goes to the list of reports below the button (data-in-place-focus), not to
-the panel's heading above it, which would scroll the page. When the
-Family has only one address left and it is offered, a notice names it, so
-the Administrator knows before reporting that the Family would get no
-campaign email. It is drawn with the page, so nothing appears on a choice,
-and it sits after the button: a report that leaves the Family no address
-removes it, and that must not move the button.{% endcomment %}
+Family email, in a closed "Did this email bounce?" disclosure (#1563),
+which stays open across in-place answers once opened (data-keep-open). It
+acts in place and replaces only its own region (data-in-place-only), so
+nothing above its button moves; the reports already recorded for this
+email are listed after the form, so a new one appears below the button.
+While a prerequisite is missing (the email is not delivered, the campaign
+accepts no changes, or every address is set aside) the button is shown
+unavailable with the reason (#563). Report waits for an address, a note
+that is more than spaces and the tick, as the server requires; the hint
+follows the button. After a report, focus goes to the list of reports below
+the button (data-in-place-focus), not to the panel's heading above it,
+which would scroll the page. When the Family has only one address left and
+it is offered, a notice names it, so the Administrator knows before
+reporting that the Family would get no campaign email. It is drawn with the
+page, so nothing appears on a choice, and it sits after the button: a
+report that leaves the Family no address removes it, and that must not move
+the button.{% endcomment %}
 {% if bounce %}<section id="bounce-report" aria-labelledby="bounce-heading" data-in-place-region>
-<h2 id="bounce-heading">{% translate "Report a bounced address" %}</h2>
+<details id="bounce-disclosure" data-keep-open><summary id="bounce-heading">{% translate "Did this email bounce?" %}</summary>
 {% if bounce.unavailable %}<div class="panel"><p class="notice" id="bounce-unavailable">{{ bounce.unavailable }}</p>
 <p>{% button type="button" disabled=True aria-describedby="bounce-unavailable" %}{% translate "Report bounce" %}{% endbutton %}</p></div>
 {% else %}<form method="post" action="{% url 'admin:delivery_bounce_report' delivery.id %}#bounce-report" class="panel" data-in-place="bounce-report" data-in-place-only data-in-place-message="{% translate 'Bounce reported.' %}" data-require-complete>
@@ -127,7 +162,22 @@ removes it, and that must not move the button.{% endcomment %}
 </form>{% endif %}
 {% if bounce.reported %}<h3 tabindex="-1" data-in-place-focus>{% translate "Bounces reported for this email" %}</h3>
 <ul>{% for report in bounce.reported %}<li><a href="{% url 'admin:delivery_refusal' report.id %}">{{ report.address }}</a> · <time datetime="{{ report.created_at|instant }}" data-local-instant>{{ report.created_at|instant }}</time>{% if report.cleared %} · {% translate "cleared" %}{% endif %}</li>{% endfor %}</ul>{% endif %}
+</details>
 </section>{% endif %}
+{# The note, while it is offered and no answer above offers it (a delivered, still-sending or cancelled email), waits closed (#1015, #1563): a note changes nothing about the email. Its summary is the form's heading. The region is always drawn, so an answer applied above can add or remove the form; it is its own (data-in-place-own), so paging keeps a note being typed, and the disclosure keeps open (data-keep-open). #}
+<div id="delivery-note" data-in-place-region data-in-place-own>
+{% if note_command %}<details id="delivery-note-disclosure" data-keep-open><summary>{% translate "Add a note to this email's history" %}</summary>
+<form method="post" action="{% url 'admin:delivery_resolve' delivery.id %}#delivery-evidence" data-require-complete data-in-place="delivery-note-form" data-in-place-only="delivery-state delivery-history delivery-resolve delivery-note bounce-report delivery-evidence" data-in-place-message="{% translate 'Note saved.' %}">
+  {% csrf_token %}
+  <input type="hidden" name="command_id" value="{{ note_command }}">
+  <input type="hidden" name="expected_version" value="{{ delivery.version }}">
+  <input type="hidden" name="action" value="note">
+  <label for="evidence-note">{% translate "Note to save in this email's history" %}</label>
+  <textarea id="evidence-note" name="note" rows="2" maxlength="2000" required aria-describedby="help-note" data-missing-hint="{% translate 'Enter the note.' %}"></textarea>
+  <p id="help-note" class="help">{% translate "Saved in this email's history, never emailed. Keep it brief; do not include passwords, Family links, codes, or complete provider responses." %}</p>
+  {% button type="submit" aria-describedby="complete-hint-note" %}{% translate "Save note" %}{% endbutton %}<p class="help" id="complete-hint-note" data-complete-hint hidden></p>
+</form></details>{% endif %}
+</div>
 <div id="delivery-evidence" data-in-place-region>
 <h2>{% translate "Admin evidence and decisions" %}</h2>
 {% for note in notes %}<section class="panel"><p>{{ note.action|delivery_label }} · <time datetime="{{ note.created_at|instant }}" data-local-instant>{{ note.created_at|instant }}</time></p><p>{{ note.evidence_note }}</p></section>

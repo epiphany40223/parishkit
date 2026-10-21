@@ -19,6 +19,7 @@ from parishkit.stewardship import (
     admin_census,
     admin_cli,
     admin_data_to_fix,
+    admin_pledges,
     admin_report_reads,
     admin_roster,
     admin_source_form,
@@ -45,7 +46,7 @@ def report_list():
         reports=[
             {
                 "command": "report participation",
-                "page": "participation",
+                "page": "response_dashboard",
                 "available": True,
             },
             {
@@ -130,13 +131,13 @@ def responses():
         families=(),
     )
     query = SimpleNamespace(mode="production")
-    return admin_report_reads.response_model(CAMPAIGN, query, {"metrics": metrics})
+    return admin_report_reads.response_model(CAMPAIGN, query, metrics)
 
 
 def no_rehearsal():
     """Testing mode with no active rehearsal: no figures, as on the page."""
     query = SimpleNamespace(mode="testing")
-    return admin_report_reads.response_model(CAMPAIGN, query, {"metrics": None})
+    return admin_report_reads.response_model(CAMPAIGN, query, None)
 
 
 def financial():
@@ -168,13 +169,28 @@ def financial():
 
 
 def limitations():
-    """``limitations_report``'s shaped result: the summary and a Member row."""
+    """``limitations_report``'s shaped result: a Member and a Family row,
+    counted at the Stage (#1735)."""
+    from parishkit.stewardship.pipeline import Placement, Stage
+
     return admin_report_reads.limitations_model(
         CAMPAIGN,
         {
             "summary": {"cannot_serve": 1, "cannot_attend": 1},
-            "members": [{"member_name": "Private Member"}],
+            "members": [
+                {
+                    "member_name": "Private Member",
+                    "placement": Placement(Stage.TO_REVIEW),
+                }
+            ],
+            "families": [
+                {
+                    "family_name": "Private Family",
+                    "placement": Placement(Stage.IGNORED),
+                }
+            ],
         },
+        "to_review",
     )
 
 
@@ -328,18 +344,18 @@ def census_row(kind, *, automatic):
 
 
 def census(history=""):
-    """Three kept rows and the page's summary, by its wording, zeros left out."""
+    """Three kept rows and the page's status counts, history only when shown."""
     rows = [
         census_row("contact", automatic=True),
         census_row("moved", automatic=False),
         census_row("contact", automatic=False),
     ]
-    summary = [("To review", 1), ("To do", 2), ("Published", 4)]
+    counts = {"to_review": 1, "to_do": 2, "published": 4}
     if history:
-        summary.append(("Superseded", 1))
+        counts["superseded"] = 1
     query = CensusQuery.parse({"status": "all", "history": history})
     return admin_census.census_model(
-        CAMPAIGN, query, {"rows": rows, "summary": summary, "administrator": True}
+        CAMPAIGN, query, {"rows": rows, "status_counts": counts, "administrator": True}
     )
 
 
@@ -383,7 +399,7 @@ GOLDEN = {
             "reports": [
                 {
                     "command": "report participation",
-                    "page": "participation",
+                    "page": "response_dashboard",
                     "available": True,
                 },
                 {
@@ -466,7 +482,9 @@ GOLDEN = {
         {
             "campaign_id": str(CAMPAIGN),
             "cannot_serve": 1,
-            "cannot_attend": 1,
+            "cannot_attend": 0,
+            "stage": "to_review",
+            "stages": {"to_review": 1, "to_handle": 0, "ignored": 1, "handled": 0},
         },
     ),
     "report information": (
@@ -482,6 +500,8 @@ GOLDEN = {
             },
             "source_as_of": ISO,
             "matching": 6,
+            "stage": None,
+            "stages": None,
         },
     ),
     "report ministry": (
@@ -576,6 +596,29 @@ GOLDEN = {
             "statuses": CENSUS_STATUSES | {"superseded": 1, "cancelled": 0},
         },
     ),
+    # Pledges (#1733): counts by stage only, zeros included.
+    "report pledges": (
+        lambda: admin_pledges.pledge_model(
+            CAMPAIGN,
+            "to_review",
+            [{"stage": "to_review"}, {"stage": "ignored"}, {"stage": "to_review"}],
+        ),
+        {
+            "campaign_id": str(CAMPAIGN),
+            "stage": "to_review",
+            "matching": 2,
+            "total": 3,
+            "stages": {
+                "to_review": 2,
+                "conflict": 0,
+                "to_enter_by_hand": 0,
+                "entered_by_hand": 0,
+                "entered_incorrectly": 0,
+                "confirmed": 0,
+                "ignored": 1,
+            },
+        },
+    ),
     "report ministry (requests)": (
         ministry_list,
         {
@@ -648,16 +691,24 @@ def test_every_report_command_has_its_models_fields():
         "report source-form": admin_source_form.SourceFormReport,
         # Data to fix in ParishSoft (#1011), a Parish data page, likewise.
         "report data-to-fix": admin_data_to_fix.DataToFixReport,
-        # Roster changes to enter (#528), under Ministry follow-up: not a
+        # The roster list (#528), under Ministry requests: not a
         # report menu entry, so ``report list`` does not offer it.
         "report roster": admin_roster.RosterReport,
         # Census changes (#528), a campaign report menu entry, so ``report
         # list`` offers it (its read is in ``admin_census``).
         "report census": admin_census.CensusReport,
+        # Pledges (#1733), a campaign report menu entry, so
+        # ``report list`` offers it (its read is in ``admin_pledges``).
+        "report pledges": admin_pledges.PledgeReport,
     }
     reports = {spec.name for spec in admin_cli.COMMANDS if spec.name[:7] == "report "}
     assert reports == set(models)
-    assert set(admin_report_reads.REPORT_COMMANDS.values()) == reports - {
+    listed = {
+        command
+        for commands in admin_report_reads.REPORT_COMMANDS.values()
+        for command in commands
+    }
+    assert listed == reports - {
         "report list",
         "report source-form",
         "report data-to-fix",
@@ -683,12 +734,17 @@ def test_the_report_commands_name_menu_entries():
         ["report", "ministry", "--requests", "maybe"],
         ["report", "participation", "--campaign", str(CAMPAIGN)],
         ["report", "information", "--search", "Private"],
+        ["report", "information", "--stage", "conflict"],
+        ["report", "limitations", "--stage", "history"],
         ["report", "roster", "--show", "entered"],
         ["report", "roster", "--ministry", "09"],
         ["report", "roster", "--campaign", str(CAMPAIGN)],
         ["report", "census", "--search", "Private"],
         ["report", "census", "--campaign", str(CAMPAIGN)],
         ["report", "census", "--history", "yes"],
+        ["report", "pledges", "--stage", "conflict"],
+        ["report", "pledges", "--search", "Private"],
+        ["report", "pledges", "--campaign", str(CAMPAIGN)],
     ],
 )
 def test_options_outside_the_pages_vocabulary_are_usage_errors(argv):

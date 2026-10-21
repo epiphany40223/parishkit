@@ -1,57 +1,43 @@
-"""Admin/Staff response dashboard: the funnel, its figures and charts (#477).
+"""The response funnel read of the Response dashboard and ``report responses``.
 
-One page (``reports/responses/``, the current campaign) shows the response
-funnel (``response_metrics``) as it stands at the database's current instant:
-a tile per stage with its share of Invited, the three figures reported beside
-the funnel, and the funnel and activity charts (``chart_specs``), which the
-browser draws from the embedded specifications. The page reads the metrics
-once; the totals, the activity buckets at the chosen grain and the chart specs
-are pure functions of that one result. Nothing renders on the server, so a
-page view never starts the chart helper process.
+The Response dashboard (``reports/responses/``, ``workspace_views.dashboard``,
+#1537) shows the response funnel (``response_metrics``) as it stands at the
+database's current instant: its Summary panel's Families by stage row is a
+stat tile per stage with its share of Invited. The tiles give every count,
+share and bar, so the page draws no funnel chart; nor does the emailed
+daily report (#1370), so no funnel chart is drawn anywhere. The page reads
+the metrics once; the tiles are a pure function of that one result.
+``report responses`` (the command line) reads the same metrics, with the
+activity buckets at a grain and each list's length, which the page no
+longer shows.
 
 Production is the default for everyone. Testing responses are shown only in
 explicit Admin testing views (``docs/specs/stewardship/reports/spec.md``), so
 only Administrators may choose ``mode=testing``, which reads the campaign's
-active rehearsal epoch. The page shows counts only, never a Family's name or
-identifier; its "Lists of Families" panel links to the Families behind the
-counts, each with its length: the active parishioner family directory with
-that list's closed presets (#933), plus ``mode=testing`` in a Testing view.
-The directory is the only page that lists those Families; the separate
-response list pages were removed (#933 slice 5), with no redirects.
+active rehearsal epoch. The funnel holds counts only, never a Family's name
+or identifier; the directory's Response filters list the Families behind
+them (#933).
 """
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import timedelta
-from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
-from django.core.exceptions import ObjectDoesNotExist
-from django.db import DatabaseError, transaction
-from django.template.loader import render_to_string
-from django.urls import reverse
+from django.db import transaction
 from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy
-from django.views.decorators.http import require_safe
 
-from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin, database_now
-from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
+from parishkit.stewardship.audit.schemas import Action, ActorKind
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.credential_models import RehearsalEpoch
-from parishkit.stewardship.campaigns.models import Campaign
-from parishkit.stewardship.observability import Event, emit_failure
-from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.report_errors import report_unavailable
-from parishkit.stewardship.web.responses import campaign_response
-from parishkit.stewardship.web.security import private_response
+from parishkit.stewardship.web.stat_tiles import tile
 
-from .chart_specs import STAGE_LABELS, activity_chart, funnel_chart, share
-from .export_views import SAFE_FAILURES
-from .read_admission import admit_report_read
+from .chart_specs import STAGE_LABELS, share
 from .response_metrics import (
     GRAINS,
     MODES,
@@ -69,13 +55,13 @@ AUTO = "auto"
 
 @dataclass(frozen=True)
 class FamilyList:
-    """One link of the "Lists of Families" panel.
+    """One list of Families behind a funnel count (``report responses``).
 
     ``selects`` picks the funnel rows (``response_metrics.FamilyResponse``)
-    the list holds, so its length equals the dashboard figure it sits
-    behind; None marks the ParishSoft data-to-check list, chosen by the
-    current ParishSoft data rather than by the funnel, which has no length
-    here. The panel says what that list holds (``description``).
+    the list holds, so its length equals the figure it sits behind; None
+    marks the ParishSoft data-to-check list, chosen by the current
+    ParishSoft data rather than by the funnel, which has no length here.
+    The directory's Response filters list the same Families (#933).
     """
 
     title: str
@@ -83,8 +69,8 @@ class FamilyList:
     selects: Callable | None = None
 
 
-# The lists behind the counts, in panel order. Their keys name the directory
-# presets below and the ``lists`` counts of ``pk-admin report responses``.
+# The lists behind the counts. Their keys name the ``lists`` counts of
+# ``pk-admin report responses``.
 LISTS = {
     "submitted": FamilyList(
         gettext_lazy("Families that submitted"),
@@ -114,31 +100,14 @@ LISTS = {
     ),
 }
 
-# The directory link presets (``directory_views.LINK_PRESETS``) that list
-# the same Families as each response list (#933), with its columns and its
-# default order: chronological for "submitted", most submissions first for
-# "more-than-once" and the directory's name order otherwise. The Response
-# choices list exactly the list's funnel rows, so the directory's matching
-# count equals the length shown here.
-DIRECTORY_PRESETS = {
-    "submitted": {"response": "submitted", "responses": "yes", "sort": "submitted"},
-    "started": {"response": "started", "responses": "yes"},
-    "not-opened": {"response": "never-opened", "responses": "yes"},
-    "more-than-once": {
-        "response": "more-than-once",
-        "responses": "yes",
-        "sort": "submissions_desc",
-    },
-    "data-quality": {"check": "anything"},
-}
-
 
 @dataclass(frozen=True)
 class DashboardQuery:
-    """The page's only URL state: the system mode and the activity grain.
+    """``report responses``' options: the system mode and the activity grain.
 
-    Both are closed vocabularies, so the URL never carries anything
-    identifying. ``grain`` is ``auto`` unless the reader chose one.
+    Both are closed vocabularies. ``grain`` is ``auto`` unless the reader
+    chose one. The Response dashboard page's own options are its
+    ``workspace.ReportQuery``.
     """
 
     mode: str = "production"
@@ -153,17 +122,6 @@ class DashboardQuery:
         if mode not in MODES or grain not in (AUTO, *GRAINS):
             raise ValueError("Invalid response dashboard options.")
         return cls(mode, grain)
-
-    def url(self, **changes):
-        """This page's URL with ``changes`` applied, leaving defaults out."""
-        chosen = replace(self, **changes)
-        values = {}
-        if chosen.mode != "production":
-            values["mode"] = chosen.mode
-        if chosen.grain != AUTO:
-            values["grain"] = chosen.grain
-        path = reverse("admin:response_dashboard")
-        return path + ("?" + urlencode(values) if values else "")
 
 
 def chosen_grain(metrics, requested):
@@ -195,37 +153,31 @@ def at_grain(metrics, grain):
 
 
 def tiles(metrics):
-    """One tile per funnel stage: label, count, share of Invited and its note."""
+    """One stat tile per funnel stage (ui-conventions "Stat tiles", #1540).
+
+    Each tile has its stage's count and its note, if any. Once an
+    invitation has been delivered, every stage but Invited also states its
+    share compared with Invited, and every tile draws that share as a bar
+    (#720): Invited's own bar is full, the reference the others are read
+    against. Before then no tile has a share or a bar.
+    """
     invited = metrics.stage("invited")
     return [
-        {
-            "key": stage.key,
-            "label": STAGE_LABELS[stage.key],
-            "count": stage.count,
-            "share": share(stage.count, invited),
-            "note": stage.note,
-        }
+        tile(
+            stage.key,
+            STAGE_LABELS[stage.key],
+            stage.count,
+            details=(
+                _("%(share)s compared with invited")
+                % {"share": share(stage.count, invited)}
+                if invited and stage.key != "invited"
+                else "",
+                stage.note or "",
+            ),
+            share=(stage.count, invited),
+        )
         for stage in metrics.stages
     ]
-
-
-def figures(metrics):
-    """The three figures reported beside the funnel, as (label, count) pairs."""
-    return [
-        (_("Invitation not sent: already responded"), metrics.skipped_responded),
-        (_("Submitted without a delivered invitation"), metrics.submitted_uninvited),
-        (_("Submitted more than once"), metrics.submitted_again),
-    ]
-
-
-def untitled(chart):
-    """``chart`` without the title drawn inside it: the page's heading names it.
-
-    The emailed image keeps its title; on the page the panel's heading shows
-    ``chart.title``, which also stays the view's accessible name.
-    """
-    spec = {key: value for key, value in chart.spec.items() if key != "title"}
-    return replace(chart, spec=spec)
 
 
 def list_counts(families):
@@ -241,39 +193,6 @@ def list_counts(families):
     }
 
 
-def list_url(query, key):
-    """Where the panel's link to the list ``key`` leads in the mode shown.
-
-    The active parishioner family directory with the list's presets (#933),
-    plus ``mode=testing`` in a Testing view (shown to Administrators only,
-    as the directory's Testing switch is), so the directory reads the same
-    rehearsal and lists the Families behind the count shown.
-    """
-    presets = DIRECTORY_PRESETS[key]
-    if query.mode != "production":
-        presets = presets | {"mode": query.mode}
-    return reverse("admin:family_directory") + "?" + urlencode(presets)
-
-
-def family_lists(query, metrics):
-    """The panel linking to each list of Families, with its length when known.
-
-    The lengths come from the same funnel rows as the tiles; the data-quality
-    list needs the ParishSoft read, so it has no length here.
-    """
-    counts = list_counts(metrics.families)
-    return [
-        {
-            "title": spec.title,
-            # Only the list without a length says what it holds.
-            "description": spec.description if spec.selects is None else "",
-            "url": list_url(query, key),
-            "count": counts.get(key),
-        }
-        for key, spec in LISTS.items()
-    ]
-
-
 def rehearsal_epoch(campaign_id):
     """The campaign's active rehearsal epoch, or None when it has none."""
     return (
@@ -283,54 +202,27 @@ def rehearsal_epoch(campaign_id):
     )
 
 
-def page_context(campaign, query, metrics, *, can_test=False):
-    """The template context for ``metrics`` (None: no Testing rehearsal to show).
-
-    A pure function of its inputs, so the page is tested without a database.
-    The activity series is re-bucketed at the chosen grain before the charts
-    are built; ``can_test`` offers the Production/Testing switch.
-    """
-    context = {
-        "campaign": campaign,
-        "query": query,
-        "testing": query.mode == "testing",
-        "can_test": can_test,
-        "production_url": query.url(mode="production"),
-        "testing_url": query.url(mode="testing"),
-        "metrics": None,
-    }
-    if metrics is None:
-        return context
-    metrics = at_grain(metrics, chosen_grain(metrics, query.grain))
-    return context | {
-        "metrics": metrics,
-        "tiles": tiles(metrics),
-        "figures": figures(metrics),
-        "charts": [untitled(funnel_chart(metrics)), untitled(activity_chart(metrics))],
-        "invited": metrics.stage("invited"),
-        "lists": family_lists(query, metrics),
-        "hour_url": query.url(grain="hour"),
-        "day_url": query.url(grain="day"),
-    }
-
-
-def dashboard_context(campaign_id, query, *, can_test=False):
-    """Read the funnel once at the database's current instant and shape the page.
+def read_metrics(campaign_id, mode):
+    """The funnel of ``mode`` at the database's current instant, or None.
 
     Runs inside the campaign read guard's read-only transaction. A Testing
-    view reads the campaign's active rehearsal epoch; with none, it shows no
-    figures.
+    read uses the campaign's active rehearsal epoch; with none there is
+    nothing to show (None).
     """
-    campaign = Campaign.objects.select_related("active_configuration").get(
-        pk=campaign_id
-    )
-    epoch = rehearsal_epoch(campaign_id) if query.mode == "testing" else None
-    metrics = None
-    if query.mode == "production" or epoch is not None:
-        metrics = response_metrics(
-            ResponseScope(campaign_id, query.mode, epoch), database_now()
-        )
-    return page_context(campaign, query, metrics, can_test=can_test)
+    epoch = rehearsal_epoch(campaign_id) if mode == "testing" else None
+    if mode == "testing" and epoch is None:
+        return None
+    return response_metrics(ResponseScope(campaign_id, mode, epoch), database_now())
+
+
+def funnel_panels(metrics):
+    """The Response dashboard's Families by stage row (#1537): a stat tile per
+    stage, and the Invited count that decides whether shares are shown."""
+    return {
+        "metrics": metrics,
+        "stage_tiles": tiles(metrics),
+        "invited": metrics.stage("invited"),
+    }
 
 
 def _principal(request, store, *, read_only=False):
@@ -349,12 +241,17 @@ def _admit_mode(principal, query):
         raise PermissionError("Testing responses are shown to Administrators only.")
 
 
-def _audit(principal, campaign_id, outcome):
-    """Record that the dashboard was read: who, which campaign, how it ended.
+def _audit(principal, campaign_id, outcome, *, automatic=False):
+    """Record that the funnel was read: who, which campaign, how it ended.
 
     No reported value is copied into the audit; an append takes no row locks,
     so it runs outside the read guard, as the other report audits do.
+    ``automatic`` marks a view the open page made by itself to bring newer
+    figures in (#1620); a reader's own view records no such key.
     """
+    context = {"outcome": outcome}
+    if automatic:
+        context["automatic"] = True
     with transaction.atomic():
         system = SystemConfiguration.objects.select_related(
             "active_configuration__parish"
@@ -366,86 +263,5 @@ def _audit(principal, campaign_id, outcome):
             subject_id=campaign_id,
             parish_id=system.active_configuration.parish.pk,
             campaign_id=campaign_id,
-            context={"outcome": outcome},
+            context=context,
         )
-
-
-@require_safe
-def dashboard(request, campaign_id):
-    """The response dashboard of one campaign, read under the campaign guard.
-
-    Admission, the purge protection, the role recheck inside the guard and
-    the completion audit follow the other campaign reports (``limitation_views``).
-    """
-    finish, handed_off = None, False
-    try:
-        service = runtime()
-        principal = _principal(request, service.store)
-        try:
-            query = DashboardQuery.parse(request.GET)
-        except ValueError:
-            return private_response("Invalid report filters.\n", status=400)
-        _admit_mode(principal, query)
-        admit_report_read(campaign_id)
-        finalized = False
-
-        def finish(completed):
-            """Audit completion once, after the read-only transaction closes."""
-            nonlocal finalized
-            if finalized:
-                return
-            finalized = True
-            try:
-                _audit(
-                    principal,
-                    campaign_id,
-                    Outcome.SUCCEEDED if completed else Outcome.FAILED,
-                )
-            except (DatabaseError, StorageInvariantError) as error:
-                emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
-
-        def authorize(guard):
-            """A role change while the page is produced ends it."""
-            nonlocal principal
-            fresh = _principal(request, service.store, read_only=True)
-            if fresh.identity != principal.identity:
-                raise PermissionError("Response dashboard access changed.")
-            _admit_mode(fresh, query)
-            principal = fresh
-            admit_report_read(campaign_id)
-
-        def content():
-            """Render the page from the one guarded read."""
-            context = dashboard_context(
-                campaign_id, query, can_test="administrator" in principal.roles
-            )
-            page = render_to_string(
-                "stewardship/response-dashboard.html", context, request=request
-            )
-            return iter((page.encode(),))
-
-        response = campaign_response(
-            request,
-            [campaign_id],
-            authorize=authorize,
-            open_content=content,
-            on_close=finish,
-        )
-        # Admission refused before streaming (busy or closing): the Admin
-        # report error page, as the other campaign reports answer.
-        if response.status_code == 503 and not response.streaming:
-            return report_unavailable()
-        handed_off = response.status_code == 200 and response.streaming
-        return response
-    except (PermissionError, ObjectDoesNotExist):
-        return denial()
-    except (*SAFE_FAILURES, StorageInvariantError):
-        return report_unavailable()
-    except ValueError as error:
-        # The page is built before the response starts, so a shaping fault
-        # lands here; the reader's options were already validated above.
-        emit_failure(error, event=Event.REPORT_SHAPING_FAILED)
-        return report_unavailable()
-    finally:
-        if finish is not None and not handed_off:
-            finish(False)

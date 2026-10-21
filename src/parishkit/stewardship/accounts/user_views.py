@@ -21,7 +21,9 @@ building its answer, so an Administrator demoted meanwhile is refused:
 
 Below the users table, ``users`` also draws the ParishSoft Ministry leaders
 who have no user yet, and its Apply records their import
-(``leader_import_views``, #952 slice 6).
+(``leader_import_views``, #952 slice 6), and then the Email Ministry
+leaders table, whose review and Apply have their own route
+(``leader_email_views``, #1592).
 
 Nothing here edits configuration directly. Every change is one
 ``ConfigurationChangeRequest`` built by ``user_changes.plan_changes`` and
@@ -60,6 +62,7 @@ from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.field_rules import EMAIL, email_input
 from parishkit.stewardship.web.refusals import (
     UserFacingError,
     UserFacingMissing,
@@ -79,6 +82,8 @@ from .admin_editing import (
     sign_preview,
 )
 from .authentication import runtime
+from .leader_email_views import PREFIX as EMAIL_PREFIX
+from .leader_email_views import emails_context
 from .leader_import import imported_ids
 from .leader_import_views import PREFIX as LEADER_PREFIX
 from .leader_import_views import leaders_context
@@ -86,6 +91,7 @@ from .limiting import Counter, LimiterUnavailable
 from .policy import Capability
 from .policy_models import PortalUser
 from .request_patch import build_candidate
+from .sessions import passive_read
 from .user_changes import (
     DEFAULT_ROLE,
     MESSAGES,
@@ -151,20 +157,25 @@ class UserForm(AdminForm):
     # field as the reader leaves it; ``plan_changes`` words the server's
     # refusal. Each field is described by its reserved error line (and the
     # Name by its help line), whose ids user-entry.html draws.
+    # The address's format is the shared email rule (#1577), which
+    # ``clean_email`` (normalized_email) admits exactly: the browser checks
+    # it as the field is left, in its reserved line, and Review's complete
+    # gate says what it waits for (#1330).
     email = forms.CharField(
         label=_("Email"),
         max_length=254,
         required=False,
-        widget=forms.EmailInput(
-            attrs={
+        widget=email_input(
+            {
                 "autocomplete": "off",
-                "spellcheck": "false",
                 "required": True,
                 "aria-describedby": "id_email_error",
                 "data-user-email": True,
-                # Review's complete gate says what it waits for (#1330).
-                "data-empty-hint": MESSAGES["email_required"],
-                "data-missing-hint": MESSAGES["email_invalid"],
+                **EMAIL.worded(
+                    MESSAGES["email_invalid"],
+                    code="email_invalid",
+                    empty=MESSAGES["email_required"],
+                ).attrs(),
             }
         ),
     )
@@ -331,7 +342,13 @@ def users(request):
     """
     try:
         service = runtime()
-        actor = principal(request, service, capability=Capability.MANAGE_USERS)
+        # The page's own re-read once its leaders can be read again (#1863)
+        # is passive: it never extends the sign-in, though it is audited,
+        # and marked automatic. The header can only add that mark.
+        automatic = request.method == "GET" and passive_read(request)
+        actor = principal(
+            request, service, passive=automatic, capability=Capability.MANAGE_USERS
+        )
         if request.method == "POST":
             if request.GET or request.FILES:
                 raise unexpected_fields(request.GET, request.FILES, allowed=())
@@ -354,7 +371,8 @@ def users(request):
         paging = filters(
             request.GET,
             allowed=set(table_parameters(PREFIX))
-            | set(table_parameters(LEADER_PREFIX)),
+            | set(table_parameters(LEADER_PREFIX))
+            | set(table_parameters(EMAIL_PREFIX)),
         )
         with read_transaction():
             configuration, records = _users(service)
@@ -363,18 +381,25 @@ def users(request):
             own = acting_email(actor.identity)
             # The chrome presents this verified observation, never a newer one.
             request._stewardship_display_configuration = configuration
+            # Each address's latest leader email, read in the same snapshot.
+            emails = emails_context(
+                rows, paging, _carried(paging, PREFIX, LEADER_PREFIX)
+            )
         table = paginate(
             table_rows(rows, saved, own),
             paging,
             prefix=PREFIX,
-            carry=_carried(paging, LEADER_PREFIX),
+            carry=_carried(paging, LEADER_PREFIX, EMAIL_PREFIX),
             sorting=USER_SORTING,
         )
-        leaders = leaders_context(request, paging, _carried(paging, PREFIX))
+        leaders = leaders_context(
+            request, paging, _carried(paging, PREFIX, EMAIL_PREFIX)
+        )
         response = render(
             request,
             "stewardship/users.html",
             leaders
+            | emails
             | {
                 "table": table,
                 "base_digest": configuration.active_configuration.digest,
@@ -396,7 +421,8 @@ def users(request):
                 Action.USERS_VIEWED,
                 actor_kind=ActorKind.PORTAL_USER,
                 actor_id=current.identity,
-                context={"outcome": Outcome.SUCCEEDED, "count": len(table.rows)},
+                context={"outcome": Outcome.SUCCEEDED, "count": len(table.rows)}
+                | ({"automatic": True} if automatic else {}),
             )
         response["Cache-Control"] = "no-store"
         return response
@@ -404,9 +430,11 @@ def users(request):
         return error_response(error)
 
 
-def _carried(paging, prefix):
-    """The other table's place (its prefixed page, size and sort) to keep."""
-    return [(name, value) for name, value in paging.items() if name.startswith(prefix)]
+def _carried(paging, *prefixes):
+    """The other tables' places (their prefixed page, size and sort) to keep."""
+    return [
+        (name, value) for name, value in paging.items() if name.startswith(prefixes)
+    ]
 
 
 def recorded_identities(email):

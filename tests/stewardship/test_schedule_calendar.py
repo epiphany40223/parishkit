@@ -3,7 +3,7 @@
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from parishkit.stewardship.accounts import schedule_calendar_views
+from parishkit.stewardship.accounts import digest_skips
 from parishkit.stewardship.accounts.schedule_calendar_views import (
     WEEK,
     calendar_sends,
@@ -41,10 +41,14 @@ def test_one_time_sends_keep_their_rows_and_digests_send_on_each_day():
     assert [local(send).date() for send in weekly] == [
         day for day in CAMPAIGN_DAYS if day.weekday() == 0
     ]
-    # Each digest send is its digest's row: the same name, status and Edit.
-    assert len({(send.label, send.status, send.edit_url) for send in daily}) == 1
+    # Each digest send is its digest's row: the same name, status and Edit,
+    # whose address names that send's slot (#1658).
+    assert len({(send.label, send.status) for send in daily}) == 1
     assert daily[0].status == "repeats"
-    assert daily[0].edit_url.startswith("/admin/campaign/schedules/")
+    assert {send.edit_url for send in daily} == {
+        f"/admin/campaign/schedules/{send.id}/?send={send.slot}" for send in daily
+    }
+    assert daily[0].slot == "2054-10-01"
 
 
 def test_a_schedule_that_has_run_is_listed_without_its_edit_page():
@@ -87,7 +91,7 @@ def test_a_digests_past_sends_are_muted_and_its_later_ones_linked():
 
 def test_every_digest_send_is_listed_however_many_pages_it_takes(monkeypatch):
     """The scheduler's evaluation is read page by page to its last send."""
-    monkeypatch.setattr(schedule_calendar_views, "PAGE_DATES", 7)
+    monkeypatch.setattr(digest_skips, "PAGE_DATES", 7)
     daily = [
         send
         for send in calendar_sends(saved(), VALUES, {}, BEFORE)
@@ -159,3 +163,46 @@ def test_the_month_grid_week_starts_on_sunday():
         "Friday",
         "Saturday",
     ]
+
+
+def test_a_skipped_digest_send_is_listed_muted_as_skipped():
+    """A digest's skipped send (#1658) stays on the calendar, unlinked."""
+    rows = saved()
+    daily = next(row for row in rows if row["values"]["kind"] == "daily_digest")
+    daily["values"] = daily["values"] | {"skip_dates": ["2054-10-03"]}
+    sends = [
+        send
+        for send in calendar_sends(rows, VALUES, {}, BEFORE)
+        if send.kind == "daily_digest"
+    ]
+    assert len(sends) == len(CAMPAIGN_DAYS)
+    (skipped,) = [send for send in sends if send.slot == "2054-10-03"]
+    assert (skipped.status, skipped.status_label, skipped.read_only) == (
+        "skipped",
+        "Skipped",
+        True,
+    )
+    assert skipped.edit_url is None
+    assert {send.status for send in sends if send is not skipped} == {"repeats"}
+
+
+def test_only_upcoming_dated_family_sends_are_movable():
+    """Move… (#1521): the Initial invitation and reminders until they run.
+
+    A digest's sends are one repeating schedule and never move; a send that
+    has run, or whose time passed without sending (missed), does not either.
+    """
+    sends = calendar_sends(saved(), VALUES, {}, BEFORE)
+    assert {send.kind for send in sends if send.movable} == {"initial", "reminder"}
+    assert not any(send.movable for send in sends if send.digest)
+    rows = saved()
+    initial = next(row for row in rows if row["values"]["kind"] == "initial")
+    later = datetime(2054, 10, 5, tzinfo=UTC)
+    after = calendar_sends(rows, VALUES, {initial["id"]: {"delivered": 3}}, later)
+    assert (after[0].status, after[0].movable) == ("sent", False)
+    missed = calendar_sends(rows, VALUES, {}, later)[0]
+    assert (missed.status, missed.edit_url is not None, missed.movable) == (
+        "missed",
+        True,
+        False,
+    )

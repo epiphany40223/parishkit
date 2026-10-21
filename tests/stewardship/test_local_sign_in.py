@@ -368,26 +368,31 @@ def test_login_page_hides_google_sign_in_only_in_local():
     assert "Sign in with Google" in other
     assert 'action="/admin/login"' in other
     assert "local laptop environment" not in other
+    assert "stewardship-local.sh" not in other
 
 
-def test_step_up_prompt_describes_the_command_only_in_local():
-    """LOCAL's fresh-authentication prompt cannot offer Google; others still do."""
-    local = render_to_string(
-        "stewardship/components/reauthenticate.html",
-        {"local_environment": True, "next": "/admin/users"},
+def test_local_login_page_offers_google_beside_the_test_sign_in():
+    """With a real OAuth client (#1399) LOCAL offers Google and the command."""
+    page = render_to_string(
+        "stewardship/login.html",
+        {"local_environment": True, "google_sign_in": True},
     )
-    assert "Confirm with Google" not in local and "<form" not in local
+    assert "Sign in with Google" in page and 'action="/admin/login"' in page
+    assert "not available in the local laptop environment" not in page
     assert (
         "<code>tools/stewardship-local.sh sign-in --email you@example.org</code>"
-        in local
+        in page
     )
-    assert "refreshes this sign-in in place" in local
-    other = render_to_string(
-        "stewardship/components/reauthenticate.html", {"next": "/admin/users"}
-    )
-    assert "Confirm with Google" in other
-    assert 'action="/admin/login"' in other and 'value="/admin/users"' in other
-    assert "stewardship-local.sh" not in other
+    assert page.index("Sign in with Google") < page.index("stewardship-local.sh")
+
+
+def test_the_local_sign_in_form_sends_no_return_path():
+    """Every LOCAL sign-in opens the Admin home: no step-up "next" (#1547)."""
+    page = render_to_string("stewardship/local-sign-in.html", {})
+    assert 'name="next"' not in page
+    static = Path(local_sign_in.__file__).parent / "static" / "stewardship"
+    script = (static / "local-sign-in-v1.js").read_text(encoding="utf-8")
+    assert "localStorage" not in script and "next" not in script
 
 
 def test_static_script_is_shipped_and_the_policy_forbids_inline_script():

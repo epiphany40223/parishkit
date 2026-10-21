@@ -13,16 +13,22 @@ from argparse import Namespace
 import pytest
 
 from parishkit.stewardship import (
+    admin_backup_key,
     admin_changes,
     admin_cli,
     admin_delivery_control,
     admin_digests,
     admin_followup,
+    admin_go_live,
     admin_history,
     admin_hosted_files,
     admin_integration_changes,
     admin_integration_keys,
+    admin_pledges,
+    admin_roster_tick,
     admin_tests,
+    admin_worklists,
+    mail_halt_clear,
     system_health,
 )
 from parishkit.stewardship.accounts import family_maintenance
@@ -35,6 +41,8 @@ ROLE_FIRST = {
     "system debug-off": None,
     "system refresh-accept": None,
     "system debug-allow": None,
+    # Clear the halt's confirmation (ADM-13 PR 4a): before the token is read.
+    "system mail-clear": None,
     "config request cancel": None,
     "test sample": None,
     "test families": None,
@@ -52,8 +60,24 @@ ROLE_FIRST = {
     "history remove": None,
     "integration confirm": None,
     "integration key finish-switching": None,
+    # A settings page's Save with a new key: before the key line is read.
+    "integration key replace": None,
+    # The Backup encryption key page's Confirm.
+    "integration backup-key confirm": None,
     # Pause and resume mail's Confirm (PR 7b, #463).
     "send confirm": None,
+    # The Email Ministry leaders Apply (#1622); its --confirm path.
+    "users email-leaders": Capability.MANAGE_USERS,
+    # The Go live page's prompting actions (PR 12, #1809).
+    "go-live start": None,
+    "go-live refresh-again": None,
+    "go-live stop": None,
+    "go-live confirm": None,
+    "go-live cancel": None,
+    # Update ParishSoft's Update and Run again (#1755): an Administrator's,
+    # before the request key is made or the page's checks run.
+    "census update-confirm": Capability.PUBLISH_CENSUS,
+    "census update-rerun": Capability.PUBLISH_CENSUS,
 }
 
 # The prompting commands Staff may run, as on their pages.
@@ -72,6 +96,25 @@ ADMITTING_READ = {
     "history confirm": (admin_history, "pending_replacement", {"token": "-"}),
     # The page's own admission, which admits a leader of any Ministry.
     "followup bulk": (admin_followup, "admit_followup", {}),
+    # The roster tick's admission: Administrators and Staff only.
+    "followup roster-bulk": (admin_roster_tick, "admit_roster", {}),
+    # The worklist pages' own admission: Administrators and Staff only
+    # (#1735).
+    "information decide": (admin_worklists, "admit_decide", {}),
+    "limitations decide": (admin_worklists, "admit_decide", {}),
+    # The worklist pages' own admission: Administrators and Staff only
+    # (#1733).
+    "pledges decide": (admin_pledges, "admit_decide", {}),
+}
+# Commands above that no longer prompt but still check the role before any
+# input: Entered by hand stopped being final (#1840), so ``pledges decide``
+# asks nothing, and its admission still comes first.
+# Commands that asked while a mark was final and ask nothing now (#1840).
+NO_PROMPT = {
+    "pledges decide",
+    "census resolve",
+    "information decide",
+    "limitations decide",
 }
 
 # Everything a handler may read, look up or prompt with after its role check.
@@ -83,6 +126,7 @@ LATER = (
     (system_health, "debug_off_preview_lines"),
     (system_health, "debug_allow_preview_lines"),
     (system_health, "accept_prompt_lines"),
+    (mail_halt_clear, "clear_prompt_lines"),
     (admin_tests, "unknown_outcome"),
     (admin_tests, "families_count"),
     (admin_digests, "acknowledgement"),
@@ -90,8 +134,19 @@ LATER = (
     (admin_integration_changes, "applied_settings"),
     (admin_integration_changes, "prompt_lines"),
     (admin_integration_keys, "finish_prompt_lines"),
+    (admin_cli, "read_secret"),
+    (admin_integration_keys, "review_replacement"),
+    (admin_backup_key, "prompt_lines"),
     (admin_delivery_control, "confirm_prompt_lines"),
     (admin_delivery_control, "confirm_control"),
+    (admin_go_live, "start_prompt_lines"),
+    (admin_go_live, "start"),
+    (admin_go_live, "prepare_control"),
+    (admin_go_live, "apply_prepare"),
+    (admin_go_live, "confirm_prompt_lines"),
+    (admin_go_live, "confirm"),
+    (admin_go_live, "cancel_prompt_lines"),
+    (admin_go_live, "cancel"),
 )
 
 
@@ -116,7 +171,8 @@ def handler(name):
 def test_every_prompting_command_is_covered():
     """A new prompting command must say how it checks its role first."""
     prompting = {spec.name for spec in admin_cli.COMMANDS if spec.prompts}
-    assert prompting == set(ROLE_FIRST) | set(ADMITTING_READ)
+    assert prompting == (set(ROLE_FIRST) | set(ADMITTING_READ)) - NO_PROMPT
+    assert not {spec.name for spec in admin_cli.COMMANDS if spec.prompts} & NO_PROMPT
 
 
 @pytest.mark.parametrize("name", sorted(ROLE_FIRST))
@@ -138,7 +194,11 @@ def test_the_role_is_checked_before_any_input_lookup_or_prompt(name, monkeypatch
     for module, attribute in LATER:
         monkeypatch.setattr(module, attribute, unexpected)
     with pytest.raises(PermissionError):
-        handler(name)(Namespace(), None, Untouchable(), {"caller": None})
+        # A command whose preview prompts for nothing (``users email-leaders``)
+        # prompts only with ``--confirm --token``; the other options are the
+        # usage check's, which runs before the role check.
+        arguments = Namespace(confirm=True, token="-", all=False, email=[])
+        handler(name)(arguments, None, Untouchable(), {"caller": None})
     assert calls == [(True, ROLE_FIRST[name])]
 
 

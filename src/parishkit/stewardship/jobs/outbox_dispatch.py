@@ -4,6 +4,7 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 
 from .dispatch import Handler
 from .family_mail_delivery_tasks import delivery_handler as campaign_handler
+from .leader_email_owner import LEADER
 from .operational_mail_tasks import delivery_handler as alert_handler
 from .operational_owner import OPERATIONAL
 from .outbox_models import OutboxMessage
@@ -43,11 +44,12 @@ def delivery_handler(
     )
     # Each Administrator-routed owner keeps its own cohort, content and SQL
     # admission; the purpose only names which compiled owner must prove it.
+    # Ministry leader emails (#1592) share the engine under their own owner.
     alerts = {
         owner.purpose: alert_handler(
             store, credential_path=credential_path, scheduler=scheduler, owner=owner
         )
-        for owner in (OPERATIONAL, SECURITY)
+        for owner in (OPERATIONAL, SECURITY, LEADER)
     }
 
     def owner(status):

@@ -24,7 +24,10 @@ ui-v1.js fills the hidden zone field (data-browser-zone) and names the zone
 in the note, and on an unbound Edit page fills the fields from the saved
 moment in data-schedule-local, which become the values the change gate
 compares with. Without a zone, data-zone-missing shows and the button
-stays unavailable.
+stays unavailable. The form carries the campaign dates and time zone
+(data-window-start, -end and -zone) for the send date's window check
+(#1787): ui-v1.js refuses a send date and time outside the campaign at the
+date, as the server would, and holds the button meanwhile.
 Both offer "Edit this schedule's email" (schedule-email.html, #446): a
 changed email is reviewed with the schedule and saved as a new email that
 only this schedule (on New, every reminder its repeat adds) sends.
@@ -39,12 +42,33 @@ A Repeat is also remembered as a reminder series, and Edit of a series'
 reminder shows "Part of" its rule with the Change scope
 (schedule-series-scope.html, drawn by schedule-row.html, #469); the review
 then lists the series it keeps or changes.
-{% endcomment %}
+Edit opened for one send of a digest from the Campaign calendar (?send=,
+skip_send, #1658) offers "This email only" (scope=send, the default, with
+that send's slot in the hidden send field), which skips just that send, and
+"The whole digest" (scope=this); otherwise a digest's Delete is the whole
+digest alone.
+Edit has Delete in a section of its own after the form (#1656): a second
+form, posting action=preview to Delete scheduled emails, that opens its own
+review dialog (schedule-delete-review) with the server's review of removing
+this schedule, or with "The whole series" chosen for a series' reminder,
+every unsent reminder of its series. Apply confirms on Dates and mail
+schedules like Review changes, then returns to list_url (the list, or the
+calendar month the page was opened from). Its one help line is always shown,
+so choosing a scope moves nothing.
+Inside the campaign wizard (admin_chrome.campaign_wizard.direct, #1404 PR 4b)
+the page draws neither its own button nor Cancel, nor the review dialog,
+nor Delete: the
+form is marked data-direct-save and posts action=save with the stepper's
+request key, from the wizard's action row's Save and go back
+(campaign-step-actions.html), which the same change gate and zone check
+hold, named by the same hint; ui-v1.js follows the saved change and opens
+Dates and mail schedules again, its status line saying what was saved.
+{% endcomment %}{% with direct=admin_chrome.campaign_wizard.direct %}
 <h1>{% if new %}{% translate "New scheduled email" %}{% else %}{% translate "Edit scheduled email" %}{% endif %}</h1>
 {% aboutpage "schedule-entry" %}{% include 'stewardship/schedule-guide.html' with window_text=window_text %}{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
 <p class="campaign-dates">{% blocktranslate trimmed with start=values.start_date|parish_date end=values.end_date|parish_date %}Campaign dates: {{ start }} – {{ end }}{% endblocktranslate %}</p>
-<form method="post" action="{{ post_url }}" id="schedule-entry-form" data-schedule-entry data-review-open="schedule-review" data-require-change="base_digest"{% if local_from %} data-schedule-local="{{ local_from }}"{% endif %}>{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="zone" value="" data-browser-zone>
+<form method="post" action="{{ post_url }}" id="schedule-entry-form" data-schedule-entry {% if direct %}data-direct-save data-direct-saved="{% if new %}{% translate 'New scheduled email saved.' %}{% else %}{% translate 'Scheduled email saved.' %}{% endif %}"{% else %}data-review-open="schedule-review"{% endif %} data-require-change="base_digest" data-window-start="{{ values.start_date }}" data-window-end="{{ values.end_date }}" data-window-zone="{{ values.timezone }}"{% if local_from %} data-schedule-local="{{ local_from }}"{% endif %}>{% csrf_token %}{% if direct %}<input type="hidden" name="action" value="save"><input type="hidden" name="request_key" value="{{ admin_chrome.campaign_wizard.save_key }}">{% else %}<input type="hidden" name="action" value="preview">{% endif %}<input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="zone" value="" data-browser-zone>
 <p class="help" data-browser-zone-note hidden>{% translate "Enter the date and time in this computer's time zone:" %} <span data-browser-zone-name></span>.</p>
 <p class="notice notice-error" id="schedule-zone-missing" data-zone-missing hidden>{% translate "Your browser didn't report a time zone, so this send time can't be read. Check your computer's time zone setting, then reload this page." %}</p>
 <div data-editor-modes="schedule-entry">{% comment %}
@@ -61,9 +85,24 @@ mode (schedule_entry_views.editor_mode); it is never saved.
 {% include 'stewardship/schedule-row.html' with form=entry legend=legend number=0 %}
 {% include 'stewardship/schedule-email.html' %}
 {% if repeat %}<p class="repeat-summary" role="status" data-repeat-summary hidden></p><div data-repeat-posted></div>{% endif %}
-<p>{% button type="submit" autocomplete="off" %}{% if new %}{% translate "Add the scheduled email" %}{% else %}{% translate "Review changes" %}{% endif %}{% endbutton %} <a href="{{ list_url }}">{% translate "Cancel" %}</a> <span class="help unchanged-hint" data-unchanged-hint data-idle>{% if new %}{% translate "Fill in the scheduled email to add it." %}{% else %}{% translate "Change the date, time, email or comparison to review it." %}{% endif %}</span></p>
+{% if direct %}<p><span class="help unchanged-hint" data-unchanged-hint data-idle>{% if new %}{% translate "Fill in the scheduled email to save it." %}{% else %}{% translate "Change the date, time, email or comparison to save it." %}{% endif %}</span></p>{% else %}<p>{% button type="submit" autocomplete="off" %}{% if new %}{% translate "Add the scheduled email" %}{% else %}{% translate "Review changes" %}{% endif %}{% endbutton %} <a href="{{ list_url }}">{% translate "Cancel" %}</a> <span class="help unchanged-hint" data-unchanged-hint data-idle>{% if new %}{% translate "Fill in the scheduled email to add it." %}{% else %}{% translate "Change the date, time, email or comparison to review it." %}{% endif %}</span></p>{% endif %}
 {% if repeat %}<div data-repeat-dates></div>{% endif %}
 </div>
 </form>
-{% if new %}{% translate "Review new scheduled email" as review_title %}{% else %}{% translate "Review scheduled email change" as review_title %}{% endif %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="schedule-review" title=review_title apply_url=apply_url return_url=list_url outcome_id="schedules-outcome" fallback="schedule-entry-form" %}
-{% endblock %}
+{% if not direct and not new %}<section class="panel schedule-delete" aria-labelledby="schedule-delete-title">
+<h2 id="schedule-delete-title">{% translate "Delete this scheduled email" %}</h2>
+<form method="post" action="{{ delete_url }}" id="schedule-delete-form" data-review-open="schedule-delete-review">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="schedule_id" value="{{ schedule.id }}">
+{% if series %}<fieldset class="field" aria-describedby="schedule-delete-help"><legend>{% translate "Delete" %}</legend>
+<div><input type="radio" name="scope" value="this" id="schedule-delete-this" checked> <label for="schedule-delete-this">{% translate "This reminder only" %}</label></div>
+<div><input type="radio" name="scope" value="series" id="schedule-delete-series"> <label for="schedule-delete-series">{% translate "The whole series" %}</label></div>
+</fieldset>{% elif skip_send %}<input type="hidden" name="send" value="{{ skip_send.key }}"><fieldset class="field" aria-describedby="schedule-delete-help"><legend>{% translate "Delete" %}</legend>
+<div><input type="radio" name="scope" value="send" id="schedule-delete-send" checked> <label for="schedule-delete-send">{% translate "This email only" %}</label></div>
+<div><input type="radio" name="scope" value="this" id="schedule-delete-digest"> <label for="schedule-delete-digest">{% translate "The whole digest" %}</label></div>
+</fieldset>{% endif %}
+<p class="help" id="schedule-delete-help">{% if skip_send %}{% translate "This email only skips just the digest's send at" %} <time datetime="{{ skip_send.due_at|instant }}" data-local-instant>{{ skip_send.due_at|instant }}</time>. {% translate "The digest keeps every other send. The whole digest stops every send of it still to come. You review what changes before anything does." %}{% elif series %}{% translate "This reminder only deletes just this reminder, which then leaves its series. The whole series deletes every reminder of the series that has not sent or been prepared; those that sent stay as ordinary reminders." %}{% elif schedule.values.kind == "daily_digest" or schedule.values.kind == "weekly_digest" %}{% translate "This digest repeats, so deleting it stops every send of it still to come. You review what is removed before anything changes." %}{% else %}{% translate "Deleting cancels this email's sends that have not started. You review what is removed before anything changes." %}{% endif %}</p>
+<p>{% button type="submit" class="button-danger" autocomplete="off" aria-describedby="schedule-delete-help" %}{% translate "Delete" %}{% endbutton %}</p>
+</form>
+</section>
+{% translate "Review deleting this scheduled email" as delete_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="schedule-delete-review" title=delete_title apply_url=apply_url return_url=list_url outcome_id="schedules-outcome" fallback="schedule-delete-form" %}{% endif %}
+{% if not direct %}{% if new %}{% translate "Review new scheduled email" as review_title %}{% else %}{% translate "Review scheduled email change" as review_title %}{% endif %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="schedule-review" title=review_title apply_url=apply_url return_url=list_url outcome_id="schedules-outcome" fallback="schedule-entry-form" %}{% endif %}
+{% endwith %}{% endblock %}

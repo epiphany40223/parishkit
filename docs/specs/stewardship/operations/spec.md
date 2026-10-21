@@ -574,6 +574,34 @@ across releases.
 Rollback instructions distinguish application rollback (only when schema is
 compatible) from database restore.
 
+Every upgrade pulls a new release image and none is ever removed by Docker
+itself, so after a successful scripted upgrade or rollback the host prunes
+old release images (#1661). It removes only images of the stewardship
+release repository, one at a time by image ID and without force, so Docker
+also refuses an image a container uses or another repository shares. It
+keeps every image a container on the host uses, running or stopped, the
+release just started, the replaced release (the image an application-only
+[rollback](../../../guides/stewardship-deployment-runbook.md#rollback) moves
+back to), and the newest few other release images (four by default,
+configurable), so a catastrophic rollback under the fail-forward policy
+finds the previous release on the host without a registry pull. It
+then clears Docker's build cache, which holds no images or volumes and which
+a host that only pulls never needs. It never removes a volume, never
+removes an image of another repository and never uses Docker's blanket
+prune commands for images, containers or volumes. It logs each image it
+removes or keeps and the disk space freed, offers a dry run that removes
+nothing, and a pruning failure is a warning that never fails the upgrade.
+It prunes only when the upgrade knows the replaced release as a release
+digest different from the one just started; otherwise (an unreported
+replaced release, or a re-run of the same digest) it skips pruning and
+says so. Any failure while finding what to keep, other than a protected
+image that is not on the host, stops it before anything is removed. The
+dry run is the default until the Administrator has reviewed one Production
+dry-run log; only then does a one-line follow-up (#1671) make real
+removal the default.
+The local laptop environment's deploy does not prune: its images are built
+in its VM and its build cache speeds the next build.
+
 ### Users upgrade from sign-in rules
 
 The [Users revamp](../admin-portal/spec.md#portal-user-management)
@@ -948,7 +976,7 @@ execution/resume of one recovery operation is idempotent and cannot emit
 duplicate grants/events. Preserve prior configuration and audit history.
 
 Matching database activation also revokes all administration-portal sessions
-and pending administrative OAuth/reauthentication state, records a parish-owned
+and pending administrative OAuth state, records a parish-owned
 audit with operator identity/reason, target, operation ID, and before/after
 digests/roles, and creates a persistent unacknowledged security event. Queue
 operational notifications to preexisting Admins and the replacement address
@@ -1183,13 +1211,12 @@ and checks the expected ParishSoft organization without mutation. The mode
 stays as restored: the restore gate, not Testing, keeps the scheduler, ordinary
 worker admission, production outbox dispatch and Family mail off. Before
 exposing any web route, restore invalidates
-all restored administration and Family sessions, pending OAuth state, and
-cached reauthentication evidence, and revokes every
+all restored administration and Family sessions and pending OAuth state,
+and revokes every
 [automation session](../admin-automation/spec.md#session-rules) (`restore`,
 as `revoke-automation-sessions` does in the v1 manual restore).
-Fresh Google login is required for Admin,
-Staff, and Ministry leaders; neither a saved cookie nor a previously fresh
-reauthentication timestamp survives restore. Before `web` starts, the
+A new Google sign-in is required for Admin,
+Staff, and Ministry leaders; no saved cookie survives restore. Before `web` starts, the
 operator runs `pk-stewardship restore-begin --backup-at SET_NAME` in the
 `admin-recovery` profile. It records a `restore_begin` runtime transition that
 sets the durable `restore_review_required` gate with a new restore id and the
@@ -1605,10 +1632,9 @@ refusal, with a closed reason code saying which, so a new kind needs no
 migration. A refusal is a 400, 403, 404, 409, 410 or 422 answer to a request
 that resolved to an Admin page: a field or form error, a stale page,
 unexpected or duplicated form fields, an expired or altered
-[review](../ui-conventions/spec.md#review-dialog) preview, a denial, an
-action that needs a fresh sign-in, or a CSRF failure. A page that answers
-a refusal in place with 200 (an action's region showing the step-up
-notice, or Automation access refusing a pairing code) marks its answer as
+[review](../ui-conventions/spec.md#review-dialog) preview, a denial, or a
+CSRF failure. A page that answers a refusal in place with 200 (such as
+Automation access refusing a pairing code) marks its answer as
 a refusal, and it is recorded without a status. A 404 for an address
 that names no Admin page is not input and is not recorded. A control drawn
 [unavailable](../ui-conventions/spec.md#prerequisite-gates) is not a
@@ -1625,9 +1651,11 @@ before it becomes a page for people, so no view makes a logging call of its
 own. The reason comes from what the refusal already carries: its closed
 `ErrorCode` values and field identifiers; a closed reason code on the
 refusal itself, which the shared refusals fix (`stale_page`,
-`unexpected_fields`, `expired_preview`, `bad_signature`,
-`fresh_authentication_required`, `csrf_failed`, `denied`, and `gone` for a
-retired action or another campaign's address), or which a refusal names
+`unexpected_fields`, `expired_preview`, `bad_signature`, `csrf_failed`,
+`denied`, and `gone` for a retired action or another campaign's address;
+`fresh_authentication_required` stays in the set only so entries written
+before [#1547](https://github.com/epiphany40223/parishkit/issues/1547)
+still read, and nothing emits it now), or which a refusal names
 for itself (such as `campaign_zone_not_parish`, `image_too_large` or the
 Off-site backups page's Test access refusals); and the error codes of a
 refused form: Django's own (`required`, `invalid_choice`, `max_length`
@@ -1734,11 +1762,10 @@ the command line agree:
 | --- | --- |
 | `denied` (the fixed reason of `UserFacingDenied` and of the access checks' refusals), `csrf_failed`, and each reason whose cause is server state or configuration rather than the input | WARNING |
 | `unclassified` | WARNING when the exception is a `PermissionError` or any subclass of it, INFO otherwise |
-| Every other reason, `fresh_authentication_required` included | INFO |
+| Every other reason | INFO |
 
-Python keeps the WARNING reasons in one closed set. A step-up request is
-INFO although it is a 403: it is the ordinary first answer to every
-fresh-gated action. `audit.log_contract.REQUIRED` requires `reason` on a
+Python keeps the WARNING reasons in one closed set.
+`audit.log_contract.REQUIRED` requires `reason` on a
 WARNING entry
 ([what went wrong](../background-processing/spec.md#what-went-wrong-and-recovery)).
 
@@ -1759,10 +1786,8 @@ advisory lock is held, so it agrees with the database time the writer
 trigger stamps on the row, rather than with the transaction's start, which
 may come before a lock wait. The 30th entry of a budget in a window carries
 `capped: true`; later refusals of that
-level in that window have the process-log line only. Step-up requests count
-against the INFO budget: every durable row is kept for good, so every
-durable row is bounded, and an Administrator who meets 30 step-ups in 10
-minutes has nothing more to learn from a 31st. The count and the insert run
+level in that window have the process-log line only. Every durable row is
+kept for good, so both budgets bound them. The count and the insert run
 in one short transaction that first takes a transaction advisory lock for
 that actor and level, so concurrent requests are serialised and the cap is
 exact. The count reads only that actor's refusal entries in the window,
@@ -1809,14 +1834,10 @@ stops before closing the response loses the record, line included.
 
 **Not duplicated.** Refusals that already leave a record keep it and get no
 second one: refused sign-ins (`admin_login_refused` and the sampled
-`admin_login_denied`), including a step-up sign-in by the wrong account,
-and refused automation sessions (`automation_session_refused`). The code
+`admin_login_denied`) and refused automation sessions (`automation_session_refused`). The code
 that writes such a record marks the request or response as already
 recorded, and the hook skips a marked one, so each of those paths gives
-its own record and no `admin_input_refused` entry or line. A completed
-step-up stays recorded as `admin_step_up` or `automation_fresh_gate`; the
-refused request that asked for it is new information and is recorded, with
-reason `fresh_authentication_required`. Debug logging is unchanged, and the
+its own record and no `admin_input_refused` entry or line. Debug logging is unchanged, and the
 browser sends no report of its own: the server already knows every refusal
 it makes.
 
@@ -1848,7 +1869,7 @@ and the slot decision records (skipped and held).
 - **Last full refresh.** The start time of the newest promoted full
   refresh. Only this drives the alarm below, because only a full refresh
   re-reads everything.
-- **Data as of.** What pages, the digest and the command line show: the
+- **Data as of.** What pages, report emails and the command line show: the
   start time of the newest promoted snapshot that could have brought in
   ParishSoft changes, that is the last full refresh, or a later quick update
   that changed at least one record. The change count is the snapshot
@@ -1961,7 +1982,7 @@ scheduled full refresh is 02:00 tomorrow.
 
 - The alarm, the bulk-send hold and the Admin home page's problem line use
   the last full refresh and the out-of-date rule.
-- Home, the refresh page, the ParishSoft page, the daily digest and
+- Home, the refresh page, the ParishSoft page, report emails (their saved copies) and
   the `source` member of `pk-admin status` (see the
   [automation guide](../../../guides/stewardship-admin-automation.md#status))
   show "data as of" and the connection line, and, when the data is out of
@@ -1974,9 +1995,10 @@ scheduled full refresh is 02:00 tomorrow.
 - The settings page no longer refuses a schedule for its gaps: it states the
   longest wait for new data and when the alarm would sound (see
   [cost and freshness summary](../admin-portal/spec.md#cost-and-freshness-summary)).
-- Before Start, go-live readiness still requires a full refresh that
-  started within `source_stale_seconds`, and Start waives only that age
-  because it queues the go-live's own refresh. After Start, the go-live's
+- Before Start, Go live requires a completed full refresh of the
+  current organization and campaign window, of any age: one merely older
+  than `source_stale_seconds` does not block Check or Start, because Start
+  queues the go-live's own refresh. After Start, the go-live's
   checks require the attempt's refresh (or a later full refresh) and expire
   at the attempt's hold end instead; see
   [freshness during a go-live](../admin-portal/spec.md#go-live-page).
@@ -2112,8 +2134,8 @@ Required suites include:
   ordinary compaction, removed generations cannot be partially served, and
   task/audit history plus underlying submissions/protected source inputs are
   unchanged. After protection ends, eligible daily rows are reclaimed;
-- archive/Return tests for required daily and weekly digests not yet due or
-  materialized, explicit audited skips, empty/no-recipient coverage, coalesced
+- archive/Return tests for report email sends due by archive and not yet
+  settled or materialized, report sends still to come, explicit audited skips, empty/no-recipient coverage, coalesced
   replacements, failed and unknown deliveries, and new input racing final
   inventory verification; verify scheduler retries, schedule revisions, and
   unarchive/reopen do not resurrect resolved coverage or suppress newer inputs;
@@ -2218,7 +2240,7 @@ Required suites include:
   Family path, including stale submit and repeat visit;
 - browser and authorization tests proving that user changes (New, Edit,
   Delete and Import Ministry leaders) save only through Review and Apply,
-  without reauthentication, while enforcing CSRF, optimistic concurrency,
+  while enforcing CSRF, optimistic concurrency,
   current-Admin authorization, last-Administrator protection, and complete
   audit records; that the Users tables sort in place; and that their pages
   have no horizontal page scroll at 320 px and 1280 px;
@@ -2288,7 +2310,7 @@ At minimum, end-to-end tests demonstrate:
    Testing/draft, and unlocks structural settings, while an active campaign and
    unresolved provider-submitting/delivery-unknown work cannot be withdrawn.
    Production readiness locks the Campaign timezone snapshot; later Parish
-   timezone changes do not alter its boundaries, schedules, digests, or
+   timezone changes do not alter its boundaries, schedules, report emails, or
    historical report buckets.
 4. Full/delta refresh success, interrupted/invalid load retaining prior truth,
    new/inactive/reactivated Family behavior, and non-overlap/manual coalescing;
@@ -2305,7 +2327,7 @@ At minimum, end-to-end tests demonstrate:
    columns, filters, consistent historical/current participation-chart scopes,
    atomic/pinned CampaignDailyFactSet generation and drift verification, chart
    parity, and CSV/XLSX/PDF/PNG output.
-8. Missed initial/reminder/digest occurrence, per-Family and daily-digest
+8. Missed initial/reminder/digest occurrence, per-Family and report email
    recovery coalescing, worker/broker restart, systemic email failure,
    deduplicated CRITICAL notification, active-campaign delivery pause with
    continued live submission and held receipts, pre-provider race checks,

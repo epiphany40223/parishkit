@@ -42,6 +42,7 @@ def request(**overrides):
             api_key="SYNTHETIC-PRIVATE-KEY",
             timeout=30,
             profile="production",
+            base_url=DEFAULT_API_BASE_URL,
         )
         | overrides
     )
@@ -54,6 +55,7 @@ def session(**overrides):
             before_request=lambda seconds: None,
             check=lambda: None,
             profile="production",
+            base_url=DEFAULT_API_BASE_URL,
         )
         | overrides
     )
@@ -113,6 +115,10 @@ def test_search_post_vocabulary_does_not_enable_provider_writes(path):
         {"profile": "private-profile"},
         {"profile": "LOCAL"},
         {"url": LOCAL_SOURCE_BASE_URL + "/families/change/list"},
+        {"base_url": None},
+        {"base_url": "https://other.example/api/v2"},
+        {"base_url": DEFAULT_API_BASE_URL + "/"},
+        {"base_url": LOCAL_SOURCE_BASE_URL},
     ],
 )
 def test_invalid_or_nonread_request_is_rejected_without_private_diagnostics(overrides):
@@ -132,35 +138,50 @@ def test_local_fake_base_url_is_refused_for_every_non_local_profile(profile):
                 profile=profile, url=LOCAL_SOURCE_BASE_URL + "/families/change/list"
             )
         )
+    with pytest.raises(ValueError, match="base URL"):
+        helper.validate_request(
+            request(
+                profile=profile,
+                base_url=LOCAL_SOURCE_BASE_URL,
+                url=LOCAL_SOURCE_BASE_URL + "/families/change/list",
+            )
+        )
 
 
 def test_helper_profiles_match_the_deployment_profiles():
     """The shared helper names the profiles itself; the application's enum agrees."""
     assert {profile.value for profile in DeploymentProfile} == helper.PROFILES
-    assert helper.admitted_base_url("local") == LOCAL_SOURCE_BASE_URL
-    assert helper.admitted_base_url("production") == DEFAULT_API_BASE_URL
+    assert {DEFAULT_API_BASE_URL, LOCAL_SOURCE_BASE_URL} == helper.BASE_URLS
+    assert helper.default_base_url("local") == LOCAL_SOURCE_BASE_URL
+    for profile in ("development", "test", "production"):
+        assert helper.default_base_url(profile) == DEFAULT_API_BASE_URL
+        assert helper.admitted_base_url(profile, DEFAULT_API_BASE_URL)
+        with pytest.raises(ValueError):
+            helper.admitted_base_url(profile, LOCAL_SOURCE_BASE_URL)
+    for base_url in (DEFAULT_API_BASE_URL, LOCAL_SOURCE_BASE_URL):
+        assert helper.admitted_base_url("local", base_url) == base_url
     with pytest.raises(ValueError):
-        helper.admitted_base_url(DeploymentProfile.LOCAL)
+        helper.admitted_base_url(DeploymentProfile.LOCAL, LOCAL_SOURCE_BASE_URL)
+    with pytest.raises(ValueError):
+        helper.default_base_url("LOCAL")
 
 
 @pytest.mark.parametrize("path", ["families/change/list", "families/5", "members/5"])
-def test_local_request_admits_only_the_fake_base_url(path):
-    """A local request may reach the fake and nothing else, not even the real API."""
-    assert helper.validate_request(
-        request(profile="local", url=LOCAL_SOURCE_BASE_URL + "/" + path)
-    )
+@pytest.mark.parametrize("base_url", [LOCAL_SOURCE_BASE_URL, DEFAULT_API_BASE_URL])
+def test_local_request_admits_only_its_one_chosen_base_url(path, base_url):
+    """A local request reaches the one base URL it names (the fake or, #1399,
+    the real API) and nothing else, not even the other allowed one."""
+    other = ({LOCAL_SOURCE_BASE_URL, DEFAULT_API_BASE_URL} - {base_url}).pop()
+    local = {"profile": "local", "base_url": base_url}
+    assert helper.validate_request(request(url=base_url + "/" + path, **local))
+    with pytest.raises(ValueError, match="endpoint"):
+        helper.validate_request(request(url=other + "/" + path, **local))
     with pytest.raises(ValueError, match="endpoint"):
         helper.validate_request(
-            request(profile="local", url=DEFAULT_API_BASE_URL + "/" + path)
-        )
-    with pytest.raises(ValueError, match="endpoint"):
-        helper.validate_request(
-            request(profile="local", url="http://fake-parishsoft:8081/api/v2/" + path)
+            request(url="http://fake-parishsoft:8081/api/v2/" + path, **local)
         )
     with pytest.raises(ValueError, match="operation"):
-        helper.validate_request(
-            request(profile="local", url=LOCAL_SOURCE_BASE_URL + "/families/search")
-        )
+        helper.validate_request(request(url=base_url + "/families/search", **local))
 
 
 def test_session_requires_a_profile_and_sends_it_in_every_frame(monkeypatch):
@@ -170,6 +191,9 @@ def test_session_requires_a_profile_and_sends_it_in_every_frame(monkeypatch):
     for profile in ("LOCAL", None, DeploymentProfile.LOCAL):
         with pytest.raises(TypeError):
             session(profile=profile)
+    for base_url in (None, "https://other.example/api/v2", LOCAL_SOURCE_BASE_URL):
+        with pytest.raises(TypeError):
+            session(base_url=base_url)
     frames = []
 
     def exchange(payload, **options):
@@ -177,13 +201,20 @@ def test_session_requires_a_profile_and_sends_it_in_every_frame(monkeypatch):
         return b"200\n[]"
 
     monkeypatch.setattr(transport, "_exchange", exchange)
-    current = session(profile="local")
+    current = session(profile="local", base_url=LOCAL_SOURCE_BASE_URL)
     current.get(LOCAL_SOURCE_BASE_URL + "/families/change/list", timeout=30)
     assert frames[0]["profile"] == "local"
+    assert frames[0]["base_url"] == LOCAL_SOURCE_BASE_URL
     assert frames[0]["url"].startswith(LOCAL_SOURCE_BASE_URL)
     with pytest.raises(ValueError):
         session().get(LOCAL_SOURCE_BASE_URL + "/families/change/list", timeout=30)
+    with pytest.raises(ValueError):
+        current.get(DEFAULT_API_BASE_URL + "/families/change/list", timeout=30)
     assert len(frames) == 1
+    # A LOCAL deployment that chose the real API (#1399) reaches only it.
+    real = session(profile="local")
+    real.get(DEFAULT_API_BASE_URL + "/families/change/list", timeout=30)
+    assert frames[1]["base_url"] == DEFAULT_API_BASE_URL
 
 
 class HTTPResponse:
@@ -817,6 +848,82 @@ def test_only_a_write_started_helper_admits_the_member_contact_put():
             helper.validate_request(request(method="PUT", url=url), contact_writes=True)
 
 
+def test_a_local_request_never_writes_to_the_real_parishsoft():
+    """pk-local may read the real ParishSoft (#1399) but never writes to it:
+    a ``local`` PUT to the real API is refused even by a write-started
+    helper, and LOCAL cannot build a publication session for it. The local
+    fake is the one ParishSoft a LOCAL request may write to (#1884)."""
+    put = request(method="PUT", url=CONTACT, parameters={"firstName": "Pat"})
+    assert helper.validate_request(put, contact_writes=True)
+    with pytest.raises(ValueError, match="operation"):
+        helper.validate_request(put | {"profile": "local"}, contact_writes=True)
+    with pytest.raises(TypeError, match="local"):
+        BoundedPublicationSession(
+            before_request=lambda seconds: None,
+            check=lambda: None,
+            profile="local",
+            base_url=DEFAULT_API_BASE_URL,
+        )
+    fake = put | {
+        "profile": "local",
+        "base_url": LOCAL_SOURCE_BASE_URL,
+        "url": LOCAL_SOURCE_BASE_URL + "/members/5/contact",
+    }
+    assert helper.validate_request(fake, contact_writes=True)
+    # Still only from a write-started helper, and only the contact PUT.
+    with pytest.raises(ValueError, match="operation"):
+        helper.validate_request(fake, contact_writes=False)
+    with pytest.raises(ValueError, match="operation"):
+        helper.validate_request(
+            fake | {"url": LOCAL_SOURCE_BASE_URL + "/families/5/contact"},
+            contact_writes=True,
+        )
+    BoundedPublicationSession(
+        before_request=lambda seconds: None,
+        check=lambda: None,
+        profile="local",
+        base_url=LOCAL_SOURCE_BASE_URL,
+    )
+
+
+def test_a_publication_session_refuses_an_invalid_base_url_as_the_read_does():
+    """The write check skips a profile or base URL that is not admitted at
+    all (its ValueError is suppressed), so the read session's own refusal
+    answers, for LOCAL as for every profile; only an admitted LOCAL URL
+    that is not the fake gets the write refusal."""
+    hooks = {"before_request": lambda seconds: None, "check": lambda: None}
+    for profile, base_url in (
+        ("local", "https://other.example/api/v2"),
+        ("production", LOCAL_SOURCE_BASE_URL),
+        ("not-a-profile", DEFAULT_API_BASE_URL),
+    ):
+        with pytest.raises(TypeError, match="requires a profile and its base URL"):
+            BoundedPublicationSession(**hooks, profile=profile, base_url=base_url)
+    with pytest.raises(TypeError, match="writes only to the local fake"):
+        BoundedPublicationSession(
+            **hooks, profile="local", base_url=DEFAULT_API_BASE_URL
+        )
+
+
+def test_the_contact_put_rule_is_unchanged_outside_local():
+    """#1884 changes the write rule for ``local`` requests to the fake only:
+    every other profile may PUT to exactly the base URLs it could before
+    (the real API), and none may name the fake at all."""
+    for profile in sorted(helper.PROFILES):
+        assert helper.contact_put_admitted(profile, DEFAULT_API_BASE_URL) is (
+            profile != "local"
+        )
+        if profile == "local":
+            assert helper.contact_put_admitted(profile, LOCAL_SOURCE_BASE_URL)
+        else:
+            with pytest.raises(ValueError):
+                helper.contact_put_admitted(profile, LOCAL_SOURCE_BASE_URL)
+        with pytest.raises(ValueError):
+            helper.contact_put_admitted(profile, "https://other.example/api/v2")
+    with pytest.raises(ValueError):
+        helper.contact_put_admitted("validation", DEFAULT_API_BASE_URL)
+
+
 def test_helper_writes_only_when_its_key_frame_says_so(monkeypatch):
     """A helper started without ``contact_writes`` refuses a PUT frame whatever
     its parent sends; one started with it passes the admission to perform."""
@@ -854,7 +961,10 @@ def test_only_the_publication_session_has_a_put(monkeypatch):
     started with writes, and an empty 2xx answer to its PUT is a success."""
     assert not any(name.lower().startswith("put") for name in dir(BoundedSourceSession))
     writer = BoundedPublicationSession(
-        before_request=lambda seconds: None, check=lambda: None, profile="production"
+        before_request=lambda seconds: None,
+        check=lambda: None,
+        profile="production",
+        base_url=DEFAULT_API_BASE_URL,
     )
     writer.headers["x-api-key"] = "SYNTHETIC-PRIVATE-KEY"
     assert writer._helper.contact_writes and not session()._helper.contact_writes

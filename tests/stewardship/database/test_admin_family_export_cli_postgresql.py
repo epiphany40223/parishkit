@@ -140,8 +140,8 @@ def test_a_financial_export_is_the_pages(
     # It names the export's report kind and format (#1398).
     context = AuditContext.objects.get(event=event).context
     assert (context["report"], context["format"]) == ("financial", made.format)
-    # The full-scope session stood in for the page's recent sign-in, in the
-    # export's own transaction (#547, the caller-aware require_fresh).
+    # The full-scope session's use is recorded in the export's own
+    # transaction (#547, the caller-aware sign_in_instant).
     [gate] = AuditEvent.objects.filter(event_type="automation_fresh_gate")
     assert gate.subject_id == event.subject_id
     # A repeat returns the same export and records nothing new.
@@ -210,6 +210,7 @@ def test_ministry_and_information_exports(
 ):
     """A Ministry list, a packet and the information queue."""
     from parishkit.stewardship.reports.information import InformationQuery
+    from parishkit.stewardship.reports.information_worklist import WorklistQuery
 
     harness = ministry_setup(response_service)
     browser, _ = signed_in()
@@ -263,6 +264,27 @@ def test_ministry_and_information_exports(
     assert count("admin_cmd_export_ministry_packet") == 1
     assert count("admin_cmd_export_information") == 1
 
+    # The worklist's Stage (#1735) is the export pane's follow-up filters:
+    # To handle exports the requests whose follow-up is needed, not done.
+    code, document = run("export", "information", *base, "--stage", "to_handle")
+    assert code == 0 and document["result"]["created"], document
+    staged = ExportRequest.objects.get(pk=document["result"]["export"]["id"])
+    # What the worklist's export pane posts for To handle, unsorted.
+    pane = WorklistQuery.parse({"stage": "to_handle"}).export_values("")
+    fields = pane | dict(
+        format="csv",
+        browser_timezone="UTC",
+        request_key=str(uuid4()),
+    )
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert (
+            post(browser, reverse("admin:information_export"), fields).status_code
+            == 302
+        )
+    page = ExportRequest.objects.get(request_key=fields["request_key"])
+    assert page.parameters == staged.parameters
+    assert len(requested()) == 6
+
     # The packet's file: rendered and streamed, never printed.
     render(run.service, reports_root, made["packet"].pk)
     code, document = run("export", "status", str(made["packet"].pk))
@@ -292,6 +314,16 @@ def test_ministry_and_information_exports(
         ),
         ("export", "ministry-packet", *base, "--ministry", "9", "--ministry", "9"),
         ("export", "information", *base, "--filter", "search=Example"),
+        # A worklist Stage stands for the follow-up filters (#1735).
+        (
+            "export",
+            "information",
+            *base,
+            "--stage",
+            "to_review",
+            "--filter",
+            "needed=yes",
+        ),
     ):
         code, document = run(*argv)
         assert code == 1 and document["error"]["code"] == "invalid", argv
@@ -301,7 +333,7 @@ def test_ministry_and_information_exports(
         "export", "ministry", *base, "--ministry", "123", "--requests", "join"
     )
     assert code == 1 and document["error"]["code"] == "invalid"
-    assert len(requested()) == 4
+    assert len(requested()) == 6
 
 
 @pytest.fixture
@@ -369,7 +401,7 @@ def test_the_directory_and_mail_merge_exports(
         event__event_type="admin_cmd_export_directory"
     ).context
     assert (context["report"], context["format"]) == ("family_directory", made.format)
-    # The session stood in for the page's recent sign-in (#547).
+    # The full-scope session's use is recorded once (#547).
     assert count("automation_fresh_gate") == 1
     # A repeat returns the same export without loading any key.
     code, document = run(*argv)

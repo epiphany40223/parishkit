@@ -397,14 +397,14 @@ def test_a_production_weekly_report_shows_the_response_funnel():
     for body in (result.html, result.text):
         assert "Response funnel" in body
         assert "Email invites sent" in body and "Link followed" not in body
-        assert "Submitted more than once" in body
+        # The side figure is left out, as in the daily email (#1532).
+        assert "more than once" not in body
     assert "Response funnel (Families):" in result.text
     assert "Email invites sent: 1,000 (100%)" in result.text
     assert "Submitted: 401 (40%)" in result.text
-    assert "Submitted more than once: 7 (2% of Submitted)" in result.text
-    # Four stage rows and one figure row, each with a table-cell bar.
+    # Four stage rows, each with a table-cell bar.
     funnel = result.html[result.html.index("Response funnel") :]
-    assert funnel.count(f'style="{STYLES["bar"]}"') == 5
+    assert funnel.count(f'style="{STYLES["bar"]}"') == 4
     # The requests stay first; the funnel comes before the report button.
     for body in (result.html, result.text):
         assert body.index("corrections to previously") < body.index("Response funnel")
@@ -454,9 +454,9 @@ def test_the_weekly_saved_page_context_shares_the_daily_panel():
         ("Progressed past the first step", 480),
         ("Submitted", 401),
     ]
-    assert context["funnel_figures"][0][0] == "Submitted more than once"
+    assert "funnel_figures" not in context  # no side figures (#1532)
     assert context["funnel_testing_note"] == ""
     testing = funnel_context(None, "testing")
-    assert testing["funnel_stages"] == () and testing["funnel_figures"] == ()
+    assert testing["funnel_stages"] == ()
     assert testing["funnel_testing_note"].startswith("Testing digests")
     assert funnel_context(None, None)["funnel_testing_note"] == ""

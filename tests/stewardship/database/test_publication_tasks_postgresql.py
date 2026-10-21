@@ -10,6 +10,7 @@ carry the #1245 review notes the dispatch must honour (notes 2, 4 and 5;
 notes 1 and 3 are the worker's, in test_publication_worker_postgresql).
 """
 
+import json
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
@@ -281,6 +282,152 @@ def test_an_unreadable_member_is_blocked(world):
     assert confirmation_counts(plan.pk)["write_entities"] == 0
 
 
+# How a Member leaves the change's Family in the promoted data (#1738): the
+# snapshot's record for the Member, rewritten in place (triggers off), so
+# the shared status reads moved, inactive or deceased.
+LEAVINGS = {
+    "moved": ("family_key='999999'", "{family_key}", '"999999"'),
+    "inactive": (None, "{active}", "false"),
+    "deceased": (None, "{deceased}", "true"),
+}
+
+
+def leave(row, how):
+    """Make the promoted data stop listing ``row``'s Member in its Family."""
+    column, path, value = LEAVINGS[how]
+    owner(
+        "UPDATE stewardship_source_member SET "
+        + (column + ", " if column else "")
+        + "canonical=jsonb_set(canonical::jsonb, %s, %s::jsonb)::text "
+        "WHERE id IN (SELECT payload_id FROM stewardship_snapshot_member m "
+        "JOIN stewardship_source_current c ON c.snapshot_id=m.snapshot_id "
+        "WHERE m.source_key=%s)",
+        [path, value, row.entity_key],
+    )
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT stewardship_member_source_status_v1(c.snapshot_id, %s, "
+            "f.family_duid) FROM stewardship_source_current c, "
+            "stewardship_family_campaign f WHERE f.id=%s",
+            [row.entity_key, row.submission.family_id],
+        )
+        assert cursor.fetchone()[0] == how
+
+
+@pytest.mark.parametrize("how", sorted(LEAVINGS))
+def test_a_member_no_longer_in_the_family_is_neither_read_nor_written(world, how):
+    """The promoted data no longer lists the Member, active and living, in
+    the change's Family (#1738): preflight leaves the change out (open and
+    unplanned) and does not read the Member for it."""
+    leave(world.first, how)
+    plan = world.planned(uuid4())
+    assert world.gateway.reads == []
+    assert not PublicationEntity.objects.filter(plan=plan).exists()
+    assert confirmation_counts(plan.pk)["write_entities"] == 0
+    assert proposal(world.first) == "pending"
+
+
+@pytest.mark.parametrize("how", sorted(LEAVINGS))
+def test_a_member_who_left_after_the_plan_is_not_written(world, how):
+    """A refresh after the confirmation keeps the change open (rule 4), so
+    the worker checks the Member again before reading them: the entity is
+    invalidated with no read and no write, and the change stays pending."""
+    plan = world.planned(uuid4())
+    _, run = world.confirm(plan)
+    leave(world.first, how)
+    reads = len(world.gateway.reads)
+    assert world.execute(run.run_id) and state(run) == "succeeded"
+    assert len(world.gateway.reads) == reads and world.gateway.writes == []
+    entity = PublicationEntity.objects.get(plan=plan)
+    assert list(entity.outcomes.values_list("result", flat=True)) == ["invalidated"]
+    assert proposal(world.first) == "pending"
+
+
+def copy(table, row_id, **values):
+    """Copy one row of ``table`` with a new id and ``values``; the new id.
+
+    Forged as the schema owner with triggers off, as the other world
+    changes here are: the copy stands for a second Family's response.
+    """
+    new_id = uuid4()
+    owner(
+        f"INSERT INTO {table} SELECT (jsonb_populate_record(NULL::{table}, "
+        f"to_jsonb(t) || %s::jsonb)).* FROM {table} t WHERE id=%s",
+        [json.dumps({"id": str(new_id), **values}), row_id],
+    )
+    return new_id
+
+
+def test_a_member_with_changes_from_two_families_plans_the_current_one(
+    world, monkeypatch
+):
+    """A Member who moved has an open change from the Family they left (kept
+    by rule 4) and one from the Family they are in now, for one field. The
+    left Family's change is left out, so the planner meets one open change
+    per field (two would raise and fail every preflight): the Member is read
+    once and only the current change is planned (#1738)."""
+    answered = world.first.submission
+    baseline = copy("stewardship_family_form_baseline", answered.baseline_id)
+    submission = copy(
+        "stewardship_submission",
+        answered.pk,
+        baseline_id=str(baseline),
+        family_version=answered.family_version + 100,
+        campaign_sequence=answered.campaign_sequence + 100,
+    )
+    current = copy(
+        "stewardship_proposed_change", world.first.pk, submission_id=str(submission)
+    )
+    # The original change stands for the Family the Member left.
+    monkeypatch.setattr(tasks, "unlisted_changes", lambda ids: {world.first.pk})
+    plan = world.planned(uuid4())
+    assert world.gateway.reads == [world.first.entity_key]
+    assert list(
+        PublicationField.objects.filter(entity__plan=plan).values_list(
+            "proposal_id", "outcome"
+        )
+    ) == [(current, "write")]
+    assert proposal(world.first) == "pending"
+
+
+def test_the_waiting_count_leaves_out_a_member_who_left(world):
+    """Update ParishSoft counts only what preflight would plan, so a change
+    whose Member left the Family cannot offer Check ParishSoft alone; it is
+    counted apart (#1688, #1749's note)."""
+    from parishkit.stewardship.reports.census_publication import waiting
+
+    campaign = world.first.submission.campaign_id
+    assert waiting(campaign) == {"changes": 1, "members": 1, "away": 0}
+    leave(world.first, "moved")
+    assert waiting(campaign) == {"changes": 0, "members": 0, "away": 1}
+
+
+def test_the_queueing_transaction_checks_the_member_again(world, monkeypatch):
+    """Should the pre-read check pass, the queue's own check still refuses a
+    Member who left: one read, no write, the entity invalidated."""
+    from parishkit.stewardship.responses import publication_worker
+
+    real = publication_worker.unlisted_changes
+    calls = []
+
+    def first_passes(ids):
+        """The pre-read check answers "still listed"; later ones are real."""
+        calls.append(ids)
+        return set() if len(calls) == 1 else real(ids)
+
+    plan = world.planned(uuid4())
+    _, run = world.confirm(plan)
+    leave(world.first, "moved")
+    reads = len(world.gateway.reads)
+    monkeypatch.setattr(publication_worker, "unlisted_changes", first_passes)
+    assert world.execute(run.run_id) and state(run) == "succeeded"
+    assert len(calls) == 2
+    assert len(world.gateway.reads) == reads + 1 and world.gateway.writes == []
+    entity = PublicationEntity.objects.get(plan=plan)
+    assert list(entity.outcomes.values_list("result", flat=True)) == ["invalidated"]
+    assert proposal(world.first) == "pending"
+
+
 def test_a_change_since_the_read_fails_the_preflight(world):
     """A decision recorded between the read and the plan leaves a stale
     version, which the plan guard refuses: the run fails, no plan."""
@@ -384,14 +531,20 @@ def test_the_real_gateway_gets_the_timeout_recorder(monkeypatch, tmp_path):
     the source timeout recorder and reads the credential at run time."""
     from types import SimpleNamespace
 
+    from parishkit.parishsoft import DEFAULT_API_BASE_URL
     from parishkit.stewardship.responses import publication_gateway
     from parishkit.stewardship.source import credentials
 
     seen = {}
 
-    def opened(cls, execution, credential, *, profile, on_timeout):
+    def opened(cls, execution, credential, *, profile, base_url, on_timeout):
         """Capture what the task passed."""
-        seen.update(credential=credential, profile=profile, on_timeout=on_timeout)
+        seen.update(
+            credential=credential,
+            profile=profile,
+            base_url=base_url,
+            on_timeout=on_timeout,
+        )
         return "gateway"
 
     monkeypatch.setattr(
@@ -404,6 +557,8 @@ def test_the_real_gateway_gets_the_timeout_recorder(monkeypatch, tmp_path):
     path = tmp_path / "parishsoft"
     assert tasks.parishsoft_gateway(path)(execution) == "gateway"
     assert seen["credential"] == path
+    # The test profile's default, the real API: no recorded choice.
+    assert seen["base_url"] == DEFAULT_API_BASE_URL
     assert seen["on_timeout"].__qualname__.startswith("source_timeout_recorder")
 
 
@@ -518,3 +673,129 @@ def test_do_block_refuses_the_maps_it_replaces(name):
     ):
         cursor.execute(_replaced(old, name))
         cursor.execute(check)
+
+
+def final_refreshes():
+    """Every source refresh command recorded so far."""
+    from parishkit.stewardship.source.refresh_models import SourceRefreshCommand
+
+    return SourceRefreshCommand.objects.select_related("request")
+
+
+def test_an_update_requests_one_final_refresh_as_its_administrator(world):
+    """A run that updated a Member asks for one full refresh once it has
+    released the lease (#1688): a manual refresh attributed to the
+    Administrator who confirmed the plan, under the run's correlation id,
+    audited as following an update; the page sees it unfinished. The run
+    reports its Members done as it goes."""
+    from parishkit.stewardship.reports.census_publication import refreshing
+
+    plan = world.planned(uuid4())
+    _, run = world.confirm(plan)
+    assert not final_refreshes().exists()
+    assert world.execute(run.run_id) and state(run) == "succeeded"
+    assert proposal(world.first) == "published"
+    (command,) = final_refreshes()
+    task = TaskRun.objects.get(pk=run.run_id)
+    assert command.pk == tasks.final_refresh_command(run.run_id)
+    assert (command.cause, command.kind, command.actor_id) == (
+        "manual",
+        "full",
+        world.admin,
+    )
+    assert command.correlation_id == task.correlation_id
+    assert TaskRun.objects.filter(
+        root_id=command.request.task_root_id, task_type="source_refresh"
+    ).exists()
+    assert audited("census_publication_refresh_requested") == [
+        (None, command.pk, "started")
+    ]
+    assert refreshing([run.run_id])
+    assert (task.progress_current, task.progress_total) == (1, 1)
+
+
+def test_a_run_that_wrote_nothing_requests_no_refresh(world):
+    """A run whose Member changed since the check writes nothing, so it
+    asks for no refresh and audits none."""
+    plan = world.planned(uuid4())
+    _, run = world.confirm(plan)
+    world.gateway.records[world.first.entity_key]["firstName"] = "Changed"
+    assert world.execute(run.run_id) and state(run) == "succeeded"
+    assert world.gateway.writes == []
+    assert not final_refreshes().exists()
+    assert audited("census_publication_refresh_requested") == []
+
+
+def test_a_refused_final_refresh_leaves_the_run_as_it_ended(world, monkeypatch):
+    """A refresh the request path refuses (here, no configured organization)
+    leaves the run's outcome as it is, logged at WARNING, with nothing
+    audited; the next scheduled refresh catches up."""
+    import logging
+
+    warned = []
+
+    def refused(**_):
+        raise PermissionError("Source refresh requires its configured organization.")
+
+    monkeypatch.setattr(tasks, "request_refresh", refused)
+    monkeypatch.setattr(
+        tasks,
+        "emit_failure",
+        lambda error, **options: warned.append((type(error), options["level"])),
+    )
+    plan = world.planned(uuid4())
+    _, run = world.confirm(plan)
+    assert world.execute(run.run_id) and state(run) == "succeeded"
+    assert proposal(world.first) == "published"
+    assert not final_refreshes().exists()
+    assert audited("census_publication_refresh_requested") == []
+    assert warned == [(PermissionError, logging.WARNING)]
+
+
+def test_a_run_refused_after_writing_still_refreshes(world, monkeypatch):
+    """A run refused partway after updating a Member (here, the switch
+    found off once the Member is written) still asks for the final
+    refresh, and its task is failed for Run again."""
+    real = tasks.publish_plan
+
+    def then_switched_off(*args, **options):
+        """Write as usual, then meet the switch off."""
+        real(*args, **options)
+        raise PublicationDisabled("ParishSoft publication is switched off.")
+
+    monkeypatch.setattr(tasks, "publish_plan", then_switched_off)
+    plan = world.planned(uuid4())
+    _, run = world.confirm(plan)
+    assert world.execute(run.run_id) and state(run) == "failed"
+    assert proposal(world.first) == "published"
+    (command,) = final_refreshes()
+    assert command.pk == tasks.final_refresh_command(run.run_id)
+    assert audited("census_publication_switched_off") == [(None, run.run_id, "failed")]
+
+
+def test_a_crash_before_the_final_refresh_is_retried_for_it(world, monkeypatch):
+    """A run that crashed after updating its Member but before asking for
+    the final refresh is retried by recovery although nothing is left to
+    write, and the retry asks once, writing nothing again (#1688)."""
+    plan = world.planned(uuid4())
+    _, run = world.confirm(plan)
+    real = tasks._request_final_refresh
+
+    def crash(*args, **options):
+        """The worker dies between the writes and the refresh."""
+        raise Crash
+
+    monkeypatch.setattr(tasks, "_request_final_refresh", crash)
+    with pytest.raises(Crash):
+        world.execute(run.run_id)
+    monkeypatch.setattr(tasks, "_request_final_refresh", real)
+    assert proposal(world.first) == "published" and not final_refreshes().exists()
+    assert tasks.refresh_owed(plan.pk)
+    due(run)
+    assert world.recover(run.run_id) and state(run) == "retry_wait"
+    due(run)
+    assert world.execute(run.run_id) and state(run) == "succeeded"
+    assert len(world.gateway.writes) == 1
+    (command,) = final_refreshes()
+    assert command.pk == tasks.final_refresh_command(run.run_id)
+    assert not tasks.refresh_owed(plan.pk)

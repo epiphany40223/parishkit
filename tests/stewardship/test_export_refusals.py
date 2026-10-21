@@ -13,7 +13,6 @@ from django.test import RequestFactory
 
 from parishkit.stewardship.reports import (
     directory_export_views,
-    exact_ui,
     export_ui,
     financial_export_views,
     information_export_views,
@@ -28,7 +27,6 @@ BOUND = b"already used for a different export"
 # Every create view that allocates an export from a form key.
 CREATE_VIEWS = {
     "participation": (export_ui, export_ui.create),
-    "exact": (exact_ui, exact_ui.create),
     "directory": (directory_export_views, directory_export_views.create),
     "financial": (financial_export_views, financial_export_views.create),
     "information": (information_export_views, information_export_views.create),
@@ -107,7 +105,7 @@ def test_the_gone_page_records_the_gone_code(monkeypatch):
     check), and is never cached."""
     monkeypatch.setattr(export_ui.admin_navigation, "place", Mock())
     request = RequestFactory().get("/")
-    response = export_ui.gone_page(request, "participation", "/admin/reports/")
+    response = export_ui.gone_page(request, "response_dashboard", "/admin/reports/")
     assert response.status_code == 410
     assert response.stewardship_codes == ("gone",)
     assert response["Cache-Control"] == "no-store"
@@ -141,10 +139,11 @@ def test_native_download_denial_stays_uniform(monkeypatch):
             "?reach=email",
         ),
         (
+            # An old Testing export opens the (Production only) Timeline, #1570.
             "family_timeline",
             {"family_id": "00000000-0000-0000-0000-000000000007", "mode": "testing"},
-            "family_timeline",
-            "/00000000-0000-0000-0000-000000000007/?mode=testing",
+            "timeline",
+            "/00000000-0000-0000-0000-000000000007/",
         ),
     ],
 )

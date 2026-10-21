@@ -2,6 +2,7 @@
 
 import contextlib
 import functools
+import json
 import logging
 from datetime import timedelta
 
@@ -16,7 +17,7 @@ from parishkit.stewardship.audit.critical_events import sign as critical_sign
 from parishkit.stewardship.audit.critical_events import summary as critical_summary
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
 from parishkit.stewardship.campaigns.models import Campaign
-from parishkit.stewardship.jobs.delivery_metadata import alert_counts
+from parishkit.stewardship.jobs.delivery_metadata import alert_counts, mode_split
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
 from parishkit.stewardship.observability import (
     Event,
@@ -26,7 +27,7 @@ from parishkit.stewardship.observability import (
 from parishkit.stewardship.web.error_pages import ERROR_PAGE_ATTRIBUTE
 from parishkit.stewardship.web.refusals import mark_not_input, unavailable_response
 
-from . import admin_navigation, campaign_wizard, family_maintenance
+from . import admin_navigation, campaign_wizard, family_maintenance, review_work
 from .authentication import runtime
 from .limiting import LimiterUnavailable
 from .policy import Capability, Principal, allows
@@ -103,16 +104,31 @@ def portal_chrome(request):
     match = getattr(request, "resolver_match", None)
     placed = admin_navigation.placement(request)
     sections, breadcrumbs = admin_navigation.build(match, items, placed)
-    open_counts = _open_counts(request, actor, items, campaign)
-    for section in sections:
-        for entry in section["items"]:
-            entry["count"] = open_counts.get(entry["name"]) if entry["url"] else None
+    # Staff and Ministry leaders land on My review work, not Home (#1690):
+    # its menu entry (Review work's first, or the top entry when the viewer
+    # has no Review work group; ``_home_in_review`` below), the trail's root
+    # and a "Return to" Home name it so, as the page's heading does
+    # (ui-conventions "One name").
+    home_label = review_work.home_label(actor)
+    if breadcrumbs and breadcrumbs[0]["label"] == admin_navigation.PAGES["index"].label:
+        breadcrumbs[0]["label"] = home_label
+    back = admin_navigation.back(match, placed, items)
+    if back and back["label"] == admin_navigation.PAGES["index"].label:
+        back = back | {"label": home_label}
+    attach_counts(sections, _open_counts(request, actor, items, campaign))
+    home_current = bool(breadcrumbs) and len(breadcrumbs) == 1
+    home_in_review = review_work.lands_here(actor) and _home_in_review(
+        sections, home_label, home_current
+    )
     return {
         "admin_chrome": {
             "admin": admin,
             "parish_name": parish.name if parish else None,
             "home_url": reverse("admin:index"),
-            "home_current": bool(breadcrumbs) and len(breadcrumbs) == 1,
+            "home_label": home_label,
+            "home_current": home_current,
+            # My review work is Review work's first entry, not a top Home.
+            "home_in_review": home_in_review,
             "sections": sections,
             "breadcrumbs": breadcrumbs,
             # The viewer's menu entries by page and the reason-check state,
@@ -125,7 +141,7 @@ def portal_chrome(request):
             "campaign_wizard": _campaign_wizard(
                 request, match, campaign, configuration, admin=admin, go_live=go_live
             ),
-            "back": admin_navigation.back(match, placed, items),
+            "back": back,
             "testing": configuration.mode == "testing",
             "testing_recipient": configuration.testing_recipient if admin else None,
             "debug_in_production": _debug_in_production(configuration),
@@ -158,7 +174,13 @@ def portal_chrome(request):
             .isoformat(),
             "background": counts,
             "find_family": _find_family(actor, items, campaign),
-            "delivery_unknown": delivery_unknown,
+            # Emails that may not have arrived: the operating mode's count,
+            # which the warning shows and links, and the other mode's,
+            # linked on its own (#1576); None for a viewer who is not an
+            # Administrator.
+            "delivery_unknown": None
+            if delivery_unknown is None
+            else mode_split(delivery_unknown, configuration.mode),
             # Presence has its own passive endpoint. Do not repeat its current
             # epoch/population/session reads on every ordinary Admin page.
             "presence_count": None,
@@ -231,6 +253,35 @@ def request_downloaded(request):
         found = functools.cache(parishsoft_downloaded)
         request._stewardship_parishsoft_data = found
     return found
+
+
+def _home_in_review(sections, label, current):
+    """Put My review work first in the viewer's Review work group, in place.
+
+    Staff and Ministry leaders land on My review work at ``/admin/``
+    (#1690); the menu lists it as the first entry of Review work, beside
+    the worklists it counts, rather than as a Home entry above the groups
+    (admin-portal spec, "Menu groups"; R39 finding 4). On ``/admin/`` the
+    entry and its group are current, so the group stays open. Returns
+    whether the entry was placed: a viewer with no Review work group keeps
+    the top entry instead.
+    """
+    review = next((s for s in sections if s["key"] == "review"), None)
+    if review is None:
+        return False
+    review["items"].insert(
+        0,
+        {
+            "name": "index",
+            "url": reverse("admin:index"),
+            "label": label,
+            "reason": None,
+            "current": "page" if current else None,
+            "count": None,
+        },
+    )
+    review["current"] = review["current"] or current
+    return True
 
 
 def menu_state(campaign, configuration, parishsoft_data=None):
@@ -396,7 +447,7 @@ def _find_family(actor, items, campaign):
 
     Only a viewer whose menu offers the directory now (Administrators
     and Staff, with a current campaign) gets the box, and only if they may
-    also open the Family timeline its results link to. It reuses the menu's
+    also open the Timeline its results link to. It reuses the menu's
     decision, so it costs the header no query. The search route rechecks
     both on every request; this only decides whether to show the box.
     """
@@ -406,13 +457,33 @@ def _find_family(actor, items, campaign):
     return {"url": reverse("admin:find_family")}
 
 
-# Menu entries that show how many open items their queue holds (#585).
-COUNTED = frozenset({"information_queue", "ministry_report"})
-# Both counts in one statement, each only when asked for (NULL otherwise).
-# Additional information counts current requests not yet marked "Follow-up
-# completed" (its default view lists completed ones too). Ministry requests
+# Menu entries that show how many open items their queue holds (#585,
+# #1590; Limitations since R39 finding 10).
+COUNTED = frozenset(
+    {"census_changes", "information_queue", "ministry_report", "limitations_report"}
+)
+# The count of Ministry requests' To enter by hand Stage, by this key: Home's
+# Next steps show it (home_steps), the menu never does, since Ministry
+# requests' menu count is its own (R39 finding 2).
+ENTRY_COUNT = "ministry_entry"
+# Campaign states in which that count is read: past go-live (active, closed
+# or archived). A draft or a scheduled campaign has no resolved live request
+# to enter yet, so its Home pays nothing for it.
+ROSTER_STATES = frozenset({"active", "closed", "archived"})
+# Every count in one statement, each only when asked for (NULL otherwise).
+# Census changes reads its rows grouped by the columns its status depends on
+# (census_changes.OPEN_GROUPS); Python then keeps the groups at To review
+# or Conflict (census_changes.open_count), so the stage rules live in one
+# place. ``{census}`` is that query, filled in when the
+# statement runs, since the report module is imported lazily.
+# Additional information counts the requests at its worklist's default To
+# review stage (#1685): current, follow-up neither needed nor completed, and
+# not ignored by the latest Staff revision (whose review decision says so,
+# or, saved before migration 0126, left follow-up not needed;
+# responses.information.staff_ignored). Ministry requests
 # (the follow-up queue, #1133) runs the page's own selection with its
-# default (Unresolved) filters and no rows, and takes its total, so the
+# default filters (Stage To review: the open states; the stream has no
+# Conflict stage yet) and no rows, and takes its total, so the
 # count applies every filter the page
 # does: the Ministry module, a promoted and uncompacted source, the
 # campaign's Ministries (plus removed ones with a current request), the
@@ -423,16 +494,76 @@ COUNTED = frozenset({"information_queue", "ministry_report"})
 # shows. When the page would say the Ministry follow-up is turned off or
 # unavailable, or the viewer has no Ministry in scope, the count is NULL and
 # no number shows.
+# Ministry requests' To enter by hand Stage (ENTRY_COUNT, which replaced
+# Roster changes to enter's count, #1660) runs the selection its roster
+# rows come from (ministry_worklist.read_rows for Staff: resolved requests,
+# every revision and every Member, all rows) and counts, in SQL, the rows
+# that Stage lists: the eligibility (workflows.roster.eligible: an outcome
+# in ROSTER_OUTCOMES that no ParishSoft resolution source settled and no
+# refresh check Confirmed, #1689) and no current Entered in ParishSoft mark
+# (the newest tick row, as workflows.roster.roster_marks reads it).
+# Counting here rather than through
+# the page's Python keeps the chrome at one statement; a database test holds
+# the count equal to the page's rows. Its Ministries get the same Python
+# cross-check as Ministry requests' count.
+# Limitations (R39 finding 10) runs its page's own selection with the page's
+# default filters (stewardship_limitations_report_v2, every answer) and
+# counts the answers its default To review stage lists: no decision in
+# force, or Back to review (pipeline.cannot_participate_placement). An
+# unavailable report (no Family record or source) lists no answer, so it
+# counts nothing and no number shows. The page also lists each Family's
+# Cannot contribute financially answer at its Pledges stage (R39 finding
+# 11), for a viewer Pledges admits, so the count adds those at To review,
+# read through Pledges' own stage selection
+# (stewardship_pledge_stages_v1, which places a pledge from its latest
+# refresh check, so a Conflict or Confirmed one is not To review) and the
+# response's cannot_give flag.
+# The statement's columns, by name and in order (each aliased in the SQL).
+# Read the row through these names, never by position: a caller that adds
+# columns (My review work's counts, #1727, cross-joined after these) takes
+# its own from len(MENU_COLUMNS) on.
+MENU_COLUMNS = (
+    "information",
+    "ministry",
+    "ministries",
+    "census_groups",
+    "roster",
+    "roster_ministries",
+    "limitations",
+)
 OPEN_COUNTS = """
 SELECT
     CASE WHEN %(information)s THEN (
         SELECT count(*) FROM stewardship_additional_information i
         JOIN stewardship_submission s ON s.id=i.submission_id
         WHERE s.campaign_id=%(campaign)s AND s.mode='live'
-          AND i.disposition='current_actionable' AND i.followed_up_at IS NULL)
-    END,
-    f.total,
-    f.ministries
+          AND i.disposition='current_actionable' AND i.followed_up_at IS NULL
+          AND NOT i.follow_up_needed
+          AND coalesce((SELECT coalesce(r.review_decision,'ignored')='none'
+              FROM stewardship_information_revision r WHERE r.item_id=i.id
+              ORDER BY r.expected_version DESC LIMIT 1),true))
+    END AS information,
+    f.total AS ministry,
+    f.ministries AS ministries,
+    CASE WHEN %(census)s THEN ({census}) END AS census_groups,
+    t.total AS roster,
+    t.ministries AS roster_ministries,
+    CASE WHEN %(limitations)s THEN (
+        SELECT count(*) FROM stewardship_limitations_report_v2(
+            %(campaign)s, %(limitation_filters)s::jsonb) v,
+        jsonb_array_elements(coalesce(v->'members','[]'::jsonb)
+            || coalesce(v->'families','[]'::jsonb)) a
+        WHERE NOT coalesce((a->>'in_force')::boolean, false)
+           OR coalesce(a->>'decision','none')='none')
+        + CASE WHEN %(pledges)s THEN (
+            SELECT count(*)
+            FROM stewardship_pledge_stages_v1(%(campaign)s, NULL::uuid) p
+            JOIN stewardship_submission ps ON ps.id=p.submission_id
+            WHERE p.stage='to_review'
+              AND coalesce(ps.answers->'financial'->'cannot_give'='true'::jsonb,
+                  false))
+        ELSE 0 END
+    END AS limitations
 FROM (SELECT NULL) one
 LEFT JOIN LATERAL (
     SELECT CASE WHEN (v->>'authorized')::boolean THEN (v->>'total')::bigint END
@@ -445,16 +576,54 @@ LEFT JOIN LATERAL (
         actor_uuid => %(viewer)s, page_limit => 0) v
     WHERE %(ministry)s
 ) f ON true
+LEFT JOIN LATERAL (
+    SELECT CASE WHEN (v->>'authorized')::boolean THEN (
+            SELECT count(*) FROM jsonb_array_elements(v->'rows') r
+            WHERE r->>'state'='resolved'
+              AND r->>'outcome'=ANY(%(roster_outcomes)s)
+              AND NOT (r->>'source_resolved')::boolean
+              AND NOT EXISTS (SELECT 1 FROM stewardship_refresh_check k
+                  WHERE k.request_id=(r->>'id')::uuid AND k.outcome='confirmed'
+                    AND k.item_version=(r->>'version')::bigint)
+              AND NOT coalesce((
+                  SELECT e.entered FROM stewardship_ministry_roster_entry e
+                  WHERE e.request_id=(r->>'id')::uuid
+                  ORDER BY e.sequence DESC LIMIT 1), false))
+        END AS total,
+        ARRAY(SELECT (m->>'duid')::bigint
+            FROM jsonb_array_elements(coalesce(v->'ministries','[]'::jsonb)) m)
+            AS ministries
+    FROM stewardship_ministry_followup_v2(
+        campaign_uuid => %(campaign)s, filters => %(roster_filters)s::jsonb,
+        actor_uuid => %(viewer)s) v
+    WHERE %(roster)s
+) t ON true
 """
+
+
+def attach_counts(sections, counts):
+    """Give each menu entry its open count, in place, only while it is a link.
+
+    Ministry requests also carries Home's To enter by hand count
+    (``entry_count``, ``ENTRY_COUNT``), which the menu never shows (R39
+    finding 2). Test fixtures that draw the chrome call this too, so they
+    attach the counts exactly as the chrome does.
+    """
+    for section in sections:
+        for entry in section["items"]:
+            entry["count"] = counts.get(entry["name"]) if entry["url"] else None
+            if entry["name"] == "ministry_report":
+                entry["entry_count"] = counts.get(ENTRY_COUNT) if entry["url"] else None
 
 
 def _open_counts(request, actor, items, campaign):
     """Open item counts for the menu's queue entries, by entry name (#585).
 
     Only an entry the viewer's menu offers as a link right now gets a count,
-    so a viewer without either queue (or with both greyed out) pays no
-    query; otherwise one statement reads both. The result is kept on the
-    request, so another render of the chrome in the same request reuses it.
+    so a viewer without any counted queue (or with all of them greyed out)
+    pays no query; otherwise one statement reads them all. The result is
+    kept on the request, so another render of the chrome in the same
+    request reuses it.
     A count is never cached longer: a stale number misleads in a work queue.
 
     The counts only decorate the menu, so they must never take an Admin page
@@ -462,13 +631,28 @@ def _open_counts(request, actor, items, campaign):
     follow-up selection) is logged and the menu renders without numbers,
     and an open view transaction stays usable because the statement runs
     in its own savepoint there.
+
+    Admin Home's Review work counts (#1690) ride on the same statement: the
+    view names the parts it wants in ``request._stewardship_review_flags``
+    (``review_work.read_flags``), and their placed counts are left on
+    ``request._stewardship_review_counts`` for ``review_work.with_counts``,
+    or every flagged stream as not read when the statement fails.
     """
     cached = getattr(request, "_stewardship_open_counts", None)
     if cached is not None:
         return cached
-    offered = {item.name for item in items if item.url and item.name in COUNTED}
+    # Pledges is not counted, but whether the menu offers it says whether
+    # the Limitations count includes its Cannot contribute answers.
+    offered = {
+        item.name
+        for item in items
+        if item.url and item.name in COUNTED | {"pledges_to_enter"}
+    }
+    review = getattr(request, "_stewardship_review_flags", None) or {}
+    if not any(review.values()):
+        review = None
     counts = {}
-    if offered:
+    if offered & COUNTED or review:
         # Inside a view's transaction the statement gets a savepoint, so a
         # failure rolls back only the count. Outside one (autocommit), the
         # statement is its own transaction and a failure leaves nothing
@@ -478,47 +662,114 @@ def _open_counts(request, actor, items, campaign):
         )
         try:
             with isolate():
-                counts = _read_open_counts(offered, actor, campaign)
+                counts, reviewed = _read_open_counts(offered, actor, campaign, review)
         except DatabaseError as error:
             _record_open_counts_failure(error)
+            reviewed = review and review_work.unread(review)
+        if review:
+            request._stewardship_review_counts = reviewed
     request._stewardship_open_counts = counts
     return counts
 
 
-def _read_open_counts(offered, actor, campaign):
-    """Run ``OPEN_COUNTS`` for the ``offered`` entries; see ``_open_counts``."""
+def _read_open_counts(offered, actor, campaign, review=None):
+    """Run ``OPEN_COUNTS`` for the ``offered`` entries; see ``_open_counts``.
+
+    With ``review`` (``review_work.read_flags``), Admin Home's
+    ``review_work.COUNTS`` runs in the same statement, cross-joined to the
+    menu's one row. Returns the menu's counts and the review counts (None
+    without ``review``).
+    """
+    from parishkit.stewardship.reports.census_changes import OPEN_GROUPS, open_count
+    from parishkit.stewardship.reports.limitations import LimitationsQuery
     from parishkit.stewardship.reports.ministry_followup import (
         FollowupQuery,
         in_scope,
         selection_filters,
     )
+    from parishkit.stewardship.workflows.roster import ROSTER_OUTCOMES, can_tick
 
+    # The menu offers Census changes only to those who may read it; checking
+    # the page's own capability again keeps the count from ever reaching
+    # anyone else, whatever the caller passes.
+    census = "census_changes" in offered and allows(actor, Capability.VIEW_CENSUS)
+    # Likewise the To enter by hand count, which only Administrators and
+    # Staff see (can_tick), and only past go-live (ROSTER_STATES).
+    roster = (
+        "ministry_report" in offered
+        and can_tick(actor)
+        and getattr(campaign, "state", None) in ROSTER_STATES
+    )
+    sql = OPEN_COUNTS.replace("{census}", OPEN_GROUPS)
+    if review:
+        # Both statements are one row; their shared parameters (campaign,
+        # viewer, roster_filters) carry the same values.
+        sql = f"SELECT * FROM ({sql}) menu CROSS JOIN ({review_work.COUNTS}) review"
     with connection.cursor() as cursor:
         cursor.execute(
-            OPEN_COUNTS,
+            sql,
             {
+                "census": census,
                 "information": "information_queue" in offered,
                 "ministry": "ministry_report" in offered,
+                "roster": roster,
+                # The page admits CAMPAIGN_REPORT; checked again here, as
+                # for Census changes.
+                "limitations": "limitations_report" in offered
+                and allows(actor, Capability.CAMPAIGN_REPORT),
+                "limitation_filters": json.dumps(LimitationsQuery().form_values()),
+                # Pledges' own admission (FINANCIAL_DETAIL), checked again.
+                "pledges": "pledges_to_enter" in offered
+                and allows(actor, Capability.FINANCIAL_DETAIL),
                 "campaign": campaign.pk,
                 "filters": selection_filters(FollowupQuery()),
+                # The roster rows' own selection (read_rows for Staff).
+                "roster_filters": selection_filters(
+                    FollowupQuery(state="resolved", history="all"), every_member=True
+                ),
+                "roster_outcomes": sorted(ROSTER_OUTCOMES),
                 "viewer": actor.identity,
-            },
+            }
+            | review_work.parameters(review or {}),
         )
-        information, ministry, ministries = cursor.fetchone()
+        values = cursor.fetchone()
+    # The menu's columns by name (MENU_COLUMNS); My review work's own
+    # (review_work.COUNTS, cross-joined after them) follow.
+    row = dict(zip(MENU_COLUMNS, values[: len(MENU_COLUMNS)], strict=True))
+    information, ministry, ministries = (
+        row["information"],
+        row["ministry"],
+        row["ministries"],
+    )
+    groups, roster_count = row["census_groups"], row["roster"]
+    roster_ministries, limitations = row["roster_ministries"], row["limitations"]
+    reviewed = (
+        review_work.placed(review, values[len(MENU_COLUMNS) :]) if review else None
+    )
     # A count naming a Ministry outside Python's view of the actor would be
     # refused by the page (in_scope), so it gets no count either.
     if ministry is not None and not in_scope(actor, True, ministries):
         ministry = None
+    if roster_count is not None and not in_scope(actor, True, roster_ministries):
+        roster_count = None
+    # Census changes counts its To review and Conflict stages for everyone
+    # who may read it (census_changes.open_count; Administrator decision,
+    # 2026-10-18).
+    census_count = None if groups is None else open_count(json.loads(groups))
     # An entry not asked for, or a Ministry follow-up the page would show as
     # off or unavailable, reads NULL and gets no count.
-    return {
+    menu = {
         name: count
         for name, count in (
+            ("census_changes", census_count),
             ("information_queue", information),
             ("ministry_report", ministry),
+            (ENTRY_COUNT, roster_count),
+            ("limitations_report", limitations),
         )
         if count is not None
     }
+    return menu, reviewed
 
 
 def _record_open_counts_failure(error):

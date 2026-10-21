@@ -84,6 +84,37 @@ def test_invalid_server_lifetime_never_reserves_a_target(intent, lifetime):
     assert not SecretReplacementRequest.objects.exists()
 
 
+def test_a_named_automation_session_is_bound_and_checked(intent):
+    """The named session is a UUID, part of the retry identity, and checked.
+
+    A retry naming another session than the first intake is a conflict. A
+    request naming a session that is not a live full-scope automation
+    session is refused by the intake guard even without consumers (#1763).
+    """
+    from django.db import DatabaseError
+
+    from parishkit.stewardship.accounts.secret_requests import SecretRequestConflict
+
+    with pytest.raises(TypeError, match="UUIDs"):
+        stage_secret_request(**intent, automation_session_id=str(uuid4()))
+    # Only the key-replacement targets take a session's request.
+    with pytest.raises(ConfigError, match="from a session"):
+        stage_secret_request(
+            **(intent | {"target": "django_signing"}), automation_session_id=uuid4()
+        )
+    receipt = stage_secret_request(**intent)
+    assert SecretReplacementRequest.objects.get().automation_session_id is None
+    with pytest.raises(SecretRequestConflict):
+        stage_secret_request(**intent, automation_session_id=uuid4())
+    assert stage_secret_request(**intent) == receipt
+    other = intent | {"request_id": uuid4(), "staging_reference": uuid4()}
+    other["target"] = "slack"
+    # Its own transaction rolls back.
+    with pytest.raises(DatabaseError, match="requires a live automation session"):
+        stage_secret_request(**other, automation_session_id=uuid4())
+    assert SecretReplacementRequest.objects.count() == 1
+
+
 def clean(intent, callback):
     """Exercise the future target-store port with an explicit synthetic callback."""
     return clean_secret_request(
@@ -94,8 +125,8 @@ def clean(intent, callback):
     )
 
 
-def test_sealed_intake_rejects_stale_reauthentication_without_reserving_target(intent):
-    """An unusable sealed request must fail atomically at intake, not during claim."""
+def test_sealed_intake_admits_a_sign_in_of_any_age(intent):
+    """A sign-in three hours old is staged with its sealed candidate (#1547)."""
     from parishkit.stewardship.accounts.credential_handoff import PrivateHandoff
     from parishkit.stewardship.accounts.cryptography import Key
     from parishkit.stewardship.accounts.key_files import file_fingerprint
@@ -108,16 +139,12 @@ def test_sealed_intake_rejects_stale_reauthentication_without_reserving_target(i
         "sealed_candidate": handoff.public().seal(intent["request_id"], candidate),
         "candidate_fingerprint": file_fingerprint(candidate),
     }
-    with pytest.raises(IntegrityError, match="fresh authentication"):
-        stage_secret_request(
-            **(
-                arguments
-                | {"reauthenticated_at": timezone.now() - timedelta(minutes=6)}
-            )
-        )
-    assert not SecretReplacementRequest.objects.exists()
-    assert not SealedCredentialStaging.objects.exists()
-    assert stage_secret_request(**arguments).state == "staged"
+    signed_in = timezone.now() - timedelta(hours=3)
+    receipt = stage_secret_request(**(arguments | {"reauthenticated_at": signed_in}))
+    assert receipt.state == "staged"
+    row = SecretReplacementRequest.objects.get(pk=intent["request_id"])
+    assert row.reauthenticated_at == signed_in
+    assert SealedCredentialStaging.objects.filter(request_id=row.pk).count() == 1
 
 
 def test_sql_sealed_payload_cannot_attach_to_legacy_empty_consumer_intent(intent):

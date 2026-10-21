@@ -23,8 +23,10 @@ from parishkit.stewardship.accounts.schedule_entry_views import (
     _check_repeat,
     _chosen,
     _days,
+    _delete_entries,
     _entries,
     _fields,
+    _leaves_series,
     _remember,
     _rule,
     _series_edit,
@@ -33,6 +35,8 @@ from parishkit.stewardship.accounts.schedule_entry_views import (
     entry_form,
     entry_times,
     mailings,
+    return_url,
+    year_month,
 )
 from parishkit.stewardship.accounts.schedule_forms import (
     Schedules,
@@ -123,17 +127,17 @@ def test_rows_show_each_email_by_its_readable_name():
     assert described[0].email == rows[0]["values"]["subject"]
 
 
-def test_when_sorts_sending_order_or_its_reverse():
-    """The default is sending order; ``-when`` reverses it, digests first."""
+def test_when_sorts_chronologically_or_the_reverse():
+    """Time order, a digest at its next send (#1652); ``-when`` reverses it."""
     described = schedule_rows(saved(emails()), VALUES, {}, NOW)
     labels = [
         row.label for row in whole_table(described, sorting=SORTING, sort="when").rows
     ]
     assert labels == [
         "Initial invitation",
+        "Weekly Admin digest",
         "Reminder 1",
         "Reminder 2",
-        "Weekly Admin digest",
     ]
     backwards = whole_table(described, sorting=SORTING, sort="-when").rows
     assert [row.label for row in backwards] == list(reversed(labels))
@@ -691,6 +695,103 @@ def test_a_series_time_is_checked_only_on_the_dates_it_changes():
     with pytest.raises(SeriesEditError) as refused:
         _series_edit(entry, rows[1], record, rows, campaign_row, scope="series", **edit)
     assert refused.value.reason == "day_moved"
+
+
+def test_year_month_takes_only_a_year_and_a_two_digit_month():
+    """The calendar's ?month= and Edit's ?calendar= (#1656): one form only."""
+    assert year_month({}, "month") is None
+    assert year_month({"month": "2054-11"}, "month") == "2054-11"
+    for text in ("2054-13", "2054-00", "2054-1", "54-11", "2054-11-01", " 2054-11"):
+        with pytest.raises(ValueError, match="Unknown filter input"):
+            year_month({"month": text}, "month")
+
+
+def test_return_url_goes_back_to_the_calendar_month_or_the_list():
+    """New from a day's Add and Edit from the calendar return to its month."""
+    assert return_url(None, None) == "/admin/campaign/schedules/"
+    calendar = "/admin/campaign/schedules/calendar/"
+    assert return_url("2054-10-12", None) == f"{calendar}?month=2054-10"
+    assert return_url(None, "2054-11") == f"{calendar}?month=2054-11"
+
+
+def series_of(rows):
+    """A remembered series holding the two reminders of ``saved``."""
+    return {
+        "id": str(uuid4()),
+        "values": {
+            "campaign_id": OWNER["id"],
+            "rule": {"frequency": "daily", "start": "2054-10-01", "end": "2054-10-31"},
+            "schedules": sorted(row["id"] for row in rows[1:3]),
+        },
+    }
+
+
+def test_delete_this_removes_one_schedule_and_names_a_digest():
+    """This one alone; a digest's review says every later send stops."""
+    rows = saved(emails())
+    entries, changes, notes = _delete_entries(rows[1], None, rows, set(), "this")
+    assert (entries, changes, notes) == (
+        [{"id": rows[1]["id"], "delete": True}],
+        [],
+        [],
+    )
+    entries, changes, notes = _delete_entries(rows[3], None, rows, set(), "this")
+    assert entries == [{"id": rows[3]["id"], "delete": True}]
+    assert notes == [
+        "This digest repeats, so deleting it stops every send of it still to come."
+    ]
+
+
+def test_delete_the_whole_series_keeps_its_sent_reminders():
+    """The command line's series delete: unsent members and the record go."""
+    rows = saved(emails())
+    record = series_of(rows)
+    entries, changes, notes = _delete_entries(rows[2], record, rows, set(), "series")
+    assert entries == [
+        {"id": member, "delete": True}
+        for member in sorted(
+            record["values"]["schedules"],
+            key=lambda member: next(
+                row["values"]["date"] for row in rows if row["id"] == member
+            ),
+        )
+    ]
+    assert changes == [
+        {"operation": "remove", "section": "schedule_series", "id": record["id"]}
+    ]
+    assert notes[0].startswith("The whole series is deleted: Every day, October 1")
+    assert notes[0].endswith("stay as ordinary reminders.")
+    # A reminder that sent stays, as an ordinary reminder.
+    entries, _changes, _notes = _delete_entries(
+        rows[2], record, rows, {rows[1]["id"]}, "series"
+    )
+    assert entries == [{"id": rows[2]["id"], "delete": True}]
+
+
+def test_delete_the_whole_series_of_a_reminder_no_longer_in_one_is_refused():
+    """A page drawn while the reminder was in a series: reload, nothing done."""
+    rows = saved(emails())
+    with pytest.raises(UserFacingError, match="no longer part of a series"):
+        _delete_entries(rows[1], None, rows, set(), "series")
+
+
+def test_a_reminder_moved_off_its_rule_says_it_leaves_its_series():
+    """Edit's "This reminder only" line (#1521), on upkeep's own test.
+
+    The series sends every day of October, so a reminder moved to another
+    October day stays in it and November 3 takes it out; a reminder in no
+    series, or a change with no date, says nothing.
+    """
+    rows = saved(emails())
+    record = series_of(rows)
+    moved = [{"id": rows[1]["id"], "date": "2054-11-03", "time": "09:00:00"}]
+    (line,) = _leaves_series(record, moved)
+    assert str(line).startswith("This reminder leaves its series (")
+    assert str(line).endswith("), since the series does not send on its new day.")
+    kept = [{"id": rows[1]["id"], "date": "2054-10-12", "time": "09:00:00"}]
+    assert _leaves_series(record, kept) == []
+    assert _leaves_series(None, moved) == []
+    assert _leaves_series(record, [{"id": rows[1]["id"], "date": None}]) == []
 
 
 def test_the_page_opens_in_basic_unless_advanced_was_sent_or_a_tool_is_on():

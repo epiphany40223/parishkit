@@ -74,10 +74,16 @@ def task_retry():
 
 
 def delivery_list():
-    """One page of Outgoing mail with one message."""
+    """One page of Sent mail with one message."""
     return admin_operations.delivery_list_model(
         {
-            "values": {"state": "all", "q": "", "sort": "-created"},
+            "values": {
+                "state": "all",
+                "recipient": "",
+                "purpose": "all",
+                "mode": None,
+                "sort": "-created",
+            },
             "window": WINDOW,
             "rows": [MESSAGE_ROW | {"refused": 2}],
             "has_next": False,
@@ -114,6 +120,12 @@ def delivery_show():
             "has_next": False,
             "actions": ["note", "retry_failed"],
             "retry_unavailable": False,
+            # The outcome panel and its question (#1563).
+            "outcome": "needs_resolution",
+            "choices": [
+                {"choice": "send_again", "action": "retry_failed", "unavailable": None},
+                {"choice": "keep_failed", "action": "note", "unavailable": None},
+            ],
         }
     )
 
@@ -246,6 +258,10 @@ GOLDEN |= {
         delivery_list,
         {
             "state": "all",
+            "purpose": "all",
+            "mode": None,
+            "start": None,
+            "end": None,
             "send": None,
             "page": 1,
             "size": 25,
@@ -268,6 +284,11 @@ GOLDEN |= {
             },
             "actions": ["note", "retry_failed"],
             "retry_unavailable": False,
+            "outcome": "needs_resolution",
+            "choices": [
+                {"choice": "send_again", "action": "retry_failed", "unavailable": None},
+                {"choice": "keep_failed", "action": "note", "unavailable": None},
+            ],
             "page": 1,
             "size": 25,
             "has_next": False,
@@ -400,7 +421,17 @@ ALLOWED = {
         "state",
     },
     # ``refused`` is the page's count of unresolved refused addresses (#1004).
-    "delivery list": {"state", "send", "deliveries", "refused"}
+    # The filters echo all but the recipient, which is input only (#1562).
+    "delivery list": {
+        "state",
+        "purpose",
+        "mode",
+        "start",
+        "end",
+        "send",
+        "deliveries",
+        "refused",
+    }
     | PAGE_MEMBERS
     | DELIVERY_MEMBERS,
     "delivery show": {
@@ -409,6 +440,10 @@ ALLOWED = {
         "retry_sequence",
         "actions",
         "retry_unavailable",
+        "outcome",
+        "choices",
+        "choice",
+        "unavailable",
         "page",
         "size",
         "has_next",
@@ -485,9 +520,10 @@ def test_each_documents_members_are_exactly_its_allowlist(command):
 
 def test_the_parsers_vocabularies_match_the_pages():
     """Spelled out before Django is set up; kept equal to their sources."""
-    from parishkit.stewardship.jobs.delivery_metadata import STATES
+    from parishkit.stewardship.jobs.delivery_metadata import PURPOSE_CHOICES, STATES
 
     assert admin_cli.DELIVERY_STATES == STATES
+    assert admin_cli.DELIVERY_PURPOSES == PURPOSE_CHOICES
     assert admin_cli.RESOLVE_ACTIONS == admin_operations.RESOLVE_ACTIONS
 
 
@@ -580,6 +616,9 @@ def test_delivery_show_lists_every_action_the_page_offers():
     """Each listed action has a command: resend is delivery resend (PR 9c)."""
     document = delivery_show().to_document()
     assert document["actions"] == ["note", "retry_failed"]
+    # Every allowed answer of the page's question is an offered action (#1563).
+    allowed = [row["action"] for row in document["choices"] if not row["unavailable"]]
+    assert set(allowed) <= set(document["actions"])
     offered = admin_cli.RESOLVE_ACTIONS + ("resend",)
     from parishkit.stewardship.jobs.delivery_resolution import ACTIONS
 

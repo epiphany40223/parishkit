@@ -51,7 +51,6 @@ GUARD_TESTS = (
     "tests/stewardship/test_admin_wording.py",
     "tests/stewardship/test_task_wording.py",
     "tests/stewardship/test_local_hint_wording.py",
-    "tests/stewardship/test_local_step_up_wording.py",
     "tests/stewardship/test_admin_help_guards.py",
     "tests/stewardship/test_setup_help.py",
     "tests/stewardship/test_admin_page_names.py",

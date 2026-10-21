@@ -244,9 +244,6 @@ def error_page(request, response):
         page_fix = refusal.page_fix if request.method == "POST" else None
         guidance = page_fix or refusal.fix or guidance
         title = refusal.title or title
-    reauthenticate = admin and getattr(response, "stewardship_reauthenticate", False)
-    if reauthenticate:
-        title = _("Confirm it's you")
     context = {
         # Admin errors extend the JavaScript-gated Admin base (#565); Family
         # errors keep the ungated base.
@@ -257,35 +254,25 @@ def error_page(request, response):
         "error_messages": messages,
         "fix_link": refusal.link if refusal else None,
         "fix_label": refusal.link_label if refusal else None,
-        "reauthenticate": reauthenticate,
-        # Where "Confirm with Google" returns: this page, unless the view named
-        # the page its form came from (a POST-only route would answer the
-        # returning GET with 405). Either way only a valid Admin path.
-        "next": admin_return_path(
-            getattr(response, "stewardship_return_path", None)
-            or request.get_full_path()
-        ),
-        # The return page's name, when it is not this page (a POST-only
-        # route's form page), so the step-up says where it returns.
-        "next_label": getattr(response, "stewardship_return_label", None),
-        "submitted": request.method == "POST",
-        # The view kept the Admin's choices (server-side) for after the step-up.
-        "inputs_kept": getattr(response, "stewardship_inputs_kept", False),
-        "sign_in": (
-            ("/admin/login" if admin else "/")
-            if code == ErrorCode.DENIED and not reauthenticate
-            else None
-        ),
+        "sign_in": ("/admin/login" if admin else "/")
+        if code == ErrorCode.DENIED
+        else None,
         "back": _back_path(request),
         "home": ADMIN_HOME if admin else "/",
         "home_label": _("Administration home") if admin else _("Family portal home"),
-        # Chrome and step-up forms need this even without request context.
+        # The chrome's forms need this even without request context.
         "csrf_token": get_token(request),
-        # So does LOCAL's step-up wording (#619): the outage fallback below
+        # So does the chrome's LOCAL wording (#619): the outage fallback below
         # renders without context processors, which otherwise set this flag
         # (accounts.branding_context.local_environment).
         "local_environment": _is_local(),
     }
+    if context["local_environment"]:
+        # The banner's ParishSoft wording and the Google sign-in flag too
+        # (#1399).
+        from ..accounts.branding_context import local_banner
+
+        context.update(local_banner())
     try:
         content = render_to_string("stewardship/error.html", context, request=request)
     except DatabaseError:

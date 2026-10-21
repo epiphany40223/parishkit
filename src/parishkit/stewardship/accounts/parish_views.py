@@ -16,6 +16,14 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.field_rules import (
+    HOST,
+    SPACE,
+    FieldRule,
+    RuleField,
+    apply,
+    trimmed,
+)
 from parishkit.stewardship.web.presentation import parse_us_phone, phone
 from parishkit.stewardship.web.refusals import (
     UserFacingError,
@@ -60,11 +68,34 @@ PROFILE_FIELDS = (
 DEFAULTS = {"date_format": dates.DEFAULT}
 
 
-class PhoneField(forms.CharField):
+# A US telephone typed any common way: an optional +1 or 1, a ten-digit
+# number whose area code and exchange do not start with 0 or 1 (the stored
+# constraint), the area code optionally in parentheses, and spaces, dots or
+# hyphens between the groups. The browser checks the same rule (#1577);
+# ``parse_us_phone`` then stores it as E.164, and reads every value it
+# admits (the shared case table pins both). Any whitespace may surround it
+# (the field strips it), but between the groups only the separators
+# phonenumbers reads: a space, a no-break space (pasted from a page), a dot
+# or a hyphen.
+_BETWEEN = r" \u00a0.\-"
+PHONE = FieldRule(
+    name="parish_phone",
+    pattern=(
+        rf"[{SPACE}]*(\+?1[{_BETWEEN}]*)?(\([2-9][0-9]{{2}}\)|[2-9][0-9]{{2}})"
+        rf"[{_BETWEEN}]*[2-9][0-9]{{2}}[{_BETWEEN}]*[0-9]{{4}}[{SPACE}]*"
+    ),
+    message=_("Enter a ten-digit US telephone number, such as (212) 555-1234."),
+    code="invalid_phone",
+    empty=_("Enter the parish telephone, such as (212) 555-1234."),
+)
+
+
+class PhoneField(RuleField):
     """A US telephone typed any common way, stored as canonical E.164.
 
     The configuration keeps "+12125551234"; people read and type
-    "+1 (212) 555-1234", "(212) 555-1234" or "212-555-1234".
+    "+1 (212) 555-1234", "(212) 555-1234" or "212-555-1234". The browser
+    checks the same rule (``PHONE``) as the field is left.
     """
 
     def __init__(self, **kwargs):
@@ -72,7 +103,7 @@ class PhoneField(forms.CharField):
         kwargs.setdefault(
             "widget", forms.TextInput(attrs={"type": "tel", "autocomplete": "tel"})
         )
-        super().__init__(max_length=32, **kwargs)
+        super().__init__(PHONE, max_length=32, **kwargs)
 
     def prepare_value(self, value):
         """Show stored and re-displayed values in the familiar grouping."""
@@ -86,66 +117,92 @@ class PhoneField(forms.CharField):
         try:
             return parse_us_phone(value)
         except ValueError:
-            raise forms.ValidationError(
-                _("Enter a ten-digit US telephone number, such as (212) 555-1234."),
-                code="invalid_phone",
-            ) from None
+            # Not expected: parse_us_phone reads every value PHONE admits.
+            raise forms.ValidationError(PHONE.message, code=PHONE.code) from None
 
 
-# The Parish website's refusal, at the field and as the browser's hint.
-WEBSITE_REFUSAL = _("Use a website URL without credentials, query or fragment.")
-WEBSITE_EMPTY = _("Enter the parish website, such as https://example.org.")
-# What the browser checks of it: a scheme, a host part without "@", then any
-# path; a lone "?" or "#" (an empty query or fragment) is still admitted, as
-# the server admits it. Written for the browser's "v" pattern flag.
-WEBSITE_PATTERN = r"[A-Za-z][A-Za-z0-9+.\-]*:\/\/[^\/?#@]*(\/[^?#]*)?\??#?"
+# The Parish website's rule, checked by the browser and the server alike:
+# http:// or https://, a host name as URLValidator admits one (``HOST``, so
+# no user name or password), then any path without spaces; a lone "?" or "#"
+# (an empty query or fragment) is still admitted, as the configuration
+# admits it. Spaces around the value are admitted (``trimmed``): the field
+# strips them. The server then also checks it as a stored URL
+# (``clean_website``).
+WEBSITE = FieldRule(
+    name="parish_website",
+    pattern=trimmed(rf"[Hh][Tt][Tt][Pp][Ss]?:\/\/{HOST}(\/[^?#{SPACE}]*)?\??#?"),
+    message=_(
+        "Use a website URL such as https://example.org, without credentials, "
+        "query or fragment."
+    ),
+    # URLField's own check says "invalid"; one code per field.
+    code="invalid",
+    empty=_("Enter the parish website, such as https://example.org."),
+)
+# An online giving link: https://, a host name as URLValidator admits one
+# (``HOST``, so no user name or password), then any path, query or fragment
+# without spaces (giving providers use "?tab=home"). The server then also
+# checks it as a stored link.
+GIVING = FieldRule(
+    name="online_giving_url",
+    pattern=trimmed(rf"[Hh][Tt][Tt][Pp][Ss]:\/\/{HOST}([\/?#][^{SPACE}]*)?"),
+    message=_(
+        "Use an https:// address without a user name or password, "
+        "for example https://giving.example.org/parish?tab=home."
+    ),
+    # URLField's own check says "invalid"; one code per field.
+    code="invalid",
+)
+
+
+def url_input():
+    """A text box that asks phones for a URL keyboard.
+
+    Not ``type="url"``: the browser's own URL check refuses a value padded
+    with a Unicode space, which the server strips and admits, so the rule's
+    pattern (``trimmed``) is the one check both sides share. Autocapitalize
+    and spellcheck are off, as ``type="url"`` would imply on phones.
+    """
+    return forms.TextInput(
+        attrs={"inputmode": "url", "autocapitalize": "none", "spellcheck": "false"}
+    )
 
 
 class ParishForm(AdminForm):
     """The profile form cannot modify branding, runtime mode or campaign snapshots."""
 
     name = forms.CharField(label=_("Parish name"), max_length=254)
-    website = forms.URLField(
-        label=_("Parish website"),
-        max_length=2048,
-        assume_scheme="https",
-        # The browser refuses a user name, query or fragment at once (#1330):
-        # no "@" before the path, and no "?" or "#" with anything after it.
-        # clean_website stays the authority.
-        widget=forms.URLInput(
-            attrs={
-                "pattern": WEBSITE_PATTERN,
-                "data-missing-hint": WEBSITE_REFUSAL,
-                # An empty website says what to enter, not the format rule.
-                "data-empty-hint": WEBSITE_EMPTY,
-            }
+    # The browser refuses a user name, query or fragment as the field is
+    # left (#1330, #1577); clean_website checks the same rule.
+    website = apply(
+        forms.URLField(
+            label=_("Parish website"),
+            max_length=2048,
+            assume_scheme="https",
+            widget=url_input(),
         ),
+        WEBSITE,
     )
     timezone = TimezoneField(label=_("Parish timezone"))
     phone = PhoneField(
         label=_("Parish telephone"),
         help_text=_("The ten-digit US number, such as (212) 555-1234."),
     )
-    online_giving_url = forms.URLField(
-        label=_("Online giving URL"),
-        max_length=2048,
-        required=False,
-        assume_scheme="https",
-        # The browser refuses an http:// address at once (#563); the server
-        # (clean_online_giving_url) stays the authority.
-        widget=forms.URLInput(
-            attrs={
-                "pattern": "[Hh][Tt][Tt][Pp][Ss]://.+",
-                "data-missing-hint": _(
-                    "Use an https:// address, for example "
-                    "https://giving.example.org/parish, or leave it blank."
-                ),
-            }
+    # The browser refuses an http:// address or a user name as the field is
+    # left (#563, #1577); clean_online_giving_url checks the same rule.
+    online_giving_url = apply(
+        forms.URLField(
+            label=_("Online giving URL"),
+            max_length=2048,
+            required=False,
+            assume_scheme="https",
+            widget=url_input(),
+            help_text=_(
+                "Optional. The page where Families can give online. Emails and "
+                "pages can link to it with the online_giving_url placeholder."
+            ),
         ),
-        help_text=_(
-            "Optional. The page where Families can give online. Emails and pages "
-            "can link to it with the online_giving_url placeholder."
-        ),
+        GIVING,
     )
     date_format = forms.ChoiceField(
         label=_("Date format"),
@@ -170,10 +227,11 @@ class ParishForm(AdminForm):
         setup, rather than as a notice above the form.
         """
         value = self.cleaned_data["website"]
+        WEBSITE.check(value)
         try:
             typed(value, "url")
         except ConfigError:
-            raise forms.ValidationError(WEBSITE_REFUSAL, code="invalid_url") from None
+            raise forms.ValidationError(WEBSITE.message, code=WEBSITE.code) from None
         return value
 
     def clean_date_format(self):
@@ -185,18 +243,13 @@ class ParishForm(AdminForm):
         value = self.cleaned_data["online_giving_url"]
         if not value:
             return ""
+        GIVING.check(value)
         try:
             typed(value, "link")
             if not value.lower().startswith("https://"):
                 raise ConfigError("Online giving requires HTTPS.")
         except ConfigError:
-            raise forms.ValidationError(
-                _(
-                    "Use an https:// address without a user name or password, "
-                    "for example https://giving.example.org/parish?tab=home."
-                ),
-                code="invalid_url",
-            ) from None
+            raise forms.ValidationError(GIVING.message, code=GIVING.code) from None
         return value
 
 

@@ -28,7 +28,7 @@ from django.utils.http import http_date
 
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.web.namespaces import ADMIN_PREFIX, cookie_namespace
-from parishkit.stewardship.web.refusals import TypedRefusal, mark_recorded
+from parishkit.stewardship.web.refusals import AccessDenied, TypedRefusal, mark_recorded
 
 from .admin_caller import AUTOMATION, WEB, as_caller
 from .admin_session_store import STORED_FORM, stored_key
@@ -234,7 +234,7 @@ def _authority_fingerprint(principal):
 
 
 def _rotate_authority(caller, row, principal, now):
-    """Replace a locked session without extending Google freshness or lifetime.
+    """Replace a locked session keeping its Google sign-in instant and lifetime.
 
     Django's cycle_key deletes its protected parent, so create a new parent and
     metadata explicitly. Revoked metadata stays available for ordered cleanup.
@@ -343,7 +343,7 @@ def issue_admin(request, user_id, *, store, authenticated_at):
         if timezone.is_naive(authenticated_at) or authenticated_at > now:
             raise PermissionError("Verified Google authentication is required.")
         # Ordinary Google SSO may predate this application session. Its signed
-        # time gates privileged actions, not the new session's absolute limit.
+        # time is what privileged actions record, not the session's limit.
         _, row = create_admin_session(
             principal,
             now=now,
@@ -357,49 +357,16 @@ def issue_admin(request, user_id, *, store, authenticated_at):
     return principal
 
 
-def reauthenticate_admin(request, user_id, *, store, authenticated_at):
-    """Step-up: refresh the current live session's Google freshness in place.
+# The header a page's automatic re-read of its own address sends (ui-v1.js,
+# UX conventions "Pages that update themselves", #1586): the reader did not
+# act, so a view whose ordinary load renews the sign-in reads passively
+# instead. A client can only lower its own request's effect with it.
+PASSIVE_READ_HEADER = "X-ParishKit-Read"
 
-    This applies only when the request already carries a live, currently
-    authorized Admin session whose principal is the PortalUser that just
-    completed a verified Google sign-in. That row's ``authenticated_at``
-    advances to the verified instant (never backwards), activity renews, and
-    the Django session key and PortalSession row stay the same, so work bound
-    to this login, such as the initial setup draft, survives. Returns the
-    principal, or None when there is no such session; the caller then issues
-    a new session exactly as for a first login.
 
-    Keeping the key is not a session-fixation risk. Every initial login
-    already replaced the pre-login key with a fresh server-issued one bound
-    to this principal, and step-up changes neither the principal nor its
-    authority, which ``authenticated_admin`` re-derives from current policy.
-    It only records that the same person proved presence with Google again.
-    A different Google account never reaches this row: it gets a new session.
-    The caller still rotates the CSRF secret, as it does after any login.
-    """
-    with transaction.atomic():
-        # Admission locks the row and revokes an idle, expired or recovered
-        # session first, so a dead session is replaced rather than revived.
-        principal = authenticated_admin(request, store=store)
-        if principal is None or principal.identity != user_id:
-            return None
-        row = request.portal_session
-        now = database_now()
-        if timezone.is_naive(authenticated_at) or authenticated_at > now:
-            raise PermissionError("Verified Google authentication is required.")
-        # A signed auth_time may predate the session's current instant (an
-        # older Google session); freshness then simply does not advance.
-        fresh = max(row.authenticated_at, authenticated_at)
-        PortalSession.objects.filter(pk=row.pk).update(
-            authenticated_at=fresh,
-            last_activity_at=now,
-            version=F("version") + 1,
-        )
-        row.authenticated_at, row.last_activity_at = fresh, now
-        AuditEvent.objects.create(
-            event_type="admin_step_up", actor_id=user_id, subject_id=row.pk
-        )
-    return principal
+def passive_read(request):
+    """Whether ``request`` is a page's automatic re-read of itself (#1586)."""
+    return request.headers.get(PASSIVE_READ_HEADER) == "passive"
 
 
 def authenticated_admin(
@@ -520,87 +487,46 @@ def _automation_admitted(caller, principal):
     )
 
 
-# The refusal log's reason for a missing fresh sign-in (#1403).
-FRESH_AUTHENTICATION_REASON = "fresh_authentication_required"
+class SignInEnded(TypedRefusal, PermissionError):
+    """A guard found the Admin's session no longer live at its write (#1547).
 
-
-class FreshAuthenticationRequired(TypedRefusal, PermissionError):
-    """The session is valid, but this action needs a Google sign-in within 5 min.
-
-    It stays a PermissionError, so every existing denial path still refuses.
-    Admin error handling can instead offer the step-up confirmation page.
-    The refusal log records it with its own reason, at INFO (#1403).
+    Admission passed moments before, so the session ended in between (an
+    hour idle, signed out in another tab, or access removed). Regions that
+    answer in place show it as ``signed_out``; nothing was done.
     """
 
-    reason = FRESH_AUTHENTICATION_REASON
+    reason = "denied"
 
 
-FRESH_SECONDS = 300
+def sign_in_instant(caller, *, irreversible=False, record=True):
+    """The sign-in instant a privileged Admin action records (#1547).
 
-# The setup wizard's credential steps (#1402) accept a sign-in up to an hour
-# old, the Admin idle timeout's length, so the Admin is not asked to confirm
-# again on each credential page. Only setup_credential_views and
-# setup_credentials pass it, for the original setup attempt while it is
-# collecting; the SQL guard stewardship_setup_secret_guard_v1 enforces the
-# same 60 minutes on the sealed credential row (migration 0104); both count a
-# sign-in exactly 60 minutes old as within the window. Every other
-# action, and every action after setup, keeps FRESH_SECONDS.
-SETUP_FRESH_SECONDS = 3600
-
-
-def freshness(request, within=None):
-    """Say whether a gated action would be admitted now, for page notices only.
-
-    Returns ``(fresh, minutes)``: ``minutes`` is how long ago this session last
-    signed in with Google (``None`` without a live session). ``within`` is the
-    action's window in seconds (``FRESH_SECONDS`` when omitted). It never
-    admits anything; every gated command still calls ``require_fresh`` itself.
-    """
-    row = getattr(request, "portal_session", None)
-    if row is None:
-        return False, None
-    age = (database_now() - row.authenticated_at).total_seconds()
-    window = FRESH_SECONDS if within is None else within
-    return 0 <= age <= window, max(0, int(age // 60))
-
-
-def require_fresh(caller, *, irreversible=False, record=True, within=None):
-    """A fresh Google round trip, not a browser flag, admits privileged commands.
-
-    ``caller`` is an ``AdminCaller`` (until the final ADM-11 PR, a Django
-    request is still converted). A web caller must have signed in with Google
-    within the last five minutes. An automation caller stands in for that
-    sign-in with a live, full-scope automation session (ADM-11 PR 5; see
-    ``_automation_fresh``). Returns the sign-in instant the action records,
-    which its SQL guard compares with the session row. ``irreversible`` marks
-    the actions whose automation notice is ``irreversible`` (the Production
-    confirmation and pre-start withdrawal); the web ignores it. A passive
-    probe (a page showing whether a fresh sign-in is in place) passes
-    ``record=False``: it is no action, so it records no fresh-gate event or
-    notice. ``within`` replaces the web's five-minute window, in seconds;
-    only the setup wizard's credential steps pass it
-    (``SETUP_FRESH_SECONDS``, #1402). It is resolved at call time, so tests
-    that patch ``FRESH_SECONDS`` still take effect.
+    ``caller`` is an ``AdminCaller`` (a Django request is still converted).
+    A sign-in of any age admits the action: Google ignores ``max_age`` and
+    never sends ``auth_time``, so a recent sign-in proved only a live Google
+    browser session, and the Admin portal no longer asks for one. The action
+    records the admitted session's Google sign-in instant, which its SQL
+    guard compares with the live session row. A web caller always has one
+    once admitted. An automation caller must hold a live, full-scope
+    automation session (``_automation_instant``); its use is reported
+    unless ``record`` is false, and ``irreversible`` marks the actions whose
+    notice is ``irreversible`` (the Production confirmation and pre-start
+    withdrawal); the web ignores both.
     """
     caller = as_caller(caller)
     if caller.channel == AUTOMATION:
-        instant = _automation_fresh(caller)
+        instant = _automation_instant(caller)
         if record:
-            _record_automation_fresh(caller, irreversible=irreversible)
+            _record_automation_notice(caller, irreversible=irreversible)
         return instant
     row = caller.portal_session
-    window = FRESH_SECONDS if within is None else within
-    if (
-        caller.channel != WEB
-        or row is None
-        or not 0 <= (database_now() - row.authenticated_at).total_seconds() <= window
-    ):
-        raise FreshAuthenticationRequired("Please authenticate with Google again.")
+    if caller.channel != WEB or row is None:
+        raise AccessDenied("Access is unavailable.")
     return row.authenticated_at
 
 
-def _automation_fresh(caller):
-    """A live, full-scope automation session stands in for a fresh sign-in.
+def _automation_instant(caller):
+    """A privileged automation command needs a live, full-scope session.
 
     The automation session row is locked ``FOR SHARE`` in the caller's
     transaction, so an ending (revocation, logout, role loss) waits for the
@@ -609,18 +535,20 @@ def _automation_fresh(caller):
     unexpired, its principal still an Administrator, no later recovery), of
     full scope and the admitted principal's, and the command session must
     carry its sign-in instant. That instant is returned: the action records
-    it as the page records a fresh sign-in, and the SQL guards accept it
-    through ``stewardship_automation_fresh_v1``. A read-only session never
-    passes. It must run in the action's transaction: outside one, the lock
-    would end at once and prove nothing about the action's commit.
+    it as the page records its session's sign-in, and the SQL guards bind it
+    to the command session's row. A read-only session never passes. It must
+    run in the action's transaction: outside one, the lock would end at once
+    and prove nothing about the action's commit.
     """
     row = caller.portal_session
     if caller.read_only or row is None or caller.principal is None:
-        raise FreshAuthenticationRequired("This needs a full-scope session.")
+        raise AccessDenied("This needs a full-scope session.")
     if not connection.in_atomic_block:
         from parishkit.stewardship.storage import StorageInvariantError
 
-        raise StorageInvariantError("An automation fresh gate needs its transaction.")
+        raise StorageInvariantError(
+            "A privileged automation command needs its transaction."
+        )
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT a.scope,a.principal_id,a.authenticated_at,"
@@ -636,12 +564,12 @@ def _automation_fresh(caller):
         or found[2] != row.authenticated_at
         or found[3] is not True
     ):
-        raise FreshAuthenticationRequired("This needs a live full-scope session.")
+        raise AccessDenied("This needs a live full-scope session.")
     return found[2]
 
 
-def _record_automation_fresh(caller, *, irreversible):
-    """Tell Administrators that an automation session passed a fresh gate.
+def _record_automation_notice(caller, *, irreversible):
+    """Tell Administrators that an automation session ran a privileged command.
 
     Once per state-changing command (the command line sets ``command_type``;
     a read or preview has none and records nothing), in the action's own
@@ -649,11 +577,11 @@ def _record_automation_fresh(caller, *, irreversible):
     invocation and per kind, read from the database: a notice of the same
     kind, session and correlation already recorded suppresses another (an
     attempt that rolled back left none, so a retried attempt records again;
-    an irreversible gate after a fresh-gated one still records its own
+    an irreversible command after a privileged one still records its own
     notice and incident): an
     ``automation_fresh_gate`` audit event (the Administrator as actor, the
-    automation session as subject) distinguishes an action whose fresh
-    sign-in an automation session stood in for, and a dashboard notice
+    automation session as subject; the name predates #1547) marks a
+    privileged action an automation session ran, and a dashboard notice
     names the session, command and campaign. An irreversible action's
     notice is ``irreversible`` and also observes the
     ``automation_irreversible`` incident, which emails and posts to Slack

@@ -10,10 +10,14 @@ import pytest
 from django.utils import timezone
 
 from parishkit.stewardship.accounts import integration_credentials as credentials
+from parishkit.stewardship.accounts.automation_models import AutomationSession
 from parishkit.stewardship.accounts.configuration_errors import (
     ConfigurationReadinessUnavailable,
 )
 from parishkit.stewardship.accounts.configuration_installation import install_request
+from parishkit.stewardship.accounts.credential_errors import (
+    CredentialOrganizationMismatch,
+)
 from parishkit.stewardship.accounts.credential_files import CredentialFiles
 from parishkit.stewardship.accounts.credential_installation import CredentialInstaller
 from parishkit.stewardship.accounts.integration_credentials import (
@@ -28,12 +32,15 @@ from parishkit.stewardship.accounts.key_files import (
 )
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
-from parishkit.stewardship.accounts.secret_models import SecretReplacementRequest
+from parishkit.stewardship.accounts.secret_models import (
+    SealedCredentialStaging,
+    SecretReplacementRequest,
+)
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.credential_runtime import acknowledge_rotations
 from parishkit.stewardship.deployment import ServiceRole, load_deployment
 
-from ..schedule_rows import rows
+from ..schedule_rows import rows, shown
 from . import campaign_builders
 from .auth_builders import signed_in, stale_sign_in
 from .campaign_builders import change
@@ -101,7 +108,11 @@ def working(request, monkeypatch, tmp_path, google):
 
 
 def save(value, candidate=CANDIDATE, **settings):
-    """Submit the page's own form with a pasted key, as a browser would."""
+    """Submit the page's own form with a pasted key, as a browser would.
+
+    A setting given as None is left out, as a browser leaves out a disabled
+    field (the locked organization ID, #1492).
+    """
     browser, store = value["browser"], value["service"].store
     page = browser.get(URL)
     fields = {
@@ -111,6 +122,7 @@ def save(value, candidate=CANDIDATE, **settings):
         "intent": hidden(page, "intent"),
         "candidate": candidate.decode(),
     } | settings
+    fields = {name: field for name, field in fields.items() if field is not None}
     with identity("pk_stewardship_web"):
         return post(browser, URL, fields)
 
@@ -121,6 +133,35 @@ def install(value, request_id):
         return install_request(
             value["service"].store, request_id=request_id, correlation_id=uuid4()
         )
+
+
+def test_key_paste_after_the_approved_sessions_ended_still_stages(working):
+    """An ended automation session does not block its approving browser's paste.
+
+    The browser approved a full-scope automation session and then ended it.
+    The browser's own sign-in is still live, and its request names no
+    automation session, so its key replacement no longer depends on the
+    sessions it approved (#1763; before that, #1547 showed a sign-in page).
+    """
+    from parishkit.stewardship.accounts import automation_sessions as automation
+
+    from .automation_builders import approve_now, start
+    from .test_automation_sessions_postgresql import owner
+
+    service = working["service"]
+    secret, code = start(service)
+    approve_now(service, code)
+    row = AutomationSession.objects.get(secret_digest=automation.secret_digest(secret))
+    assert automation.revoke(row.pk, owner(service), reason="revoked_by_owner")
+    response = save(working)
+    assert response.status_code == 302
+    assert response["Location"] == URL
+    staged = SecretReplacementRequest.objects.get()
+    # The request holds the ended session's sign-in instant, so this is the
+    # shared-instant case 0114's check used to refuse.
+    assert staged.reauthenticated_at == row.authenticated_at
+    assert staged.automation_session_id is None
+    assert SealedCredentialStaging.objects.count() == 1
 
 
 def test_saved_key_installs_acknowledges_and_is_selected(working):
@@ -192,7 +233,7 @@ def test_organization_cannot_change_after_the_first_load(
 
     Every refresh must read the organization whose data is loaded, so saving
     another ID (with or without a new key) would stop them all. The page
-    shows the ID read-only, and a posted change is refused: nothing is
+    shows the ID disabled, and a posted change is refused: nothing is
     queued or staged.
     """
     monkeypatch.setattr(
@@ -201,8 +242,8 @@ def test_organization_cannot_change_after_the_first_load(
     )
     page = working["browser"].get(URL)
     field = page.context["form"]["organization_id"]
-    assert field.field.widget.attrs.get("readonly") is True
-    assert b"so its ID can no longer change" in page.content
+    assert field.field.disabled and " disabled" in str(field)
+    assert b"Locked: ParishSoft data for this organization is loaded." in page.content
     if with_key:
         response = save(working, organization_id="54321")
     else:
@@ -306,13 +347,19 @@ def test_failed_switch_is_an_error_and_finish_switching_recovers(
     assert "switching to it did not finish" in page
     assert "ParishSoft refreshes are stopped" in page
     assert "notice-error" in page and 'role="alert"' in page
-    select = f"/admin/system/key-changes/{row.pk}/selection/"
-    assert f'class="button" href="{select}"' in page
+    # Finish switching opens the page's review dialog (#1568), never a page.
+    assert 'data-review-open="integration-review"' in page
+    assert '<input type="hidden" name="action" value="finish">' in page
+    assert "/admin/system/key-changes/" not in page
     assert summary("parishsoft", _record(working)).kind == "unselected"
     # Finish switching previews the original selection on today's settings.
-    preview = hidden(browser.get(select), "preview")
+    preview = hidden(post(browser, URL, {"action": "finish"}), "preview")
     with identity("pk_stewardship_web"):
-        response = post(browser, select, {"action": "confirm", "preview": preview})
+        response = post(
+            browser,
+            URL,
+            {"action": "confirm", "preview": preview, "request_id": str(row.pk)},
+        )
     assert response.status_code == 302, response.content
     assert b"Switching to it now" in browser.get(URL).content
     finish = ConfigurationChangeRequest.objects.get(
@@ -370,18 +417,23 @@ def test_finish_switching_keeps_another_admins_newer_schedule(working):
 
     Another Administrator's schedule change landed first. Replaying the
     whole saved settings block would silently undo it; only the key-scope
-    organization ID is carried over, and the confirm page lists it.
+    organization ID is carried over, and the confirmation lists it.
     """
     row = failed_switch(working, nightly_time="04:15")
     browser = working["browser"]
-    select = f"/admin/system/key-changes/{row.pk}/selection/"
-    page = browser.get(select)
+    page = post(browser, URL, {"action": "finish"})
     changes = page.context["changes"]
     assert [(c["before"], c["after"]) for c in changes] == [("12345", "54321")]
     assert b"Settings saved with the new key" in page.content
     with identity("pk_stewardship_web"):
         response = post(
-            browser, select, {"action": "confirm", "preview": hidden(page, "preview")}
+            browser,
+            URL,
+            {
+                "action": "confirm",
+                "preview": hidden(page, "preview"),
+                "request_id": str(row.pk),
+            },
         )
     assert response.status_code == 302, response.content
     finish = UUID(response["Location"].rstrip("/").rsplit("/", 1)[-1])
@@ -397,17 +449,18 @@ def test_finish_switching_keeps_another_admins_newer_schedule(working):
 def test_finish_switching_cannot_change_a_loaded_organization(working, monkeypatch):
     """A key saved with a new organization before the first load can't switch after.
 
-    The confirm page refuses in plain language and records nothing, and the
-    configuration installer refuses the same change from any other path.
+    Its review in the dialog refuses in plain language and records nothing
+    (#1568), and the configuration installer refuses the same change from
+    any other path.
     """
     from parishkit.stewardship.accounts import integration_selection
     from parishkit.stewardship.accounts.configuration_requests import record_request
 
-    row = failed_switch(working)
+    failed_switch(working)
     monkeypatch.setattr(integration_selection, "loaded_organization", lambda: 12345)
     count = ConfigurationChangeRequest.objects.count()
     browser = working["browser"]
-    page = browser.get(f"/admin/system/key-changes/{row.pk}/selection/")
+    page = post(browser, URL, {"action": "finish"})
     assert page.status_code == 409
     assert b"organization ID can't change after ParishSoft data" in page.content
     assert b'name="preview"' not in page.content
@@ -456,6 +509,93 @@ def test_rejected_key_keeps_the_old_one_and_says_so(working):
     page = working["browser"].get(URL).content
     assert b"ParishSoft did not accept the new API key" in page
     assert b"The previous key is still in use." in page
+    # A rejected key names only that cause (#1495).
+    assert b"different ParishSoft organization" not in page
+    assert not AuditEvent.objects.filter(
+        event_type="credential_key_organization_mismatch"
+    ).exists()
+
+
+@pytest.mark.parametrize("loaded", [12345, None])
+def test_key_for_another_organization_says_exactly_that(working, monkeypatch, loaded):
+    """A key that sees another organization fails with its own line (#1495).
+
+    The real installer role records the cause as one audit event about the
+    request, committed with the failure; the request itself stays failed,
+    the previous key stays in use, and the page names that one cause.
+    """
+
+    def validate(value):
+        """The check's "mismatch" verdict, as provider_checks raises it."""
+        raise CredentialOrganizationMismatch()
+
+    installer = CredentialInstaller(working["installer"].files, validate=validate)
+    monkeypatch.setattr(credentials, "loaded_organization", lambda: loaded)
+    assert save(working).status_code == 302
+    row = SecretReplacementRequest.objects.get()
+    with identity("pk_stewardship_credential_parishsoft"):
+        installer.run_once()
+        installer.run_once()
+    row.refresh_from_db()
+    assert row.state == "failed" and row.cleanup_reason == "failed"
+    assert read_private(working["worker"].secrets["parishsoft"]) == PRIOR
+    event = AuditEvent.objects.get(event_type="credential_key_organization_mismatch")
+    assert event.subject_id == row.pk and event.actor_id is None
+    # Committed with the move to cleanup, under the same correlation.
+    assert AuditEvent.objects.filter(
+        event_type="secret_request_cleanup_pending",
+        subject_id=row.pk,
+        correlation_id=event.correlation_id,
+    ).exists()
+    selection = ConfigurationChangeRequest.objects.get(
+        request_key=selection_key(row.pk)
+    )
+    assert install(working, selection.pk).state == "failed"
+    page = working["browser"].get(URL).content.decode()
+    if loaded is None:
+        expected = (
+            "This key belongs to a different ParishSoft organization than the "
+            "configured organization ID. Check the key and the organization ID, "
+            "then try again."
+        )
+    else:
+        expected = (
+            "This key belongs to a different ParishSoft organization than the "
+            "data already loaded. Paste the key for the loaded organization."
+        )
+    assert expected in page
+    assert "ParishSoft did not accept" not in page
+    assert summary("parishsoft", _record(working)).message == expected
+
+
+def test_later_rejected_key_does_not_inherit_an_earlier_mismatch(working):
+    """A mismatch on one request never colours a later request's failure (#1495)."""
+
+    def mismatch(value):
+        """The check's "mismatch" verdict, as provider_checks raises it."""
+        raise CredentialOrganizationMismatch()
+
+    def refuse(files_installer):
+        """Run a request through the installer until it has failed."""
+        with identity("pk_stewardship_credential_parishsoft"):
+            files_installer.run_once()
+            files_installer.run_once()
+
+    assert save(working).status_code == 302
+    first = SecretReplacementRequest.objects.get()
+    refuse(CredentialInstaller(working["installer"].files, validate=mismatch))
+    assert AuditEvent.objects.filter(
+        event_type="credential_key_organization_mismatch", subject_id=first.pk
+    ).exists()
+    # A later attempt with a key ParishSoft rejects shows the general line.
+    assert save(working, candidate=b"synthetic-wrong-key").status_code == 302
+    later = SecretReplacementRequest.objects.exclude(pk=first.pk).get()
+    refuse(working["installer"])
+    later.refresh_from_db()
+    assert later.state == "failed"
+    page = working["browser"].get(URL).content
+    assert b"ParishSoft did not accept the new API key" in page
+    assert b"different ParishSoft organization" not in page
 
 
 def test_key_change_in_progress_is_announced_on_admin_pages(working):
@@ -521,14 +661,19 @@ def test_worker_acknowledges_only_bytes_it_reads_from_its_mount(working, tmp_pat
     assert working["published"] == []
 
 
-def test_stale_sign_in_gets_step_up_and_stages_nothing(working):
-    """A key is never read or sealed without a recent Google sign-in."""
+def test_an_old_sign_in_stages_the_key(working):
+    """A sign-in older than five minutes saves and stages the key (#1547).
+
+    The page carries no sign-in notice or warning that the key is not kept.
+    """
     stale_sign_in()
+    page = working["browser"].get(URL)
+    assert b"enter it again when you return" not in page.content
+    assert b"the last five minutes" not in page.content
     response = save(working)
-    assert response.status_code == 403
+    assert response.status_code == 302 and response["Location"] == URL
     assert CANDIDATE not in response.content
-    assert not SecretReplacementRequest.objects.exists()
-    assert not ConfigurationChangeRequest.objects.exists()
+    assert SecretReplacementRequest.objects.count() == 1
 
 
 def test_blank_key_keeps_the_settings_preview(working):
@@ -562,46 +707,6 @@ def test_key_with_a_first_schedule_change_says_to_save_them_apart(working):
     assert re.search(
         r'data-error-summary.*?<a href="#id_candidate">Nothing was saved', html, re.S
     )
-    assert CANDIDATE not in response.content
-    assert not SecretReplacementRequest.objects.exists()
-
-
-def test_stale_key_save_page_says_nothing_was_done(working):
-    """A browser save refused for a stale sign-in explains itself plainly.
-
-    The key is never kept for after the step-up (secrets are not stored), so
-    the page says nothing was done and the key must be entered again.
-    """
-    browser, store = working["browser"], working["service"].store
-    # The page warns that a step-up discards what was entered (the pasted
-    # key included) only when Save would ask for one (#1159); a sign-in that
-    # ages after a fresh render gets this refusal page, which says the same.
-    hint = b"what you entered is not kept: enter it again when you return"
-    assert hint not in browser.get(URL).content
-    stale_sign_in()
-    page = browser.get(URL)
-    assert hint in page.content
-    # One step-up notice, not one for the settings and another for the key.
-    assert page.content.count(b"the last five minutes") == 1
-    fields = {
-        "action": "preview",
-        "base_digest": store.active().digest,
-        "organization_id": "12345",
-        "intent": hidden(page, "intent"),
-        "candidate": CANDIDATE.decode(),
-        "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
-    }
-    with identity("pk_stewardship_web"):
-        response = browser.post(
-            URL,
-            fields,
-            HTTP_ACCEPT="text/html,*/*;q=0.8",
-            HTTP_SEC_FETCH_MODE="navigate",
-        )
-    assert response.status_code == 403
-    assert b"Confirm with Google" in response.content
-    assert b"Nothing was done or sent." in response.content
-    assert b"enter it again after you return" in response.content
     assert CANDIDATE not in response.content
     assert not SecretReplacementRequest.objects.exists()
 
@@ -647,7 +752,13 @@ def test_pending_key_status_is_passive_and_cannot_outlive_the_idle_limit(
     assert install(working, selection.pk).state == "applied"
     finished = browser.get(URL + "status/").content
     assert b"data-live-pending" not in finished
-    assert b'data-live-follow href="' + URL.encode() + b'"' in finished
+    # Its one follow-up redraws the status line and editor in place (#1568).
+    assert (
+        b"<a hidden data-live-follow data-in-place data-in-place-quiet "
+        b'data-in-place-only="integration-editor" href="'
+        + URL.encode()
+        + b'#integration-status">'
+    ) in finished
     # Polling never moved the idle deadline, so once the clock passes it the
     # same poll is refused: an open page cannot keep an idle login alive.
     session.refresh_from_db()
@@ -730,3 +841,28 @@ def _record(value):
     """The applied ParishSoft integration record."""
     document = value["service"].store.active().document()
     return document["sections"]["integrations"][0]
+
+
+def test_a_key_pasted_with_the_schedule_untouched_is_saved(working, monkeypatch):
+    """With data loaded, a key pasted on the page as drawn is saved (#1492).
+
+    The browser posts the schedule rows back untouched and leaves out the
+    disabled organization ID, so the save is neither a key plus a schedule
+    change (``key_with_schedule_change``) nor an organization change: the
+    key's selection changes the key alone.
+    """
+    monkeypatch.setattr(
+        "parishkit.stewardship.accounts.integration_views.loaded_organization",
+        lambda: 12345,
+    )
+    page = shown(working["browser"].get(URL).content.decode())
+    assert int(page["rules-TOTAL_FORMS"]) > 0
+    response = save(working, organization_id=None, **page)
+    assert response.status_code == 302, response.content
+    row = SecretReplacementRequest.objects.get()
+    selection = ConfigurationChangeRequest.objects.get(
+        request_key=selection_key(row.pk)
+    )
+    assert [set(item["values"]) for item in selection.patch] == [
+        {"credential_fingerprint"}
+    ]
