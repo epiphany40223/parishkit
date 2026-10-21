@@ -1222,12 +1222,21 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
    and a ParishSoft refresh's Background task status (#1579) draw it. */
 .stage-boxes { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); }
 /* The status sits on its own line under the stage's name, so a box keeps
-   its height when its status word changes (Not started, then Done). */
+   its height when its status word changes (Not started, then Done). The
+   box is one grid cell: its shown words (.stage-body) share it with
+   invisible, aria-hidden copies of every form it can take while the
+   work runs (.reserve-ghost, a stage's ``reserve``), so the box is as tall
+   as its longest form at every width and engine's wrapping, and longer
+   words never grow the box or its row (#1903). The mark and the spinner
+   are absolutely placed, outside the cell. */
 .stage-boxes > li {
-  display: flex; flex-direction: column; gap: .1rem;
+  display: grid;
   padding: .45rem .6rem .45rem 2rem; position: relative; min-width: 0;
   border: 1px solid var(--border); border-radius: var(--radius-small);
 }
+.stage-boxes > li > .stage-body { grid-area: 1 / 1; display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+/* A reserved form: it keeps its space but is never seen or read. */
+.reserve-ghost { visibility: hidden; }
 .stage-boxes > li::before {
   position: absolute; left: .55rem; top: .5rem; width: 1rem; text-align: center;
   font-weight: 700; content: "\2022"; color: var(--muted);
@@ -1272,6 +1281,11 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 .campaign-load-summary-slot > * { grid-area: 1 / 1; margin: 0; }
 .campaign-load-summary-ghost { visibility: hidden; }
 @media (max-width: 40rem) { .campaign-load-count { min-height: 2lh; } }
+/* Setup's load lines under the saved-record bar ("The load started: 3
+   minutes ago", "Last sign of activity: ..."): their times grow as the load
+   runs and can wrap on a phone (Firefox at 320 px), so a phone reserves two
+   lines for each and nothing below moves (UX conventions "No layout shift"). */
+@media (max-width: 40rem) { .setup-load-line { min-height: 3.2em; min-height: 2lh; } }
 /* Its button's slot (source-refresh.html) is one grid cell holding the
    button, when there is one, over invisible copies of both its labels
    (Load and Try again), so it is as tall as the taller button at every width
