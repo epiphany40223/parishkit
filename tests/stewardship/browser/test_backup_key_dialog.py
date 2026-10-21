@@ -4,8 +4,8 @@ Its two proof steps act in place: Continue swaps the change region to the
 challenge, whose heading then takes focus, and Start over swaps it back; a
 refused paste is swapped in with its error summary focused. The code's
 Review opens the shared review dialog with a compact review of the old and
-new fingerprints; a wrong code stays on the form, said in the change
-region's status line with no jump to the top. Apply closes the dialog,
+new fingerprints; a wrong or expired code stays on the form, said in the
+change region's status line with no jump to the top. Apply closes the dialog,
 redraws the key in use and the change region from the page's address and
 says what was applied in the status line under the step, with no reload.
 Pages and answers are ``integration_dialog_components``'.
@@ -17,6 +17,7 @@ import pytest
 
 from .integration_dialog_components import (
     BACKUP_KEY,
+    BACKUP_KEY_EXPIRED,
     BACKUP_KEY_PROOF,
     BACKUP_KEY_REFUSED,
     BACKUP_KEY_REVIEW,
@@ -188,6 +189,21 @@ def test_a_wrong_code_is_refused_in_place(page, component_origin):
     visible(page.get_by_label("New public key"))
     assert line.inner_text() == ""
     assert page.locator("[data-error-summary]").count() == 0
+    assert not failures
+
+
+def test_an_expired_code_says_so_in_place(page, component_origin):
+    """A code checked after its challenge expired is refused the same way,
+    in its own words: the code expired, and Start over gets a new one."""
+    failures, scrolled = refuse_code(page, component_origin, BACKUP_KEY_EXPIRED)
+    assert_refused_in_place(page, scrolled, "This code has expired")
+    text = page.locator("#backup-key-outcome").inner_text()
+    assert "Choose Start over and paste the public key again" in text
+    assert "did not expect" not in text
+    # The whole sentence is shown, wrapped, never cut short.
+    assert page.locator("#backup-key-outcome").evaluate(
+        "node => node.scrollWidth <= node.clientWidth"
+    )
     assert not failures
 
 

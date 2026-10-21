@@ -2047,9 +2047,11 @@ credential file, and only the one-shot `backup-worker` profile reads it
   review, "Replace the backup encryption key?": "Key fingerprint: old →
   new" ("Not known yet" before the first backup) and a sentence that
   backups already made still need the old private key. A wrong code is the
-  code field's refusal, with the same challenge, said in the change's status
-  line under the step, where the reader is, never in a summary above the
-  page heading. Once applied, the key in use
+  code field's refusal, with the same challenge; so is a code checked after
+  the challenge's 15 minutes, which says the code expired and to choose
+  **Start over** and paste the public key again. Either is said in the
+  change's status line under the step, where the reader is, never in a
+  summary above the page heading. Once applied, the key in use
   and the change, back at its paste step, are redrawn in place.
 - **Authority and audit.** Only Administrators with the Configure capability
   may use the page; neither starting a change nor confirming it checks the

@@ -38,9 +38,10 @@ step, posting to itself, with ``OLD_FINGERPRINT`` in use. A test answers its
 Continue with ``BACKUP_KEY_PROOF`` (the challenge step) or
 ``BACKUP_KEY_REFUSED`` (the paste refused, status 400), and the code's
 Review with ``BACKUP_KEY_WRONG`` (the challenge again with the code's error,
-status 400) or ``BACKUP_KEY_REVIEW`` (the compact review). Its Apply is
-redirected (``POSTS``) to ``APPLIED``; a test then answers the redraw's read
-of ``BACKUP_KEY`` with ``BACKUP_KEY_SETTLED``, ``NEW_FINGERPRINT`` in use.
+status 400), ``BACKUP_KEY_EXPIRED`` (the same for an expired challenge) or
+``BACKUP_KEY_REVIEW`` (the compact review). Its Apply is redirected
+(``POSTS``) to ``APPLIED``; a test then answers the redraw's read of
+``BACKUP_KEY`` with ``BACKUP_KEY_SETTLED``, ``NEW_FINGERPRINT`` in use.
 """
 
 from types import SimpleNamespace
@@ -48,7 +49,7 @@ from uuid import UUID, uuid4
 
 from django.template.loader import render_to_string
 
-from parishkit.stewardship.accounts.backup_key import KeyStatus
+from parishkit.stewardship.accounts.backup_key import EXPIRED, WRONG_CODE, KeyStatus
 from parishkit.stewardship.accounts.integration_credentials import CredentialSummary
 from parishkit.stewardship.accounts.integration_forms import (
     InlineCredentialForm,
@@ -84,6 +85,7 @@ BACKUP_KEY = "/backup-key-dialog"
 BACKUP_KEY_PROOF = "/backup-key-dialog-proof"
 BACKUP_KEY_REFUSED = "/backup-key-dialog-refused"
 BACKUP_KEY_WRONG = "/backup-key-dialog-wrong"
+BACKUP_KEY_EXPIRED = "/backup-key-dialog-expired"
 BACKUP_KEY_REVIEW = "/backup-key-dialog-review"
 BACKUP_KEY_SETTLED = "/backup-key-dialog-settled"
 OLD_FINGERPRINT = "0123456789abcdef"
@@ -253,7 +255,8 @@ def components(context, admin, now):
         "challenge": "PKBKP1:" + "A" * 80,
         "intent": "synthetic-intent",
     }
-    wrong = "That code does not match."
+    wrong = str(WRONG_CODE)
+    expired = str(EXPIRED)
     refused = "This is not a backup public key."
     applied = SimpleNamespace(state="applied", request_id=REQUEST, failure_code="")
     return {
@@ -269,6 +272,12 @@ def components(context, admin, now):
             **proof,
             code_error=wrong,
             errors=[{"message": wrong, "field_id": "backup-key-code"}],
+        ),
+        BACKUP_KEY_EXPIRED: backup_key(
+            OLD_FINGERPRINT,
+            **proof,
+            code_error=expired,
+            errors=[{"message": expired, "field_id": "backup-key-code"}],
         ),
         BACKUP_KEY_REVIEW: review(
             kind="backup_key",

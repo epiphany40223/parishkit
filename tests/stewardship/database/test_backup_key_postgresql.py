@@ -110,6 +110,8 @@ def test_admin_replaces_the_key_after_proving_the_private_key(auth_service, goog
         wrong.content
     )
     assert b'<a href="#backup-key-code">That code does not match' in wrong.content
+    # The refusal log records why, after the status's own code (#1444).
+    assert wrong.stewardship_default_codes == ("invalid", "code_mismatch")
     # A challenge made for this key cannot be answered with another key.
     other, _ = keypair()
     page = post(browser, URL, {"action": "challenge", "public_key": public})
@@ -291,6 +293,34 @@ def test_a_proof_is_bound_to_its_administrator_and_settings(auth_service, google
     assert stale.status_code == 409
     # Only the parish-name change above was ever requested.
     assert ConfigurationChangeRequest.objects.count() == 1
+
+
+def test_an_expired_code_is_refused_at_the_code(auth_service, google, monkeypatch):
+    """A code checked after its challenge expired is the code field's
+    refusal in its own words (#750): the same challenge drawn again, status
+    400, nothing requested; a tampered intent is still the generic refusal."""
+    from parishkit.stewardship.accounts import backup_key
+
+    browser, _ = signed_in()
+    private, public = keypair()
+    page = post(browser, URL, {"action": "challenge", "public_key": public})
+    intent = field(page, "intent")
+    monkeypatch.setattr(backup_key, "PROOF_SECONDS", -1)
+    code = backup_sealing.display_code(
+        backup_sealing.open_proof(challenge_of(page), private)
+    )
+    expired = post(browser, URL, {"action": "preview", "intent": intent, "code": code})
+    assert expired.status_code == 400
+    assert b"This code has expired" in expired.content
+    assert b"Choose Start over and paste the public key again" in expired.content
+    assert b'id="backup-key-code-error"><li>This code has expired' in expired.content
+    assert challenge_of(expired) == challenge_of(page)
+    assert expired.stewardship_default_codes == ("invalid", "code_expired")
+    assert not ConfigurationChangeRequest.objects.exists()
+    forged = post(
+        browser, URL, {"action": "preview", "intent": intent + "x", "code": code}
+    )
+    assert forged.status_code == 400 and b"This code has expired" not in forged.content
 
 
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])
