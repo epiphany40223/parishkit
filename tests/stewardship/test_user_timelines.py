@@ -169,9 +169,10 @@ def test_email_lines_name_tag_and_link():
     ]
     assert lines[0].at == START + 2 * MINUTE and lines[0].detail == "Delivered"
     assert lines[0].message_id == UUID(int=1)
-    # Still on its way: listed at the time it was planned. Sent mail does
-    # not list leader emails yet, so it has no Mail message link.
-    assert lines[1].at == START + 2 * MINUTE and lines[1].message_id is None
+    # Still on its way: listed at the time it was planned. Sent mail lists
+    # leader emails (#1562), so this one links its Mail message page too.
+    assert lines[1].at == START + 2 * MINUTE
+    assert lines[1].message_id == UUID(int=2)
     assert lines[2].detail == "Failed · Testing"
     assert {line.kind for line in lines} == {"emails"}
 
