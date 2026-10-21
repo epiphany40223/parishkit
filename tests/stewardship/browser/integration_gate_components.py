@@ -98,6 +98,7 @@ def components(context, admin):
             "backup-key",
             {
                 "label": "Backup encryption key",
+                "page_url": "/admin/system/integrations/backup_key/",
                 "current": KeyStatus("configured", "0123456789abcdef"),
             },
         ),
@@ -106,6 +107,7 @@ def components(context, admin):
             "backup-key",
             {
                 "label": "Backup encryption key",
+                "page_url": "/admin/system/integrations/backup_key/",
                 "current": KeyStatus("configured", "0123456789abcdef"),
                 "new_fingerprint": "fedcba9876543210",
                 "challenge": "PKBKP1:" + "A" * 80,

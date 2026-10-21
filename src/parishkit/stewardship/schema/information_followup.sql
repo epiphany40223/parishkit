@@ -34,12 +34,28 @@ BEGIN
     -- why, as the review pipeline requires: the request's earlier notes,
     -- which a revision carries forward, are not one.
     IF NEW.review_decision<>'ignored'
-       AND (btrim(NEW.notes)='' OR NEW.notes=prior.notes)
+       AND (NEW.notes !~ '\S' OR NEW.notes=prior.notes)
        AND prior.id IS NOT NULL AND NOT item.follow_up_needed
        AND item.followed_up_at IS NULL
        AND coalesce(prior.review_decision,'ignored')='ignored'
     THEN RAISE EXCEPTION 'Reopening an ignored request needs a note'
         USING ERRCODE='23514'; END IF;
+    -- Leaving Handled (a completed follow-up cleared, whether by the
+    -- worklist's Back to review or the command line's clear) undoes a
+    -- terminal step, which needs a new note saying why, as reopening an
+    -- Ignored request does (#1840).
+    IF item.followed_up_at IS NOT NULL AND NOT NEW.followed_up
+       AND (NEW.notes !~ '\S' OR NEW.notes=prior.notes)
+    THEN RAISE EXCEPTION 'Undoing a handled request needs a note'
+        USING ERRCODE='23514'; END IF;
+    -- The worklist's undo also keeps the Accept (To handle: accepted,
+    -- follow-up needed, not followed up; responses.information.recorded),
+    -- but this guard cannot require that: pk-admin's followup
+    -- information-update records the same revision, with the same
+    -- confirm_clear, and may clear a completed follow-up with Follow-up
+    -- needed off, back to To review, as the admin automation spec says.
+    -- Nothing in a revision tells the two apart, so the service holds the
+    -- worklist's destination.
     -- Only a request To review (or already Ignored) is ignored: one whose
     -- follow-up is needed or done goes back to review first.
     IF NEW.review_decision='ignored'

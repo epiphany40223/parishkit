@@ -184,6 +184,12 @@ REPEAT_FIELDS = (
     "dates",
 )
 REPEAT_MULTIPLE = {"repeat-weekdays", "repeat-dates"}
+# The page's Basic and Advanced toggle (#1129; UX conventions, "Basic and
+# Advanced modes", additive editors). Only the page is drawn by it: Basic is
+# the page with Repeat and the schedule's own email off, so the mode itself
+# is never saved.
+MODE = "editor_mode"
+BASIC, ADVANCED = "basic", "advanced"
 # Edit's choice of which reminders of a series change (#469), posted as
 # ``series-scope``.
 SCOPE = "series-scope"
@@ -831,6 +837,7 @@ def _fields(new):
     names = {
         "base_digest",
         ZONE,
+        MODE,
         schedule_email.EDIT,
         *schedule_email.FIELDS,
         *(f"{ENTRY}-{name}" for name in ENTRY_FIELDS),
@@ -840,6 +847,31 @@ def _fields(new):
     else:
         names.update({SCOPE, MOVE})
     return names
+
+
+def editor_mode(posted):
+    """The mode New and Edit scheduled email is drawn in (#1129).
+
+    Basic, unless the page answers a post sent from Advanced or with an
+    Advanced tool in use (Repeat on a Reminder, or "Edit this schedule's email"), so a
+    page drawn again never hides a tool the reader was using. The mode is
+    derived, never stored: Basic is the page with both tools off (UX
+    conventions, "Basic and Advanced modes", additive editors). A posted
+    mode other than Basic or Advanced is refused, as any unknown value is.
+    """
+    if posted is None:
+        return BASIC
+    mode = posted.get(MODE, BASIC)
+    if mode not in {BASIC, ADVANCED}:
+        # No sources: a malformed value of a field the page has.
+        raise unexpected_fields()
+    # Repeat is a Reminder's: a ticked box left over from another mail type
+    # is hidden, so it is not a tool in use.
+    repeating = (
+        posted.get("repeat-repeat") and posted.get("schedule-kind") == "reminder"
+    )
+    in_use = posted.get(schedule_email.EDIT) or repeating
+    return ADVANCED if in_use else mode
 
 
 def _days(entry, repeat):
@@ -1523,6 +1555,8 @@ def _entry(request, campaign_id, schedule_id=None):
             # The review dialog's Apply confirms on the list, then returns.
             "apply_url": reverse("admin:schedule_settings"),
             "window_text": window_text(values),
+            # The Basic and Advanced toggle's opening mode (#1129).
+            "editor_mode": editor_mode(posted),
         } | entry_times(values, saved, schedule, now, bound=posted is not None)
         admin_navigation.place(request, flow="change", step="edit")
         if posted is None:

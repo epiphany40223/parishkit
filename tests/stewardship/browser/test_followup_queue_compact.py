@@ -109,11 +109,14 @@ def test_queue_is_compact_at_laptop_width(page, component_origin, axe_source):
         top for previous, top in zip(tops, tops[1:], strict=False) if top - previous > 1
     ]
     assert len(rows_of_fields) <= 2, tops
-    # Apply filters ends the last row, its bottom level with the fields'.
+    # Apply filters ends the last row, and its pair with Clear filters
+    # (side by side, or Clear under Apply, #1653) is level with the fields'
+    # bottom.
     last = [box for box in fields if box["y"] >= rows_of_fields[-1] - 1]
     apply = page.locator(APPLY).bounding_box()
     assert apply["x"] > max(box["x"] for box in last)
-    assert abs((apply["y"] + apply["height"]) - (last[0]["y"] + last[0]["height"])) <= 1
+    pair = page.locator(f"{FILTERS} .filter-actions").bounding_box()
+    assert abs((pair["y"] + pair["height"]) - (last[0]["y"] + last[0]["height"])) <= 1
     rows = page.evaluate(ROWS)
     assert len(rows["heights"]) == 25
     assert max(short_rows(rows)) < rows["oneLine"], rows

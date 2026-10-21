@@ -85,6 +85,9 @@ def test_slashless_forms_redirect_and_old_addresses_are_gone(auth_service, googl
         "/admin/mail/outgoing/",
         "/admin/mail/outgoing",
         f"/admin/mail/outgoing/{uuid4()}/",
+        # Family email progress, replaced by Mail queue with no redirect (#1562).
+        "/admin/mail/family-progress/",
+        "/admin/mail/family-progress/status/",
         "/admin/family-portal",
         "/admin/presence?size=25",
         f"/admin/campaign/{current}/delivery",
@@ -138,7 +141,7 @@ def test_group_roots_open_the_first_entry_the_viewer_may_open(auth_service, goog
     for root, first in (
         ("/admin/campaign/", "/admin/campaign/settings/"),
         # Pause and resume mail is greyed out in Testing mode.
-        ("/admin/mail/", "/admin/mail/family-progress/"),
+        ("/admin/mail/", "/admin/mail/queue/"),
         ("/admin/parish/", "/admin/parish/settings/"),
     ):
         response = browser.get(root)

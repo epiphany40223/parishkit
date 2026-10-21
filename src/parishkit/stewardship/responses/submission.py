@@ -16,6 +16,7 @@ from parishkit.stewardship.campaigns.runtime import _now
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.reports.demand import request_rebuild
 from parishkit.stewardship.reports.inputs import FactInputs
+from parishkit.stewardship.reports.pledge_refresh import answered_pledge
 from parishkit.stewardship.source.pins import pin_snapshot
 
 from .answers import validate_answers
@@ -96,7 +97,11 @@ def submit_family(request, service, *, baseline_id, payload):
             baseline_id, family=family, session=session, campaign=campaign
         )
         if validated.review_required:
-            return SubmissionResult(refreshed=issue_baseline(request, service))
+            # The fresh form keeps the open one's rule and its untouched
+            # items' shown values (#1705, "Reviewed form concurrency").
+            return SubmissionResult(
+                refreshed=issue_baseline(request, service, replacing=validated)
+            )
         answers = validate_answers(
             payload,
             validated.current,
@@ -129,6 +134,7 @@ def submit_family(request, service, *, baseline_id, payload):
             or 0
         )
         now = _now()
+        financial = "financial" in answers
         submission = Submission.objects.create(
             family=family,
             campaign=campaign,
@@ -148,11 +154,24 @@ def submit_family(request, service, *, baseline_id, payload):
             form_schema=FORM_SCHEMA,
             answers=answers,
             annual_pledge=Decimal(answers["financial"]["annual_pledge"])
-            if "financial" in answers
+            if financial
+            else None,
+            # ParishSoft's upcoming-year pledge the Family answered against
+            # (the financial stream's A, #1753), from the snapshot this
+            # submit validates against, or None when its giving read is
+            # unproven: never a reason to refuse the submit.
+            upcoming_pledge=answered_pledge(
+                validated.validation_snapshot_id, campaign.pk, family.family_duid
+            )
+            if financial
             else None,
             actor_id=family.pk,
             # Staff entered it for the Family through Open form (#529).
             entered_by_id=entered_by(request, session),
+            # What the form showed (#1705), copied unchanged from the locked
+            # baseline so the response keeps it after the baseline is gone.
+            reviewed_view=validated.baseline.reviewed_view,
+            shown_items=validated.baseline.shown_items,
         )
         submission.refresh_from_db(fields=["submitted_at", "submitted_on"])
         for source_id in sorted(

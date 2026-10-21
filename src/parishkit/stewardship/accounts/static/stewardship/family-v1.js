@@ -1268,11 +1268,6 @@
         refreshed: initial.financial.annual_pledge});
     }
   }
-  function periodYears(period) {
-    // "2026", or "2026–2027" for a period that spans two calendar years.
-    const [first, last] = [period.start.slice(0, 4), period.end.slice(0, 4)];
-    return first === last ? first : first + "–" + last;
-  }
   function installment(cents, frequency) {
     // Each payment's amount, and whether it is exact: $6,000 monthly is
     // exactly $500, but $1,000.01 monthly is only about $83.33.
@@ -1299,12 +1294,12 @@
     const dates = window.ParishDates;
     if (value.contributions.available && value.through_date) {
       // "towards your <year> pledge of $y" only when there was one to give
-      // towards; otherwise "in <year>".
+      // towards; otherwise "in <year>". The server names the years (#1923).
       const pledged = value.pledge.available && Number(value.pledge.amount) > 0;
       node("p", "As of " + (dates ? dates.date(value.through_date) : value.through_date) +
         ", you have contributed " + value.contributions.display + (pledged ?
-          " towards your " + periodYears(value.comparison) + " pledge of " + value.pledge.display + "." :
-          " in " + periodYears(value.comparison) + "."), parent);
+          " towards your " + value.comparison.years + " pledge of " + value.pledge.display + "." :
+          " in " + value.comparison.years + "."), parent);
     }
     if (!value.pledge.available || !value.contributions.available) node("p",
       "Financial records are unavailable or incomplete; this is not a zero balance. You can still enter your pledge.", parent);
@@ -1605,6 +1600,8 @@
       return;
     }
     const cents = moneyCents(financial.annual_pledge), each = installment(cents, financial.frequency);
+    // year_label is the upcoming period's years, so it agrees with the start
+    // date below (#1923).
     node("p", "Your " + form.financial.year_label + " pledge: " + moneyDisplay(cents) + (!each ? "" : each.exact ?
       " (" + each.amount + " per " + each.unit + ")" :
       " (approximately " + each.amount + " per " + each.unit + "; the final payment may differ slightly)"),

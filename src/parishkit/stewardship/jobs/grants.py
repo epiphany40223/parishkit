@@ -286,6 +286,11 @@ def task_runtime_grants(role):
     from parishkit.stewardship.reports.weekly_grants import add_weekly_grants
 
     add_weekly_grants(tables, columns, worker=role is ServiceRole.WORKER)
+    from parishkit.stewardship.reports.report_email_grants import (
+        add_report_email_grants,
+    )
+
+    add_report_email_grants(tables, columns, worker=role is ServiceRole.WORKER)
     from .family_mail_grants import add_family_mail_grants
 
     add_family_mail_grants(tables, columns, worker=role is ServiceRole.WORKER)

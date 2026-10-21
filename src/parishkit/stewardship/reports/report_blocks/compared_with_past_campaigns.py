@@ -25,6 +25,11 @@ def draw(document, frame, options):
     return Section(section_html(section, link), section_text(section, link), images)
 
 
+def capture(document, options):
+    """The section's retained figures, or None when it is left out."""
+    return document.comparison
+
+
 BLOCK = Block(
     key="compared_with_past_campaigns",
     label=HEADING,
@@ -35,5 +40,6 @@ BLOCK = Block(
     kind=STATUS,
     fact=True,
     draw=draw,
+    capture=capture,
     placement=AFTER_BUTTON,
 )

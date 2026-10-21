@@ -60,6 +60,11 @@ checks need no database:
   whose Review answers 400 with the page drawn again with Reminder 2 outside
   the campaign, its editor open and the view's summary; ``DATES_STALE``: the
   same page, whose Review answers 409 (``STALE_REFUSAL``).
+- ``NEW_BASIC``, ``EDIT_BASIC`` and ``EDIT_SERIES_BASIC``: New, Edit and
+  the series Edit drawn in Basic, as the view draws a page for a GET
+  (#1129). Every other New and Edit page above is drawn in Advanced, as
+  the view draws a page answering a post sent from Advanced, so their
+  tests reach Repeat and the schedule's own email directly.
 - ``CALENDAR``: the read-only Campaign calendar (#469) of the same schedules
   plus a daily digest at 7:00 AM, the invitation sent, with the weekly digest
   expanded to each Monday and the daily one to each day through November 1
@@ -184,6 +189,9 @@ NEW_BLOCKED = "/schedule-new-blocked"
 NEW_PENDING = "/schedule-new-pending"
 NEW_INVALID = "/schedule-new-invalid"
 NEW_STALE = "/schedule-new-stale"
+NEW_BASIC = "/schedule-new-basic"
+EDIT_BASIC = "/schedule-edit-basic"
+EDIT_SERIES_BASIC = "/schedule-edit-series-basic"
 NEW_RULE_REFUSED = "/schedule-new-rule-refused"
 APPLY = "/schedule-list/apply"
 APPLY_PENDING = "/schedule-list/apply-pending"
@@ -378,6 +386,7 @@ def _entry(
     list_url=LIST,
     delete_url=EDIT_DELETE,
     skip_send=None,
+    mode="advanced",
 ):
     """New scheduled email, or Edit scheduled email for ``schedule_row``.
 
@@ -390,6 +399,8 @@ def _entry(
     calendar's Add on a day (#1521), ``list_url`` where Cancel and Apply
     return, and ``delete_url`` where Edit's Delete posts its review (#1656).
     ``skip_send`` is the digest send Delete may skip alone (#1658).
+    ``mode`` is the Basic and Advanced toggle's opening mode (#1129,
+    ``schedule_entry_views.editor_mode``).
     """
     entry = entry_form(None, emails, rows, schedule_row, on=on)
     scope_data = QueryDict("series-scope=following") if scope_error else None
@@ -429,6 +440,7 @@ def _entry(
             "delete_url": delete_url,
             "skip_send": skip_send,
             "window_text": window_text(owner["values"]),
+            "editor_mode": mode,
         }
         | entry_times(owner["values"], rows, schedule_row, NOW, bound=False)
         | errors
@@ -862,6 +874,28 @@ def components(context, admin):
             values, owner, emails, rows, post_url=f"{NEW_INVALID}/review"
         ),
         NEW_STALE: _entry(values, owner, emails, rows, post_url=f"{NEW_STALE}/review"),
+        NEW_BASIC: _entry(
+            values, owner, emails, rows, post_url=f"{NEW}/review", mode="basic"
+        ),
+        EDIT_BASIC: _entry(
+            values,
+            owner,
+            emails,
+            rows,
+            schedule_row=first,
+            post_url=f"{EDIT}/review",
+            mode="basic",
+        ),
+        EDIT_SERIES_BASIC: _entry(
+            values,
+            owner,
+            emails,
+            rows,
+            schedule_row=first,
+            post_url=f"{EDIT_SERIES}/review",
+            series=series,
+            mode="basic",
+        ),
         NEW_RULE_REFUSED: _entry(
             values, owner, emails, rows, post_url=f"{NEW_RULE_REFUSED}/review"
         ),

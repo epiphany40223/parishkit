@@ -22,9 +22,11 @@ changes. A rule error is shown at its fields (#1915), and while the rule gives
 no date to add the form's buttons wait (data-repeat-gated), named by that
 error's words or the summary's; a refused New draws the server's refusal at
 the same fields (RepeatRule.refuse_rule).
-{% endcomment %}<div class="schedule-repeat-entry" data-repeat-panel data-repeat-entry data-repeat-start="{{ values.start_date }}" data-repeat-end="{{ values.end_date }}" data-repeat-window-start="{{ window_start }}" data-repeat-window-end="{{ window_end }}" data-repeat-mailings="{{ mailings_json }}" data-repeat-room="{{ room }}" data-repeat-limit="{{ limit }}" hidden>
+It is an Advanced panel of the page's Basic and Advanced toggle (#1129,
+schedule-entry.html): hidden in Basic, where Repeat is always off.
+{% endcomment %}<div data-editor-mode-panel="advanced"{% if editor_mode == "basic" %} hidden{% endif %}><div class="schedule-repeat-entry" data-repeat-panel data-repeat-entry data-repeat-start="{{ values.start_date }}" data-repeat-end="{{ values.end_date }}" data-repeat-window-start="{{ window_start }}" data-repeat-window-end="{{ window_end }}" data-repeat-mailings="{{ mailings_json }}" data-repeat-room="{{ room }}" data-repeat-limit="{{ limit }}" hidden>
 <div class="field">{{ repeat.repeat.errors }}<label><input type="checkbox" name="{{ repeat.repeat.html_name }}" id="{{ repeat.repeat.auto_id }}" data-repeat="enabled" aria-describedby="repeat-help"{% if repeat.repeat.value %} checked{% endif %}> {% translate "Repeat" %}</label>
 <p class="help" id="repeat-help">{% translate "Send this reminder on several dates. Each date is saved as its own reminder." %}</p></div>
 <div data-repeat-rule hidden>
 {% include 'stewardship/components/repeat-rule.html' with rule=repeat named=True from_value=values.start_date until_value=values.end_date %}
-</div></div>
+</div></div></div>
