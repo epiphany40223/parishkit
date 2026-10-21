@@ -349,16 +349,14 @@ SITES = {
     # --- Worker handlers ----------------------------------------------------
     "jobs/outbox_storage.py::create_message": site(
         # Family preparation and test, operational and security alert
-        # fan-out, and daily and weekly digest fan-out handlers.
+        # fan-out, and report email fan-out handlers.
         "outbox_delivery",
         WORKER,
         {
             "jobs/family_mail_preparation.py",
             "jobs/family_mail_test_tasks.py",
             "jobs/operational_fanout.py",
-            "reports/digest_fanout.py",
             "reports/report_email_fanout.py",
-            "reports/weekly_fanout.py",
         },
     ),
     "reports/exact_tasks.py::_handoff": site(

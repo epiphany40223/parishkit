@@ -814,7 +814,7 @@ FAILURES = frozenset(
         "admin_command_outcome_unknown",
         # A daily digest chart the server renderer could not draw on the
         # compile's last attempt, so the digest was sent without its
-        # server-drawn charts (#477; reports.digest_tasks.charts_withheld).
+        # server-drawn charts (#477; reports.report_email_tasks.charts_withheld).
         "digest_funnel_chart",
         "digest_activity_chart",
         "digest_comparison_chart",
