@@ -20,12 +20,12 @@ case ([#1684](https://github.com/epiphany40223/parishkit/issues/1684);
 [follow-up workflows](../admin-portal/spec.md#follow-up-workflows)), and
 the refresh re-evaluation of census and Ministry, with the cases it leaves
 for later ([#1689](https://github.com/epiphany40223/parishkit/issues/1689);
-[as built](#refresh-checks)); the automatic update on Update ParishSoft
-([#1688](https://github.com/epiphany40223/parishkit/issues/1688);
-[as built](#automatic-update)), switched off in Production; and My review
-work for Staff and leaders
+[as built](#refresh-checks)); My review work for Staff and leaders
 ([#1690](https://github.com/epiphany40223/parishkit/issues/1690),
-`accounts/review_work.py`), linking to those pages. Every Staff
+`accounts/review_work.py`), linking to those pages; and the automatic
+update on Update ParishSoft
+([#1688](https://github.com/epiphany40223/parishkit/issues/1688);
+[as built](#automatic-update)), switched off in Production. Every Staff
 and Ministry leader part ships during the current campaign. The
 Family-facing view of reviewed changes
 ([#1705](https://github.com/epiphany40223/parishkit/issues/1705)) comes
@@ -1592,9 +1592,15 @@ changes what each role lands on:
     every "Return to" it, for those who land on it. Its menu entry is the
     first of the Review work group, not a Home entry above the groups
     ([admin portal, menu groups](../admin-portal/spec.md#menu-groups)).
-  - Until a stream moves to the worklist, its cards link to its current
-    page unfiltered (no current page reads a stage from its address); each
-    worklist slice makes its cards link `?stage=<value>`.
+  - Each Staff card of Census changes, Ministry requests, Additional
+    information and Financial links its stream's worklist at its stage,
+    `?stage=<value>`, so the page opens on the rows counted
+    (Administrator decision, 2026-10-19,
+    [#1818](https://github.com/epiphany40223/parishkit/issues/1818)). A
+    leader's per-Ministry cards link `?ministry=<DUID>` instead, and Cannot
+    participate, which has only To review, links its page unfiltered. A
+    stage link the page cannot use is refused in plain words, as every
+    worklist link is.
 - **Administrators** keep the full Home and menu, and also get the same
   panels, plus a Ready to update count per stream with its update link.
   As built (#1690), they are one **Review work** panel on Home, just before

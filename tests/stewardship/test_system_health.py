@@ -1034,7 +1034,7 @@ def test_an_unrecorded_follow_up_refusal_is_a_problem_linking_its_email():
         "stewardship/system-health-problem.html", {"problem": found[1]}
     )
     assert "An address the mail service refused permanently could not" in one
-    assert "use Report a bounced address to set it aside" in one
+    assert "open Did this email bounce? and use Report bounce to set it aside" in one
     assert f'href="/admin/mail/sent/{message}/">See the email</a>' in one
     several = Problem("refusal_unrecorded", at=NOW, count=3, message_id=message)
     body = render_to_string(
@@ -1268,7 +1268,7 @@ def test_the_backup_confirmation_says_only_what_the_page_does_not():
     )
     assert "off-site copies are not set up, so it stays on the server only" in held
     assert "A Family email send is in progress, so the backup will wait" in held
-    assert f'<a href="{reverse("admin:family_email_progress")}">' in held
+    assert f'<a href="{reverse("admin:mail_queue")}">' in held
 
 
 def test_the_backup_request_and_refusals_answer_the_dialog():

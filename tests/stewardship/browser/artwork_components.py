@@ -20,6 +20,13 @@ and the answers its forms post for are served by the fixture server:
   Review and Apply, which the fixture server cannot tell apart);
 - Apply's POST to ``PAGE`` answers with a redirect to ``APPLIED``, the
   change's status, Applied; ``SETTLED`` is the page with the banner set too.
+
+``STEP`` is Campaign images as the campaign wizard draws it, saving
+directly (#1404 PR 4c): no Upload and review, and the action row's Save and
+continue stages each chosen image at its slot's upload address (the answers
+above) before it posts the save to ``PAGE``, answered as Apply is. Its
+slots are redrawn from ``STEP_SETTLED`` (the wizard's page with the
+welcome icon removed) once a removal is applied.
 """
 
 from types import SimpleNamespace as Value
@@ -51,6 +58,7 @@ APPLIED = "/artwork-applied"
 SETTLED = "/artwork-settled"
 # Campaign images as a Campaign setup step (#1404), with its action row.
 STEP = "/artwork-step"
+STEP_SETTLED = "/artwork-step-settled"
 # The answers the fixture server gives the page's POSTs; the upload's and
 # the refused upload's are added by ``components``.
 POSTS = {PAGE: (303, APPLIED, "")}
@@ -72,9 +80,10 @@ def components(context, admin):
         for index, label in enumerate(("Make changes", "Review", "Apply"))
     ]
 
-    def page(current, forms=None, wizard=None):
+    def page(current, forms=None, wizard=None, refresh=SETTLED):
         """Campaign images with ``current`` ({slot: asset}) set; ``forms``
-        holds a refused upload's bound form."""
+        holds a refused upload's bound form; ``refresh`` is where its slots
+        are redrawn from."""
         forms = forms or {}
 
         def form(slot):
@@ -105,7 +114,7 @@ def components(context, admin):
                 "slots": slots,
                 "base_digest": "a" * 64,
                 "page_url": PAGE,
-                "refresh_url": SETTLED,
+                "refresh_url": refresh,
                 "errors": summary_errors(refused) if refused is not None else [],
             },
         )
@@ -125,6 +134,12 @@ def components(context, admin):
                     "preview": "synthetic-signed-intent",
                 }
             },
+        )
+
+    def step():
+        """Campaign images' stepper as the wizard draws it, saving directly."""
+        return campaign_wizard.build(
+            False, "images", done={"settings"}, mail_test_url=None, direct=True
         )
 
     refused = ArtworkForm(
@@ -154,13 +169,9 @@ def components(context, admin):
         PAGE: ("text/html", page({"welcome": welcome})),
         STEP: (
             "text/html",
-            page(
-                {"welcome": welcome},
-                wizard=campaign_wizard.build(
-                    False, "images", done={"settings"}, mail_test_url=None
-                ),
-            ),
+            page({"welcome": welcome}, wizard=step(), refresh=STEP_SETTLED),
         ),
+        STEP_SETTLED: ("text/html", page({}, wizard=step(), refresh=STEP_SETTLED)),
         REMOVAL: ("text/html", review("welcome", None)),
         APPLIED: (
             "text/html",

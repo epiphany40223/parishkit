@@ -247,7 +247,7 @@ def control(request, service, campaign_id, request_id, *, token):
         if binding["action"] == "prepare":
             if binding["inputs"] != _inputs(current_inputs(row)):
                 raise StaleRecordError(
-                    "Link preparation inputs changed; refresh this page."
+                    "Link preparation inputs changed since the step was read."
                 )
             return request_preparation(
                 transition_id=request_id, request_key=UUID(binding["key"]), **common
@@ -275,12 +275,12 @@ def control(request, service, campaign_id, request_id, *, token):
             root_id = cancellation.task_id
         task = TaskRun.objects.get(pk=UUID(binding["task"]), root_id=root_id)
         if task.version != binding["version"]:
-            raise StaleRecordError("The task changed; refresh before retrying.")
+            raise StaleRecordError("The task changed since the step was read.")
         try:
             return retry_failed(
                 run_id=task.pk, command_id=UUID(binding["key"]), **common
             )
         except TaskRetryConflict:
             raise StaleRecordError(
-                "The task changed; refresh before retrying."
+                "The task changed since the step was read."
             ) from None

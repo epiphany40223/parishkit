@@ -29,8 +29,6 @@ from parishkit.stewardship.accounts.setup_credential_views import (
     SetupCredentialForm,
 )
 from parishkit.stewardship.accounts.setup_wizard import BY_KEY
-from parishkit.stewardship.web.contracts import PageWindow
-from parishkit.stewardship.web.tables import window_table
 
 from .test_setup_final_steps import actions, page, wizard
 
@@ -231,49 +229,6 @@ def test_family_tests_wait_for_a_duid_and_show_send_unavailable_with_why():
     (send,) = re.findall(r"<button[^>]*>(?=Send these Family tests)", html)
     assert 'type="button"' in send and " disabled" in send
     assert 'aria-describedby="family-test-unavailable"' in send
-
-
-def links_page(**values):
-    """Prepare Family links with no earlier preparation listed."""
-    return render_to_string(
-        "stewardship/go-live-links.html",
-        {
-            "campaign": Value(active_configuration=Value(name="Annual")),
-            "transition": Value(pk=UUID(int=2)),
-            "table": window_table(PageWindow(1, 25), [], False),
-        }
-        | values,
-    )
-
-
-@pytest.mark.parametrize(
-    ("values", "words"),
-    [
-        ({"unavailable": "not_draft"}, "this campaign is no longer a draft."),
-        ({"unavailable": "cleanup"}, "Finish Testing cleanup, then reload"),
-        ({"unavailable": "inputs"}, "Wait for any running ParishSoft refresh"),
-        ({"unavailable": "discarding"}, "Wait for them to finish being discarded"),
-        ({"unavailable": "prepared"}, "cancel and discard those first"),
-    ],
-)
-def test_prepare_is_shown_unavailable_with_its_reason(values, words):
-    """Without a prepare control, Prepare is greyed and described by why."""
-    html = links_page(**values)
-    (reason,) = re.findall(r'<p role="status" id="prepare-unavailable">([^<]*)', html)
-    assert words in reason.replace("&#x27;", "'")
-    # Only the cleanup reason names cleanup, and only discarding says wait.
-    assert ("Testing cleanup" in reason) == (values["unavailable"] == "cleanup")
-    assert ("cancel and discard" in reason) == (values["unavailable"] == "prepared")
-    (button,) = re.findall(r"<button[^>]*>(?=Prepare inactive Family links)", html)
-    assert " disabled" in button and 'aria-describedby="prepare-unavailable"' in button
-
-
-def test_prepare_is_available_while_the_server_offers_it():
-    """With a signed prepare control, Prepare submits and gives no reason."""
-    html = links_page(prepare="synthetic-prepare")
-    assert 'id="prepare-unavailable"' not in html
-    (button,) = re.findall(r"<button[^>]*>(?=Prepare inactive Family links)", html)
-    assert 'type="submit"' in button and "disabled" not in button
 
 
 class Records(list):

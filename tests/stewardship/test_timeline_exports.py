@@ -60,12 +60,16 @@ PAYLOAD = {
 REQUESTED = datetime(2054, 10, 5, 15, 0, tzinfo=UTC)
 
 
-def document(code="ABCD-EFGH", timezone="America/New_York"):
+CAMPAIGN = "Stewardship 2055"
+
+
+def document(code="ABCD-EFGH", timezone="America/New_York", payload=PAYLOAD):
     """The file's document for the sample capture."""
     return timeline_document(
-        PAYLOAD,
+        payload,
         code=code,
         parish_name="Sample Parish",
+        campaign_name=CAMPAIGN,
         requested_at=REQUESTED,
         timezone=timezone,
     )
@@ -77,7 +81,9 @@ def test_the_document_holds_the_family_and_every_line():
     metadata = dict(built.metadata)
     assert metadata["Family"] == "Example" and metadata["Family DUID"] == "42"
     assert metadata["Family code"] == "ABCD-EFGH"
-    assert metadata["Mode"] == "Production"
+    assert metadata["Campaign"] == CAMPAIGN
+    # A Production capture names no mode (#1841).
+    assert "Mode" not in metadata
     assert metadata["Timeline lines"] == "2, oldest first"
     # The page's Summary panel, in the display zone.
     assert metadata["Submitted"] == (
@@ -292,3 +298,91 @@ def test_administrators_and_staff_may_have_a_timeline_export(
     else:
         with pytest.raises(PermissionError):
             export_services.authorize(None, UUID(REQUESTER), request=export)
+
+
+def xlsx_book(report):
+    """The rendered XLSX of ``report``, parsed back with openpyxl."""
+    output = io.BytesIO()
+    render_timeline(report, output, format="xlsx")
+    return load_workbook(io.BytesIO(output.getvalue()))
+
+
+def test_the_xlsx_sheet_opens_with_title_rows():
+    """The Timeline sheet names its Family, code, campaign and time (#1841).
+
+    Reports spec, "File design": a one-subject sheet opens with label/value
+    title rows, a blank row, then the table, whose heading row stays the
+    frozen, filtered and printed one.
+    """
+    book = xlsx_book(document())
+    sheet = book["Timeline"]
+    rows = list(sheet.iter_rows(values_only=True))
+    assert [row[:2] for row in rows[:4]] == [
+        ("Family", "Example"),
+        ("Family code", "ABCD-EFGH"),
+        ("Campaign", CAMPAIGN),
+        # 14:00 UTC, in the browser's zone as every value of the file.
+        ("Counted at", datetime(2054, 10, 5, 10, 0)),
+    ]
+    assert rows[4] == (None, None, None)
+    assert rows[5] == HEADINGS
+    assert rows[7][1] == "Submitted a response" and len(rows) == 8
+    assert sheet.freeze_panes == "A7"
+    assert sheet.print_title_rows == "$6:$6"
+    assert sheet.auto_filter.ref == "A6:C8"
+    # The title values span the table's width, styled as label/value rows.
+    assert "B1:C1" in {str(merged) for merged in sheet.merged_cells.ranges}
+    assert sheet["A1"].font.bold and not sheet["B1"].font.bold
+    assert sheet["A6"].font.bold and sheet["A6"].font.color.rgb.endswith("FFFFFF")
+    # The details stay on the Report information sheet, Campaign among them.
+    information = dict(book["Report information"].iter_rows(values_only=True))
+    assert information["Campaign"] == CAMPAIGN and "Mode" not in information
+
+
+@pytest.mark.parametrize(
+    ("change", "family", "code"),
+    [
+        # A Family the data no longer has: its status, as the PDF heading.
+        ({"name": None}, "Not in ParishSoft", "ABCD-EFGH"),
+        ({}, "Example", None),
+    ],
+)
+def test_the_title_rows_use_the_report_information_s_words(change, family, code):
+    """No name reads as "Not in ParishSoft"; no code as the page's words."""
+    payload = PAYLOAD | {"family": PAYLOAD["family"] | change}
+    sheet = xlsx_book(document(code=code, payload=payload))["Timeline"]
+    assert sheet["B1"].value == family
+    assert sheet["B2"].value == (code or "Unavailable for this campaign")
+
+
+def test_only_a_testing_capture_names_its_mode():
+    """Production files carry no mode word in any format; an old Testing
+    capture's file stays marked Testing (#1841)."""
+    book = xlsx_book(document())
+    values = {
+        value
+        for sheet in book.worksheets
+        for row in sheet.iter_rows(values_only=True)
+        for value in row
+    }
+    assert "Production" not in values
+    testing = document(payload=PAYLOAD | {"mode": "testing"})
+    assert dict(testing.metadata)["Mode"] == "Testing rehearsal"
+    information = dict(
+        xlsx_book(testing)["Report information"].iter_rows(values_only=True)
+    )
+    assert information["Mode"] == "Testing rehearsal"
+
+
+def test_an_empty_timeline_keeps_its_title_rows():
+    """A Family with no lines still gets its title rows over the headings."""
+    sheet = xlsx_book(document(payload=PAYLOAD | {"events": []}))["Timeline"]
+    rows = list(sheet.iter_rows(values_only=True))
+    assert [row[0] for row in rows[:4]] == [
+        "Family",
+        "Family code",
+        "Campaign",
+        "Counted at",
+    ]
+    assert rows[5] == HEADINGS and len(rows) == 6
+    assert sheet.freeze_panes == "A7"

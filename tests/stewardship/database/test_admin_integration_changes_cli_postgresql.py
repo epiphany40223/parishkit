@@ -374,7 +374,8 @@ def test_a_parishsoft_change_keeps_the_stored_schedule_exactly(admin):
 
 
 def test_the_offsite_folder_is_refused_in_the_local_environment(mail, monkeypatch):
-    """The local environment never reaches Google Drive, as the page says."""
+    """Without a mail redirect the local environment never reaches Google
+    Drive, as the page says (#1399)."""
     from parishkit.stewardship import deployment
 
     monkeypatch.setattr(

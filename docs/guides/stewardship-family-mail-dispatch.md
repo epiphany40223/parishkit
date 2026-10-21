@@ -427,7 +427,7 @@ BG-12). What an operator sees during that lead window:
 - Sent mail lists each prepared reminder as pending. Its delivery task
   waits for the due time; nothing is sent before it, and the dispatch guard
   refuses a message whose occurrence is not yet due in any case.
-- The send progress panel shows the reminder as upcoming (within an hour
+- The Mail queue's Family send panel shows the reminder as upcoming (within an hour
   of its due time), not as a send in progress, and due-work health ignores
   it until it is due.
 - Scheduled delta refreshes wait while the reminders are being prepared,

@@ -2,10 +2,11 @@
 
 A form with a required acknowledgment box keeps its button unavailable, and
 a hint after the button (named by its aria-describedby) says to tick the box.
-Cancel go-live, Mail delivery, delivery refusal and Confirm Production use
-the complete gate instead: a reason or note of only spaces is still empty,
-as the server trims it, and the typed "Production" may have spaces around it
-as the server allows. Each hint sits after its button, so a line coming or
+Mail delivery and delivery refusal use the complete gate instead: a note
+of only spaces is still empty, as the server trims it. (Confirm
+Production's typed word and Cancel go-live's reason are gated inside their
+review dialogs: test_go_live_confirm.py and test_production_activation.py.)
+Each hint sits after its button, so a line coming or
 going never moves the control just used, or the button. Every state is
 worked out again on pageshow and for a form an in-place swap brings in.
 """
@@ -13,7 +14,6 @@ worked out again on pageshow and for a form an in-place swap brings in.
 import pytest
 
 from .test_campaign_setup_gates import ready, restore, spot, waits_with
-from .waits import hidden
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -102,41 +102,22 @@ def test_a_swapped_in_form_is_gated(page, component_origin):
     ready(go, hint)
 
 
-def test_cancel_go_live_waits_for_a_real_reason_and_the_tick(page, component_origin):
-    """A reason of only spaces is empty, as the server trims it."""
-    page.goto(component_origin + "/production-withdrawal")
-    preview = page.get_by_role("button", name="Preview cancellation")
-    hint = page.locator("#withdrawal-complete-hint")
-    reason = page.locator("#withdrawal-reason")
-    box = page.locator("input[name=acknowledged]")
-    # Only the complete gate's hint is shown, never a second line.
-    assert page.locator("[data-acknowledgment-hint]").count() == 0
-    reason.fill("   ")
-    waits_with(preview, hint, "Enter the reason for cancelling go-live.")
-    follows(preview, hint)
-    reason.fill("Correct the schedule")
-    waits_with(
-        preview,
-        hint,
-        "Tick the box to confirm that deleted Testing data cannot be restored.",
-    )
-    where = (spot(box), spot(preview))
-    box.check()
-    ready(preview, hint)
-    assert (spot(box), spot(preview)) == where
-    restore(reason, "node => { node.value = '  '; }")
-    waits_with(preview, hint, "Enter the reason for cancelling go-live.")
-
-
 def test_delivery_evidence_notes_need_more_than_spaces(page, component_origin):
-    """Each resolution waits for a note; a resend also for its tick."""
+    """Each answer waits for a note; a resend also for its tick. The hint's
+    line is reserved, so it only empties when the answer is ready (#1563)."""
+
+    def answered(button, hint):
+        """The button is available and its reserved hint line is empty."""
+        assert button.is_enabled()
+        assert hint.text_content() == ""
+
     page.goto(component_origin + "/delivery")
-    form = page.locator("form").filter(
-        has=page.locator('[name="action"][value="resend"]')
-    )
+    for name in ("It was not sent", "Yes"):
+        page.get_by_role("radio", name=name, exact=True).check()
+    form = page.locator("#answer-resend")
     button = form.get_by_role("button")
     hint = form.locator("[data-complete-hint]")
-    note = "Enter why you are doing this."
+    note = "Enter the note."
     waits_with(button, hint, note)
     follows(button, hint)
     form.locator("textarea").fill("  \n ")
@@ -144,14 +125,13 @@ def test_delivery_evidence_notes_need_more_than_spaces(page, component_origin):
     form.locator("textarea").fill("Confirmed with the Family")
     waits_with(button, hint, "Tick the box to accept the duplicate risk.")
     form.get_by_role("checkbox").check()
-    ready(button, hint)
-    # Another resolution on the page waits for its own note only.
-    other = page.locator("form").filter(
-        has=page.locator('[name="action"][value="accept"]')
-    )
+    answered(button, hint)
+    # Another answer waits for its own note only.
+    page.get_by_role("radio", name="It was sent", exact=True).check()
+    other = page.locator("#answer-sent")
     waits_with(other.get_by_role("button"), other.locator("[data-complete-hint]"), note)
     other.locator("textarea").fill("Provider log shows acceptance")
-    ready(other.get_by_role("button"), other.locator("[data-complete-hint]"))
+    answered(other.get_by_role("button"), other.locator("[data-complete-hint]"))
 
 
 def test_refusal_removal_needs_a_note_and_the_tick(page, component_origin):
@@ -166,25 +146,3 @@ def test_refusal_removal_needs_a_note_and_the_tick(page, component_origin):
     waits_with(clear, hint, "Tick the box to confirm that you verified this address.")
     page.get_by_role("checkbox").check()
     ready(clear, hint)
-
-
-def test_confirm_production_waits_for_the_typed_word(page, component_origin):
-    """Only "Production" (spaces around it allowed, as the server allows)
-    makes Confirm available; the hint says what to type."""
-    page.goto(component_origin + "/production-confirmation")
-    confirm = page.get_by_role("button", name="Confirm Production")
-    hint = page.locator("#production-complete-hint")
-    typed = page.locator("#production-confirmation")
-    text = "Type Production exactly as shown to confirm."
-    waits_with(confirm, hint, text)
-    follows(confirm, hint)
-    where = (spot(typed), spot(confirm))
-    for value in ("production", "Productio", "Production!"):
-        typed.fill(value)
-        waits_with(confirm, hint, text)
-    typed.fill(" Production ")
-    ready(confirm, hint)
-    assert (spot(typed), spot(confirm)) == where
-    typed.fill("")
-    waits_with(confirm, hint, text)
-    hidden(page.locator("[data-acknowledgment-hint]"))

@@ -26,8 +26,35 @@ from .sessions import sign_in_instant
 SALT = "stewardship-production-confirmation-v1"
 
 
-def verify_preview(request, service, campaign_id, transition_id, preparation_id):
-    """Verify the public origin outside SQL, then collect exact current impact."""
+def preview_counts(preview):
+    """The counts a confirmation binds: the ones its preview showed.
+
+    The SQL confirmation token carries them, and ``ProductionConfirmation``
+    records them. The Confirm Production dialog's Review signs them too, so
+    Apply refuses when a send fell due since (#1585): the counts depend on
+    the preview's instant, which no inputs digest covers.
+    """
+    families, digests = preview.families.counts, preview.digests
+    return {
+        "active_families": families.active,
+        "eligible_families": families.email_eligible,
+        "no_email_families": families.no_eligible_email,
+        "family_messages": families.messages,
+        "daily_messages": digests.daily_messages,
+        "weekly_messages": digests.weekly_messages,
+        "coalesced_slots": families.coalesced_slots + digests.coalesced_slots,
+    }
+
+
+def verify_preview(
+    request, service, campaign_id, transition_id, preparation_id, *, key=None
+):
+    """Verify the public origin outside SQL, then collect exact current impact.
+
+    ``key`` is the confirmation's request key: the Confirm Production
+    dialog's Apply (#1585) passes the one its Review named, so a resend of
+    the same Apply is the same confirmation; otherwise a new one.
+    """
     if connection.in_atomic_block:
         raise StorageInvariantError(
             "Confirmation verification must own its transaction."
@@ -42,30 +69,20 @@ def verify_preview(request, service, campaign_id, transition_id, preparation_id)
     )
     token = None
     if verified and not preview.problems:
-        families, digests = preview.families.counts, preview.digests
         token = signing.dumps(
             {
                 "actor": str(actor.identity),
                 "campaign": str(campaign_id),
                 "request": str(transition_id),
                 "preparation": str(preparation_id),
-                "key": str(uuid4()),
+                "key": str(key or uuid4()),
                 "digest": preview.readiness.digest,
                 "origin": origin,
                 "profile": profile.value,
                 "expires": preview.expires_at.isoformat(),
                 "observed": preview.readiness.observed_at.isoformat(),
                 "target": preview.readiness.target_state,
-                "counts": {
-                    "active_families": families.active,
-                    "eligible_families": families.email_eligible,
-                    "no_email_families": families.no_eligible_email,
-                    "family_messages": families.messages,
-                    "daily_messages": digests.daily_messages,
-                    "weekly_messages": digests.weekly_messages,
-                    "coalesced_slots": families.coalesced_slots
-                    + digests.coalesced_slots,
-                },
+                "counts": preview_counts(preview),
             },
             salt=SALT,
         )
@@ -102,7 +119,15 @@ def _binding(token):
 
 
 def confirm(
-    request, service, campaign_id, transition_id, preparation_id, *, token, typed
+    request,
+    service,
+    campaign_id,
+    transition_id,
+    preparation_id,
+    *,
+    token,
+    typed,
+    record=None,
 ):
     """Atomically consume one exact preview under installation/work/lifecycle order.
 
@@ -115,6 +140,10 @@ def confirm(
     readiness. The SQL login identifies the web service, not a browser user;
     its guard independently enforces durable scope/session/version invariants,
     but is not a second verifier of Django signatures or external DNS evidence.
+
+    ``record(actor, confirmation)`` runs after a new confirmation is
+    created (never for a replay), in this transaction: ``pk-admin go-live
+    confirm`` records its own event there (#1809).
     """
     if type(typed) is not str or typed.strip() != "Production":
         raise ValueError("Type Production to confirm this transition.")
@@ -186,7 +215,7 @@ def confirm(
             raise ValueError("Confirmation evidence requires UTC instants.")
         if _now() >= expires:
             raise StaleRecordError("Confirmation preview expired; verify it again.")
-        return ProductionConfirmation.objects.create(
+        created = ProductionConfirmation.objects.create(
             request_id=transition_id,
             preparation_id=preparation_id,
             activation_id=uuid4(),
@@ -206,3 +235,6 @@ def confirm(
             actor_id=actor.identity,
             correlation_id=current_correlation(),
         )
+        if record is not None:
+            record(actor, created)
+        return created

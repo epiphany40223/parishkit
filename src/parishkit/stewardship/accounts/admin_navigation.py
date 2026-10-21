@@ -76,6 +76,11 @@ class Page:
     ``entry`` names the menu entry a page outside the menu only redirects to
     (a report root): it is linked only while the viewer's menu offers that
     entry, because the page checks the same capability (#457 L3).
+
+    ``step_of`` names the menu entry of the guided page this page is one
+    step of (the Go live page's Prepare step, #1585): it has that page's
+    name, marks that entry current as the page itself, and its trail does
+    not repeat the name.
     """
 
     section: str | None
@@ -83,6 +88,7 @@ class Page:
     parent: str | None = None
     linkable: bool = True
     entry: str | None = None
+    step_of: str | None = None
 
 
 @dataclass(frozen=True)
@@ -187,26 +193,23 @@ PAGES = {
     # shares that page's name.
     "artwork_upload": Page("campaign", _("Campaign images"), "artwork_settings"),
     "reminder_workgroup": Page("campaign", _(REMINDER_WORKGROUP_NAME)),
-    "go_live": Page("campaign", _("Go-live readiness")),
+    "go_live": Page("campaign", _("Go live")),
     "go_live_families": Page("campaign", _("Testing submissions"), "go_live"),
-    "go_live_cleanup": Page("campaign", _("Testing cleanup"), "go_live"),
-    "go_live_links": Page("campaign", _("Prepare Family links"), "go_live_cleanup"),
-    "production_confirmation": Page(
-        "campaign", _("Confirm Production"), "go_live_links"
-    ),
-    # A menu entry of its own, available once Production is confirmed.
+    # The Go live page's Prepare and Confirm Production steps (#1585): the
+    # same page as Check, so each has its name and marks its menu entry,
+    # and its trail is the group, then Go live, never one crumb per step.
+    "go_live_prepare": Page("campaign", _("Go live"), step_of="go_live"),
+    "go_live_confirm": Page("campaign", _("Go live"), step_of="go_live"),
+    # A menu entry of its own, available once Production is confirmed: the
+    # Go live page's Activation step, whose Cancel go-live (formerly Withdraw
+    # from Production) is a review dialog there (#1585 slice 5).
     "production_progress": Page("campaign", _("Production activation")),
-    # Cancel go-live (formerly Withdraw from Production) is offered only on
-    # Production activation, so its trail runs through that page. The name
-    # avoids a clash with the after-archive Return to Testing (decision 9).
-    "production_withdrawal": Page(
-        "campaign", _("Cancel go-live"), "production_progress"
-    ),
     # Mail and Family portal
     "delivery_control": Page("mail", _("Pause and resume mail")),
-    # Watching a launch or reminder send (#413): a sidebar entry of its own,
-    # beside Pause and resume mail, so it is found without knowing where it is.
-    "family_email_progress": Page("mail", _("Family email progress")),
+    # Every email waiting to go out, with the launch or reminder send's
+    # progress (#413, #1562): a sidebar entry of its own, beside Pause and
+    # resume mail, so it is found without knowing where it is.
+    "mail_queue": Page("mail", _("Mail queue")),
     # The permanent record of every send (#432), listed beside the live panel.
     "family_email_sends": Page("mail", _("Family email history")),
     "deliveries": Page("mail", _("Sent mail")),
@@ -360,7 +363,7 @@ STRUCTURE_FIXED = _(
 )
 ALREADY_LIVE = _("Only a draft campaign can go live; this one already has")
 NOT_CONFIRMED = _(
-    "Production has not been confirmed for this campaign; start at Go-live readiness"
+    "Production has not been confirmed for this campaign; start at Go live"
 )
 PRODUCTION_ONLY = _("Available in Production mode")
 NO_SOURCE_DATA = _("ParishSoft data has not been downloaded yet")
@@ -449,7 +452,7 @@ def _structural(module_reason):
 
 
 def _draft(state):
-    """Go-live readiness: only a draft campaign can go live."""
+    """Go live: only a draft campaign can go live."""
     if not state.campaign:
         return NO_CAMPAIGN
     if state.campaign.state != "draft":
@@ -516,7 +519,8 @@ MENU = (
     Entry("production_progress", _ADMIN, _confirmed),
     # Mail and Family portal
     Entry("delivery_control", _ADMIN, _production),
-    Entry("family_email_progress", _ADMIN, _campaign),
+    # Always available: notices and Ministry leader emails need no campaign.
+    Entry("mail_queue", _ADMIN),
     Entry("family_email_sends", _ADMIN, _campaign),
     Entry("deliveries", _ADMIN),
     Entry("family_portal", _ADMIN),
@@ -708,6 +712,10 @@ NON_PAGES = frozenset(
         # The figures status the Response dashboard and Campaign comparison
         # poll (#1586), a fragment.
         "response_dashboard_status",
+        # The passive statuses of the parts the Information request page and
+        # Users could not read (#1863), fragments.
+        "information_contacts_status",
+        "user_leaders_status",
         # A Campaign setup step's Continue (#1404), a POST that redirects.
         "campaign_step_continue",
         "content_plain_text",
@@ -719,9 +727,12 @@ NON_PAGES = frozenset(
         "delivery_refusal_clear",
         "dismiss_credential_result",
         "delivery_resolve",
-        "family_email_progress_status",
+        "mail_queue_status",
         # The header's presence count, polled at the old presence address.
         "presence_count",
+        # Dates and mail schedules' Add these schedules and continue (#1404
+        # PR 6), a POST answered with the change's status.
+        "schedule_suggested",
         "timeline_export",
         "family_directory_export",
         # Open form's hand-off (#529): a POST that opens the Family form.
@@ -796,6 +807,8 @@ NON_PAGES = frozenset(
         # status fragment.
         "system",
         "system_health_status",
+        # Data to fix in ParishSoft polls its counts region (#1859).
+        "parishsoft_fixes_status",
     }
 )
 
@@ -821,15 +834,6 @@ FLOWS = {
         ("choose", _("Choose Families")),
         ("review", _("Review")),
         ("send", _("Send and follow")),
-    ),
-    # Going live: check readiness, clean up Testing data, prepare Family
-    # links, confirm Production, then follow its activation.
-    "go_live": (
-        ("readiness", _("Check readiness")),
-        ("cleanup", _("Testing cleanup")),
-        ("links", _("Family links")),
-        ("confirm", _("Confirm Production")),
-        ("activate", _("Activation")),
     ),
     # A report export: request it from a report, wait for it, download it.
     "export": (
@@ -938,7 +942,7 @@ def _link(name, arguments, offered=None):
     A menu page is linked only when the sidebar offers that exact URL: the
     sidebar already greys out entries their page would refuse (Share options
     once the campaign is locked, Campaign images for an archived campaign,
-    Go-live readiness after the draft), so a trail or "Return to" link
+    Go live after the draft), so a trail or "Return to" link
     reuses that decision instead of repeating it (#196). A page standing for
     an entry (``Page.entry``) is linked only while that entry is offered. None
     skips the check.
@@ -1053,10 +1057,12 @@ def build(match, items, placed=None):
     the view's optional ``Placement``.
     """
     name, chain, arguments = _resolved(match, placed)
+    # A step of a guided page marks that page's entry (``Page.step_of``).
+    step_of = PAGES[name].step_of if name in PAGES else None
     current_item = next(
         (
             entry_name
-            for entry_name in reversed(chain)
+            for entry_name in reversed(chain + [step_of] if step_of else chain)
             if any(entry[1] == entry_name for entry in items)
         ),
         None,
@@ -1073,7 +1079,7 @@ def build(match, items, placed=None):
                 # "page" for the page itself; "true" when the entry is only
                 # the nearest listed ancestor of the page being viewed.
                 "current": (
-                    ("page" if item.name == name else "true")
+                    ("page" if item.name in {name, step_of} else "true")
                     if item.name == current_item
                     else None
                 ),

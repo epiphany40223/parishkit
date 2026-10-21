@@ -1,0 +1,37 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
+{% block title %}{% translate "Mail queue" %}{% endblock %}
+{% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
+{% block content %}
+{# The cross-links sit above the heading, as on Sent mail (#938): an Admin who keeps the About panel open would otherwise find them pushed below the fold. #}
+<p>{% menu_link "deliveries" _("Sent mail") %} · {% menu_link "family_email_sends" _("Family email history") %} · {% menu_link "system_health" _("Why sends are waiting (System health)") query="#health-mail" %}{% if campaign and not testing %} · {% menu_link "delivery_control" _("Pause and resume mail") %}{% endif %}</p>
+<h1>{% translate "Mail queue" %}</h1>
+{% aboutpage "mail-queue" %}<p>{% translate "Every email waiting to go out, of every kind: Family invitations, reminders and receipts, test sends, Administrator reports, operational and security notices, and Ministry leader emails. Sent mail keeps the record of every email once it is sent. The page updates by itself." %}</p>
+<p>{% translate "The counts are for the system's current mode: Testing until Production is activated, then Production. A line under the figures says when the other mode also has emails waiting." %}</p>
+<dl><dt>{% translate "Queued" %}</dt><dd>{% translate "Waiting for their turn to be sent." %}</dd>
+<dt>{% translate "Sending now" %}</dt><dd>{% translate "Being handed to the mail service right now." %}</dd>
+<dt>{% translate "Waiting to retry" %}</dt><dd>{% translate "The mail service refused them for now; they are tried again by themselves." %}</dd>
+<dt>{% translate "Paused" %}</dt><dd>{% translate "Held while live delivery is paused. They go out when delivery resumes." %}</dd></dl>
+<p>{% url 'admin:deliveries' as outgoing_url %}{% blocktranslate %}Emails that may not have arrived are not waiting to be sent: they are never retried by themselves. Review them on <a href="{{ outgoing_url }}">Sent mail</a>.{% endblocktranslate %}</p>
+<p>{% translate "The Family send panel shows how far the invitation or reminder being sent to Families right now has got. When no send is in progress, it says so and sums up the last one. A send is in progress while it still has emails to prepare or send; if its schedule is moved or edited, its emails from then on are a new send." %}</p>
+<p>{% translate "Emails are prepared a few Families at a time, but the total counts every Family the send will email from the start. Each Family counts once. If the Family list is being refreshed, the total is shown once it is known." %}</p>
+<dl><dt>{% translate "Sent" %}</dt><dd>{% translate "The mail service accepted the email. That does not prove it reached the inbox." %}</dd>
+<dt>{% translate "Remaining" %}</dt><dd>{% translate "Not sent yet: waiting to be prepared, waiting for its turn, being handed to the mail service, or waiting to try again. The part not prepared yet is shown in brackets." %}</dd>
+<dt>{% translate "Failed" %}</dt><dd>{% url 'admin:deliveries' as outgoing_url %}{% url 'admin:background' as background_url %}{% blocktranslate %}The email could not be sent. Review it on the <a href="{{ outgoing_url }}">Sent mail</a> page, or on <a href="{{ background_url }}">Background work</a> if it failed before it was prepared.{% endblocktranslate %}</dd>
+<dt>{% translate "Not sure it arrived" %}</dt><dd>{% url 'admin:deliveries' as outgoing_url %}{% blocktranslate %}The mail service did not confirm either way. These are never retried automatically; resolve them on the <a href="{{ outgoing_url }}">Sent mail</a> page.{% endblocktranslate %}</dd>
+<dt>{% translate "Held: invitation failed or not sure it arrived" %}</dt><dd>{% translate "A reminder is not sent to a Family whose invitation failed or may not have arrived. It waits until that invitation is resolved, and is not in the total." %}</dd>
+<dt>{% translate "Couldn't be emailed" %}</dt><dd>{% translate "The Family has no deliverable email address, or is no longer eligible. Not in the total." %}</dd>
+<dt>{% translate "Not needed" %}</dt><dd>{% translate "The Family already responded, a later email replaced this one, or the campaign closed. Not in the total." %}</dd>
+<dt>{% translate "Held" %}</dt><dd>{% translate "No new emails are being prepared for now, for example while a campaign change is applied. The panel says so instead of showing the send as sending." %}</dd></dl>
+<p>{% translate "The rate counts emails finished in the last five minutes. The finish time assumes that rate continues, so it is an estimate." %}</p>
+<p>{% translate "Watching this page does not slow the send down, and does not extend your sign-in." %}</p>{% endaboutpage %}
+{# Drawn once per page load, outside the updated region, so it never appears or vanishes under the pointer. #}
+{% include 'stewardship/delivery-holds.html' with on_queue=True %}
+{# Screen readers hear only this line, and only when the Family send's coarse status changes, not every count on every update. #}
+<p class="visually-hidden" role="status" data-live-announcer="mail-queue"></p>
+{# live-status-v1.js updates this region by itself; the page has no Refresh link (#1586). #}
+<div id="mail-queue" data-in-place-region>{% include 'stewardship/mail-queue-status.html' %}</div>
+{% if send %}<details class="technical-details"><summary>{% translate "Technical details" %}</summary>
+<dl><dt>{% translate "Schedule type" %}</dt><dd><code>{{ send.counts.kind }}</code></dd>
+<dt>{% translate "Mode" %}</dt><dd><code>{% if testing %}testing{% else %}production{% endif %}</code></dd></dl>
+<p>{% translate "These values are as of when this page was opened." %}</p></details>{% endif %}
+{% endblock %}

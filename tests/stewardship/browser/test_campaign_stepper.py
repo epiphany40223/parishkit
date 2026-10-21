@@ -5,7 +5,6 @@ from uuid import UUID
 import pytest
 from django.urls import reverse
 
-from .artwork_components import STEP as ARTWORK_STEP
 from .review_helpers import answer_reviews
 from .stepper_components import (
     CONTENT,
@@ -23,7 +22,6 @@ from .stepper_components import (
     PATH,
     REVIEW,
 )
-from .test_artwork_dialog import png, slot
 from .test_components import axe_violations, shown_step_list
 from .test_in_place import MARK, MARKED
 from .waits import (
@@ -180,36 +178,6 @@ def test_continue_opens_the_next_step_and_a_sub_page_returns_to_it(
     assert row.get_by_role("button").count() == 0
     back = row.get_by_role("link", name="Return to Pages and emails")
     assert back.get_attribute("href") == reverse("admin:content_catalog")
-    assert failures == []
-
-
-def test_continue_waits_while_an_image_is_chosen_but_not_uploaded(
-    page, component_origin
-):
-    """On Campaign images a chosen file is a change: Continue waits (#1404).
-
-    Pressing Continue then would drop the chosen image unsaid and record
-    the step kept as is, so Continue is held with its hint, and nothing
-    in its row moves, until the file is cleared.
-    """
-    failures = []
-    page.on("pageerror", lambda error: failures.append(str(error)))
-    page.goto(component_origin + ARTWORK_STEP)
-    proceed = page.get_by_role("button", name="Continue to Go-live readiness")
-    hint = page.locator("#campaign-continue-hint")
-    available(proceed)
-    assert not hint.is_visible()
-    row = page.locator("[data-campaign-step-actions]")
-    before = proceed.bounding_box()["y"] - row.bounding_box()["y"]
-    field = slot(page, "Banner (top of the Family emails only)").get_by_label("Image")
-    field.set_input_files(png())
-    greyed(proceed)
-    visible(hint)
-    assert proceed.get_attribute("aria-describedby") == "campaign-continue-hint"
-    assert proceed.bounding_box()["y"] - row.bounding_box()["y"] == before
-    field.set_input_files([])
-    available(proceed)
-    assert not hint.is_visible()
     assert failures == []
 
 
