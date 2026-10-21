@@ -161,6 +161,10 @@ def add_refresh_worker_grants(tables, columns):
     columns["stewardship_proposal_resolution"] = {
         "SELECT": {"proposal_id", "expected_version", "action", "member_duid"}
     }
+    # Added Member links (#1670): promotion records them; its guard admits
+    # INSERT alone, and only for a link the snapshot's evidence supports.
+    # The worker also reads them through the Ministry selections.
+    tables["stewardship_added_member_link"] = {"SELECT", "INSERT"}
     columns["stewardship_submission"] = {
         "SELECT": {
             "id",

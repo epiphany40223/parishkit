@@ -107,8 +107,15 @@ WITH selected AS MATERIALIZED (
     -- deceased) does not clear it; a Member never answered is not hidden.
     -- Only an entry whose box is a JSON boolean is an answer, so a
     -- malformed one (which the guards refuse) cannot clear the box.
+    -- A Member the Family added and the ParishSoft Member a refresh linked
+    -- them to (stewardship_added_member_link, #1670) are one person, so a
+    -- checked box as either key's current answer also withholds the other
+    -- key's requests. The link only ever adds a checked box: it never lets
+    -- a request share that would not share without it, so a link the
+    -- evidence got wrong can only hide more.
     -- One sort over the campaign's live submissions of Families with a
     -- request here, joined by Member, not a lookup per request.
+    SELECT v.family_id,o.kind,o.key,bool_or(v.cannot_serve) AS cannot_serve FROM (
     SELECT DISTINCT ON (s.family_id,g.kind,e.key) s.family_id,g.kind,e.key,
         e.value->'cannot_serve'='true'::jsonb AS cannot_serve
     FROM source x JOIN stewardship_submission s
@@ -124,6 +131,16 @@ WITH selected AS MATERIALIZED (
         JOIN ministries m ON m.duid IN (r.ministry_duid,r.reviewed_ministry_duid)
         WHERE q.campaign_id=x.id AND q.mode='live')
     ORDER BY s.family_id,g.kind,e.key,s.family_version DESC
+    ) v
+    LEFT JOIN stewardship_added_member_link l ON l.family_id=v.family_id
+        AND ((v.kind='member' AND l.member_key=v.key)
+            OR (v.kind='proposed_member' AND l.proposed_key=v.key))
+    CROSS JOIN LATERAL (VALUES (v.kind,v.key),
+        (CASE v.kind WHEN 'member' THEN 'proposed_member' ELSE 'member' END,
+            CASE v.kind WHEN 'member' THEN l.proposed_key::text
+                ELSE l.member_key::text END)) o(kind,key)
+    WHERE o.key IS NOT NULL
+    GROUP BY v.family_id,o.kind,o.key
 ), requests AS MATERIALIZED (
     -- A request is listed, with its contact details, only under its current
     -- Ministry (#1718): the one an Edit carried forward (#1684), whose

@@ -450,6 +450,11 @@ DEBUG_OFF_CLEAR_FUNCTION = "stewardship_debug_off_clear_v2()"
 PUBLICATION_AUDITED_FUNCTION = (
     "stewardship_publication_audited_v1(text, uuid, uuid, jsonb)"
 )
+# Added Member links (#1670, migration 0141): the links a promoted
+# snapshot's evidence supports, which promotion records, the quick update's
+# skip check asks and the link table's guard checks again. Identifiers only;
+# the worker has no grant on the answers it reads.
+ADDED_MEMBER_CANDIDATES_FUNCTION = "stewardship_added_member_candidates_v1(uuid, uuid)"
 # Point-in-time exports (#1398, migration 0109): the scheduler discards the
 # saved data of every ended export, a small batch at a time, through the
 # owner-run discard functions (reports.export_cleanup.produce_discards); a
@@ -498,6 +503,11 @@ CLOSURE_FUNCTIONS = {
     ),
     # Ministry leader changes (0070, #1034) follow 0069.
     LEADER_CHANGES_FUNCTION: ("stewardship_accounts", "0018_leader_changes"),
+    # Added Member links (0141, #1670, provisional number).
+    ADDED_MEMBER_CANDIDATES_FUNCTION: (
+        "stewardship_responses",
+        "0021_added_member_links",
+    ),
     # Mail dispatch's one token read (0073, #389 L1) follows 0072.
     DISPATCH_TOKEN_FUNCTION: ("stewardship_jobs", "0025_dispatch_token_access"),
     # The daily limit's resume time (0076, #530) follows 0075.
@@ -678,6 +688,13 @@ CLOSURE_TABLES = {
     # A To review pledge's refresh checks (0135, provisional number, #1747),
     # which the worker records in promotion and web and the worker read.
     "stewardship_pledge_open_check": ("stewardship_reports", "0034_pledge_conflicts"),
+    # Added Member links (0141, #1670, provisional number): the worker
+    # records them in promotion, and web and the worker read them in the
+    # Ministry selections.
+    "stewardship_added_member_link": (
+        "stewardship_responses",
+        "0021_added_member_links",
+    ),
 }
 
 
@@ -811,7 +828,8 @@ def runtime_functions(role, *, target=None):
     and, for an Administrator, reads the emails meant for one address and
     the addresses of a Sent mail page's reports and notices (#1562).
     The general worker asks whether a publication plan's or outcome's audit
-    event is recorded (#528), since it cannot read audit rows itself.
+    event is recorded (#528), since it cannot read audit rows itself, and
+    which added Member links a promoted snapshot supports (#1670).
     The scheduler discards ended exports' saved data (#1398), through the
     owner-run batch that rechecks each export has ended.
     Every login a running service or an operator command uses reads whether
@@ -874,6 +892,7 @@ def runtime_functions(role, *, target=None):
                 ARCHIVE_ANSWERS_FUNCTION,
                 PUBLICATION_AUDITED_FUNCTION,
                 PLEDGE_REFRESH_ITEMS_FUNCTION,
+                ADDED_MEMBER_CANDIDATES_FUNCTION,
             },
             "download": {LEADER_SCOPE_FUNCTION},
             ServiceRole.ADMIN_RECOVERY: {
