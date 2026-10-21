@@ -550,7 +550,7 @@ def pledge_shown(entry, answer, review):
     clears the frequency and share methods as the Family form does for a
     zero pledge, and an edited pledge above zero is not Cannot contribute.
     The pledge stage selection compares a later response with the same
-    value in SQL (0218's ``stewardship_pledge_review_states_v1``).
+    value in SQL (0155's ``stewardship_pledge_review_states_v1``).
     """
     if entry["shown"] != Shown.REVIEWER:
         return dict(answer)

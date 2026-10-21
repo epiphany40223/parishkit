@@ -52,9 +52,9 @@ MIGRATIONS = (
     Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema/migrations"
 )
 FROZEN = MIGRATIONS / "0146_census_terminal_undo.sql"
-# 0216 (#1705) replaces 0146's derived guard last; it only replaces
+# 0153 (#1705) replaces 0146's derived guard last; it only replaces
 # functions, so it runs again whole after 0146 to put the latest back.
-LATER = MIGRATIONS / "0216_reviewed_census_resubmission.sql"
+LATER = MIGRATIONS / "0153_reviewed_census_resubmission.sql"
 
 
 def undo(harness, actor, change, *, note="Marked by mistake", key=None):

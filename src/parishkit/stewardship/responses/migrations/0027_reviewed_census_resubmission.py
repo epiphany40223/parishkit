@@ -1,7 +1,7 @@
 """Forward migration: census resubmission of a reviewed Family form (#1705).
 
-Its SQL is the frozen file ``schema/migrations/0216_reviewed_census_resubmission.sql``
-(number 0216, provisional until it is assigned in merge order), read whole
+Its SQL is the frozen file ``schema/migrations/0153_reviewed_census_resubmission.sql``
+(number 0153 in the repository-wide file sequence), read whole
 and never parsed. It replaces the derived guard and the submission effects
 check so a response drawn as the reviewed form makes no row for an answer
 left as the form showed it, keeps the change it showed in force, and never
@@ -18,13 +18,13 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0216_reviewed_census_resubmission.sql"
+    / "0153_reviewed_census_resubmission.sql"
 )
 
 
 class Migration(migrations.Migration):
     dependencies = [
-        # The migration that installs the previous frozen file (0215,
+        # The migration that installs the previous frozen file (0151,
         # #1840), which is also this app's previous migration, so the files
         # apply in prefix order and the app keeps one leaf.
         ("stewardship_responses", "0026_limitation_handled_undo"),

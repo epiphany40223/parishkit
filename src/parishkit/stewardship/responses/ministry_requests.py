@@ -212,7 +212,7 @@ def _close(request, state, successor=None):
     """Withdraw (``cancelled``) or replace (``superseded``) a request in force.
 
     A decided request keeps no outcome or Edit once closed, as the table
-    requires; its guard clears ``resolved_at`` (frozen file 0217), and its
+    requires; its guard clears ``resolved_at`` (frozen file 0154), and its
     revisions keep the decision's history.
     """
     MinistryRequest.objects.filter(pk=request.pk).update(
@@ -249,7 +249,7 @@ def _derive_reviewed(submission, previous, created):
     out of scope) is not presented, so their requests are left to the
     derivation that follows. ``previous`` loses each request judged here,
     so the final withdrawal pass leaves it alone; ``created`` gains each new
-    request. The SQL completeness check (frozen file 0217) admits a choice
+    request. The SQL completeness check (frozen file 0154) admits a choice
     with no row only where its shown request is still in force.
     """
     from .reviewed import (

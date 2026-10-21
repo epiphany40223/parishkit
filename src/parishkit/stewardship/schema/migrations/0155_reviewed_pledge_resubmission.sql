@@ -1,5 +1,5 @@
--- Frozen forward migration file 0218 (the repository-wide file sequence;
--- provisional, the number is assigned centrally in merge order): pledge
+-- Frozen forward migration file 0155 (the repository-wide file
+-- sequence): pledge
 -- resubmission of a reviewed Family form (#1705; review-pipeline spec,
 -- "Shown items"). This file is installed by its Django migration in the
 -- reports app and must never change once released;

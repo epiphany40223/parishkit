@@ -1,5 +1,5 @@
--- Frozen forward migration file 0217 (the repository-wide file sequence;
--- provisional, the number is assigned centrally in merge order): Ministry
+-- Frozen forward migration file 0154 (the repository-wide file
+-- sequence): Ministry
 -- resubmission of a reviewed Family form (#1705; review-pipeline spec,
 -- "Family resubmission" and "What the reviewed form shows"). This file is
 -- installed by its Django migration in the workflows app and must never
@@ -16,7 +16,7 @@
 -- review (rule 2); a chosen request unticked is withdrawn (rule 3), except
 -- one the parish added, a refresh resolved or Staff ticked Entered in
 -- ParishSoft. So this file replaces two functions, each copied whole from
--- its latest body (0131's completeness check; 0212's request guard, with
+-- its latest body (0131's completeness check; 0148's request guard, with
 -- #1840's terminal undo) with only these changes:
 --   stewardship_ministry_submission_effects_v1
 --       * a choice with no request of the response is admitted when its
@@ -371,7 +371,7 @@ BEGIN
               AND prosrc LIKE '%AND later.reviewed_view AND NOT OLD.parish_added%'
               AND prosrc LIKE '%WHERE shown->>''stream''=''ministry'' AND shown->>''item''=OLD.id::text)%'
               AND prosrc LIKE '%A replaced Ministry request keeps no outcome%'
-              -- 0212's terminal undo (#1840), kept.
+              -- 0148's terminal undo (#1840), kept.
               AND prosrc LIKE '%OR (OLD.state=''resolved'' AND NEW.state=''resolved''%'
               AND prosrc LIKE '%THEN OLD.resolved_at WHEN NEW.outcome IS NOT NULL THEN staff_at END;%'
               AND prosrc LIKE '%NEW.resolution_source_id := NULL;%'

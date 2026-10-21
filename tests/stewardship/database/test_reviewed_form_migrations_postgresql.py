@@ -1,4 +1,4 @@
-"""The reviewed Family form's frozen files 0216 to 0218 verify themselves (#1705).
+"""The reviewed Family form's frozen files 0153 to 0155 verify themselves (#1705).
 
 Each file ends with a DO block that refuses to commit unless its new
 bodies are installed. Run against the definitions they replace, each block
@@ -19,21 +19,21 @@ MIGRATIONS = (
 # Each file, and each function it replaces with the earlier file holding its
 # previous body.
 FILES = {
-    "0216_reviewed_census_resubmission.sql": (
+    "0153_reviewed_census_resubmission.sql": (
         (
             "stewardship_response_derived_guard_v1",
-            "0210_census_terminal_undo.sql",
+            "0146_census_terminal_undo.sql",
         ),
         ("stewardship_submission_effects_v1", "0128_census_pipeline_review.sql"),
     ),
-    "0217_reviewed_ministry_resubmission.sql": (
-        ("stewardship_ministry_request_guard_v1", "0212_ministry_terminal_undo.sql"),
+    "0154_reviewed_ministry_resubmission.sql": (
+        ("stewardship_ministry_request_guard_v1", "0148_ministry_terminal_undo.sql"),
         (
             "stewardship_ministry_submission_effects_v1",
             "0131_ministry_review_pipeline.sql",
         ),
     ),
-    "0218_reviewed_pledge_resubmission.sql": (
+    "0155_reviewed_pledge_resubmission.sql": (
         ("stewardship_pledge_review_states_v1", "0127_pledge_review.sql"),
     ),
 }

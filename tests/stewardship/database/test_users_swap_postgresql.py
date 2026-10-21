@@ -1192,16 +1192,16 @@ CLOSURE_REPLACED_ONLY = {
     # 0138 (#1749) replaced it on 0133's body (0133 replaced 0118's for
     # Entered incorrectly's two fixes), for the published Conflict; 0146
     # (#1840) replaced it on 0138's body, for Back to review undoing a
-    # terminal step; 0216 (#1705, provisional number) replaces it last, on
-    # 0146's body, for the reviewed Family form.
+    # terminal step; 0153 (#1705) replaces it last, on 0146's body, for
+    # the reviewed Family form.
     "stewardship_response_derived_guard_v1": (
         ("stewardship_responses", "0027_reviewed_census_resubmission"),
         "carries_intent := FOUND AND NOT response.reviewed_view",
     ),
-    # 0217 (#1705, provisional number) replaces 0148's Ministry request
-    # guard and 0131's Ministry completeness check, which the reruns of
-    # 0131's file (CLOSURE_ALTERED) and 0148's (CLOSURE_REPLACED) put back;
-    # only its replacements run again.
+    # 0154 (#1705) replaces 0148's Ministry request guard and 0131's
+    # Ministry completeness check, which the reruns of 0131's file
+    # (CLOSURE_ALTERED) and 0148's (CLOSURE_REPLACED) put back; only its
+    # replacements run again.
     **{
         name: (("stewardship_workflows", "0008_reviewed_ministry_resubmission"), phrase)
         for name, phrase in (
@@ -1212,8 +1212,8 @@ CLOSURE_REPLACED_ONLY = {
             ),
         )
     },
-    # 0218 (#1705, provisional number) replaces 0127's pledge item selection,
-    # which 0127's rerun puts back.
+    # 0155 (#1705) replaces 0127's pledge item selection, which 0127's
+    # rerun puts back.
     "stewardship_pledge_review_states_v1": (
         ("stewardship_reports", "0039_reviewed_pledge_resubmission"),
         "AND NOT (x.reviewed_view AND EXISTS (",

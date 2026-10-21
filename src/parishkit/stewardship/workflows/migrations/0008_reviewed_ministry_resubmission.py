@@ -1,7 +1,7 @@
 """Forward migration: Ministry resubmission of a reviewed Family form (#1705).
 
-Its SQL is the frozen file ``schema/migrations/0217_reviewed_ministry_resubmission.sql``
-(number 0217, provisional until it is assigned in merge order), read whole
+Its SQL is the frozen file ``schema/migrations/0154_reviewed_ministry_resubmission.sql``
+(number 0154 in the repository-wide file sequence), read whole
 and never parsed. It replaces the Ministry request guard and the Ministry
 submission effects check so a response drawn as the reviewed form makes no
 request for a choice left as the form showed it, and may replace or
@@ -18,7 +18,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0217_reviewed_ministry_resubmission.sql"
+    / "0154_reviewed_ministry_resubmission.sql"
 )
 
 
@@ -26,7 +26,7 @@ class Migration(migrations.Migration):
     dependencies = [
         # This app's previous migration, so the app keeps one leaf.
         ("stewardship_workflows", "0007_ministry_terminal_undo"),
-        # The migration that installs the previous frozen file (0216), so
+        # The migration that installs the previous frozen file (0153), so
         # the files apply in prefix order.
         ("stewardship_responses", "0027_reviewed_census_resubmission"),
     ]

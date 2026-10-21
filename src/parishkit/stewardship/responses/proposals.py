@@ -242,7 +242,7 @@ def _derive_reviewed(submission, validated):
     present is left as before the reviewed form: an earlier open change of
     an answered Member is withdrawn by the response's own completeness, and
     a hidden Ignored New Member or Ignored request stays Ignored (rule 1 by
-    absence). The SQL completeness check (frozen file 0216) admits each
+    absence). The SQL completeness check (frozen file 0153) admits each
     absence only where ``reviewed.left_as_shown`` holds.
     """
     from .reviewed import (

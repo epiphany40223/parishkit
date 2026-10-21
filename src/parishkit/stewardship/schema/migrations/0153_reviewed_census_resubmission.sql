@@ -1,5 +1,5 @@
--- Frozen forward migration file 0216 (the repository-wide file sequence;
--- provisional, the number is assigned centrally in merge order): census
+-- Frozen forward migration file 0153 (the repository-wide file
+-- sequence): census
 -- resubmission of a reviewed Family form (#1705; review-pipeline spec,
 -- "Family resubmission" and "Shown items"). This file is installed by its
 -- Django migration in the responses app and must never change once
@@ -17,7 +17,7 @@
 -- baseline at this submit and never carries a decision (rule 2). So this
 -- file replaces two functions, each copied whole from its latest definition
 -- with only these changes:
---   stewardship_response_derived_guard_v1 (0210's body, #1840's undo)
+--   stewardship_response_derived_guard_v1 (0146's body, #1840's undo)
 --       * a new change of a reviewed response carries no decision from the
 --         change before it (``carries_intent`` needs NOT reviewed_view);
 --       * a reviewed response may replace or withdraw any change its
@@ -804,7 +804,7 @@ BEGIN
               AND prosrc LIKE '%carries_intent := FOUND AND NOT response.reviewed_view%'
               AND prosrc LIKE '%OR (later.reviewed_view AND EXISTS (%'
               AND prosrc LIKE '%WHERE shown->>''stream''=''census'' AND shown->>''item''=OLD.id::text)))%'
-              -- 0210's terminal undo (#1840), kept.
+              -- 0146's terminal undo (#1840), kept.
               AND prosrc LIKE '%AND NOT (OLD.execution IN (''published'',''resolved_upstream'')%'
               AND prosrc LIKE '%IF OLD.execution=''published'' AND current_user<>''pk_stewardship_web'' AND NOT EXISTS (%'
               AND prosrc LIKE '%AND OLD.decision<>''approved'' THEN ''unreviewed'' ELSE ''approved'' END)%'

@@ -4,7 +4,7 @@ A live form draws each item's shown value (review pipeline spec, "Reviewed
 Family form") and records the shown items it drew; the submit compares each
 answer with what the form showed (rules 1 to 4 of "Family resubmission").
 These tests run the real form issue, the HTTP submit and the SQL guards
-(frozen files 0216 to 0218) on the restricted web login where a Family
+(frozen files 0153 to 0155) on the restricted web login where a Family
 signs in.
 """
 
