@@ -279,6 +279,9 @@ DELETE_FIELDS = {
     "action",
     "scope",
     "send",
+    # The browser's zone, which the review's send times are shown in
+    # (#1129, #1949), as on Edit's own review.
+    ZONE,
 }
 # The address parameter naming the digest send Edit was opened for from the
 # Campaign calendar (#1658), which Delete's This email only skips.
@@ -1873,6 +1876,7 @@ def _delete_review(request, service, actor, campaign_id):
             base_digest=posted.get("base_digest"),
             series_changes=series_changes,
             skips={identifier: slot} if slot else None,
+            zone=posted.get(ZONE),
         )
     if reviewed is None:
         raise _refusal(window, schedules)

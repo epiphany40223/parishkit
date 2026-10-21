@@ -598,6 +598,44 @@ def test_delete_records_one_change_that_removes_the_schedule(auth_service, googl
     assert "Return to Dates and mail schedules" in status
 
 
+def test_delete_review_draws_its_sends_with_the_schedule_preview(
+    auth_service, google, monkeypatch
+):
+    """#1949: Edit's Delete review lists the Current schedule's send as Add
+    and Update do, by its day in words and a browser-local time (the shared
+    schedule preview's compact layout), not as a full date with a zone.
+    Outside the campaign wizard, where Edit offers Delete."""
+    monkeypatch.setattr(campaign_wizard, "shown", lambda *_, **__: False)
+    store = auth_service.store
+    setup(store)
+    browser, _ = signed_in()
+    reminder = definition("reminder")
+    page = unescape(
+        browser.get(f"/admin/campaign/schedules/{reminder.pk}/").content.decode()
+    )
+    delete_form = page[page.index('id="schedule-delete-form"') :]
+    assert (
+        '<input type="hidden" name="zone" value="" data-browser-zone>'
+        in (delete_form[: delete_form.index("</form>")])
+    )
+    review = post(
+        browser,
+        DELETE,
+        {
+            "action": "preview",
+            "base_digest": store.active().digest,
+            "schedule_id": str(reminder.pk),
+            "zone": "America/New_York",
+        },
+    )
+    assert review.status_code == 200, review.content
+    text = unescape(review.content.decode())
+    assert "Current schedule" in text
+    assert "Sunday, October 25, 2054, <time " in text
+    assert "data-local-instant data-time-only>" in text
+    assert "When it sends (shown in your computer's time zone):" in text
+
+
 def test_delete_cancels_only_the_deleted_schedules_planned_sends(auth_service, google):
     """Two Upcoming reminders with planned sends; deleting one skips only its own.
 
