@@ -1,0 +1,51 @@
+{% load i18n stewardship %}{# The hub's Timeline tab (#1678, admin-portal spec "Hub tabs"): everything the Timeline page showed before the hub, for each role as before. timeline.html includes it through components/tabs.html with the page's context, and only while this tab is chosen. The filter bar and the When heading refresh the table region (#table) inside this panel, in place. #}
+{% with summary=timeline.summary email=timeline.summary.last_email %}
+<section class="panel" aria-labelledby="summary-heading">
+<h2 id="summary-heading">{% translate "Summary" %}</h2>
+<dl>
+<dt>{% translate "Submitted" %}</dt>
+<dd>{% if summary.count %}{% translate "Yes" %}, <time datetime="{{ summary.first_at|instant }}" data-local-instant>{{ summary.first_at|instant }}</time>{% if summary.count > 1 %} · {% blocktranslate with number=summary.count|number %}{{ number }} times; most recently{% endblocktranslate %} <time datetime="{{ summary.last_at|instant }}" data-local-instant>{{ summary.last_at|instant }}</time>{% endif %}{% if summary.by_staff %} · {% if summary.by_staff == summary.count %}{% translate "Entered by Staff for the Family" %}{% else %}{% blocktranslate with number=summary.by_staff|number %}{{ number }} entered by Staff for the Family{% endblocktranslate %}{% endif %}{% endif %}{% else %}{% translate "Not yet" %}{% endif %}</dd>
+<dt>{% translate "Last email" %}</dt>
+<dd>{% if email %}{{ email.name }}, <time datetime="{{ email.at|instant }}" data-local-instant>{{ email.at|instant }}</time>: <strong>{{ email.outcome }}</strong>{% else %}{% translate "None sent yet" %}{% endif %}</dd>
+{% if show_codes %}<dt>{% translate "Family code" %}</dt>
+<dd>{% if identity.code %}<code>{{ identity.code }}</code>{% else %}{% translate "Unavailable for this campaign" %}{% endif %}
+{% if open_form %}<form class="open-form" method="post" action="{{ open_form_url }}" target="_blank" rel="noopener" data-open-form data-submit-repeatable>{% csrf_token %}{% button type="submit" %}{% translate "Open form" %}<span class="visually-hidden"> {% translate "in a new tab" %}</span>{% endbutton %}</form>
+{% else %}{% button type="button" disabled aria-describedby="open-form-reason" %}{% translate "Open form" %}{% endbutton %} <span id="open-form-reason" class="help">{% if open_form_reason == 'testing' %}{% translate "Not available in Testing mode: the Family form accepts only Testing codes." %}{% if family_test_url %} <a href="{{ family_test_url }}">{% translate "Try the Family form as a chosen Family" %}</a>{% endif %}{% elif open_form_reason == 'not_current' %}{% translate "Not available: this is not the current campaign." %}{% elif open_form_reason == 'not_eligible' %}{% translate "Not available: ParishSoft no longer lists this Family as active and registered, so it can't use the Family form." %}{% else %}{% translate "Not available: this Family has no code for this campaign." %}{% endif %}</span>{% endif %}</dd>{% endif %}
+{% if identity.reminder_workgroup %}<dt>{% translate "Reminders" %}</dt>
+<dd data-reminder-workgroup>{% blocktranslate with name=identity.reminder_workgroup trimmed %}Reminders skipped: in ParishSoft WorkGroup “{{ name }}”{% endblocktranslate %}</dd>{% endif %}
+{% if full %}<dt>{% translate "Campaign email can reach this Family" %}</dt>
+<dd>{{ identity.reach_label }}</dd>
+<dt>{% translate "Furthest step reached" %}</dt>
+<dd>{% if timeline.engagement.furthest_label %}{{ timeline.engagement.furthest_label }}, <time datetime="{{ timeline.engagement.furthest_at|instant }}" data-local-instant>{{ timeline.engagement.furthest_at|instant }}</time>{% else %}{% translate "None recorded" %}{% endif %}</dd>
+<dt>{% translate "Last seen" %}</dt>
+<dd>{% if timeline.engagement.last_seen_at %}<time datetime="{{ timeline.engagement.last_seen_at|instant }}" data-local-instant>{{ timeline.engagement.last_seen_at|instant }}</time>{% else %}{% translate "Never" %}{% endif %}</dd>{% endif %}
+</dl>
+</section>
+{% endwith %}
+{% if full %}<section class="panel" aria-labelledby="events-heading">
+<h2 id="events-heading">{% translate "Timeline" %}</h2>
+{# The filter bar (#1570): a GET form whose closed choices stay in the address, applied in place (ui-v1.js, form#table-filters[data-table-sync]); it carries the When sort as hidden fields, and the sort heading carries the filters back. The zone is the browser's, filled by ui-v1.js (#558), so From and Through are days in this computer's time zone, as on System logs; the gate's hint keeps its line (data-complete-hint="reserve"), so nothing moves. #}
+<form id="table-filters" data-table-sync method="get" action="{{ page_url }}#table" class="filter-bar timeline-filters" data-require-complete data-missing-hint="{% translate 'Correct the filters to apply them.' %}">
+<input type="hidden" name="zone" value="{{ query.zone }}" data-browser-zone data-zone-missing-hint="{% translate "Your browser didn't report a time zone, so these dates can't be used. Clear From and Through, or check your computer's time zone setting." %}">
+{% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+<div class="fit"><label for="timeline-kind">{% translate "Kind" %}</label><select id="timeline-kind" name="kind">{% for key, label in kinds.items %}<option value="{{ key }}"{% if query.kind == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+<div class="short" data-missing-hint="{% translate 'Enter a whole From date, or clear it.' %}"><label for="timeline-start">{% translate "From" %}</label><input id="timeline-start" type="date" name="start" value="{{ query.start }}" aria-describedby="timeline-zone-help" data-browser-zone-field></div>
+<div class="short" data-missing-hint="{% translate 'Enter a whole Through date, no earlier than From, or clear it.' %}"><label for="timeline-end">{% translate "Through" %}</label><input id="timeline-end" type="date" name="end" data-not-before="timeline-start" value="{{ query.end }}" aria-describedby="timeline-zone-help" data-browser-zone-field></div>
+{% include "stewardship/components/filter-actions.html" %}
+{% translate "From and Through are days in this computer's time zone:" as zone_note %}{% include "stewardship/components/zone-note.html" with note_text=zone_note note_id="timeline-zone-help" %}
+<p class="help" data-complete-hint="reserve" hidden></p>
+</form>
+{# One shared table region (web/tables.py, #488/#519): the filter bar and the When heading (sort_heading) refresh it in place; each href ends in its id, the table's anchor "table". #}
+<div id="table" data-table-region>
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="events-caption"><table class="data-table"><caption id="events-caption">{% translate "Everything recorded for this Family" %}</caption>
+<thead><tr>{% translate "When" as heading %}{% sort_heading table "when" heading %}<th scope="col">{% translate "What happened" %}</th><th scope="col">{% translate "Details" %}</th></tr></thead><tbody>
+{% for event in table.rows %}<tr><td><time datetime="{{ event.at|instant }}" data-local-instant data-compact>{{ event.at|instant }}</time></td><th scope="row">{% if event.message_id %}<a href="{% url 'admin:delivery' event.message_id %}">{{ event.what }}</a>{% else %}{{ event.what }}{% endif %}</th><td>{{ event.detail }}</td></tr>
+{% empty %}<tr><td colspan="3">{% if filtered_out %}{% translate "No lines match these filters. Choose All in Kind and clear From and Through to see every line." %}{% else %}{% translate "Nothing recorded for this Family yet. Emails, sign-ins and submissions appear here as they happen." %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+</div>
+</section>{% endif %}
+{# The export (#1679, ui-conventions "Downloaded files"): one row of small export buttons below the table, with no zone choice (the file's times are in the browser's zone). The Timeline is Production only, so the form posts no mode. #}
+{% if export %}<div class="export-pane">
+<form id="timeline-export" method="post" action="{{ export.url }}">{% csrf_token %}
+<input type="hidden" name="request_key" value="{{ export.request_key }}">
+{% if not export.mutable %}<p id="timeline-export-unavailable" class="help">{% translate "Exports are unavailable while other campaign work (a restore review, or a cleanup, purge or go-live step) is under way. Try again when it finishes." %}</p>{% endif %}
+{% translate "The file holds this Family's details, the summary and every line of the timeline, whatever Kind, From and Through show, as they are when you export; later activity is not included." as tip %}{% if show_codes %}{% translate "It includes the Family code." as codes %}{% endif %}{# Each button names the reason while exports are held (#563, #1331). #}{% export_actions "csv" "xlsx" "pdf" name="timeline" label=_("Export this timeline") tip=tip tip_more=codes enabled=export.mutable describedby=export.mutable|yesno:",timeline-export-unavailable" %}</form></div>{% endif %}

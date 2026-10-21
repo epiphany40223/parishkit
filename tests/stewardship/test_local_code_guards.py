@@ -6,9 +6,13 @@ use-time check that a LOCAL deployment refuses a real provider, with the
 same input admitted (or at least not refused by that check) in Production,
 so a change that removes a guard without its replacement fails here.
 Later #1399 changes replace a guard with its configured successor and
-update the matching case. ParishSoft's is now a setting: LOCAL may choose
+update the matching case: a real Workspace key, and with it Drive, is now
+admitted in LOCAL beside a mail redirect on the normal clock, so the mail
+and Drive cases pin LOCAL without one (test_local_real_workspace covers
+LOCAL with one). ParishSoft's is now a setting: LOCAL may choose
 the real API for reads, so its cases pin that LOCAL defaults to the fake and
-never writes to ParishSoft, whatever it reads from. Google sign-in may use a
+never writes to the real ParishSoft, whatever it reads from; it writes only
+to the fake (#1884, pinned after the cases). Google sign-in may use a
 real OAuth client in LOCAL too, so its tests (after the cases) pin what keeps
 that sign-in on LOCAL: the normal clock, the localhost redirect and
 host-only cookies.
@@ -30,6 +34,7 @@ from parishkit.parishsoft_transport import BoundedPublicationSession
 from parishkit.stewardship.backup_drive import DriveFailure
 from parishkit.stewardship.deployment import (
     LOCAL_PUBLIC_ORIGIN,
+    PARISHSOFT_BASE_URL_VARIABLE,
     PARISHSOFT_PUBLICATION_VARIABLE,
     DeploymentProfile,
     ServiceRole,
@@ -53,10 +58,23 @@ PRODUCTION = DeploymentProfile.PRODUCTION
 
 
 def mail(profile, monkeypatch, tmp_path):
-    """The mail transport admits a Google service account only outside LOCAL."""
+    """Without a mail redirect, a Google service account is admitted only
+    outside LOCAL (test_local_real_workspace covers LOCAL with one)."""
     from parishkit.stewardship.mail_catcher import workspace_transport
 
-    workspace_transport(account(), profile)
+    workspace_transport(account(), profile, redirect=None)
+
+
+def mail_route(profile, monkeypatch, tmp_path):
+    """A real mailbox is reachable from LOCAL only through the mail redirect."""
+    from parishkit.stewardship.mail_catcher import MailTransport, envelope
+
+    envelope(
+        ("family@example.org",),
+        profile=profile,
+        transport=MailTransport.GMAIL,
+        redirect=None,
+    )
 
 
 def parishsoft(profile, monkeypatch, tmp_path):
@@ -111,17 +129,22 @@ def parishsoft_publication_session(profile, monkeypatch, tmp_path):
     )
 
 
+def publication_environment(profile, base_url):
+    """A deployment environment with publication on, reading ``base_url``."""
+    return {
+        "PARISHKIT_STEWARDSHIP_PROFILE": profile.value,
+        "PARISHKIT_STEWARDSHIP_PUBLIC_ORIGIN": (
+            LOCAL_PUBLIC_ORIGIN if profile is LOCAL else "https://parish.example"
+        ),
+        PARISHSOFT_BASE_URL_VARIABLE: base_url,
+        PARISHSOFT_PUBLICATION_VARIABLE: "1",
+    }
+
+
 def parishsoft_publication_setting(profile, monkeypatch, tmp_path):
-    """The census publication switch is admitted only outside LOCAL."""
-    load_deployment(
-        environ={
-            "PARISHKIT_STEWARDSHIP_PROFILE": profile.value,
-            "PARISHKIT_STEWARDSHIP_PUBLIC_ORIGIN": (
-                LOCAL_PUBLIC_ORIGIN if profile is LOCAL else "https://parish.example"
-            ),
-            PARISHSOFT_PUBLICATION_VARIABLE: "1",
-        }
-    )
+    """The census publication switch with the real API is admitted only
+    outside LOCAL (#1884 admits LOCAL with the fake)."""
+    load_deployment(environ=publication_environment(profile, DEFAULT_API_BASE_URL))
 
 
 def drive_session(profile, monkeypatch, tmp_path):
@@ -226,6 +249,7 @@ def drive_smoke(profile, monkeypatch, tmp_path):
 # Each case and what it raises when LOCAL refuses.
 CASES = {
     "mail": (mail, ConfigError),
+    "mail_route": (mail_route, ConfigError),
     "parishsoft": (parishsoft, ValueError),
     "parishsoft_check": (parishsoft_check, ValueError),
     "parishsoft_write": (parishsoft_write, ValueError),
@@ -262,6 +286,49 @@ def test_production_passes_the_same_check(name, monkeypatch, tmp_path):
             CASES[name][0](PRODUCTION, monkeypatch, tmp_path)
         return
     CASES[name][0](PRODUCTION, monkeypatch, tmp_path)
+
+
+def test_local_writes_only_to_the_fake_parishsoft():
+    """#1884: LOCAL reading the fake passes all three write guards (the
+    loader's switch, the publication session and the helper's PUT check),
+    the same layers that refuse LOCAL with the real API in the cases above."""
+    configuration = load_deployment(
+        environ=publication_environment(LOCAL, LOCAL_SOURCE_BASE_URL)
+    )
+    assert configuration.parishsoft_publication is True
+    # Naming the fake is LOCAL's default, so it is recorded as unset.
+    assert configuration.parishsoft_base_url is None
+    unnamed = publication_environment(LOCAL, "")
+    assert load_deployment(environ=unnamed).parishsoft_publication is True
+    BoundedPublicationSession(
+        before_request=lambda seconds: None,
+        check=lambda: None,
+        profile=LOCAL.value,
+        base_url=LOCAL_SOURCE_BASE_URL,
+    )
+    put = {
+        "method": "PUT",
+        "url": LOCAL_SOURCE_BASE_URL + "/members/5/contact",
+        "parameters": {},
+        "timeout": 10,
+        "profile": LOCAL.value,
+        "base_url": LOCAL_SOURCE_BASE_URL,
+        "api_key": "synthetic-key",
+    }
+    assert validate_request(put, contact_writes=True) is put
+    # The fake's URL under the real API's base, or a frame that claims the
+    # fake while naming the real API's URL, is still refused.
+    for frame in (
+        put | {"url": DEFAULT_API_BASE_URL + "/members/5/contact"},
+        put | {"base_url": DEFAULT_API_BASE_URL},
+    ):
+        with pytest.raises(ValueError):
+            validate_request(frame, contact_writes=True)
+    # Production can never name the fake, so it cannot write to it either.
+    with pytest.raises(ConfigError):
+        load_deployment(
+            environ=publication_environment(PRODUCTION, LOCAL_SOURCE_BASE_URL)
+        )
 
 
 def test_local_parishsoft_defaults_to_the_fake_and_may_choose_the_real_api():

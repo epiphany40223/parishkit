@@ -245,6 +245,18 @@ def test_the_page_and_the_command_export_the_same_timeline(
         for value in row
     }
     assert code_text in cells and "Submitted a response" in cells
+    # The Timeline sheet opens with its title rows (#1841): the Family, its
+    # code and the campaign named in the request's configuration.
+    titles = load_workbook(io.BytesIO(sheet))["Timeline"]
+    assert [titles.cell(row, 1).value for row in range(1, 5)] == [
+        "Family",
+        "Family code",
+        "Campaign",
+        "Counted at",
+    ]
+    assert titles["B1"].value == name and titles["B2"].value == code_text
+    assert titles["B3"].value == harness.campaign.active_configuration.name
+    assert "Production" not in cells
     # The PDF is the infographic sheet (#926), rendered by the same worker.
     code, document = run(*argv, "--format", "pdf", "--timezone", "UTC")
     assert code == 0, document

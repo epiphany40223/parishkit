@@ -1,0 +1,28 @@
+{% load i18n stewardship %}{% comment %}
+  Data to fix in ParishSoft's counts region (#1859): the page includes it
+  and its passive status fragment (parishsoft_fixes_status) answers with
+  it alone. live-status-v1.js polls the fragment every 60 seconds
+  (data-live-interval) and swaps the region's contents in place; the
+  region is always pending, because the counts can change at any time
+  (a ParishSoft refresh, a cleared refusal, census changes reviewed
+  elsewhere). The counts are not aria-live, as they would be read out on
+  every change; data-live-announce is the one sentence the page's
+  announcer reads, only when it changes.
+{% endcomment %}<div data-live-status="data-to-fix" data-live-url="{% url 'admin:parishsoft_fixes_status' %}" data-live-interval="60000" data-live-pending data-live-announce="{% if nothing_to_fix %}{% translate 'Nothing to fix right now.' %}{% elif uncounted and not total %}{% translate 'Some problems could not be counted right now.' %}{% elif not total %}{% translate 'No problems counted right now.' %}{% elif uncounted %}{% blocktranslate count counter=total %}{{ counter }} problem to fix in ParishSoft; some could not be counted.{% plural %}{{ counter }} problems to fix in ParishSoft; some could not be counted.{% endblocktranslate %}{% else %}{% blocktranslate count counter=total %}{{ counter }} problem to fix in ParishSoft.{% plural %}{{ counter }} problems to fix in ParishSoft.{% endblocktranslate %}{% endif %}">
+{% comment %}The data line: the campaign and the ParishSoft data the counts were read from, in browser-local time.{% endcomment %}<p id="data-to-fix-data">{% if campaign %}{{ campaign.active_configuration.name }}. {% else %}{% translate "No current campaign." %} {% endif %}{% if refreshed_at %}{% translate "ParishSoft data as of" %} <time datetime="{{ refreshed_at|instant }}" data-local-instant>{{ refreshed_at|instant }}</time>.{% else %}{% translate "ParishSoft data: not yet loaded." %}{% endif %}{% if nothing_to_fix %} <strong>{% translate "Nothing to fix right now." %}</strong>{% endif %}</p>
+{% comment %}One block per section, always drawn for the viewer's role: a zero or an unavailable count keeps its block, so the page has one shape (no layout shift).{% endcomment %}{% for section in sections %}<section class="panel data-to-fix-section" data-section="{{ section.key }}" aria-labelledby="data-to-fix-{{ section.key }}">
+{% if section.key == "form_cannot_open" %}<h2 id="data-to-fix-{{ section.key }}">{% translate "Families the form cannot open" %}</h2>
+<p data-count>{% if section.reason %}{{ section.reason }}{% elif section.count %}{% blocktranslate count counter=section.count %}{{ counter }} Family cannot open the Family form because a Member's ParishSoft data has a value the form cannot accept.{% plural %}{{ counter }} Families cannot open the Family form because a Member's ParishSoft data has a value the form cannot accept.{% endblocktranslate %}{% else %}{% translate "None: every Family that can use the portal can open the form." %}{% endif %}</p>
+<p>{% translate "Fix: correct the named Member field in ParishSoft." %}</p>
+{% elif section.key == "refused_addresses" %}<h2 id="data-to-fix-{{ section.key }}">{% translate "Refused email addresses" %}</h2>
+<p data-count>{% if section.reason %}{{ section.reason }}{% elif section.count %}{% blocktranslate count counter=section.count %}{{ counter }} refused email address is not cleared yet{% plural %}{{ counter }} refused email addresses are not cleared yet{% endblocktranslate %}{% blocktranslate count counter=section.families %}, from {{ counter }} Family.{% plural %}, from {{ counter }} Families.{% endblocktranslate %}{% else %}{% translate "No refused addresses: campaign email reaches every address it has tried." %}{% endif %}</p>
+<p>{% translate "Fix: correct the address in ParishSoft, or clear it once the mailbox is checked." %}</p>
+{% elif section.key == "unreachable_families" %}<h2 id="data-to-fix-{{ section.key }}">{% translate "Families no mail can reach" %}</h2>
+<p data-count>{% if section.reason %}{{ section.reason }}{% elif section.count %}{% blocktranslate count counter=section.count %}{{ counter }} Family has neither a deliverable email nor a usable mailing address, so no campaign mail can reach it.{% plural %}{{ counter }} Families have neither a deliverable email nor a usable mailing address, so no campaign mail can reach them.{% endblocktranslate %}{% else %}{% translate "None: every active Family can be reached by email or postal mail." %}{% endif %}</p>
+<p>{% translate "Fix: add an email address or a mailing address for the Family in ParishSoft." %}</p>
+{% elif section.key == "census_changes" %}<h2 id="data-to-fix-{{ section.key }}">{% translate "Census changes to enter" %}</h2>
+<p data-count>{% if section.reason %}{{ section.reason }}{% elif section.count %}{% blocktranslate count counter=section.count %}{{ counter }} census change that Families reported is still to be handled.{% plural %}{{ counter }} census changes that Families reported are still to be handled.{% endblocktranslate %}{% else %}{% translate "None: every census change Families reported has been handled." %}{% endif %}</p>
+<p>{% translate "Fix: enter each change in ParishSoft, or publish it there from Census changes." %}</p>
+{% endif %}<p>{% blocktranslate asvar open_label with name=section.label %}Open {{ name }}{% endblocktranslate %}{% if section.url %}<a href="{{ section.url }}">{{ open_label }}</a>{% else %}{% with control_id="data-to-fix-open-"|add:section.key %}{% include "stewardship/components/disabled-control.html" with control_id=control_id label=open_label tip=section.reason %}{% endwith %}{% endif %}</p>
+</section>{% endfor %}
+</div>

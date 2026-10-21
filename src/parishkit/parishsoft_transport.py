@@ -26,12 +26,12 @@ from decimal import Decimal
 import requests
 
 from parishkit.parishsoft_http_worker import (
-    LOCAL_PROFILE,
     MAX_REQUEST_BYTES,
     MAX_RESPONSE_BYTES,
     REQUEST_FIELDS,
     InvalidSourceResponse,
     admitted_base_url,
+    contact_put_admitted,
     validate_request,
 )
 
@@ -431,14 +431,21 @@ class BoundedPublicationSession(BoundedSourceSession):
     census publication gateway (``stewardship.responses.publication_gateway``)
     constructs it, and a test pins that; the refresh's session has no PUT and
     its helper refuses one. The write itself is used only by the BG-09 worker,
-    which refuses unless publication is switched on. A LOCAL deployment never
-    builds one (#1399): it may read the real ParishSoft but never writes.
+    which refuses unless publication is switched on. A LOCAL deployment
+    builds one only for the local fake (#1884): it may read the real
+    ParishSoft (#1399) but never writes to it.
     """
 
     def __init__(self, *, before_request, check, profile, base_url, on_timeout=None):
         """Bind the owning hooks, as the read session does, with writes admitted."""
-        if profile == LOCAL_PROFILE:
-            raise TypeError("ParishSoft publication is refused in the local profile.")
+        # An invalid profile or base URL is not a write question: the read
+        # session's own check below refuses it.
+        with suppress(ValueError):
+            if not contact_put_admitted(profile, base_url):
+                raise TypeError(
+                    "ParishSoft publication in the local profile writes only "
+                    "to the local fake."
+                )
         super().__init__(
             before_request=before_request,
             check=check,

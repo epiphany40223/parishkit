@@ -115,6 +115,7 @@ def deliver_weekly(
     profile,
     smtp_factory=smtplib.SMTP_SSL,
     session_factory=CheckSession,
+    redirect=None,
 ):
     """Keep DATA acceptance/uncertainty semantics identical to existing mail."""
     settings = delivery_settings(settings)
@@ -129,4 +130,5 @@ def deliver_weekly(
         profile=profile,
         smtp_factory=smtp_factory,
         session_factory=session_factory,
+        redirect=redirect,
     )

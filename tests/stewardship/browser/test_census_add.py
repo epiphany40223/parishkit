@@ -142,6 +142,35 @@ def test_an_add_posts_its_fields_and_answers_in_place(page, component_origin):
     assert page.evaluate(MARKED) == "kept"
 
 
+def test_an_added_address_sends_only_the_shown_state(page, component_origin):
+    """An added address starts with United States and its State drop-down
+    (#1785). Showing the address again after another field never brings
+    back the hidden free-text State, so exactly one State is sent."""
+    page.goto(component_origin + PATH)
+    sent = answer_posts(page, component_origin)
+    dialog = open_add(page)
+    changed = dialog.get_by_label("What changed")
+    changed.select_option("home_address")
+    assert dialog.get_by_label("Country").input_value() == "US"
+    changed.select_option("birth_date")
+    changed.select_option("home_address")
+    text = dialog.locator('[name="value_region"]:not(select)')
+    assert text.is_disabled()
+    hidden(text)
+    dialog.get_by_label("Family DUID").fill("1003")
+    dialog.get_by_label("Street", exact=True).fill("1 Main Street")
+    dialog.get_by_label("City").fill("Louisville")
+    dialog.get_by_label("State", exact=True).select_option("KY")
+    dialog.get_by_label("ZIP code").fill("40223")
+    add = dialog.get_by_role("button", name="Add", exact=True)
+    available(add)
+    add.click()
+    has_text(page.locator("#census-notice"), ADDED_NOTICE)
+    assert sent[0].count("value_region=") == 1
+    assert "value_region=KY" in sent[0] and "value_country=US" in sent[0]
+    assert "value_member" not in sent[0]
+
+
 @pytest.mark.parametrize("width", [320, 1280])
 def test_the_add_dialog_fits_and_has_no_wcag_violation(
     page, component_origin, axe_source, width

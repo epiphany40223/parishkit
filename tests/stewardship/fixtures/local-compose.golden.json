@@ -2293,7 +2293,7 @@
      "bind": {
       "create_host_path": false
      },
-     "read_only": true,
+     "read_only": false,
      "source": "/opt/parishkit/run/local/fake-parishsoft.json",
      "target": "/opt/parishkit/run/local/fake-parishsoft.json",
      "type": "bind"

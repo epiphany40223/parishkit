@@ -5,7 +5,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from queue import Queue
-from threading import Event
 from uuid import uuid4
 
 import pytest
@@ -21,7 +20,10 @@ from parishkit.stewardship.accounts.confirmation_commands import (
     confirm,
     verify_preview,
 )
-from parishkit.stewardship.accounts.installation_lock import installation_lock
+from parishkit.stewardship.accounts.installation_lock import (
+    ConfigurationBusy,
+    installation_lock,
+)
 from parishkit.stewardship.accounts.sessions import database_now, issue_admin
 from parishkit.stewardship.campaigns.confirmation_models import ProductionConfirmation
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
@@ -39,7 +41,6 @@ from .test_confirmation_readiness_postgresql import (  # noqa: F401
     setup_service,
 )
 from .test_setup_mail_views_postgresql import web_login
-from .test_setup_views_postgresql import post
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -119,16 +120,10 @@ def test_waiting_confirmation_rechecks_changed_impact_and_busy_http_is_retryable
 ):
     """Prove an actual lock wait, then reject the newly committed eligibility change."""
     preparation, arguments = prepare(ready_links)
-    login, service, campaign_id = arguments[:3]
-    browser = ready_links[0]
+    login, service = arguments[:2]
     with web_login():
         _, _, token = fresh(arguments)
-        browser.cookies["pk_admin"] = login.session.session_key
-        path = reverse(
-            "admin:production_confirmation",
-            args=[preparation.transition.pk, preparation.pk],
-        )
-        browser.get(path)
+    path = reverse("admin:go_live_confirm")
     started = Queue()
 
     def competing():
@@ -163,71 +158,30 @@ def test_waiting_confirmation_rechecks_changed_impact_and_busy_http_is_retryable
             wait_for_work_lock(started.get(timeout=3))
         assert result.result(timeout=5) == "stale"
     assert not ProductionConfirmation.objects.exists()
-    # Nonblocking installer admission must return a recoverable response instead
-    # of an unhandled 500. A different session owns the real installer lock.
+    # Nonblocking installer admission is a recoverable refusal (the Confirm
+    # Production dialog answers it with a 409; test_go_live_confirm), never
+    # a confirmation made around another installer.
     with installation_lock(), ThreadPoolExecutor(max_workers=1) as pool:
 
         def submit():
-            """Own the HTTP database handle solely within this competing thread."""
+            """Own the database handle solely within this competing thread."""
             connection.close()
             try:
                 with web_login():
-                    return post(
-                        browser,
-                        path,
-                        {"action": "confirm", "preview": token, "typed": "Production"},
-                    ).status_code
+                    request = RequestFactory().post(path)
+                    request.session = SessionStore(login.session.session_key)
+                    confirm(
+                        request,
+                        service,
+                        *arguments[2:],
+                        token=token,
+                        typed="Production",
+                    )
+            except ConfigurationBusy:
+                return "busy"
             finally:
                 connection.close()
+            return "committed"
 
-        assert pool.submit(submit).result(timeout=5) == 409
-    with work_transaction():
-        FamilyCampaign.objects.update(email_deliverable=True, version=F("version") + 1)
-    with web_login():
-        _, _, token = verify_preview(*arguments)
-        _overlapping_confirmation(arguments, browser, path, token)
-
-
-def _overlapping_confirmation(arguments, browser, path, token):
-    """The first final transaction wins; a competing browser can safely replay."""
-    entered, release = Event(), Event()
-    login, service = arguments[:2]
-
-    def winner():
-        """Pause after real SQL effects but before commit on a distinct web socket."""
-        connection.close()
-
-        def after_effect(execute, sql, params, many, context):
-            """Make the exact in-flight final transaction observable, without sleeps."""
-            result = execute(sql, params, many, context)
-            if sql.startswith('INSERT INTO "stewardship_production_confirmation"'):
-                entered.set()
-                assert release.wait(5), "Competing HTTP request did not finish"
-            return result
-
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute("SET SESSION AUTHORIZATION pk_stewardship_web")
-                cursor.execute("SET statement_timeout='5s'")
-            request = RequestFactory().post(path)
-            request.session = SessionStore(login.session.session_key)
-            with connection.execute_wrapper(after_effect):
-                return confirm(
-                    request, service, *arguments[2:], token=token, typed="Production"
-                ).pk
-        finally:
-            connection.close()
-
-    values = {"action": "confirm", "preview": token, "typed": "Production"}
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        future = pool.submit(winner)
-        try:
-            assert entered.wait(5), "Final confirmation never reached its SQL effect"
-            assert post(browser, path, values).status_code == 409
-        finally:
-            release.set()
-        identity = future.result(timeout=5)
-    assert post(browser, path, values).status_code == 302
-    assert list(ProductionConfirmation.objects.values_list("pk", flat=True)) == [
-        identity
-    ]
+        assert pool.submit(submit).result(timeout=5) == "busy"
+    assert not ProductionConfirmation.objects.exists()

@@ -37,7 +37,7 @@ from parishkit.stewardship.web.refusals import (
 )
 from parishkit.stewardship.web.tables import whole_table
 
-from . import admin_navigation
+from . import admin_navigation, schedule_suggestions
 from .admin_editing import confirm, error_response, principal
 from .authentication import runtime
 from .campaign_mail import admits_test_mail
@@ -88,18 +88,23 @@ def _list(request, state, campaign, editable, sort, *, end_live=False):
     the confirmation dialog redraws the table after a deletion is applied.
     ``end_live`` says a live campaign's end date may still change (#912),
     so the dates line links to Campaign settings.
+    ``suggested`` are the suggested starting schedules of a campaign with
+    none saved (#1404 PR 6, ``schedule_suggestions``); the page lists them
+    only while the campaign wizard proposes them (its ``suggest``).
     """
     configuration = state[0]
     values = campaign.active_configuration.values
     previous = sorted(
         campaign_schedules(configuration, campaign.pk), key=schedule_order
     )
-    rows = schedule_rows(
-        previous,
-        values,
-        work_summary(campaign.pk),
-        timezone.now(),
-        campaign_email_names(_records(configuration, campaign.pk)),
+    records = _records(configuration, campaign.pk)
+    names = campaign_email_names(records)
+    now = timezone.now()
+    rows = schedule_rows(previous, values, work_summary(campaign.pk), now, names)
+    suggested = (
+        []
+        if previous or not editable
+        else schedule_suggestions.rows(values, records, campaign.pk, now, names)
     )
     return render(
         request,
@@ -111,6 +116,8 @@ def _list(request, state, campaign, editable, sort, *, end_live=False):
             "end_live": end_live,
             "base_digest": configuration.active_configuration.digest,
             "table": whole_table(rows, sorting=SORTING, sort=sort),
+            "suggested": suggested,
+            "suggested_url": reverse("admin:schedule_suggested"),
             "refresh_url": request.get_full_path(),
             "new_url": reverse("admin:schedule_new"),
             "delete_url": reverse("admin:schedule_delete"),

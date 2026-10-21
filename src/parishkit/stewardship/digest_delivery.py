@@ -156,6 +156,7 @@ def deliver_digest(
     profile,
     smtp_factory=smtplib.SMTP_SSL,
     session_factory=CheckSession,
+    redirect=None,
 ):
     """Use identical DATA certainty semantics without weakening Family mail input."""
     settings = delivery_settings(settings)
@@ -170,4 +171,5 @@ def deliver_digest(
         profile=profile,
         smtp_factory=smtp_factory,
         session_factory=session_factory,
+        redirect=redirect,
     )

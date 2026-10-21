@@ -12,8 +12,9 @@ the page's Timeline table, with its three columns in the page's order and
 words, and the Family and Summary lines are the report information (the XLSX
 "Report information" sheet and the PDF's summary and code; a CSV is the table
 alone), named and ordered as the page shows them. Lines that only a file
-needs (report, parish, request time, time zone, line count, privacy) come
-first or last.
+needs (report, parish, campaign, request time, time zone, line count,
+privacy) come first or last. The XLSX's Timeline sheet also opens with
+``title_rows`` (#1841), so the sheet itself names its Family.
 The Family code is added here, decrypted under the key-set lock, only for a
 requester who may see Family codes; the capture never holds it.
 """
@@ -44,10 +45,39 @@ class TimelineDocument:
     headings: ClassVar[tuple[str, ...]] = HEADINGS
     title: ClassVar[str] = "Family timeline"
     sheet_name: ClassVar[str] = "Timeline"
+    # The details the XLSX's Timeline sheet repeats above its table (#1841).
+    TITLE_FIELDS: ClassVar[tuple[str, ...]] = (
+        "Family",
+        "Family code",
+        "Campaign",
+        "Counted at",
+    )
+
+    @property
+    def title_rows(self):
+        """The (label, value) rows above the table: whose timeline, and when.
+
+        The report information's own words: a Family the data no longer has
+        shows its ParishSoft status in place of its blank name, as the PDF's
+        heading does; a detail the document lacks is left out.
+        """
+        values = dict(self.metadata)
+        if not values.get("Family"):
+            values["Family"] = values.get(STATUS_HEADING, "")
+        return tuple(
+            (label, values[label]) for label in self.TITLE_FIELDS if values.get(label)
+        )
 
 
 def timeline_document(
-    payload, *, code, parish_name, requested_at, timezone, code_hidden=False
+    payload,
+    *,
+    code,
+    parish_name,
+    requested_at,
+    timezone,
+    code_hidden=False,
+    campaign_name="",
 ):
     """The file's metadata and rows from one retained capture.
 
@@ -55,6 +85,7 @@ def timeline_document(
     requester may not see codes (the file says it is not shown); otherwise
     the Family has none for this campaign, as the page says. Rows are
     oldest first, the page's tie order; the page lists them newest first.
+    ``campaign_name`` is the request's campaign name (left out when empty).
     """
     zone = ZoneInfo(timezone)
 
@@ -84,7 +115,7 @@ def timeline_document(
         """
         return dates.display_text(instant(value)) if value else ""
 
-    # The page's own words and punctuation (timeline.html):
+    # The page's own words and punctuation (timeline-panel.html):
     # "Yes, <first>", and for more than one, " · N times; most recently <last>".
     submitted = (
         f"Yes, {words(summary['first_submitted_at'])}"
@@ -99,14 +130,16 @@ def timeline_document(
     )
     # The page's own lines, in its order and words: the identity line
     # (Family, any ParishSoft status, Family DUID, Envelope number), the mode
-    # line, Counted at, then the Summary panel (Submitted, Last email, Family
-    # code, Reminders when the Family is in the Reminder WorkGroup, Campaign
-    # email can reach this Family, Furthest step reached, Last seen).
+    # line (Testing only), Counted at, then the Summary panel (Submitted,
+    # Last email, Family code, Reminders when the Family is in the Reminder
+    # WorkGroup, Campaign email can reach this Family, Furthest step reached,
+    # Last seen).
     workgroup = family.get("reminder_workgroup")
     status = source_status_label(family_status(family["name"]))
     metadata = (
         ("Report", "Family timeline"),
         ("Parish", parish_name),
+        *((("Campaign", campaign_name),) if campaign_name else ()),
         # A Family the data no longer has: no name, and the page's badge
         # words as a detail of their own, only when there is a mark (#1216).
         ("Family", family["name"] or ""),
@@ -116,10 +149,9 @@ def timeline_document(
             "Envelope number",
             str(family["envelope"]) if family["envelope"] is not None else "",
         ),
-        (
-            "Mode",
-            "Testing rehearsal" if payload["mode"] == "testing" else "Production",
-        ),
+        # Only a Testing capture names its mode, as the directory exports;
+        # every export since #1570 is Production and says nothing (#1841).
+        *((("Mode", "Testing rehearsal"),) if payload["mode"] == "testing" else ()),
         ("Counted at", instant(payload["as_of"])),
         ("Submitted", submitted),
         (
@@ -180,6 +212,7 @@ def load_timeline(request, *, general, store):
     )
     from parishkit.stewardship.campaigns.credential_keys import key_set_lock
     from parishkit.stewardship.campaigns.family_identity import code_context
+    from parishkit.stewardship.campaigns.models import CampaignConfiguration
     from parishkit.stewardship.storage import StorageInvariantError
 
     snapshot = request.timeline_snapshot
@@ -204,6 +237,10 @@ def load_timeline(request, *, general, store):
         code=code,
         code_hidden=hidden,
         parish_name=request.configuration.parish.name,
+        # The campaign's name in the configuration the request was made under.
+        campaign_name=CampaignConfiguration.objects.values_list("name", flat=True).get(
+            configuration_id=request.configuration_id, record_id=request.campaign_id
+        ),
         requested_at=request.created_at,
         timezone=request.browser_timezone,
     )

@@ -45,6 +45,29 @@ def _admit(request, service, setup_attempt_id=None, *, passive=False):
     return actor, configuration
 
 
+def sign_in(caller):
+    """The sign-in a staged upload belongs to, as ``BrandingBundle.session_id``.
+
+    On the web that is the request's own portal session: another browser
+    sign-in (another tab signed in again) never applies this one's uploads.
+    An automation caller's sign-in is its automation session, since every
+    ``pk-admin`` run is a new, short-lived command session of it: so
+    ``branding preview`` stages logos that a later ``branding confirm`` of
+    the same automation session applies (#1865). The automation session's
+    id is used, not the command session's, because command sessions and
+    their links are deleted by the hourly maintenance pass while a staged
+    upload lives a day. ``session_id`` is a soft reference, so either id
+    fits; both are random UUIDs. Another automation session, even the same
+    Administrator's, and every browser sign-in stay apart. ``caller`` is a
+    Django request or an ``AdminCaller``.
+    """
+    from .admin_caller import is_automation
+
+    if is_automation(caller):
+        return caller.automation_session_id
+    return caller.portal_session.pk
+
+
 def _owned(request, service, bundle_id, *, setup_attempt_id=None, passive=False):
     """Recheck the original session and applied base before previewing or completing."""
     actor, configuration = _admit(request, service, setup_attempt_id, passive=passive)
@@ -53,7 +76,7 @@ def _owned(request, service, bundle_id, *, setup_attempt_id=None, passive=False)
         .filter(
             pk=bundle_id,
             owner_id=actor.identity,
-            session_id=request.portal_session.pk,
+            session_id=sign_in(request),
             setup_attempt_id=setup_attempt_id,
         )
         .first()
@@ -77,6 +100,7 @@ def stage_branding(
     base_digest,
     setup_attempt_id=None,
     mode=None,
+    record=None,
 ):
     """Record ownership before writing files; publish receipts only after full fsync.
 
@@ -85,7 +109,9 @@ def stage_branding(
     partially applied logo. Filesystem exclusion spans both short SQL admissions.
     ``mode`` records how a logo bundle was made, "basic" (one image) or
     "advanced" (sizes uploaded separately), so Parish logos can open in that
-    mode (#1062); campaign artwork leaves it None.
+    mode (#1062); campaign artwork leaves it None. ``record()``, when
+    given, runs in the transaction that makes the bundle ready, so a
+    command's own audit event commits with the staged logos (#1865).
     """
     with media_lock(media_root):
         with work_transaction():
@@ -95,7 +121,7 @@ def stage_branding(
             row = BrandingBundle.objects.create(
                 owner_id=actor.identity,
                 actor_id=actor.identity,
-                session_id=request.portal_session.pk,
+                session_id=sign_in(request),
                 setup_attempt_id=setup_attempt_id,
                 base_id=configuration.active_configuration_id,
                 expires_at=database_now() + timedelta(hours=24),
@@ -120,6 +146,8 @@ def stage_branding(
                     correlation_id=current_correlation(),
                 )
             _transition(row, "ready", actor_id=row.owner_id)
+            if record is not None:
+                record()
         return row.pk
 
 
