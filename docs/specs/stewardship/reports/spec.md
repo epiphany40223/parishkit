@@ -978,9 +978,11 @@ current campaign. It replaced the Family timeline page
 address, so nothing is redirected or aliased
 ([#864](https://github.com/epiphany40223/parishkit/issues/864)); the name
 "Family timeline" is retired from the page, its navigation and its help.
-People's own timelines (Administrators, Staff and Ministry leaders, who may
-also be ParishSoft Family members) are planned on the same page design in a
-later slice of #1570; until then the page has only the Family subject.
+People's own timelines (Administrators, Staff and Ministry leaders) are
+each user's [Timeline](../admin-portal/spec.md#user-timeline) under Users,
+which shares this page's table and filter rules; the Family part of a
+person's timeline (for users who are also ParishSoft Family members)
+follows in [#1867](https://github.com/epiphany40223/parishkit/issues/1867).
 
 `<family>` is the Family's campaign record id, an opaque random identifier
 like a Mail message's; the Family's name, DUID, envelope number and code never
@@ -1136,7 +1138,7 @@ too:
   and submissions), Emails (every email line and the not-sent lines),
   Sign-ins and sign-outs (sign-ins, Staff opened the form, Signed out,
   Session ended and Earlier session ended), or Reviews (the
-  [review lines](#timeline-review-lines)). A person's timeline will add
+  [review lines](#timeline-review-lines)). A user's timeline adds
   Admin actions and Role changes; a Family's shows only the kinds it can have
   ([conditional fields](../ui-conventions/spec.md#conditional-fields)).
 - **From** and **Through:** whole days in the browser's time zone, as on
@@ -2011,15 +2013,27 @@ replaces the queue table, its Status and Outcome filters and its bulk
 outcomes; the request pages, the remembered view,
 Export these requests and the packet stay. From the top, the page shows:
 
-1. The heading, the page help, the ParishSoft data date and the notice
-   shown while other campaign work locks edits. (Roster changes to enter,
-   once linked here, is this page's To enter by hand Stage since R39;
+1. The heading, with the page help (About this page, holding the
+   ParishSoft data date) and By Ministry's control beside it. (Roster
+   changes to enter, once linked here, is this page's To enter by hand
+   Stage since R39;
    [roster entry](../admin-portal/spec.md#roster-entry-on-ministry-requests).)
 2. **By Ministry**, a compact table described below. It stays above the
    worklist's filters, not between them and the table: its counts apply
    filters in place and the table's height changes with them, so anything
    below the table would move under the pointer
-   ([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
+   ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). It is a
+   closed disclosure whose control sits on the heading's line after About
+   this page, drawn like it, so the worklist's first rows start on a
+   laptop's first screen
+   ([#1653](https://github.com/epiphany40223/parishkit/issues/1653)).
+   Opened, the counts take their own full-width row below the heading's
+   row (below About's help when that is open too) and move only what
+   follows them; opening either one never moves the other's control
+   ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). Each
+   browser remembers it open
+   ([disclosures](../ui-conventions/spec.md#disclosures)). The notice shown
+   while other campaign work locks edits follows By Ministry.
 3. The worklist: its reserved notice line, then its filters, always open:
    **Stage** first, then Search Member or Ministry name, Ministry and
    Request, and for Staff and Administrators **Members**, whose second

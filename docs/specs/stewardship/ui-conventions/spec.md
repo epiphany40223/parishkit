@@ -62,6 +62,7 @@ when it lands.
   [addresses and legacy URLs](#addresses-and-legacy-urls),
   [not-found pages](#not-found-pages),
   [unavailable menu pages](#unavailable-menu-pages),
+  [pages the role may not open](#pages-the-role-may-not-open),
   [navigation rules](#navigation-rules), [wizards](#wizards).
 - Admin page layout: [page help](#page-help),
   [button labels](#button-labels), [button emphasis](#button-emphasis),
@@ -635,7 +636,9 @@ never scrolls to show it (Administrator, pk-local review of
   replaced, and the address is unchanged. The error summary, which the base
   template draws above the page content, moves to the top of the region when
   it is drawn outside the region; this page's own older summaries outside
-  the regions are removed then (a successful swap leaves them). The reader
+  the regions are removed then (a successful swap leaves them, except an
+  item whose field the swap removed, which goes, and the summary with it
+  once it lists nothing, #750). The reader
   keeps their place, focus moves to the summary (or to the control when
   there is none), the fields it names are marked in error beside their
   message as the fetched page draws them, and the live region reads the
@@ -1020,7 +1023,12 @@ that would change an open band's height waits while the pointer is over
 the grid. First user: the
 [System health dashboard's tile grid](../admin-portal/spec.md#tile-grid)
 (Administrator, 2026-10-13, on
-[#1214](https://github.com/epiphany40223/parishkit/issues/1214)).
+[#1214](https://github.com/epiphany40223/parishkit/issues/1214)). A
+heading with more than one disclosure control beside it (Ministry
+requests' About this page and By Ministry,
+[#1653](https://github.com/epiphany40223/parishkit/issues/1653)) is such a
+row: the heading and the controls share it, and each opened content is a
+full-width band below it, in source order.
 
 Recorded exception (Administrator, 2026-10-11, on
 [#1015](https://github.com/epiphany40223/parishkit/issues/1015)): on the
@@ -1064,6 +1072,16 @@ never moves them.
   Space work as before. The details get no extra role or tab stop: the
   details click is a pointer convenience. The details keep the text
   cursor, so selection still looks possible.
+
+- **Remembered open, before the page shows.** A disclosure that starts
+  closed and that each browser remembers open (the About panel; Ministry
+  requests' By Ministry counts, #1653) stores only an "open" marker,
+  removed when it is closed, and every storage access is guarded, so
+  with storage refused it just starts closed. One whose opening moves
+  the page's data (By Ministry, above the worklist) is opened while the
+  page is parsed, by `remember-open-v1.js` loaded without defer straight
+  after it (`data-remember-open`), so a remembered open state never moves
+  the page after it shows ([no layout shift](#no-layout-shift)).
 
 **Why.** A link to one area should show that area, not every area that
 starts open; and a card that looks like one thing should answer a click
@@ -1292,7 +1310,10 @@ single-field check first used by a live campaign's
 [end date](../admin-portal/spec.md#campaign-configuration), #944; the ParishSoft refresh
 schedule's multi-row editor, #920, checks its whole formset with its own
 mechanism for now). Save is held while such an error stands only on forms
-that use the complete-before-submit gate above. Three shared checks in
+that use the complete-before-submit gate above or hold their buttons with
+their own gate (the [send date window](#schedules), #1787, and the
+[repeat rule](../admin-portal/spec.md#new-and-edit-scheduled-email), #1915).
+Three shared checks in
 `ui-v1.js` cover the common cases (#563): `data-not-before="<start id>"` on
 an end date (or a text amount) keeps it no earlier than its start, as the
 report and System logs filters and the campaign and financial period end
@@ -1569,8 +1590,11 @@ the campaign wizard in #1404 PR 4).
   form shows its error summary and marks each field, as the
   [field errors](#field-errors-and-live-checks) convention says, and becomes
   editable again. Where panes share one dialog and each pane has its own
-  status line (see After Apply below), the refusal is said in that pane's
-  line instead, which takes focus without scrolling, and the field is marked
+  status line (see After Apply below), or a form sits far below the page
+  heading and names its region's status line (Backup encryption key's code,
+  [#750](https://github.com/epiphany40223/parishkit/issues/750)), the
+  refusal is said in that line instead, which takes focus without
+  scrolling, and the field is marked
   and described by it: no summary is placed above the heading, since moving
   focus there would jump the page to the top, and no error line is added
   that would move the pane's controls. The line clears on the form's next
@@ -1763,6 +1787,7 @@ in-place preview of the counts.
 
 Current state, to be converted: Users' New user, Edit user and Import
 Ministry leaders, New and Edit scheduled email,
+[Pages and emails' editor](../admin-portal/spec.md#default-content),
 [Campaign settings](../admin-portal/spec.md#campaign-settings-page) (#1119),
 Share options, Campaign images, Parish logos, Parish settings, Create the
 campaign and No-reminders WorkGroup use the dialog; Create the campaign, New
@@ -1770,17 +1795,21 @@ user and No-reminders WorkGroup are confirmations under #1356, and so are a
 one-time New scheduled email, Import selected with nobody skipped and
 Campaign images' Remove this image. Edit user, Share options, a small
 Campaign settings change and Parish settings are compact reviews under the
-same issue. The
+same issue; the Pages and emails editor's Preview changes keeps its full
+review (the fictional sample) and returns to Pages and emails. The
 [integration settings pages](../admin-portal/spec.md#parish-and-integration-configuration)
 use the dialog too (#750): an ordinary settings edit is a compact review, a
 refresh schedule change keeps its full review, and setting up Off-site
 backups by its folder, removing Slack, turning off off-site copies, a key
 change and Finish switching to the new key are confirmations (#1568); the
-Backup encryption key change still uses its separate
-Review page. The in-place review panel of #532 is retired
+[Backup encryption key](../admin-portal/spec.md#parish-and-integration-configuration)
+change, once its code is proved, is a compact review (its proof steps act in
+place). The in-place review panel of #532 is retired
 ([#1429](https://github.com/epiphany40223/parishkit/issues/1429),
-[in-place controls](#in-place-controls)); the other editors use separate
-Review and Change status pages.
+[in-place controls](#in-place-controls)); Pages and emails' editor still uses
+its separate Review and Change status pages, as does Copy campaign, which
+refuses every request until
+[#145](https://github.com/epiphany40223/parishkit/issues/145).
 [#750](https://github.com/epiphany40223/parishkit/issues/750) tracks the
 conversion.
 
@@ -1853,6 +1882,15 @@ A Share options row ticked Delete greys its label, free-text box and order
 in place (`data-enabled-when` on the row's own Delete box), so the rows below
 never move; a redrawn form shows a deleted row's saved values, still greyed,
 and unticking Delete gives them back (#563).
+
+In the Pages and emails editor, ticking "Remove this selected content" greys
+the email subject, the HTML source, "Generate plain text from HTML" and the
+plain text in place (`data-enabled-when` on the Remove box), and the visual
+editor and its formatting buttons stop accepting edits, so nothing moves and
+none of the text is sent; the subject is required only while the box is
+unticked, and the server reads it the same way. The campaign banner box
+stays available, so a removal never changes the banner choice by leaving it
+out (#563, #750).
 
 ### Binary choices
 
@@ -2358,10 +2396,11 @@ opens one page per kind of reason. **Precedent.** #1128.
   with the same reason, by any method (`admin_navigation.refuse_greyed`).
 - **Only for a viewer who sees the entry greyed.** The role still hides an
   entry ([stable menu shape](../admin-portal/spec.md#stable-menu-shape)), so
-  a page the viewer's role may not open is refused by its own view (403) as
-  before, without the reason; a signed-out visitor, or a session the page
-  would rotate or end, also goes to the view. The session is checked
-  read-only, renewing no idle time.
+  a page the viewer's role may not open is refused by its own view (403),
+  which says the role is the reason
+  ([pages the role may not open](#pages-the-role-may-not-open)); a signed-out
+  visitor, or a session the page would rotate or end, also goes to the view.
+  The session is checked read-only, renewing no idle time.
 - **Server checks stay.** The page shows only the menu's words and grants
   nothing; every view keeps its own checks, which still refuse anything the
   gate lets through.
@@ -2386,6 +2425,39 @@ opens one page per kind of reason. **Precedent.** #1128.
   (a stale page, busy configuration) is still retried. **Shared code.**
   `live-status-v1.js`. **Precedent.**
   [#1805](https://github.com/epiphany40223/parishkit/issues/1805).
+
+### Pages the role may not open
+
+**Rule.** A signed-in Staff user or Ministry leader who opens a page their
+role may not open (from a bookmark, a shared link or a typed address) is
+told the role is the reason, never to sign in again: the page keeps the
+"Access unavailable" heading and says "This page is for Administrators.
+Your access doesn't include it." ("for Administrators and Staff" on a Staff
+page), then "Choose a page from the menu, or ask a parish administrator if
+you need this one.", with the usual Administration home link and no Sign in
+again link. Only a missing or ended session keeps the sign-in wording
+("Your sign-in has ended…" or "Your session may have ended…", with Sign in
+again). The answer stays HTTP 403 with the closed `denied` code and
+refusal-log reason, and scripts and in-place regions get the same refusal as
+JSON. A Ministry leader's refusal within its scope (a Ministry it does not
+lead, or none at all) is about scope, not role, and keeps its own wording.
+The same holds for a page's role-only parts: Staff asking a report for its
+Testing responses, the Administrator-only timeline export, the weekly digest
+snapshot or an export cleanup retry get the role refusal too. **Deliberate
+exceptions.** Three refusals keep the generic denial: the setup-only steps
+(setup staging and cancelling setup), which only the setup Administrator
+reaches; a service's recheck after its page already admitted the session,
+which refuses only a role changed during the request; and the Admin command
+line, which has no sign-in page. **Why.** Signing in again cannot help when the role is the reason, and the
+old wording sent people round in a loop. Naming the page's roles tells a
+signed-in user nothing the 403 and their own menu do not already show; a
+visitor without a current session never gets past the session check to see
+it. **Shared code.** `accounts/role_refusal.py` (`role_denied` and `require`
+for a capability, `role_denied_for` and `require_role` for a role level,
+`RoleDenied`, `response`), used by `admin_editing.principal` and the
+page-level role checks; `web/error_pages.py` drops Sign in again for a
+refusal that says signing in cannot fix it (`Refusal.sign_in`).
+**Precedent.** #1924.
 
 ### Navigation rules
 
@@ -3946,11 +4018,19 @@ selection.
 A **worklist** (a table a reader works through, such as the review
 pipeline's [review worklist](../review-pipeline/spec.md#review-worklist)) has its filters
 always open, never behind a disclosure, above the table, and its export
-buttons below the table. Its filters sit in rows that wrap, each field
-13rem wide (on a phone, the whole row), and its Apply filters and
-Clear filters follow the last field as every filter form's do
-([Clear filters](#clear-filters)), with no line between that field and
-them (R38). Its view is in its address, so a reload re-renders the same
+buttons below the table. Its filters sit on one compact row, each label
+visible above its field: each field keeps a narrow fixed or bounded
+width (the exact widths are in the stylesheet), so at laptop width
+(1366 px, the Admin menu beside) the fields and Apply filters and Clear
+filters share one row and the first table row starts inside a 1366×768
+window ([#1653](https://github.com/epiphany40223/parishkit/issues/1653)).
+A label longer than its field wraps above it rather than being cut, and
+the row wraps only when the window is too narrow for it; on a phone each
+field takes the whole row. Its Apply filters and Clear filters follow
+the last field as every filter form's do
+([Clear filters](#clear-filters)): beside it, or Clear under Apply when a
+two-line label already makes the row that tall, with no line between
+that field and them (R38). Its view is in its address, so a reload re-renders the same
 view: after every in-place answer the address bar shows the page's own
 address with the Stage, the closed filters and the table's sort, size and
 page (`a[data-page-address]`), and the page draws that view from it. A

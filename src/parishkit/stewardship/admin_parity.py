@@ -187,9 +187,11 @@ LEDGER = {
         "workgroup show", "workgroup preview", "workgroup confirm"
     ),
     "content_catalog": command("content list"),
-    # The editor as it opens; its Review and Apply are still owed.
-    "content_edit": command("content show", owed="PR 10"),
-    "content_revision": command("content show", owed="PR 10"),
+    # The editor as it opens, and its Preview changes and review dialog
+    # Apply (``content preview --edit`` and ``content confirm --edit``,
+    # #1873); the campaign wizard's direct save is the same change.
+    "content_edit": command("content show", "content preview", "content confirm"),
+    "content_revision": command("content show", "content preview", "content confirm"),
     # The email tables' Delete, as a preview and a confirm (#879).
     "content_delete": command("content preview", "content confirm"),
     "content_history": command("content history"),
@@ -485,6 +487,8 @@ LEDGER = {
     "user_edit": command("users list", "users preview", "users confirm"),
     "user_delete": command("users preview", "users confirm"),
     "user_name_suggestions": command("users preview"),
+    # One user's Timeline (#1866): the same summary and lines.
+    "user_timeline": command("users timeline"),
     # The leaders table and its import review (#952 slice 6).
     "user_leader_import": command("users import-leaders"),
     # The leaders section's passive status (#1863): no data of its own.

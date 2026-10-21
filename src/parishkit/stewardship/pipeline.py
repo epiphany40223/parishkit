@@ -15,6 +15,7 @@ that move each stream to the shared worklist read it (#1680).
 - ``ROLE_ACTIONS`` is the spec's role-specific actions table as data;
   ``allowed_actions`` and ``may_add`` combine it with what a stage offers.
 - ``refresh_outcome`` is the R/A/C baseline refresh comparison.
+- ``shown_value`` says which value a reviewed Family form shows (#1705).
 - ``CENSUS_CONFIRMABLE`` says which census fields a ParishSoft read returns.
 
 The vocabulary is display only: stored values (``approved``, audit event
@@ -674,6 +675,76 @@ def allowed_actions(stream, stage, roles, *, leads=False, by_hand=False):
 def may_add(stream, roles):
     """Whether the reader gets the Add button on ``stream``'s worklist."""
     return Action.ADD in role_actions(stream, roles)
+
+
+# --- The reviewed Family form ----------------------------------------------
+
+
+class Shown(StrEnum):
+    """Which value a reviewed Family form shows for one item (#1705).
+
+    The value itself is never stored: a form's shown item names the rows
+    it is read back from (``responses.reviewed``).
+    """
+
+    FAMILY = "family"
+    REVIEWER = "reviewer"
+    BASELINE = "baseline"
+
+
+@dataclass(frozen=True, slots=True)
+class ShownValue:
+    """One item's shown value and whether the form may mark it changed.
+
+    ``markable`` is whether the item's field carries the form's change
+    marker at all (census fields and Ministry choices) and the item is not
+    Ignored; the caller marks it only when the value also differs from the
+    current baseline by the stream's canonical comparison.
+    """
+
+    shown: Shown
+    markable: bool
+
+
+# The streams whose Family form fields carry change markers today.
+_MARKED_STREAMS = frozenset({Stream.CENSUS, Stream.MINISTRY})
+# Stages a decision in force carries forward ("decided": accepted, edited or
+# added, at any later stage short of Confirmed).
+_OPEN_STAGES = frozenset({Stage.TO_REVIEW, Stage.CONFLICT})
+
+
+def shown_value(stream, placement, *, baseline_shown=True):
+    """What a reviewed Family form shows for one item at ``placement``.
+
+    The review pipeline spec's shown-value tables ("One working change set"
+    and "What the reviewed form shows"): To review and Conflict show the
+    Family's own latest answer; a decided item its carried-forward value
+    (the reviewer's value when edited or added by the parish, else the
+    Family's); Ignored the current baseline, where the form can show it as
+    an answer (``baseline_shown``: a census field other than the addresses
+    and the email opt-out, a Ministry choice), else the Family's own
+    answer. A Confirmed item and History have no shown item (None): the
+    form shows the plain baseline. The pledge is the exception: it is one
+    item per Family that stays the Family's answer after Confirmed, so a
+    Confirmed pledge shows its carried-forward answer. Cannot participate
+    and Additional information always show the Family's own answer.
+    """
+    stream = Stream(stream)
+    stage = placement.stage
+    if stage is Stage.HISTORY or (
+        stage is Stage.CONFIRMED and stream is not Stream.FINANCIAL
+    ):
+        return None
+    markable = stream in _MARKED_STREAMS and stage is not Stage.IGNORED
+    if stream in (Stream.CANNOT_PARTICIPATE, Stream.ADDITIONAL_INFORMATION):
+        return ShownValue(Shown.FAMILY, markable)
+    if stage in _OPEN_STAGES:
+        return ShownValue(Shown.FAMILY, markable)
+    if stage is Stage.IGNORED:
+        showable = baseline_shown and stream in _MARKED_STREAMS
+        return ShownValue(Shown.BASELINE if showable else Shown.FAMILY, markable)
+    edited = placement.decision in (Decision.ACCEPTED_EDITED, Decision.ADDED)
+    return ShownValue(Shown.REVIEWER if edited else Shown.FAMILY, markable)
 
 
 # --- Confirmation by a refresh ---------------------------------------------

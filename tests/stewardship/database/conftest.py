@@ -4,7 +4,11 @@ import pytest
 from django.conf import settings
 
 from .auth_builders import auth_service, google, real_limiter  # noqa: F401
-from .response_builders import live_response_service, response_service  # noqa: F401
+from .response_builders import (  # noqa: F401
+    earlier_rule,
+    live_response_service,
+    response_service,
+)
 from .schema_leak_guard import SchemaGuard, schema_connection
 from .schema_leak_guard import failure as schema_leak_failure
 

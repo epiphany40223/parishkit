@@ -287,6 +287,8 @@ PAGES = {
     "users": Page("users", _("Users")),
     "user_new": Page("users", _("New user"), "users"),
     "user_edit": Page("users", _("Edit user"), "users"),
+    # One user's Timeline (#1866), opened from the user's Email on Users.
+    "user_timeline": Page("users", _("Timeline"), "users"),
     # Answers only the table's confirmation dialog, with a change's status.
     "user_delete": Page("users", _("Delete user"), "users", linkable=False),
     # Answers only the leaders table's Import selected and Import all with

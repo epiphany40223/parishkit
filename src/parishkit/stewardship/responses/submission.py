@@ -97,7 +97,11 @@ def submit_family(request, service, *, baseline_id, payload):
             baseline_id, family=family, session=session, campaign=campaign
         )
         if validated.review_required:
-            return SubmissionResult(refreshed=issue_baseline(request, service))
+            # The fresh form keeps the open one's rule and its untouched
+            # items' shown values (#1705, "Reviewed form concurrency").
+            return SubmissionResult(
+                refreshed=issue_baseline(request, service, replacing=validated)
+            )
         answers = validate_answers(
             payload,
             validated.current,

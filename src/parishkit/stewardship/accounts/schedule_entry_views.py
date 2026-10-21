@@ -68,7 +68,11 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.intervals import local_day
-from parishkit.stewardship.campaigns.recurrence import canonical_rule, expand
+from parishkit.stewardship.campaigns.recurrence import (
+    RULE_ERRORS,
+    canonical_rule,
+    expand,
+)
 from parishkit.stewardship.campaigns.work_locks import (
     read_transaction,
     work_transaction,
@@ -324,6 +328,51 @@ BLOCKED = _(
 BLOCKED_FIX = _("Wait for it to finish, or resolve it on Sent mail, then save again.")
 
 
+# The id of each repeat rule control (components/repeat-rule.html), whose
+# reserved error line is "<id>_error"; the weekdays' line is the group's.
+RULE_IDS = {
+    "frequency": "repeat-frequency",
+    "weekdays": "repeat-weekdays",
+    "by": "repeat-by",
+    "day": "repeat-day",
+    "ordinal": "repeat-ordinal",
+    "month_weekday": "repeat-month-weekday",
+    "start": "repeat-from",
+    "until": "repeat-until",
+}
+# Each rule error's closed code, for the refusal log (#1437).
+RULE_CODES = {
+    "dates": "repeat_dates",
+    "order": "repeat_order",
+    "span": "repeat_span",
+    "weekdays": "repeat_weekdays",
+    "monthly": "repeat_monthly",
+    "frequency": "repeat_frequency",
+}
+
+
+def rule_place(error, data):
+    """Where a repeat rule's ``error`` is shown: ``(fields, line field)``.
+
+    The same places as the page script's repeatErrorPlace (ui-v1.js,
+    #1915): the fields marked, and the field whose reserved line holds the
+    message, the last of them (UX conventions "Field errors and live
+    checks": an error about two fields marks both and is said once, after
+    them). A missing date marks whichever date is empty, or both.
+    """
+    if error == "dates":
+        fields = tuple(name for name in ("start", "until") if not data.get(name))
+        fields = fields or ("start", "until")
+    elif error in ("order", "span"):
+        fields = ("start", "until")
+    elif error == "monthly":
+        by_day = data.get("by") != "weekday"
+        fields = ("day",) if by_day else ("ordinal", "month_weekday")
+    else:  # weekdays, frequency
+        fields = (error,)
+    return fields, fields[-1]
+
+
 class RepeatRule(AdminForm):
     """New scheduled email's Repeat checkbox and rule, for reminders only.
 
@@ -331,7 +380,8 @@ class RepeatRule(AdminForm):
     and posts the dates that fit as ``dates``; only ``repeat`` and ``dates``
     decide what is saved. The rule's own fields are kept loose (any choice the
     page offers, or nothing) because they are only drawn again on a refused
-    page, never trusted.
+    page, never trusted, except that a rule giving no date is refused at the
+    field the page marks for it (``refuse_rule``, #1915).
     """
 
     repeat = forms.BooleanField(required=False, label=_("Repeat"))
@@ -357,7 +407,15 @@ class RepeatRule(AdminForm):
             ("weekday", _("A weekday of the month")),
         ],
     )
-    day = forms.IntegerField(required=False, min_value=1, max_value=31)
+    # In the page script's words for a day out of range (#1915).
+    day = forms.IntegerField(
+        required=False,
+        min_value=1,
+        max_value=31,
+        error_messages={
+            key: RULE_ERRORS["monthly"] for key in ("invalid", "min_value", "max_value")
+        },
+    )
     ordinal = forms.ChoiceField(
         required=False,
         choices=[
@@ -372,10 +430,50 @@ class RepeatRule(AdminForm):
         required=False,
         choices=[(str(index), day) for index, day in weekday_choices()],
     )
-    start = forms.DateField(required=False)
-    until = forms.DateField(required=False)
+    start = forms.DateField(
+        required=False, error_messages={"invalid": RULE_ERRORS["dates"]}
+    )
+    until = forms.DateField(
+        required=False, error_messages={"invalid": RULE_ERRORS["dates"]}
+    )
     # Plain text values, checked below: the page script writes them.
     dates = forms.Field(required=False, widget=forms.MultipleHiddenInput)
+
+    # Fields a rule error marks beyond the field that holds it (refuse_rule).
+    rule_marks = ()
+    # The rule errors' words, for the sizes of the reserved error lines.
+    words = RULE_ERRORS
+
+    @property
+    def marks(self):
+        """Each marked rule field's name -> the id of the line describing it.
+
+        A field with its own error is described by its own line; one that
+        ``refuse_rule`` marks with another, by that field's line. The
+        template draws ``aria-invalid`` and ``aria-describedby`` from it.
+        """
+        found = {name: name for name in RULE_IDS if name in self.errors}
+        found |= dict(self.rule_marks)
+        return {name: f"{RULE_IDS[line]}_error" for name, line in found.items()}
+
+    def refuse_rule(self):
+        """Refuse a rule ``expand`` refuses at its fields; True if refused.
+
+        The page script holds Save while the rule gives no date, so this
+        answers only a request that skips it, in the same words and at the
+        same fields (#1915).
+        """
+        rule = _rule_fields(self.cleaned_data)
+        # A monthly weekday choice that is not a number is a monthly error.
+        error = expand(rule).get("error") if rule is not None else "monthly"
+        if not error:
+            return False
+        fields, line = rule_place(error, self.cleaned_data)
+        self.add_error(
+            line, forms.ValidationError(RULE_ERRORS[error], code=RULE_CODES[error])
+        )
+        self.rule_marks = tuple((name, line) for name in fields)
+        return True
 
     def clean_dates(self):
         """The posted dates: distinct calendar days, at most REPEAT_LIMIT."""
@@ -857,7 +955,8 @@ def _check_repeat(entry, repeat):
             "repeat",
             forms.ValidationError(_("Only reminders repeat."), code="reminders_only"),
         )
-    elif not repeat.cleaned_data.get("dates"):
+    elif not repeat.cleaned_data.get("dates") and not repeat.refuse_rule():
+        # A valid rule none of whose dates can be added.
         repeat.add_error(
             "repeat",
             forms.ValidationError(
@@ -877,7 +976,16 @@ def _rule(repeat):
     they are read only to remember the rule, so anything incomplete or
     invalid is simply None.
     """
-    data = repeat.cleaned_data
+    rule = _rule_fields(repeat.cleaned_data)
+    return None if rule is None else canonical_rule(rule)
+
+
+def _rule_fields(data):
+    """The rule New's cleaned Repeat fields describe, as ``expand`` takes it.
+
+    None when a monthly weekday choice is not a number (only a request built
+    by hand sends one).
+    """
     frequency = data.get("frequency")
     rule = {
         "frequency": frequency,
@@ -896,7 +1004,7 @@ def _rule(repeat):
             rule["monthly"] = {"day": data.get("day")}
     except (TypeError, ValueError):
         return None
-    return canonical_rule(rule)
+    return rule
 
 
 def _remember(repeat, entries, document):
@@ -1197,7 +1305,11 @@ def _summary(entry, repeat, email=None, scope=None):
     page loads, so the reader hears what to fix and can jump to each field.
     ``email`` is the schedule's email form; it counts only while in use
     (bound). ``scope`` is Edit's series scope (#469), linked to its first
-    choice, since a choice group has no control of its own id.
+    choice, since a choice group has no control of its own id. The repeat
+    rule's controls are drawn with their own ids (``RULE_IDS``, not Django's
+    ``id_repeat-...``); the weekdays link to their first box, and an error
+    that marks several fields (a last date before the first) to the first
+    of them (#1915).
     """
     errors = []
     for form in (entry, repeat, email, scope):
@@ -1207,6 +1319,11 @@ def _summary(entry, repeat, email=None, scope=None):
             target = None if field == "__all__" else form[field].auto_id
             if form is scope and target:
                 target = f"{target}_0"
+            if form is repeat and field in RULE_IDS:
+                marked = [name for name, line in repeat.rule_marks if line == field]
+                target = RULE_IDS[marked[0] if marked else field]
+                if target == RULE_IDS["weekdays"]:
+                    target = "repeat-weekday-0"
             errors.extend(
                 {"message": message, "field_id": target} for message in messages
             )

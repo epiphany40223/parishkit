@@ -483,6 +483,8 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # one of 0126's guards in place (the information revision guard and the
 # limitation review guard), which 0126's rerun brings back older, so
 # ``CLOSURE_REPLACED`` runs each file again after it.
+# 0152 (#1866) creates only the audit actor index, only when missing, and
+# replaces nothing; the swap drops none of it, so nothing is registered.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -854,7 +856,57 @@ CLOSURE_CREATED = {
         "stewardship_jobs",
         "0036_page_member_names",
     ),
+    # 0156 (#1786) creates the report email tables (in
+    # CLOSURE_TABLES) and these functions, and replaces the two task-type
+    # maps with 0120's bodies plus report_email_prepare, so its file installs
+    # whole again after 0120's.
+    **dict.fromkeys(
+        (
+            "public.stewardship_report_next_send_v1(jsonb,date,date,date)",
+            "public.stewardship_report_slot_due_v1(jsonb,date,date,text,text)",
+            "public.stewardship_report_due_v1(uuid,text)",
+            "public.stewardship_report_email_scope_v1(uuid,uuid,uuid,text,uuid)",
+            "public.stewardship_report_email_live_v1(uuid,uuid,bigint,uuid)",
+            "public.stewardship_report_email_page_v1(jsonb,jsonb)",
+            "public.stewardship_report_email_predecessors_v1(uuid,text,uuid)",
+            "public.stewardship_report_email_replacement_v1(jsonb)",
+            "public.stewardship_report_email_slots_v1(uuid,text)",
+            "public.stewardship_report_email_inputs_v1("
+            "jsonb,jsonb,timestamp with time zone,date,date,text)",
+            "public.stewardship_report_email_cohort_v1(jsonb,uuid)",
+            "public.stewardship_report_email_current_v1(uuid,text,text,text)",
+            "public.stewardship_report_email_label_v1(text,text,text)",
+            "public.stewardship_report_email_skipped_v1(uuid)",
+            "public.stewardship_report_email_requests_v1("
+            "uuid,uuid,timestamp with time zone)",
+            "public.stewardship_report_email_preparation_guard_v1()",
+            "public.stewardship_report_email_source_commit_v1()",
+            "public.stewardship_report_email_snapshot_guard_v1()",
+            "public.stewardship_report_email_snapshot_commit_v1()",
+            "public.stewardship_report_email_recipient_guard_v1()",
+            "public.stewardship_report_email_render_v1(jsonb,uuid,text,text,text)",
+            "public.stewardship_report_email_write_admitted_v1(text,jsonb,jsonb)",
+            "public.stewardship_report_email_mail_write_v1(uuid,text,jsonb,jsonb)",
+            "public.stewardship_report_email_mail_commit_v1()",
+            "public.stewardship_report_email_reason_v1(text)",
+            "public.stewardship_report_email_completion_v1(jsonb)",
+            "public.stewardship_report_email_settle_v1()",
+            "public.stewardship_report_email_dispatch_live_v1(uuid,boolean)",
+            "public.stewardship_report_email_seed_v1(uuid,uuid)",
+            "public.stewardship_report_email_dispatch_write_v1(text,jsonb,jsonb)",
+            "public.stewardship_report_email_manual_guard_v1()",
+            "public.stewardship_report_email_manual_allocate_v1()",
+            "public.stewardship_report_email_immutable_v1()",
+            "public.stewardship_report_email_pin_retained_v1()",
+        ),
+        ("stewardship_reports", "0040_report_pipeline"),
+    ),
 }
+
+
+# The CLOSURE_TABLES entries that are views: the report email completion
+# proof (0156, #1786).
+CLOSURE_VIEWS = {"stewardship_report_email_completion_ready"}
 
 
 # A closure migration whose frozen file only replaces functions another
@@ -1194,13 +1246,34 @@ CLOSURE_REPLACED_ONLY = {
         ("stewardship_workflows", "0003_ministry_review_pipeline"),
         "AS reviewed_ministry_name",
     ),
-    # 0146 (#1840) replaces it last, on 0138's body (0138 replaced 0133's
-    # for the published Conflict, and 0133 replaced 0118's for Entered
-    # incorrectly's two fixes), for Back to review undoing a terminal step.
+    # 0138 (#1749) replaced it on 0133's body (0133 replaced 0118's for
+    # Entered incorrectly's two fixes), for the published Conflict; 0146
+    # (#1840) replaced it on 0138's body, for Back to review undoing a
+    # terminal step; 0153 (#1705) replaces it last, on 0146's body, for
+    # the reviewed Family form.
     "stewardship_response_derived_guard_v1": (
-        ("stewardship_responses", "0023_census_terminal_undo"),
-        "IF OLD.execution='published' AND current_user<>'pk_stewardship_web' "
-        "AND NOT EXISTS (",
+        ("stewardship_responses", "0027_reviewed_census_resubmission"),
+        "carries_intent := FOUND AND NOT response.reviewed_view",
+    ),
+    # 0154 (#1705) replaces 0148's Ministry request guard and 0131's
+    # Ministry completeness check, which the reruns of 0131's file
+    # (CLOSURE_ALTERED) and 0148's (CLOSURE_REPLACED) put back; only its
+    # replacements run again.
+    **{
+        name: (("stewardship_workflows", "0008_reviewed_ministry_resubmission"), phrase)
+        for name, phrase in (
+            ("stewardship_ministry_request_guard_v1", "AND later.reviewed_view"),
+            (
+                "stewardship_ministry_submission_effects_v1",
+                "AND NOT (NEW.reviewed_view AND EXISTS (",
+            ),
+        )
+    },
+    # 0155 (#1705) replaces 0127's pledge item selection, which 0127's
+    # rerun puts back.
+    "stewardship_pledge_review_states_v1": (
+        ("stewardship_reports", "0039_reviewed_pledge_resubmission"),
+        "AND NOT (x.reviewed_view AND EXISTS (",
     ),
     # 0138 (#1749) replaces the refresh check guard last, on 0137's body
     # (0133's with #1738's fields); the rerun of 0133's file
@@ -1630,7 +1703,11 @@ def swap_pending():
         for definition in old_definitions().values():
             cursor.execute(definition)
         for table in CLOSURE_TABLES:
-            cursor.execute(f"DROP TABLE public.{table} CASCADE")
+            # A view a dropped table's CASCADE took with it is gone already.
+            if table in CLOSURE_VIEWS:
+                cursor.execute(f"DROP VIEW IF EXISTS public.{table} CASCADE")
+            else:
+                cursor.execute(f"DROP TABLE public.{table} CASCADE")
         for function in CLOSURE_CREATED:
             cursor.execute(f"DROP FUNCTION {function} CASCADE")
         for statement in (
@@ -1923,6 +2000,24 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
             # Added Member links (0141, #1670): the worker records them in
             # promotion; web only reads them.
             "stewardship_added_member_link": ("pk_stewardship_worker", "INSERT"),
+            # The report email pipeline (0156, #1786): the scheduler
+            # allocates preparations, the worker writes snapshots and
+            # recipients, and web reads the completion proof.
+            "stewardship_report_email_preparation": (
+                "pk_stewardship_scheduler",
+                "INSERT",
+            ),
+            **dict.fromkeys(
+                (
+                    "stewardship_report_email_snapshot",
+                    "stewardship_report_email_recipient",
+                ),
+                ("pk_stewardship_worker", "INSERT"),
+            ),
+            "stewardship_report_email_completion_ready": (
+                "pk_stewardship_web",
+                "SELECT",
+            ),
         }
         for table in CLOSURE_TABLES:
             login, privilege = writers.get(table, ("pk_stewardship_web", "INSERT"))

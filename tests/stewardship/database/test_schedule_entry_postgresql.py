@@ -404,6 +404,34 @@ def test_a_repeat_adds_one_ordinary_reminder_per_date(auth_service, google):
     )
     assert refused.status_code == 400
     assert "Only reminders repeat." in unescape(refused.content.decode())
+    # A rule that gives no date is refused at the fields the page marks:
+    # Until before From marks both, said once in Until's line (#1915).
+    order = post(
+        browser,
+        NEW,
+        data
+        | {
+            "repeat-start": "2054-10-14",
+            "repeat-until": "2054-10-01",
+            "repeat-dates": [],
+            "base_digest": store.active().digest,
+        },
+    )
+    assert order.status_code == 400
+    page = unescape(order.content.decode())
+    assert (
+        '<ul class="errorlist" id="repeat-until_error"><li>The last date is before '
+        "the first.</li></ul>"
+    ) in page
+    # The summary links to the first marked field (a control that exists).
+    assert re.search(r'<a href="#repeat-from">The last date is before', page)
+    for control in ("repeat-from", "repeat-until"):
+        assert re.search(
+            rf'id="{control}"[^>]*aria-invalid="true" '
+            r'aria-describedby="repeat-until_error"',
+            page,
+        )
+    assert "This rule gives no date that can be added" not in page
 
 
 def test_a_repeat_date_whose_time_has_passed_is_refused(

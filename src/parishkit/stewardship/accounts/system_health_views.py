@@ -53,7 +53,9 @@ from parishkit.stewardship.web.refusals import (
 from .admin_editing import editable_configuration
 from .authentication import runtime
 from .content_views import resave_recommended
-from .policy import Capability, allows
+from .policy import Capability
+from .role_refusal import RoleDenied, require
+from .role_refusal import response as role_response
 from .runtime_models import SystemConfiguration
 from .sessions import authenticated_admin
 from .source_form_views import source_form_summary
@@ -78,9 +80,7 @@ def _principal(request, store, *, final=False, activity=False):
     actor = authenticated_admin(
         request, store=store, activity=activity, read_only=final
     )
-    if not allows(actor, Capability.SYSTEM_LOGS):
-        raise PermissionError("System health requires an Administrator.")
-    return actor
+    return require(actor, Capability.SYSTEM_LOGS)
 
 
 def resave_summary(service, campaign_id):
@@ -222,6 +222,10 @@ def _read(request, template, *, page):
                 )
         response["Cache-Control"] = "no-store"
         return response
+    except RoleDenied as error:
+        # A role that lacks the page: the shared role refusal (#1924), not
+        # this page's sign-in-again error.
+        return role_response(error)
     except PermissionError:
         return _error(ErrorCode.DENIED, 403)
     except DatabaseError as error:

@@ -34,6 +34,13 @@ pytestmark = pytest.mark.parametrize(
 
 ACTION = "**/admin/reports/financial/pledges/"
 
+# The row editor's own body, which the Edit icon must not replace (R40c F1).
+BODY = (
+    "Record this value as the reviewer's value. The item is Accepted (edited), "
+    "and the Family's answer stays beside it. The Family will see this value "
+    "the next time it signs in."
+)
+
 
 def row(page, index):
     """Family ``index``'s row (its response id is ``UUID(int=index)``)."""
@@ -223,6 +230,7 @@ def test_edit_saves_the_reviewers_pledge(page, component_origin):
     icon(page, 3, "Edit").click()
     editor = page.locator("#pledges-edit-dialog-00000000-0000-0000-0000-000000000003")
     has_text(editor.locator("h2"), "Edit Family 03")
+    has_text(editor.locator("[data-confirm-body]"), BODY)
     amount = editor.get_by_label("Annual pledge, in dollars")
     frequency = editor.get_by_label("Frequency")
     assert amount.input_value() == "1200.00"

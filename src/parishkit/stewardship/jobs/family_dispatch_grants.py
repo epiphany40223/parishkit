@@ -40,6 +40,11 @@ def add_dispatch_grants(tables, columns):
 
     add_digest_dispatch_grants(tables, columns, private=True)
     add_weekly_dispatch_grants(tables, columns, private=True)
+    from parishkit.stewardship.reports.report_email_grants import (
+        add_report_email_dispatch_grants,
+    )
+
+    add_report_email_dispatch_grants(tables, columns, private=True)
     add_receipt_reads(columns)
     from .leader_email_grants import add_leader_email_dispatch_grants
 
@@ -159,6 +164,11 @@ def add_dispatch_scheduler_reads(tables, columns):
 
     add_digest_dispatch_grants(tables, columns, private=False)
     add_weekly_dispatch_grants(tables, columns, private=False)
+    from parishkit.stewardship.reports.report_email_grants import (
+        add_report_email_dispatch_grants,
+    )
+
+    add_report_email_dispatch_grants(tables, columns, private=False)
     columns.setdefault("stewardship_outbox_message", {}).setdefault(
         "SELECT", set()
     ).update(METADATA_FIELDS)

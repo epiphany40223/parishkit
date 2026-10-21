@@ -52,6 +52,9 @@ MIGRATIONS = (
     Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema/migrations"
 )
 FROZEN = MIGRATIONS / "0146_census_terminal_undo.sql"
+# 0153 (#1705) replaces 0146's derived guard last; it only replaces
+# functions, so it runs again whole after 0146 to put the latest back.
+LATER = MIGRATIONS / "0153_reviewed_census_resubmission.sql"
 
 
 def undo(harness, actor, change, *, note="Marked by mistake", key=None):
@@ -444,6 +447,7 @@ def test_the_migration_check_refuses_the_old_bodies_which_refuse_the_undo(
     finally:
         with transaction.atomic(), connection.cursor() as cursor:
             cursor.execute(text)
+            cursor.execute(LATER.read_text(encoding="utf-8"))
     assert fresh(marked).execution == "resolved_external"
     undo(harness, staff, marked)
     assert fresh(marked).execution == "pending"
