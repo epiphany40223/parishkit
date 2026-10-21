@@ -2734,7 +2734,20 @@ The campaign editor includes:
   Each option also has an optional **Short label**
   ([#1569](https://github.com/epiphany40223/parishkit/issues/1569)): plain
   text (no placeholders), at most 12 characters, unique among the
-  campaign's short labels ignoring case. Its help says "Shown in the Admin
+  campaign's short labels ignoring case and surrounding spaces (compared
+  by upper then lower case, which the browser and the server both apply,
+  so "Straße" and "STRASSE" are one). Both rules are checked at the field
+  as the Admin types, under the
+  [field errors](../ui-conventions/spec.md#field-errors-and-live-checks)
+  rule: braces are a shared format rule, said when the box is left; a short
+  label another kept option also has marks every box that has it with
+  "Another option already has this short label." in its reserved error line
+  (after a pause in typing, or at once when the box is left), and **Save**
+  waits with those words as its reason, in a line kept below it so nothing
+  moves, while any repeat stands. Resolving it
+  takes the marks off every box at once and gives Save back. A deleted
+  option (Delete ticked) does not count. The server refuses the same
+  values in the same words at the same boxes. Its help says "Shown in the Admin
   tables and charts instead of the long label. Families still see the full
   label." Admin screens that list share methods compactly use it (see
   [Financial stewardship detail](../reports/spec.md#financial-stewardship-detail));

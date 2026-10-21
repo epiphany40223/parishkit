@@ -1412,7 +1412,14 @@ it with the server's own limits and words, and its examples sit in the same
 table where they can: a list of Family DUIDs (no number twice), a financial
 period's end (exactly the day the start gives, drawn as its `min` and
 `max`) and a chosen file of 0 bytes (`data-empty-file-message`, beside
-`data-max-bytes`). A rule only the server can decide stays the server's,
+`data-max-bytes`). Values that must differ from one another across a form's
+rows, such as Share options' short labels, are one `data-distinct` group
+compared as the server compares them (#1569): every box whose value another
+enabled box has is marked at its own reserved line with the server's words,
+a new mark after a pause in typing or at once when the box is left, and the
+form's button waits with those words while any repeat stands; a mark goes
+from every box at once when the repeat is resolved. A rule only the server
+can decide stays the server's,
 shown at the field after Save: a mail schedule's send date, typed in the
 browser's time zone and judged on the campaign's days
 ([#1787](https://github.com/epiphany40223/parishkit/issues/1787)).
