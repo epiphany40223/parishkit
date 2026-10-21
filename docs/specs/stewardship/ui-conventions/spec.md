@@ -3313,6 +3313,35 @@ step and Production activation
 the other stage-progress displays move to it in
 [#1579](https://github.com/epiphany40223/parishkit/issues/1579).
 
+Clarification for changing words. A box whose words change while the work
+runs (its status word, or a detail drawn under it, such as Finishing
+setup's explanation, acknowledgement count, records loaded and task
+reference) is as tall as the longest of the forms it can take while the
+work runs, from its first rendering: its shown words share one grid cell
+with invisible, aria-hidden copies of every one of those forms (with
+counts the size of a large parish's where the real ones are not known
+yet), so neither the box nor its row of boxes grows or shrinks as the
+work moves on. Likewise a
+status sentence above the boxes that changes with the work's state (Load
+parish data's "Current status") shares one grid cell with invisible copies
+of every wording it can take, so the boxes below it never move; and a
+line under the boxes that appears part-way through (Load parish data's
+"Records saved for this setup" bar) keeps its space, invisible, until it
+appears. Each row of a list whose status words change (Load parish data's
+downloaded items) likewise shares a cell with invisible copies of its label
+and every status wording, in the heaviest weight the row takes, so a row
+never wraps to another line part-way through. A grid cell, not a fixed line count, because each browser wraps
+the same words differently. The forms reserved are the ones the page can
+show while it still updates itself; a failed step's explanation, which
+comes with a failure notice above the boxes and stops the updates, is not
+reserved, so a running box is not drawn tall enough for a long failure.
+**Precedent.** The Administrator's pk-local check of R40a (2026-10-21,
+[#1903](https://github.com/epiphany40223/parishkit/issues/1903)): Load
+parish data's status sentence grew from one line to three and pushed the
+boxes down by about 52 pixels when the load started, and Finishing
+setup's boxes changed height as their words changed; Load ParishSoft
+data's summary line already worked this way (#1618).
+
 ### Time entry
 
 Every Admin field that takes a time of day accepts it in any common form,
