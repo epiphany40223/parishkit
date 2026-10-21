@@ -2,7 +2,11 @@
 
 import pytest
 
-from parishkit.stewardship.accounts.setup_progress_views import SUMMARIES, summary
+from parishkit.stewardship.accounts.setup_progress_views import (
+    RUNNING_SUMMARIES,
+    SUMMARIES,
+    summary,
+)
 
 
 @pytest.mark.parametrize(
@@ -175,7 +179,7 @@ def test_progress_page_shows_the_right_parts_for_each_phase(phase):
     assert "30 minutes" not in html
     assert 'data-progress-deadline="idle_at"' in html
     assert "Families" in html and "Ministry rosters" in html
-    records_hidden = "data-load-records hidden" in html
+    records_hidden = 'class="setup-progress reserve-ghost" data-load-records' in html
     assert records_hidden is (phase == "fetching")
     assert ("data-progress-done" in html) is (phase == "done")
     # The live status region polls the passive fragment while the load runs
@@ -222,3 +226,65 @@ def test_each_ending_says_what_to_do_next(key):
     assert ('href="/admin/setup/source"' in html) is (key != "ended")
     assert ('href="/admin/setup/credentials/parishsoft"' in html) is (key == "failed")
     assert ("cancel setup" in html) is (key == "ended")
+
+
+@pytest.mark.parametrize("phase", ["queued", "fetching", "staging"])
+def test_summary_and_records_bar_keep_their_space(phase):
+    """The summary sits over invisible copies of every other wording and the
+    records bar keeps its space until saving starts, so neither moves the
+    stage boxes or the lines below (#1903)."""
+    from django.template.loader import render_to_string
+    from django.utils.html import escape
+
+    from parishkit.stewardship.accounts.setup_progress_views import _status_context
+
+    progress = observation("staging" if phase == "staging" else "fetching")
+    if phase == "queued":
+        progress |= {"task_state": "queued", "phase": "unspecified"}
+    progress |= {"started_at": None, "heartbeat_at": None}
+    context = _status_context(progress)
+    assert summary(progress) == phase
+    assert sorted(map(str, context["summary_reserve"])) == sorted(
+        str(SUMMARIES[key]) for key in RUNNING_SUMMARIES if key != phase
+    )
+    html = render_to_string(
+        "stewardship/setup-source-progress-status.html", context | {"wizard": None}
+    )
+    for key, text in SUMMARIES.items():
+        shown = (
+            '<p class="setup-progress-summary" data-progress-summary>'
+            f"{escape(text)}</p>"
+        )
+        ghost = f'<p class="reserve-ghost" aria-hidden="true">{escape(text)}</p>'
+        assert (shown in html) is (key == phase)
+        # Only the wordings shown while the page still updates are reserved.
+        assert (ghost in html) is (key in RUNNING_SUMMARIES and key != phase)
+    off = 'class="setup-progress reserve-ghost" data-load-records aria-hidden="true"'
+    assert (off in html) is (phase != "staging")
+
+
+def test_collection_rows_reserve_their_longest_wordings():
+    """Each downloaded row's status shares a cell with invisible copies of
+    its other wordings, so a row never wraps part-way through (#1903)."""
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.accounts.setup_progress_views import (
+        _status_context,
+        collection_reserve,
+    )
+
+    assert "99,999 loaded" in collection_reserve("families")
+    assert "999 of 999 loaded" not in collection_reserve("families")
+    assert "999 of 999 loaded" in collection_reserve("ministry_roster")
+    html = render_to_string(
+        "stewardship/setup-source-progress-status.html",
+        _status_context(
+            observation("fetching") | {"started_at": None, "heartbeat_at": None}
+        )
+        | {"wizard": None},
+    )
+    ghost = '<span class="setup-load-status reserve-ghost" aria-hidden="true">'
+    # Seven rows, each with Waiting, Downloading and a count (and one with
+    # the rosters' form).
+    assert html.count(ghost) == 7 * 3 + 1
+    assert f"{ghost}999 of 999 loaded</span>" in html

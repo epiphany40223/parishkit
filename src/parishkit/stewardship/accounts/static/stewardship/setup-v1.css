@@ -51,6 +51,15 @@
 .setup-load-collections li > .spinner { --spinner-ink: currentColor; position: absolute; left: calc(.55rem + (1rem - 1em) / 2); top: calc(.5rem + (1.6em - 1em) / 2); top: calc(.5rem + (1lh - 1em) / 2); }
 .setup-load-active { background: var(--accent-soft); font-weight: 600; }
 .setup-load-waiting .setup-load-label { color: var(--muted); }
+/* A collection's status shares one grid cell with invisible copies of its
+   other wordings, so the row's wrapping never changes mid-load (#1903). */
+.setup-load-status-slot, .setup-load-label-slot { display: grid; }
+.setup-load-label-slot > .setup-load-label { grid-area: 1 / 1; }
+.setup-load-status-slot > .setup-load-status { grid-area: 1 / 1; text-align: end; }
+/* The copies are drawn bold, as the active row's words are, so they are as
+   wide as the widest form the row takes (the label has a copy too, since it
+   turns bold with the row). */
+.setup-load-collections .reserve-ghost { font-weight: 600; }
 .setup-load-status { font-size: .925rem; font-variant-numeric: tabular-nums; }
 .setup-load-result {
   margin-block: 0 1.5rem; padding: 1rem 1.25rem; border: 2px solid var(--accent);
@@ -58,6 +67,13 @@
 }
 .setup-load-result h2 { margin-top: 0; }
 .setup-load-result .setup-actions { margin-block: .75rem 0; }
+/* Load parish data's summary sentence shares one grid cell with invisible
+   copies of its other wordings (.reserve-ghost, ui-v1.css), so it is as
+   tall as the longest at every width and the stage boxes below it never
+   move when the load moves on (#1903). The cell keeps a paragraph's
+   bottom margin. */
+.setup-progress-summary-slot { display: grid; margin-block: 0 1rem; }
+.setup-progress-summary-slot > p { grid-area: 1 / 1; margin: 0; min-width: 0; }
 .setup-progress { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; margin-block: 0 1rem; }
 .setup-progress label { margin: 0; }
 .setup-progress progress { flex: 1 1 12rem; }

@@ -125,7 +125,9 @@ def test_stage_boxes_show_the_spinner_only_while_in_progress():
     for key, inner in boxes.items():
         assert (spinner in inner) is (key == "active"), key
     # The spinner comes first, before the words, so it sits in the mark's slot.
-    assert boxes["active"].startswith(spinner + '<span class="stage-label">')
+    assert boxes["active"].startswith(
+        spinner + '<div class="stage-body"><span class="stage-label">'
+    )
 
 
 def test_live_running_line_uses_the_shared_spinner():

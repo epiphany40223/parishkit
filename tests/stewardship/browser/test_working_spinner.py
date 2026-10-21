@@ -42,7 +42,10 @@ WORDS = """boxes => boxes.map(box => {
 # would otherwise grow its bounding rectangle as it turns.
 SLOT = """spinner => {
   const box = spinner.parentElement;
-  const label = spinner.nextElementSibling;
+  // A stage box's label is inside its words' body (#1903); a collection
+  // row's label follows the spinner directly.
+  const next = spinner.nextElementSibling;
+  const label = next.querySelector('.stage-label') || next;
   const pad = parseFloat(getComputedStyle(box).paddingLeft);
   const right = spinner.offsetLeft + spinner.offsetWidth;
   // Level with the label's first line: their middles within 2px.

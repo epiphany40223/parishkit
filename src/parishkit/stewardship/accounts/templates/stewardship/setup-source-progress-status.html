@@ -17,7 +17,13 @@
   (data-live-recheck-shown), so a load discarded from another tab (#1353)
   turns Continue into the "no longer used" status in place. Once the region
   is settled, its hidden follow-up link re-reads the page's step bar in
-  place (live-status-v1.js), so the steps match the status.
+  place (live-status-v1.js), so the steps match the status. Nothing the
+  region draws moves the stage boxes or the lines below them (#1903): the
+  summary shares one grid cell with invisible, aria-hidden copies of every
+  other wording (summary_reserve), so it is as tall as the longest, each
+  collection's status shares a cell with its other wordings so a row never
+  wraps part-way through, and the saved-record bar keeps its space,
+  invisible, until saving starts.
 {% endcomment %}<div class="setup-load-region" data-live-status="setup-load"{% if status_url %} data-live-url="{{ status_url }}"{% endif %} data-live-announce="{{ summary_text }}" data-progress-state="{{ status_key }}" data-live-recheck-shown{% if progress.active %} data-live-pending{% endif %}>
 {% if status_key == 'done' %}<div class="setup-load-result" data-progress-done>
 <h2>{% translate "Parish data is loaded" %}</h2>
@@ -39,13 +45,13 @@
 </div>{% endif %}
 <section class="panel" data-setup-progress>
 <h2>{% translate "Current status" %}</h2>
-<p class="setup-progress-summary" data-progress-summary>{{ summary_text }}</p>
+<div class="setup-progress-summary-slot"><p class="setup-progress-summary" data-progress-summary>{{ summary_text }}</p>{% for text in summary_reserve %}<p class="reserve-ghost" aria-hidden="true">{{ text }}</p>{% endfor %}</div>
 {% translate "Parts of the load" as phases_label %}{% include 'stewardship/components/stage-boxes.html' with stages=phases label=phases_label key_attribute="load-phase" %}
 <h3>{% translate "Downloaded from ParishSoft" %}</h3>
 <ul class="setup-load-collections" data-load-collections>{% for item in collections %}
-<li class="setup-load-{{ item.state }}" data-collection="{{ item.key }}">{% if item.state == "active" %}{% include "stewardship/components/spinner.html" %}{% endif %}<span class="setup-load-label">{{ item.label }}</span> <span class="setup-load-status" data-load-status>{{ item.text }}</span></li>{% endfor %}
+<li class="setup-load-{{ item.state }}" data-collection="{{ item.key }}">{% if item.state == "active" %}{% include "stewardship/components/spinner.html" %}{% endif %}<span class="setup-load-label-slot"><span class="setup-load-label">{{ item.label }}</span><span class="setup-load-label reserve-ghost" aria-hidden="true">{{ item.label }}</span></span> <span class="setup-load-status-slot"><span class="setup-load-status" data-load-status>{{ item.text }}</span>{% for text in item.reserve %}<span class="setup-load-status reserve-ghost" aria-hidden="true">{{ text }}</span>{% endfor %}</span></li>{% endfor %}
 </ul>
-<div class="setup-progress" data-load-records{% if progress.phase != 'staging' and progress.phase != 'validating' %} hidden{% endif %}>
+<div class="setup-progress{% if not records_shown %} reserve-ghost{% endif %}" data-load-records{% if not records_shown %} aria-hidden="true"{% endif %}>
 <label for="setup-load-bar">{% translate "Records saved for this setup" %}</label>
 <progress id="setup-load-bar" data-progress-bar{% if progress.total %} max="{{ progress.total }}" value="{{ progress.current }}"{% endif %}></progress>
 <span data-task-counts>{% blocktranslate trimmed with current=progress.current|number total=progress.total|number %}{{ current }} of {{ total }}{% endblocktranslate %} {% if progress.total %}({% widthratio progress.current progress.total 100 %}%){% else %}(0%){% endif %}</span>

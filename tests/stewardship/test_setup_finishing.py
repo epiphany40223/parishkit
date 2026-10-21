@@ -219,3 +219,53 @@ def test_enabled_slack_and_unexpected_rows_are_listed():
         )
     )
     assert rows["slack"]["state"] == "active"
+
+
+def forms(row):
+    """A row's reserved forms as (state, text) pairs."""
+    return {(form["state"], str(form["text"])) for form in row["reserve"]}
+
+
+def test_each_box_reserves_every_running_form():
+    """Every step's box reserves each form it can take while setup runs,
+    the one it shows included, so its height holds as it moves on
+    (#1903); Setup complete reserves nothing, since the page's result
+    replaces the boxes."""
+    rows = by_key(finishing(status()))
+    credential_forms = forms(rows["parishsoft"])
+    assert {state for state, _text in credential_forms} == {
+        "waiting",
+        "active",
+        "operator",
+        "done",
+    }
+    assert len(credential_forms) == 6
+    operator = next(
+        form for form in rows["parishsoft"]["reserve"] if form["state"] == "operator"
+    )
+    assert operator["count"] == {"done": 8, "total": 8}
+    assert operator["status"] == "Waiting for the server operator"
+    assert forms(rows["configuration"]) == {
+        ("waiting", "Starts after every credential is installed and acknowledged."),
+        ("active", "Preparing the new configuration."),
+        ("done", "The configuration is prepared."),
+    }
+    source = {form["state"]: form for form in rows["source"]["reserve"]}
+    assert set(source) == {"waiting", "active", "done"}
+    # The final load's counts and task reference are reserved before it starts.
+    assert "progress" in source["active"] and len(source["active"]["task"]) == 36
+    assert rows["completed"]["reserve"] == []
+    # A running final load reserves the stand-in counts, not its own.
+    running = {"id": uuid4(), "state": "running", "progress": Percentage(1, 2)}
+    rows = by_key(finishing(status(prepared=True, source=running)))
+    assert len(rows["source"]["reserve"]) == 3
+
+
+def test_a_box_never_reserves_a_failure():
+    """A failure's long explanation is not reserved: it stops the updates
+    and comes with a notice above the boxes (#1903)."""
+    rows = by_key(finishing(status(credentials=[credential("parishsoft", "failed")])))
+    assert rows["parishsoft"]["state"] == "failed"
+    for row in rows.values():
+        assert "failed" not in {form["state"] for form in row["reserve"]}
+    assert len(rows["parishsoft"]["reserve"]) == 6

@@ -55,6 +55,16 @@ SUMMARIES = {
     ),
 }
 
+# The status keys the page can show while it still updates itself.
+RUNNING_SUMMARIES = (
+    "queued",
+    "retry_wait",
+    "fetching",
+    "staging",
+    "validating",
+    "working",
+)
+
 # The three parts of a load, in order, as the page names them.
 PHASES = (
     ("fetching", _("Download from ParishSoft")),
@@ -79,6 +89,24 @@ COLLECTION_TEXT = {
     "active": _("Downloading…"),
     "waiting": _("Waiting"),
 }
+
+
+def collection_reserve(key):
+    """Every wording a collection's row can take while the load runs (#1903).
+
+    The row draws them invisibly in its status cell, so a row never wraps
+    to another line part-way through the load (a narrow screen can fit
+    "Waiting" beside a label but not "1,234 loaded"). The counts are the
+    size of a large parish's; a larger one grows the row once.
+    """
+    texts = [
+        COLLECTION_TEXT["waiting"],
+        COLLECTION_TEXT["active"],
+        COLLECTION_TEXT["done"].format(count="99,999"),
+    ]
+    if key == "ministry_roster":
+        texts.append(COLLECTION_TEXT["rosters"].format(finished="999", expected="999"))
+    return texts
 
 
 def phases(progress, status_key):
@@ -115,7 +143,13 @@ def collections(progress):
         else:
             text = COLLECTION_TEXT[state]
         rows.append(
-            item | {"label": COLLECTIONS[item["key"]], "state": state, "text": text}
+            item
+            | {
+                "label": COLLECTIONS[item["key"]],
+                "state": state,
+                "text": text,
+                "reserve": collection_reserve(item["key"]),
+            }
         )
     return rows
 
@@ -165,6 +199,17 @@ def _status_context(progress):
         "progress": progress,
         "status_key": status_key,
         "summary_text": SUMMARIES[status_key],
+        # Every other wording the page can show while it still updates,
+        # drawn invisibly in the summary's grid cell so the stage boxes below
+        # never move when the wording changes (#1903). The settled wordings
+        # (done, failed, ended, voided) are not reserved: the page stops
+        # updating on them and a failure comes with its own notice.
+        "summary_reserve": [
+            SUMMARIES[key] for key in RUNNING_SUMMARIES if key != status_key
+        ],
+        # The saved-record bar shows only while records are saved and
+        # checked; before then it keeps its space, invisible (#1903).
+        "records_shown": progress["phase"] in {"staging", "validating"},
         "phases": phases(progress, status_key),
         "collections": collections(progress),
         "started_ago": _ago(progress["server_now"], progress["started_at"]),
