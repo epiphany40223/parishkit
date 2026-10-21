@@ -215,7 +215,14 @@ def test_the_page_reads_a_fixed_number_of_statements(people):
     store, browser, record, portal, message = people
 
     def statements():
-        """How many statements one view runs."""
+        """How many statements one view runs.
+
+        A first, uncounted view comes before the counted one: the Admin
+        chrome runs one more audit query now and then (a time-based check
+        outside this page), which made back-to-back counts differ by one
+        in longer runs.
+        """
+        get(browser, timeline_path(record))
         with CaptureQueriesContext(connection) as queries:
             status, _page = get(browser, timeline_path(record))
         assert status == 200
