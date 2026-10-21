@@ -1025,9 +1025,19 @@ It is a SECURITY DEFINER function no login may execute directly.
 portal user's Ministries, empty unless the user's role is Ministry leader or
 higher (until #952 lands, the interim code reads the current login rule's
 roles instead); database-grants lets the web, worker and download logins
-execute it. `stewardship_ministry_scope_v1` and Python's
-`current_principal()` read that scope, so Python never restates the rule and
-can never grant more than SQL. The Admin session guard (#306) admits by the
+execute it. `stewardship_address_leader_scope_v1(address, actor)` (frozen
+migration 0170, [#1925](https://github.com/epiphany40223/parishkit/issues/1925))
+returns the same answer for an address, compared in lower case, so a
+user's [Timeline](../admin-portal/spec.md#user-timeline) can show the
+Ministries of a user who never signed in and so has no portal user row. It
+is read-only (STABLE, no audit of its own; the page's view event names the
+reader), admits only the web login (or the schema owner) and an actor who is
+an enabled Administrator (`stewardship_export_authorized_v1(actor, true)`),
+refusing anything else with SQLSTATE 42501 and a malformed address with
+22023, and returns only Ministry DUIDs; database-grants lets only the web
+login execute it. `stewardship_ministry_scope_v1` and Python's
+`current_principal()` read the per-user scope, so Python never restates the
+rule and can never grant more than SQL. The Admin session guard (#306) admits by the
 user's role alone (by login rule in the interim code). Every role comes only
 from users (until #952 lands, from login rules in the interim code), never
 from ParishSoft; Staff and Administrators see every

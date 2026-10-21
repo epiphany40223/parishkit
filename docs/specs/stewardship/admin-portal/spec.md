@@ -6593,7 +6593,12 @@ history does not keep the name. Its breadcrumb parent is Users.
   the user.
 - **Email:** the user's address, which this Administrator-only page may show.
 - **Ministry leader of:** the Ministries the person leads now through a
-  ParishSoft leader role (the shared leader scope), when there are any.
+  ParishSoft leader role (the shared leader scope), when there are any. A
+  user who has never signed in has no Google account for that scope, so
+  their address is read instead, with the same answer the shared scope
+  gives once they sign in. A user whose Google accounts are all disabled
+  shows no Ministries (the address is not read instead)
+  ([#1925](https://github.com/epiphany40223/parishkit/issues/1925)).
 - **Last signed in:** the newest successful sign-in of any Google account
   with the address, or "Never".
 - **Last email:** the email to the address, not cancelled, whose line is
@@ -6642,7 +6647,10 @@ configuration and the activations, the Google accounts of the address, their
 audit records through the audit's `(actor_id, created_at)` index (frozen
 migration 0152, which adds that index), the emails
 through the Administrator-only address read of
-[Sent mail](#sent-mail) (frozen migration 0116), and the leader scope. Each
+[Sent mail](#sent-mail) (frozen migration 0116), and the leader scope (for a
+user with no Google account, the Administrator-only address form of it,
+frozen migration 0170, described under
+[Ministry leaders](../data/spec.md#ministry-leaders)). Each
 view sends `Cache-Control: no-store` and records one `user_timeline_viewed`
 audit event ("Someone opened a user's timeline") whose subject is the user's
 record ID, with the outcome and no address, Name, filter or shown value.
