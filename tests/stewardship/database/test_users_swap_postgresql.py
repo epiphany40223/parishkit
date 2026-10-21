@@ -440,6 +440,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # again) and replaces three bodies (0124's intake check, 0114's state guard,
 # the baseline's request guard) that no closure file installs again, so
 # nothing else is registered.
+# 0133 (#1737, provisional number) creates nothing: it replaces 0060's
+# resolution guard and 0132's refresh check guard, which their files bring
+# back older (``CLOSURE_REPLACED`` runs 0133's file again), and the derived
+# guard last (``CLOSURE_REPLACED_ONLY``).
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -889,6 +893,17 @@ CLOSURE_REPLACED = {
         ("stewardship_responses", "0010_upstream_at_check"),
         "p.version<>f.proposal_version+1",
     ),
+    # 0133 (#1737) replaces 0060's resolution guard and 0132's refresh
+    # check guard, which those files bring back; it creates nothing, so its
+    # file runs again whole.
+    "public.stewardship_proposal_resolution_guard_v1()": (
+        ("stewardship_responses", "0017_entered_incorrectly_fixes"),
+        "OR (NOT incorrect AND NOT open_state)",
+    ),
+    "public.stewardship_refresh_check_guard_v1()": (
+        ("stewardship_responses", "0017_entered_incorrectly_fixes"),
+        "k.item_version=change.version-1",
+    ),
 }
 
 
@@ -972,9 +987,9 @@ def rerun_old_bodies(cursor, migrations):
 # put an earlier body back, when that file also creates tables and so cannot
 # run whole twice: only its replacement statement runs again, unless the body
 # already has the phrase. 0096 (#528) replaced the derived guard after 0090,
-# 0113 (#1596) and 0118 (#1603) replace it last, after 0108's and 0112's
-# reruns; 0118's body keeps 0096's, 0108's, 0112's and 0113's rules, so only
-# the latest replacement runs.
+# 0113 (#1596), 0118 (#1603) and 0133 (#1737) replace it last, after 0108's
+# and 0112's reruns; 0133's body keeps 0096's, 0108's, 0112's, 0113's and
+# 0118's rules, so only the latest replacement runs.
 CLOSURE_REPLACED_ONLY = {
     # 0131 (#1684) replaces the follow-up selection last; 0094's rerun
     # (above) puts back its older body, and 0131 adds columns, so only its
@@ -983,9 +998,11 @@ CLOSURE_REPLACED_ONLY = {
         ("stewardship_workflows", "0003_ministry_review_pipeline"),
         "AS reviewed_ministry_name",
     ),
+    # 0133 (#1737) replaces it last, on 0118's body, for Entered
+    # incorrectly's two fixes.
     "stewardship_response_derived_guard_v1": (
-        ("stewardship_responses", "0012_gender_by_hand"),
-        "'suffix','gender','marital_status'",
+        ("stewardship_responses", "0017_entered_incorrectly_fixes"),
+        "AND (OLD.execution='resolved_external' OR (NOT EXISTS (",
     ),
     # 0109 (#1398) widens 0106's safe context with the export report and
     # format keys, and 0122 (#1620) widens 0109's with the automatic view

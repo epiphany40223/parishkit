@@ -62,6 +62,7 @@ from parishkit.stewardship.responses.refresh_checks import (
 from parishkit.stewardship.source.source_status import source_status_label
 from parishkit.stewardship.web.presentation import duid
 from parishkit.stewardship.web.review_worklist import (
+    INCORRECT_WORDS,
     NOT_SEEN,
     RETIRED_DATES,
     WORDS,
@@ -70,6 +71,7 @@ from parishkit.stewardship.web.review_worklist import (
     build,
     page_address,
 )
+from parishkit.stewardship.workflows.models import RefreshCheck
 
 from .census_changes import LABELS, REOPENED, STAGES
 
@@ -114,17 +116,13 @@ def _withheld(row):
     Edit for a field no value can be typed for (moved, deceased, the email
     opt-out, a New Member), and Accept and Edit on a Conflict whose
     ParishSoft value is unknown, which waits for a refresh: Accept on a
-    Conflict is decided against ParishSoft's current value. Entered
-    incorrectly's two fixes come with #1737; until then a refresh confirms
-    the change once ParishSoft holds the reviewer's value.
+    Conflict is decided against ParishSoft's current value.
     """
     withheld = set()
     if row["editor"] is None:
         withheld.add(Action.EDIT)
     if row["placement"].stage is Stage.CONFLICT and not row["resolvable"]:
         withheld |= {Action.ACCEPT, Action.EDIT}
-    if row["placement"].stage is Stage.ENTERED_INCORRECTLY:
-        withheld |= {Action.BACK_TO_REVIEW, Action.ENTERED_BY_HAND}
     if row.get("covered"):
         # An open addition of the field stands in for it (#1710).
         withheld.add(Action.BACK_TO_REVIEW)
@@ -389,6 +387,19 @@ def _value(fields, field):
     return fields["value"][0]
 
 
+def _made_again(resolution):
+    """Whether ``resolution`` marked a change Entered by hand again (#1737).
+
+    Refresh checks exist only at a final change's versions, so a mark made
+    at a version some check was made at was made over Entered incorrectly.
+    Read from the recorded row, so a replayed first mark (its change is
+    entered by now) is not worded "again".
+    """
+    return RefreshCheck.objects.filter(
+        proposal_id=resolution.proposal_id, item_version=resolution.expected_version
+    ).exists()
+
+
 class CensusDecisions:
     """The census stream's worklist decisions, one campaign's (``DecisionService``).
 
@@ -471,14 +482,18 @@ class CensusDecisions:
         additions' placements, which offer only their own later steps.
         """
         roles = self._roles(principal)
-        # A final change is placed by its latest refresh check (#1689), as
-        # the page placed it.
+        # A final change is placed by its latest refresh check at its
+        # current version (#1689, #1737). A change a later response replaced
+        # is placed so too here; its fixes are refused by the service
+        # (``refresh_checks.replaced``), as the page offers none.
+        final = {
+            pk: proposal
+            for pk, proposal in proposals.items()
+            if proposal.execution in FINAL_EXECUTIONS
+        }
         checks = check_states(
-            proposals=[
-                pk
-                for pk, proposal in proposals.items()
-                if proposal.execution in FINAL_EXECUTIONS
-            ]
+            proposals=list(final),
+            versions={str(pk): proposal.version for pk, proposal in final.items()},
         )
         stages = [
             (
@@ -614,6 +629,10 @@ class CensusDecisions:
                 return f"{addition_name(addition)} withdrawn."
             return f"{addition_name(addition)} {words}"
         (proposal,) = proposals.values()
+        if decision.action in INCORRECT_WORDS and _made_again(recorded[0]):
+            # Entered incorrectly's mark made again (#1737), worded as its
+            # icon was, also when the answer is a replay.
+            words = INCORRECT_WORDS[decision.action].done
         if decision.action is Action.EDIT and not recorded[0].admin_value_set:
             return f"{notice_name(proposal)} {EDIT_MATCHED}"
         return f"{notice_name(proposal)} {words}"

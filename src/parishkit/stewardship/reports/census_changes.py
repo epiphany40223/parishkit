@@ -306,7 +306,10 @@ SELECT p.id::text, p.entity_kind, p.entity_key, p.field,
           AND NOT EXISTS (SELECT 1 FROM stewardship_proposal_review later
               WHERE later.proposal_id=pr.id
                 AND later.expected_version>base.expected_version
-                AND later.decision<>'approved')) AS reopened
+                AND later.decision<>'approved')) AS reopened,
+    -- The response's place in its Family's order, which tells a final change
+    -- a later response replaced (#1737).
+    s.family_version
 FROM stewardship_campaign c
 LEFT JOIN stewardship_source_current sc ON sc.singleton
 JOIN stewardship_submission s ON s.campaign_id=c.id AND s.mode='live'
@@ -413,6 +416,7 @@ COLUMNS = (
     "resolution_at",
     "resolution_by",
     "reopened",
+    "family_version",
 )
 
 # The menu's open count (#585, #1590; admin_context.OPEN_COUNTS embeds it):
@@ -575,9 +579,30 @@ def census_rows(campaign_id):
             raise ReadUnavailable("Census change inputs are unavailable.")
         cursor.execute(ROWS, [NAME_NOT_RECORDED, campaign_id])
         rows = [dict(zip(COLUMNS, values, strict=True)) for values in cursor]
-    # The refresh checks (#1689) of the final changes, which place them.
+
+    # The refresh checks (#1689) of the final changes, which place them: only
+    # those at the change's current version, since a mark made again over
+    # Entered incorrectly moves it on and the checks before no longer count
+    # (#1737).
+    # A final change a later response of the Family replaced (the same field
+    # answered again; ``refresh_checks.replaced``) is history and placed by
+    # its execution alone.
+    def key(row):
+        """The Family's field a change answers."""
+        return (row["family_duid"], row["entity_kind"], row["entity_key"], row["field"])
+
+    latest = {}
+    for row in rows:
+        latest[key(row)] = max(latest.get(key(row), 0), row["family_version"])
+    final = [
+        row
+        for row in rows
+        if row["execution"] in FINAL_EXECUTIONS
+        and row["family_version"] == latest[key(row)]
+    ]
     checks = check_states(
-        proposals=[row["id"] for row in rows if row["execution"] in FINAL_EXECUTIONS]
+        proposals=[row["id"] for row in final],
+        versions={row["id"]: row["version"] for row in final},
     )
     for row in rows:
         # JSON values arrive as text (cast in ROWS), whatever the driver's
