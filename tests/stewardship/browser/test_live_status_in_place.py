@@ -214,7 +214,7 @@ def test_finished_task_shows_its_final_steps_in_place(page, component_origin):
     visible(history.get_by_text("Downloading from ParishSoft"))
     assert history.get_by_role("cell", name="Finished", exact=True).count() == 0
     # The poll finds the run finished; the follow-up re-reads the page.
-    visible(page.get_by_text("Finished successfully."))
+    visible(page.locator("#task-status").get_by_text("Finished successfully."))
     visible(history.get_by_role("cell", name="Finished", exact=True))
     visible(history.get_by_text("Making the new data current").first)
     # The bar and the table agree: both at the last of 4,000 records.

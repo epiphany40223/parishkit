@@ -1831,6 +1831,10 @@ def component_origin():
                 "is_refresh": True,
                 "refresh_label": "Full refresh",
                 "phase_text": "Downloading from ParishSoft",
+                # The run's stage boxes (#1579), as _task_read builds them.
+                "stages": campaign_wizard.task_stages(
+                    {"state": "running", "progress": {"phase": "fetching"}}
+                ),
                 "retry_text": "An earlier attempt stopped unexpectedly (for "
                 "example, the server restarted), so this work started again "
                 "automatically.",
