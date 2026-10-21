@@ -785,6 +785,9 @@ if [ "$mode" = upgrade ]; then
             # Report emails' migration refuses while digest work is open.
             echo "If it refused because a Daily or Weekly digest send is unfinished, see the" >&2
             echo "operations specification, Report email conversion." >&2
+            # The digest retirement (#1834) refuses a database not yet converted.
+            echo "If it refused because schedule definitions are still Daily or Weekly digests," >&2
+            echo "upgrade to the release that converts them first (the same section)." >&2
             exit 1
         fi
         grants grants

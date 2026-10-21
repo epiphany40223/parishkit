@@ -41,7 +41,7 @@ from parishkit.stewardship.reports.weekly_models import (
 )
 from parishkit.stewardship.reports.weekly_observation import decode_observation
 
-from .report_builders import seed_digests, triggers_off
+from .report_builders import digest_kinds_admitted, seed_digests, triggers_off
 from .source_builders import running_source_task
 from .test_source_snapshots_postgresql import permit
 
@@ -95,16 +95,25 @@ def claim_of(task):
 
 
 def digest_definitions(harness, monkeypatch):
-    """The campaign's Daily and Weekly definition IDs, added on first use."""
+    """The campaign's Daily and Weekly definition IDs, added on first use.
+
+    A database past the digest retirement (#1834) holds them converted to
+    report emails, with the digest kind only on their immutable revisions,
+    so they are seeded with the digest kinds admitted and retyped as
+    reports afterwards (``digest_kinds_admitted``), and found again by
+    their revisions' kind.
+    """
     found = {
-        row.kind: row.pk
+        row.current_revision.kind: row.pk
         for row in ScheduleDefinition.objects.filter(
-            campaign=harness.campaign, kind__in=("daily_digest", "weekly_digest")
-        )
+            campaign=harness.campaign,
+            current_revision__kind__in=("daily_digest", "weekly_digest"),
+        ).select_related("current_revision")
     }
     if found:
         return found["daily_digest"], found["weekly_digest"]
-    return seed_digests(harness.service.store, harness.campaign, monkeypatch)
+    with digest_kinds_admitted():
+        return seed_digests(harness.service.store, harness.campaign, monkeypatch)
 
 
 @dataclass(frozen=True)

@@ -196,9 +196,61 @@ def digests_admitted(monkeypatch):
         yield
 
 
+# The schedule definition check before and after migration 0162 (#1834),
+# in the form the frozen files write it.
+DIGEST_KIND_CHECK = (
+    "CHECK (((kind)::text = ANY ((ARRAY['initial'::character varying, "
+    "'reminder'::character varying, 'daily_digest'::character varying, "
+    "'weekly_digest'::character varying, 'report'::character varying])::text[])))"
+)
+REPORT_KIND_CHECK = (
+    "CHECK (((kind)::text = ANY ((ARRAY['initial'::character varying, "
+    "'reminder'::character varying, 'report'::character varying])::text[])))"
+)
+
+
+def _definition_check(cursor, check):
+    """Replace the schedule definition kind check with ``check``."""
+    cursor.execute(
+        "ALTER TABLE stewardship_schedule_definition "
+        "DROP CONSTRAINT schedule_definition_kind"
+    )
+    cursor.execute(
+        "ALTER TABLE stewardship_schedule_definition "
+        f"ADD CONSTRAINT schedule_definition_kind {check}"
+    )
+
+
+@contextmanager
+def digest_kinds_admitted():
+    """Admit the digest kinds in the definition check for one test.
+
+    Migration 0162 (#1834) dropped them, since every deployment has run the
+    conversion; the conversion suites still seed the digests a database
+    held before it. Afterwards any digest definition the test left is
+    retyped as a report, with the triggers off (the transactional test's
+    flush removes it anyway), so the check is restored exactly.
+    """
+    from django.db import connection
+
+    with connection.cursor() as cursor:
+        _definition_check(cursor, DIGEST_KIND_CHECK)
+    try:
+        yield
+    finally:
+        with triggers_off(), connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE stewardship_schedule_definition SET kind='report' "
+                "WHERE kind IN ('daily_digest','weekly_digest')"
+            )
+        with connection.cursor() as cursor:
+            _definition_check(cursor, REPORT_KIND_CHECK)
+
+
 def seed_digests(store, campaign, monkeypatch, *, daily_html="", weekly_html=None):
     """The campaign's Daily (07:00) and Weekly (Mondays 08:00) digests.
 
+    The test must admit the digest kinds first (``digest_kinds_admitted``).
     Each sends the default email template of its slot, saved as content
     holds it, unless ``daily_html`` or ``weekly_html`` replaces the intro.
     Returns the Daily's and the Weekly's definition IDs.

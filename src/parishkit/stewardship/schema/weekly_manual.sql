@@ -41,44 +41,6 @@ REVOKE ALL ON FUNCTION stewardship_weekly_manual_guard_v1() FROM PUBLIC;
 CREATE TRIGGER weekly_manual_guard BEFORE INSERT OR UPDATE OR DELETE ON stewardship_weekly_manual_request
 FOR EACH ROW EXECUTE FUNCTION stewardship_weekly_manual_guard_v1();
 
--- Runtime Web may insert only the intent above. It has no direct occurrence or
--- preparation INSERT grant. The closed command derives every subordinate field.
-CREATE FUNCTION stewardship_weekly_manual_allocate_v1() RETURNS trigger
-LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp AS $$
-DECLARE c stewardship_campaign%ROWTYPE; d stewardship_schedule_definition%ROWTYPE;
-    runtime stewardship_system_configuration%ROWTYPE; epoch uuid; cycle bigint;
-    instant timestamptz:=stewardship_campaign_now_v1(); slot text:='manual:'||NEW.id::text;
-BEGIN
-    SELECT * INTO c FROM stewardship_campaign WHERE id=NEW.campaign_id;
-    SELECT * INTO runtime FROM stewardship_system_configuration;
-    SELECT * INTO d FROM stewardship_schedule_definition
-        WHERE campaign_id=c.id AND kind='weekly_digest' AND current_revision_id IS NOT NULL;
-    IF runtime.mode='testing' THEN
-        SELECT rehearsal_epoch_id INTO epoch FROM stewardship_campaign_credentials WHERE campaign_id=c.id;
-    END IF;
-    cycle:=CASE WHEN runtime.mode='production' THEN c.production_cycle ELSE 0 END;
-    INSERT INTO stewardship_schedule_occurrence(
-        id,actor_id,correlation_id,version,definition_id,revision_id,mode,routing,
-        target,slot,due_at,occurrence_key,state,fence,attempts,reason,pause_version,production_cycle)
-    VALUES(NEW.id,NEW.actor_id,NEW.id,1,d.id,d.current_revision_id,runtime.mode,
-        CASE runtime.mode WHEN 'testing' THEN 'testing_override' ELSE 'production' END,
-        'admins',slot,instant,encode(sha256(convert_to(
-            '["'||d.current_revision_id::text||'","'||runtime.mode||'","admins","'||slot||'"'
-            ||CASE WHEN cycle>0 THEN ',["production_cycle",'||cycle::text||']' ELSE '' END||']','UTF8')),'hex'),
-        'pending',0,0,'',CASE WHEN runtime.mode='production' AND c.delivery_paused THEN c.pause_version ELSE NULL END,cycle);
-    INSERT INTO stewardship_weekly_digest_preparation(
-        id,actor_id,correlation_id,version,campaign_id,definition_id,revision_id,
-        campaign_configuration_id,task_id,mode,rehearsal_epoch_id,cutoff,phase,occurrence_id)
-    VALUES(NEW.id,NEW.actor_id,NEW.id,1,c.id,d.id,d.current_revision_id,c.active_configuration_id,
-        NEW.task_id,runtime.mode,epoch,instant,'capture',NEW.id);
-    INSERT INTO stewardship_audit_event(id,actor_id,correlation_id,event_type,subject_id,campaign_reference)
-    VALUES(gen_random_uuid(),NEW.actor_id,NEW.id,'weekly_manual_requested',NEW.id,c.id);
-    RETURN NULL;
-END $$;
-REVOKE ALL ON FUNCTION stewardship_weekly_manual_allocate_v1() FROM PUBLIC;
-CREATE TRIGGER weekly_manual_allocate AFTER INSERT ON stewardship_weekly_manual_request
-FOR EACH ROW EXECUTE FUNCTION stewardship_weekly_manual_allocate_v1();
-
 CREATE FUNCTION stewardship_weekly_preparation_history_v1(preparation uuid)
 RETURNS jsonb LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
     SELECT stewardship_weekly_history_v1(p.campaign_id,p.mode,p.rehearsal_epoch_id)

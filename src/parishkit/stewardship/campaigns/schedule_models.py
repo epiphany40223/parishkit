@@ -36,18 +36,9 @@ class ScheduleDefinition(MutableRecord):
         db_table = "stewardship_schedule_definition"
         constraints = MutableRecord.Meta.constraints + [
             models.CheckConstraint(
-                condition=models.Q(
-                    # The digest kinds remain only until the offline
-                    # conversion (#1786) retypes every definition; no new
-                    # one may be made (campaigns.configuration).
-                    kind__in=[
-                        "initial",
-                        "reminder",
-                        "daily_digest",
-                        "weekly_digest",
-                        "report",
-                    ]
-                ),
+                # The digest kinds left once every definition was converted
+                # to a report (#1786, #1834); old revisions keep them.
+                condition=models.Q(kind__in=["initial", "reminder", "report"]),
                 name="schedule_definition_kind",
             ),
             models.CheckConstraint(

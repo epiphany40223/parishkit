@@ -1,8 +1,12 @@
-"""Daily digest permissions: scheduler metadata is not access to private reports."""
+"""Daily digest permissions: scheduler metadata is not access to private reports.
+
+The Daily digest pipeline is retired (#1834): every grant here reads the
+saved digests. Migration 0162 revoked the write grants these once declared.
+"""
 
 
 def add_digest_grants(tables, columns, *, worker):
-    """Share opaque ownership; only the general worker can capture report inputs."""
+    """Share opaque ownership; only the general worker reads the report inputs."""
     tables.setdefault("stewardship_daily_digest_preparation", set()).add("SELECT")
     tables.setdefault("stewardship_recovery_replacement", set()).add("SELECT")
     tables.setdefault("stewardship_daily_digest_completion_ready", set()).add("SELECT")
@@ -34,13 +38,9 @@ def add_digest_grants(tables, columns, *, worker):
             "stewardship_campaign_archive_band",
         ):
             tables.setdefault(table, set()).add("SELECT")
-        tables["stewardship_daily_digest_preparation"].add("UPDATE")
         for name in ("snapshot", "ready", "recipient"):
-            tables.setdefault("stewardship_daily_digest_" + name, set()).update(
-                {"SELECT", "INSERT"}
-            )
+            tables.setdefault("stewardship_daily_digest_" + name, set()).add("SELECT")
     else:
-        tables["stewardship_daily_digest_preparation"].add("INSERT")
         columns.setdefault("stewardship_daily_digest_snapshot", {}).setdefault(
             "SELECT", set()
         ).update(
