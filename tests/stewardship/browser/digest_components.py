@@ -1,6 +1,7 @@
 """Render an exact synthetic report with the actual retained-chart UI component."""
 
 from dataclasses import replace
+from decimal import Decimal
 
 from django.template.loader import render_to_string
 
@@ -50,7 +51,38 @@ def components(context, admin):
         plot=chart_layout(content.chart.data),
     )
     comparison |= daily_rows(comparison, {})
-    return {
+    # The widest realistic Campaign totals (#1639): 1,234 of 2,345 Families
+    # have responded, 1,088 first submissions and over a million dollars of
+    # pledges on the report day; and the same day with its pledges unknown.
+    wide, unknown = (
+        report_day(
+            value,
+            first_responses=1088,
+            cumulative_responses=1234,
+            cohort_denominator=2345,
+            pledge_total=pledges,
+            pledge_available=pledges is not None,
+        )
+        for pledges in (Decimal("1234567.89"), None)
+    )
+    pages = {}
+    for path, report in (("wide", wide), ("unknown", unknown)):
+        totals = snapshot_context(
+            report,
+            mode="production",
+            chart_url="/digest-chart.png",
+            download_url="/digest-chart-download.png",
+            plot=chart_layout(content.chart.data),
+        )
+        totals |= daily_rows(totals, {})
+        pages[f"/daily-digest-{path}"] = (
+            "text/html",
+            render_to_string(
+                "stewardship/daily-digest.html",
+                context | {"admin_chrome": admin} | totals,
+            ),
+        )
+    return pages | {
         "/daily-digest-comparison": (
             "text/html",
             render_to_string(
@@ -75,3 +107,10 @@ def components(context, admin):
         "/digest-chart.png": ("image/png", content.chart.data),
         "/digest-chart-download.png": ("image/png", content.chart.data),
     }
+
+
+def report_day(value, **changes):
+    """``value`` with its report day (the chart's last day) changed."""
+    chart = value.participation
+    last = replace(chart.days[-1], **changes)
+    return replace(value, participation=replace(chart, days=(*chart.days[:-1], last)))

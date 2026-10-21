@@ -831,3 +831,81 @@ def test_finish_switching_is_a_confirmation_carrying_its_key_change():
     summary = (TEMPLATES / "integration-summary.html").read_text()
     assert 'data-review-region="integration-editor"' in summary
     assert "key-changes" not in summary and "Key replacement status" not in summary
+
+
+def test_the_content_review_is_a_full_review_fragment_for_the_dialog():
+    """Pages and emails' Preview changes (#750) answers a fragment: the
+    fictional sample's current and proposed content, the schedules the
+    text switches with their instant for the browser to show, and the
+    signed preview; no page, form, Apply button or second-screen link.
+    Schedules that already sent are listed apart, so "switches these
+    schedules" never claims a finished send (pk-local R40c F2)."""
+    from datetime import UTC, datetime
+
+    from parishkit.stewardship.accounts.schedule_table import ScheduleRow
+
+    text = render_to_string(
+        "stewardship/content-review.html",
+        {
+            "label": "Welcome page",
+            "before": None,
+            "after": {"subject": "", "html": "<p>Hello</p>", "text": "Hello"},
+            "affected": [
+                ScheduleRow(
+                    id="b",
+                    label="Reminder 2",
+                    kind="reminder",
+                    subject="Please reply",
+                    status="upcoming",
+                    due=datetime(2054, 10, 15, 13, 0, tzinfo=UTC),
+                )
+            ],
+            "already_sent": [
+                ScheduleRow(
+                    id="a",
+                    label="Reminder 1",
+                    kind="reminder",
+                    subject="Please reply",
+                    status="sent",
+                    due=datetime(2054, 10, 8, 13, 0, tzinfo=UTC),
+                )
+            ],
+            "preview": "signed",
+        },
+    )
+    assert '<div data-review-answer data-review-done="Welcome page changed.">' in text
+    assert "Fictional sample preview" in text
+    assert '<h3 id="content-review-current">Current content</h3>' in text
+    assert "Empty — no content will be shown in this slot." in text
+    assert "<p>Hello</p>" in text and "Schedules using this template" in text
+    assert '<time datetime="2054-10-15T13:00:00+00:00" data-local-instant>' in text
+    upcoming, sent = text.split('<h4 id="content-review-sent">Already sent</h4>')
+    assert "<li>Reminder 2 — " in upcoming and "Reminder 1" not in upcoming
+    assert "switches these schedules" in upcoming
+    assert "<li>Reminder 1 — " in sent and "not sent them again" in sent
+    assert re.search(r'name="preview" value="signed" data-review-preview', text)
+    assert "<form" not in text and "<h1" not in text and "<h2" not in text
+    assert "Apply changes" not in text and "Return to" not in text
+    assert "data-review-title" not in text
+
+
+def test_the_content_editor_reviews_in_the_dialog_and_returns_to_its_list():
+    """Outside the campaign wizard the editor's form opens content-review,
+    whose Apply posts to the editor and returns to Pages and emails, which
+    reserves the status line; inside the wizard it saves directly (#1404
+    PR 4b) with no dialog. The separate review page is gone."""
+    source = (TEMPLATES / "content-settings.html").read_text(encoding="utf-8")
+    assert re.search(
+        r'data-content-form\{% if not direct %\} data-review-open="content-review"'
+        r"\{% endif %\}",
+        source,
+    )
+    assert re.search(
+        r'\{% if not direct %\}[^\n]*review=True dialog_id="content-review" '
+        r"title=review_title apply_url=post_url return_url=catalog_url "
+        r'outcome_id="content-outcome"',
+        source,
+    )
+    listing = (TEMPLATES / "content-catalog.html").read_text(encoding="utf-8")
+    assert 'review-outcome.html" with outcome_id="content-outcome"' in listing
+    assert not (TEMPLATES / "content-preview.html").exists()

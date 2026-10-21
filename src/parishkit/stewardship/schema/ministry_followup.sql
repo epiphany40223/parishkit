@@ -34,7 +34,7 @@ $$;
 CREATE FUNCTION public.stewardship_ministry_revision_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE target stewardship_ministry_request%ROWTYPE; campaign uuid; asked jsonb;
-    reopen boolean; ticked boolean;
+    reopen boolean; ticked boolean; undo boolean; confirmed boolean; operational boolean;
 BEGIN
     IF TG_OP<>'INSERT' THEN
         RAISE EXCEPTION 'Ministry follow-up history is immutable' USING ERRCODE='23514';
@@ -68,25 +68,53 @@ BEGIN
         WHERE c.id=campaign;
     SELECT e.entered INTO ticked FROM stewardship_ministry_roster_entry e
         WHERE e.request_id=target.id ORDER BY e.sequence DESC LIMIT 1;
+    -- Back to review of a terminal step (#1840): a resolved request kept
+    -- resolved, with its outcome and Edit, undoes Entered in ParishSoft or
+    -- a Confirmed refresh check at its version; a Staff member or
+    -- Administrator only (never a Ministry leader), with a note.
+    undo := reopen AND NEW.state='resolved';
+    confirmed := EXISTS (SELECT 1 FROM stewardship_refresh_check k
+        WHERE k.request_id=target.id AND k.item_version=target.version
+          AND k.outcome='confirmed');
+    operational := coalesce((stewardship_ministry_scope_v1(NEW.actor_id)->'operational')
+        ='true'::jsonb,false);
     IF (NEW.assignee_id IS NOT NULL AND NOT
             stewardship_ministry_followup_authorized_v1(NEW.assignee_id,target.ministry_duid))
        OR (NEW.outcome='joined' AND target.action<>'join')
        OR (NEW.outcome='leave_confirmed' AND target.action<>'leave')
        OR NEW.contact_at>NEW.created_at
-       -- Back to review: In progress with nothing carried forward, never once
-       -- a refresh resolved it or Staff ticked it Entered in ParishSoft, and
-       -- with a note when it reopens an ignored request. A request the parish
-       -- added is withdrawn (cancelled) instead.
-       OR (reopen AND (NEW.state<>CASE WHEN target.parish_added THEN 'cancelled' ELSE 'in_progress' END
+       -- Back to review: In progress with nothing carried forward, never
+       -- while Staff ticked it Entered in ParishSoft or a refresh check
+       -- Confirmed a person's decision (that step is undone first, by the
+       -- undo below, keeping the decision), with a note when it reopens an
+       -- ignored request, and by Staff with a note when it undoes a
+       -- refresh's resolution (#1840). A request the parish added is
+       -- withdrawn (cancelled) instead.
+       OR (reopen AND NOT undo
+           AND (NEW.state<>CASE WHEN target.parish_added THEN 'cancelled' ELSE 'in_progress' END
            OR NEW.outcome IS NOT NULL OR NEW.reviewed_ministry_duid IS NOT NULL
+           OR NEW.contact_channel IS NOT NULL OR coalesce(ticked,false)
+           OR (confirmed AND target.resolution_source_id IS NULL)
+           OR (target.resolution_source_id IS NOT NULL
+               AND (NEW.decision_note !~ '\S' OR NOT operational))
+           OR (target.outcome NOT IN ('joined','leave_confirmed') AND NEW.decision_note !~ '\S')))
+       -- The undo of Entered in ParishSoft or Confirmed (above): the
+       -- decision as it stands, a person's (no refresh resolution), and a
+       -- tick or a Confirmed check to undo.
+       OR (undo AND (target.state<>'resolved'
+           OR target.outcome NOT IN ('joined','leave_confirmed')
+           OR NEW.outcome IS DISTINCT FROM target.outcome
+           OR NEW.reviewed_ministry_duid IS DISTINCT FROM target.reviewed_ministry_duid
            OR NEW.contact_channel IS NOT NULL
-           OR target.resolution_source_id IS NOT NULL OR coalesce(ticked,false)
-           OR (target.outcome NOT IN ('joined','leave_confirmed') AND btrim(NEW.decision_note)='')))
+           OR target.resolution_source_id IS NOT NULL
+           OR NOT (coalesce(ticked,false) OR confirmed)
+           OR NEW.decision_note !~ '\S' OR NOT operational))
        OR (NOT reopen AND NEW.state='cancelled')
        -- Edit: Accept with another of the campaign's Ministries carried
        -- forward, which the actor may also follow up (a leader edits only
        -- into a Ministry they lead).
-       OR (NEW.reviewed_ministry_duid IS NOT NULL AND (NEW.state<>'resolved'
+       -- (The undo keeps the Edit it had, checked above.)
+       OR (NEW.reviewed_ministry_duid IS NOT NULL AND NOT undo AND (NEW.state<>'resolved'
            OR NEW.outcome IS DISTINCT FROM
                CASE WHEN target.action='join' THEN 'joined' ELSE 'leave_confirmed' END
            OR NEW.reviewed_ministry_duid=target.ministry_duid

@@ -266,6 +266,9 @@ def test_native_packet_request_form(response_service, google):
     ]
 
 
+# The rule before the reviewed Family form (#1705): forms drawn before
+# its release, as one open across the deploy is.
+@pytest.mark.usefixtures("earlier_rule")
 def test_packet_contact_dates_follow_a_same_intent_resubmission(response_service):
     """A Family resubmission replaces the rows; recorded follow-up still prints."""
     harness = setup(response_service)

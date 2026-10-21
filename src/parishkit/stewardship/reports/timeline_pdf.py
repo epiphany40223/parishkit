@@ -78,6 +78,8 @@ KINDS = {
     "skipped": Kind("Emails not sent", "X", WARNING_INK),
     "progress": Kind("Form progress", "^", ACCENT),
     "submitted": Kind("Submissions", "D", ACCENT_STRONG, GOLD),
+    # Review actions on the Family's answers (#1774).
+    "review": Kind("Reviews", "h", ACCENT, GOLD),
     "other": Kind("Other lines", "P", MUTED),
 }
 # The words of each kind's lines (timelines.events and email_name).
@@ -92,6 +94,13 @@ EMAILS = frozenset(
     {"Invitation", "Reminder", "Submission receipt", "Chosen-Family test email"}
 )
 NUMBERED_REMINDER = re.compile(r"Reminder \d+")
+# The review lines' words (``timeline_reviews.WORDS``; a test keeps the two
+# equal), copied like the sets above so the file renderer needs no reads.
+REVIEWS = frozenset(
+    {"Accepted", "Accepted (edited)", "Ignored", "Added by the parish"}
+    | {"Back to review", "Edited", "Edit cleared", "Follow-up updated"}
+    | {"Entered by hand", "Entered by hand cleared", "Handled", "Handled cleared"}
+)
 
 
 def kind_of(what):
@@ -107,6 +116,8 @@ def kind_of(what):
         return "skipped"
     if what in EMAILS or NUMBERED_REMINDER.fullmatch(what):
         return "email"
+    if what in REVIEWS:
+        return "review"
     return "other"
 
 

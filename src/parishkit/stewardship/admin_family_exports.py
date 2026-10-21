@@ -626,9 +626,10 @@ def export_family_timeline(
 
     ``family_id`` is the Family's campaign record id, the opaque id in the
     page's address. Admits as the page's form post does (``CAMPAIGN_REPORT``,
-    recording activity) and, as the page, only an Administrator may export
-    the full timeline; the campaign must be one reports read. The capture,
-    the record and ``export_requested`` are the page's own
+    recording activity) and, as the page, only a role that sees the full
+    timeline (Administrators and Staff, #1799) may export it; the campaign
+    must be one reports read. The capture, the record and
+    ``export_requested`` are the page's own
     (``timeline_exports.create_timeline_export``); the file is fetched with
     ``export fetch``. A Family of another campaign is ``not_available``. The
     file can hold the Family's live code, so, as the page's view does, the
@@ -638,12 +639,14 @@ def export_family_timeline(
     from .audit.schemas import Action
     from .reports.read_admission import admit_report_read
     from .reports.timeline_exports import MODES, create_timeline_export
-    from .reports.timeline_views import _principal
+    from .reports.timeline_views import _full, _principal
 
     def parse(actor, campaign_id):
-        """The page's checks, in its order: Administrator, campaign, mode."""
-        if "administrator" not in actor.roles:
-            raise PermissionError("The timeline export is for Administrators.")
+        """The page's checks, in its order: role, campaign, mode."""
+        if not _full(actor):
+            raise PermissionError(
+                "The timeline export is for Administrators and Staff."
+            )
         admit_report_read(campaign_id)
         if mode not in MODES:
             # The page shows Production records only since #1570.

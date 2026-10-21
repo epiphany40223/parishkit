@@ -33,6 +33,9 @@ def financial_form(*, census=False, ministry=False, available=True):
     form["modules"].append("financial")
     form["effective_member_count"] = 1
     values = configuration()
+    # A Stewardship year label that disagrees with the 2055 period (#1923):
+    # the pledge is still labeled by its period.
+    values["year_label"] = "2054"
     values["share_options"] = [
         {"id": CHECK, "label": "{{ pronoun }} will send a check", "free_text": False},
         {
@@ -222,7 +225,7 @@ def test_financial_modules_mobile_final_only_and_accessible(
     # pledge and the refresh time are not repeated (#267).
     history = page.get_by_text("you have contributed", exact=False)
     expect(history).to_contain_text(
-        re.compile(r"you have contributed \$500 towards your \d{4} pledge of \$1,200\.")
+        re.compile(r"you have contributed \$500 towards your 2026 pledge of \$1,200\.")
     )
     assert "Parish records for" not in page.locator("main").inner_text()
     assert "Giving records last refreshed" not in page.locator("main").inner_text()
@@ -244,11 +247,14 @@ def test_financial_modules_mobile_final_only_and_accessible(
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     review(page)
     pledge_line = page.get_by_text(
-        re.compile(r"^Your \S+ pledge: \$1,000\.01 \(approximately \$83\.33 per month;")
+        re.compile(
+            r"^Your 2055 pledge: \$1,000\.01 \(approximately \$83\.33 per month;"
+        )
     )
     expect(show(page, pledge_line)).to_be_visible()
+    # The start year agrees with the label, not the Stewardship year label.
     starts = page.get_by_text("This pledge starts on", exact=False)
-    expect(starts.locator("strong")).to_be_visible()
+    expect(starts.locator("strong")).to_contain_text("2055")
     for gone in ("Upcoming stewardship period", "Nothing is saved", "Parish records"):
         assert gone not in page.locator("main").inner_text()
     page.get_by_role("button", name="Back to edit").click()

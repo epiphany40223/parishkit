@@ -325,7 +325,7 @@ def test_only_the_send_the_panel_shows_links_to_it():
     rows = send_history.mark_live([invitation, reminder], reminder.send.counts)
     assert [r.live for r in rows] == [False, True]
     html = render(*rows)
-    assert html.count('href="/admin/mail/family-progress/"') == 1
+    assert html.count('href="/admin/mail/queue/"') == 1
     assert html.count("In progress") == 2
     assert "455 to send" in html and "7 to send" in html
 

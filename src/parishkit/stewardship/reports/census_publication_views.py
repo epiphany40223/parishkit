@@ -1,8 +1,7 @@
-"""Publish to ParishSoft: what waits, Check ParishSoft and its plan (#528).
+"""Update ParishSoft: what waits, Check ParishSoft, its plan and its run.
 
-The page (reports spec, "Publish to ParishSoft"; ADM-09) is the
-Administrator's. This first slice reads and checks, and writes nothing to
-ParishSoft: Publish, Run again and the command line come in later slices.
+The page (reports spec, "Update ParishSoft"; ADM-09, renamed from Publish
+to ParishSoft by #1688) is the Administrator's.
 
 - While the deployment's ``parishsoft_publication`` setting is off the page
   says so and offers no button, and every post is refused
@@ -16,33 +15,61 @@ ParishSoft: Publish, Run again and the command line come in later slices.
   redraws in place with the plan.
 - The current campaign's newest plan, whoever made it, is shown with its
   counts and a table of its rows, which sorts and pages in place.
+- Update N changes opens the shared review dialog as a confirmation: its
+  review and Apply post to ``confirmation/`` (``confirmation``), naming the plan,
+  which calls ``confirm_and_publish`` after the shared newest-plan check.
+  Run again's review and Apply post to ``retries/``
+  (``retries``), which calls ``rerun_publication``. The run's live status
+  then shows in the plan's region, and each written change's result in the
+  table once it ends.
 
-Viewing records ``census_publication_viewed`` with the number of plan rows.
+Viewing records ``census_publication_viewed`` with the number of plan rows;
+the dialog's posts record what their services record.
 """
 
+import logging
 from uuid import UUID, uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
 from django.http import HttpResponseRedirect
+from django.shortcuts import render
 from django.template.loader import render_to_string
 from django.urls import reverse
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_POST
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability
 from parishkit.stewardship.accounts.role_refusal import require
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.accounts.sessions import authenticated_admin
+from parishkit.stewardship.accounts.sessions import (
+    authenticated_admin,
+    sign_in_instant,
+)
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
-from parishkit.stewardship.jobs.views import PUBLICATION_CHECK, _task_read
+from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
+from parishkit.stewardship.jobs.storage import TaskRetryConflict
+from parishkit.stewardship.jobs.views import (
+    PUBLICATION_CHECK,
+    UPDATE_RUN,
+    _task_read,
+)
 from parishkit.stewardship.observability import (
     Event,
     current_correlation,
     emit_failure,
 )
-from parishkit.stewardship.responses.publication_tasks import request_preflight
+from parishkit.stewardship.responses.publication_models import (
+    PublicationConfirmation,
+)
+from parishkit.stewardship.responses.publication_plans import confirmation_counts
+from parishkit.stewardship.responses.publication_tasks import (
+    confirm_and_publish,
+    request_preflight,
+    rerun_publication,
+)
+from parishkit.stewardship.responses.publication_worker import PublicationDisabled
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import (
@@ -61,10 +88,12 @@ from .read_admission import admit_report_read
 # The session key remembering the check this sign-in last requested, so the
 # page shows it after the Post/Redirect/Get (navigation rule 5).
 RUN_KEY = "stewardship_publication_check"
+# The counts Update's review shows and Apply binds (confirm_plan's).
+COUNTS = ("write_entities", "write_fields", "blocked_entities")
 
 
 def _principal(request, store, *, read_only=False):
-    """The signed-in Administrator who may publish; anyone else is denied."""
+    """The signed-in Administrator who may update; anyone else is denied."""
     principal = authenticated_admin(
         request, store=store, activity=not read_only, read_only=read_only
     )
@@ -114,6 +143,32 @@ def _run(request):
     }
 
 
+def _update_run(request, campaign_id):
+    """The newest plan's latest update run's live status, or {} for none.
+
+    Read unaudited before the page is produced, as the check's is, and drawn
+    in the plan's region (``UPDATE_RUN``), polled with ``?view=update`` so a
+    poll words the run as the page does.
+    """
+    plan = publication.newest_plan(campaign_id)
+    run = publication.latest_run(plan) if plan is not None else None
+    if run is None:
+        return {}
+    result, context = _task_read(request, str(run.pk))
+    if context is None:
+        return {}
+    return {
+        "update_status": context
+        | {
+            "region_id": UPDATE_RUN,
+            "update_run": True,
+            "status_url": reverse("admin:background_task_status", args=[run.pk])
+            + "?view=update",
+        },
+        "update_task_id": run.pk,
+    }
+
+
 def _check(request, service, principal, campaign_id):
     """Queue Check ParishSoft under the page's key and show it on this page.
 
@@ -122,7 +177,7 @@ def _check(request, service, principal, campaign_id):
     """
     if not publication.enabled():
         # Every post is refused while the switch is off, before anything is
-        # read (reports spec, "Publishing switched off").
+        # read (reports spec, "Updating switched off").
         raise publication.OFF.refusal()
     filters(request.POST, allowed={"request_key", "csrfmiddlewaretoken"})
     if request.FILES:
@@ -151,7 +206,7 @@ def _check(request, service, principal, campaign_id):
         raise publication.HELD_CAMPAIGN.refusal() from None
     request.session[RUN_KEY] = str(task.run_id)
     return HttpResponseRedirect(
-        reverse("admin:census_publication") + f"#{PUBLICATION_CHECK}"
+        reverse("admin:update_parishsoft") + f"#{PUBLICATION_CHECK}"
     )
 
 
@@ -182,7 +237,7 @@ def _render(request, campaign_id, paging, run):
         link_families(campaign_id, table.rows)
     return (
         render_to_string(
-            "stewardship/census-publication.html",
+            "stewardship/update-parishsoft.html",
             {
                 "enabled": on,
                 "waiting": waiting,
@@ -200,7 +255,7 @@ def _render(request, campaign_id, paging, run):
 
 @require_http_methods(["GET", "HEAD", "POST"])
 def page(request, campaign_id):
-    """Publish to ParishSoft: the page, and its Check ParishSoft (a POST)."""
+    """Update ParishSoft: the page, and its Check ParishSoft (a POST)."""
     finish, handed_off = None, False
     try:
         service = runtime()
@@ -217,7 +272,11 @@ def page(request, campaign_id):
             paging = _paging(request)
         except ValueError:
             return _error(campaign_id, status=400)
-        run = _run(request) if publication.enabled() else {}
+        run = (
+            _run(request) | _update_run(request, campaign_id)
+            if publication.enabled()
+            else {}
+        )
         finalized, count = False, 0
 
         def finish(completed):
@@ -241,7 +300,7 @@ def page(request, campaign_id):
             nonlocal principal
             fresh = _principal(request, service.store, read_only=True)
             if fresh.identity != principal.identity:
-                raise PermissionError("Publish to ParishSoft access changed.")
+                raise PermissionError("Update ParishSoft access changed.")
             principal = fresh
             admit_report_read(campaign_id)
 
@@ -272,3 +331,232 @@ def page(request, campaign_id):
     finally:
         if finish is not None and not handed_off:
             finish(False)
+
+
+def _step_fields(request, confirm_fields):
+    """The step's action and plan, refusing unexpected fields and uploads.
+
+    A review posts its action and the plan the page showed; Apply also posts
+    the review's hidden fields (``confirm_fields``). The plan travels in the
+    post, not the address, so the dialog (outside every region, which a
+    redraw never removes) keeps one Apply address whichever plan is newest.
+    """
+    action = request.POST.get("action", "")
+    if action not in {"preview", "confirm"}:
+        raise ValueError("Unknown step.")
+    allowed = {"action", "plan", "csrfmiddlewaretoken"}
+    if action == "confirm":
+        allowed |= confirm_fields
+    filters(request.POST, allowed=allowed)
+    if request.FILES:
+        raise ValueError("Unexpected upload.")
+    return action, UUID(request.POST.get("plan", ""))
+
+
+def _key(request, name):
+    """A version 4 key the review drew, from the posted field ``name``."""
+    key = UUID(request.POST.get(name, ""))
+    if key.version != 4:
+        raise ValueError("Invalid key.")
+    return key
+
+
+def _not_offered(run):
+    """The refusal for a step the plan no longer offers.
+
+    An unfinished run is running; otherwise the plan has moved on (another
+    Administrator confirmed it, or its run completed).
+    """
+    if run is not None and run.state in NONTERMINAL_STATES:
+        return publication.RUNNING.refusal()
+    return publication.CHANGED.refusal()
+
+
+def _update_step(request, service, principal, campaign_id):
+    """Update's review (a confirmation) or Apply, for the campaign's newest plan.
+
+    The review re-checks what the page drew (the newest plan, not yet
+    confirmed, in Production, nothing unfinished, the campaign free and the
+    plan less than an hour old) and draws the confirmation with a new key.
+    Apply checks the same, requires the counts shown to equal the plan's,
+    and calls ``confirm_and_publish`` under the review's key, so a repeated
+    Apply returns the same run; the database checks every rule again.
+    """
+    action, plan_id = _step_fields(request, {"request_key", *COUNTS})
+    plan = publication.newest_plan_check(campaign_id, plan_id)
+    counts = confirmation_counts(plan.pk)
+    if action == "confirm":
+        key = _key(request, "request_key")
+        shown = {name: int(request.POST.get(name, "")) for name in COUNTS}
+        replay = PublicationConfirmation.objects.filter(
+            actor_id=principal.identity, request_key=key, plan_id=plan.pk
+        ).exists()
+    else:
+        replay = False
+    if not replay:
+        run = publication.latest_run(plan)
+        offer = publication.offer(plan, counts, run=run)
+        if offer.kind != "update":
+            raise _not_offered(run)
+        if offer.gate is not None:
+            raise offer.gate.refusal()
+    if action == "preview":
+        return {
+            "update": {
+                "preview": True,
+                "plan": plan,
+                "counts": counts,
+                "title": publication.update_question(counts),
+                "key": uuid4(),
+            }
+        }
+    if shown != {name: counts[name] for name in COUNTS}:
+        raise publication.CHANGED.refusal()
+    try:
+        confirm_and_publish(
+            service.store,
+            principal.identity,
+            plan.pk,
+            correlation_id=current_correlation(),
+            enabled=publication.enabled(),
+            session_id=request.portal_session.pk,
+            authenticated_at=sign_in_instant(request),
+            request_key=key,
+            **shown,
+        )
+    except PublicationDisabled:
+        # Switched off between the page's check and the service's.
+        raise publication.OFF.refusal() from None
+    except DatabaseError as error:
+        refusal = publication.confirm_refusal(error, plan)
+        if refusal is error:
+            # Not a refusal: an outage, logged here and answered as one (503).
+            emit_failure(error, level=logging.ERROR, name_class=True)
+            raise
+        raise refusal from None
+    except PermissionError:
+        # The services' own admission refused what the page's checks passed
+        # a moment before (a race): said as the page would now say it.
+        raise _raced(request, service, plan) from None
+    except ValueError:
+        # The key is bound to another intent: a stale dialog.
+        raise publication.CHANGED.refusal() from None
+    return {"update": {"started": True}}
+
+
+def _raced(request, service, plan):
+    """The refusal for a service refusing what the page's checks passed.
+
+    The Administrator is checked again first, so a lost role is still a
+    denial; otherwise the plan's region is worked out again and its reason
+    given: an unfinished run, the campaign held, Testing mode, every Member
+    finished, or, failing a better word, that something changed.
+    """
+    _principal(request, service.store, read_only=True)
+    run = publication.latest_run(plan)
+    offer = publication.offer(plan, confirmation_counts(plan.pk), run=run)
+    if offer.gate is not None:
+        return offer.gate.refusal()
+    if run is not None and run.state in NONTERMINAL_STATES:
+        return publication.RUNNING.refusal()
+    if run is not None and offer.kind is None:
+        return publication.FINISHED.refusal()
+    return publication.CHANGED.refusal()
+
+
+def _rerun_step(request, service, principal, campaign_id):
+    """Run again's review (a confirmation) or Apply, for the newest plan.
+
+    Offered only once the plan's run task failed and a Member has no final
+    outcome (``census_publication.offer``), never in Testing mode. Apply
+    calls ``rerun_publication`` with the review's key as
+    its command id, so a repeated Apply returns the same retry.
+    """
+    action, plan_id = _step_fields(request, {"command_key"})
+    plan = publication.newest_plan_check(campaign_id, plan_id)
+    run = publication.latest_run(plan)
+    key = _key(request, "command_key") if action == "confirm" else None
+    replay = (
+        key is not None
+        and run is not None
+        and TaskRun.objects.filter(root_id=run.root_id, retry_command_id=key).exists()
+    )
+    if not replay:
+        offer = publication.offer(plan, confirmation_counts(plan.pk), run=run)
+        if offer.kind != "rerun":
+            if run is not None and run.state in NONTERMINAL_STATES:
+                raise publication.RUNNING.refusal()
+            raise publication.FINISHED.refusal()
+        if offer.gate is not None:
+            raise offer.gate.refusal()
+    if action == "preview":
+        return {
+            "rerun": {
+                "preview": True,
+                "plan": plan,
+                "title": publication.rerun_question(offer.unfinished),
+                "closing": publication.past_window(plan),
+                "key": uuid4(),
+            }
+        }
+    try:
+        rerun_publication(
+            service.store,
+            principal.identity,
+            plan.pk,
+            command_id=key,
+            correlation_id=current_correlation(),
+            enabled=publication.enabled(),
+        )
+    except PublicationDisabled:
+        # Switched off between the page's check and the service's.
+        raise publication.OFF.refusal() from None
+    except (PermissionError, TaskRetryConflict):
+        # Another Administrator's Run again, or the run's last Member
+        # finished, between the page's check and the service's. Any other
+        # storage invariant is a programming error, answered as an outage.
+        raise _raced(request, service, plan) from None
+    return {"rerun": {"started": True}}
+
+
+def _dialog(request, campaign_id, step):
+    """Answer one of the review dialog's posts (a review or Apply) for a plan.
+
+    Every post is refused while the switch is off. A refusal the page would
+    have drawn (``UserFacingUnavailable``) is the closed JSON refusal the
+    dialog shows below its buttons; a malformed post is a 400. The answer
+    is ``update-parishsoft-review.html``: a review the dialog shows, or,
+    after Apply, a plain fragment, after which the page is read again in
+    place and shows the run's status.
+    """
+    try:
+        service = runtime()
+        principal = _principal(request, service.store)
+        admit_report_read(campaign_id)
+        try:
+            if not publication.enabled():
+                raise publication.OFF.refusal()
+            context = step(request, service, principal, campaign_id)
+        except UserFacingUnavailable as error:
+            return unavailable_response(error)
+        except ValueError:
+            return _error(campaign_id, status=400)
+        response = render(request, "stewardship/update-parishsoft-review.html", context)
+        response["Cache-Control"] = "no-store"
+        return response
+    except (PermissionError, ObjectDoesNotExist):
+        return denial()
+    except (*SAFE_FAILURES, StorageInvariantError):
+        return _error(campaign_id, status=503)
+
+
+@require_POST
+def confirmation(request, campaign_id):
+    """Update N changes: its confirmation's review and Apply (#1688)."""
+    return _dialog(request, campaign_id, _update_step)
+
+
+@require_POST
+def retries(request, campaign_id):
+    """Run again: its confirmation's review and Apply (#1688)."""
+    return _dialog(request, campaign_id, _rerun_step)

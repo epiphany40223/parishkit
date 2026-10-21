@@ -1,0 +1,52 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}{# One Admin portal user's Timeline (#1866; admin-portal spec "User timeline"): a summary, then every line of the user's timeline in the Family Timeline's shared table, paged. accounts/user_timeline_views.py builds the context and accounts/user_timelines.py reads the records. Data first; the explanation sits in the About panel. The heading names the user, but the browser title leaves the Name out, so browser history does not keep it. Administrators only. #}
+{% block title %}{% translate "Timeline" %}{% endblock %}
+{% block content %}
+{# display always has a value (the Name, else the address); the fallback keeps the page name in the heading for the page-name check. #}
+<h1>{% if person.display %}{{ person.display }}{% else %}{% translate "Timeline" %}{% endif %}</h1>
+{% aboutpage "user-timeline" %}<p>{% translate "Everything recorded about one Admin portal user: their sign-ins and sign-outs, what they did in the Admin portal, each change of their role, and every email sent to their address, newest first; select the When heading to reverse the order. Kind, From and Through narrow the lines shown; the summary always covers everything." %}</p>
+<p>{% translate "Admin actions are worded as System logs words them. Opening a page or report is not listed. An Administrator signing out someone else's session is listed as their action; the other person's timeline shows their session ending." %}</p>
+<p>{% translate "Role changes are read from each settings change that was applied, at the time it took effect. Sign-ins, actions and emails follow the email address, so a user deleted and added again also shows the address's earlier ones. An email is listed when the address was one of its intended recipients; Testing emails went to the Testing recipient instead. Delivered means the mail service accepted the email; that does not prove it reached the inbox." %}</p>
+<p>{% translate "Times are shown in your browser's time zone." %}</p>{% endaboutpage %}
+<p>{% if edit_url %}<a href="{{ edit_url }}">{% translate "Edit user" %}</a> · {% endif %}{% translate "Counted at" %} <time datetime="{{ as_of|instant }}" data-local-instant>{{ as_of|instant }}</time></p>
+<section class="panel" aria-labelledby="summary-heading">
+<h2 id="summary-heading">{% translate "Summary" %}</h2>
+<dl>
+<dt>{% translate "Role" %}</dt>
+<dd>{% if person.role %}{{ person.role_label }}{% elif person.removed_at %}{% translate "No longer a user since" %} <time datetime="{{ person.removed_at|instant }}" data-local-instant>{{ person.removed_at|instant }}</time>{% else %}{% translate "No longer a user" %}{% endif %}</dd>
+<dt>{% translate "Email" %}</dt>
+<dd>{{ person.email }}</dd>
+{% if summary.ministries %}<dt>{% translate "Ministry leader of" %}</dt>
+<dd>{{ summary.ministries|join:", " }}</dd>{% endif %}
+<dt>{% translate "Last signed in" %}</dt>
+<dd>{% if summary.last_sign_in %}<time datetime="{{ summary.last_sign_in|instant }}" data-local-instant>{{ summary.last_sign_in|instant }}</time>{% else %}{% translate "Never" %}{% endif %}</dd>
+<dt>{% translate "Last email" %}</dt>
+<dd>{% with email=summary.last_email %}{% if email %}{% if email.message_id %}<a href="{% url 'admin:delivery' email.message_id %}">{{ email.what }}</a>{% else %}{{ email.what }}{% endif %}, <time datetime="{{ email.at|instant }}" data-local-instant>{{ email.at|instant }}</time>: <strong>{{ email.detail }}</strong>{% else %}{% translate "None sent" %}{% endif %}{% endwith %}</dd>
+</dl>
+{# Each recorded Google account's own System logs entries: a POST, so the account never enters an address, as on Edit user (#953). #}
+{% if accounts %}<ul>{% for account in accounts %}<li><form method="post" action="{% url 'admin:logs' %}" class="inline-form">{% csrf_token %}<input type="hidden" name="applied" value="yes"><input type="hidden" name="audit" value="yes"><input type="hidden" name="actor" value="{{ account.id }}">{% if accounts|length > 1 %}{% blocktranslate with number=forloop.counter asvar account_label %}System logs of account {{ number }}{% endblocktranslate %}{% else %}{% translate "See this user's entries in System logs" as account_label %}{% endif %}{% button type="submit" variant="link" %}{{ account_label }}{% endbutton %}{% if account.disabled %} <span class="status-badge">{% translate "Disabled" %}</span>{% endif %}</form></li>{% endfor %}</ul>{% endif %}
+</section>
+<section class="panel" aria-labelledby="events-heading">
+<h2 id="events-heading">{% translate "Timeline" %}</h2>
+{# The filter bar: a GET form whose closed choices stay in the address, applied in place (ui-v1.js, form#table-filters[data-table-sync]), as on a Family's Timeline. It carries the size and the When sort as hidden fields and starts again at page 1; the navigators and the sort heading carry the filters back. The zone is the browser's, filled by ui-v1.js. #}
+<form id="table-filters" data-table-sync method="get" action="{{ page_url }}#{{ table.anchor }}" class="filter-bar timeline-filters" data-require-complete data-missing-hint="{% translate 'Correct the filters to apply them.' %}">
+<input type="hidden" name="zone" value="{{ query.zone }}" data-browser-zone data-zone-missing-hint="{% translate "Your browser didn't report a time zone, so these dates can't be used. Clear From and Through, or check your computer's time zone setting." %}">
+{% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+<div class="fit"><label for="timeline-kind">{% translate "Kind" %}</label><select id="timeline-kind" name="kind">{% for key, label in kinds.items %}<option value="{{ key }}"{% if query.kind == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+<div class="short" data-missing-hint="{% translate 'Enter a whole From date, or clear it.' %}"><label for="timeline-start">{% translate "From" %}</label><input id="timeline-start" type="date" name="start" value="{{ query.start }}" aria-describedby="timeline-zone-help" data-browser-zone-field></div>
+<div class="short" data-missing-hint="{% translate 'Enter a whole Through date, no earlier than From, or clear it.' %}"><label for="timeline-end">{% translate "Through" %}</label><input id="timeline-end" type="date" name="end" data-not-before="timeline-start" value="{{ query.end }}" aria-describedby="timeline-zone-help" data-browser-zone-field></div>
+{% include "stewardship/components/filter-actions.html" %}
+{% translate "From and Through are days in this computer's time zone:" as zone_note %}{% include "stewardship/components/zone-note.html" with note_text=zone_note note_id="timeline-zone-help" %}
+<p class="help" data-complete-hint="reserve" hidden></p>
+</form>
+{# One shared table region (web/tables.py, #488/#519): the filter bar, the navigators and the When heading refresh it in place. #}
+{% translate "Timeline pages" as navigator_label %}
+<div id="{{ table.anchor }}" data-table-region>
+{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="events-caption"><table class="data-table"><caption id="events-caption">{% translate "Everything recorded for this user" %}</caption>
+<thead><tr>{% translate "When" as heading %}{% sort_heading table "when" heading %}<th scope="col">{% translate "What happened" %}</th><th scope="col">{% translate "Details" %}</th></tr></thead><tbody>
+{% for event in table.rows %}<tr><td><time datetime="{{ event.at|instant }}" data-local-instant data-compact>{{ event.at|instant }}</time></td><th scope="row">{% if event.message_id %}<a href="{% url 'admin:delivery' event.message_id %}">{{ event.what }}</a>{% else %}{{ event.what }}{% endif %}</th><td>{{ event.detail }}</td></tr>
+{% empty %}<tr><td colspan="3">{% if filtered_out %}{% translate "No lines match these filters. Choose All in Kind and clear From and Through to see every line." %}{% else %}{% translate "Nothing recorded for this user yet. Sign-ins, actions and emails appear here as they happen." %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
+</div>
+</section>
+{% endblock %}
