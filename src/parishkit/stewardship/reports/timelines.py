@@ -252,7 +252,10 @@ class Event:
     at the same instant, so both sort directions read the same way.
     ``portal`` marks a line that only the Family itself can cause on the
     parishioner portal, the candidates for the hub's Last portal action
-    (``Timeline.last_action``).
+    (``Timeline.last_action``). ``tag`` names the Family a line is about on
+    a user's Timeline, where a Family member's Family lines join the user's
+    own (#1867); a Family's own Timeline leaves it blank. ``family_duid`` is
+    that Family's DUID, for the command line.
     """
 
     at: datetime
@@ -262,6 +265,8 @@ class Event:
     kind: str = "form"
     rank: int = 0
     portal: bool = False
+    tag: str = ""
+    family_duid: int | None = None
 
 
 @dataclass(frozen=True)

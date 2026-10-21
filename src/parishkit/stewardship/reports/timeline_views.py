@@ -32,6 +32,11 @@ with each change's review-pipeline stage (``hub_census``); the Member tabs
 also show Ministry joins and leaves, and the Financial and the Cannot
 participate and Additional information tabs their streams (slices 3 and 4,
 ``hub_streams``), each read only while its tab is chosen (``hub_reads``).
+
+For Administrators only (``MANAGE_USERS``, the roles that may open a
+user's Timeline), the summary also lists the Family's users, each linking
+the user's Timeline (#1867, ``person_identity.family_user_rows``); the page
+never shows their Admin activity, which Staff could otherwise read.
 """
 
 from dataclasses import dataclass, replace
@@ -53,6 +58,7 @@ from parishkit.stewardship.accounts.cryptography import CryptographicError
 from parishkit.stewardship.accounts.family_authentication import (
     runtime as family_runtime,
 )
+from parishkit.stewardship.accounts.person_identity import family_user_rows
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin, database_now
@@ -368,7 +374,9 @@ def page_context(campaign, family_id, identity, timeline, as_of, **options):
     tab's stream (``hub_reads``): ``hub_ministry``, ``hub_financial`` and
     ``hub_other``, and ``ministry`` and ``information``, whether the
     campaign has Ministry stewardship (its Member tabs list Ministry joins
-    and leaves) and Additional information (the last tab shows it).
+    and leaves) and Additional information (the last tab shows it), and
+    ``family_users``, the Family's users for an Administrator
+    (``person_identity.family_user_rows``; empty for anyone else).
     """
     full = options.get("full", False)
     query = options.get("query") or TimelineQuery()
@@ -432,6 +440,8 @@ def page_context(campaign, family_id, identity, timeline, as_of, **options):
         "family_test_url": options.get("family_test_url"),
         "page_url": page_url,
         "export": options.get("export") if full else None,
+        # People in this Family who are users (#1867), Administrators only.
+        "family_users": options.get("family_users", ()),
     }
 
 
@@ -620,6 +630,14 @@ def timeline(request, campaign_id, family_id):
                 principal=principal,
                 parish_name=system.active_configuration.parish.name,
             )
+            # The Family's users, only for a reader who may open their
+            # Timelines (#1867), and only while the Timeline tab (the only
+            # panel that shows them) is chosen, as hub_reads reads the other
+            # streams: one identity read and one users read.
+            chosen = hub_tabs("", request.GET, sections, census or HubCensus()).selected
+            members = ()
+            if chosen == "timeline" and allows(principal, Capability.MANAGE_USERS):
+                members = family_user_rows(family.family_duid, principal.identity)
             # The chosen-Family test page is Administrator only (CONFIGURE).
             test_url = None
             if codes and testing_codes and allows(principal, Capability.CONFIGURE):
@@ -651,6 +669,7 @@ def timeline(request, campaign_id, family_id):
                 information=bool(
                     campaign.active_configuration.values.get("additional_information")
                 ),
+                family_users=members,
                 **streams,
             )
             page = render_to_string(

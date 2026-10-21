@@ -37,6 +37,16 @@ Sign-ins, actions and emails follow the address (its Google accounts and
 the emails meant for it), while role changes follow the record: an
 address deleted and added again is a new user whose timeline also shows
 the address's earlier sign-ins, actions and emails.
+
+The Family part (#1867, admin-portal spec "User timeline Family part"):
+the ParishSoft Families whose Family or Member contacts hold the address
+(``person_identity.address_people``, frozen migration 0157) each get a
+``FamilyPart`` with that Family's Timeline summary fields, read by the
+Family Timeline's own readers (``reports.timelines.read_timeline`` and
+``reports.timeline_views.read_identity``) in the current campaign, and
+their lines join the user's, each tagged with the Family's name. They are
+read only while the campaign's report admission is open, as the Family's
+Timeline is.
 """
 
 from dataclasses import dataclass, replace
@@ -64,6 +74,9 @@ KINDS = {
     "actions": _("Admin actions"),
     "roles": _("Role changes"),
     "emails": _("Emails"),
+    # A Family member's Family form lines (#1867); the menu offers it only
+    # when there are such lines (``UserTimeline.form_lines``).
+    "form": _("Family form activity"),
 }
 # An Administrator signing out someone else's session on Signed-in sessions
 # is in System logs' Sign-in activity group, but on the acting
@@ -155,18 +168,70 @@ class Summary:
 
 
 @dataclass(frozen=True)
+class FamilyPart:
+    """One ParishSoft Family the user's address belongs to (#1867).
+
+    ``name`` is the directory's surname-and-heads name from the current
+    ParishSoft data. ``state`` says what the page can show: ``shown`` (the
+    Family's summary fields, from ``identity``, ``records`` and
+    ``open_form``), ``not_in_campaign`` (no current campaign holds the
+    Family, so it has no Family form records) or ``unavailable`` (other
+    campaign work holds the campaign's reports). ``family_id`` is the
+    Family's record in the current campaign, which its Timeline link and
+    Open form name; None when it has none. ``campaign_id`` is that
+    campaign, for the view's audit (``record_family_views``).
+    ``test_url`` is the Testing "Try the Family form as a chosen Family"
+    link the Family's Timeline gives the same reader, or None.
+    """
+
+    duid: int
+    name: str | None = None
+    family_id: UUID | None = None
+    state: str = "not_in_campaign"
+    identity: object = None
+    records: object = None
+    open_form: tuple = (False, "")
+    campaign_id: UUID | None = None
+    test_url: str | None = None
+
+    @property
+    def label(self):
+        """The Family's tag on its lines: its name, else its DUID."""
+        return self.name or _("Family %(duid)s") % {"duid": self.duid}
+
+    @property
+    def reason_id(self):
+        """The id of its Open form reason, unique among the page's Families."""
+        return f"open-form-reason-{self.duid}"
+
+
+@dataclass(frozen=True)
 class UserTimeline:
     """One user's page: the person, the summary, every line and the accounts.
 
     ``accounts`` are the address's Google accounts as ``{"id",
     "disabled"}`` in id order, which the page's Sign-in activity controls
-    post to System logs.
+    post to System logs. ``families`` are the ``FamilyPart`` of each
+    ParishSoft Family the address belongs to, in DUID order (#1867).
     """
 
     person: Person
     summary: Summary
     events: tuple = ()
     accounts: tuple = ()
+    families: tuple = ()
+
+    @property
+    def form_lines(self):
+        """Whether any Family form line is listed, so Kind offers it.
+
+        Only a Family's own ``form`` lines (opens, steps, submissions) are
+        Family form activity; its sign-ins and emails are under Sign-ins and
+        sign-outs and Emails, so a Family with only those offers nothing.
+        """
+        return any(
+            line.family_duid is not None and line.kind == "form" for line in self.events
+        )
 
 
 def rule_role(role, roles):
@@ -396,13 +461,171 @@ def read_ministries(accounts):
     return tuple(ministry_names(led).values()) if led else ()
 
 
-def read_timeline(user_id, actor_id):
-    """One user's page: the person, summary, lines and Google accounts.
+def read_families(address, actor_id, *, codes=False, test_link=False):
+    """The ``FamilyPart`` of each ParishSoft Family the address belongs to.
+
+    The Families come from the Administrator-only identity read
+    (``person_identity.address_people``), their names from the current
+    ParishSoft data, and their records in the current campaign, Production
+    only, through the Family Timeline's own readers, so both pages show the
+    same values. ``codes`` says the reader may see Family codes; the code
+    is decrypted only then. ``test_link`` says the reader may also be
+    offered the chosen-Family test page (``CONFIGURE``), as the Family's
+    Timeline offers it in Testing mode. The records are read only while the campaign's
+    report admission is open (as ``admit_report_read`` checks it for the
+    Family's Timeline): during a restore review or other campaign work the
+    part is ``unavailable``, as it is while a key rotation holds the codes.
+    Statements: the identity read, the snapshot pointer and names, the
+    campaign records and admission once, then the Family Timeline's reads
+    per Family (usually one).
+    """
+    from parishkit.stewardship.accounts.campaign_family_test import (
+        chosen_family_test_url,
+    )
+    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+    from parishkit.stewardship.campaigns.models import Campaign
+    from parishkit.stewardship.reports.export_services import admit_campaign
+    from parishkit.stewardship.reports.response_metrics import ResponseScope
+    from parishkit.stewardship.reports.timeline_views import open_form, read_identity
+    from parishkit.stewardship.reports.timelines import read_timeline as read_family
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+    from parishkit.stewardship.source.snapshot_names import snapshot_family_facts
+    from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
+
+    from .cryptography import CryptographicError
+    from .person_identity import address_people
+
+    duids = list(address_people(address, actor_id))
+    if not duids:
+        return ()
+    snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
+    facts = snapshot_family_facts(snapshot, duids, NAME_NOT_RECORDED)
+    # The instance, not values(): the chosen-Family test link reads it.
+    system = SystemConfiguration.objects.only("mode", "current_campaign_id").get()
+    campaign_id = system.current_campaign_id
+    held = {}
+    if campaign_id is not None:
+        held = {
+            family.family_duid: family
+            for family in FamilyCampaign.objects.filter(
+                campaign_id=campaign_id, family_duid__in=duids
+            )
+        }
+    admitted, values, test_url = False, None, None
+    if held:
+        try:
+            admit_campaign(campaign_id, mutating=False)
+            admitted = True
+        except PermissionError:
+            pass
+    if admitted:
+        campaign = Campaign.objects.select_related("active_configuration").get(
+            pk=campaign_id
+        )
+        values = campaign.active_configuration.values
+        # Only with codes, as on the Family's Timeline: the link is the way
+        # round a live code that Testing mode refuses.
+        if codes and test_link:
+            test_url = chosen_family_test_url(system, campaign)
+    parts = []
+    for duid in duids:
+        name = facts[duid].name if duid in facts else None
+        family = held.get(duid)
+        if family is None:
+            parts.append(FamilyPart(duid, name))
+            continue
+        if not admitted:
+            parts.append(FamilyPart(duid, name, family.pk, "unavailable"))
+            continue
+        try:
+            identity = read_identity(family, codes=codes, workgroup=values)
+        except CryptographicError:
+            # A key rotation holds the codes for a moment: the part reads as
+            # unavailable rather than failing the whole page.
+            parts.append(FamilyPart(duid, name, family.pk, "unavailable"))
+            continue
+        parts.append(
+            FamilyPart(
+                duid,
+                name,
+                family.pk,
+                "shown",
+                identity,
+                read_family(
+                    ResponseScope(campaign_id),
+                    family.pk,
+                    full=True,
+                    current_mode=system.mode,
+                ),
+                open_form(
+                    identity,
+                    testing_codes=system.mode == "testing",
+                    eligible=family.portal_eligible,
+                ),
+                campaign_id,
+                test_url,
+            )
+        )
+    return tuple(parts)
+
+
+def record_family_views(timeline, actor_id, *, printed=None):
+    """Record a ``family_timeline_viewed`` for each Family the page showed.
+
+    ``printed``, for the command line, is the DUIDs of the Families whose
+    lines it prints: it shows no Family summary, so a Family none of whose
+    lines pass the filters was not looked at and is not recorded.
+
+    A shown Family's panel and lines are what its own Timeline shows (its
+    code included), so each is recorded as that page records a view: the
+    Family's campaign record id as subject, its campaign, and the outcome
+    only, so a later review sees who looked at which Family whichever page
+    showed it. Runs inside the caller's audit transaction, after the
+    recheck; one insert per shown Family (usually none or one).
+    """
+    from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
+    from parishkit.stewardship.audit.services import record_action
+
+    for part in timeline.families:
+        if part.state == "shown" and (printed is None or part.duid in printed):
+            record_action(
+                Action.FAMILY_TIMELINE_VIEWED,
+                actor_kind=ActorKind.PORTAL_USER,
+                actor_id=actor_id,
+                subject_id=part.family_id,
+                campaign_id=part.campaign_id,
+                current_parish=True,
+                context={"outcome": Outcome.SUCCEEDED},
+            )
+
+
+def family_lines(families):
+    """Every shown Family's Timeline lines, each tagged with its Family.
+
+    In each Family's own order (its ``rank``), so lines at one instant keep
+    the order the Family Timeline gives them when ``ordered`` re-ranks the
+    merged list.
+    """
+    return [
+        replace(line, tag=part.label, family_duid=part.duid)
+        for part in families
+        if part.state == "shown"
+        for line in part.records.events
+    ]
+
+
+def read_timeline(user_id, actor_id, *, codes=False, test_link=False):
+    """One user's page: the person, summary, lines, accounts and Families.
 
     Runs inside the caller's read-only snapshot. ``actor_id`` is the
-    reading Administrator, for the email read. An unknown user raises
-    ``LookupError``. Ministries are read only for a current user: a former
-    user leads nothing here.
+    reading Administrator, for the email and identity reads; ``codes`` says
+    the reader may see Family codes and ``test_link`` the chosen-Family
+    test page (``read_families``). An unknown user
+    raises ``LookupError``. Ministries are read only for a current user: a
+    former user leads nothing here. A Family email that also went to the
+    user's address is listed once, as the Family's line, which names it as
+    the Family Timeline does ("Reminder 2"); the summary's Last email still
+    counts it.
     """
     person, activations, roles = read_person(user_id)
     accounts = tuple(
@@ -414,11 +637,19 @@ def read_timeline(user_id, actor_id):
     rows = read_audit([account["id"] for account in accounts])
     emails = read_emails(person.email, actor_id)
     ministries = read_ministries(accounts) if person.role else ()
+    families = read_families(person.email, actor_id, codes=codes, test_link=test_link)
+    tagged = family_lines(families)
+    listed = {line.message_id for line in tagged if line.message_id}
     lines = [
         *role_changes(activations, roles),
         *audit_lines(rows),
-        *email_lines(emails),
+        *email_lines(row for row in emails if row["id"] not in listed),
+        *tagged,
     ]
     return UserTimeline(
-        person, summarize(rows, emails, ministries), ordered(lines), accounts
+        person,
+        summarize(rows, emails, ministries),
+        ordered(lines),
+        accounts,
+        families,
     )

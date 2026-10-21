@@ -6,13 +6,16 @@ line are covered against PostgreSQL in
 """
 
 import re
+from dataclasses import replace
 from datetime import timedelta
+from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
 from django.http import QueryDict
 from django.template.loader import render_to_string
 
+from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.accounts.user_timeline_views import (
     PAGE_SIZE,
     UserTimelineQuery,
@@ -24,10 +27,12 @@ from parishkit.stewardship.accounts.user_timelines import (
     KINDS,
     SESSION_WORDS,
     SIGNED_OUT_OTHER,
+    FamilyPart,
     Person,
     UserTimeline,
     audit_lines,
     email_lines,
+    family_lines,
     ordered,
     role_changes,
     rule_role,
@@ -36,6 +41,15 @@ from parishkit.stewardship.accounts.user_timelines import (
 from parishkit.stewardship.audit.log_descriptions import describe
 from parishkit.stewardship.audit.log_rows import ACTIVITY_TYPES, PAGE_READS
 from parishkit.stewardship.jobs.outbox_models import DELIVERY_PURPOSES
+from parishkit.stewardship.reports.timeline_views import Identity
+from parishkit.stewardship.reports.timelines import (
+    Email,
+    Engagement,
+    Submitted,
+    Timeline,
+    events,
+    summary,
+)
 from parishkit.stewardship.web.dates import using
 
 from .test_response_metrics import START
@@ -224,7 +238,7 @@ def test_the_query_takes_only_this_pages_kinds():
     assert UserTimelineQuery.parse({}).kind == "all"
     for kind in KINDS:
         assert UserTimelineQuery.parse({"kind": kind}).kind == kind
-    for kind in ("form", "views", ""):
+    for kind in ("reviews", "views", ""):
         with pytest.raises(ValueError):
             UserTimelineQuery.parse({"kind": kind})
     query = UserTimelineQuery.parse(
@@ -247,7 +261,7 @@ def test_parse_query_refuses_anything_else():
         "page": "2",
         "size": "100",
     }
-    for bad in ("mode=testing", "sort=what", "size=7", "user=x", "kind=form"):
+    for bad in ("mode=testing", "sort=what", "size=7", "user=x", "kind=views"):
         with pytest.raises(ValueError):
             parse_query(QueryDict(bad))
 
@@ -275,14 +289,19 @@ def timeline(count=3):
     )
 
 
-def render(records, query=None, values=None):
-    """The page as the view renders it."""
+def render(records, query=None, values=None, *, show_codes=True):
+    """The page as the view renders it, for an Administrator."""
     with using("us_long"):
         context = page_context(
             records,
             query or UserTimelineQuery(),
             values or {},
             START + timedelta(days=1),
+            show_codes=show_codes,
+        )
+        # The admitted principal, which the Family name links read.
+        context["request"] = SimpleNamespace(
+            principal=Principal(UUID(int=1), frozenset({"administrator"}))
         )
         return render_to_string("stewardship/user-timeline.html", context)
 
@@ -333,3 +352,140 @@ def test_the_table_pages_and_filters():
         {},
     )
     assert "No lines match these filters" in nothing
+
+
+# A Family the user belongs to (#1867): one invitation, one submission, and
+# the engagement record, read as the Family Timeline reads them.
+FAMILY_ID = UUID(int=6)
+INVITATION = Email(UUID(int=31), "initial", "Invitation", "delivered", START, START)
+SUBMITTED = Submitted(UUID(int=32), START + 30 * MINUTE, no_receipt=True)
+ENGAGEMENT = Engagement(START + 25 * MINUTE, "ministry", START + 28 * MINUTE)
+RECORDS = Timeline(
+    summary([INVITATION], [SUBMITTED]),
+    events([INVITATION], [SUBMITTED], engagement=ENGAGEMENT),
+    ENGAGEMENT,
+)
+SHOWN = FamilyPart(
+    1234,
+    "Adams, Ann and Bob",
+    FAMILY_ID,
+    "shown",
+    Identity(1234, "Adams, Ann and Bob", 101, "ABCD-EFGH", True, "deliverable"),
+    RECORDS,
+    (True, ""),
+)
+
+
+def with_families(*parts):
+    """The sample timeline with ``parts`` and their tagged lines merged in."""
+    base = timeline()
+    lines = ordered([*base.events, *family_lines(parts)])
+    return UserTimeline(base.person, base.summary, lines, base.accounts, parts)
+
+
+def test_family_lines_are_tagged_and_keep_their_order():
+    """Each shown Family's lines carry its name (or DUID) and DUID; others none."""
+    gone = FamilyPart(77, None, None, "not_in_campaign")
+    held = FamilyPart(78, "Held, Hal", UUID(int=8), "unavailable")
+    unnamed = FamilyPart(79, None, FAMILY_ID, "shown", None, RECORDS)
+    lines = family_lines([SHOWN, gone, held, unnamed])
+    assert {line.family_duid for line in lines} == {1234, 79}
+    assert {line.tag for line in lines if line.family_duid == 1234} == {
+        "Adams, Ann and Bob"
+    }
+    assert {str(line.tag) for line in lines if line.family_duid == 79} == {"Family 79"}
+    # In the Family's own order, so ties read as on its Timeline.
+    assert [line.what for line in lines[: len(RECORDS.events)]] == [
+        line.what for line in RECORDS.events
+    ]
+    assert SHOWN.reason_id != unnamed.reason_id
+
+
+def test_a_family_member_sees_the_familys_summary_and_lines():
+    """A panel per Family linking its Timeline, its fields and tagged lines."""
+    page = render(with_families(SHOWN))
+    assert "Family member of" in page
+    assert (
+        f'<a href="/admin/reports/families/{FAMILY_ID}/">Adams, Ann and Bob</a>' in page
+    )
+    assert "Not found in ParishSoft as a Family member" not in page
+    for shown in (
+        "Submitted",
+        "Invitation, <time",
+        "<code>ABCD-EFGH</code>",
+        f'action="/admin/reports/families/{FAMILY_ID}/open-form/"',
+        "Campaign email can reach this Family",
+        "Furthest step reached",
+        "Last seen",
+    ):
+        assert shown in page, shown
+    # The Family's lines are tagged; Kind offers Family form activity.
+    assert '<span class="status-badge">Adams, Ann and Bob</span>' in page
+    assert '<option value="form">Family form activity</option>' in page
+    # The Family email links its Mail message page.
+    assert f'href="/admin/mail/sent/{INVITATION.id}/"' in page
+    # Without the right to see codes: no code, no Open form.
+    hidden = render(with_families(SHOWN), show_codes=False)
+    assert "ABCD-EFGH" not in hidden and "Open form" not in hidden
+
+
+def test_family_parts_without_records_say_why():
+    """Not in the campaign, unavailable, or no Family at all."""
+    gone = FamilyPart(77, "Gone, Gus")
+    held = FamilyPart(78, "Held, Hal", UUID(int=8), "unavailable")
+    page = render(with_families(gone, held))
+    assert "Not in the current campaign, so there are no Family form records." in page
+    assert "This Family's form records are unavailable right now" in page
+    # Neither has lines, so Kind does not offer Family form activity.
+    assert 'value="form"' not in page
+    # No link without a campaign record; the held one still links.
+    assert "Gone, Gus</h2>" in page
+    assert f'href="/admin/reports/families/{UUID(int=8)}/"' in page
+    alone = render(timeline())
+    assert (
+        "Not found in ParishSoft as a Family member, so there are no Family form "
+        "records." in alone
+    )
+    assert "Family member of" not in alone and 'value="form"' not in alone
+
+
+def test_family_form_activity_narrows_to_the_familys_lines():
+    """Kind form keeps only the Family's form lines, tagged."""
+    page = render(with_families(SHOWN), UserTimelineQuery("form"), {})
+    rows = re.findall(r'<th scope="row">(?:<a [^>]*>)?([^<]+)', page)
+    assert [row.strip() for row in rows] == [
+        "Submitted a response",
+        "Reached the furthest step so far",
+        "Got past the first step",
+    ]
+    assert "Signed in</th>" not in page and "Became a user" not in page
+
+
+def test_family_form_activity_is_offered_only_with_family_form_lines():
+    """A Family with only an email offers no Family form activity, and an
+    address that still names it reads as All (#1887 review)."""
+    mailed = replace(
+        SHOWN,
+        records=Timeline(summary([INVITATION], []), events([INVITATION], []), None),
+    )
+    page = render(with_families(mailed))
+    assert '<span class="status-badge">Adams, Ann and Bob</span>' in page
+    assert 'value="form"' not in page
+    fallen = render(with_families(mailed), UserTimelineQuery("form"), {})
+    assert '<option value="all" selected>' in fallen
+    assert "No lines match these filters" not in fallen
+    assert "Signed in</th>" in fallen
+
+
+def test_the_family_panel_carries_the_testing_test_link():
+    """In Testing, Open form's reason links the chosen-Family test page, as
+    on the Family's Timeline."""
+    held = replace(SHOWN, open_form=(False, "testing"), test_url="/admin/test-here/")
+    page = render(with_families(held))
+    assert "Not available in Testing mode" in page
+    assert '<a href="/admin/test-here/">Try the Family form as a chosen Family</a>' in (
+        page
+    )
+    assert "Try the Family form" not in render(
+        with_families(replace(held, test_url=None))
+    )
