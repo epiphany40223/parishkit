@@ -4,7 +4,8 @@ Its two proof steps act in place: Continue swaps the change region to the
 challenge, whose heading then takes focus, and Start over swaps it back; a
 refused paste is swapped in with its error summary focused. The code's
 Review opens the shared review dialog with a compact review of the old and
-new fingerprints; a wrong code stays on the form. Apply closes the dialog,
+new fingerprints; a wrong code stays on the form, said in the change
+region's status line with no jump to the top. Apply closes the dialog,
 redraws the key in use and the change region from the page's address and
 says what was applied in the status line under the step, with no reload.
 Pages and answers are ``integration_dialog_components``'.
@@ -124,35 +125,69 @@ def test_a_refused_paste_is_shown_in_place(page, component_origin):
     assert not failures
 
 
-def test_a_wrong_code_stays_on_the_form(page, component_origin):
-    """A wrong code (status 400, the challenge again) keeps the dialog shut,
-    marks the code field with its message on its own line and focuses the
-    summary; Start over then clears that summary, whose field is gone."""
-    answer(page, component_origin, BACKUP_KEY, "challenge", BACKUP_KEY_PROOF)
-    answer(page, component_origin, BACKUP_KEY, "preview", BACKUP_KEY_WRONG, status=400)
-    failures = opened(page, component_origin)
+def refuse_code(page, origin, fixture):
+    """Reach the challenge, scroll its code field into a short window and
+    check a code the server refuses with ``fixture`` (status 400). Returns
+    the script errors and where the page was scrolled before the check."""
+    answer(page, origin, BACKUP_KEY, "challenge", BACKUP_KEY_PROOF)
+    answer(page, origin, BACKUP_KEY, "preview", fixture, status=400)
+    failures = opened(page, origin)
     continue_to_proof(page)
     code = page.get_by_label("Code from backup-prove")
     code.fill(CODE)
+    # A short window, scrolled down to the code: a summary placed above the
+    # page heading and focused would scroll the page back to the top.
+    page.set_viewport_size({"width": 1280, "height": 500})
+    code.evaluate("node => node.scrollIntoView({block: 'center'})")
+    scrolled = page.evaluate("window.scrollY")
+    assert scrolled > 0
     page.get_by_role("button", name="Check code and continue").click()
     eventually(
         page,
         "document.getElementById('backup-key-code')"
         ".getAttribute('aria-invalid') === 'true'",
     )
+    return failures, scrolled
+
+
+def assert_refused_in_place(page, scrolled, words):
+    """The dialog stays shut and the refusal is said in the change region's
+    status line, which has focus and describes the field, with no error
+    summary anywhere and no jump (UX conventions, "Review dialog")."""
     assert not page.locator("#backup-key-review").evaluate("node => node.open")
-    # The message fills the code's own line, under the field, and the error
-    # summary takes focus.
-    message = page.locator("#backup-key-code-error")
-    visible(message)
-    assert "does not match" in message.inner_text()
-    assert page.locator("#backup-key-proof .errorlist").count() == 1
-    eventually(page, "Boolean(document.activeElement?.closest('[data-error-summary]'))")
-    # Start over removes the field the summary links to, so the summary goes.
+    line = page.locator("#backup-key-outcome")
+    eventually(page, f"({FOCUSED}) === 'backup-key-outcome'")
+    assert words in line.inner_text()
+    assert page.locator("[data-error-summary]").count() == 0
+    # No line is added at the field to move the button under the pointer.
+    assert page.locator("#backup-key-proof .errorlist").count() == 0
+    described = page.get_by_label("Code from backup-prove").get_attribute(
+        "aria-describedby"
+    )
+    assert "backup-key-outcome" in described.split()
+    assert page.evaluate("window.scrollY") >= scrolled
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_a_wrong_code_is_refused_in_place(page, component_origin):
+    """A wrong code (status 400, the challenge again) keeps the dialog shut
+    and is said in the region's status line, where the reader is; the next
+    edit of the code clears it, and so does Start over."""
+    failures, scrolled = refuse_code(page, component_origin, BACKUP_KEY_WRONG)
+    assert_refused_in_place(page, scrolled, "That code does not match.")
+    line = page.locator("#backup-key-outcome")
+    page.get_by_label("Code from backup-prove").press("End")
+    page.keyboard.type("X")
+    eventually(page, "document.getElementById('backup-key-outcome').textContent === ''")
+    assert (
+        page.get_by_label("Code from backup-prove").get_attribute("aria-invalid")
+        == "false"
+    )
+    # Start over swaps in the paste step, with its own empty status line.
     page.get_by_role("link", name="Start over").click()
     visible(page.get_by_label("New public key"))
-    eventually(page, "!document.querySelector('[data-error-summary]')")
-    assert page.evaluate(MARKED) == "kept"
+    assert line.inner_text() == ""
+    assert page.locator("[data-error-summary]").count() == 0
     assert not failures
 
 

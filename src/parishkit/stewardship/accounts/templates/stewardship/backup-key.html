@@ -14,7 +14,11 @@
   the challenge's heading takes focus (data-in-place-focus). The code form
   opens the shared review dialog at the end of the page
   (data-review-open): a wrong code is a field refusal (status 400, this
-  form again), so the dialog stays shut and the field is marked; a proved
+  form again), so the dialog stays shut, the field is marked and
+  the refusal is said in the change region's own status line, which the
+  form names (data-review-outcome), with no summary above the page heading,
+  so the page never jumps to the top (UX conventions, "Review dialog",
+  "Field errors stay on the form"); a proved
   code answers with integration-review.html's compact review, whose Apply
   posts the signed preview here and follows the change. Once it is
   applied, both regions (the key in use, and the change back at its first
@@ -52,10 +56,10 @@
 <li>{% translate "On the key machine, run backup-prove with the new private key and paste the line when it waits for input:" %}<br><code>docker run --rm -i --network none --user "$(id -u):$(id -g)" --read-only --cap-drop ALL --security-opt no-new-privileges:true --mount type=bind,source=KEY_DIRECTORY,target=/keys,readonly IMAGE backup-prove --key /keys/NEW_PRIVATE_KEY_FILE</code></li>
 <li>{% translate "Type the code it prints below. The code proves the private key opens what is sealed to this public key; the private key itself never leaves your machine." %}</li>
 </ol>
-{# Each step waits for a well-formed entry (data-require-complete and a pattern the server's rule also admits, #563), with the hint after the button; a refusal is shown at its field. The code is read leniently (any case, spaces or dashes), as normalize_code reads it. #}<form method="post" action="{{ page_url }}" id="backup-key-proof" autocomplete="off" data-require-complete data-review-open="backup-key-review">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="intent" value="{{ intent }}">
+{# Each step waits for a well-formed entry (data-require-complete and a pattern the server's rule also admits, #563), with the hint after the button; a refusal is shown at its field. The code is read leniently (any case, spaces or dashes), as normalize_code reads it. #}<form method="post" action="{{ page_url }}" id="backup-key-proof" autocomplete="off" data-require-complete data-review-open="backup-key-review" data-review-outcome="backup-key-outcome">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="intent" value="{{ intent }}">
 <div><label for="backup-key-code">{% translate "Code from backup-prove" %}</label>
 <input type="text" id="backup-key-code" name="code" maxlength="40" autocomplete="off" spellcheck="false" required pattern="[\s\-]*(?:[0-9A-Za-z][\s\-]*){12}" data-missing-hint="{% translate 'Type the 12-character code backup-prove printed.' %}"{% if code_error %} aria-invalid="true" aria-describedby="backup-key-code-error"{% endif %}>
-{# The code's error line is always drawn (hidden without an error), so a wrong code answered to the review dialog fills this line where the server draws it (ui-v1.js showFieldErrors) rather than adding one above the field. #}<ul class="errorlist" id="backup-key-code-error"{% if not code_error %} hidden{% endif %}>{% if code_error %}<li>{{ code_error }}</li>{% endif %}</ul></div>
+{# The code's error line is drawn only with an error, on a page the server draws whole. Answered to the review dialog, the refusal is said in the status line below instead (data-review-outcome), which describes the field, so no line appears here to move the button. #}{% if code_error %}<ul class="errorlist" id="backup-key-code-error"><li>{{ code_error }}</li></ul>{% endif %}</div>
 {% button type="submit" aria-describedby="backup-key-code-hint" %}{% translate "Check code and continue" %}{% endbutton %}<p class="help" id="backup-key-code-hint" data-complete-hint hidden></p></form>
 <p><a href="{{ page_url }}#backup-key-change" data-in-place="backup-key-start-over">{% translate "Start over" %}</a></p>
 </section>
@@ -67,6 +71,6 @@
 <p class="help" id="backup-key-public-help">{% translate "The public_key value from backup-keygen: one line of 44 characters ending in =. Never paste the private key." %}</p>
 {% if key_error %}<ul class="errorlist" id="backup-key-public-error"><li>{{ key_error }}</li></ul>{% endif %}</div>
 {% button type="submit" aria-describedby="backup-key-public-hint" %}{% translate "Continue" %}{% endbutton %}<p class="help" id="backup-key-public-hint" data-complete-hint hidden></p></form>
-{% endif %}{# The status line of the change applied in the review dialog, under the step that made it; written after this region is redrawn. #}{% include 'stewardship/components/review-outcome.html' with outcome_id="backup-key-outcome" %}</div>
+{% endif %}{# The status line of the change applied in the review dialog, under the step that made it; written after this region is redrawn. It also says why a code was refused, where the reader is. #}{% include 'stewardship/components/review-outcome.html' with outcome_id="backup-key-outcome" %}</div>
 {% translate "Replace the backup encryption key" as review_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="backup-key-review" title=review_title apply_url=page_url outcome_id="backup-key-outcome" fallback="backup-key-form" %}
 {% endblock %}

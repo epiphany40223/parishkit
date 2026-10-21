@@ -1533,8 +1533,11 @@ the campaign wizard in #1404 PR 4).
   form shows its error summary and marks each field, as the
   [field errors](#field-errors-and-live-checks) convention says, and becomes
   editable again. Where panes share one dialog and each pane has its own
-  status line (see After Apply below), the refusal is said in that pane's
-  line instead, which takes focus without scrolling, and the field is marked
+  status line (see After Apply below), or a form sits far below the page
+  heading and names its region's status line (Backup encryption key's code,
+  [#750](https://github.com/epiphany40223/parishkit/issues/750)), the
+  refusal is said in that line instead, which takes focus without
+  scrolling, and the field is marked
   and described by it: no summary is placed above the heading, since moving
   focus there would jump the page to the top, and no error line is added
   that would move the pane's controls. The line clears on the form's next
