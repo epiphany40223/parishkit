@@ -1788,6 +1788,19 @@ most 500 ids per call, so the list can name each such email's
 Administrator; a Family email's addresses never leave it. Neither returns any
 other column of the rendering.
 
+It names those people with a third read of the same kind (frozen migration
+0220, provisional,
+[#1562](https://github.com/epiphany40223/parishkit/issues/1562)):
+`stewardship_delivery_page_member_names_v1(messages, actor)` returns, for
+each given email with no Family (at most 500 ids) whose current rendering's
+first intended address a ParishSoft Member's contact record in the current
+snapshot lists (matched trimmed and case-insensitively), the single best
+name, ranked as `stewardship_member_names_v1` ranks the Users page's default
+Name. It returns only `(message, name)`, never an address, another contact
+field, a DUID or a Family, and only to the web login for an enabled
+Administrator. It takes email ids rather than addresses, so it cannot name
+an arbitrary address.
+
 The same page says what the latest attempt recorded for each address
 ([#806](https://github.com/epiphany40223/parishkit/issues/806)). An attempt's
 evidence (`stewardship_outbox_event.evidence_note`, outside the web login's
