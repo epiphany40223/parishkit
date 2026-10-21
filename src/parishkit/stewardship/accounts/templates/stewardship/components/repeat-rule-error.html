@@ -10,4 +10,4 @@ empty, so a message coming or going never moves the controls below (UX
 conventions "No layout shift"). A line without ``size`` belongs to a control
 whose error only a request built by hand can give (a choice no menu offers),
 so it takes no room until it shows. Both are polite live regions.
-{% endcomment %}{% if size %}<div class="field-error-line" role="status"><span class="field-error-size" aria-hidden="true">{{ size }}</span>{% else %}<div role="status">{% endif %}<ul class="errorlist" id="{{ line_id }}_error"{% if not errors %} hidden{% endif %}>{% for error in errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div>
+{% endcomment %}<div{% if size %} class="field-error-line"{% endif %} role="status">{% if size %}<span class="field-error-size" aria-hidden="true">{{ size }}</span>{% endif %}<ul class="errorlist" id="{{ line_id }}_error"{% if not errors %} hidden{% endif %}>{% for error in errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div>
