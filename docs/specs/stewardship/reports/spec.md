@@ -3035,7 +3035,8 @@ section is the page.
   contribute", then the share methods chosen), Reviewer's value (an Edit's
   annual pledge and frequency), Stage, Submitted (the Family's latest
   response), Last decision and Actions. There is no Baseline column: A is
-  $0.00 for a Family's answer (#1704, #1753). **ParishSoft now**, after
+  ParishSoft's amount when the Family answered, $0.00 when unrecorded
+  (#1704, #1753). **ParishSoft now**, after
   Reviewer's value, is ParishSoft's upcoming-year amount the latest refresh
   found, shown on a Conflict, Entered incorrectly or Not seen in ParishSoft
   row, as on every worklist; a page with no such row has no such column.
@@ -3082,7 +3083,9 @@ section is the page.
   its cents. The two "to enter" columns are filled only for To enter by hand,
   Entered by hand, Entered incorrectly and Confirmed rows; at the other stages
   nothing is to be entered. ParishSoft annual pledge is the latest refresh
-  check's amount, blank before any; a flagged row's Stage reads "Entered by
+  check's amount, or for a pledge Confirmed at the Family's submit the
+  amount ParishSoft held then (#1753), blank before any; a flagged row's
+  Stage reads "Entered by
   hand, Not seen in ParishSoft".
 - **Audit.** Each decision is one immutable history row (frozen migration
   0127, provisional number) with a `pledge_review_updated` event that names

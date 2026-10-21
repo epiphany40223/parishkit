@@ -16,6 +16,7 @@ from parishkit.stewardship.campaigns.runtime import _now
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.reports.demand import request_rebuild
 from parishkit.stewardship.reports.inputs import FactInputs
+from parishkit.stewardship.reports.pledge_refresh import answered_pledge
 from parishkit.stewardship.source.pins import pin_snapshot
 
 from .answers import validate_answers
@@ -129,6 +130,7 @@ def submit_family(request, service, *, baseline_id, payload):
             or 0
         )
         now = _now()
+        financial = "financial" in answers
         submission = Submission.objects.create(
             family=family,
             campaign=campaign,
@@ -148,7 +150,16 @@ def submit_family(request, service, *, baseline_id, payload):
             form_schema=FORM_SCHEMA,
             answers=answers,
             annual_pledge=Decimal(answers["financial"]["annual_pledge"])
-            if "financial" in answers
+            if financial
+            else None,
+            # ParishSoft's upcoming-year pledge the Family answered against
+            # (the financial stream's A, #1753), from the snapshot this
+            # submit validates against, or None when its giving read is
+            # unproven: never a reason to refuse the submit.
+            upcoming_pledge=answered_pledge(
+                validated.validation_snapshot_id, campaign.pk, family.family_duid
+            )
+            if financial
             else None,
             actor_id=family.pk,
             # Staff entered it for the Family through Open form (#529).
