@@ -1,0 +1,11 @@
+{% load i18n %}{% comment %}
+  My review work's stream panels (#1690; review pipeline spec, "Role views"):
+  one per stream the viewer reviews, each a grid of link cards (ui-conventions
+  "Overview pages"), a stage's count and the page that lists it. ``panels``
+  are review_work.panels' rows. On Staff and Ministry leaders' landing page
+  each stream is a panel with an h2; on Admin Home (``nested``) they are h3
+  groups inside one Review work panel. Static: nothing moves on a click.
+{% endcomment %}{% for panel in panels %}<section class="{% if nested %}review-work-stream{% else %}panel review-work{% endif %}" aria-labelledby="review-{{ panel.stream }}-heading" data-review-stream="{{ panel.stream }}">
+    {% if nested %}<h3 id="review-{{ panel.stream }}-heading">{{ panel.title }}</h3>{% else %}<h2 id="review-{{ panel.stream }}-heading">{{ panel.title }}</h2>{% endif %}
+    {% with heading_id="review-"|add:panel.stream|add:"-heading" %}{% include "stewardship/components/link-cards.html" with cards=panel.cards cards_labelledby=heading_id %}{% endwith %}
+  </section>{% endfor %}

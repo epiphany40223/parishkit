@@ -33,9 +33,7 @@ from parishkit.stewardship.pipeline import (
 )
 from parishkit.stewardship.responses.capabilities import capability
 from parishkit.stewardship.responses.census import (
-    ADDRESS_LIMITS,
-    blank_address,
-    country_choices,
+    address_editor,
 )
 from parishkit.stewardship.responses.census_additions import (
     ADD_FIELDS,
@@ -72,6 +70,7 @@ from parishkit.stewardship.web.presentation import duid
 from parishkit.stewardship.web.review_worklist import (
     INCORRECT_WORDS,
     NOT_SEEN,
+    RETIRED_DATES,
     WORDS,
     Column,
     Remark,
@@ -298,24 +297,19 @@ LINK_DEFAULTS = {
     "stage": Stage.TO_REVIEW.value,
     "route": "any",
     "kind": "any",
-    "start": "",
-    "end": "",
-    "zone": "",
 }
 
 
 def link_pairs(query, paging=None):
     """The view's choices a link may carry, as ``(name, value)`` pairs.
 
-    The Stage and the closed filters other than their defaults, the zone
-    only while a day needs it, then the table's ``paging`` (its page, size
-    and sort as the form sent them). ``page_address`` drops empty values.
+    The Stage and the closed filters other than their defaults, then the
+    table's ``paging`` (its page, size and sort as the form sent them).
+    ``page_address`` drops empty values.
     """
-    days = bool(query.start or query.end)
     pairs = [
-        (name, "" if value == LINK_DEFAULTS[name] else value)
-        for name, value in ((name, getattr(query, name)) for name in LINK_DEFAULTS)
-        if name != "zone" or days
+        (name, "" if getattr(query, name) == default else getattr(query, name))
+        for name, default in LINK_DEFAULTS.items()
     ]
     return pairs + sorted((paging or {}).items())
 
@@ -348,7 +342,7 @@ def worklist_page(result, query, table, action, *, mutable, paging=None):
         fields={
             name: value
             for name, value in query.form_values().items()
-            if name not in {"status", "history"}
+            if name not in {"status", "history", *RETIRED_DATES}
         },
         filters_template="stewardship/census-worklist-filters.html",
         editor_template="stewardship/census-worklist-value.html",
@@ -412,7 +406,7 @@ def add_fields():
     with its label and its value control: a date, its census choices,
     text no longer than the field takes (as Edit limits it, by the handling
     registry's handling), or a Family address's parts. ``address`` is the
-    shared address editor's parts, limits and countries, and
+    shared address editor's (``census.address_editor``, a blank address), and
     ``address_fields`` the choice value that shows it (data-show-when).
     """
     fields = []
@@ -434,11 +428,7 @@ def add_fields():
     return {
         "fields": fields,
         "address_fields": "|".join(FAMILY_ADD_FIELDS),
-        "address": {
-            "parts": blank_address(),
-            "limits": dict(ADDRESS_LIMITS),
-            "countries": country_choices(),
-        },
+        "address": address_editor(),
     }
 
 

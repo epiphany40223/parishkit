@@ -473,6 +473,15 @@ def test_search_gates_apply_and_ministry_is_chosen_by_name():
     assert re.search(r'<details id="log-identifier-filters"[^>]* open>', subject)
 
 
+def test_search_help_says_only_a_short_word_reads_the_whole_range():
+    """Since the trigram indexes (#765) only a search for fewer than three
+    letters or digits in a row reads every entry; the help says so (#1572)."""
+    html = " ".join(_render(LogQuery()).split())
+    assert "fewer than three letters or digits in a row" in html
+    assert "so a narrower range answers it faster" in html
+    assert "A search reads every entry" not in html
+
+
 def test_the_activity_choice_offers_sign_in_activity_in_plain_words():
     """The filter bar's Activity choice (#953) shows its applied group, and
     its explanation never asks the reader to type a type name."""

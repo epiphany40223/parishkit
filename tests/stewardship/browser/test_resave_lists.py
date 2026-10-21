@@ -1,4 +1,4 @@
-"""Content to re-save on go-live readiness and System health (#838)."""
+"""Content to re-save on Go live and System health (#838)."""
 
 import pytest
 
@@ -30,8 +30,8 @@ def _check_rows(page, container):
     assert rows.nth(1).inner_text().endswith("Can't be sent until fixed")
 
 
-def test_go_live_readiness_links_each_page_or_email_to_re_save(page, component_origin):
-    """The list sits in the checks panel, with a link to each editor."""
+def test_go_live_check_links_each_page_or_email_to_re_save(page, component_origin):
+    """The list sits with Check's readiness lines, a link to each editor."""
     page.set_viewport_size({"width": 320, "height": 900})
     page.goto(component_origin + "/go-live")
     visible(page.get_by_text("These saved pages and emails have markup"))

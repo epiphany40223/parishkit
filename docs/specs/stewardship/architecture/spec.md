@@ -705,7 +705,7 @@ concurrent Family sessions:
 
 - ordinary cached pages should have a p95 server response below two seconds;
 - filtered report first pages should return below three seconds;
-- long polls, publication, digests, exports, purge, and backups are always
+- long polls, publication, report emails, exports, purge, and backups are always
   asynchronous, except a small CSV rendered on request from the rows of the
   page it is downloaded from (see
   [campaign read guards](../data/spec.md#campaign-read-guards)); and
@@ -719,7 +719,7 @@ execution capacity defined by the
 The default participation graph meets these targets through immutable
 `CampaignDailyFactSet` materialization keyed by its exact source/submission/
 scope/timezone inputs. Source promotions and live submissions enqueue
-idempotent rebuild hints. Web, export, and digest rendering share those facts;
+idempotent rebuild hints. Web, export, and report email rendering share those facts;
 no request performs one independent corpus aggregation per campaign day.
 
 Database indexes cover campaign/Family DUID, normalized email/domain, code

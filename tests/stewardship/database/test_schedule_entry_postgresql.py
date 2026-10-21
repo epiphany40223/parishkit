@@ -251,7 +251,10 @@ def test_a_new_reminder_is_reviewed_then_applied_from_the_list(
     dialog = dialog[dialog.index('<dialog id="schedule-review"') :]
     assert f'data-review-return="{LIST}"' in dialog
     assert 'data-review-outcome="schedules-outcome"' in dialog
-    assert f'<form method="post" action="{LIST}" data-review-apply>' in dialog
+    assert (
+        '<form id="schedule-review-apply" method="post" '
+        f'action="{LIST}" data-review-apply>' in dialog
+    )
     assert ConfigurationChangeRequest.objects.count() == before
     accepted = post(browser, LIST, {"action": "confirm", "preview": token(review)})
     apply(store, accepted)

@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from uuid import UUID
 
@@ -13,6 +13,7 @@ from parishkit.stewardship.campaigns.activation_tokens import (
     require_current,
 )
 from parishkit.stewardship.campaigns.confirmation_models import ActivationImpactRevision
+from parishkit.stewardship.campaigns.go_live_sequencing import current_attempt
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.campaigns.production_models import (
     ProductionTransitionRequest,
@@ -57,6 +58,30 @@ def impact_revision():
     return value
 
 
+def go_live_source(source, transition, instant):
+    """The source readiness a go-live check after Start uses (#462, #1585).
+
+    The admin-portal spec's "Freshness during a go-live" rule, in place of
+    ``source_stale_seconds``: while the request has an attempt, the current
+    full snapshot is ready when it started at or after the attempt began
+    (the attempt's own refresh or a later one) and the instant is before
+    the attempt's hold end, which is then when it expires. Once the hold
+    end has passed it is ``go_live_hold_ended``: scheduled refreshes have
+    resumed, so the next attempt must begin (Refresh and prepare again).
+    Tenant and scope problems are left as ``source_readiness`` found them,
+    and a request with no attempt (started before #1585 slice 3) keeps
+    today's rule.
+    """
+    attempt = current_attempt(transition)
+    if attempt is None or source.reason not in {"ready", "full_refresh_stale"}:
+        return source
+    if instant >= attempt.hold_end:
+        return replace(source, reason="go_live_hold_ended")
+    if source.observed_at < attempt.started_at:
+        return replace(source, reason="full_refresh_stale")
+    return replace(source, reason="ready", expires_at=attempt.hold_end)
+
+
 def collect_readiness(request, service, campaign_id, transition_id, preparation_id):
     """Re-read all nonenumerated prerequisites, including after a lock wait.
 
@@ -90,7 +115,7 @@ def collect_readiness(request, service, campaign_id, transition_id, preparation_
     scope = _scope(campaign_id)
     applied = editable_configuration(service)
     document = applied.active_configuration.canonical_document
-    source = source_readiness(scope)
+    source = go_live_source(source_readiness(scope), transition, scope.instant)
     ministries, funds = _catalogs(source)
     configuration = configuration_readiness(
         document, campaign_id, ministries=ministries, funds=funds

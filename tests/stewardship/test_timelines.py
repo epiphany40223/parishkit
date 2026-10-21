@@ -223,6 +223,12 @@ def test_the_url_carries_only_closed_choices():
         TimelineQuery("emails", "2054-10-01", "2054-10-02", "America/New_York"),
         {"sort": "when", "size": "all"},
     )
+    # The hub's tab is the tab component's own (#1678): any key is accepted
+    # here, and an unknown one shows the first tab.
+    assert parse_query(QueryDict("tab=family&kind=emails"))[0] == TimelineQuery(
+        "emails"
+    )
+    assert parse_query(QueryDict("tab=nonsense")) == (TimelineQuery(), {})
     # Without a day the zone is dropped, so it never stays in the links.
     assert parse_query(QueryDict("zone=America/New_York"))[0] == TimelineQuery()
     for invalid in (
@@ -243,6 +249,7 @@ def test_the_url_carries_only_closed_choices():
         "sort=what",
         "size=25",
         "page=2",
+        "tab=timeline&tab=family",
     ):
         with pytest.raises(ValueError):
             parse_query(QueryDict(invalid))
@@ -320,11 +327,16 @@ def test_administrator_page_shows_summary_and_timeline():
     """Data first; the timeline links each email to its Mail message page."""
     page = render(TIMELINE)
     assert "<title>" not in page or "Adams" not in page.split("</title>")[0]
-    # The heading names the Family; the old page name is gone (#1570).
-    assert "<h1>Adams, Ann — timeline</h1>" in page
+    # The heading names the Family alone, above the hub's tabs (#1678); the
+    # old page name is gone (#1570).
+    assert "<h1>Adams, Ann</h1>" in page
     assert "Family timeline" not in page
     assert page.index("<h1>") < page.index('data-about-page="timeline"')
-    assert "<p>Family DUID 1234 · Envelope number 101 · <a href=" in page
+    # The header strip's Last portal action: the newest submission.
+    assert (
+        "<p>Family DUID 1234 · Envelope number 101 · Last portal action: "
+        f'Submitted a response, <time datetime="{SECOND.at.isoformat()}"'
+    ) in page
     # One shared table region: the filter bar and the When heading both
     # refresh it in place. No Production / Testing control is drawn.
     assert '<div id="table" data-table-region>' in page
@@ -409,16 +421,20 @@ def test_staff_page_is_the_reduced_view():
     assert "Yes, <time" in page and "Submission receipt, <time" in page
     assert "<code>ABCD-EFGH</code>" in page and "data-open-form" in page
     for absent in (
-        "data-in-place=",
+        "data-table-region",
         "table-filters",
         "/admin/mail/sent/",
         "Timeline</h2>",
         "Campaign email can reach",
         "Furthest step",
         "Last seen",
-        "mail scanner",
+        "A sign-in can also be a mail scanner",
     ):
         assert absent not in page, absent
+    # The Last portal action and its About text are for Staff too
+    # (Administrator decision, 2026-10-18).
+    assert "Last portal action: None recorded" in page
+    assert "Last portal action is the newest action" in page
 
 
 def test_open_form_is_unavailable_with_its_reason():
@@ -601,3 +617,152 @@ def test_narrow_keeps_one_kind_within_half_open_bounds():
     assert [line.message_id for line in narrow(lines, "all", (at, None))] == [
         RECEIPT.id
     ]
+
+
+def test_last_portal_action_ignores_what_an_email_reader_makes():
+    """Only the Family's own steps count, never a sign-in or form open (#1678).
+
+    A mail scanner fetching the personal link signs in and opens the form
+    exactly as the Family would, so those lines (and the system's session
+    end, every email and a response Staff entered) are never the Family's
+    Last portal action, however late they are.
+    """
+    staffed = Submitted(UUID(int=12), START + 50 * MINUTE, by_staff=True)
+    out = START + 40 * MINUTE
+    later = START + 60 * MINUTE
+    lines = events(
+        [replace_state(REMINDER, "delivered")],
+        [FIRST, staffed],
+        sign_ins=[later, (later, True)],
+        forms=[later],
+        engagement=Engagement(START + 25 * MINUTE, "ministry", START + 28 * MINUTE),
+        session_ends=[(out, "family_logout"), (later, "family_session_ended")],
+    )
+    action = Timeline(summary([], [FIRST, staffed]), lines).last_action
+    assert (str(action.what), action.at) == ("Signed out", out)
+    # Without the sign-out, the newest is the Family's own submission, then
+    # its furthest step (built after the first step at a shared instant).
+    lines = events([], [FIRST], sign_ins=[later], forms=[later])
+    assert str(Timeline(summary([], [FIRST]), lines).last_action.what) == (
+        "Submitted a response"
+    )
+    same = START + 25 * MINUTE
+    lines = events([], [], engagement=Engagement(same, "census", same))
+    assert str(Timeline(summary([], []), lines).last_action.what) == (
+        "Reached the furthest step so far"
+    )
+    # The first step is reported as the form page loads, with nothing
+    # chosen (a script-running mail scanner too): never an action.
+    lines = events([], [], engagement=Engagement(None, "welcome", same))
+    assert Timeline(summary([], []), lines).last_action is None
+    # A Sign out in a session Staff opened through Open form is Staff's.
+    lines = events(
+        [],
+        [FIRST],
+        sign_ins=[(later, True)],
+        session_ends=[(later + MINUTE, "family_logout", True)],
+    )
+    assert [str(line.what) for line in lines][-1] == "Signed out"
+    assert str(Timeline(summary([], [FIRST]), lines).last_action.what) == (
+        "Submitted a response"
+    )
+    # Nothing but a link fetch: none recorded.
+    lines = events([INVITATION], [], sign_ins=[later], forms=[later])
+    assert Timeline(summary([INVITATION], []), lines).last_action is None
+    page = render(Timeline(summary([INVITATION], []), lines))
+    assert "Last portal action: None recorded</p>" in page
+    # Staff's reduced view reads none of these lines and shows no value.
+    assert Timeline(TIMELINE.summary).last_action is None
+
+
+def test_hub_tabs_follow_the_campaign_modules():
+    """Timeline, Family, the Members, Financial, then the last tab (#1678)."""
+    from parishkit.stewardship.reports.hub_census import HubCensus, Subject
+    from parishkit.stewardship.reports.timeline_views import hub_sections, hub_tabs
+
+    assert hub_sections({"modules": ["census", "financial", "ministry"]}) == (
+        "family",
+        "members",
+        "financial",
+        "other",
+    )
+    assert hub_sections({"modules": ["financial"]}) == ("financial",)
+    assert hub_sections({"modules": ["census"], "additional_information": True}) == (
+        "family",
+        "members",
+        "other",
+    )
+    assert hub_sections({"modules": ["ministry"]}) == ("members", "other")
+    path = reverse("admin:timeline", args=[FAMILY])
+    members = (Subject("member-1", "Adams, Ann"), Subject("member-2", "Adams, Bo"))
+    census = HubCensus(Subject("family", "Family"), members)
+    tabs = hub_tabs(path, {}, ("family", "members", "other"), census)
+    assert [(tab.key, str(tab.label), str(tab.unavailable)) for tab in tabs.tabs] == [
+        ("timeline", "Timeline", ""),
+        ("family", "Family", ""),
+        ("member-1", "Adams, Ann", ""),
+        ("member-2", "Adams, Bo", ""),
+        ("other", "Additional", ""),
+    ]
+    assert tabs.selected == "timeline" and tabs.tabs[0].href == path + "?tab=timeline"
+    assert hub_tabs(path, {"tab": "member-2"}, ("members",), census).selected == (
+        "member-2"
+    )
+    # Before any response the Family tab is still drawn, with no Member tabs.
+    tabs = hub_tabs(path, {"tab": "family"}, ("family", "members"))
+    assert [tab.key for tab in tabs.tabs] == ["timeline", "family"]
+    assert tabs.selected == "family"
+    # Without census, Member tabs are available too: their panels show
+    # Ministry joins and leaves (slice 4). No hub tab is "Coming soon".
+    ministry = HubCensus(members=members, census=False)
+    tabs = hub_tabs(path, {"tab": "member-1"}, ("members", "financial"), ministry)
+    assert [tab.unavailable for tab in tabs.tabs] == [""] * 4
+    assert tabs.selected == "member-1" and tabs.tabs[3].key == "financial"
+    # A tab that is not drawn, or an unknown one, opens the Timeline tab.
+    for asked in ("member-1", "family", "nonsense"):
+        assert hub_tabs(path, {"tab": asked}, ("other",)).selected == "timeline"
+
+
+def test_the_page_is_a_hub_with_the_timeline_tab():
+    """The header strip sits above the tabs; the Timeline panel holds the rest."""
+    page = render(TIMELINE, sections=("financial", "other"))
+    strip = page.index("Last portal action:")
+    row = page.index('role="tablist" aria-label="Family information"')
+    assert page.index("<h1>") < strip < row
+    # The strip has no directory link: the Admin menu has it (2026-10-19).
+    assert "Active parishioner family directory</a>" not in page[strip:row]
+    # The summary, the filter bar, the table region and the export are all
+    # inside the Timeline's panel, which is the one drawn.
+    panel = page.index('id="family-tabs-panel-timeline"')
+    for part in ('id="summary-heading"', 'id="table-filters"', 'id="table"'):
+        assert row < panel < page.index(part), part
+    assert page.count("data-tab-loaded") == 1
+    assert (
+        f'href="/admin/reports/families/{FAMILY}/?tab=timeline'
+        '#family-tabs-panel-timeline"'
+    ) in page
+    # Every tab is built: none is unavailable, and only the chosen one's
+    # panel is drawn.
+    assert 'aria-disabled="true"' not in page and "Coming soon" not in page
+    for key in ("financial", "other"):
+        assert f'id="family-tabs-panel-{key}"' in page, key
+    for label in ("Financial", "Additional"):
+        assert f">{label}</a>" in page, label
+    # A campaign without any content tab: Timeline alone.
+    page = render(TIMELINE)
+    assert page.count('role="tab"') == 1
+    # Staff get the tabs, the summary and the Last portal action
+    # (Administrator decision, 2026-10-18), from the portal lines alone.
+    portal = tuple(line for line in TIMELINE.events if line.portal)
+    page = render(
+        Timeline(TIMELINE.summary, portal), full=False, sections=("financial",)
+    )
+    assert 'id="family-tabs-panel-timeline"' in page
+    assert 'id="family-tabs-tab-financial"' in page
+    assert (
+        "Last portal action: "
+        f'Submitted a response, <time datetime="{SECOND.at.isoformat()}"'
+    ) in page
+    assert 'id="table-filters"' not in page
+    page = render(Timeline(TIMELINE.summary), full=False, sections=("financial",))
+    assert "Last portal action: None recorded</p>" in page

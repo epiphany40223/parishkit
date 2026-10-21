@@ -218,14 +218,14 @@ def dashboard(request, campaign_id):
             nonlocal participation_read
             with ExitStack() as stack:
                 metrics = read_metrics(campaign_id, query.mode)
-                participation, cause = None, None
+                participation, cause, shown = None, None, None
                 if production:
-                    participation, cause = _participation(
+                    participation, cause, shown = _participation(
                         stack, response_guard, campaign_id, query
                     )
                     participation_read = participation is not None
                 context = _page_context(
-                    campaign_id, query, participation, metrics, principal, cause
+                    campaign_id, query, participation, metrics, principal, cause, shown
                 )
                 payload = render_to_string(
                     "stewardship/response-dashboard.html", context, request=request
@@ -264,17 +264,22 @@ def dashboard(request, campaign_id):
 
 
 def _participation(stack, guard, campaign_id, query):
-    """The daily chart's selection and statistics, as ``(result, cause)``.
+    """The daily chart's selection and statistics, as ``(result, cause, shown)``.
 
     The selection's generation protection joins ``stack``. Inputs that
     cannot be read (``FactUnavailable``, ``StatisticsUnavailable``) leave
     the funnel shown and these panels out (#1537), rather than refusing the
     whole page; a database failure still ends it. ``result`` is then None and
     ``cause`` is "facts" (the daily chart is not ready) or "statistics" (the
-    ParishSoft inputs are missing or unreadable). The swallowed error is
-    debug-logged, as ``report_unavailable`` does, so a real code fault stays
-    visible to a maintainer.
+    ParishSoft inputs are missing or unreadable). ``shown`` is the chart
+    generation the selection chose, or when it chose none or the facts could
+    not be read the newest one now (None when there is none): an
+    unavailable page's figures status re-reads the page once another
+    generation is ready (#1586). The
+    swallowed error is debug-logged, as ``report_unavailable`` does, so a
+    real code fault stays visible to a maintainer.
     """
+    shown = None
     try:
         selected = stack.enter_context(
             guarded_participation(
@@ -284,16 +289,35 @@ def _participation(stack, guard, campaign_id, query):
                 browser_timezone=query.timezone,
             )
         )
+        if selected.document is not None:
+            shown = selected.document.fact_set_id
         return (
-            selected,
-            calculate_statistics(capture_statistics(campaign_id)),
-        ), None
+            (selected, calculate_statistics(capture_statistics(campaign_id))),
+            None,
+            shown,
+        )
     except FactUnavailable:
         debug_swallowed("participation facts unavailable")
-        return None, "facts"
+        # The selection already passes over a busy generation, so facts
+        # that fail here seldom clear by themselves: compare with the
+        # newest generation now, so the page re-reads only once another is
+        # ready, never once a minute while nothing changed (#1586).
+        return None, "facts", _newest(campaign_id, query.scope)
     except StatisticsUnavailable:
         debug_swallowed("participation statistics unavailable")
-        return None, "statistics"
+        if shown is None:
+            # No generation could be read: compare with the newest, for
+            # the same reason.
+            shown = _newest(campaign_id, query.scope)
+        return None, "statistics", shown
+
+
+def _newest(campaign_id, scope):
+    """The newest generation now, or None when there is none to name."""
+    try:
+        return newest_figures(campaign_id, scope)[0]
+    except FactUnavailable:
+        return None
 
 
 # The pages that show Participation figures, by the in-place region their
@@ -304,7 +328,9 @@ FIGURES_REGIONS = {
 }
 
 
-def figures_status(view, scope, shown, updating, *, newer=False, follow=True):
+def figures_status(
+    view, scope, shown, updating, *, newer=False, follow=True, retry=False
+):
     """The figures status region's context (report-figures-status.html).
 
     ``view`` is the page (a FIGURES_REGIONS key), ``scope`` the population
@@ -314,17 +340,25 @@ def figures_status(view, scope, shown, updating, *, newer=False, follow=True):
     newer generation than ``shown`` is ready, so the page re-reads itself.
     ``follow`` False draws the notice but never watches it: a page that is
     itself a refusal (a Campaign comparison day out of range) would only be
-    refused again by its own re-read.
+    refused again by its own re-read. ``retry`` marks a page that could not
+    read its figures at all (the Response dashboard's unavailable line): the
+    region is watched at a fixed, slow pace (60 s, as each re-read it leads
+    to is an audited view) and shows no Updating notice, since the
+    unavailable line already says what is missing; its address carries
+    ``retry=1`` so each status answer keeps both (#1586).
     """
-    query = urlencode({"view": view, "scope": scope, "shown": shown or ""})
+    fields = {"view": view, "scope": scope, "shown": shown or ""}
+    if retry:
+        fields["retry"] = "1"
     return {
         "figures_status": {
             "view": view,
             "region": FIGURES_REGIONS[view],
-            "updating": updating,
+            "updating": updating and not retry,
+            "retry": retry,
             "newer": newer,
             "follow": follow,
-            "url": reverse("admin:response_dashboard_status") + "?" + query,
+            "url": reverse("admin:response_dashboard_status") + "?" + urlencode(fields),
         }
     }
 
@@ -338,7 +372,9 @@ def dashboard_status(request, campaign_id):
     says only whether newer figures than the page's (``shown``) are ready
     and whether the newest are still being prepared, never a figure. When
     newer ones are ready, the page re-reads its own address once, passively
-    (UX conventions, "Pages that update themselves"). The read never
+    (UX conventions, "Pages that update themselves"). ``retry=1`` (its only
+    value) comes from a page that could not read its figures at all, and is
+    answered at that page's slow pace (``figures_status``). The read never
     extends the sign-in.
     """
     try:
@@ -348,9 +384,12 @@ def dashboard_status(request, campaign_id):
         view = fields.get("view", "")
         scope = fields.get("scope", "")
         if (
-            set(fields) - {"view", "scope", "shown"}
+            set(fields) - {"view", "scope", "shown", "retry"}
             or view not in FIGURES_REGIONS
             or scope not in POPULATION_SCOPES
+            or fields.get("retry", "1") != "1"
+            # Only the dashboard draws an unavailable line.
+            or ("retry" in fields and view != "dashboard")
         ):
             raise ValueError("Invalid figures status options.")
         shown = UUID(fields["shown"]) if fields.get("shown") else None
@@ -364,7 +403,9 @@ def dashboard_status(request, campaign_id):
         return report_unavailable()
     except ValueError:
         return private_response("Invalid report options.\n", status=400)
-    context = figures_status(view, scope, shown, updating, newer=newest != shown)
+    context = figures_status(
+        view, scope, shown, updating, newer=newest != shown, retry="retry" in fields
+    )
     response = render(request, "stewardship/report-figures-status.html", context)
     response["Cache-Control"] = "no-store"
     return response
@@ -436,7 +477,9 @@ def mode_links(query):
     return {mode: query.url(page=1, mode=mode) for mode in ("production", "testing")}
 
 
-def _page_context(campaign_id, query, participation, metrics, principal, cause=None):
+def _page_context(
+    campaign_id, query, participation, metrics, principal, cause=None, shown=None
+):
     """Format detached shared observations; never recompute money in templates.
 
     ``metrics`` is the funnel of the mode shown (None: a Testing view with
@@ -444,7 +487,9 @@ def _page_context(campaign_id, query, participation, metrics, principal, cause=N
     statistics, read in Production only: None in a Testing view, which
     shows no statistics, daily chart or export, or when they could not be
     read, which the page says; ``cause`` ("facts" or "statistics") picks its
-    wording.
+    wording, and ``shown`` (the generation that read chose, if any) is what
+    the unavailable line's figures status compares newer figures with, so
+    the page brings them in by itself once they can be read (#1586).
     """
     campaign = Campaign.objects.select_related("active_configuration").get(
         pk=campaign_id
@@ -464,6 +509,12 @@ def _page_context(campaign_id, query, participation, metrics, principal, cause=N
     if metrics is not None:
         context.update(funnel_panels(metrics))
     if participation is None:
+        if context["participation_unavailable"]:
+            # The figures status stays beside the unavailable line, at its
+            # slow retry pace, so the page never asks for a reload (#1586).
+            context |= figures_status(
+                "dashboard", query.scope, shown, False, retry=True
+            )
         return context
     selected, statistics = participation
     mutable = True

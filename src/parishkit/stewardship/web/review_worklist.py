@@ -783,6 +783,30 @@ def page_address(action, pairs):
     return f"{action}?{urlencode(kept)}" if kept else action
 
 
+# The Submitted From / Through filter Census changes and Additional
+# information offered until #1888, with its browser zone. A page drawn
+# before then, a bookmark or a typed address may still send them: the
+# pages drop them unread (no error page, no redirect), while the
+# ``pk-admin`` commands keep their own date options.
+RETIRED_DATES = frozenset({"start", "end", "zone"})
+
+
+def drop_retired_dates(parameters):
+    """Remove the retired date filter's fields from a mutable QueryDict copy."""
+    for name in RETIRED_DATES:
+        parameters.pop(name, None)
+    return parameters
+
+
+def page_fields(values):
+    """A query's ``form_values`` without the retired date fields.
+
+    The pages' forms carry no date field (#1888); the shared query classes
+    keep theirs for ``pk-admin``, whose output is unchanged.
+    """
+    return {name: value for name, value in values.items() if name not in RETIRED_DATES}
+
+
 # --- The decision POST ------------------------------------------------------
 
 

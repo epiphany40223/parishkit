@@ -451,7 +451,7 @@ def test_back_never_sends_a_bulk_confirm_again(page, component_origin):
     page.locator("#bulk-panel summary").click()
     retry = page.locator("#bulk-retry_failed")
     retry.locator("textarea[name=note]").fill("Gmail was down from 2 to 3 PM.")
-    retry.get_by_role("button", name="Preview retry").click()
+    retry.get_by_role("button", name="Preview sending again").click()
     page.get_by_role("button", name="Retry 3 emails").click()
     page.get_by_role("heading", name="Partly done").wait_for()
     recorded(page, sent, 2)

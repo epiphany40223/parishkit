@@ -26,6 +26,7 @@ from parishkit.stewardship.reports.census_changes import (
 from parishkit.stewardship.reports.census_worklist import add_fields, worklist_page
 from parishkit.stewardship.responses.comparison import phone_record
 from parishkit.stewardship.responses.refresh_checks import CheckState
+from parishkit.stewardship.web.review_worklist import page_fields
 from parishkit.stewardship.web.tables import paginate
 
 # The page's own path: what every heading, navigator, filter and dialog posts.
@@ -241,7 +242,7 @@ def components(context, admin):
         table = paginate(
             result["rows"],
             paging,
-            carry=list(query.form_values().items()),
+            carry=list(page_fields(query.form_values()).items()),
             sorting=SORTING,
         )
         worklist, table = worklist_page(result, query, table, PATH, mutable=True)
@@ -255,7 +256,7 @@ def components(context, admin):
                     "worklist": worklist,
                     "table": table,
                     "query": query,
-                    "query_fields": query.form_values(),
+                    "query_fields": page_fields(query.form_values()),
                     "route_choices": ROUTE_LABELS.items(),
                     "kind_choices": KIND_LABELS.items(),
                     "notice": notice,

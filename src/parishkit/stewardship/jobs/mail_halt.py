@@ -212,6 +212,7 @@ def check_mailbox(credential_path, profile, *, check):
         CredentialValidationUnavailable,
     )
     from parishkit.stewardship.accounts.key_files import read_private
+    from parishkit.stewardship.deployment import recorded_mail_redirect
     from parishkit.stewardship.observability import emit_failure
     from parishkit.stewardship.provider_checks import check_candidate
 
@@ -226,6 +227,8 @@ def check_mailbox(credential_path, profile, *, check):
             seconds=CHECK_SECONDS,
             check=check,
             profile=profile,
+            # A real key is checked from LOCAL only beside the redirect (#1399).
+            redirect=recorded_mail_redirect(),
         )
     except CredentialValidationUnavailable:
         return "unavailable"

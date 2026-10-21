@@ -237,8 +237,8 @@ mailing the whole parish:
 4. Check the daily and weekly Admin reports and a manual weekly report at the
    Testing mailbox (they show zero participation: they count only live
    answers), the reports and exports pages (which exclude Testing answers by
-   design), and the Production readiness page's list of Testing submissions.
-5. Before Production readiness, move the start date back to its real date,
+   design), and the Go live page's Testing submissions list.
+5. Before going live, move the start date back to its real date,
    send the fictional sample test again (any configuration change voids the
    earlier one as readiness evidence), and wait until every Testing message
    has finished (delivered, failed or cancelled): readiness requires it, and
