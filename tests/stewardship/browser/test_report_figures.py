@@ -50,6 +50,16 @@ SHOW = """() => {
 }"""
 
 
+@pytest.fixture(autouse=True)
+def settle_routes(page):
+    """After each test, let any routed read still being fetched finish
+    before the page closes. Otherwise its ``route.fulfill`` fails with
+    "Fetch response has been disposed" and the error lands on the next
+    test's setup (#1850)."""
+    yield
+    page.unroute_all(behavior="wait")
+
+
 def answer(page, origin, matches, *fixtures):
     """Answer each fetch whose address ``matches`` (never a page load) with
     the next of ``fixtures``, the last one from then on. Returns the

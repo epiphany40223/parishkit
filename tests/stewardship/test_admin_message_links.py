@@ -22,34 +22,47 @@ OUTGOING = f'<a href="{reverse("admin:deliveries")}">Sent mail</a>'
 
 
 def _production_progress(complete):
-    """Render Production activation with initial mail being prepared or done."""
+    """Render Production activation with initial mail being prepared or done.
+
+    Through the view's own context (``confirmation_views._context``), so the
+    page's state and stage boxes are the ones it would draw.
+    """
+    from parishkit.stewardship.accounts.confirmation_views import _context
+
     now = datetime(2054, 10, 1, tzinfo=UTC)
+    shown = {
+        "campaign": SimpleNamespace(
+            state="active",
+            delivery_paused=False,
+            active_configuration=SimpleNamespace(name="Annual", starts_at=now),
+        ),
+        "receipt": SimpleNamespace(created_at=now),
+        "demand": SimpleNamespace(
+            items_completed=3, phase="plan", groups_completed=1, failure_code=""
+        ),
+        "task": SimpleNamespace(state="running", updated_at=now),
+        "complete": complete,
+        "control": None,
+        "outcomes": [],
+        "withdrawal_available": False,
+    }
     return render_to_string(
         "stewardship/production-progress.html",
-        {
-            "admin_chrome": None,
-            "campaign": SimpleNamespace(
-                state="active", active_configuration=SimpleNamespace(name="Annual")
-            ),
-            "receipt": SimpleNamespace(created_at=now),
-            "demand": SimpleNamespace(
-                items_completed=3, phase="plan", groups_completed=1, failure_code=""
-            ),
-            "task": SimpleNamespace(state="running", updated_at=now),
-            "complete": complete,
-            "outcomes": [],
-        },
+        {"admin_chrome": None} | _context(shown),
     )
 
 
 @pytest.mark.parametrize("complete", [False, True])
 def test_production_activation_links_outgoing_mail(complete):
-    """Both "see Sent mail" messages link Sent mail once preparation shows."""
+    """Once preparation is done, its "follow delivery" line links Sent mail.
+
+    The Sending box never claims delivery, so the line says where it shows.
+    """
     html = _production_progress(complete)
     link = f'<a href="{reverse("admin:deliveries")}">Sent mail</a>'
-    # The outcomes note always shows; the completion note only once complete.
-    assert html.count(link) == (2 if complete else 1)
-    assert f"for that, see {link}." in html
+    assert html.count(link) == (1 if complete else 0)
+    if complete:
+        assert f"follow delivery on {link}." in html
     assert "See Sent mail" not in html
     assert "see Sent mail" not in html
 

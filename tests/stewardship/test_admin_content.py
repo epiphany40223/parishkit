@@ -424,11 +424,15 @@ def test_the_catalog_entries(name, model, options):
 def test_the_ledger_covers_the_pages():
     """The catalog and both history routes are covered."""
     assert LEDGER["content_catalog"].detail == ("content list",)
-    # The editor as it opens; its Review and Apply are still owed.
+    # The editor as it opens, and its Review and Apply (#1873).
     for route in ("content_edit", "content_revision"):
         assert LEDGER[route].kind == "command"
-        assert LEDGER[route].detail == ("content show",)
-        assert LEDGER[route].owed == "PR 10"
+        assert LEDGER[route].detail == (
+            "content show",
+            "content preview",
+            "content confirm",
+        )
+        assert LEDGER[route].owed is None
     # The email tables' Delete and the editors' plain-text preview (#463).
     assert LEDGER["content_delete"].kind == "command"
     assert LEDGER["content_delete"].detail == ("content preview", "content confirm")

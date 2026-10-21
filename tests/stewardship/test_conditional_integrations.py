@@ -136,17 +136,19 @@ def test_test_access_is_unavailable_with_why_until_workspace_mail_is_set_up():
 
 
 def test_test_access_is_unavailable_with_why_in_the_local_environment(monkeypatch):
-    """LOCAL never reaches Google Drive, so Test access is drawn disabled and
-    named by that reason even with Workspace mail set up, never offered and
-    then refused (#519, #563); the page's context says so from the same
-    check the view's refusal uses."""
+    """Where LOCAL does not reach Google Drive (no mail redirect, or the fake
+    clock, #1399), Test access is drawn disabled and named by that reason
+    even with Workspace mail set up, never offered and then refused (#519,
+    #563); the page's context says so from the same check the view's
+    refusal uses."""
     html = settings_page("backup", workspace_configured=True, drive_in_local=True)
     button = tag(html, r"<button[^>]*>(?=Test access)")
     assert "disabled" in button and 'type="button"' in button
     assert 'value="test"' not in button
     assert 'aria-describedby="backup-test-reason"' in button
     reason = tag(html, r'<span class="help" id="backup-test-reason">[^<]*')
-    assert "not available in the local environment" in reason
+    assert "not available in this local environment" in reason
+    assert "deploy --mail-redirect" in reason
     monkeypatch.setattr(integration_views, "_drive_in_local", lambda: True)
     monkeypatch.setattr(integration_views, "backup_state", lambda *args: {})
     request = Value(portal_session=Value(principal_id="0" * 32))
@@ -179,7 +181,11 @@ def backup_key_page(**context):
     """Render the backup encryption key page."""
     return render_to_string(
         "stewardship/backup-key.html",
-        {"label": "Backup encryption key", "current": Value(source="unknown")}
+        {
+            "label": "Backup encryption key",
+            "page_url": "/key/",
+            "current": Value(source="unknown"),
+        }
         | context,
     )
 
@@ -199,10 +205,12 @@ def test_the_new_public_key_is_checked_in_the_browser():
     assert key.fullmatch(public) and key.fullmatch(public.strip())
     for wrong in ("", public.strip()[:-1], '{"public_key": "x"}', public * 2):
         assert not key.fullmatch(wrong)
+    # Continue posts in place (#750), to the page's own address.
     assert (
-        '<form method="post" class="panel" autocomplete="off" data-require-complete>'
-        in html
-    )
+        '<form method="post" action="/key/#backup-key-change" class="panel"'
+        ' id="backup-key-form" autocomplete="off" data-require-complete'
+        ' data-in-place="backup-key-continue">'
+    ) in html
     assert 'data-missing-hint="Paste the public_key value' in field(html, "public_key")
 
 
@@ -247,7 +255,8 @@ def test_backup_key_refusals_are_shown_at_their_field(context, name, message):
     assert (
         error_id in re.search(r'aria-describedby="([^"]*)"', control).group(1).split()
     )
-    assert "notice-error" not in html
+    # The review dialog's refusal area (empty and hidden) is no notice.
+    assert "notice-error" not in re.sub(r"<dialog.*?</dialog>", "", html, flags=re.S)
 
 
 def test_a_share_row_ticked_delete_greys_its_fields():

@@ -72,8 +72,8 @@ patterns = [
     ),
     # Past campaigns compared with the current one (#1018).
     _page("reports/comparison/", comparison_views.report, "campaign_comparison"),
-    # Its download form (#1018, slice 6): a POST answered with the export's
-    # status page.
+    # Its download form (#1018, slice 6): a POST answered with a redirect to
+    # the export's status address, which the page follows in place (#1778).
     _page(
         "reports/comparison/exports/",
         comparison_export_views.create,
@@ -135,6 +135,13 @@ patterns = [
         "reports/information/<uuid:item_id>/",
         information_views.detail,
         "information_item",
+    ),
+    # The passive status a request page's Contact details poll when the
+    # ParishSoft data was replaced while it was read (#1863).
+    _page(
+        "reports/information/contacts/status/",
+        information_views.contacts_status,
+        "information_contacts_status",
     ),
     # A request's Save (information_update) was retired, with no redirect
     # (#1685): decisions are made on the Additional information worklist,

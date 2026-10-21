@@ -306,13 +306,27 @@ def test_upload_rejects_non_images(auth_service, google, media):
     assert not BrandingAsset.objects.exists()
 
 
-def test_a_slot_no_family_page_shows_cannot_take_an_upload(auth_service, google, media):
+def test_a_slot_no_family_page_shows_cannot_take_an_upload(
+    auth_service, google, media, monkeypatch
+):
     """The census-only draft shows no Financial page, so its icon's Upload is
     unavailable, named by why, and the server refuses one at the field (#563).
-    Every other slot waits for a chosen image (the complete gate)."""
+    Every other slot waits for a chosen image (the complete gate). Inside
+    the campaign wizard the slots have no Upload (#1404 PR 4c), and the
+    Financial page icon's field is greyed with the same reason."""
+    from parishkit.stewardship.accounts import campaign_wizard
+
     store = auth_service.store
     _, path = draft(store)
     browser, _ = signed_in()
+    wizard = browser.get(path).content.decode()
+    assert wizard.count('<fieldset class="artwork-upload" disabled>') == 1
+    assert "data-require-complete" not in wizard
+    assert 'aria-describedby="id_financial_image_helptext artwork-hint-financial"' in (
+        wizard
+    )
+    # Outside the wizard (the stepper not shown) each slot has its Upload.
+    monkeypatch.setattr(campaign_wizard, "shown", lambda *_, **__: False)
     page = browser.get(path).content.decode()
     reason = "Families see no Financial page while Financial stewardship is off"
     assert (

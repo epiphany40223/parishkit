@@ -15,24 +15,44 @@ that again after building its answer. The leaders are read through the
 ``stewardship_leaders_without_user_v1`` definer (``leader_import``), so a
 posted address only chooses among the rows the server reads now; the Name,
 the Member DUID and the role are never taken from the form.
+
+When the leaders cannot be read, the section's notice polls the passive
+status ``user_leaders_status`` (#1863, ``web.part_status``), which never
+reads a leader, is never audited and never extends the sign-in; once it is
+ready, the Users page re-reads its own address once, passively, and that
+view is audited marked automatic.
 """
 
 from uuid import uuid4
 
 from django.db import DatabaseError
+from django.http import HttpResponse
 from django.shortcuts import render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_POST, require_safe
 
 from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.observability import debug_swallowed
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.part_status import (
+    Part,
+    current_generation,
+    is_ready,
+    parse_status,
+    part_status,
+)
 from parishkit.stewardship.web.refusals import UserFacingError, unexpected_fields
 from parishkit.stewardship.web.tables import paginate
 
-from .admin_editing import error_response, principal, sign_preview
+from .admin_editing import (
+    editable_configuration,
+    error_response,
+    principal,
+    sign_preview,
+)
 from .authentication import runtime
 from .leader_import import (
     LEADER_SORTING,
@@ -44,6 +64,7 @@ from .leader_import import (
 )
 from .policy import Capability
 from .request_patch import build_candidate
+from .sessions import passive_read
 from .user_changes import ENTRY_LIMIT, UserRefused, clean_email
 
 # The leaders table's query-string prefix, beside the users table's
@@ -53,6 +74,21 @@ PREFIX = "leaders_"
 # page of the table can show (250 rows, or All of a parish's leaders).
 CHOSEN_LIMIT = 2000
 SCOPES = {"selected", "all"}
+# The leaders section's notice when they could not be read (#1863): tried
+# again a minute on, then only once newer ParishSoft data is in use.
+LEADERS = Part(
+    name="leaders",
+    route="user_leaders_status",
+    region="leaders-table",
+    notice=_(
+        "The ParishSoft Ministry leaders could not be read just now, so none can "
+        "be imported. The users above are not affected. The leaders appear here "
+        "by themselves once they can be read."
+    ),
+    notice_id="leaders-unavailable",
+    notice_class="notice notice-error",
+    interval=60000,
+)
 
 
 def leaders_context(request, paging, carry):
@@ -68,6 +104,12 @@ def leaders_context(request, paging, carry):
     table above it stays usable (#952 review). It never shows a partial
     list. ``carry`` keeps the users table's own place in this table's links.
     An unknown sort is refused before anything is read.
+
+    The section then brings the leaders in by itself (#1863): after the
+    reader's own view its status is ready a minute on (``retry``); after
+    the page's automatic re-read it waits for a ParishSoft data generation
+    other than the one in use now, so a failure that lasts is not re-read
+    once a minute.
     """
     LEADER_SORTING.parse(paging, PREFIX)
     try:
@@ -76,7 +118,22 @@ def leaders_context(request, paging, carry):
         raise
     except DatabaseError:
         debug_swallowed("leaders without a user unavailable")
-        return {"leaders": None, "leaders_unavailable": True}
+        try:
+            shown = current_generation()
+        except DatabaseError:
+            # The database may be down: the first check that works is ready.
+            debug_swallowed("leaders status generation unavailable")
+            shown = 0
+        return {
+            "leaders": None,
+            "leaders_unavailable": True,
+            # A view the reader asked for (opening the page, or an in-place
+            # sort or page change) retries a minute on; only the page's
+            # automatic re-read waits for newer data.
+            "leaders_status": part_status(
+                LEADERS, shown=shown, retry=not passive_read(request)
+            ),
+        }
     table = paginate(
         table_rows(leaders),
         paging,
@@ -212,3 +269,35 @@ def user_leader_import(request):
         return response
     except ERRORS as error:
         return error_response(error)
+
+
+@require_safe
+def user_leaders_status(request):
+    """The leaders section's passive status, polled while they are unreadable.
+
+    Never reads a leader (the leaders definer audits every read): it says
+    only whether the page should re-read itself now, as ``web.part_status``
+    decides from ``shown`` and ``retry``. Administrators only, like the
+    section; never audited and never extends the sign-in (#1863).
+    """
+    from .user_views import ERRORS
+
+    try:
+        service = runtime()
+        principal(request, service, read_only=True, capability=Capability.MANAGE_USERS)
+        # The Users page refuses while no ordinary edit is possible (restore
+        # review, before setup); so does its status, so ready never leads
+        # the page's re-read to that refusal.
+        editable_configuration(service)
+        try:
+            shown, retry = parse_status(request.GET, retry=True)
+        except ValueError:
+            raise unexpected_fields(request.GET, allowed={"shown", "retry"}) from None
+        ready = is_ready(shown, retry)
+    except ERRORS as error:
+        return error_response(error)
+    html = render_to_string(
+        "stewardship/components/part-status.html",
+        {"part_status": part_status(LEADERS, shown=shown, retry=retry, ready=ready)},
+    )
+    return HttpResponse(html, headers={"Cache-Control": "no-store"})

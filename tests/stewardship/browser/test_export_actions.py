@@ -4,12 +4,11 @@ Each export is one row of small outlined "Export XLSX" … buttons below the
 page's table, quieter than the primary green buttons, wrapping at phone
 width without widening the page, in light and dark schemes. No row asks for
 a time zone except System logs' "Times in", which starts on the browser's
-zone. A slow queued export keeps its in-place progress: the clicked button
-is busy and the waiting note appears below the row, not between buttons.
+zone. How each export downloads in place, busy and waiting below its row, is
+test_export_in_place.py's (#1778).
 """
 
 import pytest
-from django.urls import reverse
 
 from .test_charts import assert_clean, watch
 from .timeline_components import ADMIN as TIMELINE
@@ -107,35 +106,3 @@ def test_only_system_logs_has_a_zone_choice(page, component_origin, path):
         "America/Los_Angeles (this browser)",
     ]
     assert form.locator("input[name=browser_timezone]").count() == 0
-
-
-def test_a_slow_export_waits_below_its_row(page, component_origin):
-    """The clicked button shows it is busy, the row waits with it, and the
-    "Still working" note appears after the row, not between its buttons.
-
-    The export's answer is held past the five seconds after which ui-v1.js
-    shows the note, then answered 204 No Content, which keeps the page in
-    place so its waiting state can be read.
-    """
-    page.goto(component_origin + "/financial-report")
-    held = []
-    page.route(
-        "**" + reverse("admin:financial_export"), lambda route: held.append(route)
-    )
-    row = page.get_by_role("group", name="Export complete results", exact=True)
-    csv = row.get_by_role("button", name="Export CSV")
-    # Clicked from the page, so the test does not wait on the held answer.
-    csv.evaluate("button => button.click()")
-    page.wait_for_timeout(6000)
-    assert len(held) == 1 and "format=csv" in held[0].request.post_data
-    held[0].fulfill(status=204)
-    assert "is-busy" in csv.get_attribute("class")
-    for name in ("Export XLSX", "Export PDF"):
-        other = row.get_by_role("button", name=name)
-        assert other.get_attribute("aria-disabled") == "true"
-    note = page.locator(".submit-wait")
-    visible(note)
-    assert note.evaluate(
-        "node => node.previousElementSibling.matches('.export-actions')"
-    )
-    assert row.locator(".submit-wait").count() == 0

@@ -11,6 +11,13 @@ refreshed in place, with a notice naming the request.
 the decisions. A request's own page shows its text, its Family's contact
 details and its history; decisions are made on the list. Every view is
 audited (``information_viewed``) without the search or any shown value.
+
+When the request page could not read its Contact details because the
+ParishSoft data was replaced while it was read, the section's notice polls
+the passive status ``contacts_status`` (#1863, ``web.part_status``), which
+is never audited and never extends the sign-in; once newer data is in use,
+the page re-reads its own address once, passively, and that view is audited
+marked automatic, as a report's re-read for newer figures is (#1620).
 """
 
 from uuid import uuid4
@@ -20,13 +27,14 @@ from django.db import DatabaseError, transaction
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.translation import gettext_lazy
 from django.views.decorators.http import require_GET, require_http_methods
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.models import PortalUser
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.accounts.sessions import authenticated_admin
+from parishkit.stewardship.accounts.sessions import authenticated_admin, passive_read
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
@@ -43,10 +51,23 @@ from parishkit.stewardship.web.contracts import (
     filters,
     validation_response,
 )
-from parishkit.stewardship.web.dates import UnknownZone
+from parishkit.stewardship.web.part_status import (
+    Part,
+    is_ready,
+    parse_status,
+    part_status,
+)
 from parishkit.stewardship.web.refusals import with_status_code
 from parishkit.stewardship.web.responses import campaign_response
-from parishkit.stewardship.web.review_worklist import REBOUND, read_decision, record
+from parishkit.stewardship.web.review_worklist import (
+    REBOUND,
+    RETIRED_DATES,
+    drop_retired_dates,
+    page_fields,
+    read_decision,
+    record,
+)
+from parishkit.stewardship.web.security import private_response
 from parishkit.stewardship.web.tables import paginate, table_parameters
 
 from .export_services import admit_campaign
@@ -69,6 +90,21 @@ from .information_worklist import (
 )
 from .read_admission import admit_report_read
 
+# The Contact details, when the ParishSoft data was replaced while the page
+# read them (#1863): the notice that stands in for them until newer data is
+# in use, then the page re-reads itself once.
+CONTACTS = Part(
+    name="information-contacts",
+    route="information_contacts_status",
+    region="information-item",
+    notice=gettext_lazy(
+        "The ParishSoft data was replaced while this page was read, so contact "
+        "details are unavailable just now. They appear here by themselves once "
+        "the newer ParishSoft data can be read."
+    ),
+    notice_id="information-contacts-unavailable",
+)
+
 
 def _principal(request, store, *, read_only=False):
     """Every list, request page and decision reloads the current Staff capability."""
@@ -80,11 +116,10 @@ def _principal(request, store, *, read_only=False):
     return principal
 
 
-def _error(campaign_id, *, item_id=None, status=400, bound=False, zone=False):
+def _error(campaign_id, *, item_id=None, status=400, bound=False):
     """No private form/exception values or database-dependent context processors.
 
-    ``bound`` marks a reused export form, whose 409 differs from a decision's;
-    ``zone`` marks dates sent without the browser's time zone (#558).
+    ``bound`` marks a reused export form, whose 409 differs from a decision's.
     """
     debug_swallowed("report request refused")
     response = HttpResponse(
@@ -95,7 +130,6 @@ def _error(campaign_id, *, item_id=None, status=400, bound=False, zone=False):
                 "item_id": item_id,
                 "status": status,
                 "bound": bound,
-                "zone": zone,
             },
         ),
         status=status,
@@ -105,15 +139,19 @@ def _error(campaign_id, *, item_id=None, status=400, bound=False, zone=False):
     if status == 503:
         response["Retry-After"] = "5"
     # The refusal log's codes for this page of its own (#1403).
-    return with_status_code(
-        response,
-        *(["form_reused"] if bound else []),
-        *(["zone_missing"] if zone else []),
-    )
+    return with_status_code(response, *(["form_reused"] if bound else []))
 
 
-def _audit(principal, campaign_id, outcome):
-    """Retain parish-owned access evidence, not private search or displayed values."""
+def _audit(principal, campaign_id, outcome, *, automatic=False):
+    """Retain parish-owned access evidence, not private search or displayed values.
+
+    ``automatic`` marks a request page's own re-read that brought in the
+    Contact details it could not read (#1863), as a report's automatic view
+    is marked (#1620); a view the reader asked for carries no such key.
+    """
+    context = {"outcome": outcome}
+    if automatic:
+        context["automatic"] = True
     # An audit append takes no row locks, so it need not join the
     # writers' work order; waiting there stalled report pages behind
     # every source promotion and installer.
@@ -128,7 +166,7 @@ def _audit(principal, campaign_id, outcome):
             subject_id=campaign_id,
             parish_id=system.active_configuration.parish.pk,
             campaign_id=campaign_id,
-            context={"outcome": outcome},
+            context=context,
         )
 
 
@@ -182,7 +220,10 @@ def _list_context(campaign_id, query, paging, principal):
     action = reverse("admin:information_queue")
     metadata, rows, counts = requests(campaign_id, query)
     table = paginate(
-        rows, paging, carry=list(query.form_values().items()), sorting=SORTING
+        rows,
+        paging,
+        carry=list(page_fields(query.form_values()).items()),
+        sorting=SORTING,
     )
     # Each shown Family name opens its Timeline (#1570): one read of the
     # page's Family record ids.
@@ -194,8 +235,8 @@ def _list_context(campaign_id, query, paging, principal):
         "worklist": worklist,
         "table": table,
         "query": query,
-        "query_fields": query.form_values(),
-        "export_fields": query.export_values(paging.get("sort", "")),
+        "query_fields": page_fields(query.form_values()),
+        "export_fields": page_fields(query.export_values(paging.get("sort", ""))),
         "mutable": mutable,
     }
 
@@ -218,6 +259,11 @@ def _item_context(campaign_id, item_id, history_page, principal, history_only):
             principal, result["metadata"]["source_id"], item["family_duid"]
         )
     )
+    if contacts and contacts["state"] == "unavailable":
+        # Brought in by themselves once newer data is in use (#1863).
+        contacts["status"] = part_status(
+            CONTACTS, shown=result["metadata"]["source_generation"]
+        )
     ids = {row.actor_id for row in history} | {row.followed_up_by_id for row in history}
     ids.add(item["followed_up_by_id"])
     labels = {
@@ -254,20 +300,37 @@ def _respond(request, campaign_id, *, item_id=None):
     """Guard every data query, template render and byte; audit response completion.
 
     The list reads its filters, table choices and any decision from its own
-    POST body: a decision is recorded first, in its own work transaction, so
-    the page that answers shows its result. A request someone changed first
+    POST body, or a Stage alone from a GET link (``?stage=``): a decision
+    is recorded first, in its own work transaction, so the page that
+    answers shows its result. A request someone changed first
     is the page's notice, not an error; a page sent again with other
     choices is a 409 that asks for a reload.
     """
     finish, handed_off = None, False
     try:
         service = runtime()
-        principal = _principal(request, service.store)
+        # A request page's own re-read once its Contact details can be read
+        # (#1863) is passive: it never extends the sign-in, though it is
+        # audited, and marked automatic. The header can only add that mark:
+        # every view is audited whatever the request sends. This page's
+        # admission has no activity-only form, so the read-only check is
+        # how it leaves the sign-in alone (Users uses ``passive``).
+        automatic = item_id is not None and passive_read(request)
+        principal = _principal(request, service.store, read_only=automatic)
         notice, history_page, history_only, decision = None, 1, False, None
         if item_id is None:
-            if request.GET:
+            # A link may carry a Stage alone, a My review work card's
+            # ``?stage=`` (#1818); WorklistQuery.parse checks its value.
+            # Search and table choices stay private POST state. The retired
+            # submitted dates (#1888) are dropped unread, never refused.
+            if request.GET and (
+                request.method != "GET"
+                or not set(request.GET) - RETIRED_DATES <= {"stage"}
+            ):
                 raise ValueError("Search and filters require a POST body.")
-            parameters = request.POST.copy()
+            parameters = drop_retired_dates(
+                (request.GET if request.GET else request.POST).copy()
+            )
             parameters.pop("csrfmiddlewaretoken", None)
             decision = read_decision(parameters)
             paging = paging_values(parameters)
@@ -286,10 +349,14 @@ def _respond(request, campaign_id, *, item_id=None):
             history_page = parse_page(values.get("page", "1"))
             # An in-place history page swaps only the history (its links are
             # data-in-place-only); a reload of that address reads it all.
+            # The automatic re-read redraws the whole request, its Contact
+            # details included, whichever history page the address names.
             history_only = (
-                "page" in values and request.headers.get("X-Requested-With") == "fetch"
+                not automatic
+                and "page" in values
+                and request.headers.get("X-Requested-With") == "fetch"
             )
-        _audit(principal, campaign_id, Outcome.STARTED)
+        _audit(principal, campaign_id, Outcome.STARTED, automatic=automatic)
         finalized = False
 
         def finish(completed):
@@ -303,6 +370,7 @@ def _respond(request, campaign_id, *, item_id=None):
                     principal,
                     campaign_id,
                     Outcome.SUCCEEDED if completed else Outcome.FAILED,
+                    automatic=automatic,
                 )
             except (DatabaseError, StorageInvariantError) as error:
                 emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
@@ -354,8 +422,6 @@ def _respond(request, campaign_id, *, item_id=None):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):
         return _error(campaign_id, item_id=item_id, status=503)
-    except UnknownZone:
-        return _error(campaign_id, item_id=item_id, zone=True)
     except ValueError:
         # A malformed form or filter, or a decision the request does not
         # take (a reopening with no note): a 400, nothing recorded.
@@ -375,3 +441,33 @@ def queue(request, campaign_id):
 def detail(request, campaign_id, item_id):
     """One request of this campaign: its text, contact details and history."""
     return _respond(request, campaign_id, item_id=item_id)
+
+
+@require_GET
+def contacts_status(request, campaign_id):
+    """The Contact details' passive status a request page polls (#1863).
+
+    Says only whether ParishSoft data other than the page's own (``shown``)
+    is now in use, so a re-read would read the details from it; never a
+    contact value. It admits the page's readers, is never audited and never
+    extends the sign-in; its answer is the notice's region, settled with the
+    follow-up link once ready.
+    """
+    try:
+        service = runtime()
+        _principal(request, service.store, read_only=True)
+        shown, _retry = parse_status(request.GET)
+        admit_report_read(campaign_id)
+        ready = is_ready(shown, False)
+    except (PermissionError, ObjectDoesNotExist):
+        return denial()
+    except (*SAFE_FAILURES, StorageInvariantError):
+        return _error(campaign_id, status=503)
+    except ValueError:
+        # A poll, not a form: a short private answer, as the figures status's.
+        return private_response("Invalid status options.\n", status=400)
+    html = render_to_string(
+        "stewardship/components/part-status.html",
+        {"part_status": part_status(CONTACTS, shown=shown, ready=ready)},
+    )
+    return HttpResponse(html, headers={"Cache-Control": "no-store"})

@@ -517,6 +517,10 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
   .stat-tiles:has(> [data-stat]:nth-child(5):last-child) { grid-template-columns: repeat(auto-fit, minmax(max(clamp(12.5rem, (65.5rem - 100%) * 100000, (100% - 1.5rem) / 3), min(100%, (39rem - 100%) * 100000)), 1fr)); }
 }
 .stat-detail { color: var(--muted); font-size: .875rem; }
+/* Mail queue (#1562): the other mode's line keeps one line's height while empty, so the
+   table below never moves when it appears (no layout shift); a kind's zero counts are muted. */
+.mail-queue-other { min-height: 1.6em; min-height: 1lh; margin-block: .5rem 0; }
+.mail-queue-zero { color: var(--muted); }
 /* An unknown value's "—" carries its reason in a toggletip beside it (#1540), its "i" at the
    size it has elsewhere. The 1.75rem button is centred in the value's 2.1rem line from its top,
    so it never makes the line taller: a value that becomes unknown in place moves nothing. */
@@ -598,6 +602,25 @@ input[aria-invalid=true], textarea[aria-invalid=true], select[aria-invalid=true]
 /* A choice group (checkboxes or radios) with an unanswered required choice;
    only groups marked .choice-group, never a whole Member section or panel. */
 fieldset.choice-group:has(> label > input:is([type=checkbox], [type=radio])[aria-invalid=true]) { border: 2px solid var(--error-border); }
+/* The Mail message page's resolution question (#1563). Every answer of one
+   question shares one grid cell (.choice-slot), so the cell is as tall as
+   its tallest answer before anything is chosen, and choosing or changing an
+   answer never moves what follows (no layout shift, #736). An answer not
+   chosen keeps its space but is invisible (ui-v1.js also makes it inert);
+   each answer's button sits at the bottom of the cell, a nested question's
+   cell filling the rest of its answer. The note starts two lines tall and
+   grows with what is typed, where the browser can. */
+.choice-slot { display: grid; }
+.choice-slot > [data-choice-panel] { grid-area: 1 / 1; display: flex; flex-direction: column; min-width: 0; margin: 0; }
+.choice-slot > [data-choice-panel] > .choice-slot { flex: 1; }
+[data-choice-panel][data-choice-hidden] { visibility: hidden; }
+.choice-answer > .choice-submit { margin-top: auto; padding-top: .5rem; }
+.choice-answer textarea { field-sizing: content; min-height: 3lh; max-height: 12lh; }
+/* The questions are compact, so the reserved slot stays short: the
+   answers sit side by side (wrapping on a phone) and a question inside the
+   outcome panel draws no card of its own. */
+.outcome-panel fieldset.choice-question { border: 0; background: none; padding: 0; margin-block: .75rem; }
+.choice-question > .choice-options { display: flex; flex-wrap: wrap; gap: .25rem 1.5rem; }
 /* The Ministry packet lists every Ministry in the reader's scope (#533), which
    for an Administrator can be many, so the boxes flow into columns. */
 .packet-choices { columns: 18rem auto; column-gap: 1.5rem; }
@@ -746,6 +769,13 @@ textarea { max-width: 56rem; }
 @media (min-width: 48rem) {
   :is(form, fieldset) > div:has(> input:is([type=date], [type=time], [type=datetime-local], [type=month], [type=number], [data-time-entry=time])):not(:has(> :is(select, textarea))):not([hidden]) { display: inline-flex !important; flex-direction: column; vertical-align: top; min-width: 12rem; margin-inline-end: 1.5rem; }
   :is(form, fieldset) > div:has(> input:is([type=date], [type=time], [type=datetime-local], [type=month], [type=number], [data-time-entry=time])) > :is(input, .helptext, .time-reading) { max-width: 14rem; }
+  /* A short field's reserved answer line (.field-error-line, drawn before
+     the control) sits under its control, not above it, so every short field
+     in a row (a date beside a time, which keeps its reading line below) puts
+     its box at the same height under its label (#1851). The help
+     follows it, as it follows a time's reading. */
+  :is(form, fieldset) > div:has(> input:is([type=date], [type=time], [type=datetime-local], [type=month], [type=number], [data-time-entry=time])):not(:has(> :is(select, textarea))):not([hidden]) > .field-error-line { order: 1; }
+  :is(form, fieldset) > div:has(> input:is([type=date], [type=time], [type=datetime-local], [type=month], [type=number], [data-time-entry=time])):not(:has(> :is(select, textarea))):not([hidden]) > .helptext { order: 2; }
   /* A date checked as it is typed whose answer line has no Review beside
      it (a live campaign's end date on Campaign settings, #1119) takes the
      form's whole width, so its reserved line holds the longest answer in
@@ -839,13 +869,25 @@ button.is-busy[aria-disabled=true], .button.is-busy[aria-disabled=true], input[t
 #table-filters .filter-actions[data-filter-place=row] { display: flex; width: max-content; flex-basis: 100%; grid-column: 1 / -1; justify-self: start; }
 .filter-clear { position: relative; display: inline-block; }
 button[data-clear-unavailable][aria-disabled=true], button[data-clear-unavailable][aria-disabled=true]:not(:disabled):hover { cursor: not-allowed; opacity: .55; background: var(--paper); color: var(--accent); box-shadow: none; }
-button.is-busy::after, .button.is-busy::after { content: ""; display: inline-block; width: .85em; height: .85em; margin-inline-start: .5em; vertical-align: -.1em; border: 2px solid currentColor; border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
+/* The working spinner (ui-conventions "Working spinner", #1847): the ONE
+   spinning icon of the portal, a ring with a quarter open. It is drawn
+   by components/spinner.html (.spinner) or, on a button whose request is
+   in flight, by the button's ::after (is-busy is a class ui-v1.js
+   toggles, so the ring is a pseudo-element there). Both share this one
+   rule and keyframes; test_spinner_guard.py fails on any other spinning
+   rule. A context changes only its size, colour (--spinner-ink, the
+   accent by default) or placement, in its own rule. Under reduced motion
+   it stands still (the rule at the end of this file). */
+.spinner, :is(button, .button).is-busy::after { display: inline-block; width: 1em; height: 1em; vertical-align: -.15em; border: 2px solid var(--spinner-ink, var(--accent)); border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
 @keyframes busy-spin { to { transform: rotate(360deg); } }
+/* A busy button: a slightly smaller ring after its label, in the
+   label's own colour. */
+:is(button, .button).is-busy::after { content: ""; --spinner-ink: currentColor; width: .85em; height: .85em; margin-inline-start: .5em; vertical-align: -.1em; }
 /* Live status regions (live-status-v1.js, live-running.html): a still-running
    indicator that says so in words, and prominent finished/failed outcomes. */
 .live-running { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .5rem; margin: 0 0 .75rem; }
 .live-running .help { flex-basis: 100%; margin: 0; }
-.live-spinner { display: inline-block; width: 1em; height: 1em; align-self: center; border: 2px solid var(--accent); border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
+.live-running > .spinner { align-self: center; }
 .live-done { color: var(--accent-strong); }
 .live-failed { color: var(--error-ink); }
 .live-status-problem { margin-top: .5rem; }
@@ -1096,6 +1138,21 @@ td > :last-child { margin-bottom: 0; }
 .calendar-month ul { list-style: none; margin: 0; padding: 0; }
 .calendar-month li { margin-block: .15rem; }
 .calendar-month li.schedule-past { color: var(--muted); }
+/* A movable send's Move… (#1521): an icon button after its link, at least
+   24px square (WCAG 2.2 SC 2.5.8), drawn on every movable send from the
+   start so nothing moves. While a send is dragged it is faded and the day
+   under the pointer is outlined, never resized, so nothing moves either. */
+.calendar-month li.calendar-movable { display: flex; align-items: flex-start; justify-content: space-between; gap: .25rem; }
+.calendar-move { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: .25rem; background: transparent; color: var(--accent); cursor: pointer; }
+.calendar-move:hover { background: var(--accent-soft); color: var(--accent-strong); }
+.calendar-move .action-icon { width: .9rem; height: .9rem; }
+.calendar-month li.calendar-dragging { opacity: .55; }
+.calendar-month td.calendar-drop-target { outline: 2px dashed var(--accent); outline-offset: -3px; }
+.calendar-drag-active, .calendar-drag-active * { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+/* The Move dialog's refusal line, after its buttons (the dialog is anchored
+   at the top), so a refusal of any length moves no control; one line is
+   kept so a short one does not resize the dialog. */
+.calendar-move-refusal { min-height: 1lh; margin: .5rem 0 0; color: var(--error-ink); font-weight: 600; }
 .calendar-month tbody tr:hover { background: none; }
 .schedule-editing { color: var(--muted); font-weight: 400; }
 /* The note keeps its space while idle, so showing it never re-wraps the cell
@@ -1141,6 +1198,8 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 .export-live > :first-child { margin-top: 0; }
 .export-state { font-size: 1.15rem; font-weight: 650; }
 .export-state-ready { color: var(--accent-strong); }
+/* A pending export's working spinner, before its words. */
+.export-state > .spinner { margin-inline-end: .35em; }
 /* A ready export's "until" line (#1398): its two sentences share one grid
    cell, so the line is as tall as the longer one from the start and the
    switch when the download window ends moves nothing (#736). */
@@ -1150,9 +1209,10 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 /* Stage boxes (components/stage-boxes.html, UX conventions "Stage boxes"):
    one box per major stage of a long piece of work, left to right, wrapping
    on a phone with no sideways scroll. The status word always carries the
-   state; the mark (a bullet, a pointer, a check, a cross or a pause) and
-   the colour only reinforce it. Loading parish data and Finishing setup
-   (setup wizard) and Load ParishSoft data (Campaign setup) draw it. */
+   state; the mark (a bullet, the working spinner, a check, a cross or a
+   pause) and the colour only reinforce it. Loading parish data and
+   Finishing setup (setup wizard) and Load ParishSoft data (Campaign setup)
+   draw it. */
 .stage-boxes { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); }
 /* The status sits on its own line under the stage's name, so a box keeps
    its height when its status word changes (Not started, then Done). */
@@ -1173,7 +1233,12 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
    box keeps its size as its state changes (no layout shift). */
 .stage-boxes > .stage-done::before { content: "\2713"; color: var(--accent); }
 .stage-boxes > .stage-done { background: var(--accent-soft); border-color: var(--accent-line); }
-.stage-boxes > .stage-active::before { content: "\25B8"; color: var(--warning-ink); }
+/* In progress shows the working spinner (components/spinner.html) in the
+   mark's place: absolutely positioned in the same reserved slot as every
+   state's mark (left .55rem, 1rem wide, centred on the label's first
+   line), so its arrival or departure moves nothing (#1847). */
+.stage-boxes > .stage-active::before { content: none; }
+.stage-boxes > li > .spinner { --spinner-ink: var(--warning-ink); position: absolute; left: calc(.55rem + (1rem - 1em) / 2); top: calc(.5rem + (1.6em - 1em) / 2); top: calc(.5rem + (1lh - 1em) / 2); }
 .stage-boxes > .stage-active { background: var(--warning-bg); border-color: var(--warning-border); }
 .stage-boxes > .stage-waiting .stage-label { color: var(--muted); }
 .stage-boxes > .stage-operator::before { content: "\23F8"; color: var(--ink); }
@@ -1211,7 +1276,6 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 .campaign-load-ghost { visibility: hidden; }
 .campaign-load-ghost::before { content: attr(data-label); }
 .button-large { font-size: 1.1rem; padding: .8rem 1.75rem; }
-.spinner { display: inline-block; width: 1em; height: 1em; margin-inline-end: .35em; vertical-align: -.15em; border: 2px solid var(--accent); border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
 /* Export actions (#1679, components/export-actions.html): one row of small
    outlined buttons, one per format, smaller and quieter than the primary
    green buttons, wrapping on a phone instead of widening the page. They are
@@ -1229,8 +1293,11 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
    may shrink below that text, so a phone page never scrolls sideways. */
 .export-zone { min-width: 0; max-width: 100%; }
 .export-zone select { display: inline-block; flex: 0 1 auto; width: auto; min-width: 0; max-width: 100%; min-height: 2.25rem; padding-block: .25rem; }
-/* A slow export's waiting note (ui-v1.js) sits below the row, never in it. */
-.export-actions + .submit-wait { margin-top: 0; }
+/* The row's reserved status line (#1778): a slow export's waiting note or a
+   refusal, said in place under the buttons (ui-v1.js). It keeps two lines'
+   height while empty, three on a phone (.reserve-lines-wrap), and ui-v1.js
+   says at most two sentences there, so its text never moves the page. */
+.export-status { margin-block: 0 .25rem; }
 /* A worklist's always-open Filters box (Census changes, #1682): the open
    disclosure's box, its title a heading the size and place of a disclosure's
    summary line, so the page reads as the other reports do with their panels
@@ -1314,6 +1381,10 @@ section.filter-panel > h2 { margin: 0; padding-block: .6rem; font-size: 1rem; li
    6.5rem, so the button wrapped and pushed that field's control below the
    others'. */
 .filter-bar.mail-filters > div:not(.short):has(> .label-row) { min-width: 7.5rem; }
+/* Sent mail's hint row (the gate's hint and a refused Recipient's message,
+   #1562) keeps its own full-width line under the fields, as the plain hint
+   paragraph did, rather than taking a field's share of the row. */
+.filter-bar.mail-filters > .hint-row-messages { flex: 0 1 100%; }
 /* From and Through are wide enough for the empty "mm/dd/yyyy" placeholder
    beside the calendar button, with Linux's wider fonts too. They drop the
    desktop short-field rule's end margin: the bar's gap spaces them, and
@@ -1449,6 +1520,8 @@ details.technical-details dd { overflow-wrap: anywhere; }
 [data-visual-content][aria-busy="true"] .content-editor { opacity: .55; }
 /* An HTML source error is marked at the visual editor too, as a field's (#563). */
 .content-editor[aria-invalid="true"] { border: 2px solid var(--error-border); }
+/* Greyed in place, as a disabled textarea is, while "Remove this selected content" is ticked (#563, #750). */
+.content-editor[aria-disabled="true"] { background: var(--paper-soft); color: var(--muted); cursor: not-allowed; }
 .content-sample, pre { overflow-wrap: anywhere; white-space: pre-wrap; }
 .light-card { background: var(--paper); color: var(--ink); }
 .content-sample { padding: 1rem; border: 1px dashed var(--control-border); border-radius: var(--radius-small); background: var(--paper); }
@@ -1528,6 +1601,11 @@ fieldset.artwork-upload { border: 0; border-radius: 0; background: none; padding
    phone) grows the line rather than being cut short. */
 .artwork-slot .review-outcome { white-space: normal; min-height: 2lh; }
 @media (max-width: 40rem) { .artwork-slot .review-outcome { min-height: 3lh; } }
+/* Backup encryption key's status line also says why a code was refused
+   (#750), a sentence or two. It ends the page's content, so it wraps,
+   whole, instead of being cut short: growing moves nothing but the
+   footer. */
+#backup-key-outcome { white-space: normal; }
 .family-summary .family-name { font-size: 1.2rem; font-weight: 650; }
 .family-nav { position: sticky; bottom: 0; z-index: 1; background: var(--paper-soft, var(--paper)); padding-block: .75rem max(.75rem, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); margin-top: 1.5rem; }
 .family-nav > button { margin-block: 0; }
@@ -1989,14 +2067,15 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
    would a Campaign images slot's file field, moving every slot below it
    (#1410; its scope is in :where(), so the list keeps its specificity),
    and so would a report filter's range ends, refused in place (#1332),
-   and a System logs filter field (#1332).
+   a System logs filter field (#1332), and the Campaign calendar Move
+   dialog's date, whose buttons sit under it (#1521).
    A select is held at its minimum height and keeps the global 2px border. */
-:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
-:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(.calendar-move-dialog) input, :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
+:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(.calendar-move-dialog) input, :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 /* Forced colors draw no shadow: an outline inside the border marks it,
    except under keyboard focus, where the global 3px focus ring shows. */
 @media (forced-colors: active) {
-  :is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
+  :is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(.calendar-move-dialog) input, :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
 }
 .schedule-row-messages { padding-top: .5rem; min-height: calc(1lh + .5rem); }
 .schedule-row-messages > * { margin: 0; }

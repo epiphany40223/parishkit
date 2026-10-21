@@ -23,8 +23,9 @@ def test_staff_panels_link_each_stage_and_fit(
     page, component_origin, axe_source, width
 ):
     """One panel per stream in order, each stage a link card read as its
-    stage, count and what is counted; no sideways scroll on a phone, and the
-    whole page fits a laptop window."""
+    stage, count and what is counted, linking its page at that Stage
+    (#1818); no sideways scroll on a phone, and the whole page fits a
+    laptop window."""
     page.set_viewport_size({"width": width, "height": 768})
     page.goto(component_origin + PATH)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
@@ -43,11 +44,16 @@ def test_staff_panels_link_each_stage_and_fit(
     census = page.get_by_role("region", name="Census changes")
     expect(census.get_by_role("link")).to_have_count(3)
     link = census.get_by_role("link", name="To review 1,234 changes")
-    expect(link).to_have_attribute("href", "/admin/reports/census/")
+    expect(link).to_have_attribute("href", "/admin/reports/census/?stage=to_review")
+    expect(census.get_by_role("link", name="Conflict 2 changes")).to_have_attribute(
+        "href", "/admin/reports/census/?stage=conflict"
+    )
     # Ready to update is the Administrator's; Staff do not see it.
     expect(census.get_by_text("Ready to update")).to_have_count(0)
     ministry = page.get_by_role("region", name="Ministry requests")
-    expect(ministry.get_by_role("link", name="To review 8 requests")).to_be_visible()
+    expect(ministry.get_by_role("link", name="To review 8 requests")).to_have_attribute(
+        "href", "/admin/reports/ministries/?stage=to_review"
+    )
     expect(
         ministry.get_by_role("link", name="To enter by hand 3 requests")
     ).to_have_attribute("href", "/admin/reports/ministries/?stage=to_enter_by_hand")
@@ -56,7 +62,13 @@ def test_staff_panels_link_each_stage_and_fit(
     expect(financial.get_by_role("link")).to_have_count(0)
     expect(financial).to_contain_text("does not include Financial stewardship")
     information = page.get_by_role("region", name="Additional information")
-    expect(information.get_by_role("link", name="To handle 1 items")).to_be_visible()
+    expect(information.get_by_role("link", name="To handle 1 items")).to_have_attribute(
+        "href", "/admin/reports/information/?stage=to_handle"
+    )
+    # Cannot participate has only To review and links its plain page.
+    expect(
+        page.get_by_role("region", name="Cannot participate").get_by_role("link")
+    ).to_have_attribute("href", "/admin/reports/limitations/")
     if width == 1366:
         # An overview page fits a laptop window without scrolling.
         assert page.evaluate(

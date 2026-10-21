@@ -1540,6 +1540,20 @@
     if (loose) fresh.prepend(loose);
     return loose || null;
   };
+  // A successful swap can remove the fields an earlier refusal's summary
+  // (outside every region) links to: Backup encryption key's Start over
+  // after a wrong code (#750). Such an item names nothing any more, so it
+  // goes, and the summary with it once it lists nothing; a summary item
+  // whose field is still shown stays until that field is edited.
+  const dropOrphanedSummaries = () => {
+    document.querySelectorAll("[data-error-summary]").forEach((summary) => {
+      if (summary.closest(REGIONS)) return;
+      summary.querySelectorAll('li a[href^="#"]').forEach((link) => {
+        if (!document.getElementById(link.hash.slice(1))) link.closest("li")?.remove();
+      });
+      if (!summary.querySelector("li")) summary.remove();
+    });
+  };
   // Show an answer as the whole page, as a native submission would have shown
   // it. document.open keeps this window: it erases the old page's event
   // listeners but not its timers, which would keep running beside the new
@@ -1952,6 +1966,7 @@
     } finally {
       swappingFor = null;
     }
+    if (!refused) dropOrphanedSummaries();
     if (!anywhere) syncControls(parsed);
     // Clear filters (#1651) asked the server for the unfiltered view, so the
     // form takes that answer's values, as after a cross-link that sets them.
@@ -2863,11 +2878,15 @@
     });
     return new Set(keys.map((key) => key.replace(/#\d+$/, "")));
   };
+  // Campaign images' slot upload forms in the campaign wizard
+  // (data-wizard-upload) whose enabled file field holds a chosen image.
+  const chosenUploads = () => [...document.querySelectorAll("form[data-wizard-upload]")]
+    .filter((upload) => [...upload.querySelectorAll('input[type="file"]')]
+      .some((node) => !node.matches(":disabled") && node.files?.length > 0));
   // A Campaign setup step's Continue (#1404, campaign-step-actions.html)
   // records the step kept as is, so it waits while the page holds a change:
-  // a change-gated form that differs from its saved values, or an upload
-  // form (Campaign images) with a file chosen but not uploaded yet. The
-  // page's own Review stays the way on. Its hint after the row keeps its
+  // a change-gated form that differs from its saved values. The page's own
+  // Review stays the way on. Its hint after the row keeps its
   // line (data-idle hides it with visibility), and names the button only
   // while it is shown.
   // On a step that saves directly (Campaign settings, Share options, #1404
@@ -2877,13 +2896,16 @@
   // again. The one not offered is data-step-inactive (hidden with
   // visibility, so the cell keeps its width) and inert. Save and continue
   // is described by the form's complete hint, as the page's Save was.
+  // On Campaign images (data-direct-uploads, #1404 PR 4c) the change is a
+  // chosen image in any slot's upload form (chosenUploads, below).
   const gateStepContinue = () => {
     const form = document.querySelector("form[data-campaign-continue]");
     if (!form) return;
     const save = document.querySelector("[data-campaign-save]");
     const direct = save?.form;
     if (direct?.matches("[data-direct-save]")) {
-      const changed = direct.hasAttribute("data-holds-change");
+      const changed = direct.hasAttribute("data-direct-uploads")
+        ? chosenUploads().length > 0 : direct.hasAttribute("data-holds-change");
       form.toggleAttribute("data-step-inactive", changed);
       form.inert = changed;
       save.toggleAttribute("data-step-inactive", !changed);
@@ -2892,9 +2914,7 @@
       if (hint) save.setAttribute("aria-describedby", hint.id);
       return;
     }
-    const held = Boolean(document.querySelector("form[data-require-change][data-holds-change]"))
-      || [...document.querySelectorAll('form input[type="file"]')]
-        .some((node) => !node.matches(":disabled") && node.files?.length > 0);
+    const held = Boolean(document.querySelector("form[data-require-change][data-holds-change]"));
     const hint = document.getElementById("campaign-continue-hint");
     hint?.toggleAttribute("data-idle", !held);
     form.querySelectorAll("button[type=submit]").forEach((node) => {
@@ -3034,7 +3054,7 @@
   const submitControls = (form) => [...form.elements].filter((node) =>
     (node instanceof HTMLButtonElement || node instanceof HTMLInputElement)
     && node.type === "submit");
-  // Forms marked data-submit-waits (export queueing) can legitimately wait
+  // Forms marked data-submit-waits (long server steps) can legitimately wait
   // on the server for a minute or two, e.g. behind a ParishSoft refresh's
   // final step. They stay busy much longer and say so visibly, instead of
   // silently re-enabling after ten seconds, which looked like nothing happened.
@@ -3061,9 +3081,9 @@
       note = document.createElement("p");
       note.className = "help submit-wait";
       note.setAttribute("role", "status");
-      // An export's buttons share one row (export-actions.html, #1679), so
-      // the note goes below the row rather than between two buttons.
-      (submitter?.closest(".export-actions") || submitter || form).insertAdjacentElement("afterend", note);
+      // An export row's submit never reaches here: exports download in
+      // place (below, #1778), with their note in the row's own status line.
+      (submitter || form).insertAdjacentElement("afterend", note);
       waitNotes.set(form, note);
     }
     note.textContent = text;
@@ -3109,6 +3129,327 @@
       if (window.crypto?.randomUUID) input.value = window.crypto.randomUUID();
     });
   });
+
+  // Every Admin export downloads in place (#1778; ui-conventions "Downloads
+  // happen in place"): a submit from an export row (.export-actions) or a
+  // form[data-export-in-place] (the campaign archive) is posted with fetch,
+  // and the page never leaves. The answer is one of:
+  // - the file itself (an in-memory export such as Limitations), saved at
+  //   once;
+  // - a redirect to the export's status address (a queued export), which is
+  //   then read passively at the live-status pace (live-status-v1.js) until
+  //   its [data-export-state] says ready; its Download form is then posted
+  //   the same way and the file saved;
+  // - a refusal, said in the row's reserved status line
+  //   ([data-export-status]), in the server's own words where it gives some.
+  // The clicked button is busy and the form's other buttons wait until the
+  // file arrives or the export is refused; after five seconds the line says
+  // the export is still being worked on (a queued export's own status
+  // sentence, such as why it has not started, #340). The server is
+  // unchanged: freezing, auditing, limits, windows and one-use download
+  // grants are its own.
+  const EXPORT_PACE = [2000, 2000, 3000, 4000, 6000, 8000, 10000];
+  // A queued export is usually ready in seconds. Past this the page stops
+  // watching, so a stuck export never holds the buttons for good.
+  const EXPORT_GIVE_UP_MS = 30 * 60 * 1000;
+  // How long one request may take before it counts as unanswered: the
+  // start may wait behind a ParishSoft refresh's last step (up to two
+  // minutes), a status read is a quick passive page, and a download carries
+  // the file.
+  const EXPORT_START_MS = 180000;
+  const EXPORT_READ_MS = 30000;
+  const EXPORT_DOWNLOAD_MS = 120000;
+  // A ready file's Download answered busy (503) is posted again at the pace
+  // this many times; trying the button again would start a new export.
+  const EXPORT_DOWNLOAD_TRIES = 5;
+  const EXPORT_TEXT = {
+    waiting: "Still working… If a ParishSoft refresh is finishing, this can take up to two minutes. Keep this page open.",
+    failed: "The file could not be created. Try again; if it fails again, check System logs or ask your system administrator.",
+    gone: "This export ended before it was downloaded. Try again.",
+    cancelled: "This export was cancelled. Try again.",
+    signedOut: "Couldn't check on the file: your sign-in may have ended. Reload the page or sign in again.",
+    slow: "The file is taking longer than usual. Try again later; if it keeps happening, ask your system administrator.",
+    noAnswer: "No response from the server yet. Your export may still have been started; try again in a few minutes.",
+    unreachable: "The server could not be reached. Check your connection, then try again.",
+    empty: "No file came back. Reload the page, then try again.",
+  };
+  // The running exports, keyed by their form's id (the form itself when it
+  // has none), each with the clicked button's {name, value}. An in-place
+  // redraw may bring in a fresh copy of a running export's form (Campaign
+  // comparison's Compare on day) or of its buttons (Ministry requests'
+  // synced row), which must show the export busy and must not start a
+  // second one beside it.
+  const runningExports = new Map();
+  const exportKey = (form) => form.id || form;
+  // fetch() that gives up after ``ms`` (an AbortError, as a lost answer).
+  const fetchWithin = (url, init, ms) => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), ms);
+    return fetch(url, {...init, credentials: "same-origin", signal: controller.signal})
+      .finally(() => window.clearTimeout(timer));
+  };
+  // The file name a download answer gives (RFC 6266's filename* first, as
+  // web/exports.py writes both), or a plain fallback.
+  const downloadName = (header) => {
+    const value = header || "";
+    const encoded = /filename\*=UTF-8''([^;]+)/i.exec(value);
+    if (encoded) {
+      try { return decodeURIComponent(encoded[1]); } catch { /* fall through */ }
+    }
+    return /filename="([^"]+)"/i.exec(value)?.[1] || "export";
+  };
+  // Whether an answer is the file itself (web/exports.download_headers).
+  const isDownload = (response) => response.ok
+    && /^\s*attachment\b/i.test(response.headers.get("Content-Disposition") || "");
+  // Whether an unanswered or failed read may be tried again: no answer, a
+  // server or proxy failure, or too many requests. Any other refusal is
+  // final.
+  const transient = (response) => !response || response.status >= 500 || response.status === 429;
+  // Save a download answer's body through a blob link with the server's
+  // file name; the link is never part of the page.
+  const saveDownload = async (response) => {
+    const name = downloadName(response.headers.get("Content-Disposition"));
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    link.hidden = true;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    // Long enough for the browser to have taken the file.
+    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+  };
+  // At most the first two sentences of ``text``: an error page's notice is
+  // written for a whole page, and the row's line keeps room for two lines.
+  const twoSentences = (text) => squeeze(text).split(/(?<=[.!?])\s+/).slice(0, 2).join(" ");
+  // The sentence a refusal gives: a JSON refusal's message; a plain-text
+  // answer's text; for the page drawn again (the campaign archive's 409),
+  // the reason its copy of ``form`` names on a button; for an error page,
+  // its notice's first paragraph; else the status's default.
+  const exportRefusal = (response, text, form) => {
+    const status = response.status;
+    const type = response.headers.get("Content-Type") || "";
+    try {
+      if (JSON.parse(text)?.refusal) return refusalText(status, text);
+    } catch { /* not JSON: a page or plain text */ }
+    if (/^text\/plain\b/i.test(type)) return twoSentences(text) || refusalText(status, "");
+    const parsed = new DOMParser().parseFromString(text || "", "text/html");
+    const same = form?.id ? parsed.getElementById(form.id) : null;
+    if (same) {
+      const reason = [...same.querySelectorAll("button[aria-describedby]")]
+        .flatMap((node) => node.getAttribute("aria-describedby").split(/\s+/))
+        .map((id) => squeeze(parsed.getElementById(id)?.textContent)).find(Boolean);
+      return reason || refusalText(status, "");
+    }
+    const node = parsed.querySelector("main [role=alert], main [role=status], main .notice-error");
+    const sentence = node && (node.matches("p") ? node : node.querySelector("p") || node);
+    return twoSentences(sentence?.textContent) || refusalText(status, "");
+  };
+  // The form an export runs for, as the page has it now: an in-place
+  // redraw (a Compare-on-day change, a refreshed table) may have replaced
+  // it with a fresh copy of the same id.
+  const liveForm = (form) => (form.isConnected || !form.id ? form
+    : document.getElementById(form.id) || form);
+  // Say ``text`` in the export row's reserved line, in the error colour for
+  // a refusal. An unchanged sentence is left alone, so a screen reader does
+  // not hear it again at every status read.
+  const sayExport = (form, text, error = false) => {
+    const line = liveForm(form).querySelector("[data-export-status]");
+    if (!line) return;
+    if (line.textContent !== text) line.textContent = text;
+    line.classList.toggle("error", Boolean(text) && error);
+  };
+  // A one-time request key is spent by each start, so the next click is a
+  // new export (a reused key would be refused as an already-bound form).
+  const renewRequestKey = (form) => {
+    const input = liveForm(form).querySelector('input[type="hidden"][name="request_key"]');
+    if (input && window.crypto?.randomUUID) input.value = window.crypto.randomUUID();
+  };
+  // The status page's own sentence for the row's line: a copy without the
+  // parts hidden from screen readers (queue-wait.html's ticking "queued"
+  // time, which would make every read a new announcement), its times in
+  // this browser's zone as date-format-v1.js shows them, and at most two
+  // sentences.
+  const statusSentence = (node) => {
+    if (!node) return "";
+    const copy = node.cloneNode(true);
+    copy.querySelectorAll("[aria-hidden=true]").forEach((part) => part.remove());
+    window.ParishDates?.localize(copy);
+    return twoSentences(copy.textContent);
+  };
+  // A queued export's status page answer: {state, pending, sentence,
+  // download, token} from it, {retry} for a read worth repeating, or
+  // {refusal} when it settled otherwise.
+  const parseExport = (response, text) => {
+    if (transient(response)) return {retry: true};
+    if (response.status === 410) {
+      // An ended export, or a campaign that is no longer current, whose
+      // typed refusal says so.
+      try {
+        if (JSON.parse(text)?.refusal) return {refusal: refusalText(410, text)};
+      } catch { /* the fixed "no longer available" page */ }
+      return {refusal: EXPORT_TEXT.gone};
+    }
+    const parsed = new DOMParser().parseFromString(text, "text/html");
+    const region = parsed.querySelector("[data-export-state]");
+    // Signed out (a redirect to sign-in) or no longer allowed.
+    if (!region) {
+      return {refusal: response.ok ? EXPORT_TEXT.signedOut : exportRefusal(response, text, null)};
+    }
+    const download = region.querySelector("form[data-live-autosubmit]");
+    return {
+      state: region.getAttribute("data-export-state"),
+      pending: region.hasAttribute("data-live-pending"),
+      sentence: statusSentence(region.querySelector(".export-state")),
+      download: download && new URL(download.getAttribute("action"), response.url).href,
+      token: download?.querySelector('input[name="csrfmiddlewaretoken"]')?.value,
+    };
+  };
+  // One passive read of the status address, as live-status-v1.js reads it.
+  // An unanswered read is {retry}, as a server failure is.
+  const readExport = async (url) => {
+    try {
+      const response = await fetchWithin(url, {cache: "no-store",
+        headers: {Accept: "text/html"}}, EXPORT_READ_MS);
+      return parseExport(response, await response.text());
+    } catch {
+      return {retry: true};
+    }
+  };
+  // Post a ready file's Download and save the file. A busy answer (503) is
+  // posted again at the pace; returns the refusal sentence, or "" once the
+  // file is saved.
+  const downloadExport = async (status) => {
+    for (let attempt = 0; ; attempt += 1) {
+      const body = new URLSearchParams();
+      if (status.token) body.set("csrfmiddlewaretoken", status.token);
+      let response;
+      try {
+        response = await fetchWithin(status.download, {method: "POST", body,
+          headers: {"X-Requested-With": "fetch"}}, EXPORT_DOWNLOAD_MS);
+      } catch {
+        return EXPORT_TEXT.unreachable;
+      }
+      if (isDownload(response)) {
+        await saveDownload(response);
+        return "";
+      }
+      if (response.status === 410) return EXPORT_TEXT.gone;
+      const text = await response.text();
+      if (response.status !== 503 || attempt + 1 >= EXPORT_DOWNLOAD_TRIES) {
+        return exportRefusal(response, text, null);
+      }
+      await pause(EXPORT_PACE[Math.min(attempt, EXPORT_PACE.length - 1)]);
+    }
+  };
+  // Follow a queued export from its first reading until it is ready, then
+  // download it. ``progress`` is the export's {slow, sentence}: the latest
+  // status sentence is kept there, and said once the export is slow. A
+  // read worth repeating (no answer, a server failure) is read again at
+  // the pace, as live-status-v1.js does. Returns the refusal sentence, or
+  // "" once the file is saved.
+  const followExport = async (form, url, first, progress) => {
+    const started = Date.now();
+    let status = first;
+    for (let attempt = 0; ; attempt += 1) {
+      if (status.refusal) return status.refusal;
+      if (!status.retry) {
+        if (status.state === "ready" && status.download) return downloadExport(status);
+        if (!status.pending) {
+          return status.state === "cancelled" ? EXPORT_TEXT.cancelled : EXPORT_TEXT.failed;
+        }
+        progress.sentence = status.sentence;
+        if (progress.slow) sayExport(form, status.sentence || EXPORT_TEXT.waiting);
+      }
+      if (Date.now() - started > EXPORT_GIVE_UP_MS) return EXPORT_TEXT.slow;
+      await pause(EXPORT_PACE[Math.min(attempt, EXPORT_PACE.length - 1)]);
+      // A hidden tab is not read; it is checked again once shown.
+      while (document.visibilityState !== "visible") await pause(1000);
+      status = await readExport(url);
+    }
+  };
+  // Show ``form``'s export busy (or released): the form aria-busy, its
+  // buttons waiting, the clicked one (by name and value) with its spinner.
+  // One helper for an export's start, a redraw while it runs and its end.
+  const showExportBusy = (form, clicked, busy) => {
+    if (busy) form.setAttribute("aria-busy", "true");
+    else form.removeAttribute("aria-busy");
+    submitControls(form).forEach((control) => {
+      const mine = Boolean(clicked) && control.name === clicked.name
+        && control.value === clicked.value;
+      control.classList.toggle("is-busy", busy && mine);
+      if (busy) control.setAttribute("aria-disabled", "true");
+      else control.removeAttribute("aria-disabled");
+    });
+  };
+  // A redraw brought in fresh copies: show each running export busy again
+  // on the form as the page has it now.
+  document.addEventListener("parishkit:swap", () => {
+    runningExports.forEach((clicked, key) => {
+      const form = typeof key === "string" ? document.getElementById(key) : key;
+      if (form instanceof HTMLFormElement && form.isConnected) showExportBusy(form, clicked, true);
+    });
+  });
+  // Run one export for ``form`` from the clicked ``submitter``: mark the
+  // form busy, post it, save the file or follow the queued export, and say
+  // any refusal in the row's line. The buttons are released, on the form as
+  // the page has it then, whatever happens.
+  const exportInPlace = async (form, submitter) => {
+    const clicked = submitter ? {name: submitter.name, value: submitter.value} : null;
+    runningExports.set(exportKey(form), clicked);
+    showExportBusy(form, clicked, true);
+    busyStatus.textContent = "Working…";
+    sayExport(form, "");
+    // Five seconds in, the line says the export is still being worked on:
+    // its latest status sentence once there is one.
+    const progress = {slow: false, sentence: ""};
+    const timer = window.setTimeout(() => {
+      progress.slow = true;
+      sayExport(form, progress.sentence || EXPORT_TEXT.waiting);
+    }, 5000);
+    const fields = new FormData(form, submitter || undefined);
+    let refusal = "";
+    try {
+      const response = await fetchWithin(form.getAttribute("action") || "", {method: "POST",
+        body: new URLSearchParams(fields), headers: {"X-Requested-With": "fetch"}},
+      EXPORT_START_MS);
+      if (isDownload(response)) {
+        await saveDownload(response);
+      } else if (response.ok && response.redirected) {
+        // A queued export: the redirect's answer is the status address's
+        // first read (or, signed out, the sign-in page: no export state).
+        const first = parseExport(response, await response.text());
+        refusal = await followExport(form, response.url, first, progress);
+      } else {
+        const text = await response.text();
+        refusal = response.ok && !text ? EXPORT_TEXT.empty : exportRefusal(response, text, form);
+      }
+    } catch (error) {
+      refusal = error?.name === "AbortError" ? EXPORT_TEXT.noAnswer : EXPORT_TEXT.unreachable;
+    } finally {
+      window.clearTimeout(timer);
+      // Renewed whatever the answer: even a lost one may have reached the
+      // server and bound the key.
+      renewRequestKey(form);
+      runningExports.delete(exportKey(form));
+      [form, liveForm(form)].forEach((node) => showExportBusy(node, clicked, false));
+    }
+    sayExport(form, refusal, Boolean(refusal));
+    busyStatus.textContent = refusal ? "" : "Download started.";
+  };
+  // Capture phase, so this runs before the busy-state handler above, which
+  // leaves a submission script took over alone.
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (event.defaultPrevented || !(form instanceof HTMLFormElement)) return;
+    if (!form.hasAttribute("data-export-in-place") && !event.submitter?.closest(".export-actions")) return;
+    if (!sameOrigin(form.getAttribute("action") || "")) return;
+    event.preventDefault();
+    // A repeat (a double click, Enter pressed twice) while it runs is ignored.
+    if (runningExports.has(exportKey(form))) return;
+    exportInPlace(form, event.submitter);
+  }, true);
 
   // Required acknowledgments: a form's submit buttons stay disabled (muted by
   // button:disabled) until every visible [data-acknowledgment] checkbox that
@@ -3848,7 +4189,13 @@
           });
         }
         controls.forEach((item) => {
-          item.disabled = !shown;
+          // A group inside another (the census address editor's State
+          // controls inside Add's "What changed" group, #1785) is sent only
+          // while every group around it is shown: showing the outer group
+          // never enables a control the inner rule hides, nor the inner
+          // one a control inside a hidden outer group.
+          item.disabled = !shown || showWhenUpdates.some((entry) => entry.wrapper !== wrapper
+            && entry.wrapper?.hidden && entry.wrapper.contains(item));
           // A hidden file field's size refusal goes with it (#1062).
           if (!shown && item.dataset.sizeRule) {
             item.setCustomValidity("");
@@ -3863,7 +4210,38 @@
       // buttons is listened to instead.
       (control instanceof RadioNodeList ? [...control] : [control])
         .forEach((item) => item.addEventListener("change", update));
-      showWhenUpdates.push({node, update});
+      showWhenUpdates.push({node, update, wrapper: hides ? wrapper : null});
+      update();
+    });
+  };
+  // Question-led choices (the Mail message page's resolution question,
+  // #1563). An element marked data-choice-panel="name=value" is the part of
+  // a question shown while the radio button group "name" has that value
+  // ("name=" while none is chosen yet). The group is found in the panel's
+  // nearest [data-choice-scope], and is in no form, so choosing an answer
+  // sends nothing: each answer is its own form, and only the chosen one is
+  // ever visible. A panel not chosen is hidden by visibility (ui-v1.css,
+  // [data-choice-hidden]) and made inert, never removed from the layout:
+  // every panel of a question shares one reserved grid cell (.choice-slot),
+  // so choosing, or changing, an answer never moves the button or what
+  // follows (#736). Applied again on pageshow, for a browser that restores
+  // a ticked radio button from history, and after an in-place swap.
+  let choiceUpdates = []; // {node, update} for each data-choice-panel
+  const wireChoices = (root) => {
+    within(root, "[data-choice-panel]").forEach((panel) => {
+      const [name, value] = panel.dataset.choicePanel.split("=");
+      const scope = panel.closest("[data-choice-scope]") || document;
+      const radios = [...scope.querySelectorAll("input[type=radio]")]
+        .filter((radio) => radio.name === name);
+      const update = () => {
+        if (!panel.isConnected) return;
+        const chosen = radios.find((radio) => radio.checked);
+        const shown = value === "" ? !chosen : chosen?.value === value;
+        panel.toggleAttribute("data-choice-hidden", !shown);
+        panel.inert = !shown;
+      };
+      radios.forEach((radio) => radio.addEventListener("change", update));
+      choiceUpdates.push({node: panel, update});
       update();
     });
   };
@@ -4390,12 +4768,14 @@
   const wireConditional = (root) => {
     wireMaxBytes(root);
     showWhenUpdates = showWhenUpdates.filter(({node}) => node.isConnected);
+    choiceUpdates = choiceUpdates.filter(({node}) => node.isConnected);
     lockedUpdates = lockedUpdates.filter(({node}) => node.isConnected);
     completeForms = completeForms.filter((form) => form.isConnected);
     notFutureChecks = notFutureChecks.filter(({date}) => date.isConnected);
     patternChecks = patternChecks.filter(({field}) => field.isConnected);
     liveChecks = liveChecks.filter(({form}) => form.isConnected);
     wireShowWhen(root);
+    wireChoices(root);
     wireLockedWhen(root);
     wireNotBefore(root);
     wirePattern(root);
@@ -4417,6 +4797,7 @@
   });
   window.addEventListener("pageshow", () => {
     showWhenUpdates.forEach(({update}) => update());
+    choiceUpdates.forEach(({update}) => update());
     lockedUpdates.forEach(({update}) => update());
     document.querySelectorAll("input[data-not-before]").forEach(checkNotBefore);
     patternChecks.forEach(({check}) => check());
@@ -4708,6 +5089,24 @@
     dialog.querySelector("[data-confirm-cancel]")?.addEventListener("click", () => {
       if (!confirming?.busy) dialog.close();
     });
+    // A review answer's typed field (data-review-require, the Confirm
+    // Production dialog's "Type Production to confirm", #1585) is gated
+    // while it is edited, and Enter in it is Apply, never a native submit of
+    // the Apply form it names: Apply always posts from acceptReview. The
+    // Enter that commits an input method's composition is not Apply.
+    dialog.addEventListener("input", (event) => {
+      if (event.target instanceof Element && event.target.matches("[data-review-require]")) gateReview(dialog);
+    });
+    dialog.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || event.isComposing || !(event.target instanceof Element)
+        || !event.target.matches("[data-review-require]")) return;
+      event.preventDefault();
+      const accept = dialog.querySelector("[data-confirm-accept]");
+      if (accept && !accept.disabled && !accept.hidden) accept.click();
+    });
+    dialog.querySelector("form[data-review-apply]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+    });
     dialog.querySelector("[data-confirm-accept]")?.addEventListener("click", (event) => {
       // A dialog with fields makes Confirm its form's submit button, so the
       // form's complete gate holds it (confirm-dialog.html fields_template);
@@ -4745,6 +5144,15 @@
     const values = {count: chosen.length.toLocaleString("en-US"), name: chosen[0].name || ""};
     dialog.querySelector("[data-confirm-title]").textContent = fillIn(
       chosen.length === 1 ? text("titleOne") : text("titleMany"), values);
+    // A caution for marked rows only (confirm-dialog.html caution_marked):
+    // said while some chosen row's control carries data-confirm-caution.
+    const caution = dialog.querySelector("[data-confirm-caution-marked]");
+    if (caution) {
+      caution.hidden = !(bulk
+        ? [...form.elements].some((box) => box.matches("input[data-select-row]:checked")
+          && !box.disabled && box.hasAttribute("data-confirm-caution"))
+        : opener.hasAttribute("data-confirm-caution"));
+    }
     const body = dialog.querySelector("[data-confirm-body]");
     if (body) {
       if (body.dataset.default === undefined) body.dataset.default = body.textContent;
@@ -4875,8 +5283,13 @@
     try {
       ids = (JSON.parse(raw)?.errors || []).map((item) => item?.field_id).filter(Boolean);
     } catch { return false; }
-    const fields = [...new Set(ids)].map((id) => document.getElementById(id)
-      || state.form.elements.namedItem(id))
+    // A name two controls share (the census address editor's State: a
+    // drop-down for the United States, free text otherwise, #1785) is a
+    // RadioNodeList; the enabled one, which was sent, is marked.
+    const fields = [...new Set(ids)].flatMap((id) => {
+      const found = document.getElementById(id) || state.form.elements.namedItem(id);
+      return found instanceof RadioNodeList ? [...found] : [found];
+    })
       .filter((node) => node instanceof HTMLElement && state.dialog.contains(node)
         && node.matches("input, select, textarea") && !node.disabled);
     const list = state.dialog.querySelector(".errorlist[id]");
@@ -5018,9 +5431,13 @@
       return false;
     }
     onRecorded?.();
-    // Follow the change until it is applied (a passive status read).
+    // Follow the change until it is applied (a passive status read). A
+    // review dialog that leaves for the page Apply's answer redirected to
+    // (data-review-redraw="leave": Start go-live, #1585) follows nothing:
+    // that page follows its own work.
     const statusUrl = answer.response.url;
-    const {status, outcome} = await settleChange(statusUrl, changeStatus(answer.text));
+    const {status, outcome} = await settleChange(statusUrl,
+      dialog.dataset.reviewRedraw === "leave" ? null : changeStatus(answer.text));
     if (outcome === "waiting") {
       refuseConfirm(state, "The change is saved but not applied yet, so the list is unchanged for now.",
         {href: statusUrl, text: "See the change's status"});
@@ -5234,9 +5651,14 @@
   // a field named "action" shadows.
   const formUrl = (form) => new URL(form.getAttribute("action") || "", document.baseURI).href;
   // A form that names its pane's own reserved status line (Campaign images'
-  // slots, data-review-outcome) shows a refused Review there (#1410).
-  const paneLine = (form) => (form.dataset.reviewOutcome
-    ? document.getElementById(form.dataset.reviewOutcome) : null);
+  // slots, data-review-outcome) shows a refused Review there (#1410). A
+  // form inside a dialog of its own (the Campaign calendar's Move…, #1521)
+  // names its refusal line with data-review-refused instead, so a refusal
+  // stays in its dialog while Apply's status goes to the page's line.
+  const paneLine = (form) => {
+    const id = form.dataset.reviewRefused || form.dataset.reviewOutcome;
+    return id ? document.getElementById(id) : null;
+  };
   // A refusal written to a pane's line goes once it no longer applies: on
   // an edit of a form naming the line, when a Review from the pane is
   // accepted, or when the line takes another refusal. The pane's forms
@@ -5349,6 +5771,33 @@
     wireSummaryLinks(placed.parentElement);
     placed.focus();
   };
+  // Hold a review dialog's Apply until every field of its answer marked
+  // data-review-require is valid (prerequisite gates): the Confirm
+  // Production dialog's typed word, whose pattern ignores spaces around it,
+  // as the server does (#1585). While it holds, the reserved status line
+  // under the buttons says what is missing (the field's data-missing-hint)
+  // and describes Apply, so nothing moves when it clears. Not while Apply
+  // runs or after a refusal, which keeps Apply unavailable itself.
+  const gateReview = (dialog) => {
+    const fields = [...dialog.querySelectorAll("[data-review-body] [data-review-require]")];
+    const accept = dialog.querySelector("[data-confirm-accept]");
+    const status = dialog.querySelector("[data-confirm-status]");
+    if (!accept) return;
+    if (!fields.length) {
+      // Another answer in the same dialog: Apply no longer names the line.
+      if (status.id && accept.getAttribute("aria-describedby") === status.id) {
+        accept.removeAttribute("aria-describedby");
+      }
+      return;
+    }
+    if (confirming?.dialog !== dialog || confirming.busy
+      || !dialog.querySelector("[data-confirm-error]").hidden) return;
+    const missing = fields.find((field) => !field.checkValidity());
+    accept.disabled = Boolean(missing);
+    status.textContent = missing ? missing.dataset.missingHint || "" : "";
+    if (missing && status.id) accept.setAttribute("aria-describedby", status.id);
+    else accept.removeAttribute("aria-describedby");
+  };
   const openReview = (dialog, form, opener, answer, refusal) => {
     wireDialog(dialog);
     const apply = dialog.querySelector("form[data-review-apply]");
@@ -5409,6 +5858,7 @@
         // setup step, #1404), in place of the dialog's own.
         back: answer?.getAttribute("data-review-return") || "",
         backOutcome: answer?.getAttribute("data-review-return-outcome") || ""}};
+    gateReview(dialog);
     dialog.showModal();
     if (refusal) refuseConfirm(confirming, refusal);
     // The title first, so the reader hears what is reviewed.
@@ -5569,6 +6019,15 @@
     dialog.querySelector("[data-confirm-status]").textContent = dialog.dataset.applied || "Applied.";
     const text = [review.done, fillIn(dialog.dataset.appliedAt || "Applied at {time}.",
       {time: clockTime()})].filter(Boolean).join(" ");
+    // A dialog marked data-review-redraw="leave" (Start go-live, #1585)
+    // ends on the page Apply's answer redirected to, opened as a page: its
+    // address, not this one, is then the history entry a reload shows.
+    if (dialog.dataset.reviewRedraw === "leave" && sameOrigin(answer.response.url)) {
+      state.done = true;
+      dialog.close();
+      window.location.assign(answer.response.url);
+      return;
+    }
     const own = review.back && sameOrigin(review.back) ? review.back : "";
     const back = own || dialog.dataset.reviewReturn;
     const outcome = (own && review.backOutcome) || state.form.dataset.reviewOutcome || dialog.dataset.reviewOutcome || "";
@@ -5610,7 +6069,8 @@
 
   // A campaign wizard step's direct save (#1404 PR 4; UX conventions,
   // "Wizards", rules 4 and 5): a form marked data-direct-save (Campaign
-  // settings, Share options and the sub-pages that save, while the wizard
+  // settings, Share options, the sub-pages that save and Dates and mail
+  // schedules' suggested schedules, #1404 PR 6, while the wizard
   // applies) is posted by the action row's Save and continue (a sub-page's
   // Save and go back) without a page load and without the review dialog. The form is inert and aria-busy meanwhile, and the
   // row's reserved status line (#campaign-step-status) says "Saving…".
@@ -5642,6 +6102,53 @@
   //   When the page cannot be read again (the sign-in ended), Save and
   //   continue is held (data-save-spent-gated) and the line says to reload.
   const SAVE_UNREACHABLE = "The server could not be reached, so nothing was saved. Try again in a moment.";
+  // Campaign images' Save and continue (#1404 PR 4c) first stages each
+  // chosen image at its slot's own upload address (data-wizard-upload),
+  // one at a time, as an upload outside the wizard does; the answer is
+  // that upload's review, of which only the staged bundle is read. Each
+  // staged bundle becomes the save form's bundle_<slot> field, so a retry
+  // after a refusal stages only what is not staged yet; changing a slot's
+  // file drops its field (below). A refused image (status 400 drawing the
+  // page) is marked at its field and said in its slot's line; any other
+  // refusal is said in the row's line. An answer that is neither (the
+  // sign-in page once the session ended) holds Save and continue until a
+  // reload (``hold``), as a save whose status is lost does. Returns whether
+  // every chosen image is staged; ``finish`` or ``hold`` ends the save with
+  // a line otherwise.
+  const stageUploads = async (form, finish, hold) => {
+    for (const upload of chosenUploads()) {
+      const name = `bundle_${upload.dataset.wizardUpload}`;
+      if (form.elements.namedItem(name)) continue;
+      let answer = null;
+      try {
+        answer = await readPage(formUrl(upload), {method: "POST", body: new FormData(upload)});
+      } catch { /* no answer: said below */ }
+      if (!answer) {
+        finish(SAVE_UNREACHABLE);
+        return false;
+      }
+      const parsed = new DOMParser().parseFromString(answer.text, "text/html");
+      const bundle = answer.response.ok
+        ? parsed.querySelector('input[type=hidden][name="bundle"]')?.value : "";
+      if (!bundle) {
+        if (answer.response.ok) {
+          hold(`The image could not be uploaded. ${SAVE_RELOAD}`);
+        } else if (answer.response.status === 400 && parsed.getElementById(upload.id)) {
+          finish("");
+          showFieldErrors(upload, parsed);
+        } else {
+          finish(refusalText(answer.response.status, answer.text), refusalLink(answer.text));
+        }
+        return false;
+      }
+      const field = document.createElement("input");
+      field.type = "hidden";
+      field.name = name;
+      field.value = bundle;
+      form.append(field);
+    }
+    return true;
+  };
   const SAVE_RELOAD = "Reload the page to make another change.";
   const SAVE_STATUS_LOST = "The change was saved, but its status can no longer be checked: your sign-in ended or your account no longer has access. " + SAVE_RELOAD;
   const saveStep = async (form, submitter) => {
@@ -5660,29 +6167,42 @@
       }
     };
     const opener = submitter || form;
-    const body = new URLSearchParams(new FormData(form, submitter || undefined));
     // Read before the save: the form's drawn (saved) state against the
     // posted one. Only Campaign settings carries the note.
     const financial = form.elements.namedItem("financial_enabled");
     const removes = financial instanceof HTMLInputElement && financial.defaultChecked
       && !financial.checked;
-    form.setAttribute("aria-busy", "true");
+    // Campaign images (data-direct-uploads) stages from the slots' own
+    // forms, so the whole slots region is held: a file changed, or an image
+    // removed, while an upload is in flight would otherwise save an image
+    // the page no longer shows, or post from a redrawn region.
+    const busy = form.hasAttribute("data-direct-uploads")
+      ? form.closest("[data-in-place-region]") || form : form;
+    busy.setAttribute("aria-busy", "true");
     opener.setAttribute("aria-disabled", "true");
     opener.classList.add("is-busy");
-    form.inert = true;
+    busy.inert = true;
+    // The row's Continue (Continue without schedules for now beside Add
+    // these schedules and continue) waits too, so the step is not kept as
+    // is while its save is under way; each gets back its own state.
+    const paused = [...document.querySelectorAll("form[data-campaign-continue]")]
+      .map((node) => [node, node.inert]);
+    paused.forEach(([node]) => { node.inert = true; });
     say("Saving…");
     const finish = (text, link) => {
-      form.inert = false;
-      form.removeAttribute("aria-busy");
+      busy.inert = false;
+      paused.forEach(([node, inert]) => { node.inert = inert; });
+      busy.removeAttribute("aria-busy");
       opener.removeAttribute("aria-disabled");
       opener.classList.remove("is-busy");
       reviewing.delete(form);
       say(text, link);
     };
-    // Hold Save and continue for good (until a reload), saying why.
+    // Hold Save and continue (or Add these schedules and continue, #1404
+    // PR 6) for good (until a reload), saying why.
     const hold = (text, link) => {
       finish(text, link);
-      document.querySelectorAll("[data-campaign-save]")
+      document.querySelectorAll("[data-campaign-save], [data-campaign-add]")
         .forEach((node) => holdButton(node, "data-save-spent-gated"));
     };
     // The change is recorded but the page stays: keep what was typed (at
@@ -5705,6 +6225,9 @@
       form.elements.namedItem("request_key").value = key.value;
       finish(text, link);
     };
+    if (form.hasAttribute("data-direct-uploads") && !(await stageUploads(form, finish, hold))) return;
+    // Read once any images are staged, so the save names them.
+    const body = new URLSearchParams(new FormData(form, submitter || undefined));
     let answer = null;
     try {
       answer = await readPage(formUrl(form), {method: "POST", body});
@@ -5774,6 +6297,14 @@
     redrawFrom(fresh);
     if (!showOutcome("campaign-step-outcome", text)) announce(text);
   };
+  // A slot whose file changes after its image was staged stages it again.
+  document.addEventListener("change", (event) => {
+    const upload = event.target instanceof HTMLInputElement && event.target.type === "file"
+      && event.target.closest("form[data-wizard-upload]");
+    if (!upload) return;
+    document.querySelector(`form[data-direct-uploads] input[name="bundle_${upload.dataset.wizardUpload}"]`)
+      ?.remove();
+  });
   document.addEventListener("submit", (event) => {
     const form = event.target;
     if (event.defaultPrevented || !(form instanceof HTMLFormElement)
@@ -5859,7 +6390,9 @@
   //   - [data-editor-mode-panel="advanced"]: the full configuration. It is
   //     only ever hidden, never disabled: its fields carry the configuration
   //     the server validates and stores in either mode (the recorded
-  //     exception to conditional fields).
+  //     exception to conditional fields). An additive editor (#1129) has
+  //     no Basic panel and one Advanced panel per extra tool, each off in
+  //     Basic; its adapter has only toBasic and clearBasic.
   // The editor's script registers an adapter by the editor's name with
   // ParishEditorMode.register(name, adapter). It is looked up by name when
   // an event fires, so it still applies after an in-place answer redraws
@@ -5894,14 +6427,18 @@
     .find((node) => node.closest("[data-editor-modes]") === root);
   const modeChoice = (root, mode) => modeToggle(root)
     ?.querySelector(`input[data-editor-mode-choice][value="${mode}"]`);
-  const modePanel = (root, mode) => [...root.querySelectorAll(
-    `[data-editor-mode-panel="${mode}"]`)].find((node) => node.closest("[data-editor-modes]") === root);
+  // root's panels for mode (not a nested editor's). An additive editor
+  // (New and Edit scheduled email, #1129) has several Advanced panels, one
+  // where each of its tools is drawn; other editors have one of each.
+  const modePanels = (root, mode) => [...root.querySelectorAll(
+    `[data-editor-mode-panel="${mode}"]`)].filter((node) => node.closest("[data-editor-modes]") === root);
+  const modePanel = (root, mode) => modePanels(root, mode)[0];
   // The Advanced fields that are in error: marked by the server or a live
   // check, or invalid in the browser's own terms (an unreadable time). A
   // field only waiting for its group's first choice (data-require-one, such
   // as Parish logos' sizes with no file chosen) is incomplete, not in error.
-  const advancedErrors = (root) => [...(modePanel(root, "advanced")
-    ?.querySelectorAll("input, select, textarea") || [])]
+  const advancedErrors = (root) => modePanels(root, "advanced")
+    .flatMap((panel) => [...panel.querySelectorAll("input, select, textarea")])
     .filter((node) => node.getAttribute("aria-invalid") === "true"
       || node.hasAttribute("data-field-error") || node.hasAttribute("data-client-error")
       || (node.willValidate && !node.validity.valid
@@ -6668,6 +7205,10 @@
     const control = (name) => panel.querySelector(`[data-repeat="${name}"]`);
     const update = () => {
       const reminder = kind.value === "reminder";
+      // Repeat is a Reminder's: with another mail type its panel is hidden,
+      // so the box is unticked rather than posted hidden (conditional
+      // fields), and it does not count as a tool in use for Basic.
+      if (!reminder) enabled.checked = false;
       const on = reminder && enabled.checked;
       panel.hidden = !reminder;
       rule.hidden = !on;
@@ -7027,7 +7568,7 @@
   // source). The one response also carries the generated plain text, relayed
   // to the plain-text preview as "stewardship:source-preview", and a
   // plain-language list of removed markup, shown as text (never as markup).
-  function liveSource(form, visual, editor, source) {
+  function liveSource(form, visual, editor, source, removing) {
     const url = visual.dataset.previewUrl;
     const csrf = form.querySelector('input[name="csrfmiddlewaretoken"]');
     const updating = visual.querySelector("[data-visual-updating]");
@@ -7043,11 +7584,14 @@
     let controller = null;
     const tools = [...form.querySelectorAll("[data-content-tag]")];
     // A stale pane accepts neither typing nor formatting: either would call
-    // sync() and overwrite newer source with the stale pane's content.
+    // sync() and overwrite newer source with the stale pane's content. Once
+    // the newest answer is in, the pane stays read-only while "Remove this
+    // selected content" is ticked (removing()).
     const busy = (value) => {
       visual.setAttribute("aria-busy", String(value));
-      editor.contentEditable = value ? "false" : "true";
-      tools.forEach((button) => { button.disabled = value; });
+      const locked = value || removing();
+      editor.contentEditable = locked ? "false" : "true";
+      tools.forEach((button) => { button.disabled = locked; });
       updating.hidden = !value;
     };
     const refresh = async () => {
@@ -7119,6 +7663,52 @@
       form.dispatchEvent(new Event("stewardship:html-changed"));
     };
     editor.addEventListener("input", sync);
+    // While "Remove this selected content" is ticked the HTML source is
+    // greyed and not sent (data-enabled-when, content_forms), so the pane
+    // that writes it stops accepting edits too, and its formatting buttons
+    // are unavailable (#563, #750). It keeps its size: only its colour
+    // changes (ui-v1.css), so nothing moves. While the pane waits for the
+    // sanitizer (aria-busy) liveSource's busy() decides, with the same rule.
+    const clear = form.elements.namedItem("clear");
+    const removing = () => clear instanceof HTMLInputElement && clear.checked && !clear.disabled;
+    const lock = () => {
+      const removed = removing();
+      if (removed) editor.setAttribute("aria-disabled", "true");
+      else editor.removeAttribute("aria-disabled");
+      if (visual.getAttribute("aria-busy") === "true") return;
+      editor.contentEditable = removed ? "false" : "true";
+      form.querySelectorAll("[data-content-tag]").forEach((button) => { button.disabled = removed; });
+    };
+    if (clear instanceof HTMLInputElement) {
+      clear.addEventListener("change", lock);
+      window.addEventListener("pageshow", lock);
+    }
+    // A Preview refused for the values (the review dialog, #750) marks the
+    // HTML source, which is folded away while this pane is in use, so its
+    // message is shown here too, as the page draws it on a load (#563):
+    // the answer's own list beside the pane, which clears on the next edit.
+    form.addEventListener("review-refused", (event) => {
+      const fresh = event.detail?.getElementById?.("visual-content-error");
+      form.querySelector("#visual-content-error")?.remove();
+      editor.removeAttribute("aria-invalid");
+      editor.removeAttribute("aria-describedby");
+      if (!fresh) return;
+      editor.after(document.importNode(fresh, true));
+      editor.setAttribute("aria-invalid", "true");
+      editor.setAttribute("aria-describedby", "visual-content-error");
+    });
+    // An edit of the HTML in either place clears the refusal from both: the
+    // pane's copy, and the HTML source's mark and error summary item, which
+    // the source's own handler never clears when sync() writes its value.
+    const clearHtmlRefusal = () => {
+      if (source.hasAttribute("data-field-error")) clearFieldError(source);
+      if (editor.getAttribute("aria-invalid") !== "true") return;
+      form.querySelector("#visual-content-error")?.remove();
+      editor.removeAttribute("aria-invalid");
+      editor.removeAttribute("aria-describedby");
+    };
+    editor.addEventListener("input", clearHtmlRefusal);
+    source.addEventListener("input", clearHtmlRefusal);
     // Shift+Enter is a line break (<br>) inside the paragraph everywhere.
     // Chrome, Firefox and Linux WebKit do that natively, but macOS WebKit
     // (and presumably Safari) maps Shift+Return to the same "insert newline"
@@ -7132,7 +7722,8 @@
           || event.altKey || event.ctrlKey || event.metaKey) return;
       if (document.execCommand("insertLineBreak")) event.preventDefault();
     });
-    liveSource(form, visual, editor, source);
+    liveSource(form, visual, editor, source, removing);
+    lock();
     const selectedRange = () => {
       const selection = window.getSelection();
       if (!selection || !selection.rangeCount) return null;
@@ -7289,6 +7880,28 @@
       // does not replace it.
       edited = true;
     });
+  });
+
+  // New and Edit scheduled email's Basic and Advanced modes (#1129; UX
+  // conventions, "Basic and Advanced modes", additive editors). Both modes
+  // show the schedule's fields; Advanced adds Repeat and "Edit this
+  // schedule's email", each an Advanced panel where it is drawn. Basic is
+  // the page with both off, so Advanced → Basic switches at once while
+  // they are off and otherwise asks. Switch to Basic unticks them through
+  // their own change events, so the repeat rule and the email fields close
+  // as if the reader had unticked them, and nothing hidden is posted.
+  // A Repeat ticked under another mail type is unticked as it hides (the
+  // repeat script), so a tool in use is always one on screen.
+  const scheduleTools = (root) => [...root.querySelectorAll(
+    'input[data-repeat="enabled"], input[name="edit_email"]')];
+  window.ParishEditorMode.register("schedule-entry", {
+    toBasic: (root) => scheduleTools(root).every((box) => !box.checked),
+    clearBasic(root) {
+      scheduleTools(root).filter((box) => box.checked).forEach((box) => {
+        box.checked = false;
+        box.dispatchEvent(new Event("change", {bubbles: true}));
+      });
+    },
   });
 
   // "Send a test of this text" under a scheduled email's own email (#446,
@@ -7461,7 +8074,18 @@
       text.focus();
     };
     box.addEventListener("change", () => { show(); if (box.checked) refresh(); });
-    panel.querySelector("[data-edit-plain-text]")?.addEventListener("click", edit);
+    const editButton = panel.querySelector("[data-edit-plain-text]");
+    editButton?.addEventListener("click", edit);
+    // While "Remove this selected content" is ticked the generated-text box
+    // and the plain text are greyed (data-enabled-when), so "Edit plain
+    // text" is unavailable with them; unticking gives it back (#563, #750).
+    const clear = form.elements.namedItem("clear");
+    if (editButton && clear instanceof HTMLInputElement) {
+      const lockEdit = () => { editButton.disabled = clear.checked && !clear.disabled; };
+      clear.addEventListener("change", lockEdit);
+      window.addEventListener("pageshow", lockEdit);
+      lockEdit();
+    }
     // Typing into the read-only generated text means "let me edit it".
     text.addEventListener("keydown", (event) => {
       if (!box.checked || event.ctrlKey || event.metaKey || event.altKey) return;

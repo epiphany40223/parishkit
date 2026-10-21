@@ -75,6 +75,13 @@ patterns = [
         data_to_fix_views.data_to_fix,
         name="parishsoft_fixes",
     ),
+    # The passive status fragment the open page polls for its counts
+    # (#1859): never audited, never extends the sign-in.
+    path(
+        "parish/data-to-fix/status/",
+        data_to_fix_views.data_to_fix_status,
+        name="parishsoft_fixes_status",
+    ),
 ]
 
 # A configuration change's status page, outside the menu groups: it stands

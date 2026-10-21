@@ -1,4 +1,5 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
+{% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block title %}{% translate "Users" %}{% endblock %}
 {% block content %}{% comment %}
 The Users page (#952; user_views.users, admin-portal spec "Portal user
@@ -14,6 +15,8 @@ column. The reader's own row has no Delete (an Administrator never deletes
 themselves, Administrator decision 2026-10-11), and neither has the only
 Administrator's, who is always the reader; the line under the table says
 why, and the server refuses it anyway.
+Each row's Email links that user's Timeline (#1866), where the user's
+sign-ins, actions, role changes and emails are listed.
 The rows have no Sign-in activity control (Administrator, 2026-10-11): the
 link above the table opens all sign-in activity in System logs, and Edit user
 lists one button per recorded Google identity (#953).
@@ -55,7 +58,7 @@ time zone (data-compact, date-format-v1.js), as other dense tables do
   </tr></thead>
   <tbody>
   {% for row in table.rows %}<tr>
-    <th scope="row"><span class="cell-ellipsis" title="{{ row.email }}">{{ row.email }}</span></th>
+    <th scope="row"><a href="{{ row.timeline_url }}" class="cell-ellipsis" title="{{ row.email }}">{{ row.email }}</a></th>
     <td><span class="cell-ellipsis" title="{{ row.name }}">{{ row.name }}</span></td>
     <td class="nowrap">{{ row.role_label }}</td>
     <td class="nowrap">{% if row.last_login %}<time datetime="{{ row.last_login|instant }}" data-local-instant data-compact>{{ row.last_login|instant }}</time>{% else %}{% translate "Never" %}{% endif %}</td>
@@ -84,15 +87,16 @@ reason line under the buttons says why as visible text, so ticking a row
 moves nothing. With no rows at all, both buttons are unavailable and the same
 line gives the empty-table reason (empty_hint), which Import all names
 (hint_id). If the leaders cannot be read, the section says so instead and the
-users table above stays usable. Leaders with no usable email are only
-counted, in a muted line.
+users table above stays usable, and the notice brings the leaders in by
+itself (#1863, components/part-status.html). Leaders with no usable email
+are only counted, in a muted line.
 {% endcomment %}
 {% translate "Leader pages" as leader_navigator_label %}
 {% include "stewardship/components/review-outcome.html" with outcome_id="leaders-outcome" %}
 <section id="{{ leaders.anchor|default:'leaders-table' }}" class="panel" data-table-region data-refresh-url="{{ refresh_url }}" aria-labelledby="leaders-table-title">
 <h2 id="leaders-table-title" tabindex="-1">{% translate "ParishSoft Ministry leaders without a user" %}</h2>
 <p class="help">{% translate "People ParishSoft lists as leaders of this campaign's Ministries who can't sign in yet. Importing makes each one a user with the role Ministry leader named as the Member column shows; you can change the Name later with Edit." %}</p>
-{% if leaders_unavailable %}<p class="notice notice-error" id="leaders-unavailable">{% translate "The ParishSoft Ministry leaders could not be read just now, so none can be imported. The users above are not affected. Reload the page to try again." %}</p>{% else %}
+{% if leaders_unavailable %}{% include "stewardship/components/part-status.html" with part_status=leaders_status %}{% else %}
 {% include "stewardship/table-navigator.html" with table=leaders label=leader_navigator_label %}
 <form method="post" action="{{ import_url }}" id="leader-import" data-review-open="leader-review" data-select-table data-missing-hint="{% translate 'Select at least one leader to use Import selected.' %}">{% csrf_token %}
   <div class="bulk-bar">

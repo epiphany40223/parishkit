@@ -362,29 +362,51 @@ def backup_state(configuration, actor_id):
 
 
 def _drive_in_local():
-    """Whether this is LOCAL (#476), which never reaches Google Drive."""
-    from parishkit.stewardship.deployment import DeploymentProfile, recorded_profile
+    """Whether Drive is closed here: LOCAL without its real-key terms (#1399).
 
-    return recorded_profile() is DeploymentProfile.LOCAL
+    Off-site copies sign in with the Workspace key, so the local environment
+    reaches Drive only where a real key may be used
+    (``mail_catcher.admit_real_workspace``): with a mail redirect, on the
+    normal clock. Every other profile is never closed here. A redirect that
+    the recorded settings refuse counts as closed.
+    """
+    from parishkit.config import ConfigError
+    from parishkit.stewardship.deployment import (
+        DeploymentProfile,
+        recorded_mail_redirect,
+        recorded_profile,
+    )
+    from parishkit.stewardship.mail_catcher import admit_real_workspace
+
+    profile = recorded_profile()
+    if profile is not DeploymentProfile.LOCAL:
+        return False
+    try:
+        admit_real_workspace(profile, recorded_mail_redirect())
+    except ConfigError:
+        return True
+    return False
 
 
 def _refuse_drive_in_local():
-    """LOCAL (#476) never reaches Google Drive: no off-site folder is set or tested.
+    """No off-site folder is set or tested where Drive is closed (#476, #1399).
 
-    The Workspace credential in LOCAL is the mail-catcher document, which the
-    Drive session refuses anyway; this refusal says so before anything is
-    queued or saved. The page draws Test access unavailable there already;
-    this is the server's own check.
+    In the local environment Drive opens only with a mail redirect on the
+    normal clock (``_drive_in_local``); the Drive session refuses anything
+    else anyway, and this refusal says so before anything is queued or
+    saved. The page draws Test access unavailable there already; this is
+    the server's own check.
     """
     if _drive_in_local():
         raise UserFacingError(
             _(
-                "Off-site Google Drive copies are not available in the local "
+                "Off-site Google Drive copies are not available in this local "
                 "environment."
             ),
             fix=_(
-                "The local laptop environment never reaches Google Drive; its "
-                "backups stay inside the VM."
+                "The local laptop environment reaches Google Drive only with a "
+                "mail redirect (deploy --mail-redirect) and the normal clock; "
+                "until then its backups stay inside the VM."
             ),
             reason="drive_not_in_local",
         )

@@ -131,7 +131,7 @@ def test_first_settled_test_shows_continue_in_place(page, component_origin):
     row = actions.bounding_box()
     spot = (back.bounding_box()["y"] - row["y"], row["height"])
     expect(page.locator("#campaign-test-pending")).to_have_count(0, timeout=10000)
-    expect(continuing).to_have_text("Continue to Go-live readiness", timeout=10000)
+    expect(continuing).to_have_text("Continue to Go live", timeout=10000)
     # The step now counts as completed (one more than before).
     expect(count).not_to_have_text(before)
     # Continue joins Back in the row: the row keeps its height and Back

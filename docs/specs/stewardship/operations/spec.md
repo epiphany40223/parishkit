@@ -1869,7 +1869,7 @@ and the slot decision records (skipped and held).
 - **Last full refresh.** The start time of the newest promoted full
   refresh. Only this drives the alarm below, because only a full refresh
   re-reads everything.
-- **Data as of.** What pages, the digest and the command line show: the
+- **Data as of.** What pages, report emails and the command line show: the
   start time of the newest promoted snapshot that could have brought in
   ParishSoft changes, that is the last full refresh, or a later quick update
   that changed at least one record. The change count is the snapshot
@@ -1982,7 +1982,7 @@ scheduled full refresh is 02:00 tomorrow.
 
 - The alarm, the bulk-send hold and the Admin home page's problem line use
   the last full refresh and the out-of-date rule.
-- Home, the refresh page, the ParishSoft page, the daily digest and
+- Home, the refresh page, the ParishSoft page, report emails (their saved copies) and
   the `source` member of `pk-admin status` (see the
   [automation guide](../../../guides/stewardship-admin-automation.md#status))
   show "data as of" and the connection line, and, when the data is out of
@@ -1995,9 +1995,10 @@ scheduled full refresh is 02:00 tomorrow.
 - The settings page no longer refuses a schedule for its gaps: it states the
   longest wait for new data and when the alarm would sound (see
   [cost and freshness summary](../admin-portal/spec.md#cost-and-freshness-summary)).
-- Before Start, go-live readiness still requires a full refresh that
-  started within `source_stale_seconds`, and Start waives only that age
-  because it queues the go-live's own refresh. After Start, the go-live's
+- Before Start, Go live requires a completed full refresh of the
+  current organization and campaign window, of any age: one merely older
+  than `source_stale_seconds` does not block Check or Start, because Start
+  queues the go-live's own refresh. After Start, the go-live's
   checks require the attempt's refresh (or a later full refresh) and expire
   at the attempt's hold end instead; see
   [freshness during a go-live](../admin-portal/spec.md#go-live-page).
@@ -2133,8 +2134,8 @@ Required suites include:
   ordinary compaction, removed generations cannot be partially served, and
   task/audit history plus underlying submissions/protected source inputs are
   unchanged. After protection ends, eligible daily rows are reclaimed;
-- archive/Return tests for required daily and weekly digests not yet due or
-  materialized, explicit audited skips, empty/no-recipient coverage, coalesced
+- archive/Return tests for report email sends due by archive and not yet
+  settled or materialized, report sends still to come, explicit audited skips, empty/no-recipient coverage, coalesced
   replacements, failed and unknown deliveries, and new input racing final
   inventory verification; verify scheduler retries, schedule revisions, and
   unarchive/reopen do not resurrect resolved coverage or suppress newer inputs;
@@ -2309,7 +2310,7 @@ At minimum, end-to-end tests demonstrate:
    Testing/draft, and unlocks structural settings, while an active campaign and
    unresolved provider-submitting/delivery-unknown work cannot be withdrawn.
    Production readiness locks the Campaign timezone snapshot; later Parish
-   timezone changes do not alter its boundaries, schedules, digests, or
+   timezone changes do not alter its boundaries, schedules, report emails, or
    historical report buckets.
 4. Full/delta refresh success, interrupted/invalid load retaining prior truth,
    new/inactive/reactivated Family behavior, and non-overlap/manual coalescing;
@@ -2326,7 +2327,7 @@ At minimum, end-to-end tests demonstrate:
    columns, filters, consistent historical/current participation-chart scopes,
    atomic/pinned CampaignDailyFactSet generation and drift verification, chart
    parity, and CSV/XLSX/PDF/PNG output.
-8. Missed initial/reminder/digest occurrence, per-Family and daily-digest
+8. Missed initial/reminder/digest occurrence, per-Family and report email
    recovery coalescing, worker/broker restart, systemic email failure,
    deduplicated CRITICAL notification, active-campaign delivery pause with
    continued live submission and held receipts, pre-provider race checks,

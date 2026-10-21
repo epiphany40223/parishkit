@@ -24,10 +24,18 @@ REPORT_BUTTON = "#bounce-report button[type=submit]"
 NOTE = "Bounce arrived 10/12: mailbox not found."
 
 
+def open_bounce(page):
+    """Open the closed "Did this email bounce?" disclosure (#1563)."""
+    disclosure = page.locator("#bounce-disclosure")
+    assert disclosure.get_attribute("open") is None
+    disclosure.locator("summary").click()
+
+
 def test_report_waits_for_the_address_the_note_and_the_tick(page, component_origin):
     """Report bounce is unavailable, with its hint after it, until all three
     are given; a note of spaces does not count."""
     page.goto(component_origin + DELIVERED)
+    open_bounce(page)
     button = page.locator(REPORT_BUTTON)
     hint = page.locator("#bounce-complete-hint")
     assert button.is_disabled()
@@ -57,6 +65,7 @@ def test_field_help_opens_from_toggletips(page, component_origin):
     from playwright.sync_api import expect
 
     page.goto(component_origin + DELIVERED)
+    open_bounce(page)
     for tip in ("#bounce-address-tip", "#bounce-note-tip"):
         bubble = page.locator(tip)
         expect(bubble).to_be_hidden()
@@ -73,6 +82,7 @@ def test_report_happens_in_place_without_moving_the_button(page, component_origi
 
     page.set_viewport_size(VIEWPORT)
     page.goto(component_origin + DELIVERED)
+    open_bounce(page)
     page.evaluate(MARK)
     posts = count_requests(page, "POST", BOUNCE)
     page.get_by_label("Address that bounced").select_option("head@example.org")
@@ -90,6 +100,8 @@ def test_report_happens_in_place_without_moving_the_button(page, component_origi
     # not scroll to the panel's heading.
     reports = panel.get_by_role("heading", name="Bounces reported for this email")
     expect(reports).to_be_focused()
+    # The disclosure stays open across the in-place answer (data-keep-open).
+    assert page.locator("#bounce-disclosure").evaluate("node => node.open")
     assert page.evaluate(MARKED) == "kept"
     # Nothing above the button changed, so it stays where it was on the
     # page; the browser scrolls down at most as far as needed to show the
@@ -118,6 +130,7 @@ def test_unavailable_report_names_its_reason(page, component_origin):
     """While the email is not delivered, Report bounce is shown unavailable
     and is described by the visible reason."""
     page.goto(component_origin + "/delivery-bounce-unavailable")
+    open_bounce(page)
     button = page.locator("#bounce-report button")
     assert button.is_disabled()
     assert button.get_attribute("aria-describedby") == "bounce-unavailable"

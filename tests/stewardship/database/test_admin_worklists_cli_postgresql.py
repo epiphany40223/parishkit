@@ -292,6 +292,11 @@ def test_information_refusals(live_response_service, google, cli, monkeypatch): 
         code, document = run("information", "list")
         assert code == 1 and document["error"]["code"] == "denied", document
     assert AdditionalInformationRevision.objects.count() == 0
+    # --yes is gone (#1893): a usage error that records nothing.
+    code, document = inform(run, "accept", item, extra=("--yes",))
+    assert code == 2 and document["error"]["code"] == "usage", document
+    assert AdditionalInformationRevision.objects.count() == 0
+    assert count(INFORMATION_EVENT) == 0
     with monkeypatch.context() as patch:
         with_roles(patch, {"staff"})
         code, document = inform(run, "ignore", item)
@@ -426,7 +431,7 @@ def test_limitations_counts_files_and_decisions(response_service, google, cli): 
     assert code == 0 and body.startswith(b"%PDF") and document["result"]["count"] == 0
 
     # One answer stale in a set: nothing is recorded.
-    code, refused = limit(run, "handled", {member: 1, family: 0}, "--yes")
+    code, refused = limit(run, "handled", {member: 1, family: 0})
     assert code == 1 and refused["error"]["code"] == "stale_version", refused
     assert count(REVIEWED) == 3
     # Handled asks nothing, as Back to review undoes it (#1840) with a
@@ -439,7 +444,7 @@ def test_limitations_counts_files_and_decisions(response_service, google, cli): 
     code, document = limit(run, "back_to_review", {member: 2}, "--note", "Not yet")
     assert code == 0, document
     assert document["result"]["decisions"][0]["decision"] == "accepted"
-    code, document = limit(run, "handled", {member: 3}, "--yes")
+    code, document = limit(run, "handled", {member: 3})
     assert code == 0, document
     code, document = limit(run, "back_to_review", {family: 1})
     assert code == 0, document
@@ -490,4 +495,8 @@ def test_limitations_refusals(response_service, google, cli, monkeypatch):  # no
         assert code == 1 and document["error"]["code"] == "denied", document
         code, document = run("report", "limitations", "--stage", "to_review")
         assert code == 1 and document["error"]["code"] == "denied", document
+    assert LimitationReview.objects.count() == 0 and count(LIMITATIONS_EVENT) == 0
+    # --yes is gone (#1893): a usage error that records nothing.
+    code, document = limit(run, "accept", {member: 0}, "--yes")
+    assert code == 2 and document["error"]["code"] == "usage", document
     assert LimitationReview.objects.count() == 0 and count(LIMITATIONS_EVENT) == 0
