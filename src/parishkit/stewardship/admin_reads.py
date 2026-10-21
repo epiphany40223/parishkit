@@ -40,7 +40,8 @@ class Unavailable(Exception):
 class NotAvailable(Exception):
     """The record the command names does not exist (``not_available``, exit 1).
 
-    A missing task, an unknown campaign, or no current campaign at all. Only
+    A missing task, an unknown campaign, no current campaign at all, or the
+    first campaign can't be created now. Only
     this, never a bare ``LookupError``, is reported as ``not_available``.
     """
 

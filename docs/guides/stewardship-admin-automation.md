@@ -1341,6 +1341,54 @@ request, plus what the page records: `campaign_end_date_requested` for an
 end date, `campaign_ministries_requested` for Ministries. Repeating it
 with the same token returns the same request.
 
+## Create the campaign
+
+`campaign create-preview` and `campaign create` are **Create the
+campaign**'s **Create the campaign and continue** review and the review
+dialog's **Apply**: they add the deployment's first campaign as a
+Testing-mode draft, with the default text for each of its pages and
+emails. They need an Administrator and a full-scope session. They work
+only while there is no campaign yet, the system is in Testing mode and
+ParishSoft data has been loaded, as the page does; after that, change the
+campaign with `campaign preview` ([Campaign settings](#campaign-settings)).
+
+`--changes` is a JSON document shaped like `campaign show`'s `settings`.
+A setting it leaves out takes the value the page's form starts with: the
+parish's time zone, Census and Additional information ticked, the default
+Ministry leader roles, and everything else blank, so give at least
+`name`, `start_date` and `end_date`. `--expected-version` is the
+configuration version `parish show` prints. Nothing changes until
+`campaign create`.
+
+```sh
+VERSION=$(pk-admin parish show | jq -r .result.version)
+pk-admin campaign create-preview --expected-version "$VERSION" \
+    --changes '{"campaign": {"name": "Stewardship 2028",
+      "start_date": "2027-10-01", "end_date": "2027-11-30",
+      "ministry": false}}' |
+  jq -r .result.preview.token | pk-admin campaign create --token -
+```
+
+| Field | What it holds |
+| --- | --- |
+| `version` (`campaign create-preview`) | The version the new campaign was reviewed against |
+| `settings` | Every setting as it was reviewed: the document over the form's starting values |
+| `content` | How many pages and emails the campaign starts with, in the default text |
+| `preview.token` | What `campaign create --token` takes, valid for fifteen minutes |
+| `created`, `request` (`campaign create`) | As `parish confirm` prints them; follow the change with `config request show --watch` |
+
+Once the request is applied, load the campaign's Families with `refresh
+start`, as the page's status offers. A value the page refuses is exit 1
+(`invalid`), naming the setting (`campaign.<field>`). A version that is
+no longer current, or an expired token, is exit 1 (`stale_version`). Once
+a campaign exists, or before ParishSoft data is loaded, each command is
+exit 1 (`not_available`). `campaign create` records
+`admin_cmd_campaign_create` in System logs with the request; repeating it
+with the same token returns the same request, even after the campaign
+exists. Copying a campaign has no command: Copy campaign is retired until
+the single-campaign change
+([#145](https://github.com/epiphany40223/parishkit/issues/145)).
+
 ## Parish, Ministry, logo and Share option settings
 
 `parish show`, `ministries list`, `branding show` and `campaign shares`
@@ -3937,11 +3985,16 @@ Each change is recorded in System logs as on the page
   --format jsonl` records gain `reviews`, the decisions `census review`
   takes on the row now.
 - `pk-admin/1` (#463): additive. `campaign show`, `campaign preview
-  --changes FILE|- --expected-version VERSION` and `campaign confirm
+  --changes JSON|- --expected-version VERSION` and `campaign confirm
   --token TOKEN|-`, Campaign settings' read, Review and Apply
   (Administrators only; the read in any session, the others in a
   full-scope one); `campaign confirm` records `admin_cmd_campaign_confirm`
   and the page's own events.
+- `pk-admin/1` (#1899): additive. `campaign create-preview --changes
+  JSON|- --expected-version VERSION` and `campaign create --token
+  TOKEN|-`, Create the campaign's Review and Apply for the deployment's
+  first campaign (Administrators only, full scope, neither fresh-gated nor
+  prompting); `campaign create` records `admin_cmd_campaign_create`.
 - `pk-admin/1` (#632): additive. `integration schedule-preview
   [--refresh-schedule DOCUMENT|-]`, the ParishSoft page's live refresh
   schedule check (any session, Administrators only, no event).

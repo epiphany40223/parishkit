@@ -57,6 +57,11 @@ def permanent(reason):
     return Parity("permanent", (reason,))
 
 
+def deferred(decision):
+    """Routes waiting on a decision, which ``decision`` names."""
+    return Parity("deferred", (decision,))
+
+
 SESSION_CHROME = (
     "browser sign-in and session chrome; the session commands cover automation"
 )
@@ -153,13 +158,17 @@ LEDGER = {
     ),
     # The live end-date check validates what ``schedule preview`` reviews.
     "campaign_end_date_check": command("schedule preview"),
-    # The command line has no first-campaign path yet: ``campaign confirm``
-    # edits the current campaign and refuses any added one. When PR 10 adds
-    # one, it must admit the first campaign only through
-    # ``single_campaign.first_campaign_admitted`` (and
-    # ``refuse_campaign_creation(first=True)``), as this page does.
-    "campaign_create": pending("PR 10", "campaign create-preview", "campaign create"),
-    "campaign_clone": pending("PR 10", "campaign clone"),
+    # Create the campaign's Review and Apply (#1899): the first campaign
+    # only, admitted through the page's own ``_admitted`` and ``_scope``
+    # (``single_campaign.first_campaign_admitted``) and confirmed with
+    # ``first_campaign=True``, as the page does.
+    "campaign_create": command("campaign create-preview", "campaign create"),
+    # Copy campaign refuses every request before reading anything until
+    # #145 (navigation rule 10), so a command could only repeat that
+    # refusal; #145 decides whether copying comes back.
+    "campaign_clone": deferred(
+        "#145, the single-campaign change, which retires or restores Copy campaign"
+    ),
     # A Campaign setup step's Continue (#1404), and Pages and emails'
     # editor's Keep as is and go back (one item, #1404 PR 6b), only record
     # the browser stepper's "kept as is" and open the next step page (or
