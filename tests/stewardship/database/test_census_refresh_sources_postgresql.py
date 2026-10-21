@@ -12,14 +12,17 @@ import json
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 from django.db import DatabaseError, connection, transaction
 
 from parishkit.stewardship.pipeline import Stage
+from parishkit.stewardship.reports.census_changes import HEADINGS, export_rows
 from parishkit.stewardship.responses.models import ProposedChange
 from parishkit.stewardship.responses.refresh_checks import census_source
 from parishkit.stewardship.source.corpus import normalize_core
+from parishkit.stewardship.source.source_status import source_status_label
 from parishkit.stewardship.workflows.models import RefreshCheck
 
 from ..policy_factory import address as rule
@@ -45,6 +48,7 @@ MIGRATIONS = (
     Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema/migrations"
 )
 FROZEN = MIGRATIONS / "0137_census_refresh_sources.sql"
+UTC = ZoneInfo("UTC")
 
 
 def refresh(harness, *, member=None, family=None):
@@ -245,6 +249,10 @@ def test_an_open_change_whose_member_left_keeps_its_stage(
     row = census_row(harness, kept)
     assert row["stage"] == Stage.READY_TO_UPDATE
     assert row["member_status"] == status
+    # The download says the same in Member's ParishSoft status (#1752).
+    cells = dict(zip(HEADINGS, export_rows({"rows": [row]}, UTC)[0], strict=True))
+    assert cells["Who"] == row["who"] and "ParishSoft" not in row["who"]
+    assert cells["Member's ParishSoft status"] == source_status_label(status)
     # Back in the Family, the change is compared again as before.
     refresh(harness, member={"firstName": "Requested"})
     assert fresh(kept).execution == "resolved_upstream"
