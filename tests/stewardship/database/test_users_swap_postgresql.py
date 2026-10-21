@@ -495,7 +495,7 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # reruns above bring back; so ``CLOSURE_REPLACED_ONLY`` puts each 0159 body
 # back last, by its replacement statement alone.
 # 0160 (#1895, provisional number) creates nothing: it replaces 0159's
-# derived guard and 0216's submission effects check in place, so
+# derived guard and 0153's submission effects check in place, so
 # ``CLOSURE_REPLACED_ONLY`` puts each 0160 body back last, after 0159's.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (

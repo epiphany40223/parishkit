@@ -1,5 +1,5 @@
 -- Frozen forward migration file 0160 (the repository-wide file sequence;
--- provisional, the number is assigned centrally in merge order): a Family's
+-- the number is reserved for this change): a Family's
 -- unchanged resubmission keeps a census change ParishSoft already holds in
 -- its stage (#1895; review-pipeline spec, "Resubmission before the reviewed
 -- form" rules 1 and 3, and strict phase order, #1890). This file is
@@ -16,7 +16,7 @@
 -- already does (#1683). Replaced, each copied whole from its latest body
 -- with these changes and only these:
 --   stewardship_response_derived_guard_v1  (0159's, #1890; guards.sql has
---       the same body, which keeps 0216's reviewed view rules)
+--       the same body, which keeps 0153's reviewed view rules)
 --       * a new change's predecessor is also the newest change for its
 --         field on any earlier response of the Family while it is open and
 --         the prior census response gives its answer (a kept change), so a
@@ -25,7 +25,7 @@
 --         Family response;
 --       * a Family response never resolves a change upstream (superseded
 --         or cancelled only).
---   stewardship_submission_effects_v1      (0216's, #1705)
+--   stewardship_submission_effects_v1      (0153's, #1705)
 --       * an open change of an earlier census response, or a kept one, is
 --         admitted unreplaced when a response not drawn as the reviewed form
 --         gives its answer again and ParishSoft's value is that answer.
@@ -948,7 +948,7 @@ BEGIN
               AND prosrc LIKE '%OR (NEW.execution=''resolved_upstream'' AND OLD.execution<>''queued'')%'
               AND prosrc LIKE '%OR (OLD.execution IN (''pending'',''failed'') AND NEW.execution=''published''%'
               AND prosrc LIKE '%AND NEW.execution=''pending'' AND NEW.current_available%'
-              -- 0216's reviewed view rules (#1705), kept.
+              -- 0153's reviewed view rules (#1705), kept.
               AND prosrc LIKE '%carries_intent := FOUND AND NOT response.reviewed_view%'
               AND prosrc LIKE '%WHERE shown->>''stream''=''census'' AND shown->>''item''=OLD.id::text)))%'
               AND prosrc LIKE '%Proposal replacement requires a new final Family response%')
@@ -964,7 +964,7 @@ BEGIN
               AND proconfig=ARRAY['search_path=pg_catalog, public, pg_temp']
               AND prosrc LIKE '%OR proposal.id=(SELECT newest.id FROM (%'
               AND prosrc LIKE '%IF NOT NEW.reviewed_view AND prior.entity_kind IN (''family'',''member'') AND EXISTS (%'
-              -- 0216's reviewed view rules (#1705), kept.
+              -- 0153's reviewed view rules (#1705), kept.
               AND prosrc LIKE '%Submission must keep what its form showed%'
               AND prosrc LIKE '%IF NEW.reviewed_view AND EXISTS (%'
               AND prosrc LIKE '%AND NOT (NEW.reviewed_view AND EXISTS (%'

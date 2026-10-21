@@ -39,7 +39,7 @@ FROZEN = SCHEMA / "migrations/0160_resubmission_phase_order.sql"
 # Each function 0160 replaces, and the file holding the body it replaces.
 EARLIER = {
     "stewardship_response_derived_guard_v1": "0159_strict_phase_order.sql",
-    "stewardship_submission_effects_v1": "0216_reviewed_census_resubmission.sql",
+    "stewardship_submission_effects_v1": "0153_reviewed_census_resubmission.sql",
 }
 # ParishSoft holding both of the fixture's answers (Member 3's first name
 # and prefix, which the Family answered "Requested" and "Dr.").
