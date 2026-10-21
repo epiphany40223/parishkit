@@ -471,6 +471,9 @@ FROZEN = {
     "0159_strict_phase_order.sql": (
         "6e22e18665523982160c73cbba0802e1458b39d55c6b1e7d184c50a56fb19579"
     ),
+    "0160_resubmission_phase_order.sql": (
+        "d4bc632a39f9df00e1ddf8cf8eb1a0abbc00d2e535225e7c0dff90cdc3796abd"
+    ),
     "0146_census_terminal_undo.sql": (
         "4bdbbda58daa0aecda124bb36bab4157c2898d27a5d86392e5833d0c7684c456"
     ),

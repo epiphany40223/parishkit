@@ -4698,10 +4698,55 @@ BEGIN
               AND history.family_version<=previous.family_version
               AND (history.id=public.stewardship_response_census_anchor_v1(previous.id)
                    OR (proposal.entity_kind='member'
-                       AND proposal.field IN ('moved_household','deceased_status','death_date')))
+                       AND proposal.field IN ('moved_household','deceased_status','death_date'))
+                   -- An open change kept on an earlier response (#1895).
+                   OR proposal.id=(SELECT newest.id FROM (
+                           SELECT kept.id, kept.execution, kept.submitted_value
+                           FROM public.stewardship_proposed_change kept
+                           JOIN public.stewardship_submission kept_response ON kept_response.id=kept.submission_id
+                           JOIN public.stewardship_submission kept_prior ON kept_prior.id=previous.id
+                           WHERE kept_response.family_id=kept_prior.family_id
+                             AND kept_response.campaign_id=kept_prior.campaign_id
+                             AND kept_response.mode=kept_prior.mode
+                             AND kept_response.rehearsal_epoch_id IS NOT DISTINCT FROM kept_prior.rehearsal_epoch_id
+                             AND kept_response.family_version<=kept_prior.family_version
+                             AND ROW(kept.entity_kind,kept.entity_key,kept.field)=ROW(proposal.entity_kind,proposal.entity_key,proposal.field)
+                           ORDER BY kept_response.family_version DESC LIMIT 1) newest
+                       JOIN public.stewardship_submission kept_census
+                           ON kept_census.id=public.stewardship_response_census_anchor_v1(previous.id)
+                       CROSS JOIN LATERAL (SELECT kept_census.answers #> CASE proposal.entity_kind
+                             WHEN 'family' THEN ARRAY['family',proposal.field]
+                             ELSE ARRAY['members',proposal.entity_key,proposal.field] END AS value) given
+                       WHERE proposal.entity_kind IN ('family','member')
+                         AND newest.execution NOT IN ('published','resolved_upstream','resolved_external','cancelled','superseded')
+                         AND given.value IS NOT NULL
+                         AND public.stewardship_response_comparison_v1(proposal.field,given.value)
+                             IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(proposal.field,newest.submitted_value)))
             ORDER BY proposal.entity_kind,proposal.entity_key,proposal.field,history.family_version DESC
         LOOP
             IF prior.execution IN ('published','resolved_upstream','resolved_external','cancelled','superseded') THEN
+                CONTINUE;
+            END IF;
+            -- Strict phase order (#1895): the same answer again for an open
+            -- change ParishSoft already holds keeps it as it is, its stage
+            -- and decision, until its review and step (the resubmission
+            -- rule 1; rule 3 withdraws only an item whose previous answer
+            -- ParishSoft does not hold). responses/proposals.py derives the
+            -- same; a reviewed form's own rules are above and below.
+            IF NOT NEW.reviewed_view AND prior.entity_kind IN ('family','member') AND EXISTS (
+                SELECT 1 FROM (SELECT NEW.answers #> CASE prior.entity_kind
+                      WHEN 'family' THEN ARRAY['family',prior.field]
+                      ELSE ARRAY['members',prior.entity_key,prior.field] END AS value,
+                    CASE prior.entity_kind
+                      WHEN 'family' THEN public.stewardship_response_household_source_v1(
+                          NEW.validation_source_id,NEW.family_id,prior.entity_key,prior.field)
+                      ELSE public.stewardship_response_field_source_v1(
+                          NEW.validation_source_id,NEW.family_id,prior.entity_key,prior.field) END AS source) held
+                WHERE held.value IS NOT NULL AND held.source->'available'='true'::jsonb
+                  AND public.stewardship_response_comparison_v1(prior.field,held.value)
+                      IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(prior.field,prior.submitted_value)
+                  AND public.stewardship_response_comparison_v1(prior.field,held.value)
+                      IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(prior.field,held.source->'value')) THEN
                 CONTINUE;
             END IF;
             -- A change a reviewed form (#1705) showed, which this response
@@ -4936,6 +4981,10 @@ BEGIN
             -- Terminal/date work may survive an intervening response that has
             -- no active source Member to display. Mirror the Family namespace
             -- and latest-record selection used by effective.proposal_index.
+            -- So may an open change ParishSoft already holds that the Family
+            -- answered again unchanged (strict phase order, #1895): it stays
+            -- on its earlier response while each later census response gives
+            -- its answer, the newest change for the field and still open.
             SELECT candidate.* INTO predecessor FROM public.stewardship_proposed_change candidate
             JOIN public.stewardship_submission earlier ON earlier.id=candidate.submission_id
             JOIN public.stewardship_submission prior ON prior.id=response.prior_submission_id
@@ -4944,7 +4993,29 @@ BEGIN
               AND earlier.rehearsal_epoch_id IS NOT DISTINCT FROM response.rehearsal_epoch_id
               AND earlier.family_version<=prior.family_version
               AND (earlier.id=public.stewardship_response_census_anchor_v1(prior.id) OR (NEW.entity_kind='member'
-                   AND NEW.field IN ('moved_household','deceased_status','death_date')))
+                   AND NEW.field IN ('moved_household','deceased_status','death_date'))
+                   OR candidate.id=(SELECT newest.id FROM (
+                           SELECT kept.id, kept.execution, kept.submitted_value
+                           FROM public.stewardship_proposed_change kept
+                           JOIN public.stewardship_submission kept_response ON kept_response.id=kept.submission_id
+                           JOIN public.stewardship_submission kept_prior ON kept_prior.id=prior.id
+                           WHERE kept_response.family_id=kept_prior.family_id
+                             AND kept_response.campaign_id=kept_prior.campaign_id
+                             AND kept_response.mode=kept_prior.mode
+                             AND kept_response.rehearsal_epoch_id IS NOT DISTINCT FROM kept_prior.rehearsal_epoch_id
+                             AND kept_response.family_version<=kept_prior.family_version
+                             AND ROW(kept.entity_kind,kept.entity_key,kept.field)=ROW(NEW.entity_kind,NEW.entity_key,NEW.field)
+                           ORDER BY kept_response.family_version DESC LIMIT 1) newest
+                       JOIN public.stewardship_submission kept_census
+                           ON kept_census.id=public.stewardship_response_census_anchor_v1(prior.id)
+                       CROSS JOIN LATERAL (SELECT kept_census.answers #> CASE NEW.entity_kind
+                             WHEN 'family' THEN ARRAY['family',NEW.field]
+                             ELSE ARRAY['members',NEW.entity_key,NEW.field] END AS value) given
+                       WHERE NEW.entity_kind IN ('family','member')
+                         AND newest.execution NOT IN ('published','resolved_upstream','resolved_external','cancelled','superseded')
+                         AND given.value IS NOT NULL
+                         AND public.stewardship_response_comparison_v1(NEW.field,given.value)
+                             IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(NEW.field,newest.submitted_value)))
               AND ROW(candidate.entity_kind,candidate.entity_key,candidate.field)=ROW(NEW.entity_kind,NEW.entity_key,NEW.field)
             ORDER BY earlier.family_version DESC LIMIT 1;
             -- A response drawn as the reviewed form (#1705) never carries a
@@ -5194,7 +5265,10 @@ BEGIN
                 -- execution (entered) or the decision (ignored, reopened),
                 -- nothing else, and advances the version by one. Any other
                 -- web change must be a replacement by a later Family response,
-                -- which never changes the decision. A change Entered by hand
+                -- which never changes the decision and never resolves a change
+                -- upstream (strict phase order, #1895: an unchanged answer
+                -- keeps a change ParishSoft already holds, and an answer set
+                -- back withdraws one). A change Entered by hand
                 -- takes only a resolution (#1737): Entered by hand again keeps
                 -- it entered. Back to review (reopened) of a terminal step
                 -- (#1840: Entered by hand, Updated in ParishSoft, Already in
@@ -5267,7 +5341,7 @@ BEGIN
                           THEN NEW.execution='conflict'
                           ELSE NEW.execution=OLD.execution END)
                    AND (NEW.decision<>OLD.decision
-                   OR NEW.execution NOT IN ('superseded','cancelled','resolved_upstream')
+                   OR NEW.execution NOT IN ('superseded','cancelled')
                    OR NOT EXISTS (
                        SELECT 1 FROM public.stewardship_submission later
                        JOIN public.stewardship_family_form_baseline baseline ON baseline.id=later.baseline_id
@@ -5292,6 +5366,32 @@ BEGIN
                                AND ROW(candidate.entity_kind,candidate.entity_key,candidate.field)=
                                    ROW(OLD.entity_kind,OLD.entity_key,OLD.field)
                              ORDER BY history.family_version DESC LIMIT 1))
+                           -- An open change ParishSoft already holds, which
+                           -- the Family answered again unchanged, stays on its
+                           -- earlier response (#1895): the predecessor lookup
+                           -- above finds it the same way.
+                           OR OLD.id=(SELECT newest.id FROM (
+                                   SELECT kept.id, kept.execution, kept.submitted_value
+                                   FROM public.stewardship_proposed_change kept
+                                   JOIN public.stewardship_submission kept_response ON kept_response.id=kept.submission_id
+                                   JOIN public.stewardship_submission kept_prior ON kept_prior.id=later.prior_submission_id
+                                   WHERE kept_response.family_id=kept_prior.family_id
+                                     AND kept_response.campaign_id=kept_prior.campaign_id
+                                     AND kept_response.mode=kept_prior.mode
+                                     AND kept_response.rehearsal_epoch_id IS NOT DISTINCT FROM kept_prior.rehearsal_epoch_id
+                                     AND kept_response.family_version<=kept_prior.family_version
+                                     AND ROW(kept.entity_kind,kept.entity_key,kept.field)=ROW(OLD.entity_kind,OLD.entity_key,OLD.field)
+                                   ORDER BY kept_response.family_version DESC LIMIT 1) newest
+                               JOIN public.stewardship_submission kept_census
+                                   ON kept_census.id=public.stewardship_response_census_anchor_v1(later.prior_submission_id)
+                               CROSS JOIN LATERAL (SELECT kept_census.answers #> CASE OLD.entity_kind
+                                     WHEN 'family' THEN ARRAY['family',OLD.field]
+                                     ELSE ARRAY['members',OLD.entity_key,OLD.field] END AS value) given
+                               WHERE OLD.entity_kind IN ('family','member')
+                                 AND newest.execution NOT IN ('published','resolved_upstream','resolved_external','cancelled','superseded')
+                                 AND given.value IS NOT NULL
+                                 AND public.stewardship_response_comparison_v1(OLD.field,given.value)
+                                     IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(OLD.field,newest.submitted_value))
                            -- A reviewed form (#1705) names each change it
                            -- showed, which a Family that left it as shown kept
                            -- on its earlier response: such a change, on any
