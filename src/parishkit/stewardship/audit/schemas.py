@@ -295,6 +295,8 @@ class Action(StrEnum):
     ADMIN_CMD_WORKGROUP_CONFIRM = "admin_cmd_workgroup_confirm"
     # campaign confirm: Campaign settings' Apply (ADM-11 PR 10).
     ADMIN_CMD_CAMPAIGN_CONFIRM = "admin_cmd_campaign_confirm"
+    # campaign create: Create the campaign's Apply (#1899).
+    ADMIN_CMD_CAMPAIGN_CREATE = "admin_cmd_campaign_create"
     # campaign shares-confirm: Share options' Apply (ADM-11 PR 10).
     ADMIN_CMD_CAMPAIGN_SHARES_CONFIRM = "admin_cmd_campaign_shares_confirm"
     ADMIN_CMD_USERS_IMPORT_LEADERS = "admin_cmd_users_import_leaders"

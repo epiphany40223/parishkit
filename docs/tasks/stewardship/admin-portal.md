@@ -957,7 +957,27 @@ locked field refused, its leader roles, its end date with
 `campaign_end_date_requested` and its intent, its Ministries with
 `campaign_ministries_requested`, no current campaign, a read-only session
 and Staff denied, an ended session) and the unchanged Campaign settings,
-live end date and live Ministries page suites. Another part adds `campaign
+live end date and live Ministries page suites. Another part (#1899) adds
+`campaign create-preview` and `campaign create`, Create the campaign's
+Review and Apply for the deployment's first campaign, in
+`parishkit.stewardship.admin_campaign_create`, through the page's own
+admission, form, Review, salt and Apply recheck and
+`admin_editing.confirm_intent` with `first_campaign`, and defers
+`campaign_clone` on #145, with no schema change; proven by
+`tests/stewardship/test_admin_campaign_create.py` (the catalog entries,
+the described event, the documents' names, the ledger, the refusal's
+code, usage errors), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_campaign_create_cli_postgresql.py`
+(the first campaign reviewed, created with the event and applied with its
+default content, a repeat once it exists, a second review refused, the
+form's starting values for omitted fields, a command token confirmed on
+the page and a page token by the command, a stale version, field errors,
+an unknown field, a malformed document, an altered, Campaign settings' or
+another Administrator's token, a token reviewed before the settings
+changed, a campaign added since the review, a read-only session and Staff
+denied, an ended session) and the unchanged Create the campaign page
+suite. Another part adds `campaign
 shares-preview` and `campaign shares-confirm`, Share options' Review and
 Apply, in `parishkit.stewardship.admin_shares`, through the page's own
 target and editability checks, formset, review (moved into

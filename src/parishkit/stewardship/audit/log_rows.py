@@ -226,6 +226,7 @@ ACTIVITY_TYPES = {
         "admin_cmd_integration_backup_key_confirm",
         "admin_cmd_workgroup_confirm",
         "admin_cmd_campaign_confirm",
+        "admin_cmd_campaign_create",
         "admin_cmd_campaign_shares_confirm",
         "user_leaders_import_requested",
         "user_leader_imported",

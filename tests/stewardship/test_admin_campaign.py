@@ -121,11 +121,10 @@ def test_the_documents_print_only_allowed_names():
 
 def test_the_ledger_covers_the_page():
     """The page is covered by its read, Review and Apply; nothing is owed.
-    Creating a campaign stays pending under its own names."""
+    Create the campaign has its own commands (test_admin_campaign_create)."""
     parity = LEDGER["campaign_settings"]
     assert parity.kind == "command" and parity.owed is None
     assert parity.detail == ("campaign show", "campaign preview", "campaign confirm")
-    assert LEDGER["campaign_create"].kind == "pending"
 
 
 @pytest.mark.parametrize(
