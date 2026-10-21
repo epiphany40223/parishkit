@@ -973,13 +973,16 @@ def assert_lacks_capability(browser, response):
     """``response`` refuses a signed-in user's missing capability (#879).
 
     A post whose session has ended is refused with 403 too, but with the
-    "Your sign-in has ended" refusal. A capability refusal carries none, and
-    the same browser still opens the Admin home page, so its session is live.
+    "Your sign-in has ended" refusal, which links to the sign-in page. A
+    capability refusal is the role refusal (#1924), which links to Admin home
+    instead, and the same browser still opens the Admin home page, so its
+    session is live.
     """
     assert response.status_code == 403, response.content
     body = json.loads(response.content)
     assert [error["code"] for error in body["errors"]] == ["denied"]
-    assert "refusal" not in body
+    assert "sign-in has ended" not in json.dumps(body)
+    assert ((body.get("refusal") or {}).get("link") or {}).get("url") != "/admin/login"
     assert browser.get("/admin/").status_code == 200
 
 
