@@ -105,9 +105,7 @@ def collect_inputs(caller, service, campaign_id):
             or scope.runtime.active_configuration_id
             != configuration.active_configuration_id
         ):
-            raise StaleRecordError(
-                "Go-live readiness requires the current Testing draft."
-            )
+            raise StaleRecordError("Go live requires the current Testing draft.")
         document = configuration.active_configuration.canonical_document
         source = source_readiness(scope)
         ministries, funds = _catalogs(source)
