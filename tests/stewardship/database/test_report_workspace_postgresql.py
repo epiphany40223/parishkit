@@ -479,11 +479,29 @@ def test_figures_status_is_passive_and_rereads_never_renew(http_scenario):
         assert response.status_code == 200
         assert b"data-live-pending" not in response.content
         assert b'data-reread href="#comparison-report"' in response.content
+        # A page that could not read its figures (retry=1, #1586) is watched
+        # at the slow pace with no Updating notice while its generation is
+        # still the newest, and re-reads itself once another one is ready.
+        response = browser.get(status + shown + "&retry=1")
+        assert response.status_code == 200
+        assert b'data-live-pending data-live-interval="60000"' in response.content
+        assert b"Updating" not in response.content
+        assert b"retry=1" in response.content
+        assert b"data-reread" not in response.content
+        response = browser.get(
+            status + "?view=dashboard&scope=historical&shown=&retry=1"
+        )
+        assert response.status_code == 200
+        assert b"data-live-pending" not in response.content
+        assert b'data-reread href="#response-dashboard"' in response.content
         for query in (
             "view=other&scope=historical&shown=",
             "view=dashboard&scope=all&shown=",
             "view=dashboard&scope=historical&shown=not-a-uuid",
             "view=dashboard&scope=historical&shown=&day=3",
+            "view=dashboard&scope=historical&shown=&retry=0",
+            "view=dashboard&scope=historical&shown=&retry=",
+            "view=comparison&scope=historical&shown=&retry=1",
         ):
             assert browser.get(status + "?" + query).status_code == 400, query
         assert events.count() == 0

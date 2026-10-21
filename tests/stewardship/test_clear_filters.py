@@ -30,7 +30,7 @@ FILTER_FORMS = {
     "financial-report.html",
     "logs.html",
     "ministries.html",
-    "timeline.html",
+    "timeline-panel.html",
 }
 # Hidden fields a filter form keeps when its filters are cleared: the
 # table's sort and size (a TablePage's view_fields, drawn by a loop), the

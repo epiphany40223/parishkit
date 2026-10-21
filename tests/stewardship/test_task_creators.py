@@ -76,7 +76,14 @@ SITES = {
     "accounts/activation_progress.py::control": site(
         {"production_tokens", "production_token_cleanup"},
         WEB,
-        {"accounts/activation_views.py", "local/seed_web.py"},
+        # The Go live page's Check step retries a stopped go-live's failed
+        # disposal through it (Retry stopping go-live, #1585); its Prepare
+        # step retries and discards the links through it (#1585 slice 3).
+        {
+            "accounts/go_live_prepare_views.py",
+            "accounts/go_live_views.py",
+            "local/seed_web.py",
+        },
     ),
     "accounts/campaign_family_test.py::_enqueue": site(
         # Called by request_tests (the Family test page and admin_tests).
@@ -86,8 +93,12 @@ SITES = {
     # Called by request_sample and by the scheduled email's test of an unsaved
     # edit (#446), which share the limits and the task.
     "accounts/campaign_mail.py::_queue": site("campaign_mail_test", WEB),
+    # Production activation's Retry, and pk-admin go-live retry (#1809),
+    # which runs as the web login.
     "accounts/confirmation_progress.py::retry": site(
-        "activation_catchup", WEB, {"accounts/confirmation_views.py"}
+        "activation_catchup",
+        WEB,
+        {"accounts/confirmation_views.py", "admin_go_live.py"},
     ),
     "accounts/setup_mail.py::request_sample": site(
         "setup_mail_test",
@@ -103,7 +114,7 @@ SITES = {
         "production_cleanup", WEB, {"accounts/go_live_progress.py"}
     ),
     "campaigns/production_storage.py::begin_transition": site(
-        # cleanup_requests.begin_cleanup, from the go-live cleanup page.
+        # cleanup_requests.begin_cleanup, from the Go live page's Start go-live.
         "production_cleanup",
         WEB,
         {"campaigns/cleanup_requests.py"},

@@ -24,7 +24,10 @@ failed, that line with a link to its Background task and Try again (#1404
 PR 5), so a failed load never looks as if none was started. Load
 ParishSoft data, the step that is this load (source-refresh.html), draws
 none of them: the page itself offers it.
-{% endcomment %}{% with wizard=admin_chrome.campaign_wizard %}{% if wizard %}
+On Go live's Check step it draws nothing: that page shows one step bar,
+its own (go-live-check.html, #1585), and takes its Back from this
+stepper's ``previous``.
+{% endcomment %}{% with wizard=admin_chrome.campaign_wizard %}{% if wizard and wizard.current.key != 'go_live' %}
 <nav id="campaign-stepper" class="setup-stepper" data-in-place-region aria-labelledby="campaign-stepper-heading">
 <h2 id="campaign-stepper-heading" class="setup-sr-only">{% translate "Campaign setup progress" %}</h2>
 <div class="setup-stepper-summary">
@@ -35,8 +38,8 @@ none of them: the page itself offers it.
 {% translate "Campaign setup steps" as track_label %}{% translate "All campaign setup steps" as list_summary %}{% include 'stewardship/stepper-steps.html' with track_label=track_label list_id='campaign-stepper-list' list_summary=list_summary %}
 </nav>
 {% include 'stewardship/components/review-outcome.html' with outcome_id="campaign-step-outcome" %}
-{% if wizard.current.key == 'load' %}{% elif wizard.load == 'offer' or wizard.load == 'failed' %}<div class="notice next-step{% if wizard.load == 'failed' %} notice-error{% endif %}" data-campaign-load>{% if wizard.load == 'failed' %}{% include 'stewardship/campaign-load-failed.html' %}{% else %}<p><strong>{% translate "Load the campaign's ParishSoft data." %}</strong> {% translate "A full refresh adds the campaign's Families, Family codes and giving. It usually takes a few minutes. You can go on with the next steps while it runs; Go-live readiness waits for it." %}</p>{% endif %}
+{% if wizard.current.key == 'load' %}{% elif wizard.load == 'offer' or wizard.load == 'failed' %}<div class="notice next-step{% if wizard.load == 'failed' %} notice-error{% endif %}" data-campaign-load>{% if wizard.load == 'failed' %}{% include 'stewardship/campaign-load-failed.html' %}{% else %}<p><strong>{% translate "Load the campaign's ParishSoft data." %}</strong> {% translate "A full refresh adds the campaign's Families, Family codes and giving. It usually takes a few minutes. You can go on with the next steps while it runs; going live waits for it." %}</p>{% endif %}
 <form method="post" action="{% url 'admin:source_refresh' %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ wizard.refresh_key }}"><input type="hidden" name="return_step" value="{{ wizard.current.key }}">{% button type="submit" data-submit-waits %}{% if wizard.load == 'failed' %}{% translate "Try again" %}{% else %}{% translate "Load the campaign's ParishSoft data" %}{% endif %}{% endbutton %}</form></div>
 {% elif wizard.load == 'empty' %}<p class="notice" role="status" data-campaign-load>{% translate "The campaign's ParishSoft data loaded, but no Families matched." %} {% translate "Check that ParishSoft has active Parishioner Families, then load again." %}{% if wizard.load_task %} <a href="{% url 'admin:background_task_page' wizard.load_task %}">{% translate "See the load" %}</a>{% endif %} <a href="{% url 'admin:source_refresh' %}">{% translate "Refresh from ParishSoft" %}</a></p>
-{% elif wizard.load == 'loading' %}<p class="notice" role="status" data-campaign-load>{% translate "ParishSoft data is loading; Go-live readiness waits for it." %}</p>{% endif %}
+{% elif wizard.load == 'loading' %}<p class="notice" role="status" data-campaign-load>{% translate "ParishSoft data is loading; going live waits for it." %}</p>{% endif %}
 {% endif %}{% endwith %}

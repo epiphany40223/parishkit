@@ -1,0 +1,77 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
+{% comment %}
+  The Go live page's Confirm Production step (admin-portal spec, "Go live
+  page"; #1585 slice 4; go_live_confirm_views.confirmation). One frame, as
+  Check's and Prepare's: the heading, the About panel, the Go live step
+  bar, the step's content and one action row (the secondary Stop go-live
+  first, then exactly one primary, or none while there is nothing to do),
+  with the reserved status line under it. No Back: Prepare cannot be redone
+  without stopping.
+
+  The content is one impact preview, as of a browser-local time: whether
+  the campaign becomes active now or is scheduled, the Families with and
+  without an eligible email address, and the Family and report emails due
+  at once, with the combined and skipped counts in a disclosure. A line
+  names what changed since go-live started (the start time passed, or the
+  links were prepared again on changed ParishSoft data).
+
+  The step bar, content and row are one region (#go-live-confirm) that
+  updates itself (live-status-v1.js) every 30 seconds while go-live is in
+  progress, so a change made elsewhere shows here; there is no Refresh link
+  (#1586). Once the step is no longer the one in progress (the links are
+  being prepared again, go-live was stopped, or Production was confirmed
+  elsewhere) the region settles and its primary, marked data-live-follow,
+  opens the page that now applies. A reload draws the same state.
+
+  ``confirm`` is go_live_confirm's Confirm: ready, problems, hold_ended,
+  closed, moved, stopped, not_started or confirmed; ``stage`` is the
+  Prepare read it comes from (its Stop go-live and Refresh and prepare
+  again controls).
+{% endcomment %}
+{% block title %}{% translate "Go live" %}{% endblock %}
+{% block head %}{% if not admin_chrome.campaign_wizard %}<link rel="stylesheet" href="{% static 'stewardship/stepper-v1.css' %}">{% endif %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
+{% block content %}
+<h1>{% translate "Go live" %}</h1>
+{% aboutpage "go-live-confirm" %}<p>{% translate "This is the last step before the campaign goes live. It shows what confirming would do now: whether the campaign becomes active at once or is scheduled for its start, and how many emails are sent at once. The preview updates by itself." %}</p>
+<p>{% translate "Confirm Production asks you to type Production. Before anything reaches Families it checks readiness and the site's public web address again, and it refuses if anything shown here changed meanwhile." %}</p>
+<p>{% translate "Testing data deleted earlier cannot be restored. Stop go-live returns the campaign to a Testing draft; the prepared Family links are then discarded." %}</p>{% endaboutpage %}
+{% if confirm.state == 'ready' %}{% translate "Ready to confirm Production." as headline %}{% elif confirm.state == 'problems' %}{% translate "Something needs attention before going live." as headline %}{% elif confirm.state == 'hold_ended' %}{% translate "ParishSoft refreshes resumed while this waited." as headline %}{% elif confirm.state == 'closed' %}{% translate "The campaign has ended, so it cannot go live." as headline %}{% elif confirm.state == 'moved' and stage.reason == 'repreparing' %}{% translate "ParishSoft data changed, so new links are being prepared." as headline %}{% elif confirm.state == 'moved' %}{% translate "Not available yet: the Family links are not prepared yet." as headline %}{% elif confirm.state == 'stopped' and stage.stopped_by_other %}{% translate "Another Administrator stopped go-live." as headline %}{% elif confirm.state == 'stopped' %}{% translate "Go-live was stopped." as headline %}{% elif confirm.state == 'confirmed' and confirm.confirmed_by_other %}{% translate "Another Administrator already confirmed Production." as headline %}{% elif confirm.state == 'confirmed' %}{% translate "Production is confirmed." as headline %}{% else %}{% translate "Not available yet: Start go-live on the Check step first." as headline %}{% endif %}
+<div id="go-live-confirm" data-in-place-region data-live-status="go-live-confirm"{% if live_pending %} data-live-pending data-live-interval="{{ live_interval }}"{% endif %} data-live-give-up="{{ live_limit }}" data-live-announce="{{ headline }}" data-go-live-confirm="{{ confirm.state }}">
+{% include 'stewardship/go-live-steps.html' %}
+<section class="go-live-step" aria-labelledby="go-live-state">
+<h2 id="go-live-state">{{ headline }}</h2>
+{% if preview %}{% if confirm.start_passed %}<p data-go-live-changed="start">{% translate "The campaign start time has passed, so it will become active at once." %}</p>{% elif confirm.reprepared %}<p data-go-live-changed="links">{% translate "ParishSoft data changed after go-live started, so the Family links were prepared again." %}</p>{% endif %}
+{% if problems %}<ul class="go-live-problems">{% for problem in problems %}<li>{{ problem.text }}{% for url, label in problem.links %} <a href="{{ url }}">{{ label }}</a>{% endfor %}</li>{% endfor %}</ul>{% endif %}
+<p data-go-live-impact>{% if confirm.target == 'scheduled' %}{% translate "The campaign is scheduled to start" %} <time data-local-instant datetime="{{ campaign.active_configuration.starts_at|instant }}">{{ campaign.active_configuration.starts_at|instant }}</time>{% translate "; nothing is sent until then." %}{% else %}{% translate "The campaign becomes active as soon as you confirm, and the emails due at once are sent." %}{% endif %}</p>
+<p>{% translate "As of" %} <time data-local-instant datetime="{{ preview.readiness.observed_at|instant }}">{{ preview.readiness.observed_at|instant }}</time></p>
+<dl><dt>{% translate "Families with an eligible email address" %}</dt><dd>{{ email_eligibility|out_of }}</dd>
+<dt>{% translate "Families without an eligible email address" %}</dt><dd>{{ no_email|out_of }}</dd>
+<dt>{% translate "Family emails due at once" %}</dt><dd>{{ families.messages|number }}</dd>
+<dt>{% translate "Report emails due at once" %}</dt><dd>{{ report_messages|number }}</dd></dl>
+<details class="go-live-counts" data-keep-open><summary>{% translate "Combined and skipped sends" %}</summary>
+<dl><dt>{% translate "Family sends combined into one message (not extra messages)" %}</dt><dd>{{ families.coalesced_slots|number }}</dd>
+<dt>{% translate "Family sends skipped" %}</dt><dd>{{ families.skipped_slots|number }}</dd>
+<dt>{% translate "Report sends combined into one message (not extra messages)" %}</dt><dd>{{ digests.coalesced_slots|number }}</dd>
+<dt>{% translate "Weekly reports skipped (nothing new to report)" %}</dt><dd>{{ digests.empty_weekly_reports|number }}</dd></dl>
+</details>
+<p>{% translate "Who gets mail is checked again when it is actually prepared, so the actual counts may differ slightly from these." %}</p>
+{% elif confirm.state == 'hold_ended' %}<p>{% translate "Scheduled ParishSoft refreshes were paused while this waited, and the pause has ended, so the Family links may no longer match ParishSoft. Refresh and prepare again gets current ParishSoft data and then prepares new Family links from it. It does not delete Testing data again." %}</p>
+{% elif confirm.state == 'closed' %}<p>{% translate "Stop go-live, then review the campaign dates on Check." %}</p>
+{% elif confirm.state == 'moved' %}<p>{% translate "Prepare shows how the Family links are being prepared." %}</p>
+{% elif confirm.state == 'confirmed' %}<p>{% translate "Production activation shows how going live is proceeding." %}</p>
+{% else %}<p>{% translate "Check shows whether the campaign is ready to go live." %}</p>{% endif %}
+</section>
+<div class="campaign-step-actions go-live-actions" data-go-live-actions>
+{% if confirm.started and confirm.state != 'moved' %}<form method="post" action="{% url 'admin:go_live_prepare' %}" data-review-open="go-live-stop-review" data-review-redirects data-go-live-stop>{% csrf_token %}<input type="hidden" name="action" value="review_stop">{% button type="submit" variant="secondary" %}{% translate "Stop go-live" %}{% endbutton %}</form>{% endif %}
+{% if confirm.state == 'ready' %}{% comment %}data-review-redirects: a Review answered with Production activation (Production this Administrator already confirmed in another tab) opens it.{% endcomment %}<form method="post" action="{% url 'admin:go_live_confirm' %}" data-review-open="go-live-confirm-review" data-review-redirects data-go-live-primary>{% csrf_token %}<input type="hidden" name="action" value="review">{% button type="submit" %}{% translate "Confirm Production" %}{% endbutton %}</form>
+{% elif confirm.state == 'hold_ended' %}{% comment %}Prepare owns its next attempt: posted in place, its answer is Prepare, which draws no region of this page, so the page opens it (ui-v1.js), where the new refresh and links are followed.{% endcomment %}<form method="post" action="{% url 'admin:go_live_prepare' %}#go-live-confirm" data-in-place="go-live-confirm-again" data-in-place-message="{% translate 'A new ParishSoft refresh was requested.' %}" data-go-live-primary>{% csrf_token %}<input type="hidden" name="action" value="again"><input type="hidden" name="control" value="{{ stage.controls.again }}">{% button type="submit" %}{% translate "Refresh and prepare again" %}{% endbutton %}</form>
+{% elif confirm.state == 'moved' %}{% url 'admin:go_live_prepare' as prepare_url %}{% button href=prepare_url data-go-live-primary data-live-follow %}{% translate "Open Prepare" %}{% endbutton %}
+{% elif confirm.state == 'confirmed' %}{% url 'admin:production_progress' as progress_url %}{% button href=progress_url data-go-live-primary data-live-follow %}{% translate "Open Production activation" %}{% endbutton %}
+{% elif not confirm.started %}{% url 'admin:go_live' as check_url %}{% button href=check_url data-go-live-primary data-live-follow %}{% translate "Open Check" %}{% endbutton %}{% endif %}
+</div>
+</div>
+{% include 'stewardship/components/review-outcome.html' with outcome_id="go-live-confirm-outcome" %}
+<p class="setup-sr-only" data-live-announcer="go-live-confirm" role="status"></p>
+{% comment %}The two dialogs (UX conventions, "Review dialog"), outside the region so an update never removes one while it is open. Confirm Production's Apply posts here and answers with Production activation, where the page goes (data-review-redraw="leave"); Stop go-live's Apply posts its stop to Prepare, which answers with Check.{% endcomment %}{% url 'admin:go_live_confirm' as confirm_url %}{% translate "Go live now?" as confirm_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="go-live-confirm-review" title=confirm_title apply_url=confirm_url outcome_id="go-live-confirm-outcome" fallback="go-live-confirm-outcome" redraw_leave=True %}
+{% url 'admin:go_live_prepare' as prepare_url %}{% translate "Stop going live?" as stop_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="go-live-stop-review" title=stop_title apply_url=prepare_url apply_action="stop" describedby="go-live-stop-summary" outcome_id="go-live-confirm-outcome" fallback="go-live-confirm-outcome" redraw_leave=True %}
+{% endblock %}

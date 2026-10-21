@@ -42,11 +42,21 @@ In the [local environment](stewardship-local-environment.md) the command
 runs the same checks against what is installed there
 ([#1399](https://github.com/epiphany40223/parishkit/issues/1399)):
 ParishSoft against the fake service (or the real API, when the deployment
-chose it with `deploy --parishsoft real`), the mailbox against the mail catcher,
-the sentinel OAuth client (or a real localhost-only one, which needs the
-normal clock), and a test Slack token. A `--send-to` is refused
-there, because the send path takes only a Google service account, which the
-local environment still refuses. The local environment's
+chose it with `deploy --parishsoft real`), the mailbox against the mail catcher
+(or a test mailbox's real key beside the mail redirect, which needs the
+normal clock), the sentinel OAuth client (or a real localhost-only one, which
+needs the normal clock), and a test Slack token. A `--send-to` is refused
+there without a mail redirect, before the key is read; with one and a real
+key, its one recipient is the redirect address, never the address given.
+`backup_drive` runs only on the same terms as a real key (a mail redirect,
+the normal clock) and is refused before it reads anything otherwise.
+`parishsoft_contact` runs only while the deployment reads the fake, the one
+ParishSoft a local deployment may write to; with `deploy --parishsoft real`
+it is refused before the tenant check. On the fake, give the test Member a
+`pager` (or `fax`) first with a `fake-parishsoft` edit, since the generated
+parish leaves both unset; the marker and restore writes are recorded in the
+fake's edits list like any other write.
+The local environment's
 [safety guarantees](../specs/stewardship/local-environment/spec.md#safety-guarantees)
 say what each check can reach.
 

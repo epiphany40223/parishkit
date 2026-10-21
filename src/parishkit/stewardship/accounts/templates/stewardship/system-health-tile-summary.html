@@ -10,7 +10,8 @@
   turning Not current changes nothing's size. The page draws it inside the
   tile's toggle, in a data-live-mirror-target, and the polled region carries
   a copy, so a poll changes only the row's words and icon, never whether the
-  tile is open. A page-load tile has no polled copy.
+  tile is open. A page-load tile's copy comes only with the slow recheck
+  (#1790).
 {% endcomment %}{% translate "Show details" as show %}{% translate "Hide details" as hide %}<span class="health-box health-counted status-{{ tile.state }}"><span class="health-head">{% include "stewardship/components/level-icon.html" with level=tile.icon %}<span class="health-name">{{ tile.name }}</span> <span class="status-word">{{ tile.word }}</span></span>
 <span class="health-line-two"><span class="health-said">{% include "stewardship/system-health-tile-words.html" %}</span> <span class="health-cue"><span class="health-cue-show">{{ show }}</span><span class="health-cue-hide">{{ hide }}</span></span></span></span>
 <span class="health-box health-unknown status-unknown"><span class="health-head">{% include "stewardship/components/level-icon.html" with level="unknown" %}<span class="health-name">{{ tile.name }}</span> <span class="status-word">{% translate "Not current" %}</span></span>

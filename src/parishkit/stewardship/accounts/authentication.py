@@ -557,10 +557,16 @@ def logout(request):
 
 @require_safe
 def index(request):
-    """Show current campaign status under fresh, capability-filtered authorization."""
+    """Show Home, or My review work, under fresh, capability-filtered authorization.
+
+    Staff and Ministry leaders sign in to My review work instead of Home
+    (review pipeline spec, "Role views", decision 8; ``review_work``); an
+    Administrator keeps Home. Both are the dashboard view for the audit.
+    """
     from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
     from parishkit.stewardship.audit.services import record_action
 
+    from . import review_work
     from .admin_caller import AdminCaller
     from .admin_dashboard import observe
 
@@ -570,7 +576,11 @@ def index(request):
         principal = authenticated_admin(caller, store=service.store, activity=True)
         if principal is None:
             return HttpResponseRedirect("/admin/login")
-        observed = observe(principal, service.store, home=True)
+        landing = review_work.lands_here(principal)
+        if landing:
+            observed = review_work.observe(principal, service.store)
+        else:
+            observed = observe(principal, service.store, home=True)
         if observed is None:
             return denial(status=503, retry=5)
         config, data, now = observed
@@ -582,13 +592,17 @@ def index(request):
         # after release; chrome must use that observation, not independently
         # choose a newer projection for the same response.
         request._stewardship_display_configuration = config
+        if not landing and data.get("review"):
+            # Home's Review work counts ride on the menu's open-count
+            # statement (review_work.with_counts), which reads this.
+            request._stewardship_review_flags = data["review"]["flags"]
         response = render(
             request,
-            "stewardship/home.html",
+            "stewardship/my-review-work.html" if landing else "stewardship/home.html",
             {
                 "principal": principal,
                 "configuration": config,
-                "dashboard": data,
+                ("review" if landing else "dashboard"): data,
             },
         )
         with transaction.atomic():

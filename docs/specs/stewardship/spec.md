@@ -28,7 +28,7 @@ The application provides:
 - a Google-authenticated administration portal under `/admin/`;
 - a short, mobile-first Family response flow at `/`;
 - repeated atomic synchronization from ParishSoft;
-- personalized, scheduled Family email and administrative digests;
+- personalized, scheduled Family email and Administrator report emails;
 - live campaign reports and post-campaign workflows;
 - controlled ParishSoft contact-data write-back where the API supports it; and
 - durable, replayable operational and audit history.
@@ -78,6 +78,9 @@ Implementation tracking: [plans](../../plans/stewardship/README.md) and
 - [Review pipeline](review-pipeline/spec.md): one stage model,
   vocabulary and review worklist for every Family-submitted stream, from
   baseline through review to ParishSoft update or manual handling.
+- [Report emails](report-emails/spec.md): Administrator-designed report
+  emails made of report blocks, sent once or repeating to chosen
+  recipients, which replaced the daily and weekly Admin digests.
 
 ## Terminology
 

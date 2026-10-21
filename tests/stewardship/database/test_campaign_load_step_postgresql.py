@@ -176,7 +176,7 @@ def test_load_step_shows_one_state_at_a_time(auth_service, google):
     assert PortalSession.objects.get().last_activity_at == before
     # Every other step says the data is loading.
     content = page(browser, reverse("admin:content_catalog"))
-    assert "ParishSoft data is loading; Go-live readiness waits for it." in content
+    assert "ParishSoft data is loading; going live waits for it." in content
     # Outside the stepper (the campaign is no longer a draft) the page is
     # the ordinary Refresh from ParishSoft, with Refresh now and its wording.
     command(row, uuid4(), Action.ACTIVATE)

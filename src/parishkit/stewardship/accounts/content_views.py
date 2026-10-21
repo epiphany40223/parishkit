@@ -225,7 +225,7 @@ def _content_state(record):
 def catalog_entries(configuration, campaign):
     """The Pages and emails list's rows: (pages, emails), without rendering.
 
-    Shared with ``resave_recommended``, so go-live readiness and System
+    Shared with ``resave_recommended``, so Go live and System
     health flag exactly the rows this list marks (#838).
     """
     records = _records(configuration, campaign.pk)

@@ -276,13 +276,17 @@ class DeliveryShow(ReadModel):
 
     ``version`` (in ``delivery``) is what ``delivery resolve`` takes as
     ``--expected-version``. Notes give when and which action only; the
-    evidence text stays on the page.
+    evidence text stays on the page. ``outcome`` and ``choices`` are the
+    page's outcome panel and its question's answers (#1563): each choice
+    names its action and, while it is unavailable, the reason code.
     """
 
     delivery: dict
     task: dict | None
     actions: list
     retry_unavailable: bool
+    outcome: str
+    choices: list
     page: int
     size: int
     has_next: bool
@@ -383,6 +387,8 @@ def delivery_show_model(data):
         task=data["task"],
         actions=list(data["actions"]),
         retry_unavailable=data["retry_unavailable"],
+        outcome=data["outcome"],
+        choices=[dict(row) for row in data["choices"]],
         page=window.page,
         size=window.size,
         has_next=bool(data["has_next"]),
