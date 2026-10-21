@@ -7,6 +7,10 @@
   const message = document.getElementById("family-flow-message");
   const cancel = document.getElementById("family-cancel");
   const csrf = cancel.querySelector('[name="csrfmiddlewaretoken"]').value;
+  // The page's own Cancel and sign out button, below the flow. While an
+  // editing page shows, the button row carries Cancel in its middle slot
+  // instead (cancelSlot), so this one is hidden then (#1933).
+  const cancelButton = cancel.querySelector("button");
   const testing = root.dataset.testing === "true";
   let form = null, answers = null, initial = null, busy = false, finished = false;
   let accepted = false, submissionAttempted = false;
@@ -2006,6 +2010,17 @@
     if (push) pushPage({familyPage: page.key}, "");
     if (focus) focusTop(page.element.querySelector("h3"));
   }
+  function cancelSlot(nav) {
+    // Cancel and sign out in the editing pages' middle slot (#1933). The row
+    // sits inside the editor's form, and forms cannot nest, so this button
+    // submits the page's own #family-cancel form by its form attribute: the
+    // same form, confirmation and sign-out as before. The page's own button
+    // is hidden meanwhile, so only one Cancel shows. Returns the button.
+    const button = node("button", "Cancel and sign out", nav, {type: "submit", form: cancel.id,
+      class: "button-secondary", "data-nav-slot": "action"});
+    cancelButton.hidden = true;
+    return button;
+  }
   function retitle(key, title) {
     // Keep a Member page's heading, step link and counter in step with the
     // name being typed, so a new person's page stops saying "Household member".
@@ -2211,13 +2226,22 @@
     const nav = node("div", null, editor, {class: "actions family-nav"});
     node("p", null, nav, {class: "notice notice-error family-nav-error", role: "alert",
       id: "family-nav-error", "data-nav-error": "", hidden: ""});
-    const back = node("button", "Back", nav, {type: "button", class: "button-secondary", "data-page-back": ""});
+    // One three-slot row on every page (#1933): Back left, the action
+    // (Cancel and sign out here, Submit on Review) centered, Next right.
+    // Each button names its slot and ui-v1.css places it there, so a hidden
+    // Back or Next leaves its slot empty and nothing else moves.
+    const back = node("button", "Back", nav, {type: "button", class: "button-secondary",
+      "data-page-back": "", "data-nav-slot": "back"});
     back.addEventListener("click", () => {
       reviewPointerDown = false;
       const index = pages.findIndex((page) => page.key === currentPage);
       if (index > 0) showPage(pages[index - 1].key, {push: true});
     });
-    const next = node("button", "Next", nav, {type: "button", class: "button-secondary", "data-page-next": ""});
+    // Its press is over once it clicks: if the Family then declines the
+    // discard prompt, blur validation must work again, as after Next or Back.
+    cancelSlot(nav).addEventListener("click", () => { reviewPointerDown = false; });
+    const next = node("button", "Next", nav, {type: "button", class: "button-secondary",
+      "data-page-next": "", "data-nav-slot": "next"});
     next.addEventListener("click", () => {
       // The press that deferred blur validation is over; a later outside click
       // must validate as usual.
@@ -2229,7 +2253,8 @@
     // below checks every page before Review (#330). It looks and reads exactly
     // like the earlier pages' Next (#1422): both carry the same class, so they
     // share one style and position whatever their type.
-    node("button", "Next", nav, {type: "submit", class: "button-secondary", "data-page-review": ""});
+    node("button", "Next", nav, {type: "submit", class: "button-secondary", "data-page-review": "",
+      "data-nav-slot": "next"});
     // Enter in a field (or a phone keyboard's Go) means Next on every page but
     // the last, instead of implicitly submitting straight to Review.
     editor.addEventListener("keydown", (event) => {
@@ -2402,9 +2427,15 @@
     // sticky element only sticks within its parent, so the bar belongs to the
     // whole Review page and its Submit button joins the form by id.
     const actions = node("div", null, root, {class: "actions family-nav"});
-    const back = node("button", "Back to edit", actions, {type: "button", class: "button-secondary"});
+    // The same three slots as the editing pages (#1933): Back to edit left,
+    // Submit centered, the Next slot empty. Cancel and sign out shows below
+    // the flow again, as the page's own button.
+    cancelButton.hidden = false;
+    const back = node("button", "Back to edit", actions, {type: "button", class: "button-secondary",
+      "data-nav-slot": "back"});
     back.addEventListener("click", () => { edit(); pushPage({familyPage: currentPage}, ""); });
-    const submit = node("button", submitLabel, actions, {type: "submit", form: confirmation.id});
+    const submit = node("button", submitLabel, actions, {type: "submit", form: confirmation.id,
+      "data-nav-slot": "action"});
     confirmation.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (busy || !confirmation.reportValidity()) return;

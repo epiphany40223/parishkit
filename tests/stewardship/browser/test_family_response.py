@@ -377,7 +377,10 @@ def test_expiry_erases_sensitive_form_and_never_submits(page, component_origin):
     )
     show(page, page.get_by_label("First name (required)")).fill("Private tab edit")
     page.clock.fast_forward(4 * 60 * 60 * 1000)
-    expect(page.locator("#family-cancel")).to_be_hidden()
+    # Neither Cancel remains: the bar's went with the editor, and the page's
+    # own form is hidden itself (not just empty of a visible button).
+    expect(page.get_by_role("button", name="Cancel and sign out")).to_have_count(0)
+    expect(page.locator("#family-cancel")).to_have_attribute("hidden", "")
     assert page.locator("#member-3-first_name").count() == 0
     assert "Private tab edit" not in page.content()
     assert not submissions
