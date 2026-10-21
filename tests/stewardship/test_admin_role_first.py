@@ -19,6 +19,7 @@ from parishkit.stewardship import (
     admin_delivery_control,
     admin_digests,
     admin_followup,
+    admin_go_live,
     admin_history,
     admin_hosted_files,
     admin_integration_changes,
@@ -67,6 +68,16 @@ ROLE_FIRST = {
     "send confirm": None,
     # The Email Ministry leaders Apply (#1622); its --confirm path.
     "users email-leaders": Capability.MANAGE_USERS,
+    # The Go live page's prompting actions (PR 12, #1809).
+    "go-live start": None,
+    "go-live refresh-again": None,
+    "go-live stop": None,
+    "go-live confirm": None,
+    "go-live cancel": None,
+    # Update ParishSoft's Update and Run again (#1755): an Administrator's,
+    # before the request key is made or the page's checks run.
+    "census update-confirm": Capability.PUBLISH_CENSUS,
+    "census update-rerun": Capability.PUBLISH_CENSUS,
 }
 
 # The prompting commands Staff may run, as on their pages.
@@ -95,6 +106,16 @@ ADMITTING_READ = {
     # (#1733).
     "pledges decide": (admin_pledges, "admit_decide", {}),
 }
+# Commands above that no longer prompt but still check the role before any
+# input: Entered by hand stopped being final (#1840), so ``pledges decide``
+# asks nothing, and its admission still comes first.
+# Commands that asked while a mark was final and ask nothing now (#1840).
+NO_PROMPT = {
+    "pledges decide",
+    "census resolve",
+    "information decide",
+    "limitations decide",
+}
 
 # Everything a handler may read, look up or prompt with after its role check.
 LATER = (
@@ -118,6 +139,14 @@ LATER = (
     (admin_backup_key, "prompt_lines"),
     (admin_delivery_control, "confirm_prompt_lines"),
     (admin_delivery_control, "confirm_control"),
+    (admin_go_live, "start_prompt_lines"),
+    (admin_go_live, "start"),
+    (admin_go_live, "prepare_control"),
+    (admin_go_live, "apply_prepare"),
+    (admin_go_live, "confirm_prompt_lines"),
+    (admin_go_live, "confirm"),
+    (admin_go_live, "cancel_prompt_lines"),
+    (admin_go_live, "cancel"),
 )
 
 
@@ -142,7 +171,8 @@ def handler(name):
 def test_every_prompting_command_is_covered():
     """A new prompting command must say how it checks its role first."""
     prompting = {spec.name for spec in admin_cli.COMMANDS if spec.prompts}
-    assert prompting == set(ROLE_FIRST) | set(ADMITTING_READ)
+    assert prompting == (set(ROLE_FIRST) | set(ADMITTING_READ)) - NO_PROMPT
+    assert not {spec.name for spec in admin_cli.COMMANDS if spec.prompts} & NO_PROMPT
 
 
 @pytest.mark.parametrize("name", sorted(ROLE_FIRST))

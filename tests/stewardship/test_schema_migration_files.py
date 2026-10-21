@@ -429,6 +429,75 @@ FROZEN = {
     "0132_refresh_checks.sql": (
         "850b796b28d7cd472fee463fc6e119b73c33150ca920c899d1d69d400f84ed9d"
     ),
+    "0133_entered_incorrectly_fixes.sql": (
+        "a482e1594c86f1c27820c4901171c055f1b3490615f92da97b76d4eca904e312"
+    ),
+    "0134_pledge_refresh_checks.sql": (
+        "18c6c6c4053ce6470a3db4586f486bfd76716417e34903a695e7aff871eed912"
+    ),
+    "0135_pledge_conflicts.sql": (
+        "958caff9e59ffe8464f3a71a2fe21582e8372b3371b4f2a46186a0a019f94ab7"
+    ),
+    "0136_submission_upcoming_pledge.sql": (
+        "b66fcf15d06818dc6781b5a5813df647282dbe1f1dfb30ff4edf922696bd64cf"
+    ),
+    "0137_census_refresh_sources.sql": (
+        "5e855dbbfaffb607d16f4c9d5ff25bf443c021a2cc853a5c9f30ee2f5a1a94f3"
+    ),
+    "0138_published_refresh_conflicts.sql": (
+        "9e24ed6ab1b4a65d1c9081a976b562a2b7720e4fe383ef115548207d4df5759f"
+    ),
+    "0139_new_member_id_correction.sql": (
+        "6a6a5744da0c33c346213a5a178e55100141f073ac76cba98c04072b0200c8ae"
+    ),
+    "0140_edited_ministry_contacts.sql": (
+        "fca7ffa4f76a74ccc422264b303b79a4af5c859f55017abf6f3267fcba4e223c"
+    ),
+    "0141_added_member_links.sql": (
+        "01bf1e8b13a9f293d3c3713984a6b8e3cfab64288b22784688e10ff02d917820"
+    ),
+    "0142_participation_export_summary.sql": (
+        "e8eecd8555cfd8f4cfee650b6974b92551ab1f52d592b3ae0b513445d5fce073"
+    ),
+    "0143_reviewed_form_shown_items.sql": (
+        "5071598637b62aed4cce02362f86a7e67cb1273996387308a95969aa064f0a66"
+    ),
+    "0144_staff_timeline_export.sql": (
+        "adfde07b256d584b99de8ae7cdc2910cd982bf4bc1d505404e7b4fc957b522b6"
+    ),
+    "0145_page_member_names.sql": (
+        "9391e8c99018c8b7c5f7c996d4530e89d4d533864876cb2d5dc859321f1cc3b9"
+    ),
+    "0146_census_terminal_undo.sql": (
+        "4bdbbda58daa0aecda124bb36bab4157c2898d27a5d86392e5833d0c7684c456"
+    ),
+    "0147_census_addition_undo.sql": (
+        "eb1adbd6ae93bf45a258b9ce780327fdda4136654c416224c13aada41711cade"
+    ),
+    "0148_ministry_terminal_undo.sql": (
+        "86e61414d56fc3c6679fd92da0b5cdb59e50babcbe744e6223075157e4025837"
+    ),
+    "0149_pledge_terminal_undo.sql": (
+        "f6a3f9f033a7762572b632638ef81267c485c7a89c4bbee6a4b1ab6bd27f8b64"
+    ),
+    "0150_information_handled_undo.sql": (
+        "be6227c224f3b1e0308a77c0dc2b4d5f77f63f1fc86e333c57074eea49a7ab26"
+    ),
+    "0151_limitation_handled_undo.sql": (
+        "576d22f2d53cb5093794e599ef8f8a0384a187dcd9ee2c8d8505b9291d5d020e"
+    ),
+    "0152_audit_actor_time.sql": (
+        "1f7ac38ef615a918afcc7a6ff87d743484b013b5af31b5174b743c87868b96fb"
+    ),
+    "0153_reviewed_census_resubmission.sql": (
+        "a6f73dc9bd0bffa4d2e8527ba33e45cf3da1c4029e7d6aa1def2f4106f4d92b9"
+    ),
+    "0154_reviewed_ministry_resubmission.sql": (
+        "ebfd4ab090cde6e8676a42dd4ec73ada1b4c116b7bc533c994efdf52da81435d"
+    ),
+    "0155_reviewed_pledge_resubmission.sql": (
+        "c58fed6f43b79cd5bf5c6b8979df949d68cd461d7be04c816afc3a38055427f3"
+    ),
     "0156_report_pipeline.sql": (
         "dc04b332bc79d4ebeb52f4349e426744b79a83aac233fe9eea833ede7ee43a69"
     ),

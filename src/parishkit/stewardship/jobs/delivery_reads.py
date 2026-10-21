@@ -376,8 +376,9 @@ def administrator_names(addresses):
     """The Users-page Name of each address, lower-cased, that has one (#1562).
 
     Reads the current configuration's users (``AddressRule``) in one query.
-    An address with no entry there (a former Administrator), or whose entry
-    has no Name, is left out, so the page shows the address itself.
+    An address with no entry there (a former Administrator, or a Ministry
+    leader with no user entry), or whose entry has no Name, is left out,
+    so the page shows the address itself.
     """
     from django.db.models import Subquery
     from django.db.models.functions import Lower
@@ -402,12 +403,13 @@ PAGE_RECIPIENTS_LIMIT = 500
 
 
 def administrator_addresses(ids, actor_id):
-    """``{message id: address}`` for emails with no Family (#1562).
+    """``{message id: address}`` for emails with no Family (#1562, #1592).
 
     Read through ``stewardship_delivery_page_recipients_v1`` (frozen
     migration 0116), one call per ``PAGE_RECIPIENTS_LIMIT`` ids: a page
-    makes one, the Recipient sort one per 500 such emails. A report or
-    notice goes to one address; the first is kept. Raises
+    makes one, the Recipient sort one per 500 such emails. A report, a
+    notice or a Ministry leader email goes to one address; the first is
+    kept. Raises
     ``PermissionError`` when the read refuses ``actor_id``.
     """
     ids = list(ids)
@@ -425,27 +427,79 @@ def administrator_addresses(ids, actor_id):
     return addresses
 
 
+def member_names(ids, actor_id):
+    """``{message id: name}``: a ParishSoft Member's name for each email.
+
+    Read through ``stewardship_delivery_page_member_names_v1`` (frozen
+    migration 0145, #1562), one call per ``PAGE_RECIPIENTS_LIMIT`` ids: for
+    each email with no Family, the one name of a Member whose contact
+    record in the current ParishSoft data lists its address, in the Users
+    page's default-Name order (a Member of an active Family first, then a
+    head of household, then by name and Member DUID). An email no Member's
+    address matches is left out. Raises ``PermissionError`` when the read
+    refuses ``actor_id``.
+    """
+    ids = list(ids)
+    names = {}
+    for start in range(0, len(ids), PAGE_RECIPIENTS_LIMIT):
+        found = _definer_rows(
+            "SELECT message_id, name FROM "
+            "public.stewardship_delivery_page_member_names_v1(%s::uuid[],%s)",
+            (ids[start : start + PAGE_RECIPIENTS_LIMIT], actor_id),
+        )
+        if found is None:
+            raise PermissionError("Email recipients require an Administrator.")
+        names.update(found)
+    return names
+
+
+def person_names(addresses, actor_id):
+    """``{message id: name}`` Sent mail shows for each email to a person.
+
+    ``addresses`` maps each email's id to its address
+    (``administrator_addresses``). The name is the address's Users-page
+    Name (``administrator_names``), else, by Administrator decision
+    (2026-10-20, #1562), a ParishSoft Member's name for it
+    (``member_names``), read only for the emails whose address has no
+    Users-page Name; an email with neither is left out, so the page shows
+    the address itself.
+    """
+    users = administrator_names(addresses.values())
+    unnamed = [
+        key for key, address in addresses.items() if address.lower() not in users
+    ]
+    members = member_names(unnamed, actor_id) if unnamed else {}
+    named = {key: users.get(address.lower()) for key, address in addresses.items()}
+    return {
+        key: named[key] or members[key]
+        for key in addresses
+        if named[key] or key in members
+    }
+
+
 def with_recipients(rows, actor_id):
     """Each listed email with whom it is for, for Sent mail's Recipient (#1562).
 
     A Family email is named by its Family (``with_family_names``). An email
-    with no Family (a report or notice, sent to one Administrator address)
-    gains ``recipient_address``, read for the shown page through
+    with no Family (a report or notice, sent to one Administrator address,
+    or a Ministry leader's sign-in email, to one leader's address) gains
+    ``recipient_address``, read for the shown page through
     ``stewardship_delivery_page_recipients_v1`` (frozen migration 0116),
-    and ``recipient_name``, that address's Users-page Name or None: one
-    definer read and one query, however many rows, and none when the page
-    lists only Family emails. Raises ``PermissionError`` when the read
-    refuses ``actor_id``.
+    and ``recipient_name``, its name (``person_names``: the Users-page
+    Name, else a ParishSoft Member's) or None: one definer read and one
+    query, however many rows (and the Member-name read when an address has
+    no Users-page Name), and none when the page lists only Family emails.
+    Raises ``PermissionError`` when a read refuses ``actor_id``.
     """
     addresses = administrator_addresses(
         [row["id"] for row in rows if row["family_id"] is None], actor_id
     )
-    names = administrator_names(addresses.values())
+    names = person_names(addresses, actor_id)
     return [
         row
         | {
             "recipient_address": addresses.get(row["id"]),
-            "recipient_name": names.get((addresses.get(row["id"]) or "").lower()),
+            "recipient_name": names.get(row["id"]),
         }
         for row in rows
     ]
@@ -885,9 +939,9 @@ def read_detail(message_id, parameters):
     ``OutboxMessage.DoesNotExist`` for an unknown message.
 
     Every email Sent mail lists opens here, operational and security
-    notices too (#1562). Those belong to no campaign, and every resolution
-    and its admission is a campaign's, so they offer nothing and their
-    admission is not read.
+    notices and Ministry leader emails too (#1562). Those belong to no
+    campaign, and every resolution and its admission is a campaign's, so
+    they offer nothing and their admission is not read.
     """
     from parishkit.stewardship.campaigns.models import Campaign
 

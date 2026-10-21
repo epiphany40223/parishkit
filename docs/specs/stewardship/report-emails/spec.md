@@ -1177,6 +1177,17 @@ recovery; a test send has no saved copy) and its recipients by kind (names for u
 and groups; outside addresses only to Administrators). Its access is
 audited (`report_email_viewed`).
 
+The saved copy draws the Campaign totals as
+[stat tiles](../ui-conventions/spec.md#stat-tiles), each with the email's
+own value text: Families that have responded show their count, with "out of
+93 (10.8%)" as the tile's line and a share bar. A total the email reads
+"Unavailable" reads "—" on the page, with a toggletip saying why: the
+ParishSoft data for that day was not available, or (for pledges) a
+responding Family's pledge amount is not known, so the total is not added
+up. The email keeps the word "Unavailable", as its day-by-day table does,
+because a mail program cannot show a toggletip
+([#1639](https://github.com/epiphany40223/parishkit/issues/1639)).
+
 Who may open it: every Administrator; Staff only when every block in it has
 reader role Staff (decision 11), which holds for every block today, so Staff
 may open every saved copy, including those with the additional information
@@ -1229,7 +1240,7 @@ In the wizard (#1404), the step lists them under "Suggested report emails",
 each with a checkbox and a time field, marked "Not saved yet"; **Add these
 schedules and continue** adds the ticked ones with the Family schedules in
 the step's one save. Elsewhere, Start from fills New report email's form.
-Neither is required for go-live: Go-live readiness no longer checks digest
+Neither is required for go-live: Go live no longer checks digest
 schedules.
 
 ## Command line
@@ -1480,7 +1491,7 @@ require.
    guards are the first to admit a report's writes.
 4. **Conversion**: the conversion frozen file with its function rewrites and
    the conversion; the scheduler, catch-up, recovery, live pause recovery,
-   archive inventory, Testing cleanup, Go-live readiness and activation
+   archive inventory, Testing cleanup, Go live and activation
    counts (`campaigns/readiness_digests.py`, `reports/readiness_weekly.py`,
    which counted weekly messages from the watermark) on `report`; the outbox
    purposes; the additional information block's scope change, the converted

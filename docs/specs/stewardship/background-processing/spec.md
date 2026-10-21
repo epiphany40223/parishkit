@@ -542,13 +542,12 @@ completed deletions intact.
 
 ### Go-live sequencing
 
-> **Status:** target of
-> [#462](https://github.com/epiphany40223/parishkit/issues/462). The producer
-> and the hold are built (`campaigns/go_live_sequencing.py`) but idle,
-> because nothing begins an attempt yet; slice 3 of
-> [#1585](https://github.com/epiphany40223/parishkit/issues/1585) makes
-> **Start go-live** begin attempt 1. Until then, the Administrator prepares
-> the links by hand after cleanup.
+> **Status:** built ([#462](https://github.com/epiphany40223/parishkit/issues/462)
+> for the producer and the hold, `campaigns/go_live_sequencing.py`; slice 3
+> of [#1585](https://github.com/epiphany40223/parishkit/issues/1585) for
+> **Start go-live** beginning attempt 1 and the Prepare step's Retry,
+> Refresh and prepare again and Stop go-live). The local seeding tool still
+> starts cleanup without an attempt and prepares the links itself.
 
 Between **Start go-live** and **Confirm Production** on the
 [Go live page](../admin-portal/spec.md#go-live-page), the system runs the
@@ -1451,12 +1450,11 @@ unchanged.
 
 #### Refreshes wait for go-live
 
-> **Status:** the scheduler side is built (`campaigns/go_live_sequencing.py`:
-> the hold, its logging and the data-age shift), but it is idle: nothing
-> begins an attempt until the Go live page's **Start go-live** does, which is
-> the rest of [#462](https://github.com/epiphany40223/parishkit/issues/462)
-> (slice 3 of [#1585](https://github.com/epiphany40223/parishkit/issues/1585)).
-> The "waiting for go-live" health line below is not built yet either.
+> **Status:** built (`campaigns/go_live_sequencing.py`: the hold, its
+> logging and the data-age shift); the Go live page's **Start go-live**
+> begins attempt 1 since slice 3 of
+> [#1585](https://github.com/epiphany40223/parishkit/issues/1585). The
+> "waiting for go-live" health line below is not built yet.
 
 From the start of a go-live [attempt](../admin-portal/spec.md#go-live-page)
 (**Start go-live**, or **Refresh and prepare again**) until its hold end, the
@@ -1701,7 +1699,8 @@ Family's due reminders as `workgroup_excluded`, in the same order of reasons
 ([#866](https://github.com/epiphany40223/parishkit/issues/866)). The preview
 counts them as skipped, confirming the resume writes them so, and none
 coalesces into the Family's due invitation, which is still selected and sent.
-Family email progress
+The Mail queue's
+[Family send progress](../admin-portal/spec.md#family-send-progress) panel
 counts these skips separately ("Skipped: No-reminders WorkGroup"), never as owed
 or remaining, and the Family's
 [Timeline](../reports/spec.md#timeline) names them.
@@ -2511,10 +2510,11 @@ unavailability, not a retry conflict.
 ## ParishSoft publication
 
 Not in use yet: publication is ADM-09
-([#528](https://github.com/epiphany40223/parishkit/issues/528)), its
-[Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft) page is
-built only up to its check so far, and it ships switched off, so today
-census changes reach ParishSoft by hand from the
+([#528](https://github.com/epiphany40223/parishkit/issues/528)), run from
+the [Update ParishSoft](../reports/spec.md#update-parishsoft) page
+([#1688](https://github.com/epiphany40223/parishkit/issues/1688)), and it
+ships switched off, so until the Administrator turns it on census changes
+reach ParishSoft by hand from the
 [Census changes](../reports/spec.md#pending-census-changes) page.
 
 Publication runs on the worker's source queue (the low-concurrency
@@ -2543,8 +2543,9 @@ and requires a new confirmation. Execution owns and heartbeats the lease
 through final ParishSoft verification, releases it, and then, when it
 published at least one entity, requests the final full refresh as the
 [data workflow](../data/spec.md#review-and-publication) says, which claims
-the lease normally (not yet built). The worker may already create
-`source_refresh` tasks, so this needs no task-creator change. The preflight
+the lease normally. The worker may already create `source_refresh` tasks,
+so this needs no task-creator change. The preflight
+
 also marks already-matching changes `resolved_upstream` in a Production-mode
 plan (frozen migration 0112).
 

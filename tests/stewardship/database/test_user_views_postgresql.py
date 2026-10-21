@@ -71,10 +71,13 @@ def page(browser, path=USERS):
 
 
 def row(body, email):
-    """The Users table row whose header cell is this address."""
+    """The Users table row whose header cell is this address.
+
+    The address links the user's Timeline (#1866).
+    """
     found = re.findall(
-        r'<tr>\s*<th scope="row"><span class="cell-ellipsis" '
-        rf'title="{re.escape(email)}">.*?</tr>',
+        r'<tr>\s*<th scope="row"><a href="/admin/users/[0-9a-f-]+/timeline/" '
+        rf'class="cell-ellipsis" title="{re.escape(email)}">.*?</tr>',
         body,
         flags=re.S,
     )
@@ -807,7 +810,10 @@ def test_the_review_dialog_gets_a_fragment_and_follows_the_change(converted):
     dialog = form[form.index('<dialog id="user-review"') :]
     assert 'data-review-return="/admin/users/"' in dialog
     assert 'data-review-outcome="users-outcome"' in dialog
-    assert '<form method="post" action="/admin/users/" data-review-apply>' in dialog
+    assert (
+        '<form id="user-review-apply" method="post" '
+        'action="/admin/users/" data-review-apply>' in dialog
+    )
     values = {"email": "dialog@example.org", "name": "Dialog, Dee", "role": "staff"}
     with web():
         reviewed = fetched(

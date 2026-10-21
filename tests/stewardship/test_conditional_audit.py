@@ -142,7 +142,8 @@ def test_locked_report_actions_name_the_notice_that_says_why(
 def test_a_held_roster_tick_is_shown_unavailable_with_why(entered):
     """While other campaign work holds follow-up, the request page's Mark or
     Clear Entered in ParishSoft is drawn disabled, named by the locked
-    notice; otherwise it is the plain enabled button."""
+    notice; otherwise it is the plain enabled button. (Clear opens its
+    dialog, so it is no submit button and has no data-server-disabled.)"""
     label = "Clear Entered in ParishSoft" if entered else "Mark entered in ParishSoft"
     row = {
         "id": uuid4(),
@@ -154,8 +155,8 @@ def test_a_held_roster_tick_is_shown_unavailable_with_why(entered):
     template = "stewardship/roster-tick.html"
     held = render_to_string(template, context | {"mutable": False})
     assert re.search(
-        rf'<button[^>]*disabled data-server-disabled aria-describedby="followup-locked"'
-        rf"[^>]*>{label}</button>",
+        rf"<button[^>]*disabled(?: data-server-disabled)?"
+        rf' aria-describedby="followup-locked"[^>]*>{label}</button>',
         held,
     )
     open_ = render_to_string(template, context | {"mutable": True})
@@ -207,11 +208,10 @@ def unavailable(html, label, reason):
     assert f'id="{reason}"' in html
 
 
-def test_testing_cleanup_needs_no_recent_sign_in():
-    """A signed cleanup preview offers Start Testing cleanup at once (#1547)."""
-    text = (TEMPLATES / "go-live-readiness.html").read_text()
-    assert "cleanup-fresh-reason" not in text
-    assert '<input type="hidden" name="action" value="cleanup">' in text
+def test_start_go_live_needs_no_recent_sign_in():
+    """Start go-live's dialog has no sign-in step to refuse with (#1547)."""
+    text = (TEMPLATES / "go-live-start-review.html").read_text()
+    assert "step-up" not in text and "reauthenticate" not in text
 
 
 def test_queue_without_a_weekly_schedule_is_unavailable():

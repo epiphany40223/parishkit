@@ -228,6 +228,9 @@ def test_late_owner_failure_rolls_back_every_effect(
     assert submit(harness, form, answers).submission is not None
 
 
+# The rule before the reviewed Family form (#1705): forms drawn before
+# its release, as one open across the deploy is.
+@pytest.mark.usefixtures("earlier_rule")
 def test_proposal_cannot_link_backwards_in_response_history(live_response_service):
     """SQL independently enforces same-field, forward-only supersession identity."""
     harness = live_response_service

@@ -106,7 +106,8 @@ def inform(run, action, *items, note=None, key=None, extra=(), answer=b""):
 def test_information_counts_ids_and_decisions(live_response_service, google, cli):  # noqa: F811
     """``report information --stage`` and ``information list`` read the
     worklist as the page does; ``information decide`` records the page's
-    revision and event through its service, once per key; Handled asks."""
+    revision and event through its service, once per key; nothing asks,
+    and Back to review undoes Handled with a note (#1840)."""
     harness = live_response_service
     item = requested(harness)
     browser, _ = signed_in()
@@ -205,15 +206,22 @@ def test_information_counts_ids_and_decisions(live_response_service, google, cli
         "handled",
     ]
 
-    # Handled is final, so it asks first; --yes answers.
+    # Handled can be undone (#1840), so it asks nothing.
     code, document = inform(run, "handled", item)
-    assert code == 4 and document["error"]["code"] == "confirmation_required"
-    code, document = inform(run, "handled", item, answer=b"yes\n")
     assert code == 0, document
     assert document["result"]["decisions"][0]["followed_up"]
     assert (count(UPDATED), count(INFORMATION_EVENT)) == (4, 3)
+    # Back to review undoes Handled (#1840), only with a new note.
+    code, document = inform(run, "back_to_review", item)
+    assert code == 1 and document["error"]["code"] == "invalid", document
+    assert document["error"]["fields"][0]["field"] == "note"
     code, document = inform(run, "back_to_review", item, note="Undo")
-    assert code == 1 and document["error"]["code"] == "stale_version", document
+    assert code == 0, document
+    (undone,) = document["result"]["decisions"]
+    assert (undone["decision"], undone["follow_up_needed"]) == ("accepted", True)
+    assert not undone["followed_up"]
+    code, document = run("information", "list", "--stage", "to_handle")
+    assert code == 0 and document["result"]["requests"][0]["item_id"] == str(item.pk)
 
 
 def test_ignored_needs_a_note_and_bulk_is_all_or_none(
@@ -239,12 +247,9 @@ def test_ignored_needs_a_note_and_bulk_is_all_or_none(
     code, document = inform(run, "back_to_review", item)
     assert code == 1 and document["error"]["code"] == "invalid", document
     assert [field["field"] for field in document["error"]["fields"]] == ["note"]
-    # Standard input carries the note, so it cannot carry an answer: --yes.
+    # Standard input carries the note, and needs nothing else (no --yes): no
+    # decision command prompts any more (#1840).
     code, document = inform(run, "back_to_review", item, note="-", answer=NOTE.encode())
-    assert code == 2 and document["error"]["code"] == "usage", document
-    code, document = inform(
-        run, "back_to_review", item, note="-", extra=("--yes",), answer=NOTE.encode()
-    )
     assert code == 0, document
     assert AdditionalInformationRevision.objects.latest("expected_version").notes == (
         NOTE
@@ -287,6 +292,11 @@ def test_information_refusals(live_response_service, google, cli, monkeypatch): 
         code, document = run("information", "list")
         assert code == 1 and document["error"]["code"] == "denied", document
     assert AdditionalInformationRevision.objects.count() == 0
+    # --yes is gone (#1893): a usage error that records nothing.
+    code, document = inform(run, "accept", item, extra=("--yes",))
+    assert code == 2 and document["error"]["code"] == "usage", document
+    assert AdditionalInformationRevision.objects.count() == 0
+    assert count(INFORMATION_EVENT) == 0
     with monkeypatch.context() as patch:
         with_roles(patch, {"staff"})
         code, document = inform(run, "ignore", item)
@@ -421,13 +431,20 @@ def test_limitations_counts_files_and_decisions(response_service, google, cli): 
     assert code == 0 and body.startswith(b"%PDF") and document["result"]["count"] == 0
 
     # One answer stale in a set: nothing is recorded.
-    code, refused = limit(run, "handled", {member: 1, family: 0}, "--yes")
+    code, refused = limit(run, "handled", {member: 1, family: 0})
     assert code == 1 and refused["error"]["code"] == "stale_version", refused
     assert count(REVIEWED) == 3
-    # Handled asks first; Ignore then reopening needs a note.
+    # Handled asks nothing, as Back to review undoes it (#1840) with a
+    # note, back to To handle; Ignore then reopening needs a note too.
     code, document = limit(run, "handled", {member: 1})
-    assert code == 4 and document["error"]["code"] == "confirmation_required"
-    code, document = limit(run, "handled", {member: 1}, "--yes")
+    assert code == 0, document
+    code, document = limit(run, "back_to_review", {member: 2})
+    assert code == 1 and document["error"]["code"] == "invalid", document
+    assert [field["field"] for field in document["error"]["fields"]] == ["note"]
+    code, document = limit(run, "back_to_review", {member: 2}, "--note", "Not yet")
+    assert code == 0, document
+    assert document["result"]["decisions"][0]["decision"] == "accepted"
+    code, document = limit(run, "handled", {member: 3})
     assert code == 0, document
     code, document = limit(run, "back_to_review", {family: 1})
     assert code == 0, document
@@ -453,7 +470,7 @@ def test_limitations_counts_files_and_decisions(response_service, google, cli): 
         "ignored": 0,
         "handled": 1,
     }
-    assert (count(REVIEWED), count(LIMITATIONS_EVENT)) == (7, 5)
+    assert (count(REVIEWED), count(LIMITATIONS_EVENT)) == (9, 7)
 
 
 def test_limitations_refusals(response_service, google, cli, monkeypatch):  # noqa: F811
@@ -478,4 +495,8 @@ def test_limitations_refusals(response_service, google, cli, monkeypatch):  # no
         assert code == 1 and document["error"]["code"] == "denied", document
         code, document = run("report", "limitations", "--stage", "to_review")
         assert code == 1 and document["error"]["code"] == "denied", document
+    assert LimitationReview.objects.count() == 0 and count(LIMITATIONS_EVENT) == 0
+    # --yes is gone (#1893): a usage error that records nothing.
+    code, document = limit(run, "accept", {member: 0}, "--yes")
+    assert code == 2 and document["error"]["code"] == "usage", document
     assert LimitationReview.objects.count() == 0 and count(LIMITATIONS_EVENT) == 0

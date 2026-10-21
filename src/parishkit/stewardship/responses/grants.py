@@ -85,6 +85,13 @@ def add_response_web_grants(tables, columns):
     # A pledge's review history (#1686): Staff and Administrators record
     # each decision; its guard checks the actor, the item and its stage.
     tables["stewardship_pledge_review"] = {"SELECT", "INSERT"}
+    # A decided pledge's refresh checks (#1704) place it; web only reads them.
+    tables["stewardship_pledge_refresh_check"] = {"SELECT"}
+    # A To review pledge's refresh checks (#1747) place it too.
+    tables["stewardship_pledge_open_check"] = {"SELECT"}
+    # Added Member links (#1670): the Ministry selections read them for the
+    # cannot-participate contact rule; only the worker records them.
+    tables["stewardship_added_member_link"] = {"SELECT"}
     # Publication plans and outcomes (#528, DAT-09.01): web reads them all and
     # writes only an Administrator's confirmation; the worker writes the rest.
     for table in (

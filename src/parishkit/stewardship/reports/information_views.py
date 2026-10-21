@@ -51,7 +51,6 @@ from parishkit.stewardship.web.contracts import (
     filters,
     validation_response,
 )
-from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.part_status import (
     Part,
     is_ready,
@@ -60,7 +59,14 @@ from parishkit.stewardship.web.part_status import (
 )
 from parishkit.stewardship.web.refusals import with_status_code
 from parishkit.stewardship.web.responses import campaign_response
-from parishkit.stewardship.web.review_worklist import REBOUND, read_decision, record
+from parishkit.stewardship.web.review_worklist import (
+    REBOUND,
+    RETIRED_DATES,
+    drop_retired_dates,
+    page_fields,
+    read_decision,
+    record,
+)
 from parishkit.stewardship.web.security import private_response
 from parishkit.stewardship.web.tables import paginate, table_parameters
 
@@ -110,11 +116,10 @@ def _principal(request, store, *, read_only=False):
     return principal
 
 
-def _error(campaign_id, *, item_id=None, status=400, bound=False, zone=False):
+def _error(campaign_id, *, item_id=None, status=400, bound=False):
     """No private form/exception values or database-dependent context processors.
 
-    ``bound`` marks a reused export form, whose 409 differs from a decision's;
-    ``zone`` marks dates sent without the browser's time zone (#558).
+    ``bound`` marks a reused export form, whose 409 differs from a decision's.
     """
     debug_swallowed("report request refused")
     response = HttpResponse(
@@ -125,7 +130,6 @@ def _error(campaign_id, *, item_id=None, status=400, bound=False, zone=False):
                 "item_id": item_id,
                 "status": status,
                 "bound": bound,
-                "zone": zone,
             },
         ),
         status=status,
@@ -135,11 +139,7 @@ def _error(campaign_id, *, item_id=None, status=400, bound=False, zone=False):
     if status == 503:
         response["Retry-After"] = "5"
     # The refusal log's codes for this page of its own (#1403).
-    return with_status_code(
-        response,
-        *(["form_reused"] if bound else []),
-        *(["zone_missing"] if zone else []),
-    )
+    return with_status_code(response, *(["form_reused"] if bound else []))
 
 
 def _audit(principal, campaign_id, outcome, *, automatic=False):
@@ -202,10 +202,14 @@ def decision_label(revision):
     """One history entry's decision, in the pipeline's words.
 
     A revision saved before migration 0126 has no decision; the page words
-    it by its follow-up choices instead (None here).
+    it by its follow-up choices instead (None here). An accepted revision
+    that confirmed clearing a completion is Handled's undo (#1840), Back to
+    review.
     """
     if revision.review_decision == "accepted":
-        return "Handled" if revision.followed_up else "Accepted"
+        if revision.followed_up:
+            return "Handled"
+        return "Back to review" if revision.confirm_clear else "Accepted"
     return {"ignored": "Ignored", "none": "Back to review"}.get(
         revision.review_decision
     )
@@ -216,7 +220,10 @@ def _list_context(campaign_id, query, paging, principal):
     action = reverse("admin:information_queue")
     metadata, rows, counts = requests(campaign_id, query)
     table = paginate(
-        rows, paging, carry=list(query.form_values().items()), sorting=SORTING
+        rows,
+        paging,
+        carry=list(page_fields(query.form_values()).items()),
+        sorting=SORTING,
     )
     # Each shown Family name opens its Timeline (#1570): one read of the
     # page's Family record ids.
@@ -228,8 +235,8 @@ def _list_context(campaign_id, query, paging, principal):
         "worklist": worklist,
         "table": table,
         "query": query,
-        "query_fields": query.form_values(),
-        "export_fields": query.export_values(paging.get("sort", "")),
+        "query_fields": page_fields(query.form_values()),
+        "export_fields": page_fields(query.export_values(paging.get("sort", ""))),
         "mutable": mutable,
     }
 
@@ -314,12 +321,16 @@ def _respond(request, campaign_id, *, item_id=None):
         if item_id is None:
             # A link may carry a Stage alone, a My review work card's
             # ``?stage=`` (#1818); WorklistQuery.parse checks its value.
-            # Search, dates and table choices stay private POST state.
+            # Search and table choices stay private POST state. The retired
+            # submitted dates (#1888) are dropped unread, never refused.
             if request.GET and (
-                request.method != "GET" or set(request.GET) != {"stage"}
+                request.method != "GET"
+                or not set(request.GET) - RETIRED_DATES <= {"stage"}
             ):
                 raise ValueError("Search and filters require a POST body.")
-            parameters = (request.GET if request.GET else request.POST).copy()
+            parameters = drop_retired_dates(
+                (request.GET if request.GET else request.POST).copy()
+            )
             parameters.pop("csrfmiddlewaretoken", None)
             decision = read_decision(parameters)
             paging = paging_values(parameters)
@@ -411,8 +422,6 @@ def _respond(request, campaign_id, *, item_id=None):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):
         return _error(campaign_id, item_id=item_id, status=503)
-    except UnknownZone:
-        return _error(campaign_id, item_id=item_id, zone=True)
     except ValueError:
         # A malformed form or filter, or a decision the request does not
         # take (a reopening with no note): a 400, nothing recorded.

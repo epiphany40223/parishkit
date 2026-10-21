@@ -76,8 +76,8 @@ def refresh_controls(page):
     return page.locator("a, button").filter(has_text=PAGE_REFRESH)
 
 
-def test_family_email_progress_updates_itself(page, component_origin):
-    """Family email progress has no Refresh link (#1586) and brings its
+def test_mail_queue_updates_itself(page, component_origin):
+    """The Mail queue has no Refresh link (#1586) and brings its
     passive status's fresh counts in by itself, at its fixed pace: no
     reload, focus left where it was."""
     page.set_viewport_size(VIEWPORT)
@@ -176,7 +176,7 @@ def test_integration_dismiss_is_in_place(page, component_origin):
 
 
 def test_progress_keeps_one_poller(page, component_origin):
-    """Family email progress is watched for as long as a send runs, at the
+    """The Mail queue is watched for as long as a send runs, at the
     page's own pace, by one watcher: no two polls come closer together than
     half that pace."""
     page.set_viewport_size(VIEWPORT)

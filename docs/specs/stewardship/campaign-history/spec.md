@@ -436,7 +436,9 @@ no current campaign, before day 1 has ended, or while no Family has
 responded by the cutoff (an archive needs at least one Family).
 
 The action queues the shared export lifecycle's `campaign_archive` kind,
-XLSX only, and answers with the shared status page (download, Cancel and
+XLSX only, and downloads in place, with the button busy until the file
+arrives ([downloads happen in place](../ui-conventions/spec.md#downloads-happen-in-place));
+its status address keeps the shared lifecycle (download, Cancel and
 Retry as for every export, within the shared
 [download window](../operations/spec.md#point-in-time-exports)). The worker
 reads the submissions itself at generation, under the request's

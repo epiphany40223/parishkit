@@ -3,8 +3,9 @@
 The shared component (``components/stage-boxes.html``, ``.stage-boxes`` in
 ui-v1.css) draws a row of boxes, left to right and wrapping on a phone,
 each named with its stage and its state in words (UX conventions, "Stage
-boxes"). Loading parish data and Finishing setup (the setup wizard) and
-Load ParishSoft data (the Campaign setup stepper, #1404 PR 5) draw it.
+boxes"). Loading parish data and Finishing setup (the setup wizard),
+Load ParishSoft data (the Campaign setup stepper, #1404 PR 5) and the Go
+live page's Prepare step (#1585 slice 3, go_live_prepare) draw it.
 This module words each box's state the same way for every one of them.
 """
 

@@ -168,7 +168,9 @@ EVENTS = tuple(sorted({item.value for item in Action} | {item.value for item in 
 # - ParishSoft refreshes: full refreshes and quick updates accepted,
 #   rejected, replaced or fallen back to a full reload, their failures and
 #   holds, an Administrator accepting a refused large change once, and the
-#   Ministry leader changes they cause (#1034). That one type
+#   Ministry leader changes they cause (#1034), and updating ParishSoft with
+#   census changes (#1688): an update is not a refresh, so the label says
+#   both. That one leader type
 #   is also recorded when a settings change (leader roles or Ministries)
 #   changes who leads; it stays here, with the refreshes
 #   that cause most of them, because each type belongs to one group.
@@ -226,6 +228,7 @@ ACTIVITY_TYPES = {
         "admin_cmd_integration_backup_key_confirm",
         "admin_cmd_workgroup_confirm",
         "admin_cmd_campaign_confirm",
+        "admin_cmd_campaign_create",
         "admin_cmd_campaign_shares_confirm",
         "user_leaders_import_requested",
         "user_leader_imported",
@@ -301,6 +304,22 @@ ACTIVITY_TYPES = {
         # Accept this change once (ADM-13 PR 5b, #530) on System health.
         "source_drop_accepted",
         "admin_cmd_system_refresh_accept",
+        # Updating ParishSoft with census changes (#528, #1688): checks,
+        # plans, confirmations, attempts, reruns, the final refresh and
+        # refusals. The page view stays ungrouped with the other views.
+        "census_publication_preflight_requested",
+        "census_publication_planned",
+        "census_publication_confirmed",
+        "census_publication_recorded",
+        "census_publication_rerun_requested",
+        "census_publication_refresh_requested",
+        "census_publication_switched_off",
+        "census_publication_read_unconfirmed",
+        "census_publication_refused",
+        # The command line's Check ParishSoft, Update and Run again (#1755).
+        "admin_cmd_census_update_check",
+        "admin_cmd_census_update_confirm",
+        "admin_cmd_census_update_rerun",
     ),
     "downloads": (
         *(
@@ -381,8 +400,13 @@ ACTIVITY_TYPES = {
 # written type fails until it joins a group or is listed here. Not written
 # to either log, so in neither: ``authentication_limits_weakened`` goes only
 # to the process log at startup (``AuthenticationPolicy.warn_if_weaker``).
+# The reason of the types that only read (the first below); PAGE_READS
+# names them by it.
+READS_REASON = (
+    "Opening a page or report, or looking something up, reads; it changes nothing"
+)
 UNGROUPED_REASONS = {
-    "Opening a page or report, or looking something up, reads; it changes nothing": (
+    READS_REASON: (
         "background_viewed",
         "campaign_comparison_viewed",
         "census_changes_viewed",
@@ -401,6 +425,7 @@ UNGROUPED_REASONS = {
         "ministry_report_viewed",
         "participation_viewed",
         "portal_users_viewed",
+        "user_timeline_viewed",
         "postal_outreach_viewed",
         "response_dashboard_viewed",
         "response_data_quality_list_viewed",
@@ -463,6 +488,13 @@ UNGROUPED_REASONS = {
         "campaign_boundary_skipped",
         *built_types("production_"),
         "production_cancel_requested",
+        # The Go live page's actions from the command line (#1809).
+        "admin_cmd_go_live_start",
+        "admin_cmd_go_live_retry",
+        "admin_cmd_go_live_refresh_again",
+        "admin_cmd_go_live_stop",
+        "admin_cmd_go_live_confirm",
+        "admin_cmd_go_live_cancel",
         "runtime_transition",
         "rehearsal_gate_released",
         "rehearsal_invalidated",
@@ -539,17 +571,6 @@ UNGROUPED_REASONS = {
     "Found while using already-loaded ParishSoft data, not in a refresh": (
         "source_member_unusable",
     ),
-    # Publication plans (#528, DAT-09.01): no page shows them yet (ADM-09).
-    "Publishing census changes to ParishSoft; no page shows it yet": (
-        "census_publication_planned",
-        "census_publication_confirmed",
-        "census_publication_recorded",
-        "census_publication_preflight_requested",
-        "census_publication_rerun_requested",
-        "census_publication_switched_off",
-        "census_publication_read_unconfirmed",
-        "census_publication_refused",
-    ),
     # Refused Admin input (#1403): its writer is in place before anything
     # calls it, and its own Activity group, Refused input, comes with the
     # page's operational-only handling of that group.
@@ -561,6 +582,10 @@ UNGROUPED_REASONS = {
     ),
 }
 UNGROUPED = frozenset().union(*UNGROUPED_REASONS.values())
+# The types that record only opening a page or report, or a lookup (the
+# first reason above). A user's timeline leaves them out of its Admin
+# actions (#1866) until #1570's slice 3 gives them a kind of their own.
+PAGE_READS = frozenset(UNGROUPED_REASONS[READS_REASON])
 # The groups that hold operational entries as well as audit records. The
 # others are audit records only: while one is chosen the page greys the five
 # level boxes and waits for Audit record, and the read leaves operational
@@ -576,7 +601,7 @@ ACTIVITY_LABELS = (
     ("sign_in", _("Sign-in activity")),
     ("configuration", _("Configuration changes")),
     ("family_mail", _("Family mail")),
-    ("parishsoft", _("ParishSoft refreshes")),
+    ("parishsoft", _("ParishSoft refreshes and updates")),
     ("downloads", _("Reports and downloads")),
     ("security", _("Security events")),
     ("family_portal", _("Family portal activity")),

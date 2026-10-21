@@ -340,19 +340,25 @@ def test_heartbeat_never_revives_an_ended_command_session(admin, google):
     assert automation.heartbeat(command) is False
 
 
-def test_send_progress_and_history_without_a_send(admin, google):
-    """No send yet: the watch stops at once; the history is empty."""
+def test_mail_queue_and_history_without_a_send(admin, google):
+    """Nothing queued and no send yet: the watch stops at once (#1562)."""
+    from parishkit.stewardship.jobs.mail_queue import QUEUE_PURPOSES
+
     store = admin.service.store
     _, row, _ = add_draft(store, store.active(), uuid4())
     secret = session(admin, scope="read-only")
     before = views("delivery_viewed")
-    code, documents = admin("send", "progress", "--watch", "2", secret=secret)
+    code, documents = admin("mail", "queue", "--watch", "2", secret=secret)
     assert code == 0 and len(documents) == 1, documents
     result = documents[0]["result"]
+    empty = {"queued": 0, "sending": 0, "retry_wait": 0, "paused": 0}
     assert result == {
         "campaign_id": row["id"],
         "mode": "testing",
         "paused": False,
+        "counts": empty,
+        "other_mode_queued": 0,
+        "kinds": [{"purpose": purpose} | empty for purpose in QUEUE_PURPOSES],
         "upcoming": False,
         "send": None,
     }
@@ -394,7 +400,7 @@ def test_an_ended_session_is_exit_5_for_every_read(admin, google):
     row = AutomationSession.objects.get()
     actor = current_principal(admin.service.store, row.principal_id)
     automation.revoke(row.pk, actor, reason="revoked_by_owner")
-    for argv in (("status",), ("task", "list"), ("send", "progress")):
+    for argv in (("status",), ("task", "list"), ("mail", "queue")):
         code, document = one(admin, *argv, secret=secret)
         assert code == 5 and document["error"]["code"] == "session_ended", argv
 
@@ -436,9 +442,17 @@ def test_a_real_send_in_progress_is_followed_and_listed(
     # not in progress (BG-12 prepares reminders ahead of their due time).
     due = ScheduleDefinition.objects.get().current_revision.due_at
     with campaign_clock(due):
-        code, documents = run("send", "progress", "--watch", "2", "--timeout", "6")
+        code, documents = run("mail", "queue", "--watch", "2", "--timeout", "6")
         assert code == 7, documents
-        send = documents[0]["result"]["send"]
+        # The prepared invitation is queued, and the Family send follows it.
+        result = documents[0]["result"]
+        assert result["counts"]["queued"] == 1
+        assert {"purpose": "initial", "queued": 1} | {
+            "sending": 0,
+            "retry_wait": 0,
+            "paused": 0,
+        } in result["kinds"]
+        send = result["send"]
         assert send["active"] and send["kind"] == "initial"
         assert send["remaining"] == 1 and send["total"] == 1 and send["done"] == 0
         assert documents[-1]["error"]["code"] == "watch_timeout"

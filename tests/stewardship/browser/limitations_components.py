@@ -34,6 +34,10 @@ PATH = reverse("admin:limitations_report")
 # The answers the tests receive after a decision, and their notices.
 ACCEPTED = "/limitations-report-accepted"
 ACCEPTED_NOTICE = "The answer of Family DUID 2 accepted."
+# Baker's answer marked Handled, and the page after its undo (#1840).
+HANDLED = "/limitations-report-handled"
+UNDONE = "/limitations-report-undone"
+UNDONE_NOTICE = "The answer of Family DUID 2 sent back to review."
 # A Family's Cannot contribute financially answer, decided on Pledges.
 CONTRIBUTION = "/limitations-report-cannot-contribute"
 PLEDGES_LINK = reverse("admin:pledges_to_enter") + "?stage=to_review"
@@ -73,9 +77,10 @@ def components(context, admin):
     when = datetime(2026, 9, 20, 12, tzinfo=UTC)
     proposed = str(UUID(int=91))
 
-    def result(accepted=False):
+    def result(accepted=False, handled=False):
         """The report's answers: two Members and two Families (Baker's
-        accepted when ``accepted``)."""
+        accepted when ``accepted``, marked Handled when ``handled``)."""
+        decision = "handled" if handled else "accepted" if accepted else None
         return {
             "metadata": {"name": "Sample campaign"},
             "members": [
@@ -94,7 +99,7 @@ def components(context, admin):
                     "family",
                     "Baker",
                     2,
-                    decision="accepted" if accepted else None,
+                    decision=decision,
                     when=when,
                 ),
                 answer("family", "Carter", 1, when=when),
@@ -162,6 +167,8 @@ def components(context, admin):
         "/limitations-report-families-desc": page({"sort": "-family"}),
         "/limitations-report-member": page({"sort": "member"}),
         ACCEPTED: page({}, ACCEPTED_NOTICE, data=result(accepted=True)),
+        HANDLED: page({}, data=result(handled=True)),
+        UNDONE: page({}, UNDONE_NOTICE, data=result(accepted=True)),
         CONTRIBUTION: page({}, data=contribution, stage="to_review"),
         # Nobody has a limitation yet, and a Stage with nothing at it: the
         # two empty states differ (#227).

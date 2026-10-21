@@ -24,6 +24,7 @@ from email.message import EmailMessage
 from pathlib import Path
 
 from parishkit.config import ConfigError
+from parishkit.parishsoft_http_worker import contact_put_admitted
 
 from .accounts.integration_candidates import (
     GOOGLE_TOKEN_URI,
@@ -33,7 +34,7 @@ from .accounts.integration_candidates import (
 from .accounts.key_files import read_private
 from .accounts.policy_schema import normalized_email
 from .accounts.provider_context import validated_context
-from .deployment import DeploymentProfile, ServiceRole, load_deployment
+from .deployment import ServiceRole, load_deployment
 from .local import source_base_url
 from .observability import Event, configure_logging, emit_failure
 from .runtime_paths import RuntimeLayout
@@ -91,11 +92,19 @@ def check_parishsoft_contact(
     that sees another organization never reaches it. Before ``--send``
     restores the original, the value-free marker result goes to standard
     error, so it survives a process that dies during the restore.
+
+    It may write, so census publication's one write rule decides first, in
+    every profile (#1884): Production is admitted as before, a LOCAL
+    deployment only while it reads the local fake (#1399). A LOCAL one
+    reading the real API is refused before even the tenant read; the
+    publication session and the helper would refuse its write again.
     """
-    if configuration.profile is DeploymentProfile.LOCAL:
-        # It may write to ParishSoft, which LOCAL never does (#1399); refuse
-        # before even the tenant read.
-        raise ConfigError("The Member contact check never runs in the local profile.")
+    base_url = source_base_url(configuration.profile, configuration.parishsoft_base_url)
+    if not contact_put_admitted(configuration.profile.value, base_url):
+        raise ConfigError(
+            "The Member contact check runs in the local profile only against "
+            "the local fake ParishSoft."
+        )
     if configuration.service_role is not ServiceRole.WORKER:
         raise ConfigError("Run the Member contact check in the worker.")
     if member_id is None or member_id != confirm_member_id:
@@ -118,9 +127,7 @@ def check_parishsoft_contact(
     gateway = ParishSoftContactGateway.open_operator(
         SourceCredential(_credential(configuration, "parishsoft")),
         profile=configuration.profile.value,
-        base_url=source_base_url(
-            configuration.profile, configuration.parishsoft_base_url
-        ),
+        base_url=base_url,
         on_timeout=_contact_timeout,
     )
     try:
@@ -169,7 +176,7 @@ def check_workspace(configuration, *, delegated_email, send_to=None):
     first: a LOCAL ``mail_redirect`` replaces it, and LOCAL without one is
     refused before the key is read or any provider is contacted.
     """
-    from .mail_catcher import MailTransport, envelope
+    from .mail_catcher import MailTransport, envelope, is_mail_catcher
 
     route = dict(
         profile=configuration.profile,
@@ -188,6 +195,13 @@ def check_workspace(configuration, *, delegated_email, send_to=None):
         "credential": _outcome("google_workspace", value, settings, configuration)
     }
     if send_to is not None and result["credential"] == "valid":
+        if is_mail_catcher(value):
+            # Valid only in LOCAL, where the check reached Mailpit; the send
+            # goes over Gmail and needs a real key (#1878 review B3).
+            raise ConfigError(
+                "The smoke message needs a Google service account; the mail "
+                "catcher is installed."
+            )
         from parishkit.email.google_workspace import xoauth2_string
 
         from .provider_check_worker import CheckSession
@@ -339,14 +353,15 @@ def check_backup_drive(configuration, *, delegated_email, folder_link, send=Fals
         workspace_session,
     )
     from .backup_offsite import SEALED_FILES, _complete_sets, _copy_lock
+    from .mail_catcher import admit_real_workspace
     from .runtime_paths import explicit_path, private_directory
 
     if configuration.service_role is not ServiceRole.BACKUP_WORKER:
         raise ConfigError("Run the off-site backup check in the backup profile.")
-    if configuration.profile is DeploymentProfile.LOCAL:
-        # Drive stays closed in LOCAL until a real Workspace key is admitted
-        # there (#1399); refused before the key or the database is read.
-        raise ConfigError("Off-site Drive copies are not available in LOCAL.")
+    # Drive opens in LOCAL only where a real Workspace key may be used: with a
+    # mail redirect, on the normal clock (#1399). Refused before the key or
+    # the database is read.
+    admit_real_workspace(configuration.profile, configuration.mail_redirect)
     folder = folder_id_from_url(folder_link or "")
     tag = {"tag": _deployment_tag(configuration)} if send else {}
     value = read_private(RuntimeLayout(configuration).credential("google_workspace"))
@@ -356,6 +371,7 @@ def check_backup_drive(configuration, *, delegated_email, folder_link, send=Fals
                 value,
                 subject=normalized_email(delegated_email),
                 profile=configuration.profile,
+                redirect=configuration.mail_redirect,
             ),
             **tag,
         )
@@ -392,6 +408,7 @@ def _outcome(target, value, settings, configuration):
         settings,
         profile=configuration.profile,
         base_url=configuration.parishsoft_base_url,
+        redirect=configuration.mail_redirect,
     )
 
 

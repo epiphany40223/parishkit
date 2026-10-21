@@ -72,8 +72,8 @@ patterns = [
     ),
     # Past campaigns compared with the current one (#1018).
     _page("reports/comparison/", comparison_views.report, "campaign_comparison"),
-    # Its download form (#1018, slice 6): a POST answered with the export's
-    # status page.
+    # Its download form (#1018, slice 6): a POST answered with a redirect to
+    # the export's status address, which the page follows in place (#1778).
     _page(
         "reports/comparison/exports/",
         comparison_export_views.create,
@@ -105,12 +105,25 @@ patterns = [
         census_change_views.export,
         "census_changes_export",
     ),
-    # Publish to ParishSoft (#528, ADM-09), linked from Census changes; its
-    # Check ParishSoft posts to the page itself.
+    # Update ParishSoft (#528, ADM-09; renamed from Publish to ParishSoft by
+    # #1688, whose old address is gone with no redirect), linked from Census
+    # changes. Its Check ParishSoft posts to the page itself; Update's review
+    # and Apply post to its confirmation, and Run again's to its retries,
+    # each naming the plan and answering the review dialog.
     _page(
-        "reports/census/publication/",
+        "reports/census/update-parishsoft/",
         census_publication_views.page,
-        "census_publication",
+        "update_parishsoft",
+    ),
+    _page(
+        "reports/census/update-parishsoft/confirmation/",
+        census_publication_views.confirmation,
+        "update_parishsoft_confirmation",
+    ),
+    _page(
+        "reports/census/update-parishsoft/retries/",
+        census_publication_views.retries,
+        "update_parishsoft_retries",
     ),
     _page("reports/information/", information_views.queue, "information_queue"),
     _page(

@@ -1,34 +1,76 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
+{% comment %}
+  Production activation, the Go live page's Activation step (admin-portal
+  spec, "Go live page"; #1585 slice 5; confirmation_views.progress). It is
+  its own menu page, so its heading stays Production activation. While a
+  direct activation's initial mail preparation is unfinished it draws the
+  Go live step bar (Step 4 of 4); afterwards, and for a scheduled
+  campaign, it is the ordinary menu page with no step bar (wizard rule 12).
+
+  A direct activation shows three stage boxes (components/stage-boxes.html):
+  Go live (Done), Prepare initial emails and Sending, which is In progress
+  with a Sent mail link once preparation is done, never Done, so the page
+  never claims delivery. One detail line and one note line follow, drawn
+  in every state with reserved rows, and the action row keeps one button's
+  height even when empty, so a change of state moves nothing (no layout
+  shift, .production-line and .production-actions in stepper-v1.css);
+  the preview compared with the preparation outcomes is in a disclosure.
+  A scheduled campaign says when it starts and offers Cancel go-live,
+  which opens the review dialog, while the start has not passed and live
+  delivery is not paused.
+
+  The content and action row are one region (#production-status) that
+  updates itself (live-status-v1.js); the step bar sits above it, drawn
+  only when the page is opened, so a finished preparation never moves the
+  page while it is watched. The region updates closely while preparation runs,
+  every 30 seconds while a Retry waits or the campaign is scheduled, and
+  not at all once nothing can change by itself. There is no Refresh link
+  (#1586); a reload draws the same state. ``state`` is
+  confirmation_views._state's: preparing, retrying, failed, prepared,
+  scheduled, started or closed.
+{% endcomment %}
 {% block title %}{% translate "Production activation" %}{% endblock %}
+{% block head %}{% if not admin_chrome.campaign_wizard %}<link rel="stylesheet" href="{% static 'stewardship/stepper-v1.css' %}">{% endif %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block content %}
 <h1>{% translate "Production activation" %}</h1>
-{% aboutpage "production-progress" %}<p>{% translate "Confirmed preview is what the final go-live check counted. Prepared is what the background work has actually set up. Family counts are recorded as preparation runs. Admin report counts are the report emails the later report work creates, including ones that were cancelled, and stay partial until that work finishes." %}</p>
-<p>{% translate "If preparation was restarted, its counts use the settings in effect for that run." %}</p>{% endaboutpage %}
+{% aboutpage "production-progress" %}<p>{% translate "This page follows the campaign after Production is confirmed. A campaign that went live at once prepares its initial campaign mail here; one confirmed before its start date follows the normal mail schedules from its start. This page updates by itself, so you can leave it and come back." %}</p>
+<p>{% translate "Confirmed preview is what the final go-live check counted. Prepared is what the background work has actually set up. Family counts are recorded as preparation runs. Admin report counts are the report emails the later report work creates, including ones that were cancelled, and stay partial until that work finishes. If preparation was restarted, its counts use the settings in effect for that run." %}</p>
+<p>{% translate "Cancel go-live is offered only while a scheduled campaign has not started and live mail delivery is not paused. It returns the campaign to a Testing draft; Testing data deleted earlier is not restored, and going live again starts from Check." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
-{# Refresh Production progress re-reads this region, and Cancel go-live's below, in place (ui-v1.js, a[data-in-place], #519). #}
-<div id="production-status" data-in-place-region>
-<h2>{% if campaign.state == 'active' %}{% translate "Campaign active" %}{% elif campaign.state == 'scheduled' %}{% translate "Campaign scheduled" %}{% elif campaign.state == 'closed' %}{% translate "Campaign closed" %}{% else %}{{ campaign.state }}{% endif %}</h2>
+{% if state == 'preparing' or state == 'retrying' %}{% translate "Campaign active. Preparing initial campaign mail." as headline %}{% elif state == 'failed' %}{% translate "Campaign active. Initial campaign mail failed." as headline %}{% elif state == 'prepared' %}{% translate "Campaign active. Initial campaign mail is prepared." as headline %}{% elif state == 'scheduled' %}{% translate "Campaign scheduled." as headline %}{% elif state == 'closed' %}{% translate "Campaign closed." as headline %}{% else %}{% translate "Campaign active." as headline %}{% endif %}
+{% url 'admin:deliveries' as outgoing_url %}
+{% comment %}The step bar sits outside the self-updating region: drawn when the page is opened while initial mail is prepared, it stays until the next load, so the region's update when preparation finishes never moves the page.{% endcomment %}{% if wizard %}{% include 'stewardship/go-live-steps.html' %}{% endif %}
+<div id="production-status" data-in-place-region data-live-status="production-status"{% if live_pending %} data-live-pending{% endif %}{% if live_interval %} data-live-interval="{{ live_interval }}"{% endif %} data-live-give-up="{{ live_limit }}" data-live-announce="{{ headline }}" data-production-state="{{ state }}">
+<section class="go-live-step" aria-labelledby="production-state">
+<h2 id="production-state" class="production-heading">{{ headline }}</h2>
 <p>{% translate "Production confirmed" %}: <time data-local-instant datetime="{{ receipt.created_at|instant }}">{{ receipt.created_at|instant }}</time></p>
-{% comment %}Messages link the page they name (navigation rule 6, #521).{% endcomment %}{% url 'admin:deliveries' as outgoing_url %}
-{% if demand %}<section class="panel"><h2>{% if complete %}{% translate "Initial campaign mail preparation complete" %}{% else %}{% translate "Preparing initial campaign mail" %}{% endif %}</h2>
-{% if not complete %}<p class="notice">{% translate "Scheduled mail waits until this preparation finishes. If preparation fails, the campaign stays live and scheduled mail stays on hold until it is retried. Families can still respond in the meantime." %}</p>{% else %}<p>{% translate "Preparation is complete; this does not mean the email has been delivered. Delivery pauses and each Family's current eligibility still apply. For delivery, see" %} <a href="{{ outgoing_url }}">{% translate "Sent mail" %}</a>.</p>{% endif %}
-<dl><dt>{% translate "Status" %}</dt><dd>{% include "stewardship/task-state.html" with state=task.state %}</dd>
-<dt>{% translate "Items processed" %}</dt><dd>{{ demand.items_completed|number }}</dd>
-<dt>{% translate "Last update" %}</dt><dd><time data-local-instant datetime="{{ task.updated_at|instant }}">{{ task.updated_at|instant }}</time></dd></dl>
-<details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Worker task state" %}</dt><dd><code>{{ task.state }}</code></dd><dt>{% translate "Preparation phase" %}</dt><dd><code>{{ demand.phase }}</code></dd><dt>{% translate "Committed groups" %}</dt><dd>{{ demand.groups_completed|number }}</dd></dl></details>
-<p>{% translate "Items processed counts work done so far, not messages sent, and the total can change while preparation runs." %}</p>
-<h3>{% translate "Preview compared with preparation outcomes" %}</h3>
-<p class="help">{% translate "None of these counts shows that email was delivered; for that, see" %} <a href="{{ outgoing_url }}">{% translate "Sent mail" %}</a>.</p>
+{% if boxes %}{% translate "Parts of going live" as stages_label %}{% include 'stewardship/components/stage-boxes.html' with stages=boxes label=stages_label key_attribute="production-stage" %}
+<p class="go-live-detail production-line" data-production-detail>{% blocktranslate trimmed with count=demand.items_completed|number %}Items processed: {{ count }}.{% endblocktranslate %} {% if state == 'preparing' %}{% translate "Scheduled mail waits until this preparation finishes." %}{% elif state == 'retrying' %}{% translate "Preparation ran into a problem, and the system is retrying it by itself." %}{% elif state == 'failed' %}{% translate "Preparation failed after its automatic retries, the last at" %} <time data-local-instant datetime="{{ task.updated_at|instant }}">{{ task.updated_at|instant }}</time>.{% else %}{% translate "Prepared does not mean delivered: follow delivery on" %} <a href="{{ outgoing_url }}">{% translate "Sent mail" %}</a>.{% endif %}</p>
+<p class="production-line" data-production-note>{% if state == 'failed' and control %}{% translate "Retry tries the same preparation again and repeats no work already done. The campaign stays live; scheduled mail waits for it." %}{% elif state == 'failed' %}{% translate "Retry isn't available for this failure; see Technical details. The campaign stays live; scheduled mail waits for it." %}{% elif state == 'prepared' %}{% translate "Delivery pauses and each Family's current eligibility still apply. Families can respond as usual." %}{% else %}{% translate "Nothing to do here; this page updates by itself. Families can respond in the meantime." %}{% endif %}</p>
+<details class="go-live-counts" data-keep-open><summary>{% translate "Preview compared with preparation outcomes" %}</summary>
+<p class="help">{% translate "Items processed counts work done so far, not messages sent, and the total can change while preparation runs. None of these counts shows that email was delivered." %}</p>
 {% if not complete %}<p>{% translate "Partial results: unfinished groups are not counted yet. Differences so far are not final reductions." %}</p>{% endif %}
-{% for row in outcomes %}<section><h4>{{ row.label }}</h4><dl>
+{% for row in outcomes %}<section><h3>{{ row.label }}</h3><dl>
 <dt>{% translate "Confirmed preview" %}</dt><dd>{{ row.preview|number }}</dd>
 <dt>{% if row.complete %}{% translate "Prepared" %}{% else %}{% translate "Prepared so far" %}{% endif %}</dt><dd>{{ row.actual|number }}</dd>
 <dt>{% if row.complete %}{% translate "Difference" %}{% else %}{% translate "Difference so far" %}{% endif %}</dt><dd>{{ row.difference|number }}</dd>
 </dl></section>{% endfor %}
-{% if demand.failure_code and not complete %}<p role="alert">{% translate "Preparation ran into a problem. The system may still be recovering it on its own. If a Retry button appears, retrying does not repeat work already done." %}</p>{% endif %}
-{# Retry posts in place and follows the redirect back here; once it is gone, focus falls back to Refresh Production progress below. #}{% if control %}<form method="post" action="{% url 'admin:production_progress' %}#production-status" data-in-place="production-retry" data-in-place-fallback="refresh" data-in-place-message="{% translate 'Mail preparation retry started.' %}">{% csrf_token %}<input type="hidden" name="control" value="{{ control }}">{% button type="submit" %}{% translate "Retry failed mail preparation" %}{% endbutton %}</form>{% endif %}
-</section>{% else %}<p>{% translate "This campaign was confirmed before its start date, so its mail follows the normal mail schedules. There is no initial mail to prepare here." %}</p>{% endif %}
+</details>
+{% elif state == 'scheduled' %}<p data-production-start>{% translate "Scheduled to start" %} <time data-local-instant datetime="{{ campaign.active_configuration.starts_at|instant }}">{{ campaign.active_configuration.starts_at|instant }}</time>. {% translate "Emails follow the mail schedules from then." %}</p>
+{% if cancel_unavailable == 'paused' %}{% url 'admin:delivery_control' as controls_url %}<p data-production-cancel-unavailable="paused">{% translate "Cancel go-live isn't available while live mail delivery is paused. To cancel, resume mail first on" %} <a href="{{ controls_url }}">{% translate "Pause and resume mail" %}</a>.</p>{% elif cancel_unavailable == 'started' %}<p data-production-cancel-unavailable="started">{% translate "The start time has passed, so go-live can no longer be cancelled." %}</p>{% endif %}
+{% elif state == 'closed' %}<p>{% translate "The campaign has closed. Its mail and responses stay in their reports." %}</p>
+{% else %}<p>{% translate "This campaign was confirmed before its start date, so its mail follows the normal mail schedules. There is no initial mail to prepare here. For delivery, see" %} <a href="{{ outgoing_url }}">{% translate "Sent mail" %}</a>.</p>{% endif %}
+</section>
+<div class="campaign-step-actions go-live-actions production-actions" data-production-actions>
+{% if withdrawal_available %}<form method="post" action="{% url 'admin:production_progress' %}" data-review-open="production-cancel-review" data-review-redirects data-production-cancel>{% csrf_token %}<input type="hidden" name="action" value="review_cancel">{% button type="submit" variant="secondary" %}{% translate "Cancel go-live" %}{% endbutton %}</form>{% endif %}
+{% if control %}<form method="post" action="{% url 'admin:production_progress' %}#production-status" data-in-place="production-retry" data-in-place-message="{% translate 'Mail preparation retry started.' %}" data-production-primary>{% csrf_token %}<input type="hidden" name="action" value="retry"><input type="hidden" name="control" value="{{ control }}">{% button type="submit" %}{% translate "Retry" %}{% endbutton %}</form>{% endif %}
 </div>
-<p><a href="{% url 'admin:production_progress' %}#production-status" data-in-place="refresh" data-in-place-message="{% translate 'Progress refreshed.' %}">{% translate "Refresh Production progress" %}</a> · <a href="{% url 'admin:campaign_settings' %}">{% translate "Review Campaign settings" %}</a></p>
-<div id="production-withdrawal" data-in-place-region>{% if withdrawal_available %}<p><a href="{% url 'admin:production_withdrawal' %}">{% translate "Cancel go-live" %}</a></p>{% endif %}</div>
+</div>
+{% comment %}Technical details sit outside the self-updating region: an update replaces the region's content, which would close an open disclosure under the reader. Like Send progress's, it says it is as of when the page was opened. It is drawn only for a direct activation (the case with stage boxes).{% endcomment %}
+{% if boxes %}<details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Worker task state" %}</dt><dd><code>{{ task.state }}</code></dd><dt>{% translate "Preparation phase" %}</dt><dd><code>{{ demand.phase }}</code></dd><dt>{% translate "Committed groups" %}</dt><dd>{{ demand.groups_completed|number }}</dd></dl>
+<p>{% translate "These values are as of when this page was opened." %}</p></details>{% endif %}
+{% include 'stewardship/components/review-outcome.html' with outcome_id="production-outcome" %}
+<p class="setup-sr-only" data-live-announcer="production-status" role="status"></p>
+<p><a href="{% url 'admin:campaign_settings' %}">{% translate "Review Campaign settings" %}</a></p>
+{% comment %}Cancel go-live's dialog (UX conventions, "Review dialog", a full review), outside the region so an update never removes it while it is open. Its dismiss button reads "Keep it scheduled", since "Cancel" would read as cancelling go-live (#1806). Its Apply posts the cancellation here, which answers with Check, where the page goes (data-review-redraw="leave").{% endcomment %}{% url 'admin:production_progress' as progress_url %}{% translate "Cancel go-live?" as cancel_title %}{% translate "Keep it scheduled" as keep_label %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="production-cancel-review" title=cancel_title cancel=keep_label apply_url=progress_url apply_action="cancel" outcome_id="production-outcome" fallback="production-outcome" redraw_leave=True %}
 {% endblock %}

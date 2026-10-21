@@ -8,15 +8,15 @@ credential is installed and again where it is used:
   marker and no secret, and the SMTP endpoint is the code constant
   ``LOCAL_SMTP_ENDPOINT``, never a document field, so no file can point the
   transport anywhere else;
-- ``workspace_transport`` admits that document only for the LOCAL profile and
-  a Google service account only for every other profile, so a LOCAL deployment
-  cannot reach Gmail and a Production deployment cannot be pointed at a mail
-  catcher.
+- ``workspace_transport`` admits that document only for the LOCAL profile,
+  so a Production deployment cannot be pointed at a mail catcher, and admits
+  a Google service account in LOCAL only beside a mail redirect, on the
+  normal clock (``admit_real_workspace``, #1399).
 
 Below both, ``envelope`` is the forced mail redirect (#1399): a LOCAL-only
 ``mail_redirect`` address replaces every envelope recipient of every SMTP
 submission, and LOCAL without one may submit only to the mail catcher. It
-is what keeps a real address from being reached once LOCAL admits a real
+is what keeps a real address from being reached when LOCAL uses a real
 mailbox; unset, every other profile's envelopes are unchanged.
 
 Helper subprocesses run with ``python -I`` and an empty environment, so they
@@ -28,6 +28,7 @@ module level, because the helpers import this module too.
 """
 
 import json
+import os
 import smtplib
 from enum import StrEnum
 
@@ -79,16 +80,61 @@ def is_mail_catcher(value):
     return True
 
 
-def workspace_transport(value, profile):
+def fake_clock(environ=None):
+    """Whether this process runs under the LOCAL fake clock (#476).
+
+    libfaketime fakes the clock only when its ``FAKETIME_*`` variables are
+    set (deploy/stewardship/Dockerfile.faketime), and only the LOCAL
+    fake-clock override sets them (``local.clock.FAKETIME_ENVIRONMENT``), on
+    the faked services and the seeder's one-shot containers. Helpers start
+    with an empty environment, so they always run on real time.
+    """
+    environ = os.environ if environ is None else environ
+    return any(name.startswith("FAKETIME") for name in environ)
+
+
+def admit_real_workspace(profile, redirect, environ=None):
+    """Refuse a real Google Workspace use that this process may not make (#1399).
+
+    One rule for every path that reaches Google with the Workspace key (Gmail
+    submission, the provider and mailbox checks, smoke and the off-site Drive
+    copies). In LOCAL it is admitted only with a mail redirect, so a real
+    mailbox can never be reached from the laptop without the forced
+    redirect, and only on the normal clock: the key's token assertion and
+    Google's certificates are checked against this process's clock, which
+    the fake clock holds in the past. Every other profile is admitted as
+    before, and refuses a redirect as ``envelope`` does. A refusal is a
+    ConfigError.
+    """
+    if not isinstance(profile, DeploymentProfile):
+        raise ConfigError("Mail transport selection requires a deployment profile.")
+    if profile is not DeploymentProfile.LOCAL:
+        if redirect is not None:
+            raise ConfigError("A mail redirect is admitted only in the local profile.")
+        return
+    if redirect is None:
+        raise ConfigError(
+            "The local profile admits a Google service account only with a mail "
+            "redirect."
+        )
+    if fake_clock(environ):
+        raise ConfigError(
+            "The local profile admits a Google service account only on the normal "
+            "clock."
+        )
+
+
+def workspace_transport(value, profile, *, redirect, environ=None):
     """Select the transport an installed Workspace document may use under ``profile``.
 
-    This is the two-way refusal. LOCAL admits only the mail-catcher document
-    and refuses anything else, so a Google service account can never reach
-    Gmail from LOCAL. Every other profile refuses the mail-catcher document
-    and hands anything else to the unchanged Gmail path, whose own strict
-    service-account parser (``workspace_info``) refuses a malformed file as it
-    always has. The profile must be explicit: a caller that does not know its
-    profile cannot send.
+    The mail-catcher document is admitted only in LOCAL. Anything else goes
+    to the unchanged Gmail path, whose own strict service-account parser
+    (``workspace_info``) refuses a malformed file as it always has, once
+    ``admit_real_workspace`` admits a real key here: in LOCAL only beside the
+    deployment's mail ``redirect`` (#1399) and on the normal clock. The
+    profile must be explicit, and every caller names the redirect (None when
+    the deployment sets none), so a caller that does not know them cannot
+    send.
     """
     if not isinstance(profile, DeploymentProfile):
         raise ConfigError("Mail transport selection requires a deployment profile.")
@@ -98,11 +144,7 @@ def workspace_transport(value, profile):
                 "The mail-catcher credential is admitted only in the local profile."
             )
         return MailTransport.MAIL_CATCHER
-    if profile is DeploymentProfile.LOCAL:
-        raise ConfigError(
-            "The local profile admits only the mail-catcher credential, never a "
-            "Google service account."
-        )
+    admit_real_workspace(profile, redirect, environ)
     return MailTransport.GMAIL
 
 

@@ -222,13 +222,13 @@ FAMILY_LABELS = {
 }
 # The pages where staff act on a specific Member in ParishSoft, the only ones
 # that show a Member DUID (UX conventions, "Table column order", #1123):
-# Publish to ParishSoft writes each Member whole and leaves its Conflicts and
+# Update ParishSoft writes each Member whole and leaves its Conflicts and
 # Cannot checks for staff to find in ParishSoft (#528). Plus
 # the Users page's ParishSoft Ministry leaders table and its import review,
 # kept at the Administrator's request (2026-10-12, #932).
 MEMBER_DUID_PAGES = {
     "census-changes.html",
-    "census-publication.html",
+    "update-parishsoft.html",
     # Census Add's dialog asks for the Member's DUID (#1710).
     "census-worklist-add.html",
     "limitations-report.html",
