@@ -74,6 +74,10 @@ ROLE_FIRST = {
     "go-live stop": None,
     "go-live confirm": None,
     "go-live cancel": None,
+    # Update ParishSoft's Update and Run again (#1755): an Administrator's,
+    # before the request key is made or the page's checks run.
+    "census update-confirm": Capability.PUBLISH_CENSUS,
+    "census update-rerun": Capability.PUBLISH_CENSUS,
 }
 
 # The prompting commands Staff may run, as on their pages.

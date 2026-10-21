@@ -177,7 +177,7 @@ def test_the_page_s_files_and_json_lines(response_service, google, cli):  # noqa
     assert records["First name"]["actions"] == []
     # The automatic rename is the Administrator's to review (census
     # review); the By-hand address has no Review.
-    assert records["First name"]["reviews"] == ["approved", "ignored"]
+    assert records["First name"]["reviews"] == ["accepted", "ignored"]
     assert records["Home address"]["reviews"] == []
     # Its value may be edited (census edit); it is in no conflict to resolve
     # (census resolve-conflict). The By-hand address has neither (#1434).

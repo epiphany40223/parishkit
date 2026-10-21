@@ -140,5 +140,5 @@ default turns it on, and both steps above come first. Once it is on, an
 Administrator updates ParishSoft from the
 [Update ParishSoft](../specs/stewardship/reports/spec.md#update-parishsoft)
 page, reached from Census changes: Check ParishSoft, then Update in its
-confirmation dialog. The `pk-admin census update-*` commands are not built
-yet ([#1755](https://github.com/epiphany40223/parishkit/issues/1755)).
+confirmation dialog, or with the `pk-admin census update-*` commands
+([operator guide](stewardship-admin-automation.md#updating-parishsoft)).

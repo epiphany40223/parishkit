@@ -2565,15 +2565,16 @@ logs show the page's `census_change_updated` and the command's
 
 ### Reviewing an automatic census change
 
-`census review` is an Automatic row's review: **Approve** (`approved`),
+`census review` is an Automatic row's review: **Accept** (`accepted`),
 **Ignore** (`ignored`) or **Send back to To review** (`unreviewed`). Only an
 Administrator may review (Staff and Ministry leaders get `denied`, before
 anything is read), with a full-scope session, as on the page. Every review can be changed again until publication of the change
-starts, so, as on the page, it asks nothing. Approving does not publish
-anything: publication is a separate step.
+starts, so, as on the page, it asks nothing. Accepting does not write
+anything to ParishSoft: that is a separate step
+([Updating ParishSoft](#updating-parishsoft)).
 
 ```sh
-pk-admin census review PROPOSAL_ID --decision approved --expected-version 3
+pk-admin census review PROPOSAL_ID --decision accepted --expected-version 3
 pk-admin census review PROPOSAL_ID --decision ignored --expected-version 4 \
     --note - < note.txt
 ```
@@ -2586,28 +2587,33 @@ written to standard error when left out, and a repeat with the same key
 returns the same review (`created` false) and records nothing new; the key
 used for another decision or note is exit 1 (`invalid`). A change someone
 updated since that version is exit 1 (`stale_version`). A decision the change does not
-take now is exit 1 (`invalid`): the decision it already has, approving a
+take now is exit 1 (`invalid`): the decision it already has, accepting a
 Conflict, sending an ignored change back (`unreviewed`) without a note, or
 any review of a change that is queued for publication or already has a
 final outcome. Since the Census changes page moved to the review pipeline
 ([#1683](https://github.com/epiphany40223/parishkit/issues/1683)), a By-hand
-change takes a review too, as on the page; the command keeps its words until
-[#1688](https://github.com/epiphany40223/parishkit/issues/1688) renames it. A change that is not the
+change takes a review too, as on the page. The command speaks the
+pipeline's words since
+[#1755](https://github.com/epiphany40223/parishkit/issues/1755):
+`accepted`, where it said `approved`, which is no longer taken. A change that is not the
 current campaign's is exit 1 (`not_available`), and so is a repeat after
 the current campaign changed.
 
 The result has `created`, `request_key`, `review` (`id`, `proposal_id`,
 `decision`, `expected_version`, `created_at`) and `proposal` (the change's
 `id`, `version`, `decision` and `execution` as the command left them),
-never the note, the Family, the Member or the value. System logs show the
-page's `census_change_updated` and the command's `admin_cmd_census_review`.
+never the note, the Family, the Member or the value. Every `decision` the
+census commands print, and the `reviews` of `export census --format jsonl`,
+say `accepted` for an accepted change, as the page does, though the
+database still stores `approved`. System logs show the page's
+`census_change_updated` and the command's `admin_cmd_census_review`.
 
 ### Editing a value or resolving a conflict
 
 `census edit` is the same row's **Edit value** (`--value`) and **Clear
 edit** (`--clear`): the value publication writes instead of the Family's
 answer, which never changes. `census resolve-conflict` is **Use the
-Family's value anyway** on a Conflict: it approves the change over
+Family's value anyway** on a Conflict: it accepts the change over
 ParishSoft's current value, which publication then expects to find. Both
 are an Administrator's only, with a full-scope session, one change at a
 time, and ask nothing, as on the page; neither publishes anything.
@@ -2644,6 +2650,90 @@ and `edited`, whether an edited value is now set). `census resolve-conflict`'s
 result is `census review`'s. Neither has the value, the note, the Family or
 the Member. System logs show the page's `census_change_updated` and the
 command's `admin_cmd_census_edit` or `admin_cmd_census_resolve_conflict`.
+
+### Updating ParishSoft
+
+The `census update-*` commands are the
+[Update ParishSoft](../specs/stewardship/reports/spec.md#update-parishsoft)
+page's steps: Check ParishSoft, the plan it makes, Update's Apply and Run
+again. Only an Administrator may run them (Staff and Ministry leaders get
+`denied` before anything is read). While updating ParishSoft is switched off
+(the deployment's `parishsoft_publication`, off by default), every one of
+them is exit 1 (`not_available`) with `error.reason` `publication_off`, and
+nothing is read or queued.
+
+```sh
+pk-admin census update-check
+pk-admin task show TASK_ID --watch 5
+pk-admin census update-plan
+pk-admin census update-confirm PLAN_ID
+pk-admin task show TASK_ID --watch 5
+pk-admin census update-plan PLAN_ID
+pk-admin census update-rerun PLAN_ID
+```
+
+`census update-check` is **Check ParishSoft**, with a full-scope session. It
+asks nothing, as the page does, and is refused as the page's button is
+unavailable: nothing Ready to update (`invalid`,
+`publication_nothing_approved`), an update running or stopped before it
+finished, or other campaign work holding the campaign (`not_available`,
+with `publication_running`, `publication_stopped` or
+`publication_campaign_held`). It prints `created`, `request_key` and the
+check's `task` (`id`, `state`); follow it with `task show TASK_ID --watch
+5`. System logs show `census_publication_preflight_requested` and the
+command's `admin_cmd_census_update_check`.
+
+`census update-plan` reads the newest check's plan, or the plan `PLAN_ID`
+names, from a session of any scope. It prints `waiting` (`changes`,
+`members` and `away`, the Ready changes whose Member left the Family),
+`check` (`available`, and the `reason` Check ParishSoft is unavailable),
+`checking` (a check is under way) and `plan`: `id`, `checked_by` (the
+checking Administrator's user id), `created_at`, `testing`, `expires_at`
+(the end of its hour to be confirmed in) and `expired`, `counts`
+(`write_entities`, `write_fields`, `blocked_entities` and `already`),
+`confirmed`, `run` (its latest run task's `id` and `state`, or null),
+`refreshing` (the refresh after the run is still going) and `offer`:
+`kind` (`update`, `rerun` or null), `available`, `reason` and
+`unfinished` (the Members Run again would try). `plan` is null before the
+first check. `rows` has one entry per row of the page's table:
+`proposal_id`, `proposal_version`, `field`, `member_duid` and `outcome`
+(`write`, `held`, `already_in_parishsoft`, `conflict` or `cannot_check`,
+and once run `updated`, `confirmed`, `not_written`, `failed` or
+`not_finished`); `others` counts the plan's rows the table leaves out. No
+value or name is printed; `export census` has those. System logs show the
+page's `census_publication_viewed`.
+
+`census update-confirm PLAN_ID` is **Update N changes**' Apply. It needs a
+full-scope session, and it is a privileged (fresh-gated) action: it shows
+the plan's counts and asks for `yes` (see [Confirmations](#confirmations)),
+or takes `--yes`. It refuses, before asking and again after, what the page
+would not offer: a plan that is not the newest check (`stale_version`,
+`publication_plan_superseded`), one more than an hour old
+(`publication_plan_expired`) or changed since it was shown
+(`publication_plan_changed`), a plan that writes nothing (`invalid`,
+`publication_nothing_to_write`), Testing mode, an update running, a check
+under way, or the campaign held (`not_available`). The result has
+`created`, `request_key`, `plan_id`, `confirmation` (`id`, `created_at`,
+`write_entities`, `write_fields`, `blocked_entities`) and the run's `task`;
+follow it with `task show TASK_ID --watch 5`, then `census update-plan
+PLAN_ID` for each change's result. System logs show
+`census_publication_confirmed`, the `automation_fresh_gate` event and the
+command's `admin_cmd_census_update_confirm`.
+
+`census update-rerun PLAN_ID` is **Run again**, offered only after a run
+that stopped before every Member was finished (`invalid`,
+`publication_finished`, once every Member is). It asks for `yes` with the
+number of Members it would try, or takes `--yes`, and prints `created`,
+`request_key`, `plan_id` and the retry's `task`. System logs show
+`census_publication_rerun_requested` and `admin_cmd_census_update_rerun`.
+
+`--request-key` (a version 4 UUID) is made for you and written to standard
+error when left out. Repeating `update-check`, `update-confirm` or
+`update-rerun` with the same key returns the same check, run or retry
+(`created` false) and records nothing new, even after a newer check (so
+the key recovers an unknown outcome, exit 6). Once the page's checks
+pass, a key the same command already used for another plan, or another
+Administrator's, is exit 1 (`invalid`).
 
 ## Digests
 
@@ -4133,6 +4223,20 @@ Each change is recorded in System logs as on the page
   Member is no longer an active, living Member of its Family, blank
   otherwise. The command's options and document are unchanged; a script
   that reads these files by position must change.
+- `pk-admin/1` (#1755): additive. `census update-check [--request-key
+  KEY]`, `census update-plan [PLAN_ID]`, `census update-confirm PLAN_ID
+  [--request-key KEY]` (fresh-gated and prompting) and `census update-rerun
+  PLAN_ID [--request-key KEY]` (prompting), the Update ParishSoft page's
+  steps, recording `admin_cmd_census_update_check`,
+  `admin_cmd_census_update_confirm` and `admin_cmd_census_update_rerun`. An
+  error document of these commands may carry `reason`, the page's refusal
+  code.
+- `pk-admin/1` (#1755, decision 7): a rename, kept on version 1, with no
+  alias. `census review --decision approved` is now `--decision accepted`
+  (`approved` is a usage error, exit 2), and every `decision` the census
+  commands print, and `export census --format jsonl`'s `reviews`, say
+  `accepted` where they said `approved`. Its only readers are
+  Administrator-run assistants.
 - `pk-admin/1` (#1704): additive. `report pledges` and `export pledges`
   take the Pledges page's two new stages, `entered_incorrectly` and
   `confirmed`, and `report pledges` counts them in `stages`; the
