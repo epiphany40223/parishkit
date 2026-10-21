@@ -6979,9 +6979,23 @@ takes a few minutes; they say nothing of quick updates
 A refresh run's background task page,
 and its row in the background-work list, name the run as a "Full refresh" or a
 "Quick update" from its request kind (whatever the quick-update cadence, so the
-label never claims a 15-minute cadence that is not configured), and describe
-the current phase in words ("Downloading from ParishSoft", "Saving the
-downloaded records", "Checking the new data", "Making the new data current").
+label never claims a 15-minute cadence that is not configured). The list
+names the run's current phase in words ("Downloading from ParishSoft",
+"Saving the downloaded records", "Checking the new data", "Making the new
+data current"). The task page's Current status, which Refresh from
+ParishSoft also draws for the run it requested, shows those four phases as
+[stage boxes](../ui-conventions/spec.md#stage-boxes) (Download from
+ParishSoft, Save the downloaded records, Check the new data, Make the new
+data current), the same boxes as Load ParishSoft data
+([#1579](https://github.com/epiphany40223/parishkit/issues/1579)): every
+box Not started while the run waits to start, waits to try again or is
+being recovered (each attempt starts again from the download); the stages
+before the current one Done and the current one In progress while it runs;
+every box Done once it succeeded; the stage it stopped in Failed when it
+failed; and, when it was cancelled, the stages it finished Done and the
+rest Not started. The region then names its state and current stage in one
+sentence that the page's announcer reads out only when it changes, rather
+than reading the whole region out on every poll.
 The download phase has no count, so while a refresh is downloading the page
 says so instead of a bare wait message; other steps without a count keep the
 general message. Counts are labeled as records checked, since every refresh places every record into a

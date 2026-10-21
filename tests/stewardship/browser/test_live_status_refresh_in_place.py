@@ -54,7 +54,7 @@ def test_finished_task_keeps_details_open_and_updates_them(page, component_origi
     details.locator("summary").click()
     visible(details.get_by_text("running", exact=True))
     reads = answer_reads(page, component_origin, TASK_PAGE, "/live-task-finished")
-    visible(page.get_by_text("Finished successfully."))
+    visible(page.locator("#task-status").get_by_text("Finished successfully."))
     visible(details.get_by_text("succeeded", exact=True))
     assert details.evaluate("node => node.open")
     history = page.locator("[data-table-region]")
@@ -96,7 +96,7 @@ def test_finished_task_keeps_the_history_sort_and_a_reload_keeps_it(
 
     page.route(lambda url: "sort=action" in url, finished)
     answer_reads(page, component_origin, TASK_STATUS, "/live-task-finished-status")
-    visible(page.get_by_text("Finished successfully."))
+    visible(page.locator("#task-status").get_by_text("Finished successfully."))
     history = page.locator("[data-table-region]")
     visible(history.get_by_role("cell", name="Finished", exact=True))
     has_attribute(heading, "aria-sort", "ascending")
