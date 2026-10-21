@@ -68,7 +68,7 @@ def test_link_line_stays_on_screen_with_the_about_panel_open(page, component_ori
     assert page.evaluate("scrollY") == 0
     for name in (
         "Review refused addresses (3 unresolved)",
-        "Watch Family email progress",
+        "See the mail queue",
         "See Family email history",
     ):
         box = page.get_by_role("link", name=name).bounding_box()

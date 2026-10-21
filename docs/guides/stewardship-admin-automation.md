@@ -185,7 +185,7 @@ These read what the matching Admin page shows, as counts, states,
 identifiers and UTC instants only: no Family names, email addresses, codes
 or other personal data. A read-only session can run every one of them. Each
 records the same view event in System logs as its page (`status` the home
-page's, `task list` and `task show` Background work's, `send progress` and
+page's, `task list` and `task show` Background work's, `mail queue` and
 `send history` Sent mail's, `system health` System health's);
 `schedule show`, `go-live readiness` and `go-live progress` record none,
 like their pages. `system health` needs an Administrator's session, as its
@@ -195,7 +195,7 @@ page does.
 pk-admin status
 pk-admin task list --state failed --size 20
 pk-admin task show TASK_ID --watch 5
-pk-admin send progress --watch 10
+pk-admin mail queue --watch 10
 pk-admin send history
 pk-admin schedule show
 pk-admin go-live readiness
@@ -236,13 +236,20 @@ your roles would not show on the page is `null`.
 | `tasks` or `task` | Each task's `id`, `root_id`, `parent_id`, `retry_sequence`, `type`, `state`, `action`, `version`, `attempt`, `initiator_id`, `progress` (`phase`, `current`, `total`, `percent`), its instants and `active` |
 | `latest_run_id`, `events` | `task show` only: the newest retry, and the history (`version`, `at`, `action`, `state`, `attempt`, `progress`) |
 
-### `send progress` and `send history`
+### `mail queue` and `send history`
+
+`mail queue` reads the Mail queue page: every email waiting to go out, of
+every kind, and the Family send in progress. It replaced `send progress`
+(#1562).
 
 | Field | What it holds |
 | --- | --- |
-| `campaign_id` | The current campaign |
-| `mode`, `paused`, `upcoming` | `send progress` only: the mode, whether delivery is paused, and whether a Production send is about to start |
-| `send` | `send progress` only: the send in progress or the latest, or `null` |
+| `campaign_id` | The current campaign, or `null` |
+| `mode`, `paused`, `upcoming` | `mail queue` only: the operating mode, whether delivery is paused, and whether a Production send is about to start |
+| `counts` | `mail queue` only: the operating mode's queued emails as `queued`, `sending`, `retry_wait` and `paused` |
+| `other_mode_queued` | `mail queue` only: how many emails of the other mode are queued (never added to `counts`) |
+| `kinds` | `mail queue` only: one row per kind (`purpose`, as Sent mail's `--purpose` names it) with the same four counts |
+| `send` | `mail queue` only: the Family send in progress or the latest, or `null` |
 | `page`, `pages`, `count`, `size`, `sends` | `send history` only: one page of sends, newest first |
 
 Each send has `kind`, `active`, `paused`, `stalled`, `held`, `total`,
@@ -584,10 +591,11 @@ pk-admin system mail-clear --token TOKEN
 
 ### Watching and errors
 
-`--watch SECONDS` (2 to 300) on `task show`, `send progress`,
+`--watch SECONDS` (2 to 300) on `task show`, `mail queue`,
 `go-live progress` and `system health` prints one document per poll,
 `final` false until the last. It stops with exit 0 once the task has
-finished, once no send is in progress or about to start, once System
+finished, once nothing is queued and no send is in progress or about to
+start, once System
 health lists no problem except those waiting cannot clear (off-site copies
 not set up, `offsite_missing`, and a requested backup that failed, did not
 finish or was never picked up, `backup_request_failed`: the
@@ -4190,6 +4198,12 @@ Each change is recorded in System logs as on the page
   operational and security notices. The document adds `purpose`, `mode`,
   `start` and `end`; each row keeps its `mode` and `attempt`. Its only
   readers are the Administrator and the operator, who keep no legacy forms.
+- `pk-admin/1` (#1562): a change of meaning, kept on version 1.
+  `send progress` is replaced by `mail queue`, with no alias. Its document
+  keeps `campaign_id`, `mode`, `paused`, `upcoming` and `send` unchanged
+  and adds `counts`, `other_mode_queued` and `kinds`; a watch also runs on
+  while any email is queued. Its only readers are the Administrator and
+  the operator, who keep no legacy forms.
 - `pk-admin/1` (#1622): additive. `users email-leaders --preview` and
   `--confirm`, the Users page's Email Ministry leaders review and Apply
   (full scope, the page's audit events and `admin_cmd_users_email_leaders`;

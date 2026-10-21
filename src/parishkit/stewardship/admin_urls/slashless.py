@@ -89,7 +89,7 @@ SLASHLESS = (
     ),
     ("reports/emailed/daily/<uuid:snapshot_id>", "daily_digest_snapshot"),
     ("mail/controls", "delivery_control"),
-    ("mail/family-progress", "family_email_progress"),
+    ("mail/queue", "mail_queue"),
     ("mail/family-history", "family_email_sends"),
     ("mail/sent", "deliveries"),
     ("mail/sent/<uuid:message_id>", "delivery"),

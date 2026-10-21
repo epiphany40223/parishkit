@@ -58,7 +58,7 @@ TEMPLATES = {
     "go_live_confirm": "go-live-confirm.html",
     "production_progress": "production-progress.html",
     "delivery_control": "delivery-control.html",
-    "family_email_progress": "family-email-progress.html",
+    "mail_queue": "mail-queue.html",
     "family_email_sends": "family-email-sends.html",
     "deliveries": "deliveries.html",
     "delivery_refusals": "delivery-refusals.html",

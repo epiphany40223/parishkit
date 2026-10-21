@@ -253,8 +253,8 @@ LEDGER = {
         "go-live cancel",
     ),
     # Family email history and Pause and resume mail.
-    "family_email_progress": command("send progress"),
-    "family_email_progress_status": command("send progress"),
+    "mail_queue": command("mail queue"),
+    "mail_queue_status": command("mail queue"),
     "family_email_sends": command("send history"),
     # Its read, and its pause, resume and resolution previews and their
     # confirmation (PR 7b, #463).
