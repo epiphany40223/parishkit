@@ -458,3 +458,30 @@ def test_repeat_limit_leaves_out_saved_rows_marked_delete(page, component_origin
     page.locator('[name="schedules-0-DELETE"]').check()
     has_text(summary, "3 reminders to add, 6 not added.")
     has_text(panel.locator("[data-repeat-add]"), "Add these 3 reminders")
+
+
+def test_repeat_leaves_out_dates_whose_time_has_passed(page, component_origin):
+    """#1948: a date whose send time is already past is listed as not added.
+
+    With the browser's clock at noon on Thursday, October 15, 2054 (UTC, so
+    6:00 AM on the 15th has passed in any American zone), a Monday and
+    Thursday rule at 6:00 AM counts only the four later dates; the five
+    earlier ones, the 15th among them, say their time has passed.
+    """
+    from datetime import UTC, datetime
+
+    page.clock.set_fixed_time(datetime(2054, 10, 15, 16, tzinfo=UTC))
+    page.goto(component_origin + "/schedule-editor-mail")
+    panel = page.locator("[data-repeat-panel]")
+    visible(panel)
+    for day in ("0", "3"):
+        panel.locator(f'[data-repeat="weekday"][value="{day}"]').check()
+    repeat(page, "time").fill("6am")
+    repeat(page, "time").blur()
+    has_text(panel.locator("[data-repeat-summary]"), "4 reminders to add, 5 not added.")
+    has_text(panel.locator("[data-repeat-add]"), "Add these 4 reminders")
+    text = panel.locator("[data-repeat-dates]").inner_text()
+    for passed in ("Thursday, October 1", "Monday, October 5", "Thursday, October 15"):
+        assert f"{passed}, 2054: not added, its time has passed" in text
+    assert "Monday, October 19, 2054" in text
+    assert "Monday, October 19, 2054: not added" not in text
