@@ -283,7 +283,7 @@ def test_return_links_name_a_page(template):
     # The Census changes worklist's "Back to To review" is a review decision,
     # not a link back to a page (see ALLOWED), as is the review pipeline's
     # Back to review on Ministry requests (#1684), Additional information
-    # and Limitations (#1685).
+    # and Limitations (#1685), and Pledges (#1840).
     if template not in {"census-changes.html", *REVIEW_PIPELINE_PAGES}:
         assert "Back to " not in source
     for target in re.findall(r'"Return to ([^"]+)"', source):
@@ -487,6 +487,8 @@ REVIEW_PIPELINE_PAGES = frozenset(
         # Additional information and Limitations (#1685).
         "information.html",
         "limitations-report.html",
+        # Pledges, whose help names Back to review's undo (#1840).
+        "pledges-to-enter.html",
     }
 )
 ALLOWED = {

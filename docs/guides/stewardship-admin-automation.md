@@ -2099,8 +2099,7 @@ the prompt or from `--yes`.
 A prompting command checks your role first: if your user no longer may do
 the action (an Administrator who is now Staff, say), it exits 1 (`denied`)
 before it reads any input, looks anything up or prompts. A command Staff
-may run, such as `export financial` or `census resolve`, still prompts
-Staff.
+may run, such as `export financial`, still prompts Staff.
 
 Since [#1547](https://github.com/epiphany40223/parishkit/issues/1547) no
 Admin page asks for a recent sign-in, so a session never stands in for one.
@@ -2505,28 +2504,31 @@ pk-admin pledges decide --action accept --item ITEM_ID:0 --item ITEM_ID:2
 pk-admin pledges decide --action edit --item ITEM_ID:0 \
     --amount 1,300 --frequency monthly
 pk-admin pledges decide --action entered_by_hand --item ITEM_ID:1
+pk-admin pledges decide --action back_to_review --item ITEM_ID:2 \
+    --note "Marked by mistake"
 ```
 
 `pledges decide` records one decision, as a row's icon or the bulk bar does:
 `accept`, `edit` (one pledge, with `--amount` and, for a pledge above zero,
 `--frequency`: `weekly`, `monthly`, `quarterly` or `annual`), `ignore`,
-`back_to_review` (a `--note` saying why is required to reopen an ignored
-pledge) or `entered_by_hand`. It needs a full-scope session; Administrators
-and Staff may run it. Entered by hand is final, so it asks for `yes` first
-(see [Confirmations](#confirmations)), or takes `--yes`; the others ask
-nothing. Each `--item` is a pledge's `item_id` and `version` from the JSON
+`back_to_review` or `entered_by_hand`. It needs a full-scope session;
+Administrators and Staff may run it. Nothing asks first: every decision can
+be changed again, Entered by hand too. `back_to_review` on an Ignored pledge
+reopens it, and on an Entered by hand, Entered incorrectly or Confirmed one
+undoes that step, so the pledge goes back to To enter by hand with its
+decision kept (To review for a pledge ParishSoft already held); both need a
+`--note` saying why. There is no `--yes`. Each `--item` is a pledge's `item_id` and `version` from the JSON
 Lines; up to 100 at once, all or none. A campaign without Financial
 stewardship is exit 1 (`not_available`). A pledge someone decided since, or
 that the Family answered again, is exit 1 (`stale_version`): export again.
 A decision the pledge's stage does not offer, or an amount the Family form
 would refuse, is exit 1 (`invalid`, the amount's problem at `amount` or
-`frequency`). `--note -` reads the note from standard input (then
-`entered_by_hand` needs `--yes`). `--request-key` is made for you when left
+`frequency`). `--note -` reads the note from standard input. `--request-key` is made for you when left
 out; repeating with the same key, pledges, decision and value returns the
 same rows (`created` false), and using the key for other pledges, another
 decision or another value is `invalid`. A note longer than 2,000
-characters, or an amount the Edit would refuse, is refused before the
-question is asked. The result has
+characters, or an amount the Edit would refuse, is refused before anything
+is recorded. The result has
 `created`, `request_key` and `decisions` (each row's `id`, `item_id`,
 `sequence`, `action`, `decision`, `entered` and `created_at`), never the
 amount or the note. System logs show the page's `pledge_review_updated` and
@@ -2538,32 +2540,35 @@ the command's `admin_cmd_pledges_decide`.
 (`entered`), **Ignore** (`ignored`) or **Reopen** (`reopened`) icon. Like the
 page's buttons it needs a full-scope session; Administrators and Staff may
 record Entered and Ignore, and only an Administrator may reopen an ignored
-change (Staff get `denied`).
-Entered in ParishSoft cannot be undone, so, as the page's dialog does,
-`--action entered` shows the change's id and version and asks for `yes`
-(see [Confirmations](#confirmations)), or takes `--yes`; Ignore and Reopen
-ask nothing.
+change (Staff get `denied`). Reopen of a change that is Entered by hand
+(also Entered incorrectly or Confirmed), Updated in ParishSoft or Already in
+ParishSoft is the page's **Back to review** of that step, which Staff may
+record too: the change goes back to the stage before it with its decision
+kept (To enter by hand or Ready to update; To review when nobody had
+decided it), and nothing is written to ParishSoft.
+Every outcome can be undone that way, so no action asks first, and there
+is no `--yes`.
 
 ```sh
 pk-admin census resolve PROPOSAL_ID --action entered --expected-version 3
 pk-admin census resolve PROPOSAL_ID --action reopened --expected-version 4 \
-    --note - --yes < note.txt
+    --note - < note.txt
 ```
 
 `PROPOSAL_ID` and the `--expected-version` are the change's id and version,
 which `export census --format jsonl` prints (`proposal_id` and `version`,
 with the `actions` the change takes now; the page's own downloads leave
-them out). `--note` is optional, except to reopen; `-` reads it from
-standard input, which keeps a note that names people out of shell history
-and the process list, and then needs `--yes`, because standard input cannot
-carry both the note and an answer. `--request-key` is made for you and
+them out). `--note` is optional, except to reopen (an ignored change, or a
+terminal step); `-` reads it from standard input, which keeps a note that
+names people out of shell history and the process list. `--request-key` is made for you and
 written to standard error when left out. Repeating the command with the
 same key returns the same resolution (`created` false) and records nothing
 new; the key used for another outcome or note is exit 1 (`invalid`). A
 change someone updated since that version is exit 1 (`stale_version`):
 read it again on the page. An outcome the change's status does not allow
-(an automatic change, or one already entered), or reopening without a
-note, is exit 1 (`invalid`); a change that is not the current campaign's
+(an automatic change, an entered one marked again before a refresh found
+it wrong, one queued for an update run, or one a later response of the
+Family replaced), or reopening without a note, is exit 1 (`invalid`); a change that is not the current campaign's
 is exit 1 (`not_available`), and so is a repeat after the current campaign
 changed.
 
@@ -3179,12 +3184,12 @@ pk-admin limitations decide --action handled --item m41-3:1
 
 Each takes `--action` (`accept`, `ignore`, `back_to_review` or `handled`),
 one `--item ID:VERSION` for each item (up to 100, all or none), `--note TEXT`
-(at most 2,000 characters; `-` reads standard input, which then needs
-`--yes`) and `--request-key`. Handled is final, so it asks for `yes` first
-(see [Confirmations](#confirmations)), or takes `--yes`; the others ask
-nothing, as they can be changed again. Taking an Ignored item back to
-review needs a `--note` saying why (for a request, a new one, not its
-current notes) (exit 1, `invalid`, naming `note`,
+(at most 2,000 characters; `-` reads standard input) and
+`--request-key`. None asks first, as every decision can be
+changed again, Handled too, and none takes `--yes`. Taking an Ignored
+item back to review, or a Handled one (which returns it to To handle,
+with its Accept kept), needs a `--note` saying why (for a request, a new
+one, not its current notes) (exit 1, `invalid`, naming `note`,
 otherwise). An item someone decided since, or that the Family answered
 again, is exit 1 (`stale_version`): list or export again. An action the
 item's stage does not offer is `stale_version` too, as on the page. A
@@ -3635,7 +3640,8 @@ notes; read those on the page, or download them with `export information`.
 ```sh
 pk-admin followup show REQUEST_ID
 pk-admin followup roster-entered REQUEST_ID --set --expected-version 0
-pk-admin followup roster-entered REQUEST_ID --clear --expected-version 1
+pk-admin followup roster-entered REQUEST_ID --clear --expected-version 1 \
+  --note "Marked by mistake"
 pk-admin followup roster-bulk --request REQUEST_ID:0 --request OTHER_ID:2
 pk-admin followup information-show ITEM_ID
 pk-admin followup information-update ITEM_ID --expected-version 3 \
@@ -3648,7 +3654,12 @@ adds one. A tick changed since is exit 1 (`stale_version`). A request that
 takes no tick (only a join or leave a person resolved as joined or leave
 confirmed takes one) is exit 1 (`invalid`, `error.fields` naming
 `request`), and so is a tick that already says so (naming `set` or
-`clear`). `followup roster-bulk` takes each chosen request as `ID:VERSION`,
+`clear`). `--clear` is the request's Back to review of the mark, as the
+page's Clear Entered in ParishSoft is: it needs `--note TEXT` (or `--note -`
+to read it from standard input), saying why, and records that undo with the
+note; the request is To enter by hand again, its decision kept. Without a
+note it is exit 1 (`invalid`, naming `note`); `--set` takes no note.
+`followup roster-bulk` takes each chosen request as `ID:VERSION`,
 up to 250, and only marks; it asks for confirmation first (or takes
 `--yes`), and saves nothing if any request is stale or already marked.
 Find the requests with `followup list --state resolved`: a row whose
@@ -3672,8 +3683,9 @@ current is exit 1 (`stale_version`). The flags give the request its
 worklist stage: needed is To handle, completed is Handled, and setting both
 to no keeps a To review or Ignored request as it was, or sends a To handle
 or Handled one back to review; the command never ignores a request. An
-Ignored request leaves Ignored only with new `--notes` saying why (exit 1,
-`invalid`, naming `notes`, otherwise).
+Ignored request leaves Ignored only with new `--notes` saying why, and
+clearing a completed follow-up undoes Handled, which needs new `--notes`
+saying why too (exit 1, `invalid`, naming `notes`, otherwise).
 
 Each change takes `--request-key`; without one it makes a key and prints it
 to standard error. A repeat with the key records nothing twice; the key

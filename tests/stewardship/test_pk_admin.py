@@ -1116,7 +1116,8 @@ def test_the_prompting_list_names_every_prompting_command():
     assert "delivery_bounce-report" in prompting
     assert "portal_maintenance_set" in prompting
     assert "files_delete" in prompting and "files_rename" not in prompting
-    assert "census_resolve" in prompting
+    # Every census outcome can be undone (#1840), so it asks nothing.
+    assert "census_resolve" not in prompting
     assert "portal_maintenance" not in prompting
 
 

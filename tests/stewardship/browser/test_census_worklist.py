@@ -39,6 +39,8 @@ from .census_components import (
     RETURNED_NOTICE,
     STALE,
     STALE_NOTICE,
+    UNDONE,
+    UNDONE_NOTICE,
     WRONG,
 )
 from .test_bulk_bar import assert_accessible
@@ -130,8 +132,9 @@ def test_staff_accept_an_automatic_change_in_place(page, component_origin):
 
 def test_entered_by_hand_on_a_to_review_row_is_one_step(page, component_origin):
     """A To review By hand row offers Entered by hand beside Accept, Edit and
-    Ignore; its dialog says it is final, and the redrawn row is Entered by
-    hand with its mark selected and no box."""
+    Ignore; its dialog says to check ParishSoft first and that Back to review
+    undoes the mark, and the redrawn row is Entered by hand with its mark
+    selected and Back to review its box's one kind (#1840)."""
     page.goto(component_origin + PATH)
     page.evaluate(MARK)
     sent = posts(page, component_origin, ENTERED)
@@ -145,14 +148,50 @@ def test_entered_by_hand_on_a_to_review_row_is_one_step(page, component_origin):
     has_text(dialog.locator("h2"), f"Mark {name(1)} entered by hand?")
     has_text(
         dialog.locator("[data-confirm-body]"),
-        "Record that you typed this into ParishSoft. Check ParishSoft first: "
-        "this is final.",
+        "Record that you typed this into ParishSoft. Check ParishSoft first; "
+        "Back to review undoes the mark.",
     )
     dialog.get_by_role("button", name="Record").click()
     has_text(page.locator("#census-notice"), ENTERED_NOTICE)
     assert "decide=entered_by_hand" in sent[-1]
     has_text(row(page, 1).locator(".stage-chip .status-word"), "Entered by hand")
-    assert row(page, 1).locator("input[data-select-row]").count() == 0
+    box = row(page, 1).locator("input[data-select-row]")
+    assert box.get_attribute("data-confirm-kind") == "back_to_review"
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_back_to_review_undoes_entered_by_hand_with_a_note(page, component_origin):
+    """An Entered by hand row offers Back to review (#1840): its dialog says
+    the mark is undone and where the change goes, the note is required
+    before Record is available, and the redrawn row is To enter by hand,
+    Accepted, in place."""
+    page.goto(component_origin + ENTERED)
+    page.evaluate(MARK)
+    sent = posts(page, component_origin, UNDONE)
+    assert actions(page, 1) == [
+        ("accept", "true"),
+        ("back_to_review", None),
+        ("entered_by_hand", "true"),
+    ]
+    icon(page, 1, "Send").click()
+    dialog = page.locator("#census-decide-dialog")
+    has_text(dialog.locator("h2"), f"Send {name(1)} back to review?")
+    has_text(
+        dialog.locator("[data-confirm-body]"),
+        "Entered by hand is undone: the item goes back to To enter by hand, "
+        "with its decision kept. Say why.",
+    )
+    record = dialog.get_by_role("button", name="Record")
+    assert record.get_attribute("aria-disabled") == "true" or record.is_disabled()
+    has_text(dialog.locator("[data-complete-hint]"), "Say why this item goes back.")
+    dialog.get_by_label("Note (required)").fill("Typed the wrong number")
+    available(record)
+    record.click()
+    has_text(page.locator("#census-notice"), UNDONE_NOTICE)
+    hidden(dialog)
+    assert "decide=back_to_review" in sent[-1] and "item=1" in sent[-1]
+    assert "note=Typed+the+wrong+number" in sent[-1]
+    has_text(row(page, 1).locator(".stage-chip .status-word"), "To enter by hand")
     assert page.evaluate(MARKED) == "kept"
 
 
@@ -420,10 +459,10 @@ def test_entered_by_hand_again_on_an_entered_incorrectly_row(page, component_ori
 
 
 def test_back_to_review_on_an_entered_incorrectly_row(page, component_origin):
-    """Back to review on an Entered incorrectly row needs no note; its dialog
-    says to edit the item to ParishSoft's value (no confirmation is promised:
-    a refresh before the Edit makes it a Conflict), and the redrawn row is
-    To review, in place."""
+    """Back to review on an Entered incorrectly row undoes the mark (#1840):
+    its dialog says the change goes back to To enter by hand with its
+    decision kept, the note is required, and the redrawn row is To enter by
+    hand, in place."""
     page.goto(component_origin + INCORRECT)
     page.evaluate(MARK)
     sent = posts(page, component_origin, RETURNED)
@@ -432,16 +471,18 @@ def test_back_to_review_on_an_entered_incorrectly_row(page, component_origin):
     has_text(dialog.locator("h2"), f"Send {name(3)} back to review?")
     has_text(
         dialog.locator("[data-confirm-body]"),
-        "The item goes back to To review. If ParishSoft's value is right, edit "
-        "the item to that value.",
+        "Entered incorrectly is undone: the item goes back to To enter by hand, "
+        "with its decision kept. Say why.",
     )
     record = dialog.get_by_role("button", name="Record")
+    assert record.get_attribute("aria-disabled") == "true" or record.is_disabled()
+    dialog.get_by_label("Note (required)").fill("Wrong value")
     available(record)
     record.click()
     has_text(page.locator("#census-notice"), RETURNED_NOTICE)
     hidden(dialog)
     assert "decide=back_to_review" in sent[-1] and "item=3" in sent[-1]
-    has_text(row(page, 3).locator(".stage-chip .status-word"), "To review")
+    has_text(row(page, 3).locator(".stage-chip .status-word"), "To enter by hand")
     assert page.evaluate(MARKED) == "kept"
 
 
@@ -547,8 +588,8 @@ def test_a_new_members_entered_by_hand_asks_for_its_member_id(
     )
     has_text(
         dialog.locator("[data-confirm-body]"),
-        "Record that you typed this into ParishSoft. Check ParishSoft first: "
-        "this is final.",
+        "Record that you typed this into ParishSoft. Check ParishSoft first; "
+        "Back to review undoes the mark.",
     )
     member_id = dialog.get_by_label("ParishSoft Member ID (optional)")
     assert member_id.input_value() == ""
@@ -582,9 +623,9 @@ def test_correcting_a_new_members_member_id(page, component_origin, axe_source):
     place, focus back on the selected mark."""
     page.goto(component_origin + MEMBER_ENTERED)
     page.evaluate(MARK)
-    actions = row(page, 4).locator('[data-row-action="entered_by_hand"]')
-    assert actions.count() == 2
-    assert actions.nth(0).get_attribute("aria-pressed") == "true"
+    marks = row(page, 4).locator('[data-row-action="entered_by_hand"]')
+    assert marks.count() == 2
+    assert marks.nth(0).get_attribute("aria-pressed") == "true"
     label = (
         "Correct the ParishSoft Member ID of New Member for New Member: Newly Sample"
     )

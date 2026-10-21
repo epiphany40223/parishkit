@@ -172,7 +172,9 @@ def test_a_resubmitted_change_keeps_its_carried_decision(response_service):
 
 def test_ministry_follow_up_and_roster_ticks(response_service):
     """A follow-up edit, a resolution and the Entered in ParishSoft tick set
-    and cleared, worded per step, with the Ministry names read once."""
+    and cleared, worded per step, with the Ministry names read once. The
+    clear is Back to review of the mark (#1840): its revision reads Back to
+    review, and the tick's clearing written with it is no line of its own."""
     harness, admin, join, leave = resolved(response_service)
     tick(harness, admin, join, True)
     tick(harness, admin, join, False)
@@ -185,7 +187,7 @@ def test_ministry_follow_up_and_roster_ticks(response_service):
     assert [what for what, _detail in lines] == [
         "Accepted",
         "Entered by hand",
-        "Entered by hand cleared",
+        "Back to review",
         "Follow-up updated",
         "Ignored",
     ]

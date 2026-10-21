@@ -242,10 +242,10 @@ def entered_incorrectly(proposal):
     """Whether a census change is Entered incorrectly now (#1737).
 
     Only a change Entered by hand can be, and only while its latest refresh
-    check at its current version says so: the two fixes (Entered by hand
-    again and Back to review) are offered and recorded then alone, as the
-    resolution guard (migration 0133, provisional number) also requires. One
-    query, for an entered change only.
+    check at its current version says so: Entered by hand again is offered
+    and recorded then alone, as the resolution guard (migration 0133,
+    provisional number) also requires. (Back to review undoes any terminal
+    step, #1840.) One query, for an entered change only.
     """
     if proposal.execution != "resolved_external" or replaced(proposal):
         return False
@@ -278,14 +278,16 @@ def replaced(proposal):
 def _remarked(rows):
     """ParishSoft's value at each census change's latest mark made again, by id.
 
-    A final change's version moves only when it is marked Entered by hand
-    again, and then by one: over Entered incorrectly (#1737), or a New
-    Member's Member ID corrected (#1773), which has no third value and so
-    never reads this. So a check at the version before an entered change's
-    current one means that mark was made, and the latest such check's
-    ParishSoft value is the value recorded at it. The refresh check guard
-    (migration 0133, provisional number) reads it the same way. One query,
-    when any change is entered.
+    A final change's version moves while it stays final only when it is
+    marked Entered by hand again, and then by one: over Entered incorrectly
+    (#1737), or a New Member's Member ID corrected (#1773), which has no
+    third value and so never reads this. Back to review of a terminal step
+    (#1840) leaves the change open, where no check is made, so a mark after
+    it never finds a check at the version before. So a check at the version
+    before an entered change's current one means a mark was made again
+    there, and the latest such check's ParishSoft value is the value
+    recorded at it. The refresh check guard (migration 0133, provisional
+    number) reads it the same way. One query, when any change is entered.
     """
     wanted = {
         (row.pk, row.version - 1)

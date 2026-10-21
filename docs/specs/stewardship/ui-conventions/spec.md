@@ -3950,11 +3950,15 @@ inventory on #879 lists.
   records rather than removes, and that the row's other action undoes, also
   takes an icon of its own and acts [in place](#in-place-controls) without a
   dialog; so far only the request page's tick, "Mark … entered in
-  ParishSoft" (a check mark) and "Clear Entered in ParishSoft for …" (an
-  undo arrow). An action that carries a note opens the confirmation dialog
+  ParishSoft" (a check mark), whose undo, "Clear Entered in ParishSoft for
+  …" (an undo arrow), opens the confirmation dialog for its required note
+  like every undo of a terminal step (below). An action that carries a note opens the confirmation dialog
   instead, which holds the note, with an ordinary confirm button unless the
-  action cannot be undone; so far only Census changes ([#879](https://github.com/epiphany40223/parishkit/issues/879)), whose
-  decisions take an optional note and Reopen a required one. A note field
+  action cannot be undone: Census changes ([#879](https://github.com/epiphany40223/parishkit/issues/879)), whose
+  decisions take an optional note and Reopen a required one; every review
+  worklist's Back to review on a terminal stage, which needs a note
+  ([#1840](https://github.com/epiphany40223/parishkit/issues/1840)); and the
+  Ministry request page's Clear Entered in ParishSoft, the same undo. A note field
   shared by several actions is labelled by the action chosen: "Note
   (optional)", and "Note (required)" only while that action needs one,
   changing in place as the dialog opens (the review worklist, R38). An
@@ -3974,7 +3978,11 @@ inventory on #879 lists.
   again is not an undo; the row's own undo action (the review pipeline's
   Back to review) is, so the selected icon is unavailable
   (`aria-disabled="true"`) and its tooltip names the state and the undo
-  in one phrase.
+  in one phrase. Every recorded state has that undo, a final-looking mark
+  (Entered by hand, Handled, Updated in ParishSoft, Confirmed) included,
+  and undoing such a mark needs a note saying why
+  ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
+  [#1840](https://github.com/epiphany40223/parishkit/issues/1840)): no row's state is left with no way back.
   So the decision shows on the icons, not only in a
   status column ([review pipeline](../review-pipeline/spec.md#selected-state-icons),
   [#1680](https://github.com/epiphany40223/parishkit/issues/1680)).

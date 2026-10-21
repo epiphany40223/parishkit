@@ -3,10 +3,12 @@
 The worklists' services record each decision as the stream's own immutable
 row under the real web login; SQL admits only what the services may record,
 and an Additional information revision saved before 0126 reads by its
-follow-up flags.
+follow-up flags. Back to review undoes Handled with a note (#1840,
+migrations 0150 and 0151).
 """
 
 import json
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -17,7 +19,7 @@ from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.models import FamilyCampaign
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
-from parishkit.stewardship.pipeline import Action, Stage
+from parishkit.stewardship.pipeline import Action, Stage, Stream
 from parishkit.stewardship.reports.limitations import (
     LimitationsQuery,
     limitations_report,
@@ -26,6 +28,7 @@ from parishkit.stewardship.responses.census_review import KeyRebound
 from parishkit.stewardship.responses.information import (
     ReopenNeedsNote,
     StaleItem,
+    UndoNeedsNote,
     decide_information,
     information_stage,
     latest_revision,
@@ -52,6 +55,8 @@ from .test_runtime_auth_grants_postgresql import web_login
 from .test_weekly_observation_postgresql import respond as respond_text
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+MIGRATIONS = Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema"
 
 
 def staff_actor():
@@ -119,10 +124,9 @@ def test_information_decisions_follow_the_pipeline(live_response_service, google
     # A decision with no note keeps the request's Staff notes.
     assert handled.notes == "Will call"
     assert stage_of(item.pk) is Stage.HANDLED
-    # Handled is final.
-    for action in (Action.BACK_TO_REVIEW, Action.IGNORE):
-        with pytest.raises(StaleItem):
-            decide(harness, actor, action, item)
+    # Handled is not ignored; its undo needs a note (below).
+    with pytest.raises(StaleItem):
+        decide(harness, actor, Action.IGNORE, item)
     events = AuditEvent.objects.filter(
         event_type="information_updated", subject_id__in=[accepted.pk, handled.pk]
     )
@@ -161,6 +165,224 @@ def test_ignore_needs_a_note_to_reopen(live_response_service, google):
     (back,) = decide(harness, actor, Action.BACK_TO_REVIEW, item, note="Misread it")
     assert back.review_decision == "none"
     assert stage_of(item.pk) is Stage.TO_REVIEW
+
+
+def handled_request(harness, actor, text):
+    """A request Accepted with a note and then marked Handled on the worklist."""
+    item = AdditionalInformationItem.objects.get(submission=respond_text(harness, text))
+    decide(harness, actor, Action.ACCEPT, item, note="Will call")
+    decide(harness, actor, Action.HANDLED, item)
+    item.refresh_from_db()
+    assert stage_of(item.pk) is Stage.HANDLED
+    return item
+
+
+def undo_row(actor, item, notes):
+    """Handled's undo written directly, as the worklist's service writes it."""
+    item.refresh_from_db()
+    return AdditionalInformationRevision.objects.create(
+        actor_id=actor,
+        item_id=item.pk,
+        expected_version=item.version,
+        request_key=uuid4(),
+        follow_up_needed=True,
+        followed_up=False,
+        confirm_clear=True,
+        notes=notes,
+        review_decision="accepted",
+    )
+
+
+def test_back_to_review_undoes_handled_with_a_note(live_response_service, google):
+    """Handled's undo (#1840): a note, To handle again, completion cleared.
+
+    The worklist and the guard both need a new note (the request's earlier
+    notes, carried forward, are not one); a Ministry leader and a stale
+    version are refused. The undo keeps the Accept, so the request is To
+    handle, follow-up still needed, with the completion (who and when)
+    cleared; every revision stays as history, the item's version advances,
+    the request's history and Timeline read Back to review, and the counts,
+    My review work and the export's To handle selection place it as To
+    handle. A repeat of the undo's key replays it.
+    """
+    from parishkit.stewardship.accounts.review_work import read_counts
+    from parishkit.stewardship.reports.information import (
+        InformationQuery,
+        information_page,
+    )
+    from parishkit.stewardship.reports.information_views import decision_label
+    from parishkit.stewardship.reports.information_worklist import (
+        WorklistQuery,
+        requests,
+    )
+
+    from .test_census_resolution_postgresql import leader
+    from .test_ministry_reports_postgresql import actor as principal_for
+
+    harness = live_response_service
+    actor = staff_actor()
+    item = handled_request(harness, actor, "Please call about the picnic")
+    for note in ("", "  ", "Will call"):
+        with pytest.raises(UndoNeedsNote):
+            decide(harness, actor, Action.BACK_TO_REVIEW, item, note=note)
+    for notes in ("", "Will call"):
+        with (
+            task_login(ServiceRole.WEB, exact=True, reconnect=True),
+            pytest.raises(DatabaseError, match="Undoing a handled request"),
+            work_transaction(),
+        ):
+            undo_row(actor, item, notes)
+    # A Ministry leader is refused by the service and by the guard.
+    head = leader(harness, actor)
+    with pytest.raises(PermissionError):
+        decide(harness, head, Action.BACK_TO_REVIEW, item, note="Mistake")
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(DatabaseError, match="lacks current authority"),
+        work_transaction(),
+    ):
+        undo_row(head, item, "Mistake")
+    # A stale version is a race, never a write.
+    item.refresh_from_db()
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(StaleItem),
+    ):
+        decide_information(
+            harness.service.store,
+            actor,
+            harness.campaign.pk,
+            Action.BACK_TO_REVIEW,
+            {item.pk: item.version - 1},
+            note="Mistake",
+            request_key=uuid4(),
+        )
+    before = item.version
+    key = uuid4()
+    (undone,) = decide(
+        harness, actor, Action.BACK_TO_REVIEW, item, note="Not called yet", key=key
+    )
+    assert (undone.follow_up_needed, undone.followed_up) == (True, False)
+    assert undone.review_decision == "accepted" and undone.confirm_clear
+    assert undone.followed_up_at is None and undone.followed_up_by_id is None
+    assert undone.notes == "Not called yet"
+    item.refresh_from_db()
+    assert item.version == before + 1
+    assert item.follow_up_needed and item.followed_up_at is None
+    assert stage_of(item.pk) is Stage.TO_HANDLE
+    assert decision_label(undone) == "Back to review"
+    history = AdditionalInformationRevision.objects.filter(item_id=item.pk)
+    assert [
+        (row.review_decision, row.followed_up)
+        for row in history.order_by("expected_version")
+    ] == [("accepted", False), ("accepted", True), ("accepted", False)]
+    assert history.get(followed_up=True).followed_up_by_id == actor
+    assert AuditEvent.objects.filter(
+        event_type="information_updated", subject_id=undone.pk
+    ).exists()
+    # The repeated post replays the undo, even now the request is To handle.
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        replay = decide_information(
+            harness.service.store,
+            actor,
+            harness.campaign.pk,
+            Action.BACK_TO_REVIEW,
+            {item.pk: before},
+            note="Not called yet",
+            request_key=key,
+        )
+    assert [row.pk for row in replay] == [undone.pk]
+    # Counted as To handle: the worklist's stage counts, My review work and
+    # the selection the To handle export reads; the menu counts To review
+    # only, so the request is not in it.
+    staff = principal_for(harness, ("staff",), ())
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        _, rows, counts = requests(
+            harness.campaign.pk, WorklistQuery.parse({"stage": "to_handle"})
+        )
+        assert counts == {"to_handle": 1}
+        assert [row["id"] for row in rows] == [str(item.pk)]
+        with transaction.atomic():
+            found = read_counts(staff, harness.campaign.pk)
+        assert found[Stream.ADDITIONAL_INFORMATION] == {"to_handle": 1}
+        page = information_page(
+            harness.campaign.pk, InformationQuery(needed="yes", completed="no")
+        )
+        assert [row["id"] for row in page["rows"]] == [str(item.pk)]
+    # Handled again marks it afresh, by its new completer.
+    (again,) = decide(harness, actor, Action.HANDLED, item)
+    assert again.followed_up_at is not None and again.followed_up_at > undone.created_at
+
+
+def test_the_command_line_clear_of_handled_needs_a_note(live_response_service, google):
+    """``information-update``'s clear of a completed follow-up is an undo too.
+
+    With the clearing confirmation but no new notes it is refused as the
+    worklist's undo is, and with new notes it is recorded, To handle or, with
+    follow-up not needed, To review.
+    """
+    harness = live_response_service
+    actor = staff_actor()
+    item = handled_request(harness, actor, "Please call about the choir")
+
+    def clear(notes, needed=True):
+        """The command line's Save clearing the completion."""
+        item.refresh_from_db()
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            return update_information(
+                harness.service.store,
+                actor,
+                item.pk,
+                expected_version=item.version,
+                request_key=uuid4(),
+                follow_up_needed=needed,
+                followed_up=False,
+                confirm_clear=True,
+                notes=notes,
+            )
+
+    for notes in ("", "Will call"):
+        with pytest.raises(UndoNeedsNote):
+            clear(notes)
+    assert clear("Marked too soon").review_decision == "accepted"
+    assert stage_of(item.pk) is Stage.TO_HANDLE
+    item.refresh_from_db()
+    decide(harness, actor, Action.HANDLED, item)
+    assert clear("Nothing to do after all", needed=False).review_decision == "none"
+    assert stage_of(item.pk) is Stage.TO_REVIEW
+
+
+def test_migration_0150_check_refuses_the_previous_guard(live_response_service, google):
+    """0150's DO block passes as installed and fails on 0126's guard, which
+    admitted Handled's undo with no note (the Python service alone refused
+    it); rolled back, the installed guard refuses it again."""
+    harness = live_response_service
+    actor = staff_actor()
+    item = handled_request(harness, actor, "Please call about the bake sale")
+    text = (MIGRATIONS / "migrations/0150_information_handled_undo.sql").read_text(
+        encoding="utf-8"
+    )
+    check = text[text.index("DO $check$") : text.index("$check$;") + len("$check$;")]
+    old = (MIGRATIONS / "migrations/0126_information_limitation_review.sql").read_text(
+        encoding="utf-8"
+    )
+    start = old.index(
+        "CREATE OR REPLACE FUNCTION public.stewardship_information_revision_guard_v1()"
+    )
+    previous = old[start : old.index("END $$;", start) + len("END $$;")]
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(check)  # The installed definition passes.
+        with pytest.raises(DatabaseError, match="Migration 0150"), transaction.atomic():
+            cursor.execute(previous)
+            cursor.execute(check)
+        with transaction.atomic():
+            cursor.execute(previous)
+            with work_transaction():
+                undo_row(actor, item, "Will call")  # 0126's guard admits it.
+            transaction.set_rollback(True)
+        cursor.execute(check)  # Rolled back to the installed definition.
+        transaction.set_rollback(True)
+    assert stage_of(item.pk) is Stage.HANDLED
 
 
 def test_new_revisions_state_a_decision_and_old_ones_read_by_flags(
@@ -497,6 +719,184 @@ def test_limitation_decisions_follow_the_resubmission_rule(response_service, goo
             connection.cursor() as cursor,
         ):
             cursor.execute(statement, [again.pk])
+
+
+def answer_undo_row(actor, family, note):
+    """Handled's undo of Member 3's answer written directly, at its version."""
+    latest = (
+        LimitationReview.objects.filter(family_id=family.pk, kind="member")
+        .order_by("-expected_version")
+        .first()
+    )
+    return LimitationReview.objects.create(
+        actor_id=actor,
+        family_id=family.pk,
+        submission_id=FamilyCampaign.objects.get(pk=family.pk).effective_submission_id,
+        kind="member",
+        member_key="3",
+        expected_version=latest.expected_version + 1,
+        request_key=uuid4(),
+        decision="accepted",
+        note=note,
+    )
+
+
+def test_back_to_review_undoes_a_handled_answer(response_service, google):
+    """Handled's undo (#1840): an accepted row with a note, To handle again.
+
+    The service and the guard both need a note; a Ministry leader and a
+    stale version are refused. The undo is one more immutable row, so the
+    history keeps the Handled one, the answer's version advances and the
+    counts place it as To handle; Handled again marks it afresh, and an
+    answer given again unchanged keeps its Handled, which can be undone
+    the same way. A repeat of the undo's key replays it.
+    """
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts import admin_context
+    from parishkit.stewardship.accounts.policy import Principal
+    from parishkit.stewardship.reports.limitation_worklist import (
+        answer_rows,
+        at_stage,
+    )
+
+    from .test_census_resolution_postgresql import leader
+
+    harness = response_service
+    start(harness)
+    harness = activate_response_service(harness)
+    first = submit_live(harness, cannot_serve=True)
+    actor = staff_actor()
+    family = FamilyCampaign.objects.get(pk=first.family_id)
+    member = answer_id(family.family_duid, "member", "3")
+    accept_key = uuid4()
+    decide_answer(harness, actor, Action.ACCEPT, member, 0, key=accept_key)
+    # Accept's key sent again as Back to review at the same version: both
+    # store accepted, but Accept stored it on To review, so it is no repeat.
+    with pytest.raises(KeyRebound):
+        decide_answer(
+            harness,
+            actor,
+            Action.BACK_TO_REVIEW,
+            member,
+            0,
+            note="Oops",
+            key=accept_key,
+        )
+    (handled,) = decide_answer(harness, actor, Action.HANDLED, member, 1)
+    assert limitation_stage(handled).stage is Stage.HANDLED
+    for note in ("", "  "):
+        with pytest.raises(UndoNeedsNote):
+            decide_answer(harness, actor, Action.BACK_TO_REVIEW, member, 2, note=note)
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(DatabaseError, match="Limitation review lacks"),
+        work_transaction(),
+    ):
+        answer_undo_row(actor, family, " ")
+    head = leader(harness, actor)
+    with pytest.raises(PermissionError):
+        decide_answer(harness, head, Action.BACK_TO_REVIEW, member, 2, note="Oops")
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(DatabaseError, match="Limitation review lacks"),
+        work_transaction(),
+    ):
+        answer_undo_row(head, family, "Oops")
+    with pytest.raises(StaleItem):
+        decide_answer(harness, actor, Action.BACK_TO_REVIEW, member, 1, note="Oops")
+    key = uuid4()
+    (undone,) = decide_answer(
+        harness, actor, Action.BACK_TO_REVIEW, member, 2, note="Not yet", key=key
+    )
+    assert (undone.decision, undone.note) == ("accepted", "Not yet")
+    assert limitation_stage(undone).stage is Stage.TO_HANDLE
+    assert AuditEvent.objects.filter(
+        event_type="limitation_reviewed", subject_id=undone.pk
+    ).exists()
+    assert list(
+        LimitationReview.objects.filter(family_id=family.pk, kind="member")
+        .order_by("expected_version")
+        .values_list("decision", flat=True)
+    ) == ["accepted", "handled", "accepted"]
+    (replay,) = decide_answer(
+        harness, actor, Action.BACK_TO_REVIEW, member, 2, note="Not yet", key=key
+    )
+    assert replay.pk == undone.pk
+    # The undo's key is no Accept, though it stored accepted too.
+    with pytest.raises(KeyRebound):
+        decide_answer(harness, actor, Action.ACCEPT, member, 2, key=key)
+    (row,) = limitation_rows(harness)["members"]
+    assert (row["decision"], row["in_force"], row["version"]) == ("accepted", True, 3)
+    # Counted as To handle on the page; the menu counts To review only, so
+    # only the Family's cannot-attend answer is in it.
+    _, counts = at_stage(answer_rows(limitation_rows(harness)), "to_handle")
+    assert (counts.get("to_handle"), counts.get("to_review")) == (1, 1)
+    items = [
+        SimpleNamespace(name="limitations_report", url="/admin/reports/limitations/")
+    ]
+    reader = Principal(actor, frozenset({"staff"}), frozenset())
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        menu = admin_context._open_counts(
+            SimpleNamespace(), reader, items, harness.campaign
+        )
+    assert menu.get("limitations_report") == 1
+    # Handled again, kept by an unchanged answer, and undone again.
+    decide_answer(harness, actor, Action.HANDLED, member, 3)
+    resubmit(harness, cannot_serve=True)
+    (row,) = limitation_rows(harness)["members"]
+    assert (row["decision"], row["in_force"]) == ("handled", True)
+    (again,) = decide_answer(
+        harness, actor, Action.BACK_TO_REVIEW, member, 4, note="Still not done"
+    )
+    assert limitation_stage(again).stage is Stage.TO_HANDLE
+
+
+def test_migration_0151_check_refuses_the_previous_guard(response_service, google):
+    """0151's DO block passes as installed and fails on 0126's guard, which
+    refused any step from Handled; rolled back, the installed guard admits
+    the undo again."""
+    harness = response_service
+    start(harness)
+    harness = activate_response_service(harness)
+    first = submit_live(harness, cannot_serve=True)
+    actor = staff_actor()
+    family = FamilyCampaign.objects.get(pk=first.family_id)
+    member = answer_id(family.family_duid, "member", "3")
+    decide_answer(harness, actor, Action.ACCEPT, member, 0)
+    decide_answer(harness, actor, Action.HANDLED, member, 1)
+    text = (MIGRATIONS / "migrations/0151_limitation_handled_undo.sql").read_text(
+        encoding="utf-8"
+    )
+    check = text[text.index("DO $check$") : text.index("$check$;") + len("$check$;")]
+    old = (MIGRATIONS / "migrations/0126_information_limitation_review.sql").read_text(
+        encoding="utf-8"
+    )
+    start_at = old.index(
+        "CREATE FUNCTION public.stewardship_limitation_review_guard_v1()"
+    )
+    previous = (
+        "CREATE OR REPLACE FUNCTION"
+        + old[start_at + len("CREATE FUNCTION") : old.index("END $$;", start_at) + 7]
+    )
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(check)  # The installed definition passes.
+        with pytest.raises(DatabaseError, match="Migration 0151"), transaction.atomic():
+            cursor.execute(previous)
+            cursor.execute(check)
+        with transaction.atomic():
+            cursor.execute(previous)
+            with (
+                pytest.raises(DatabaseError, match="Limitation review lacks"),
+                work_transaction(),
+            ):
+                answer_undo_row(actor, family, "Not yet")
+            transaction.set_rollback(True)
+        cursor.execute(check)  # Rolled back to the installed definition.
+        with work_transaction():
+            answer_undo_row(actor, family, "Not yet")  # The new guard admits it.
+            transaction.set_rollback(True)
+        transaction.set_rollback(True)
 
 
 def submit_everyone(harness):

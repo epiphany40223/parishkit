@@ -106,6 +106,16 @@ ADMITTING_READ = {
     # (#1733).
     "pledges decide": (admin_pledges, "admit_decide", {}),
 }
+# Commands above that no longer prompt but still check the role before any
+# input: Entered by hand stopped being final (#1840), so ``pledges decide``
+# asks nothing, and its admission still comes first.
+# Commands that asked while a mark was final and ask nothing now (#1840).
+NO_PROMPT = {
+    "pledges decide",
+    "census resolve",
+    "information decide",
+    "limitations decide",
+}
 
 # Everything a handler may read, look up or prompt with after its role check.
 LATER = (
@@ -161,7 +171,8 @@ def handler(name):
 def test_every_prompting_command_is_covered():
     """A new prompting command must say how it checks its role first."""
     prompting = {spec.name for spec in admin_cli.COMMANDS if spec.prompts}
-    assert prompting == set(ROLE_FIRST) | set(ADMITTING_READ)
+    assert prompting == (set(ROLE_FIRST) | set(ADMITTING_READ)) - NO_PROMPT
+    assert not {spec.name for spec in admin_cli.COMMANDS if spec.prompts} & NO_PROMPT
 
 
 @pytest.mark.parametrize("name", sorted(ROLE_FIRST))

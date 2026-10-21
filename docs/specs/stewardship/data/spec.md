@@ -1136,8 +1136,11 @@ Decision and execution are orthogonal:
   `resolved_external`, `failed`, `superseded`, or `cancelled`.
 
 Ignored decisions remain searchable and may return to unreviewed/approved.
-Published or resolved records are immutable outcomes; a later response creates
-new proposed-change records where necessary. A later census response that
+Published or resolved records are outcomes no worker changes; only Back to
+review on Census changes, a paired `reopened` resolution with its required
+note, returns one to `pending` with its decision kept
+([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)).
+A later response creates new proposed-change records where necessary. A later census response that
 gives the same answer again for an ordinary field already *published* or
 *resolved_external* (not yet in the promoted download) creates none: the
 entered change stays as it is
@@ -1291,9 +1294,12 @@ it, attached to the Family's latest live response; and
 `added_in_place_of`, the Ignored request of the same Member it was added
 in place of. Each revision also keeps its decision's note
 (`decision_note`). The SQL guards admit, besides today's edits: a revision
-that sends a resolved or closed request back to In progress (never one a
-refresh resolved or one ticked Entered in ParishSoft; reopening an ignored
-one needs a note), or that withdraws (cancels) a request the parish added;
+that sends a resolved or closed request back to In progress (reopening an
+ignored one needs a note), one that undoes a terminal step (the Entered in
+ParishSoft tick, a Confirmed refresh check or a refresh resolution; with a
+required note,
+[undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)),
+or that withdraws (cancels) a request the parish added;
 an Edit only by someone who may follow up both the request's Ministry and
 the one chosen, which must be another of the campaign's Ministries; and an
 added request only from a current Staff member or Administrator, for a
@@ -2189,9 +2195,12 @@ current authorization/filter snapshot.
    refresh brings the snapshot level. It is also the only path that
    recognizes an Administrator's edited value already in ParishSoft, which
    reconciliation, comparing with the Family's answer, would call a
-   conflict. The mark is final: the derived-proposal guard treats
-   `resolved_upstream` as immutable, so Reopen on Census changes cannot
-   undo it, and a wrong mark is corrected only in ParishSoft. Because it
+   conflict. Back to review on Census changes undoes the mark with a
+   required note (#1840,
+   [undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)):
+   the derived-proposal guard admits the web role's paired `reopened`
+   resolution, which returns the change to `pending` with its decision
+   kept; nothing is written to ParishSoft. Because it
    rests on one uncached read whose value decoding is provisional until
    the Member contact round trip is confirmed, it can happen only after
    that confirmation: the switch, which must be on before any check runs,

@@ -32,7 +32,8 @@ class PledgeReview(ImmutableRecord):
     answer as SQL fingerprints it (``stewardship_pledge_answer_v1``), set by
     the guard, never by the caller, so a later response is compared with it
     exactly. ``decision`` is the decision in force afterwards (NULL after
-    Back to review), with the reviewer's annual pledge and frequency for
+    Back to review of a decision; Back to review of a terminal step keeps
+    it, #1840), with the reviewer's annual pledge and frequency for
     Accepted (edited); ``entered`` is the Entered by hand mark, which
     carries the decision forward. ``marked_pledge`` is ParishSoft's
     upcoming-year pledge read at the mark, when ``marked_pledge_known``
@@ -127,7 +128,10 @@ class PledgeReview(ImmutableRecord):
                 name="pledge_review_value_shape",
             ),
             # The row's state is what its action records: a mark keeps an
-            # accepted decision, every other action is not a mark.
+            # accepted decision, every other action is not a mark. Back to
+            # review clears the decision, or keeps an accepted one when it
+            # undoes a terminal step (#1840, frozen migration 0149,
+            # provisional number; the guard says which it may be).
             models.CheckConstraint(
                 condition=models.Q(
                     action="accept",
@@ -149,6 +153,12 @@ class PledgeReview(ImmutableRecord):
                 )
                 | models.Q(
                     action="back_to_review", decision__isnull=True, entered=False
+                )
+                | models.Q(
+                    action="back_to_review",
+                    decision__isnull=False,
+                    decision__in=("accepted", "accepted_edited"),
+                    entered=False,
                 )
                 | models.Q(
                     action="entered_by_hand",

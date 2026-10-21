@@ -7450,8 +7450,13 @@ tick, with its own entry and audit event). A marked row shows the icon
 selected, and the line under its Stage says who marked it and when. A row
 for a Member no longer in ParishSoft, or one a later response replaced,
 offers only Entered by hand: its review decisions stay where they were. A
-mistaken mark is cleared on the request's own page, which keeps the Clear
-Entered in ParishSoft button. A tick someone else changed first records
+mistaken mark is undone by the row's **Back to review**, with a required
+note, which returns the request to To enter by hand with its decision kept
+([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage));
+a Confirmed request offers the same. The request's own page's Clear Entered
+in ParishSoft button is that undo too: it asks for the required note in the
+shared [confirmation dialog](../ui-conventions/spec.md#row-actions-and-confirmation)
+first (#1840). A tick someone else changed first records
 nothing, and the page answers with its current state and the notice that
 says so. Every control acts in place and keeps the applied view.
 

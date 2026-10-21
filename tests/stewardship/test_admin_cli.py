@@ -338,7 +338,9 @@ def test_the_catalog_lists_every_command_with_its_flags():
             }
         ), name
         # A prompting command, and only one, takes --yes. Other branches add
-        # their own prompting commands, so this is not a closed list.
+        # their own prompting commands, so this is not a closed list. The
+        # commands that stopped asking when their marks could be undone
+        # (#1840) take no --yes at all (#1893).
         assert ("--yes" in names) == entry["prompts"], name
         # Only the downloads stream a file to standard output.
         assert entry["streams"] == (
@@ -870,12 +872,12 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert options["--address"]["required"] and options["--note"]["required"]
     # census resolve: a Census changes row's Record outcome, keyed and
     # versioned, full scope, not fresh-gated, as its page asks for no recent
-    # sign-in; it prompts, but only for Entered in ParishSoft, which cannot
-    # be undone (its page's confirmation dialog).
+    # sign-in. Every outcome can be undone now (#1840), so nothing asks,
+    # and it takes no --yes (#1893).
     census = entries["census resolve"]
     assert census["scope"] == "full" and census["changes_state"]
     assert census["request_key"] and census["expected_version"]
-    assert census["prompts"] and not census["fresh_gated"]
+    assert not census["prompts"] and not census["fresh_gated"]
     assert census["audit_event"] == "admin_cmd_census_resolve"
     assert census["arguments"] == ["PROPOSAL_ID"]
     assert census["result_fields"] == [
@@ -930,14 +932,15 @@ def test_the_catalog_lists_every_command_with_its_flags():
     options = {option["name"]: option for option in edit["options"]}
     assert {"--value", "--clear"} <= set(options)
     # information decide and limitations decide (#1735): keyed, full scope,
-    # not fresh-gated; they prompt, but only for Handled, which is final.
+    # not fresh-gated; nothing asks since Handled can be undone (#1840), and
+    # they take no --yes (#1893).
     # Each chosen item carries its own version, so there is no
     # --expected-version.
     for name in ("information decide", "limitations decide"):
         decide = entries[name]
         assert decide["scope"] == "full" and decide["changes_state"], name
         assert decide["request_key"] and not decide["expected_version"], name
-        assert decide["prompts"] and not decide["fresh_gated"], name
+        assert not decide["prompts"] and not decide["fresh_gated"], name
         assert decide["audit_event"] == f"admin_cmd_{name.split()[0]}_decide"
         assert decide["result_fields"] == ["created", "request_key", "decisions"]
         options = {option["name"]: option for option in decide["options"]}
@@ -963,13 +966,14 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "all",
     ]
     assert "--search" not in options
-    # pledges decide (#1733): keyed, full scope, not fresh-gated; it
-    # prompts, but only for Entered by hand, which is final. Each chosen
-    # pledge carries its own version, so there is no --expected-version.
+    # pledges decide (#1733): keyed, full scope, not fresh-gated; it asks
+    # nothing, since Entered by hand can be undone (#1840), and takes no
+    # --yes (#1893). Each chosen pledge carries its own version,
+    # so there is no --expected-version.
     pledges = entries["pledges decide"]
     assert pledges["scope"] == "full" and pledges["changes_state"]
     assert pledges["request_key"] and not pledges["expected_version"]
-    assert pledges["prompts"] and not pledges["fresh_gated"]
+    assert not pledges["prompts"] and not pledges["fresh_gated"]
     assert pledges["audit_event"] == "admin_cmd_pledges_decide"
     assert pledges["result_fields"] == ["created", "request_key", "decisions"]
     options = {option["name"]: option for option in pledges["options"]}

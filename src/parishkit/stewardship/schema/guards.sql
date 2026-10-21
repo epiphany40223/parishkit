@@ -4913,15 +4913,19 @@ BEGIN
             END IF;
         ELSE
             -- A final change never changes, except a change Entered by hand
-            -- that the web login reworks over Entered incorrectly (#1737):
-            -- the web branch below admits that only with its paired
-            -- resolution row, whose own guard requires the change's latest
-            -- refresh check to say Entered incorrectly; and an Updated in
-            -- ParishSoft change a refresh finds ParishSoft no longer holds
-            -- (#1749), which moves to conflict only with its paired refresh
-            -- check (below), never through the web login.
+            -- that the web login marks again over Entered incorrectly
+            -- (#1737); a change Entered by hand, Updated in ParishSoft or
+            -- Already in ParishSoft whose terminal step the web login undoes
+            -- with Back to review (#1840): the web branch below admits each
+            -- only with its paired resolution row, whose own guard checks the
+            -- actor, the state and the note; and an Updated in ParishSoft
+            -- change a refresh finds ParishSoft no longer holds (#1749),
+            -- which moves to conflict only with its paired refresh check
+            -- (below), never through the web login.
             IF (OLD.execution IN ('published','resolved_upstream','resolved_external','cancelled','superseded')
                     AND NOT (OLD.execution='resolved_external' AND current_user='pk_stewardship_web')
+                    AND NOT (OLD.execution IN ('published','resolved_upstream')
+                        AND current_user='pk_stewardship_web')
                     AND NOT (OLD.execution='published' AND NEW.execution='conflict'
                         AND current_user<>'pk_stewardship_web'))
                 OR (to_jsonb(NEW)-ARRAY['current_available','current_value','current_source_id','admin_value_set','admin_value','decision','execution','superseded_by_id','version','updated_at'])
@@ -4935,8 +4939,9 @@ BEGIN
             -- the snapshot and the change: the change takes that value and
             -- snapshot. The worker's reconciliation branch below then
             -- requires the fenced, pinned source and returns the decision
-            -- to review.
-            IF OLD.execution='published' AND NOT EXISTS (
+            -- to review. The web login's undo (#1840) is checked by its own
+            -- branch below instead.
+            IF OLD.execution='published' AND current_user<>'pk_stewardship_web' AND NOT EXISTS (
                 SELECT 1 FROM public.stewardship_refresh_check k
                 WHERE k.proposal_id=OLD.id AND k.item_version=OLD.version
                   AND k.outcome='conflict' AND k.snapshot_id=NEW.current_source_id
@@ -5018,7 +5023,8 @@ BEGIN
                    -- upstream at the next version and nothing is written. The
                    -- plan guard stamps created_at with transaction_timestamp(),
                    -- so a plan committed earlier never matches; resolved_upstream
-                   -- is terminal, so the mark is final.
+                   -- is terminal: only the web login's Back to review (#1840,
+                   -- with its resolution row) undoes the mark.
                    OR (OLD.execution IN ('pending','failed') AND NEW.execution='resolved_upstream'
                        AND OLD.decision='approved' AND OLD.handling='api' AND OLD.entity_kind='member'
                        AND EXISTS (SELECT 1 FROM public.stewardship_publication_field f
@@ -5080,8 +5086,15 @@ BEGIN
                 -- web change must be a replacement by a later Family response,
                 -- which never changes the decision. A change Entered by hand
                 -- takes only a resolution (#1737): Entered by hand again keeps
-                -- it entered, and Back to review (reopened) makes it pending
-                -- with no decision, open to reconciliation again.
+                -- it entered. Back to review (reopened) of a terminal step
+                -- (#1840: Entered by hand, Updated in ParishSoft, Already in
+                -- ParishSoft) makes it pending, open to reconciliation again,
+                -- with the decision behind the step kept: approved, also for
+                -- a change that Entered by hand accepted in one step (decision
+                -- 2, unreviewed until now), and unreviewed for a change
+                -- ParishSoft already held that nobody approved (To review).
+                -- Reopening an Ignore keeps the execution (AND binds before
+                -- OR).
                 IF NOT EXISTS (
                     SELECT 1 FROM public.stewardship_proposal_resolution r
                     WHERE r.proposal_id=OLD.id AND r.expected_version=OLD.version
@@ -5096,10 +5109,14 @@ BEGIN
                               AND NEW.decision=OLD.decision
                           WHEN 'ignored' THEN NEW.decision='ignored'
                               AND NEW.execution=OLD.execution
-                              AND OLD.execution<>'resolved_external'
+                              AND OLD.execution NOT IN ('resolved_external','published','resolved_upstream')
                           WHEN 'reopened' THEN NEW.decision='unreviewed'
-                              AND NEW.execution=(CASE WHEN OLD.execution='resolved_external'
-                                  THEN 'pending' ELSE OLD.execution END)
+                              AND NEW.execution=OLD.execution
+                              AND OLD.execution NOT IN ('resolved_external','published','resolved_upstream')
+                              OR (OLD.execution IN ('resolved_external','published','resolved_upstream')
+                                  AND NEW.execution='pending'
+                                  AND NEW.decision=(CASE WHEN OLD.execution='resolved_upstream'
+                                      AND OLD.decision<>'approved' THEN 'unreviewed' ELSE 'approved' END))
                           ELSE false END)
                    -- An Administrator's review of an Automatic change (#528,
                    -- ADM-09) is admitted the same way, only with its paired
@@ -5114,8 +5131,9 @@ BEGIN
                    -- putting it back to conflict; every other review keeps the
                    -- execution.
                    -- An entered change takes neither a review nor a Family's
-                   -- replacement (#1737).
-                   AND (OLD.execution='resolved_external' OR (NOT EXISTS (
+                   -- replacement (#1737), nor does an updated or already
+                   -- held one the web login may now undo (#1840).
+                   AND (OLD.execution IN ('resolved_external','published','resolved_upstream') OR (NOT EXISTS (
                     SELECT 1 FROM public.stewardship_proposal_review v
                     WHERE v.proposal_id=OLD.id AND v.expected_version=OLD.version
                       AND NEW.version=OLD.version+1
@@ -5699,10 +5717,16 @@ BEGIN
     -- A closed request changes only by Staff follow-up sending it back to
     -- review (or withdrawing one the parish added); its revision guard
     -- proves which (#1684). The Edit's Ministry is part of the projection.
+    -- Back to review of a terminal step (Entered in ParishSoft or a
+    -- Confirmed refresh check, #1840) keeps the decision: the request stays
+    -- resolved with its outcome and Edit, and only its version moves.
     IF (OLD.state NOT IN ('new','assigned','in_progress')
         AND NOT (current_user='pk_stewardship_web'
             AND OLD.state IN ('resolved','closed_no_response')
-            AND (NEW.state='in_progress' OR (NEW.state='cancelled' AND OLD.parish_added))))
+            AND (NEW.state='in_progress' OR (NEW.state='cancelled' AND OLD.parish_added)
+                OR (OLD.state='resolved' AND NEW.state='resolved'
+                    AND NEW.outcome IS NOT DISTINCT FROM OLD.outcome
+                    AND NEW.reviewed_ministry_duid IS NOT DISTINCT FROM OLD.reviewed_ministry_duid))))
        OR NEW.version<>OLD.version+1
        OR (to_jsonb(NEW)-ARRAY['state','outcome','resolved_at','resolution_source_id','superseded_by_id','assignee_id','reviewed_ministry_duid','version','updated_at'])
           IS DISTINCT FROM
@@ -5736,10 +5760,17 @@ BEGIN
               AND r.outcome IS NOT DISTINCT FROM NEW.outcome
               AND r.assignee_id IS NOT DISTINCT FROM NEW.assignee_id
               AND r.reviewed_ministry_duid IS NOT DISTINCT FROM NEW.reviewed_ministry_duid;
-        IF NOT FOUND OR NEW.resolution_source_id IS NOT NULL OR NEW.superseded_by_id IS NOT NULL THEN
+        -- Staff follow-up never carries a refresh's resolution: Back to
+        -- review of a request the refresh resolved, which its revision
+        -- guard admits only with a note, clears it (#1840); the web login
+        -- has no privilege on the column.
+        NEW.resolution_source_id := NULL;
+        IF NOT FOUND OR NEW.superseded_by_id IS NOT NULL THEN
             RAISE EXCEPTION 'Ministry follow-up projection requires its paired history' USING ERRCODE='23514';
         END IF;
-        NEW.resolved_at := CASE WHEN NEW.outcome IS NOT NULL THEN staff_at END;
+        -- An undone terminal step keeps the decision's time (#1840).
+        NEW.resolved_at := CASE WHEN OLD.state='resolved' AND NEW.state='resolved'
+            THEN OLD.resolved_at WHEN NEW.outcome IS NOT NULL THEN staff_at END;
     ELSIF current_user='pk_stewardship_web' THEN
         SELECT candidate.* INTO later FROM public.stewardship_submission candidate
         JOIN public.stewardship_family_form_baseline baseline ON baseline.id=candidate.baseline_id

@@ -5,7 +5,8 @@ each POST is answered with the fixture page after it. A mark outside every
 region shows the page never reloaded. The shared worklist's general
 behaviour is tested on its own fixture page (``test_review_worklist``);
 these tests check what Limitations adds: one table of Members' and
-Families' answers, its Show filter and its download below the table.
+Families' answers, its Show filter, its download below the table, and
+Handled's undo with its required note (#1840).
 """
 
 import pytest
@@ -14,12 +15,15 @@ from .limitations_components import (
     ACCEPTED,
     ACCEPTED_NOTICE,
     CONTRIBUTION,
+    HANDLED,
     PATH,
     PLEDGES_LINK,
+    UNDONE,
+    UNDONE_NOTICE,
 )
 from .test_bulk_bar import assert_accessible
 from .test_table_sorting import MARK, MARKED, fulfil_post_with
-from .waits import has_text
+from .waits import available, has_text
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "webkit"], indirect=True
@@ -77,6 +81,42 @@ def test_accept_a_familys_answer_in_place(page, component_origin):
     body = sent[-1]
     assert "decide=accept" in body and "item=f2" in body and "version=0" in body
     assert "show=any" in body and "stage=all" in body
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_back_to_review_undoes_a_handled_answer(page, component_origin):
+    """A Handled answer offers Back to review (#1840); its dialog says the
+    answer goes back to To handle with its decision kept and waits for the
+    required note, then the redrawn row is To handle, with no reload."""
+    page.goto(component_origin + HANDLED)
+    page.evaluate(MARK)
+    sent = []
+
+    def choose(request):
+        """Keep the body and answer with the page after the undo."""
+        sent.append(request.post_data)
+        return UNDONE
+
+    fulfil_post_with(page, "**" + PATH, component_origin, choose)
+    row = page.locator("#limitations-row-f2")
+    has_text(row.locator(".stage-chip .status-word"), "Handled")
+    page.get_by_role("button", name=f"Send {FAMILY} back to review", exact=True).click()
+    dialog = page.locator("#limitations-decide-dialog")
+    has_text(
+        dialog.locator("[data-confirm-body]"),
+        "Handled is undone: the item goes back to To handle, with its decision "
+        "kept. Say why.",
+    )
+    record = dialog.get_by_role("button", name="Record")
+    assert record.get_attribute("aria-disabled") == "true" or record.is_disabled()
+    dialog.get_by_label("Note (required)").fill("Not yet")
+    available(record)
+    record.click()
+    has_text(page.locator("#limitations-notice"), UNDONE_NOTICE)
+    body = sent[-1]
+    assert "decide=back_to_review" in body and "item=f2" in body
+    assert "version=1" in body and "note=Not+yet" in body
+    has_text(row.locator(".stage-chip .status-word"), "To handle")
     assert page.evaluate(MARKED) == "kept"
 
 
