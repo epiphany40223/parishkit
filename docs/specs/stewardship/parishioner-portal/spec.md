@@ -189,7 +189,9 @@ Steps are assembled from enabled modules:
    their respective modules are enabled. The Member census and Ministry
    introductions appear on the first Member page only; their defaults are one
    short paragraph each so that, on a 390×844 phone, the page's first control
-   is visible without scrolling.
+   starts on the screen, at most one short scroll away (the sticky
+   [button row](../ui-conventions/spec.md#stepper-button-row) has two lines
+   on a phone).
 4. Add and fully edit proposed Members, when census is enabled, including their
    enabled census and Ministry subsections.
 5. Financial stewardship, when enabled.
