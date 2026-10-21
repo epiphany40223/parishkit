@@ -1,9 +1,9 @@
 """Forward migration: Sent mail names emails to people by a Member (#1562).
 
-Its SQL is the frozen file ``schema/migrations/0220_page_member_names.sql``
-(prefix 0220, provisional until the repository-wide file sequence assigns
-it), read whole and never parsed. It adds the Administrator-only definer
-read ``stewardship_delivery_page_member_names_v1``: for a page's emails to
+Its SQL is the frozen file ``schema/migrations/0145_page_member_names.sql``
+(prefix 0145 in the repository-wide file sequence), read whole and never
+parsed. It adds the Administrator-only definer read
+``stewardship_delivery_page_member_names_v1``: for a page's emails to
 people, the ParishSoft Member name of each one's address, in the Users
 page's default-Name order. It ends with a DO block that refuses to commit
 unless the function is installed as declared. It changes no table, so it
@@ -21,7 +21,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0220_page_member_names.sql"
+    / "0145_page_member_names.sql"
 )
 
 

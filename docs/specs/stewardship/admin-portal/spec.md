@@ -5184,7 +5184,7 @@ line the first rows start on a laptop screen with the help closed
   named this way, whether or not it is a user or has ever signed in (a
   removed Ministry leader, for example): the names are read through the
   Administrator-only Member-name read of the page's emails (below, frozen
-  migration 0220), and only for the shown emails whose address has no
+  migration 0145), and only for the shown emails whose address has no
   Users-page Name, so a page of Family emails or of named users reads no
   ParishSoft names. The addresses of a Family email are not
   listed here: they are on its Mail message page, with what each address's
@@ -5398,7 +5398,7 @@ else:
   of each listed email that has no Family (a report or notice), at most 500
   ids per call; Family emails' addresses are not returned.
 
-**Member-name read (frozen migration 0220, provisional).**
+**Member-name read (frozen migration 0145).**
 `stewardship_delivery_page_member_names_v1(messages, actor)`, with the
 same caller and Administrator checks, returns `(message, name)`: for each
 given email that has no Family (at most 500 per call), when a ParishSoft

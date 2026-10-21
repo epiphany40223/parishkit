@@ -1697,8 +1697,7 @@ Administrator; a Family email's addresses never leave it. Neither returns any
 other column of the rendering.
 
 It names those people with a third read of the same kind (frozen migration
-0220, provisional,
-[#1562](https://github.com/epiphany40223/parishkit/issues/1562)):
+0145, [#1562](https://github.com/epiphany40223/parishkit/issues/1562)):
 `stewardship_delivery_page_member_names_v1(messages, actor)` returns, for
 each given email with no Family (at most 500 ids) whose current rendering's
 first intended address a ParishSoft Member's contact record in the current

@@ -67,7 +67,7 @@ MEMBER_NAMES = (
 )
 NAMES_FROZEN = (
     Path(__file__).resolve().parents[3]
-    / "src/parishkit/stewardship/schema/migrations/0220_page_member_names.sql"
+    / "src/parishkit/stewardship/schema/migrations/0145_page_member_names.sql"
 ).read_text(encoding="utf-8")
 NAMES_CHECK = NAMES_FROZEN[NAMES_FROZEN.index("DO $check$") :]
 NAMES_FUNCTION = "public.stewardship_delivery_page_member_names_v1(uuid[], uuid)"
@@ -625,7 +625,7 @@ def test_the_member_name_read_names_only_emails_to_people(response_service, goog
 
 
 def test_the_member_name_check_block_refuses_an_older_install():
-    """0220's DO block passes on the installation, and refuses it with the
+    """0145's DO block passes on the installation, and refuses it with the
     function missing, made an invoker, executable by PUBLIC, or without its
     caller or Administrator check."""
     with transaction.atomic(), connection.cursor() as cursor:
@@ -651,7 +651,7 @@ def test_the_member_name_check_block_refuses_an_older_install():
         [body.replace(administrator, "false")],
     ):
         with (
-            pytest.raises(DatabaseError, match="0220"),
+            pytest.raises(DatabaseError, match="0145"),
             transaction.atomic(),
             connection.cursor() as cursor,
         ):

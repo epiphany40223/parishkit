@@ -440,7 +440,7 @@ def member_names(ids, actor_id):
     """``{message id: name}``: a ParishSoft Member's name for each email.
 
     Read through ``stewardship_delivery_page_member_names_v1`` (frozen
-    migration 0220, #1562), one call per ``PAGE_RECIPIENTS_LIMIT`` ids: for
+    migration 0145, #1562), one call per ``PAGE_RECIPIENTS_LIMIT`` ids: for
     each email with no Family, the one name of a Member whose contact
     record in the current ParishSoft data lists its address, in the Users
     page's default-Name order (a Member of an active Family first, then a

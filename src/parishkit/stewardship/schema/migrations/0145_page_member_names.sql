@@ -1,9 +1,9 @@
--- Frozen forward migration file 0220 (provisional: the repository-wide file
--- sequence assigns its final number when it merges): Sent mail names every
--- email to a person by a ParishSoft Member (#1562). This file is installed
--- by its Django migration in the jobs app and must never change once
--- released; tests/stewardship/test_schema_migration_files.py pins its
--- digest. Reversing needs its own forward migration.
+-- Frozen forward migration file 0145 (the repository-wide file sequence):
+-- Sent mail names every email to a person by a ParishSoft Member (#1562).
+-- This file is installed by its Django migration in the jobs app and must
+-- never change once released;
+-- tests/stewardship/test_schema_migration_files.py pins its digest.
+-- Reversing needs its own forward migration.
 --
 -- Sent mail's Recipient names an email to a person (an Administrator's
 -- report or notice, or a Ministry leader's sign-in email) by the Users-page
@@ -121,7 +121,7 @@ REVOKE ALL ON FUNCTION public.stewardship_delivery_page_member_names_v1(uuid[], 
 DO $check$
 BEGIN
     IF to_regprocedure('public.stewardship_delivery_page_member_names_v1(uuid[],uuid)') IS NULL THEN
-        RAISE EXCEPTION 'Migration 0220 (Sent mail Member names) is not installed as declared';
+        RAISE EXCEPTION 'Migration 0145 (Sent mail Member names) is not installed as declared';
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_proc p
          WHERE p.oid='public.stewardship_delivery_page_member_names_v1(uuid[],uuid)'::regprocedure
@@ -137,7 +137,7 @@ BEGIN
           <>'TABLE(message_id uuid, name text)'
        OR has_function_privilege('public',
           'public.stewardship_delivery_page_member_names_v1(uuid[],uuid)', 'EXECUTE') THEN
-        RAISE EXCEPTION 'Migration 0220 (Sent mail Member names) is not installed as declared';
+        RAISE EXCEPTION 'Migration 0145 (Sent mail Member names) is not installed as declared';
     END IF;
 END
 $check$;
