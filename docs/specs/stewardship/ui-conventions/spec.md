@@ -635,7 +635,9 @@ never scrolls to show it (Administrator, pk-local review of
   replaced, and the address is unchanged. The error summary, which the base
   template draws above the page content, moves to the top of the region when
   it is drawn outside the region; this page's own older summaries outside
-  the regions are removed then (a successful swap leaves them). The reader
+  the regions are removed then (a successful swap leaves them, except an
+  item whose field the swap removed, which goes, and the summary with it
+  once it lists nothing, #750). The reader
   keeps their place, focus moves to the summary (or to the control when
   there is none), the fields it names are marked in error beside their
   message as the fetched page draws them, and the live region reads the
@@ -1569,8 +1571,11 @@ the campaign wizard in #1404 PR 4).
   form shows its error summary and marks each field, as the
   [field errors](#field-errors-and-live-checks) convention says, and becomes
   editable again. Where panes share one dialog and each pane has its own
-  status line (see After Apply below), the refusal is said in that pane's
-  line instead, which takes focus without scrolling, and the field is marked
+  status line (see After Apply below), or a form sits far below the page
+  heading and names its region's status line (Backup encryption key's code,
+  [#750](https://github.com/epiphany40223/parishkit/issues/750)), the
+  refusal is said in that line instead, which takes focus without
+  scrolling, and the field is marked
   and described by it: no summary is placed above the heading, since moving
   focus there would jump the page to the top, and no error line is added
   that would move the pane's controls. The line clears on the form's next
@@ -1776,11 +1781,14 @@ use the dialog too (#750): an ordinary settings edit is a compact review, a
 refresh schedule change keeps its full review, and setting up Off-site
 backups by its folder, removing Slack, turning off off-site copies, a key
 change and Finish switching to the new key are confirmations (#1568); the
-Backup encryption key change still uses its separate
-Review page. The in-place review panel of #532 is retired
+[Backup encryption key](../admin-portal/spec.md#parish-and-integration-configuration)
+change, once its code is proved, is a compact review (its proof steps act in
+place). The in-place review panel of #532 is retired
 ([#1429](https://github.com/epiphany40223/parishkit/issues/1429),
-[in-place controls](#in-place-controls)); the other editors use separate
-Review and Change status pages.
+[in-place controls](#in-place-controls)); Pages and emails' editor still uses
+its separate Review and Change status pages, as does Copy campaign, which
+refuses every request until
+[#145](https://github.com/epiphany40223/parishkit/issues/145).
 [#750](https://github.com/epiphany40223/parishkit/issues/750) tracks the
 conversion.
 
