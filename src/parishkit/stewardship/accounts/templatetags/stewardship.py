@@ -10,7 +10,7 @@ from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _
 from django.utils.translation import ngettext
 
-from parishkit.stewardship.accounts import admin_navigation, google_account_help
+from parishkit.stewardship.accounts import admin_navigation, google_account_help, stages
 from parishkit.stewardship.campaigns import single_campaign
 from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAME
 from parishkit.stewardship.source.source_status import source_status_label
@@ -66,6 +66,15 @@ def reminder_workgroup_name():
     Templates take it from its one source, so renaming it is one line.
     """
     return _(REMINDER_WORKGROUP_NAME)
+
+
+@register.simple_tag
+def stage_queued():
+    """The Start the load box's waiting sentence (``stages.QUEUED``, #1916).
+
+    Templates take it from its one source, so every page says it alike.
+    """
+    return str(stages.QUEUED)
 
 
 @register.simple_tag

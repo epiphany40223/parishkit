@@ -50,7 +50,9 @@ def places(boxes):
 
 def states(boxes):
     """Each stage box's state, in order."""
-    return [boxes.nth(i).get_attribute("data-stage-state") for i in range(4)]
+    return [
+        boxes.nth(i).get_attribute("data-stage-state") for i in range(boxes.count())
+    ]
 
 
 @pytest.mark.parametrize("width", [320, 1280])
@@ -77,16 +79,16 @@ def test_the_boxes_follow_the_run_in_place_and_announce_each_change_once(
     # Measured at once: the first poll (after 2 s) may already have moved
     # the run on to saving, which must not move or resize any box either.
     before = places(boxes)
-    assert len(before) == 4
+    assert len(before) == 5
     assert region.get_attribute("aria-live") is None
     assert "Step:" not in region.inner_text()
-    settled(boxes.nth(1), "active")
-    assert states(boxes) == ["done", "active", "waiting", "waiting"]
-    assert "In progress" in boxes.nth(1).inner_text()
+    settled(boxes.nth(2), "active")
+    assert states(boxes) == ["done", "done", "active", "waiting", "waiting"]
+    assert "In progress" in boxes.nth(2).inner_text()
     assert places(boxes) == before
-    settled(boxes.nth(3), "done")
-    assert states(boxes) == ["done"] * 4
-    assert all("Done" in boxes.nth(i).inner_text() for i in range(4))
+    settled(boxes.nth(4), "done")
+    assert states(boxes) == ["done"] * 5
+    assert all("Done" in boxes.nth(i).inner_text() for i in range(5))
     visible(page.locator("#task-status").get_by_text("Finished successfully."))
     assert places(boxes) == before
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
@@ -108,7 +110,7 @@ def test_the_boxes_draw_on_the_refresh_page_too(page, component_origin):
     page.goto(component_origin + "/live-refresh-finished")
     region = page.locator("#refresh-run")
     boxes = region.get_by_role("list", name="Parts of the refresh").locator("li")
-    assert states(boxes) == ["done"] * 4
+    assert states(boxes) == ["done"] * 5
     announcer = page.locator('[data-live-announcer="task"]')
     assert announcer.count() == 1
     assert announcer.evaluate("node => !node.closest('#refresh-run')")

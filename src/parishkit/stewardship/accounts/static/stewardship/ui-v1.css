@@ -1267,6 +1267,12 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
    after the stage boxes (records checked, or the Family count) is reserved
    in every state, so its text coming and going moves nothing below it. */
 .campaign-load-count { min-height: 1lh; }
+/* While the load waits for a worker, that line says so (stages.QUEUED,
+   #1916). It shares one grid cell with an invisible copy of that sentence,
+   so the line is as tall as the sentence at every width in every state, and
+   nothing below moves when the sentence gives way to the records checked. */
+.campaign-load-count-slot { display: grid; margin-block: 0 1rem; }
+.campaign-load-count-slot > * { grid-area: 1 / 1; margin: 0; }
 /* Its summary line shares one grid cell with invisible, aria-hidden copies
    of every state's wording (with all its links), so the cell is as tall as
    the longest wording at every width, zoom and engine's text metrics, and

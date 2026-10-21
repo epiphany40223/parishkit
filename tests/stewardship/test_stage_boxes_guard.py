@@ -128,7 +128,7 @@ def refresh(state, phase="unspecified", current=0, total=0):
 
 
 def states(task):
-    """The four boxes' states for ``task``, in order."""
+    """The five boxes' states for ``task``, in order."""
     as_dict = {"state": task.state, "progress": {"phase": task.progress.phase}}
     return [box["state"] for box in task_stages(as_dict)]
 
@@ -136,17 +136,18 @@ def states(task):
 @pytest.mark.parametrize(
     ("state", "phase", "expected"),
     [
-        ("queued", "unspecified", ["waiting"] * 4),
-        ("running", "unspecified", ["waiting"] * 4),
-        ("running", "fetching", ["active", "waiting", "waiting", "waiting"]),
-        ("running", "validating", ["done", "done", "active", "waiting"]),
-        # Each attempt starts again from the download.
-        ("retry_wait", "staging", ["waiting"] * 4),
-        ("abandoned", "promoting", ["waiting"] * 4),
-        ("succeeded", "promoting", ["done"] * 4),
-        ("failed", "staging", ["done", "failed", "waiting", "waiting"]),
-        ("failed", "unspecified", ["failed", "waiting", "waiting", "waiting"]),
-        ("cancelled", "validating", ["done", "done", "waiting", "waiting"]),
+        # Start the load is In progress until a worker takes the run (#1916).
+        ("queued", "unspecified", ["active", *["waiting"] * 4]),
+        ("running", "unspecified", ["active", *["waiting"] * 4]),
+        ("running", "fetching", ["done", "active", *["waiting"] * 3]),
+        ("running", "validating", ["done", "done", "done", "active", "waiting"]),
+        # Each attempt starts again from the download, after a worker's claim.
+        ("retry_wait", "staging", ["active", *["waiting"] * 4]),
+        ("abandoned", "promoting", ["active", *["waiting"] * 4]),
+        ("succeeded", "promoting", ["done"] * 5),
+        ("failed", "staging", ["done", "done", "failed", "waiting", "waiting"]),
+        ("failed", "unspecified", ["failed", *["waiting"] * 4]),
+        ("cancelled", "validating", ["done", "done", "done", "waiting", "waiting"]),
     ],
 )
 def test_a_refresh_marks_its_stages_by_the_task_state(state, phase, expected):
@@ -196,7 +197,7 @@ def test_a_running_refresh_draws_the_boxes_and_announces_its_stage_once():
 @pytest.mark.parametrize(
     ("state", "phase", "sentence"),
     [
-        ("queued", "unspecified", "Waiting to start."),
+        ("queued", "unspecified", "Waiting to start. Start the load: In progress."),
         ("succeeded", "promoting", "Finished successfully."),
         ("failed", "validating", "Failed. Check the new data: Failed."),
         ("cancelled", "validating", "Cancelled."),
@@ -208,11 +209,11 @@ def test_each_refresh_state_announces_its_own_sentence(state, phase, sentence):
     assert f'data-live-announce="{sentence}"' in tag
 
 
-def test_every_refresh_state_draws_the_same_four_boxes():
-    """The boxes are drawn in every state, so a change of state adds none."""
+def test_every_refresh_state_draws_the_same_five_boxes():
+    """Start the load and the four phases are drawn in every state."""
     for state in ("queued", "running", "succeeded", "failed", "cancelled"):
         html = status(refresh(state, "staging"))
-        assert html.count("data-refresh-stage=") == 4, state
+        assert html.count("data-refresh-stage=") == 5, state
 
 
 def test_other_tasks_keep_their_step_line_and_aria_live():
