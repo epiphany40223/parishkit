@@ -27,10 +27,10 @@ from parishkit.stewardship.accounts.series_edits import rule_text
 from parishkit.stewardship.campaigns.models import ScheduleDefinition
 
 from ..campaign_factory import campaign as campaign_record
-from ..content_factory import content
 from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import change
+from .report_builders import add_digest
 from .test_admin_navigation_postgresql import flow_steps
 from .test_campaign_series_postgresql import FIRST, RULE, reminder, series_deployment
 from .test_campaign_views_postgresql import apply, post
@@ -549,23 +549,10 @@ def test_a_missed_send_or_a_digest_does_not_move(auth_service, google, monkeypat
     store = auth_service.store
     _, _ = draft_with_schedules(store)
     campaign_id = store.active().document()["sections"]["campaigns"][0]["id"]
-    digest = content(campaign_id, kind="email", slot="daily_digest", subject="Digest")
-    assert (
-        change(
-            store,
-            store.active(),
-            uuid4(),
-            [{"operation": "add", "section": "content", **digest}],
-        ).state
-        == "applied"
-    )
+    # A Daily report converted from the Daily digest (#1786): a digest
+    # schedule can no longer be added, so the suites add one as converted.
+    add_digest(store, SimpleNamespace(pk=campaign_id), time="09:30:00")
     browser, _ = signed_in()
-    review = post(
-        browser,
-        NEW,
-        entry(store, kind="daily_digest", time="09:30", template_version=digest["id"]),
-    )
-    apply(store, post(browser, LIST, {"action": "confirm", "preview": token(review)}))
     initial = definition("initial")
     later = initial.current_revision.due_at + timedelta(hours=1)
     clock = SimpleNamespace(now=lambda: later)
@@ -575,7 +562,7 @@ def test_a_missed_send_or_a_digest_does_not_move(auth_service, google, monkeypat
     first = f"/admin/campaign/schedules/{initial.pk}/"
     assert f'data-edit-url="{first}"' in page
     assert f'data-move-url="{first}"' not in page
-    daily = f"/admin/campaign/schedules/{definition('daily_digest').pk}/"
+    daily = f"/admin/campaign/schedules/{definition('report').pk}/"
     assert f'data-edit-url="{daily}?send=' in page
     assert f'data-move-url="{daily}' not in page
     before = ConfigurationChangeRequest.objects.count()
