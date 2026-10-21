@@ -50,7 +50,6 @@ from .campaign_views import _scope, _state
 from .campaign_wizard_models import CampaignSetupReview, item_key
 from .content_defaults import default_initial
 from .content_forms import (
-    EMAIL_LABELS,
     OFFERED_EMAIL_LABELS,
     ContentForm,
     matches_default,
