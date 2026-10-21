@@ -283,6 +283,7 @@ def test_outside_the_wizard_the_sub_pages_keep_their_own_buttons(
     for page in (editor, new):
         assert "data-direct-save" not in page and "data-campaign-save" not in page
     assert ">Preview changes</button>" in editor
+    assert 'data-review-open="content-review"' in editor
     assert 'data-review-open="schedule-review"' in new
     assert ">Add the scheduled email</button>" in new
     for answer in (late, late_schedule):

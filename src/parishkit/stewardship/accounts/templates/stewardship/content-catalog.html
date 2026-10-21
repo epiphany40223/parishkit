@@ -7,6 +7,7 @@
 <p>{% translate "A campaign starts with default text for every page and email. You can edit any of them, or reset one to its default text, but you do not have to." %}</p>
 <p>{% translate "Each email template has Edit in its Actions column, which opens its editor. An email no schedule sends also has Delete. Delete, or Delete selected for the ticked emails, asks first, then removes them from the list; if any chosen email is sent by a schedule, nothing is deleted." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
+{# The status line a page or email's editor returns to once its change, reviewed in the editor's review dialog, is applied (#750; components/review-outcome.html): above the lists the editor was opened from, outside the email tables' region so a Delete's redraw never wipes it. #}{% include "stewardship/components/review-outcome.html" with outcome_id="content-outcome" %}
 {% comment %}
 Each page and email says one text state (#1404 PR 6b): Default text,
 Edited, or Empty, and, while the campaign wizard applies, Kept as is in

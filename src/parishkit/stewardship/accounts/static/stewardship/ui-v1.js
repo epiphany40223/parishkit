@@ -7568,7 +7568,7 @@
   // source). The one response also carries the generated plain text, relayed
   // to the plain-text preview as "stewardship:source-preview", and a
   // plain-language list of removed markup, shown as text (never as markup).
-  function liveSource(form, visual, editor, source) {
+  function liveSource(form, visual, editor, source, removing) {
     const url = visual.dataset.previewUrl;
     const csrf = form.querySelector('input[name="csrfmiddlewaretoken"]');
     const updating = visual.querySelector("[data-visual-updating]");
@@ -7584,11 +7584,14 @@
     let controller = null;
     const tools = [...form.querySelectorAll("[data-content-tag]")];
     // A stale pane accepts neither typing nor formatting: either would call
-    // sync() and overwrite newer source with the stale pane's content.
+    // sync() and overwrite newer source with the stale pane's content. Once
+    // the newest answer is in, the pane stays read-only while "Remove this
+    // selected content" is ticked (removing()).
     const busy = (value) => {
       visual.setAttribute("aria-busy", String(value));
-      editor.contentEditable = value ? "false" : "true";
-      tools.forEach((button) => { button.disabled = value; });
+      const locked = value || removing();
+      editor.contentEditable = locked ? "false" : "true";
+      tools.forEach((button) => { button.disabled = locked; });
       updating.hidden = !value;
     };
     const refresh = async () => {
@@ -7660,6 +7663,52 @@
       form.dispatchEvent(new Event("stewardship:html-changed"));
     };
     editor.addEventListener("input", sync);
+    // While "Remove this selected content" is ticked the HTML source is
+    // greyed and not sent (data-enabled-when, content_forms), so the pane
+    // that writes it stops accepting edits too, and its formatting buttons
+    // are unavailable (#563, #750). It keeps its size: only its colour
+    // changes (ui-v1.css), so nothing moves. While the pane waits for the
+    // sanitizer (aria-busy) liveSource's busy() decides, with the same rule.
+    const clear = form.elements.namedItem("clear");
+    const removing = () => clear instanceof HTMLInputElement && clear.checked && !clear.disabled;
+    const lock = () => {
+      const removed = removing();
+      if (removed) editor.setAttribute("aria-disabled", "true");
+      else editor.removeAttribute("aria-disabled");
+      if (visual.getAttribute("aria-busy") === "true") return;
+      editor.contentEditable = removed ? "false" : "true";
+      form.querySelectorAll("[data-content-tag]").forEach((button) => { button.disabled = removed; });
+    };
+    if (clear instanceof HTMLInputElement) {
+      clear.addEventListener("change", lock);
+      window.addEventListener("pageshow", lock);
+    }
+    // A Preview refused for the values (the review dialog, #750) marks the
+    // HTML source, which is folded away while this pane is in use, so its
+    // message is shown here too, as the page draws it on a load (#563):
+    // the answer's own list beside the pane, which clears on the next edit.
+    form.addEventListener("review-refused", (event) => {
+      const fresh = event.detail?.getElementById?.("visual-content-error");
+      form.querySelector("#visual-content-error")?.remove();
+      editor.removeAttribute("aria-invalid");
+      editor.removeAttribute("aria-describedby");
+      if (!fresh) return;
+      editor.after(document.importNode(fresh, true));
+      editor.setAttribute("aria-invalid", "true");
+      editor.setAttribute("aria-describedby", "visual-content-error");
+    });
+    // An edit of the HTML in either place clears the refusal from both: the
+    // pane's copy, and the HTML source's mark and error summary item, which
+    // the source's own handler never clears when sync() writes its value.
+    const clearHtmlRefusal = () => {
+      if (source.hasAttribute("data-field-error")) clearFieldError(source);
+      if (editor.getAttribute("aria-invalid") !== "true") return;
+      form.querySelector("#visual-content-error")?.remove();
+      editor.removeAttribute("aria-invalid");
+      editor.removeAttribute("aria-describedby");
+    };
+    editor.addEventListener("input", clearHtmlRefusal);
+    source.addEventListener("input", clearHtmlRefusal);
     // Shift+Enter is a line break (<br>) inside the paragraph everywhere.
     // Chrome, Firefox and Linux WebKit do that natively, but macOS WebKit
     // (and presumably Safari) maps Shift+Return to the same "insert newline"
@@ -7673,7 +7722,8 @@
           || event.altKey || event.ctrlKey || event.metaKey) return;
       if (document.execCommand("insertLineBreak")) event.preventDefault();
     });
-    liveSource(form, visual, editor, source);
+    liveSource(form, visual, editor, source, removing);
+    lock();
     const selectedRange = () => {
       const selection = window.getSelection();
       if (!selection || !selection.rangeCount) return null;
@@ -8024,7 +8074,18 @@
       text.focus();
     };
     box.addEventListener("change", () => { show(); if (box.checked) refresh(); });
-    panel.querySelector("[data-edit-plain-text]")?.addEventListener("click", edit);
+    const editButton = panel.querySelector("[data-edit-plain-text]");
+    editButton?.addEventListener("click", edit);
+    // While "Remove this selected content" is ticked the generated-text box
+    // and the plain text are greyed (data-enabled-when), so "Edit plain
+    // text" is unavailable with them; unticking gives it back (#563, #750).
+    const clear = form.elements.namedItem("clear");
+    if (editButton && clear instanceof HTMLInputElement) {
+      const lockEdit = () => { editButton.disabled = clear.checked && !clear.disabled; };
+      clear.addEventListener("change", lockEdit);
+      window.addEventListener("pageshow", lockEdit);
+      lockEdit();
+    }
     // Typing into the read-only generated text means "let me edit it".
     text.addEventListener("keydown", (event) => {
       if (!box.checked || event.ctrlKey || event.metaKey || event.altKey) return;
