@@ -398,6 +398,12 @@ ADDRESS_RETRIES_FUNCTION = "stewardship_delivery_address_retries_v1(uuid, uuid)"
 # renderings that hold them.
 ADDRESS_DELIVERIES_FUNCTION = "stewardship_delivery_ids_for_address_v1(text, uuid)"
 PAGE_RECIPIENTS_FUNCTION = "stewardship_delivery_page_recipients_v1(uuid[], uuid)"
+# The person identity reads (#1867), for an Administrator only: the
+# ParishSoft Families and Members whose contacts hold one address, and the
+# user record ids whose address is a contact of one Family or its Members;
+# identifiers only, without any grant on the contact records.
+ADDRESS_PEOPLE_FUNCTION = "stewardship_address_people_v1(text, uuid)"
+FAMILY_USERS_FUNCTION = "stewardship_family_users_v1(bigint, uuid)"
 # An Administrator's report that a delivered email bounced at one address
 # (#806 slice 4): the report's only writer, so web keeps SELECT only on the
 # refusal table; the definer and the refusal guard admit it only from web.
@@ -547,6 +553,11 @@ CLOSURE_FUNCTIONS = {
     ),
     # The Email Ministry leaders review (0120, #1592).
     LEADER_EMAILS_FUNCTION: ("stewardship_jobs", "0035_leader_emails"),
+    # The person identity reads (0157, #1867).
+    **dict.fromkeys(
+        (ADDRESS_PEOPLE_FUNCTION, FAMILY_USERS_FUNCTION),
+        ("stewardship_accounts", "0031_person_identity_reads"),
+    ),
 }
 
 
@@ -793,7 +804,8 @@ def runtime_functions(role, *, target=None):
     opens that follow-up and reads its link token. Web records an
     Administrator's report that a delivered email bounced (#806 slice 4),
     and, for an Administrator, reads the emails meant for one address and
-    the addresses of a Sent mail page's reports and notices (#1562).
+    the addresses of a Sent mail page's reports and notices (#1562), and
+    the Families an address belongs to and a Family's users (#1867).
     The general worker asks whether a publication plan's or outcome's audit
     event is recorded (#528), since it cannot read audit rows itself.
     The scheduler discards ended exports' saved data (#1398), through the
@@ -831,6 +843,8 @@ def runtime_functions(role, *, target=None):
                 BOUNCE_REPORT_FUNCTION,
                 ADDRESS_DELIVERIES_FUNCTION,
                 PAGE_RECIPIENTS_FUNCTION,
+                ADDRESS_PEOPLE_FUNCTION,
+                FAMILY_USERS_FUNCTION,
                 DEBUG_OFF_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {

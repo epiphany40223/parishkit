@@ -158,6 +158,7 @@
 !src/parishkit/stewardship/schema/migrations/0131_ministry_review_pipeline.sql
 !src/parishkit/stewardship/schema/migrations/0132_refresh_checks.sql
 !src/parishkit/stewardship/schema/migrations/0152_audit_actor_time.sql
+!src/parishkit/stewardship/schema/migrations/0157_person_identity_reads.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

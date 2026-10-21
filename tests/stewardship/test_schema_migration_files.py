@@ -432,6 +432,9 @@ FROZEN = {
     "0152_audit_actor_time.sql": (
         "1f7ac38ef615a918afcc7a6ff87d743484b013b5af31b5174b743c87868b96fb"
     ),
+    "0157_person_identity_reads.sql": (
+        "85466fd212f85c2efe5d184d2485fad66a5022df25df531b235020ecdd85cb37"
+    ),
 }
 
 
