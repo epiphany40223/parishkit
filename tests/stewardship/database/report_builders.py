@@ -7,7 +7,7 @@ the real mail dispatch handler with a fake provider.
 """
 
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from uuid import UUID, uuid4
 
 import pytest
@@ -335,6 +335,170 @@ def digest_history(definition_id, slot, due_at, *, state="succeeded", dispositio
                 actor_id=uuid4(),
                 correlation_id=uuid4(),
             )
+    return occurrence
+
+
+def _history_row(cursor, table, **values):
+    """Insert one pre-conversion row, filling its other required columns.
+
+    Only the columns the work rows read are given; each other NOT NULL
+    column without a default gets a neutral value of its type. The caller
+    holds ``triggers_off``, so no guard or foreign key is consulted.
+    """
+    from uuid import uuid4 as fresh
+
+    cursor.execute(
+        "SELECT column_name, udt_name FROM information_schema.columns "
+        "WHERE table_schema='public' AND table_name=%s AND is_nullable='NO' "
+        "AND column_default IS NULL",
+        [table],
+    )
+    neutral = {
+        "uuid": fresh,
+        "int8": lambda: 0,
+        "jsonb": lambda: "[]",
+        "bytea": lambda: b"",
+        "timestamptz": lambda: datetime(2054, 10, 1, tzinfo=UTC),
+        "date": lambda: date(2054, 10, 1),
+    }
+    for name, kind in cursor.fetchall():
+        if name not in values:
+            values[name] = neutral.get(kind, lambda: "x@example.org")()
+    columns = ", ".join(values)
+    marks = ", ".join(["%s"] * len(values))
+    cursor.execute(
+        f"INSERT INTO public.{table} ({columns}) VALUES ({marks})",
+        list(values.values()),
+    )
+
+
+def digest_send(
+    definition_id,
+    slot,
+    due_at,
+    *,
+    settled_by="delivery",
+    state="succeeded",
+    task_state="succeeded",
+    message_state="delivered",
+    disposition="delivered",
+):
+    """One past digest send as the release before left it (#1839).
+
+    Its occurrence (``digest_history``) is bound, as the digests' settle
+    triggers bound it, to the task that settled it: the preparation's own
+    task (``settled_by="prepare"``), its finalizer (``"finalize"``) or the
+    delivery task of its one recipient's message (``"delivery"``, the most
+    common, since a Weekly or Daily settles when its last message does).
+    The preparation, snapshot, recipient and message rows link the task to
+    the occurrence the way the digest work rows prove ownership. Returns
+    the occurrence.
+    """
+    from django.db import connection
+
+    from parishkit.stewardship.campaigns.schedule_models import (
+        ScheduleDefinition,
+        ScheduleOccurrence,
+    )
+
+    definition = ScheduleDefinition.objects.get(pk=definition_id)
+    kind = definition.kind
+    occurrence = digest_history(
+        definition_id, slot, due_at, state=state, disposition=disposition
+    )
+    preparation, snapshot, recipient, message = (uuid4() for _ in range(4))
+    tasks = {name: uuid4() for name in ("prepare", "finalize", "delivery")}
+    finished = message_state in {"delivered", "permanent_failure", "cancelled"}
+    with triggers_off(), connection.cursor() as cursor:
+        for name, task_type, request in (
+            ("prepare", f"{kind}_prepare", preparation),
+            ("finalize", f"{kind}_finalize", preparation),
+            ("delivery", "outbox_delivery", message),
+        ):
+            _history_row(
+                cursor,
+                "stewardship_task_run",
+                id=tasks[name],
+                root_id=tasks[name],
+                task_type=task_type,
+                domain_request_id=request,
+                idempotency_key=str(request) if name != "delivery" else None,
+                state=task_state,
+                version=1,
+                retry_sequence=0,
+            )
+        _history_row(
+            cursor,
+            f"stewardship_{kind}_preparation",
+            id=preparation,
+            version=1,
+            campaign_id=definition.campaign_id,
+            definition_id=definition.pk,
+            revision_id=definition.current_revision_id,
+            task_id=tasks["prepare"],
+            mode=occurrence.mode,
+            rehearsal_epoch_id=uuid4() if occurrence.mode == "testing" else None,
+            cutoff=due_at,
+            phase="complete" if state == "succeeded" else "cancelled",
+            occurrence_id=occurrence.pk,
+        )
+        _history_row(
+            cursor,
+            f"stewardship_{kind}_snapshot",
+            id=snapshot,
+            preparation_id=preparation,
+            campaign_id=definition.campaign_id,
+            **({"population_scope": "historical"} if kind == "daily_digest" else {}),
+        )
+        if kind == "daily_digest":
+            ready = uuid4()
+            _history_row(
+                cursor, "stewardship_daily_digest_ready", id=ready, snapshot_id=snapshot
+            )
+            owner = {"ready_id": ready}
+        else:
+            owner = {"snapshot_id": snapshot}
+        submitted = (
+            {
+                "attempt": 1,
+                "run_id": tasks["delivery"],
+                "submitted_at": due_at,
+                "provider_deadline": due_at,
+                "task_fence": 1,
+                "worker_id": uuid4(),
+            }
+            if message_state in {"submitting", "delivery_unknown", "delivered"}
+            else {}
+        )
+        _history_row(
+            cursor,
+            "stewardship_outbox_message",
+            id=message,
+            version=1,
+            action="created",
+            semantic_key=recipient,
+            mode=occurrence.mode,
+            routing=occurrence.routing,
+            purpose=kind,
+            campaign_id=definition.campaign_id,
+            task_id=tasks["delivery"],
+            credential_namespace="none",
+            state=message_state,
+            finished_at=due_at if finished else None,
+            **submitted,
+        )
+        _history_row(
+            cursor,
+            f"stewardship_{kind}_recipient",
+            id=recipient,
+            address="reader@example.org",
+            outbox_id=message,
+            **owner,
+        )
+        ScheduleOccurrence.objects.filter(pk=occurrence.pk).update(
+            task_id=tasks[settled_by]
+        )
+    occurrence.refresh_from_db()
     return occurrence
 
 

@@ -1332,7 +1332,10 @@ design notes before code:
   settlement) is owed again after the conversion, as after any revision
   change: the first scheduler pass makes one coalesced catch-up send of
   that report to its Administrators. The runbook's precheck lists such
-  slots.
+  slots. A finished digest send (delivered, empty, failed or skipped)
+  stays the converted definition's own work, whichever digest task
+  settled it, so it never blocks the replacement; only one still in
+  flight does.
 - **Every lifecycle state.** Draft, active, closed and archived campaigns
   are converted, in both modes. The applied configuration's schedules get
   their new revisions as above. A digest definition no applied record

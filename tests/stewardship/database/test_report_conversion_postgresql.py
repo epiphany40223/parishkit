@@ -10,6 +10,7 @@ pipeline then sends only what was still owed.
 from datetime import UTC, date, datetime
 
 import pytest
+from django.db import connection
 
 from parishkit.stewardship.accounts.reports_conversion import converted_values
 from parishkit.stewardship.accounts.reports_upgrade import digests_remain
@@ -32,11 +33,13 @@ from .report_builders import (
     convert_reports,
     deliver_all,
     digest_history,
+    digest_send,
     digests_admitted,
     fake_provider,
     prepare_due,
     run_finalizers,
     seed_digests,
+    triggers_off,
 )
 from .test_background_grants_postgresql import task_login
 from .test_family_mail_worker_postgresql import (  # noqa: F401
@@ -337,3 +340,220 @@ def test_the_converted_weekly_sends_with_its_documented_changes(
         )
     )
     assert fulfillments == {"2054-10-05": "empty", "2054-10-12": "delivered"}
+
+
+# The Daily's first morning and the Weekly's first Monday of the fixture.
+DAILY_SLOT, WEEKLY_SLOT = "2054-10-01", "2054-10-05"
+
+
+def finished_sends(store, campaign, monkeypatch, **send):
+    """The two digests, each with one past send as the release before left it.
+
+    Returns the Daily's and the Weekly's definition IDs and their sends.
+    """
+    daily_id, weekly_id = seed_digests(store, campaign, monkeypatch)
+    sends = []
+    for identifier, slot in ((daily_id, DAILY_SLOT), (weekly_id, WEEKLY_SLOT)):
+        definition = ScheduleDefinition.objects.get(pk=identifier)
+        due = dict(plan_slots(definition, campaign))[slot]
+        sends.append(digest_send(identifier, slot, due, **send))
+    return daily_id, weekly_id, sends
+
+
+def converted(store):
+    """Run the conversion as ``upgrade-reports`` does; its receipt."""
+    with campaign_clock(NOW), task_login(ServiceRole.ADMIN_RECOVERY, exact=True):
+        return convert_reports()(store)
+
+
+def blocking(occurrence):
+    """Whether the schedule work row reads the occurrence as blocking."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT blocking FROM stewardship_schedule_work_row WHERE id=%s",
+            [occurrence.pk],
+        )
+        return cursor.fetchone()[0]
+
+
+def assert_converted(receipt, *identifiers):
+    """The conversion applied and left no digest definition behind."""
+    assert receipt.state == "applied"
+    assert not digests_remain()
+    for identifier in identifiers:
+        assert ScheduleDefinition.objects.get(pk=identifier).kind == "report"
+
+
+@pytest.mark.parametrize("settled_by", ["prepare", "finalize", "delivery"])
+def test_conversion_admits_finished_daily_and_weekly_sends(
+    response_service, monkeypatch, settled_by
+):
+    """A finished digest send never blocks its definition's conversion (#1839).
+
+    The conversion retypes each definition to a report before replacing its
+    revision, so the schedule work row must still prove a Daily or Weekly
+    send's own task, whichever task settled it: the preparation's, the
+    finalizer's or a recipient message's delivery.
+    """
+    store, campaign = response_service.service.store, response_service.campaign
+    daily_id, weekly_id, sends = finished_sends(
+        store, campaign, monkeypatch, settled_by=settled_by
+    )
+    assert not any(blocking(send) for send in sends)
+    assert_converted(converted(store), daily_id, weekly_id)
+    assert not any(blocking(send) for send in sends)
+    assert (
+        ScheduleFulfillment.objects.filter(
+            definition_id__in=(daily_id, weekly_id), disposition="delivered"
+        ).count()
+        == 2
+    )
+
+
+# Settled outcomes other than delivery that Production may hold.
+OUTCOMES = {
+    "failed": {
+        "state": "failed",
+        "task_state": "failed",
+        "message_state": "permanent_failure",
+        "disposition": None,
+    },
+    "skipped": {
+        "state": "skipped",
+        "task_state": "cancelled",
+        "message_state": "cancelled",
+        "disposition": None,
+    },
+}
+
+
+@pytest.mark.parametrize("outcome", sorted(OUTCOMES))
+def test_conversion_admits_failed_and_skipped_sends(
+    response_service, monkeypatch, outcome
+):
+    """A failed or skipped digest send is finished; the conversion proceeds."""
+    store, campaign = response_service.service.store, response_service.campaign
+    daily_id, weekly_id, sends = finished_sends(
+        store, campaign, monkeypatch, **OUTCOMES[outcome]
+    )
+    assert_converted(converted(store), daily_id, weekly_id)
+    assert not any(blocking(send) for send in sends)
+
+
+def test_conversion_admits_a_daily_with_no_sends(response_service, monkeypatch):
+    """A Daily that never sent converts beside a Weekly that did."""
+    store, campaign = response_service.service.store, response_service.campaign
+    daily_id, weekly_id = seed_digests(store, campaign, monkeypatch)
+    weekly = ScheduleDefinition.objects.get(pk=weekly_id)
+    digest_send(weekly_id, WEEKLY_SLOT, dict(plan_slots(weekly, campaign))[WEEKLY_SLOT])
+    assert_converted(converted(store), daily_id, weekly_id)
+    assert not ScheduleOccurrence.objects.filter(definition_id=daily_id).exists()
+
+
+def test_conversion_admits_finished_sends_while_delivery_is_paused(
+    response_service, monkeypatch
+):
+    """A campaign whose delivery is paused converts once its sends finished."""
+    store, campaign = response_service.service.store, response_service.campaign
+    daily_id, weekly_id, _ = finished_sends(store, campaign, monkeypatch)
+    with triggers_off(), connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE stewardship_campaign SET delivery_paused=true,"
+            " paused_at=clock_timestamp(), pause_actor_id=gen_random_uuid(),"
+            " pause_version=pause_version+1 WHERE id=%s",
+            [campaign.pk],
+        )
+    assert_converted(converted(store), daily_id, weekly_id)
+
+
+# Each way a digest send is still in flight after the conversion, written
+# over a finished send with the triggers off: the statements change its
+# occurrence %(o)s, its preparation task %(t)s or its message %(m)s.
+IN_FLIGHT = {
+    # A pending send whose preparation task's worker was lost.
+    "abandoned_task": (
+        "UPDATE stewardship_schedule_occurrence SET state='pending' WHERE id=%(o)s",
+        "UPDATE stewardship_task_run SET state='abandoned' WHERE id=%(t)s",
+    ),
+    # A message handed to the provider with no answer yet.
+    "submitting_message": (
+        "UPDATE stewardship_outbox_message SET state='submitting',"
+        " finished_at=NULL WHERE id=%(m)s",
+    ),
+    # A send that names another send's task is foreign work, finished or not.
+    "foreign_task": (
+        "UPDATE stewardship_schedule_occurrence SET task_id=%(f)s WHERE id=%(o)s",
+    ),
+}
+
+
+@pytest.mark.parametrize("case", sorted(IN_FLIGHT))
+def test_a_digest_send_in_flight_still_blocks_the_converted_definition(
+    response_service, monkeypatch, case
+):
+    """The converted definitions' digest sends block while still in flight.
+
+    Only finished work is admitted (#1839): a send whose task is running or
+    lost, whose message is with the provider, or whose task is not its own
+    still blocks a replacement of the report's revision.
+    """
+    store, campaign = response_service.service.store, response_service.campaign
+    daily_id, weekly_id, sends = finished_sends(
+        store, campaign, monkeypatch, settled_by="prepare"
+    )
+    assert_converted(converted(store), daily_id, weekly_id)
+    daily, weekly = sends
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT p.task_id,r.outbox_id FROM stewardship_daily_digest_preparation p"
+            " JOIN stewardship_daily_digest_snapshot s ON s.preparation_id=p.id"
+            " JOIN stewardship_daily_digest_ready y ON y.snapshot_id=s.id"
+            " JOIN stewardship_daily_digest_recipient r ON r.ready_id=y.id"
+            " WHERE p.occurrence_id=%s",
+            [daily.pk],
+        )
+        task, message = cursor.fetchone()
+    names = {"o": daily.pk, "t": task, "m": message, "f": weekly.task_id}
+    with triggers_off(), connection.cursor() as cursor:
+        for statement in IN_FLIGHT[case]:
+            cursor.execute(statement, names)
+    assert blocking(daily)
+    assert not blocking(weekly)
+
+
+def test_the_converted_daily_sends_after_real_digest_history(
+    dispatch_worker,  # noqa: F811
+    monkeypatch,
+):
+    """Upgrade path: delivered Daily and Weekly sends, then the next report.
+
+    Each earlier morning and the first Monday were sent, and settled by
+    their last message's delivery, as the release before left them; the
+    conversion applies and the converted Daily sends the next morning.
+    """
+    harness, path = dispatch_worker
+    store, campaign = harness.service.store, harness.campaign
+    daily_id, weekly_id = seed_digests(store, campaign, monkeypatch)
+    daily = ScheduleDefinition.objects.get(pk=daily_id)
+    weekly = ScheduleDefinition.objects.get(pk=weekly_id)
+    slots = dict(plan_slots(daily, campaign))
+    for day in range(1, 8):
+        slot = date(2054, 10, day).isoformat()
+        digest_send(daily_id, slot, slots[slot])
+    digest_send(weekly_id, WEEKLY_SLOT, dict(plan_slots(weekly, campaign))[WEEKLY_SLOT])
+    with (
+        campaign_clock(DAILY_MORNING),
+        task_login(ServiceRole.ADMIN_RECOVERY, exact=True),
+    ):
+        assert_converted(convert_reports()(store), daily_id, weekly_id)
+    with campaign_clock(DAILY_MORNING), fake_provider(monkeypatch):
+        prepare_due()
+        deliver_all(harness, path)
+        run_finalizers()
+    fulfillments = dict(
+        ScheduleFulfillment.objects.filter(definition_id=daily_id).values_list(
+            "slot", "disposition"
+        )
+    )
+    assert fulfillments["2054-10-08"] == "delivered"
+    assert "2054-10-09" not in fulfillments

@@ -3665,6 +3665,12 @@ SELECT * FROM public.stewardship_weekly_digest_work_row
 UNION ALL
 SELECT * FROM public.stewardship_report_email_work_row;
 
+-- A definition the conversion retyped to a report keeps its digest sends
+-- (#1839): their tasks are still the digest's own, proven through the digest
+-- preparation of the same occurrence, so a finished Daily or Weekly send does
+-- not read as foreign work that blocks the definition's replacement. Work
+-- still in flight blocks as before (running, uncertain, or with an unfinished
+-- message).
 CREATE OR REPLACE VIEW public.stewardship_schedule_work_row AS
 SELECT o.id, o.definition_id, o.revision_id, o.state, o.version, o.outbox_id,
        coalesce(m.version,0)+coalesce(digest.outbox_versions,0) AS outbox_version,
@@ -3679,7 +3685,7 @@ SELECT o.id, o.definition_id, o.revision_id, o.state, o.version, o.outbox_id,
                          AND q.occurrence_id=o.id AND q.mode=o.mode))
                    OR (t.task_type='outbox_delivery' AND t.domain_request_id=m.id
                        AND t.root_id=m.task_id AND m.semantic_key=o.id)
-                   OR (d.kind='daily_digest' AND digest.occurrence_id=o.id AND (
+                   OR (d.kind IN ('daily_digest','report') AND digest.occurrence_id=o.id AND (
                        (t.task_type='daily_digest_prepare' AND t.root_id=digest.task_id)
                        OR (t.task_type='daily_digest_finalize' AND EXISTS(
                            SELECT 1 FROM public.stewardship_daily_digest_preparation preparation
@@ -3692,7 +3698,7 @@ SELECT o.id, o.definition_id, o.revision_id, o.state, o.version, o.outbox_id,
                            JOIN public.stewardship_daily_digest_preparation preparation ON preparation.id=snapshot.preparation_id
                            WHERE child.id=t.domain_request_id AND child.task_id=t.root_id
                              AND preparation.occurrence_id=o.id))))
-                   OR (d.kind='weekly_digest' AND digest.occurrence_id=o.id AND (
+                   OR (d.kind IN ('weekly_digest','report') AND digest.occurrence_id=o.id AND (
                        (t.task_type='weekly_digest_prepare' AND t.root_id=digest.task_id)
                        OR (t.task_type='weekly_digest_finalize' AND EXISTS(
                            SELECT 1 FROM public.stewardship_weekly_digest_preparation preparation
@@ -4191,6 +4197,9 @@ BEGIN
         ('stewardship_report_email_work_row', 'stewardship_report_email_preparation'),
         ('stewardship_admin_digest_work_row', 'stewardship_report_email_work_row'),
         ('stewardship_schedule_work_row', 'report_email_prepare'),
+        -- A converted definition's digest sends stay its own (#1839).
+        ('stewardship_schedule_work_row', 'ARRAY[''daily_digest''::character varying, ''report''::character varying]'),
+        ('stewardship_schedule_work_row', 'ARRAY[''weekly_digest''::character varying, ''report''::character varying]'),
         ('stewardship_delivery_digest_message', 'stewardship_report_email_recipient'),
         ('stewardship_delivery_digest_recovery', 'stewardship_report_slots_v1'),
         ('stewardship_delivery_closed_coverage', 'admin_report'),
