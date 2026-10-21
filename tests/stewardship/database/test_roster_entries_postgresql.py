@@ -20,7 +20,12 @@ from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.storage import StaleRecordError
-from parishkit.stewardship.workflows.models import MinistryRequest, MinistryRosterEntry
+from parishkit.stewardship.workflows.models import (
+    MinistryRequest,
+    MinistryRosterEntry,
+    MinistryWorkflowRevision,
+)
+from parishkit.stewardship.workflows.review import undo_entered
 from parishkit.stewardship.workflows.roster import set_roster_entered
 
 from .auth_builders import signed_in
@@ -51,34 +56,65 @@ def resolved(response_service):
     return harness, admin, join, leave
 
 
-def tick(harness, actor, target, entered, *, sequence=None, key=None):
-    """Set or clear the tick through the service on the restricted web login."""
+def tick(harness, actor, target, entered, *, sequence=None, key=None, note="Typo"):
+    """Set or clear the tick through the service on the restricted web login.
+
+    Clearing is Back to review of the mark, with its required ``note``
+    (``review.undo_entered``, #1840).
+    """
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         latest = (
             MinistryRosterEntry.objects.filter(request=target)
             .order_by("-sequence")
             .first()
         )
+        sequence = (
+            (latest.sequence if latest else 0) + 1 if sequence is None else sequence
+        )
+        if not entered:
+            return undo_entered(
+                harness.service.store,
+                actor,
+                target.pk,
+                sequence=sequence,
+                note=note,
+                request_key=key or uuid4(),
+            )
         return set_roster_entered(
             harness.service.store,
             actor,
             target.pk,
-            sequence=(latest.sequence if latest else 0) + 1
-            if sequence is None
-            else sequence,
-            entered=entered,
+            sequence=sequence,
+            entered=True,
             request_key=key or uuid4(),
         )
 
 
 def test_set_clear_and_set_again_with_history_and_audit(response_service):
     """Each set or clear is one row in sequence; a replay is the same row;
-    the audit names the Ministry and the sequences only."""
+    the audit names the Ministry and the sequences only. A clear is Back to
+    review of the mark (#1840): its revision keeps the request joined, with
+    the note, one version on, and a replay of it records nothing more."""
     harness, admin, join, _ = resolved(response_service)
     key = uuid4()
     first = tick(harness, admin, join, True, key=key)
     assert tick(harness, admin, join, True, sequence=1, key=key).pk == first.pk
-    tick(harness, admin, join, False)
+    version = MinistryRequest.objects.get(pk=join.pk).version
+    clear = uuid4()
+    cleared = tick(harness, admin, join, False, key=clear)
+    assert tick(harness, admin, join, False, sequence=2, key=clear).pk == cleared.pk
+    undo = MinistryWorkflowRevision.objects.get(request=join, request_key=clear)
+    assert (undo.state, undo.outcome, undo.decision_note) == (
+        "resolved",
+        "joined",
+        "Typo",
+    )
+    after = MinistryRequest.objects.get(pk=join.pk)
+    assert (after.state, after.outcome, after.version) == (
+        "resolved",
+        "joined",
+        version + 1,
+    )
     tick(harness, admin, join, True)
     assert list(
         MinistryRosterEntry.objects.filter(request=join)
@@ -113,6 +149,24 @@ def test_service_refuses_leaders_open_requests_stale_and_noop(response_service, 
         tick(harness, admin, join, True, sequence=2)
     with pytest.raises(ValueError):
         tick(harness, admin, join, False)  # already not entered
+    tick(harness, admin, join, True)
+    with pytest.raises(ValueError, match="needs a note"):
+        tick(harness, admin, join, False, note=" ")
+    with pytest.raises(PermissionError):
+        tick(harness, head, join, False)
+    # The mark alone is never cleared without its Back to review.
+    with (
+        pytest.raises(ValueError),
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+    ):
+        set_roster_entered(
+            harness.service.store,
+            admin,
+            join.pk,
+            sequence=2,
+            entered=False,
+            request_key=uuid4(),
+        )
     edit(harness, admin, leave, state="resolved", outcome="declined")
     leave.refresh_from_db()
     with pytest.raises(ValueError):
@@ -355,6 +409,9 @@ def test_migration_self_check_refuses_a_database_without_the_guards():
             raise Rollback
 
 
+# The rule before the reviewed Family form (#1705): forms drawn before
+# its release, as one open across the deploy is.
+@pytest.mark.usefixtures("earlier_rule")
 def test_a_resubmitted_family_keeps_its_resolved_change_on_the_list(
     response_service, google
 ):
@@ -474,7 +531,7 @@ def test_a_gated_campaign_takes_no_tick_and_draws_no_form(response_service, goog
     _, body = get(browser, f"/admin/reports/ministries/follow-up/{join.pk}/")
     assert b'id="followup-locked"' in body
     assert re.search(
-        rb'<button[^>]*disabled data-server-disabled aria-describedby="followup-locked"'
+        rb'<button[^>]*disabled aria-describedby="followup-locked"'
         rb"[^>]*>Clear Entered in ParishSoft</button>",
         body,
     )

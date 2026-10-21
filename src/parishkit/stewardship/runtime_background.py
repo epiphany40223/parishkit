@@ -174,6 +174,8 @@ def scheduler_handlers():
     from .reports.export_tasks import export_handler
     from .reports.fact_tasks import TASK_TYPE as REPORT_FACTS
     from .reports.fact_tasks import fact_handler
+    from .reports.report_email_ownership import TASK_TYPE as REPORT_EMAIL_PREPARE
+    from .reports.report_email_tasks import report_email_handler
     from .reports.verification_production import TASK_TYPE as VERIFY_FACTS
     from .reports.verification_tasks import verification_handler
     from .reports.weekly_ownership import TASK_TYPE as WEEKLY_PREPARE
@@ -200,6 +202,8 @@ def scheduler_handlers():
         DAILY_FINALIZE: finalization_handler(scheduler=True),
         WEEKLY_PREPARE: weekly_handler(scheduler=True),
         WEEKLY_FINALIZE: finalization_handler(scheduler=True),
+        # Report emails (#1786): nothing creates one until the conversion.
+        REPORT_EMAIL_PREPARE: report_email_handler(scheduler=True),
         FAMILY_MAIL_PREPARE: preparation_handler(scheduler=True),
         FAMILY_MAIL_TEST: family_test_handler(scheduler=True),
         REPORT_EXPORT: export_handler(scheduler=True),
@@ -388,6 +392,10 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
         from .reports.export_tasks import export_handler
         from .reports.fact_tasks import TASK_TYPE as REPORT_FACTS
         from .reports.fact_tasks import fact_handler
+        from .reports.report_email_ownership import (
+            TASK_TYPE as REPORT_EMAIL_PREPARE,
+        )
+        from .reports.report_email_tasks import report_email_handler
         from .reports.verification_production import TASK_TYPE as VERIFY_FACTS
         from .reports.verification_tasks import verification_handler
         from .reports.weekly_ownership import TASK_TYPE as WEEKLY_PREPARE
@@ -405,6 +413,10 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
             DAILY_FINALIZE: finalization_handler(),
             WEEKLY_PREPARE: weekly_handler(public_origin=configuration.public_origin),
             WEEKLY_FINALIZE: finalization_handler(),
+            # Report emails (#1786): nothing creates one until the conversion.
+            REPORT_EMAIL_PREPARE: report_email_handler(
+                public_origin=configuration.public_origin
+            ),
             FAMILY_MAIL_PREPARE: preparation_handler(
                 general=rings["general_encryption"],
                 mac=rings["family_code_mac"],

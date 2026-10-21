@@ -32,6 +32,16 @@ itself; a test answers its Save with ``SCHEDULE_REVIEW`` (the full review of
 a schedule change) and the editor's live check with
 ``refresh_schedule_components.check_answer``. Its region is redrawn from
 ``SCHEDULE_SETTLED``, the new schedule at version ``"b" * 64``.
+
+The Backup encryption key (#750): ``BACKUP_KEY`` is its page at the paste
+step, posting to itself, with ``OLD_FINGERPRINT`` in use. A test answers its
+Continue with ``BACKUP_KEY_PROOF`` (the challenge step) or
+``BACKUP_KEY_REFUSED`` (the paste refused, status 400), and the code's
+Review with ``BACKUP_KEY_WRONG`` (the challenge again with the code's error,
+status 400), ``BACKUP_KEY_EXPIRED`` (the same for an expired challenge) or
+``BACKUP_KEY_REVIEW`` (the compact review). Its Apply is redirected
+(``POSTS``) to ``APPLIED``; a test then answers the redraw's read of
+``BACKUP_KEY`` with ``BACKUP_KEY_SETTLED``, ``NEW_FINGERPRINT`` in use.
 """
 
 from types import SimpleNamespace
@@ -39,6 +49,7 @@ from uuid import UUID, uuid4
 
 from django.template.loader import render_to_string
 
+from parishkit.stewardship.accounts.backup_key import EXPIRED, WRONG_CODE, KeyStatus
 from parishkit.stewardship.accounts.integration_credentials import CredentialSummary
 from parishkit.stewardship.accounts.integration_forms import (
     InlineCredentialForm,
@@ -70,7 +81,17 @@ SLACK_UNSELECTED = "/integration-dialog-unselected"
 SLACK_FINISH = "/integration-dialog-finish"
 PARISHSOFT_KEY = "/integration-dialog-parishsoft-key"
 PARISHSOFT_KEY_REVIEW = "/integration-dialog-parishsoft-key-review"
+BACKUP_KEY = "/backup-key-dialog"
+BACKUP_KEY_PROOF = "/backup-key-dialog-proof"
+BACKUP_KEY_REFUSED = "/backup-key-dialog-refused"
+BACKUP_KEY_WRONG = "/backup-key-dialog-wrong"
+BACKUP_KEY_EXPIRED = "/backup-key-dialog-expired"
+BACKUP_KEY_REVIEW = "/backup-key-dialog-review"
+BACKUP_KEY_SETTLED = "/backup-key-dialog-settled"
+OLD_FINGERPRINT = "0123456789abcdef"
+NEW_FINGERPRINT = "fedcba9876543210"
 POSTS = {
+    BACKUP_KEY: (303, APPLIED, ""),
     SLACK: (303, APPLIED, ""),
     SLACK_REMOVING: (303, APPLIED, ""),
     SCHEDULE: (303, APPLIED, ""),
@@ -209,8 +230,68 @@ def components(context, admin, now):
             ),
         )
 
+    def backup_key(fingerprint, **values):
+        """The Backup encryption key page with ``fingerprint`` in use, at the
+        step ``values`` draw (the paste step without a challenge)."""
+        return (
+            "text/html",
+            render_to_string(
+                "stewardship/backup-key.html",
+                context
+                | {
+                    "admin_chrome": admin,
+                    "label": "Backup encryption key",
+                    "page_url": BACKUP_KEY,
+                    "current": KeyStatus("configured", fingerprint),
+                    "errors": [],
+                }
+                | values,
+            ),
+        )
+
+    # The challenge step, as the server draws it after Continue.
+    proof = {
+        "new_fingerprint": NEW_FINGERPRINT,
+        "challenge": "PKBKP1:" + "A" * 80,
+        "intent": "synthetic-intent",
+    }
+    wrong = str(WRONG_CODE)
+    expired = str(EXPIRED)
+    refused = "This is not a backup public key."
     applied = SimpleNamespace(state="applied", request_id=REQUEST, failure_code="")
     return {
+        BACKUP_KEY: backup_key(OLD_FINGERPRINT),
+        BACKUP_KEY_PROOF: backup_key(OLD_FINGERPRINT, **proof),
+        BACKUP_KEY_REFUSED: backup_key(
+            OLD_FINGERPRINT,
+            key_error=refused,
+            errors=[{"message": refused, "field_id": "backup-key-public"}],
+        ),
+        BACKUP_KEY_WRONG: backup_key(
+            OLD_FINGERPRINT,
+            **proof,
+            code_error=wrong,
+            errors=[{"message": wrong, "field_id": "backup-key-code"}],
+        ),
+        BACKUP_KEY_EXPIRED: backup_key(
+            OLD_FINGERPRINT,
+            **proof,
+            code_error=expired,
+            errors=[{"message": expired, "field_id": "backup-key-code"}],
+        ),
+        BACKUP_KEY_REVIEW: review(
+            kind="backup_key",
+            target="backup_key",
+            label="Backup encryption key",
+            changes=[
+                {
+                    "label": "Key fingerprint",
+                    "before": OLD_FINGERPRINT,
+                    "after": NEW_FINGERPRINT,
+                }
+            ],
+        ),
+        BACKUP_KEY_SETTLED: backup_key(NEW_FINGERPRINT),
         SLACK: slack(CHANNEL, "a" * 64, path=SLACK, refresh=SLACK_SETTLED),
         SLACK_REVIEW: review(
             kind="compact",

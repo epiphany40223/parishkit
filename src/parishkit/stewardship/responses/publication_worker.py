@@ -18,7 +18,10 @@ construction:
   ``invalidated`` without a write (a switch to Testing stops the whole run);
 - it queues the entity's written proposals (``pending|failed -> queued``)
   with their rows locked ``FOR NO KEY UPDATE`` in pk order, under the fence,
-  and reserves the lease's request window before every provider call;
+  and reserves the lease's request window before every provider call; it
+  queues nothing, and invalidates the entity, when the current promoted
+  data no longer lists the Member, active and living, in a written
+  change's Family (#1738);
 - the PUT body holds only the fields to write (the contact PUT is a
   partial update, #1600); after the PUT it reads the record back and
   requires the confirmed ``planned_sha256`` (the record read with the writes
@@ -76,7 +79,12 @@ from .publication_models import (
     PublicationEntity,
     PublicationOutcome,
 )
-from .publication_plans import marked_upstream, matches_confirmed, record_outcome
+from .publication_plans import (
+    marked_upstream,
+    matches_confirmed,
+    record_outcome,
+    unlisted_changes,
+)
 
 # Write attempts per entity in one run (the spec's bounded shared retries).
 ATTEMPTS = 3
@@ -202,15 +210,22 @@ class _Entity:
         write this plan already queued (a retry), or be one the plan's own
         check marked *Already in ParishSoft* (``marked_upstream``), so a
         decision, an Administrator edit or a later Family response since the
-        plan stops the write.
+        plan stops the write. So does a Member the current promoted data no
+        longer lists, active and living, in a written change's Family: a
+        refresh since the preflight keeps such a change open (rule 4), and
+        it must not reach a Member now in another household (#1738).
         """
         rows = self._locked(self.recorded)
         marked = marked_upstream(self.fields, rows)
-        if len(rows) != len(self.recorded) or not all(
-            row.version == self.recorded[row.pk]
-            or self.queued_by_plan(row)
-            or row.pk in marked
-            for row in rows
+        if (
+            len(rows) != len(self.recorded)
+            or not all(
+                row.version == self.recorded[row.pk]
+                or self.queued_by_plan(row)
+                or row.pk in marked
+                for row in rows
+            )
+            or unlisted_changes(self.writes)
         ):
             return False
         self._move(
@@ -297,6 +312,17 @@ def _attempt(execution, claim, gateway, item):
     execution.check()
     if not _production():
         return "stop"
+    rows = item.rows()
+    if not any(isinstance(row, _Unqueued) for row in rows) and unlisted_changes(
+        item.writes
+    ):
+        # The Member left a written change's Family since the preflight (a
+        # refresh kept the change, rule 4, #1738): no read of a Member now in
+        # another household, and no write. A change this plan already queued
+        # may have landed, so that entity is read back first as usual, and
+        # the queueing transaction checks the Member again.
+        _record(claim, item, "invalidated")
+        return "invalidated"
     try:
         fresh = _read(claim, gateway, item)
     except ContactGatewayError as error:
@@ -425,7 +451,11 @@ def publish_plan(execution, plan_id, gateway, *, enabled):
             for entity in unfinished([pk for pk in expired if pk != plan_id]):
                 counts[_close(claim, gateway, _Entity(entity))] += 1
             stopped = plan_id in expired
-            for entity in unfinished([plan_id]):
+            entities = unfinished([plan_id])
+            # Update ParishSoft's status line counts the Members done
+            # ("3 of 5 Members done", #1688): a typed count, never a name.
+            execution.progress(0, len(entities))
+            for done, entity in enumerate(entities, start=1):
                 item = _Entity(entity)
                 # A resumed entity whose PUT was already accepted but read
                 # back wrong goes straight to the closing read: no more PUTs.
@@ -448,6 +478,7 @@ def publish_plan(execution, plan_id, gateway, *, enabled):
                     # have landed) is tried again.
                     if result != "failed":
                         break
+                execution.progress(done, len(entities))
             # Every entity this run did not finish is closed, so none is
             # left queued or blocking a later confirmation.
             for entity in unfinished([plan_id]):

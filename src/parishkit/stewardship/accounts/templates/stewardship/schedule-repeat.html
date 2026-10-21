@@ -12,7 +12,10 @@ until the script reveals it; the Admin portal requires JavaScript.
 Only the one-line summary is a live region (the date list can run to
 hundreds of items and is rebuilt as the Admin types), and it sits with the
 button above the list, its line reserved, so a growing or shrinking list
-never moves the button. The send time is a shared time entry field
+never moves the button. A rule error is shown at its fields, in the rule's
+reserved error lines (#1915); while the rule gives nothing to add, Add these
+reminders waits, named by that line or by the summary, which says what is
+missing. The send time is a shared time entry field
 (data-time-entry, ui-v1.js): its "Reads as" line, refusal, blur rewrite and
 Save gate are the same as every other Admin time (#1117). Its zone is the
 rows': the browser's (schedules.browser_times, #558). Only the date-change
@@ -25,7 +28,7 @@ review shows this panel, and it always takes browser times.
 <p class="help" id="repeat-time-help">{% translate "In this computer's time zone, for example 9:00 AM. Every date uses the same time, even across a daylight-saving change." %}</p></div>
 <div class="field"><label for="repeat-email">{% translate "Email to send" %}</label><select id="repeat-email" data-repeat="email"></select>
 <p class="help" data-repeat-no-email hidden>{% translate "No reminder email is saved yet. Save one with the page and email templates first." %}</p></div>
-<p class="repeat-summary" role="status" data-repeat-summary></p>
+<p class="repeat-summary" id="repeat-summary" role="status" data-repeat-summary></p>
 <p>{% button type="button" variant="secondary" data-repeat-add disabled %}{% translate "Add these reminders" %}{% endbutton %}</p>
 <div data-repeat-dates></div>
 </fieldset>

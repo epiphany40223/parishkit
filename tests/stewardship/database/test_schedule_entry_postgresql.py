@@ -404,6 +404,71 @@ def test_a_repeat_adds_one_ordinary_reminder_per_date(auth_service, google):
     )
     assert refused.status_code == 400
     assert "Only reminders repeat." in unescape(refused.content.decode())
+    # A rule that gives no date is refused at the fields the page marks:
+    # Until before From marks both, said once in Until's line (#1915).
+    order = post(
+        browser,
+        NEW,
+        data
+        | {
+            "repeat-start": "2054-10-14",
+            "repeat-until": "2054-10-01",
+            "repeat-dates": [],
+            "base_digest": store.active().digest,
+        },
+    )
+    assert order.status_code == 400
+    page = unescape(order.content.decode())
+    assert (
+        '<ul class="errorlist" id="repeat-until_error"><li>The last date is before '
+        "the first.</li></ul>"
+    ) in page
+    # The summary links to the first marked field (a control that exists).
+    assert re.search(r'<a href="#repeat-from">The last date is before', page)
+    for control in ("repeat-from", "repeat-until"):
+        assert re.search(
+            rf'id="{control}"[^>]*aria-invalid="true" '
+            r'aria-describedby="repeat-until_error"',
+            page,
+        )
+    assert "This rule gives no date that can be added" not in page
+
+
+def test_a_repeat_date_whose_time_has_passed_is_refused(
+    auth_service, google, monkeypatch
+):
+    """#1948: on October 10 a repeat posting October 6 would add a reminder
+    in the past, which would send at once. Refused at Repeat, naming the
+    date and time, and nothing is recorded; the later date alone reviews."""
+    store = auth_service.store
+    _, emails = setup(store)
+    now = datetime(2054, 10, 10, 13, tzinfo=UTC)
+    monkeypatch.setattr(
+        schedule_entry_views, "timezone", SimpleNamespace(now=lambda: now)
+    )
+    browser, _ = signed_in()
+    data = entry(
+        store, kind="reminder", time="09:00", template_version=emails["reminder"]["id"]
+    ) | {
+        "repeat-repeat": "on",
+        "repeat-frequency": "weekly",
+        "repeat-weekdays": "1",
+        "repeat-start": "2054-10-01",
+        "repeat-until": "2054-10-14",
+        "repeat-dates": ["2054-10-06", "2054-10-13"],
+    }
+    before = ConfigurationChangeRequest.objects.count()
+    refused = post(browser, NEW, data)
+    assert refused.status_code == 400
+    assert (
+        "The reminder on October 6, 2054 at 9:00 AM would send at a time that "
+        "has already passed" in unescape(refused.content.decode())
+    )
+    errors = refused.context["repeat"].errors.as_data()["repeat"]
+    assert [error.code for error in errors] == ["repeat_time_passed"]
+    assert ConfigurationChangeRequest.objects.count() == before
+    review = post(browser, NEW, data | {"repeat-dates": ["2054-10-13"]})
+    assert review.status_code == 200, review.content
 
 
 def test_a_refused_new_schedule_shows_its_errors_and_records_nothing(

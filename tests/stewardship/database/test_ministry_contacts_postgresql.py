@@ -14,6 +14,7 @@ import json
 from uuid import uuid4
 
 import pytest
+from django.db import transaction
 from django.urls import reverse
 from openpyxl import load_workbook
 
@@ -23,6 +24,10 @@ from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports import ministry_followup_views
 from parishkit.stewardship.reports.export_models import MinistryExportSnapshot
 from parishkit.stewardship.reports.ministries import MinistryQuery
+from parishkit.stewardship.reports.ministry_contacts import (
+    packet_contacts,
+    request_contacts,
+)
 from parishkit.stewardship.reports.ministry_followup import FollowupQuery
 from parishkit.stewardship.workflows.models import MinistryRequest
 
@@ -30,10 +35,13 @@ from ..census_factory import member
 from .test_background_grants_postgresql import task_login
 from .test_export_views_postgresql import post
 from .test_information_followup_postgresql import search
+from .test_live_ministries_postgresql import installed
 from .test_ministry_exports_postgresql import create, leader
 from .test_ministry_followup_postgresql import requests
-from .test_ministry_reports_postgresql import drop_leader, page, prepare, setup
+from .test_ministry_packets_postgresql import packet, sections
+from .test_ministry_reports_postgresql import actor, drop_leader, page, prepare, setup
 from .test_ministry_responses_postgresql import ministry_source, respond, revisit
+from .test_ministry_review_postgresql import decide, view, withdraw_leave
 from .test_report_workspace_postgresql import read
 from .test_response_http_postgresql import answers_for
 from .test_source_families_postgresql import promote
@@ -379,3 +387,166 @@ def test_a_cannot_participate_leave_hides_the_contact_on_an_earlier_join(
     snapshot = MinistryExportSnapshot.objects.get(pk=request.ministry_snapshot_id)
     assert snapshot.row_count == 1
     assert EMAIL not in json.dumps(snapshot.document)
+
+
+# The rule before the reviewed Family form (#1705): forms drawn before
+# its release, as one open across the deploy is.
+@pytest.mark.usefixtures("earlier_rule")
+def test_contacts_and_counts_follow_an_edit(response_service, google):
+    """Staff edit Member 3's Food pantry (9) join into Ministry 4 (#1684):
+    its contact details are read under Ministry 4 from then on (#1718), so
+    Ministry 4's leader gets them, the Member's own unpublished email too
+    (#1591), and Food pantry's leader, who still sees the request read
+    only, gets none on its page, in its file or from its packet. By Ministry
+    counts it under both, as the worklist's Ministry filter lists it."""
+    harness = setup(response_service)
+    browser, _, _, _ = leader(harness, google)
+    staff = actor(harness, {"staff"}, ())
+    fours = actor(harness, {"ministry_leader"}, (4,))
+    pantry = actor(harness, {"ministry_leader"}, (9,))
+    join = withdraw_leave(harness)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert EMAIL in contact(item(browser, join))
+    decide(harness, staff, "edit", join, fields={"value": ["4"]})
+    assert join.reviewed_ministry_duid == 4
+
+    def details(principal):
+        """The edited request's details as the worklist reads them."""
+        row = view(harness, principal)[str(join.pk)]
+        login = task_login(ServiceRole.WEB, exact=True, reconnect=True)
+        with login, transaction.atomic():
+            found = request_contacts(harness.campaign.pk, principal, [row])
+        return found.get(row["id"])
+
+    found = details(fours)
+    assert found["ministry_duid"] == 4 and found["emails"]
+    assert EMAIL in json.dumps(found)
+    assert (found["email_visibility"], found["phone_visibility"]) == (
+        "available",
+        "available",
+    )
+    assert details(pantry) is None
+    found = details(staff)
+    assert EMAIL in json.dumps(found)
+    assert (found["email_visibility"], found["phone_visibility"]) == (
+        "available",
+        "available",
+    )
+    # The join's earlier version (superseded when the Family answered
+    # again) stays under Food pantry, but the latest's consent is Ministry
+    # 4's now: Food pantry's leader reads it Not published, and Ministry 4's
+    # leader lists only the edited version.
+    earlier = MinistryRequest.objects.get(ministry_duid=9, state="superseded")
+    history = dict(action="join", history="all", state="any")
+    rows = page(harness, roles=("ministry_leader",), scope=(9,), ministry=9, **history)
+    assert [row["id"] for row in rows["rows"]] == [str(earlier.pk)]
+    assert rows["rows"][0]["email_visibility"] == "not_published"
+    assert EMAIL not in json.dumps(rows, default=str)
+    rows = page(harness, roles=("ministry_leader",), scope=(4,), ministry=4, **history)
+    assert [row["id"] for row in rows["rows"]] == [str(join.pk)]
+    # Once the Family says Member 3 cannot participate in any ministries,
+    # the edited join is no longer consent to Ministry 4's leader either.
+    form = revisit(harness)
+    answers = answers_for(form)
+    answers["ministries"]["members"]["3"] = {"join": [], "leave": [4]}
+    answers["service"] = {
+        "members": {"3": {"cannot_serve": True}},
+        "proposed_members": {},
+    }
+    respond(harness, form, answers)
+    # A decided request is not withdrawn by leaving it unticked (#1684), so
+    # the change is the cannot-participate answer's alone.
+    join.refresh_from_db()
+    assert (join.state, join.reviewed_ministry_duid) == ("resolved", 4)
+    found = details(fours)
+    assert found["email_visibility"] == "not_published" and not found["emails"]
+    assert EMAIL not in json.dumps(found)
+    # The report lists the request under Ministry 4 alone, for every reader.
+    for roles, scope, ministry, listed in (
+        (("ministry_leader",), (4,), 4, True),
+        (("ministry_leader",), (9,), 9, False),
+        (("staff",), (), 9, False),
+        (("staff",), (), 4, True),
+    ):
+        rows = page(
+            harness,
+            roles=roles,
+            scope=scope,
+            ministry=ministry,
+            action="join",
+            history="all",
+            state="any",
+        )["rows"]
+        assert (str(join.pk) in {row["id"] for row in rows}) is listed, roles
+    # So does the packet; its leave contacts are read from it.
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True), transaction.atomic():
+        assert str(join.pk) in packet_contacts(harness.campaign.pk, staff, {4})[0]
+        assert str(join.pk) not in packet_contacts(harness.campaign.pk, staff, {9})[0]
+        assert str(join.pk) in packet_contacts(harness.campaign.pk, fours, {4})[0]
+    # By Ministry counts it under both Ministries, as the worklist's Ministry
+    # filter finds it under either.
+    summaries = {
+        row["duid"]: row["joining"]
+        for row in page(harness, roles=("staff",), scope=())["summaries"]
+    }
+    assert summaries[9] == 1 and summaries[4] == 1
+    assert str(join.pk) in view(harness, staff, ministry="9")
+    assert str(join.pk) in view(harness, staff, ministry="4")
+    # Food pantry's leader still opens the request, read only, with no
+    # contact details, and its file reads them Unavailable.
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        section = contact(item(browser, join))
+        assert "No contact details are available for this request." in section
+        assert EMAIL not in section and PHONE not in section
+        response, body = export(browser, state="any")
+        assert response.status_code == 200
+        rows = [row for row in table(body) if row["Ministry"] == "Food pantry"]
+        assert [(row["Email"], row["Phones"]) for row in rows] == [
+            ("Unavailable", "Unavailable")
+        ]
+        assert EMAIL not in body.decode()
+
+
+def test_a_leaves_contacts_follow_its_edit(response_service):
+    """The Family withdraws the Food pantry join, and Staff edit the leave of
+    Ministry 4 into Food pantry (9): the leave's contacts, read from the
+    packet, go to Food pantry's leader and no longer to Ministry 4's. Once
+    Ministry 4 is removed from the campaign, the edited leave still keeps it
+    listed, so a packet for it, which By Ministry offers, gets its (empty)
+    section rather than failing."""
+    harness = setup(response_service)
+    staff = actor(harness, {"staff"}, ())
+    fours = actor(harness, {"ministry_leader"}, (4,))
+    pantry = actor(harness, {"ministry_leader"}, (9,))
+    form = revisit(harness)
+    answers = answers_for(form)
+    answers["ministries"]["members"]["3"] = {"join": [], "leave": [4]}
+    respond(harness, form, answers)
+    leave = MinistryRequest.objects.get(ministry_duid=4, action="leave", state="new")
+    decide(harness, staff, "edit", leave, fields={"value": ["9"]})
+    assert leave.reviewed_ministry_duid == 9
+
+    def details(principal):
+        """The edited leave's details as the worklist reads them."""
+        row = view(harness, principal)[str(leave.pk)]
+        login = task_login(ServiceRole.WEB, exact=True, reconnect=True)
+        with login, transaction.atomic():
+            found = request_contacts(harness.campaign.pk, principal, [row])
+        return found.get(row["id"])
+
+    found = details(pantry)
+    assert (found["kind"], found["ministry_duid"]) == ("leave", 9)
+    assert EMAIL in json.dumps(found) and found["email_visibility"] == "available"
+    assert details(fours) is None
+    assert EMAIL in json.dumps(details(staff))
+    assert installed(harness, [9]).state == "applied"
+    by_ministry = page(harness)["summaries"]
+    assert {(row["duid"], row["in_campaign"]) for row in by_ministry} == {
+        (4, False),
+        (9, True),
+    }
+    _, captured = sections(packet(harness, staff.identity, (4, 9), history=True))
+    assert captured[4]["rows"] == []
+    # Food pantry's section holds the edited leave (and, with the history
+    # option, the withdrawn join).
+    assert str(leave.pk) in {row["id"] for row in captured[9]["rows"]}

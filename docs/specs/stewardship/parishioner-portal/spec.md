@@ -471,7 +471,11 @@ authoritative, and the page notes the final payment may differ slightly.
 Review shows the financial answer as "Your *year* pledge: *amount*", followed in
 parentheses by the payment amount under the same exact-or-approximate rule, and,
 for a positive pledge, "This pledge starts on **start date**" ("began on" once
-the period has started) with the date in bold. It does not
+the period has started) with the date in bold. The *year* names the
+upcoming financial period ("2027", or "2027–2028" for a period that spans two
+years), never the campaign's Stewardship year label, so it always agrees with
+the start date; the giving history's "towards your *year* pledge" names the
+comparison period the same way. It does not
 repeat the giving history, and neither Review nor its default text adds a
 "nothing is sent until Submit" prompt.
 
@@ -593,6 +597,9 @@ A valid Family may return during the campaign using the same code/token. The
 form is built from the current source snapshot merged with the latest effective
 live response according to the [effective-value rules](../data/spec.md#effective-value-merge).
 All prior Family proposals still differing from source are visibly marked.
+From the release with #1705's last slice, a live form instead shows the
+result of the parish's review, with the same markers and no new wording
+([reviewed Family form](../review-pipeline/spec.md#reviewed-family-form)).
 
 The new final submission is a complete replacement effective answer, not a
 partial patch, while the old immutable version remains in history. Current

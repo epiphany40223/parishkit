@@ -45,12 +45,25 @@ def ministry_presentation(
     terminal_members,
     proposed_members,
     unavailable_members=frozenset(),
+    shown=None,
 ):
-    """Expose only currently offered labels and unresolved authorized choices."""
+    """Expose only currently offered labels and unresolved authorized choices.
+
+    ``shown`` is a reviewed form's Ministry shown items (#1705), or None for
+    every other form. A reviewed form draws each choice its shown items
+    name (a request To review, accepted, edited or added by the parish, on
+    the Ministry it carries forward); before the reviewed form only open
+    requests are drawn, with the Family's own Ministry.
+    """
     require_work_order()
     if inputs is None:
         return None
-    previous = request_index(prior)
+    if shown is not None:
+        from .reviewed import ministry_draw, ministry_rows
+
+        rows, revisions = ministry_rows(shown)
+        drawn = ministry_draw(shown, rows, revisions)
+    previous = request_index(prior) if shown is None else {}
     result = {
         "options": [
             {"id": option.duid, "name": option.name} for option in inputs.options
@@ -65,6 +78,11 @@ def ministry_presentation(
         if entity == "member" and key in unavailable_members:
             continue
         choices = {"join": [], "leave": []} if entity == "member" else {"join": []}
+        if shown is not None:
+            terminal = entity == "member" and key in terminal_members
+            for action, ministries in drawn.get((entity, key), {}).items():
+                if not terminal and action in choices:
+                    choices[action] = sorted(ministries)
         for ministry in sorted(offered):
             old = previous.get((entity, key, ministry))
             if (
@@ -98,11 +116,16 @@ def derive_ministry_requests(submission, validated):
         return []
     previous = request_index(validated.prior_submission)
     created = []
+    # A reviewed form's shown requests (#1705) are judged first; the choices
+    # they account for are left out of the derivation below.
+    answers = submission.answers["ministries"]
+    if submission.reviewed_view:
+        answers = _derive_reviewed(submission, previous, created)
     for group, entity in (
         ("members", "member"),
         ("proposed_members", "proposed_member"),
     ):
-        for key, choices in submission.answers["ministries"][group].items():
+        for key, choices in answers[group].items():
             for action, ministries in choices.items():
                 for ministry in ministries:
                     identity = (entity, key, ministry)
@@ -170,3 +193,118 @@ def derive_ministry_requests(submission, validated):
             state="cancelled", version=F("version") + 1
         )
     return created
+
+
+def _create(submission, entity, key, ministry, action):
+    """A new request To review for one of ``submission``'s choices."""
+    return MinistryRequest.objects.create(
+        submission=submission,
+        entity_kind=entity,
+        entity_key=key,
+        ministry_duid=ministry,
+        action=action,
+        state="new",
+        actor_id=submission.family_id,
+    )
+
+
+def _close(request, state, successor=None):
+    """Withdraw (``cancelled``) or replace (``superseded``) a request in force.
+
+    A decided request keeps no outcome or Edit once closed, as the table
+    requires; its guard clears ``resolved_at`` (frozen file 0154), and its
+    revisions keep the decision's history.
+    """
+    MinistryRequest.objects.filter(pk=request.pk).update(
+        state=state,
+        superseded_by=successor,
+        outcome=None,
+        reviewed_ministry_duid=None,
+        version=F("version") + 1,
+    )
+
+
+def _derive_reviewed(submission, previous, created):
+    """Judge a reviewed form's shown requests; return the choices left to derive.
+
+    Each request the form showed (``reviewed.ministry_entries``) is compared
+    with what the form showed for it (review pipeline spec, "Family
+    resubmission"): its action on the Ministry it carries forward, chosen,
+    or for an Ignored one "not selected" or "Continue in this ministry".
+
+    1. Left as shown: the request keeps its stage and decision; no row.
+    2. Changed again: re-choosing an Ignored request, or choosing the
+       Family's own Ministry while an edit into another is in force, reopens
+       it as a new request To review that replaces it. A carried-forward
+       Ministry still chosen beside it is a request of its own (rule 4). A
+       request already Entered in ParishSoft is not replaced: it stays for
+       the refresh to judge, beside the new one.
+    3. Withdrawn: unticking a chosen request (or choosing to continue)
+       withdraws it, whatever its stage, except one Entered in ParishSoft,
+       which the refresh judges, and one the parish added, which keeps its
+       decision until Staff decide. Both rows say the Family undid it
+       (``reports.ministry_worklist``).
+
+    A Member the response does not answer (a terminal request, a Member
+    out of scope) is not presented, so their requests are left to the
+    derivation that follows. ``previous`` loses each request judged here,
+    so the final withdrawal pass leaves it alone; ``created`` gains each new
+    request. The SQL completeness check (frozen file 0154) admits a choice
+    with no row only where its shown request is still in force.
+    """
+    from .reviewed import (
+        MINISTRY,
+        _entered,
+        entries_of,
+        ministry_key,
+        ministry_rows,
+        ministry_shown,
+    )
+
+    entries = entries_of(submission.shown_items, MINISTRY)
+    rows, revisions = ministry_rows(entries)
+    entered = _entered(rows)
+    remaining = {
+        group: {
+            key: {action: set(ids) for action, ids in choices.items()}
+            for key, choices in members.items()
+        }
+        for group, members in submission.answers["ministries"].items()
+    }
+    for entry in entries:
+        request = rows.get(entry["item"])
+        group = "members" if entry["entity"] == "member" else "proposed_members"
+        choices = remaining[group].get(entry["key"])
+        if request is None or request.state in {"cancelled", "superseded"}:
+            continue
+        if choices is None:
+            continue
+        previous.pop(ministry_key(entry), None)
+        selected = choices.get(entry["action"], set())
+        own = request.ministry_duid
+        shown = ministry_shown(entry, request, revisions.get(entry["decision"] or ""))
+        if (shown is None or shown != own) and own in selected:
+            # Rule 2: an Ignored request chosen again, or the Family's own
+            # Ministry chosen while an edit into another is in force.
+            selected.discard(own)
+            new = _create(
+                submission, entry["entity"], entry["key"], own, request.action
+            )
+            created.append(new)
+            # One Staff entered in ParishSoft stays in the history for the
+            # refresh to judge; only the new request is To review.
+            if str(request.pk) not in entered:
+                _close(request, "superseded", new)
+        elif shown is None:
+            continue
+        elif shown in selected:
+            selected.discard(shown)
+        elif not request.parish_added and str(request.pk) not in entered:
+            _close(request, "cancelled")
+    return {
+        group: {
+            key: {action: sorted(ids) for action, ids in choices.items()}
+            for key, choices in members.items()
+        }
+        for group, members in remaining.items()
+    }

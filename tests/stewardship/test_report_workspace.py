@@ -332,7 +332,7 @@ def test_xlsx_is_complete_typed_formula_safe_and_keeps_original_request():
     participation_xlsx(value, stream)
     stream.seek(0)
     book = load_workbook(stream)
-    sheet = book["Participation"]
+    sheet = book["Daily participation"]
     assert sheet.max_row == len(value.days) + 1
     assert sheet["C2"].data_type == "n" and sheet["C2"].value == 1
     assert sheet["H2"].data_type == "n" and sheet["H2"].value == 1234.56
@@ -358,8 +358,8 @@ def test_large_money_stays_exact_instead_of_excel_rounding():
     participation_xlsx(replace(value, days=(day, *value.days[1:])), stream)
     stream.seek(0)
     book = load_workbook(stream)
-    assert book["Participation"]["H2"].value == "1234567890123456.78"
-    assert book["Participation"]["H2"].data_type == "s"
+    assert book["Daily participation"]["H2"].value == "1234567890123456.78"
+    assert book["Daily participation"]["H2"].data_type == "s"
     book.close()
 
 
@@ -371,7 +371,7 @@ def test_zero_pledge_total_is_a_number_not_text():
     participation_xlsx(replace(value, days=(day, *value.days[1:])), stream)
     stream.seek(0)
     book = load_workbook(stream)
-    cell = book["Participation"]["H2"]
+    cell = book["Daily participation"]["H2"]
     assert cell.data_type == "n" and cell.value == 0
     assert cell.number_format == '"$"#,##0.00'
     book.close()

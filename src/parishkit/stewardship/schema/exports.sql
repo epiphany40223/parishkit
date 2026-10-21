@@ -213,13 +213,15 @@ BEGIN
                     WHERE prior.family_test_names_snapshot_id=names.id
                       AND prior.requester_id=NEW.requester_id));
     ELSIF NEW.report='family_timeline' THEN
-        -- One Family's timeline (migration 0063): Administrator only, as
-        -- the page's full view, so any current Administrator may also
-        -- regenerate another's capture.
+        -- One Family's timeline (migration 0063): its own capture, for the
+        -- requester who captured it or an Administrator, who may also
+        -- regenerate another's. Staff may request it since #1799; the
+        -- request authorization checks the requester's role.
         SELECT * INTO timeline FROM stewardship_timeline_export_snapshot WHERE id=NEW.timeline_snapshot_id;
         inputs_valid:=timeline.id IS NOT NULL AND timeline.campaign_id=NEW.campaign_id
             AND NEW.parameters=timeline.parameters
-            AND stewardship_export_authorized_v1(NEW.requester_id,true);
+            AND (timeline.actor_id=NEW.requester_id
+                OR stewardship_export_authorized_v1(NEW.requester_id,true));
     ELSIF NEW.report='campaign_comparison' THEN
         -- The Campaign comparison (migration 0071): its own capture, for
         -- the requester who captured it, an Administrator, or a requester

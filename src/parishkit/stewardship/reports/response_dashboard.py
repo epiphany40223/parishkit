@@ -28,7 +28,8 @@ from django.db import transaction
 from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy
 
-from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.accounts.policy import Capability
+from parishkit.stewardship.accounts.role_refusal import require, require_role
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin, database_now
 from parishkit.stewardship.audit.schemas import Action, ActorKind
@@ -230,15 +231,13 @@ def _principal(request, store, *, read_only=False):
     principal = authenticated_admin(
         request, store=store, activity=not read_only, read_only=read_only
     )
-    if not allows(principal, Capability.CAMPAIGN_REPORT):
-        raise PermissionError("The response dashboard is unavailable.")
-    return principal
+    return require(principal, Capability.CAMPAIGN_REPORT)
 
 
 def _admit_mode(principal, query):
     """Testing responses are shown to Administrators only."""
-    if query.mode == "testing" and "administrator" not in principal.roles:
-        raise PermissionError("Testing responses are shown to Administrators only.")
+    if query.mode == "testing":
+        require_role(principal, "administrator")
 
 
 def _audit(principal, campaign_id, outcome, *, automatic=False):

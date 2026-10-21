@@ -18,6 +18,7 @@ from parishkit.stewardship.responses import (
     census_resolution,
     census_review,
     reconciliation,
+    refresh_checks,
 )
 from parishkit.stewardship.responses import publication_tasks as tasks
 from parishkit.stewardship.responses.publication_worker import PublicationDisabled
@@ -126,6 +127,12 @@ GATES = {
     "responses/reconciliation.py": (
         reconciliation.resets_approval,
         reconciliation.RESET_EXECUTIONS,
+    ),
+    # A refresh moves an Updated in ParishSoft change ParishSoft no longer
+    # holds back to Conflict, To review (#1749).
+    "responses/refresh_checks.py": (
+        refresh_checks.moves_to_conflict,
+        refresh_checks.CONFLICT_EXECUTIONS,
     ),
 }
 

@@ -119,19 +119,24 @@ SITES = {
         WEB,
         {"campaigns/cleanup_requests.py"},
     ),
-    # The census Publish page's calls (#528). Check ParishSoft, on the
-    # Publish to ParishSoft page, queues the preflight from the web login;
-    # Apply and Run again are a later slice, so nothing imports them yet.
+    # Update ParishSoft's calls (#528, #1688), all from the web login: Check
+    # ParishSoft queues the preflight, Update's Apply confirms the plan and
+    # queues its run, and Run again retries that run; the page and its
+    # pk-admin census update-* commands (#1755).
     "responses/publication_tasks.py::request_preflight": site(
         "census_publication_preflight",
         WEB,
-        {"reports/census_publication_views.py"},
+        {"reports/census_publication_views.py", "admin_census_update.py"},
     ),
     "responses/publication_tasks.py::confirm_and_publish": site(
-        "census_publication", WEB
+        "census_publication",
+        WEB,
+        {"reports/census_publication_views.py", "admin_census_update.py"},
     ),
     "responses/publication_tasks.py::rerun_publication": site(
-        "census_publication", WEB
+        "census_publication",
+        WEB,
+        {"reports/census_publication_views.py", "admin_census_update.py"},
     ),
     "jobs/delivery_resolution.py::resolve_delivery": site(
         "outbox_delivery",
@@ -250,6 +255,11 @@ SITES = {
         WEB,
         {"admin_digests.py", "reports/weekly_manual_views.py"},
     ),
+    # A report email's Send now (#1786); its page and command ship with
+    # the Report emails page (report-emails spec, delivery plan item 5).
+    "reports/report_email_manual.py::request_send_now": site(
+        "report_email_prepare", WEB
+    ),
     "responses/receipts.py::create_submission_receipt": site(
         # A Family's submission receipt.
         "outbox_delivery",
@@ -271,14 +281,15 @@ SITES = {
     ),
     "source/requests.py::request_refresh": site(
         # The refresh page and command line (web), the refresh and go-live
-        # producers (scheduler), and the source handler's full fallback
-        # after a rejected delta (worker).
+        # producers (scheduler), the source handler's full fallback after a
+        # rejected delta and an update run's final refresh (#1688, worker).
         "source_refresh",
         {WEB, SCHEDULER, WORKER},
         {
             "accounts/refresh_views.py",
             "campaigns/go_live_sequencing.py",
             "local/seed_web.py",
+            "responses/publication_tasks.py",
             "source/fallback.py",
             "source/production.py",
         },
@@ -337,6 +348,11 @@ SITES = {
     "reports/weekly_ownership.py::WeeklyDigestProducer.__call__": site(
         "weekly_digest_prepare", SCHEDULER, {"runtime_process.py"}
     ),
+    # Compiled into the scheduler with the conversion (report-emails spec,
+    # delivery plan item 4).
+    "reports/report_email_ownership.py::ReportEmailProducer.__call__": site(
+        "report_email_prepare", SCHEDULER
+    ),
     "source/setup_cleanup.py::produce_setup_cleanup": site(
         "setup_source_cleanup", SCHEDULER, {"runtime_process.py"}
     ),
@@ -357,6 +373,7 @@ SITES = {
             "jobs/family_mail_test_tasks.py",
             "jobs/operational_fanout.py",
             "reports/digest_fanout.py",
+            "reports/report_email_fanout.py",
             "reports/weekly_fanout.py",
         },
     ),
