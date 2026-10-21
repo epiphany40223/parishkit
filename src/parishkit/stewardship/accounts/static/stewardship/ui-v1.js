@@ -6375,7 +6375,9 @@
   //   - [data-editor-mode-panel="advanced"]: the full configuration. It is
   //     only ever hidden, never disabled: its fields carry the configuration
   //     the server validates and stores in either mode (the recorded
-  //     exception to conditional fields).
+  //     exception to conditional fields). An additive editor (#1129) has
+  //     no Basic panel and one Advanced panel per extra tool, each off in
+  //     Basic; its adapter has only toBasic and clearBasic.
   // The editor's script registers an adapter by the editor's name with
   // ParishEditorMode.register(name, adapter). It is looked up by name when
   // an event fires, so it still applies after an in-place answer redraws
@@ -6410,14 +6412,18 @@
     .find((node) => node.closest("[data-editor-modes]") === root);
   const modeChoice = (root, mode) => modeToggle(root)
     ?.querySelector(`input[data-editor-mode-choice][value="${mode}"]`);
-  const modePanel = (root, mode) => [...root.querySelectorAll(
-    `[data-editor-mode-panel="${mode}"]`)].find((node) => node.closest("[data-editor-modes]") === root);
+  // root's panels for mode (not a nested editor's). An additive editor
+  // (New and Edit scheduled email, #1129) has several Advanced panels, one
+  // where each of its tools is drawn; other editors have one of each.
+  const modePanels = (root, mode) => [...root.querySelectorAll(
+    `[data-editor-mode-panel="${mode}"]`)].filter((node) => node.closest("[data-editor-modes]") === root);
+  const modePanel = (root, mode) => modePanels(root, mode)[0];
   // The Advanced fields that are in error: marked by the server or a live
   // check, or invalid in the browser's own terms (an unreadable time). A
   // field only waiting for its group's first choice (data-require-one, such
   // as Parish logos' sizes with no file chosen) is incomplete, not in error.
-  const advancedErrors = (root) => [...(modePanel(root, "advanced")
-    ?.querySelectorAll("input, select, textarea") || [])]
+  const advancedErrors = (root) => modePanels(root, "advanced")
+    .flatMap((panel) => [...panel.querySelectorAll("input, select, textarea")])
     .filter((node) => node.getAttribute("aria-invalid") === "true"
       || node.hasAttribute("data-field-error") || node.hasAttribute("data-client-error")
       || (node.willValidate && !node.validity.valid
@@ -7184,6 +7190,10 @@
     const control = (name) => panel.querySelector(`[data-repeat="${name}"]`);
     const update = () => {
       const reminder = kind.value === "reminder";
+      // Repeat is a Reminder's: with another mail type its panel is hidden,
+      // so the box is unticked rather than posted hidden (conditional
+      // fields), and it does not count as a tool in use for Basic.
+      if (!reminder) enabled.checked = false;
       const on = reminder && enabled.checked;
       panel.hidden = !reminder;
       rule.hidden = !on;
@@ -7805,6 +7815,28 @@
       // does not replace it.
       edited = true;
     });
+  });
+
+  // New and Edit scheduled email's Basic and Advanced modes (#1129; UX
+  // conventions, "Basic and Advanced modes", additive editors). Both modes
+  // show the schedule's fields; Advanced adds Repeat and "Edit this
+  // schedule's email", each an Advanced panel where it is drawn. Basic is
+  // the page with both off, so Advanced → Basic switches at once while
+  // they are off and otherwise asks. Switch to Basic unticks them through
+  // their own change events, so the repeat rule and the email fields close
+  // as if the reader had unticked them, and nothing hidden is posted.
+  // A Repeat ticked under another mail type is unticked as it hides (the
+  // repeat script), so a tool in use is always one on screen.
+  const scheduleTools = (root) => [...root.querySelectorAll(
+    'input[data-repeat="enabled"], input[name="edit_email"]')];
+  window.ParishEditorMode.register("schedule-entry", {
+    toBasic: (root) => scheduleTools(root).every((box) => !box.checked),
+    clearBasic(root) {
+      scheduleTools(root).filter((box) => box.checked).forEach((box) => {
+        box.checked = false;
+        box.dispatchEvent(new Event("change", {bubbles: true}));
+      });
+    },
   });
 
   // "Send a test of this text" under a scheduled email's own email (#446,
