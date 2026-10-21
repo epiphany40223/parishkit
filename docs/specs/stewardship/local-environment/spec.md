@@ -130,7 +130,7 @@ Line numbers are as of `main` on 2026-10-03 and are for orientation only.
 | `web/security.py:57` `production` flag | secure cookies, CSRF cookie, HTTPS redirect and HSTS for PRODUCTION | secure cookies, CSRF cookie and HTTPS redirect on (`behind_proxy`); HSTS 0 (PRODUCTION only) |
 | `runtime_ingress.production_hostname` (`runtime_ingress.py:15`) | refuses non-PRODUCTION | unchanged; LOCAL uses a separate local Caddyfile renderer that never calls it |
 | `/app/src` mount exemption (`service_boundaries.py:250`) | DEVELOPMENT only | not admitted |
-| enumerated mounts (`service_boundaries.validate_mounts`) | each role's mounts only; anything else refused | unchanged for every existing role; LOCAL adds rules only for the two local services (`fake-parishsoft`: its one configuration file, read-only; `mailpit`: its store directory, read-write) |
+| enumerated mounts (`service_boundaries.validate_mounts`) | each role's mounts only; anything else refused | unchanged for every existing role; LOCAL adds rules only for the two local services (`fake-parishsoft`: its one configuration file, read-write for [publication writes](#fake-parishsoft-writes); `mailpit`: its store directory, read-write) |
 | development reload (`runtime_process.py:45`, `:174`) | DEVELOPMENT only | off |
 | existing `!= DEVELOPMENT` refusals (`services.py:25`, `cli.py:295`) | refuse outside DEVELOPMENT | unchanged (they refuse, the safe direction) |
 
@@ -426,10 +426,27 @@ Production in either direction.
   profile's default and never into the provisioning record, so Production's
   documents are unchanged. A LOCAL deployment that chose the real API reads
   real parish data; that is allowed on the laptop (#1399) and is never
-  committed. LOCAL never writes to ParishSoft, whatever it reads: the loader
-  refuses `parishsoft_publication` in LOCAL, a publication session cannot be
-  built for the `local` profile, and the read helper refuses the Member
-  contact PUT in any `local` request. The seeded campaign, `up` and the
+  committed. LOCAL never writes to the real ParishSoft, whatever it reads
+  ([#1884](https://github.com/epiphany40223/parishkit/issues/1884)): one rule,
+  `parishsoft_http_worker.contact_put_admitted`, admits the Member contact
+  PUT for every other profile exactly as before and for a `local` request
+  only when its base URL is the fake. Three layers apply it independently:
+  the loader refuses `parishsoft_publication` in LOCAL unless the deployment
+  reads the fake, a publication session cannot be built for the `local`
+  profile with the real API, and the helper refuses the PUT in any `local`
+  request naming the real API. So a LOCAL deployment that reads the fake runs
+  census publication (Update ParishSoft) through the same preflight, worker,
+  gateway, session and helper as Production, and its writes reach only the
+  fake, which [records them](#fake-parishsoft-writes). The gateway's contact
+  read stays refused (`read_unconfirmed`) for the real API until that read is
+  confirmed (see the
+  [member requests guide](../../../guides/stewardship-member-requests.md#parishsoft-publication));
+  for the fake it reads `GET members/{id}` and maps the fake's Member object
+  onto the PUT's field names (`stewardship/local/fake_contact.py`). The
+  operator script renders `parishsoft_publication` on for LOCAL while the
+  deployment reads the fake (`up` and every `deploy`), never with the real
+  API and never into a rollback. Testing mode still stops publication after
+  its preflight, as in Production. The seeded campaign, `up` and the
   setup wizard's printed values use the fake; switching an existing
   deployment to the real API needs a real `parishsoft` key for the real
   organization.
@@ -479,7 +496,7 @@ Production in either direction.
   Workspace key (see Mail and Drive above). A fast test lists each of those
   use-time checks and asserts that LOCAL refuses its real provider without
   its configured guard, defaults to the fake ParishSoft and never writes to
-  ParishSoft.
+  the real ParishSoft.
   Under the [fake clock](#fake-clock), which never runs ahead of real time, a
   faked process checks a real provider's TLS certificate against that past
   time: it refuses a certificate issued since then and accepts one that has
@@ -550,8 +567,9 @@ giving and household reads all run through their real code.
   and `--port` (default 8080) is the listening port on every interface of its
   container.
 - **Mounts and credentials.** The service receives no credential and exactly
-  one mount: its own configuration file (below), read-only. It runs as the
-  application uid, which owns that file, and joins only `backend`.
+  one mount: its own configuration file (below), read-write so it can record
+  [publication writes](#fake-parishsoft-writes). It runs as the application
+  uid, which owns that file, and joins only `backend`.
 - **Base URL.** `LOCAL_SOURCE_BASE_URL = "http://fake-parishsoft:8080/api/v2"`.
   It is LOCAL's default ParishSoft base URL (see
   [ParishSoft](#safety-guarantees) for the setting that may choose the real
@@ -567,11 +585,12 @@ giving and household reads all run through their real code.
 - **Authentication.** Requests MUST carry `x-api-key` equal to the code
   constant `LOCAL_PARISHSOFT_KEY`, which `up` installs as the `parishsoft`
   credential; any other or missing key gets HTTP 401 with an empty body.
-- **Read-only.** The fake implements only the read endpoints below and has no
-  control endpoint. Any other method or path gets 404 or 405, and LOCAL
-  refuses ParishSoft publication before any request (see
-  [ParishSoft](#safety-guarantees)). Its data changes only through its
-  configuration file's [operator edits](#fake-parishsoft-edits).
+- **Reads and one write.** The fake implements the read endpoints below and
+  the one Member contact PUT census publication sends (see
+  [publication writes](#fake-parishsoft-writes)), and has no control
+  endpoint. Any other method or path gets 404 or 405. Its data changes only
+  through its configuration file's [operator edits](#fake-parishsoft-edits)
+  and the publication writes it records there.
 
 ### Fake configuration
 
@@ -634,6 +653,7 @@ envelope parser in `parishkit/parishsoft_pagination.py`, the allowlist in
 | `GET families/{id}` | none | one Family object | `familyDUID` |
 | `GET families/{id}/member/list` | none | bare array | `memberDUID` |
 | `GET members/{id}` | none | one Member object | `memberDUID` |
+| `PUT members/{id}/contact` | none | empty body (200); see [publication writes](#fake-parishsoft-writes) | `memberDUID` |
 
 Further rules:
 
@@ -749,6 +769,57 @@ service (a container keeps a bind mount on the inode it started with).
 Delta refreshes do not see an edit, since the [change feed](#change-feed)
 stays empty as Production's is; a full refresh does. Snapshots carry the
 file, so a `reset` or `switch` restores that snapshot's edits.
+
+### Fake ParishSoft writes
+
+Census publication (Update ParishSoft) writes to the fake on pk-local
+([#1884](https://github.com/epiphany40223/parishkit/issues/1884); the guards
+that keep it off the real API are under [ParishSoft](#safety-guarantees)).
+The fake answers `PUT members/{id}/contact` the way the live v2 write test of
+2026-10-17 observed the real one (#528):
+
+- It is a partial update: a field left out of the body, or sent as `null`,
+  is left unchanged.
+- Only the Member contact fields census publication may write are taken
+  (`firstName`, `middleName`, `lastName`, `nickName`, `maidenName`,
+  `dateOfBirth` as `YYYY-MM-DD`, `language`, `emailAddress`, `homePhone`,
+  `cellPhone`, `workPhone`); each is stored on the Member under the fake's
+  own name (`dateOfBirth` as `birthdate`, `cellPhone` as `mobilePhone`).
+  An unknown, blank or invalid field, a body that is not a JSON object, a
+  body with no field to write, or a Member [edits](#fake-parishsoft-edits)
+  cannot name (the late-added Family's, once served) gets 400 and changes
+  nothing. A Member the fake does not serve gets 404. If the fake cannot
+  store the write, or the edits list has reached its bound of 500 edits
+  (operator edits and recorded writes together), it answers 503 and changes
+  nothing; the gateway reports that as `write_unavailable`, since the
+  payload itself is fine, and at the bound the fake logs a line naming
+  `fake-parishsoft undo` and `clear`, which free edits.
+- An accepted PUT answers 200 with an empty body and is recorded as one
+  ordinary `member` edit at the end of the configuration file's `edits`
+  list, written back to the file in place, so it survives restarts and
+  deploys, `fake-parishsoft show` lists it and `undo` drops it like any
+  edit. A full refresh then reads the written values back, so the
+  published changes become Confirmed.
+
+The gateway's read of the fake (`stewardship/local/fake_contact.py`) maps the
+Member object back onto the PUT's names: the same eleven fields plus
+`gender` and `dateOfDeath`, a date as `YYYY-MM-DD`; `fax` and `pager` are
+left out, as the fake holds neither. A value read back is exactly the value
+written, as the publish worker's read-back check requires.
+
+The operator script's `fake-parishsoft` edits replace the file and recreate
+the service, so the script stops the fake before it reads the file: a PUT
+sent while the fake is stopped fails to connect (`write_unavailable`, as in
+any ParishSoft outage) instead of being answered and then lost with a file
+about to be replaced. A refused edit starts the fake again on the unchanged
+file. `seed` rewrites `release_at` only while every service, the fake
+included, is stopped.
+
+The write back is in place, not a rename, since the file is the service's
+one bind mount, so it is not atomic: a fake stopped or out of disk partway
+through a write can leave the file invalid, and the fake then refuses to
+start. `reset --seeded` (or `reset NAME`) restores the file with its
+snapshot.
 
 ## Synthetic parish
 
