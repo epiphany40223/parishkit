@@ -504,8 +504,10 @@ def _join_egress(service):
     LOCAL joins the same services as Production (#1399), so pk-local runs the
     real integrations through Production's code. What a LOCAL service may
     reach is limited by code, not by the network: the mail transport admits
-    only the mail catcher, ParishSoft only the fake and Google sign-in only
-    the sentinel client (``mail_catcher.workspace_transport``,
+    only the mail catcher unless the mail redirect is set (#1399), ParishSoft
+    only the fake unless the real API was chosen, and Google sign-in only the
+    sentinel unless a real localhost client is installed
+    (``mail_catcher.workspace_transport``,
     ``parishsoft_http_worker.admitted_base_url``,
     ``runtime_web.parse_google_client``). Caddy, Mailpit and the fake
     ParishSoft never call this, so they stay off the egress network.
@@ -791,8 +793,9 @@ def fake_parishsoft_configuration(configuration):
 
     The operator script's ``up`` writes it (seed, Family count, anchor date and
     release instant), owned by the application uid with mode 0600, before the
-    services start; the fake reads it once at start. It is the service's only
-    mount, so the renderer and the script must agree on this path.
+    services start; the fake reads it once at start and writes the contact
+    PUTs it accepts back to it (#1884). It is the service's only mount, so
+    the renderer and the script must agree on this path.
     """
     return configuration.paths["run"] / "local" / "fake-parishsoft.json"
 
@@ -805,7 +808,8 @@ def _fake_parishsoft(configuration, image):
     only) and answers at ``LOCAL_SOURCE_BASE_URL``, so the worker and the
     ParishSoft credential installer reach it by its service name over
     ``backend``. It receives no credential and exactly one mount, its own
-    configuration file, read-only; it publishes no port and never joins
+    configuration file, read-write so it can record census publication's
+    contact PUTs there (#1884); it publishes no port and never joins
     ``ingress``. The command refuses any profile but LOCAL before binding, and
     the profile is passed explicitly because the service mounts no deployment
     document.
@@ -840,7 +844,7 @@ def _fake_parishsoft(configuration, image):
             "timeout": "5s",
             "retries": 3,
         },
-        volumes=[bind(path)],
+        volumes=[bind(path, read_only=False)],
     )
     return result
 

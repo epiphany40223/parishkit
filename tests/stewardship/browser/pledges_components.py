@@ -30,6 +30,11 @@ CHECKED = "/pledges-checked"
 EVERY = "/pledges-every"
 ACCEPTED = "/pledges-accepted"
 EDITED = "/pledges-edited"
+# The page's own addresses (#1820): the plain one (To review) and Every
+# stage's, which a reload fetches. The browser only puts an address in its
+# bar when the path is the page's own.
+ADDRESS = "/admin/reports/financial/pledges/"
+EVERY_ADDRESS = ADDRESS + "?stage=all"
 ACCEPTED_NOTICE = "2 pledges accepted."
 EDITED_NOTICE = "Family 03 accepted (edited)."
 STAFF = frozenset({"staff"})
@@ -150,6 +155,8 @@ def components(context, admin):
     return {
         PATH: _page(context, admin, rows(), "to_review"),
         EVERY: _page(context, admin, rows(), "all"),
+        ADDRESS: _page(context, admin, rows(), "to_review"),
+        EVERY_ADDRESS: _page(context, admin, rows(), "all"),
         ACCEPTED: _page(
             context, admin, rows(accepted=True), "to_review", ACCEPTED_NOTICE
         ),

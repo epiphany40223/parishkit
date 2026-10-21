@@ -273,19 +273,19 @@ background work holds while mail is being sent, is exit 1
 ### `go-live readiness` and `go-live progress`
 
 These matter again for the next campaign. Both read the current campaign
-unless `--campaign UUID` names another. Starting cleanup, the public web
-address check, preparing links, confirming Production and withdrawing stay
-on the pages until ADM-11 PR 12.
+unless `--campaign UUID` names another. The
+[Go live page's](../specs/stewardship/admin-portal/spec.md#go-live-page)
+actions follow in [Going live](#going-live).
 
-`go-live readiness` is the Go-live readiness page's preview of the current
-Testing draft, without its public web address check:
+`go-live readiness` is the Go live page's Check step: its preview of the
+current Testing draft, without its public web address check:
 
 | Field | What it holds |
 | --- | --- |
 | `campaign_id`, `observed_at`, `target_state` | The draft, when it was read, and what confirming would make it (`scheduled`, `active` or `closed`) |
 | `checks_passed`, `problems` | Whether the settings and data checks passed, and the codes of those that did not (for example `full_refresh_required`, `family_test_mail_required`), which the page explains in words |
 | `family_templates` | The selected Family mail templates, by record id |
-| `source` | The full ParishSoft refresh the preview relies on: `state` (`ready` or why not), `current_id`, `full_id`, `observed_at`, `expires_at` |
+| `source` | The full ParishSoft refresh the preview relies on: `state` (`ready` or why not; `full_refresh_stale` does not block, since Start go-live queues its own refresh), `current_id`, `full_id`, `observed_at`, `expires_at` |
 | `families` | Family mail impact counts: `families`, `active`, `eligible` and `not_eligible` (with and without an eligible email address), `deliverable`, `messages` due at once, `coalesced_slots`, `skipped_slots`, `blocked_families` |
 | `admin_reports` | Admin report mail impact counts: `daily_messages`, `weekly_messages`, `coalesced_slots`, `empty_weekly_reports`, `blocked_groups` |
 | `cleanup` | The Testing data cleanup would delete: `submissions`, `families`, `messages`, `unresolved`, `total`, `inventory` (`category`, `count`) and `message_states` (`state`, `count`) |
@@ -294,8 +294,9 @@ Testing draft, without its public web address check:
 | `version` | Changes whenever anything the preview counts changes |
 
 The Admin report recipients and the Testing Families are not shown; the
-Testing Families list is an export (PR 12). A campaign that is not the
-current Testing draft is exit 1 (`stale_version`), as on the page.
+Testing Families list is `go-live families`, a streamed file. A campaign
+that is not the current Testing draft is exit 1 (`stale_version`), as on
+the page.
 
 `go-live progress` is the Production activation page:
 
@@ -303,14 +304,106 @@ current Testing draft is exit 1 (`stale_version`), as on the page.
 | --- | --- |
 | `campaign_id`, `campaign_state` | The campaign and its state (`scheduled`, `active` or `closed`) |
 | `confirmation_id`, `confirmed_at` | The Production confirmation |
-| `withdrawal_available` | Whether the page offers withdrawal (before the start only) |
-| `preparation` | The initial mail preparation, or `null` when the campaign was confirmed before its start and has none: `complete`, `task_id` (follow it with `task show`), `task_state`, `updated_at`, `phase`, `items_completed`, `groups_completed`, `failure` (a stored code, or `null`) and `retry_available` (the page offers **Retry failed mail preparation**) |
+| `withdrawal_available` | Whether the page offers Cancel go-live (before the start only) |
+| `preparation` | The initial mail preparation, or `null` when the campaign was confirmed before its start and has none: `complete`, `task_id` (follow it with `task show`), `task_state`, `updated_at`, `phase`, `items_completed`, `groups_completed`, `failure` (a stored code, or `null`) and `retry_available` (the page offers mail preparation's **Retry**) |
 | `outcomes` | Each count the confirmation previewed, by `key` (`family_messages`, `daily_messages`, `weekly_messages`, `coalesced_slots`, `active_families`, `eligible_families`, `no_email_families`): `preview`, `actual`, `difference`, and `complete` once that count is final |
 
 A campaign that is not the current Production campaign, a Testing draft
 included, is exit 1 (`denied`), as on the page; the current Production
-campaign with no confirmation receipt is exit 1 (`not_available`). Retrying
-failed preparation stays on the page until PR 12.
+campaign with no confirmation receipt is exit 1 (`not_available`).
+
+### Going live
+
+The [Go live page's](../specs/stewardship/admin-portal/spec.md#go-live-page)
+actions (ADM-11 PR 12,
+[#1809](https://github.com/epiphany40223/parishkit/issues/1809)), on the
+current campaign, in the order of the
+[launch runbook's Production activation](stewardship-launch-runbooks.md#production-activation):
+
+```sh
+pk-admin go-live preview                  # Check readiness and public web address
+pk-admin go-live families > testing.csv   # the Testing submissions list
+pk-admin go-live start --token TOKEN      # Start go-live (prompts)
+pk-admin go-live status --watch 30        # the Prepare step
+pk-admin go-live retry                    # a failed part's Retry
+pk-admin go-live refresh-again            # Refresh and prepare again (prompts)
+pk-admin go-live stop                     # Stop go-live (prompts)
+pk-admin go-live confirm-preview          # Confirm Production's review
+pk-admin go-live confirm --token TOKEN    # Confirm Production (type Production)
+pk-admin go-live progress --watch 30      # Production activation
+pk-admin go-live cancel-preview --reason "Dates changed"
+pk-admin go-live cancel --token TOKEN     # Cancel go-live (prompts)
+```
+
+Every action needs a full-scope session; `go-live status` and `go-live
+families` also run on a read-only one. Each runs the page's own code, so
+the page's rules and server checks apply unchanged. A preview's token
+records what it showed; its confirming command builds everything again
+and refuses with exit 1 (`stale_version`) when anything it showed changed,
+so a token never expires by age alone. Exit 1 `stale_version` also means
+the step is not where the action needs it (go-live already stopped, the
+links being prepared again, Production already confirmed, the public web
+address check failing): read `go-live status` or `go-live progress` and
+act again. An exact repeat of `start`, `confirm` or `cancel` with the same
+token does nothing new and says so (`created` false); a repeated `start`
+asks nothing, while `confirm` and `cancel` ask again first. Another
+Administrator's token is exit 1 (`denied`) before any prompt.
+
+- `go-live preview` runs the public web address check, then reads readiness.
+  It prints `campaign_id`, `origin_verified`, `startable`, `readiness` (the
+  `go-live readiness` document) and `preview.token` (null unless
+  `startable`), the token `go-live start` takes.
+- `go-live start --token TOKEN` is Start go-live: typing `yes` (or
+  `--yes`) acknowledges that Testing data is deleted and cannot be
+  restored, and that Testing links and codes stop working now. It runs the
+  public web address check again first. It prints `created`, `request_id`
+  and `status` (the `go-live status` document). It notifies the
+  Administrators that an automation session took an irreversible action.
+- `go-live status` is the Prepare step: `state` (`running`, `failed`,
+  `again`, `ready`, `closed`, `stopped`, `not_started` or `confirmed`),
+  `reason`, `request_id`, the three `boxes` (`cleanup`, `refresh`,
+  `links`, each with its `state`), `done`, `total`, `preparation`,
+  `max_preparations`, `prepared_id`, `failed_at`, `stop_kind`,
+  `stopped_by_other`, which actions the page offers (`retry_available`,
+  `again_available`, `stop_available`, `confirm_available`) and
+  `stopping` (a stop still running or failed on Check, else `null`).
+  `--watch` stops once the state is no longer `running` and no stop is
+  still `stopping`.
+- `go-live retry` retries the failed part the current step offers a Retry
+  for: mail preparation on Production activation, a failed box on Prepare,
+  or a failed stop on Check. It changes no data and does not prompt.
+  Nothing failed is exit 1 (`not_available`). It prints `step`, `retried`
+  and `status`.
+- `go-live refresh-again` and `go-live stop` are Refresh and prepare again
+  and Stop go-live. Each prompts with the page's words and prints
+  `status`; `refresh-again` also prints `attempt`.
+- `go-live confirm-preview` is Confirm Production's review: `request_id`,
+  `preparation_id`, `target_state` (`active`: go live now; `scheduled`:
+  schedule the campaign), `starts_at`, `start_passed`, `reprepared`, the
+  `counts` the
+  confirmation binds and `preview.token`.
+- `go-live confirm --token TOKEN` asks you to type `Production` (or take
+  `--yes`), runs the public web address check again, rebuilds the preview
+  and confirms only if nothing changed (emails that fell due since the
+  review change the counts). It prints `created`, `confirmation_id`,
+  `target_state` and `progress` (the `go-live progress` document), and
+  notifies the Administrators of an irreversible action.
+- `go-live cancel-preview --reason TEXT` (or `--reason -` to read it from
+  standard input) is Cancel go-live's review, before the campaign starts:
+  `confirmation_id`, `reason`, `inventory` (`occurrences`, `cancellable`,
+  `messages`, `failed`, `delivered`, `blocking`), `cancellable` and
+  `preview.token` (null while mail blocks it: resolve that mail first).
+- `go-live cancel --token TOKEN` prompts, rebuilds the cancellation and
+  cancels only if nothing changed. It prints `created`, `withdrawal_id`
+  and `campaign_id`, and notifies the Administrators of an irreversible
+  action. The campaign is a Testing draft again.
+- `go-live families` writes the Testing submissions list (`duid`, `name`,
+  by DUID) as CSV to standard output, and its document (`campaign_id`,
+  `count`, `file_name`, `content_type`, `size`, `sha256`) to standard
+  error. It holds Family names: keep the file private.
+
+Each action records `admin_cmd_go_live_<verb>` in System logs beside the
+page's own events.
 
 ### `system health`
 
@@ -1248,6 +1341,54 @@ request, plus what the page records: `campaign_end_date_requested` for an
 end date, `campaign_ministries_requested` for Ministries. Repeating it
 with the same token returns the same request.
 
+## Create the campaign
+
+`campaign create-preview` and `campaign create` are **Create the
+campaign**'s **Create the campaign and continue** review and the review
+dialog's **Apply**: they add the deployment's first campaign as a
+Testing-mode draft, with the default text for each of its pages and
+emails. They need an Administrator and a full-scope session. They work
+only while there is no campaign yet, the system is in Testing mode and
+ParishSoft data has been loaded, as the page does; after that, change the
+campaign with `campaign preview` ([Campaign settings](#campaign-settings)).
+
+`--changes` is a JSON document shaped like `campaign show`'s `settings`.
+A setting it leaves out takes the value the page's form starts with: the
+parish's time zone, Census and Additional information ticked, the default
+Ministry leader roles, and everything else blank, so give at least
+`name`, `start_date` and `end_date`. `--expected-version` is the
+configuration version `parish show` prints. Nothing changes until
+`campaign create`.
+
+```sh
+VERSION=$(pk-admin parish show | jq -r .result.version)
+pk-admin campaign create-preview --expected-version "$VERSION" \
+    --changes '{"campaign": {"name": "Stewardship 2028",
+      "start_date": "2027-10-01", "end_date": "2027-11-30",
+      "ministry": false}}' |
+  jq -r .result.preview.token | pk-admin campaign create --token -
+```
+
+| Field | What it holds |
+| --- | --- |
+| `version` (`campaign create-preview`) | The version the new campaign was reviewed against |
+| `settings` | Every setting as it was reviewed: the document over the form's starting values |
+| `content` | How many pages and emails the campaign starts with, in the default text |
+| `preview.token` | What `campaign create --token` takes, valid for fifteen minutes |
+| `created`, `request` (`campaign create`) | As `parish confirm` prints them; follow the change with `config request show --watch` |
+
+Once the request is applied, load the campaign's Families with `refresh
+start`, as the page's status offers. A value the page refuses is exit 1
+(`invalid`), naming the setting (`campaign.<field>`). A version that is
+no longer current, or an expired token, is exit 1 (`stale_version`). Once
+a campaign exists, or before ParishSoft data is loaded, each command is
+exit 1 (`not_available`). `campaign create` records
+`admin_cmd_campaign_create` in System logs with the request; repeating it
+with the same token returns the same request, even after the campaign
+exists. Copying a campaign has no command: Copy campaign is retired until
+the single-campaign change
+([#145](https://github.com/epiphany40223/parishkit/issues/145)).
+
 ## Parish, Ministry, logo and Share option settings
 
 `parish show`, `ministries list`, `branding show` and `campaign shares`
@@ -1257,8 +1398,9 @@ session of any scope may run them, and they record nothing in System
 logs, as opening the pages records nothing. Each prints `version`, the
 applied configuration's version. Changing the parish profile is
 `parish preview` and `parish confirm`, and changing Share options is
-`campaign shares-preview` and `campaign shares-confirm` (both below);
-uploading logos stays on the page for now.
+`campaign shares-preview` and `campaign shares-confirm` (both below),
+and changing the logos is `branding preview` and `branding confirm`
+([Parish logos](#parish-logos)).
 
 ```sh
 pk-admin parish show
@@ -1285,8 +1427,8 @@ organization, the page cannot show a catalog and `ministries list` is
 exit 3 (`unavailable`). Unlike the Share options page, which only edits
 and refuses a locked campaign, `campaign shares` reads a live or ended
 campaign's options too, with `editable` false. With no current campaign,
-or an unknown one, `campaign shares` is exit 1 (`not_available`). Logo
-images stay on the page.
+or an unknown one, `campaign shares` is exit 1 (`not_available`).
+`branding show` prints the logos' stored facts, never their images.
 
 `parish preview` and `parish confirm` are the Parish settings page's
 **Review** and **Apply**, as `schedule preview` and `schedule confirm` are
@@ -1362,6 +1504,51 @@ unknown one for `campaign shares-preview`, is exit 1 (`not_available`).
 `campaign shares-confirm` records `admin_cmd_campaign_shares_confirm` in System logs
 with the request; repeating it with the same token returns the same
 request.
+
+## Parish logos
+
+`branding preview` and `branding confirm` are the **Parish logos** page's
+upload, with its review, and the review's **Apply**. They need a
+full-scope session. `branding preview` reads one PNG, JPEG or WebP image
+(up to 5 MB) from standard input: without `--size` it is the page's
+Basic mode, and the image is made into all four sizes; with `--size
+large`, `menu`, `icon` or `favicon` it is Advanced for that one size, and
+the other three keep their current images. To replace several sizes one by
+one, apply each before previewing the next. The preview stores the sizes
+it made, as the page's upload does, but nothing changes on the site until
+`branding confirm`.
+
+```sh
+VERSION=$(pk-admin branding show | jq -r .result.version)
+pk-admin branding preview - --expected-version "$VERSION" < logo.png > review.json
+jq .result.logos review.json
+pk-admin branding confirm --bundle "$(jq -r .result.bundle review.json)" \
+    --token "$(jq -r .result.preview.token review.json)"
+```
+
+| Field | What it holds |
+| --- | --- |
+| `version` (`branding preview`) | The configuration version the logos were made and reviewed against |
+| `bundle` | The uploaded logos, which `branding confirm --bundle` names |
+| `mode` | `basic` (one image for every size) or `advanced` (one size replaced) |
+| `logos` | Each size in the order `large`, `menu`, `icon`, `favicon`: `slot`, `name` (its label on the page), the new image's `id`, `width` and `height` (pixels), `size` (bytes) and `sha256`, and `changed`, whether this upload changes that size |
+| `preview.token` | What `branding confirm --token` takes with the same `--bundle`, valid for fifteen minutes |
+| `created`, `request` (`branding confirm`) | As `parish confirm` prints them; follow the change with `config request show --watch` |
+
+An image the page refuses (too large, not a supported still image, or a
+size outside its rules) is exit 1 (`invalid`) at `branding.logo`, or
+`branding.<size>` with `--size`, in the page's words. A version that is
+no longer current, logos older than a day, or an expired token is exit 1
+(`stale_version`): read `branding show` and preview again. Uploaded logos
+belong to the session that uploaded them, as on the page: `branding
+confirm` applies only what the same `pk-admin` session's `branding
+preview` uploaded (at any time in the upload's day), never logos uploaded on the page or under another
+session, which are exit 1 (`not_available`). Another bundle's or an
+altered token is exit 1 (`invalid`). Logos never applied expire within a
+day, so previewing again is always safe. `branding preview` records
+`admin_cmd_branding_preview` in System logs and `branding confirm`
+records `admin_cmd_branding_confirm` with the request; repeating
+`branding confirm` with the same token returns the same request.
 
 ## Integrations
 
@@ -3798,11 +3985,16 @@ Each change is recorded in System logs as on the page
   --format jsonl` records gain `reviews`, the decisions `census review`
   takes on the row now.
 - `pk-admin/1` (#463): additive. `campaign show`, `campaign preview
-  --changes FILE|- --expected-version VERSION` and `campaign confirm
+  --changes JSON|- --expected-version VERSION` and `campaign confirm
   --token TOKEN|-`, Campaign settings' read, Review and Apply
   (Administrators only; the read in any session, the others in a
   full-scope one); `campaign confirm` records `admin_cmd_campaign_confirm`
   and the page's own events.
+- `pk-admin/1` (#1899): additive. `campaign create-preview --changes
+  JSON|- --expected-version VERSION` and `campaign create --token
+  TOKEN|-`, Create the campaign's Review and Apply for the deployment's
+  first campaign (Administrators only, full scope, neither fresh-gated nor
+  prompting); `campaign create` records `admin_cmd_campaign_create`.
 - `pk-admin/1` (#632): additive. `integration schedule-preview
   [--refresh-schedule DOCUMENT|-]`, the ParishSoft page's live refresh
   schedule check (any session, Administrators only, no event).
@@ -3923,6 +4115,16 @@ Each change is recorded in System logs as on the page
   `--stage` and the `stage` and `stages` fields (null without it);
   `export limitations` gains `--stage`, `--format jsonl` and the
   document's `stage`; `export information` gains `--stage`.
+- `pk-admin/1` (#1865): additive. `branding preview - [--size SIZE]
+  --expected-version VERSION` and `branding confirm --bundle ID --token
+  TOKEN|-`, the Parish logos page's upload with its review and its Apply
+  (full scope, Administrators only); they record
+  `admin_cmd_branding_preview` and `admin_cmd_branding_confirm`.
+- `pk-admin/1` (ADM-11 PR 12, #1809): additive. The Go live page's
+  actions: `go-live preview`, `go-live start`, `go-live status`, `go-live
+  retry`, `go-live refresh-again`, `go-live stop`, `go-live
+  confirm-preview`, `go-live confirm`, `go-live cancel-preview`, `go-live
+  cancel` and `go-live families` (a streamed file).
 - `pk-admin/1` (#1752): a deliberate change, kept on version 1, as for
   #1216. The files `export census` writes have a `Member's ParishSoft
   status` column right after `Who`, and its JSON Lines a

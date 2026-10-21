@@ -55,7 +55,8 @@ already released carries no new hold and is sent at once, as a released
 message always is.
 
 The delivery detail page therefore offers **Authorize potentially duplicate
-resend** during a pause whenever it would be offered otherwise, and still
+resend** (since #1563, the answer "It was not sent", then Yes: **Send it
+again**) during a pause whenever it would be offered otherwise, and still
 hides the failed and unsent retries. The launch runbook's temporary warning is
 removed, and the
 [Family-mail resolution guide](stewardship-family-mail-resolution.md) and the

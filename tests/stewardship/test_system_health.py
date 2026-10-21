@@ -1034,7 +1034,7 @@ def test_an_unrecorded_follow_up_refusal_is_a_problem_linking_its_email():
         "stewardship/system-health-problem.html", {"problem": found[1]}
     )
     assert "An address the mail service refused permanently could not" in one
-    assert "use Report a bounced address to set it aside" in one
+    assert "open Did this email bounce? and use Report bounce to set it aside" in one
     assert f'href="/admin/mail/sent/{message}/">See the email</a>' in one
     several = Problem("refusal_unrecorded", at=NOW, count=3, message_id=message)
     body = render_to_string(
@@ -2958,9 +2958,13 @@ def test_a_resave_finding_is_its_tiles_problem_item_with_the_list():
 
 def test_the_page_load_tips_and_about_say_why_the_tiles_do_not_follow_the_poll():
     """A toggletip beside each sentence, and "About this page" explains what
-    keeps a Family from the form."""
+    keeps a Family from the form. Nothing tells the reader to reload the
+    page (#1790): the tiles are checked again about every 5 minutes."""
     page_body = loaded_page(2, [RECOMMENDED])
-    assert page_body.count("checked when the page opens, not every 10 seconds") == 2
+    tip = "This is checked about every 5 minutes, not every 10 seconds"
+    tiles = page_body[page_body.index('id="health-source-form"') :]
+    assert tiles.count(tip) == 2
+    assert "Reload the page" not in page_body
     from pathlib import Path
 
     template = (
@@ -2969,6 +2973,48 @@ def test_the_page_load_tips_and_about_say_why_the_tiles_do_not_follow_the_poll()
     ).read_text()
     assert '<dt>{% translate "Families the form cannot open" %}</dt>' in template
     assert "the next ParishSoft refresh" in template
+    assert "are checked about every 5 minutes instead" in template
+
+
+def test_the_page_load_tiles_follow_only_a_slow_recheck():
+    """#1790: the page and a slow recheck draw lasting copies of the two
+    page-load tiles' summary rows and panels for their mirror targets, and
+    ask for the recheck every 5 minutes; an ordinary poll (loaded_echoed)
+    draws no copies, so the page keeps the last ones."""
+    from parishkit.stewardship.accounts.system_health_views import (
+        RECHECK_MILLISECONDS,
+    )
+
+    assert RECHECK_MILLISECONDS == 300_000
+    reads = {
+        "health": health(),
+        "dashboard": dashboard(health(), loaded=loaded_states(2, [RECOMMENDED])),
+        "source_form_count": 2,
+        "resave": [RECOMMENDED],
+        "source_form_tile": source_form_tile(2),
+        "resave_tile": resave_tile([RECOMMENDED]),
+        "recheck_interval": RECHECK_MILLISECONDS,
+    }
+    body = loaded_page(2, [RECOMMENDED], recheck_interval=RECHECK_MILLISECONDS)
+    region = body[: body.index('id="health-mail"')]
+    assert 'data-live-slow-every="300000"' in region
+    for tile in ("source-form", "resave"):
+        for part in ("summary", "panel"):
+            name = f"health-{tile}-{part}"
+            assert f'<template data-live-mirror="{name}" data-live-mirror-lasting>' in (
+                region
+            )
+            assert f'data-live-mirror-target="{name}"' in body[len(region) :]
+    copy = region.split('data-live-mirror="health-source-form-summary"', 1)[1]
+    assert "2 Families cannot open the form" in copy.split("</template>", 1)[0]
+    status = render_to_string("stewardship/system-health-status.html", reads)
+    assert status.count("data-live-mirror-lasting") == 4
+    echoed = render_to_string(
+        "stewardship/system-health-status.html", reads | {"loaded_echoed": True}
+    )
+    assert "data-live-mirror-lasting" not in echoed
+    assert "health-resave-panel" not in echoed
+    assert 'data-live-slow-every="300000"' in echoed
 
 
 def test_the_version_summary_names_the_first_that_holds():

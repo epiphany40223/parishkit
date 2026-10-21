@@ -37,6 +37,7 @@ from parishkit.stewardship.reports.statistics import StatisticsUnavailable
 from parishkit.stewardship.reports.workspace import ReportQuery
 from parishkit.stewardship.reports.workspace_views import (
     daily_table,
+    figures_status,
     mode_links,
     scope_links,
     statistics_panel,
@@ -374,18 +375,32 @@ def test_daily_table_links_keep_the_mode_and_population():
 def test_unreadable_statistics_leave_the_stages_and_say_so():
     """When the statistics or daily facts cannot be read, the Production
     view still shows Families by stage and says the other rows and panels
-    are unavailable (#1537), with no zero assumed."""
-    context = page_context(ReportQuery(mode="testing")) | {
-        "query": ReportQuery(),
-        "testing": False,
-        "participation_unavailable": True,
-    }
+    are unavailable (#1537), with no zero assumed. They come back by
+    themselves: the slow figures status sits after the line, which never
+    tells the reader to reload (#1586)."""
+    context = (
+        page_context(ReportQuery(mode="testing"))
+        | {
+            "query": ReportQuery(),
+            "testing": False,
+            "participation_unavailable": True,
+        }
+        | figures_status("dashboard", "historical", None, False, retry=True)
+    )
     with using("us_long"):
         page = render_to_string("stewardship/response-dashboard.html", context)
     assert 'aria-label="Families by stage"' in page
     assert 'aria-label="Active population"' not in page and "Data as of" not in page
     assert '<p id="production-unavailable">' in page
     assert "no zero values have been assumed" in page
+    assert "appear here by themselves once they can be read" in page
+    # The only reload left is the JavaScript-off notice of every Admin page.
+    assert "reload" not in page.lower().replace("then reload this page", "")
+    # Inside the dashboard region its re-read redraws, after the line.
+    region = page.index('id="response-dashboard"')
+    line = page.index('id="production-unavailable"')
+    assert region < line < page.index('data-live-status="figures"')
+    assert 'data-live-interval="60000"' in page and "retry=1" in page
     for gone in ("participation-chart", "export-format"):
         assert gone not in page
     assert 'id="production-unavailable"' not in render()
@@ -404,11 +419,97 @@ def test_swallowed_participation_errors_are_logged(monkeypatch, caplog, error, c
         raise error
 
     monkeypatch.setattr(workspace_views, "guarded_participation", fail)
+    monkeypatch.setattr(workspace_views, "newest_figures", lambda *a: (None, False))
     monkeypatch.setattr(observability, "debug_logging_enabled", lambda: True)
     with caplog.at_level("DEBUG", logger="parishkit.stewardship.debug"):
         result = workspace_views._participation(ExitStack(), None, None, ReportQuery())
-    assert result == (None, cause)
+    assert result == (None, cause, None)
     assert [r.exc_info[1] for r in caplog.records] == [error]
+
+
+def test_unreadable_statistics_keep_the_chart_generation_chosen(monkeypatch):
+    """When only the statistics fail, the generation the selection chose is
+    returned, so the unavailable page waits for another one rather than
+    re-reading itself while that one is still the newest (#1586)."""
+    from contextlib import ExitStack, contextmanager
+
+    chosen = UUID(int=77)
+
+    @contextmanager
+    def selection(*args, **kwargs):
+        """A selection that chose ``chosen``."""
+        yield SimpleNamespace(document=SimpleNamespace(fact_set_id=chosen))
+
+    def missing(campaign_id):
+        """No ParishSoft inputs for the statistics."""
+        raise StatisticsUnavailable("x")
+
+    monkeypatch.setattr(workspace_views, "guarded_participation", selection)
+    monkeypatch.setattr(workspace_views, "capture_statistics", missing)
+    with ExitStack() as stack:
+        result = workspace_views._participation(stack, None, None, ReportQuery())
+    assert result == (None, "statistics", chosen)
+    # A selection that chose none compares with the newest generation now.
+    newest = UUID(int=80)
+
+    @contextmanager
+    def nothing(*args, **kwargs):
+        """A selection that chose no generation."""
+        yield SimpleNamespace(document=None)
+
+    monkeypatch.setattr(workspace_views, "guarded_participation", nothing)
+    monkeypatch.setattr(workspace_views, "newest_figures", lambda *a: (newest, True))
+    with ExitStack() as stack:
+        result = workspace_views._participation(stack, None, None, ReportQuery())
+    assert result == (None, "statistics", newest)
+
+
+def test_unreadable_facts_compare_with_the_newest_generation(monkeypatch):
+    """When the facts cannot be read, the page compares with the newest
+    generation now, so it re-reads only once another is ready, never once
+    a minute while nothing changed; with no generation readable it compares
+    with none (#1586)."""
+    from contextlib import ExitStack
+
+    newest = UUID(int=79)
+
+    def fail(*args, **kwargs):
+        raise FactUnavailable("x")
+
+    monkeypatch.setattr(workspace_views, "guarded_participation", fail)
+    monkeypatch.setattr(workspace_views, "newest_figures", lambda *a: (newest, True))
+    result = workspace_views._participation(ExitStack(), None, None, ReportQuery())
+    assert result == (None, "facts", newest)
+    monkeypatch.setattr(workspace_views, "newest_figures", fail)
+    result = workspace_views._participation(ExitStack(), None, None, ReportQuery())
+    assert result == (None, "facts", None)
+
+
+def test_retry_figures_status_is_slow_and_says_nothing():
+    """The unavailable line's figures status (#1586) is watched every 60
+    seconds through an address marked retry=1, with no Updating notice
+    even while the newest figures are being prepared."""
+    shown = UUID(int=78)
+    status = figures_status("dashboard", "current", shown, True, retry=True)
+    query = QueryDict(urlsplit(status["figures_status"]["url"]).query)
+    assert query.dict() == {
+        "view": "dashboard",
+        "scope": "current",
+        "shown": str(shown),
+        "retry": "1",
+    }
+    page = render_to_string("stewardship/report-figures-status.html", status)
+    assert 'data-live-pending data-live-interval="60000"' in page
+    assert "data-live-retry" in page
+    assert "Updating" not in page and "data-reread" not in page
+    newer = figures_status("dashboard", "current", shown, True, newer=True, retry=True)
+    page = render_to_string("stewardship/report-figures-status.html", newer)
+    assert "data-live-pending" not in page and "data-reread" in page
+    # An ordinary status carries no retry and keeps its own paces.
+    plain = figures_status("dashboard", "current", shown, False)
+    assert "retry" not in plain["figures_status"]["url"]
+    page = render_to_string("stewardship/report-figures-status.html", plain)
+    assert 'data-live-interval="30000"' in page and "data-live-retry" not in page
 
 
 def test_no_parishsoft_data_wording_differs_from_a_pending_chart():
@@ -422,3 +523,4 @@ def test_no_parishsoft_data_wording_differs_from_a_pending_chart():
     with using("us_long"):
         page = render_to_string("stewardship/response-dashboard.html", context)
     assert "none is available yet" in page and "few minutes" not in page
+    assert "appear here by themselves after the first ParishSoft update" in page

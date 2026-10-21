@@ -300,7 +300,7 @@ slices).
    checked since", else "Working", shown apart from "data as of", with no
    new alarm; superseded or cancelled quick updates and held or skipped
    slots are not attempts.
-5. **Go-live readiness.** Default: unchanged; it still requires a full
+5. **Go live.** Default: unchanged; it still requires a full
    refresh within `source_stale_seconds` before going live.
 6. **Default schedule on the settings page.** Default: the nightly full
    refresh at 02:00 plus hourly quick updates (#630). A stored document
