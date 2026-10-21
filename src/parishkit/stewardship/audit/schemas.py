@@ -277,7 +277,8 @@ class Action(StrEnum):
     # review dialog's Apply (#1865).
     ADMIN_CMD_BRANDING_PREVIEW = "admin_cmd_branding_preview"
     ADMIN_CMD_BRANDING_CONFIRM = "admin_cmd_branding_confirm"
-    # content confirm: Pages and emails' Delete of unused emails (ADM-11 PR 10).
+    # content confirm: Pages and emails' Delete of unused emails (ADM-11 PR 10)
+    # and the content editor's review Apply (#1873).
     ADMIN_CMD_CONTENT_CONFIRM = "admin_cmd_content_confirm"
     # integration confirm: an integration settings page's Apply (ADM-11 PR 10).
     ADMIN_CMD_INTEGRATION_CONFIRM = "admin_cmd_integration_confirm"
