@@ -1689,8 +1689,10 @@ with the stream's columns, under the stream's filters, with the shared
 export below it. Its parts:
 
 1. The page heading and help, then the filters, always open (no
-   disclosure), with **Stage** first (To review is the default) and the
-   stream's own filters after it.
+   disclosure), on one compact row at laptop width
+   ([worklist filters](../ui-conventions/spec.md#admin-tables), #1653),
+   with **Stage** first (To review is the default) and the stream's own
+   filters after it.
 2. The selection bar and table. Columns: the stream's identity columns in
    the shared [column order](../ui-conventions/spec.md#table-column-order),
    Baseline (where a stream has one), Family's answer, Reviewer's value

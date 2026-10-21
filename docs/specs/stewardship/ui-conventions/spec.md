@@ -1023,7 +1023,12 @@ that would change an open band's height waits while the pointer is over
 the grid. First user: the
 [System health dashboard's tile grid](../admin-portal/spec.md#tile-grid)
 (Administrator, 2026-10-13, on
-[#1214](https://github.com/epiphany40223/parishkit/issues/1214)).
+[#1214](https://github.com/epiphany40223/parishkit/issues/1214)). A
+heading with more than one disclosure control beside it (Ministry
+requests' About this page and By Ministry,
+[#1653](https://github.com/epiphany40223/parishkit/issues/1653)) is such a
+row: the heading and the controls share it, and each opened content is a
+full-width band below it, in source order.
 
 Recorded exception (Administrator, 2026-10-11, on
 [#1015](https://github.com/epiphany40223/parishkit/issues/1015)): on the
@@ -1067,6 +1072,16 @@ never moves them.
   Space work as before. The details get no extra role or tab stop: the
   details click is a pointer convenience. The details keep the text
   cursor, so selection still looks possible.
+
+- **Remembered open, before the page shows.** A disclosure that starts
+  closed and that each browser remembers open (the About panel; Ministry
+  requests' By Ministry counts, #1653) stores only an "open" marker,
+  removed when it is closed, and every storage access is guarded, so
+  with storage refused it just starts closed. One whose opening moves
+  the page's data (By Ministry, above the worklist) is opened while the
+  page is parsed, by `remember-open-v1.js` loaded without defer straight
+  after it (`data-remember-open`), so a remembered open state never moves
+  the page after it shows ([no layout shift](#no-layout-shift)).
 
 **Why.** A link to one area should show that area, not every area that
 starts open; and a card that looks like one thing should answer a click
@@ -3997,11 +4012,19 @@ selection.
 A **worklist** (a table a reader works through, such as the review
 pipeline's [review worklist](../review-pipeline/spec.md#review-worklist)) has its filters
 always open, never behind a disclosure, above the table, and its export
-buttons below the table. Its filters sit in rows that wrap, each field
-13rem wide (on a phone, the whole row), and its Apply filters and
-Clear filters follow the last field as every filter form's do
-([Clear filters](#clear-filters)), with no line between that field and
-them (R38). Its view is in its address, so a reload re-renders the same
+buttons below the table. Its filters sit on one compact row, each label
+visible above its field: each field keeps a narrow fixed or bounded
+width (the exact widths are in the stylesheet), so at laptop width
+(1366 px, the Admin menu beside) the fields and Apply filters and Clear
+filters share one row and the first table row starts inside a 1366×768
+window ([#1653](https://github.com/epiphany40223/parishkit/issues/1653)).
+A label longer than its field wraps above it rather than being cut, and
+the row wraps only when the window is too narrow for it; on a phone each
+field takes the whole row. Its Apply filters and Clear filters follow
+the last field as every filter form's do
+([Clear filters](#clear-filters)): beside it, or Clear under Apply when a
+two-line label already makes the row that tall, with no line between
+that field and them (R38). Its view is in its address, so a reload re-renders the same
 view: after every in-place answer the address bar shows the page's own
 address with the Stage, the closed filters and the table's sort, size and
 page (`a[data-page-address]`), and the page draws that view from it. A
