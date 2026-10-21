@@ -526,6 +526,121 @@ def test_production_emails_go_to_each_leader_with_the_kept_content(production):
         assert result.state.value == "delivered"
 
 
+def sent_mail(browser, path="/admin/mail/sent/", **query):
+    """A Sent mail page as the web login serves it: (status, HTML).
+
+    A query naming a Recipient is posted, as the page's filter form posts
+    it (the Recipient is private filter state, #1562); any other is a GET.
+    """
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        if "recipient" in query:
+            token = browser.cookies["pk_admin_csrf"].value
+            response = browser.post(path, {"csrfmiddlewaretoken": token, **query})
+        else:
+            response = browser.get(path, query)
+    return response.status_code, response.content.decode()
+
+
+def test_sent_mail_lists_ministry_leader_emails(production):
+    """Sent mail lists the Ministry leader emails (#1562): each is named by
+    its leader's Users-page Name, its Recipient lists that leader's emails
+    in place, the Purpose filter names the kind, and its own page says
+    whom it was for, never its content, and offers no resolution."""
+    harness, browser = production
+    rows = prepared(
+        harness.service.store, ["leader-9@example.org", "leader-4-9@example.org"]
+    )
+    ids = {address: str(row.outbox_id) for address, row in rows.items()}
+    status, html = sent_mail(browser, purpose="leader_email")
+    assert status == 200
+    for address, name in (
+        ("leader-9@example.org", "Nine, Leader"),
+        ("leader-4-9@example.org", "Both, Leader"),
+    ):
+        assert f'href="/admin/mail/sent/{ids[address]}/"' in html
+        assert (
+            f'<input type="hidden" name="recipient" value="{address}">'
+            '<input type="hidden" name="mode" value="production">'
+        ) in html
+        assert f'id="recipient-{ids[address]}">{name}</button>' in html
+    assert (
+        '<option value="leader_email" selected>Ministry leader email</option>' in html
+    )
+    # Listed by default too, beside every other kind.
+    status, html = sent_mail(browser)
+    assert status == 200 and all(f"/admin/mail/sent/{i}/" in html for i in ids.values())
+    # By the leader's address, in any case: that leader's email only.
+    status, html = sent_mail(browser, recipient="Leader-9@Example.org")
+    assert status == 200
+    assert f"/admin/mail/sent/{ids['leader-9@example.org']}/" in html
+    assert f"/admin/mail/sent/{ids['leader-4-9@example.org']}/" not in html
+    # Not an email anyone resolves: Needs attention never lists one.
+    status, html = sent_mail(browser, state="needs_attention")
+    assert status == 200 and not any(i in html for i in ids.values())
+    status, own = sent_mail(browser, f"/admin/mail/sent/{ids['leader-9@example.org']}/")
+    assert status == 200
+    assert "<h1>Ministry leader email</h1>" in own
+    assert "<p>Ministry leader email</p>" in own
+    assert "leader-9@example.org" in own
+    assert "Resolve this email" not in own and 'name="action"' not in own
+    # Whom it was for, never what it said.
+    assert rows["leader-9@example.org"].subject not in own
+
+
+def test_a_leader_email_without_a_users_page_name_takes_the_best_member_name(
+    mail_ready, request, google, monkeypatch
+):
+    """A Ministry leader email whose address has no Users-page Name (a user
+    since removed, who never signed in) shows the ParishSoft Member name
+    the Users page would give it (Administrator decision 2026-10-20,
+    #1562): of two Members sharing the address, the one in an active
+    Family. The Member-name read ranks as the Users page's own read."""
+    from parishkit.stewardship.accounts.users_upgrade import member_names
+    from parishkit.stewardship.jobs import delivery_reads
+
+    from .leader_builders import leader
+
+    store = request.getfixturevalue("auth_service").store
+    convert(store)
+    leaders_source(
+        store,
+        [
+            leader("shared@example.org", 9, family="inactive"),
+            leader(" Shared@Example.org ", 9),
+            leader("ann@example.org", 9),
+        ],
+    )
+    add_users(
+        store,
+        ("shared@example.org", "Shared, Leader", "ministry_leader"),
+        ("ann@example.org", "Ann, Leader", "ministry_leader"),
+    )
+    browser, login = signed_in()
+    assert login.status_code == 302
+    rows = prepared(store, ["shared@example.org", "ann@example.org"])
+    ids = {address: row.outbox_id for address, row in rows.items()}
+    with task_login(ServiceRole.WEB, exact=True):
+        expected = member_names()
+        found = delivery_reads.member_names(list(ids.values()), admin_id())
+    assert expected["shared@example.org"] == ["Example 1, Leader", "Example 0, Leader"]
+    assert found == {
+        ids["shared@example.org"]: "Example 1, Leader",
+        ids["ann@example.org"]: expected["ann@example.org"][0],
+    }
+    # With no Users-page Name, Sent mail names each by its Member.
+    monkeypatch.setattr(delivery_reads, "administrator_names", lambda _: {})
+    status, html = sent_mail(browser, purpose="leader_email")
+    assert status == 200
+    assert f'id="recipient-{ids["shared@example.org"]}">Example 1, Leader</button>' in (
+        html
+    )
+    # And a name finds it (#1849), in any case.
+    status, html = sent_mail(browser, recipient="example 1")
+    assert status == 200
+    assert f"/admin/mail/sent/{ids['shared@example.org']}/" in html
+    assert f"/admin/mail/sent/{ids['ann@example.org']}/" not in html
+
+
 def test_a_leader_who_is_no_longer_one_is_not_emailed(production):
     """A user demoted to Staff before the send: the unsent email is cancelled."""
     harness, _browser = production

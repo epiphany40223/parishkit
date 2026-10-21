@@ -5368,7 +5368,7 @@ line the first rows start on a laptop screen with the help closed
   named this way, whether or not it is a user or has ever signed in (a
   removed Ministry leader, for example): the names are read through the
   Administrator-only Member-name read of the page's emails (below, frozen
-  migration 0220), and only for the shown emails whose address has no
+  migration 0145), and only for the shown emails whose address has no
   Users-page Name, so a page of Family emails or of named users reads no
   ParishSoft names. The addresses of a Family email are not
   listed here: they are on its Mail message page, with what each address's
@@ -5382,7 +5382,9 @@ line the first rows start on a laptop screen with the help closed
   the current campaign's record for the Family's DUID, read for the shown
   page in one query. Every other Recipient (a Testing email, whose Family's
   Testing records the Production-only Timeline does not show; a Family the
-  current campaign has no record of; and an email to a person, until
+  current campaign has no record of; a Family the latest ParishSoft data no
+  longer has, for which the shared link draws only its badge, never a
+  link; and an email to a person, until
   [#1570](https://github.com/epiphany40223/parishkit/issues/1570) gives
   people their own Timeline) redraws this list in place filtered to that
   recipient (the Family's DUID, or the person's address) in the same mode,
@@ -5580,7 +5582,7 @@ else:
   of each listed email that has no Family (a report or notice), at most 500
   ids per call; Family emails' addresses are not returned.
 
-**Member-name read (frozen migration 0220, provisional).**
+**Member-name read (frozen migration 0145).**
 `stewardship_delivery_page_member_names_v1(messages, actor)`, with the
 same caller and Administrator checks, returns `(message, name)`: for each
 given email that has no Family (at most 500 per call), when a ParishSoft

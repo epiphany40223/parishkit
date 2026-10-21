@@ -465,6 +465,9 @@ FROZEN = {
     "0144_staff_timeline_export.sql": (
         "adfde07b256d584b99de8ae7cdc2910cd982bf4bc1d505404e7b4fc957b522b6"
     ),
+    "0145_page_member_names.sql": (
+        "9391e8c99018c8b7c5f7c996d4530e89d4d533864876cb2d5dc859321f1cc3b9"
+    ),
 }
 
 

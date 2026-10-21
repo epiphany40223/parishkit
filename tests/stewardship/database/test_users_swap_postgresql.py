@@ -829,6 +829,11 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_reports", "0036_participation_summary"),
     ),
+    # 0145 (#1562) creates only Sent mail's Member-name read.
+    "public.stewardship_delivery_page_member_names_v1(uuid[],uuid)": (
+        "stewardship_jobs",
+        "0036_page_member_names",
+    ),
 }
 
 

@@ -136,7 +136,10 @@ def components(now):
         id=uuid4(),
         family_id=uuid4(),
         family__family_duid=12345,
-        # Recipient lists everything sent to this Family (#1562).
+        # Recipient lists everything sent to this Family (#1562). With no
+        # timeline_family_id this models a Production Family the current
+        # campaign has no record of, so it keeps the in-place filter; the
+        # Timeline link is checked in test_sent_mail_postgresql.
         recipient_fields=[("recipient", "12345"), ("mode", "production")],
         # The Family's name beside its DUID (#931), long enough to wrap.
         family_name="Castellanos, Maximiliana and Bartholomew",
@@ -241,8 +244,9 @@ def components(now):
     )
     yield ("/deliveries-names", "deliveries", names)
     # The same page drawn again for a Recipient the server refuses at its
-    # field (#1562): a short hex-like name the field's pattern lets through.
-    yield ("/deliveries-refused", "deliveries", refused_recipient(names, "Abbe"))
+    # field (#1562): a DUID out of range, which the field's pattern lets
+    # through.
+    yield ("/deliveries-refused", "deliveries", refused_recipient(names, "0"))
     # Sent mail's filters and its Production / Testing links acting in
     # place (#1562): the answers a test routes the Testing link and an
     # applied filter to.
