@@ -1,8 +1,8 @@
 """Forward migration: a live campaign's share options may change their short
 labels (#1569).
 
-Its SQL is the frozen file ``schema/migrations/0167_share_short_labels.sql``
-(prefix 0167, assigned in the repository-wide file sequence), read whole and
+Its SQL is the frozen file ``schema/migrations/0166_share_short_labels.sql``
+(prefix 0166, assigned in the repository-wide file sequence), read whole and
 never parsed. It replaces ``stewardship_campaign_pointer_v1`` with 0103's
 body, changing only the locked-structure check: a structurally locked
 campaign's share options are compared without their ``short_label`` keys,
@@ -22,7 +22,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0167_share_short_labels.sql"
+    / "0166_share_short_labels.sql"
 )
 
 

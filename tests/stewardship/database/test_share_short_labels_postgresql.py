@@ -1,6 +1,6 @@
-"""Frozen migration 0167: a live campaign's short labels stay editable (#1569).
+"""Frozen migration 0166: a live campaign's short labels stay editable (#1569).
 
-0167 replaces ``stewardship_campaign_pointer_v1`` with 0103's body, changing
+0166 replaces ``stewardship_campaign_pointer_v1`` with 0103's body, changing
 only the locked-structure check so that a structurally locked campaign's
 share options are compared without their ``short_label`` keys. This tests
 the file against the OLD (0103) definition, that its DO block refuses each
@@ -37,7 +37,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 MIGRATIONS = Path(__file__).resolve().parents[3] / (
     "src/parishkit/stewardship/schema/migrations"
 )
-FROZEN = (MIGRATIONS / "0167_share_short_labels.sql").read_text(encoding="utf-8")
+FROZEN = (MIGRATIONS / "0166_share_short_labels.sql").read_text(encoding="utf-8")
 OLD = (MIGRATIONS / "0103_any_creation_timezone.sql").read_text(encoding="utf-8")
 POINTER = "public.stewardship_campaign_pointer_v1()"
 MARK = "e.option - 'short_label'"
@@ -81,7 +81,7 @@ def test_the_file_replaces_the_old_definition():
 
 
 def test_migration_check_refuses_the_old_body_or_a_changed_function():
-    """0167's DO block passes as installed and refuses each regression."""
+    """0166's DO block passes as installed and refuses each regression."""
     capture = FROZEN[FROZEN.index("SELECT set_config(") :]
     capture = capture[: capture.index("true);") + len("true);")]
     check = FROZEN[FROZEN.index("DO $check$") :]
@@ -99,7 +99,7 @@ def test_migration_check_refuses_the_old_body_or_a_changed_function():
             ),
         ):
             with (
-                pytest.raises(DatabaseError, match=f"Migration 0167.*{message}"),
+                pytest.raises(DatabaseError, match=f"Migration 0166.*{message}"),
                 transaction.atomic(),
             ):
                 cursor.execute(change_sql)

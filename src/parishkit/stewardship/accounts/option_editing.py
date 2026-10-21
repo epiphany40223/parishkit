@@ -105,7 +105,7 @@ def short_labels_only(configuration, campaign, held, editable):
     background work holds the settings: the
     short label is Admin-only wording, outside the Family form and its
     digest, so the structure lock (``admission._locked_part`` and SQL's
-    stewardship_campaign_pointer_v1, migration 0167) leaves it open.
+    stewardship_campaign_pointer_v1, migration 0166) leaves it open.
     """
     return (
         not editable

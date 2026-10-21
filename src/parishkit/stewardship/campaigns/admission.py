@@ -17,7 +17,7 @@ def _locked_part(values, editable):
 
     Every key outside ``editable``, with the share options compared without
     their short labels (#1569), which stay editable on a live campaign, as
-    SQL's stewardship_campaign_pointer_v1 compares them (migration 0167).
+    SQL's stewardship_campaign_pointer_v1 compares them (migration 0166).
     """
     from .configuration import without_short_labels
 

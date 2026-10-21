@@ -1,4 +1,4 @@
--- Frozen forward migration file 0167 (the repository-wide file sequence):
+-- Frozen forward migration file 0166 (the repository-wide file sequence):
 -- a live campaign's share options may change their short labels (#1569).
 -- This file is installed by the Django migration that names it in
 -- FROZEN_SQL and must never change once released;
@@ -30,7 +30,7 @@ SET LOCAL search_path = public;
 -- The function's grants before the replacement, compared in the DO block. A
 -- transaction-local setting holds them: the migration login has no TEMP
 -- privilege.
-SELECT set_config('stewardship.migration_0167_acl', (
+SELECT set_config('stewardship.migration_0166_acl', (
     SELECT coalesce(p.proacl::text,'default')
     FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
     WHERE n.nspname='public' AND p.proname='stewardship_campaign_pointer_v1'), true);
@@ -171,13 +171,13 @@ BEGIN
           AND strpos(p.prosrc, 'e.option - ''short_label''')>0)<>1
        OR (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
            WHERE n.nspname='public' AND p.proname='stewardship_campaign_pointer_v1')<>1 THEN
-        RAISE EXCEPTION 'Migration 0167: the campaign pointer function is not installed as declared';
+        RAISE EXCEPTION 'Migration 0166: the campaign pointer function is not installed as declared';
     END IF;
-    IF current_setting('stewardship.migration_0167_acl', true) IS DISTINCT FROM (
+    IF current_setting('stewardship.migration_0166_acl', true) IS DISTINCT FROM (
            SELECT coalesce(p.proacl::text,'default')
            FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
            WHERE n.nspname='public' AND p.proname='stewardship_campaign_pointer_v1') THEN
-        RAISE EXCEPTION 'Migration 0167: the campaign pointer function''s grants changed';
+        RAISE EXCEPTION 'Migration 0166: the campaign pointer function''s grants changed';
     END IF;
 END
 $check$;
