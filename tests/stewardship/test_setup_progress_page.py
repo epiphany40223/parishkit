@@ -142,12 +142,35 @@ def test_phases_are_named_in_order_and_complete_when_done():
     from parishkit.stewardship.accounts.setup_progress_views import phases
 
     saving = phases(observation("staging"), "staging")
-    assert [row["state"] for row in saving] == ["done", "active", "waiting"]
-    assert saving[1]["status"] == "In progress"
+    assert [row["key"] for row in saving] == [
+        "start",
+        "fetching",
+        "staging",
+        "validating",
+    ]
+    assert [row["state"] for row in saving] == ["done", "done", "active", "waiting"]
+    assert saving[2]["status"] == "In progress"
     finished = phases(observation("validating", active=False), "done")
     assert {row["state"] for row in finished} == {"done"}
+    # Queued: Start the load is in progress until a worker picks it up
+    # (#1916), then the download is at once, before its first collection.
     queued = phases(observation("unspecified"), "queued")
-    assert {row["state"] for row in queued} == {"waiting"}
+    assert [row["state"] for row in queued] == ["active"] + ["waiting"] * 3
+    starting = phases(observation("starting"), "working")
+    assert [row["state"] for row in starting] == [
+        "done",
+        "active",
+        "waiting",
+        "waiting",
+    ]
+    # A load that stopped for good fails the box it stopped in; one that
+    # ended before any worker took it fails Start the load.
+    failed = phases(observation("staging", active=False), "failed")
+    assert [row["state"] for row in failed] == ["done", "done", "failed", "waiting"]
+    never = phases(observation("unspecified", active=False), "ended")
+    assert [row["state"] for row in never] == ["failed"] + ["waiting"] * 3
+    voided = phases(observation("staging", active=False), "voided")
+    assert [row["state"] for row in voided] == ["done", "done", "waiting", "waiting"]
 
 
 @pytest.mark.parametrize("phase", ["fetching", "staging", "done"])

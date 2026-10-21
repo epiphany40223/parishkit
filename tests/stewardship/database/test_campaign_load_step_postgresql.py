@@ -21,6 +21,7 @@ from django.utils import timezone
 
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+from parishkit.stewardship.accounts.stages import QUEUED
 from parishkit.stewardship.campaigns.family_identity import FamilyStatus
 from parishkit.stewardship.campaigns.lifecycle import Action
 from parishkit.stewardship.deployment import ServiceRole
@@ -125,7 +126,7 @@ def test_load_step_shows_one_state_at_a_time(auth_service, google):
     # Not loaded: the line, every stage box waiting, and the load button,
     # which acts in place and also redraws the action row.
     assert state(html) == "offer" and NOT_LOADED in summary(html)
-    assert html.count('data-stage-state="waiting"') == 4
+    assert html.count('data-stage-state="waiting"') == 5
     assert OFFER in html
     assert 'data-in-place-only="campaign-step-actions"' in html
     assert "Refresh now" not in html and QUEUE not in html
@@ -134,6 +135,14 @@ def test_load_step_shows_one_state_at_a_time(auth_service, google):
     row_html = actions(html)
     assert f'href="{reverse("admin:campaign_settings")}"' in row_html
     assert "Continue" not in row_html
+    # Just requested, no worker has the run yet: Start the load is in
+    # progress and the line after the boxes says it waits (#1916).
+    refresh_run("queued")
+    html = page(browser)
+    assert state(html) == "loading" and LOADING in summary(html)
+    assert 'data-load-stage="start" data-stage-state="active"' in html
+    assert 'data-load-stage="fetching" data-stage-state="waiting"' in html
+    assert f"data-campaign-load-count>{QUEUED}</p>" in html
     # Loading: the boxes follow the run, polled through its passive status
     # (?view=load); no button at all, and no Continue until it is loaded.
     claimed = timezone.now()
@@ -228,7 +237,7 @@ def test_families_complete_the_load_step(auth_service, google):
     assert "did not load" not in summary(html)
     assert "data-campaign-load-start" not in html
     # Loaded: every box done, the Family count, and Continue.
-    assert state(html) == "loaded" and html.count('data-stage-state="done"') == 4
+    assert state(html) == "loaded" and html.count('data-stage-state="done"') == 5
     assert "The campaign's ParishSoft data is loaded." in summary(html)
     assert re.search(r"data-campaign-load-count>1 Family[,.]", html)
     assert (
@@ -276,7 +285,7 @@ def test_only_refreshes_since_creation_and_families_count(auth_service, google):
     )
     assert "Continue" not in actions(html)
     # Every stage is done; the run and Refresh from ParishSoft are linked.
-    assert html.count('data-stage-state="done"') == 4
+    assert html.count('data-stage-state="done"') == 5
     assert f'href="{reverse("admin:background_task_page", args=[succeeded])}"' in html
     assert ">See the load<" in html and ">Refresh from ParishSoft<" in html
     assert "Check that ParishSoft has active Parishioner Families" in summary(html)

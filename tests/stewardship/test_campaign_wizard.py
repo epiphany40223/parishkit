@@ -812,29 +812,36 @@ def states(boxes):
     return [(box["key"], box["state"]) for box in boxes]
 
 
-KEYS = ["fetching", "staging", "validating", "promoting"]
+KEYS = ["start", "fetching", "staging", "validating", "promoting"]
 
 
 @pytest.mark.parametrize(
     ("load", "phase", "expected"),
     [
-        ("offer", None, ["waiting"] * 4),
-        ("loading", "unspecified", ["waiting"] * 4),
-        ("loading", "fetching", ["active", "waiting", "waiting", "waiting"]),
-        ("loading", "validating", ["done", "done", "active", "waiting"]),
-        ("loaded", None, ["done"] * 4),
+        ("offer", None, ["waiting"] * 5),
+        # Queued, not yet picked up by a worker: Start the load (#1916).
+        ("loading", "unspecified", ["active"] + ["waiting"] * 4),
+        # Picked up: Start the load is done and the download in progress at
+        # once, before the worker reports its first phase.
+        ("loading", "starting", ["done", "active", "waiting", "waiting", "waiting"]),
+        ("loading", "fetching", ["done", "active", "waiting", "waiting", "waiting"]),
+        ("loading", "validating", ["done", "done", "done", "active", "waiting"]),
+        ("loaded", None, ["done"] * 5),
         # A load that ran and finished is done, even with no Families.
-        ("empty", None, ["done"] * 4),
-        ("failed", "staging", ["done", "failed", "waiting", "waiting"]),
-        ("failed", "unspecified", ["failed", "waiting", "waiting", "waiting"]),
+        ("empty", None, ["done"] * 5),
+        ("failed", "staging", ["done", "done", "failed", "waiting", "waiting"]),
+        ("failed", "starting", ["done", "failed", "waiting", "waiting", "waiting"]),
+        # Ended before any worker took it: the failure is on Start the load.
+        ("failed", "unspecified", ["failed"] + ["waiting"] * 4),
     ],
 )
 def test_load_stages_follow_the_refresh_phases(load, phase, expected):
     """One box per refresh phase the worker reports, in order (#1404 PR 5).
 
-    Not loaded: every stage waiting; loading: the stages before the run's
-    phase done and its own in progress; loaded: every stage done; failed:
-    the stage it stopped in failed. Each box words its state.
+    Not loaded: every stage waiting; loading: Start the load in progress
+    until a worker picks the run up (#1916), then the stages before the
+    run's phase done and its own in progress; loaded: every stage done;
+    failed: the stage it stopped in failed. Each box words its state.
     """
     boxes = wizard.load_stages(load, phase)
     assert states(boxes) == list(zip(KEYS, expected, strict=True))
@@ -856,7 +863,8 @@ def test_the_loading_stepper_carries_the_run_to_its_stage_boxes():
         load_progress=("staging", 10, 40),
     )
     assert stepper.load_view == "loading" and stepper.load_task == task
-    assert states(stepper.load_stages)[:2] == [
+    assert states(stepper.load_stages)[:3] == [
+        ("start", "done"),
         ("fetching", "done"),
         ("staging", "active"),
     ]
@@ -890,7 +898,7 @@ def test_load_status_region_draws_one_state_each():
     offer = load_region(load="offer", stages=wizard.load_stages("offer", None))
     assert "This campaign's ParishSoft data hasn't been loaded yet." in summary(offer)
     assert "data-live-pending" not in offer and "data-live-url" not in offer
-    assert offer.count('data-stage-state="waiting"') == 4
+    assert offer.count('data-stage-state="waiting"') == 5
     loading = load_region(
         load="loading",
         load_task=task,
@@ -919,7 +927,7 @@ def test_load_status_region_draws_one_state_each():
     )
     assert "is loaded." in summary(loaded) and "1,234 Families, as of" in loaded
     assert 'datetime="2026-10-17T12:00:00+00:00" data-local-instant' in loaded
-    assert loaded.count('data-stage-state="done"') == 4
+    assert loaded.count('data-stage-state="done"') == 5
     # A poll's settled answer follows up by re-reading the page in place.
     polled = load_region(
         **wizard.load_status(task_values("succeeded", task), families=True)
@@ -933,7 +941,7 @@ def test_load_status_region_draws_one_state_each():
     )
     assert "loaded, but no Families matched." in summary(empty)
     assert "is loaded." not in summary(empty)
-    assert empty.count('data-stage-state="done"') == 4
+    assert empty.count('data-stage-state="done"') == 5
     assert reverse("admin:background_task_page", args=[task]) in empty
     assert reverse("admin:source_refresh") in empty
     assert "<button" not in empty and "hasn't been loaded" not in summary(empty)
@@ -968,3 +976,43 @@ def test_load_status_reads_the_run_state(state, families, load):
     status = wizard.load_status(task_values(state, task, "staging"), families=families)
     assert status["load"] == load and status["load_task"] == str(task)
     assert status["polled"] is True
+
+
+def count_line(html):
+    """The load region's reserved line after the boxes, without its sizing copy."""
+    return re.search(
+        r'<p class="campaign-load-count"[^>]*>(.*?)</p>', html, re.DOTALL
+    ).group(1)
+
+
+def test_a_queued_load_says_it_waits_in_start_the_load():
+    """Queued: Start the load in progress and the shared waiting sentence (#1916).
+
+    The poll's answer for a run no worker has taken yet draws Start the load
+    In progress (with the shared spinner) and, on the reserved line, the
+    queued sentence; once a worker takes it the line gives way to the
+    records checked. Every state draws the sentence's invisible copy, so the
+    line keeps its height and nothing moves when the first stage starts.
+    """
+    from parishkit.stewardship.accounts.stages import QUEUED
+
+    task = uuid4()
+    waiting = wizard.load_status(task_values("queued", task, "unspecified"), families=0)
+    assert states(waiting["stages"])[:2] == [
+        ("start", "active"),
+        ("fetching", "waiting"),
+    ]
+    queued = load_region(**waiting)
+    assert count_line(queued) == str(QUEUED)
+    assert "Start the load: In progress." in queued
+    start = 'data-load-stage="start" data-stage-state="active"><span class="spinner"'
+    assert start in queued
+    running = load_region(
+        **wizard.load_status(task_values("running", task, "fetching"), families=0)
+    )
+    assert "Start the load: In progress." not in running
+    assert "Download from ParishSoft: In progress." in running
+    assert count_line(running) == "4,000 of 4,000 records checked"
+    offer = load_region(load="offer", stages=wizard.load_stages("offer", None))
+    ghost = f'<span class="campaign-load-summary-ghost" aria-hidden="true">{QUEUED}<'
+    assert all(ghost in html for html in (queued, running, offer))

@@ -18,6 +18,8 @@ from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.campaigns.domain import Percentage
 
+from . import stages
+
 TARGET_LABELS = {
     "parishsoft": _("Install the ParishSoft credential"),
     "google_workspace": _("Install the Google Workspace credential"),
@@ -70,7 +72,13 @@ CHECKPOINT_FAILURES = {
     ),
 }
 
-# What the configuration and final load steps say in each running state.
+# What the Start the load step, the configuration step and the final load
+# step say in each running state (#1916).
+START_TEXT = {
+    "waiting": _("Starts after the configuration is prepared."),
+    "active": stages.QUEUED,
+    "done": _("The background service started the load."),
+}
 CONFIGURATION_TEXT = {
     "waiting": _("Starts after every credential is installed and acknowledged."),
     "active": _("Preparing the new configuration."),
@@ -78,9 +86,17 @@ CONFIGURATION_TEXT = {
 }
 SOURCE_TEXT = {
     "waiting": _("Starts after the configuration is prepared."),
+    # The final load is queued and no worker has taken it yet.
+    "queued": _("Starts once the background service picks up the job."),
     "active": _("Loading the parish data again."),
     "done": _("Parish data is loaded."),
 }
+# The final load's states in which it ended without loading anything.
+SOURCE_ENDED = frozenset({"failed", "cancelled", "abandoned"})
+SOURCE_FAILED = _(
+    "The final load did not finish. Ask the operator to check the service logs "
+    "for the task reference below, then cancel this setup before starting again."
+)
 # Stand-ins for the counts and task reference of a reserved form (#1903)
 # that the step cannot show yet: an acknowledgement count of one digit (a
 # deployment has a handful of credential consumers), a final load as large
@@ -95,7 +111,8 @@ SAMPLE_TASK = "00000000-0000-0000-0000-000000000000"
 # (state, text, extras): a failure is left out, since it stops the updates
 # and brings its notice above the boxes, and a box reserved for a long
 # failure would stand tall the whole time setup runs. Setup complete
-# waits until the page shows its result instead of the boxes.
+# waits until the page shows its result instead of the boxes. "The load
+# did not start." is a failure's text too, so it needs no reserve.
 CREDENTIAL_FORMS = (
     ("waiting", CREDENTIAL_TEXT["missing"], {}),
     *(("active", CREDENTIAL_TEXT[s], {}) for s in ("staged", "testing", "installing")),
@@ -103,11 +120,13 @@ CREDENTIAL_FORMS = (
     ("done", CREDENTIAL_TEXT["acknowledged"], {}),
 )
 RUNNING_FORMS = {
+    "start": tuple((state, words, {}) for state, words in START_TEXT.items()),
     "configuration": tuple(
         (state, words, {}) for state, words in CONFIGURATION_TEXT.items()
     ),
     "source": (
         ("waiting", SOURCE_TEXT["waiting"], {}),
+        ("waiting", SOURCE_TEXT["queued"], {}),
         (
             "active",
             SOURCE_TEXT["active"],
@@ -117,7 +136,6 @@ RUNNING_FORMS = {
     ),
     "completed": (),
 }
-
 STATUS_LABELS = {
     "done": _("Done"),
     "active": _("In progress"),
@@ -187,6 +205,25 @@ def failure_text(target, reason):
     return CREDENTIAL_FAILURES.get(reason, FALLBACK_FAILURE)
 
 
+def _start(source, completed):
+    """The shared Start the load step ahead of the final load (#1916).
+
+    In progress, with the waiting sentence every Start the load box says
+    (``stages.QUEUED``), from the moment the final load is queued until a
+    worker picks it up; Done from then on. A final load that ended before
+    any worker took it fails here, with its task reference, rather than on
+    the load's own step, which never began.
+    """
+    label = stages.START[1]
+    if completed or (source and stages.picked_up(source.get("phase"))):
+        return _row("start", label, "done", START_TEXT["done"])
+    if source is None:
+        return _row("start", label, "waiting", START_TEXT["waiting"])
+    if source["state"] in SOURCE_ENDED:
+        return _row("start", label, "failed", SOURCE_FAILED) | {"task": source["id"]}
+    return _row("start", label, "active", START_TEXT["active"])
+
+
 def finishing(status, *, completed=False):
     """Return the step rows, the overall state and any failure explanation.
 
@@ -224,30 +261,26 @@ def finishing(status, *, completed=False):
         rows.append(_row("configuration", label, state, CONFIGURATION_TEXT[state]))
 
     source = status["source"]
+    rows.append(_start(source, completed))
+    # Whether a worker has taken the final load: until then its own step has
+    # not begun, and the Start the load step above says why.
+    picked = bool(source) and stages.picked_up(source.get("phase"))
     label = _("Final parish data load")
     if completed or (source and source["state"] == "succeeded"):
         rows.append(_row("source", label, "done", SOURCE_TEXT["done"]))
-    elif source and source["state"] in {"failed", "cancelled", "abandoned"}:
-        rows.append(
-            _row(
-                "source",
-                label,
-                "failed",
-                _(
-                    "The final load did not finish. Ask the operator to check the "
-                    "service logs for the task reference below, then cancel this "
-                    "setup before starting again."
-                ),
-            )
-        )
-    elif source:
+    elif picked and source["state"] in SOURCE_ENDED:
+        rows.append(_row("source", label, "failed", SOURCE_FAILED))
+        rows[-1]["task"] = source["id"]
+    elif picked:
         rows.append(_row("source", label, "active", SOURCE_TEXT["active"]))
         rows[-1]["progress"] = source["progress"]
         rows[-1]["task"] = source["id"]
+    elif source and source["state"] in SOURCE_ENDED:
+        rows.append(_row("source", label, "waiting", _("The load did not start.")))
+    elif source:
+        rows.append(_row("source", label, "waiting", SOURCE_TEXT["queued"]))
     else:
         rows.append(_row("source", label, "waiting", SOURCE_TEXT["waiting"]))
-    if source and source["state"] in {"failed", "cancelled", "abandoned"}:
-        rows[-1]["task"] = source["id"]
 
     rows.append(
         _row(

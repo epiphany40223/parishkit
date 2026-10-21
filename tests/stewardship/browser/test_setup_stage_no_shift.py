@@ -107,7 +107,7 @@ def test_load_parish_data_boxes_keep_their_place(page, component_origin, width):
     region = page.locator("[data-live-status=setup-load]")
     has_attribute(region, "data-progress-state", "fetching")
     boxes = places(page, "[data-load-phase]")
-    assert len(boxes) == 3
+    assert len(boxes) == 4  # Start the load, then the load's three parts
     # The line after the saved-record bar, which keeps its space until
     # saving starts, so this line and its "i" button never move either.
     quiet = places(page, "#setup-load-quiet-label")
@@ -138,7 +138,8 @@ def test_load_parish_data_boxes_keep_their_place(page, component_origin, width):
 def test_finishing_setup_boxes_keep_their_place(page, component_origin, width):
     """Every Finishing setup box keeps its place and size as its words change,
     from waiting through installing, the server operator's acknowledgement,
-    preparing the configuration and the final load (#1903)."""
+    preparing the configuration, the final load waiting for a worker and
+    the worker picking it up (#1903, #1916)."""
     page.set_viewport_size({"width": width, "height": 900})
     page.clock.install(time=NOW)
 
@@ -152,6 +153,10 @@ def test_finishing_setup_boxes_keep_their_place(page, component_origin, width):
         "phase": "loading",
         "progress": Percentage(1234, 5678),
     }
+    # The final load queued, then taken by a worker (#1916): Start the load
+    # turns Done and the load's own box begins, in the same render.
+    queued = load | {"state": "queued", "phase": "unspecified", "progress": None}
+    claimed = load | {"phase": "starting"}
     both = [acknowledged("parishsoft", 2), acknowledged("google_workspace", 2)]
     # Each poll's answer: the step that moved on, its new state, and the
     # facts finalization_status would read for it.
@@ -164,6 +169,8 @@ def test_finishing_setup_boxes_keep_their_place(page, component_origin, width):
             None,
         ),
         ("configuration", "active", both, None),
+        ("start", "active", both, queued),
+        ("start", "done", both, claimed),
         ("source", "active", both, load),
     ]
     contexts = [
@@ -182,7 +189,7 @@ def test_finishing_setup_boxes_keep_their_place(page, component_origin, width):
     page.evaluate(MARK)
     steps = "[data-finishing-step]"
     boxes = places(page, steps)
-    assert len(boxes) == 5
+    assert len(boxes) == 6
     elapsed = places(page, "[data-finishing-elapsed]")
     for count, (key, state, _credentials, _source) in enumerate(states, start=1):
         next_poll(page, polls, count)

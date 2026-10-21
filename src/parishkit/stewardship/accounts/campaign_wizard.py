@@ -48,6 +48,7 @@ from uuid import uuid4
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
+from . import stages
 from .admin_navigation import PAGES as NAMES
 from .campaign_wizard_models import REVIEW_STEPS, CampaignSetupReview
 from .setup_wizard import Step, Wizard
@@ -531,8 +532,10 @@ _UNFINISHED = frozenset({"failed", "cancelled"})
 
 # The major stages of a full ParishSoft refresh, in the order its worker
 # reports them (source/refreshing.py, then source/execution.py's promotion),
-# as Load ParishSoft data's stage boxes name them (#1404 PR 5).
+# as Load ParishSoft data's stage boxes name them (#1404 PR 5), after the
+# shared Start the load box for the time the run waits for a worker (#1916).
 LOAD_STAGES = (
+    stages.START,
     ("fetching", _("Download from ParishSoft")),
     ("staging", _("Save the downloaded records")),
     ("validating", _("Check the new data")),
@@ -544,21 +547,20 @@ def load_stages(load, phase):
     """The stage boxes for the load in state ``load`` at its run's ``phase``.
 
     Not loaded yet ("offer"): every stage waiting. Loaded: every stage done.
-    Loading: the stages before the run's phase done and its phase in
-    progress (none yet while it is queued). Failed: the stage the run
-    stopped in is marked failed, the first one when it stopped before any.
+    Loading: Start the load in progress until a worker picks the run up,
+    then the stages before the run's phase done and its phase in progress
+    (``stages.queued_index``). Failed: the stage the run stopped in is
+    marked failed, Start the load when it stopped before a worker took it.
     """
-    from . import stages
-
     keys = [key for key, _label in LOAD_STAGES]
-    index = keys.index(phase) if phase in keys else -1
+    index = stages.queued_index(keys, phase)
     if load in {"loaded", "empty"}:
         # A load that ran and finished is done even with no Families.
         return stages.rows(LOAD_STAGES, len(keys))
     if load == "loading":
         return stages.rows(LOAD_STAGES, index)
     if load == "failed":
-        return stages.rows(LOAD_STAGES, max(index, 0), "failed")
+        return stages.rows(LOAD_STAGES, index, "failed")
     return stages.rows(LOAD_STAGES, -1)
 
 
