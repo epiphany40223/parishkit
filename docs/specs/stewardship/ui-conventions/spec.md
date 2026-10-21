@@ -3167,9 +3167,12 @@ two ways of reading to a screen reader. **Precedent.**
   draws a row of them. Its `shown()` takes a value that is already text,
   only for figures that must read word for word as another renderer
   formats them: Campaign comparison's, shared with its PDF and the report
-  emails, and a report email's saved copy, which shows exactly what was
-  emailed. A guard test fails when a template outside `components/` draws
-  stat-tile markup by hand, with no exceptions. Email and PDF reports
+  emails, and a report email's saved copy (its Campaign totals and its
+  Compared with past campaigns figures), which shows exactly what was
+  emailed, an unknown value reading "—" with its reason where the email had
+  a word ([#1639](https://github.com/epiphany40223/parishkit/issues/1639)). A
+  guard test fails when a template outside `components/` draws stat-tile
+  markup by hand, with no exceptions. Email and PDF reports
   cannot load the stylesheet and keep their own layouts.
 
 ### Overview pages
