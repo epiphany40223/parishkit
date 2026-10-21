@@ -108,6 +108,10 @@ MEMBER_FIELDS = {
             "memberStatus",
             "memberType",
             "maritalStatus",
+            # Unset in the generated parish; the Member contact smoke
+            # check's round trip needs one filled in (``fake_contact``).
+            "pager",
+            "fax",
         ),
         TEXT,
     ),
