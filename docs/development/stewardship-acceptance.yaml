@@ -317,6 +317,7 @@ sections:
     "Endpoint contract": [OPS-10]
     "Change feed": [OPS-10]
     "Fake ParishSoft edits": [OPS-10]
+    "Fake ParishSoft writes": [OPS-10]
     "Synthetic parish": [OPS-10]
     "Fake clock": [OPS-10]
     "Seeded campaign and responses": [OPS-10]
