@@ -374,14 +374,17 @@ the right and the action still centered, and no button moves from one step
 to the next ([no layout shift](#no-layout-shift)). Back and Next never wrap;
 only the centered action may, when its label is long (Submit with a long
 parish name), and the side slots stay equally wide so it stays centered.
-Where the three do not fit on one line (a phone), Back and Next keep the
-first line, at the left and right, and the action is centered on its own
-line below; the choice depends only on the screen width, so every step of
-the flow looks the same. The document order is the visual order (Back,
-action, Next), so Tab and screen readers meet them as they are drawn.
-**Why.** The Family form's Next sat at the left on its first step and at the
-right from the second on, and its Cancel and sign out sat below the flow
-(Administrator, 2026-10-21, on
+Where the full labels do not fit on one line (a phone), the row still stays
+one line: each long label shows only its first word (Back, Cancel and Next;
+Back and Submit on the final review) with tighter spacing, and keeps its
+full label (Back to edit, Cancel and sign out, Submit to the parish) as its
+accessible name. The choice depends only on the screen width, so every step
+of the flow looks the same, and the one-line bar keeps 44 px tap targets
+while covering little of a phone's screen. The document order is the visual
+order (Back, action, Next), so Tab and screen readers meet them as they are
+drawn. **Why.** The Family form's Next sat at the left on its first step and
+at the right from the second on, and its Cancel and sign out sat below the
+flow (Administrator, 2026-10-21, on
 [#1933](https://github.com/epiphany40223/parishkit/issues/1933)): a button
 that changes place between steps is missed, or the wrong one is pressed.
 **Shared code.** The Family form's sticky bar (`.family-nav` in `ui-v1.css`,

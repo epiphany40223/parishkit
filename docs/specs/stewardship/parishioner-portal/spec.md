@@ -160,7 +160,9 @@ bar (Back to edit/Submit on Review) is sticky at the bottom of the screen, so
 the next action is always one tap away. It is the
 [stepper button row](../ui-conventions/spec.md#stepper-button-row): Back at
 the left, Cancel and sign out (Submit on Review) centered, Next at the right,
-on every step including Welcome. Parish-written text is always shown in
+on every step including Welcome. On a phone it stays one line, showing
+Back, Cancel and Next (Back and Submit on Review), while each button keeps
+its full name for assistive technology. Parish-written text is always shown in
 full, exactly as the Administrator wrote it, with no "Read more" collapse.
 Occasional field help (phone formats, death-date review, the email opt-out)
 sits behind a small "i" toggletip beside the label, which opens on click, tap,

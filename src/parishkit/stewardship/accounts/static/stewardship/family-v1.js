@@ -2010,13 +2010,22 @@
     if (push) pushPage({familyPage: page.key}, "");
     if (focus) focusTop(page.element.querySelector("h3"));
   }
+  function navButton(short, rest, parent, attributes) {
+    // A bar button whose label shortens on a phone (#1933): the visible text
+    // is short, then rest in a span that ui-v1.css hides below 40rem, so the
+    // row stays on one line. The full label is always its accessible name,
+    // and it starts with the visible word (WCAG label in name).
+    const button = node("button", short, parent, {...attributes, "aria-label": short + rest});
+    node("span", rest, button, {class: "family-nav-long"});
+    return button;
+  }
   function cancelSlot(nav) {
     // Cancel and sign out in the editing pages' middle slot (#1933). The row
     // sits inside the editor's form, and forms cannot nest, so this button
     // submits the page's own #family-cancel form by its form attribute: the
     // same form, confirmation and sign-out as before. The page's own button
     // is hidden meanwhile, so only one Cancel shows. Returns the button.
-    const button = node("button", "Cancel and sign out", nav, {type: "submit", form: cancel.id,
+    const button = navButton("Cancel", " and sign out", nav, {type: "submit", form: cancel.id,
       class: "button-secondary", "data-nav-slot": "action"});
     cancelButton.hidden = true;
     return button;
@@ -2360,7 +2369,8 @@
     paintTrack("review");
     if (history.state?.familyPage !== "review") pushPage({familyPage: "review"}, "");
     block("review", root);
-    const submitLabel = testing ? "Submit test response" : "Submit to " + form.parish_name;
+    // "Submit" shows alone on a phone; the rest joins it on wider screens.
+    const submitRest = testing ? " test response" : " to " + form.parish_name;
     familySummary();
     if (answers.cannot_attend) {
       const welcome = node("section", null, root, {class: "panel"});
@@ -2431,10 +2441,10 @@
     // Submit centered, the Next slot empty. Cancel and sign out shows below
     // the flow again, as the page's own button.
     cancelButton.hidden = false;
-    const back = node("button", "Back to edit", actions, {type: "button", class: "button-secondary",
+    const back = navButton("Back", " to edit", actions, {type: "button", class: "button-secondary",
       "data-nav-slot": "back"});
     back.addEventListener("click", () => { edit(); pushPage({familyPage: currentPage}, ""); });
-    const submit = node("button", submitLabel, actions, {type: "submit", form: confirmation.id,
+    const submit = navButton("Submit", submitRest, actions, {type: "submit", form: confirmation.id,
       "data-nav-slot": "action"});
     confirmation.addEventListener("submit", async (event) => {
       event.preventDefault();
