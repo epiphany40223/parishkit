@@ -1098,7 +1098,7 @@ Exceptions map in this order, and the first match wins. Order matters:
 | Confirmation declined, or end of input at the prompt | 4 |
 | Automation session missing, ended, expired or revoked, a host mismatch, a command session ended by a role change, or pairing not finished, including `UserFacingDenied` for an ended session | 5 |
 | `PermissionError`, `ValueError`, `StaleRecordError`, other `ConfigError` raised by a domain function, and a database guard's refusal (SQLSTATE class 23, 42501 or P0001) that its command does not map otherwise, as `denied` | 1 |
-| `admin_reads.NotAvailable` (an unknown task or campaign, or no current campaign), and `ObjectDoesNotExist` from a command that changes nothing, as `not_available`; a bare `LookupError` or `KeyError` is a bug (`internal`) | 1 |
+| `admin_reads.NotAvailable` (an unknown task or campaign, no current campaign, or the first campaign can't be created now), and `ObjectDoesNotExist` from a command that changes nothing, as `not_available`; a bare `LookupError` or `KeyError` is a bug (`internal`) | 1 |
 | Any error after a durable commit (for example an export queued but its download failed), or an unexpected error in a state-changing command | 6 |
 | An unexpected error in a read | 3, with `internal`; retry at most once, then report it |
 
@@ -1814,6 +1814,10 @@ signatures:
   live and Ministries reviews, each returning the review instead of a
   response), and `campaign confirm` its Apply routing into
   `campaign_views.confirm_route`; the page now calls both.
+  `campaign create-preview` and `campaign create` (#1899) needed none:
+  Create the campaign's admission, form, Review and Apply recheck
+  (`campaign_create_views._admitted`, `creation_form`, `creation_review`,
+  `_scope`) were already request-free.
   `campaign shares-preview` moved Share options' review (after the page's
   version and formset checks) into `option_editing.review_options`, which
   the page's Review now calls; `campaign shares-confirm` needed none, as
@@ -2026,7 +2030,7 @@ none.
 | `schedule_calendar` | `schedule show` (PR 3a): the read-only Campaign calendar (#469) draws the saved schedules and campaign dates that `schedule show` lists |
 | `campaign_end_date_check` | `schedule preview` (PR 4): Campaign settings' no-save live check of a live campaign's end date answers what a preview of that end date would refuse |
 | `configuration_request` | `config request show --watch` (PR 4); `config request cancel` ([#944](https://github.com/epiphany40223/parishkit/pull/944)), an operator recovery with no page button |
-| `campaign_settings`, `campaign_create`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), Campaign settings' read, Review and Apply, a live campaign's Ministries included (#1119); `campaign create-preview`, `campaign create` and `campaign clone` (PR 10); until #145, creating or copying a campaign is refused, except the first campaign through [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142) ([navigation rule 10](../ui-conventions/spec.md#navigation-rules)): commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, will get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
+| `campaign_settings`, `campaign_create`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), Campaign settings' read, Review and Apply, a live campaign's Ministries included (#1119); `campaign create-preview`, `campaign create` ([#1899](https://github.com/epiphany40223/parishkit/issues/1899)), [Create the campaign](../admin-portal/spec.md#create-the-campaign)'s Review and Apply for the first campaign (#142); `campaign_clone` is deferred on #145: until then creating or copying a campaign is refused, except the first campaign ([navigation rule 10](../ui-conventions/spec.md#navigation-rules)), and Copy campaign refuses every request before reading anything, so a command could only repeat that refusal. Commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
 | `share_settings` | `campaign shares`, `campaign shares-preview`, `campaign shares-confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), Share options' read, Review and Apply |
 | `reminder_workgroup` (its review and apply, #750) | `workgroup show`, `workgroup preview`, `workgroup confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
 | `content_catalog`, `content_edit`, `content_revision`, `content_delete`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content history`, `content preview` (the Delete and the plain-text preview), `content confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the editor's Review and Apply (PR 10) |
@@ -2477,6 +2481,45 @@ The inventory's placeholder `campaign ministries` folded into `campaign
 preview` when #1119 made the page one editor. The document shape and
 `kind` are defaults, pending Administrator confirmation. The
 [operator guide](../../../guides/stewardship-admin-automation.md#campaign-settings)
+lists the fields.
+
+`campaign create-preview --changes … --expected-version …` and `campaign
+create --token …` are [Create the campaign](../admin-portal/spec.md#create-the-campaign)'s
+Review and its review dialog's Apply (#1899): they add the deployment's
+first campaign, and nothing else, through the page's own pieces
+(`campaign_create_views._admitted`, `_scope`, `creation_form`,
+`creation_review` and `SALT`). Both are Administrators only (`CONFIGURE`)
+and need a full-scope session; neither is fresh-gated or prompts, as the
+page asks for no recent sign-in and its Apply is the reviewed token.
+`campaign create-preview` admits as the page's Review post does (recording
+activity) and, in the page's work transaction, checks the page's
+admission first: once any campaign exists, or while the system is not in
+Testing mode, no ParishSoft data is loaded or background campaign work
+holds the configuration, it is `not_available` (the page's 409 is no
+stale version: no newer version admits it).
+It then binds the change document (`{"campaign": {...}}`, `campaign
+preview`'s shape and field names) to the page's form. A field the
+document leaves out takes the value the page's form opens with (the
+parish's time zone, Census and Additional information ticked, the
+default Ministry leader roles, everything else blank), so the document
+must name at least the name and dates. The form's field errors are
+`invalid` at `campaign.<field>`, a candidate the configuration refuses
+is `invalid`, and another version is `stale_version`. It prints
+`version`, `settings` (every field as posted, in `campaign show`'s
+shape), `content` (the number of default pages and emails the campaign
+starts with) and `preview.token`, the page's own signed binding, so a
+token from either channel confirms on the other; it records nothing.
+`campaign create` records the configuration request as the dialog's
+Apply does, through `admin_editing.confirm_intent` with the page's salt,
+`_scope` (admission rechecked under the work lock; refused as
+`not_available`) and `first_campaign`; it adds `admin_cmd_campaign_create`
+in the request's own transaction, and a repeat returns the original
+request, even once the campaign exists, as on the page. It prints
+`created` and `request`; once the request is applied, `refresh start`
+loads the campaign's Families, as the page's status offers. The command
+names and the document shape are defaults, pending Administrator
+confirmation. The
+[operator guide](../../../guides/stewardship-admin-automation.md#create-the-campaign)
 lists the fields.
 
 `parish show`, `ministries list`, `branding show` and `campaign shares

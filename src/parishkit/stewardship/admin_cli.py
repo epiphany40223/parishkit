@@ -78,6 +78,8 @@ preview reads the image from standard input after the preamble.
 in ``admin_workgroup``) read and change the No-reminders WorkGroup.
 ``campaign show``, ``campaign preview`` and ``campaign confirm`` (PR 10, in
 ``admin_campaign``) read and change Campaign settings.
+``campaign create-preview`` and ``campaign create`` (#1899, in
+``admin_campaign_create``) are Create the campaign's Review and Apply.
 ``campaign shares-preview`` and ``campaign shares-confirm`` (PR 10, in
 ``admin_shares``) change a campaign's Share options.
 ``followup list``, ``followup show``, ``followup update`` and ``followup
@@ -1905,6 +1907,36 @@ def campaign_confirm(args, preamble, runtime, context):
     # The role first (#1341): denied before any input is read.
     _role_first(context, runtime)
     return confirm_campaign(
+        context["caller"],
+        runtime,
+        token=_input(args.token, context, TOKEN_LIMIT),
+        context=context,
+    )
+
+
+def campaign_create_preview(args, preamble, runtime, context):
+    """Review the deployment's first campaign, as Create the campaign (#1899)."""
+    from .admin_campaign import CHANGES_LIMIT
+    from .admin_campaign_create import preview_create
+
+    # The role first (#1341): denied before any input is read.
+    _role_first(context, runtime)
+    return preview_create(
+        context["caller"],
+        runtime,
+        expected_version=args.expected_version,
+        changes=_input(args.changes, context, CHANGES_LIMIT),
+    )
+
+
+def campaign_create(args, preamble, runtime, context):
+    """Confirm a reviewed first campaign as a request (#1899)."""
+    from .admin_campaign_create import confirm_create
+    from .admin_changes import TOKEN_LIMIT
+
+    # The role first (#1341): denied before any input is read.
+    _role_first(context, runtime)
+    return confirm_create(
         context["caller"],
         runtime,
         token=_input(args.token, context, TOKEN_LIMIT),
@@ -4970,6 +5002,31 @@ def _campaign_confirm_options(parser):
     )
 
 
+def _campaign_create_preview_options(parser):
+    """Options of ``campaign create-preview``: the version and the new campaign."""
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_digest,
+        help="the version campaign create-preview is reviewed against "
+        "(parish show prints it)",
+    )
+    parser.add_argument(
+        "--changes",
+        required=True,
+        help="the new campaign as JSON, or - to read it from standard input",
+    )
+
+
+def _campaign_create_options(parser):
+    """Options of ``campaign create``: the preview's token."""
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from campaign create-preview, or - for standard input",
+    )
+
+
 def _users_confirm_options(parser):
     """Options of ``users confirm``: the preview's token."""
     parser.add_argument(
@@ -6138,9 +6195,11 @@ def _campaign_specs():
     are ``campaign preview`` and ``campaign confirm``, as ``parish
     preview`` and ``parish confirm``: full scope, as the page's posts record
     activity; neither is privileged nor prompts, as its Apply is the
-    reviewed token.
+    reviewed token. Create the campaign's Review and Apply (#1899,
+    ``admin_campaign_create``) follow the same rules for the first campaign.
     """
     from .admin_campaign import CampaignConfirm, CampaignPreview, CampaignShow
+    from .admin_campaign_create import CampaignCreate, CampaignCreatePreview
 
     return (
         CommandSpec(
@@ -6174,6 +6233,29 @@ def _campaign_specs():
             CampaignConfirm.field_names(),
             10,
             options=(_campaign_confirm_options,),
+        ),
+        # Create the campaign (#1899): the first campaign only.
+        CommandSpec(
+            "campaign create-preview",
+            "Review the deployment's first campaign.",
+            campaign_create_preview,
+            "full",
+            False,
+            CampaignCreatePreview.field_names(),
+            10,
+            options=(_campaign_create_preview_options,),
+            expected_version=True,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "campaign create",
+            "Create the reviewed first campaign.",
+            campaign_create,
+            "full",
+            True,
+            CampaignCreate.field_names(),
+            10,
+            options=(_campaign_create_options,),
         ),
     )
 

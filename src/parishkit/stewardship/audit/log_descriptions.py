@@ -212,6 +212,10 @@ DESCRIPTIONS = {
         "An automation session confirmed a reviewed change to the campaign's "
         "settings, which became a configuration request."
     ),
+    "admin_cmd_campaign_create": _(
+        "An automation session confirmed a reviewed new campaign, which became "
+        "a configuration request."
+    ),
     "admin_cmd_campaign_shares_confirm": _(
         "An automation session confirmed a reviewed change to the campaign's "
         "Share options, which became a configuration request."
