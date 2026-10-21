@@ -1,6 +1,6 @@
 """A report send skips the recipients that already have its slots (#1835).
 
-Frozen file 0250's comparison (``stewardship_report_email_prior_v1``), the
+Frozen file 0162's comparison (``stewardship_report_email_prior_v1``), the
 recipient guard that holds every recipient row to it, and the completion
 view that counts a covered recipient as delivered. Until the conversion
 admits report schedules no report send can run end to end, so the earlier

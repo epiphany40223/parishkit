@@ -1,6 +1,4 @@
--- Frozen forward migration file 0250 (provisional: the repository-wide file
--- sequence assigns the final number when the pull request merges): a report
--- send skips the recipients whose message for its slots the provider
+-- Frozen forward migration file 0162: a report send skips the recipients whose message for its slots the provider
 -- already accepted (#1835, report-emails spec "Catch-up, recovery and
 -- holds"). This file is installed by its Django migration in the reports
 -- app and must never change once released;
@@ -201,7 +199,7 @@ BEGIN
         WHERE attrelid='public.stewardship_report_email_recipient'::regclass
           AND attname='covered_messages' AND NOT attisdropped AND attnotnull
           AND NOT atthasdef AND atttypid='jsonb'::regtype) THEN
-        RAISE EXCEPTION 'Migration 0250: the recipient coverage column is missing';
+        RAISE EXCEPTION 'Migration 0162: the recipient coverage column is missing';
     END IF;
     IF to_regclass('public.stewardship_report_email_recipient') IS NULL
        OR EXISTS(SELECT 1 FROM pg_constraint
@@ -211,14 +209,14 @@ BEGIN
         WHERE conrelid='public.stewardship_report_email_recipient'::regclass
           AND conname='report_email_recipient_coverage' AND contype='c'
           AND pg_get_constraintdef(oid) LIKE '%''covered''::text%') THEN
-        RAISE EXCEPTION 'Migration 0250: the recipient coverage check is not installed';
+        RAISE EXCEPTION 'Migration 0162: the recipient coverage check is not installed';
     END IF;
     IF NOT EXISTS(SELECT 1 FROM pg_proc p
         WHERE p.oid=to_regprocedure('public.stewardship_report_email_prior_v1(uuid,text)')
           AND NOT p.prosecdef AND p.provolatile='s'
           AND strpos(p.prosrc,'was_unknown')>0
           AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']) THEN
-        RAISE EXCEPTION 'Migration 0250: the coverage comparison is not installed as declared';
+        RAISE EXCEPTION 'Migration 0162: the coverage comparison is not installed as declared';
     END IF;
     IF NOT EXISTS(SELECT 1 FROM pg_proc p
         WHERE p.oid=to_regprocedure('public.stewardship_report_email_recipient_guard_v1()')
@@ -227,30 +225,30 @@ BEGIN
           AND strpos(p.prosrc,'stewardship_report_email_prior_v1(NEW.snapshot_id,NEW.address)')>0
           AND strpos(p.prosrc,'Report recipient waits for an earlier message to settle')>0
           AND strpos(p.prosrc,'Report recipient lacks its exact cohort message')>0) THEN
-        RAISE EXCEPTION 'Migration 0250: the recipient guard does not check coverage';
+        RAISE EXCEPTION 'Migration 0162: the recipient guard does not check coverage';
     END IF;
     IF NOT EXISTS(SELECT 1 FROM pg_trigger t
         WHERE t.tgrelid='public.stewardship_report_email_recipient'::regclass
           AND t.tgname='report_email_recipient_insert' AND NOT t.tgisinternal AND t.tgenabled='O'
           AND t.tgfoid=to_regprocedure('public.stewardship_report_email_recipient_guard_v1()')) THEN
-        RAISE EXCEPTION 'Migration 0250: the recipient guard trigger is missing';
+        RAISE EXCEPTION 'Migration 0162: the recipient guard trigger is missing';
     END IF;
     IF strpos(pg_get_viewdef('public.stewardship_report_email_completion_ready'::regclass),
               '''covered''')=0 THEN
-        RAISE EXCEPTION 'Migration 0250: the completion view does not settle covered recipients';
+        RAISE EXCEPTION 'Migration 0162: the completion view does not settle covered recipients';
     END IF;
     -- 0161's change holds: the view answers a skipped send itself.
     IF strpos(pg_get_viewdef('public.stewardship_report_email_completion_ready'::regclass),
               'stewardship_report_email_skipped_v1')>0 THEN
-        RAISE EXCEPTION 'Migration 0250: the completion view calls the skipped check';
+        RAISE EXCEPTION 'Migration 0162: the completion view calls the skipped check';
     END IF;
     IF has_table_privilege('public','public.stewardship_report_email_completion_ready','SELECT') THEN
-        RAISE EXCEPTION 'Migration 0250: the completion proof is readable by PUBLIC';
+        RAISE EXCEPTION 'Migration 0162: the completion proof is readable by PUBLIC';
     END IF;
     -- A send that covers no slot (here: no such snapshot) is never covered.
     IF public.stewardship_report_email_prior_v1(gen_random_uuid(),'nobody@example.org')
        IS DISTINCT FROM '{"state":"none"}'::jsonb THEN
-        RAISE EXCEPTION 'Migration 0250: the coverage comparison does not answer as declared';
+        RAISE EXCEPTION 'Migration 0162: the coverage comparison does not answer as declared';
     END IF;
 END
 $check$;

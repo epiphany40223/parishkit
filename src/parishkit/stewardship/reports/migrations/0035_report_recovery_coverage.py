@@ -1,9 +1,8 @@
 """Forward migration: a report send skips already-accepted recipients (#1835).
 
 Its SQL is the frozen file
-``schema/migrations/0250_report_recovery_coverage.sql`` (prefix 0250,
-provisional until the repository-wide file sequence assigns the final
-number), read whole and never parsed. It adds ``covered_messages`` and the
+``schema/migrations/0162_report_recovery_coverage.sql``, read whole and
+never parsed. It adds ``covered_messages`` and the
 ``covered`` disposition to the report email recipient, the coverage
 comparison ``stewardship_report_email_prior_v1``, and replaces frozen file
 0156's recipient guard and 0161's completion view so a covered recipient is
@@ -24,7 +23,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0250_report_recovery_coverage.sql"
+    / "0162_report_recovery_coverage.sql"
 )
 
 

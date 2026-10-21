@@ -53,7 +53,7 @@ class CoverageUncertain(Exception):
 def prior_coverage(snapshot_id, address):
     """The database's comparison of one address with the report's earlier sends.
 
-    ``stewardship_report_email_prior_v1`` (frozen file 0250) answers
+    ``stewardship_report_email_prior_v1`` (frozen file 0162) answers
     ``{"state": "covered", "messages": [...]}``, ``{"state": "uncertain"}``
     or ``{"state": "none"}``; the recipient guard admits a row only when it
     agrees with the same answer, so the worker never decides on its own.
