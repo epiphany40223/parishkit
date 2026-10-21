@@ -6,7 +6,7 @@ never parsed. It creates the Administrator's coverage decision about an
 earlier report message that was once unknown and then cancelled, with its
 insert guard, replaces frozen file 0162's coverage comparison so it reads
 those decisions and names what an uncertain answer waits on (the read of the
-sends that wait is 0037's, frozen file 0165). It ends with a DO block that
+sends that wait is 0044's, frozen file 0165). It ends with a DO block that
 refuses to commit unless all of it is installed as declared. The state
 operation records the same model, so ``makemigrations --check`` stays clean.
 Reversing needs its own forward migration.
@@ -35,7 +35,7 @@ class Migration(migrations.Migration):
     dependencies = [
         # The reports app's previous migration, which installs the previous
         # frozen file (0162), so the files apply in prefix order.
-        ("stewardship_reports", "0035_report_recovery_coverage"),
+        ("stewardship_reports", "0042_report_recovery_coverage"),
     ]
 
     operations = [

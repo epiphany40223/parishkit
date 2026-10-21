@@ -26,7 +26,7 @@ FROZEN_SQL = (
 class Migration(migrations.Migration):
     dependencies = [
         # The coverage decisions (0164), whose comparison it reads.
-        ("stewardship_reports", "0036_report_coverage_decisions"),
+        ("stewardship_reports", "0043_report_coverage_decisions"),
     ]
 
     operations = [migrations.RunSQL(FROZEN_SQL.read_text(encoding="utf-8"))]

@@ -594,7 +594,7 @@ CLOSURE_FUNCTIONS = {
     # The report sends waiting on an earlier email (0165, #1872).
     REPORT_WAITING_FUNCTION: (
         "stewardship_reports",
-        "0037_report_waiting_read",
+        "0044_report_waiting_read",
     ),
 }
 
@@ -749,7 +749,7 @@ CLOSURE_TABLES = {
     # (0164, #1872), which web records and reads.
     "stewardship_report_email_coverage_decision": (
         "stewardship_reports",
-        "0036_report_coverage_decisions",
+        "0043_report_coverage_decisions",
     ),
 }
 

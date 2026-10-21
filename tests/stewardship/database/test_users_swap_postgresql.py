@@ -955,7 +955,7 @@ CLOSURE_CREATED = {
     # runtime_grants.CLOSURE_FUNCTIONS, which installs it again on its own.
     "public.stewardship_report_email_coverage_decision_guard_v1()": (
         "stewardship_reports",
-        "0036_report_coverage_decisions",
+        "0043_report_coverage_decisions",
     ),
 }
 
