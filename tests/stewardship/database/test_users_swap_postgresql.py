@@ -1953,7 +1953,7 @@ def before_report_conversion(cursor, views_before):
 
 
 def before_retire_digests(cursor):
-    """Make again the digest write functions and triggers 0158 drops.
+    """Make again the digest write functions and triggers 0162 drops.
 
     The copy is the baseline's own, run as a fresh install runs it: bodies
     are checked when they run, since the copy's functions call each other.
@@ -2035,7 +2035,7 @@ def swap_pending():
     form baselines and submissions as they were before 0143
     (``before_reviewed_form_shown_items``), and the functions and views 0161
     replaced as they were before 0156 (``before_report_conversion``), and
-    the digest write functions and triggers 0158 drops
+    the digest write functions and triggers 0162 drops
     (``before_retire_digests``).
     """
     from django.db.migrations.loader import MigrationLoader
