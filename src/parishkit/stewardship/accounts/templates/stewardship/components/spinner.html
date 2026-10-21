@@ -1,0 +1,9 @@
+{% comment %}
+  The working spinner (ui-conventions "Working spinner", #1847): the one
+  spinning icon of the portal, drawn by the shared .spinner rule in
+  ui-v1.css, which a busy button's ::after shares. It is decorative and
+  hidden from assistive technology: the words beside it carry the state
+  ("Working…", "In progress"). Under reduced motion it stands still. A
+  context that needs it placed differently adds a placement rule for
+  .spinner there; never a spinner class of its own.
+{% endcomment %}<span class="spinner" aria-hidden="true"></span>
