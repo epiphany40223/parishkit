@@ -109,7 +109,8 @@ database-authoritative.
 A helper `profile.behind_proxy` is true for PRODUCTION and LOCAL and false
 otherwise. Every new code branch that distinguishes LOCAL MUST test `is LOCAL`
 or `behind_proxy`; a new test such as `!= DEVELOPMENT` is prohibited, because it
-would silently change meaning when a profile is added.
+would silently change meaning when a profile is added (the
+[inventory test](#remaining-local-branches) pins the existing ones).
 
 ### Existing profile branches
 
@@ -148,15 +149,27 @@ and Drive code. The branches that remain are listed here, each with the reason
 it stays. A branch is any comparison with, or use of, the LOCAL profile in the
 package code: `DeploymentProfile.LOCAL`, the helpers' `LOCAL_PROFILE`, or the
 string `"local"` compared with, tested for membership in a set, tuple or list,
-or matched by a `case`. Shared `behind_proxy` tests are not branches,
-because Production takes the same path. The operator scripts under `tools/`
-are laptop tooling and are not listed.
+or matched by a `case`; `LOCAL` on an aliased import and
+`DeploymentProfile("local")` count too. Shared `behind_proxy` tests are not
+branches, because Production takes the same path. The operator scripts under
+`tools/` are laptop tooling and are not listed.
 
 The first column names each module (under `src/parishkit/`) and the top-level
 functions, classes or module-level names that hold its branches. A fast test
 (`tests/stewardship/test_local_branch_inventory.py`) MUST fail when the code
 holds a branch in a function this table does not name, or the table names one
 that holds none, so a new LOCAL branch needs a reason here before it merges.
+The same test fails on a new negative test against another profile (`!=`,
+`is not` or `not in` a `DeploymentProfile` member other than LOCAL), which
+would give LOCAL the other branch without naming it; the four that predate
+LOCAL are rows of [existing profile branches](#existing-profile-branches)
+and refuse in the safe direction.
+
+The final review for
+[#1399](https://github.com/epiphany40223/parishkit/issues/1399) (2026-10-21)
+checked every row below against the code: each is laptop topology, a safety
+rule or a laptop tool, and none refuses or disables an integration that
+Testing mode and the mail redirect guard instead.
 
 Every remaining branch falls in one of three kinds:
 
