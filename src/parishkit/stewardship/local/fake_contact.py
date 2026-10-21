@@ -36,9 +36,16 @@ WRITABLE = {
     "cellPhone": "mobilePhone",
     "workPhone": "workPhone",
 }
+# The Member contact smoke check's two marker fields (#1399,
+# ``responses.contact_smoke.MARKERS``). Census publication never writes them,
+# but the fake's PUT takes them too, so the smoke round trip runs against the
+# fake on pk-local; the generated parish leaves both unset, and an operator
+# edit fills one in first.
+SMOKE_WRITABLE = {"pager": "pager", "fax": "fax"}
 # What the read returns: the writable fields plus the two the fake also
-# holds. ``fax`` and ``pager`` are left out (the fake holds neither), so the
-# planner treats them as not read rather than blank.
+# holds. ``fax`` and ``pager`` are left out (publication never writes them),
+# so the planner treats them as not read rather than blank; the smoke check
+# reads the raw Member object instead.
 READABLE = {**WRITABLE, "gender": "sex", "dateOfDeath": "dateOfDeath"}
 
 
@@ -68,7 +75,8 @@ def contact_edit(member_id, body, parish):
     """The ``member`` edit one PUT ``body`` makes, or EditError if refused.
 
     The PUT is a partial update: a field left out or sent as ``null`` is
-    left unchanged. Only ``WRITABLE`` fields are taken, a blank value is
+    left unchanged. Only ``WRITABLE`` fields and the smoke check's
+    ``SMOKE_WRITABLE`` markers are taken, a blank value is
     refused (as the real API refuses ``""``), and each value must be one the
     source loaders accept (``fake_edits.check_value``). A body that writes
     nothing is refused, so every recorded edit names at least one field
@@ -76,13 +84,14 @@ def contact_edit(member_id, body, parish):
     """
     if type(body) is not dict:
         raise EditError("The contact PUT body is not an object.")
+    fields = WRITABLE | SMOKE_WRITABLE
     changes = {}
     for name, value in body.items():
-        if name not in WRITABLE:
+        if name not in fields:
             raise EditError(f"The fake cannot write {name}.")
         if value is None:
             continue
-        field = WRITABLE[name]
+        field = fields[name]
         if MEMBER_FIELDS[field] == DATE:
             # Exactly YYYY-MM-DD, so the value reads back as it was sent.
             value = served_date(value, name)

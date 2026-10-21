@@ -20,6 +20,7 @@ from parishkit.parishsoft_http_worker import LOCAL_SOURCE_BASE_URL
 from parishkit.stewardship.local import LOCAL_PARISHSOFT_KEY
 from parishkit.stewardship.local.fake_contact import (
     READABLE,
+    SMOKE_WRITABLE,
     WRITABLE,
     contact_record,
 )
@@ -31,6 +32,7 @@ from parishkit.stewardship.local.fake_parishsoft import (
     file_recorder,
 )
 from parishkit.stewardship.responses.capabilities import MEMBER_CAPABILITIES
+from parishkit.stewardship.responses.contact_smoke import MARKERS
 from parishkit.stewardship.responses.publication import (
     MEMBER_CONTACT_FIELDS,
     encode_member_value,
@@ -83,6 +85,8 @@ def test_the_writable_fields_are_the_publishers_api_fields():
     assert set(WRITABLE) == api
     assert set(READABLE) <= set(MEMBER_CONTACT_FIELDS)
     assert set(MEMBER_CONTACT_FIELDS) - set(READABLE) == {"fax", "pager"}
+    # Beyond those, the PUT takes only the smoke check's marker fields.
+    assert set(SMOKE_WRITABLE) == set(MARKERS) == {"fax", "pager"}
 
 
 def test_a_put_is_a_partial_update_recorded_in_the_file(stored):
@@ -139,7 +143,8 @@ def test_a_put_is_a_partial_update_recorded_in_the_file(stored):
     [
         {},
         {"lastName": None},
-        {"fax": "513-555-0100"},
+        {"suffix": "Jr."},
+        {"pager": ""},
         {"gender": "F"},
         {"nickName": ""},
         {"dateOfBirth": "19800203"},
@@ -248,8 +253,52 @@ def test_the_gateway_reads_and_writes_the_fake_end_to_end(stored, monkeypatch):
     assert len(json.loads(path.read_text())["edits"]) == 1
     assert gateway.read_member_contact(999999, timeout=30) is None
     with pytest.raises(ContactGatewayError) as error:
-        gateway.write_member_contact(identifier, {"fax": "1"}, timeout=30)
+        gateway.write_member_contact(identifier, {"gender": "F"}, timeout=30)
     assert error.value.kind == "write_rejected"
+
+
+def test_the_contact_smoke_round_trip_runs_against_the_fake(tmp_path, monkeypatch):
+    """pk-local's Member contact smoke check (#1399) runs Production's probe
+    and round trip through the real gateway, session and helper check
+    against the fake: once an operator edit gives the Member a pager, the
+    marker is written, read back and restored, and both writes are recorded
+    as ordinary edits. Without a pager the round trip writes nothing."""
+    from parishkit.stewardship.responses import contact_smoke
+
+    path = tmp_path / "fake-parishsoft.json"
+    path.write_text(json.dumps(DOCUMENT))
+    identifier = member_id(FakeParishSoft(FakeConfiguration.read(path)))
+
+    def round_trip():
+        """One smoke run with ``--send`` against a fake started from ``path``."""
+        fake = FakeParishSoft(FakeConfiguration.read(path), record=file_recorder(path))
+        fake_exchange(fake, monkeypatch)
+        gateway = ParishSoftContactGateway.open_operator(
+            Mock(api_key=LOCAL_PARISHSOFT_KEY),
+            profile="local",
+            base_url=LOCAL_SOURCE_BASE_URL,
+            on_timeout=Mock(),
+        )
+        try:
+            return fake, contact_smoke.run(gateway, identifier, send=True)
+        finally:
+            gateway.close()
+
+    _, unset = round_trip()
+    assert unset["write"] == "refused_marker_field_unread"
+    assert "edits" not in json.loads(path.read_text())
+    words = ["member", str(identifier), "pager=555-010-0100"]
+    path.write_text(json.dumps(edit_document(words, json.loads(path.read_text()))))
+    fake, result = round_trip()
+    assert result["write"] == "accepted" and result["marker_read_back"] is True
+    assert result["also_changed"] == [] and result["restored"] is True
+    assert result["confirmed"] is True
+    edits = json.loads(path.read_text())["edits"]
+    assert [edit["set"] for edit in edits[1:]] == [
+        {"pager": contact_smoke.MARKERS["pager"]},
+        {"pager": "555-010-0100"},
+    ]
+    assert member(fake, identifier)["pager"] == "555-010-0100"
 
 
 def test_the_publishers_encoded_values_read_back_as_planned(stored):

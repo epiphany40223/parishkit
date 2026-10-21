@@ -500,6 +500,24 @@ edits. A Member of the late-added Family, which the fake serves after
 `seed`, cannot be written: a change for that Member fails as refused by
 ParishSoft.
 
+### The Member contact smoke check
+
+The [Member contact round trip](stewardship-smoke-tools.md#member-contact-round-trip)
+runs the same probe and round-trip steps as Production, against the fake, while pk-local reads the
+fake (with `deploy --parishsoft real` it is refused before it reads
+anything). Its round trip writes only `pager` or `fax`, which the synthetic
+parish leaves unset, so give the test Member one first, then run the probe
+and the round trip in the worker (the fake's organization is `1001`):
+
+```sh
+tools/stewardship-local.sh fake-parishsoft member 500010 pager=555-010-0100
+limactl shell parishkit-local -- sudo docker exec parishkit-local-worker-1 pk-stewardship smoke --config /opt/parishkit/config/services/worker.yaml --target parishsoft_contact --organization-id 1001 --member-id 500010 --confirm-member-id 500010 --send
+```
+
+The marker and restore writes are recorded as `member` edits, so
+`fake-parishsoft show` lists them; `fake-parishsoft clear` (or `undo`) drops
+them with your own edits.
+
 ## Rehearsing a bulk send
 
 `rehearse` measures one scheduled Family send, for the

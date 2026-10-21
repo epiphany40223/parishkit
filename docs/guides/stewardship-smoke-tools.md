@@ -50,6 +50,12 @@ there without a mail redirect, before the key is read; with one and a real
 key, its one recipient is the redirect address, never the address given.
 `backup_drive` runs only on the same terms as a real key (a mail redirect,
 the normal clock) and is refused before it reads anything otherwise.
+`parishsoft_contact` runs only while the deployment reads the fake, the one
+ParishSoft a local deployment may write to; with `deploy --parishsoft real`
+it is refused before the tenant check. On the fake, give the test Member a
+`pager` (or `fax`) first with a `fake-parishsoft` edit, since the generated
+parish leaves both unset; the marker and restore writes are recorded in the
+fake's edits list like any other write.
 The local environment's
 [safety guarantees](../specs/stewardship/local-environment/spec.md#safety-guarantees)
 say what each check can reach.

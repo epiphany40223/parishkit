@@ -24,6 +24,7 @@ from email.message import EmailMessage
 from pathlib import Path
 
 from parishkit.config import ConfigError
+from parishkit.parishsoft_http_worker import contact_put_admitted
 
 from .accounts.integration_candidates import (
     GOOGLE_TOKEN_URI,
@@ -33,7 +34,7 @@ from .accounts.integration_candidates import (
 from .accounts.key_files import read_private
 from .accounts.policy_schema import normalized_email
 from .accounts.provider_context import validated_context
-from .deployment import DeploymentProfile, ServiceRole, load_deployment
+from .deployment import ServiceRole, load_deployment
 from .local import source_base_url
 from .observability import Event, configure_logging, emit_failure
 from .runtime_paths import RuntimeLayout
@@ -91,11 +92,19 @@ def check_parishsoft_contact(
     that sees another organization never reaches it. Before ``--send``
     restores the original, the value-free marker result goes to standard
     error, so it survives a process that dies during the restore.
+
+    It may write, so census publication's one write rule decides first, in
+    every profile (#1884): Production is admitted as before, a LOCAL
+    deployment only while it reads the local fake (#1399). A LOCAL one
+    reading the real API is refused before even the tenant read; the
+    publication session and the helper would refuse its write again.
     """
-    if configuration.profile is DeploymentProfile.LOCAL:
-        # It may write to ParishSoft, which LOCAL never does (#1399); refuse
-        # before even the tenant read.
-        raise ConfigError("The Member contact check never runs in the local profile.")
+    base_url = source_base_url(configuration.profile, configuration.parishsoft_base_url)
+    if not contact_put_admitted(configuration.profile.value, base_url):
+        raise ConfigError(
+            "The Member contact check runs in the local profile only against "
+            "the local fake ParishSoft."
+        )
     if configuration.service_role is not ServiceRole.WORKER:
         raise ConfigError("Run the Member contact check in the worker.")
     if member_id is None or member_id != confirm_member_id:
@@ -118,9 +127,7 @@ def check_parishsoft_contact(
     gateway = ParishSoftContactGateway.open_operator(
         SourceCredential(_credential(configuration, "parishsoft")),
         profile=configuration.profile.value,
-        base_url=source_base_url(
-            configuration.profile, configuration.parishsoft_base_url
-        ),
+        base_url=base_url,
         on_timeout=_contact_timeout,
     )
     try:
