@@ -28,12 +28,10 @@ FROZEN_SQL = (
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("stewardship_campaigns", "0014_digest_skip_dates"),
-        # The migration that installs the previous frozen file on main (0156,
-        # the report pipeline), so the files apply in prefix order.
-        # 0157-0166 are assigned to other open changes; whichever merges
-        # last re-points this.
-        ("stewardship_reports", "0040_report_pipeline"),
+        ("stewardship_campaigns", "0015_report_conversion"),
+        # The migration that installs the previous frozen file (0165, the
+        # report waiting read), so the files apply in prefix order.
+        ("stewardship_reports", "0044_report_waiting_read"),
     ]
 
     operations = [migrations.RunSQL(FROZEN_SQL.read_text(encoding="utf-8"))]
