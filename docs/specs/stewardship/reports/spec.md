@@ -1949,11 +1949,10 @@ into another Ministry is in the scope of both Ministries' leaders
 ([follow-up workflows](../admin-portal/spec.md#follow-up-workflows)). By
 Ministry and the packet's choices read the Ministry report selection with
 its own cross-check, so a reader needs both scopes, which the same roles
-hold; they still count and list each request under the Family's Ministry,
-while the worklist's Ministry filter also finds an edited request under its
-Edit's Ministry, so after an Edit a count link can show one request more
-or less than its count ([#1718](https://github.com/epiphany40223/parishkit/issues/1718)
-tracks counting by the Edit).
+hold. By Ministry counts a request edited into another Ministry under both
+its Ministries, as the worklist's Ministry filter finds it under either, so
+each count link lists exactly what it counts
+([#1718](https://github.com/epiphany40223/parishkit/issues/1718)).
 The page's view audit is
 the queue's `ministry_followup_viewed`; it no longer records
 `ministry_report_viewed`, which the host `report ministry` command still
@@ -2041,12 +2040,30 @@ their rows stay distinct in every format. A request whose Ministry the report
 cannot read (one removed from the campaign whose requests were all withdrawn)
 shows no details and says so.
 
+A request is read under its current Ministry: the one review's Edit carried
+forward ([follow-up workflows](../admin-portal/spec.md#follow-up-workflows)),
+whose leaders decide it from then on, else the Family's. The Ministry report
+selection and the packet list an edited request, with its details, under
+that Ministry only, so its leaders see the Member's details and a leader of
+only the Family's Ministry, who still sees the request read only, sees none
+([#1718](https://github.com/epiphany40223/parishkit/issues/1718), frozen
+migration 0140). An earlier version of the request, shown with the history
+option, stays under the Family's Ministry but is not consent there (the
+rule below): its leaders see only published values on it. Both selections
+keep both Ministries of an edited request listed, so a packet for the
+Family's Ministry, which By Ministry still offers, gets its section, empty
+of that request; a one-Ministry read of the report can therefore count a
+request (By Ministry counts it under both) that it does not list. Nothing
+else changes: each selection still reads only the reader's SQL-derived
+scope, and the rule below applies to the current Ministry's leaders.
+
 Leader phone and email values honor ParishSoft publish flags and show "Not
 published" rather than leaking a value, with one exception (Administrator
 decision, 2026-10-17, "show own contacts" on
 [#1591](https://github.com/epiphany40223/parishkit/issues/1591)): asking to
 join or leave a Ministry is consent to be contacted about it, so on a
-Member's standing request that Ministry's leaders see the requesting
+Member's standing request that Ministry's leaders (the leaders of its
+current Ministry, above) see the requesting
 Member's own email and phones even when ParishSoft does not publish them.
 A request stands while the Member's latest version of it is neither
 withdrawn (cancelled) nor replaced; an earlier version shown with the

@@ -43,17 +43,19 @@ WITH selected AS MATERIALIZED (
     -- campaign (#342): removing a Ministry never hides answers already given;
     -- they are marked not in_campaign. A request for a Member no longer in
     -- ParishSoft (#1217) does not keep one listed (#1219), as it is never
-    -- counted or listed under it.
+    -- counted or listed under it. A request edited into another Ministry
+    -- (#1684) holds both, as the follow-up selection lists it (#1718).
     CROSS JOIN LATERAL (
         SELECT n.duid,true FROM jsonb_array_elements_text(x.values->'ministry_duids') n(duid)
         UNION
-        SELECT DISTINCT r.ministry_duid::text,false
+        SELECT DISTINCT d.duid::text,false
         FROM stewardship_submission s
         JOIN stewardship_ministry_request r ON r.submission_id=s.id
         JOIN stewardship_family_campaign f ON f.id=s.family_id
-        WHERE s.campaign_id=x.id AND s.mode='live'
+        CROSS JOIN LATERAL (VALUES (r.ministry_duid),(r.reviewed_ministry_duid)) d(duid)
+        WHERE s.campaign_id=x.id AND s.mode='live' AND d.duid IS NOT NULL
           AND r.state NOT IN ('cancelled','superseded')
-          AND NOT x.values->'ministry_duids' @> to_jsonb(r.ministry_duid)
+          AND NOT x.values->'ministry_duids' @> to_jsonb(d.duid)
           AND (r.entity_kind<>'member'
               OR stewardship_member_source_status_v1(
                   x.source_id,r.entity_key,f.family_duid)='current')
@@ -119,19 +121,37 @@ WITH selected AS MATERIALIZED (
     WHERE jsonb_typeof(e.value->'cannot_serve')='boolean'
         AND s.family_id IN (SELECT q.family_id FROM stewardship_submission q
         JOIN stewardship_ministry_request r ON r.submission_id=q.id
-        JOIN ministries m ON m.duid=r.ministry_duid
+        JOIN ministries m ON m.duid IN (r.ministry_duid,r.reviewed_ministry_duid)
         WHERE q.campaign_id=x.id AND q.mode='live')
     ORDER BY s.family_id,g.kind,e.key,s.family_version DESC
 ), requests AS MATERIALIZED (
-    SELECT r.id,r.entity_kind,r.entity_key,r.ministry_duid,r.action,r.state,
-        r.outcome,r.submission_id,s.submitted_at,f.family_duid,
-        row_number() OVER (PARTITION BY s.family_id,r.entity_kind,r.entity_key,
-            r.ministry_duid ORDER BY s.family_version DESC,r.id) AS revision
-    FROM source x
-    JOIN stewardship_submission s ON s.campaign_id=x.id AND s.mode='live'
-    JOIN stewardship_ministry_request r ON r.submission_id=s.id
-    JOIN ministries m ON m.duid=r.ministry_duid
-    JOIN stewardship_family_campaign f ON f.id=s.family_id
+    -- A request is listed, with its contact details, only under its current
+    -- Ministry (#1718): the one an Edit carried forward (#1684), whose
+    -- leaders now decide it, else the Family's. The versions are numbered
+    -- over whole chains (every version of a Member's requests to one Family
+    -- Ministry) before scope applies, so the reader's scope never changes
+    -- which version is latest.
+    SELECT q.* FROM (
+        SELECT r.id,r.entity_kind,r.entity_key,
+            coalesce(r.reviewed_ministry_duid,r.ministry_duid) AS ministry_duid,
+            r.action,r.state,r.outcome,r.submission_id,s.submitted_at,f.family_duid,
+            row_number() OVER (PARTITION BY s.family_id,r.entity_kind,r.entity_key,
+                r.ministry_duid ORDER BY s.family_version DESC,r.id) AS revision
+        FROM source x
+        JOIN stewardship_submission s ON s.campaign_id=x.id AND s.mode='live'
+        JOIN stewardship_ministry_request r ON r.submission_id=s.id
+        JOIN stewardship_family_campaign f ON f.id=s.family_id
+        -- Only whole chains a scoped Ministry holds, as the Family's or an
+        -- Edit's, are read; the subquery names the campaign by its
+        -- parameter, so it runs once rather than per row.
+        WHERE r.ministry_duid IN (SELECT duid FROM ministries)
+           OR (s.family_id,r.entity_kind,r.entity_key,r.ministry_duid) IN (
+               SELECT es.family_id,e.entity_kind,e.entity_key,e.ministry_duid
+               FROM stewardship_submission es
+               JOIN stewardship_ministry_request e ON e.submission_id=es.id
+               WHERE es.campaign_id=campaign_uuid AND es.mode='live'
+                 AND e.reviewed_ministry_duid IN (SELECT duid FROM ministries))
+    ) q JOIN ministries m ON m.duid=q.ministry_duid
 ), latest AS MATERIALIZED (
     SELECT r.*,p.canonical::jsonb AS person,
         -- A standing request (this is its latest version) is its Member's
