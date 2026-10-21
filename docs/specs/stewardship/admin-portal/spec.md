@@ -3191,12 +3191,32 @@ types, the page lists every date the rule gives, with its weekday, and says
 which it will not add and why: outside the campaign dates, not after the
 initial invitation, at the same moment as a saved invitation or reminder, over
 30 reminders from one rule, or over the campaign's limit of schedules (the
-schedule form set's maximum, 100). A short summary above **Review changes**, the only live region of
-the rule, says how many reminders the rule adds, or what is still missing:
+schedule form set's maximum, 100). A short summary above **Review changes**
+says how many reminders the rule adds, or what is still missing:
 "Enter a send time to check these dates" until the time reads, since the timed
 checks cannot run without it, and "Choose the email to send" without an email.
 Two lines are reserved for it (a phone wraps the longer messages) and the date
-list sits below the button, so neither moves the button. A month without the
+list sits below the button, so neither moves the button.
+A rule that gives no dates is an error at its fields, under the shared
+[field errors](../ui-conventions/spec.md#field-errors-and-live-checks) rule
+([#1915](https://github.com/epiphany40223/parishkit/issues/1915)): the last
+date before the first, or a span over a year, marks From and Until and is
+said once, after Until; a missing date marks the empty date; no weekday
+marks the days; a day of the month outside 1 to 31 marks the day. Each
+place has its own reserved line, so a message coming or going moves
+nothing. As with the browser's own checks, a field is marked once the Admin
+has edited or left one of its fields (a fresh rule's missing weekday is said
+in the summary as what is missing), and a date being typed is judged after
+a pause. While the rule gives no date to add (a rule error, or no date that
+fits), the page's button (**Add the scheduled email**, or **Save and go
+back** in the campaign wizard) is unavailable, named by the same words, under
+the [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates) rule,
+and worked out again when the page is shown from the browser's history. The
+server refuses such a rule at the same fields in the same words, and
+otherwise refuses a rule none of whose dates can be added at Repeat. The
+date-change review's **Repeat a reminder** shows rule errors at its fields
+the same way, and its **Add these reminders** is unavailable, named by that
+line or by its summary, while there is nothing to add. A month without the
 chosen day (the 31st in September) is skipped and listed as skipped, not
 moved. Every day comes with a note that each reminder goes to every Family that
 has not responded and that sending spreads out or waits near the mailbox's
