@@ -462,6 +462,9 @@ FROZEN = {
     "0143_reviewed_form_shown_items.sql": (
         "5071598637b62aed4cce02362f86a7e67cb1273996387308a95969aa064f0a66"
     ),
+    "0144_staff_timeline_export.sql": (
+        "adfde07b256d584b99de8ae7cdc2910cd982bf4bc1d505404e7b4fc957b522b6"
+    ),
 }
 
 
