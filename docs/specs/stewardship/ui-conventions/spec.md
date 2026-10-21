@@ -151,10 +151,7 @@ day and the active window keep their campaign-zone definitions. Shown
 timestamps include a time zone abbreviation in detail views. A form that
 accepts a date and time carries the browser's IANA zone in a hidden field that
 the page script fills, and the server converts the typed wall-clock time to
-UTC; the page names the zone next to the fields. Exception: Census changes'
-From and Through filters (days, not times) leave that line out and its
-About panel says the days are in this computer's time zone (Administrator,
-2026-10-19, R38 finding 8). The Admin portal requires
+UTC; the page names the zone next to the fields. The Admin portal requires
 JavaScript ([#565](https://github.com/epiphany40223/parishkit/issues/565)), so
 a missing or unknown zone is refused rather than guessed, and when the browser
 reports none the page keeps Save unavailable, saying why. A typed time that
@@ -174,7 +171,8 @@ logs date filters the second ([Admin portal](../admin-portal/spec.md#logs)),
 New and Edit scheduled email the third ([Admin
 portal](../admin-portal/spec.md#new-and-edit-scheduled-email)), and the
 submitted-date filters of the Additional information and Ministry reports the
-fourth ([Reports](../reports/spec.md#additional-information)), then the
+fourth ([Reports](../reports/spec.md#additional-information); the Additional
+information page no longer has one, #1888), then the
 date-change review ([Admin
 portal](../admin-portal/spec.md#dates-and-mail-schedules)) and the Financial
 stewardship response-date filters
