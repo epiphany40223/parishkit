@@ -61,6 +61,8 @@ def capture(campaign_id, family, mode, epoch, *, current_mode):
         family.pk,
         full=True,
         current_mode=current_mode,
+        # The file holds every line, the review lines included (#1774).
+        reviews=True,
     )
     # The page's Reminders line (#861) needs the campaign's configuration.
     values = (
