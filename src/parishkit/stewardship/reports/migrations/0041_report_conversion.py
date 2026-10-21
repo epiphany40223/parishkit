@@ -33,7 +33,7 @@ class Migration(migrations.Migration):
         # The reports app's previous migration, which installs the previous
         # frozen file (0156, the report pipeline), so the files apply in
         # prefix order.
-        ("stewardship_reports", "0033_report_pipeline"),
+        ("stewardship_reports", "0040_report_pipeline"),
     ]
 
     operations = [migrations.RunSQL(FROZEN_SQL.read_text(encoding="utf-8"))]

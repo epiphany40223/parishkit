@@ -910,7 +910,7 @@ CLOSURE_CREATED = {
             "public.stewardship_digest_work_open_v1()",
             "public.stewardship_report_slots_v1(uuid,timestamp with time zone)",
         ),
-        ("stewardship_reports", "0034_report_conversion"),
+        ("stewardship_reports", "0041_report_conversion"),
     ),
 }
 

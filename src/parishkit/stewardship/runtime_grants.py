@@ -576,7 +576,7 @@ CLOSURE_FUNCTIONS = {
     PAGE_MEMBER_NAMES_FUNCTION: ("stewardship_jobs", "0036_page_member_names"),
     # The report conversion's open digest work check (0161,
     # #1786), which the admin-recovery login's offline conversion asks.
-    DIGEST_WORK_FUNCTION: ("stewardship_reports", "0034_report_conversion"),
+    DIGEST_WORK_FUNCTION: ("stewardship_reports", "0041_report_conversion"),
 }
 
 

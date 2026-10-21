@@ -2,7 +2,7 @@
 
 It admits the configuration schema ``campaign-series-v12`` and the
 conversion's request format ``operator-upgrade-reports-v12``. The frozen file 0161
-(``stewardship_reports.0034_report_conversion``) changes the constraints
+(``stewardship_reports.0041_report_conversion``) changes the constraints
 in the database; this records them in Django's model state only, so
 ``makemigrations --check`` stays clean.
 """
@@ -12,7 +12,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("stewardship_reports", "0034_report_conversion"),
+        ("stewardship_reports", "0041_report_conversion"),
         ("stewardship_accounts", "0030_secret_request_session"),
     ]
 
