@@ -2,6 +2,10 @@
 
 from urllib.parse import urlsplit
 
+# The protected pages a report email may link: the Reports pages, and the
+# report emails' saved copies (report-emails spec, "Saved copies", #1786).
+PROTECTED_PREFIXES = ("/admin/reports/", "/admin/mail/report-emails/")
+
 
 def report_url(public_origin, path):
     """Append a compiler-owned report route to an origin without URL credentials."""
@@ -28,7 +32,7 @@ def report_url(public_origin, path):
         raise ValueError("Reports require a public HTTP origin.")
     if (
         type(path) is not str
-        or not path.startswith("/admin/reports/")
+        or not path.startswith(PROTECTED_PREFIXES)
         or any(ord(char) <= 32 or ord(char) == 127 for char in path)
         or any(value in path for value in ("\\", "?", "#", "%", "..", "//"))
     ):
