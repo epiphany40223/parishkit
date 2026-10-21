@@ -554,6 +554,12 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             "stewardship_refresh_check_guard",
             "stewardship_refresh_check_guard_v1",
         ),
+        # An added Member's ParishSoft link (#1670): INSERT only, by the
+        # promoting worker with its evidence, under its own name.
+        "stewardship_added_member_link": (
+            "stewardship_added_member_link_guard",
+            "stewardship_added_member_link_guard_v1",
+        ),
         # A roster tick's history (#528): INSERT only, under its own name.
         "stewardship_ministry_roster_entry": (
             "stewardship_ministry_roster_entry_guard",
@@ -923,6 +929,7 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                 "stewardship_limitation_review",
                 "stewardship_pledge_refresh_check",
                 "stewardship_pledge_open_check",
+                "stewardship_added_member_link",
                 "stewardship_publication_plan",
                 "stewardship_publication_entity",
                 "stewardship_publication_field",

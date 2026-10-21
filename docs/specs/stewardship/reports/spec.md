@@ -2087,14 +2087,19 @@ response that answers the question for that Member (lists them in its
 not an answer). Only a later live response that answers it for the
 Member without the checkbox lets their standing requests share again; a
 response that leaves the Member out, such as one reporting them moved out
-or deceased, does not, and a Member never answered is not withheld. For a
-Member the Family added, the answer is the one for the form's own entry for
-that person: such a Member is not linked to the ParishSoft record Staff
-create for them later, so a later answer for that ParishSoft Member does
-not cover their earlier added-Member requests
-([#1670](https://github.com/epiphany40223/parishkit/issues/1670)). Both
-selections read the same answer, so the request page, Export these
-requests and the packet agree.
+or deceased, does not, and a Member never answered is not withheld. A
+Member the Family added on the form and the ParishSoft Member a refresh
+later linked them to
+([added Member links](../data/spec.md#proposed-changes),
+[#1670](https://github.com/epiphany40223/parishkit/issues/1670)) are one
+person: a checked box as either key's current answer withholds the
+requests under both, so a later cannot-participate answer for the
+ParishSoft Member also covers the earlier added-Member requests. The link
+only adds a checked box: each key's requests share again only once neither
+key's current answer is checked, so a link the evidence got wrong can only
+hide more, never share more. An added Member with no link is answered by
+the form's own entry for that person. Both selections read the same answer,
+so the request page, Export these requests and the packet agree.
 Every other Member's standing requests share as above. Nothing else
 widens: a Member with no standing request to the Ministry (so every other
 Member of the Family), a withdrawn request and other Ministries' requests
