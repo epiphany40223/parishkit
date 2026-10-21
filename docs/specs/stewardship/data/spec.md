@@ -1288,7 +1288,8 @@ it, attached to the Family's latest live response; and
 in place of. Each revision also keeps its decision's note
 (`decision_note`). The SQL guards admit, besides today's edits: a revision
 that sends a resolved or closed request back to In progress (reopening an
-ignored one needs a note), one that undoes a terminal step (the Entered in
+ignored one takes an optional note since forward migration 0158,
+[#1889](https://github.com/epiphany40223/parishkit/issues/1889)), one that undoes a terminal step (the Entered in
 ParishSoft tick, a Confirmed refresh check or a refresh resolution; with a
 required note,
 [undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)),

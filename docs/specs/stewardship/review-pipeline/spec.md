@@ -148,10 +148,10 @@ history reads "Ignored; Added in its place: …". **Back to review** undoes a
 decision while the item has not started its update (for an Added item, it
 withdraws the item), and undoes a terminal step after it
 ([undoing a terminal stage](#undoing-a-terminal-stage)). Every decision
-takes an optional note; reopening an ignored item, or undoing a terminal
-step, requires one, as
-[Manual census resolution](../reports/spec.md#manual-census-resolution)
-already requires for Reopen.
+takes an optional note; only undoing a terminal step requires one.
+Reopening an ignored item takes an optional note like any other decision
+(Administrator decision, 2026-10-21,
+[#1889](https://github.com/epiphany40223/parishkit/issues/1889)).
 
 The first draft's **Replace** is dropped. What it covered is now one of two
 plain decisions: when the Family meant a different value of the same kind
@@ -293,9 +293,11 @@ The rule, for every stream and every terminal stage:
   ([decision 2](#decisions)) is shown Accepted, so it returns to To enter by
   hand, Accepted. To decide the item again, choose Back to review once more
   from its accepted stage.
-- **A note is required**, as for reopening an Ignored item: the dialog's
-  note is "Note (required)" for such a row, and a bulk Back to review needs
-  one while any ticked row does.
+- **A note is required**: the dialog's note is "Note (required)" for such
+  a row, and a bulk Back to review needs one while any ticked row is at a
+  terminal stage. This is the only Back to review that needs a note:
+  reopening an Ignored item takes an optional one
+  ([#1889](https://github.com/epiphany40223/parishkit/issues/1889)).
 - **Staff and Administrators only.** Ministry leaders never see these
   stages ([role-specific actions](#role-specific-actions)).
 - **History keeps everything.** The terminal step, every refresh check of
@@ -337,6 +339,13 @@ How each stream stores the undo:
 | Financial | Entered by hand, Entered incorrectly, Confirmed | a `back_to_review` pledge review row that keeps the decision in force (0149) |
 | Additional information | Handled | a revision clearing the follow-up with its note, follow-up still needed (0150) |
 | Cannot participate | Handled | an `accepted` review row with its note (0151) |
+
+Forward migration 0158 (provisional number,
+[#1889](https://github.com/epiphany40223/parishkit/issues/1889)) drops the
+SQL guards' required note for reopening an Ignored item, on every stream
+(the census review and resolution guards, and the Ministry, pledge,
+Additional information and Limitations guards), and keeps every terminal
+step's.
 
 Rejected: undoing only until a refresh has checked the mark (a mistake found
 after a refresh would stay wrong), keeping the marks final (a mis-click had
@@ -1713,9 +1722,9 @@ turning back), and, in the update phase, Entered by hand / Handled (check in
 a box). A census New Member Entered by hand also offers Correct (or Add) the
 ParishSoft Member ID (pencil, after its selected mark;
 [refresh checks](#refresh-checks)). Each takes the optional note in the
-shared confirmation dialog; Back to review requires it on an Ignored row and
-on a [terminal stage](#undoing-a-terminal-stage), whose dialog says where
-the row goes.
+shared confirmation dialog; Back to review requires it only on a
+[terminal stage](#undoing-a-terminal-stage), whose dialog says where the row
+goes (on an Ignored row the note stays optional, #1889).
 
 ### Selected-state icons
 

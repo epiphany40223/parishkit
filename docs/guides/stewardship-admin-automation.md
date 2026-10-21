@@ -2360,8 +2360,8 @@ pk-admin census resolve PROPOSAL_ID --action reopened --expected-version 4 \
 `PROPOSAL_ID` and the `--expected-version` are the change's id and version,
 which `export census --format jsonl` prints (`proposal_id` and `version`,
 with the `actions` the change takes now; the page's own downloads leave
-them out). `--note` is optional, except to reopen (an ignored change, or a
-terminal step); `-` reads it from standard input, which keeps a note that
+them out). `--note` is optional, except to undo a terminal step (reopening
+an ignored change takes an optional one); `-` reads it from standard input, which keeps a note that
 names people out of shell history and the process list; `--yes` is still
 accepted and does nothing. `--request-key` is made for you and
 written to standard error when left out. Repeating the command with the
@@ -2371,7 +2371,8 @@ change someone updated since that version is exit 1 (`stale_version`):
 read it again on the page. An outcome the change's status does not allow
 (an automatic change, an entered one marked again before a refresh found
 it wrong, one queued for an update run, or one a later response of the
-Family replaced), or reopening without a note, is exit 1 (`invalid`); a change that is not the current campaign's
+Family replaced), or undoing a terminal step without a note, is exit 1
+(`invalid`); a change that is not the current campaign's
 is exit 1 (`not_available`), and so is a repeat after the current campaign
 changed.
 
@@ -2407,7 +2408,7 @@ returns the same review (`created` false) and records nothing new; the key
 used for another decision or note is exit 1 (`invalid`). A change someone
 updated since that version is exit 1 (`stale_version`). A decision the change does not
 take now is exit 1 (`invalid`): the decision it already has, accepting a
-Conflict, sending an ignored change back (`unreviewed`) without a note, or
+Conflict, or
 any review of a change that is queued for publication or already has a
 final outcome. Since the Census changes page moved to the review pipeline
 ([#1683](https://github.com/epiphany40223/parishkit/issues/1683)), a By-hand
@@ -3096,8 +3097,7 @@ plus `proposal_id`
 and `version`, which recording a row's outcome needs and the page's files
 leave out, and `actions`: the outcomes you may record on that row now
 (`entered` and `ignored` on a By-hand change still open, `reopened` on an
-ignored one, for Administrators only, and only with a `--note` saying
-why), `reviews`: the decisions `census review` takes on that row now
+ignored one, for Administrators only, with an optional `--note`), `reviews`: the decisions `census review` takes on that row now
 (an Automatic change still open, for Administrators only), and `editable`
 and `resolvable`: whether `census edit` and `census resolve-conflict` act
 on it now (true or false, for Administrators only). They are empty or false
@@ -3486,9 +3486,9 @@ current is exit 1 (`stale_version`). The flags give the request its
 worklist stage: needed is To handle, completed is Handled, and setting both
 to no keeps a To review or Ignored request as it was, or sends a To handle
 or Handled one back to review; the command never ignores a request. An
-Ignored request leaves Ignored only with new `--notes` saying why, and
+Ignored request leaves Ignored with or without new `--notes`, and
 clearing a completed follow-up undoes Handled, which needs new `--notes`
-saying why too (exit 1, `invalid`, naming `notes`, otherwise).
+saying why (exit 1, `invalid`, naming `notes`, otherwise).
 
 Each change takes `--request-key`; without one it makes a key and prints it
 to standard error. A repeat with the key records nothing twice; the key
