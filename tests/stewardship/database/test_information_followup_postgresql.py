@@ -16,7 +16,6 @@ from parishkit.stewardship.reports.information import (
     InformationQuery,
     information_page,
 )
-from parishkit.stewardship.reports.weekly_observation import capture_weekly_observation
 from parishkit.stewardship.responses.information import update_information
 from parishkit.stewardship.responses.models import (
     AdditionalInformationItem,
@@ -187,10 +186,6 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
                 "context", flat=True
             )
         )
-    )
-    observation = capture_weekly_observation(harness.campaign.pk)
-    assert (
-        observation.items[0].value.text == submission.answers["additional_information"]
     )
     assert item.disposition == "current_actionable"
 

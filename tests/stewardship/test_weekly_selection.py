@@ -1,4 +1,4 @@
-"""Successful interval coverage is distinct from actual item delivery history."""
+"""A sent Weekly digest's retained observation decodes into validated values."""
 
 from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, datetime, timedelta
@@ -9,19 +9,15 @@ import pytest
 from parishkit.stewardship.reports.weekly_digest import (
     WeeklyCorrection,
     WeeklyInformation,
-    render_weekly_digest,
 )
 from parishkit.stewardship.reports.weekly_observation import (
     WeeklyUnavailable,
-    capture_weekly_observation,
     decode_observation,
-    observation_document,
 )
 from parishkit.stewardship.reports.weekly_selection import (
-    WeeklyHistory,
     WeeklyItem,
     WeeklyObservation,
-    select_weekly,
+    WeeklySelection,
 )
 
 NOW = datetime(2026, 9, 17, 12, tzinfo=UTC)
@@ -76,116 +72,11 @@ def document():
     }
 
 
-@pytest.mark.parametrize(
-    "microseconds,fraction",
-    [
-        (0, ""),
-        (100000, ".1"),
-        (120000, ".12"),
-        (123000, ".123"),
-        (123400, ".1234"),
-        (123450, ".12345"),
-        (123456, ".123456"),
-    ],
-)
-def test_observation_timestamp_encoding_matches_exact_sql_spelling(
-    microseconds, fraction
-):
-    """Cheap format coverage complements the real SQL capture invariant test."""
-    instant = datetime(2026, 9, 17, microsecond=microseconds, tzinfo=UTC)
-    row = item(1)
-    row = replace(row, value=replace(row.value, submitted_at=instant))
-    captured = replace(observation(row), observed_at=instant)
-    encoded = observation_document(captured)
-    expected = f"2026-09-17T00:00:00{fraction}+00:00"
-    assert encoded["observed_at"] == expected
-    assert encoded["items"][0][4] == expected
-    assert decode_observation(encoded) == captured
-
-
-def test_first_interval_selects_only_actionable_requests():
-    rows = (
-        item(1, disposition="withdrawn"),
-        item(2),
-        item(3, disposition="superseded"),
-    )
-    result = select_weekly(observation(*rows), WeeklyHistory(CAMPAIGN))
-    assert result.information == (rows[1].value,)
-    assert result.corrections == ()
-    assert result.observation.watermark == 3
-
-
-def test_successful_boundary_does_not_repeat_old_or_lose_equal_timestamp_new_items():
-    first, second = item(1), item(2)
-    result = select_weekly(observation(first, second), WeeklyHistory(CAMPAIGN, 1))
-    assert first.value.submitted_at == second.value.submitted_at
-    assert result.information == (second.value,)
-
-
-def test_partial_acceptance_is_not_successful_interval_progress():
-    row = item(1)
-    history = WeeklyHistory(CAMPAIGN, reported=frozenset({row.value.item_id}))
-    result = select_weekly(observation(row), history)
-    assert result.information == (row.value,)
-    assert history.watermark == 0
-
-
-@pytest.mark.parametrize("disposition", ["superseded", "withdrawn"])
-def test_corrections_survive_later_empty_intervals_and_do_not_repeat(disposition):
-    row = item(1, disposition=disposition)
-    observed = observation(row, watermark=50)
-    reported = frozenset({row.value.item_id})
-    result = select_weekly(observed, WeeklyHistory(CAMPAIGN, 50, reported))
-    assert result.corrections == (row.value,)
-    assert not hasattr(result.corrections[0], "text")
-    history = WeeklyHistory(
-        CAMPAIGN, 50, reported, frozenset({(row.value.item_id, disposition)})
-    )
-    assert select_weekly(observed, history).empty
-
-
-def test_unsent_withdrawn_items_do_not_fabricate_corrections():
-    observed = observation(item(1, disposition="withdrawn"), watermark=10)
-    result = select_weekly(observed, WeeklyHistory(CAMPAIGN, 10))
-    assert result.empty
-    assert result.observation.watermark == 10
-
-
-def test_replacement_produces_new_request_and_correction_only_for_reported_old_item():
-    old, new = item(1, disposition="superseded"), item(3)
-    history = WeeklyHistory(CAMPAIGN, 2, frozenset({old.value.item_id}))
-    result = select_weekly(observation(old, new), history)
-    assert result.information == (new.value,)
-    assert result.corrections == (old.value,)
-    digest = result.document(
-        snapshot_id=uuid4(),
-        parish_name="Parish",
-        campaign_name="Census",
-        campaign_timezone="America/New_York",
-    )
-    rendered = render_weekly_digest(digest, public_origin="https://parish.example")
-    assert "Private request 3" in rendered.text
-    assert "Private request 1" not in rendered.text
-
-
-def test_canonical_renderer_order_is_not_assumed_to_equal_sequence_order():
-    first = item(1, identifier=UUID(int=999))
-    second = item(2, identifier=UUID(int=10))
-    result = select_weekly(observation(first, second), WeeklyHistory(CAMPAIGN))
-    assert result.information == (second.value, first.value)
-
-
-def test_empty_interval_still_has_a_capture_boundary():
-    result = select_weekly(observation(watermark=9), WeeklyHistory(CAMPAIGN, 8))
-    assert result.empty and result.observation.watermark == 9
-
-
-def test_input_and_output_are_immutable_and_repr_does_not_show_private_values():
+def test_values_are_immutable_and_repr_does_not_show_private_values():
     value = item(1)
     observed = observation(value)
-    history = WeeklyHistory(CAMPAIGN)
-    selected = select_weekly(observed, history)
-    for obj in (value, observed, history, selected):
+    selected = WeeklySelection(observed, (value.value,), ())
+    for obj in (value, observed, selected):
         assert "Private request" not in repr(obj)
         assert "Example" not in repr(obj)
         assert str(CAMPAIGN) not in repr(obj)
@@ -228,45 +119,6 @@ def test_invalid_observation_is_rejected(change):
         replace(observation(item(1)), **change)
 
 
-@pytest.mark.parametrize(
-    "change",
-    [
-        {"campaign_id": "private"},
-        {"watermark": True},
-        {"watermark": -1},
-        {"reported": set()},
-        {"reported": frozenset({"private"})},
-        {"corrected": set()},
-        {"corrected": frozenset({"private"})},
-        {"corrected": frozenset({(uuid4(), "withdrawn")})},
-        {
-            "corrected": frozenset({(UUID(int=101), "current_actionable")}),
-            "reported": frozenset({UUID(int=101)}),
-        },
-    ],
-)
-def test_invalid_history_is_rejected(change):
-    with pytest.raises(ValueError):
-        replace(WeeklyHistory(CAMPAIGN), **change)
-
-
-@pytest.mark.parametrize(
-    "history", [WeeklyHistory(uuid4()), WeeklyHistory(CAMPAIGN, 2)]
-)
-def test_mixed_or_ahead_history_is_rejected(history):
-    with pytest.raises(ValueError):
-        select_weekly(observation(item(1)), history)
-
-
-@pytest.mark.parametrize(
-    "bad_observation,bad_history",
-    [(None, WeeklyHistory(CAMPAIGN)), (observation(), {})],
-)
-def test_untyped_selection_is_rejected(bad_observation, bad_history):
-    with pytest.raises(TypeError):
-        select_weekly(bad_observation, bad_history)
-
-
 def test_decode_copies_private_mutable_projection():
     source = document()
     result = decode_observation(source)
@@ -274,12 +126,6 @@ def test_decode_copies_private_mutable_projection():
     assert result.items[1].value.text == "Private request"
     assert result.items[0].value.disposition == "withdrawn"
     assert not hasattr(result.items[0].value, "text")
-    assert decode_observation(observation_document(result)) == result
-
-
-def test_observation_serialization_rejects_untyped_inputs():
-    with pytest.raises(TypeError):
-        observation_document(document())
 
 
 @pytest.mark.parametrize(
@@ -345,9 +191,3 @@ def test_decode_rejects_invalid_or_text_bearing_corrections(row):
 def test_decode_requires_exact_envelope(source):
     with pytest.raises(WeeklyUnavailable):
         decode_observation(source)
-
-
-@pytest.mark.parametrize("campaign", [str(CAMPAIGN), None, True])
-def test_capture_rejects_noncanonical_campaign_before_database_io(campaign):
-    with pytest.raises(ValueError, match="canonical campaign"):
-        capture_weekly_observation(campaign)

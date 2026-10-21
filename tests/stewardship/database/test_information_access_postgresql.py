@@ -11,9 +11,7 @@ from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.export_tasks import load_document
 from parishkit.stewardship.reports.information import InformationQuery, information_page
 from parishkit.stewardship.reports.information_exports import create_information_export
-from parishkit.stewardship.reports.weekly_observation import capture_weekly_observation
 from parishkit.stewardship.responses.models import AdditionalInformationItem
-from parishkit.stewardship.source.source_status import NOT_IN_PARISHSOFT
 
 from ..policy_factory import address
 from .auth_builders import signed_in
@@ -169,15 +167,11 @@ def test_current_source_absence_keeps_submitted_request(live_response_service):
     promote(snapshot, claim, harness.campaign, harness.rings)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         report = information_page(harness.campaign.pk, InformationQuery())
-        weekly = capture_weekly_observation(harness.campaign.pk)
         assert load_document(request) == original
         assert request.information_snapshot.source_id != snapshot.pk
     assert report["metadata"]["source_id"] == str(snapshot.pk)
     assert report["total"] == 1
     # The data no longer has the Family: the report gives it no name (the
-    # page shows the badge) and the weekly email names it by its status.
+    # page shows the badge).
     assert report["rows"][0]["family_name"] is None
-    assert weekly.items[0].value.family_name == NOT_IN_PARISHSOFT
-    assert (
-        report["rows"][0]["text"] == weekly.items[0].value.text == "Keep this request"
-    )
+    assert report["rows"][0]["text"] == "Keep this request"

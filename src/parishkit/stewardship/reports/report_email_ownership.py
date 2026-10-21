@@ -1,6 +1,6 @@
 """Opaque report email preparation ownership (report-emails spec, #1786).
 
-As for the digests (``digest_ownership``): the scheduler allocates one
+As the digests' was: the scheduler allocates one
 finite preparation per report email with sends due, every worker page
 binds to that same root and rechecks the current campaign, revision and
 Testing epoch, and an obsolete preparation may only cancel itself. Unlike a
