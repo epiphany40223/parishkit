@@ -1,4 +1,4 @@
--- Frozen forward migration file 0169 (the repository-wide file sequence):
+-- Frozen forward migration file 0168 (the repository-wide file sequence):
 -- each setup test is bound to its own inputs (#1578). This file is
 -- installed by the Django migration that names it in FROZEN_SQL and must
 -- never change once released; tests/stewardship/test_schema_migration_files.py
@@ -39,7 +39,7 @@ SET LOCAL search_path = public;
 -- The replaced functions' grants before the replacement, compared in the DO
 -- block. A transaction-local setting holds them, not a temporary table: the
 -- migration login has no TEMP privilege.
-SELECT set_config('stewardship.migration_0169_acl', (
+SELECT set_config('stewardship.migration_0168_acl', (
     SELECT string_agg(p.proname || '=' || coalesce(p.proacl::text,'default'), ';' ORDER BY p.proname)
     FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
     WHERE n.nspname='public' AND p.proname IN ('stewardship_setup_mail_live_v1',
@@ -293,8 +293,8 @@ BEGIN
            FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
            WHERE n.nspname='public' AND p.proname IN ('stewardship_setup_mail_live_v1',
                'stewardship_setup_slack_live_v1','stewardship_setup_readiness_guard_v1'))
-          IS DISTINCT FROM current_setting('stewardship.migration_0169_acl') THEN
-        RAISE EXCEPTION 'Migration 0169: a replaced setup test function is not installed as declared';
+          IS DISTINCT FROM current_setting('stewardship.migration_0168_acl') THEN
+        RAISE EXCEPTION 'Migration 0168: a replaced setup test function is not installed as declared';
     END IF;
     -- The readiness guard binds the Slack test to its sealed channel and
     -- still runs on readiness inserts.
@@ -307,7 +307,7 @@ BEGIN
             WHERE t.tgrelid='public.stewardship_setup_readiness_binding'::regclass
               AND t.tgname='stewardship_setup_readiness_insert' AND t.tgenabled='O'
               AND t.tgfoid='public.stewardship_setup_readiness_guard_v1()'::regprocedure) THEN
-        RAISE EXCEPTION 'Migration 0169: the setup readiness guard is not installed as declared';
+        RAISE EXCEPTION 'Migration 0168: the setup readiness guard is not installed as declared';
     END IF;
 END
 $check$;

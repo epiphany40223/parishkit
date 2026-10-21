@@ -1,7 +1,7 @@
 """Forward migration: each setup test is bound to its own inputs (#1578).
 
-Its SQL is the frozen file ``schema/migrations/0169_setup_test_binding.sql``
-(prefix 0169, assigned in the repository-wide file sequence), read whole and
+Its SQL is the frozen file ``schema/migrations/0168_setup_test_binding.sql``
+(prefix 0168, assigned in the repository-wide file sequence), read whole and
 never parsed. It replaces ``stewardship_setup_mail_live_v1`` and
 ``stewardship_setup_slack_live_v1`` without their joins on a succeeded
 parish data load and on the exact draft version, and
@@ -21,7 +21,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0169_setup_test_binding.sql"
+    / "0168_setup_test_binding.sql"
 )
 
 

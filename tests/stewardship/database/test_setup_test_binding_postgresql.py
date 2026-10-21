@@ -1,7 +1,7 @@
 # ruff: noqa: F811 -- pytest resolves the imported fixture dependencies.
 """Each setup test is bound to its own inputs (#1578), as SQL enforces it.
 
-Migration 0169 (``schema/migrations/0169_setup_test_binding.sql``) replaces
+Migration 0168 (``schema/migrations/0168_setup_test_binding.sql``) replaces
 the email and Slack live checks without their joins on a succeeded parish
 data load and on the exact draft version, and the readiness guard with the
 tests bound to the staged credential and the settings sealed with it. These
@@ -22,7 +22,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 MIGRATIONS = Path(__file__).resolve().parents[3] / (
     "src/parishkit/stewardship/schema/migrations"
 )
-FROZEN = MIGRATIONS / "0169_setup_test_binding.sql"
+FROZEN = MIGRATIONS / "0168_setup_test_binding.sql"
 
 
 def earlier(file, name):
@@ -34,7 +34,7 @@ def earlier(file, name):
     return text[start : text.index(tag + ";", body) + len(tag) + 1]
 
 
-# The bodies 0169 replaces: 0102's live checks and 0055's readiness guard.
+# The bodies 0168 replaces: 0102's live checks and 0055's readiness guard.
 OLD = {
     "stewardship_setup_mail_live_v1": "0102_setup_load_void.sql",
     "stewardship_setup_slack_live_v1": "0102_setup_load_void.sql",
@@ -49,7 +49,7 @@ class Rollback(Exception):
 @pytest.mark.parametrize("name", sorted(OLD))
 def test_the_check_refuses_each_old_body_and_the_file_installs_the_new(name):
     """The DO block passes on the installed functions and fails once any one
-    is the body 0169 replaces; the whole file, run over that body, installs
+    is the body 0168 replaces; the whole file, run over that body, installs
     the new one again."""
     text = FROZEN.read_text(encoding="utf-8")
     # The check compares the grants the file records before replacing.
@@ -62,7 +62,7 @@ def test_the_check_refuses_each_old_body_and_the_file_installs_the_new(name):
             cursor.execute(grants)
             cursor.execute(check)
         with (
-            pytest.raises(DatabaseError, match="Migration 0169"),
+            pytest.raises(DatabaseError, match="Migration 0168"),
             transaction.atomic(),
         ):
             cursor.execute(grants)

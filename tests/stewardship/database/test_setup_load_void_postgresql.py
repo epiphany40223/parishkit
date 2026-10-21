@@ -521,7 +521,7 @@ def earlier_definition(name):
 
 
 def restore_0102(cursor, text):
-    """Put back 0102's own email and Slack live checks, which 0169 (#1578)
+    """Put back 0102's own email and Slack live checks, which 0168 (#1578)
     replaced since, so 0102's check runs against what 0102 installed; the
     caller rolls back."""
     for name in ("stewardship_setup_mail_live_v1", "stewardship_setup_slack_live_v1"):
