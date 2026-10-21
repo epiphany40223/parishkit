@@ -55,15 +55,6 @@ REFUSAL_SORTING = Sorting.by_column(
     descending_first={"refused"},
     tiebreak=("id",),
 )
-# What each action offered on one delivery's page is called there.
-ACTION_LABELS = {
-    "note": _("Save evidence note"),
-    "accept": _("Confirm delivery using external evidence"),
-    "confirm_unsent": _("Record that the provider did not send it (no resend)"),
-    "resend": _("Authorize potentially duplicate resend"),
-    "retry_failed": _("Retry failed delivery"),
-    "retry_unsent": _("Retry delivery not accepted by the provider"),
-}
 
 
 def parse_window(parameters, allowed, sorting=None):
@@ -780,18 +771,172 @@ def offered_actions(state, task_state, *, campaign_state, can_resolve, can_retry
     return actions
 
 
+# The question each state's outcome panel asks (#1563), as (choice,
+# action) pairs in the page's order: each answer is exactly one existing
+# resolution action. Not sure it arrived asks "What did you find?" ("It
+# was sent", "It was not sent" then "Send it again?" Yes or No, "I can't
+# tell yet"); Failed asks "Send it again?"; a still-sending email whose
+# background task failed offers only "Try again now".
+QUESTIONS = {
+    "delivery_unknown": (
+        ("sent", "accept"),
+        ("resend", "resend"),
+        ("not_sent", "confirm_unsent"),
+        ("unsure", "note"),
+    ),
+    "permanent_failure": (("send_again", "retry_failed"), ("keep_failed", "note")),
+    "pending": (("try_again", "retry_unsent"),),
+    "retry_wait": (("try_again", "retry_unsent"),),
+}
+# The actions that send the email again, whose refusal the page explains by
+# the admission condition that failed (retry_refusal).
+SENDING_ACTIONS = frozenset({"resend", "retry_failed", "retry_unsent"})
+# Why an answer is unavailable, in the order the codes are checked (#1563;
+# admin-portal spec, Resolution questions). The last five explain a refused
+# send only.
+UNAVAILABLE_REASONS = {
+    "no_campaign": _("Notices belong to no campaign, so they can't be resolved here."),
+    "archived": _("The campaign is archived, so its email can't be changed."),
+    "held": _(
+        "Other campaign work (a restore review, or a cleanup, purge or go-live "
+        "step) is under way, so this email can't be resolved until it "
+        "finishes or is cancelled."
+    ),
+    "task_running": _(
+        "This email's background task has not finished, so it can be "
+        "answered once it has."
+    ),
+    "campaign_ended": _("The campaign has ended, so it is not sent again."),
+    "family_responded": _("The Family has already responded, so it is not sent again."),
+    "family_unreachable": _(
+        "The Family can no longer be emailed (ParishSoft no longer gives it a "
+        "usable address, or it left the campaign)."
+    ),
+    "paused": _("Campaign email is paused; it can be sent again once mail is resumed."),
+    "not_admitted": _(
+        "Sending it again is not available right now. It needs the campaign "
+        "to be open, campaign email not paused, up-to-date ParishSoft data, "
+        "and no other email already covering this one."
+    ),
+}
+
+
+def email_outcome(state, refused):
+    """Which outcome panel one email's page shows (#1563).
+
+    ``refused`` says the email's delivery recorded unresolved refused
+    addresses: a delivered email with one still needs the Administrator,
+    who checks and clears it.
+    """
+    if state == "delivered":
+        return "needs_resolution" if refused else "delivered"
+    if state == "cancelled":
+        return "cancelled"
+    if state in {"delivery_unknown", "permanent_failure"}:
+        return "needs_resolution"
+    return "still_sending"
+
+
+def question_choices(state, task_state, actions, *, blocked, refusal):
+    """The answers an email's outcome panel offers, with why any is unavailable.
+
+    Returns ``[{"choice", "action", "unavailable"}]`` in the page's order
+    (``QUESTIONS``); ``unavailable`` is None for an answer whose action is
+    offered now (it is in ``actions``, from ``offered_actions``, so the
+    page never offers what the server would refuse) or else a key of
+    ``UNAVAILABLE_REASONS``. ``blocked`` is the reason nothing can be
+    changed (no campaign, archived, held) or None; ``refusal`` is why the
+    resend admission refused a send (``retry_refusal``), or None. A
+    still-sending email asks nothing until its background task has failed,
+    as before.
+    """
+    if state in {"pending", "retry_wait"} and task_state != "failed":
+        return []
+    rows = []
+    for choice, action in QUESTIONS.get(state, ()):
+        if action in actions:
+            reason = None
+        elif blocked:
+            reason = blocked
+        elif task_state != "failed":
+            reason = "task_running"
+        else:
+            # Every other answer is offered whenever the campaign accepts
+            # changes and the task failed, so only a send can be refused here.
+            reason = refusal or "not_admitted"
+        rows.append(dict(choice=choice, action=action, unavailable=reason))
+    return rows
+
+
+def retry_refusal(message):
+    """Which condition refuses sending ``message`` again, for its page (#1563).
+
+    Called only after ``stewardship_delivery_retry_admitted_v1`` refused,
+    so the admitted or refused answer is always the server's own; this only
+    names a likely cause, and returns None (the generic reason) when none of
+    these explains it. One query of columns the web login reads, in the
+    order the page names them: a Production invitation or reminder whose
+    campaign is no longer scheduled or active or whose end has passed
+    (``campaign_ended``), or whose Family has responded
+    (``family_responded``); a Production Family email whose Family is no
+    longer active, eligible and deliverable (``family_unreachable``); or
+    Production campaign email paused, which fences every send but the
+    resend of a delivery that may have arrived (``paused``). Testing mail
+    is never diagnosed: its admission follows the rehearsal instead.
+    A campaign with no active configuration reads as not ended: the
+    answer then names the generic reason rather than "campaign ended".
+    """
+    if message["mode"] != "production":
+        return None
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT c.state IN ('scheduled','active')"
+            " AND COALESCE(p.ends_at>now_at, true),"
+            " f.effective_submission_id IS NOT NULL,"
+            " f.active AND f.email_eligible AND f.email_deliverable,"
+            " c.delivery_paused"
+            " FROM stewardship_campaign c"
+            " CROSS JOIN LATERAL (SELECT stewardship_campaign_now_v1() AS now_at) n"
+            " LEFT JOIN stewardship_campaign_configuration p"
+            " ON p.id=c.active_configuration_id"
+            " LEFT JOIN stewardship_family_campaign f ON f.id=%s"
+            " WHERE c.id=%s",
+            (message["family_id"], message["campaign_id"]),
+        )
+        found = cursor.fetchone()
+    if found is None:
+        return None
+    open_now, responded, reachable, paused = found
+    invitation = message["purpose"] in {"initial", "reminder"}
+    for reason, holds in (
+        ("campaign_ended", invitation and not open_now),
+        ("family_responded", invitation and responded),
+        ("family_unreachable", message["family_id"] is not None and not reachable),
+        ("paused", paused and message["state"] != "delivery_unknown"),
+    ):
+        if holds:
+            return reason
+    return None
+
+
 def read_detail(message_id, parameters):
     """One delivery: its metadata, history, latest task, notes and actions.
 
     The history's upper version is pinned to the message read, so a page
     and its history agree. ``actions`` are the resolutions the page offers
     now, in its order; ``retry_unavailable`` says a retry would be offered
-    but the campaign's resend admission refuses it. ``held`` are the
-    decisions (not the bare note) the page would offer but other campaign
-    work holds now (the export admission refuses; never for an archived
-    campaign, which accepts no change at all), so the page shows them
-    unavailable with why (#1331). Raises ``OutboxMessage.DoesNotExist`` for
-    an unknown message.
+    but the campaign's resend admission refuses it. ``refused`` are the
+    email's unresolved refused addresses (``email_refusals``).
+
+    The outcome panel (#1563): ``outcome`` (``email_outcome``) and
+    ``choices``, its question's answers with why any is unavailable
+    (``question_choices``): nothing can be changed for a notice
+    (``no_campaign``), on an archived campaign, or while other campaign
+    work holds it (``held``, the export admission refusing, #1331); a
+    refused send is named by ``retry_refusal``. ``paused`` says campaign
+    email is paused and ``last_attempt_at`` is when the provider was last
+    asked to send it (None before any attempt). Raises
+    ``OutboxMessage.DoesNotExist`` for an unknown message.
 
     Every email Sent mail lists opens here, operational and security
     notices and Ministry leader emails too (#1562). Those belong to no
@@ -805,7 +950,7 @@ def read_detail(message_id, parameters):
     from .outbox_models import OutboxEvent
 
     window = parse_window(parameters, set())[1]
-    message = listed_messages().values(*FIELDS).get(pk=message_id)
+    message = listed_messages().values(*FIELDS, "not_before").get(pk=message_id)
     events, events_following = window.rows(
         OutboxEvent.objects.filter(
             message_id=message_id, version__lte=message["version"]
@@ -821,9 +966,12 @@ def read_detail(message_id, parameters):
     )
     resolvable = message["purpose"] in PURPOSES and message["campaign_id"]
     campaign_state, can_resolve, can_retry = "archived", False, False
+    paused = False
     if resolvable:
-        campaign_state = (
-            Campaign.objects.only("state").get(pk=message["campaign_id"]).state
+        campaign_state, paused = (
+            Campaign.objects.filter(pk=message["campaign_id"])
+            .values_list("state", "delivery_paused")
+            .get()
         )
         with connection.cursor() as cursor:
             cursor.execute(
@@ -839,25 +987,33 @@ def read_detail(message_id, parameters):
         can_resolve=can_resolve,
         can_retry=can_retry,
     )
-    held = []
-    if resolvable and not can_resolve and campaign_state != "archived":
-        # What the page would offer once the campaign work finishes. The
-        # resend admission also refuses while campaign work holds the
-        # campaign, so the retry is held with the rest, named by the same
-        # notice, rather than drawn apart with a reason that misses the
-        # real blocker.
-        held = offered_actions(
-            message["state"],
-            task and task["state"],
-            campaign_state=campaign_state,
-            can_resolve=True,
-            can_retry=True,
-        )[1:]
     notes, notes_following = window.rows(
         DeliveryResolution.objects.filter(message_id=message_id)
         .order_by("-created_at", "-id")
         .values("created_at", "action", "evidence_note")
     )
+    refused = email_refusals(message_id)
+    task_state = task and task["state"]
+    retry_unavailable = bool(
+        resolvable
+        and task
+        and task["state"] == "failed"
+        and not can_retry
+        and message["state"]
+        in {"delivery_unknown", "permanent_failure", "pending", "retry_wait"}
+    )
+    blocked = (
+        "no_campaign"
+        if not resolvable
+        else "archived"
+        if campaign_state == "archived"
+        else "held"
+        if not can_resolve
+        else None
+    )
+    # The cause is looked up only for a send the admission refused, and
+    # only on a page that would otherwise offer it.
+    refusal = retry_refusal(message) if retry_unavailable and blocked is None else None
     return dict(
         delivery=message,
         events=events,
@@ -866,15 +1022,26 @@ def read_detail(message_id, parameters):
         window=window,
         has_next=events_following or notes_following,
         actions=actions,
-        held=held,
-        retry_unavailable=bool(
-            resolvable
-            and task
-            and task["state"] == "failed"
-            and not can_retry
-            and message["state"]
-            in {"delivery_unknown", "permanent_failure", "pending", "retry_wait"}
+        retry_unavailable=retry_unavailable,
+        refused=refused,
+        # The outcome panel (#1563): which one, its answers, whether
+        # campaign email is paused (a still-sending email waits for
+        # resume) and when the provider was last asked to send it.
+        outcome=email_outcome(message["state"], bool(refused)),
+        choices=question_choices(
+            message["state"],
+            task_state,
+            actions,
+            blocked=blocked,
+            refusal=refusal,
         ),
+        paused=paused,
+        last_attempt_at=OutboxEvent.objects.filter(
+            message_id=message_id, action="submit", version__lte=message["version"]
+        )
+        .order_by("-version")
+        .values_list("created_at", flat=True)
+        .first(),
     )
 
 

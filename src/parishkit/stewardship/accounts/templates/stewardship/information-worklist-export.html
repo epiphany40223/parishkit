@@ -1,0 +1,17 @@
+{% load i18n stewardship %}{% comment %}
+  Additional information's complete export (#1685), below the table and
+  always shown, as a worklist's export pane is (UX conventions, "Admin
+  tables"): one row of small export buttons (#1679, export_actions), each
+  posting its format, in the browser's time zone. It queues the existing
+  captured export with the worklist's view (export_fields: the search
+  and sort, and the Stage as the stored follow-up choices it stands for,
+  information_worklist.EXPORT_FILTERS), whose hidden fields follow every
+  in-place Apply, sort or page change (data-table-sync). The tip says what
+  the buttons cannot: To review and Ignored are both follow-up not needed in
+  the file, so either Stage exports both.
+{% endcomment %}<div class="export-pane">
+<form id="table-export" data-table-sync method="post" action="{% url 'admin:information_export' %}">{% csrf_token %}
+{% for key,value in export_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+<input type="hidden" name="request_key" value="{{ request_key }}">
+<label><input type="checkbox" name="history" value="yes"{% if not mutable %} disabled{% endif %}> {% translate "Include complete Staff workflow history" %}</label>
+{% translate "To review and Ignored are both recorded as follow-up not needed, so either Stage exports both." as tip %}{% export_actions "csv" "xlsx" "pdf" name="information" label=_("Export complete results") enabled=mutable describedby=mutable|yesno:",information-locked" tip=tip %}</form></div>

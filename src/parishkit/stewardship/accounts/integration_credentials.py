@@ -445,10 +445,15 @@ def save_credential(
     with transaction.atomic():
         sign_in_instant(request, record=False)
     if target in {"google_workspace", "slack"}:
-        from parishkit.stewardship.deployment import recorded_profile
+        from parishkit.stewardship.deployment import (
+            recorded_mail_redirect,
+            recorded_profile,
+        )
 
         try:
-            admit_candidate(target, value, recorded_profile())
+            admit_candidate(
+                target, value, recorded_profile(), redirect=recorded_mail_redirect()
+            )
         except ConfigError:
             raise ValueError("The credential has an invalid format.") from None
     records = integration_records(configuration.active_configuration.canonical_document)

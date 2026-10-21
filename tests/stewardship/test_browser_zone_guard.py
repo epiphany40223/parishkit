@@ -96,8 +96,9 @@ SERVER_INSTANTS = {
     "jobs/receipt_content.py": "email",
     "jobs/operational_content.py": "email",
     "reports/daily_digest.py": "email",
-    # The emailed weekly report (its Admin snapshot page shows it as sent).
-    "reports/weekly_digest.py": "email",
+    # The emailed weekly report's requests block (its Admin snapshot page
+    # shows it as sent).
+    "reports/report_blocks/additional_information.py": "email",
     # The Family portal's last-submitted line (campaign zone, named).
     "responses/presentation.py": "Family portal",
     # The shared helper behind responses/presentation.py.
@@ -111,10 +112,10 @@ SERVER_INSTANTS = {
     # Export stamps ("Downloaded …") in the zone the reader chose.
     "reports/census_changes.py": "export in the chosen zone",
     "reports/limitations.py": "export in the chosen zone",
-    # The roster export stamp is in the chosen zone; resolved_on() names a
-    # stale bulk row's day in the browser zone the dialog posts (the page's
-    # duplicate-row labels are localized by date-format-v1.js, #558).
+    # The roster export stamp is in the chosen zone.
     "reports/ministry_roster_views.py": "export in the chosen zone",
+    # Pledges' PDF (#1686), in the zone the download names.
+    "reports/pledge_review_views.py": "export in the chosen zone",
 }
 # Form fields whose label, help or errors name a fixed zone, by (form class,
 # field).

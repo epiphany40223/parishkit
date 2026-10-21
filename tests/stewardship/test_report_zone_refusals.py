@@ -1,18 +1,19 @@
 """Report dates without the browser's zone are refused with a plain reason (#558).
 
-The Additional information queue and its export take submitted dates only
-as days in the viewer's browser zone (one Ministry's requests, which also
-did, were retired in #1157), and so do Financial stewardship and its export
-for the first and latest response dates (migration 0110). A dated POST
-without a known zone (a tab opened before the release, or a browser that
-reports none) is a 400 that says so, never a guess and never a generic form
-error.
+Financial stewardship and its export take the first and latest response
+dates only as days in the viewer's browser zone (migration 0110). A dated
+POST without a known zone (a tab opened before the release, or a browser
+that reports none) is a 400 that says so, never a guess and never a generic
+form error. The Additional information queue and its export no longer have
+a submitted-date filter (#1888): a page drawn before then still posts its
+dates and zone, which are dropped unread, never refused.
 """
 
 from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
+from django.http import HttpResponse
 from django.test import RequestFactory
 
 from parishkit.stewardship.reports import (
@@ -39,7 +40,8 @@ def _signed_in(monkeypatch, module):
 
 
 def _information(zone):
-    """A dated queue filter with this zone (None leaves the field out)."""
+    """A dated queue filter with this zone (None leaves the field out), as a
+    page drawn before #1888 posts it."""
     values = InformationQuery(disposition="all", start="2026-11-01").form_values()
     return {key: value for key, value in values.items() if key != "zone"} | (
         {} if zone is None else {"zone": zone}
@@ -47,24 +49,54 @@ def _information(zone):
 
 
 @pytest.mark.parametrize("zone", ["", "Etc/Unknown", None])
-def test_information_queue_refuses_dates_without_a_zone(monkeypatch, zone):
-    """The queue's filter POST answers 400 with the zone message."""
+def test_information_queue_ignores_the_retired_dates(monkeypatch, zone):
+    """The worklist's filter POST (#1685) reads the view without the dates."""
     _signed_in(monkeypatch, information_views)
-    request = RequestFactory().post("/", _information(zone))
-    response = information_views.queue(request, uuid4())
-    assert response.status_code == 400 and ZONE in response.content
+    parse = Mock(wraps=information_views.WorklistQuery.parse)
+    monkeypatch.setattr(information_views.WorklistQuery, "parse", parse)
+    for name in ("admit_report_read", "_audit"):
+        monkeypatch.setattr(information_views, name, Mock())
+    page = HttpResponse("page")
+    monkeypatch.setattr(information_views, "campaign_response", Mock(return_value=page))
+    values = {"stage": "all", "search": "", "start": "2026-11-01", "end": "x"}
+    request = RequestFactory().post(
+        "/", values | ({} if zone is None else {"zone": zone})
+    )
+    assert information_views.queue(request, uuid4()) is page
+    assert set(parse.call_args.args[0]) == {"stage", "search"}
 
 
 @pytest.mark.parametrize("zone", ["", "Etc/Unknown", None])
-def test_information_export_refuses_dates_without_a_zone(monkeypatch, zone):
-    """So does its export, including a form from a page loaded before #558."""
+def test_information_export_ignores_the_retired_dates(monkeypatch, zone):
+    """So does its export: a pane drawn before #1888 still queues one, with
+    no date range captured."""
     _signed_in(monkeypatch, information_export_views)
+    create = Mock(return_value=Mock(pk=uuid4()))
+    monkeypatch.setattr(information_export_views, "create_information_export", create)
+    monkeypatch.setattr(information_export_views, "_redirect", Mock(return_value=302))
     request = RequestFactory().post("/", _information(zone) | EXPORT)
-    response = information_export_views.create(request, uuid4())
-    assert response.status_code == 400 and ZONE in response.content
+    assert information_export_views.create(request, uuid4()) == 302
+    query = create.call_args.kwargs["query"]
+    assert (query.start, query.end, query.zone) == ("", "", "")
 
 
-def test_an_export_with_a_query_string_is_invalid_before_any_zone_check(monkeypatch):
+def test_information_export_needs_no_dates(monkeypatch):
+    """The current pane posts no dates, zone or page, and queues the export."""
+    _signed_in(monkeypatch, information_export_views)
+    create = Mock(return_value=Mock(pk=uuid4()))
+    monkeypatch.setattr(information_export_views, "create_information_export", create)
+    monkeypatch.setattr(information_export_views, "_redirect", Mock(return_value=302))
+    values = {
+        key: value
+        for key, value in InformationQuery(disposition="all").form_values().items()
+        if key not in {"start", "end", "zone"}
+    }
+    request = RequestFactory().post("/", values | EXPORT)
+    assert information_export_views.create(request, uuid4()) == 302
+    assert create.call_args.kwargs["query"] == InformationQuery(disposition="all")
+
+
+def test_an_export_with_a_query_string_is_invalid(monkeypatch):
     """A query string is refused as invalid, never answered with the zone hint."""
     _signed_in(monkeypatch, information_export_views)
     values = _information(None) | EXPORT

@@ -168,43 +168,62 @@ def test_native_page_and_downloads(response_service, google, settings):
         # record ids read once, however many rows it shows.
         duid = rows[0]["family_duid"]
         link = timeline_link(harness.campaign, duid, directory_name(duid))
-        assert len(rows) == body.count(f"<td>{link}</td>".encode()) == 2
+        # The worklist draws the Family as each row's header cell.
+        cell = f'<th scope="row">{link}</th>'.encode()
+        assert len(rows) == body.count(cell) == 2
         assert len(link_reads(queries)) == 1
         assert get(browser, route + "?search=x")[0].status_code == 400
-        response, body = search(browser, route, {"status": "conflict"})
-        assert (
-            response.status_code == 200
-            and b"No census changes match these filters." in body
-        )
-        for invalid in ({"status": "bad"}, {"sort": "id"}, {"size": "7"}):
+        # The retired Submitted from and Through (#1888), from an old link
+        # or a page drawn before then, are dropped unread, never refused.
+        stale = "?start=2054-10-05&end=bad&zone=Nowhere/Zone"
+        response, body = get(browser, route + stale)
+        assert response.status_code == 200 and b'name="start"' not in body
+        stale = {"start": "bad", "end": "", "zone": ""}
+        assert search(browser, route, stale)[0].status_code == 200
+        response, body = search(browser, route, {"stage": "conflict"})
+        assert response.status_code == 200 and b"Nothing is at this stage." in body
+        for invalid in (
+            {"stage": "bad"},
+            {"status": "bad"},
+            {"sort": "id"},
+            {"size": "7"},
+        ):
             assert search(browser, route, invalid)[0].status_code == 400
-        response, body = search(browser, route, {"sort": "-submitted"})
+        response, body = search(browser, route, {"sort": "-who"})
         assert response.status_code == 200 and b'aria-sort="descending"' in body
         # Member DUID has its own column beside Who, and sorts in place (#932).
-        response, body = search(
-            browser, route, {"status": "all", "sort": "member_duid"}
-        )
+        response, body = search(browser, route, {"stage": "all", "sort": "member_duid"})
         assert response.status_code == 200 and b'aria-sort="ascending"' in body
         assert b'<td class="numeric">3</td>' in body
         export = route + "exports/"
+        # A download pane drawn before #1888 still posts its empty dates.
         response, body = search(
-            browser, export, {"format": "csv", "timezone": "UTC", "status": "all"}
+            browser,
+            export,
+            {
+                "format": "csv",
+                "timezone": "UTC",
+                "stage": "all",
+                "start": "",
+                "zone": "",
+            },
         )
         assert response.status_code == 200 and response["Content-Type"] == "text/csv"
         assert "stewardship-census-changes-" in response["Content-Disposition"]
         assert b"Requested" in body and b"How it reaches ParishSoft" in body
         table = list(csv.reader(io.StringIO(body.decode())))
         # The page's order (#932): ParishSoft status after Family (#1216),
-        # Member DUID right after Who, then Submitted and the latest
-        # resolution's three columns (#528).
+        # the Member's (#1752) and Member DUID right after Who, then
+        # Submitted and the latest resolution's three columns (#528).
         assert table[0][:2] == ["Family", "ParishSoft status"]
-        assert table[0][3:5] == ["Who", "Member DUID"]
-        assert table[0][11:] == ["Submitted", "Recorded by", "Recorded at", "Note"]
-        assert any(values[4] == "3" for values in table[1:])
-        # Every Family is current: no status to mark.
+        assert table[0][3:6] == ["Who", "Member's ParishSoft status", "Member DUID"]
+        assert table[0][12:] == ["Submitted", "Recorded by", "Recorded at", "Note"]
+        assert any(values[5] == "3" for values in table[1:])
+        # Every Family and Member is current: no status to mark.
         assert {values[1] for values in table[1:]} == {""}
+        assert {values[4] for values in table[1:]} == {""}
         response, body = search(
-            browser, export, {"format": "xlsx", "timezone": "UTC", "status": "all"}
+            browser, export, {"format": "xlsx", "timezone": "UTC", "stage": "all"}
         )
         assert response.status_code == 200
         book = load_workbook(io.BytesIO(body))
@@ -246,9 +265,9 @@ def test_native_page_and_downloads(response_service, google, settings):
         ]
         # One column set and the same rows in both files (#966).
         assert sheet == table
-        assert "Requested" in [values[7] for values in sheet[1:]]
+        assert "Requested" in [values[8] for values in sheet[1:]]
         response, body = search(
-            browser, export, {"format": "pdf", "timezone": "UTC", "status": "all"}
+            browser, export, {"format": "pdf", "timezone": "UTC", "stage": "all"}
         )
         assert response.status_code == 200
         assert response["Content-Type"] == "application/pdf"
@@ -322,8 +341,8 @@ def test_staff_may_open_the_page_and_ministry_leaders_may_not(
     response, body = get(browser, route)
     if allowed:
         assert response.status_code == 200 and b"9 Census Way" in body
-        # Staff may open the Timeline (its summary), so the name links.
-        assert b'<td><a href="/admin/reports/families/' in body
+        # Staff may open the Timeline, so the name links.
+        assert b'<th scope="row"><a href="/admin/reports/families/' in body
     else:
         assert response.status_code in {403, 404} and b"9 Census Way" not in body
         # A real CSRF POST to the live route: refused by access, not CSRF.

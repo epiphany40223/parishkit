@@ -5,8 +5,9 @@ XLSX or PDF summary of the comparison on the day the page shows. The view
 reads the page's comparison under the campaign's read guard and reduces it
 at once to the protected capture (``comparison_exports.read_capture``),
 then stores it and queues the file (``create_comparison_export``) and
-answers with the export's status page, where the shared lifecycle
-publishes, downloads, cancels and retries it.
+answers with a redirect to the export's status address, where the shared
+lifecycle publishes, downloads, cancels and retries it. The page's buttons
+follow that address in place and download the file there (#1778).
 
 The form posts exactly ``day`` (the page's comparison day, blank before day
 1 has ended), ``format`` and ``request_key``, each once, and no query, plus

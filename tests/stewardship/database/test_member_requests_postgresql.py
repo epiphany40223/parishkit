@@ -293,12 +293,13 @@ def test_date_work_survives_terminal_source_and_later_household_response(
         data.members[3]["memberStatus"] = (
             "Deceased" if change == "deceased" else "Inactive"
         )
+    before = ProposedChange.objects.get(field="death_date")
     snapshot, claim = prepare(data)
     with task_login(ServiceRole.WORKER, exact=True):
         promote(snapshot, claim, harness.campaign, harness.rings)
     date_change = ProposedChange.objects.get(field="death_date")
     expected = (
-        "conflict"
+        "pending"
         if change in {"moved", "removed"}
         else "resolved_upstream"
         if caught_up
@@ -306,7 +307,12 @@ def test_date_work_survives_terminal_source_and_later_household_response(
     )
     assert date_change.execution == expected
     if change in {"moved", "removed"}:
-        assert not date_change.current_available and date_change.current_value is None
+        # Rule 4 (#1738): a Member no longer in the Family gives no value,
+        # so the change keeps its stage and stored comparison untouched.
+        fields = ("version", "current_available", "current_value", "current_source_id")
+        assert [getattr(date_change, name) for name in fields] == [
+            getattr(before, name) for name in fields
+        ]
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT stewardship_response_field_source_v1(%s,%s,'3','death_date')",

@@ -1,0 +1,6 @@
+{% load i18n %}{% comment %}
+  Additional information's own filters after the worklist's Stage (#1685),
+  inside the shared filters form (components/review-worklist.html): the
+  search. There is no submitted-date filter (#1888), as on the other
+  review worklists.
+{% endcomment %}{% with q=query.information %}<div><label for="information-search">{% translate "Search Family name, DUID, submitted text or Staff notes" %}</label><input id="information-search" name="search" maxlength="200" value="{{ q.search }}"></div>{% endwith %}

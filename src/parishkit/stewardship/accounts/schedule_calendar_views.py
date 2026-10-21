@@ -19,6 +19,11 @@ changes anything: Edit opens the existing Edit scheduled email page (with
 the month shown, so it returns there; its Delete is Edit's, #1656), and each
 day's Add (#1521) the existing New scheduled email page with that send date
 (``schedule_entry_views.added_on``), whose review, Apply and audit are New's.
+Move… on a movable send (``ScheduleRow.movable``; a drag only fills in its
+date, #1521) posts the new date to that send's Edit page
+(``schedule_entry_views.MOVE``), so its review, Apply and audit are Edit's
+too: the page only draws the review dialog Edit's answer opens in, and
+Apply redraws the list of sends and the table in place.
 
 The table, Every email by date, has its own view of the sends (#1656): Show
 (``?show=``) leaves out the past ones by default, and its When and Schedule
@@ -154,7 +159,7 @@ def sends_view(sends, parameters, now, path):
 
 @require_http_methods(["GET", "HEAD"])
 def schedule_calendar(request, campaign_id):
-    """Show the current campaign's sends by date, read-only (Administrator).
+    """Show the current campaign's sends by date (Administrator).
 
     It reads the applied configuration in one read-only snapshot, as the
     scheduled emails list does, and rechecks access after rendering so a
@@ -190,6 +195,10 @@ def schedule_calendar(request, campaign_id):
                     "list_url": reverse("admin:schedule_settings"),
                     # Each day's Add (#1521) opens New with ?date=<day>.
                     "add_url": reverse("admin:schedule_new"),
+                    # Move… (#1521) posts to Edit at this configuration;
+                    # its review's Apply confirms on the list, as Edit's.
+                    "base_digest": configuration.active_configuration.digest,
+                    "apply_url": reverse("admin:schedule_settings"),
                 }
                 | sends_view(sends, parameters, now, request.path),
             )

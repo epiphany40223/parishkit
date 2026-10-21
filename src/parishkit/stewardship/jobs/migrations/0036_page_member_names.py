@@ -29,9 +29,9 @@ class Migration(migrations.Migration):
     dependencies = [
         # The jobs app's previous migration (0120, #1592), so the app keeps
         # one leaf, and the migration that installs the latest earlier
-        # frozen file (0125, #1763), so the files apply in prefix order.
+        # frozen file (0144, #1799), so the files apply in prefix order.
         ("stewardship_jobs", "0035_leader_emails"),
-        ("stewardship_accounts", "0030_secret_request_session"),
+        ("stewardship_reports", "0037_staff_timeline_export"),
     ]
 
     operations = [migrations.RunSQL(FROZEN_SQL.read_text(encoding="utf-8"))]

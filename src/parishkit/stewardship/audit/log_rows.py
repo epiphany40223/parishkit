@@ -168,7 +168,9 @@ EVENTS = tuple(sorted({item.value for item in Action} | {item.value for item in 
 # - ParishSoft refreshes: full refreshes and quick updates accepted,
 #   rejected, replaced or fallen back to a full reload, their failures and
 #   holds, an Administrator accepting a refused large change once, and the
-#   Ministry leader changes they cause (#1034). That one type
+#   Ministry leader changes they cause (#1034), and updating ParishSoft with
+#   census changes (#1688): an update is not a refresh, so the label says
+#   both. That one leader type
 #   is also recorded when a settings change (leader roles or Ministries)
 #   changes who leads; it stays here, with the refreshes
 #   that cause most of them, because each type belongs to one group.
@@ -215,6 +217,8 @@ ACTIVITY_TYPES = {
         "admin_cmd_users_confirm",
         "admin_cmd_parish_confirm",
         "admin_cmd_artwork_remove",
+        "admin_cmd_branding_preview",
+        "admin_cmd_branding_confirm",
         "admin_cmd_content_confirm",
         "admin_cmd_integration_confirm",
         "admin_cmd_integration_backup_probe",
@@ -224,6 +228,7 @@ ACTIVITY_TYPES = {
         "admin_cmd_integration_backup_key_confirm",
         "admin_cmd_workgroup_confirm",
         "admin_cmd_campaign_confirm",
+        "admin_cmd_campaign_create",
         "admin_cmd_campaign_shares_confirm",
         "user_leaders_import_requested",
         "user_leader_imported",
@@ -299,6 +304,22 @@ ACTIVITY_TYPES = {
         # Accept this change once (ADM-13 PR 5b, #530) on System health.
         "source_drop_accepted",
         "admin_cmd_system_refresh_accept",
+        # Updating ParishSoft with census changes (#528, #1688): checks,
+        # plans, confirmations, attempts, reruns, the final refresh and
+        # refusals. The page view stays ungrouped with the other views.
+        "census_publication_preflight_requested",
+        "census_publication_planned",
+        "census_publication_confirmed",
+        "census_publication_recorded",
+        "census_publication_rerun_requested",
+        "census_publication_refresh_requested",
+        "census_publication_switched_off",
+        "census_publication_read_unconfirmed",
+        "census_publication_refused",
+        # The command line's Check ParishSoft, Update and Run again (#1755).
+        "admin_cmd_census_update_check",
+        "admin_cmd_census_update_confirm",
+        "admin_cmd_census_update_rerun",
     ),
     "downloads": (
         *(
@@ -337,6 +358,7 @@ ACTIVITY_TYPES = {
         "response_started_list_exported",
         "response_submitted_list_exported",
         "roster_changes_exported",
+        "pledges_to_enter_exported",
         "ministry_followup_exported",
         "talents_report_exported",
         "system_logs_exported",
@@ -405,6 +427,7 @@ UNGROUPED_REASONS = {
         "response_started_list_viewed",
         "response_submitted_list_viewed",
         "roster_changes_viewed",
+        "pledges_to_enter_viewed",
         "source_form_viewed",
         "system_health_viewed",
         "system_logs_viewed",
@@ -424,13 +447,19 @@ UNGROUPED_REASONS = {
         "admin_cmd_followup_roster_bulk",
         "admin_cmd_followup_roster_entered",
         "admin_cmd_followup_update",
+        "admin_cmd_information_decide",
+        "admin_cmd_limitations_decide",
+        "admin_cmd_pledges_decide",
         "census_change_updated",
         "census_handling_corrected",
+        "refresh_checks_started",
         "chair_review_decided",
         "information_updated",
+        "limitation_reviewed",
         "ministry_request_updated",
         "ministry_followup_bulk_applied",
         "ministry_roster_entered",
+        "pledge_review_updated",
     ),
     "Staff opening a Family's form through Open form, and the Family sign-in "
     "it starts (#529); not a portal sign-in": (
@@ -452,6 +481,13 @@ UNGROUPED_REASONS = {
         "campaign_boundary_skipped",
         *built_types("production_"),
         "production_cancel_requested",
+        # The Go live page's actions from the command line (#1809).
+        "admin_cmd_go_live_start",
+        "admin_cmd_go_live_retry",
+        "admin_cmd_go_live_refresh_again",
+        "admin_cmd_go_live_stop",
+        "admin_cmd_go_live_confirm",
+        "admin_cmd_go_live_cancel",
         "runtime_transition",
         "rehearsal_gate_released",
         "rehearsal_invalidated",
@@ -528,17 +564,6 @@ UNGROUPED_REASONS = {
     "Found while using already-loaded ParishSoft data, not in a refresh": (
         "source_member_unusable",
     ),
-    # Publication plans (#528, DAT-09.01): no page shows them yet (ADM-09).
-    "Publishing census changes to ParishSoft; no page shows it yet": (
-        "census_publication_planned",
-        "census_publication_confirmed",
-        "census_publication_recorded",
-        "census_publication_preflight_requested",
-        "census_publication_rerun_requested",
-        "census_publication_switched_off",
-        "census_publication_read_unconfirmed",
-        "census_publication_refused",
-    ),
     # Refused Admin input (#1403): its writer is in place before anything
     # calls it, and its own Activity group, Refused input, comes with the
     # page's operational-only handling of that group.
@@ -565,7 +590,7 @@ ACTIVITY_LABELS = (
     ("sign_in", _("Sign-in activity")),
     ("configuration", _("Configuration changes")),
     ("family_mail", _("Family mail")),
-    ("parishsoft", _("ParishSoft refreshes")),
+    ("parishsoft", _("ParishSoft refreshes and updates")),
     ("downloads", _("Reports and downloads")),
     ("security", _("Security events")),
     ("family_portal", _("Family portal activity")),

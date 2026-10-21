@@ -76,7 +76,14 @@ SITES = {
     "accounts/activation_progress.py::control": site(
         {"production_tokens", "production_token_cleanup"},
         WEB,
-        {"accounts/activation_views.py", "local/seed_web.py"},
+        # The Go live page's Check step retries a stopped go-live's failed
+        # disposal through it (Retry stopping go-live, #1585); its Prepare
+        # step retries and discards the links through it (#1585 slice 3).
+        {
+            "accounts/go_live_prepare_views.py",
+            "accounts/go_live_views.py",
+            "local/seed_web.py",
+        },
     ),
     "accounts/campaign_family_test.py::_enqueue": site(
         # Called by request_tests (the Family test page and admin_tests).
@@ -86,8 +93,12 @@ SITES = {
     # Called by request_sample and by the scheduled email's test of an unsaved
     # edit (#446), which share the limits and the task.
     "accounts/campaign_mail.py::_queue": site("campaign_mail_test", WEB),
+    # Production activation's Retry, and pk-admin go-live retry (#1809),
+    # which runs as the web login.
     "accounts/confirmation_progress.py::retry": site(
-        "activation_catchup", WEB, {"accounts/confirmation_views.py"}
+        "activation_catchup",
+        WEB,
+        {"accounts/confirmation_views.py", "admin_go_live.py"},
     ),
     "accounts/setup_mail.py::request_sample": site(
         "setup_mail_test",
@@ -103,24 +114,29 @@ SITES = {
         "production_cleanup", WEB, {"accounts/go_live_progress.py"}
     ),
     "campaigns/production_storage.py::begin_transition": site(
-        # cleanup_requests.begin_cleanup, from the go-live cleanup page.
+        # cleanup_requests.begin_cleanup, from the Go live page's Start go-live.
         "production_cleanup",
         WEB,
         {"campaigns/cleanup_requests.py"},
     ),
-    # The census Publish page's calls (#528). Check ParishSoft, on the
-    # Publish to ParishSoft page, queues the preflight from the web login;
-    # Apply and Run again are a later slice, so nothing imports them yet.
+    # Update ParishSoft's calls (#528, #1688), all from the web login: Check
+    # ParishSoft queues the preflight, Update's Apply confirms the plan and
+    # queues its run, and Run again retries that run; the page and its
+    # pk-admin census update-* commands (#1755).
     "responses/publication_tasks.py::request_preflight": site(
         "census_publication_preflight",
         WEB,
-        {"reports/census_publication_views.py"},
+        {"reports/census_publication_views.py", "admin_census_update.py"},
     ),
     "responses/publication_tasks.py::confirm_and_publish": site(
-        "census_publication", WEB
+        "census_publication",
+        WEB,
+        {"reports/census_publication_views.py", "admin_census_update.py"},
     ),
     "responses/publication_tasks.py::rerun_publication": site(
-        "census_publication", WEB
+        "census_publication",
+        WEB,
+        {"reports/census_publication_views.py", "admin_census_update.py"},
     ),
     "jobs/delivery_resolution.py::resolve_delivery": site(
         "outbox_delivery",
@@ -260,14 +276,15 @@ SITES = {
     ),
     "source/requests.py::request_refresh": site(
         # The refresh page and command line (web), the refresh and go-live
-        # producers (scheduler), and the source handler's full fallback
-        # after a rejected delta (worker).
+        # producers (scheduler), the source handler's full fallback after a
+        # rejected delta and an update run's final refresh (#1688, worker).
         "source_refresh",
         {WEB, SCHEDULER, WORKER},
         {
             "accounts/refresh_views.py",
             "campaigns/go_live_sequencing.py",
             "local/seed_web.py",
+            "responses/publication_tasks.py",
             "source/fallback.py",
             "source/production.py",
         },

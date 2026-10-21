@@ -12,6 +12,7 @@ has none (#720), and the PDF is a US Letter page in the shared report frame
 """
 
 from contextlib import contextmanager
+from datetime import datetime
 from threading import RLock
 from typing import NamedTuple
 
@@ -26,8 +27,11 @@ RENDERER_VERSION = "participation-v3"
 # The daily email's drawing (#720), named in its PNG's Creator text so the
 # saved report page can tell which drawing a retained digest holds.
 EMAIL_RENDERER_VERSION = "participation-email-v2"
-# The PDF's drawing: the plot inside the shared report page frame (#926).
-PDF_RENDERER_VERSION = "participation-pdf-v2"
+# The PDF's drawing: the plot inside the shared report page frame (#926),
+# among the Response dashboard's sections since version 3 (#1557).
+PDF_RENDERER_VERSION = "participation-pdf-v3"
+# The PDF section the chart page and the daily table hold (#1557).
+DAILY_SECTION = "Daily participation"
 # The plot box (figure fractions) spans every panel, from the top of the
 # first to the bottom of the last; the page's hover and date slider map the
 # box's left and right edges to the first and last dates. With no right-hand
@@ -129,16 +133,19 @@ def _fit_to_margins(figure):
         )
 
 
-def pdf_frame(document):
-    """The shared report page frame for the chart PDF (#926).
+def pdf_frame(document, section=None):
+    """The shared report page frame for the participation PDF (#926).
 
-    It names the parish, campaign and population scope like the page PNG.
-    Unlike the other report PDFs it states no capture or request time: the
-    chart's provenance travels in the file's metadata instead (#575).
+    It names the parish, campaign and population scope like the page PNG,
+    and ``section``, the Response dashboard section the page holds (#1557),
+    under the title. Unlike the other report PDFs it states no capture or
+    request time: the chart's provenance travels in the file's metadata
+    instead (#575).
     """
     return pdf_design.PdfFrame(
         title=f"Family participation — {document.scope_label}",
         eyebrow=f"{document.parish_name} · {document.campaign_name}",
+        details=(section,) if section else (),
     )
 
 
@@ -259,13 +266,15 @@ def rendering_style():
 
 
 @contextmanager
-def participation_figure(document, *, email=False, pdf=False):
+def participation_figure(document, *, email=False, pdf=False, page=(1, 1)):
     """Own plotting state until consumption ends; callers cannot leak a figure.
 
     ``email`` drops the page furniture (parish and campaign names, the scope
     title and the renderer footer) that the daily email already states in its
     text (#720), and lets the plot fill the image (``EMAIL_PLOT_LAYOUT``).
-    ``pdf`` draws a US Letter page: the shared report frame around the plot.
+    ``pdf`` draws the PDF's chart page: the shared report frame, naming the
+    Daily participation section, around the plot; ``page`` is its
+    ``(number, count)`` in the file.
     """
     if not isinstance(document, ParticipationDocument):
         raise TypeError("Rendering requires an immutable participation document.")
@@ -284,8 +293,8 @@ def participation_figure(document, *, email=False, pdf=False):
             figure = Figure(figsize=(12, 7), dpi=120, facecolor="white")
         try:
             if pdf:
-                frame = pdf_frame(document)
-                frame.draw(pdf_design.Canvas(figure), 1, 1)
+                frame = pdf_frame(document, DAILY_SECTION)
+                frame.draw(pdf_design.Canvas(figure), *page)
                 layout = pdf_layout(frame)
             else:
                 layout = EMAIL_LAYOUT if email else PAGE_LAYOUT
@@ -415,39 +424,148 @@ def provenance_text(document):
     return " ".join(document.as_of_label.split("\n"))
 
 
+def pdf_cell(value):
+    """One PDF table cell in the page's words; "Unavailable" for an unknown value.
+
+    Dates and times are left to ``pdf_design.safe``, which writes them in
+    the parish's date format.
+    """
+    from parishkit.stewardship.web.presentation import number
+
+    from .money import MoneyAmount
+
+    if value is None:
+        return "Unavailable"
+    if isinstance(value, MoneyAmount):
+        return value.display
+    if type(value) is int:
+        return number(value)
+    return value
+
+
+def summary_pdf_rows(document):
+    """The Summary section's PDF rows: every column of its CSV and XLSX."""
+    from zoneinfo import ZoneInfo
+
+    from .participation_summary import share_text
+
+    zone = ZoneInfo(document.browser_timezone)
+    return [
+        [
+            group,
+            figure,
+            pdf_cell(value.astimezone(zone) if isinstance(value, datetime) else value),
+            share_text(ratio),
+            note,
+        ]
+        for group, figure, value, ratio, note in document.summary.rows()
+    ]
+
+
+def daily_pdf_rows(document):
+    """The daily table's PDF rows: every column of the CSV and XLSX, in order."""
+    from zoneinfo import ZoneInfo
+
+    from .money import MoneyAmount, source_cents
+    from .participation import participation_columns, participation_table
+
+    zone = ZoneInfo(document.browser_timezone)
+    keys = [key for key, _ in participation_columns(document)]
+    rows = []
+    for day, row in zip(document.days, participation_table(document), strict=True):
+        values = row | {"date": day.local_date}
+        if row["source_as_of"] is not None:
+            values["source_as_of"] = day.source_as_of.astimezone(zone)
+        if "pledge_usd" in row and day.pledge_available:
+            values["pledge_usd"] = MoneyAmount(source_cents(row["pledge_usd"]))
+        rows.append([pdf_cell(values[key]) for key in keys])
+    return rows
+
+
+def participation_pdf(document, output):
+    """The Response dashboard's export as a PDF: its sections in page order.
+
+    The Summary table (when the export captured one), then the chart on a
+    page of its own, then every daily row as a table under the CSV's
+    columns (#1557). Every page is in the shared report frame and names its
+    section under the title. Like the chart image it states no request or
+    capture time; the provenance is the file's ``Subject`` (#575), and the
+    creation time is the request's, so a retried rendering is the same.
+    """
+    from matplotlib.backends.backend_pdf import PdfPages
+    from matplotlib.figure import Figure
+
+    from .comparison_documents import fitted_table
+    from .participation import participation_columns
+    from .participation_summary import COLUMNS as SUMMARY_COLUMNS
+    from .participation_summary import SUMMARY
+
+    def tables(section, headings, rows):
+        """One section's table pages: ``(frame, table, page)`` each."""
+        frame = pdf_frame(document, section)
+        table = fitted_table(headings, rows)
+        return [
+            (frame, table, page) for page in pdf_design.table_pages(table, rows, frame)
+        ]
+
+    pages = []
+    if document.summary is not None:
+        pages += tables(SUMMARY, SUMMARY_COLUMNS, summary_pdf_rows(document))
+    pages.append(None)  # the chart
+    pages += tables(
+        DAILY_SECTION,
+        [heading for _, heading in participation_columns(document)],
+        daily_pdf_rows(document),
+    )
+    metadata = {
+        "Title": "Family participation",
+        "Creator": PDF_RENDERER_VERSION,
+        "Subject": provenance_text(document),
+        # The logical document originates at its immutable request, not at
+        # a retry's wall-clock render time.
+        "CreationDate": document.requested_at,
+        "ModDate": document.requested_at,
+        "Producer": "ParishKit",
+    }
+    with rendering_style(), PdfPages(output, metadata=metadata) as pdf:
+        for number, page in enumerate(pages, 1):
+            if page is None:
+                with participation_figure(
+                    document, pdf=True, page=(number, len(pages))
+                ) as figure:
+                    pdf.savefig(figure)
+                continue
+            frame, table, rows = page
+            figure = Figure(
+                figsize=(pdf_design.PAGE_WIDTH / 72, pdf_design.PAGE_HEIGHT / 72),
+                facecolor="white",
+            )
+            try:
+                canvas = pdf_design.Canvas(figure)
+                frame.draw(canvas, number, len(pages))
+                pdf_design.draw_table(table, frame)(canvas, rows)
+                pdf.savefig(figure)
+            finally:
+                figure.clear()
+
+
 def render_participation(document, output, *, format, email=False):
     """Write a fixed-layout artifact without host clock or random PDF metadata.
 
     ``email`` selects the daily email's PNG drawing (see
-    ``participation_figure``); a PDF is always the framed report page.
+    ``participation_figure``); a PDF is the export's sections in the report
+    frame (``participation_pdf``).
     """
     if format not in {"png", "pdf"}:
         raise ValueError("Participation charts support PNG or PDF.")
-    pdf = format == "pdf"
-    with participation_figure(document, email=email and not pdf, pdf=pdf) as figure:
-        metadata = {
-            "Title": "Family participation",
-            "Creator": PDF_RENDERER_VERSION
-            if pdf
-            else EMAIL_RENDERER_VERSION
-            if email
-            else RENDERER_VERSION,
-        }
+    if format == "pdf":
+        return participation_pdf(document, output)
+    with participation_figure(document, email=email) as figure:
         # The image no longer draws the source snapshot and request time; the
         # file keeps them as metadata instead (Administrator decision, #575).
-        # PNG takes any text key; PDF only the standard Info keys, so Subject.
-        provenance = provenance_text(document)
-        if format == "png":
-            metadata["Description"] = provenance
-        if format == "pdf":
-            metadata.update(
-                {
-                    "Subject": provenance,
-                    # The logical document originates at its immutable request,
-                    # not at a retry's wall-clock render time.
-                    "CreationDate": document.requested_at,
-                    "ModDate": document.requested_at,
-                    "Producer": "ParishKit",
-                }
-            )
+        metadata = {
+            "Title": "Family participation",
+            "Creator": EMAIL_RENDERER_VERSION if email else RENDERER_VERSION,
+            "Description": provenance_text(document),
+        }
         figure.savefig(output, format=format, dpi=120, metadata=metadata)

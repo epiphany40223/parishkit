@@ -4607,6 +4607,42 @@ BEGIN
                AND NOT EXISTS (SELECT 1 FROM public.stewardship_proposed_change proposal
                    WHERE proposal.submission_id=NEW.id AND proposal.entity_kind=answer.entity
                      AND proposal.entity_key=answer.identity AND proposal.field=answer.field)
+               -- The same answer again for a change already entered by hand
+               -- or published, which the download may not show yet, keeps
+               -- that change and makes no row (the review pipeline's
+               -- resubmission rule, #1683): the newest earlier change for
+               -- the key is entered or published with this very answer, and
+               -- the prior census response gave it too. Without that, an
+               -- answer set back to ParishSoft's value in between (which
+               -- makes no row) would let the old answer again pass with no
+               -- row, where responses/proposals.py makes a new one. Not for
+               -- a terminal request, which is no longer presented once
+               -- entered, so asking for it again is a new request.
+               AND ((answer.entity='member'
+                     AND answer.field IN ('moved_household','deceased_status','death_date'))
+                    OR NOT EXISTS (SELECT 1 FROM (
+                   SELECT proposal.execution, proposal.submitted_value
+                   FROM public.stewardship_proposed_change proposal
+                   JOIN public.stewardship_submission history ON history.id=proposal.submission_id
+                   WHERE history.family_id=NEW.family_id AND history.campaign_id=NEW.campaign_id
+                     AND history.mode=NEW.mode
+                     AND history.rehearsal_epoch_id IS NOT DISTINCT FROM NEW.rehearsal_epoch_id
+                     AND history.family_version<NEW.family_version
+                     AND proposal.entity_kind=answer.entity
+                     AND proposal.entity_key=answer.identity AND proposal.field=answer.field
+                   ORDER BY history.family_version DESC LIMIT 1) latest
+                   JOIN public.stewardship_submission census_prior
+                     ON census_prior.id=public.stewardship_response_census_anchor_v1(NEW.prior_submission_id)
+                   CROSS JOIN LATERAL (SELECT census_prior.answers #> CASE answer.entity
+                         WHEN 'family' THEN ARRAY['family',answer.field]
+                         WHEN 'member' THEN ARRAY['members',answer.identity,answer.field]
+                         ELSE ARRAY['proposed_members',answer.identity] END AS value) given
+                   WHERE latest.execution IN ('published','resolved_external')
+                     AND public.stewardship_response_comparison_v1(answer.field,latest.submitted_value)
+                         IS NOT DISTINCT FROM submitted_key
+                     AND given.value IS NOT NULL
+                     AND public.stewardship_response_comparison_v1(answer.field,given.value)
+                         IS NOT DISTINCT FROM submitted_key))
             THEN
                 RAISE EXCEPTION 'Submitted census change requires atomic derived work' USING ERRCODE='23514';
             END IF;
@@ -4876,11 +4912,38 @@ BEGIN
                 RAISE EXCEPTION 'Proposal execution differs from its derived merge state' USING ERRCODE='23514';
             END IF;
         ELSE
-            IF OLD.execution IN ('published','resolved_upstream','resolved_external','cancelled','superseded')
+            -- A final change never changes, except a change Entered by hand
+            -- that the web login reworks over Entered incorrectly (#1737):
+            -- the web branch below admits that only with its paired
+            -- resolution row, whose own guard requires the change's latest
+            -- refresh check to say Entered incorrectly; and an Updated in
+            -- ParishSoft change a refresh finds ParishSoft no longer holds
+            -- (#1749), which moves to conflict only with its paired refresh
+            -- check (below), never through the web login.
+            IF (OLD.execution IN ('published','resolved_upstream','resolved_external','cancelled','superseded')
+                    AND NOT (OLD.execution='resolved_external' AND current_user='pk_stewardship_web')
+                    AND NOT (OLD.execution='published' AND NEW.execution='conflict'
+                        AND current_user<>'pk_stewardship_web'))
                 OR (to_jsonb(NEW)-ARRAY['current_available','current_value','current_source_id','admin_value_set','admin_value','decision','execution','superseded_by_id','version','updated_at'])
                     IS DISTINCT FROM (to_jsonb(OLD)-ARRAY['current_available','current_value','current_source_id','admin_value_set','admin_value','decision','execution','superseded_by_id','version','updated_at'])
             THEN
                 RAISE EXCEPTION 'Proposal history and terminal outcomes are immutable' USING ERRCODE='23514';
+            END IF;
+            -- An Updated in ParishSoft change becomes a Conflict (#1749) only
+            -- with the refresh check the promotion recorded for it at its
+            -- version, whose own guard checked ParishSoft's value against
+            -- the snapshot and the change: the change takes that value and
+            -- snapshot. The worker's reconciliation branch below then
+            -- requires the fenced, pinned source and returns the decision
+            -- to review.
+            IF OLD.execution='published' AND NOT EXISTS (
+                SELECT 1 FROM public.stewardship_refresh_check k
+                WHERE k.proposal_id=OLD.id AND k.item_version=OLD.version
+                  AND k.outcome='conflict' AND k.snapshot_id=NEW.current_source_id
+                  AND NEW.current_available
+                  AND k.observed=jsonb_build_object('available',true,'value',NEW.current_value))
+            THEN
+                RAISE EXCEPTION 'An updated change becomes a Conflict only with its refresh check' USING ERRCODE='23514';
             END IF;
             IF current_user='pk_stewardship_worker'
                AND NEW.current_source_id IS NOT DISTINCT FROM OLD.current_source_id THEN
@@ -4896,7 +4959,10 @@ BEGIN
                 -- it to pending or failed when that outcome is invalidated.
                 -- The publication check also marks it resolved upstream when
                 -- its plan, recorded in this transaction, found the value
-                -- already in ParishSoft.
+                -- already in ParishSoft. It queues a change only while the
+                -- current data lists its Member as an active, living Member
+                -- of the change's Family (#1738, #1749), as preflight and the
+                -- worker check before they read or write.
                 IF ROW(NEW.current_available,NEW.current_value,NEW.admin_value_set,
                        NEW.admin_value,NEW.decision,NEW.superseded_by_id)
                    IS DISTINCT FROM
@@ -4905,6 +4971,16 @@ BEGIN
                    OR NOT (
                    (OLD.execution IN ('pending','failed') AND NEW.execution='queued'
                        AND OLD.decision='approved' AND OLD.handling='api' AND OLD.entity_kind='member'
+                       AND public.stewardship_member_source_status_v1(
+                           (SELECT current_source.snapshot_id
+                               FROM public.stewardship_source_current current_source
+                               WHERE current_source.singleton),
+                           OLD.entity_key,
+                           (SELECT listed_family.family_duid
+                               FROM public.stewardship_submission listed_response
+                               JOIN public.stewardship_family_campaign listed_family
+                                   ON listed_family.id=listed_response.family_id
+                               WHERE listed_response.id=OLD.submission_id))='current'
                        AND EXISTS (SELECT 1 FROM public.stewardship_publication_field f
                            JOIN public.stewardship_publication_entity e ON e.id=f.entity_id
                            JOIN public.stewardship_publication_plan p ON p.id=e.plan_id
@@ -4970,11 +5046,17 @@ BEGIN
                 -- An approval resting on it goes back to To review while the
                 -- change stays open. A queued change keeps its approval (the
                 -- publish worker owns it then); its plan, merged against the
-                -- Family's baseline again, can only meet a conflict. Nothing
-                -- else here changes the decision. (The CASE is in
-                -- parentheses: an IF condition ends at its first THEN outside
-                -- them.)
-                IF NEW.decision IS DISTINCT FROM (CASE WHEN OLD.decision='approved'
+                -- Family's baseline again, can only meet a conflict. (The
+                -- CASE is in parentheses: an IF condition ends at its first
+                -- THEN outside them.)
+                -- An Updated in ParishSoft change a refresh found
+                -- ParishSoft no longer holds (#1749) goes back to To
+                -- review too: its approval is decided again, never carried
+                -- by a later refresh or the Family's same answer back
+                -- into force over the undo in ParishSoft. Nothing else
+                -- here changes the decision.
+                IF NEW.decision IS DISTINCT FROM (CASE WHEN OLD.execution='published'
+                       THEN 'unreviewed' WHEN OLD.decision='approved'
                        AND OLD.execution IN ('pending','failed')
                        AND NEW.execution IN ('pending','conflict')
                        AND EXISTS (SELECT 1 FROM public.stewardship_proposal_review base
@@ -4996,7 +5078,10 @@ BEGIN
                 -- execution (entered) or the decision (ignored, reopened),
                 -- nothing else, and advances the version by one. Any other
                 -- web change must be a replacement by a later Family response,
-                -- which never changes the decision.
+                -- which never changes the decision. A change Entered by hand
+                -- takes only a resolution (#1737): Entered by hand again keeps
+                -- it entered, and Back to review (reopened) makes it pending
+                -- with no decision, open to reconciliation again.
                 IF NOT EXISTS (
                     SELECT 1 FROM public.stewardship_proposal_resolution r
                     WHERE r.proposal_id=OLD.id AND r.expected_version=OLD.version
@@ -5011,8 +5096,10 @@ BEGIN
                               AND NEW.decision=OLD.decision
                           WHEN 'ignored' THEN NEW.decision='ignored'
                               AND NEW.execution=OLD.execution
+                              AND OLD.execution<>'resolved_external'
                           WHEN 'reopened' THEN NEW.decision='unreviewed'
-                              AND NEW.execution=OLD.execution
+                              AND NEW.execution=(CASE WHEN OLD.execution='resolved_external'
+                                  THEN 'pending' ELSE OLD.execution END)
                           ELSE false END)
                    -- An Administrator's review of an Automatic change (#528,
                    -- ADM-09) is admitted the same way, only with its paired
@@ -5026,7 +5113,9 @@ BEGIN
                    -- (an active accepted base) away from approved undoes that,
                    -- putting it back to conflict; every other review keeps the
                    -- execution.
-                   AND NOT EXISTS (
+                   -- An entered change takes neither a review nor a Family's
+                   -- replacement (#1737).
+                   AND (OLD.execution='resolved_external' OR (NOT EXISTS (
                     SELECT 1 FROM public.stewardship_proposal_review v
                     WHERE v.proposal_id=OLD.id AND v.expected_version=OLD.version
                       AND NEW.version=OLD.version+1
@@ -5078,7 +5167,7 @@ BEGIN
                          AND (NEW.execution <> 'superseded' OR EXISTS (
                              SELECT 1 FROM public.stewardship_proposed_change successor
                              WHERE successor.id=NEW.superseded_by_id AND successor.submission_id=later.id))
-                   ))
+                   ))))
                 THEN
                     RAISE EXCEPTION 'Proposal replacement requires a new final Family response' USING ERRCODE='23514';
                 END IF;
@@ -5505,6 +5594,7 @@ DECLARE
     later public.stewardship_submission;
     prior public.stewardship_ministry_request;
     successor public.stewardship_ministry_request;
+    replaced public.stewardship_ministry_request;
     group_name text; expected_state text; same_intent boolean;
     staff_at timestamp with time zone;
 BEGIN
@@ -5530,6 +5620,58 @@ BEGIN
         RAISE EXCEPTION 'Ministry request requires its immutable response' USING ERRCODE='23514';
     END IF;
     group_name := CASE WHEN NEW.entity_kind='member' THEN 'members' ELSE 'proposed_members' END;
+    IF TG_OP='INSERT' AND NEW.parish_added THEN
+        -- A request the parish added (#1684): a current Staff member or
+        -- Administrator, on the Family's latest live response in a campaign
+        -- that admits edits, for a Member that response lists and a Ministry
+        -- the campaign asks about, open and unworked (its Accept follows as
+        -- a revision), with no current request for that Member and
+        -- Ministry. It may name the same Member's ignored request it was
+        -- added in place of.
+        IF current_user<>'pk_stewardship_web' OR response.mode<>'live'
+           OR NOT coalesce((public.stewardship_ministry_scope_v1(NEW.actor_id)->'operational')
+               ='true'::jsonb,false)
+           OR NOT public.stewardship_export_admitted_v1(response.campaign_id,true)
+           OR EXISTS (SELECT 1 FROM public.stewardship_submission newer
+               WHERE newer.family_id=response.family_id AND newer.campaign_id=response.campaign_id
+                 AND newer.mode='live' AND newer.family_version>response.family_version)
+           OR NEW.entity_kind<>'member' OR NOT ((response.answers->'members') ? NEW.entity_key)
+           OR NOT EXISTS (SELECT 1 FROM public.stewardship_campaign c
+               JOIN public.stewardship_campaign_configuration cc ON cc.id=c.active_configuration_id
+               WHERE c.id=response.campaign_id
+                 AND cc.values->'ministry_duids' @> to_jsonb(NEW.ministry_duid))
+           OR EXISTS (SELECT 1 FROM public.stewardship_ministry_request current_request
+               JOIN public.stewardship_submission history ON history.id=current_request.submission_id
+               WHERE history.family_id=response.family_id AND history.campaign_id=response.campaign_id
+                 AND history.mode='live' AND current_request.entity_kind=NEW.entity_kind
+                 AND current_request.entity_key=NEW.entity_key
+                 -- A request holds its Family's Ministry and its Edit's:
+                 -- Back to review can return it to the first.
+                 AND NEW.ministry_duid IN (current_request.ministry_duid,
+                     current_request.reviewed_ministry_duid)
+                 AND current_request.state NOT IN ('cancelled','superseded'))
+           OR NEW.version<>1 OR NEW.state<>'new' OR NEW.assignee_id IS NOT NULL
+           OR NEW.superseded_by_id IS NOT NULL OR NEW.outcome IS NOT NULL
+           OR NEW.resolved_at IS NOT NULL OR NEW.resolution_source_id IS NOT NULL
+           OR NEW.reviewed_ministry_duid IS NOT NULL THEN
+            RAISE EXCEPTION 'A request the parish adds needs Staff, a current response and a free Ministry'
+                USING ERRCODE='23514';
+        END IF;
+        IF NEW.added_in_place_of_id IS NOT NULL THEN
+            SELECT r.* INTO replaced FROM public.stewardship_ministry_request r
+                JOIN public.stewardship_submission history ON history.id=r.submission_id
+                WHERE r.id=NEW.added_in_place_of_id AND history.family_id=response.family_id
+                  AND history.campaign_id=response.campaign_id AND history.mode='live';
+            IF replaced.id IS NULL OR replaced.entity_kind<>NEW.entity_kind
+               OR replaced.entity_key<>NEW.entity_key
+               OR NOT (replaced.state='closed_no_response'
+                   OR (replaced.state='resolved' AND replaced.outcome NOT IN ('joined','leave_confirmed'))) THEN
+                RAISE EXCEPTION 'An added request replaces only the same Member''s ignored request'
+                    USING ERRCODE='23514';
+            END IF;
+        END IF;
+        RETURN NEW;
+    END IF;
     IF TG_OP='INSERT' THEN
         IF NOT EXISTS (SELECT 1 FROM public.stewardship_family_form_baseline
                        WHERE id=response.baseline_id AND state='open')
@@ -5537,7 +5679,8 @@ BEGIN
            OR NOT coalesce(response.answers#>ARRAY['ministries',group_name,NEW.entity_key,NEW.action]
                            @> to_jsonb(NEW.ministry_duid),false)
            OR NEW.superseded_by_id IS NOT NULL OR NEW.outcome IS NOT NULL
-           OR NEW.resolved_at IS NOT NULL OR NEW.resolution_source_id IS NOT NULL THEN
+           OR NEW.resolved_at IS NOT NULL OR NEW.resolution_source_id IS NOT NULL
+           OR NEW.reviewed_ministry_duid IS NOT NULL OR NEW.added_in_place_of_id IS NOT NULL THEN
             RAISE EXCEPTION 'Ministry request must derive from an in-flight final answer' USING ERRCODE='23514';
         END IF;
         SELECT * INTO prior FROM public.stewardship_ministry_request WHERE id=
@@ -5553,16 +5696,24 @@ BEGIN
         END IF;
         RETURN NEW;
     END IF;
-    IF OLD.state NOT IN ('new','assigned','in_progress') OR NEW.version<>OLD.version+1
-       OR (to_jsonb(NEW)-ARRAY['state','outcome','resolved_at','resolution_source_id','superseded_by_id','assignee_id','version','updated_at'])
+    -- A closed request changes only by Staff follow-up sending it back to
+    -- review (or withdrawing one the parish added); its revision guard
+    -- proves which (#1684). The Edit's Ministry is part of the projection.
+    IF (OLD.state NOT IN ('new','assigned','in_progress')
+        AND NOT (current_user='pk_stewardship_web'
+            AND OLD.state IN ('resolved','closed_no_response')
+            AND (NEW.state='in_progress' OR (NEW.state='cancelled' AND OLD.parish_added))))
+       OR NEW.version<>OLD.version+1
+       OR (to_jsonb(NEW)-ARRAY['state','outcome','resolved_at','resolution_source_id','superseded_by_id','assignee_id','reviewed_ministry_duid','version','updated_at'])
           IS DISTINCT FROM
-          (to_jsonb(OLD)-ARRAY['state','outcome','resolved_at','resolution_source_id','superseded_by_id','assignee_id','version','updated_at']) THEN
+          (to_jsonb(OLD)-ARRAY['state','outcome','resolved_at','resolution_source_id','superseded_by_id','assignee_id','reviewed_ministry_duid','version','updated_at']) THEN
         RAISE EXCEPTION 'Ministry provenance and closed outcomes are immutable' USING ERRCODE='23514';
     END IF;
     IF current_user='pk_stewardship_worker' THEN
         IF NEW.state<>'resolved' OR NEW.outcome IS DISTINCT FROM
             (CASE WHEN NEW.action='join' THEN 'joined' ELSE 'leave_confirmed' END)
            OR NEW.assignee_id IS DISTINCT FROM OLD.assignee_id
+           OR NEW.reviewed_ministry_duid IS NOT NULL
            OR NEW.resolution_source_id IS NULL
            OR NOT public.stewardship_response_source_owner_v1(NEW.resolution_source_id)
            OR NEW.entity_kind<>'member'
@@ -5575,14 +5726,16 @@ BEGIN
             RAISE EXCEPTION 'Ministry resolution requires fenced scoped roster evidence' USING ERRCODE='23514';
         END IF;
         NEW.resolved_at := clock_timestamp();
-    ELSIF current_user='pk_stewardship_web' AND NEW.state NOT IN ('superseded','cancelled') THEN
+    ELSIF current_user='pk_stewardship_web' AND (NEW.state NOT IN ('superseded','cancelled')
+        OR (NEW.state='cancelled' AND OLD.parish_added AND OLD.state='resolved')) THEN
         -- Staff follow-up. Its revision guard already proved current authority,
         -- Ministry scope, the work gate and this exact version; accept only the
         -- projection that history records. Roster evidence stays worker-owned.
         SELECT r.created_at INTO staff_at FROM public.stewardship_ministry_revision r
             WHERE r.request_id=NEW.id AND r.expected_version=OLD.version AND r.state=NEW.state
               AND r.outcome IS NOT DISTINCT FROM NEW.outcome
-              AND r.assignee_id IS NOT DISTINCT FROM NEW.assignee_id;
+              AND r.assignee_id IS NOT DISTINCT FROM NEW.assignee_id
+              AND r.reviewed_ministry_duid IS NOT DISTINCT FROM NEW.reviewed_ministry_duid;
         IF NOT FOUND OR NEW.resolution_source_id IS NOT NULL OR NEW.superseded_by_id IS NOT NULL THEN
             RAISE EXCEPTION 'Ministry follow-up projection requires its paired history' USING ERRCODE='23514';
         END IF;
@@ -5597,6 +5750,8 @@ BEGIN
           AND OLD.id=public.stewardship_ministry_predecessor_v1(
               candidate,OLD.entity_kind,OLD.entity_key,OLD.ministry_duid);
         IF NOT FOUND OR NEW.assignee_id IS DISTINCT FROM OLD.assignee_id
+           OR OLD.state NOT IN ('new','assigned','in_progress')
+           OR NEW.reviewed_ministry_duid IS NOT NULL
            OR NOT public.stewardship_response_ministry_visible_v1(
                later.validation_source_id,later.configuration_id,later.campaign_id,NEW.ministry_duid)
            OR (NEW.entity_kind='member' AND NOT ((later.answers->'members') ? NEW.entity_key))
@@ -5640,10 +5795,18 @@ BEGIN
         FOR member_key,choices IN SELECT * FROM jsonb_each(NEW.answers#>ARRAY['ministries',group_name]) LOOP
             FOR action_name,identifiers IN SELECT * FROM jsonb_each(choices) LOOP
                 FOR identifier IN SELECT * FROM jsonb_array_elements(identifiers) LOOP
+                    -- A choice repeating a decided request's action for the
+                    -- same Member and Ministry derives nothing: the decided
+                    -- request keeps its decision ("Family asked again", #1684).
                     IF NOT EXISTS (SELECT 1 FROM public.stewardship_ministry_request request
                         WHERE request.submission_id=NEW.id AND request.entity_kind=entity
                           AND request.entity_key=member_key AND request.ministry_duid=identifier::text::integer
-                          AND request.action=action_name) THEN
+                          AND request.action=action_name)
+                       AND NOT EXISTS (SELECT 1 FROM public.stewardship_ministry_request decided
+                        WHERE decided.id=public.stewardship_ministry_predecessor_v1(
+                              NEW,entity,member_key,identifier::text::integer)
+                          AND decided.state IN ('resolved','closed_no_response')
+                          AND decided.action=action_name) THEN
                         RAISE EXCEPTION 'Submitted Ministry choice requires atomic derived work' USING ERRCODE='23514';
                     END IF;
                 END LOOP;

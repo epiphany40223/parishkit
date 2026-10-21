@@ -1,14 +1,13 @@
-"""Census changes (#528): one shared POST table, as the view renders it.
+"""Census changes (#528, #1683): the review worklist, as the view renders it.
 
-The in-place paging and sorting test needs the real page under a few table
-choices. Each fixture path renders it through the view's own sorting and the
-real template, from 30 shaped rows (two pages of 25), so the headings' and
-navigator's POST forms carry exactly what the production page would.
+Each fixture path renders the real page through the view's own sorting,
+``census_worklist.worklist_page`` and the real templates, from shaped rows,
+so the headings', navigator's and dialogs' POST forms carry exactly what the
+production page would. Each test answers a POST with the fixture page after
+it, as the view answers with its page redrawn.
 """
 
-from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from uuid import UUID, uuid4
 
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -17,317 +16,285 @@ from parishkit.stewardship.reports.census_change_views import (
     KIND_LABELS,
     ROUTE_LABELS,
     SORTING,
-    bulk_actions,
-    row_controls,
-    row_dialogs,
-    status_choices,
 )
-from parishkit.stewardship.reports.census_changes import CensusQuery, select, shape
+from parishkit.stewardship.reports.census_changes import (
+    CensusQuery,
+    select,
+    shape,
+    shape_addition,
+)
+from parishkit.stewardship.reports.census_worklist import add_fields, worklist_page
 from parishkit.stewardship.responses.comparison import phone_record
+from parishkit.stewardship.responses.refresh_checks import CheckState
+from parishkit.stewardship.web.review_worklist import page_fields
 from parishkit.stewardship.web.tables import paginate
 
-CAMPAIGN = UUID(int=528)
-# The page's own path: what every heading, navigator and filter form posts.
+# The page's own path: what every heading, navigator, filter and dialog posts.
 PATH = reverse("admin:census_changes")
 ROWS = 30
-# The notices the view answers a resolution of the first row with.
-RESOLVED = (
-    "Mobile phone for Member DUID 100 in Family DUID 1000 marked entered in ParishSoft."
+# Row 0 is Automatic and row 1 By hand, both To review; row 2 a Family
+# address (By hand), every later row By hand too.
+ADDRESS = {
+    "line1": "9 Census Way",
+    "line2": "",
+    "city": "Louisville",
+    "region": "KY",
+    "postal_code": "40223",
+    "country": "US",
+}
+# The answers the tests receive after a decision, and their notices.
+ACCEPTED = "/census-changes-accepted"
+ACCEPTED_NOTICE = "Mobile phone for Member DUID 100 in Family DUID 1000 accepted."
+ENTERED = "/census-changes-entered"
+ENTERED_NOTICE = (
+    "Mobile phone for Member DUID 101 in Family DUID 1001 marked entered by hand."
 )
-# The page whose first row is Automatic (#528, ADM-09), at an address of its
-# own that its forms post back to, and the notice the view answers an
-# Administrator's Approve of that row with.
-AUTOMATIC = "/census-changes-automatic"
-APPROVED = "Mobile phone for Member DUID 100 in Family DUID 1000 approved."
-# The page whose first three rows are Automatic and offer bulk review, and
-# the notice the view answers an Administrator's bulk Approve of two with.
-BULK = "/census-changes-bulk"
-BULK_APPROVED = "2 changes approved."
-# The notice the view answers Save value on the first Automatic row with, the
-# value saved, and the page after it, where that row has the edit (ADM-09.04).
-EDITED = "Mobile phone for Member DUID 100 in Family DUID 1000 now has an edited value."
-EDITED_VALUE = "(317) 555-0199"
-EDITED_PAGE = "/census-changes-edited"
-# The page whose first (Automatic) row is a Conflict, the notice the view
-# answers its Use the Family's value anyway with, and the page after it,
-# where that row is approved and pending (ADM-09.03).
-CONFLICT = "/census-changes-conflict"
-CONFLICT_RESOLVED = (
-    "Mobile phone for Member DUID 100 in Family DUID 1000 approved over "
-    "ParishSoft's current value."
+BULKED = "/census-changes-bulked"
+BULK_NOTICE = "2 changes accepted."
+STALE = "/census-changes-stale"
+STALE_NOTICE = (
+    "Mobile phone for Member DUID 100 in Family DUID 1000: not recorded, "
+    "changed by someone else."
 )
-CONFLICT_PAGE = "/census-changes-conflict-resolved"
-# The Automatic page redrawn with other view settings, nothing saved: 50 rows
-# a page; then also sorted newest first; then also filtered to Automatic
-# changes. Its first row's Edit value is drawn at the same version each time
-# (#1334 re-review).
-AUTOMATIC_REDRAWS = (
-    "/census-changes-automatic-50",
-    "/census-changes-automatic-newest",
-    "/census-changes-automatic-filtered",
+EDITED = "/census-changes-edited"
+EDITED_NOTICE = "Home address for the Family in Family DUID 1002 accepted (edited)."
+# Add (#1710): the page after an Add, with the added row (id "add-a1").
+ADDED = "/census-changes-added"
+ADDED_NOTICE = "Nickname for Member DUID 103 in Family DUID 1003 added."
+# Row 3 Entered incorrectly (#1737): a refresh found ParishSoft at a third
+# value, and the pages after each of its two fixes.
+INCORRECT = "/census-changes-incorrect"
+WRONG = "555-0199"
+REENTERED = "/census-changes-reentered"
+REENTERED_NOTICE = (
+    "Mobile phone for Member DUID 103 in Family DUID 1003 marked entered by hand again."
 )
-STALE = (
-    "Mobile phone for Member DUID 100 in Family DUID 1000 was updated by "
-    "someone else, so nothing was recorded. The list shows its current status."
+RETURNED = "/census-changes-returned"
+RETURNED_NOTICE = (
+    "Mobile phone for Member DUID 103 in Family DUID 1003 sent back to review."
 )
-
-# The page whose rows carry the longest values staff meet (#1472): a long
-# Family name, a Family address, a New Member, an edited Conflict and a
-# recorded change with its sign-in address and note.
-WIDE = "/census-changes-wide"
-
-
-def wide_rows(when):
-    """Shaped rows with realistic long values, one of each kind of row."""
-    family = "Fernández-Castellanos, Maria Guadalupe and Christopher"
-    address = {
-        "line1": "12345 North Saint Bartholomew Boulevard",
-        "line2": "Apartment 1204",
-        "city": "Louisville",
-        "region": "KY",
-        "postal_code": "40241-1234",
-    }
-    base = {
-        "entity_kind": "member",
-        "field": "mobile_phone",
-        "baseline_available": True,
-        "baseline_value": "555-0100",
-        "submitted_value": phone_record("(502) 555-0142"),
-        "current_available": True,
-        "current_value": "555-0100",
-        "admin_value_set": False,
-        "admin_value": None,
-        "handling": "manual",
-        "decision": "unreviewed",
-        "execution": "pending",
-        "submitted_at": when,
-        "family_duid": 1234567,
-        "family_name": family,
-        "member_name": "Fernández-Castellanos, Maria Guadalupe",
-        "version": 1,
-    }
-    changes = [
-        {
-            "entity_kind": "family",
-            "entity_key": "1234567",
-            "field": "home_address",
-            "current_available": False,
-            "submitted_value": address,
-        },
-        {
-            "entity_key": "7654321",
-            "handling": "api",
-            "execution": "conflict",
-            "current_value": "(502) 555-0177",
-            "admin_value_set": True,
-            "admin_value": phone_record("(502) 555-0199"),
-        },
-        {
-            "entity_kind": "proposed_member",
-            "entity_key": "new-1",
-            "field": "new_member",
-            "current_available": False,
-            "baseline_available": False,
-            "submitted_value": {
-                "first_name": "Bartholomew",
-                "last_name": "Fernández-Castellanos",
-                "email": "bartholomew.fernandez-castellanos@example.org",
-            },
-        },
-        {
-            "entity_key": "7654322",
-            "field": "email",
-            "execution": "resolved_external",
-            "current_value": "maria.guadalupe.fernandez@example.org",
-            "submitted_value": "maria.fernandez-castellanos@example.org",
-            "resolution_action": "entered",
-            "resolution_by": "parish.office.administrator@example.org",
-            "resolution_at": when + timedelta(days=1),
-            "resolution_note": "Typed into ParishSoft after calling the Family "
-            "to confirm the new address and spelling.",
-        },
-    ]
-    return [
-        shape(
-            base
-            | {"id": f"w{index}", "submitted_at": when + timedelta(minutes=index)}
-            | change
-        )
-        for index, change in enumerate(changes)
-    ]
+# The page after an Edit of row 0's mobile phone (R38 finding 4).
+EDITED_PHONE = "/census-changes-edited-phone"
+EDITED_PHONE_NOTICE = (
+    "Mobile phone for Member DUID 100 in Family DUID 1000 accepted (edited)."
+)
+# Row 4 a New Member (#1749), whose Entered by hand asks for the ParishSoft
+# Member ID; row 5 an Updated in ParishSoft change a refresh put back in
+# Conflict; and the page after the New Member's mark.
+NEW_MEMBER = "/census-changes-new-member"
+MEMBER_ENTERED = "/census-changes-member-entered"
+MEMBER_ENTERED_NOTICE = (
+    "New Member for a New Member in Family DUID 1004 marked entered by hand."
+)
+# The page after the New Member's Member ID is corrected to 9 (#1773).
+MEMBER_CORRECTED = "/census-changes-member-corrected"
+MEMBER_CORRECTED_NOTICE = (
+    "New Member for a New Member in Family DUID 1004 had its ParishSoft Member ID "
+    "corrected."
+)
 
 
 def components(context, admin):
-    """The page at each table choice the test steps through."""
+    """The page at each table choice and after each decision the tests take."""
     when = datetime(2054, 10, 5, 12, tzinfo=UTC)
 
-    def shaped(index, automatic, approved=0, edited=False, conflict=False):
-        """One shaped row; the first ``automatic`` rows are Automatic, and the
-        first ``approved`` of them approved (one version on); with ``edited``,
-        the first has an Administrator's edited value (one version on); with
-        ``conflict``, the first is a Conflict (ParishSoft changed since)."""
-        edit = edited and index == 0
-        clash = conflict and index == 0
+    def shaped(
+        index,
+        accepted=(),
+        entered=(),
+        incorrect=(),
+        edited=(),
+        new_members=False,
+        member=7,
+    ):
+        """One shaped row: To review unless ``accepted`` (approved, one
+        version on), ``entered`` (Entered by hand) or ``incorrect`` (Entered
+        by hand, then found at a third value) holds its index; ``edited``
+        rows carry a reviewer's value. With ``new_members``, row 4 is a New
+        Member (marked with Member ID ``member``) and row 5 a refresh
+        Conflict."""
+        family = index == 2
+        entered = set(entered) | set(incorrect)
+        if new_members and index == 4:
+            return shape(new_member(index, entered=index in entered, member=member))
+        if new_members and index == 5:
+            return shape(
+                row(index)
+                | {
+                    "decision": "unreviewed",
+                    "execution": "conflict",
+                    "handling": "api",
+                    "current_value": "555-0100",
+                    "refresh_conflict": True,
+                }
+            )
         return shape(
+            row(
+                index,
+                family=family,
+                accepted=accepted,
+                entered=entered,
+                incorrect=incorrect,
+                edited=edited,
+            )
+        )
+
+    def addition():
+        """The parish-added row: Member 03's nickname, To enter by hand."""
+        return shape_addition(
             {
-                "id": str(index),
+                "id": "a1",
                 "entity_kind": "member",
-                "entity_key": str(100 + index),
-                "field": "mobile_phone",
-                "baseline_available": True,
-                "baseline_value": "555-0100",
-                # Stored as the Family form stores a phone: a record.
-                "submitted_value": phone_record(f"555-{index:04d}"),
-                "current_available": True,
-                "current_value": "555-0177" if clash else "555-0100",
-                "admin_value_set": edit,
-                "admin_value": phone_record(EDITED_VALUE) if edit else None,
-                "handling": "api" if index < automatic else "manual",
-                "decision": "approved" if index < approved else "unreviewed",
-                "execution": "conflict" if clash else "pending",
-                # Later Families answered later, so newest first reverses.
-                "submitted_at": when + timedelta(minutes=index),
-                "family_duid": 1000 + index,
-                "family_name": f"Family {index:02d}",
-                "member_name": f"Member {index:02d}",
-                "version": 2 if index < approved or edit else 1,
+                "entity_key": "103",
+                "field": "nickname",
+                "value": '"Bo"',
+                "in_place_of": None,
+                "created_at": when + timedelta(hours=1),
+                "baseline": None,
+                "family_duid": 1003,
+                "family_name": "Family 03",
+                "member_name": "Member 03",
+                "snapshot_id": None,
+                "added_by": "staff@example.org",
+                "added_note": "Phoned in",
+                "step": None,
+                "step_note": None,
+                "step_at": None,
+                "step_by": None,
             }
         )
 
-    query = CensusQuery()
+    def new_member(index, *, entered, member):
+        """Row ``index`` as a New Member the Family added (#1749), marked
+        with Member ID ``member`` when ``entered``; a correction (#1773)
+        is one version on."""
+        return row(index) | {
+            "entity_kind": "proposed_member",
+            "entity_key": "local-key",
+            "field": "new_member",
+            "baseline_available": False,
+            "baseline_value": None,
+            "submitted_value": {"first_name": "Newly", "last_name": "Sample"},
+            "current_available": False,
+            "current_value": None,
+            "handling": "manual",
+            "decision": "approved" if entered else "unreviewed",
+            "execution": "resolved_external" if entered else "pending",
+            "version": (2 if member == 7 else 3) if entered else 1,
+            "resolution_action": "entered" if entered else None,
+            "resolution_member": member if entered else None,
+            "member_status": None,
+        }
 
-    def page(
-        paging,
-        notice=None,
-        *,
-        automatic=False,
-        bulk=False,
-        approved=0,
-        edited=False,
-        conflict=False,
-        path=None,
-        filters=None,
-        rows=ROWS,
-        wide=False,
-    ):
+    def row(index, *, family=False, accepted=(), entered=(), incorrect=(), edited=()):
+        """Row ``index``'s query columns, as ``shaped`` describes them."""
+        return {
+            "id": str(index),
+            "entity_kind": "family" if family else "member",
+            "entity_key": "1002" if family else str(100 + index),
+            "field": "home_address" if family else "mobile_phone",
+            "baseline_available": not family,
+            "baseline_value": None if family else "555-0100",
+            # Stored as the Family form stores a phone: a record.
+            "submitted_value": (
+                ADDRESS if family else phone_record(f"555-{index:04d}")
+            ),
+            "current_available": not family,
+            "current_value": None if family else "555-0100",
+            "admin_value_set": index in edited,
+            "admin_value": phone_record("555-9999") if index in edited else None,
+            "handling": "api" if index == 0 else "manual",
+            "decision": "approved" if index in accepted else "unreviewed",
+            "execution": "resolved_external" if index in entered else "pending",
+            # Later Families answered later, so newest first reverses.
+            "submitted_at": when + timedelta(minutes=index),
+            "family_duid": 1000 + index,
+            "family_name": f"Family {index:02d}",
+            "member_name": f"Member {index:02d}",
+            "version": 2 if index in accepted or index in entered else 1,
+            "resolution_action": None,
+            "resolution_note": None,
+            "resolution_at": None,
+            "resolution_by": None,
+            "reopened": False,
+            "check": CheckState(
+                "entered_incorrectly", {"available": True, "value": WRONG}
+            )
+            if index in incorrect
+            else None,
+            # Member 01 moved to another Family (#1738): the change keeps
+            # its stage and the Who cell shows the shared badge.
+            "member_status": "moved" if index == 1 else None,
+        }
+
+    def page(paging, notice=None, *, stage="all", rows=ROWS, added=False, **changes):
         """Render the page with the table paged and sorted as ``paging`` says,
-        and ``notice`` (a resolution's answer) above it; with ``automatic``,
-        its first row is an Automatic change an Administrator reviews, and
-        its forms post to ``AUTOMATIC``; with ``bulk``, its first three rows
-        are, it offers bulk review, and its forms post to ``BULK``; with
-        ``edited``, its first (Automatic) row has an edited value; with
-        ``conflict``, it is a Conflict; ``path`` is where its forms post;
-        ``filters`` (a CensusQuery) replace the default filters; ``rows``
-        is how many changes there are (none draws the empty table); with
-        ``wide``, the rows are WIDE_ROWS' realistic long values instead."""
-        path = path or (BULK if bulk else AUTOMATIC if automatic else PATH)
-        shown = filters or query
-        count = 3 if bulk else int(automatic)
-        rows = [
-            shaped(index, count, approved, edited, conflict) for index in range(rows)
+        the Stage filter at ``stage``, ``notice`` above the table, and
+        ``changes`` (``shaped``'s) applied, for a Staff reader; ``added``
+        puts the parish-added row first."""
+        query = CensusQuery(stage=stage)
+        found = [addition()] * added + [
+            shaped(index, **changes) for index in range(rows)
         ]
-        if wide:
-            rows = wide_rows(when)
-        result = select(rows, shown, administrator=True)
+        result = select(found, query, administrator=False)
+        result["roles"] = frozenset({"staff"})
+        result["replacements"] = {}
         table = paginate(
             result["rows"],
             paging,
-            carry=list(shown.form_values().items()),
+            carry=list(page_fields(query.form_values()).items()),
             sorting=SORTING,
         )
-        row_controls(table.rows, administrator=True, mutable=True)
+        worklist, table = worklist_page(result, query, table, PATH, mutable=True)
         return (
             "text/html",
             render_to_string(
                 "stewardship/census-changes.html",
                 context
                 | {"admin_chrome": admin}
-                | result
                 | {
-                    "table": replace(table, method="post", action=path),
-                    "campaign_id": CAMPAIGN,
-                    "query": shown,
-                    "query_fields": shown.form_values(),
-                    "status_choices": status_choices(
-                        result["status_counts"], administrator=True
-                    ),
+                    "worklist": worklist,
+                    "table": table,
+                    "query": query,
+                    "query_fields": page_fields(query.form_values()),
                     "route_choices": ROUTE_LABELS.items(),
                     "kind_choices": KIND_LABELS.items(),
                     "notice": notice,
-                    "action": path,
                     "mutable": True,
-                    "bulk": bulk,
-                    "bulk_actions": bulk_actions(),
-                    "row_dialogs": row_dialogs(True),
-                    # A fresh key per drawn page, as the view draws one.
-                    "bulk_key": uuid4(),
+                    "administrator": False,
                     "edit_today": "2054-10-06",
+                    "add_fields": add_fields(),
+                    "add_replaceable": [
+                        ("9", "Mobile phone for Member 09, Family DUID 1009")
+                    ],
                 },
             ),
         )
 
+    size = {"size": "25"}
     return {
-        "/census-changes": page({"size": "25"}),
-        # The page at its own address, which its row forms post back to, so
-        # an in-place answer from there is this same page.
-        PATH: page({"size": "25"}),
+        "/census-changes": page(size),
+        PATH: page(size),
         "/census-changes-page-2": page({"size": "25", "page": "2"}),
-        "/census-changes-newest": page({"size": "25", "sort": "-submitted"}),
-        "/census-changes-resolved": page(
-            {"size": "25"},
-            notice=RESOLVED,
+        "/census-changes-who": page({"size": "25", "sort": "-who"}),
+        ACCEPTED: page(size, ACCEPTED_NOTICE, accepted={0}),
+        ENTERED: page(size, ENTERED_NOTICE, entered={1}),
+        BULKED: page(size, BULK_NOTICE, accepted={0, 1}),
+        STALE: page(size, STALE_NOTICE),
+        EDITED: page(size, EDITED_NOTICE, accepted={2}),
+        ADDED: page(size, ADDED_NOTICE, added=True),
+        NEW_MEMBER: page(size, new_members=True),
+        MEMBER_ENTERED: page(
+            size, MEMBER_ENTERED_NOTICE, new_members=True, entered={4}
         ),
-        # The first row Automatic, To review; and the answer to its Approve.
-        AUTOMATIC: page({"size": "25"}, automatic=True),
-        "/census-changes-approved": page(
-            {"size": "25"}, notice=APPROVED, automatic=True
+        MEMBER_CORRECTED: page(
+            size, MEMBER_CORRECTED_NOTICE, new_members=True, entered={4}, member=9
         ),
-        # The answer to Save value on the first (Automatic) row.
-        EDITED_PAGE: page({"size": "25"}, notice=EDITED, automatic=True, edited=True),
-        # The first row an Automatic Conflict; and the answer to its Use the
-        # Family's value anyway, where it is approved and pending.
-        CONFLICT: page({"size": "25"}, automatic=True, conflict=True, path=CONFLICT),
-        CONFLICT_PAGE: page(
-            {"size": "25"},
-            notice=CONFLICT_RESOLVED,
-            automatic=True,
-            approved=1,
-            path=CONFLICT,
-        ),
-        # Three Automatic rows with bulk review; and the answer to Approve.
-        BULK: page({"size": "25"}, bulk=True),
-        AUTOMATIC_REDRAWS[0]: page({"size": "50"}, automatic=True),
-        AUTOMATIC_REDRAWS[1]: page(
-            {"size": "50", "sort": "-submitted"}, automatic=True
-        ),
-        AUTOMATIC_REDRAWS[2]: page(
-            {"size": "50", "sort": "-submitted"},
-            automatic=True,
-            filters=CensusQuery(route="automatic"),
-        ),
-        "/census-changes-bulk-approved": page(
-            {"size": "25"}, notice=BULK_APPROVED, bulk=True, approved=2
-        ),
-        # A row someone else changed first: the page says so, nothing saved.
-        "/census-changes-stale": page(
-            {"size": "25"},
-            notice=STALE,
-        ),
-        # No changes at all: with no filter, with only Every status, with
-        # Every status and history, and with a search (#227: each says why
-        # the table is empty).
-        "/census-changes-none": page({"size": "25"}, rows=0),
-        "/census-changes-none-all": page(
-            {"size": "25"}, rows=0, filters=CensusQuery(status="all")
-        ),
-        "/census-changes-none-everything": page(
-            {"size": "25"},
-            rows=0,
-            filters=CensusQuery(status="all", history="yes"),
-        ),
-        # Realistic long values at their widest (#1472): the column-fit test.
-        WIDE: page({"size": "25"}, wide=True, filters=CensusQuery(status="all")),
-        "/census-changes-none-searched": page(
-            {"size": "25"}, rows=0, filters=CensusQuery(search="Nobody")
-        ),
+        INCORRECT: page(size, incorrect={3}),
+        REENTERED: page(size, REENTERED_NOTICE, entered={3}),
+        RETURNED: page(size, RETURNED_NOTICE),
+        EDITED_PHONE: page(size, EDITED_PHONE_NOTICE, accepted={0}, edited={0}),
+        # No changes at all, and none at the stage chosen.
+        "/census-changes-none": page(size, rows=0),
+        "/census-changes-none-stage": page(size, rows=0, stage="to_review"),
     }

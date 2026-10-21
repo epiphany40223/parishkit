@@ -523,7 +523,7 @@ def _bind(service, actor, configuration, target, fields, expected_version, key):
     from .admin_changes import InvalidChange
     from .admin_integration_changes import field_errors, form_data, setting_names
     from .admin_reads import Unavailable
-    from .deployment import recorded_profile
+    from .deployment import recorded_mail_redirect, recorded_profile
     from .storage import StaleRecordError
 
     if configuration.active_configuration.digest != expected_version:
@@ -557,6 +557,7 @@ def _bind(service, actor, configuration, target, fields, expected_version, key):
                 target,
                 credential.cleaned_data["candidate"].encode("utf-8"),
                 recorded_profile(),
+                redirect=recorded_mail_redirect(),
             )
         except ConfigError:
             problems.append(_key_problem("The key has an invalid format."))

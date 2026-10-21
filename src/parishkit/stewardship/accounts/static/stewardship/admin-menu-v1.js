@@ -36,9 +36,15 @@
   const GAP = 6;
   const entries = Array.from(document.querySelectorAll("[data-menu-tip]"));
   const tipOf = (entry) => document.getElementById(entry.getAttribute("aria-describedby"));
-  // The wrapper holds the entry and its tip: the menu's list item, or an
-  // in-page control's span.
-  const wrapperOf = (entry) => entry.parentElement;
+  // The areas the pointer may rest on while the tip stays: the wrapper that
+  // holds the entry and its tip (the menu's list item, or an in-page
+  // control's span), or, for an unavailable tab (components/tabs.html,
+  // #1712), the tab and its tip, since the tab row may hold only tabs and
+  // its tip sits after the row (WCAG 1.4.13: the pointer can move onto it).
+  const areasOf = (entry) => (entry.matches("[role=tab]")
+    ? [entry, tipOf(entry)].filter(Boolean) : [entry.parentElement]);
+  const inside = (entry, node) => areasOf(entry).some((area) => area.contains(node));
+  const hovered = (entry) => areasOf(entry).some((area) => area.matches(":hover"));
   let shown = null;
   let showTimer = null;
   let hideTimer = null;
@@ -89,24 +95,23 @@
   };
 
   entries.forEach((entry) => {
-    const wrapper = wrapperOf(entry);
-    wrapper.addEventListener("mouseenter", () => {
+    areasOf(entry).forEach((area) => area.addEventListener("mouseenter", () => {
       if (tapped || lastPointer === "touch") return;
       if (shown === entry) { clearTimers(); return; }
       if (shown) hide();
       clearTimers();
       showTimer = setTimeout(() => show(entry, false), SHOW_DELAY);
-    });
-    wrapper.addEventListener("mouseleave", () => {
+    }));
+    areasOf(entry).forEach((area) => area.addEventListener("mouseleave", () => {
       clearTimeout(showTimer);
       if (tapped) return;
       if (shown === entry && document.activeElement !== entry) {
         hideTimer = setTimeout(hide, HIDE_GRACE);
       }
-    });
+    }));
     entry.addEventListener("focus", () => show(entry, false));
     entry.addEventListener("blur", () => {
-      if (shown === entry && (tapped || !wrapper.matches(":hover"))) hide();
+      if (shown === entry && (tapped || !hovered(entry))) hide();
     });
     entry.addEventListener("pointerdown", (event) => { lastPointer = event.pointerType; });
     // Activating an unavailable entry does nothing but show its reason. A
@@ -127,12 +132,12 @@
     // content that is not interactive, and that tap must still dismiss.
     document.addEventListener("pointerdown", (event) => {
       lastPointer = event.pointerType;
-      if (shown && !wrapperOf(shown).contains(event.target)) hide();
+      if (shown && !inside(shown, event.target)) hide();
     });
     // Reaching another link or control hides the tip at once.
     document.addEventListener("mouseover", (event) => {
       if (
-        shown && !tapped && !wrapperOf(shown).contains(event.target) &&
+        shown && !tapped && !inside(shown, event.target) &&
         event.target.closest && event.target.closest("a, button, summary, input, select, textarea")
       ) {
         hide();
@@ -179,7 +184,17 @@
   let hideTimer = null;
   const clipped = (name) =>
     name.scrollWidth > name.clientWidth + 1 || name.scrollHeight > name.clientHeight + 1;
-  const nameOf = (target) => (target && target.closest ? target.closest(SELECTOR) : null);
+  // A clipped name inside a link (a review worklist's shared name link,
+  // #1709, wraps its cell) is reached through that link: focus on the link
+  // shows the name's tip, and the name never joins the tab order itself.
+  const nameOf = (target) => {
+    if (!target || !target.closest) return null;
+    const name = target.closest(SELECTOR);
+    if (name) return name;
+    return target.matches("a") ? target.querySelector(SELECTOR) : null;
+  };
+  // The element that holds focus for a name: its link, or the name.
+  const holderOf = (name) => name.closest("a") || name;
   const onTip = (target) => Boolean(tip && target && tip.contains(target));
   const clearTimers = () => {
     clearTimeout(showTimer);
@@ -194,7 +209,7 @@
   // reaches the name or the tip first.
   const hideSoon = () => {
     clearTimeout(hideTimer);
-    if (shown && document.activeElement !== shown) hideTimer = setTimeout(hide, HIDE_GRACE);
+    if (shown && document.activeElement !== holderOf(shown)) hideTimer = setTimeout(hide, HIDE_GRACE);
   };
   // Put the shown tip under its name, or above it with no room below, kept
   // inside the viewport; rerun on scroll and resize, since a fixed tip
@@ -233,6 +248,7 @@
   // again leaves it, except the focused one, which focusout releases.
   const mark = (root) => {
     root.querySelectorAll(`${SELECTOR}:not(a)`).forEach((name) => {
+      if (name.closest("a")) return;
       if (clipped(name)) name.setAttribute("tabindex", "0");
       else if (name !== document.activeElement) name.removeAttribute("tabindex");
     });
@@ -268,7 +284,9 @@
     const name = nameOf(event.target);
     if (!name) return;
     if (name === shown) hide();
-    if (!name.matches("a") && !clipped(name)) name.removeAttribute("tabindex");
+    if (holderOf(name) === name && !name.matches("a") && !clipped(name)) {
+      name.removeAttribute("tabindex");
+    }
   });
   document.addEventListener("pointerdown", (event) => {
     if (onTip(event.target)) return;

@@ -5,15 +5,13 @@ the registry label, and every "Return to" link names its target the same way.
 The placement table in the admin-portal spec is the source of the names, so
 the registry is checked against it too. NAV-4 covered Campaign setup and Mail
 and Family portal, and NAV-5a Home, Parish data, Users and access, System and
-the setup wizard; NAV-5b adds Responses and reports.
+the setup wizard; NAV-5b adds Responses and reports (since R39, Review work
+and Reports and queries).
 """
 
 import ast
 import re
-from datetime import UTC, datetime
 from pathlib import Path
-from types import SimpleNamespace
-from uuid import uuid4
 
 import pytest
 from django.template import Context, Template
@@ -30,7 +28,7 @@ TEMPLATE_DIR = PACKAGE / "accounts/templates/stewardship"
 SPEC = ROOT / "docs/specs/stewardship/admin-portal/spec.md"
 
 # The menu groups whose page names are settled so far.
-GROUPS = {"campaign", "mail", "reports", "parish", "users", "system"}
+GROUPS = {"campaign", "mail", "review", "reports", "parish", "users", "system"}
 # Pages outside every menu group whose names are settled too.
 UNGROUPED = {"index", "configuration_request", "campaign_create"}
 
@@ -54,13 +52,11 @@ TEMPLATES = {
     "artwork_settings": "artwork-settings.html",
     "artwork_upload": "artwork-settings.html",
     "reminder_workgroup": "reminder-workgroup.html",
-    "go_live": "go-live-readiness.html",
+    "go_live": "go-live-check.html",
     "go_live_families": "go-live-families.html",
-    "go_live_cleanup": "go-live-cleanup.html",
-    "go_live_links": "go-live-links.html",
-    "production_confirmation": "production-confirmation.html",
+    "go_live_prepare": "go-live-prepare.html",
+    "go_live_confirm": "go-live-confirm.html",
     "production_progress": "production-progress.html",
-    "production_withdrawal": "production-withdrawal.html",
     "delivery_control": "delivery-control.html",
     "mail_queue": "mail-queue.html",
     "family_email_sends": "family-email-sends.html",
@@ -92,9 +88,10 @@ TEMPLATES = {
     "logs": "logs.html",
     "campaign_comparison": "campaign-comparison.html",
     "financial_report": "financial-report.html",
+    "pledges_to_enter": "pledges-to-enter.html",
     "limitations_report": "limitations-report.html",
     "census_changes": "census-changes.html",
-    "census_publication": "census-publication.html",
+    "update_parishsoft": "update-parishsoft.html",
     "response_dashboard": "response-dashboard.html",
     "information_queue": "information.html",
     "information_item": "information.html",
@@ -102,9 +99,8 @@ TEMPLATES = {
     "weekly_digest_snapshot": "weekly-digest.html",
     "weekly_digest_item": "weekly-digest.html",
     # Ministry requests is the follow-up queue's page (#1133).
-    "ministry_report": "ministry-followup.html",
+    "ministry_report": "ministry-requests.html",
     "ministry_followup_item": "ministry-followup.html",
-    "ministry_roster": "ministry-roster.html",
     "family_directory": "directory.html",
     "emailed_reports": "emailed-reports.html",
     "timeline": "timeline.html",
@@ -285,8 +281,10 @@ def test_return_links_name_a_page(template):
     labels = {str(page.label) for page in navigation.PAGES.values()}
     source = _source(template)
     # The Census changes worklist's "Back to To review" is a review decision,
-    # not a link back to a page (see ALLOWED).
-    if template != "census-changes.html":
+    # not a link back to a page (see ALLOWED), as is the review pipeline's
+    # Back to review on Ministry requests (#1684), Additional information
+    # and Limitations (#1685).
+    if template not in {"census-changes.html", *REVIEW_PIPELINE_PAGES}:
         assert "Back to " not in source
     for target in re.findall(r'"Return to ([^"]+)"', source):
         assert target in labels or (template, target) in UNNAMED_RETURNS, (
@@ -435,6 +433,8 @@ RETIRED = (
     "Families with Testing submissions",
     "How Families will share",
     "Production activation progress",
+    # Renamed Go live by #1585 slice 2.
+    "Go-live readiness",
     # Retired after NAV-5b review: the setup content editor's old wording.
     "content list",
     # Retired by NAV-5b.
@@ -478,26 +478,59 @@ RETIRED = (
 
 # Legitimate uses, as (path relative to the package, retired name), each
 # with the reason it is not a page name.
+# The review pipeline's worklist pages (#1684, #1685), whose help names the
+# decision Back to review.
+REVIEW_PIPELINE_PAGES = frozenset(
+    {
+        "ministry-requests.html",
+        "ministry-followup.html",
+        # Additional information and Limitations (#1685).
+        "information.html",
+        "limitations-report.html",
+    }
+)
 ALLOWED = {
     # "Back to edit" steps back inside the Family form, outside the Admin
     # portal and its page names.
     ("accounts/static/stewardship/family-v1.js", "Back to "),
+    # The Timeline's review lines (#1774) name the review pipeline's Back to
+    # review action, not a page.
+    ("reports/timeline_reviews.py", "Back to "),
     # "Back to To review" is the Census changes review button that undoes an
     # Approve or Ignore (#528), not a link back to a page.
     ("accounts/templates/stewardship/census-changes.html", "Back to "),
+    # The review pipeline's decision Back to review (#1684), named in the
+    # help of Ministry requests and of its request pages.
+    *(
+        (f"accounts/templates/stewardship/{template}", "Back to ")
+        for template in sorted(REVIEW_PIPELINE_PAGES)
+    ),
+    # The review pipeline's decision Back to review (#1685), named in the
+    # help of Additional information and Limitations.
+    *(
+        (f"accounts/templates/stewardship/{template}", "Back to ")
+        for template in sorted(REVIEW_PIPELINE_PAGES)
+    ),
     # ``pk-admin census review`` (#528) words that button's decision
     # (``unreviewed``) in its help, not a link back to a page.
     ("admin_cli.py", "Back to "),
     # "Distinct Families with Testing submissions": a readiness count and
     # the Testing submissions table's caption, not the page's name.
     (
-        "accounts/templates/stewardship/go-live-readiness.html",
+        "accounts/templates/stewardship/go-live-check.html",
+        "Families with Testing submissions",
+    ),
+    (
+        "accounts/templates/stewardship/go-live-start-review.html",
         "Families with Testing submissions",
     ),
     (
         "accounts/templates/stewardship/go-live-families.html",
         "Families with Testing submissions",
     ),
+    # ``pk-admin go-live readiness`` is a command's name, kept when the page
+    # was renamed Go live (#1585), as ``content list`` below.
+    ("admin_cli.py", "Go-live readiness"),
     # ``pk-admin content list`` (#463) is a command's name, as ``files
     # list``, not the retired wording for the Pages and emails page.
     ("admin_cli.py", "content list"),
@@ -597,62 +630,26 @@ def test_retired_page_names_are_not_shown():
     assert found >= ALLOWED, sorted(ALLOWED - found)
 
 
-def test_cancel_go_live_sits_under_production_activation():
-    """The trail runs Home › Campaign setup › Production activation › Cancel go-live."""
-    progress = reverse("admin:production_progress")
-    items = [
-        navigation.MenuItem(
-            "campaign", "production_progress", "Production activation", progress
-        )
-    ]
-    match = SimpleNamespace(
-        url_name="production_withdrawal",
-        namespace=navigation.NAMESPACE,
-        kwargs={},
-    )
-    _, trail = navigation.build(match, items)
-    assert [(crumb["label"], crumb["url"]) for crumb in trail][1:] == [
-        ("Campaign setup", progress),
-        ("Production activation", progress),
-        ("Cancel go-live", None),
-    ]
-
-
 def test_cancel_go_live_blocking_message_links_the_pages_it_names():
-    """Work in flight names Pause and resume mail and Sent mail as links."""
-    campaign = SimpleNamespace(
-        pk=uuid4(),
-        active_configuration=SimpleNamespace(
-            name="Annual campaign", starts_at=datetime(2054, 10, 1, tzinfo=UTC)
-        ),
-    )
+    """Work in flight names Pause and resume mail and Sent mail as links.
+
+    Cancel go-live is a review dialog on Production activation (#1585
+    slice 5): mail that blocks it is a refusal inside the dialog, which
+    offers no Apply (no signed review).
+    """
     inventory = dict.fromkeys(
         ("occurrences", "cancellable", "messages", "failed", "delivered"), 0
     )
     html = render_to_string(
-        "stewardship/production-withdrawal.html",
-        {
-            "admin_chrome": None,
-            "campaign": campaign,
-            "available": True,
-            "preview": {
-                "reason": "Fix a date",
-                "inventory": inventory | {"blocking": 1},
-            },
-        },
+        "stewardship/production-cancel-review.html",
+        {"refused": "blocking", "inventory": inventory | {"blocking": 1}},
     )
     controls = reverse("admin:delivery_control")
     outgoing = reverse("admin:deliveries")
     assert f'<a href="{controls}">Pause and resume mail</a>' in html
     assert f'<a href="{outgoing}">Sent mail</a>' in html
-    assert "<h1>Cancel go-live</h1>" in html
-    # Confirm is shown unavailable, named by the blocking message (#563),
-    # with no form that could post it.
-    assert 'value="confirm"' not in html
-    assert (
-        'disabled aria-describedby="withdrawal-blocked">Confirm cancelling go-live'
-        in html
-    )
+    assert "data-review-refusal" in html and "data-review-preview" not in html
+    assert "1 item of mail is being sent right now" in html
 
 
 @pytest.mark.parametrize("key", sorted(SETUP))

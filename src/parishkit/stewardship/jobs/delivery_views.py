@@ -67,13 +67,12 @@ from .delivery_metadata import (
     recipient_scope,
 )
 from .delivery_reads import (
-    ACTION_LABELS,
     LISTING_FILTERS,
     REFUSAL_SORTING,
+    UNAVAILABLE_REASONS,
     bounce_panel,
     current_snapshot,
     email_recipients,
-    email_refusals,
     parse_window,
     read_detail,
     read_listing,
@@ -658,13 +657,32 @@ def _available():
         raise ObjectDoesNotExist("Delivery pages are withheld.")
 
 
-# The retry offered_actions (delivery_reads) gives each retryable state.
-RETRY_ACTIONS = {
-    "delivery_unknown": "resend",
-    "permanent_failure": "retry_failed",
-    "pending": "retry_unsent",
-    "retry_wait": "retry_unsent",
-}
+def outcome_context(data):
+    """The outcome panel's part of the Mail message page's context (#1563).
+
+    ``data`` is ``read_detail``'s answer (its ``outcome``, ``choices``,
+    ``actions``, ``paused`` and ``last_attempt_at``). ``choices`` maps each
+    answer the question offers by its choice, with a fresh command id (used
+    only by an available answer's form) and its unavailable reason's words;
+    ``choice_rows`` lists the same answers in the page's order, whose reasons
+    the question says once each. ``note_command`` is the closed "Add a note"
+    form's command id while the note is offered but no answer offers it,
+    else None.
+    """
+    choices = {
+        row["choice"]: row
+        | {"id": uuid4(), "reason": UNAVAILABLE_REASONS.get(row["unavailable"])}
+        for row in data["choices"]
+    }
+    asks_note = any(row["action"] == "note" for row in data["choices"])
+    return dict(
+        outcome=data["outcome"],
+        choices=choices,
+        choice_rows=list(choices.values()),
+        paused=data["paused"],
+        last_attempt_at=data["last_attempt_at"],
+        note_command=uuid4() if "note" in data["actions"] and not asks_note else None,
+    )
 
 
 @require_safe
@@ -678,11 +696,11 @@ def delivery_detail(request, message_id):
         the latest ParishSoft data, as Sent mail reads it), its
         recipient addresses (read for ``actor`` through the definer function,
         #1024) and the refused addresses its delivery recorded (#1015).
-        ``commands`` are the offered resolutions; ``decisions`` says whether
-        any of them changes the email (anything but a bare evidence note),
-        which decides whether the page shows the "Resolve this email" section
-        or only the closed note form. ``bounce`` is the "Report a bounced
-        address" panel (#806 slice 4), or None where it does not apply.
+        ``outcome`` and ``choices`` are its outcome panel and the answers
+        its question offers (#1563); ``note_command`` is the closed "Add a
+        note" form's command id while the note is offered but no question
+        offers it. ``bounce`` is the "Report a bounced address" panel (#806
+        slice 4), or None where it does not apply.
         """
         data = read_detail(message_id, request.GET)
         window = data["window"]
@@ -694,32 +712,11 @@ def delivery_detail(request, message_id):
             bounce=bounce_panel(
                 delivery, recipients, can_change="note" in data["actions"]
             ),
-            refused=email_refusals(message_id),
+            refused=data["refused"],
             events=data["events"],
             task=data["task"],
             notes=data["notes"],
-            retry_unavailable=data["retry_unavailable"],
-            # The retry the page would offer, shown unavailable with why
-            # while the resend admission refuses it (#563).
-            retry_label=ACTION_LABELS[RETRY_ACTIONS[delivery["state"]]]
-            if data["retry_unavailable"]
-            else None,
-            # Decisions other campaign work holds now, shown unavailable,
-            # named by the notice that says why (#1331).
-            held=[
-                dict(action=action, label=ACTION_LABELS[action])
-                for action in data["held"]
-            ],
-            # An unavailable retry, or a held decision, is a decision too: it
-            # is shown, greyed, in the "Resolve this email" section where it
-            # would sit (#563).
-            decisions=(data["retry_unavailable"] and bool(data["actions"]))
-            or bool(data["held"])
-            or any(action != "note" for action in data["actions"]),
-            commands=[
-                dict(action=action, label=ACTION_LABELS[action], id=uuid4())
-                for action in data["actions"]
-            ],
+            **outcome_context(data),
             next_query=_next(request, window, data["has_next"]),
             previous_query=_previous(request, window),
         ), len(data["events"]) + len(data["notes"])
