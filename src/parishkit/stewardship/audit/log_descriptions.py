@@ -237,6 +237,30 @@ DESCRIPTIONS = {
         "after the Administrator accepted the duplicate risk, as the email's "
         "page does."
     ),
+    "admin_cmd_go_live_start": _(
+        "An automation session started go-live, as the Go live page's Start "
+        "go-live does: Testing data is deleted and cannot be restored."
+    ),
+    "admin_cmd_go_live_retry": _(
+        "An automation session retried a failed part of going live, as the "
+        "Go live page's Retry does."
+    ),
+    "admin_cmd_go_live_refresh_again": _(
+        "An automation session asked for a new ParishSoft refresh and new "
+        "Family links, as the Go live page's Refresh and prepare again does."
+    ),
+    "admin_cmd_go_live_stop": _(
+        "An automation session stopped go-live, as the Go live page's Stop "
+        "go-live does."
+    ),
+    "admin_cmd_go_live_confirm": _(
+        "An automation session confirmed Production, as the Go live page's "
+        "Confirm Production does."
+    ),
+    "admin_cmd_go_live_cancel": _(
+        "An automation session cancelled go-live before the campaign "
+        "started, as Production activation's Cancel go-live does."
+    ),
     "admin_cmd_send_confirm": _(
         "An automation session confirmed a reviewed pause, resume or "
         "resolution of held email, as the Pause and resume mail page does."

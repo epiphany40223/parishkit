@@ -911,6 +911,147 @@ def go_live_progress(args, preamble, runtime, context):
     return read_go_live_progress(context["caller"], runtime, args.campaign)
 
 
+# --- The Go live page's actions (PR 12, #1809, in ``admin_go_live``) ----------
+
+
+def go_live_preview(args, preamble, runtime, context):
+    """Check readiness and public web address: the start token, if startable."""
+    from .admin_go_live import preview_start
+
+    return preview_start(context["caller"], runtime)
+
+
+def go_live_start(args, preamble, runtime, context):
+    """Start go-live from a ``go-live preview`` token, as the dialog's Apply.
+
+    The role first, then the token and readiness are checked and the
+    prompt (the acknowledgement that Testing cleanup cannot be undone) is
+    asked, before any transaction. The same token again starts nothing
+    more, so it is not asked about.
+    """
+    from .admin_changes import TOKEN_LIMIT
+    from .admin_go_live import start, start_prompt_lines
+
+    _role_first(context, runtime)
+    token = _input(args.token, context, TOKEN_LIMIT)
+    lines = start_prompt_lines(context["caller"], runtime, token)
+    if lines is not None:
+        confirm(context, lines)
+    return start(
+        context["caller"],
+        runtime,
+        token=token,
+        context=context,
+        asked=lines is not None,
+    )
+
+
+def go_live_status(args, preamble, runtime, context):
+    """The Go live page's Prepare step, with Check's stop."""
+    from .admin_go_live import read_status
+
+    return read_status(context["caller"], runtime)
+
+
+def go_live_retry(args, preamble, runtime, context):
+    """The one Retry the current go-live step offers."""
+    from .admin_go_live import retry
+
+    return retry(context["caller"], runtime, context=context)
+
+
+def _go_live_prepare_control(action, context, runtime, lines):
+    """Refresh and prepare again or Stop go-live: read, prompt, then act.
+
+    The role first, then the step's control is read and the page's words
+    asked at the prompt, before any transaction.
+    """
+    from .admin_go_live import apply_prepare, prepare_control
+
+    _role_first(context, runtime)
+    token, shown = prepare_control(context["caller"], runtime, action)
+    confirm(context, lines(shown))
+    return apply_prepare(
+        context["caller"], runtime, action, token=token, context=context
+    )
+
+
+def go_live_refresh_again(args, preamble, runtime, context):
+    """Refresh and prepare again: begin the next go-live attempt."""
+    from .admin_go_live import again_prompt_lines
+
+    return _go_live_prepare_control("again", context, runtime, again_prompt_lines)
+
+
+def go_live_stop(args, preamble, runtime, context):
+    """Stop go-live: discard the Family links and stop Testing cleanup."""
+    from .admin_go_live import stop_prompt_lines
+
+    return _go_live_prepare_control("stop", context, runtime, stop_prompt_lines)
+
+
+def go_live_confirm_preview(args, preamble, runtime, context):
+    """The Confirm Production dialog's Review."""
+    from .admin_go_live import preview_confirm
+
+    return preview_confirm(context["caller"], runtime)
+
+
+def go_live_confirm(args, preamble, runtime, context):
+    """Confirm Production from a ``go-live confirm-preview`` token.
+
+    The role first, then the token's signature; the prompt asks for the
+    typed word ``Production``, as the dialog does, before any transaction.
+    """
+    from .admin_changes import TOKEN_LIMIT
+    from .admin_go_live import confirm as confirm_production
+    from .admin_go_live import confirm_prompt_lines
+
+    _role_first(context, runtime)
+    token = _input(args.token, context, TOKEN_LIMIT)
+    confirm(
+        context,
+        confirm_prompt_lines(context["caller"], runtime, token),
+        typed="Production",
+    )
+    return confirm_production(context["caller"], runtime, token=token, context=context)
+
+
+def go_live_cancel_preview(args, preamble, runtime, context):
+    """The Cancel go-live dialog's Review, with the reason."""
+    from .admin_go_live import preview_cancel
+
+    # Up to four UTF-8 bytes a character; the dialog counts characters.
+    reason = _input(args.reason, context, 2000 * 4)
+    return preview_cancel(context["caller"], runtime, reason=reason)
+
+
+def go_live_cancel(args, preamble, runtime, context):
+    """Cancel go-live from a ``go-live cancel-preview`` token.
+
+    The role first, then the token's signature; the prompt is the
+    acknowledgement that deleted Testing data is not restored, before any
+    transaction.
+    """
+    from .admin_changes import TOKEN_LIMIT
+    from .admin_go_live import cancel, cancel_prompt_lines
+
+    _role_first(context, runtime)
+    token = _input(args.token, context, TOKEN_LIMIT)
+    confirm(context, cancel_prompt_lines(context["caller"], runtime, token))
+    return cancel(context["caller"], runtime, token=token, context=context)
+
+
+def go_live_families(args, preamble, runtime, context):
+    """The Testing submissions list, streamed as CSV."""
+    from .admin_go_live import export_families
+
+    return export_families(context["caller"], runtime, context=context)
+
+
+# --- end of the Go live page's actions ----------------------------------------
+
+
 # The answer read at a prompt: one line of at most this many bytes.
 ANSWER_LIMIT = 256
 
@@ -4699,6 +4840,26 @@ def _go_live_progress_options(parser):
     _watch_options(parser)
 
 
+def _go_live_token_options(parser):
+    """--token: a go-live preview's token."""
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from the matching go-live preview command, or - "
+        "for standard input (needs --yes)",
+    )
+
+
+def _go_live_cancel_preview_options(parser):
+    """--reason: why go-live is cancelled, as the dialog asks."""
+    parser.add_argument(
+        "--reason",
+        required=True,
+        help="why (at most 2,000 characters; kept with the cancellation), or - "
+        "to read it from standard input",
+    )
+
+
 def _pairing_options(parser):
     """Options of ``login start``; the wrapper passes the same ones."""
     parser.add_argument("--name", required=True, help="the session file's name")
@@ -5191,6 +5352,152 @@ def _read_specs():
             options=(_go_live_progress_options,),
             audit_event=None,
             watch=True,
+        ),
+    )
+
+
+def _go_live_specs():
+    """The Go live page's actions (PR 12, #1809, in ``admin_go_live``).
+
+    Every action needs a full-scope session, as the page's posts record
+    activity; ``go-live status`` and ``go-live families`` are passive reads
+    any session may run. Start, confirm and cancel are privileged
+    (fresh-gated) and irreversible; they, refresh-again and stop prompt.
+    The previews record no event; ``go-live families`` streams its file.
+    """
+    from .admin_go_live import (
+        CancelPreview,
+        CancelResult,
+        ConfirmPreview,
+        ConfirmResult,
+        FamiliesExport,
+        GoLiveStatus,
+        PrepareResult,
+        RetryResult,
+        StartPreview,
+        StartResult,
+    )
+
+    token = (_go_live_token_options,)
+    return (
+        CommandSpec(
+            "go-live preview",
+            "Check readiness and the public web address; print the start token.",
+            go_live_preview,
+            "full",
+            False,
+            StartPreview.field_names(),
+            12,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "go-live start",
+            "Start go-live: delete Testing data and prepare Family links.",
+            go_live_start,
+            "full",
+            True,
+            StartResult.field_names(),
+            12,
+            options=token,
+            fresh_gated=True,
+            prompts=True,
+        ),
+        CommandSpec(
+            "go-live status",
+            "Show the Go live page's Prepare step.",
+            go_live_status,
+            "read_only",
+            False,
+            GoLiveStatus.field_names(),
+            12,
+            options=(_watch_options,),
+            audit_event=None,
+            watch=True,
+        ),
+        CommandSpec(
+            "go-live retry",
+            "Retry the failed part the current go-live step offers a Retry for.",
+            go_live_retry,
+            "full",
+            True,
+            RetryResult.field_names(),
+            12,
+        ),
+        CommandSpec(
+            "go-live refresh-again",
+            "Refresh ParishSoft data and prepare the Family links again.",
+            go_live_refresh_again,
+            "full",
+            True,
+            PrepareResult.field_names(),
+            12,
+            prompts=True,
+        ),
+        CommandSpec(
+            "go-live stop",
+            "Stop go-live; the campaign stays a Testing draft.",
+            go_live_stop,
+            "full",
+            True,
+            PrepareResult.field_names(),
+            12,
+            prompts=True,
+        ),
+        CommandSpec(
+            "go-live confirm-preview",
+            "Review confirming Production; print its token.",
+            go_live_confirm_preview,
+            "full",
+            False,
+            ConfirmPreview.field_names(),
+            12,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "go-live confirm",
+            "Confirm Production from a reviewed token.",
+            go_live_confirm,
+            "full",
+            True,
+            ConfirmResult.field_names(),
+            12,
+            options=token,
+            fresh_gated=True,
+            prompts=True,
+        ),
+        CommandSpec(
+            "go-live cancel-preview",
+            "Review cancelling go-live before the campaign starts.",
+            go_live_cancel_preview,
+            "full",
+            False,
+            CancelPreview.field_names(),
+            12,
+            options=(_go_live_cancel_preview_options,),
+            audit_event=None,
+        ),
+        CommandSpec(
+            "go-live cancel",
+            "Cancel go-live from a reviewed token.",
+            go_live_cancel,
+            "full",
+            True,
+            CancelResult.field_names(),
+            12,
+            options=token,
+            fresh_gated=True,
+            prompts=True,
+        ),
+        CommandSpec(
+            "go-live families",
+            "Write the Testing submissions list (CSV) to standard output.",
+            go_live_families,
+            "read_only",
+            False,
+            FamiliesExport.field_names(),
+            12,
+            audit_event=None,
+            streams=True,
         ),
     )
 
@@ -8365,6 +8672,7 @@ COMMANDS = (
     + _worklist_specs()
     + _pledge_specs()
     + _census_update_specs()
+    + _go_live_specs()
 )
 BY_NAME = {spec.name: spec for spec in COMMANDS}
 

@@ -650,7 +650,7 @@ these groups, each listing the entries the viewer's role may open:
 | Campaign setup | Dates and mail schedules | `/admin/campaign/schedules/` | Administrator | No current campaign, or it is archived |
 | Campaign setup | Share options | `/admin/campaign/share-options/` | Administrator | The campaign has no financial module, or it is not an unlocked Testing draft |
 | Campaign setup | No-reminders WorkGroup | `/admin/campaign/no-reminders-workgroup/` | Administrator | No current campaign, or it is archived |
-| Campaign setup | Go-live readiness | `/admin/campaign/go-live/` | Administrator | The campaign is not a draft (it points to Production activation) |
+| Campaign setup | Go live | `/admin/campaign/go-live/` | Administrator | The campaign is not a draft (it points to Production activation) |
 | Campaign setup | Production activation | `/admin/campaign/production/` | Administrator | Production has not been confirmed for this campaign |
 | Mail and Family portal | Pause and resume mail | `/admin/mail/controls/` | Administrator | Testing mode |
 | Mail and Family portal | Family email progress | `/admin/mail/family-progress/` | Administrator | No current campaign |
@@ -991,8 +991,8 @@ instead, so it is not repeated here):
 
 | State | Next steps |
 | --- | --- |
-| Draft in Testing | Continue campaign setup (the Campaign setup stepper's first step not done yet, #1404), Campaign settings, Pages and emails, Dates and mail schedules, Preview and test email (for the initial invitation's current revision), Go-live readiness |
-| Production being activated | Production activation, Sent mail (while the campaign is still a draft, Go-live readiness leads) |
+| Draft in Testing | Continue campaign setup (the Campaign setup stepper's first step not done yet, #1404), Campaign settings, Pages and emails, Dates and mail schedules, Preview and test email (for the initial invitation's current revision), Go live |
+| Production being activated | Production activation, Sent mail (while the campaign is still a draft, Go live leads) |
 | Active | Census changes, Ministry requests to enter by hand, Additional information and Ministry requests (each with its count), Family email progress, Sent mail problems (with count) |
 | Mail paused | Pause and resume mail first, then the Active list |
 | Closed or archived | Census changes, Ministry requests to enter by hand, Additional information, Ministry requests (each with its count), Report emails |
@@ -1118,7 +1118,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `content_edit` | _page or email name_ | Pages and emails | Administrator | Edit page or email | `/admin/campaign/content/<kind>/<slot>/` | (same) | Object-named (exception). |
 | `content_revision` | _email name_ | Pages and emails | Administrator | _email template name_; Content revision | `/admin/campaign/content/email/<slot>/<revision>/` | (same) | Object-named (exception); links its own test page. |
 | `content_delete` | Delete email templates | Pages and emails | Administrator | (new, #879) | `/admin/campaign/content/deletion/` (POST only) | (same) | The email tables' confirmation dialog posts here. |
-| `campaign_mail` | Preview and test email | _email name_ | Administrator | Campaign email test | `/admin/campaign/content/test/<revision>/` | (same) | Returns to the page it was opened from (Go-live readiness, Pause and resume mail). |
+| `campaign_mail` | Preview and test email | _email name_ | Administrator | Campaign email test | `/admin/campaign/content/test/<revision>/` | (same) | Returns to the page it was opened from (Go live, Pause and resume mail). |
 | `campaign_mail_families` | Send to chosen Families | Preview and test email | Administrator | Send this email to chosen Families | `/admin/campaign/content/test/<revision>/families/` | (same) |  |
 | `artwork_settings` | Campaign images | Menu: Campaign images | Administrator | (same) | `/admin/campaign/images/` | (same) |  |
 | `artwork_upload` | Campaign images | Campaign images | Administrator | Campaign images (upload error); Campaign image upload | `/admin/campaign/images/<slot>/` (POST only) | (same) | POST-only: a staged upload answers with the review dialog's review of it (#750); a refused one re-renders Campaign images (status 400). Review campaign image is a review, and Remove campaign image a confirmation (#1356), in Campaign images' review dialog; their old addresses are gone. |
@@ -1130,13 +1130,15 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `schedule_delete` | Delete scheduled emails | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/deletion/` (POST only) | (same) | The table's confirmation dialog posts here; Edit's Delete posts `action=preview` for its review (#1656). |
 | `share_settings` | Share options | Menu: Share options | Administrator | How Families will share | `/admin/campaign/share-options/` | (same) | Gains a Return link and About panel. |
 | `reminder_workgroup` | No-reminders WorkGroup | Menu: No-reminders WorkGroup | Administrator | (new, #861) | `/admin/campaign/no-reminders-workgroup/` | (same) | Edit, confirm, apply; stays editable while live. |
-| `go_live` | Go-live readiness | Menu: Go-live readiness | Administrator | (same) | `/admin/campaign/go-live/` | (same) |  |
-| `go_live_families` | Testing submissions | Go-live readiness | Administrator | Families with Testing submissions; Testing Families | `/admin/campaign/go-live/families/` | (same) |  |
-| `go_live_cleanup` | Testing cleanup | Go-live readiness | Administrator | Testing cleanup progress | `/admin/campaign/go-live/cleanup/<request>/` | (same) |  |
-| `go_live_links` | Prepare Family links | Testing cleanup | Administrator | Family links | `/admin/campaign/go-live/cleanup/<request>/links/` | (same) |  |
-| `production_confirmation` | Confirm Production | Prepare Family links | Administrator | Final Production confirmation | `/admin/campaign/go-live/cleanup/<request>/links/<preparation>/confirmation/` | (same) |  |
-| `production_progress` | Production activation | Menu: Production activation | Administrator | Production activation progress | `/admin/campaign/production/` | (same) | Links its cleanup request and Sent mail. |
-| `production_withdrawal` | Cancel go-live | Production activation | Administrator | Withdraw from Production; Return to Testing | `/admin/campaign/production/cancellation/` | (same) | Links Pause and resume mail and Sent mail where it names them. |
+| `go_live` | Go live | Menu: Go live | Administrator | Go live | `/admin/campaign/go-live/` | (same) | The Go live page's Check step (#1585); its POSTs answer in place or in the Start go-live dialog. |
+| `go_live_families` | Testing submissions | Go live | Administrator | Families with Testing submissions; Testing Families | `/admin/campaign/go-live/families/` | (same) |  |
+| `go_live_prepare` | Go live | Go live (its Check step) | Administrator | (new, #1585) | `/admin/campaign/go-live/preparing/` | (same) | The Go live page's Prepare step (#1585 slice 3); its trail is Campaign setup › Go live and it marks the Go live menu entry. |
+| `go_live_cleanup` | (retired) | (retired) | Administrator | Testing cleanup; Testing cleanup progress | `/admin/campaign/go-live/cleanup/<request>/` | (retired; 404) | Retired with no redirect (#1585 slice 3): the Prepare step shows cleanup. |
+| `go_live_links` | (retired) | (retired) | Administrator | Prepare Family links; Family links | `/admin/campaign/go-live/cleanup/<request>/links/` | (retired; 404) | Retired with no redirect (#1585 slice 3): the system prepares the links, and the Prepare step shows them. |
+| `go_live_confirm` | Go live | Go live (its Check step) | Administrator | Confirm Production; Final Production confirmation | `/admin/campaign/go-live/confirmation/` | (same) | The Go live page's Confirm Production step (#1585 slice 4); its trail is Campaign setup › Go live and it marks the Go live menu entry. |
+| `production_confirmation` | (retired) | (retired) | Administrator | Confirm Production | `/admin/campaign/go-live/cleanup/<request>/links/<preparation>/confirmation/` | (retired; 404) | Retired with no redirect (#1585 slice 4): the Confirm Production step replaced it. |
+| `production_progress` | Production activation | Menu: Production activation | Administrator | Production activation progress | `/admin/campaign/production/` | (same) | The Go live page's Activation step (#1585 slice 5); links Sent mail; its Retry posts in place and Cancel go-live opens the review dialog. |
+| `production_withdrawal` | (retired) | (retired) | Administrator | Cancel go-live; Withdraw from Production; Return to Testing | `/admin/campaign/production/cancellation/` | (retired; 404) | Retired with no redirect (#1585 slice 5): Cancel go-live is a review dialog on Production activation, which links Pause and resume mail and Sent mail where it names them. |
 | `delivery_control` | Pause and resume mail | Menu: Pause and resume mail | Administrator | Campaign delivery controls; Delivery controls | `/admin/mail/controls/` | (same) |  |
 | `family_email_progress` | Family email progress | Menu: Family email progress | Administrator | (same) | `/admin/mail/family-progress/` | (same) |  |
 | `family_email_sends` | Family email history | Menu: Family email history | Administrator | Family email sends | `/admin/mail/family-history/` | (same) |  |
@@ -1153,7 +1155,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `response_dashboard` | Response dashboard | Menu: Response dashboard | Administrator, Staff | (same); Participation and campaign statistics | `/admin/reports/responses/` | (same) | Absorbed Participation ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)): `/admin/reports/participation/` and its `exact-exports/` form action are gone, with no redirect (#864); the export form posts to `responses/exports/`. |
 | `reports` | Response dashboard | Menu: Response dashboard | Administrator, Staff | (redirects) Participation and campaign statistics; 'Campaign reports' only when no campaign exists; Campaign reports | `/admin/reports/` | (same) | Not a group root: redirects to the Response dashboard, or to Ministry requests for a viewer who may not open it (a Ministry leader). |
 | `campaign_comparison` | Campaign comparison | Menu: Campaign comparison | Administrator, Staff | (new, [#1018](https://github.com/epiphany40223/parishkit/issues/1018)) | `/admin/reports/comparison/` | (same) | Compares the current campaign with imported past campaigns ([campaign history](../campaign-history/spec.md#comparison-report)). |
-| `report_export` | _report page name_ export | The report it came from | Administrator, Staff, Ministry leader | Ministry export / Additional-information export / Family-directory export / Family-directory mail-merge export; Report export (breadcrumb) | `/admin/reports/exports/<request>/` | (same) | Object-named (exception). Every export shares it: a latest-data export too (decision 8). A report's export is named after its report page, for example "Active parishioner family directory export" or "Ministry requests export" (#520), and its breadcrumb says the same name as its heading. Exports that are not one report's keep their own names (Campaign archive, Campaign comparison download, Family timeline export, Chosen-Family test names export). The export error page reads nothing from the database, so it cannot name the export; its link back says "Return to the export status page". Its actions post to `cancellation/`, `retries/` and `download/`. It is a [point-in-time](../operations/spec.md#point-in-time-exports) preparing step, not a history entry: past the download window it answers the fixed "no longer available" page, and no page lists earlier exports. |
+| `report_export` | _report page name_ export | The report it came from | Administrator, Staff, Ministry leader | Ministry export / Additional-information export / Family-directory export / Family-directory mail-merge export; Report export (breadcrumb) | `/admin/reports/exports/<request>/` | (same) | Object-named (exception). Every export shares it: a latest-data export too (decision 8). A report's export is named after its report page, for example "Active parishioner family directory export" or "Ministry requests export" (#520), and its breadcrumb says the same name as its heading. Exports that are not one report's keep their own names (Campaign archive, Campaign comparison download, Family timeline export, Chosen-Family test names export). No Admin page opens it: every export button downloads in place and only reads this address passively for the export's state ([downloads happen in place](../ui-conventions/spec.md#downloads-happen-in-place)); it is still the page for the exports only the command line asks for (latest-data, chosen-Family test names) and for an address opened directly. The export error page reads nothing from the database, so it cannot name the export; its link back says "Return to the export status page", and its sentences say to try again, never to return to the status page. Its actions post to `cancellation/`, `retries/` and `download/`. It is a [point-in-time](../operations/spec.md#point-in-time-exports) preparing step, not a history entry: past the download window it answers the fixed "no longer available" page, and no page lists earlier exports. |
 | `report_exact` | Latest-data export | Response dashboard | Administrator, Staff | Queued participation export; Exact export | `/admin/reports/exports/<request>/` (the shared export page) | (same) | Decision 8: folded into the shared export page; it keeps its own heading, and its trail names it. Its old addresses (`exact-exports/<request>/` and its actions) are gone (#864). Since #1537 it is requested only with `export exact create`: the Response dashboard offers the export of the chart shown. |
 | `financial_report` | Financial stewardship | Menu: Financial stewardship | Administrator, Staff | Financial stewardship detail; Financial report | `/admin/reports/financial/` | (same) |  |
 | `pledges_to_enter` | Pledges | Menu: Pledges | Administrator, Staff | (new, [#1686](https://github.com/epiphany40223/parishkit/issues/1686)) | (none) | `/admin/reports/financial/pledges/` | The financial stream's review worklist and manual report ([Pledges](../reports/spec.md#pledges)); its decisions post to the page itself, and its CSV/XLSX/PDF download (`pledges/exports/`) is a non-page action. |
@@ -1287,7 +1289,7 @@ multi-step flows keep their context: it may name a different parent, supply
 route arguments an ancestor link needs, and name an ancestor specifically.
 Preview and test email sits under the email it sends (Home › Campaign setup ›
 Pages and emails › Initial invitation › Preview and test email), with Send to
-chosen Families below it. An export's status page sits under the report it came
+chosen Families below it. An export's status page, opened directly, sits under the report it came
 from. A configuration change's status page sits under the settings page the
 change was confirmed on: confirming remembers that page in the signed-in
 session (never in the URL), and the status page shows its trail and a "Return
@@ -1317,8 +1319,7 @@ Ministries), Campaign settings, New user and Edit user
 (whose review and Apply are in the
 [review dialog](../ui-conventions/spec.md#review-dialog), so the page
 stays at Make changes) and every change's status
-page; going live (Check readiness, Testing cleanup, Family links, Confirm
-Production, Activation); sending to chosen Families (Choose Families, Review,
+page; sending to chosen Families (Choose Families, Review,
 Send and follow); and report exports (Choose report, Prepare file, Download).
 Campaign settings with nothing open to change (a closed campaign's) is not
 in a flow. Import Ministry
@@ -1504,17 +1505,18 @@ the fifteen-minute backup-key proof and campaign clone seed):
   [configuration requests](../admin-automation/spec.md#schedules-and-configuration)
   use the same fifteen minutes.
 - **Five minutes** for the delivery-critical actions, whose previews bind a
-  live work inventory or a public web address check: **Start Testing
-  cleanup**, the controls on the Testing cleanup and Family links pages
-  (prepare, retry, cancel), **Confirm Production** (or sooner, when the
-  campaign's start or close, the ParishSoft data's expiry or the next newly
-  due mail comes first), **Retry failed mail preparation** on the activation
-  progress page, **Cancel go-live** (or sooner, at the campaign start), and
+  live work inventory or a public web address check: the Production
+  confirmation token (or sooner, when the campaign's start or close, the
+  ParishSoft data's expiry or the next newly due mail comes first), which
+  the [Go live page](#go-live-page)'s Confirm Production dialog mints at
+  its Apply so the limit never reaches the Administrator, mail
+  preparation's **Retry** on Production activation, **Cancel go-live** (or sooner, at the campaign start), and
   pausing, resuming and resolving held messages on
-  [Pause and resume mail](#live-delivery-pause). The
-  [launch runbook](../../../guides/stewardship-launch-runbooks.md#production-activation)
-  tells the Administrator about these limits, and the
-  [Go live page](#go-live-page) replaces them for going live.
+  [Pause and resume mail](#live-delivery-pause). For going live, the
+  [Go live page](#go-live-page) mints the confirmation token, the mail
+  preparation retry's control and the cancellation's intent at the moment
+  of the action, from what is checked then, so none of these limits
+  reaches the Administrator.
 
 Confirming an expired or out-of-date preview is a correctable refusal ("This
 preview is out of date"), usually with a link back to the page that builds it, so one
@@ -1979,8 +1981,11 @@ and removed through the same configuration-request path. It requires the
 Google Workspace mail integration, whose delegated user and key the copies
 use. Until Google Workspace mail is set up, **Test access** is shown
 unavailable, with that reason and a link to set it up. In the local
-environment, which never reaches Google Drive, it is always shown
-unavailable with that reason; the server still refuses it there. **Test access** queues a check that the Google Workspace credential
+environment it is shown unavailable with its reason whenever that
+environment does not reach Google Drive (without a mail redirect, or under
+the fake clock; see the
+[local-environment spec](../local-environment/spec.md#safety-guarantees));
+the server still refuses it there. **Test access** queues a check that the Google Workspace credential
 installer answers by writing and trashing one small file in the folder, as
 the applied delegated mailbox user only (the database refuses a check naming
 any other user, so the web process cannot make the installer impersonate
@@ -2709,7 +2714,11 @@ Content and future schedules remain versioned/editable under the
 [atomic schedule-replacement policy](../background-processing/spec.md#schedule-replacement-and-removal).
 The confirmation shows successful, safely cancellable, failed, and blocking
 in-flight/unknown counts. A sent message cannot be recalled; its logical
-schedule fulfillment carries across revisions. Provider-submitting or
+schedule fulfillment carries across revisions. The review says so ("Email
+already sent cannot be recalled.") only when a schedule it changes or
+deletes has already sent email; a review of schedules that have sent
+nothing yet, such as a future Reminder's edit or move, carries no such
+notice. Provider-submitting or
 `delivery_unknown` work blocks the edit until it is resolved.
 
 When a proposed end-date shortening would place future Family mail outside the
@@ -2894,7 +2903,9 @@ a new revision and plan it again. Every other row has **Edit** and **Delete**.
 Edit opens the [Edit scheduled email page](#new-and-edit-scheduled-email)
 for that schedule. Delete, and **Delete selected** for the ticked rows, open the
 confirmation dialog. It names the schedule ("Delete Reminder 2?") or the count
-("Delete 3 scheduled emails?") and says that email already sent is not recalled
+("Delete 3 scheduled emails?"). Only when a chosen schedule has already sent
+email (the same sent count as the review's notice, so in practice an Admin
+digest that has run) does it also say that email already sent is not recalled
 and that emailed Family codes and links keep working. Confirming removes the
 schedules in one configuration change. The server builds the change as the
 review does (the same validation of the remaining schedules, the same blocking
@@ -3154,9 +3165,9 @@ email delivery paused), one pending test per campaign, the acknowledgment
 while an earlier test may have arrived, and the same record and audit. The
 record names the chosen email, the one the text started from, so the test
 is listed under that email's Recent test results and, in Testing, counts
-for Go-live readiness like a test of that email. Nothing is saved (no change
-request, email or schedule change), and no Family's code, link or sealed
-credential is read or made. A reserved status line after the button says
+as a test of that email on the Go live page's Check step. Nothing is
+saved (no change request, email or schedule change), and no Family's
+code, link or sealed credential is read or made. A reserved status line after the button says
 why it is unavailable ("Choose an email to send first.", the reason the
 campaign admits no test mail now, or "Tick the confirmation below to send
 another test.") or what the send did: queued, with the time in this
@@ -3223,8 +3234,10 @@ following** and **The whole series**. The choice is described by "Part of: "
 and the series' rule in plain words, such as "Every Monday and Thursday,
 October 5, 2054 – November 13, 2054", and by one help line that is always
 shown. "This reminder only" is the ordinary Edit: moving the reminder to a day
-its rule does not give takes it out of the series, and deleting it from the
-list does too. The other two grey the send date in place (a [conditional
+its rule does not give takes it out of the series, and the review says so in
+one line ("This reminder leaves its series (Every Monday …), since the series
+does not send on its new day."); deleting it from the list takes it out too.
+The other two grey the send date in place (a [conditional
 field](../ui-conventions/spec.md#conditional-fields), not sent), and the
 greyed box shows this reminder's own date, with help under it that the date
 is used only with "This reminder only". Every reminder they change keeps its
@@ -3273,7 +3286,7 @@ what happens to the series:
   (with its rule, now ending the day before) and that the changed ones become
   a new series (with its rule).
 
-Changing a series' rule stays on the command line for now; deleting a series
+Changing a series' rule stays on the command line for now (planned in [#1808](https://github.com/epiphany40223/parishkit/issues/1808)); deleting a series
 is Edit's Delete ([Delete a scheduled email](#delete-a-scheduled-email)).
 Editing from the calendar is in
 [Editing from the calendar](#editing-from-the-calendar).
@@ -3328,10 +3341,11 @@ directly; the wizard's list has its own Delete.
 **Campaign calendar** (`/admin/campaign/schedules/calendar/`,
 [#469](https://github.com/epiphany40223/parishkit/issues/469)), opened by the
 link beside New scheduled email, shows every email the saved schedules send,
-by date. It changes nothing itself and offers no Delete of its own: Add on a
-day starts a new schedule ([Editing from the
-calendar](#editing-from-the-calendar)), and each send links to its Edit
-scheduled email page, which has [Delete](#delete-a-scheduled-email). It reads
+by date. It changes nothing without the review dialog and offers no Delete of
+its own: Add on a day starts a new schedule and Move… (or a drag) moves a send
+to another day ([Editing from the calendar](#editing-from-the-calendar)), and
+each send links to its Edit scheduled email page, which has
+[Delete](#delete-a-scheduled-email). It reads
 the current schedules: the
 Initial invitation, each reminder, and every send of each
 [report email](../report-emails/spec.md#campaign-calendar-and-other-pages),
@@ -3404,15 +3418,14 @@ not a date is refused as an unknown address.
 A muted send is told apart by its status, in words in the table and read to
 screen readers in the grid. A week view,
 Production activation and go-live milestones, ParishSoft refresh times and the
-backup window are later slices of
-[#1521](https://github.com/epiphany40223/parishkit/issues/1521).
+backup window are planned in
+[#1808](https://github.com/epiphany40223/parishkit/issues/1808).
 
 ##### Editing from the calendar
 
 From [#1521](https://github.com/epiphany40223/parishkit/issues/1521) (split
 from #469); the defaults below stand until the Administrator changes them.
-Add on a day is built; Move… and drag to move are planned, and until they
-ship the calendar moves nothing.
+Add on a day, Move… and drag to move are built.
 
 The calendar starts the existing edits; it has no write path of its own.
 Every change it starts is the same server-drawn review, signed preview, Apply
@@ -3437,18 +3450,51 @@ checks it exactly as that page does.
   what was applied. Days outside the campaign's dates, or already past, have no Add. Until a
   schedule exists the calendar draws no grid, and its link to Dates and mail
   schedules is the way to add one.
-- **Move…** Each send the calendar links (a dated schedule that has not run:
-  the Initial invitation and each reminder) has a **Move…** action beside its
-  link. It opens the [review dialog](../ui-conventions/spec.md#review-dialog)
-  over the calendar with one date field, filled in with the send's date, and
-  the send's time and email shown but not editable. Its Review answers
-  exactly the review Edit scheduled email draws for that schedule with the
-  new date, the same browser-local time and the same email. Apply redraws the
-  calendar in place ([in-place
-  controls](../ui-conventions/spec.md#in-place-controls)).
-- **Drag to move.** Dragging a movable send onto another day opens the same
-  Move dialog with that day filled in. The drop changes nothing: the send
-  stays where it was until Apply, and Cancel leaves it there. Drag follows
+- **Move…** Each send the grid links (a dated schedule that has not run:
+  the Initial invitation and each reminder) has a small move icon button
+  beside its link, at least 24 px square, reachable by keyboard, and named,
+  with a matching tooltip, with the send ("Move Reminder 2…"). It opens a
+  dialog over the calendar titled with the same words, which says the send's
+  time (browser-local) and email, that only the date changes and the time
+  stays the same in this computer's time zone, and holds one date field,
+  **New send date**, filled in with the send's date. **Review the move**
+  stays unavailable until the date differs from the send's
+  ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)), with
+  its hint after it. Review posts the move to the schedule's Edit scheduled
+  email address (`move=yes` with the date, the browser's zone and the
+  configuration version) and the server answers exactly the review Edit
+  scheduled email draws for that schedule with the new date, the same
+  browser-local time and the same email: it fills in the rest of Edit's form
+  from the saved schedule, so the calendar has no write path or rules of its
+  own. That review opens in the [review
+  dialog](../ui-conventions/spec.md#review-dialog) on top of the Move
+  dialog; its Cancel returns to the Move dialog. A refusal for a value (a
+  day outside the campaign, two Family mailings at one moment, the
+  repeated hour) is said in the Move dialog's reserved line after its
+  buttons, so a long refusal moves nothing; a refusal of the date marks the
+  field, which the line then describes. The repeated hour is refused at the
+  date, in words that fit the dialog: choose another day, or change the
+  time on the send's Edit page. Move always reviews in the dialog, also
+  while the campaign wizard applies (whose own steps save directly): the
+  calendar is not a wizard step but a view of schedules that may already be
+  live, and a move changes when Families get mail. Apply redraws the grid and
+  the table in place ([in-place
+  controls](../ui-conventions/spec.md#in-place-controls)) on the month
+  shown, closes the Move dialog, and the calendar's status line says
+  "Scheduled email changed. Applied at …". Escape or Cancel closes the Move
+  dialog, changing nothing, and returns focus to what opened it. The table
+  keeps its Edit link and offers no Move…; the grid's is the one Move.
+- **Drag to move.** On a fine pointer (a mouse or trackpad), dragging a
+  movable send's link or its Move… button by a few pixels starts a drag:
+  the send is marked as being dragged and the day under the pointer is
+  outlined (outline only, so nothing moves). Dropping it on another day of
+  the grid opens the same Move dialog with that day filled in; dropping it
+  on its own day, outside the grid, or pressing Escape cancels the drag, and
+  the click that ends a drag neither follows the link nor opens Move…. A
+  click without a drag still follows the link or opens Move…, and Enter or
+  Space on Move… opens it as before.
+  The drop changes nothing: the send stays where it was until Apply, and
+  Cancel leaves it there. Touch has no drag and uses Move…. Drag follows
   the [dragging rule](../ui-conventions/spec.md#accessibility-and-client-behavior).
 - **The moved send** keeps its browser-local wall-clock time, converted on
   the new day as a typed date is, so 9:00 AM stays 9:00 AM across a
@@ -3457,13 +3503,16 @@ checks it exactly as that page does.
   two Family mailings at one moment, and the hour the clocks repeat. Only the
   moved send may move into the past.
 - **A series reminder** moves as "This reminder only". On a day its rule does
-  not give, it leaves the series, and the review says so. The series scopes
-  stay on Edit, where every reminder keeps its own date.
+  not give, it leaves the series, and the review says so in Edit's line
+  ([New and Edit scheduled email](#new-and-edit-scheduled-email)). The series
+  scopes stay on Edit, where every reminder keeps its own date.
 - **Not movable:** a send that has run, is being prepared or was missed, and
   every send of a report email (a report keeps its own schedule; one of its
   sends can only be skipped, through
   [Skip this send](../report-emails/spec.md#skip-one-send)). These keep their look on the
-  calendar and offer neither Move… nor a drag.
+  calendar and offer neither Move… nor a drag, and the server refuses a
+  move of any of them, from an old page or a crafted request, in the
+  review dialog, changing nothing.
 
 ### Ministry leader roles
 
@@ -3551,11 +3600,12 @@ Create the campaign drawn as step 1 (#1404 PR 3), Load ParishSoft data as
 step 2 (#1404 PR 5), and the direct save
 on Campaign settings and Share options (#1404 PR 4), on Pages and emails'
 editor and New and Edit scheduled email (#1404 PR 4b) and on Campaign images
-(#1404 PR 4c), and the Pages and emails item states (#1404 PR 6b).
+(#1404 PR 4c), the Pages and emails item states (#1404 PR 6b), and Dates and
+mail schedules' suggested schedules (#1404 PR 6a).
 The rest of #1404 is planned, and each part below marked "(planned, #1404
-PR n)" describes the design, not yet the pages: the
-suggested schedules (PR 6); and Back asking before it discards, with
-Go-live readiness's summary lines (PR 7). Setup ends without a campaign, so
+PR n)" describes the design, not yet the pages: Back asking before it
+discards, with
+Go live's summary lines (PR 7). Setup ends without a campaign, so
 a newly set-up deployment reaches the page; a deployment set up before #142
 already has its campaign and never does.
 
@@ -3644,7 +3694,7 @@ refresh and opens that refresh's progress page. Every other Campaign setup
 step and sub-page also offers it, at its top, until the campaign has its
 Families;
 pressed there, it returns to that step, which then says "ParishSoft data is
-loading; Go-live readiness waits for it." while the refresh is under way.
+loading; going live waits for it." while the refresh is under way.
 After a failed load (the newest ParishSoft refresh requested since the
 campaign was created failed or was cancelled, and the campaign has no
 Families) that notice says "The campaign's ParishSoft data did not load. The
@@ -3658,7 +3708,7 @@ reads the campaign's giving window and creates the campaign's Families and
 Family codes, as a refresh does for any current
 draft. If no one presses the button, the next scheduled quick update cannot
 continue from its cursor, because the giving window changed, and runs as a
-full refresh instead. Go-live readiness, which already requires the
+full refresh instead. Go live, which already requires the
 population to match the current ParishSoft data, stays incomplete until a
 full refresh has finished.
 
@@ -3674,7 +3724,7 @@ settings (its basics, Ministries and funds, one form since
 campaign before the campaign exists), Load ParishSoft data, Share
 options (shown only when the campaign's modules use it), Pages and emails,
 Dates and mail schedules, Campaign images, Preview and test email (for the
-initial invitation's current revision), and Go-live readiness. Each step is
+initial invitation's current revision), and Go live. Each step is
 named after the page it opens (except Load ParishSoft data, which opens
 Refresh from ParishSoft) and is that existing page, not a separate
 staging page, so every save is that page's ordinary review, confirm and
@@ -3700,7 +3750,7 @@ data once the campaign has its Families (a Family campaign record exists,
 the read the load offer already uses), so it needs no stored review and
 no schema change (#1404 PR 5). Defaults
 (the default text and share options that Create the campaign adds) never
-complete a step by themselves, and Go-live readiness completes only by going
+complete a step by themselves, and Go live completes only by going
 live.
 
 **The steps, page by page.** What each step adds to the
@@ -3822,24 +3872,46 @@ live.
   Continue is always available and accepts every item not yet edited as is;
   the per-item marks are optional and never complete the step, and Go-live
   readiness still flags content that must be saved again.
-- **Dates and mail schedules** (suggested schedules planned, #1404 PR 6).
+- **Dates and mail schedules** (#1404 PR 6a).
   With no schedule saved, the page proposes a starting set under "Suggested
-  schedules", drawn as the list draws saved schedules and marked "Not saved
-  yet": the initial invitation on the campaign's start date at 9:00 AM in the
-  campaign's time zone, one reminder seven days before its end date at
-  9:00 AM (the Daily report and Weekly report are offered as report emails,
+  schedules", after the (empty) Scheduled emails table, drawn as the table
+  draws saved schedules and marked "Not saved yet": the initial invitation on
+  the campaign's start date at 9:00 AM in the campaign's time zone, one
+  reminder seven days before its end date at 9:00 AM, and the Weekly Admin
+  digest every Monday at 6:00 AM (there is no configured default, so this is
+  the default; #1404, 2026-10-17, changed from 8:00 AM 2026-10-19; once
+  [report emails](../report-emails/spec.md) replace the digests, the
+  Daily report and Weekly report are offered instead, as
   [starting points](../report-emails/spec.md#campaign-wizard-starting-points));
   like every schedule, they are shown in the browser's time
-  ([dates and times](../ui-conventions/spec.md#dates-and-times)). Its primary is
-  **Add these schedules and continue**; **Continue without schedules for
-  now** (a link) keeps the step as is, and Go-live readiness then still asks
-  for exactly one initial invitation schedule. The schedules are proposed,
+  ([dates and times](../ui-conventions/spec.md#dates-and-times)). Each sends
+  the first saved email of its mail type. A mail type with no saved email is
+  left out, and so is the reminder when its day would not fall after the
+  start date (a campaign of eight days or fewer); without an initial
+  invitation email, or once the initial invitation's send time has passed,
+  nothing is proposed, since adding it would send at once with no review
+  dialog to say so. Its primary is
+  **Add these schedules and continue**, with **Continue without schedules
+  for now** as the secondary before it, which keeps the step as is; Go live
+  then still asks for exactly one initial invitation schedule. Add
+  these schedules and continue saves directly, as Save and continue does
+  (below), but posts only the page's version and request key: the server
+  works the same set out again from the campaign's saved values, so what is
+  added is what the page listed for that version, reviewed as New scheduled
+  email reviews a schedule. A schedule saved meanwhile, the initial
+  invitation's email removed or its send time passed refuses it ("The
+  suggested schedules no longer apply, so nothing was saved."; asked before
+  the page's version, so it is the answer even though saving a schedule
+  also made the page stale), as do any other stale page and setup that
+  ended.
+  Once applied, the next step not done yet opens, its status line saying
+  "Suggested schedules added." and when. The schedules are proposed,
   never created silently at creation, because they depend on dates the
-  Administrator may still change. New and Edit scheduled email and the
-  Campaign calendar are its sub-pages.
+  Administrator may still change. Outside the stepper nothing is proposed.
+  New and Edit scheduled email and the Campaign calendar are its sub-pages.
 - **Preview and test email.** Its primary is the page's own test until
   that test is accepted (its Continue, below).
-- **Go-live readiness.** The last step: its segment opens the
+- **Go live.** The last step: its segment opens the
   [Go live page](#go-live-page)'s Check step, which draws only the Go live
   step bar, not this stepper, and whose Back returns to Preview and test
   email (#1585). It gains one summary line per step (planned, #1404
@@ -3857,7 +3929,8 @@ one action row: **Back** (secondary, the previous step) and one primary
 control. On Campaign settings, Share options, Pages and emails, Dates and
 mail schedules and Campaign images it is **Continue to** the next step not
 done yet (on Dates and mail schedules with no schedule saved, **Continue
-without schedules for now**; Go-live readiness still lists the missing
+without schedules for now**, the secondary while suggested schedules are
+proposed; Go live still lists the missing
 initial invitation schedule): it records the step kept as is and opens that
 step. On Campaign settings and Share options, once the form holds a change,
 the same control is **Save and continue** (#1404 PR 4): the two share one
@@ -3907,9 +3980,9 @@ day, the settings changed since, another sign-in) is refused in the row's
 status line with a request to reload the page and choose it again.
 Load ParishSoft data offers Continue only once the campaign has its Families
 (above). Preview and test
-email offers Continue to Go-live readiness only once its test is accepted,
-because the test is the step's purpose; Go-live readiness, the last step,
-has Back only. Back and Continue never save, discard or submit the page's
+email offers Continue to Go live only once its test is accepted,
+because the test is the step's purpose; Go live, the last step,
+has Back only (on its Check step's own action row). Back and Continue never save, discard or submit the page's
 form, so an Admin who leaves a page without confirming its review keeps the
 campaign as it was. Every step stays a link (Preview and test email only
 while there is an invitation to test; until then Back and Continue skip it).
@@ -3950,9 +4023,9 @@ applied, offers Return to that step for a sub-page's change (an email's
 editor, a mail schedule) and Continue to the next step not done yet for any
 other; the change that created the campaign offers
 Load the campaign's ParishSoft data instead. The stepper is presentation
-only; each page still enforces its own prerequisites. Go-live readiness is
-the last step, so the go-live flow (and its redesign in #462) follows on
-from it unchanged. Once the campaign leaves draft (it is scheduled or goes
+only; each page still enforces its own prerequisites. Go live is
+the last step, and its [Go live page](#go-live-page) draws its own step bar
+in place of this stepper. Once the campaign leaves draft (it is scheduled or goes
 live), or once a go-live has started, the stepper is no longer shown.
 
 **Existing deployments.** A deployment that already has a campaign, such as
@@ -4005,7 +4078,7 @@ cleaned form, so they are listed without blocking. Production confirmation
 re-reads the same check.
 
 The Admin-only Family list (the **Testing submissions** page) opens only
-while the campaign is the current Testing draft, as does Go-live readiness,
+while the campaign is the current Testing draft, as does Go live,
 the only page that links to it. It names each Family as the other Admin
 tables do, the surname then the heads ("Squyres, Tracy and Jeff"), with the
 Family DUID in its own column; both columns sort on the server, the name by
@@ -4044,9 +4117,9 @@ later check fails or the Admin cancels. Cancellation before activation releases
 the gate and leaves the campaign in Testing with whatever cleanup completed.
 
 From `cleanup_complete`, once the inactive Family links are prepared on
-current ParishSoft data (today by the Administrator on the Family links page;
-with the Go live page, by
-[go-live sequencing](../background-processing/spec.md#go-live-sequencing)),
+current ParishSoft data (by
+[go-live sequencing](../background-processing/spec.md#go-live-sequencing),
+which the [Go live page](#go-live-page)'s Prepare step shows),
 typed confirmation invokes a short final transaction. Under the request, campaign, and global locks it
 recomputes readiness and compares its commit instant with the resolved half-open
 campaign interval. Test-mailing and terminal-delivery requirements are checked
@@ -4116,8 +4189,8 @@ making the `scheduled` state reachable before the start date. A test of
 unsaved text sent from New or Edit scheduled email
 ([#446](https://github.com/epiphany40223/parishkit/issues/446)) counts as a
 test of the email it started from; saving any change afterwards changes the
-configuration, so the check then needs a new test. Go-live readiness says so
-beside the check.
+configuration, so the check then needs a new test. The Go live page's
+Check step says so beside the check.
 
 For staff validation, a Testing-mode draft campaign also offers a link from the
 test send, **Send this email to chosen real Families (Testing recipient only)**,
@@ -4158,22 +4231,17 @@ gate.
 > [go-live sequencing](../background-processing/spec.md#go-live-sequencing)
 > runs, and the Testing cleanup and Family links pages retire; 4, the
 > Confirm Production step; 5, the Activation step and the Cancel go-live
-> dialog; 6, the runbooks. Until each slice lands, its part of go-live still
-> uses today's separate readiness, Testing cleanup, Family links,
-> confirmation, progress and cancellation pages, with their 5-minute page
-> limits, as the
+> dialog; 6, the
 > [launch runbook](../../../guides/stewardship-launch-runbooks.md#production-activation)
-> describes. In particular, after slice 2, Start go-live's Apply still
-> opens today's Testing cleanup page and begins no attempt until slice 3.
-> The
-> page keeps its registry name, Go-live readiness, in the
-> [page-name table](#page-names-and-placement) until slice 2 renames it Go
-> live there and in the code together; the other rows change with the
-> slices that retire their pages. The shared stage boxes
+> and the command-line parity map. All six slices have landed.
+> Slice 2 renamed the page from Go-live readiness to Go live in the
+> [page-name table](#page-names-and-placement) and in the code together;
+> the other rows change with the slices that retire their pages. The page
+> follows the shared stage boxes
 > ([#1517](https://github.com/epiphany40223/parishkit/pull/1517)) and the
 > rule that pages update themselves
-> ([#1586](https://github.com/epiphany40223/parishkit/issues/1586)) are
-> UX conventions this page follows once they land.
+> ([#1586](https://github.com/epiphany40223/parishkit/issues/1586)): the
+> steps have no Refresh link.
 
 Going live is one guided page, **Go live**, in four steps, each at its own
 address. It replaces the readiness, Testing cleanup, Family links, final
@@ -4240,7 +4308,9 @@ posts in place or through the dialog and ends on a step address; no POST
 draws a page, so a reload never asks to send a form again. Check's last
 passing public web address check is kept in the signed-in session with the
 inputs digest it checked, so a reload keeps **Start go-live** available
-until something it checked changes. A reload while a dialog is open closes
+until something it checked changes. The kept check only redraws the page:
+a DNS record can change without changing the digest, so Start go-live's
+Apply runs the check again. A reload while a dialog is open closes
 it with nothing applied; an Apply already sent completes on the server
 (its request key makes it happen once), and the reloaded step shows the
 outcome.
@@ -4282,8 +4352,14 @@ outcome.
      finish, the step shows "Go-live stopped at 3:42 PM." above its usual
      readiness state.
    - **Stop failed.** Stopping cleanup or discarding the links failed after
-     its automatic retries: "Stopping go-live did not finish: *sanitized
-     reason*." Primary: **Retry stopping go-live**, which retries the same
+     its automatic retries (a discard of earlier links that had already
+     failed when go-live was stopped counts too, so no discard is ever left
+     without a retry): "Stopping go-live did not finish: *sanitized
+     reason*." Background tasks record no failure detail beyond their
+     state, so the reason names the part that failed ("discarding the
+     prepared Family links failed after its automatic retries"), and a
+     detail line says when its last attempt failed. Primary: **Retry
+     stopping go-live**, which retries the same
      cancellation or disposal (today's **Retry failed disposal**) and changes
      no other data. Start go-live stays unavailable until it succeeds.
    - **Start go-live dialog** (a full review). Title "Start going live?";
@@ -4295,23 +4371,35 @@ outcome.
      later. Testing links and codes stop working now." Its buttons are
      **Apply** and **Cancel**. Apply is the explicit acknowledgement that
      cleanup cannot be undone (no separate tick box). The server re-checks
-     readiness at Apply. Every problem still blocks except one: a full
+     readiness at Apply and runs the public web address check again; if
+     that check fails, Apply is refused inside the dialog with the check's
+     reason ("The public web address check failed or timed out, so go-live
+     was not started."). Every problem still blocks except one: a full
      refresh that is merely older than `source_stale_seconds`
      (`full_refresh_stale`), which Start waives because it queues the
-     go-live's own full refresh in the same transaction. A missing full
-     refresh (`full_refresh_required`), a tenant or scope change
+     go-live's own full refresh in the same transaction; Check does not
+     list it either, so no one has to refresh just before Start. A missing
+     full refresh (`full_refresh_required`), a tenant or scope change
      (`source_scope_changed`), a Family population that does not match the
      current data, and every other problem refuse Start inside the dialog.
      An accepted Apply creates the request, acquires the gate, queues
      cleanup, begins attempt 1 (which queues the attempt's refresh) and
      opens Prepare. When two Administrators apply Start at once, the one
      whose Apply loses sees "Another Administrator already started go-live."
-     and lands on the step in progress.
+     with a link to the step in progress. A Start from a page left open
+     after the same Administrator started go-live (in another tab) is no
+     refusal: it opens the step in progress. While go-live is stopping, or
+     its stop failed, Start is refused with "Go-live is still stopping." or
+     "Stopping go-live did not finish." and the way on from there.
 2. **Prepare.** Three
    [stage boxes](https://github.com/epiphany40223/parishkit/pull/1517), left
    to right: **Delete Testing data**, **Refresh ParishSoft data** and
    **Prepare Family links**, each Not started, In progress, Done or Failed
-   in words. Under them, one detail line for the current box ("4,210 of
+   in words. A box is In progress only while its work runs: while the step
+   waits for **Refresh and prepare again**, the Prepare Family links box is
+   Not started (unless a preparation task is still finishing), or Failed
+   when ParishSoft data keeps changing. Under them,
+   one detail line for the current box ("4,210 of
    9,800 Testing records deleted"; "Waiting for the ParishSoft refresh to
    finish"; "Preparing links: 812 of 1,031 Families"; "ParishSoft data
    changed, so new links are being prepared (2 of 4)"). A stage that waits
@@ -4325,30 +4413,74 @@ outcome.
    - **Running.** No primary: "Nothing to do here; this page updates by
      itself. You can leave and come back."
    - **A stage failed** after its automatic retries: its box is Failed with
-     the sanitized reason. Primary: **Retry**, which retries the same task
-     and changes no data.
+     the sanitized reason. Background tasks record no failure detail beyond
+     their state, so, as Check's Stop failed does, the detail line names the
+     part that failed ("Preparing the Family links failed after its
+     automatic retries.") and when its last attempt failed. Primary:
+     **Retry**, which retries the same task and changes no data.
    - **Links keep going stale** ("ParishSoft data keeps changing") or **the
      hold ended** (below). Primary: **Refresh and prepare again**.
    - **All three done.** "Ready to confirm." Primary: **Continue to Confirm
      Production**. The step also completes by itself, so a reload opens
-     Confirm Production.
+     Confirm Production: a browser's own load of the address (its
+     `Sec-Fetch-Mode` is `navigate`) is redirected there, while the page's
+     own in-place reads draw the step, so a page left open shows Ready to
+     confirm and its Continue.
+   - **The attempt's refresh failed.** A ParishSoft refresh has no task
+     retry (a new refresh is its retry), so its box is Failed, the detail
+     line says when it failed, and the
+     primary is **Refresh and prepare again**, which begins the next
+     attempt; a refresh that was merged into, or superseded by, another
+     stays In progress until that one finishes or the hold reaches its cap.
+   - **No attempt.** A go-live started before this step existed has no
+     attempt of its own; the primary is Refresh and prepare again.
+   - **Go-live is no longer in progress** (stopped, here or by another
+     Administrator): the step bar shows Prepare unavailable, the page says
+     so and its primary opens Check; a page that was watching the step
+     opens it by itself. Check then says "Another Administrator stopped
+     go-live." when the stop was another Administrator's, above "Go-live
+     stopped at …". Once Production is confirmed, the page shows the
+     confirmed state described after these steps instead.
+   - **Controls without page age.** Retry, Refresh and prepare again and
+     Stop go-live carry a control signed without a time that names exactly
+     what the step shows (the failed task and its version, the attempt
+     number, the request). The server re-reads the step and acts only while
+     the control still names it, minting the owner's own control then, so
+     a resend after a lost answer does nothing more and no form is ever
+     refused for its age. The re-read and the action run in one
+     transaction under the work lock, so nothing can move the step between
+     them. A Stop go-live whose owner finds the state moved at that moment
+     stops nothing and says so inside its dialog ("Go-live changed while it
+     was being stopped, so nothing was stopped."), never landing silently.
 3. **Confirm Production.** One impact preview, built once the links are
    prepared and labelled with its browser-local as-of time: whether the
    campaign becomes active now or is scheduled (with its start time), the
    Families with and without an eligible email, the Family emails due at
    once and the report emails due at once; combined and skipped counts are
    in a disclosure. It updates itself when its inputs change, with a line
-   naming what changed (the messages below). Back is not offered; the
-   secondary is **Stop go-live**.
+   naming what changed since go-live started: "The campaign start time has
+   passed, so it will become active at once." or "ParishSoft data changed
+   after go-live started, so the Family links were prepared again." A
+   change between the dialog's Review and its Apply is a refusal (below).
+   Back is not offered; the secondary is **Stop go-live**, the Prepare
+   step's own, so its dialog and Apply are Prepare's.
    - **Ready.** Primary: **Confirm Production**, which opens the Confirm
      Production dialog.
    - **Hold ended before confirming.** "ParishSoft refreshes resumed while
-     this waited." Primary: **Refresh and prepare again**, which returns to
-     Prepare.
+     this waited." Primary: **Refresh and prepare again**, which posts the
+     Prepare step's own control and opens Prepare.
    - **Links went stale.** When ParishSoft data changes after the links were
      prepared, the system prepares them again, so Prepare is no longer done:
      the page returns to Prepare with the line "ParishSoft data changed, so
-     new links are being prepared."
+     new links are being prepared." An open page moves there by itself; the
+     address opened before the links are ready answers with the step bar
+     and "Not available yet: the Family links are not prepared yet.", with
+     **Open Prepare** as its primary.
+   - **A readiness problem** that the step cannot resolve by itself
+     (another campaign is live, live mail is uncertain, an integration
+     check is out of date): "Something needs attention before going live."
+     with one line each and a link to the page that fixes it, as on Check.
+     No primary.
    - **Campaign closed** while waiting: "The campaign has ended, so it cannot
      go live." No primary; the line adds "Stop go-live, then review the
      campaign dates on Check." Prepare shows the same state if the campaign
@@ -4361,33 +4493,88 @@ outcome.
      until the field holds the word, ignoring spaces around it
      ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)),
      and the server refuses Apply without it. A refusal (below) is shown
-     inside the dialog, names the change and offers to review again.
+     inside the dialog, names the change and offers to review again. Apply
+     checks the typed word, runs the public web address check again,
+     builds the preview again and compares its inputs digest, target and
+     shown counts with the Review's (the Review signs the counts it showed,
+     since a send that falls due changes them without changing any input);
+     only then is the confirmation token minted and Production confirmed.
+     A resend of an Apply that already confirmed opens Activation (its
+     request key makes the confirmation happen once).
 4. **Activation.** The [Production activation](#production-transition)
-   progress.
+   progress. It is its own menu page, so its heading stays **Production
+   activation**, as its menu entry and trail name it.
    - **Direct activation.** Stage boxes **Go live** (Done), **Prepare
      initial emails** (In progress, Done or Failed, with the items processed
-     as its detail) and **Sending**, which links to Sent mail once
-     preparation is done and never claims delivery. Failed: primary
-     **Retry** for mail preparation.
+     as its detail) and **Sending**, which is Not started until preparation
+     is done and then In progress with a link to Sent mail, so it never
+     claims delivery. Failed: primary **Retry** for mail preparation, which
+     tries the same preparation again and repeats no work already done;
+     while the system is still retrying by itself the box stays In progress
+     and the detail says so. The preview compared with the preparation
+     outcomes stays in a disclosure under the boxes.
    - **Scheduled.** "Scheduled to start Sat, Nov 7, 9:00 AM. Emails follow
      the mail schedules from then." Secondary: **Cancel go-live**, while the
-     start has not passed and live delivery is not paused.
-   - Once initial mail preparation finishes, or once the campaign is
-     scheduled, the page is the ordinary Production activation menu page,
-     with no step bar
+     start has not passed and live delivery is not paused; otherwise a line
+     says why it is not offered.
+   - A campaign confirmed before its start that has since started, and a
+     closed campaign, say so in one line, with no action.
+   - While a direct activation's initial mail preparation is unfinished,
+     the page draws the Go live step bar (Step 4 of 4: Activation, 3 of 4
+     steps completed), above its self-updating part, so a page being
+     watched keeps it until it is next opened rather than moving when
+     preparation finishes. Once that preparation finishes, or when the
+     campaign is scheduled, it is the ordinary Production activation menu
+     page, with no step bar
      ([wizard rule 12](../ui-conventions/spec.md#wizards)).
-   - **Cancel go-live dialog** (a full review), in place of today's
-     separate page. The reason field (required,
-     [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)),
-     the cancellation counts, and the caution "Testing data deleted earlier
-     is not restored; going live again starts from Check." Mail that blocks
-     the cancellation is a refusal inside the dialog, with links to Pause
-     and resume mail and Sent mail. Apply returns the campaign to a
-     Testing draft and opens Check with a status line.
+   - The page updates itself in place (no Refresh link): closely while
+     preparation runs, every 30 seconds while a Retry waits or the campaign
+     is scheduled (so its start, or a cancellation, shows), and not at all
+     once nothing can change by itself. A reload draws the same state.
+     When go-live is cancelled in another tab or by another Administrator,
+     the page becomes an unavailable menu page; the next update replaces
+     its status and Cancel go-live with the menu's reason and **Go to Go
+     live**, and stops
+     ([a watched page that becomes unavailable
+     settles](../ui-conventions/spec.md#unavailable-menu-pages)).
+   - **Cancel go-live dialog** (a full review), in place of the separate
+     page. Its Review shows the cancellation counts (scheduled mail runs
+     recorded and to cancel, unsent messages to cancel, failed runs and
+     delivered messages kept in history), the caution "Testing data deleted
+     earlier is not restored; going live again starts from Check.", then the
+     reason field (required, at most 2,000 characters; Apply is unavailable
+     until it holds more than spaces,
+     [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)).
+     Apply is the acknowledgement that the deleted Testing data cannot be
+     restored (as Start go-live's is); there is no separate tick box. Mail
+     that blocks the cancellation (being sent, of uncertain delivery, or
+     needing recovery) is a refusal inside the dialog, with links to Pause
+     and resume mail and Sent mail. As with Confirm Production, the Review
+     signs only what it showed, without a time; Apply checks the reason,
+     builds the cancellation again, refuses inside the dialog when its
+     counts changed ("Mail work changed since this preview…"), when the
+     campaign has started, when live delivery was paused or when go-live
+     was already cancelled, and only then mints the cancellation's own
+     signed intent and cancels, so its 5-minute limit never reaches the
+     Administrator. A resend of an Apply that already cancelled opens Check
+     (its request key makes the cancellation happen once). Apply returns the
+     campaign to a Testing draft and opens Check, whose status line says
+     "Go-live cancelled at 3:42 PM." until go-live starts again. The
+     dialog's dismiss button reads **Keep it scheduled**, not Cancel
+     ([a dismiss label that names what is
+     kept](../ui-conventions/spec.md#review-dialog)).
 
-After Production is confirmed, the Check, Prepare and Confirm Production
-addresses are [unavailable menu pages](../ui-conventions/spec.md#unavailable-menu-pages)
-that point to Production activation, as Go-live readiness is today.
+After Production is confirmed, the Check address is an
+[unavailable menu page](../ui-conventions/spec.md#unavailable-menu-pages)
+that points to Production activation. The Prepare and Confirm Production
+addresses instead show a confirmed state: "Production is confirmed." (or
+"Another Administrator already confirmed Production."), the line
+"Production activation shows how going live is proceeding.", and one
+primary, **Open Production activation**, which a page that was watching
+the step follows by itself; no other control. Their step bar shows Check,
+Prepare and Confirm Production completed ("3 of 4 steps completed") and
+Activation in progress, linked to Production activation; no step says to
+start go-live first.
 
 **Server checks instead of page age.** No step refuses a form for the time it
 has been open. The preview shown stays valid until something it shows
@@ -4401,6 +4588,9 @@ it and shows the updated step, never "Check this value.":
 
 - "ParishSoft data changed since this preview. Review the updated preview,
   then confirm." when the inputs digest differs;
+- "Emails fell due since this preview, so the counts changed. Review the
+  updated preview." when the inputs are the same but the counts shown
+  differ, because a mail schedule's send came due in between;
 - "The campaign start time has passed, so it will become active at once.
   Review the updated preview." when the target changes from `scheduled` to
   `active`;
@@ -4409,6 +4599,8 @@ it and shows the updated step, never "Check this value.":
   has ended (below);
 - "Another Administrator already started go-live." when a second Start
   loses to one already applied;
+- "The public web address check failed or timed out, so go-live was not
+  started." when Start's Apply runs that check again and it fails;
 - "Another Administrator stopped go-live." or "Another Administrator already
   confirmed Production." when the request moved on in another tab.
 
@@ -4430,8 +4622,12 @@ the current instant is before the hold end. This is deliberately looser
 than today's rule, which expires 30 minutes (`source_stale_seconds`) after
 the full refresh started: during the hold no scheduled refresh can change
 the data, so the go-live may take up to an hour after its refresh, or three
-hours in all. `source_stale_seconds` itself is unchanged and still governs
-readiness before Start.
+hours in all. `source_stale_seconds` itself is unchanged; before Start,
+Check and Start waive a full refresh that is merely older than it (see the
+Start go-live dialog above). Confirm Production's readiness re-check and
+deadline follow this rule since #1585 slice 4; a request with no attempt
+(started before slice 3) keeps the `source_stale_seconds` rule, and once
+the hold end has passed, readiness reports `go_live_hold_ended`.
 
 **After the hold ends.** When the hold end passes before confirmation,
 whether 60 minutes after the refresh or at the 3-hour cap, scheduled
@@ -6505,18 +6701,37 @@ Notes on the sections:
 
 ### Data to fix refresh and empty states
 
-- **Read on page load only.** Counts are read when the page loads and are
-  never polled or updated in place, as the menu's open counts are, so
-  nothing appears, changes size or moves under the pointer
-  ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). The page
-  has no controls of its own; reloading it, or coming back from a detail
-  page, reads the counts again.
+- **Counts update by themselves.** The page
+  [updates itself](../ui-conventions/spec.md#pages-that-update-themselves)
+  ([#1859](https://github.com/epiphany40223/parishkit/issues/1859)): the
+  data line and the section blocks are one status region that reads a
+  passive status fragment, `/admin/parish/data-to-fix/status/` (URL name
+  `parishsoft_fixes_status`), every 60 seconds while the page is open
+  (paused while the tab is hidden, checked at once when it is shown again;
+  the pace is the
+  [UX conventions'](../ui-conventions/spec.md#pages-that-update-themselves)
+  exception for this page).
+  The fragment admits the same roles and runs the same section reads
+  (`read_sections`) as the page, rechecks the session and the restore
+  review before it answers, accepts no query key, records no audit event
+  and never extends the sign-in; only opening the page records
+  `data_to_fix_viewed`. The counts are not read out on each check; a
+  short sentence is announced only when it changes: how many problems
+  there are, or "Nothing to fix right now.", and, when a section's read
+  failed, that some could not be counted, so a section that failed is
+  never announced as a smaller number. Nothing on the page tells
+  the reader to reload it. The page has no controls of its own, and a
+  block keeps its place when its count changes, so nothing appears or
+  disappears under the pointer
+  ([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
 - **Each section stands alone.** A section whose read fails, or that cannot
   run now (no current campaign, no promoted ParishSoft data, a campaign
   without the census), keeps its block and says why in place of the count,
   with its link greyed out as an
   [unavailable menu entry](#stable-menu-shape) is when its detail page
-  would refuse the visit too. The other sections still show. A failed read
+  would refuse the visit too. The other sections still show, and a failed
+  section is counted again by the next check. A failed read, on opening
+  the page or on a check,
   is logged as a `report_shaping_failed` warning whose shaping step names
   the section (`data_to_fix_<section>`), and the page is not an error
   page.
@@ -6525,7 +6740,8 @@ Notes on the sections:
   it has tried"). When every shown section is zero, the data line adds
   "Nothing to fix right now". An empty section never disappears, so the
   page keeps one shape for a role.
-- **Audit.** A view records one `data_to_fix_viewed` event whose count is
+- **Audit.** A view records one `data_to_fix_viewed` event (the status
+  fragment's checks record none, see above) whose count is
   the total of the section counts the viewer saw, never a name, address or
   value, as the detail pages' view events do. It is one total rather than
   a count per section because the audit context's fields are a closed list
@@ -7544,7 +7760,7 @@ actions have landed.
 - **Pages and emails to re-save (#838).** Its own tile's details hold one
   sentence that says how many of the current campaign's saved pages and
   emails should be re-saved, linking **Pages and emails**, followed by the same linked list as
-  [Go-live readiness](#production-transition). It is read when the page
+  [Go live](#production-transition). It is read when the page
   opens and then about every 5 minutes, in its own read-only snapshot,
   never by every 10-second status poll, and is not one of the problems; with no current campaign, or when the read cannot
   run, the sentence says so instead. The re-save findings stay outside the
@@ -8274,7 +8490,7 @@ above follows every decision.
    (`offsite_missing`); in Testing it is only the Backups summary.
 6. **Home does not list the page-only findings** (Families the form
    cannot open, pages and emails to re-save); they cost too much for Home,
-   and Go-live readiness already lists the re-save items.
+   and Go live already lists the re-save items.
 7. **Changed: a grid of tiles on wide screens**, one column on narrow
    screens, chosen knowing that opening a tile moves the rows below it.
    The [tile grid](#tile-grid) keeps that movement to content after the

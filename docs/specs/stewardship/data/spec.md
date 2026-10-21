@@ -1409,7 +1409,7 @@ whose Family code or link is only inside removed markup is marked "Can't be
 sent until fixed" instead, because sending refuses it. Previewing and applying
 the form stores the cleaned version through the normal configuration change
 (after putting back any lost placeholder); nothing rewrites applied history
-automatically. [Go-live readiness](../admin-portal/spec.md#production-transition)
+automatically. [Go live](../admin-portal/spec.md#go-live-page)
 and the [System health page](../admin-portal/spec.md#system-health-page) list
 the same flagged content.
 A configuration request that can never verify against

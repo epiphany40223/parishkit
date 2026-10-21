@@ -190,9 +190,15 @@ def test_complete_directory_export_controls_are_private_native_and_gated(
         ).fill("Unsaved private edit")
         page.route(
             "**" + reverse("admin:family_directory_export"),
-            lambda route: route.fulfill(body="Export queued"),
+            lambda route: route.fulfill(
+                body="file",
+                headers={"Content-Disposition": 'attachment; filename="families.xlsx"'},
+            ),
         )
-        with page.expect_request(lambda request: request.method == "POST") as sent:
+        with (
+            page.expect_request(lambda request: request.method == "POST") as sent,
+            page.expect_download() as download,
+        ):
             page.get_by_role("button", name="Export XLSX").click()
         assert (
             "search=Example" in sent.value.post_data
@@ -205,9 +211,8 @@ def test_complete_directory_export_controls_are_private_native_and_gated(
             and "Unsaved" not in sent.value.post_data
         )
         assert "?" not in sent.value.url and "Example" not in sent.value.url
-        # Let the routed answer finish loading before the next navigation,
-        # which it would otherwise interrupt (#623).
-        visible(page.get_by_text("Export queued", exact=True))
+        # The file downloads in place (#1778), before the next navigation.
+        assert download.value.suggested_filename == "families.xlsx"
         page.goto(component_origin + "/directory-gated")
         for name in ("Export XLSX", "Export CSV", "Export PDF"):
             assert page.get_by_role("button", name=name).is_disabled()

@@ -4,6 +4,8 @@ Each section's count must be the count its detail page's own read gives,
 for the sections the reader's role may open, in the decided order; Staff
 see only the sections whose pages they may open, and a Ministry leader is
 refused. The command prints the same counts on the restricted web login.
+The page's passive status fragment (#1859) answers the same counts without
+an audit row or a renewed sign-in.
 """
 
 import re
@@ -14,6 +16,7 @@ import pytest
 
 from parishkit.stewardship.accounts import data_to_fix_views
 from parishkit.stewardship.accounts.admin_dashboard import unreachable_families
+from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.reports import source_form
 
@@ -32,6 +35,7 @@ from .test_report_workspace_postgresql import read as get
 pytestmark = pytest.mark.django_db(transaction=True)
 
 PAGE = "/admin/parish/data-to-fix/"
+STATUS = PAGE + "status/"
 ORDER = (
     "form_cannot_open",
     "refused_addresses",
@@ -244,3 +248,49 @@ def test_without_a_campaign_each_section_says_why(auth_service, google):
     # The menu greys Census changes out too, so no link to it anywhere.
     assert 'href="/admin/reports/census/"' not in text
     assert viewed() == [{"outcome": "succeeded", "count": 0}]
+
+
+def test_the_status_fragment_counts_passively(scenario, google, monkeypatch):
+    """The page polls its status fragment; the fragment draws the same
+    region with the same counts and records no audit row and no activity.
+    A count that changes after the page opened shows in the next answer."""
+    browser, login = signed_in()
+    assert login.status_code == 302
+    response, body = get(browser, PAGE)
+    assert response.status_code == 200
+    page = body.decode()
+    assert f'data-live-url="{STATUS}"' in page
+    assert 'data-live-interval="60000"' in page
+    assert "Reload" not in page
+    before = PortalSession.objects.get().last_activity_at
+    fragment = browser.get(STATUS)
+    assert fragment.status_code == 200 and fragment["Cache-Control"] == "no-store"
+    text = fragment.content.decode()
+    # The region alone, with the page's sections and counts.
+    assert "<title>" not in text and text.lstrip().startswith("<div")
+    assert sections(fragment.content) == tuple(key.encode() for key in ORDER)
+    assert "1 refused email address is not cleared yet, from 1 Family." in text
+    assert "2 census changes that Families reported are still to be handled." in text
+    # The refused address is cleared (its read now finds none): the next
+    # poll reads the sections again and says so.
+    monkeypatch.setitem(
+        data_to_fix_views.READS,
+        "refused_addresses",
+        lambda principal, campaign_id: {"count": 0, "families": 0},
+    )
+    again = browser.get(STATUS).content.decode()
+    assert "No refused addresses: campaign email reaches every address" in again
+    assert len(viewed()) == 1
+    assert PortalSession.objects.get().last_activity_at == before
+    # The fragment accepts no query key, as the page does.
+    assert browser.get(STATUS + "?other=1").status_code == 400
+
+
+def test_the_status_fragment_refuses_a_ministry_leader(scenario, google):
+    """Polled by a reader who may not open the page, it answers the shared
+    denial and draws no count."""
+    browser = sign_in_as(scenario, google, ("ministry_leader",))
+    response = browser.get(STATUS)
+    assert response.status_code == 403
+    assert b"census change" not in response.content
+    assert viewed() == []

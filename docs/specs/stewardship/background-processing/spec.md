@@ -542,13 +542,12 @@ completed deletions intact.
 
 ### Go-live sequencing
 
-> **Status:** target of
-> [#462](https://github.com/epiphany40223/parishkit/issues/462). The producer
-> and the hold are built (`campaigns/go_live_sequencing.py`) but idle,
-> because nothing begins an attempt yet; slice 3 of
-> [#1585](https://github.com/epiphany40223/parishkit/issues/1585) makes
-> **Start go-live** begin attempt 1. Until then, the Administrator prepares
-> the links by hand after cleanup.
+> **Status:** built ([#462](https://github.com/epiphany40223/parishkit/issues/462)
+> for the producer and the hold, `campaigns/go_live_sequencing.py`; slice 3
+> of [#1585](https://github.com/epiphany40223/parishkit/issues/1585) for
+> **Start go-live** beginning attempt 1 and the Prepare step's Retry,
+> Refresh and prepare again and Stop go-live). The local seeding tool still
+> starts cleanup without an attempt and prepares the links itself.
 
 Between **Start go-live** and **Confirm Production** on the
 [Go live page](../admin-portal/spec.md#go-live-page), the system runs the
@@ -1451,12 +1450,11 @@ unchanged.
 
 #### Refreshes wait for go-live
 
-> **Status:** the scheduler side is built (`campaigns/go_live_sequencing.py`:
-> the hold, its logging and the data-age shift), but it is idle: nothing
-> begins an attempt until the Go live page's **Start go-live** does, which is
-> the rest of [#462](https://github.com/epiphany40223/parishkit/issues/462)
-> (slice 3 of [#1585](https://github.com/epiphany40223/parishkit/issues/1585)).
-> The "waiting for go-live" health line below is not built yet either.
+> **Status:** built (`campaigns/go_live_sequencing.py`: the hold, its
+> logging and the data-age shift); the Go live page's **Start go-live**
+> begins attempt 1 since slice 3 of
+> [#1585](https://github.com/epiphany40223/parishkit/issues/1585). The
+> "waiting for go-live" health line below is not built yet.
 
 From the start of a go-live [attempt](../admin-portal/spec.md#go-live-page)
 (**Start go-live**, or **Refresh and prepare again**) until its hold end, the

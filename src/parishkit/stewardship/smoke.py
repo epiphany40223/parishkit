@@ -169,7 +169,7 @@ def check_workspace(configuration, *, delegated_email, send_to=None):
     first: a LOCAL ``mail_redirect`` replaces it, and LOCAL without one is
     refused before the key is read or any provider is contacted.
     """
-    from .mail_catcher import MailTransport, envelope
+    from .mail_catcher import MailTransport, envelope, is_mail_catcher
 
     route = dict(
         profile=configuration.profile,
@@ -188,6 +188,13 @@ def check_workspace(configuration, *, delegated_email, send_to=None):
         "credential": _outcome("google_workspace", value, settings, configuration)
     }
     if send_to is not None and result["credential"] == "valid":
+        if is_mail_catcher(value):
+            # Valid only in LOCAL, where the check reached Mailpit; the send
+            # goes over Gmail and needs a real key (#1878 review B3).
+            raise ConfigError(
+                "The smoke message needs a Google service account; the mail "
+                "catcher is installed."
+            )
         from parishkit.email.google_workspace import xoauth2_string
 
         from .provider_check_worker import CheckSession
@@ -339,14 +346,15 @@ def check_backup_drive(configuration, *, delegated_email, folder_link, send=Fals
         workspace_session,
     )
     from .backup_offsite import SEALED_FILES, _complete_sets, _copy_lock
+    from .mail_catcher import admit_real_workspace
     from .runtime_paths import explicit_path, private_directory
 
     if configuration.service_role is not ServiceRole.BACKUP_WORKER:
         raise ConfigError("Run the off-site backup check in the backup profile.")
-    if configuration.profile is DeploymentProfile.LOCAL:
-        # Drive stays closed in LOCAL until a real Workspace key is admitted
-        # there (#1399); refused before the key or the database is read.
-        raise ConfigError("Off-site Drive copies are not available in LOCAL.")
+    # Drive opens in LOCAL only where a real Workspace key may be used: with a
+    # mail redirect, on the normal clock (#1399). Refused before the key or
+    # the database is read.
+    admit_real_workspace(configuration.profile, configuration.mail_redirect)
     folder = folder_id_from_url(folder_link or "")
     tag = {"tag": _deployment_tag(configuration)} if send else {}
     value = read_private(RuntimeLayout(configuration).credential("google_workspace"))
@@ -356,6 +364,7 @@ def check_backup_drive(configuration, *, delegated_email, folder_link, send=Fals
                 value,
                 subject=normalized_email(delegated_email),
                 profile=configuration.profile,
+                redirect=configuration.mail_redirect,
             ),
             **tag,
         )
@@ -392,6 +401,7 @@ def _outcome(target, value, settings, configuration):
         settings,
         profile=configuration.profile,
         base_url=configuration.parishsoft_base_url,
+        redirect=configuration.mail_redirect,
     )
 
 

@@ -301,9 +301,12 @@ keyboard-operable equivalent that does the same thing, such as a **Move…**
 action with a date field (WCAG 2.2 SC 2.5.7). A drop never applies a change by
 itself: it fills in the same review the equivalent opens, and only Apply
 changes anything ([review dialog](#review-dialog)). Drag uses pointer events
-with a few-pixel threshold, so a click still follows a link, is offered on
-fine pointers only (touch uses the equivalent), and Escape cancels it. The
-first user is the planned
+with a few-pixel threshold, so a click still follows a link or presses a
+button, is offered on fine pointers only (touch uses the equivalent), and
+Escape cancels it. A drag may start from the item itself or from its
+equivalent's button; a press without a drag, and Enter or Space on the
+button, still open the equivalent. The
+first user is
 [Campaign calendar editing](../admin-portal/spec.md#editing-from-the-calendar)
 ([#1521](https://github.com/epiphany40223/parishkit/issues/1521)).
 
@@ -613,21 +616,16 @@ never scrolls to show it (Administrator, pk-local review of
   never in the address. A reload draws the page from its address, so the
   list and the filter fields agree
   ([#1562](https://github.com/epiphany40223/parishkit/issues/1562)). The
-  Refresh links of Go-live readiness
-  ("Readiness preview refreshed."), Testing cleanup, Prepare Family links
-  and Production activation ("Progress refreshed.") re-read their page's
-  own address this way rather than reloading it; Prepare Family links keeps
-  the history page shown, and a disclosure such as Technical details stays
-  open because only the list inside it is a region. Their command buttons
-  post in place too: Check readiness and public web address (focus returns
-  to Check, and the overall result is read out: why cleanup can't start yet
-  when any check failed, else that every check passed), Testing cleanup's Retry and
-  Cancel, Prepare inactive Family links and each preparation's Cancel, Retry
-  and Retry disposal, and Retry failed mail preparation. A button that is
-  gone once its request is taken hands focus to the page's Refresh link just
-  below (cleanup, Production), or, on Prepare Family links, to the newest
-  preparation's heading; Start Testing cleanup stays a navigation to the
-  cleanup page.
+  [Go live page](../admin-portal/spec.md#go-live-page)'s command buttons
+  post in place: Check readiness and public web address (it redirects back
+  to Check, focus returns to the fresh button, and the overall result is
+  read out: what still needs fixing, else that every check passed), its
+  Prepare step's Retry and Refresh and prepare again (each redirects back
+  to Prepare, whose region is swapped), and Production activation's Retry
+  (it redirects back to Production activation). A button that is gone once
+  its request is taken hands focus to the step's heading; Start go-live's,
+  Stop go-live's and Cancel go-live's Apply open the page that follows (the
+  step in progress, or Check) as a page.
 - **Errors and fallback.** A POST that got an answer is never sent again; a
   saving POST is never re-sent at all; a read-only table POST with no answer
   falls back to the ordinary submission. A refused POST (an error answer, or
@@ -895,7 +893,9 @@ the [in-place controls](#in-place-controls); no other mechanism.
 - **Pace.** While background work is pending a status region reads fast
   (2 s backing off to 10 s, or the fixed pace the page asks for). A page
   whose state changes without the reader's own action re-reads every 30
-  seconds (Background work, Families on the form now), and a report's
+  seconds (Background work, Families on the form now; Data to fix in
+  ParishSoft every 60 seconds, because each check runs every section's
+  read, [admin portal](../admin-portal/spec.md#data-to-fix-refresh-and-empty-states)), and a report's
   figures status checks every 30 seconds while its figures are current, so
   figures a new response or ParishSoft load makes out of date are noticed.
   A watch that passes its time limit (an hour, or the page's own) slows
@@ -969,10 +969,11 @@ the [in-place controls](#in-place-controls); no other mechanism.
   page.
   The directory, Sent mail, System logs and Financial stewardship do this
   ([#1586](https://github.com/epiphany40223/parishkit/issues/1586)).
-- **Go-live pages.** Go-live readiness, Testing cleanup, Prepare Family
-  links and Production activation still have their Refresh links until the
-  go-live redesign applies this rule there
+- **Go-live pages.** The Go live page's steps, Check, Prepare, Confirm
+  Production and Production activation, have no Refresh link
   ([#1585](https://github.com/epiphany40223/parishkit/issues/1585)).
+  Production activation keeps updating itself while its campaign is
+  scheduled, so the start, or a cancellation, shows.
 
 ### No layout shift
 
@@ -1115,8 +1116,7 @@ as its hint; first used by Past campaigns' archive file (20 MiB). The server
 checks the size again.
 
 Wherever a form requires an acknowledgment checkbox (finishing setup, a test
-that may already have arrived, chosen-Family tests, Testing cleanup,
-withdrawal, refusal removal, bounce reports, manual reports, duplicate
+that may already have arrived, chosen-Family tests, withdrawal, refusal removal, bounce reports, manual reports, duplicate
 resends, resetting all pages and emails to their default text), the page
 script keeps the form's primary button disabled until the box is checked,
 and the server refuses a missing acknowledgment. While the button waits, a
@@ -1131,11 +1131,20 @@ short hint by the button saying what is missing (`data-require-complete` in
 the page script; first used by
 [Ministry follow-up](../admin-portal/spec.md#follow-up-workflows), #553). Fields required only in
 some states are required only while shown (not hidden or greyed). A required text field holding
-only spaces counts as empty, as the server trims it: the reason for
-cancelling go-live and the evidence notes on Mail delivery and delivery
-refusal pages use this gate, as does the typed "Production" confirmation
-(which, like the server, ignores spaces around the word). The Admin portal
-requires JavaScript ([#565](https://github.com/epiphany40223/parishkit/issues/565));
+only spaces counts as empty, as the server trims it: the evidence notes on
+Mail delivery and delivery refusal pages use this gate, as do the reason
+for cancelling go-live and the typed "Production" confirmation (which, like
+the server, ignores spaces around the word). Those two fields sit inside
+the Cancel go-live and Confirm Production review dialogs, whose answers
+mark them `data-review-require`: Apply waits for them, and the dialog's
+reserved status line under the buttons says what is missing and describes
+Apply meanwhile. A dialog's own `fields_template` with
+`data-require-complete` is not used for them, because that gates a fields
+form drawn with the dialog, while these fields arrive inside the review
+answer that Review fetches (and Apply checks them against what Review
+showed). The Admin
+portal requires JavaScript
+([#565](https://github.com/epiphany40223/parishkit/issues/565));
 server validation is unchanged and still refuses an incomplete submission.
 Likewise, a settings form's Review changes button is unavailable
 until the form differs from the saved settings, with the short hint "Change
@@ -1181,14 +1190,11 @@ setup is not ready, and Send on a campaign test email while a test is on its
 way. On Send to chosen Families, Send is unavailable with the first reason
 the reviewed Families cannot be sent: test codes not ready, campaign work in
 progress, a Family that cannot be sent a test, or more Families than the
-remaining allowance. Check these Families waits for a DUID. Prepare inactive
-Family links is unavailable, with its specific reason, while the campaign is
-no longer a draft, Testing cleanup is unfinished, other inputs (such as a
-ParishSoft refresh) are not ready, earlier links still need Cancel, or
-cancelled links are still being discarded. On the Off-site backups page,
+remaining allowance. Check these Families waits for a DUID. On the Off-site backups page,
 Test access is unavailable until Google Workspace mail is set up, since the
-check signs in as its mailbox user, and always in the local environment,
-which never reaches Google Drive. In the Pages and emails editor, "Remove
+check signs in as its mailbox user, and in the local environment whenever
+it does not reach Google Drive (without a mail redirect, or under the fake
+clock). In the Pages and emails editor, "Remove
 this selected content" is unavailable, with its reason as the box's help,
 while nothing is saved there or while mail schedules still send the email.
 The box is an action, not a setting, so its reason stays visible rather than
@@ -1232,9 +1238,7 @@ again after a refused Save shows what was posted, so its Save does not
 wait for a change then.
 
 The same holds for the rest of the Admin portal (#563, the audit's last
-slice): Start Testing cleanup on Go-live readiness and Confirm Production
-before a passing check (named by the step still needed); Confirm cancelling
-go-live while mail blocks it; the retry the Mail message page would offer while
+slice): the retry the Mail message page would offer while
 the resend admission refuses it; a report email's Send now while an earlier
 send of that report is still being prepared or delivered (checked when the
 page opens); and Upload on Hosted files while the library is full. A button
@@ -1273,6 +1277,10 @@ summary, the summary links to the first marked field and takes focus, as
 every Admin refusal summary does (#592). A review dialog's pane with its own
 status line says the refusal in that line instead
 ([field errors stay on the form](#review-dialog), #1410).
+
+Short fields that share a row (a date beside a time) keep their boxes level:
+a field's reserved error line sits under its box, never between the label and
+the box, so no field's box is pushed below its neighbour's (#1851).
 
 Where a rule can be checked in the browser, the page checks it too, and
 shows its error at the field the same way. The browser's own checks (a
@@ -1509,12 +1517,19 @@ line, `components/review-outcome.html`. An editor's form names the dialog
 with `data-review-open`; its Review answers a fragment marked
 `data-review-answer` (with `data-review-done`, the start of the status
 line), whose hidden fields Apply posts, the signed preview marked
-`data-review-preview`. A field-value refusal answers the form again (status
-400); any other refusal is the closed JSON refusal, or a fragment marked
+`data-review-preview`. A field in the answer marked `data-review-require`
+(the Confirm Production dialog's typed word and the Cancel go-live
+dialog's reason) names Apply's form in its
+`form` attribute, so Apply posts it, and holds Apply until it is valid
+([prerequisite gates](#prerequisite-gates)). A field-value refusal answers
+the form again (status 400); any other refusal is the closed JSON refusal, or a fragment marked
 `data-review-refusal` that the dialog shows as drawn. A page whose own
 address records a view when read (System health) marks its dialog
 `data-review-redraw="body"`: Apply's answer then holds the regions the
-change redraws, and the page is not read again. **Precedent.**
+change redraws, and the page is not read again. A dialog whose Apply
+leads to another step's page (the Go live page's Start go-live) marks it
+`data-review-redraw="leave"`: Apply's redirect is opened as a page, and
+that page follows its own work. **Precedent.**
 Administrator decision, 2026-10-11, on
 [#750](https://github.com/epiphany40223/parishkit/issues/750), which replaces
 the in-place review panel of #532 and the separate Review and Change status
@@ -1559,7 +1574,11 @@ the campaign wizard in #1404 PR 4).
   and described by it: no summary is placed above the heading, since moving
   focus there would jump the page to the top, and no error line is added
   that would move the pane's controls. The line clears on the form's next
-  edit or accepted Review (#1410).
+  edit or accepted Review (#1410). A form inside a dialog of its own (the
+  Campaign calendar's Move…, #1521) names its refusal line the same way
+  with `data-review-refused` instead, which leaves Apply's status line the
+  page's: a refusal is said where the reader is, in the dialog, and the
+  applied change on the page the dialog closes onto.
 - **Opening the dialog.** An accepted Review opens the dialog. Its title
   names the change ("Review campaign settings") and labels the dialog
   (`aria-labelledby`); focus moves to that title, never to Apply, so the
@@ -1623,8 +1642,17 @@ the campaign wizard in #1404 PR 4).
 - **While the dialog is open** it is a native modal `<dialog>`: the rest of
   the page, the form included, is inert and cannot be edited, and Tab stays
   inside the dialog. So the review shown is always the review of the form as
-  it stands, and no edit ever has to withdraw it. Escape or Cancel closes the
-  dialog, changes nothing, and returns focus to Review changes.
+  it stands, and no edit ever has to withdraw it. Escape or Cancel (or the
+  dialog's own dismiss label, below) closes the dialog, changes nothing,
+  and returns focus to Review changes.
+- **A dismiss label that names what is kept.** The button that closes the
+  dialog without applying reads **Cancel**, unless that word would read as
+  the action it dismisses: a dialog that asks whether to cancel something
+  then names what is kept instead (Cancel go-live's **Keep it scheduled**,
+  [#1806](https://github.com/epiphany40223/parishkit/issues/1806)), as the
+  [confirmation dialog](#row-actions-and-confirmation)'s own labels may
+  (the Basic and Advanced toggle's **Keep Advanced**). It behaves exactly as
+  Cancel does. The title still names the action ("Cancel go-live?").
 - **Apply** posts the dialog's signed preview without a page load, as the
   [Delete dialog](#row-actions-and-confirmation) does: from then on the
   dialog cannot be dismissed (no Escape, no Cancel) until the answer
@@ -2321,6 +2349,19 @@ opens one page per kind of reason. **Precedent.** #1128.
   the `menu_link` template tag (`components/menu-link.html`),
   `admin_navigation.PAGE_REASONS`, `admin_context.page_unavailable`.
   **Precedent.** #1242.
+- **A watched page that becomes unavailable settles.** A page that
+  [updates itself](#pages-that-update-themselves) can become unavailable
+  while it is open, as Production activation does when another tab or
+  another Administrator cancels go-live. Its next status read is then
+  answered with this refusal (409, `not_available`), which is never
+  retried: the self-updating region is replaced by the refusal's own words
+  and link (Production activation: the menu's reason and **Go to Go
+  live**), its stale controls go with it, and watching stops. It does not
+  wait for a focused control in the region, since those controls can no
+  longer act: focus moves to the new link instead. Any other 409
+  (a stale page, busy configuration) is still retried. **Shared code.**
+  `live-status-v1.js`. **Precedent.**
+  [#1805](https://github.com/epiphany40223/parishkit/issues/1805).
 
 ### Navigation rules
 
@@ -2359,6 +2400,12 @@ registry and the rendered pages.
    the same name. The only exceptions are the object-named pages in the Admin portal's
    [page names and placement](../admin-portal/spec.md#page-names-and-placement)
    table.
+   A step of a guided page that has its own address is that page, not a
+   child of it (the [Go live page](../admin-portal/spec.md#go-live-page)'s
+   Prepare step): it has the page's name, marks the page's menu entry
+   current as the page itself (`aria-current="page"`), and its trail ends
+   with the page's name once, never one crumb per step (`Page.step_of` in
+   the registry).
    Every "Return to" link names its target by that target's name. The
    shared error page cannot know which page the reader came from, so its
    link says "Return to the previous page"; the export error page reads
@@ -2517,7 +2564,7 @@ match.
     setup** (or **Leave setup**), which opens Home; Home then offers
     **Continue campaign setup:** and the next step not done yet while the
     wizard applies. A wizard finishes at its last step (Finish setup, or
-    Go-live readiness). The Admin menu works as always, and a menu page that
+    Go live). The Admin menu works as always, and a menu page that
     is neither a step nor a sub-page draws no stepper.
 12. **Outside the wizard nothing changes.** The same page outside its wizard
     (setup has finished, the campaign is no longer a Testing draft, a go-live
@@ -2542,7 +2589,10 @@ rule 8 for Continue, which opens the next step not done yet. Campaign
 settings and Share options meet rules 3 to 5 and 8 (#1404 PR 4), and
 Campaign images too (#1404 PR 4c), where a chosen image is the change: their
 Save and continue saves directly, follows the change and opens the next
-step not done yet. The sub-pages that save (an email's editor, New and
+step not done yet. Dates and mail schedules meets rule 9's empty step with
+its suggested schedules (#1404 PR 6a): Add these schedules and continue
+saves them directly, and Continue without schedules for now keeps the
+step as is. The sub-pages that save (an email's editor, New and
 Edit scheduled email) meet rule 10's Save and go back (#1404 PR 4b): it
 saves directly and returns to the step, whose status line says what was
 saved. Pages and emails' editor also meets rule 10's Keep as is and go back
@@ -2618,16 +2668,23 @@ Apply while the panel and its form keep their elements. A report's export is
 not a disclosure: it is the compact row of
 [export buttons](#downloaded-files) below the page's table, always shown, which
 takes one line (#1679, replacing #227's closed export disclosure). The Family
-directory, Financial stewardship and Ministry requests follow the Filters
-panel rule (#227). Census changes, a worklist, keeps its filters always open,
-as Additional information and Limitations do since they became review
-worklists ([#1685](https://github.com/epiphany40223/parishkit/issues/1685))
+directory and Financial stewardship follow the Filters panel rule (#227).
+Census changes, a worklist, keeps its filters always open, as Additional
+information and Limitations do since they became review worklists
+([#1685](https://github.com/epiphany40223/parishkit/issues/1685))
 ([its filters and downloads](../reports/spec.md#census-change-filters-and-downloads),
 [#1682](https://github.com/epiphany40223/parishkit/issues/1682)). Ministry requests keeps its
 compact filter bar rather than a Filters panel: its By Ministry counts apply
 a Ministry and request into the filters in place, and a closed panel would
-hide what the link just applied. System logs and the remaining report pages
-are still to convert.
+hide what the link just applied. System logs keeps its filter bar for the
+same reason: each entry's Related icons apply a filter into the form in
+place. The [Timeline](../reports/spec.md#timeline) keeps a one-row filter
+bar, too short to need a panel, and Roster changes keeps its
+filter bar until it moves to the shared review worklist, whose filters are
+always open
+([#1687](https://github.com/epiphany40223/parishkit/issues/1687)). No page
+is left to convert
+([#1828](https://github.com/epiphany40223/parishkit/issues/1828)).
 An edit form's short fields (a status, an outcome,
 a date and a time) likewise share a row on desktop (`.field-row` in
 `ui-v1.css`), top-aligned so a time's reading line fits under its box, while
@@ -3215,8 +3272,11 @@ while running, and light green when done". **Shared code.** The
 `components/stage-boxes.html` include, `accounts/stages.py` (`rows`, which
 marks the stages before the current one done, and the state words) and
 `.stage-boxes` in `ui-v1.css`. **Precedent.** Setup's Loading parish data
-and Finishing setup (#1354), and Load ParishSoft data
-([#1404](https://github.com/epiphany40223/parishkit/issues/1404) PR 5);
+and Finishing setup (#1354), Load ParishSoft data
+([#1404](https://github.com/epiphany40223/parishkit/issues/1404) PR 5),
+and the [Go live page](../admin-portal/spec.md#go-live-page)'s Prepare
+step and Production activation
+([#1585](https://github.com/epiphany40223/parishkit/issues/1585));
 the other stage-progress displays move to it in
 [#1579](https://github.com/epiphany40223/parishkit/issues/1579).
 
@@ -4329,11 +4389,13 @@ out or not set up yet. **Shared code.** The `{% for %}…{% empty %}` row or
 item in each template; `components/table.html` shows its caller's
 `table_empty` message. `tests/stewardship/test_admin_empty_states.py` checks
 that every such message in an Admin template has a reason or next step after
-its first sentence; its allowlist names the pages still to convert and two
-reviewed exceptions: the "None" value of a before-and-after review list, and
-the shared chart's "Nothing to show yet." row, which sits in the collapsed
-Exact values table under a chart whose visible summary and page say what it
-covers.
+its first sentence; its allowlist holds one reviewed exception, the shared
+chart's "Nothing to show yet." row, which sits in the collapsed Exact values
+table under a chart whose visible summary and page say what it covers
+([#1828](https://github.com/epiphany40223/parishkit/issues/1828) converted
+the last pages). A report table picks its filtered or unfiltered message
+with the `applied_filters` template filter, the Filters panel's own count,
+so the message and the panel's summary never disagree.
 Empty states drawn by `{% if %}…{% else %}` follow the same rule and are
 reviewed by hand. **Precedent.** Sent mail, Background work and Hosted
 files' empty rows;
@@ -4460,9 +4522,9 @@ phone rather than widening the page. A format the download cannot
 take right now (Ministry requests' PDF above its row limit) is shown
 unavailable, named by a line below the row that says why; while other campaign work
 holds exports, every button is unavailable with its reason (#563). The
-in-place progress, waiting note and refusal behaviour of the old Download
-buttons is unchanged: the clicked button shows it is busy, the row's other
-buttons wait with it, and the waiting note appears below the row. On a page
+clicked button shows it is busy, the row's other buttons wait with it, and
+the file downloads in place, with any waiting note or refusal in the row's
+reserved status line ([downloads happen in place](#downloads-happen-in-place)). On a page
 with a table the row sits below the table, so the page's data starts higher.
 **No explanatory line.** Export buttons carry no explanatory line: no
 count ("Exports all 7 estimated matching Families, every page."), no scope
@@ -4551,12 +4613,77 @@ Limitations report (formerly Talents and limitations,
 [#970](https://github.com/epiphany40223/parishkit/issues/970)) offers all
 three formats; the guard checks its Members and Families tables in each.
 
+### Downloads happen in place
+
+**Rule.** Every Admin export downloads in place
+(Administrator decision, 2026-10-19,
+[#1778](https://github.com/epiphany40223/parishkit/issues/1778)). The
+clicked export button shows the busy spinner on itself, the row's other
+buttons wait with it, and the file downloads from the same page; no export
+opens a separate "prepare, then download" page. This holds for both kinds:
+
+- **Queued exports** (Response dashboard, Campaign comparison, Financial
+  stewardship, Additional information, the Ministry follow-up packet,
+  Family directory, a Family's Timeline and the campaign archive) freeze
+  their data and build the file in the background, as before. The page
+  posts the request in place and checks the export's status passively,
+  at the [live-status](#pages-that-update-themselves) pace (2 seconds,
+  backing off to 10, paused while the tab is hidden), and never extends
+  the sign-in. A check that gets no answer or a server failure is tried
+  again at that pace. When the file is ready it is downloaded in place,
+  and a download answered busy is tried again a few times rather than
+  starting a new export. After 30 minutes the page stops checking and
+  says the file is taking longer than usual.
+- **In-memory exports** (Limitations, Census changes, Ministry requests'
+  Export these requests, Roster changes to enter and System logs) answer
+  the request with the file, which is downloaded in place too. The
+  button stays busy until the file arrives, not for a fixed time.
+
+The export row's reserved status line, directly under the buttons, says
+everything else. It keeps two lines' height while empty (three on a
+phone), and it shows at most two sentences, so nothing moves
+([no layout shift](#no-layout-shift)):
+
+- After five seconds, that the export is still being worked on: a queued
+  export's server status, such as "Preparing your file…" or why it has
+  not started yet
+  ([#340](https://github.com/epiphany40223/parishkit/issues/340)), and
+  otherwise a "Still working…" note.
+- A refusal in plain language, in the server's own words where it gives
+  some: other campaign work holds exports, a reused form, exports
+  temporarily unavailable, a denial, the file could not be created, the
+  export was cancelled or ended before it was downloaded, the sign-in
+  ended, or no answer came (the export may still have been started).
+
+Each start renews the form's one-time request key, whatever its answer,
+so the next click is a new export. The server is unchanged: snapshot freezing, auditing, owner
+and capability checks, limits, download windows and one-use download
+grants work as before.
+
+The export status address (`/admin/reports/exports/<request>/`) stays as
+the passive status read the button uses. It is also the page for the two
+exports only the command line asks for: the latest-data export
+(`export exact create`) and the chosen-Family test names file. No Admin
+page sends the reader there ([point-in-time downloads](#point-in-time-downloads)).
+**Why.** A separate page took the reader away from the report for a file
+that is usually ready in seconds, and the in-memory exports already
+stayed in place; one behaviour for every export is simpler (Administrator,
+2026-10-19). **Shared code.** The export submit handler in `ui-v1.js`
+(any submit from an `.export-actions` row or a `form[data-export-in-place]`)
+and the status line that `components/export-actions.html` reserves
+(`data-export-status`). The browser test `test_export_in_place.py` clicks
+each kind of export and receives the file without leaving the page.
+**Precedent.** [#1778](https://github.com/epiphany40223/parishkit/issues/1778).
+
 ### Point-in-time downloads
 
 **Rule.** A download is a point-in-time copy of what the report shows when
 it is asked for; the portal keeps no copies and no history of earlier
 downloads, and no page lists them. A download made in the background (an
-export) has a status page only for its short life: it says the file is
+export) is asked for and downloaded in place from its report
+([downloads happen in place](#downloads-happen-in-place)). Its status page
+remains for its short life only for the exports the command line asks for
+and for an address opened directly: it says the file is
 being prepared, starts the download once when the file is ready, offers
 Cancel while preparing and Retry after a failed run (until the export
 ends), and says until when the file can be downloaded again, in

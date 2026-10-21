@@ -27,7 +27,7 @@ from .family_delivery_worker import (
     SESSION_MESSAGES,
     SESSION_SECONDS,
 )
-from .mail_catcher import redirect_field
+from .mail_catcher import is_mail_catcher, redirect_field
 from .provider_checks import (
     ProviderCheckDrainFailure,
     ProviderCheckOwnershipLost,
@@ -164,10 +164,11 @@ def _submit_mail(value, settings, mail, *, seconds, check, helper, limit, sessio
         except (ValueError, TypeError, RecursionError):
             return unknown
 
-    # LOCAL rehearsals only: wait as long as Gmail would take (BG-12). It is
-    # before the helper call, so the wait counts in the caller's submit_ms,
-    # and outside every transaction, as a real provider's latency is.
-    latency = local_smtp_latency(profile)
+    # LOCAL rehearsals on the mail catcher only: wait as long as Gmail would
+    # take (BG-12). It is before the helper call, so the wait counts in the
+    # caller's submit_ms, and outside every transaction, as a real
+    # provider's latency is.
+    latency = local_smtp_latency(profile, value)
     if latency:
         time.sleep(latency)
     if session is not None:
@@ -198,16 +199,19 @@ def _submit_mail(value, settings, mail, *, seconds, check, helper, limit, sessio
     return unknown
 
 
-def local_smtp_latency(profile):
+def local_smtp_latency(profile, value):
     """Seconds a LOCAL mail parent waits before each submission, else 0.
 
     The local rehearsal (BG-12) sends to Mailpit, which answers at once, so
     the deployment setting ``local_smtp_latency_ms`` (admitted only in the
     local profile, and carried in this process's settings) models Gmail's
-    per-message latency. Every other profile never waits, whatever the
-    settings say.
+    per-message latency. It is tied to the mail catcher (#1399): ``value``
+    is the installed Workspace document, and a LOCAL deployment that sends
+    through real Gmail (beside its mail redirect) already has Gmail's own
+    latency, so it never waits on top of it. Every other profile never
+    waits, whatever the settings say.
     """
-    if profile is not DeploymentProfile.LOCAL:
+    if profile is not DeploymentProfile.LOCAL or not is_mail_catcher(value):
         return 0.0
     from django.conf import settings
 

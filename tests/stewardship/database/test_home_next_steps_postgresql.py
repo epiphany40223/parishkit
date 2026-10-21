@@ -81,7 +81,7 @@ def test_testing_draft_offers_the_setup_next_steps(auth_service, google):
         "Pages and emails",
         "Dates and mail schedules",
         "Preview and test email",
-        "Go-live readiness",
+        "Go live",
     ]
     assert ContentVersion.objects.filter(record_id=invitation["id"]).exists()
     assert f'href="/admin/campaign/content/test/{invitation["id"]}/"' in html

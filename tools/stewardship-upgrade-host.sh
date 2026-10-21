@@ -42,7 +42,12 @@
 #     PARISHKIT_LOCAL_PARISHSOFT=real|fake, unset or "keep" carrying the
 #     current choice over. Like the latency, a rollback never renders the
 #     real API (it falls back to the fake), and Production mode never reads
-#     the variable.
+#     the variable;
+#   - the caller may set the forced mail redirect (#1399):
+#     PARISHKIT_LOCAL_MAIL_REDIRECT=ADDRESS|off, unset or "keep" carrying the
+#     current one over. A rollback never renders it: the previous release
+#     may not know it, and without it a real Workspace key is refused, so
+#     the rollback fails closed. Production mode never reads the variable.
 #
 # In both modes the export download window (#1398) is carried over, and
 # PARISHKIT_STEWARDSHIP_EXPORT_DOWNLOAD_WINDOW_MINUTES (15-240) changes it.
@@ -440,6 +445,29 @@ if [ "$profile" = local ]; then
         # date: it may refuse a renewed one and accept a recently expired one.
         [ "$clock" != fake ] ||
             echo "    WARNING: the real ParishSoft API under the fake clock; prefer a normal-clock deployment" >&2
+    fi
+    # The forced mail redirect (#1399): one bare address, the developer's
+    # Testing recipient. With it, a real Workspace key may send, but every
+    # message goes only to this address. Checked here with a plain pattern,
+    # before anything stops; the loader applies the full rule at the
+    # retarget.
+    redirect=$(jq -r '.deployment.mail_redirect // empty' "$services/worker.yaml")
+    case "${PARISHKIT_LOCAL_MAIL_REDIRECT:-keep}" in
+        keep) ;;
+        off) redirect="" ;;
+        *) redirect=$PARISHKIT_LOCAL_MAIL_REDIRECT ;;
+    esac
+    if [ -n "$redirect" ] && ! [[ $redirect =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$ ]]; then
+        echo "The mail redirect must be one plain email address; refusing." >&2
+        exit 1
+    fi
+    if [ "$mode" = rollback ] && [ -n "$redirect" ]; then
+        echo "    the mail redirect is not carried into a rollback (a real Workspace key is then refused); deploy --mail-redirect sets it again"
+        redirect=""
+    fi
+    if [ -n "$redirect" ]; then
+        switches+=(-e "PARISHKIT_STEWARDSHIP_MAIL_REDIRECT=$redirect")
+        echo "    every message goes only to the mail redirect $redirect"
     fi
 fi
 
@@ -840,6 +868,12 @@ if [ "$profile" = local ]; then
     [ "$rendered" = "$latency" ] || problems+=("mail-dispatch: SMTP latency is $rendered ms, not $latency")
     rendered=$(jq -r '.deployment.parishsoft_base_url // empty' "$services/worker.yaml")
     [ "$rendered" = "$parishsoft" ] || problems+=("worker: ParishSoft base URL is '${rendered:-the fake}', not '${parishsoft:-the fake}'")
+    # Every role's document is rendered from the same inputs; the two mail
+    # senders are checked.
+    for role in worker mail-dispatch; do
+        rendered=$(jq -r '.deployment.mail_redirect // empty' "$services/$role.yaml")
+        [ "$rendered" = "$redirect" ] || problems+=("$role: mail redirect is '${rendered:-unset}', not '${redirect:-unset}'")
+    done
 fi
 version=$("${dc[@]}" exec -T web python -c 'import parishkit; print(parishkit.__version__)' 2>/dev/null || echo unknown)
 echo "    application version: $version"
