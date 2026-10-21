@@ -13,7 +13,8 @@ principal.
 
 from contextlib import contextmanager
 
-from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.accounts.policy import Capability
+from parishkit.stewardship.accounts.role_refusal import require
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 
 # The four retries a task page can offer, by the kind of work that failed.
@@ -31,9 +32,7 @@ def background_principal(caller, store, *, final=False, activity=False):
     makes around its effect.
     """
     actor = authenticated_admin(caller, store=store, activity=activity, read_only=final)
-    if not allows(actor, Capability.BACKGROUND_WORK):
-        raise PermissionError("Delivery administration is unavailable.")
-    return actor
+    return require(actor, Capability.BACKGROUND_WORK)
 
 
 @contextmanager

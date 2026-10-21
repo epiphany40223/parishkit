@@ -13,6 +13,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.accounts.role_refusal import require
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
@@ -156,9 +157,7 @@ def _principal(request, store, *, read_only=False):
     principal = authenticated_admin(
         request, store=store, activity=not read_only, read_only=read_only
     )
-    if not allows(principal, Capability.FINANCIAL_DETAIL):
-        raise PermissionError("Financial stewardship detail is unavailable.")
-    return principal
+    return require(principal, Capability.FINANCIAL_DETAIL)
 
 
 def _error(campaign_id, *, status, zone=False):

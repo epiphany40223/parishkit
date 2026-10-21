@@ -26,7 +26,8 @@ from parishkit.stewardship.accounts.cryptography import CryptographicError
 from parishkit.stewardship.accounts.family_authentication import (
     runtime as family_runtime,
 )
-from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.accounts.policy import Capability
+from parishkit.stewardship.accounts.role_refusal import require
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
@@ -78,11 +79,7 @@ def _principal(request, store, *, read_only=False):
     principal = authenticated_admin(
         request, store=store, activity=not read_only, read_only=read_only
     )
-    if not allows(principal, Capability.FAMILY_CODES):
-        raise PermissionError(
-            "Active parishioner family directory access is unavailable."
-        )
-    return principal
+    return require(principal, Capability.FAMILY_CODES)
 
 
 # Closed, non-private values a link may carry (GET): the reach presets (such
@@ -450,9 +447,7 @@ def directory(request, campaign_id):
 def _finder(request, store, *, read_only=False):
     """A viewer who may open the directory page and the Timeline."""
     principal = _principal(request, store, read_only=read_only)
-    if not allows(principal, Capability.CAMPAIGN_REPORT):
-        raise PermissionError("Find a Family is unavailable.")
-    return principal
+    return require(principal, Capability.CAMPAIGN_REPORT)
 
 
 @require_http_methods(["POST"])
