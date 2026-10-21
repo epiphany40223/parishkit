@@ -1,8 +1,9 @@
 """A Family's Timeline: accessible, browser-local times, filters in place (#1570).
 
 The fixtures (``timeline_components``) serve the Administrator's page, the
-exact pages its When heading and Kind filter lead to, Staff's reduced view
-and a page whose Open form is unavailable. #477 built the page as the Family
+exact pages its When heading and Kind filter lead to, Staff's view (the full
+timeline with review lines, #1774) and a page whose Open form is
+unavailable. #477 built the page as the Family
 timeline; #1570 renamed it, removed its Production / Testing pair and added
 the filter bar.
 """
@@ -64,7 +65,7 @@ def test_pages_are_accessible_and_fit_a_phone(page, component_origin, axe_source
 def test_the_page_names_the_family_and_offers_no_testing_view(page, component_origin):
     """The heading names the Family; no Production / Testing control (#1570)."""
     page.goto(component_origin + ADMIN)
-    visible(page.get_by_role("heading", name="Adams, Ann — timeline"))
+    visible(page.get_by_role("heading", name="Adams, Ann", exact=True))
     assert "Timeline" in page.title() and "Adams" not in page.title()
     assert page.locator("[data-in-place^='mode-']").count() == 0
     assert page.get_by_text("Testing rehearsal", exact=True).count() == 0
@@ -264,8 +265,11 @@ def test_the_filter_bar_is_one_row_on_a_desktop_and_wraps_on_a_phone(
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
 
-def test_staff_see_the_summary_only(page, component_origin):
-    """Submitted, last email and code with Open form; no timeline or filters."""
+def test_staff_see_the_full_timeline_with_review_lines(page, component_origin):
+    """Staff's Timeline tab (#1774): the summary, Open form, the filter bar
+    with Kind Reviews and every line, review lines included, but no email
+    line links a Mail message page Staff cannot open."""
+    errors = watch(page)
     page.goto(component_origin + STAFF)
     # Open form posts its hand-off to a new tab; no URL carries the code.
     button = page.get_by_role("button", name="Open form in a new tab")
@@ -274,8 +278,21 @@ def test_staff_see_the_summary_only(page, component_origin):
     assert form.get_attribute("target") == "_blank"
     assert form.get_attribute("action").endswith("/open-form/")
     assert page.locator("a[href*='#code=']").count() == 0
-    assert page.get_by_role("heading", name="Timeline", exact=True).count() == 0
-    assert page.locator("[data-in-place], #table-filters").count() == 0
+    visible(page.get_by_role("heading", name="Timeline", exact=True))
+    visible(page.locator("#table-filters"))
+    assert page.locator("#timeline-kind option[value=reviews]").inner_text() == (
+        "Reviews"
+    )
+    shown = lines(page)
+    # Newest first: the later review leads; the review at the second
+    # submission's instant is listed above it, as built after it.
+    assert shown[0] == "Handled"
+    assert shown.index("Accepted") + 1 == shown.index("Submitted a response")
+    row = page.locator("#table tbody tr", has_text="Accepted")
+    assert "Email address for Adams, Ann; by staff@example.org" in row.inner_text()
+    visible(page.locator("#table th", has_text="Invitation"))
+    assert page.locator("#table a[href*='/admin/mail/sent/']").count() == 0
+    assert_clean(page, errors)
 
 
 def test_unavailable_open_form_is_disabled_with_its_reason(page, component_origin):
@@ -330,8 +347,57 @@ def test_each_export_button_posts_its_format(page, component_origin):
     assert_clean(page, errors)
 
 
-def test_staff_get_no_export_form(page, component_origin):
-    """Staff see the summary only, so no export is offered."""
+def test_staff_get_the_export_form(page, component_origin):
+    """Staff see the full timeline and may export it (#1799)."""
     page.goto(component_origin + STAFF)
     visible(page.get_by_role("heading", name="Summary"))
-    assert export_form(page).count() == 0
+    visible(export_form(page))
+
+
+def test_the_hub_strip_and_tabs_frame_the_timeline(page, component_origin):
+    """The header strip names the last portal action; the Timeline tab is
+    chosen and every other tab is available, with no panel fetched until it
+    is chosen (#1678). The content tabs are tested in test_hub_census.py and
+    test_hub_streams.py.
+    """
+    errors = watch(page)
+    requests = []
+    page.on("request", lambda request: requests.append(request.url))
+    page.goto(component_origin + ADMIN)
+    strip = page.locator("p", has_text="Last portal action:")
+    # The fixture's newest portal action is the second submission; the
+    # receipt email after it is not the Family's action.
+    visible(strip)
+    assert "Last portal action: Submitted a response, " in strip.inner_text()
+    visible(strip.locator("time[data-local-instant]"))
+    tablist = page.get_by_role("tablist", name="Family information")
+    timeline = tablist.get_by_role("tab", name="Timeline")
+    has_attribute(timeline, "aria-selected", "true")
+    panel = page.get_by_role("tabpanel", name="Timeline")
+    visible(panel.get_by_role("heading", name="Summary"))
+    visible(panel.locator("#table-filters"))
+    page.evaluate(MARK)
+    loaded = len(requests)
+    for name in ("Financial", "Additional"):
+        other = tablist.get_by_role("tab", name=name, exact=True)
+        has_attribute(other, "aria-selected", "false")
+        assert other.get_attribute("aria-disabled") is None
+    assert tablist.locator('[aria-disabled="true"]').count() == 0
+    has_attribute(timeline, "aria-selected", "true")
+    assert page.evaluate(MARKED) == "kept"
+    assert page.url == component_origin + ADMIN and len(requests) == loaded
+    # Tab from the chosen tab moves into its panel.
+    timeline.focus()
+    page.keyboard.press("Tab")
+    focused(panel)
+    assert_clean(page, errors)
+
+
+def test_staff_get_the_hub_with_the_last_portal_action(page, component_origin):
+    """Staff's strip names the Last portal action too (Administrator decision,
+    2026-10-18); review lines are never portal actions (#1774)."""
+    page.goto(component_origin + STAFF)
+    has_attribute(page.get_by_role("tab", name="Timeline"), "aria-selected", "true")
+    strip = page.locator("p", has_text="Last portal action:")
+    assert "Last portal action: Submitted a response, " in strip.inner_text()
+    visible(page.get_by_role("tabpanel").get_by_role("heading", name="Summary"))

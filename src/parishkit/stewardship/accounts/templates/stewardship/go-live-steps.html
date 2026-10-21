@@ -1,0 +1,15 @@
+{% load i18n %}{% comment %}
+  The Go live step bar (admin-portal spec, "Go live page"; #1585), drawn
+  by every Go live step inside its own self-updating region:
+  "Step N of 4: name", "K of 4 steps completed", "Next: name", and the
+  shared bar and list (stepper-steps.html). ``wizard`` is
+  go_live_check.bar's.
+{% endcomment %}<nav class="setup-stepper" aria-labelledby="go-live-steps-heading">
+<h2 id="go-live-steps-heading" class="setup-sr-only">{% translate "Go live progress" %}</h2>
+<div class="setup-stepper-summary">
+<p class="setup-stepper-current">{% blocktranslate trimmed with number=wizard.current.number total=wizard.total %}Step {{ number }} of {{ total }}:{% endblocktranslate %} <strong>{{ wizard.current.label }}</strong></p>
+<p class="setup-stepper-count">{% blocktranslate trimmed with done=wizard.completed total=wizard.total %}{{ done }} of {{ total }} steps completed{% endblocktranslate %}</p>
+<p class="setup-stepper-moves"><span>{% if wizard.next %}{% blocktranslate trimmed with label=wizard.next.label %}Next: {{ label }}{% endblocktranslate %}{% endif %}</span></p>
+</div>
+{% translate "Go live steps" as track_label %}{% translate "All go live steps" as list_summary %}{% include 'stewardship/stepper-steps.html' with track_label=track_label list_id='go-live-step-list' list_summary=list_summary %}
+</nav>

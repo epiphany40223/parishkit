@@ -138,12 +138,15 @@ def test_a_local_latency_is_rendered_but_never_recorded_as_an_input(tmp_path):
 
 
 def test_only_a_local_parent_waits(settings):
-    """The wait is the LOCAL setting in seconds; every other profile never waits."""
+    """The wait is the LOCAL setting in seconds, and only before mail to the
+    mail catcher (#1399): real Gmail beside the mail redirect has its own
+    latency. Every other profile never waits."""
     settings.STEWARDSHIP_LOCAL_SMTP_LATENCY_MS = 600
-    assert local_smtp_latency(LOCAL) == 0.6
-    assert local_smtp_latency(PRODUCTION) == 0.0
+    assert local_smtp_latency(LOCAL, MAIL_CATCHER_DOCUMENT) == 0.6
+    assert local_smtp_latency(LOCAL, b'{"type": "service_account"}') == 0.0
+    assert local_smtp_latency(PRODUCTION, MAIL_CATCHER_DOCUMENT) == 0.0
     del settings.STEWARDSHIP_LOCAL_SMTP_LATENCY_MS
-    assert local_smtp_latency(LOCAL) == 0.0
+    assert local_smtp_latency(LOCAL, MAIL_CATCHER_DOCUMENT) == 0.0
 
 
 def test_a_local_submission_waits_before_the_helper(settings, monkeypatch):
@@ -172,6 +175,18 @@ def test_a_local_submission_waits_before_the_helper(settings, monkeypatch):
     )
     assert result.status is FamilyDeliveryStatus.ACCEPTED
     assert events == [("sleep", 0.25), ("helper", None)]
+    # Through a real mailbox (beside the redirect) the parent never waits.
+    events.clear()
+    settings.STEWARDSHIP_MAIL_REDIRECT = "developer@example.org"
+    result = submit_family(
+        b'{"type": "service_account"}',
+        SETTINGS,
+        sample(),
+        seconds=5,
+        check=lambda: None,
+    )
+    assert result.status is FamilyDeliveryStatus.ACCEPTED
+    assert events == [("helper", None)]
 
 
 # --- The bulk path's timing lines ----------------------------------------------

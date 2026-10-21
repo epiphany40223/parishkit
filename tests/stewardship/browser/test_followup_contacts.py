@@ -75,17 +75,26 @@ def test_export_these_requests_posts_the_applied_view(page, component_origin):
     zone = page.evaluate("Intl.DateTimeFormat().resolvedOptions().timeZone")
     page.route(
         "**" + reverse("admin:ministry_followup_export"),
-        lambda route: route.fulfill(body="Downloaded"),
+        lambda route: route.fulfill(
+            body="file",
+            headers={"Content-Disposition": 'attachment; filename="requests.xlsx"'},
+        ),
     )
-    with page.expect_request(lambda request: request.method == "POST") as sent:
+    with (
+        page.expect_request(lambda request: request.method == "POST") as sent,
+        page.expect_download() as download,
+    ):
         row.get_by_role("button", name="Export XLSX").click()
     body = sent.value.post_data
     assert "search=Example" in body and "ministry=9" in body
-    assert "format=xlsx" in body and "state=unresolved" in body
+    assert "format=xlsx" in body and "stage=to_review" in body
     assert "browser_timezone=" + quote(zone, safe="") in body
     assert "page=" not in body and "size=" not in body
     assert "?" not in sent.value.url
-    visible(page.get_by_text("Downloaded", exact=True))
+    # The export downloads in place (#1778): the file arrives and the queue
+    # stays.
+    assert download.value.suggested_filename == "requests.xlsx"
+    visible(row.get_by_role("button", name="Export XLSX"))
 
 
 def test_export_follows_an_in_place_apply(page, component_origin):

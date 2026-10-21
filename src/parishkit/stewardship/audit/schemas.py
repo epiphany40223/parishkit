@@ -101,6 +101,7 @@ class Action(StrEnum):
     CAMPAIGN_ARCHIVE_EXPORTED = "campaign_archive_exported"
     INFORMATION_VIEWED = "information_viewed"
     INFORMATION_UPDATED = "information_updated"
+    LIMITATION_REVIEWED = "limitation_reviewed"
     MINISTRY_FOLLOWUP_VIEWED = "ministry_followup_viewed"
     # The queue's Export these requests download (#1157).
     MINISTRY_FOLLOWUP_EXPORTED = "ministry_followup_exported"
@@ -120,6 +121,9 @@ class Action(StrEnum):
     # showed publication cannot carry as By hand; count: how many. Written
     # once, by the migration, as a system event with no subject.
     CENSUS_HANDLING_CORRECTED = "census_handling_corrected"
+    # The baseline refresh re-evaluation's Not seen start (#1689): written
+    # once, by migration 0132, as a system event with no subject.
+    REFRESH_CHECKS_STARTED = "refresh_checks_started"
     MINISTRY_ROSTER_ENTERED = "ministry_roster_entered"
     # Publication to ParishSoft (#528, DAT-09.01): a preflight's plan (count:
     # its entities), an Administrator's confirmation (count: entities to
@@ -140,10 +144,20 @@ class Action(StrEnum):
     CENSUS_PUBLICATION_SWITCHED_OFF = "census_publication_switched_off"
     CENSUS_PUBLICATION_READ_UNCONFIRMED = "census_publication_read_unconfirmed"
     CENSUS_PUBLICATION_REFUSED = "census_publication_refused"
-    # Someone opened Publish to ParishSoft (#528, ADM-09); count: plan rows.
+    # The final full refresh an update run requested once its plan updated a
+    # Member (#1688); the subject is the refresh command, so System logs
+    # says the refresh followed an update.
+    CENSUS_PUBLICATION_REFRESH_REQUESTED = "census_publication_refresh_requested"
+    # Someone opened Update ParishSoft (#528, ADM-09; #1688); count: plan rows.
     CENSUS_PUBLICATION_VIEWED = "census_publication_viewed"
     ROSTER_CHANGES_VIEWED = "roster_changes_viewed"
     ROSTER_CHANGES_EXPORTED = "roster_changes_exported"
+    # Pledges (#1686): opening and downloading it (count: rows),
+    # and one decision on a Family's pledge, whose subject is its
+    # stewardship_pledge_review row; no event holds an amount.
+    PLEDGES_TO_ENTER_VIEWED = "pledges_to_enter_viewed"
+    PLEDGES_TO_ENTER_EXPORTED = "pledges_to_enter_exported"
+    PLEDGE_REVIEW_UPDATED = "pledge_review_updated"
     RESPONSE_DASHBOARD_VIEWED = "response_dashboard_viewed"
     # The lists of Families behind the response funnel (#477): one event type
     # per list, so the audit names the list without a new context field. The
@@ -259,6 +273,10 @@ class Action(StrEnum):
     ADMIN_CMD_PARISH_CONFIRM = "admin_cmd_parish_confirm"
     # artwork remove: Campaign images' Apply of a removal (ADM-11 PR 10).
     ADMIN_CMD_ARTWORK_REMOVE = "admin_cmd_artwork_remove"
+    # branding preview and confirm: Parish logos' upload Review and its
+    # review dialog's Apply (#1865).
+    ADMIN_CMD_BRANDING_PREVIEW = "admin_cmd_branding_preview"
+    ADMIN_CMD_BRANDING_CONFIRM = "admin_cmd_branding_confirm"
     # content confirm: Pages and emails' Delete of unused emails (ADM-11 PR 10).
     ADMIN_CMD_CONTENT_CONFIRM = "admin_cmd_content_confirm"
     # integration confirm: an integration settings page's Apply (ADM-11 PR 10).
@@ -281,6 +299,8 @@ class Action(StrEnum):
     ADMIN_CMD_WORKGROUP_CONFIRM = "admin_cmd_workgroup_confirm"
     # campaign confirm: Campaign settings' Apply (ADM-11 PR 10).
     ADMIN_CMD_CAMPAIGN_CONFIRM = "admin_cmd_campaign_confirm"
+    # campaign create: Create the campaign's Apply (#1899).
+    ADMIN_CMD_CAMPAIGN_CREATE = "admin_cmd_campaign_create"
     # campaign shares-confirm: Share options' Apply (ADM-11 PR 10).
     ADMIN_CMD_CAMPAIGN_SHARES_CONFIRM = "admin_cmd_campaign_shares_confirm"
     ADMIN_CMD_USERS_IMPORT_LEADERS = "admin_cmd_users_import_leaders"
@@ -318,6 +338,15 @@ class Action(StrEnum):
     ADMIN_CMD_PORTAL_MAINTENANCE_SET = "admin_cmd_portal_maintenance_set"
     # send confirm: Pause and resume mail's Confirm (ADM-11 PR 7b, #463).
     ADMIN_CMD_SEND_CONFIRM = "admin_cmd_send_confirm"
+    # The Go live page's actions (ADM-11 PR 12, #1809): Start go-live, a
+    # step's Retry, Refresh and prepare again, Stop go-live, Confirm
+    # Production and Cancel go-live.
+    ADMIN_CMD_GO_LIVE_START = "admin_cmd_go_live_start"
+    ADMIN_CMD_GO_LIVE_RETRY = "admin_cmd_go_live_retry"
+    ADMIN_CMD_GO_LIVE_REFRESH_AGAIN = "admin_cmd_go_live_refresh_again"
+    ADMIN_CMD_GO_LIVE_STOP = "admin_cmd_go_live_stop"
+    ADMIN_CMD_GO_LIVE_CONFIRM = "admin_cmd_go_live_confirm"
+    ADMIN_CMD_GO_LIVE_CANCEL = "admin_cmd_go_live_cancel"
     # system backup-now: System health's Take a backup now (ADM-13 PR 3b).
     ADMIN_CMD_SYSTEM_BACKUP_NOW = "admin_cmd_system_backup_now"
     # system debug-off: System health's Turn off debug logging (ADM-13 PR 6b).
@@ -362,13 +391,25 @@ class Action(StrEnum):
     # census resolve-conflict: an Automatic Conflict's Use the Family's value
     # anyway (#1434, ADM-09.03).
     ADMIN_CMD_CENSUS_RESOLVE_CONFLICT = "admin_cmd_census_resolve_conflict"
+    # census update-check, update-confirm and update-rerun: Update
+    # ParishSoft's Check ParishSoft, Update and Run again (#1755).
+    ADMIN_CMD_CENSUS_UPDATE_CHECK = "admin_cmd_census_update_check"
+    ADMIN_CMD_CENSUS_UPDATE_CONFIRM = "admin_cmd_census_update_confirm"
+    ADMIN_CMD_CENSUS_UPDATE_RERUN = "admin_cmd_census_update_rerun"
     # followup roster-entered and followup roster-bulk: a resolved request's
-    # Entered in ParishSoft tick and Roster changes to enter's bulk mark;
+    # Entered in ParishSoft tick and a bulk Entered by hand;
     # followup information-update: an Additional information item's Save
     # (#463 PR 11b).
     ADMIN_CMD_FOLLOWUP_ROSTER_ENTERED = "admin_cmd_followup_roster_entered"
     ADMIN_CMD_FOLLOWUP_ROSTER_BULK = "admin_cmd_followup_roster_bulk"
     ADMIN_CMD_FOLLOWUP_INFORMATION_UPDATE = "admin_cmd_followup_information_update"
+    # information decide and limitations decide: a worklist decision, one
+    # item or in bulk (#1735).
+    ADMIN_CMD_INFORMATION_DECIDE = "admin_cmd_information_decide"
+    ADMIN_CMD_LIMITATIONS_DECIDE = "admin_cmd_limitations_decide"
+    # pledges decide: a Pledges decision, one pledge or in bulk
+    # (#1733).
+    ADMIN_CMD_PLEDGES_DECIDE = "admin_cmd_pledges_decide"
 
 
 # Closed field identifiers are operational metadata, never census values.

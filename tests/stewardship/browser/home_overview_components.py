@@ -45,7 +45,8 @@ FAMILIES = {
 # The menu's open counts, as the chrome reads them.
 COUNTS = {
     "census_changes": 4,
-    "ministry_roster": 12,
+    # Ministry requests' To enter by hand count (R39 finding 2).
+    "ministry_entry": 12,
     "information_queue": 3,
     "ministry_report": 5,
 }
@@ -69,9 +70,7 @@ def components(context, admin):
         ),
         items,
     )
-    for section in sections:
-        for entry in section["items"]:
-            entry["count"] = COUNTS.get(entry["name"]) if entry["url"] else None
+    admin_context.attach_counts(sections, COUNTS)
     chrome = admin | {
         "sections": sections,
         "breadcrumbs": [],

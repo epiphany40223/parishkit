@@ -112,7 +112,7 @@ def test_resend_asks_then_sends_once_per_key(
             )
             assert code == 4, refused_doc
             assert refused_doc["error"]["code"] == "confirmation_required"
-            assert "duplicate risk" in err
+            assert "second copy" in err
             untouched()
         # A read-only session is refused before anything changes.
         _, reader, _ = paired(admin.service, scope="read-only")

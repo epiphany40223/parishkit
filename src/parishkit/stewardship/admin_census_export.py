@@ -52,6 +52,7 @@ JSONL_KEYS = (
     "parishsoft_status",
     "family_duid",
     "who",
+    "member_parishsoft_status",
     "member_duid",
     "what",
     "parishsoft_now",
@@ -114,12 +115,14 @@ def reviews(row, actor, *, mutable=True):
     false), as the page then offers no Review.
     """
     from .accounts.policy import Capability, allows
+    from .admin_census import decision_word
     from .reports.census_changes import REVIEW_CHOICES
 
     if not mutable or not allows(actor, Capability.PUBLISH_CENSUS):
         return []
     decisions = dict(REVIEW_CHOICES)
-    return [decisions[action] for action in row["review_actions"]]
+    # In the command line's words (decision 7): ``accepted``, not ``approved``.
+    return [decision_word(decisions[action]) for action in row["review_actions"]]
 
 
 def offered(row, actor, key, *, mutable=True):

@@ -91,6 +91,7 @@ from .limiting import Counter, LimiterUnavailable
 from .policy import Capability
 from .policy_models import PortalUser
 from .request_patch import build_candidate
+from .sessions import passive_read
 from .user_changes import (
     DEFAULT_ROLE,
     MESSAGES,
@@ -341,7 +342,13 @@ def users(request):
     """
     try:
         service = runtime()
-        actor = principal(request, service, capability=Capability.MANAGE_USERS)
+        # The page's own re-read once its leaders can be read again (#1863)
+        # is passive: it never extends the sign-in, though it is audited,
+        # and marked automatic. The header can only add that mark.
+        automatic = request.method == "GET" and passive_read(request)
+        actor = principal(
+            request, service, passive=automatic, capability=Capability.MANAGE_USERS
+        )
         if request.method == "POST":
             if request.GET or request.FILES:
                 raise unexpected_fields(request.GET, request.FILES, allowed=())
@@ -414,7 +421,8 @@ def users(request):
                 Action.USERS_VIEWED,
                 actor_kind=ActorKind.PORTAL_USER,
                 actor_id=current.identity,
-                context={"outcome": Outcome.SUCCEEDED, "count": len(table.rows)},
+                context={"outcome": Outcome.SUCCEEDED, "count": len(table.rows)}
+                | ({"automatic": True} if automatic else {}),
             )
         response["Cache-Control"] = "no-store"
         return response

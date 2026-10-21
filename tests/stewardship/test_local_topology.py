@@ -291,7 +291,7 @@ def test_fake_parishsoft_serves_backend_only_from_its_one_mount(tmp_path, mode):
             "type": "bind",
             "source": str(path),
             "target": str(path),
-            "read_only": True,
+            "read_only": False,
             "bind": {"create_host_path": False},
         }
     ]

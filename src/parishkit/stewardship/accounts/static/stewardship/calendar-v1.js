@@ -24,13 +24,32 @@
 // Each day of the campaign's dates that is today or later (browser-local)
 // also gets a (+) Add link (#1521) that opens New scheduled email with that
 // day as its send date, and every Edit link (grid and table) carries the
-// month shown (?calendar=), so Edit returns to it; the page itself never
-// changes anything. The table's Show and sort links carry the month shown
-// too (?month=), so the address they leave keeps it; both are set again
-// after each in-place swap of the table (parishkit:swap).
+// month shown (?calendar=), so Edit returns to it. The table's Show and
+// sort links carry the month shown too (?month=), so the address they leave
+// keeps it; both are set again after each in-place swap of the table
+// (parishkit:swap).
+//
+// Move… (#1521): each movable send (data-move-url) gets a move icon button
+// after its link, which opens the Move dialog on that send: its title and
+// sentence filled in, its form posting to the send's Edit page, its date the
+// send's local day. Review the move is the shared review dialog's
+// (ui-v1.js, data-review-open), so the server draws Edit's own review and
+// nothing changes before Apply. Its change gate's version is set per send,
+// so the gate takes the send's day as the saved value. On a fine pointer, a
+// movable send's link or its Move… button can also be dragged (pointer
+// events, a few pixels before a drag starts, so a click still follows the
+// link or opens Move…) onto another day, which opens the same dialog with
+// that day filled in; Escape cancels a drag, and the drop itself changes
+// nothing (UX conventions, dragging rule). Enter or Space on Move… is a
+// click, never a drag.
+// Apply redraws the list of sends with the dialog (one region), so the grid
+// is drawn again from the new list on the same month.
 (() => {
   const root = document.querySelector("[data-calendar]");
   const template = document.getElementById("calendar-month");
+  // Pixels the pointer moves before a press on a send becomes a drag.
+  const DRAG_THRESHOLD = 5;
+  const finePointer = window.matchMedia("(pointer: fine)");
   const dates = window.ParishDates;
   const name = document.querySelector("[data-calendar-name]");
   const reason = document.querySelector("[data-calendar-reason]");
@@ -51,6 +70,13 @@
     return year * 12 + month - 1;
   };
   const monthKey = (index) => `${Math.floor(index / 12)}-${two((index % 12) + 1)}`;
+  // A translated pattern with {name}-style slots filled in as text (a
+  // replacement function, so a "$" in a name is never a pattern).
+  const fillIn = (pattern, values) => pattern.replace(/\{(\w+)\}/g,
+    (whole, key) => (key in values ? values[key] : whole));
+  // The grid's link and Move… button of a movable send (its drag handles),
+  // to its send's item in the list.
+  const sources = new WeakMap();
 
   // The list's sends grouped by local day ("2054-10-05"), each day's in
   // sending order.
@@ -75,9 +101,45 @@
     return url.pathname + url.search;
   }
 
+  // A movable send's move icon (two arrows, drawn inline like the table
+  // action icons): decoration, as the button carries the name.
+  function moveIcon() {
+    const icon = document.createElementNS(SVG, "svg");
+    icon.setAttribute("class", "action-icon");
+    icon.setAttribute("viewBox", "0 0 16 16");
+    icon.setAttribute("aria-hidden", "true");
+    icon.setAttribute("focusable", "false");
+    const path = document.createElementNS(SVG, "path");
+    path.setAttribute("d", "M2 8h12M5 5 2 8l3 3M11 5l3 3-3 3");
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", "currentColor");
+    path.setAttribute("stroke-width", "1.6");
+    path.setAttribute("stroke-linecap", "round");
+    path.setAttribute("stroke-linejoin", "round");
+    icon.append(path);
+    return icon;
+  }
+
+  // A movable send's Move… button, named and titled with the send ("Move
+  // Reminder 2…"), so a keyboard, voice control and screen reader user
+  // hears which send it moves.
+  function moveButton(row) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "calendar-move";
+    const label = fillIn(root.dataset.moveName, {name: row.dataset.label});
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    button.append(moveIcon());
+    button.addEventListener("click", () => openMove(row, null, button));
+    sources.set(button, row);
+    return button;
+  }
+
   // One send in a day: its local time and schedule name, a link to its Edit
-  // page when it has one, and its status for screen readers (the table shows
-  // it to everyone). ``row`` is the send's item in the hidden list.
+  // page when it has one, Move… when it can move, and its status for screen
+  // readers (the table shows it to everyone). ``row`` is the send's item in
+  // the hidden list.
   function sendItem({when, row}, index) {
     const item = document.createElement("li");
     if (row.classList.contains("schedule-past")) item.className = "schedule-past";
@@ -92,6 +154,14 @@
     status.className = "visually-hidden";
     status.textContent = `, ${row.dataset.status}`;
     item.append(target, status);
+    if (edit && row.dataset.moveUrl && root.dataset.moveName) {
+      // The link drags on a fine pointer; the browser's own link drag
+      // would take the pointer away from the page's drag.
+      target.draggable = false;
+      sources.set(target, row);
+      item.classList.add("calendar-movable");
+      item.append(moveButton(row));
+    }
     return item;
   }
 
@@ -150,6 +220,8 @@
   // its sends.
   function dayCell(key, day, days, today, index) {
     const cell = document.createElement("td");
+    // The day a send dropped here moves to (#1521).
+    cell.dataset.day = key;
     const head = document.createElement("div");
     head.className = "calendar-day-head";
     const number = document.createElement("span");
@@ -201,12 +273,21 @@
     return region;
   }
 
-  const days = sendsByDay();
-  const keys = [...days.keys(), root.dataset.start, root.dataset.end].filter(Boolean).sort();
-  if (!keys.length) return;
+  // The sends by day and the first and last months, read from the list;
+  // read again when Apply redraws the list (#1521).
+  let days = new Map();
+  let first = 0;
+  let last = 0;
+  function readSends() {
+    days = sendsByDay();
+    const keys = [...days.keys(), root.dataset.start, root.dataset.end].filter(Boolean).sort();
+    if (!keys.length) return false;
+    first = monthIndex(keys[0]);
+    last = monthIndex(keys[keys.length - 1]);
+    return true;
+  }
+  if (!readSends()) return;
   const today = localKey(new Date());
-  const first = monthIndex(keys[0]);
-  const last = monthIndex(keys[keys.length - 1]);
 
   // The table's links with the month shown: each Edit link's ?calendar=,
   // and its Show segments' and sort headings' ?month=. The table is
@@ -276,5 +357,152 @@
     draw(next, true);
     remember(next);
   }));
-  document.addEventListener("parishkit:swap", () => linkTable(shown));
+  // The Move dialog (#1521), looked up afresh: Apply redraws it with the
+  // list of sends. ``opener`` takes focus back when it closes unapplied.
+  let moveOpener = null;
+  const moveDialog = () => document.getElementById("calendar-move");
+
+  // Open the Move dialog on the send ``row`` (its item in the list), its
+  // date ``day`` when a drop chose one, else the send's own local day.
+  function openMove(row, day, opener) {
+    const dialog = moveDialog();
+    const form = dialog?.querySelector("form");
+    const field = form?.elements.namedItem("schedule-date");
+    const version = form?.querySelector("#calendar-move-version");
+    const node = row.querySelector("time[datetime]");
+    if (!field || !version || !node || dialog.open) return;
+    const when = new Date(node.dateTime);
+    const name = row.dataset.label;
+    form.setAttribute("action", row.dataset.moveUrl);
+    dialog.querySelector("[data-move-title]").textContent = fillIn(root.dataset.moveName, {name});
+    dialog.querySelector("[data-move-text]").textContent = fillIn(dialog.dataset.moveWhat,
+      {name, time: dates.time(when), email: row.dataset.email || ""});
+    // The send's day is the saved value the change gate compares with: a
+    // new version (this configuration and this send) makes it read the
+    // field's default again.
+    const own = localKey(when);
+    field.defaultValue = own;
+    field.value = day || own;
+    version.value = `${form.elements.namedItem("base_digest").value} ${row.dataset.moveUrl}`;
+    // A refusal from an earlier Move no longer applies.
+    const line = document.getElementById(form.dataset.reviewRefused);
+    if (line) {
+      line.textContent = "";
+      line.removeAttribute("title");
+      line.removeAttribute("data-refusal");
+    }
+    field.removeAttribute("aria-describedby");
+    field.removeAttribute("data-field-error");
+    field.setAttribute("aria-invalid", "false");
+    moveOpener = opener;
+    dialog.showModal();
+    field.focus();
+    // The gate answers on change (ui-v1.js), as it does for an edit.
+    field.dispatchEvent(new Event("change", {bubbles: true}));
+  }
+
+  // Cancel closes the Move dialog; Escape closes it natively, but not while
+  // its Review is being prepared (the form is busy then).
+  document.addEventListener("click", (event) => {
+    if (event.target instanceof Element && event.target.closest("#calendar-move [data-move-cancel]")) {
+      moveDialog()?.close();
+    }
+  });
+  document.addEventListener("cancel", (event) => {
+    if (event.target === moveDialog() && event.target.querySelector("form[aria-busy=true]")) {
+      event.preventDefault();
+    }
+  }, true);
+  // Closed unapplied: focus goes back to what opened it.
+  document.addEventListener("close", (event) => {
+    if (event.target !== moveDialog()) return;
+    if (moveOpener?.isConnected) moveOpener.focus();
+    moveOpener = null;
+  }, true);
+
+  // Drag to move (#1521; UX conventions, dragging rule), fine pointers only.
+  let drag = null;
+  let swallowClick = false;
+  // Clear a drag's marks. The click that ends an active drag never follows
+  // the link or opens Move…: it is swallowed until the next press or key,
+  // so an Escape before the mouse button is released (which ends the drag
+  // early) is covered.
+  function endDrag() {
+    if (!drag) return;
+    drag.item.classList.remove("calendar-dragging");
+    drag.over?.classList.remove("calendar-drop-target");
+    document.documentElement.classList.remove("calendar-drag-active");
+    if (drag.active) swallowClick = true;
+    drag = null;
+  }
+  // A new press or key (other than the Escape that cancels a drag) means
+  // the drag's click is past: nothing else is ever swallowed.
+  document.addEventListener("pointerdown", () => { swallowClick = false; }, true);
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") swallowClick = false;
+  }, true);
+  root.addEventListener("pointerdown", (event) => {
+    if (!finePointer.matches || event.pointerType === "touch" || event.button !== 0) return;
+    // A drag starts from a movable send's link or its Move… button.
+    const handle = event.target instanceof Element
+      ? event.target.closest("a, .calendar-move") : null;
+    const row = handle && sources.get(handle);
+    if (!row) return;
+    drag = {handle, row, item: handle.closest("li"), x: event.clientX, y: event.clientY,
+      id: event.pointerId, active: false, over: null};
+  });
+  document.addEventListener("pointermove", (event) => {
+    if (!drag || event.pointerId !== drag.id) return;
+    if (!drag.active) {
+      if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < DRAG_THRESHOLD) return;
+      drag.active = true;
+      // A selection begun in the first few pixels goes with the drag.
+      window.getSelection()?.removeAllRanges();
+      drag.item.classList.add("calendar-dragging");
+      document.documentElement.classList.add("calendar-drag-active");
+    }
+    event.preventDefault();
+    const under = document.elementFromPoint(event.clientX, event.clientY);
+    const cell = under instanceof Element ? under.closest("td[data-day]") : null;
+    const over = cell && root.contains(cell) ? cell : null;
+    if (over === drag.over) return;
+    drag.over?.classList.remove("calendar-drop-target");
+    over?.classList.add("calendar-drop-target");
+    drag.over = over;
+  });
+  document.addEventListener("pointerup", (event) => {
+    if (!drag || event.pointerId !== drag.id) return;
+    const {active, over, row, handle} = drag;
+    const own = localKey(new Date(row.querySelector("time[datetime]").dateTime));
+    endDrag();
+    // Dropped on another day: the Move dialog with that day, nothing more.
+    if (active && over && over.dataset.day !== own) openMove(row, over.dataset.day, handle);
+  });
+  document.addEventListener("pointercancel", (event) => {
+    if (drag && event.pointerId === drag.id) endDrag();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !drag?.active) return;
+    event.preventDefault();
+    endDrag();
+  }, true);
+  document.addEventListener("click", (event) => {
+    if (!swallowClick) return;
+    swallowClick = false;
+    event.preventDefault();
+    event.stopPropagation();
+  }, true);
+
+  document.addEventListener("parishkit:swap", (event) => {
+    // Apply redrew the list of sends (#1521): draw the grid again from it,
+    // on the month shown (or the nearer end, if the campaign's months
+    // changed), without announcing a month the reader did not choose.
+    if (event.target instanceof Element && event.target.id === "calendar-source" && readSends()) {
+      const index = Math.min(last, Math.max(first, shown));
+      const moved = index !== shown;
+      draw(index, false);
+      if (moved) remember(index);
+    }
+    linkTable(shown);
+  });
 })();

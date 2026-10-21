@@ -119,8 +119,8 @@ from .find_family_components import POSTS as FIND_FAMILY_POSTS
 from .find_family_components import components as find_family_components
 from .followup_components import POSTS as FOLLOWUP_POSTS
 from .followup_components import components as followup_components
+from .go_live_components import action_answer as go_live_action
 from .go_live_components import components as go_live_components
-from .go_live_components import posts as go_live_posts
 from .go_live_families_components import components as go_live_families_components
 from .held_emails_components import components as held_emails_components
 from .home_overview_components import components as home_overview_components
@@ -149,11 +149,11 @@ from .live_status_components import POSTS as LIVE_STATUS_POSTS
 from .live_status_components import components as live_status_components
 from .log_components import components as log_components
 from .menu_components import components as menu_components
-from .my_ministries_components import components as my_ministries_components
 from .not_found_components import components as not_found_components
 from .past_campaign_components import POSTS as PAST_CAMPAIGN_POSTS
 from .past_campaign_components import components as past_campaign_components
 from .pause_components import components as pause_components
+from .pledges_components import components as pledges_components
 from .publication_components import POSTS as PUBLICATION_POSTS
 from .publication_components import components as publication_components
 from .refresh_schedule_components import components as refresh_schedule_components
@@ -163,8 +163,8 @@ from .report_components import SLOW_GETS as REPORT_SLOW_GETS
 from .report_components import components as report_components
 from .response_dashboard_components import components as dashboard_components
 from .restore_review_components import components as restore_review_components
-from .roster_components import POSTS as ROSTER_POSTS
-from .roster_components import components as roster_components
+from .review_work_components import components as review_work_components
+from .review_worklist_components import components as review_worklist_components
 from .schedule_list_components import POSTS as SCHEDULE_LIST_POSTS
 from .schedule_list_components import components as schedule_list_components
 from .security_components import POSTS as SECURITY_POSTS
@@ -185,6 +185,7 @@ from .source_form_components import components as source_form_components
 from .stepper_components import POSTS as STEPPER_POSTS
 from .stepper_components import components as stepper_components
 from .system_health_components import components as system_health_components
+from .tabs_components import components as tabs_components
 from .timeline_components import components as timeline_components
 from .upload_defaults_components import components as upload_defaults_components
 from .upload_defaults_components import posts as upload_defaults_posts
@@ -2111,35 +2112,6 @@ def component_origin():
             },
         ),
         (
-            "/go-live-steps",
-            "production-progress",
-            {
-                "campaign": {
-                    "pk": uuid4(),
-                    "state": "scheduled",
-                    "active_configuration": {"name": "Sample campaign"},
-                },
-                "receipt": {"created_at": NOW},
-                "demand": None,
-                # The last of the five go-live steps, the longest indicator.
-                "admin_chrome": admin
-                | {
-                    "breadcrumbs": [
-                        {"label": "Home", "url": "/home"},
-                        {"label": "Campaign setup", "url": "/campaign-settings"},
-                        {"label": "Production activation", "url": None},
-                    ],
-                    "flow_steps": [
-                        {"label": "Check readiness", "state": "done"},
-                        {"label": "Testing cleanup", "state": "done"},
-                        {"label": "Family links", "state": "done"},
-                        {"label": "Confirm Production", "state": "done"},
-                        {"label": "Activation", "state": "current"},
-                    ],
-                },
-            },
-        ),
-        (
             "/background",
             "background",
             background | {"table": background_table(PageWindow(1, 50), True)},
@@ -2234,12 +2206,14 @@ def component_origin():
     responses.update(source_form_components(context, admin))
     responses.update(data_to_fix_components(context, admin))
     responses.update(go_live_families_components(context, admin))
-    responses.update(roster_components(context, admin))
+    responses.update(review_worklist_components(context, admin))
+    responses.update(pledges_components(context, admin))
     responses.update(financial_components(context, admin))
     responses.update(weekly_components(context, admin))
     responses.update(chart_components(context, admin))
     responses.update(dashboard_components(context, admin))
     responses.update(timeline_components(context, admin))
+    responses.update(tabs_components(context, admin))
     responses.update(find_family_components(context, admin))
     responses.update(user_components(context, admin))
     responses.update(security_components(context, admin))
@@ -2281,7 +2255,7 @@ def component_origin():
     responses.update(campaign_settings_components(context, admin))
     responses.update(campaign_create_components(context, admin))
     responses.update(menu_components(context, admin))
-    responses.update(my_ministries_components(context, admin))
+    responses.update(review_work_components(context, admin))
     responses.update(home_steps_components(context, admin))
     responses.update(home_overview_components(context, admin))
     responses.update(automation_components(context, admin))
@@ -2303,7 +2277,6 @@ def component_origin():
         | AUTOMATION_POSTS
         | SIGNED_IN_POSTS
         | FOLLOWUP_POSTS
-        | ROSTER_POSTS
         | PUBLICATION_POSTS
         | INFORMATION_POSTS
         | FIND_FAMILY_POSTS
@@ -2326,7 +2299,6 @@ def component_origin():
         | open_form_posts(context, admin)
         | family_test_posts(context, admin)
         | upload_defaults_posts()
-        | go_live_posts()
         | PAST_CAMPAIGN_POSTS
         | {
             f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),
@@ -2477,7 +2449,20 @@ def component_origin():
             """
             # Read the body before answering: closing the connection with
             # an unread request body can reset it before the answer arrives.
-            self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            # Go live's Check step posts every action to its own address,
+            # answered by the posted action (#1585).
+            answer = go_live_action(self.path, body, responses)
+            if answer is not None:
+                status, location, page = answer
+                self.send_response(status)
+                if location:
+                    self.send_header("Location", location)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Security-Policy", CSP)
+                self.end_headers()
+                self.wfile.write(page.encode())
+                return
             if self.path == "/redirect-to-login":
                 self.send_response(303)
                 self.send_header("Location", "/login")

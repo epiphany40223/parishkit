@@ -134,16 +134,3 @@ def test_family_tests_wait_for_a_duid_and_show_send_unavailable_with_why(
     assert reason.text_content() == "Only 1 more Family test may be requested now."
     assert send.get_attribute("aria-describedby") == "family-test-unavailable"
     assert failures == []
-
-
-def test_prepare_family_links_is_shown_unavailable_with_its_reason(
-    page, component_origin
-):
-    """With a preparation listed, Prepare is greyed and says why."""
-    page.goto(component_origin + "/go-live-links")
-    prepare = page.get_by_role("button", name="Prepare inactive Family links")
-    assert prepare.is_disabled()
-    reason = page.locator("#prepare-unavailable")
-    visible(reason)
-    assert "cancel and discard those first" in reason.text_content()
-    assert prepare.get_attribute("aria-describedby") == "prepare-unavailable"

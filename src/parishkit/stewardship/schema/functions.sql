@@ -278,8 +278,9 @@ BEGIN
        OR NEW.predecessor_id IS NOT NULL THEN
         RETURN NEW;
     END IF;
-    -- Framework migration/permission metadata and the guarded initial download
-    -- policy are seeded by migrations, not evidence of an existing campaign.
+    -- Framework migration/permission metadata, the guarded initial download
+    -- policy and the refresh checks' start (#1689) are seeded by migrations,
+    -- not evidence of an existing campaign.
     -- All current and future application tables must otherwise be empty.
     FOR relation IN
         SELECT n.nspname, c.relname, c.relrowsecurity FROM pg_class c
@@ -288,7 +289,7 @@ BEGIN
           AND c.relkind IN ('r','p','f')
           AND NOT (n.nspname='public' AND c.relname IN (
               'django_migrations','django_content_type','auth_permission',
-              'stewardship_download_policy'))
+              'stewardship_download_policy', 'stewardship_refresh_check_start'))
         ORDER BY n.nspname, c.relname
     LOOP
         IF relation.relrowsecurity AND NOT (relation.nspname='public'
@@ -9723,6 +9724,16 @@ BEGIN
             SELECT 1 FROM public.stewardship_ministry_request request
             WHERE request.submission_id=NEW.parent_id AND request.entity_kind='member'
               AND request.state IN ('new','assigned','in_progress')
+        ) OR EXISTS (
+            -- An Updated in ParishSoft change this promotion found
+            -- ParishSoft no longer holds (#1749): its conflict check, at
+            -- its version and in this snapshot, comes first; the census
+            -- guard then moves it to conflict at this pinned snapshot.
+            SELECT 1 FROM public.stewardship_proposed_change change
+            JOIN public.stewardship_refresh_check k ON k.proposal_id=change.id
+                AND k.item_version=change.version AND k.outcome='conflict'
+                AND k.snapshot_id=NEW.snapshot_id
+            WHERE change.submission_id=NEW.parent_id AND change.execution='published'
         ))
         OR NOT public.stewardship_response_source_owner_v1(NEW.snapshot_id)
     ) THEN

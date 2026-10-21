@@ -12,8 +12,11 @@ so a count always matches the list its link opens. A role sees a section
 only when it holds the capability that section's detail page checks, so
 the summary never shows a count the viewer could not follow.
 
-Counts are read once, when the page loads; nothing polls, so nothing on the
-page moves. Each section stands alone: a read that cannot run, or fails,
+The page updates itself (ui-conventions, "Pages that update themselves",
+#1586, #1859): its counts region polls the passive status fragment
+``data_to_fix_status``, which runs the same reads every 60 seconds and,
+unlike the page, is never audited and never extends the sign-in. Each
+section stands alone: a read that cannot run, or fails,
 leaves its block in place saying why, and the other sections still count.
 ``pk-admin report data-to-fix`` (``admin_data_to_fix``) prints the same
 counts through ``read_sections``.
@@ -25,7 +28,9 @@ from dataclasses import dataclass
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
 from django.db.models import Count
+from django.http import HttpResponse
 from django.shortcuts import render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_safe
@@ -51,12 +56,17 @@ from .runtime_models import SystemConfiguration
 from .sessions import authenticated_admin
 
 TEMPLATE = "stewardship/data-to-fix.html"
+# The counts region alone: the page includes it, the status fragment
+# answers with it.
+STATUS_TEMPLATE = "stewardship/data-to-fix-status.html"
 
 # Why a section shows no count. Each is shown in place of the count; the
 # menu's own words are reused where the menu greys the detail page out too.
 NO_CAMPAIGN = admin_navigation.NO_CAMPAIGN
 NO_SOURCE = _("ParishSoft data has not been read yet, so there is nothing to count.")
-FAILED = _("These could not be counted just now. Reload this page to try again.")
+FAILED = _(
+    "These could not be counted just now. They will be counted again in about a minute."
+)
 
 
 @dataclass(frozen=True)
@@ -125,14 +135,19 @@ def visible_sections(principal):
     return [section for section in SECTIONS if allows(principal, section.capability)]
 
 
-def _principal(request, store, *, read_only=False):
+def _principal(request, store, *, activity=True, read_only=False):
     """Administrators and Staff: anyone who may open at least one section.
 
     Every request reloads current policy. A Ministry leader may open none
     of the detail pages, so is refused, as the menu leaves the entry out.
+    Opening the page records activity; the status fragment
+    (``activity=False``) and the final recheck (``read_only``) do not.
     """
     principal = authenticated_admin(
-        request, store=store, activity=not read_only, read_only=read_only
+        request,
+        store=store,
+        activity=activity and not read_only,
+        read_only=read_only,
     )
     if not visible_sections(principal):
         raise PermissionError("Data to fix in ParishSoft is unavailable.")
@@ -202,8 +217,15 @@ def _unreachable_families(principal, campaign_id):
 
 
 def _census_changes(principal, campaign_id):
-    """The Census changes page's default view for this viewer, counted."""
+    """The Census changes rows at To review or Conflict, counted.
+
+    The same rule as the menu's count (``census_changes.open_count``) and
+    the same for every role (Administrator decision, 2026-10-18): the rows
+    waiting on a reviewer, never Ready to update or To enter by hand.
+    """
     from parishkit.stewardship.reports.census_changes import (
+        EVERY_STAGE,
+        OPEN_STAGES,
         CensusQuery,
         census_changes,
     )
@@ -211,10 +233,11 @@ def _census_changes(principal, campaign_id):
 
     result = _guarded(
         campaign_id,
-        lambda: census_changes(campaign_id, CensusQuery(), principal),
+        lambda: census_changes(campaign_id, CensusQuery(stage=EVERY_STAGE), principal),
         admit=admit_report_read,
     )
-    return {"count": len(result["rows"])}
+    stages = {stage.value for stage in OPEN_STAGES}
+    return {"count": sum(row["stage"] in stages for row in result["rows"])}
 
 
 READS = {
@@ -294,6 +317,17 @@ def total(rows):
     return sum(row.get("count", 0) for row in rows)
 
 
+def uncounted(rows):
+    """Whether any shown section's read failed (``FAILED``).
+
+    The announced sentence then says some could not be counted, so a
+    section whose read failed is never heard as a smaller total. A section
+    the campaign's state rules out (no campaign, no census) is not a
+    failure: it has nothing to count.
+    """
+    return any(row.get("reason") == FAILED for row in rows)
+
+
 def current(store):
     """The system configuration and its current campaign, or None in a restore.
 
@@ -329,39 +363,46 @@ def audit(principal, outcome, count):
         )
 
 
-@require_safe
-def data_to_fix(request):
-    """The summary page: admit, count each section, render, recheck, audit.
+def _read(request, *, page):
+    """Admit, count each section, render, recheck, and audit only the page.
 
-    The counts are read before rendering; before the HTML is released the
-    session and the restore review are checked again, so a viewer signed
-    out or demoted, or a restore begun, while the page was read withholds
-    it, as System health does.
+    The counts are read before rendering; before the HTML is released
+    the session and the restore review are checked again, so a viewer
+    signed out or demoted, or a restore begun, while the page was read
+    withholds it, as System health does. The page (``page=True``) records
+    activity and one ``data_to_fix_viewed`` event; the status fragment
+    reads the same sections for the same role but records neither, so a
+    page left open never keeps an idle sign-in alive or fills the audit
+    trail. Neither accepts a query key.
     """
     from .admin_dashboard import promoted_at
 
     try:
         filters(request.GET, allowed=set())
         service = runtime()
-        actor = _principal(request, service.store)
+        actor = _principal(request, service.store, activity=page)
         found = current(service.store)
         if found is None:
             return report_unavailable()
         configuration, campaign = found
         rows = read_sections(actor, configuration, campaign)
-        response = render(
-            request,
-            TEMPLATE,
-            {
-                "campaign": campaign,
-                "refreshed_at": promoted_at(),
-                "sections": rows,
-                "keys": [row["key"] for row in rows],
-                # Every shown section counted and found nothing.
-                "nothing_to_fix": all(row.get("count") == 0 for row in rows),
-                "can_refresh": allows(actor, Capability.CONFIGURE),
-            },
-        )
+        context = {
+            "campaign": campaign,
+            "refreshed_at": promoted_at(),
+            "sections": rows,
+            "keys": [row["key"] for row in rows],
+            # Every shown section counted and found nothing.
+            "nothing_to_fix": all(row.get("count") == 0 for row in rows),
+            "total": total(rows),
+            "uncounted": uncounted(rows),
+        }
+        if page:
+            context["can_refresh"] = allows(actor, Capability.CONFIGURE)
+            response = render(request, TEMPLATE, context)
+        else:
+            # The fragment needs no Admin chrome, so it skips the context
+            # processors (and their queries) a full page render runs.
+            response = HttpResponse(render_to_string(STATUS_TEMPLATE, context))
         with transaction.atomic():
             fresh = _principal(request, service.store, read_only=True)
             if fresh.identity != actor.identity:
@@ -370,7 +411,8 @@ def data_to_fix(request):
                 restore_review_required=True
             ).exists():
                 return report_unavailable()
-            audit(fresh, Outcome.SUCCEEDED, total(rows))
+            if page:
+                audit(fresh, Outcome.SUCCEEDED, total(rows))
         response["Cache-Control"] = "no-store"
         return response
     # Answered as the report pages answer (ui-conventions, request errors):
@@ -383,3 +425,15 @@ def data_to_fix(request):
         return report_unavailable()
     except ValueError:
         return validation_response([FieldError(ErrorCode.INVALID)], status=400)
+
+
+@require_safe
+def data_to_fix(request):
+    """The summary page: one audited view, then passive status polls."""
+    return _read(request, page=True)
+
+
+@require_safe
+def data_to_fix_status(request):
+    """The counts region the open page polls; never audited (#1859)."""
+    return _read(request, page=False)

@@ -69,8 +69,9 @@ def test_test_access_runs_and_settles_in_place(page, component_origin):
 
 
 LOCAL_REFUSAL = (
-    "Off-site Google Drive copies are not available in the local environment. "
-    "The local laptop environment never reaches Google Drive; its backups stay "
+    "Off-site Google Drive copies are not available in this local environment. "
+    "The local laptop environment reaches Google Drive only with a mail redirect "
+    "(deploy --mail-redirect) and the normal clock; until then its backups stay "
     "inside the VM."
 )
 

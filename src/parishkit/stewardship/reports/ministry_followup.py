@@ -61,7 +61,10 @@ STATE_LABELS = STATES | {
     "superseded": "Replaced by Family",
 }
 # History shows what each past edit recorded, including an old assignment.
-HISTORY_STATES = STATE_LABELS | {"assigned": "Assigned"}
+# A cancelled edit withdrew a request the parish added (#1684); the Family's
+# own withdrawals are never edits.
+WITHDRAWN = "Withdrawn by the parish"
+HISTORY_STATES = STATE_LABELS | {"assigned": "Assigned", "cancelled": WITHDRAWN}
 # The Status filter's one extra choice for Staff and Administrators (#1217):
 # the current requests, of any status, whose Member ParishSoft no longer
 # lists in that Family, or lists as inactive or deceased. The default queue
@@ -200,7 +203,7 @@ def selection_filters(query, *, every_member=False):
     selection's ``presence`` filter with any status; every other choice
     lists only Members still current there. ``every_member`` lists both,
     for Staff and Administrators only (the selection gives a leader only
-    current ones): Roster changes to enter, whose roster work may still be
+    current ones): the roster rows, whose roster work may still be
     real.
     """
     values = query.form_values() | {"assignee": "any", "presence": "current"}
@@ -369,52 +372,6 @@ def _admit(result, principal, *, empty=False):
         raise PermissionError("Ministry follow-up access is unavailable.")
 
 
-def request_totals(campaign_id, query, principal, total, *, empty=False):
-    """Ministry requests' totals for the applied queue view (#1133, #720).
-
-    ``total`` is the view's own count (the page's ``followup_page`` total).
-    The tiles count the requests the view's filters select, every page of
-    them: ``joining`` and ``leaving`` add up to ``total``. The Follow-up
-    progress chart counts the same requests whatever their Status and
-    Outcome (``requests``, of which ``completed`` are resolved or closed and
-    ``unresolved`` are not), since progress is about status: with the
-    filters' own status the queue's default view (Unresolved) would always
-    read 100% unresolved. The Staff-only Members no longer in ParishSoft
-    view has nothing to record, so it has no progress (``requests`` None).
-
-    Each further count is the queue's own selection read with no rows
-    (``page_limit`` 0), so it applies the same scope and cross-check
-    (``empty`` as in ``_admit``), and a count the view's total already
-    answers is not read again.
-    """
-
-    def count(**changes):
-        """The view's count with ``changes`` to its filters."""
-        result = _select(campaign_id, replace(query, **changes), principal, limit=0)
-        _admit(result, principal, empty=empty)
-        return result["total"]
-
-    if query.action == "any":
-        joining = count(action="join") if total else 0
-    else:
-        joining = total if query.action == "join" else 0
-    totals = {"joining": joining, "leaving": total - joining, "requests": None}
-    if query.state == NOT_IN_SOURCE:
-        return totals
-    every = replace(query, state="any", outcome="any")
-    requests = total if every == query else count(state="any", outcome="any")
-    unresolved = (
-        total
-        if replace(every, state="unresolved") == query
-        else count(state="unresolved", outcome="any")
-    )
-    return totals | {
-        "requests": requests,
-        "unresolved": unresolved,
-        "completed": requests - unresolved,
-    }
-
-
 def followup_page(
     campaign_id,
     query,
@@ -433,7 +390,7 @@ def followup_page(
     different error. Python's scope is a pre-check and a cross-check. No
     contact, address or financial column is selected. ``whole`` reads every
     matching row (no LIMIT), for a list that is filtered and paged in memory
-    (Roster changes to enter, #528). ``every_member`` also lists requests
+    (the roster rows, #528). ``every_member`` also lists requests
     for Members no longer in ParishSoft, marked (``selection_filters``).
     ``empty`` admits a campaign with no Ministry for Staff and
     Administrators (``_admit``).
@@ -465,6 +422,10 @@ def followup_page(
             row["state"] = "new"
         row.pop("assignee_id", None)
         row["state_label"] = STATE_LABELS[row["state"]]
+        # A request the parish added is withdrawn by Back to review, not by
+        # the Family (#1684).
+        if row["state"] == "cancelled" and row.get("parish_added"):
+            row["state_label"] = WITHDRAWN
         # The packet's exact labels, by the row's kind of request (#1132).
         row["outcome_label"] = outcome_label(row["outcome"], row["action"])
         # A Member ParishSoft no longer lists here (#1217): marked with the

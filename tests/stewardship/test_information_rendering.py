@@ -117,6 +117,39 @@ def document(*, count=1, history=True, **changes):
     )
 
 
+def _information_details(filters):
+    """The report information of a sample capture with these filters."""
+    report = information_document(
+        dict(metadata=document_metadata(), total=0, rows=[]),
+        dict(filters=filters, history=False),
+        parish_name="Sample Parish",
+        requested_at=datetime(2026, 10, 2, 13, tzinfo=UTC),
+        timezone="America/Detroit",
+    )
+    return dict(report.metadata)
+
+
+def test_an_undated_capture_names_no_date_range():
+    """The page has no submitted-date filter (#1888): its capture's empty
+    days and zone, and the date-filter zone, are left out of the file."""
+    details = _information_details(
+        {"search": "", "start": "", "end": "", "zone": "UTC", "sort": "name"}
+    )
+    assert "Campaign date-filter timezone" not in details
+    assert details["Filters and sort"] == '{"search": "", "sort": "name"}'
+
+
+def test_a_dated_capture_keeps_its_date_range():
+    """A ``pk-admin export information --start`` capture keeps both."""
+    details = _information_details(
+        {"search": "", "start": "2026-11-01", "end": "", "zone": "UTC"}
+    )
+    assert details["Campaign date-filter timezone"] == "America/Detroit"
+    assert details["Filters and sort"] == (
+        '{"end": "", "search": "", "start": "2026-11-01", "zone": "UTC"}'
+    )
+
+
 @pytest.mark.parametrize("history", [True, False])
 def test_csv_full_results_and_formula_safety(history):
     """More than a UI page, complete text/history, immutable local-time metadata."""
@@ -312,7 +345,8 @@ def test_format_exclusions_have_lossless_visible_notation():
     book = load_workbook(io.BytesIO(stream.getvalue()))
     try:
         assert book["Information"]["G2"].value == expected
-        assert "Unsupported characters" in book["Report information"]["B15"].value
+        notes = [str(cell.value) for cell in book["Report information"]["B"]]
+        assert any("Unsupported characters" in note for note in notes)
     finally:
         book.close()
     lines = "\n".join(text for _, text in card_text(information_records(report)))

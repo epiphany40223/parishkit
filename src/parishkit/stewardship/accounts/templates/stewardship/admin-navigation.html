@@ -23,13 +23,18 @@
   description. admin-menu-v1.js shows the reason's tip on hover, keyboard
   focus and tap, and Escape or a tap elsewhere hides it.
 
-  Additional information and Ministry requests show how many open items
-  their queue holds (#585; admin_context._open_counts) as a plain number
+  Census changes, Additional information, Ministry requests, Roster
+  changes to enter and Limitations show how many open items their queue
+  holds (#585; admin_context.COUNTED and _open_counts) as a plain number
   after the name. The pill is hidden from screen readers, which read the
   visually hidden "(N open)" instead: a pill's own box would otherwise split
   the entry's name ("( 3 open)"). None shows at zero, so the menu stays
   quiet when there is no work. The pill's title says what the number counts
   when a sighted user hovers over it.
+
+  Home is the first entry, except for Staff and Ministry leaders, whose
+  /admin/ is My review work: admin_context lists it first in Review work
+  instead (home_in_review), so it is not drawn twice.
 
   Sign out is a POST form (logout is CSRF-protected) styled as the last menu
   entry.
@@ -39,8 +44,10 @@
     <ul class="admin-sections">
       {% if admin_chrome.setup_pending %}
       <li><a href="{{ admin_chrome.setup_url }}" aria-current="page">{% translate "Initial setup" %}</a></li>
-      {% else %}
-      <li><a href="{{ admin_chrome.home_url }}"{% if admin_chrome.home_current %} aria-current="page"{% endif %}>{% translate "Home" %}</a></li>
+      {% elif not admin_chrome.home_in_review %}
+      <li><a href="{{ admin_chrome.home_url }}"{% if admin_chrome.home_current %} aria-current="page"{% endif %}>{{ admin_chrome.home_label|default:_("Home") }}</a></li>
+      {% endif %}
+      {% if not admin_chrome.setup_pending %}
       {% for section in admin_chrome.sections %}
       <li class="admin-section{% if section.current %} is-current{% endif %}">
         <details class="admin-group" data-menu-group="{{ section.key }}"{% if section.current %} data-menu-current{% endif %} open>

@@ -180,20 +180,23 @@ def test_endpoint_is_a_code_constant_opened_as_plain_smtp():
 
 @pytest.mark.parametrize("profile", PROFILES)
 def test_workspace_transport_refuses_in_both_directions(profile):
-    """LOCAL: catcher only. Everything else: never the catcher, Gmail as before."""
+    """LOCAL without a redirect: catcher only (#1399 admits a service account
+    there only beside one). Everything else: never the catcher, Gmail as
+    before."""
     if profile is LOCAL:
-        assert workspace_transport(MAIL_CATCHER_DOCUMENT, profile) is (
+        assert workspace_transport(MAIL_CATCHER_DOCUMENT, profile, redirect=None) is (
             MailTransport.MAIL_CATCHER
         )
         for value in (account(), b"synthetic", b""):
-            with pytest.raises(ConfigError, match="only the mail-catcher"):
-                workspace_transport(value, profile)
+            with pytest.raises(ConfigError, match="only with a mail redirect"):
+                workspace_transport(value, profile, redirect=None)
     else:
         with pytest.raises(ConfigError, match="only in the local profile"):
-            workspace_transport(MAIL_CATCHER_DOCUMENT, profile)
+            workspace_transport(MAIL_CATCHER_DOCUMENT, profile, redirect=None)
         # The Gmail path's own parser still decides what a service account is.
         for value in (account(), b"synthetic"):
-            assert workspace_transport(value, profile) is MailTransport.GMAIL
+            transport = workspace_transport(value, profile, redirect=None)
+            assert transport is MailTransport.GMAIL
 
 
 @pytest.mark.parametrize("profile", [None, "local", "production", object()])
@@ -201,7 +204,7 @@ def test_workspace_transport_requires_an_explicit_profile(profile):
     """A caller that cannot name its profile selects no transport at all."""
     for value in (MAIL_CATCHER_DOCUMENT, account()):
         with pytest.raises(ConfigError, match="requires a deployment profile"):
-            workspace_transport(value, profile)
+            workspace_transport(value, profile, redirect=None)
 
 
 # --- The recorded profile ------------------------------------------------------------
@@ -499,7 +502,8 @@ def test_helper_refuses_the_local_endpoint_for_a_non_local_request(
     monkeypatch.setattr(family_delivery.smtplib, "SMTP_SSL", forbidden)
     monkeypatch.setattr(family_delivery, "_credentials", forbidden)
     raw = json.dumps(family_request(profile.value, MAIL_CATCHER_DOCUMENT)).encode()
-    candidate, settings, mail, decoded = decode_request(raw)
+    candidate, settings, mail, decoded, redirect = decode_request(raw)
+    assert redirect is None
     result = deliver_family(candidate, settings, mail, profile=decoded)
     assert result.status is FamilyDeliveryStatus.SYSTEMIC
 
@@ -636,7 +640,10 @@ def test_batched_session_header_names_the_profile(settings):
     finally:
         session.close()
     assert result.status is FamilyDeliveryStatus.ACCEPTED
-    candidate, decoded_settings, profile = decode_session_header(process.header)
+    candidate, decoded_settings, profile, redirect = decode_session_header(
+        process.header
+    )
+    assert redirect is None
     assert candidate == MAIL_CATCHER_DOCUMENT
     assert decoded_settings == SETTINGS and profile is LOCAL
 
@@ -652,7 +659,7 @@ def workspace_settings():
 def test_local_provider_check_reaches_the_mail_catcher_only(mailpit, monkeypatch):
     """A LOCAL check of the catcher document EHLOs Mailpit; Google is never asked."""
     monkeypatch.setattr(worker, "workspace_candidate", forbidden)
-    session = SimpleNamespace(profile=LOCAL, request=forbidden)
+    session = SimpleNamespace(profile=LOCAL, redirect=None, request=forbidden)
     assert worker._workspace(MAIL_CATCHER_DOCUMENT, workspace_settings(), session)
     assert (mailpit.opened[0].host, mailpit.opened[0].port) == LOCAL_SMTP_ENDPOINT
     assert mailpit.opened[0].recipients == []
@@ -663,15 +670,16 @@ def test_local_provider_check_is_unavailable_when_mailpit_does_not_greet(
 ):
     """A non-250 greeting is an outage to retry, not a rejected credential."""
     monkeypatch.setattr(PlainSMTP, "ehlo", lambda self: (421, b"busy"))
-    session = SimpleNamespace(profile=LOCAL, request=forbidden)
+    session = SimpleNamespace(profile=LOCAL, redirect=None, request=forbidden)
     with pytest.raises(CredentialValidationUnavailable):
         worker._workspace(MAIL_CATCHER_DOCUMENT, workspace_settings(), session)
 
 
 def test_local_provider_check_rejects_a_service_account(mailpit, monkeypatch):
-    """LOCAL: a Google key is invalid before any token exchange or connection."""
+    """LOCAL without a redirect: a Google key is invalid before any token
+    exchange or connection."""
     monkeypatch.setattr(worker, "workspace_candidate", forbidden)
-    session = SimpleNamespace(profile=LOCAL, request=forbidden)
+    session = SimpleNamespace(profile=LOCAL, redirect=None, request=forbidden)
     assert worker._workspace(account(), workspace_settings(), session) is False
     assert mailpit.opened == []
 
@@ -680,7 +688,7 @@ def test_local_provider_check_rejects_a_service_account(mailpit, monkeypatch):
 def test_other_provider_checks_reject_the_mail_catcher(mailpit, monkeypatch, profile):
     """Outside LOCAL the catcher document is invalid before any connection."""
     monkeypatch.setattr(worker, "workspace_candidate", forbidden)
-    session = SimpleNamespace(profile=profile, request=forbidden)
+    session = SimpleNamespace(profile=profile, redirect=None, request=forbidden)
     assert worker._workspace(MAIL_CATCHER_DOCUMENT, workspace_settings(), session) is (
         False
     )
@@ -693,7 +701,7 @@ def test_provider_check_without_a_profile_is_a_defect_not_a_verdict(mailpit):
     Only the mail deliverers' token exchanges use a profile-free session, and
     they never call these checks; classify always binds the request's profile.
     """
-    session = SimpleNamespace(profile=None, request=forbidden)
+    session = SimpleNamespace(profile=None, redirect=None, request=forbidden)
     for value in (MAIL_CATCHER_DOCUMENT, account()):
         with pytest.raises(ValueError, match="requires a deployment profile"):
             worker._workspace(value, workspace_settings(), session)

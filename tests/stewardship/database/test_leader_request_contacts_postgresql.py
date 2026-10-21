@@ -77,6 +77,13 @@ LEADER_4 = dict(roles=("ministry_leader",), scope=(4,))
 LEADER_9 = dict(roles=("ministry_leader",), scope=(9,))
 
 
+def own_bodies(cursor):
+    """Put 0119's own bodies back, in the caller's rolled-back transaction:
+    0140 (#1718) has since replaced both selections again."""
+    for name in REPLACED:
+        cursor.execute(definition(MIGRATION, name))
+
+
 def check_refuses(statement, message):
     """Run ``statement`` and then 0119's closing check, which must refuse it."""
     with (
@@ -85,18 +92,21 @@ def check_refuses(statement, message):
         connection.cursor() as cursor,
     ):
         cursor.execute("SET LOCAL check_function_bodies = false")
+        own_bodies(cursor)
         cursor.execute(ACL)
         cursor.execute(statement)
         cursor.execute(CHECK)
 
 
 def test_the_closing_check_passes_on_the_installed_schema():
-    """The check is the one the migration ran; it still holds afterwards."""
+    """The check is the one the migration ran; it holds on its own bodies."""
     assert sorted(REPLACED) == [
         "stewardship_ministry_packet_v1",
         "stewardship_ministry_report_v3",
     ]
     with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL check_function_bodies = false")
+        own_bodies(cursor)
         cursor.execute(ACL)
         cursor.execute(CHECK)
         transaction.set_rollback(True)

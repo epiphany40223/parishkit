@@ -14,7 +14,7 @@ from uuid import UUID
 import pytest
 from django.http import Http404
 from django.test import RequestFactory
-from django.urls import Resolver404, resolve, reverse
+from django.urls import NoReverseMatch, Resolver404, resolve, reverse
 
 from parishkit.stewardship.accounts import admin_navigation as navigation
 from parishkit.stewardship.admin_urls import (
@@ -98,16 +98,22 @@ def test_moved_routes_follow_the_scheme(pattern):
 
 @pytest.mark.parametrize(
     "name",
-    sorted(name for name, page in navigation.PAGES.items() if page.section in MOVED),
+    sorted(
+        name
+        for name, page in navigation.PAGES.items()
+        if navigation.SECTION_PATHS.get(page.section) in MOVED
+    ),
 )
 def test_every_moved_page_reverses_under_its_group(name):
-    """Each page's URL is /admin/<group>/…/ for its menu group."""
+    """Each page's URL is /admin/<segment>/…/ for its menu group: Review work
+    shares Reports and queries' ``reports`` segment (R39 finding 4)."""
     arguments = {
         parameter: "parishsoft" if parameter == "target" else TASK
         for parameter in navigation.route_parameters()[name]
     }
     url = reverse(f"admin:{name}", kwargs=arguments)
-    assert url.startswith(f"/admin/{navigation.PAGES[name].section}/")
+    segment = navigation.SECTION_PATHS[navigation.PAGES[name].section]
+    assert url.startswith(f"/admin/{segment}/")
     assert url.endswith("/")
 
 
@@ -236,17 +242,9 @@ SLASHLESS_EXPECTED = {
     ),
     "/admin/campaign/go-live": "/admin/campaign/go-live/",
     "/admin/campaign/go-live/families": "/admin/campaign/go-live/families/",
-    f"/admin/campaign/go-live/cleanup/{T}": f"/admin/campaign/go-live/cleanup/{T}/",
-    f"/admin/campaign/go-live/cleanup/{T}/links": (
-        f"/admin/campaign/go-live/cleanup/{T}/links/"
-    ),
-    f"/admin/campaign/go-live/cleanup/{T}/links/{T}/confirmation": (
-        f"/admin/campaign/go-live/cleanup/{T}/links/{T}/confirmation/"
-    ),
+    "/admin/campaign/go-live/preparing": "/admin/campaign/go-live/preparing/",
+    "/admin/campaign/go-live/confirmation": "/admin/campaign/go-live/confirmation/",
     "/admin/campaign/production": "/admin/campaign/production/",
-    "/admin/campaign/production/cancellation": (
-        "/admin/campaign/production/cancellation/"
-    ),
     "/admin/mail/controls": "/admin/mail/controls/",
     "/admin/mail/family-progress": "/admin/mail/family-progress/",
     "/admin/mail/family-history": "/admin/mail/family-history/",
@@ -264,22 +262,23 @@ SLASHLESS_EXPECTED = {
     "/admin/users/sessions": "/admin/users/sessions/",
     "/admin/users/automation": "/admin/users/automation/",
     "/admin/users/automation/approval": "/admin/users/automation/approval/",
-    # Responses and reports pages without their trailing slash (NAV-11).
+    # Review work and Reports and queries pages without their trailing slash
+    # (NAV-11).
     "/admin/reports": "/admin/reports/",
     "/admin/reports/responses": "/admin/reports/responses/",
     "/admin/reports/comparison": "/admin/reports/comparison/",
     "/admin/reports/financial": "/admin/reports/financial/",
+    "/admin/reports/financial/pledges": "/admin/reports/financial/pledges/",
     "/admin/reports/limitations": "/admin/reports/limitations/",
     "/admin/reports/census": "/admin/reports/census/",
-    "/admin/reports/census/publication": "/admin/reports/census/publication/",
+    "/admin/reports/census/update-parishsoft": (
+        "/admin/reports/census/update-parishsoft/"
+    ),
     "/admin/reports/information": "/admin/reports/information/",
     f"/admin/reports/information/{T}": f"/admin/reports/information/{T}/",
     "/admin/reports/ministries": "/admin/reports/ministries/",
     f"/admin/reports/ministries/follow-up/{T}": (
         f"/admin/reports/ministries/follow-up/{T}/"
-    ),
-    "/admin/reports/ministries/follow-up/roster": (
-        "/admin/reports/ministries/follow-up/roster/"
     ),
     "/admin/reports/families": "/admin/reports/families/",
     f"/admin/reports/families/{T}": f"/admin/reports/families/{T}/",
@@ -469,15 +468,35 @@ def test_test_email_pages_come_before_the_content_editor():
 
 
 def test_the_go_live_chain_names_no_campaign():
-    """Each go-live step sits under the one before it, with no campaign id."""
-    cleanup = reverse("admin:go_live_cleanup", args=[TASK])
-    links = reverse("admin:go_live_links", args=[TASK])
-    confirmation = reverse("admin:production_confirmation", args=[TASK, TASK])
+    """Each go-live step sits under Go live, with no campaign id.
+
+    No step names a request or a preparation either (#1585 slices 3 and
+    4): the retired Testing cleanup, Prepare Family links and old Confirm
+    Production addresses are gone, with no redirect, as is the Cancel
+    go-live page (slice 5), now a dialog on Production activation.
+    """
     assert reverse("admin:go_live") == "/admin/campaign/go-live/"
-    assert cleanup.startswith("/admin/campaign/go-live/") and links.startswith(cleanup)
-    assert confirmation.startswith(links) and confirmation.endswith("/confirmation/")
-    withdrawal = reverse("admin:production_withdrawal")
-    assert withdrawal.startswith(reverse("admin:production_progress"))
+    assert reverse("admin:go_live_prepare") == "/admin/campaign/go-live/preparing/"
+    assert reverse("admin:go_live_confirm") == ("/admin/campaign/go-live/confirmation/")
+    for retired in ("go_live_cleanup", "go_live_links"):
+        with pytest.raises(NoReverseMatch):
+            reverse(f"admin:{retired}", args=[TASK])
+    with pytest.raises(NoReverseMatch):
+        reverse("admin:production_confirmation", args=[TASK, TASK])
+    with pytest.raises(NoReverseMatch):
+        reverse("admin:production_withdrawal")
+    for path in (
+        f"/admin/campaign/go-live/cleanup/{TASK}/",
+        f"/admin/campaign/go-live/cleanup/{TASK}/links/",
+        f"/admin/campaign/go-live/cleanup/{TASK}",
+        f"/admin/campaign/go-live/cleanup/{TASK}/links/{TASK}/confirmation/",
+        f"/admin/campaign/go-live/cleanup/{TASK}/links/{TASK}/confirmation",
+        "/admin/campaign/production/cancellation/",
+        "/admin/campaign/production/cancellation",
+    ):
+        with pytest.raises(Resolver404):
+            resolve(path)
+    assert reverse("admin:production_progress") == "/admin/campaign/production/"
 
 
 @pytest.mark.parametrize(
@@ -532,7 +551,6 @@ def test_report_actions_and_records_resolve_to_their_own_routes():
         (f"/admin/reports/families/{T}/", "timeline"),
         ("/admin/reports/information/exports/", "information_export"),
         (f"/admin/reports/information/{T}/", "information_item"),
-        (f"/admin/reports/information/{T}/record/", "information_update"),
         ("/admin/reports/ministries/", "ministry_report"),
         (f"/admin/reports/ministries/follow-up/{T}/", "ministry_followup_item"),
         (f"/admin/reports/exports/{T}/", "report_export"),

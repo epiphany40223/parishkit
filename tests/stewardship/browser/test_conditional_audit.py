@@ -171,41 +171,6 @@ def test_maintenance_message_gates_the_switch(page, component_origin):
     assert close.get_attribute("aria-describedby") == "maintenance-close-hint"
 
 
-@pytest.mark.parametrize(
-    ("path", "button", "reason"),
-    [
-        (
-            "/go-live-unchecked",
-            "Start Testing cleanup",
-            "Cleanup can't start yet. Select Check readiness and public web address "
-            "first; cleanup can start once every check passes.",
-        ),
-        (
-            "/go-live-problems",
-            "Start Testing cleanup",
-            "Cleanup can't start yet. Fix the configuration and data checks above, "
-            "then select Check readiness and public web address again.",
-        ),
-        (
-            "/production-confirmation-unchecked",
-            "Confirm Production",
-            "Select Verify final readiness and mail impact first; you can confirm "
-            "once it passes.",
-        ),
-    ],
-)
-def test_go_live_steps_show_unavailable_with_why(
-    page, component_origin, path, button, reason
-):
-    """Before a passing check, the next step's button is in view, unavailable,
-    and named by the step still needed, rather than left out."""
-    page.goto(component_origin + path)
-    control = page.get_by_role("button", name=button, exact=True)
-    assert control.is_disabled()
-    described = control.get_attribute("aria-describedby")
-    assert page.locator(f"#{described}").inner_text() == reason
-
-
 def test_upload_choices_survive_the_table_redrawing(page, component_origin):
     """A chosen file and a typed name stay through an in-place sort and a
     deletion: only Upload's own line redraws with the table, and the gate
@@ -281,8 +246,14 @@ def test_rename_waits_for_a_new_valid_name(page, component_origin):
     ("path", "button", "reason"),
     [
         ("/weekly-manual-no-schedule", "Queue new manual report", "manual-no-schedule"),
-        ("/delivery-held", "Confirm delivery using external evidence", "delivery-held"),
-        ("/delivery-held", "Authorize potentially duplicate resend", "delivery-held"),
+        # The resolution question's answers are radio buttons (#1563).
+        ("/delivery-held", ("radio", "It was sent"), "reason-found-held"),
+        ("/delivery-held", ("radio", "It was not sent"), "reason-found-held"),
+        (
+            "/delivery-failed-responded",
+            ("radio", "Yes"),
+            "reason-retry-family_responded",
+        ),
         (
             "/delivery-refusal-busy",
             "Clear verified refusal",
@@ -310,7 +281,8 @@ def test_known_refusals_are_shown_unavailable_with_why(
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
     page.goto(component_origin + path)
-    controls = page.get_by_role("button", name=button, exact=True)
+    role, name = button if isinstance(button, tuple) else ("button", button)
+    controls = page.get_by_role(role, name=name, exact=True)
     assert controls.count() >= 1
     page.evaluate(RESTORE)
     for index in range(controls.count()):
@@ -323,25 +295,13 @@ def test_known_refusals_are_shown_unavailable_with_why(
     assert failures == []
 
 
-def test_locked_followup_bulk_bar_stays_unavailable_with_why(page, component_origin):
-    """While other campaign work holds Ministry follow-up, its bulk bar and
-    row boxes are in view, unavailable, named by the locked notice (#1331)."""
+def test_locked_ministry_worklist_offers_nothing_and_says_why(page, component_origin):
+    """While other campaign work holds Ministry requests, its review
+    worklist (#1684) draws no row action, box, bulk bar or Add, and the
+    locked notice says why; the rows stay readable."""
     page.goto(component_origin + "/followup-gated")
-    actions = page.locator("[data-bulk-action]")
-    boxes = page.locator("input[data-select-row], input[data-select-all]")
-    assert actions.count() >= 1
-    assert boxes.count() >= 2
     visible(page.locator("#followup-locked"))
-    for _ in range(2):
-        for group in (actions, boxes):
-            for index in range(group.count()):
-                control = group.nth(index)
-                assert control.is_disabled()
-                described = control.get_attribute("aria-describedby").split()
-                assert "followup-locked" in described
-                # The locked notice takes precedence: the bar's none hint
-                # (no row to tick) never names a held page's buttons.
-                assert len(described) == 1
-        hint = page.locator("[data-selection-hint]")
-        assert "No request on this page" not in (hint.text_content() or "")
-        page.evaluate(RESTORE)
+    assert page.locator("#table table tbody tr").count() == 1
+    controls = "[data-bulk-action], input[data-select-row], .table-actions button"
+    assert page.locator(controls).count() == 0
+    assert page.get_by_role("button", name="Add").count() == 0

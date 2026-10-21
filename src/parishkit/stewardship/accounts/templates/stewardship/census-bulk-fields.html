@@ -1,9 +1,0 @@
-{% load i18n %}{% comment %}
-  The optional note in the Census changes bulk review dialog (#528, ADM-09),
-  recorded on each chosen change as a row's own review icon records one.
-  Included by components/confirm-dialog.html (fields_template) inside the
-  dialog, which sits in form#census-bulk, the form the rows' boxes belong
-  to. It goes back to empty whenever the dialog opens (data-confirm-reset),
-  so an earlier note is never recorded again unasked.
-{% endcomment %}<div class="dialog-fields"><label for="census-bulk-note">{% translate "Note (optional)" %}</label><input id="census-bulk-note" name="bulk_note" maxlength="2000" value="" data-confirm-reset>
-<p class="help">{% translate "The same note is recorded on each change." %}</p></div>
