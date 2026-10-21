@@ -2855,9 +2855,10 @@ also undoes a terminal outcome (Entered by hand, Entered incorrectly,
 Confirmed, Updated in ParishSoft, Already in ParishSoft) as the page's Back
 to review does
 ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
-[#1840](https://github.com/epiphany40223/parishkit/issues/1840)), so no action asks first any more. The command keeps its
-`--yes` option, which does nothing, so scripts written for the prompt keep
-working. It admits as the page's post does (`census_change_views._principal`,
+[#1840](https://github.com/epiphany40223/parishkit/issues/1840)), so no action asks first any more, and it takes no `--yes`
+([#1893](https://github.com/epiphany40223/parishkit/issues/1893): the
+Administrator removed it, with no backwards compatibility, so a script that
+still passes it is a usage error, exit 2). It admits as the page's post does (`census_change_views._principal`,
 recording activity), then in the page's command scope
 (`task_retries.command_scope`, that admission repeated around the effect)
 checks the current campaign as the page does (`admit_report_read`), finds
@@ -2976,7 +2977,7 @@ event.
 Pledges row's action or its bulk bar: full scope, keyed and not
 fresh-gated. Every action can be changed again, Entered by hand too
 ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
-[#1840](https://github.com/epiphany40223/parishkit/issues/1840)), so none asks first (`--yes` is kept and does nothing);
+[#1840](https://github.com/epiphany40223/parishkit/issues/1840)), so none asks first and none takes `--yes` ([#1893](https://github.com/epiphany40223/parishkit/issues/1893));
 `back_to_review` of a terminal stage needs `--note`, as on the page. It checks the page's admission first, so a
 Ministry leader is `denied` before any input, and refuses a choice
 the page could not post (more than 100 pledges, an Edit of more than one, a
@@ -3184,7 +3185,7 @@ the two cannot drift.
   characters or with text the page refuses). Every action can be changed
   again, Handled too
   ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
-  [#1840](https://github.com/epiphany40223/parishkit/issues/1840)), so none asks first (`--yes` is kept and does nothing);
+  [#1840](https://github.com/epiphany40223/parishkit/issues/1840)), so none asks first and none takes `--yes` ([#1893](https://github.com/epiphany40223/parishkit/issues/1893));
   `back_to_review` of a Handled item needs `--note`, as on the page. In the page's command
   scope it checks the current campaign as the page does, finds every item
   in it (a request that is not a Live one of the campaign, or an answer

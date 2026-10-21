@@ -2319,7 +2319,7 @@ be changed again, Entered by hand too. `back_to_review` on an Ignored pledge
 reopens it, and on an Entered by hand, Entered incorrectly or Confirmed one
 undoes that step, so the pledge goes back to To enter by hand with its
 decision kept (To review for a pledge ParishSoft already held); both need a
-`--note` saying why. `--yes` is still accepted and does nothing. Each `--item` is a pledge's `item_id` and `version` from the JSON
+`--note` saying why. There is no `--yes`. Each `--item` is a pledge's `item_id` and `version` from the JSON
 Lines; up to 100 at once, all or none. A campaign without Financial
 stewardship is exit 1 (`not_available`). A pledge someone decided since, or
 that the Family answered again, is exit 1 (`stale_version`): export again.
@@ -2348,13 +2348,13 @@ ParishSoft is the page's **Back to review** of that step, which Staff may
 record too: the change goes back to the stage before it with its decision
 kept (To enter by hand or Ready to update; To review when nobody had
 decided it), and nothing is written to ParishSoft.
-Every outcome can be undone that way, so no action asks first; `--yes` is
-still accepted and does nothing.
+Every outcome can be undone that way, so no action asks first, and there
+is no `--yes`.
 
 ```sh
 pk-admin census resolve PROPOSAL_ID --action entered --expected-version 3
 pk-admin census resolve PROPOSAL_ID --action reopened --expected-version 4 \
-    --note - --yes < note.txt
+    --note - < note.txt
 ```
 
 `PROPOSAL_ID` and the `--expected-version` are the change's id and version,
@@ -2362,8 +2362,7 @@ which `export census --format jsonl` prints (`proposal_id` and `version`,
 with the `actions` the change takes now; the page's own downloads leave
 them out). `--note` is optional, except to reopen (an ignored change, or a
 terminal step); `-` reads it from standard input, which keeps a note that
-names people out of shell history and the process list; `--yes` is still
-accepted and does nothing. `--request-key` is made for you and
+names people out of shell history and the process list. `--request-key` is made for you and
 written to standard error when left out. Repeating the command with the
 same key returns the same resolution (`created` false) and records nothing
 new; the key used for another outcome or note is exit 1 (`invalid`). A
@@ -2989,7 +2988,7 @@ Each takes `--action` (`accept`, `ignore`, `back_to_review` or `handled`),
 one `--item ID:VERSION` for each item (up to 100, all or none), `--note TEXT`
 (at most 2,000 characters; `-` reads standard input) and
 `--request-key`. None asks first, as every decision can be
-changed again, Handled too; `--yes` is still accepted. Taking an Ignored
+changed again, Handled too, and none takes `--yes`. Taking an Ignored
 item back to review, or a Handled one (which returns it to To handle,
 with its Accept kept), needs a `--note` saying why (for a request, a new
 one, not its current notes) (exit 1, `invalid`, naming `note`,
