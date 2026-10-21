@@ -7,7 +7,7 @@ behaviour (selected icons, bulk gates, the reopen note) is tested on its
 own fixture page (``test_review_worklist``); these tests check what Census
 changes adds: its filters and sorts, By hand rows reviewed like the rest,
 Entered by hand, Entered incorrectly's two fixes, the address editor and
-a refusal at its fields.
+a refusal at its fields, and a New Member's ParishSoft Member ID (#1749).
 """
 
 import json
@@ -26,6 +26,9 @@ from .census_components import (
     ENTERED,
     ENTERED_NOTICE,
     INCORRECT,
+    MEMBER_ENTERED,
+    MEMBER_ENTERED_NOTICE,
+    NEW_MEMBER,
     PATH,
     REENTERED,
     REENTERED_NOTICE,
@@ -490,3 +493,79 @@ def test_an_edited_value_shows_as_the_reviewers_value(page, component_origin):
     cells = row(page, 0).locator("th, td")
     reviewer = cells.nth(headings.index("Reviewer's value")).inner_text()
     assert "555-9999" in reviewer
+
+
+def test_a_new_members_entered_by_hand_asks_for_its_member_id(
+    page, component_origin, axe_source
+):
+    """A New Member's Entered by hand opens its own dialog with an optional
+    ParishSoft Member ID (#1749); a refused ID is shown at the field, and
+    the recorded mark answers with the row Entered by hand, naming the ID,
+    in place. A refresh Conflict row says why under its stage."""
+    page.goto(component_origin + NEW_MEMBER)
+    page.evaluate(MARK)
+    has_text(
+        row(page, 5).locator(".help"),
+        "ParishSoft no longer holds the update.",
+    )
+    refusal = {
+        "errors": [{"code": "invalid", "field_id": "value_member", "message": "x"}],
+        "refusal": {
+            "message": "Enter the ParishSoft Member ID as a whole number.",
+            "fix": "Correct the Member ID, or leave it blank, then record it again.",
+            "link": None,
+        },
+    }
+    sent = []
+
+    def answer(route):
+        """Refuse the first mark at its Member ID; answer the next with the
+        page after it."""
+        if route.request.method != "POST":
+            route.continue_()
+            return
+        sent.append(route.request.post_data)
+        if len(sent) == 1:
+            route.fulfill(
+                status=400, content_type="application/json", body=json.dumps(refusal)
+            )
+            return
+        route.fulfill(
+            response=route.fetch(url=component_origin + MEMBER_ENTERED, method="GET")
+        )
+
+    page.route("**" + PATH, answer)
+    row(page, 4).locator('[data-row-action="entered_by_hand"]').click()
+    dialog = page.locator("#census-entered-dialog-4")
+    visible(dialog)
+    has_text(
+        dialog.locator("h2"),
+        "Mark New Member for New Member: Newly Sample entered by hand?",
+    )
+    has_text(
+        dialog.locator("[data-confirm-body]"),
+        "Record that you typed this into ParishSoft. Check ParishSoft first: "
+        "this is final.",
+    )
+    member_id = dialog.get_by_label("ParishSoft Member ID (optional)")
+    assert member_id.input_value() == ""
+    assert_accessible(page, axe_source)
+    member_id.fill("seven")
+    dialog.get_by_role("button", name="Record").click()
+    has_text(
+        dialog.locator(".errorlist"),
+        "Enter the ParishSoft Member ID as a whole number. Correct the Member ID, "
+        "or leave it blank, then record it again.",
+    )
+    assert member_id.get_attribute("aria-invalid") == "true"
+    assert "value_member=seven" in sent[0] and "decide=entered_by_hand" in sent[0]
+    member_id.fill("7")
+    record = dialog.get_by_role("button", name="Record")
+    available(record)
+    record.click()
+    has_text(page.locator("#census-notice"), MEMBER_ENTERED_NOTICE)
+    hidden(dialog)
+    assert "value_member=7" in sent[-1] and "item=4" in sent[-1]
+    has_text(row(page, 4).locator(".stage-chip .status-word"), "Entered by hand")
+    has_text(row(page, 4).locator(".help"), "Accepted. ParishSoft Member ID 7.")
+    assert page.evaluate(MARKED) == "kept"

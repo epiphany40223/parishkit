@@ -447,6 +447,13 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0137 (#1738, provisional number) creates the census refresh source and
 # replaces 0132's refresh check guard. The source goes, so its file installs
 # whole again after 0132's, putting its guard body back over 0132's.
+# 0138 (#1749, provisional number) creates the address key, widens 0132's
+# outcome check, adds a column to 0060's resolution table and replaces the
+# census refresh source and the resolution, refresh check and derived
+# guards. The key goes and both tables are made again, so its file installs
+# whole again after 0060's, 0132's and 0137's, putting its bodies back over
+# theirs; the derived guard's later reruns are undone by
+# ``CLOSURE_REPLACED_ONLY``.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -786,6 +793,10 @@ CLOSURE_CREATED = {
         "stewardship_workflows",
         "0005_census_refresh_sources",
     ),
+    "public.stewardship_refresh_address_key_v1(jsonb)": (
+        "stewardship_responses",
+        "0019_published_refresh_conflicts",
+    ),
 }
 
 
@@ -1029,9 +1040,9 @@ def rerun_old_bodies(cursor, migrations):
 # put an earlier body back, when that file also creates tables and so cannot
 # run whole twice: only its replacement statement runs again, unless the body
 # already has the phrase. 0096 (#528) replaced the derived guard after 0090,
-# 0113 (#1596), 0118 (#1603) and 0133 (#1737) replace it last, after 0108's
-# and 0112's reruns; 0133's body keeps 0096's, 0108's, 0112's, 0113's and
-# 0118's rules, so only the latest replacement runs.
+# 0113 (#1596), 0118 (#1603), 0133 (#1737) and 0138 (#1749) replace it last,
+# after 0108's and 0112's reruns; 0138's body keeps 0096's, 0108's, 0112's,
+# 0113's, 0118's and 0133's rules, so only the latest replacement runs.
 CLOSURE_REPLACED_ONLY = {
     # 0131 (#1684) replaces the follow-up selection last; 0094's rerun
     # (above) puts back its older body, and 0131 adds columns, so only its
@@ -1040,19 +1051,20 @@ CLOSURE_REPLACED_ONLY = {
         ("stewardship_workflows", "0003_ministry_review_pipeline"),
         "AS reviewed_ministry_name",
     ),
-    # 0133 (#1737) replaces it last, on 0118's body, for Entered
-    # incorrectly's two fixes.
+    # 0138 (#1749) replaces it last, on 0133's body (0133 replaced 0118's
+    # for Entered incorrectly's two fixes), for the published Conflict.
     "stewardship_response_derived_guard_v1": (
-        ("stewardship_responses", "0017_entered_incorrectly_fixes"),
-        "AND (OLD.execution='resolved_external' OR (NOT EXISTS (",
+        ("stewardship_responses", "0019_published_refresh_conflicts"),
+        "only with its refresh check",
     ),
-    # 0137 (#1738) replaces the refresh check guard last, on 0133's body; the
-    # rerun of 0133's file (CLOSURE_REPLACED, for its resolution guard) puts
-    # 0133's body back over it, and 0137 creates the census refresh source,
-    # so only its replacement statement runs again.
+    # 0138 (#1749) replaces the refresh check guard last, on 0137's body
+    # (0133's with #1738's fields); the rerun of 0133's file
+    # (CLOSURE_REPLACED, for its resolution guard) puts 0133's body back over
+    # it, and 0138 creates the address key, so only its replacement
+    # statement runs again.
     "stewardship_refresh_check_guard_v1": (
-        ("stewardship_workflows", "0005_census_refresh_sources"),
-        "stewardship_refresh_census_source_v1(",
+        ("stewardship_responses", "0019_published_refresh_conflicts"),
+        "change.field='new_member'",
     ),
     # 0109 (#1398) widens 0106's safe context with the export report and
     # format keys, and 0122 (#1620) widens 0109's with the automatic view

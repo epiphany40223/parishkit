@@ -444,6 +444,9 @@ FROZEN = {
     "0137_census_refresh_sources.sql": (
         "5e855dbbfaffb607d16f4c9d5ff25bf443c021a2cc853a5c9f30ee2f5a1a94f3"
     ),
+    "0138_published_refresh_conflicts.sql": (
+        "9e24ed6ab1b4a65d1c9081a976b562a2b7720e4fe383ef115548207d4df5759f"
+    ),
 }
 
 
