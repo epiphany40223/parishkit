@@ -1310,7 +1310,10 @@ single-field check first used by a live campaign's
 [end date](../admin-portal/spec.md#campaign-configuration), #944; the ParishSoft refresh
 schedule's multi-row editor, #920, checks its whole formset with its own
 mechanism for now). Save is held while such an error stands only on forms
-that use the complete-before-submit gate above. Three shared checks in
+that use the complete-before-submit gate above or hold their buttons with
+their own gate (the [send date window](#schedules), #1787, and the
+[repeat rule](../admin-portal/spec.md#new-and-edit-scheduled-email), #1915).
+Three shared checks in
 `ui-v1.js` cover the common cases (#563): `data-not-before="<start id>"` on
 an end date (or a text amount) keeps it no earlier than its start, as the
 report and System logs filters and the campaign and financial period end

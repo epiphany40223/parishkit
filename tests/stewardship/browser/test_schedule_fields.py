@@ -415,11 +415,101 @@ def test_repeat_monthly_names_skipped_months_and_refusals(page, component_origin
         "Friday, November 27, 2054: not added, outside the campaign dates"
         in dates.inner_text()
     )
+    # A rule error is said at its fields (#1915), not in the summary.
     repeat(page, "until").fill("2054-09-01")
-    has_text(
-        panel.locator("[data-repeat-summary]"), "The last date is before the first."
-    )
+    has_text(panel.locator("#repeat-until_error"), "The last date is before the first.")
+    has_text(panel.locator("[data-repeat-summary]"), "")
     assert panel.locator("[data-repeat-add]").is_disabled()
+
+
+def test_repeat_rule_errors_show_at_their_fields(page, component_origin):
+    """Each rule error marks its fields, with its words in their reserved
+    line (#1915): Until before From marks both and is said once, after
+    Until; a missing date marks the empty one; a day of the month out of
+    range marks the day; no weekday marks the days. Add these reminders
+    waits meanwhile, named by that line, and nothing below moves. The
+    date-change review's own Preview never waits for the panel, whose
+    controls are not posted."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.goto(component_origin + "/schedule-editor-mail")
+    panel = page.locator("[data-repeat-panel]")
+    visible(panel)
+    add = panel.locator("[data-repeat-add]")
+    summary = panel.locator("[data-repeat-summary]")
+    start, until = repeat(page, "from"), repeat(page, "until")
+    for day in ("0", "3"):
+        panel.locator(f'[data-repeat="weekday"][value="{day}"]').check()
+    repeat(page, "time").fill("6am")
+    has_text(summary, "8 reminders to add, 1 not added.")
+    places = [add, summary, repeat(page, "time")]
+    before = [page_top(item) for item in places]
+    preview = page.locator("form:has([data-repeat-panel]) [type=submit]").first
+
+    def described(node):
+        """The ids that describe ``node``."""
+        return (node.get_attribute("aria-describedby") or "").split()
+
+    until.fill("2054-09-30")
+    line = panel.locator("#repeat-until_error")
+    has_text(line, "The last date is before the first.")
+    for field in (start, until):
+        has_attribute(field, "aria-invalid", "true")
+        assert "repeat-until_error" in described(field)
+    hidden(panel.locator("#repeat-from_error"))
+    has_text(summary, "")
+    assert add.is_disabled()
+    assert "repeat-until_error" in described(add)
+    assert [page_top(item) for item in places] == pytest.approx(before, abs=1)
+    # Only the panel's own button waits.
+    assert not preview.evaluate("node => node.hasAttribute('data-repeat-gated')")
+    # Emptied, only From is marked, with its own line.
+    until.fill("2054-10-31")
+    start.fill("")
+    has_text(
+        panel.locator("#repeat-from_error"),
+        "Choose the first and last dates to repeat on.",
+    )
+    has_attribute(start, "aria-invalid", "true")
+    has_attribute(until, "aria-invalid", "false")
+    hidden(line)
+    assert "repeat-from_error" in described(add)
+    assert [page_top(item) for item in places] == pytest.approx(before, abs=1)
+    start.fill("2054-10-01")
+    has_attribute(start, "aria-invalid", "false")
+    hidden(panel.locator("#repeat-from_error"))
+    has_text(summary, "8 reminders to add, 1 not added.")
+    assert not add.is_disabled()
+    assert "repeat-until_error" not in described(add)
+    # A day of the month out of range.
+    repeat(page, "frequency").select_option("monthly")
+    day = repeat(page, "day")
+    day.fill("40")
+    has_text(
+        panel.locator("#repeat-day_error"),
+        "Choose a day of the month from 1 to 31, or a weekday.",
+    )
+    has_attribute(day, "aria-invalid", "true")
+    assert described(day) == ["repeat-day-help", "repeat-day_error"]
+    day.fill("15")
+    has_attribute(day, "aria-invalid", "false")
+    hidden(panel.locator("#repeat-day_error"))
+    assert described(day) == ["repeat-day-help"]
+    # No weekday, once the days are reached.
+    repeat(page, "frequency").select_option("weekly")
+    for day in ("0", "3"):
+        panel.locator(f'[data-repeat="weekday"][value="{day}"]').uncheck()
+    days = panel.locator('[data-repeat="weekday"]')
+    has_attribute(days.first, "aria-invalid", "true")
+    has_text(
+        panel.locator("#repeat-weekdays_error"), "Choose at least one day of the week."
+    )
+    assert "repeat-weekdays_error" in described(add)
+    panel.locator('[data-repeat="weekday"][value="1"]').check()
+    has_attribute(days.first, "aria-invalid", "false")
+    hidden(panel.locator("#repeat-weekdays_error"))
+    assert not failures
 
 
 def test_repeat_limit_leaves_out_saved_rows_marked_delete(page, component_origin):

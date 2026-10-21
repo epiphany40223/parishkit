@@ -29,6 +29,17 @@ from datetime import date, timedelta
 SPAN_DAYS = 366
 FREQUENCIES = ("daily", "weekly", "monthly")
 ORDINALS = (1, 2, 3, 4, -1)
+# The words for each error ``expand`` names, the same as the page script's
+# REPEAT_ERRORS (ui-v1.js): the command line's repeat entry refuses in
+# them, and New scheduled email shows them at the rule's fields (#1915).
+RULE_ERRORS = {
+    "dates": "Choose the first and last dates to repeat on.",
+    "order": "The last date is before the first.",
+    "span": "Repeat over at most a year.",
+    "weekdays": "Choose at least one day of the week.",
+    "monthly": "Choose a day of the month from 1 to 31, or a weekday.",
+    "frequency": "Choose how often to repeat.",
+}
 
 
 def _day(value):
