@@ -1,4 +1,4 @@
-"""Content to re-save on go-live readiness and System health (#838)."""
+"""Content to re-save on Go live and System health (#838)."""
 
 import pytest
 

@@ -1144,7 +1144,7 @@ In the wizard (#1404), the step lists them under "Suggested report emails",
 each with a checkbox and a time field, marked "Not saved yet"; **Add these
 schedules and continue** adds the ticked ones with the Family schedules in
 the step's one save. Elsewhere, Start from fills New report email's form.
-Neither is required for go-live: Go-live readiness no longer checks digest
+Neither is required for go-live: Go live no longer checks digest
 schedules.
 
 ## Command line
@@ -1384,7 +1384,7 @@ require.
    recheck and completion code, all unused until PR 4. No visible change.
 4. **Conversion**: the conversion frozen file with its function rewrites and
    the conversion; the scheduler, catch-up, recovery, live pause recovery,
-   archive inventory, Testing cleanup, Go-live readiness and activation
+   archive inventory, Testing cleanup, Go live and activation
    counts (`campaigns/readiness_digests.py`, `reports/readiness_weekly.py`,
    which counted weekly messages from the watermark) on `report`; the outbox
    purposes; the additional information block's scope change, the converted

@@ -959,7 +959,7 @@ throughout, so occurrences fall due naturally.
 
 | Order | Phase | Clock | Identities | Work |
 | --- | --- | --- | --- | --- |
-| 1 | prepare | Friday before the start Saturday, 09:00 | `web` (its requests are installed and run by the configuration installer, worker and `mail-dispatch`) | Configure the campaign, meet [go-live readiness](#go-live-under-the-fake-clock) and take it to Production (`scheduled`) |
+| 1 | prepare | Friday before the start Saturday, 09:00 | `web` (its requests are installed and run by the configuration installer, worker and `mail-dispatch`) | Configure the campaign, meet [Go live](#go-live-under-the-fake-clock) and take it to Production (`scheduled`) |
 | 2 | drive | stepped through the timeline | `web` for Family steps; scheduler, worker and `mail-dispatch` running normally | Carry out every event before `now` in [historical order](#historical-ordering) |
 | 3 | check | (services stopped; PostgreSQL and Valkey running) | offline `migration` | Run the [invariant check](#post-seed-invariant-check) |
 | 4 | finish | real time, normal mode | `web` (the Admin's "Refresh now" and the Users page's leader import; the worker runs the refresh and the configuration installer applies the import) | After the restart without the preload, request the real full refresh that releases the late-added Family, then import the [seeded Ministry leader user](#seeded-ministry-leader-user) |
