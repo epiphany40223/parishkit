@@ -179,6 +179,7 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/home-key-change",
         "/availability",
         "/denied",
+        "/denied-admin",
         "/denied-code",
         "/denied-link",
         "/denied-unavailable",

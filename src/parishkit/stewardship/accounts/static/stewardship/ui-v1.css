@@ -2160,6 +2160,10 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
 /* Email Ministry leaders (#1592): the review lists each leader's Ministries
    and open requests one per line, with no list markers. */
 .leader-emails-review ul { list-style: none; margin: 0; padding: 0; }
+/* The never-signed-in count under the table can wrap to two lines on a phone
+   while the empty text fits one, so a narrow screen reserves two lines and
+   the line never changes height between those forms (#1593, #736). */
+@media (max-width: 40rem) { #users-never-signed-in { min-height: 3.2em; min-height: 2lh; } }
 /* New user's Name help line says what the lookup found (#952). It is one
    line high in every state, cut short with an ellipsis (whole in its title
    and to screen readers), so a long answer never moves the Role choices
