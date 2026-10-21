@@ -1,4 +1,4 @@
-"""Home's My Ministries panel for Ministry leaders (#533 slice 1).
+"""A Ministry leader's open requests per Ministry (#533 slice 1, #1690).
 
 The panel reads the follow-up queue's own selection with the leader's scope,
 so it counts exactly the open requests the queue would list for them; each
@@ -67,8 +67,9 @@ def test_a_removed_ministry_leaves_its_leaders_panel(response_service):
 
 
 def test_home_links_the_queue_by_get_and_the_filter_survives(response_service, google):
-    """The leader's Home links each Ministry's queue; Back, reload and the
-    request page keep the Ministry; a number outside the scope is refused."""
+    """The leader's My review work (#1690, which replaced My Ministries) links
+    each Ministry's queue; Back, reload and the request page keep the
+    Ministry; a number outside the scope is refused."""
     harness = setup(response_service)
     browser, _, _, _ = leader(harness, google)
     join, leave = requests()
@@ -76,13 +77,23 @@ def test_home_links_the_queue_by_get_and_the_filter_survives(response_service, g
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = get(browser, "/admin/")
         assert response.status_code == 200
-        panel = re.search(rb"<section[^>]*data-my-ministries.*?</section>", body, re.S)
-        assert panel, "the My Ministries panel is shown"
+        assert b"<h1>My review work</h1>" in body and b"data-my-ministries" not in body
+        panel = re.search(
+            rb'<section[^>]*data-review-stream="ministry".*?</section>', body, re.S
+        )
+        assert panel, "the Ministry requests panel is shown"
         panel = panel[0]
-        assert b'data-ministry="9"' in panel and b'data-ministry="4"' not in panel
-        assert b"1 asking to join" in panel
+        # One card, for the one Ministry this leader leads: Ministry 4's
+        # leave request is neither linked nor counted.
+        assert panel.count(b"data-link-card") == 1
+        assert b"?ministry=4" not in panel
         link = f'href="{route}?ministry=9"'.encode()
         assert link in panel
+        assert re.search(
+            rb'<span class="link-card-count">1</span> '
+            rb'<span class="link-card-note">to review</span>',
+            panel,
+        )
         # The link is an ordinary GET: reloading it is the same request.
         for _ in range(2):
             response, body = get(browser, route + "?ministry=9")

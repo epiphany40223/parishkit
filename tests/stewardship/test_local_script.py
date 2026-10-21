@@ -128,7 +128,7 @@ def test_the_guide_and_specification_are_cross_linked():
     for command in (
         "`start`",
         "`deploy [--schema-change] [--bulk on\\|off] [--smtp-latency-ms N] "
-        "[--parishsoft real\\|fake]`",
+        "[--parishsoft real\\|fake] [--mail-redirect ADDRESS\\|off]`",
         "`rehearse [--due-in MIN] [--send-only] [--timeout MIN] [--label NAME]`",
         "`spike [--families N] [--sources S] [--during-send] [--wait MIN] "
         "[--label NAME]`",
@@ -296,6 +296,11 @@ def vm_commands(calls):
         ("deploy", "--parishsoft"),
         ("deploy", "--parishsoft", "production"),
         ("deploy", "--rollback", "--parishsoft", "real"),
+        ("deploy", "--mail-redirect"),
+        ("deploy", "--mail-redirect", "Jeff <jeff@example.org>"),
+        ("deploy", "--mail-redirect", "a@example.org,b@example.org"),
+        ("deploy", "--mail-redirect", "nobody"),
+        ("deploy", "--rollback", "--mail-redirect", "jeff@example.org"),
         ("rehearse", "--bogus"),
         ("rehearse", "--due-in"),
         ("finish-setup", "x"),
@@ -461,6 +466,15 @@ def test_deploy_passes_the_rehearsal_rendering_choices(tmp_path):
         tmp_path / "fake", "deploy", "--bulk", "on", "--parishsoft", "fake"
     )
     assert vm_commands(calls)[-1].endswith(f" 0 {HOST_REMOTE} on keep fake")
+    # The mail redirect (#1399) is a fourth, trailing choice.
+    _, calls, _ = run_local(
+        tmp_path / "redirect", "deploy", "--mail-redirect", "jeff@example.org"
+    )
+    assert vm_commands(calls)[-1].endswith(
+        f" 0 {HOST_REMOTE} keep keep keep jeff@example.org"
+    )
+    _, calls, _ = run_local(tmp_path / "off", "deploy", "--mail-redirect", "off")
+    assert vm_commands(calls)[-1].endswith(f" 0 {HOST_REMOTE} keep keep keep off")
 
 
 def test_deploy_passes_the_users_upgrade_inputs_to_the_vm_half(tmp_path):
@@ -1062,6 +1076,9 @@ def test_up_follows_the_runbook_first_installation_order(tmp_path):
         first(calls, " up --detach web"),
     ]
     assert order == sorted(order), calls
+    # A new deployment reads the fake ParishSoft, so census publication is
+    # rendered on from the start (#1884), as an operational switch.
+    assert "-e PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION=1 " in calls[order[1]]
     # The persistent dependencies start before the offline steps.
     assert first(calls, "postgres valkey") < order[3]
     # Every Compose call names the fixed project and the initial file.
@@ -1497,8 +1514,9 @@ FAKE_HOST = r"""
 echo "host $* debug=$PARISHKIT_DEBUG_LOGGING" >>"$FAKE_LOG"
 if [ -n "$FAKE_HOST_ENV" ]; then
     bulk=$PARISHKIT_LOCAL_BULK_FAMILY_SEND latency=$PARISHKIT_LOCAL_SMTP_LATENCY_MS
-    parishsoft=$PARISHKIT_LOCAL_PARISHSOFT
-    echo "host bulk=$bulk latency=$latency parishsoft=$parishsoft" >>"$FAKE_LOG"
+    parishsoft=$PARISHKIT_LOCAL_PARISHSOFT redirect=$PARISHKIT_LOCAL_MAIL_REDIRECT
+    echo "host bulk=$bulk latency=$latency parishsoft=$parishsoft" \
+        "redirect=$redirect" >>"$FAKE_LOG"
 fi
 retarget() {
     echo '{"services": {"web": {"image": "'"$2"'"}}}' >"$3/config/services/compose.json"
@@ -1736,7 +1754,7 @@ def test_deploy_hands_the_rehearsal_choices_to_the_host_half(tmp_path):
         prepare=with_host_script(tmp_path),
         env={"FAKE_IMAGE_EXISTS": "1", "FAKE_HOST_ENV": "1"},
     )
-    assert "bulk=on latency=600 parishsoft=keep" in calls[-1]
+    assert "bulk=on latency=600 parishsoft=keep redirect=keep" in calls[-1]
     calls, _, _ = run_vm(
         tmp_path / "real",
         "deploy",
@@ -1749,7 +1767,21 @@ def test_deploy_hands_the_rehearsal_choices_to_the_host_half(tmp_path):
         prepare=with_host_script(tmp_path / "real"),
         env={"FAKE_IMAGE_EXISTS": "1", "FAKE_HOST_ENV": "1"},
     )
-    assert "bulk=keep latency=keep parishsoft=real" in calls[-1]
+    assert "bulk=keep latency=keep parishsoft=real redirect=keep" in calls[-1]
+    calls, _, _ = run_vm(
+        tmp_path / "redirect",
+        "deploy",
+        NEW_IMAGE,
+        "0",
+        str(tmp_path / "redirect" / "host.sh"),
+        "keep",
+        "keep",
+        "keep",
+        "jeff@example.org",
+        prepare=with_host_script(tmp_path / "redirect"),
+        env={"FAKE_IMAGE_EXISTS": "1", "FAKE_HOST_ENV": "1"},
+    )
+    assert "parishsoft=keep redirect=jeff@example.org" in calls[-1]
     # Without them, all carry over.
     calls, _, _ = run_vm(
         tmp_path / "keep",
@@ -1760,7 +1792,7 @@ def test_deploy_hands_the_rehearsal_choices_to_the_host_half(tmp_path):
         prepare=with_host_script(tmp_path / "keep"),
         env={"FAKE_IMAGE_EXISTS": "1", "FAKE_HOST_ENV": "1"},
     )
-    assert "bulk=keep latency=keep parishsoft=keep" in calls[-1]
+    assert "bulk=keep latency=keep parishsoft=keep redirect=keep" in calls[-1]
 
 
 def test_rehearse_needs_a_seeded_set_up_deployment(tmp_path):
@@ -2407,7 +2439,7 @@ def test_an_older_snapshot_is_migrated_forward_by_the_host_half(tmp_path):
         f"upgrade local {tmp_path / 'build'} debug=1"
     )
     # The running rendering choices travel to the host half.
-    assert calls[upgrade + 1] == "host bulk=on latency=600 parishsoft=fake"
+    assert calls[upgrade + 1] == "host bulk=on latency=600 parishsoft=fake redirect=off"
     # The record is the running deployment's again.
     assert record(tmp_path)["IMAGE"] == IMAGE
     assert record(tmp_path)["PREVIOUS_IMAGE"] == OLD_IMAGE
@@ -2449,10 +2481,41 @@ def test_an_older_snapshot_switch_carries_the_parishsoft_choice(
     )  # fmt: skip
     if carried:
         upgrade = first(calls, "host - ")
-        assert calls[upgrade + 1] == f"host bulk=on latency=600 parishsoft={carried}"
+        assert calls[upgrade + 1] == (
+            f"host bulk=on latency=600 parishsoft={carried} redirect=off"
+        )
     else:
         assert "not the real API; refusing" in output
         assert not any(" stop" in c or c.startswith("rsync") for c in calls)
+
+
+def test_an_older_snapshot_switch_carries_the_mail_redirect(tmp_path):
+    """A running mail redirect (#1399) reaches the host half on a switch."""
+    host = tmp_path / "host.sh"
+
+    def prepare(root, etc, snapshots):
+        running(root, etc, snapshots)
+        worker = root / "config" / "services" / "worker.yaml"
+        document = json.loads(worker.read_text())
+        document["deployment"]["mail_redirect"] = "jeff@example.org"
+        worker.write_text(json.dumps(document))
+        host.write_text(f"#!/usr/bin/env bash\n{FAKE_HOST}\n")
+        snapshot_of(
+            snapshots, "older", image=OLD_IMAGE,
+            migrations="stewardship_accounts 0001_initial",
+        )  # fmt: skip
+
+    calls, _, _ = run_vm(
+        tmp_path, "snapshot-restore", "older", str(host), prepare=prepare,
+        env={
+            "FAKE_MIGRATIONS": MIGRATIONS, "FAKE_IMAGE_EXISTS": "1",
+            "FAKE_HOST_ENV": "1",
+        },
+    )  # fmt: skip
+    upgrade = first(calls, "host - ")
+    assert calls[upgrade + 1] == (
+        "host bulk=on latency=600 parishsoft=fake redirect=jeff@example.org"
+    )
 
 
 def test_the_vm_half_names_the_real_parishsoft_api():
@@ -2749,6 +2812,9 @@ def test_a_fake_parishsoft_edit_rewrites_the_file_and_recreates_only_the_fake(
     assert " -i " in calls[edit] and IMAGE in calls[edit]
     recreate = first(calls, "up --detach --no-deps --force-recreate fake-parishsoft")
     assert recreate > edit
+    # The fake stops before its file is read, so no contact PUT it records
+    # there (#1884) is lost when the new document replaces the file.
+    assert first(calls, " stop fake-parishsoft") < edit
     file = root / "run" / "local" / "fake-parishsoft.json"
     assert json.loads(file.read_text()) == {"seed": 7, "edited": True}
     # The Compose selection, which can refuse, runs before the edit and write.
@@ -2772,6 +2838,10 @@ def test_a_refused_fake_parishsoft_edit_changes_nothing(tmp_path):
     file = root / "run" / "local" / "fake-parishsoft.json"
     assert file.read_text() == '{"seed": 7}\n'
     assert not any("--force-recreate" in call for call in calls)
+    # The fake, stopped for the edit, is started again on the same file.
+    assert first(calls, " stop fake-parishsoft") < first(
+        calls, " start fake-parishsoft"
+    )
 
 
 def test_fake_parishsoft_show_prints_and_writes_nothing(tmp_path):

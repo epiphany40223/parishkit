@@ -393,6 +393,47 @@ def test_a_one_time_new_schedule_confirms_without_repeating_the_form():
     assert 'translate "Add the scheduled email" %}' in source
 
 
+def test_only_a_schedule_that_has_sent_says_sent_email_is_not_recalled():
+    """The not-recalled notice shows only when build_preview counts email
+    the changed schedules already sent (R40b): never for a future send."""
+    notice = "Email already sent cannot be recalled."
+    assert notice not in schedule_fragment([scheduled("update")], new=False)
+    sent = render_to_string(
+        "stewardship/schedule-review.html",
+        {
+            "changes": [scheduled("update", delivered=3)],
+            "delivered": 3,
+            "preview": "signed",
+        },
+    )
+    assert f'<p class="notice">{notice}</p>' in sent
+
+
+def test_delete_marks_only_a_schedule_that_has_sent_for_its_caution():
+    """Delete scheduled email's caution is for sent email only (R40b): a
+    row's Delete is marked data-confirm-caution only with sent email, and
+    the dialog's caution starts hidden for ui-v1.js to show for marked
+    rows. Without caution_marked, a dialog's caution is always said."""
+    from django.template import Context, Template
+
+    actions = Template(
+        "{% load stewardship %}{% table_actions name='Reminder 1' delete='x' "
+        "confirm='schedule-delete' field='schedule_id' caution=sent %}"
+    )
+    assert "data-confirm-caution" in actions.render(Context({"sent": 4}))
+    assert "data-confirm-caution" not in actions.render(Context({"sent": 0}))
+    marked = render_to_string(
+        DIALOG,
+        {"dialog_id": "schedule-delete", "caution": "Never.", "caution_marked": True},
+    )
+    assert '<p class="notice" data-confirm-caution-marked hidden>Never.</p>' in marked
+    plain = render_to_string(DIALOG, {"dialog_id": "x", "caution": "Never."})
+    assert '<p class="notice">Never.</p>' in plain
+    source = (TEMPLATES / "schedule-settings.html").read_text(encoding="utf-8")
+    assert "{% if row.delivered %} data-confirm-caution{% endif %}" in source
+    assert "caution=row.delivered %}" in source
+
+
 def test_a_blocked_schedule_review_offers_no_apply():
     """Sends in progress block the change: the reason, and no preview."""
     text = schedule_fragment([scheduled("update", blocking=2)], new=False, blocking=2)

@@ -37,7 +37,7 @@ The readers are parish leadership: the pastor, the stewardship committee and
 staff. They are not technical and read pictures before numbers. Staff and
 Administrators open the page; the rest of leadership receive the
 [one-page summary](#downloads-and-sharing) or the
-[digest section](#digest-section) from the Administrator. The report
+[report email block](#digest-section) from the Administrator. The report
 therefore follows the visual, charts-first style of
 [#720](https://github.com/epiphany40223/parishkit/issues/720): a few large
 headline figures, line charts with the exact numbers in tooltips and a table,
@@ -436,7 +436,9 @@ no current campaign, before day 1 has ended, or while no Family has
 responded by the cutoff (an archive needs at least one Family).
 
 The action queues the shared export lifecycle's `campaign_archive` kind,
-XLSX only, and answers with the shared status page (download, Cancel and
+XLSX only, and downloads in place, with the button busy until the file
+arrives ([downloads happen in place](../ui-conventions/spec.md#downloads-happen-in-place));
+its status address keeps the shared lifecycle (download, Cancel and
 Retry as for every export, within the shared
 [download window](../operations/spec.md#point-in-time-exports)). The worker
 reads the submissions itself at generation, under the request's
@@ -774,13 +776,13 @@ the report.
 
 ### Privacy
 
-- Only aggregates leave the Admin portal: report pages, digests, downloads
+- Only aggregates leave the Admin portal: report pages, report emails, downloads
   and command output carry counts, sums, averages, quartiles and
-  percentages, never a Family row or identifier. Downloads and digests also
+  percentages, never a Family row or identifier. Downloads and report emails also
   apply the [small-count protection](#pledge-distribution).
 - The free-text `note.*`, provenance and dedup texts appear only on the
   Admin portal page (the Review card and the report's data notes). Downloads
-  and digests carry none of them.
+  and report emails carry none of them.
 - Stored Family rows are read only inside the database, by the renewal
   calculation, which returns counts.
 - The audit trail records `campaign_archive_previewed`,
@@ -812,8 +814,8 @@ campaigns started on dates from September 11 to October 5.
   Historical-as-of-day fact set row for local date start + N − 1.
 - **The comparison day** is the current campaign's last complete local day:
   the day before today in the campaign's time zone, as the
-  [daily digest's](../background-processing/spec.md#daily-campaign-digest)
-  report day is. Before day 1 has ended the page shows the imported years'
+  report day of a [report email](../report-emails/spec.md#as-of) as of the
+  end of the previous day is. Before day 1 has ended the page shows the imported years'
   final results only. After the current campaign's end date the comparison
   day stays at the day of its end date.
 - A final imported year (`is_final` `TRUE`) whose `daily` sheet ends before
@@ -925,7 +927,7 @@ value by a cent in rare cases. Amounts are
 nominal dollars with no inflation adjustment, and the report says so.
 
 **Small-count protection.** In anything that leaves the Admin portal (the
-PDF, CSV and XLSX downloads, the digest and command output), a band with
+PDF, CSV and XLSX downloads, report emails and command output), a band with
 fewer than 5 Families shows "fewer than 5" in place of its count and share,
 and no total or share of total. When any band of a year is withheld, that
 year's outside outputs also withhold:
@@ -947,7 +949,7 @@ Families shows no quartiles and no bands there.
 **The current campaign stays inside the portal.** Its distribution and
 quartiles change day by day, and the difference between two days could
 expose one Family's pledge. They therefore appear only on the Admin portal
-page. Outside the portal (downloads, digest, command output) distributions
+page. Outside the portal (downloads, report emails, command output) distributions
 and quartiles are shown only for final imported years. The Admin portal
 page itself shows every figure, since only Administrators and Staff open
 it.
@@ -1094,19 +1096,24 @@ browser's sets the file's request time, else the parish's, under the
 
 ### Digest section
 
-The daily Administrator digest may include a **Compared with past
-campaigns** section, off by default and turned on for the daily digest
-schedule on
-[Dates and mail schedules](../admin-portal/spec.md#campaign-configuration).
-It follows the digest's #720 style: the cumulative Families chart and the
+A [report email](../report-emails/spec.md) may include the **Compared with
+past campaigns** block
+([its block](../report-emails/spec.md#compared-with-past-campaigns-block)),
+chosen per report on
+[Report emails](../report-emails/spec.md#blocks-field); it was the daily
+digest's optional section before #1786. It follows the report emails' #720
+style: the cumulative Families chart and the
 cumulative pledges chart first (PNG through the chart engine's server
 renderer, with alt text carrying the figures), then one line per headline
 figure with its last-year and average comparisons, then a link to the
-report. Its comparison day is the digest's report day, and its current
-figures come from the digest's pinned fact set. When the digest is
-compiled, the occurrence stores the section's computed aggregates (the
-figures, the chart specifications and each imported year's checksum), so
-the saved digest page shows exactly what was sent, whatever is imported or
+report. Its comparison day is the report's report day for a report as of
+the end of the previous day, or the last complete campaign day before the
+capture instant for a report as of when it is made (a partial day is not
+compared with past campaigns' whole days), and its current figures come
+from the report's pinned fact set. When the report is compiled, the
+occurrence stores the section's computed aggregates (the figures, the chart
+specifications and each imported year's checksum), so the saved copy shows
+exactly what was sent, whatever is imported or
 removed later; that page draws the stored figures as
 [stat tiles](../ui-conventions/spec.md#stat-tiles), word for word. The
 section applies the [small-count protection](#pledge-distribution) and
@@ -1257,8 +1264,8 @@ committed.
   overlap at phone and laptop widths, a year with an older band set showing its
   note, the data notes starting closed and opening on request,
   the shared notes shown once and each year's own after them.
-- **Downloads and digest:** the three formats carry the same columns and
-  aggregates only, with no note text; a saved digest page shows the stored
+- **Downloads and report emails:** the three formats carry the same columns
+  and aggregates only, with no note text; a report email's saved copy shows the stored
   section unchanged after a later import and a removal; the chart
   renderer's timeout name is recorded on a kill.
 - **Command line:** each command through the page's service, the catalog
@@ -1432,7 +1439,12 @@ linked to #1018 (slice 7 completed part (b)).
    averages whatever its distribution's reason (an older band set).
 7. **Digest section.** The daily digest option, with its own
    forward migration if the digest occurrence needs new columns to record
-   the imported years it used.
+   the imported years it used. (Since
+   [#1786](https://github.com/epiphany40223/parishkit/issues/1786) the
+   section is the
+   [Compared with past campaigns block](../report-emails/spec.md#compared-with-past-campaigns-block)
+   of report emails; the record below is what was built for the daily
+   digest.)
    As built: the setting is the daily digest schedule's **Include Compared
    with past campaigns** checkbox on New and Edit scheduled email (and
    each schedule's editor on Dates and mail schedules), saved in the
@@ -1551,6 +1563,8 @@ The Administrator accepted every proposed default on October 11, 2026
    the quartiles and the [pledge distribution](#pledge-distribution) beside
    it (new requirement from this decision).
 9. **Digest section:** off by default; when on, in the daily digest only.
+   (Since #1786 it is a block any report email may include; see
+   [report emails](../report-emails/spec.md#compared-with-past-campaigns-block).)
 10. **Sending to leadership:** the one-page PDF download, which the
     Administrator emails. No public link.
 11. **Upload limits:** 20 MiB per file, 300 MiB uncompressed and 500,000

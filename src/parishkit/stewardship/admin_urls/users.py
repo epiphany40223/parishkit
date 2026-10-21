@@ -33,6 +33,13 @@ patterns = [
         leader_import_views.user_leader_import,
         name="user_leader_import",
     ),
+    # The leaders section's passive status while they cannot be read
+    # (#1863): never audited, never extends the sign-in.
+    path(
+        "users/leaders/status/",
+        leader_import_views.user_leaders_status,
+        name="user_leaders_status",
+    ),
     # The Email Ministry leaders review answers that table's Email selected;
     # its Apply posts here too and records the request (#1592).
     path(

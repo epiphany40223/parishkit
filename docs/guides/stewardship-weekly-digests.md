@@ -8,7 +8,7 @@ PR #47's verified merge `e548809c`. It owns
 and the weekly-specific portion of BG-07.05, following the
 [controlling work package](../plans/stewardship/background-processing.md#bg-07-submission-confirmations-and-admin-digests).
 The authoritative behavior comes from the
-[weekly digest contract](../specs/stewardship/background-processing/spec.md#weekly-additional-information-digest),
+[weekly digest contract](../specs/stewardship/report-emails/spec.md#open-additional-information-requests-block),
 [follow-up record model](../specs/stewardship/data/spec.md#follow-up-records),
 and [additional-information report](../specs/stewardship/reports/spec.md#additional-information).
 
@@ -353,7 +353,7 @@ and worker task. Duplicate confirmation returns the original task. Web cannot
 choose recipients, supply report bodies, or insert preparations directly.
 
 Manual selection follows the
-[manual-report contract](../specs/stewardship/background-processing/spec.md#weekly-additional-information-digest):
+[manual-report contract](../specs/stewardship/report-emails/spec.md#send-now):
 all current actionable live requests plus corrections, visibly labeled manual,
 with independent audit history. Manual delivery neither advances the scheduled
 watermark nor suppresses the next scheduled report. Both use the same isolated

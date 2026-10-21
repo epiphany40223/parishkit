@@ -99,7 +99,7 @@ CONVERTED_PAGES = {
     "/setup": "Cancel permanently ends this attempt",
     "/setup-source-progress": "Downloaded from ParishSoft",
     "/delivery-pause": "Current live-mail inventory",
-    "/go-live": "This preview has not changed the campaign",
+    "/go-live": "The campaign becomes active at once",
 }
 
 

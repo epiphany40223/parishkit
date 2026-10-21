@@ -2,7 +2,10 @@
 
 import pytest
 
+from parishkit.stewardship.responses.census import blank_address, us_regions
+
 from ..census_factory import address
+from .keyboard import tab_to_next
 from .test_family_response import expect, form_payload, prepare, review, show
 
 pytestmark = pytest.mark.parametrize(
@@ -11,13 +14,30 @@ pytestmark = pytest.mark.parametrize(
 
 
 def fill_address(page, name, value):
-    """Fill every component through the visible, uniquely labeled controls."""
+    """Fill an address as a Family would: Country first, then its parts.
+
+    Country decides the region control (#1777): a US State is chosen from the
+    drop-down, any other region is typed. Each control is found by the shared
+    id that its visible label names.
+    """
+    show(page, page.locator(f"#family-{name}-country")).select_option(value["country"])
     for component, text in value.items():
-        control = show(page, page.locator(f"#family-{name}-{component}"))
+        control = page.locator(f"#family-{name}-{component}")
         if component == "country":
+            continue
+        if component == "region" and value["country"] == "US":
             control.select_option(text)
         else:
             control.fill(text)
+
+
+def home_group(page):
+    """The home address fieldset, opened on its form page."""
+    group = page.locator("fieldset").filter(
+        has=page.locator("#family-home_address-country")
+    )
+    show(page, group)
+    return group
 
 
 @pytest.mark.parametrize("width", [320, 1280])
@@ -236,7 +256,7 @@ def test_household_blur_has_visible_linked_error_and_country_change_clears_it(
     show(page, page.locator("#family-home_address-postal_code")).focus()
     show(page, page.locator("#family-home_address-country")).focus()
     error = page.locator("#family-home_address-postal_code-constraint")
-    expect(error).to_have_text("Enter a five-digit ZIP or ZIP+4 code.")
+    expect(error).to_have_text("Enter a five-digit ZIP code or ZIP+4.")
     expect(error).to_be_visible()
     expect(page.locator("#family-home_address-postal_code")).to_have_attribute(
         "aria-describedby",
@@ -357,7 +377,9 @@ def test_untouched_address_fields_show_errors_only_on_blur_or_review(
     """R2: entering a delivery line does not announce unrelated required errors."""
     prepare(page, component_origin)
     show(page, page.locator("#family-home_address-line1")).fill("A delivery line")
-    for component in ("city", "country"):
+    # Country defaults to United States, so the US State is what is missing.
+    expect(page.locator("#family-home_address-country")).to_have_value("US")
+    for component in ("city", "region"):
         expect(
             page.locator(f"#family-home_address-{component}-constraint")
         ).to_be_hidden()
@@ -369,9 +391,345 @@ def test_untouched_address_fields_show_errors_only_on_blur_or_review(
     expect(
         show(page, page.locator("#family-home_address-city-constraint"))
     ).to_be_visible()
-    expect(page.locator("#family-home_address-country-constraint")).to_be_hidden()
+    expect(page.locator("#family-home_address-region-constraint")).to_be_hidden()
     assert not review(page)
     expect(
-        show(page, page.locator("#family-home_address-country-constraint"))
-    ).to_be_visible()
+        show(page, page.locator("#family-home_address-region-constraint"))
+    ).to_have_text("Choose a state from the list.")
     assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
+
+
+def address_violations(page, axe_source):
+    """Run the pinned axe scanner on the Family census controls only."""
+    page.evaluate(axe_source)
+    return page.evaluate("""async () => (await axe.run(
+        {include: [['#household-section']]},
+        {runOnly: {type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']}}
+    )).violations.map(({id, nodes}) => ({id, targets: nodes.map(n => n.target)}))""")
+
+
+def offsets(group):
+    """Each address control's top, measured from the fieldset's top.
+
+    Relative to the fieldset, so a scroll the browser makes while a select
+    closes cannot hide or fake a shift of the controls themselves.
+    """
+    return group.evaluate(
+        """(fieldset) => {
+            const top = fieldset.getBoundingClientRect().top;
+            return [...fieldset.querySelectorAll('input, select')]
+                .filter((control) => !control.hidden)
+                .map((control) => [control.id,
+                    Math.round(control.getBoundingClientRect().top - top)]);
+        }"""
+    )
+
+
+def test_country_comes_first_with_a_us_state_drop_down(
+    page, component_origin, axe_source
+):
+    """#1777: Country leads and defaults to US; State offers the accepted codes."""
+    prepare(page, component_origin)
+    group = home_group(page)
+    labels = group.locator("label").all_inner_texts()
+    assert labels == [
+        "Country",
+        "Address line 1",
+        "Address line 2",
+        "City or locality",
+        "State",
+        "ZIP code",
+    ]
+    country = group.get_by_label("Country", exact=True)
+    expect(country).to_have_value("US")
+    state = group.get_by_label("State", exact=True)
+    expect(state).to_have_js_property("tagName", "SELECT")
+    expect(state).to_have_attribute("id", "family-home_address-region")
+    expect(state.locator('option[value="KY"]')).to_have_text("Kentucky (KY)")
+    offered = state.locator("option").evaluate_all(
+        "options => options.map((option) => option.value).filter(Boolean)"
+    )
+    assert sorted(offered) == sorted(us_regions())
+    # Only the region control for the country is in the page, and the
+    # label names it (each control's own labels, as assistive technology
+    # reads them, not only the label's target).
+    expect(group.locator("#family-home_address-region")).to_have_count(1)
+    assert state.evaluate(
+        "(control) => [...control.labels].map((l) => l.textContent)"
+    ) == ["State"]
+    # The keyboard meets the fields in the order they are shown.
+    country.focus()
+    for label in ("Address line 1", "Address line 2", "City or locality", "State"):
+        tab_to_next(page)
+        expect(group.get_by_label(label, exact=True)).to_be_focused()
+    tab_to_next(page)
+    expect(group.get_by_label("ZIP code", exact=True)).to_be_focused()
+    assert address_violations(page, axe_source) == []
+    country.select_option("CA")
+    assert address_violations(page, axe_source) == []
+    # A typed state name carries over to the drop-down too.
+    group.get_by_label("State, province or region", exact=True).fill("Kentucky")
+    country.select_option("US")
+    expect(state).to_have_value("KY")
+
+
+def test_switching_country_swaps_controls_in_place_and_keeps_values(
+    page, component_origin
+):
+    """US and Canada entries each survive a switch; nothing moves or is lost."""
+    submissions = []
+
+    def submit(route):
+        """Capture the final aggregate request."""
+        submissions.append(route.request.post_data_json)
+        route.fulfill(json={"accepted": True})
+
+    prepare(page, component_origin, submit=submit)
+    group = home_group(page)
+    country = group.get_by_label("Country", exact=True)
+    group.get_by_label("Address line 1", exact=True).fill("24 Sussex Drive")
+    group.get_by_label("City or locality", exact=True).fill("Ottawa")
+    before = offsets(group)
+
+    # A typed abbreviation the State list offers carries over to it.
+    country.select_option("CA")
+    region = group.get_by_label("State, province or region", exact=True)
+    expect(region).to_have_js_property("tagName", "INPUT")
+    expect(group.get_by_label("Postal code", exact=True)).to_be_visible()
+    assert offsets(group) == before
+    region.fill("ky")
+    country.select_option("US")
+    state = group.get_by_label("State", exact=True)
+    expect(state).to_have_value("KY")
+    # The longest choice does not move anything either.
+    state.select_option("UM")
+    assert offsets(group) == before
+    state.select_option("KY")
+    zip_code = group.get_by_label("ZIP code", exact=True)
+    zip_code.fill("40223")
+
+    # A missing State is explained at the drop-down itself.
+    state.select_option("")
+    state.blur()
+    error = group.locator("#family-home_address-region-constraint")
+    expect(error).to_have_text("Choose a state from the list.")
+    expect(state).to_have_attribute("aria-invalid", "true")
+    expect(state).to_have_attribute(
+        "aria-describedby",
+        "family-home_address-status family-home_address-region-constraint",
+    )
+    state.select_option("KY")
+
+    # Each country's region is kept while the other is showing.
+    country.select_option("CA")
+    expect(error).to_be_hidden()
+    expect(region).to_have_value("ky")
+    region.fill("ON")
+    country.select_option("US")
+    expect(state).to_have_value("KY")
+    expect(zip_code).to_have_value("40223")
+    country.select_option("CA")
+    expect(region).to_have_value("ON")
+    group.get_by_label("Postal code", exact=True).fill("K1A 0A3")
+
+    # A third country, with no region at all.
+    mailing = address(
+        country="JP",
+        line1="1-1 Sample",
+        city="Tokyo",
+        region="",
+        postal_code="100-0001",
+    )
+    fill_address(page, "mailing_address", mailing)
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(
+        show(
+            page,
+            page.get_by_role(
+                "heading", name="Thank you!", exact=True, include_hidden=True
+            ),
+        )
+    ).to_be_visible()
+    family = submissions[0]["answers"]["family"]
+    assert family["home_address"] == {
+        "line1": "24 Sussex Drive",
+        "line2": "",
+        "city": "Ottawa",
+        "region": "ON",
+        "postal_code": "K1A 0A3",
+        "country": "CA",
+    }
+    assert family["mailing_address"] == mailing
+
+
+def test_untouched_address_with_default_country_is_not_provided(page, component_origin):
+    """The default United States alone never turns a blank address into one."""
+    submissions = []
+
+    def submit(route):
+        """Capture the final aggregate request."""
+        submissions.append(route.request.post_data_json)
+        route.fulfill(json={"accepted": True})
+
+    prepare(page, component_origin, submit=submit)
+    group = home_group(page)
+    expect(group.get_by_label("Country", exact=True)).to_have_value("US")
+    # Typing and then clearing a part leaves the address blank again.
+    line1 = group.get_by_label("Address line 1", exact=True)
+    line1.fill("Briefly typed")
+    line1.fill("")
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(
+        show(
+            page,
+            page.get_by_role(
+                "heading", name="Thank you!", exact=True, include_hidden=True
+            ),
+        )
+    ).to_be_visible()
+    family = submissions[0]["answers"]["family"]
+    assert family["home_address"] == blank_address()
+    assert family["mailing_address"] == blank_address()
+
+
+def test_address_without_a_country_shows_none_until_one_is_chosen(
+    page, component_origin
+):
+    """An address with parts but no country never pretends to be in the US."""
+    form = form_payload()
+    form["household"]["fields"][0]["value"] = address(country="")
+    prepare(page, component_origin, form=form)
+    group = home_group(page)
+    country = group.get_by_label("Country", exact=True)
+    expect(country).to_have_value("")
+    assert not review(page)
+    expect(group.locator("#family-home_address-country-constraint")).to_have_text(
+        "Complete this address field."
+    )
+    country.select_option("US")
+    expect(group.locator("#family-home_address-country-constraint")).to_be_hidden()
+    expect(group.get_by_label("State", exact=True)).to_have_value("KY")
+
+
+def test_server_region_error_follows_the_shown_control(page, component_origin):
+    """A server error on the State links to it and leaves when it is hidden."""
+    prepare(
+        page,
+        component_origin,
+        submit=lambda route: route.fulfill(
+            status=422,
+            json={
+                "error": "validation",
+                "fields": {"family.home_address.region": "Review this state."},
+            },
+        ),
+    )
+    fill_address(page, "home_address", address())
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    link = page.locator('#family-flow-message a[href="#family-home_address-region"]')
+    expect(link).to_have_text("State: Review this state.")
+    link.click()
+    group = page.locator("fieldset").filter(
+        has=page.locator("#family-home_address-country")
+    )
+    state = group.get_by_label("State", exact=True)
+    expect(state).to_be_focused()
+    expect(page.locator("#family-home_address-region-error")).to_be_visible()
+    country = group.get_by_label("Country", exact=True)
+    country.select_option("CA")
+    expect(page.locator("#family-home_address-region-error")).to_have_count(0)
+    region = group.get_by_label("State, province or region", exact=True)
+    assert region.evaluate(
+        "(control) => [...control.labels].map((l) => l.textContent)"
+    ) == ["State, province or region"]
+    country.select_option("US")
+    assert "family-home_address-region-error" not in (
+        state.get_attribute("aria-describedby")
+    )
+    assert state.evaluate(
+        "(control) => [...control.labels].map((l) => l.textContent)"
+    ) == ["State"]
+
+
+def test_same_as_home_copies_the_us_state_choice(page, component_origin):
+    """The mailing copy shows the home State in its own drop-down."""
+    prepare(page, component_origin)
+    fill_address(page, "home_address", address(region="NY"))
+    show(page, page.get_by_label("Mailing address is the same as home address")).check()
+    mailing_state = page.locator("#family-mailing_address-region")
+    expect(mailing_state).to_have_js_property("tagName", "SELECT")
+    expect(mailing_state).to_have_value("NY")
+    expect(mailing_state).to_be_disabled()
+    page.locator("#family-home_address-region").select_option("OH")
+    expect(mailing_state).to_have_value("OH")
+
+
+def test_unlisted_us_region_stays_shown_until_a_state_is_chosen(page, component_origin):
+    """Free text from records is never dropped from the State drop-down."""
+    form = form_payload()
+    form["household"]["fields"][0]["value"] = address(region="Kentucky")
+    prepare(page, component_origin, form=form)
+    group = home_group(page)
+    state = group.get_by_label("State", exact=True)
+    expect(state).to_have_value("Kentucky")
+    # Editing another part keeps it in the answer.
+    group.get_by_label("Address line 2", exact=True).fill("Apt 2")
+    expect(state).to_have_value("Kentucky")
+    assert not review(page)
+    expect(group.locator("#family-home_address-region-constraint")).to_have_text(
+        "Choose a state from the list."
+    )
+    # It is kept while another country shows, also across Review and Edit.
+    country = group.get_by_label("Country", exact=True)
+    country.select_option("CA")
+    review(page)
+    page.get_by_role("button", name="Back to edit").click()
+    group = home_group(page)
+    group.get_by_label("Country", exact=True).select_option("US")
+    state = group.get_by_label("State", exact=True)
+    expect(state).to_have_value("Kentucky")
+    state.select_option("KY")
+    expect(group.locator("#family-home_address-region-constraint")).to_be_hidden()
+
+
+def test_redrawing_never_picks_a_state_the_family_cleared(page, component_origin):
+    """Carry-over happens only when Country changes, not on a mailing copy."""
+    prepare(page, component_origin)
+    fill_address(page, "home_address", address(country="CA", region="Texas"))
+    group = home_group(page)
+    group.get_by_label("Country", exact=True).select_option("US")
+    state = group.get_by_label("State", exact=True)
+    expect(state).to_have_value("TX")
+    state.select_option("")
+    show(page, page.get_by_label("Mailing address is the same as home address")).check()
+    expect(page.locator("#family-mailing_address-region")).to_have_value("")
+    group.get_by_label("Address line 2", exact=True).fill("Unit 3")
+    expect(page.locator("#family-mailing_address-region")).to_have_value("")
+    expect(state).to_have_value("")
+
+
+def test_hidden_region_and_blank_country_survive_review_and_edit(
+    page, component_origin
+):
+    """Back to edit rebuilds the form; both regions and the choice stay."""
+    prepare(page, component_origin)
+    group = home_group(page)
+    country = group.get_by_label("Country", exact=True)
+    fill_address(page, "home_address", address(country="CA", region="ON"))
+    country.select_option("US")
+    group.get_by_label("State", exact=True).select_option("KY")
+    group.get_by_label("ZIP code", exact=True).fill("40223")
+    # A blank mailing address keeps the country chosen for it.
+    show(page, page.locator("#family-mailing_address-country")).select_option("IE")
+    review(page)
+    page.get_by_role("button", name="Back to edit").click()
+    group = home_group(page)
+    expect(group.get_by_label("State", exact=True)).to_have_value("KY")
+    expect(page.locator("#family-mailing_address-country")).to_have_value("IE")
+    group.get_by_label("Country", exact=True).select_option("CA")
+    expect(group.get_by_label("State, province or region", exact=True)).to_have_value(
+        "ON"
+    )

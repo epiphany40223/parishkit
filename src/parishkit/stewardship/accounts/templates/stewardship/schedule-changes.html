@@ -9,8 +9,11 @@ times.
 Drawn by the review dialog of New and Edit scheduled email and of the
 date-change review (schedule-review.html, #750, headings from level 3 under
 the dialog's title). ``level`` is the level of each section's heading, ``sublevel`` that of
-the headings inside a section.
-{% endcomment %}<p class="notice">{% translate "Email already sent cannot be recalled." %}</p>
+the headings inside a section. The notice that sent email cannot be
+recalled shows only when a changed schedule has already sent (``delivered``,
+build_preview's sum of the changes' sent email); a change to schedules that
+have sent nothing yet has nothing to recall.
+{% endcomment %}{% if delivered %}<p class="notice">{% translate "Email already sent cannot be recalled." %}</p>{% endif %}
 {% if window_changes %}<section class="panel"><h{{ level }}>{% translate "Campaign window" %}</h{{ level }}><p>{% translate "Current:" %} {{ before_window.start_date|parish_date }} – {{ before_window.end_date|parish_date }} ({{ before_window.timezone }})</p><p>{% translate "Proposed:" %} {{ after_window.start_date|parish_date }} – {{ after_window.end_date|parish_date }} ({{ after_window.timezone }})</p></section>{% endif %}
 {% if 'financial' in window_changes %}<section class="panel"><h{{ level }}>{% translate "Financial overlap acknowledgment" %}</h{{ level }}><p>{% translate "Current:" %} {{ before_window.financial.overlap_confirmed|yesno }}</p><p>{% translate "Proposed:" %} {{ after_window.financial.overlap_confirmed|yesno }}</p></section>{% endif %}
 {% for change in changes %}<section class="panel"><h{{ level }}>{{ change.label }} — {{ change.operation|capfirst }}</h{{ level }}>
