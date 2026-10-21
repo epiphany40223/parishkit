@@ -920,7 +920,7 @@ CLOSURE_CREATED = {
     # puts back the column, guard, view and function.
     "public.stewardship_report_email_prior_v1(uuid,text)": (
         "stewardship_reports",
-        "0035_report_recovery_coverage",
+        "0042_report_recovery_coverage",
     ),
 }
 

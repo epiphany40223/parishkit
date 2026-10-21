@@ -33,7 +33,7 @@ class Migration(migrations.Migration):
         # (#1839, earlier in the report email stack), which installs the
         # previous frozen file (0161), so the files apply in prefix order
         # and 0161's completion view is the one this file replaces.
-        ("stewardship_reports", "0034_report_conversion"),
+        ("stewardship_reports", "0041_report_conversion"),
     ]
 
     operations = [
