@@ -114,7 +114,7 @@ def recorded_ministries(recipients):
 
 
 def counts_text(ministry):
-    """A Ministry's open requests in Home's My Ministries panel's words."""
+    """A Ministry's open requests to join and to leave, in plain words."""
     if not (ministry.join or ministry.leave):
         return "No open requests"
     return f"{ministry.join} asking to join · {ministry.leave} asking to leave"

@@ -146,7 +146,9 @@ def test_delivery_history_pages_in_place(page, component_origin):
     page.set_viewport_size(VIEWPORT)
     page.goto(component_origin + "/delivery-paged")
     page.evaluate(MARK)
-    evidence = page.locator("#evidence-note")
+    # The note of the question's "I can't tell yet" answer (#1563).
+    page.get_by_role("radio", name="I can't tell yet").check()
+    evidence = page.locator("#note-unsure")
     evidence.fill(TYPED)
     turn_page(
         page,

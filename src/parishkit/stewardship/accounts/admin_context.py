@@ -27,7 +27,7 @@ from parishkit.stewardship.observability import (
 from parishkit.stewardship.web.error_pages import ERROR_PAGE_ATTRIBUTE
 from parishkit.stewardship.web.refusals import mark_not_input, unavailable_response
 
-from . import admin_navigation, campaign_wizard, family_maintenance
+from . import admin_navigation, campaign_wizard, family_maintenance, review_work
 from .authentication import runtime
 from .limiting import LimiterUnavailable
 from .policy import Capability, Principal, allows
@@ -104,13 +104,31 @@ def portal_chrome(request):
     match = getattr(request, "resolver_match", None)
     placed = admin_navigation.placement(request)
     sections, breadcrumbs = admin_navigation.build(match, items, placed)
+    # Staff and Ministry leaders land on My review work, not Home (#1690):
+    # its menu entry (Review work's first, or the top entry when the viewer
+    # has no Review work group; ``_home_in_review`` below), the trail's root
+    # and a "Return to" Home name it so, as the page's heading does
+    # (ui-conventions "One name").
+    home_label = review_work.home_label(actor)
+    if breadcrumbs and breadcrumbs[0]["label"] == admin_navigation.PAGES["index"].label:
+        breadcrumbs[0]["label"] = home_label
+    back = admin_navigation.back(match, placed, items)
+    if back and back["label"] == admin_navigation.PAGES["index"].label:
+        back = back | {"label": home_label}
     attach_counts(sections, _open_counts(request, actor, items, campaign))
+    home_current = bool(breadcrumbs) and len(breadcrumbs) == 1
+    home_in_review = review_work.lands_here(actor) and _home_in_review(
+        sections, home_label, home_current
+    )
     return {
         "admin_chrome": {
             "admin": admin,
             "parish_name": parish.name if parish else None,
             "home_url": reverse("admin:index"),
-            "home_current": bool(breadcrumbs) and len(breadcrumbs) == 1,
+            "home_label": home_label,
+            "home_current": home_current,
+            # My review work is Review work's first entry, not a top Home.
+            "home_in_review": home_in_review,
             "sections": sections,
             "breadcrumbs": breadcrumbs,
             # The viewer's menu entries by page and the reason-check state,
@@ -123,7 +141,7 @@ def portal_chrome(request):
             "campaign_wizard": _campaign_wizard(
                 request, match, campaign, configuration, admin=admin, go_live=go_live
             ),
-            "back": admin_navigation.back(match, placed, items),
+            "back": back,
             "testing": configuration.mode == "testing",
             "testing_recipient": configuration.testing_recipient if admin else None,
             "debug_in_production": _debug_in_production(configuration),
@@ -235,6 +253,35 @@ def request_downloaded(request):
         found = functools.cache(parishsoft_downloaded)
         request._stewardship_parishsoft_data = found
     return found
+
+
+def _home_in_review(sections, label, current):
+    """Put My review work first in the viewer's Review work group, in place.
+
+    Staff and Ministry leaders land on My review work at ``/admin/``
+    (#1690); the menu lists it as the first entry of Review work, beside
+    the worklists it counts, rather than as a Home entry above the groups
+    (admin-portal spec, "Menu groups"; R39 finding 4). On ``/admin/`` the
+    entry and its group are current, so the group stays open. Returns
+    whether the entry was placed: a viewer with no Review work group keeps
+    the top entry instead.
+    """
+    review = next((s for s in sections if s["key"] == "review"), None)
+    if review is None:
+        return False
+    review["items"].insert(
+        0,
+        {
+            "name": "index",
+            "url": reverse("admin:index"),
+            "label": label,
+            "reason": None,
+            "current": "page" if current else None,
+            "count": None,
+        },
+    )
+    review["current"] = review["current"] or current
+    return True
 
 
 def menu_state(campaign, configuration, parishsoft_data=None):
@@ -584,6 +631,12 @@ def _open_counts(request, actor, items, campaign):
     follow-up selection) is logged and the menu renders without numbers,
     and an open view transaction stays usable because the statement runs
     in its own savepoint there.
+
+    Admin Home's Review work counts (#1690) ride on the same statement: the
+    view names the parts it wants in ``request._stewardship_review_flags``
+    (``review_work.read_flags``), and their placed counts are left on
+    ``request._stewardship_review_counts`` for ``review_work.with_counts``,
+    or every flagged stream as not read when the statement fails.
     """
     cached = getattr(request, "_stewardship_open_counts", None)
     if cached is not None:
@@ -595,8 +648,11 @@ def _open_counts(request, actor, items, campaign):
         for item in items
         if item.url and item.name in COUNTED | {"pledges_to_enter"}
     }
+    review = getattr(request, "_stewardship_review_flags", None) or {}
+    if not any(review.values()):
+        review = None
     counts = {}
-    if offered & COUNTED:
+    if offered & COUNTED or review:
         # Inside a view's transaction the statement gets a savepoint, so a
         # failure rolls back only the count. Outside one (autocommit), the
         # statement is its own transaction and a failure leaves nothing
@@ -606,15 +662,24 @@ def _open_counts(request, actor, items, campaign):
         )
         try:
             with isolate():
-                counts = _read_open_counts(offered, actor, campaign)
+                counts, reviewed = _read_open_counts(offered, actor, campaign, review)
         except DatabaseError as error:
             _record_open_counts_failure(error)
+            reviewed = review and review_work.unread(review)
+        if review:
+            request._stewardship_review_counts = reviewed
     request._stewardship_open_counts = counts
     return counts
 
 
-def _read_open_counts(offered, actor, campaign):
-    """Run ``OPEN_COUNTS`` for the ``offered`` entries; see ``_open_counts``."""
+def _read_open_counts(offered, actor, campaign, review=None):
+    """Run ``OPEN_COUNTS`` for the ``offered`` entries; see ``_open_counts``.
+
+    With ``review`` (``review_work.read_flags``), Admin Home's
+    ``review_work.COUNTS`` runs in the same statement, cross-joined to the
+    menu's one row. Returns the menu's counts and the review counts (None
+    without ``review``).
+    """
     from parishkit.stewardship.reports.census_changes import OPEN_GROUPS, open_count
     from parishkit.stewardship.reports.limitations import LimitationsQuery
     from parishkit.stewardship.reports.ministry_followup import (
@@ -635,9 +700,14 @@ def _read_open_counts(offered, actor, campaign):
         and can_tick(actor)
         and getattr(campaign, "state", None) in ROSTER_STATES
     )
+    sql = OPEN_COUNTS.replace("{census}", OPEN_GROUPS)
+    if review:
+        # Both statements are one row; their shared parameters (campaign,
+        # viewer, roster_filters) carry the same values.
+        sql = f"SELECT * FROM ({sql}) menu CROSS JOIN ({review_work.COUNTS}) review"
     with connection.cursor() as cursor:
         cursor.execute(
-            OPEN_COUNTS.replace("{census}", OPEN_GROUPS),
+            sql,
             {
                 "census": census,
                 "information": "information_queue" in offered,
@@ -659,9 +729,13 @@ def _read_open_counts(offered, actor, campaign):
                 ),
                 "roster_outcomes": sorted(ROSTER_OUTCOMES),
                 "viewer": actor.identity,
-            },
+            }
+            | review_work.parameters(review or {}),
         )
-        row = dict(zip(MENU_COLUMNS, cursor.fetchone(), strict=True))
+        values = cursor.fetchone()
+    # The menu's columns by name (MENU_COLUMNS); My review work's own
+    # (review_work.COUNTS, cross-joined after them) follow.
+    row = dict(zip(MENU_COLUMNS, values[: len(MENU_COLUMNS)], strict=True))
     information, ministry, ministries = (
         row["information"],
         row["ministry"],
@@ -669,6 +743,9 @@ def _read_open_counts(offered, actor, campaign):
     )
     groups, roster_count = row["census_groups"], row["roster"]
     roster_ministries, limitations = row["roster_ministries"], row["limitations"]
+    reviewed = (
+        review_work.placed(review, values[len(MENU_COLUMNS) :]) if review else None
+    )
     # A count naming a Ministry outside Python's view of the actor would be
     # refused by the page (in_scope), so it gets no count either.
     if ministry is not None and not in_scope(actor, True, ministries):
@@ -681,7 +758,7 @@ def _read_open_counts(offered, actor, campaign):
     census_count = None if groups is None else open_count(json.loads(groups))
     # An entry not asked for, or a Ministry follow-up the page would show as
     # off or unavailable, reads NULL and gets no count.
-    return {
+    menu = {
         name: count
         for name, count in (
             ("census_changes", census_count),
@@ -692,6 +769,7 @@ def _read_open_counts(offered, actor, campaign):
         )
         if count is not None
     }
+    return menu, reviewed
 
 
 def _record_open_counts_failure(error):

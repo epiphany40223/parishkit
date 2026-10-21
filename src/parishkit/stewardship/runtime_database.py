@@ -327,6 +327,10 @@ def profile_settings(configuration):
         # A LOCAL deployment's choice of the real ParishSoft API (#1399);
         # absent means the profile's default (deployment.PARISHSOFT_BASE_URL_VARIABLE).
         values["STEWARDSHIP_PARISHSOFT_BASE_URL"] = configuration.parishsoft_base_url
+    if configuration.mail_redirect is not None:
+        # The forced mail redirect (#1399), admitted only in the local
+        # profile; mail parents put it in every helper request.
+        values["STEWARDSHIP_MAIL_REDIRECT"] = configuration.mail_redirect
     return values
 
 

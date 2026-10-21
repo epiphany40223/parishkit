@@ -154,8 +154,10 @@ PDF is a summary (headline tiles, then full-width day-by-day charts that
 flow onto following pages) followed by its table, whose type is set
 smaller (`pdf_design.Table` scale) so its fifteen columns of figures fit. The
 [Timeline export](#timeline-export)'s PDF is an infographic sheet
-(`reports/timeline_pdf.py`): under the title, every page names the Family,
-its DUID, envelope number and mode. Page one shows one card per Summary line
+(`reports/timeline_pdf.py`): under the title, every page names the Family
+in a heading of its own, larger than the detail lines (#1841), then a line
+with its DUID, envelope number and any
+[mode detail](#timeline-export). Page one shows one card per Summary line
 in the page's order and words, the Family code's card set apart in the
 warning tint with a short sensitive-data notice (or the page's words when no
 code is shown), and one tile per kind of line (sign-ins and form opens,
@@ -211,8 +213,12 @@ wrapped, and a landscape print setup that fits one page wide, repeats the
 heading row and numbers the pages. Label/value blocks ("Report information"
 sheets and a packet's Ministry details) use one tinted label style; a
 packet's Ministry detail values span the width of the member table below
-them. Styling never changes a cell's value or type. Every report
-workbook's document properties (Excel's File > Info) name its report as its
+them. A sheet about one subject (a packet's Ministry, the
+[Timeline export](#timeline-export)'s Family) opens with title rows: the
+same label/value style above its table, a blank row, then the table, whose
+heading row stays the frozen and printed one, so a printed or forwarded
+sheet still says whom it is about (#1841). Styling never changes a cell's
+value or type. Every report workbook's document properties (Excel's File > Info) name its report as its
 PDF's page title does and "ParishKit Stewardship" as its author. Its
 creation time is a queued report's request time, or the download time of
 Limitations and Census changes, as its PDF's is, so a retried rendering
@@ -259,24 +265,25 @@ and email image keep their own renderer):
   asserts that both charts render, take a pointer, open their table and
   follow a resize with zero policy violations or script errors.
 - **On the server**, vl-convert-python renders the same specification to PNG
-  (at twice its CSS size, for the digests' `cid:` images) and SVG, without
+  (at twice its CSS size, for the report emails' `cid:` images) and SVG, without
   Node or a browser, and reports the image's CSS width and height. These are
   the engine's two formats; how a report page offers the downloads above is
   specified in a later increment (the [response dashboard](#response-dashboard)
-  does not offer them yet). The daily digest's participation chart is the
-  participation graph's renderer. The daily digest's optional
+  does not offer them yet). A report email's
+  [participation charts block](../report-emails/spec.md#participation-charts-block)
+  is the participation graph's renderer. The
   [Compared with past campaigns](../campaign-history/spec.md#digest-section)
-  section's two charts are drawn by this renderer at the email's width (the
+  block's two charts are drawn by this renderer at the email's width (the
   axes and legend inside it) under the timeout name `digest_chart`, and
-  retained as PNGs with the digest so a retry sends the same bytes. Each is
+  retained as PNGs with the report's snapshot so a retry sends the same bytes. Each is
   an inline `cid:` image in the email's related part, never a `data:` URI,
   which Gmail does not show. A chart the renderer cannot draw fails the
-  compile, which is retried; on the last attempt the digest is compiled
+  compile, which is retried; on the last attempt the report is compiled
   without any of these server-drawn charts and sent anyway, since its tables
-  and text part carry every number they draw. That digest retains no images,
-  keeps its comparison section without charts, and its saved page draws none
+  and text part carry every number they draw. That send retains no images,
+  keeps its comparison block without charts, and its saved page draws none
   either, while one ERROR `task_failed` entry (no incident) names the chart and the
-  attempt. A digest is never left unsent for a chart.
+  attempt. A report email is never left unsent for a chart.
   Rendering happens only in workers and
   [export tasks](../background-processing/spec.md#exports-and-graph-rendering),
   never on a page view, and always in a short-lived helper process isolated
@@ -351,9 +358,9 @@ cumulative participant count can shrink and its percentage cannot exceed 100%.
 Current-population scope excludes currently inactive Families at every point.
 The statistics cards have no inactive subtotal; the
 [Response dashboard](#response-dashboard) ignores the retired `inactive`
-query parameter so old bookmarks still load. Digest
-parameters record whichever single population scope applies, so digest parity
-never combines the controls.
+query parameter so old bookmarks still load. Report email
+parameters record whichever single population scope applies, so report
+email parity never combines the controls.
 
 Eligible email follows active `get_family_heads()` Members with at least one
 syntactically valid normalized address. Publish privacy flags do not suppress
@@ -413,10 +420,10 @@ carries the campaign or fact-generation UUIDs, source generation numbers
 or the submission cutoff
 ([#966](https://github.com/epiphany40223/parishkit/issues/966)); the PNG
 and PDF are the chart, not a table.
-The daily digest email states a plain as-of line instead
-([daily campaign digest](../background-processing/spec.md#daily-campaign-digest)),
-and its chart PNG keeps the metadata. The PNG and PDF exports and the daily
-digest email draw this plot with matplotlib; the PDF sets it in the shared
+A report email states a plain as-of line instead
+([shared email layout](../report-emails/spec.md#shared-email-layout)),
+and its chart PNG keeps the metadata. The PNG and PDF exports and the report
+email draw this plot with matplotlib; the PDF sets it in the shared
 report page frame ([file design](#file-design)), while the export and email
 PNGs keep their own titles and layout. Each process draws one matplotlib file
 at a time, because matplotlib's style settings are process-global; only
@@ -473,8 +480,8 @@ exact campaign, scope, promoted-source generation cutoff, effective-submission
 cutoff, and campaign-timezone version. Historical scope reads immutable first-
 eligibility provenance through that generation; current scope reads the exact
 cutoff snapshot population. It atomically publishes that generation only
-after every expected date validates; UI, accessible table, PNG/PDF, and digest
-consumers never combine rows from different input generations.
+after every expected date validates; UI, accessible table, PNG/PDF, and
+report email consumers never combine rows from different input generations.
 
 A successful source promotion, live submission, qualifying eligibility change,
 or approved rebuild request transactionally creates an idempotent rebuild hint.
@@ -503,8 +510,10 @@ uniqueness still deduplicates builds after inputs are frozen. Failed or
 interrupted generations remain unpublished and retryable. Publishing an older
 pinned or recovered generation never moves the interactive pointer backward.
 
-Exports pin their inputs when requested; digests pin theirs when the occurrence
-first records its report inputs, using its stored as-of boundary. These requests
+Exports pin their inputs when requested; report emails pin theirs when the
+occurrence first records its report inputs, using its stored as-of boundary
+(the end of its report day, or its capture instant;
+[as of](../report-emails/spec.md#as-of)). These requests
 bypass ordinary debounce and receive priority exact-generation work. They reuse
 an existing ready/building generation with the same key and never chase later
 submissions, including on retry. Pinning protects the required input records
@@ -527,7 +536,7 @@ never refreshes the page to check. That read records the dashboard's views
 like any other (`response_dashboard_viewed` and `participation_viewed`),
 each marked `automatic: true` in its audit context so it reads as an
 automatic refresh, not as the reader opening the page. A pinned export or
-digest waits/retries for its exact generation and fails visibly rather than
+report email waits/retries for its exact generation and fails visibly rather than
 substituting a different cutoff.
 Recalculation from the pinned source/submission inputs must reproduce every
 stored fact, and a verification job detects drift.
@@ -548,8 +557,8 @@ local date as its heading, then "First submissions",
 "Families that have responded" (out of the scoped population, with
 percentage) and, when financial is enabled, "Effective annual pledges", with no
 explanatory text. A keyboard or screen-reader user gets every date's figures
-from the daily table ([chart engine](#chart-engine)). A saved daily digest's
-page shows its retained chart image instead: pointing at or tapping a date, or
+from the daily table ([chart engine](#chart-engine)). A report email's saved
+copy shows its retained chart image instead: pointing at or tapping a date, or
 choosing it with the date slider, draws the guide line over the image at that
 date and shows a short tooltip: the local date as a
 small heading, then "Families" (cumulative count), "New today" (daily count)
@@ -559,7 +568,7 @@ not move; the screen-reader live text and the slider's value text keep the
 fuller form: scope, local date, daily count, cumulative count out of the scoped
 population with percentage, and exact pledge. Either tooltip's pledge is whole
 dollars (halves round up, such as $760,410); everything else keeps exact
-cents. Report URLs, pinned digest inputs, equivalent data
+cents. Report URLs, pinned report email inputs, equivalent data
 tables, PNG/PDF output, and structured downloads record the scope and exactly
 match the displayed values. A scope note explains why the historical endpoint
 may differ from current-statistics cards.
@@ -637,7 +646,7 @@ same numbers for as long as the evidence is retained (Production-transition
 cleanup removes a rehearsal's records, and the campaign purge the campaign's),
 as [daily email report parity](#daily-email-report-parity) requires. A cutoff
 of "now" can miss rows committing at that moment; a report meant to be
-reproduced uses a cutoff in the past, as the digests do. Mail
+reproduced uses a cutoff in the past, as report emails as of the end of the previous day do. Mail
 evidence is bounded by the as-of instant alone, across every Production cycle
 of the campaign, so a withdrawal and re-activation after the cutoff cannot
 change an earlier reading; in Testing it is the rehearsal epoch's: that
@@ -651,21 +660,21 @@ instant as it stood at the cutoff, so the totals, the series below and the
 lists of Families behind any count all come from the same rows. It is the
 installed SQL function `stewardship_family_response_v1` (migration 0050,
 [#933](https://github.com/epiphany40223/parishkit/issues/933)), which the
-dashboard, the digest and the
+dashboard, report emails and the
 [directory's Response filter](#response-filters) all read, so their counts
 cannot drift apart. The
 [Response dashboard](#response-dashboard) shows its stages as stat tiles
-(no funnel chart is drawn anywhere, neither on the page nor in the emailed
-daily report, which dropped its chart in
+(no funnel chart is drawn anywhere, neither on the page nor in report
+emails; the daily report dropped its chart in
 [#1370](https://github.com/epiphany40223/parishkit/issues/1370)),
 `pk-admin report responses` reports the activity series, and the
 directory's [Response filters](#response-filters) list the Families behind
 the counts; the
 [Timeline](#timeline) shows what happened with one Family; and
-a Production [daily digest](../background-processing/spec.md#daily-campaign-digest)
-states the funnel at the end of its report day, and a Production
-[weekly report](../background-processing/spec.md#weekly-additional-information-digest)
-at its capture instant.
+a Production report email's
+[response funnel block](../report-emails/spec.md#response-funnel-block)
+states the funnel at the report's as-of moment (the end of its report day,
+or its capture instant).
 
 ### Funnel stages
 
@@ -796,12 +805,16 @@ heading, and the page sends `Cache-Control: no-store`. Top to bottom:
    the Families by stage tiles give the funnel's counts and shares and draw
    its bars, and the responses that chart drew are the Submitted tile, so
    both were removed as redundant (`pk-admin report participation` still
-   reports the email reach counts). The emailed daily report has drawn no
+   reports the email reach counts). The emailed reports have drawn no
    funnel chart since
    [#1370](https://github.com/epiphany40223/parishkit/issues/1370), so no
    funnel chart remains anywhere; the Administrator can ask for one back.
 4. **Daily participation**: the Chart population choice, the daily chart
-   and its table ([participation graph](#participation-graph)).
+   and its table ([participation graph](#participation-graph)). Before the
+   chart has a day, the panel says "No campaign dates to show yet. The daily
+   table starts on the Campaign start date and gains a row each day."
+   ([empty tables](../ui-conventions/spec.md#empty-tables-and-lists),
+   [#1828](https://github.com/epiphany40223/parishkit/issues/1828)).
 5. **Export**: the export buttons **Export XLSX**, **Export CSV** and
    **Export PDF**, with no sentence on what they export
    ([export actions](../ui-conventions/spec.md#downloaded-files)), which
@@ -850,8 +863,25 @@ the daily chart's facts, all inside the report's one
 recheck. When the statistics or the daily facts cannot be read from their
 inputs, the Production view still shows the Summary's Families by stage
 row and, instead of the other rows and panels, one line saying they are unavailable right
-now, with no zero assumed; a database or guard failure still answers the
-report's unavailable page. A view records `response_dashboard_viewed` with
+now, with no zero assumed, and that they appear by themselves; a database or
+guard failure still answers the report's unavailable page. The line never
+tells the reader to reload the page
+([pages that update themselves](../ui-conventions/spec.md#pages-that-update-themselves),
+[#1586](https://github.com/epiphany40223/parishkit/issues/1586)): the
+page's figures status stays beside it and keeps watching, through the same
+passive, unaudited status read as the **Updating** notice, at a fixed
+60-second pace and with no Updating notice of its own (its address carries
+`retry=1`, the only value `retry` takes, and only for the dashboard; any
+other is refused with 400). Once a generation other than the newest one
+when the page was drawn is ready (any ready one, when there was none), the
+page re-reads itself once, as it does for newer figures. So when only the
+ParishSoft data is missing ("They appear here by themselves after the
+first ParishSoft update completes"), the page waits for the generation that
+update builds; when the daily facts could not be read (a busy generation is
+already passed over for the next candidate, so what is left seldom clears
+by itself), the page waits for a different generation too, rather than
+re-reading itself, and recording an automatic view, about once a minute
+while nothing has changed. A view records `response_dashboard_viewed` with
 its outcome, and a Production view also `participation_viewed`, started and
 then succeeded or failed (failed, too, when its panels were unavailable);
 neither copies a reported value. The browser draws the charts; a
@@ -908,8 +938,11 @@ later slice of #1570; until then the page has only the Family subject.
 
 `<family>` is the Family's campaign record id, an opaque random identifier
 like a Mail message's; the Family's name, DUID, envelope number and code never
-enter the URL. The heading is "Family name — timeline", but the browser
-title is "Timeline" alone, so browser history does not keep the name. Every
+enter the URL. The page is the Family's
+[information hub](../admin-portal/spec.md#family-information-hub): a header
+strip, then tabs, the first of which (Timeline) holds everything described
+here. The heading is the Family's name, but the browser title is "Timeline"
+alone, so browser history does not keep the name. Every
 Admin table that names a Family links the name to this page through one
 shared helper (the `{% family_link %}` template tag), drawn only for roles
 that may open the page (the shared rule is in
@@ -939,9 +972,10 @@ Data comes first: the heading with the Family's name (the directory's
 surname-and-heads name from the latest ParishSoft data; "Timeline" alone when
 that data no longer has the Family, whose line then starts with the shared
 [Not in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
-badge), a line with its DUID and envelope number and a link to the
-directory, a line with the campaign's name and Counted at, then a summary
-that both roles see:
+badge), a line with its DUID and envelope number (and the hub's
+[Last portal action](../admin-portal/spec.md#hub-header-strip), for both
+roles), with no link to the directory (the Admin menu has it), a line with
+the campaign's name and Counted at, then, in the Timeline tab, a summary that both roles see:
 
 - **Submitted:** Yes, with the first submission's time and, after more than
   one, how many and the latest, noting any that Staff entered for the Family
@@ -1032,7 +1066,10 @@ shows them all, with no paging or row navigator. Its lines are:
 - each submission, noting when Staff entered it for the Family and when no
   receipt was sent because the Family had no email address.
 
-Staff get none of these, and the server does not read them for a Staff view.
+Staff get none of these lines. For a Staff view the server reads only the
+sign-ins, session ends and engagement record behind the
+[Last portal action](../admin-portal/spec.md#hub-header-strip), and keeps
+only the lines that can be it.
 
 **Filters.** One compact filter bar above the table (it wraps on a phone)
 narrows the lines; it is an
@@ -1146,10 +1183,17 @@ oldest first; the Family's identity line and the Summary panel are its report
 information, with the page's words in the page's order (Family, Family DUID,
 Envelope number, the mode, Counted at, Submitted, Last email, Family code,
 Reminders, Campaign email can reach this Family, Furthest step reached, Last
-seen). For a Family the data no longer has, Family is blank and a
+seen). The mode detail is there only for a Testing capture; a Production
+file states no mode, as the directory exports (#1841). The report
+information also names the campaign, from the request's configuration, so
+the PDF's frame shows it above the title as every Admin PDF does. The XLSX's
+Timeline sheet opens with [title rows](#file-design): Family, Family code,
+Campaign and Counted at, in the report information's words and time zone,
+then the table. For a Family the data no longer has, Family is blank and a
 ParishSoft status detail right after it reads
 [Not in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft),
-which the PDF's line under the title shows in place of the name, as the
+which the PDF's Family heading and the XLSX's Family title row show in
+place of the name, as the
 page's heading shows its badge. As for every shared export, the CSV is the
 table alone; the XLSX's Report information sheet and the PDF's summary cards
 carry the rest, including the code. The PDF is an infographic sheet
@@ -1192,8 +1236,11 @@ the Family writes it) and no Reviewer's value (the stream has no Edit).
 
 The filters are always open: **Stage** first, To review by default, each
 choice with its count, then a search (Family name, DUID, the text and Staff
-notes) and the submitted-date filters. History, a Stage choice of its own
-after the stages, lists requests a later answer from the Family replaced
+notes). There is no submitted-date filter: the four review worklists offer
+the same kinds of filter, and the Administrator judged a submitted date
+range not useful (2026-10-20,
+[#1888](https://github.com/epiphany40223/parishkit/issues/1888)). History,
+a Stage choice of its own after the stages, lists requests a later answer from the Family replaced
 (superseded) or cleared (withdrawn); Every stage counts the current
 requests only. The installed SQL selection searches the shown name (surname,
 then heads), as the directory does; the table sorts by Family (surname, then
@@ -1203,6 +1250,16 @@ the data no longer has has no name: the page shows the
 [ParishSoft status](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
 badge in its place, and marks an inactive Family beside its name (#1216).
 No chart or summary sits above the table: the counts are the Stage choices'.
+The search and filters travel in POST bodies; the one address a link may
+carry is a Stage alone (`?stage=<value>`, a
+[My review work](../review-pipeline/spec.md#role-views) card's,
+[#1818](https://github.com/epiphany40223/parishkit/issues/1818)), and any
+other query string, or a Stage the filter does not offer, is refused with
+the page's plain-language filter error (a 400). The removed date filter's
+`start`, `end` and `zone`, in a query string or a POST body (a page drawn
+before #1888), are ignored, never refused. The page's address carries
+its Stage the same way (To review is the plain address), so a reload after
+an in-place answer draws the same Stage.
 
 Staff and Administrators decide each request as the pipeline's
 [role-specific actions](../review-pipeline/spec.md#role-specific-actions)
@@ -1232,7 +1289,8 @@ migration 0126 with follow-up not needed reads as Ignored, since a Staff
 member chose that; a request no Staff member has saved is To review.
 
 Each request's own page shows the submitted text in full, its disposition and
-replacement link, whether a weekly digest already reported it, its Stage,
+replacement link, whether a weekly digest already reported it (a report email,
+which replaced the weekly digest in #1786, records no such mark), its Stage,
 the Family's **Contact details**
 ([#1595](https://github.com/epiphany40223/parishkit/issues/1595)) and the
 request's history, each entry worded by its decision (Accepted, Ignored,
@@ -1251,12 +1309,24 @@ flags do not hide them. Source text that is not a valid address is shown
 with "not a valid address; fix in ParishSoft", as the
 [directory](#active-parishioner-family-directory) shows it, and a detail
 with no value reads "None recorded". A Family the data no longer has shows
-no details and says so; if the data is replaced while the page is read, the
-section says to reload the page. Who sees the section is exactly who may
+no details and says so. If the data is replaced while the page is read,
+the section says the details appear by themselves once the newer ParishSoft
+data can be read, and the page
+[brings them in by itself](../ui-conventions/spec.md#pages-that-update-themselves)
+([#1863](https://github.com/epiphany40223/parishkit/issues/1863)): the
+notice is a status region that reads the passive status
+`/admin/reports/information/contacts/status/?shown=<generation>`
+(`information_contacts_status`), which admits the same readers as the page,
+never extends the sign-in, records no audit event, and says only whether a
+ParishSoft data generation other than the page's own (`shown`) is now in
+use, never a contact value. Once one is, the page re-reads its own address
+once, in place and marked automatic, which records one
+`information_viewed` view with `automatic: true` and reads the details from
+the newer data. Who sees the section is exactly who may
 open the page, Administrators and Staff (`ADDITIONAL_FOLLOWUP`), checked
 again by the contact read itself; Ministry leaders still cannot open the
 page. Only the request page reads the details, never the worklist, its
-exports, the weekly digest or `followup information-show`, and the page's
+exports, report emails or `followup information-show`, and the page's
 `information_viewed` access audit covers them; the audit records no contact
 values. The section reads the snapshot's Family, head Member and contact
 rows directly, as the directory's Family head emails do, so it needed no
@@ -1266,7 +1336,7 @@ The export pane below the table queues the complete export, which includes
 complete text and a workflow history option, and names each Family as the
 page does, from the snapshot its capture was read from; a Family without a
 surname is "Name not recorded in ParishSoft", as the selection names it.
-It takes the worklist's view: the search, the dates and the sort, and the
+It takes the worklist's view: the search and the sort, and the
 Stage as the stored follow-up choices it stands for (To handle: needed, not
 completed; Handled: completed; History: every request, current or not).
 To review and Ignored are both "not needed, not completed" there, so either
@@ -1292,22 +1362,25 @@ to a reader even after the sheet is sorted or filtered. A superseded item's
 request that replaced it, which finds that request's row, or "Not in this
 export" when the export's filters left that request out.
 
-The submitted-date filters (from, through) are whole days in the
-viewer's browser time zone, under the
-[global presentation rules](../spec.md#global-presentation-rules), and work as
-the [Logs screen's date filters](../admin-portal/spec.md#logs) do: the form
-sends the browser's zone with the dates, and a date without a known zone is
-refused, never read in another zone. An export captures the filters with their
-zone, and its retry asks for exactly those filters; a capture made before
-schema migration 0064 has no zone, keeps its campaign-zone days and is retried
-unchanged. The page checks both dates before Apply (a whole date, and
-through no earlier than from); a request that reaches the server with one
-broken is refused, as a bad filter is.
+The selection itself keeps its submitted-date filters (from, through), which
+the host command line still takes (`--start`, `--end` and `--zone`, see
+[Admin automation](../admin-automation/spec.md#reports-and-exports)):
+whole days in the given zone, as the
+[Logs screen's date filters](../admin-portal/spec.md#logs) are in the
+browser's, and a date without a known zone is refused, never read in another
+zone. An export captures the filters with their zone, and its retry asks for
+exactly those filters; a capture made before schema migration 0064 has no
+zone, keeps its campaign-zone days and is retried unchanged. The export pane
+posts no dates; a pane drawn before #1888 still posts its empty ones, which
+are dropped unread. A file whose capture has no dates names no date range:
+its "Filters and sort" leaves out the empty days and zone, and it has no
+"Campaign date-filter timezone" line; a dated capture keeps both.
 
 Every decision is checked against the request's version the row showed; a
 request someone else changed first is left as it is and the notice says so
 ([Concurrency](../review-pipeline/spec.md#concurrency)). This report is also
-the source for the weekly Admin digest.
+the source for report emails'
+[open additional information requests block](../report-emails/spec.md#open-additional-information-requests-block).
 
 ## Active parishioner family directory
 
@@ -1361,8 +1434,24 @@ reauthentication ceremony, distinct-Family reveal budget, or Valkey dependency.
 The server rechecks the report role and campaign scope on each request and uses
 `Cache-Control: no-store` for interactive responses.
 
-In Testing mode the Family sign-in accepts only rehearsal codes, so the page,
-and a directory export's page, says the listed codes work only after go-live.
+An empty table says why, by the Filters panel's own count
+([empty tables](../ui-conventions/spec.md#empty-tables-and-lists),
+[#1828](https://github.com/epiphany40223/parishkit/issues/1828)). With
+Include mailing columns and no other filter, nothing is wrong: "No active
+Family needs a postal invitation: each one has a Family head email that
+campaign mail can reach, or no usable mailing address. Turn off Include
+mailing columns to list every Family." With any other filter: "No Families
+match these filters. Select Clear filters to list every active Family."
+With none: "No active Families in the ParishSoft data yet. Families are
+listed here once a ParishSoft refresh loads them; an Administrator starts
+one from Refresh from ParishSoft." Include response columns adds columns
+and lists the same Families, so it does not count as a filter here, though
+the panel's summary counts it.
+
+In Testing mode the Family sign-in accepts only rehearsal codes, so the page
+says the listed codes work only after go-live; its exports download in place
+from that page ([downloads happen in place](../ui-conventions/spec.md#downloads-happen-in-place)),
+and an export status page opened directly says the same.
 For Administrators the notice links "Try the Family form as a chosen Family",
 the chosen-Family test send they alone may open; Staff get no link and are told
 to ask an Administrator for a test invitation
@@ -1750,7 +1839,7 @@ Ministries is a pre-check and a cross-check. If the database's scope is wider,
 the page is refused. If it is narrower, the narrower scope applies
 ([#389](https://github.com/epiphany40223/parishkit/issues/389) L3). A user the
 application treats as Admin or Staff but the database gives no scope is refused
-rather than shown an empty report. The Admin Home's My Ministries panel and the
+rather than shown an empty report. A leader's My review work cards and the
 follow-up menu count read through the same function and cross-check, so neither
 shows more than the queue would.
 
@@ -2194,15 +2283,18 @@ Updating, To enter by hand, Entered by hand, Updated in ParishSoft,
 Confirmed, Ignored, History for superseded and cancelled rows, and Every
 stage, which counts everything but History), then a Family name or DUID
 search, how the change reaches ParishSoft (Automatic and by hand, Automatic
-only, By hand only), kind of change (contact details, moved, deceased, new
-Member) and submitted date. The page has no summary: the counts are the
-Stage filter's. Sorting, paging and filters act
+only, By hand only) and kind of change (contact details, moved, deceased,
+new Member). There is no submitted-date filter, as on
+[Additional information](#additional-information) (#1888). The page has no
+summary: the counts are the Stage filter's. Sorting, paging and filters act
 [in place](../ui-conventions/spec.md#in-place-controls), and the address
 bar then shows the view's own address with its Stage, closed filters and
 table choices, so a reload draws the same view; the name search stays in
 POST bodies, so a reload clears only it, and a link carrying a search is
-refused (R38). Submitted from and Through are days in the browser's time
-zone; no zone line sits under the filters (R38).
+refused (R38). The removed Submitted from and Through filter's `start`,
+`end` and `zone`, in a link or a form (a page drawn before #1888), are
+ignored, never refused; `pk-admin report census` and `export census` keep
+their own `--start`, `--end` and `--zone`.
 
 The filtered list downloads, from the pane below the table, as CSV, XLSX or
 PDF, every format with the page's values
@@ -2306,8 +2398,7 @@ or the bulk bar, each decision with an optional note, acting
   or Ignore only. The editor starts with the value carried forward now (the
   reviewer's value, else the Family's answer): a date field no later than
   the campaign's today for a birth or death date, the census choices for
-  Gender and Marital status, an address's own parts (street, second line,
-  city, state or region, postal code, country) checked as the Family form
+  Gender and Marital status, an address's own parts checked as the Family form
   checks them, and otherwise text no longer than the field takes (for an
   Automatic change, no longer than ParishSoft's request schema takes:
   First name 30 characters, Email address 150, a phone 25). The value is
@@ -2333,6 +2424,26 @@ or the bulk bar, each decision with an optional note, acting
   accepted base no longer counts, so no later Accept can publish over
   ParishSoft's value without deciding the Conflict again. A reviewer's
   value is kept (a later Accept keeps it too) until the next Edit.
+
+The address editor (Edit's, and [Add](#census-add)'s for a Family address)
+asks for the parts in the Family form's order, Country first ([Family
+census](../parishioner-portal/spec.md#family-census), #1785): Country,
+Street, "Street, second line (optional)", City, State, and ZIP code. Country
+starts as the address's own, or United States for a blank address. For the
+United States, State is the Family form's drop-down of the regions the
+server accepts ("Kentucky (KY)", submitting the code) and the postal field
+is labelled "ZIP code"; for any other country, State is free text labelled
+"State, province or region" and the postal field "Postal code". Changing
+Country swaps the State control in place, at the same position, and each
+State control keeps its value while the other shows, so switching back
+restores it; only the shown one is sent. A US region the list does not offer
+(parish records take any text) is kept, shown and selected, so the server
+refuses it at State ("Choose a state from the list.") rather than it being
+silently dropped. As before, the ZIP code's format is checked by the server
+only, which refuses it at the field. Unlike the Family form, typed region
+text does not carry over to the drop-down on switching to United States: a
+reviewer corrects one address at a time and picks the state. The server
+checks the parts with the Family form's own address rules and messages.
 
 Each is offered only while the change's stage allows it
 ([individual actions](../review-pipeline/spec.md#individual-actions)): never
@@ -2837,9 +2948,8 @@ the projection leaves the column blank, never No (#794).
 Filters include active/inactive, first/latest submission dates, pledge range,
 zero/nonzero/cannot contribute, frequency, and share method. The first and
 latest response dates (From, Through) are whole days in the viewer's browser
-time zone and work as the [Additional information](#additional-information)
-submitted-date filters do: the form sends the browser's zone with the dates,
-and a date without a known zone is refused, never read in another zone
+time zone: the form sends the browser's zone with the dates, and a date
+without a known zone is refused, never read in another zone
 (schema migration 0110). Filters without a zone, from a release before 0110
 or a retained export capture, keep their campaign-zone days. The summary of
 the matching pledges comes first, as visuals
@@ -2900,6 +3010,12 @@ It was "Pledges to enter" until the Administrator renamed it (R39 finding 3,
 stages, decisions and resubmission rule are the
 [Financial stream](../review-pipeline/spec.md#financial-stream)'s; this
 section is the page.
+
+- **Address.** The page's address carries its Stage alone (To review is
+  the plain address; [#1820](https://github.com/epiphany40223/parishkit/issues/1820)),
+  as [Additional information's](#additional-information) does, so a reload
+  after an in-place Stage change draws the Stage on screen. The search stays
+  private POST state.
 
 - **Rows.** One row per Family whose current live response answers the
   financial questions: the rows of
@@ -3126,9 +3242,10 @@ Staff.
 
 ## Daily email report parity
 
-The daily Admin digest uses the same query/calculation service and chart data as
-the participation/statistics web reports for its stored as-of point and defaults
-to Historical as of day. The digest occurrence records the promoted source
+A report email's fact blocks use the same query/calculation service and chart
+data as the participation/statistics web reports for the report's stored as-of
+point ([as of](../report-emails/spec.md#as-of)) and default to Historical as
+of day. The report occurrence records the promoted source
 snapshot, effective-submission version cutoff, selected population scope,
 report parameters, and campaign-local day boundary. That boundary is resolved
 using the immutable campaign timezone recorded with the campaign, not the
@@ -3139,4 +3256,4 @@ those inputs and fact generation even when current eligibility later changes.
 Separate implementations that can drift are prohibited. The email simplifies
 interaction into an image/text table but its values must be reproducible from
 those recorded inputs. Its [response funnel](#response-funnel) is reproduced
-from durable timestamps instead, at the end of the report day.
+from durable timestamps instead, at the report's as-of moment.

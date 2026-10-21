@@ -110,6 +110,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "artwork show",
         "artwork remove-preview",
         "artwork remove",
+        "branding preview",
+        "branding confirm",
         "integration list",
         "integration show",
         "integration status",
@@ -131,6 +133,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "campaign show",
         "campaign preview",
         "campaign confirm",
+        "campaign create-preview",
+        "campaign create",
         "campaign shares-preview",
         "campaign shares-confirm",
     }
@@ -246,6 +250,20 @@ def test_the_catalog_lists_every_command_with_its_flags():
     }
     # Past campaigns' archive import (#1018), listed with the reports.
     reports |= {"history list", "history preview", "history confirm", "history remove"}
+    # The Go live page's actions (PR 12, #1809).
+    go_live = {
+        "go-live preview",
+        "go-live start",
+        "go-live status",
+        "go-live retry",
+        "go-live refresh-again",
+        "go-live stop",
+        "go-live confirm-preview",
+        "go-live confirm",
+        "go-live cancel-preview",
+        "go-live cancel",
+        "go-live families",
+    }
     assert set(entries) == (
         session
         | reads
@@ -258,6 +276,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         | operations
         | reports
         | users
+        | go_live
     )
     for entry in entries.values():
         names = {option["name"] for option in entry["options"]}
@@ -280,6 +299,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
             if name in reports
             else 11
             if name in users
+            else 12
+            if name in go_live
             else 3
         )
         # Only the chosen-Family send, the code and financial exports and an
@@ -304,6 +325,9 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "integration key replace",
                 "integration backup-key confirm",
                 "send confirm",
+                "go-live start",
+                "go-live confirm",
+                "go-live cancel",
             }
         ), name
         # A prompting command, and only one, takes --yes. Other branches add
@@ -320,6 +344,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "export roster",
                 "followup export",
                 "export pledges",
+                "go-live families",
             }
         ), name
         if name in acknowledged:
@@ -987,6 +1012,8 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_parish_confirm",
         "admin_cmd_workgroup_confirm",
         "admin_cmd_campaign_confirm",
+        # campaign create: Create the campaign's Apply (#1899).
+        "admin_cmd_campaign_create",
         # campaign shares-confirm: Share options' Apply (PR 10).
         "admin_cmd_campaign_shares_confirm",
         "admin_cmd_task_retry",
@@ -1030,6 +1057,9 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_history_confirm",
         "admin_cmd_history_remove",
         "admin_cmd_artwork_remove",
+        # Parish logos' upload review and Apply (#1865).
+        "admin_cmd_branding_preview",
+        "admin_cmd_branding_confirm",
         "admin_cmd_integration_confirm",
         "admin_cmd_integration_backup_probe",
         "admin_cmd_integration_dismiss",
@@ -1045,6 +1075,13 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_limitations_decide",
         # Pledges' decisions (#1733).
         "admin_cmd_pledges_decide",
+        # The Go live page's actions (PR 12, #1809).
+        "admin_cmd_go_live_start",
+        "admin_cmd_go_live_retry",
+        "admin_cmd_go_live_refresh_again",
+        "admin_cmd_go_live_stop",
+        "admin_cmd_go_live_confirm",
+        "admin_cmd_go_live_cancel",
     ]
     for event in events:
         assert Action(event) and event in DESCRIPTIONS, event
@@ -2227,7 +2264,8 @@ def test_family_keys_refuse_an_unreadable_ring(tmp_path):
 @pytest.mark.parametrize(
     "template,text",
     [
-        ("delivery.html", admin_cli.RESEND_ACKNOWLEDGEMENT),
+        # The resend's answer form on the Mail message page (#1563).
+        ("delivery-answer.html", admin_cli.RESEND_ACKNOWLEDGEMENT),
         ("delivery-refusal.html", admin_cli.CLEAR_ACKNOWLEDGEMENT),
     ],
 )

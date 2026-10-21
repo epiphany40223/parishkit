@@ -353,6 +353,11 @@ NOT_SETTINGS = {
     r"(.*-)?intent": "a signed one-time intent, drawn anew on every draw",
     r".*-drawn_at": "the send moment a row was drawn from, never saved",
     r"repeat-dates": "written by the script from the repeat rule's controls",
+    r"move": "the Campaign calendar's Move… marker, the same every time (#1521)",
+    r"base_digest": (
+        "the configuration version the calendar's Move… posts; its gate's"
+        " version is a field the script sets per send (#1521)"
+    ),
     r"proposal": "the census row the form edits",
     r"search|status|history|route|kind|start|end|zone|page|size|sort": (
         "the census table's filters (a filter's zone too), page, size and sort"
