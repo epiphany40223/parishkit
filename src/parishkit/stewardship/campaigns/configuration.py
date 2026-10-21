@@ -69,8 +69,16 @@ def validate_short_label(value):
 
 
 def short_label_key(value):
-    """The form two short labels are compared in: trimmed, case folded."""
-    return value.strip().casefold()
+    """The form two short labels are compared in: trimmed, case ignored.
+
+    Upper then lower case is Unicode's full case mapping, which JavaScript's
+    toUpperCase and toLowerCase also apply, so the Share options page's live
+    check (ui-v1.js data-distinct) finds exactly the duplicates the server
+    refuses; "Straße" and "STRASSE" are one label. (``casefold`` differs from
+    it only for rare letters, such as the dotless i, and has no JavaScript
+    equivalent.)
+    """
+    return value.strip().upper().lower()
 
 
 def without_short_labels(options):

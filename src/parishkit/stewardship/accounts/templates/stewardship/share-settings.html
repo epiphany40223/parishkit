@@ -22,13 +22,15 @@ saved change and opens the next step. Save (or Save and continue) also
 waits for every label to be valid (data-require-complete, #1577): a label's
 shared format rule (web/field_rules.py) is checked as it is left, its
 message in the field's reserved line, and the hint after the form says
-what is missing.
+what is missing; so does a short label another option has (#1569, ui-v1.js
+data-distinct), marked as it is typed. The hint keeps its line while empty
+(data-complete-hint="reserve"), so its words coming and going move nothing.
 {% endcomment %}
 <h1>{% translate "Share options" %}</h1>
 <p>{{ campaign.active_configuration.name }}</p>
 <div id="settings-editor" data-in-place-region data-refresh-url="{{ refresh_url }}">{% with wizard=admin_chrome.campaign_wizard %}<form id="settings-form" method="post" action="{{ page_url }}" {% if wizard.direct %}data-direct-save data-direct-saved="{% translate 'Share options saved.' %}"{% else %}data-review-open="share-review"{% endif %} data-require-change="base_digest" data-require-complete data-missing-hint="{% translate 'Check the option labels to save.' %}">{% csrf_token %}{% if wizard.direct %}<input type="hidden" name="action" value="save"><input type="hidden" name="request_key" value="{{ wizard.save_key }}">{% else %}<input type="hidden" name="action" value="preview">{% endif %}<input type="hidden" name="base_digest" value="{{ base_digest }}">
 {% include 'stewardship/share-fields.html' %}
-{% if not wizard.direct %}{% if short_only %}{% translate "Change a short label to save it." as option_hint %}{% else %}{% translate "Change an option to save it." as option_hint %}{% endif %}{% translate "Save" as save_label %}{% include 'stewardship/components/review-changes-button.html' with describedby="share-complete-hint" hint=option_hint label=save_label %}{% endif %}<p class="help" id="share-complete-hint" data-complete-hint hidden></p></form>{% endwith %}</div>
+{% if not wizard.direct %}{% if short_only %}{% translate "Change a short label to save it." as option_hint %}{% else %}{% translate "Change an option to save it." as option_hint %}{% endif %}{% translate "Save" as save_label %}{% include 'stewardship/components/review-changes-button.html' with describedby="share-complete-hint" hint=option_hint label=save_label %}{% endif %}<p class="help" id="share-complete-hint" data-complete-hint="reserve"></p></form>{% endwith %}</div>
 {% include 'stewardship/components/review-outcome.html' with outcome_id="share-outcome" %}
 {% translate "Save the share options?" as review_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="share-review" title=review_title apply_url=page_url outcome_id="share-outcome" fallback="settings-form" describedby="share-review-summary" %}
 {% endblock %}

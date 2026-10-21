@@ -37,6 +37,7 @@ FIELDS = {
     "slack_token": ("/setup-credential-slack", "Slack bot token"),
     "email_subject": ("/content-settings", "Email subject"),
     "share_label": ("/share-settings", "Option label"),
+    "share_short_label": ("/share-settings", "Short label"),
     "family_test_duids": (
         "/family-tests-check",
         "Family DUIDs, one per line (at most ten)",

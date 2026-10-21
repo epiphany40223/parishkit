@@ -6,11 +6,14 @@ import pytest
 from django.http import QueryDict
 
 from parishkit.stewardship.accounts.share_forms import (
+    DUPLICATE_SHORT_LABEL,
+    SHORT_LABEL_RULE,
     STRUCTURE_FIELDS,
     ShareOptions,
     default_share_options,
     share_action,
 )
+from parishkit.stewardship.campaigns.configuration import short_label_key
 
 
 def data_for(previous, *, extra=None):
@@ -185,7 +188,7 @@ def test_default_short_labels_fit_and_are_distinct():
 
     shorts = [row["short_label"] for row in default_share_options()]
     assert all(1 <= len(short) <= SHORT_LABEL_LIMIT for short in shorts)
-    assert len({short.casefold() for short in shorts}) == len(shorts)
+    assert len({short_label_key(short) for short in shorts}) == len(shorts)
 
 
 def test_a_blank_short_label_is_not_stored():
@@ -195,20 +198,54 @@ def test_a_blank_short_label_is_not_stored():
     assert form.values()[0].keys() == {"id", "label", "free_text"}
 
 
-def test_a_repeated_short_label_is_refused_at_its_field():
-    """Two kept options cannot share a short label, even in another case; a
-    deleted option's no longer counts."""
-    previous = default_share_options()[:2]
+# Short labels the server reads as one (short_label_key), and ones it
+# keeps apart; browser/test_share_options_dialog.py runs the same pairs
+# through the page's live check.
+SAME_SHORT_LABELS = [
+    ("Bank check", "BANK check"),
+    ("Online", "  online\t"),
+    ("Straße", "STRASSE"),
+    ("Ελλάς", "ΕΛΛΆΣ"),
+    ("\u00a0IRA", "ira\u3000"),
+]
+OTHER_SHORT_LABELS = [("Bank check", "Bank  check"), ("IRA", "IRAs"), ("e", "é")]
+
+
+@pytest.mark.parametrize(("first", "second"), SAME_SHORT_LABELS)
+def test_short_labels_alike_but_for_case_and_spaces_are_one(first, second):
+    """Spaces around a short label and its case do not tell it apart; upper
+    then lower case is the mapping the page script applies too."""
+    assert short_label_key(first) == short_label_key(second)
+
+
+@pytest.mark.parametrize(("first", "second"), OTHER_SHORT_LABELS)
+def test_short_labels_differing_inside_stay_apart(first, second):
+    """Inner spaces, letters and accents still tell short labels apart."""
+    assert short_label_key(first) != short_label_key(second)
+
+
+def test_a_repeated_short_label_is_refused_at_every_field_with_it():
+    """Two kept options cannot share a short label, even in another case;
+    both are marked, as the page's live check marks them, and a deleted
+    option's no longer counts."""
+    previous = default_share_options()[:3]
     data = data_for(previous) | {"options-1-short_label": "BANK check"}
     form = form_for(previous, data)
     assert not form.is_valid()
-    assert form.forms[0].errors == {}
-    assert [error.code for error in form.forms[1].errors.as_data()["short_label"]] == [
-        "duplicate_short_label"
-    ]
+    for row in (0, 1):
+        assert [
+            error.code for error in form.forms[row].errors.as_data()["short_label"]
+        ] == ["duplicate_short_label"]
+        assert form.forms[row].errors["short_label"] == [
+            "Another option already has this short label."
+        ]
+    assert form.forms[2].errors == {}
     deleted = form_for(previous, data | {"options-0-DELETE": "on"})
     assert deleted.is_valid(), deleted.errors
-    assert [row["short_label"] for row in deleted.values()] == ["BANK check"]
+    assert [row["short_label"] for row in deleted.values()] == [
+        "BANK check",
+        "New e-giving",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -222,6 +259,23 @@ def test_a_long_or_templated_short_label_is_refused(short, code):
     assert [error.code for error in form.forms[0].errors.as_data()["short_label"]] == [
         code
     ]
+
+
+def test_the_short_label_draws_its_rule_group_and_reserved_line():
+    """The short label is one data-distinct group with the server's words,
+    carries its format rule, and keeps an empty reserved error line, so the
+    page's message coming or going moves nothing (#1569)."""
+    previous = default_share_options()[:1]
+    form = form_for(previous).forms[0]
+    attrs = form.fields["short_label"].widget.attrs
+    assert attrs["data-distinct"] == "short-label"
+    assert attrs["data-distinct-message"] == DUPLICATE_SHORT_LABEL
+    assert attrs["data-field-rule"] == SHORT_LABEL_RULE.name
+    assert attrs["maxlength"] == "12"
+    html = str(form["short_label"].as_field_group())
+    line = '<ul class="errorlist" id="id_options-0-short_label_error" hidden>'
+    assert f"{line}<li></li></ul>" in html
+    assert 'class="field-error-line" role="status"' in html
 
 
 def test_the_short_label_greys_with_its_rows_delete_box():

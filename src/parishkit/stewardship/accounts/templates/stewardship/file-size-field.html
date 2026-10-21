@@ -8,8 +8,11 @@ errors in a reserved line: the server's errors and the page's own size
 refusal share the one .errorlist (id "<field id>_error", as Django names
 it), whose line keeps its height while empty so a message coming or going
 never moves the fields below, and which is a polite live region so a screen
-reader hears the page's refusal.
+reader hears the page's refusal. A field with ``error_sizes`` (the messages
+the page may say there, such as Share options' short label, #1569) keeps
+room for the tallest of them, each an invisible copy in the line, so a
+message that wraps on a narrow screen moves nothing either.
 {% endcomment %}{% if field.field.tip %}<div class="label-row">{{ field.tip_label }}{% include "stewardship/components/toggletip.html" with tip_id=field.tip_id tip_label_id=field.tip_label_id tip_text=field.field.tip %}</div>{% else %}{{ field.label_tag }}{% endif %}
 {% if field.help_text %}<div class="helptext"{% if field.auto_id %} id="{{ field.auto_id }}_helptext"{% endif %}>{{ field.help_text|safe }}</div>{% endif %}
-<div class="field-error-line" role="status"><ul class="errorlist" id="{{ field.auto_id }}_error"{% if not field.errors %} hidden{% endif %}>{% for error in field.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div>
+<div class="field-error-line" role="status">{% for size in field.field.error_sizes %}<span class="field-error-size" aria-hidden="true">{{ size }}</span>{% endfor %}<ul class="errorlist" id="{{ field.auto_id }}_error"{% if not field.errors %} hidden{% endif %}>{% for error in field.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div>
 {{ field }}

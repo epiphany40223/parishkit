@@ -49,6 +49,9 @@ SHARE_APPLIED = "/share-in-place-applied"
 SHARE_SETTLED = "/share-in-place-settled"
 # A locked campaign's Share options: only the short labels open (#1569).
 SHARE_LIVE = "/share-in-place-live"
+# Share options drawn again with Option 2's short label refused as another's
+# (#1569): the server marks both options that have it.
+SHARE_DUPLICATE = "/share-in-place-duplicate"
 # The live check's answers (#944), by the end date the browser test types.
 STRANDING = "Some scheduled emails would no longer fit the campaign."
 PASSED = "Choose an end date that has not already passed."
@@ -239,6 +242,14 @@ def components(context, admin):
             ),
         ),
         SHARE_REFUSED: share(sent | {"options-0-label": "{{ family_code }}"}),
+        SHARE_DUPLICATE: share(
+            sent
+            | {
+                f"options-{index}-short_label": option["short_label"]
+                for index, option in enumerate(options)
+            }
+            | {"options-1-short_label": "bank CHECK"}
+        ),
         SHARE_APPLIED: (
             "text/html",
             render_to_string(

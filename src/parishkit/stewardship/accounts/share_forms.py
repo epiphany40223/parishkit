@@ -18,7 +18,9 @@ from parishkit.stewardship.web.field_rules import (
     SPACE,
     FieldRule,
     RuleField,
+    char_class,
     placeholder_text_pattern,
+    spans_of,
 )
 
 from . import field_tips
@@ -77,6 +79,24 @@ SHARE_LABEL = FieldRule(
     empty=_("Enter a label for each option, or tick its Delete box."),
 )
 
+# A short label's characters (#1569), checked by the browser and the server
+# alike: what validate_short_label admits, plain visible text with no brace
+# and no control character, and the spaces around it that the field strips
+# first. Its length is the field's maxlength.
+SHORT_LABEL_RULE = FieldRule(
+    name="share_short_label",
+    pattern=(
+        rf"[{SPACE}]*{char_class(spans_of('{}' + _CONTROLS), negated=True)}*"
+        rf"[{SPACE}]*"
+    ),
+    message=_("Use plain text without placeholders or braces."),
+    code="invalid_short_label",
+)
+# Said at every option whose short label another kept option also has: by
+# the server on Save, and by the page as the Admin types (ui-v1.js
+# data-distinct, which compares the values as short_label_key does).
+DUPLICATE_SHORT_LABEL = _("Another option already has this short label.")
+
 
 def default_share_options():
     """Create fresh option IDs, not shared identities between successive campaigns."""
@@ -100,7 +120,8 @@ class ShareOptionForm(AdminForm):
     )
     label = RuleField(SHARE_LABEL, label=_("Option label"), max_length=1024)
     # Optional (#1569); blank means Admin screens show the full label.
-    short_label = forms.CharField(
+    short_label = RuleField(
+        SHORT_LABEL_RULE,
         label=_("Short label"),
         max_length=SHORT_LABEL_LIMIT,
         required=False,
@@ -108,10 +129,30 @@ class ShareOptionForm(AdminForm):
             "Optional. Shown in the Admin tables and charts instead of the long "
             "label. Families still see the full label."
         ),
+        # Every row's short label is one group: no two kept options share
+        # one, checked as the Admin types (UX conventions "Field errors and
+        # live checks"); the server's check below stays the authority.
+        widget=forms.TextInput(
+            attrs={
+                "data-distinct": "short-label",
+                "data-distinct-message": DUPLICATE_SHORT_LABEL,
+            }
+        ),
     )
     free_text = forms.BooleanField(
         label=_("Include a free-text response"), required=False
     )
+
+    def __init__(self, *args, **kwargs):
+        """Reserve the short label's error line for either of its messages."""
+        super().__init__(*args, **kwargs)
+        # Its reserved line (file-size-field.html) keeps the height of the
+        # taller of the two messages the page says there, so one wrapping
+        # at 320 px moves nothing below it.
+        self.fields["short_label"].error_sizes = (
+            SHORT_LABEL_RULE.message,
+            DUPLICATE_SHORT_LABEL,
+        )
 
     def clean_label(self):
         """Share labels admit only non-private Parish/pronoun substitutions.
@@ -130,15 +171,18 @@ class ShareOptionForm(AdminForm):
         return value
 
     def clean_short_label(self):
-        """A short label is plain visible text: no placeholders (#1569)."""
+        """A short label is plain visible text: no placeholders (#1569).
+
+        The field's rule (SHORT_LABEL_RULE) has refused what this refuses,
+        in the same words; it stays the authority.
+        """
         value = self.cleaned_data["short_label"]
         try:
             if value:
                 validate_short_label(value)
         except ValueError:
             raise forms.ValidationError(
-                _("Use plain text without placeholders or braces."),
-                code="invalid_short_label",
+                SHORT_LABEL_RULE.message, code=SHORT_LABEL_RULE.code
             ) from None
         return value
 
@@ -223,26 +267,24 @@ class ShareOptionsBase(AdminFormSet):
     def _unique_short_labels(self):
         """Refuse a short label another kept option already uses (#1569).
 
-        Compared ignoring case, as a reader would; the error is at the later
-        row's field, so the page marks the field to change. Deleted rows do
-        not count, since their labels go with them.
+        Compared ignoring case and surrounding spaces (``short_label_key``),
+        as a reader would. Every option sharing the label is marked, as the
+        page's live check marks them, so the one just typed in is marked
+        whichever row it is. Deleted rows do not count, since their labels go
+        with them (the page disables their fields).
         """
-        seen = set()
-        for form in self.forms:
-            if self._should_delete_form(form):
-                continue
-            key = short_label_key(form.cleaned_data.get("short_label") or "")
-            if not key:
-                continue
-            if key in seen:
+        kept = [form for form in self.forms if not self._should_delete_form(form)]
+        keys = [
+            short_label_key(form.cleaned_data.get("short_label") or "") for form in kept
+        ]
+        for form, key in zip(kept, keys, strict=True):
+            if key and keys.count(key) > 1:
                 form.add_error(
                     "short_label",
                     forms.ValidationError(
-                        _("Another option already has this short label."),
-                        code="duplicate_short_label",
+                        DUPLICATE_SHORT_LABEL, code="duplicate_short_label"
                     ),
                 )
-            seen.add(key)
 
     def values(self):
         """Django orders surviving rows; unchanged saved IDs remain stable."""

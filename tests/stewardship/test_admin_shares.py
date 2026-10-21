@@ -230,15 +230,16 @@ def test_a_refused_label_is_a_problem_at_its_options_name():
 
 
 @pytest.mark.parametrize(
-    ("short", "words"),
+    ("short", "words", "rows"),
     [
-        # Another option's short label in another case (#1569).
-        ("bank CHECK", "Another option already has this short label."),
-        ("Much too long a name", "at most 12 characters"),
-        ("{{ year }}", "plain text"),
+        # Another option's short label in another case (#1569): both
+        # options that have it are named, as the page marks both.
+        ("bank CHECK", "Another option already has this short label.", [0, 1]),
+        ("Much too long a name", "at most 12 characters", [1]),
+        ("{{ year }}", "plain text", [1]),
     ],
 )
-def test_a_refused_short_label_is_a_problem_at_its_short_name(short, words):
+def test_a_refused_short_label_is_a_problem_at_its_short_name(short, words, rows):
     """The page's short label checks name the option's ``short_name``."""
     previous = default_share_options()[:2]
     kept = _kept(previous)
@@ -247,8 +248,10 @@ def test_a_refused_short_label_is_a_problem_at_its_short_name(short, words):
     )
     assert not formset.is_valid()
     problems = admin_shares.field_errors(formset, count)
-    assert [problem["field"] for problem in problems] == ["options.1.short_name"]
-    assert words in problems[0]["message"]
+    assert [problem["field"] for problem in problems] == [
+        f"options.{row}.short_name" for row in rows
+    ]
+    assert all(words in problem["message"] for problem in problems)
 
 
 def test_the_preview_options_carry_the_short_label():
