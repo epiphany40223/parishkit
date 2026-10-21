@@ -412,7 +412,7 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0119 (#1591) creates nothing: it replaces the baseline packet selection
 # and 0064's report selection in place, which 0094's rerun
 # (``CLOSURE_REPLACED``) brings back older, so ``CLOSURE_REPLACED`` runs
-# 0119's file after it.
+# 0119's file after it; since 0140 (#1718) replaced both again, 0140's.
 # 0121 (#1658) creates nothing: it replaces the
 # occurrence guard (0005's, before the closure), the digest slot check and
 # the weekly page proof (both the baseline's) in place. No closure file
@@ -893,6 +893,9 @@ CLOSURE_ALTERED = {
 # 0119 (#1591) replaces the packet and report selections that 0094's file
 # puts back without the requesting Member's consent, so their entry comes
 # after 0094's, whose rerun the limitations report alone now triggers.
+# 0140 (#1718, provisional number) replaces both again, whole, listing a
+# request under the Ministry its Edit carried forward, so its file (which
+# holds 0119's consent too) is the one that runs.
 CLOSURE_REPLACED = {
     "public.stewardship_debug_off_switch_guard_v1()": (
         ("stewardship_jobs", "0031_debug_allow"),
@@ -925,7 +928,10 @@ CLOSURE_REPLACED = {
             "public.stewardship_ministry_report_v3"
             "(uuid,jsonb,boolean,bigint[],integer,text,integer,integer)",
         ),
-        (("stewardship_reports", "0031_leader_request_contacts"), "AS consented"),
+        (
+            ("stewardship_reports", "0035_edited_ministry_contacts"),
+            "coalesce(r.reviewed_ministry_duid,r.ministry_duid) AS ministry_duid",
+        ),
     ),
     **dict.fromkeys(
         (
