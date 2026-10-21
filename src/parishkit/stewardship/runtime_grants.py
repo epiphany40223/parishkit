@@ -412,6 +412,11 @@ PAGE_MEMBER_NAMES_FUNCTION = "stewardship_delivery_page_member_names_v1(uuid[], 
 # identifiers only, without any grant on the contact records.
 ADDRESS_PEOPLE_FUNCTION = "stewardship_address_people_v1(text, uuid)"
 FAMILY_USERS_FUNCTION = "stewardship_family_users_v1(bigint, uuid)"
+# A user's Timeline's Ministries (#1925), for an Administrator only: the
+# Ministries the leader scope would give a Google account with one address,
+# so a Ministry leader who never signed in (and so has no portal user row)
+# still shows them. It returns only Ministry DUIDs, never a Member's data.
+ADDRESS_LEADER_SCOPE_FUNCTION = "stewardship_address_leader_scope_v1(text, uuid)"
 # An Administrator's report that a delivered email bounced at one address
 # (#806 slice 4): the report's only writer, so web keeps SELECT only on the
 # refusal table; the definer and the refusal guard admit it only from web.
@@ -588,6 +593,11 @@ CLOSURE_FUNCTIONS = {
     # The report conversion's open digest work check (0161,
     # #1786), which the admin-recovery login's offline conversion asks.
     DIGEST_WORK_FUNCTION: ("stewardship_reports", "0041_report_conversion"),
+    # A user's Timeline's Ministries by address (0170, #1925).
+    ADDRESS_LEADER_SCOPE_FUNCTION: (
+        "stewardship_accounts",
+        "0031_address_leader_scope",
+    ),
 }
 
 
@@ -868,8 +878,9 @@ def runtime_functions(role, *, target=None):
     opens that follow-up and reads its link token. Web records an
     Administrator's report that a delivered email bounced (#806 slice 4),
     and, for an Administrator, reads the emails meant for one address and
-    the addresses of a Sent mail page's reports and notices (#1562), and
-    the Families an address belongs to and a Family's users (#1867).
+    the addresses of a Sent mail page's reports and notices (#1562), the
+    Families an address belongs to and a Family's users (#1867), and the
+    Ministries one user's address leads, for that user's Timeline (#1925).
     The general worker asks whether a publication plan's or outcome's audit
     event is recorded (#528), since it cannot read audit rows itself, and
     which added Member links a promoted snapshot supports (#1670).
@@ -913,6 +924,7 @@ def runtime_functions(role, *, target=None):
                 PAGE_MEMBER_NAMES_FUNCTION,
                 ADDRESS_PEOPLE_FUNCTION,
                 FAMILY_USERS_FUNCTION,
+                ADDRESS_LEADER_SCOPE_FUNCTION,
                 DEBUG_OFF_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {

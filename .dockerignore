@@ -188,6 +188,7 @@
 !src/parishkit/stewardship/schema/migrations/0161_report_conversion.sql
 !src/parishkit/stewardship/schema/migrations/0162_report_recovery_coverage.sql
 !src/parishkit/stewardship/schema/migrations/0163_edit_replacement.sql
+!src/parishkit/stewardship/schema/migrations/0170_address_leader_scope.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql
