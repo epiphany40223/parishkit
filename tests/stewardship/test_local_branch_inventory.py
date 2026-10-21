@@ -7,6 +7,10 @@ profile in ``src/parishkit`` and checks that the table names the module and
 the top-level function, class or module-level name that holds it, and that
 the table names nothing that holds none. A new LOCAL branch therefore needs a
 stated reason in the spec before it merges.
+
+It also pins the negative tests against another profile (``!= DEVELOPMENT``
+and the like), which give LOCAL the other branch without naming it; the
+spec prohibits new ones.
 """
 
 import ast
@@ -31,12 +35,21 @@ def _is_branch(node):
     environment-free helpers' ``LOCAL_PROFILE`` constant, and a comparison
     with the string ``"local"`` (the spike's ``--profile`` argument), whether
     ``==``, ``in`` a set, tuple or list, or a ``case "local":`` pattern.
+    ``LOCAL`` on any name counts, so an aliased ``DeploymentProfile`` import
+    cannot hide a branch, and so do ``DeploymentProfile("local")`` and
+    ``DeploymentProfile["LOCAL"]``.
     """
     if isinstance(node, ast.Attribute):
+        return node.attr == "LOCAL" and isinstance(node.value, ast.Name)
+    if isinstance(node, ast.Call):
+        return _is_profile_class(node.func) and any(
+            _is_local_constant(arg) for arg in node.args
+        )
+    if isinstance(node, ast.Subscript):
         return (
-            node.attr == "LOCAL"
-            and isinstance(node.value, ast.Name)
-            and node.value.id == "DeploymentProfile"
+            _is_profile_class(node.value)
+            and isinstance(node.slice, ast.Constant)
+            and node.slice.value == "LOCAL"
         )
     if isinstance(node, ast.Name):
         return node.id == "LOCAL_PROFILE" and isinstance(node.ctx, ast.Load)
@@ -55,6 +68,43 @@ def _is_branch(node):
     return False
 
 
+def _is_profile_class(node):
+    """Whether a node names the ``DeploymentProfile`` class."""
+    return isinstance(node, ast.Name) and node.id == "DeploymentProfile"
+
+
+def _is_negative_profile_test(node):
+    """Whether a comparison is ``!=``, ``is not`` or ``not in`` another profile.
+
+    Such a test gives LOCAL, and any later profile, the other branch without
+    naming it, which the spec prohibits for new code. Only
+    ``DeploymentProfile`` members are scanned: a string such as
+    ``"production"`` is usually a campaign mode, not a profile.
+    """
+    if not isinstance(node, ast.Compare):
+        return False
+    if not any(isinstance(op, (ast.NotEq, ast.IsNot, ast.NotIn)) for op in node.ops):
+        return False
+    return any(
+        isinstance(item, ast.Attribute)
+        and _is_profile_class(item.value)
+        and item.attr != "LOCAL"
+        for operand in [node.left, *node.comparators]
+        for item in ast.walk(operand)
+    )
+
+
+# The negative profile tests that predate LOCAL. Each refuses in the safe
+# direction and is a row of the spec's "Existing profile branches" table;
+# a new one fails the test below.
+NEGATIVE_PROFILE_TESTS = {
+    ("stewardship/cli.py", "main"),
+    ("stewardship/runtime_ingress.py", "production_hostname"),
+    ("stewardship/runtime_topology.py", "render_runtime"),
+    ("stewardship/services.py", "run_service"),
+}
+
+
 def _owner(statement):
     """The name a top-level statement defines, which the table uses."""
     if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
@@ -66,18 +116,20 @@ def _owner(statement):
     return None
 
 
-def code_branches():
-    """Every (module, top-level name) pair in the package that holds a branch.
+def code_branches(predicate=None):
+    """Every (module, top-level name) pair in the package matching a predicate.
 
-    The module is relative to ``src/parishkit``. The definition of the
-    LOCAL constants themselves (``LOCAL = "local"`` and ``LOCAL_PROFILE =
-    "local"``) is not a comparison, so it is not found.
+    The predicate defaults to ``_is_branch``. The module is relative to
+    ``src/parishkit``. The definition of the LOCAL constants themselves
+    (``LOCAL = "local"`` and ``LOCAL_PROFILE = "local"``) is not a
+    comparison, so it is not found.
     """
+    predicate = predicate or _is_branch
     found = set()
     for path in sorted(PACKAGE.rglob("*.py")):
         module = path.relative_to(PACKAGE).as_posix()
         for statement in ast.parse(path.read_text(encoding="utf-8")).body:
-            if any(_is_branch(node) for node in ast.walk(statement)):
+            if any(predicate(node) for node in ast.walk(statement)):
                 found.add((module, _owner(statement) or "<module>"))
     return found
 
@@ -122,6 +174,9 @@ def test_the_scanner_catches_membership_and_case_forms():
         'x not in ["development", "local"]',
         'match x:\n    case "local":\n        pass',
         'match x:\n    case "test" | "local":\n        pass',
+        "p is Profile.LOCAL",
+        'p == DeploymentProfile("local")',
+        'p is DeploymentProfile["LOCAL"]',
     ]
     for source in sources:
         nodes = ast.walk(ast.parse(source))
@@ -137,3 +192,26 @@ def test_every_local_branch_has_a_reason_in_the_spec():
     listed = spec_branches()
     assert sorted(found - listed) == [], "LOCAL branches missing from the spec table"
     assert sorted(listed - found) == [], "spec table names code with no LOCAL branch"
+
+
+def test_the_scanner_catches_negative_profile_tests():
+    """``!=``, ``is not`` and ``not in`` another profile are found; LOCAL is not."""
+    for source in [
+        "p != DeploymentProfile.DEVELOPMENT",
+        "p is not DeploymentProfile.PRODUCTION",
+        "p not in {DeploymentProfile.TEST, DeploymentProfile.PRODUCTION}",
+    ]:
+        nodes = ast.walk(ast.parse(source))
+        assert any(_is_negative_profile_test(node) for node in nodes), source
+    for source in [
+        "p is DeploymentProfile.PRODUCTION",
+        "p is not DeploymentProfile.LOCAL",
+        'mode != "production"',
+    ]:
+        nodes = ast.walk(ast.parse(source))
+        assert not any(_is_negative_profile_test(node) for node in nodes), source
+
+
+def test_no_new_negative_profile_test():
+    """Only the negative profile tests that predate LOCAL remain."""
+    assert code_branches(_is_negative_profile_test) == NEGATIVE_PROFILE_TESTS

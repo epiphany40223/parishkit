@@ -513,6 +513,9 @@ def test_a_new_parishsoft_value_withdraws_an_accepted_approval(
     assert not annotated(row).conflict_accepted
 
 
+# The rule before the reviewed Family form (#1705): forms drawn before
+# its release, as one open across the deploy is.
+@pytest.mark.usefixtures("earlier_rule")
 def test_a_resubmission_does_not_carry_an_accepted_approval(
     live_response_service, monkeypatch
 ):

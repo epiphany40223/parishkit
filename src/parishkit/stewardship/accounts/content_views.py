@@ -569,51 +569,55 @@ def _banner_patch(campaign, form, slot):
     return artwork_patch(campaign, artwork)
 
 
-def _preview(
-    request,
-    service,
-    actor,
-    state,
-    campaign,
-    form,
-    label,
-    previous,
-    slot,
-    salt,
-    note,
-    stale=None,
-    key=None,
+class Refused(Exception):
+    """The editor's values are refused; the bound form's errors say why.
+
+    ``refusal`` is a page refusal shown beside the form (inside the
+    campaign wizard, removing an email a schedule still sends), or None.
+    """
+
+    def __init__(self, refusal=None):
+        """Keep the refusal the page draws beside the form, if any."""
+        super().__init__("The content is refused.")
+        self.refusal = refusal
+
+
+def preview_salt(campaign_id, kind, slot, revision_id):
+    """The editor's signing salt: one page or email of one campaign.
+
+    The editor and ``pk-admin content preview --edit`` (#1873) both sign
+    with it, so a token confirms only the page or email it was built for.
+    """
+    return f"stewardship-content-preview-v1:{campaign_id}:{kind}:{slot}:{revision_id}"
+
+
+def review_change(
+    service, actor, state, campaign, form, previous, slot, salt, note, key=None
 ):
-    """Sign sanitized canonical bytes and disclose every affected mail schedule.
+    """Build and sign one editor change from a bound form, without the request.
 
-    Preview changes' answer is the review dialog's fragment
-    (``content-review.html``, #750): a fictional sample of the current and
-    proposed content, the schedules the new text switches, and the signed
-    preview that the dialog's Apply posts back here (``confirm``). A
-    refusal of the values is this page again (status 400, with its error
-    summary), so it stays on the form. A stale page, an unchanged request
-    (the page's change gate keeps it out of reach) and removing an email a
-    schedule still sends (the Remove box is unavailable then, so only a
-    race reaches it) are refusals the dialog shows.
+    The editor's Preview changes (``_preview``) and ``pk-admin content
+    preview --edit`` (#1873) both build through here, so the two cannot
+    drift. Validates ``form``, checks its base against the pinned state
+    (``stale_page`` when another tab or session changed it), makes the
+    change (``revision_patch``, the banner choice and any folded receipt
+    closing note), checks the candidate (``build_candidate``) and signs it
+    with ``salt``. Returns, for a direct save (``key``, #1404 PR 4b), the
+    signed token alone; otherwise a dict with the fictional sample's
+    ``before`` and ``after``, the saved schedules the change switches
+    (``_affected_rows``: those still to send as ``affected``, those that
+    already sent as ``already_sent``) and the signed ``preview``.
 
-    ``note`` is a retired receipt closing note that the confirmation email
-    editor showed folded into the body (receipt_note); the same request
-    removes it, so the saved email alone carries that text from then on.
-    ``stale`` keeps the saved text's re-save notice on a refused preview, so
-    the Admin still sees why the re-save is needed (#832). ``key`` is a
-    direct save's request key inside the campaign wizard (#1404 PR 4b,
-    ``admin_editing.direct_key``): the preview is signed with it and
-    returned as the signed token, which ``campaign_wizard.save_step``
-    confirms at once, instead of the review. A direct save's refusals are
-    all the page (status 400) with its error summary, as #1404 PR 4b
-    keeps them.
+    Refusals of the values raise ``Refused`` with the reason added to the
+    form. Outside a direct save, an unchanged request and removing an email
+    a schedule still sends raise ``UserFacingError`` instead, which the
+    review dialog (or the command line) shows; inside it both are form
+    errors, as #1404 PR 4b keeps them.
     """
     configuration, fingerprint = state[0], state[-1]
     direct = key is not None
     if not form.is_valid():
-        return _page(
-            request, form, campaign, label, status=400, stale=stale, summary=True
-        )
+        raise Refused()
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
         raise stale_page()
     base = service.store.active()
@@ -637,16 +641,7 @@ def _preview(
             if not direct:
                 raise
             form.add_error(None, ValidationError(error.refusal.message, code="refused"))
-            return _page(
-                request,
-                form,
-                campaign,
-                label,
-                status=400,
-                stale=stale,
-                refusal=error.refusal,
-                summary=direct,
-            )
+            raise Refused(error.refusal) from None
         if not patch:
             if not direct:
                 # The change gate keeps this out of reach; it is the server's
@@ -654,12 +649,10 @@ def _preview(
                 # "Review dialog": no page says nothing has changed).
                 raise UserFacingError(UNCHANGED, fix=_("Nothing was changed."))
             form.add_error(None, ValidationError(UNCHANGED, code="unchanged"))
-            return _page(
-                request, form, campaign, label, status=400, stale=stale, summary=True
-            )
+            raise Refused()
         build_candidate(base, patch, candidate_id=uuid4())
         if direct:
-            # Saved at once: no Review page to draw, so no samples to render.
+            # Saved at once: no review to draw, so no samples to render.
             token = sign_preview(
                 actor=actor,
                 configuration=configuration,
@@ -707,8 +700,8 @@ def _preview(
         )
         if len(token) > 256_000:
             raise ValueError("Content preview is too large.")
-    except UserFacingError:
-        # A refusal for the review dialog (above), not a content problem.
+    except (UserFacingError, Refused):
+        # A refusal for the review dialog, or one already on the form.
         raise
     except (ConfigError, ValueError):
         form.add_error(
@@ -720,20 +713,83 @@ def _preview(
                 code="candidate_refused",
             ),
         )
-        return _page(
-            request, form, campaign, label, status=400, stale=stale, summary=True
-        )
+        raise Refused() from None
     upcoming, sent = _affected_rows(affected, campaign, base.document())
+    return {
+        "before": before,
+        "after": after,
+        "affected": upcoming,
+        "already_sent": sent,
+        "preview": token,
+    }
+
+
+def _preview(
+    request,
+    service,
+    actor,
+    state,
+    campaign,
+    form,
+    label,
+    previous,
+    slot,
+    salt,
+    note,
+    stale=None,
+    key=None,
+):
+    """Preview changes (or a direct save) of the editor: ``review_change``, drawn.
+
+    Preview changes' answer is the review dialog's fragment
+    (``content-review.html``, #750): a fictional sample of the current and
+    proposed content, the schedules the new text switches, and the signed
+    preview that the dialog's Apply posts back here (``confirm``). A
+    refusal of the values is this page again (status 400, with its error
+    summary), so it stays on the form. A stale page, an unchanged request
+    (the page's change gate keeps it out of reach) and removing an email a
+    schedule still sends (the Remove box is unavailable then, so only a
+    race reaches it) are refusals the dialog shows.
+
+    ``note`` is a retired receipt closing note that the confirmation email
+    editor showed folded into the body (receipt_note); the same request
+    removes it, so the saved email alone carries that text from then on.
+    ``stale`` keeps the saved text's re-save notice on a refused preview, so
+    the Admin still sees why the re-save is needed (#832). ``key`` is a
+    direct save's request key inside the campaign wizard (#1404 PR 4b,
+    ``admin_editing.direct_key``): the preview is signed with it and
+    returned as the signed token, which ``campaign_wizard.save_step``
+    confirms at once, instead of the review. A direct save's refusals are
+    all the page (status 400) with its error summary, as #1404 PR 4b
+    keeps them.
+    """
+    try:
+        result = review_change(
+            service, actor, state, campaign, form, previous, slot, salt, note, key
+        )
+    except Refused as refused:
+        return _page(
+            request,
+            form,
+            campaign,
+            label,
+            status=400,
+            stale=stale,
+            refusal=refused.refusal,
+            summary=True,
+        )
+    if key is not None:
+        return result
     return render(
         request,
         "stewardship/content-review.html",
         {
             "label": label,
-            "before": before,
-            "after": after,
-            "affected": upcoming,
-            "already_sent": sent,
-            "preview": token,
+            "before": result["before"],
+            "after": result["after"],
+            "affected": result["affected"],
+            "already_sent": result["already_sent"],
+            "preview": result["preview"],
         },
     )
 
@@ -798,9 +854,7 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
     try:
         service = runtime()
         actor = principal(request, service)
-        salt = (
-            f"stewardship-content-preview-v1:{campaign_id}:{kind}:{slot}:{revision_id}"
-        )
+        salt = preview_salt(campaign_id, kind, slot, revision_id)
         # Only an editor GET may ask to start from the default text.
         start = (
             request.method != "POST"

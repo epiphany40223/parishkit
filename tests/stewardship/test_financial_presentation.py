@@ -63,6 +63,20 @@ def test_first_and_repeat_financial_presentation_does_not_prefill_comparison(ava
     assert financial_presentation(None, None, parish_name="Sample Parish") is None
 
 
+def test_pledge_years_come_from_the_periods_not_the_year_label():
+    """Review's and the giving history's pledge years name their periods (#1923)."""
+    values = configuration() | {"year_label": "2054"}
+    values["financial"].update(
+        comparison_start="2054-07-01", comparison_end="2055-06-30"
+    )
+    config = financial_definition(values, campaign_id=CAMPAIGN)
+    money = financial_inputs(config, None, family_duid=1, pledges=[], contributions=[])
+    form = financial_presentation(money, None, parish_name="Sample Parish")
+    assert form["year_label"] == "2055"
+    assert form["upcoming"]["start"] == "2055-01-01"
+    assert form["comparison"]["years"] == "2054–2055"
+
+
 def test_removed_prior_choice_is_explained_from_its_own_configuration(monkeypatch):
     """A removed option retains only this Family's prior label and note."""
     from parishkit.stewardship.responses import financial_presentation as owner

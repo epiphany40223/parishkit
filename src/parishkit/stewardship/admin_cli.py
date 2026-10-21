@@ -33,8 +33,9 @@ The session commands (``login start``, ``login wait``, ``logout``,
 status commands (``status``, ``task list``, ``task show``, ``send
 progress``, ``send history``, ``schedule show``, ``go-live readiness`` and
 ``go-live progress``) follow (PR 3), built on the read models of
-``admin_reads``. ``task show``, ``send progress`` and ``go-live progress``
-take ``--watch``. The schedule change commands (``schedule preview`` and
+``admin_reads``; ``mail queue`` replaced ``send progress`` (#1562).
+``task show``, ``mail queue`` and ``go-live progress`` take ``--watch``.
+The schedule change commands (``schedule preview`` and
 ``schedule confirm``, in ``admin_changes``) and ``config request show``
 (with ``--watch``) follow (PR 4), then ``task retry`` and the delivery
 commands (PR 9, in ``admin_operations``), ``logs list`` and ``logs
@@ -49,7 +50,9 @@ source-form`` (in ``admin_source_form``), ``report data-to-fix`` (in
 delete`` and ``files rename`` (PR 10, in ``admin_hosted_files``),
 ``content list``, ``content show``, ``content history``, ``content preview``
 and ``content confirm`` (PR 10, in
-``admin_content``), ``integration list``, ``integration show``, ``integration status``
+``admin_content``; their ``--edit`` mode, #1873, is the content editor's
+Review and Apply, reading its fields from standard input after the
+preamble), ``integration list``, ``integration show``, ``integration status``
 and ``integration schedule-preview`` (PR 10, in ``admin_integrations``),
 ``integration key replace`` (PR 10, in ``admin_integration_keys``), which
 takes a key from the host wrapper on the line after the preamble,
@@ -790,11 +793,11 @@ def task_show(args, preamble, runtime, context):
     )
 
 
-def send_progress(args, preamble, runtime, context):
-    """The Family email send in progress, or the most recent one."""
-    from .admin_reads import read_send_progress
+def mail_queue(args, preamble, runtime, context):
+    """Every email waiting to go out, and the Family send in progress (#1562)."""
+    from .admin_reads import read_mail_queue
 
-    return read_send_progress(context["caller"], runtime, audit=context["audit"])
+    return read_mail_queue(context["caller"], runtime, audit=context["audit"])
 
 
 def send_controls(args, preamble, runtime, context):
@@ -1472,22 +1475,41 @@ def content_show(args, preamble, runtime, context):
 
 
 def content_preview(args, preamble, runtime, context):
-    """Build a Pages and emails Delete, or preview typed HTML's plain text (PR 10).
+    """Build an editor change or a Pages and emails Delete, or preview typed
+    HTML's plain text (PR 10, #1873).
 
-    ``--delete`` (repeatable) needs ``--expected-version`` and ``--html``
-    takes none (``main`` checks both before admission). The role is
-    checked first (#1341), before any input is read.
+    ``--edit`` and ``--delete`` (repeatable) need ``--expected-version``,
+    ``--edit`` also ``-`` for its fields, and ``--html`` takes neither
+    (``main`` checks each before admission). The role is checked first
+    (#1341), before any input is read.
     """
     from .admin_content import (
         admit_preview,
         plain_text_preview,
         preview_deletion,
+        preview_edit,
     )
     from .web.content import MAX_TEXT_BYTES
 
-    delete = args.delete is not None
-    actor = admit_preview(context["caller"], runtime, delete=delete)
-    if not delete:
+    change = args.delete is not None or args.edit is not None
+    actor = admit_preview(context["caller"], runtime, change=change)
+    if args.edit is not None:
+        kind, slot = args.edit
+        return preview_edit(
+            context["caller"],
+            runtime,
+            actor,
+            kind,
+            slot,
+            args.revision,
+            # The editor's two long fields and the subject fit, even with
+            # every character escaped in JSON (up to twelve bytes, for a
+            # surrogate pair); the page's own form then checks each field's
+            # limit in its own words.
+            _input(args.fields, context, 24 * MAX_TEXT_BYTES),
+            expected_version=args.expected_version,
+        )
+    if args.delete is None:
         # Unstripped: the page converts the posted HTML exactly as typed.
         return plain_text_preview(
             _input(args.html, context, MAX_TEXT_BYTES, strip=False)
@@ -1502,7 +1524,8 @@ def content_preview(args, preamble, runtime, context):
 
 
 def content_confirm(args, preamble, runtime, context):
-    """Confirm a built Pages and emails Delete as a configuration request (PR 10).
+    """Confirm a reviewed editor change (``--edit``, #1873) or a built Pages
+    and emails Delete as a configuration request (PR 10).
 
     The role is checked first (#1341), before the token is read.
     """
@@ -1516,6 +1539,7 @@ def content_confirm(args, preamble, runtime, context):
         actor,
         token=_input(args.token, context, TOKEN_LIMIT),
         context=context,
+        edit=None if args.edit is None else (*args.edit, args.revision),
     )
 
 
@@ -2907,9 +2931,10 @@ def census_resolve(args, preamble, runtime, context):
 
     Without ``--request-key`` a new key is made and written to standard error
     before anything is done, so a run that crashes can be repeated with it.
-    Entered in ParishSoft cannot be undone, so, as the page's confirmation
-    dialog does, it asks first (or takes ``--yes``); Ignore and Reopen can
-    be undone and ask nothing, as on the page.
+    Every outcome can be undone: Reopen also undoes a terminal step (Entered
+    in ParishSoft, Entered incorrectly, Confirmed, Updated in ParishSoft;
+    #1840) as the page's Back to review does, with the required note. So
+    nothing asks first, and the command takes no ``--yes`` (#1893).
     """
     from .accounts.policy import Capability
     from .admin_census import resolve_census
@@ -2922,15 +2947,6 @@ def census_resolve(args, preamble, runtime, context):
     # The page strips the note it posts; so does a note read from standard
     # input (``_input``).
     note = _input(args.note, context, MAX_NOTE * 4).strip()
-    if args.action == "entered":
-        confirm(
-            context,
-            (
-                f"Mark census change {args.proposal_id} (version "
-                f"{args.expected_version}) as entered in ParishSoft.",
-                "Entered in ParishSoft cannot be undone.",
-            ),
-        )
     return resolve_census(
         context["caller"],
         runtime,
@@ -3244,6 +3260,21 @@ def users_list(args, preamble, runtime, context):
     return read_users(context["caller"], runtime, args.sort, audit=context["audit"])
 
 
+def users_timeline(args, preamble, runtime, context):
+    """One user's Timeline, as the page shows it (#1866)."""
+    from .admin_reads import read_user_timeline
+
+    return read_user_timeline(
+        context["caller"],
+        runtime,
+        args.user,
+        kind=args.kind or "all",
+        start=args.start or "",
+        end=args.end or "",
+        zone=args.zone or "",
+    )
+
+
 def users_preview(args, preamble, runtime, context):
     """Review a change to Admin portal users (#952 slice 5)."""
     from .admin_users import CHANGES_LIMIT, preview_users
@@ -3498,6 +3529,7 @@ DELIVERY_PURPOSES = (
     "weekly_digest",
     "operational",
     "security_event",
+    "leader_email",
 )
 # The resolutions ``delivery resolve`` offers (``admin_operations``); a test
 # keeps them equal.
@@ -3961,9 +3993,27 @@ def _integration_backup_key_confirm_options(parser):
     )
 
 
+def _content_edit_options(parser, mode):
+    """``--edit KIND SLOT`` (in ``mode``, a group or the parser) and
+    ``--revision``: the editor's page or email, as ``content show`` names it."""
+    mode.add_argument(
+        "--edit",
+        nargs=2,
+        metavar=("KIND", "SLOT"),
+        help="the content editor's page or email (page or email, and its slot)",
+    )
+    parser.add_argument(
+        "--revision",
+        type=_uuid,
+        help="with --edit: one email of the mail type, by its content list id",
+    )
+
+
 def _content_preview_options(parser):
-    """Options of ``content preview``: the emails to delete, or HTML to preview."""
+    """Options of ``content preview``: an editor change and its fields, the
+    emails to delete, or HTML to preview."""
     mode = parser.add_mutually_exclusive_group(required=True)
+    _content_edit_options(parser, mode)
     mode.add_argument(
         "--delete",
         action="append",
@@ -3978,12 +4028,21 @@ def _content_preview_options(parser):
     parser.add_argument(
         "--expected-version",
         type=_digest,
-        help="the version content list printed (with --delete)",
+        help="the version content list printed (with --edit or --delete)",
+    )
+    parser.add_argument(
+        "fields",
+        nargs="?",
+        choices=("-",),
+        metavar="-",
+        help="with --edit: read the fields as one JSON object from standard input",
     )
 
 
 def _content_confirm_options(parser):
-    """Options of ``content confirm``: the preview's token."""
+    """Options of ``content confirm``: the editor's page or email, for its
+    review's Apply, and the preview's token."""
+    _content_edit_options(parser, parser)
     parser.add_argument(
         "--token",
         required=True,
@@ -4128,7 +4187,10 @@ def _delivery_list_options(parser):
     )
     parser.add_argument(
         "--recipient",
-        help="a Family DUID, an email address or a delivery ID, as the page's",
+        help=(
+            "a Family DUID, an email address, a delivery ID or part of a "
+            "name, as the page's"
+        ),
     )
     _page_options(parser)
 
@@ -4702,7 +4764,8 @@ def _census_resolve_options(parser):
         required=True,
         choices=CENSUS_ACTIONS,
         help="entered (Entered in ParishSoft), ignored (Ignore) or reopened "
-        "(Reopen, Administrators only)",
+        "(Reopen an ignored change, Administrators only; or Back to review of "
+        "an entered, updated or confirmed change, which undoes that step)",
     )
     parser.add_argument(
         "--expected-version",
@@ -4713,9 +4776,11 @@ def _census_resolve_options(parser):
     parser.add_argument(
         "--note",
         default="",
-        help="an optional note (required to reopen), or - to read it from "
-        "standard input (needs --yes)",
+        help="an optional note (required to reopen or undo), or - to read it "
+        "from standard input",
     )
+    # A mark asked first while it was final; nothing asks now (#1840), and
+    # the Administrator removed --yes with no backwards compatibility (#1893).
     _request_key_option(parser)
 
 
@@ -5102,6 +5167,21 @@ def _users_list_options(parser):
     )
 
 
+def _users_timeline_options(parser):
+    """Options of ``users timeline``: the user and the page's filters."""
+    parser.add_argument(
+        "--user", required=True, type=_uuid, help="the user's ID, as users list prints"
+    )
+    parser.add_argument(
+        "--kind", help="all (default), sessions, actions, roles or emails"
+    )
+    parser.add_argument("--from", dest="start", help="first day, YYYY-MM-DD, in --zone")
+    parser.add_argument("--to", dest="end", help="last day, YYYY-MM-DD, in --zone")
+    parser.add_argument(
+        "--zone", help="the IANA time zone of --from and --to, e.g. America/New_York"
+    )
+
+
 def _wait_options(parser):
     """Options of ``login wait``."""
     parser.add_argument("--name", help="the session file's name (wrapper only)")
@@ -5190,9 +5270,9 @@ def _read_specs():
     from .admin_reads import (
         GoLiveProgress,
         GoLiveReadiness,
+        MailQueueRead,
         ScheduleShow,
         SendHistory,
-        SendProgressRead,
         Status,
         TaskList,
         TaskShow,
@@ -5243,12 +5323,12 @@ def _read_specs():
             watch_subject="task_id",
         ),
         CommandSpec(
-            "send progress",
-            "Show the Family email send in progress, or the latest one.",
-            send_progress,
+            "mail queue",
+            "Show every email waiting to go out, and the Family send in progress.",
+            mail_queue,
             "read_only",
             False,
-            SendProgressRead.field_names(),
+            MailQueueRead.field_names(),
             3,
             options=(_watch_options,),
             audit_event="delivery_viewed",
@@ -6007,14 +6087,16 @@ def _file_specs():
             options=(_content_history_options,),
             audit_event=None,
         ),
-        # The email tables' Delete, split into a preview and a confirm as
-        # schedule preview / schedule confirm split a schedule's Delete,
+        # The editor's Preview changes and its review's Apply (#1873) and
+        # the email tables' Delete, each split into a preview and a confirm
+        # as schedule preview / schedule confirm split a schedule's Delete,
         # and the editors' plain-text preview. Full scope, as the Delete
         # post records activity; neither is privileged, and the reviewed
         # token stands in for the dialog, so neither prompts.
         CommandSpec(
             "content preview",
-            "Build a delete of unused emails, or preview HTML as plain text.",
+            "Review an editor change or a delete of unused emails, or preview "
+            "HTML as plain text.",
             content_preview,
             "full",
             False,
@@ -6026,7 +6108,7 @@ def _file_specs():
         ),
         CommandSpec(
             "content confirm",
-            "Confirm a built delete of unused emails.",
+            "Apply a reviewed editor change or a built delete of unused emails.",
             content_confirm,
             "full",
             True,
@@ -7120,8 +7202,7 @@ def _report_specs():
             CensusResolve.field_names(),
             8,
             options=(_census_resolve_options,),
-            # Only Entered in ParishSoft, which cannot be undone, asks.
-            prompts=True,
+            # Nothing asks any more: every outcome can be undone (#1840).
             request_key=True,
             expected_version=True,
         ),
@@ -7200,13 +7281,15 @@ def _users_specs():
 
     ``users list`` and ``users preview-upgrade`` are passive reads any
     session may run; each records the page's view event,
-    ``portal_users_viewed``. ``users preview`` and ``users confirm`` change
-    users as the Users page does (slice 5) and need a full-scope session, as
+    ``portal_users_viewed``. ``users timeline`` is one user's Timeline
+    (#1866), also passive, recording ``user_timeline_viewed``. ``users
+    preview`` and ``users confirm`` change users as the Users page does
+    (slice 5) and need a full-scope session, as
     does ``users import-leaders``, the page's leaders table and import
     (slice 6), and ``users email-leaders``, its Email Ministry leaders
     review and Apply (#1622).
     """
-    from .admin_reads import UsersList, UsersUpgradePreview
+    from .admin_reads import UsersList, UsersUpgradePreview, UserTimelineRead
     from .admin_users import LeaderEmails, LeaderImport, UsersConfirm, UsersPreview
 
     return (
@@ -7220,6 +7303,17 @@ def _users_specs():
             11,
             options=(_users_list_options,),
             audit_event="portal_users_viewed",
+        ),
+        CommandSpec(
+            "users timeline",
+            "Show one user's timeline: sign-ins, actions, role changes, emails.",
+            users_timeline,
+            "read_only",
+            False,
+            UserTimelineRead.field_names(),
+            11,
+            options=(_users_timeline_options,),
+            audit_event="user_timeline_viewed",
         ),
         CommandSpec(
             "users preview-upgrade",
@@ -7805,19 +7899,25 @@ def _yes_no(value):
 def followup_roster_entered(args, preamble, runtime, context):
     """Set or clear one request's Entered in ParishSoft tick (#463, #528).
 
-    The request page's tick asks nothing, so neither does this. Without
-    ``--request-key`` a new key is made and written to standard error
-    before anything is done.
+    The request page's tick asks nothing, so neither does this. ``--clear``
+    is Back to review of the mark (#1840) and needs ``--note``, as the
+    page's dialog does. Without ``--request-key`` a new key is made and
+    written to standard error before anything is done.
     """
     from .admin_roster_tick import roster_entered
+    from .workflows.review import MAX_NOTE
 
     key = _request_key(args, context)
+    # The page's dialog strips the note it posts; so does a note read from
+    # standard input (``_input``).
+    note = None if args.note is None else _input(args.note, context, MAX_NOTE * 4)
     return roster_entered(
         context["caller"],
         runtime,
         args.request_id,
         expected_version=args.expected_version,
         entered=args.set,
+        note=note.strip() if note is not None else None,
         request_key=key,
         context=context,
     )
@@ -7899,13 +7999,24 @@ def _roster_entered_options(parser):
         action="store_true",
         help="mark the change entered in ParishSoft",
     )
-    choice.add_argument("--clear", action="store_true", help="clear a mistaken mark")
+    choice.add_argument(
+        "--clear",
+        action="store_true",
+        help="clear a mistaken mark: Back to review of Entered by hand, which "
+        "needs --note",
+    )
     parser.add_argument(
         "--expected-version",
         required=True,
         type=_tick_version,
         help="the tick's current sequence, as followup show prints "
         "roster.sequence (0 before any tick)",
+    )
+    parser.add_argument(
+        "--note",
+        metavar="TEXT|-",
+        help="why the mark is cleared (required with --clear), or - to read "
+        "it from standard input",
     )
     _request_key_option(parser)
 
@@ -8152,9 +8263,8 @@ def _worklist_decide(stream, args, context, runtime):
     The page's own role check comes first, so a Ministry leader is
     ``denied`` before any input or prompt. Without ``--request-key`` a new
     key is made and written to standard error before anything is done.
-    Handled is final, so, as a decision that cannot be undone, it asks
-    first (or takes ``--yes``); the others can be changed again and ask
-    nothing.
+    Every decision can be changed again, Handled too (Back to review with a
+    note, #1840), so none asks first, and none takes ``--yes`` (#1893).
     """
     from . import admin_worklists
     from .web.review_worklist import MAX_NOTE
@@ -8170,14 +8280,6 @@ def _worklist_decide(stream, args, context, runtime):
     # Refused before the prompt: nothing is asked about a decision the page
     # could not post (too many items, a malformed item, a long note).
     admin_worklists.check_choice(stream, versions, note)
-    if args.action == "handled":
-        confirm(
-            context,
-            (
-                f"Mark {len(versions)} {stream.items} handled.",
-                "Handled is final: it cannot be undone.",
-            ),
-        )
     return admin_worklists.decide(
         stream,
         context["caller"],
@@ -8260,7 +8362,7 @@ def _decide_options(chosen, source):
             "--action",
             required=True,
             choices=DECIDE_ACTIONS,
-            help="accept, ignore, back_to_review or handled (final)",
+            help="accept, ignore, back_to_review or handled",
         )
         parser.add_argument(
             "--item",
@@ -8274,9 +8376,12 @@ def _decide_options(chosen, source):
         parser.add_argument(
             "--note",
             default="",
-            help="an optional note (required to reopen an ignored item), or - "
-            "to read it from standard input (which then needs --yes)",
+            help="an optional note (required to reopen an ignored item or to "
+            "undo Handled), or - to read it from standard input",
         )
+        # A mark asked first while it was final; nothing asks now (#1840), and
+        # the Administrator removed --yes with no backwards compatibility
+        # (#1893).
         _request_key_option(parser)
 
     return add
@@ -8287,8 +8392,7 @@ def _worklist_specs():
 
     ``information list`` is a passive read any session may run, as
     ``followup information-show``; the ``decide`` commands are keyed and
-    full scope, and neither privileged nor asking except for Handled, as on
-    the pages.
+    full scope, and neither privileged nor asking, as on the pages.
     """
     from .admin_worklists import InformationList, WorklistDecide
 
@@ -8315,8 +8419,7 @@ def _worklist_specs():
             WorklistDecide.field_names(),
             11,
             options=(_decide_options(_chosen_request, "information list"),),
-            # Only Handled, which is final, asks.
-            prompts=True,
+            # Nothing asks (Handled can be undone, #1840).
             request_key=True,
         ),
         CommandSpec(
@@ -8330,7 +8433,7 @@ def _worklist_specs():
             options=(
                 _decide_options(_chosen_answer, "export limitations --format jsonl"),
             ),
-            prompts=True,
+            # Nothing asks (Handled can be undone, #1840).
             request_key=True,
         ),
     )
@@ -8379,9 +8482,9 @@ def pledges_decide(args, preamble, runtime, context):
     The page's own role check comes first, so a Ministry leader is
     ``denied`` before any input or prompt. Without ``--request-key`` a new
     key is made and written to standard error before anything is done.
-    Entered by hand is final, so, as a decision that cannot be undone, it
-    asks first (or takes ``--yes``); the others can be changed again and
-    ask nothing.
+    Every decision can be changed again, Entered by hand too (Back to
+    review with a note undoes it, #1840), so none asks first, and it takes
+    no ``--yes`` (#1893).
     """
     from . import admin_pledges
     from .web.review_worklist import MAX_NOTE
@@ -8394,20 +8497,12 @@ def pledges_decide(args, preamble, runtime, context):
     # The page strips the note it posts; so does a note read from standard
     # input (``_input``).
     note = _input(args.note, context, MAX_NOTE * 4).strip()
-    # Refused before the prompt: nothing is asked about a decision the page
-    # could not post (too many pledges, a long note, a value or option an
-    # Edit would refuse).
+    # Refused before any transaction: a decision the page could not post
+    # (too many pledges, a long note, a value or option an Edit would
+    # refuse).
     admin_pledges.check_choice(
         versions, args.action, amount=args.amount, frequency=args.frequency, note=note
     )
-    if args.action == "entered_by_hand":
-        confirm(
-            context,
-            (
-                f"Mark {len(versions)} pledge(s) entered by hand in ParishSoft.",
-                "Entered by hand is final: it cannot be undone.",
-            ),
-        )
     return admin_pledges.decide_pledges(
         context["caller"],
         runtime,
@@ -8475,7 +8570,7 @@ def _pledges_decide_options(parser):
         required=True,
         choices=DECIDE_ACTIONS,
         help="accept, edit (one pledge, with --amount), ignore, "
-        "back_to_review or entered_by_hand (final)",
+        "back_to_review or entered_by_hand",
     )
     parser.add_argument(
         "--item",
@@ -8498,9 +8593,13 @@ def _pledges_decide_options(parser):
     parser.add_argument(
         "--note",
         default="",
-        help="an optional note (required to reopen an ignored pledge), or - "
-        "to read it from standard input (entered_by_hand then needs --yes)",
+        help="an optional note (required to reopen an ignored pledge or to "
+        "undo Entered by hand, Entered incorrectly or Confirmed with "
+        "back_to_review), or - to read it from standard input",
     )
+    # Entered by hand asked first while it was final; nothing asks now
+    # (#1840), and the Administrator removed --yes with no backwards
+    # compatibility (#1893).
     _request_key_option(parser)
 
 
@@ -8510,7 +8609,7 @@ def _pledge_specs():
     ``report pledges`` is a read-only count; ``export pledges`` needs full
     scope, as every export and as the download's post records activity;
     ``pledges decide`` is keyed and full scope, and neither privileged nor
-    asking except for Entered by hand, as on the page.
+    asking, as on the page.
     """
     from .admin_pledges import PledgeDecide, PledgeExport, PledgeReport
 
@@ -8552,8 +8651,7 @@ def _pledge_specs():
             PledgeDecide.field_names(),
             8,
             options=(_pledges_decide_options,),
-            # Only Entered by hand, which is final, asks.
-            prompts=True,
+            # Nothing asks: every decision can be undone (#1840).
             request_key=True,
         ),
     )
@@ -9498,6 +9596,29 @@ def streaming_command(argv):
     return any(spec.streams and named(spec.name.split()) for spec in COMMANDS)
 
 
+def _check_content_usage(args):
+    """The content verbs' option rules argparse cannot say (#1873).
+
+    An editor change (``--edit``) and a Delete are built against a version;
+    the plain-text preview reads no configuration, so it takes none. Only
+    an editor change reads its fields (``-``), and only it names a
+    ``--revision``; its kind is ``page`` or ``email``.
+    """
+    if args.edit is None:
+        if args.revision is not None:
+            raise UsageError("--revision goes with --edit.")
+    elif args.edit[0] not in {"page", "email"}:
+        raise UsageError("--edit takes page or email, then the slot.")
+    if args.command_name != "content preview":
+        return
+    if (args.delete is None and args.edit is None) != (args.expected_version is None):
+        raise UsageError(
+            "--expected-version goes with --edit or --delete, and only there."
+        )
+    if (args.edit is None) != (args.fields is None):
+        raise UsageError("--edit reads its fields from standard input (-), alone.")
+
+
 def main(argv=None, *, stdin=None, stdout=None, stderr=None):
     """Console entry for ``pk-stewardship admin``: parse, run, exit with its code."""
     from .observability import configure_logging
@@ -9513,12 +9634,8 @@ def main(argv=None, *, stdin=None, stdout=None, stderr=None):
             raise UsageError("A command is required.")
         if args.command_name == "login wait" and not 1 <= args.timeout <= 600:
             raise UsageError("The timeout is 1 to 600 seconds.")
-        if args.command_name == "content preview" and (
-            (args.delete is None) != (args.expected_version is None)
-        ):
-            # The Delete is built against a version; the plain-text preview
-            # reads no configuration, so it takes none.
-            raise UsageError("--expected-version goes with --delete, and only there.")
+        if args.command_name in {"content preview", "content confirm"}:
+            _check_content_usage(args)
         if args.command_name == "integration key replace" and args.changes == "-":
             # Standard input carries the key (and the prompt's answer).
             raise UsageError("Give --changes as JSON; standard input holds the key.")

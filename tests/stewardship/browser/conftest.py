@@ -193,6 +193,7 @@ from .upload_defaults_components import components as upload_defaults_components
 from .upload_defaults_components import posts as upload_defaults_posts
 from .user_components import POSTS as USER_POSTS
 from .user_components import components as user_components
+from .user_timeline_components import components as user_timeline_components
 from .weekly_components import components as weekly_components
 
 # The default Ministry leader roles a new campaign starts with (#922).
@@ -782,28 +783,11 @@ def component_origin():
             },
         ),
         (
-            # The Backup encryption key change's review page; the other
-            # integrations review in the review dialog (#750).
-            "/integration-preview",
-            "integration-preview",
-            {
-                "target": "backup_key",
-                "label": "Backup encryption key",
-                "preview": "synthetic-preview",
-                "changes": [
-                    {
-                        "label": "Key fingerprint",
-                        "before": "0123456789abcdef",
-                        "after": "fedcba9876543210",
-                    }
-                ],
-            },
-        ),
-        (
             "/backup-key",
             "backup-key",
             {
                 "label": "Backup encryption key",
+                "page_url": "/admin/system/integrations/backup_key/",
                 "current": KeyStatus("installed", "0123456789abcdef", backup_at=NOW),
                 "key_error": "This is not a backup public key.",
             },
@@ -813,6 +797,7 @@ def component_origin():
             "backup-key",
             {
                 "label": "Backup encryption key",
+                "page_url": "/admin/system/integrations/backup_key/",
                 "current": KeyStatus("configured", "0123456789abcdef"),
                 "new_fingerprint": "fedcba9876543210",
                 # A real challenge line is one unbroken 87-character word.
@@ -868,7 +853,9 @@ def component_origin():
                         "after": "2055-10-01 through 2055-10-31",
                     }
                 ],
-                "schedules": [_describe(mail["values"], mail_campaign["values"])],
+                "schedules": [
+                    _describe(mail["values"], mail_campaign["values"], now=NOW)
+                ],
                 "preview": "synthetic-preview",
                 "content_previews": [
                     {
@@ -1726,6 +1713,18 @@ def component_origin():
         ("/availability", "availability", {"setup": True, "admin": True}),
         ("/family-maintenance", "family-maintenance", {"message": "Back by 3 PM."}),
         ("/denied", "denied", {"retry_path": "/admin/login"}),
+        # The generic Admin refusal, with the Google Account guidance (#1593).
+        (
+            "/denied-admin",
+            "denied",
+            {"retry_path": "/admin/login", "admin": True, "sign_in": True},
+        ),
+        # A signed-in person's refusal (a report view) gets no guidance.
+        (
+            "/denied-admin-signed-in",
+            "denied",
+            {"retry_path": "/admin/login", "admin": True},
+        ),
         ("/denied-code", "denied", {"retry_path": "/", "kind": "code"}),
         ("/denied-link", "denied", {"retry_path": "/", "kind": "link"}),
         (
@@ -2202,6 +2201,7 @@ def component_origin():
     responses.update(tabs_components(context, admin))
     responses.update(find_family_components(context, admin))
     responses.update(user_components(context, admin))
+    responses.update(user_timeline_components(context, admin))
     responses.update(security_components(context, admin))
     responses.update(not_found_components(context, admin))
     responses.update(go_live_components(context, admin))
@@ -2301,6 +2301,7 @@ def component_origin():
         ("admin-gate-v1.js", "application/javascript"),
         ("admin-menu-v1.js", "application/javascript"),
         ("admin-menu-state-v1.js", "application/javascript"),
+        ("remember-open-v1.js", "application/javascript"),
         ("find-family-v1.js", "application/javascript"),
         ("date-format-v1.js", "application/javascript"),
         ("family-v1.js", "application/javascript"),

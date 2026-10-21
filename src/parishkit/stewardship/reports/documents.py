@@ -7,12 +7,16 @@ from .inputs import DAY_FIELDS
 from .participation import ParticipationDay, ParticipationDocument
 
 
-def participation_document(facts, *, parish_name, browser_timezone, requested_at):
+def participation_document(
+    facts, *, parish_name, browser_timezone, requested_at, summary=None
+):
     """Detach one complete series while the caller retains its pin or read guard.
 
     Read only required source metadata, not its validation/cursor payload. The
     selected generation's configuration, not today's configuration, describes
     its name, timezone, enabled financial series and date interval.
+    ``summary`` is the export's captured Response dashboard Summary
+    (``participation_summary.ParticipationSummary``, #1557), or None.
     """
     projection = CampaignConfiguration.objects.get(pk=facts.timezone_configuration_id)
     source_as_of = SourceSnapshot.objects.values_list("promoted_at", flat=True).get(
@@ -37,4 +41,5 @@ def participation_document(facts, *, parish_name, browser_timezone, requested_at
             ParticipationDay(**row)
             for row in facts.days.order_by("local_date").values(*sorted(DAY_FIELDS))
         ),
+        summary=summary,
     )

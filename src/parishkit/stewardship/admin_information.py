@@ -40,6 +40,9 @@ from .admin_roster_tick import admit_with, scoped_write
 MAX_NOTES = 5000
 # Reopening an ignored request needs a reason (#1685), as on the page.
 REOPEN_NOTE = "This request is Ignored; give --notes saying why it is reopened."
+# Clearing a completed follow-up undoes Handled, which needs a reason too
+# (#1840), as Back to review on the worklist does.
+UNDO_NOTE = "This request is Handled; give new --notes saying why it is undone."
 # The page's confirmation box, on the command line.
 CONFIRM_CLEAR = (
     "This follow-up is completed; give --confirm-clear to reopen it. The "
@@ -233,11 +236,13 @@ def update_information_item(
     ``needed``, ``completed`` and ``notes`` None keep the current values
     (``_kept``). The item must be a Live item of the current campaign (else
     ``not_available``); then the page's service checks the version (else
-    ``stale_version``) and the clearing confirmation (``invalid`` at
-    ``confirm_clear``), and records ``information_updated``. The key binds
-    the revision: a repeat with the same change returns it and records
-    nothing, and the key with another change is ``invalid``. A new revision
-    records ``admin_cmd_followup_information_update``.
+    ``stale_version``), the clearing confirmation (``invalid`` at
+    ``confirm_clear``) and, for clearing a completed follow-up or reopening
+    an Ignored request, new notes (``invalid`` at ``notes``), and records
+    ``information_updated``. The key binds the revision: a repeat with the
+    same change returns it and records nothing, and the key with another
+    change is ``invalid``. A new revision records
+    ``admin_cmd_followup_information_update``.
     """
     from .admin_report_reads import _current
     from .audit.schemas import Action
@@ -245,6 +250,7 @@ def update_information_item(
     from .responses.information import (
         ClearUnconfirmed,
         ReopenNeedsNote,
+        UndoNeedsNote,
         update_information,
     )
     from .responses.models import (
@@ -284,6 +290,8 @@ def update_information_item(
             )
         except ClearUnconfirmed:
             raise InvalidFollowup([problem("confirm_clear", CONFIRM_CLEAR)]) from None
+        except UndoNeedsNote:
+            raise InvalidFollowup([problem("notes", UNDO_NOTE)]) from None
         except ReopenNeedsNote:
             raise InvalidFollowup([problem("notes", REOPEN_NOTE)]) from None
         if previous is None:

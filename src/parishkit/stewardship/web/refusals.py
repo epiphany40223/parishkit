@@ -75,6 +75,10 @@ class Refusal:
     # The closed reason code the refusal log records (#1403;
     # ``audit.refusal_context.REASONS``); never shown.
     reason: str | None = None
+    # Whether the browser error page offers Sign in again for a 403. False
+    # for a refusal that signing in cannot fix, such as a role that lacks
+    # the page (#1924).
+    sign_in: bool = True
 
     def as_dict(self):
         """JSON-safe fields for scripts; the link is a same-origin path."""
@@ -111,6 +115,9 @@ class UserFacing(TypedRefusal):
     """
 
     default_reason = None
+    # Copied to ``Refusal.sign_in``: a subclass whose refusal signing in
+    # cannot fix sets it False.
+    offers_sign_in = True
     # What the refusal log adds (#1403): the number of submitted field names
     # the form does not have, and its own fields sent more than once
     # (``unexpected_fields``); never shown.
@@ -147,7 +154,16 @@ class UserFacing(TypedRefusal):
             raise TypeError("A refusal reason must be a closed reason code.")
         self.expected, self.actual = setting_values(reason, expected, actual)
         super().__init__(str(message))
-        self.refusal = Refusal(message, fix, link, link_label, title, page_fix, reason)
+        self.refusal = Refusal(
+            message,
+            fix,
+            link,
+            link_label,
+            title,
+            page_fix,
+            reason,
+            self.offers_sign_in,
+        )
 
     @property
     def reason(self):

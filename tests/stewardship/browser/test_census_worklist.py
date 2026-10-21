@@ -7,7 +7,8 @@ behaviour (selected icons, bulk gates, the reopen note) is tested on its
 own fixture page (``test_review_worklist``); these tests check what Census
 changes adds: its filters and sorts, By hand rows reviewed like the rest,
 Entered by hand, Entered incorrectly's two fixes, the address editor and
-a refusal at its fields.
+a refusal at its fields, and a New Member's ParishSoft Member ID (#1749)
+and its correction (#1773).
 """
 
 import json
@@ -26,6 +27,11 @@ from .census_components import (
     ENTERED,
     ENTERED_NOTICE,
     INCORRECT,
+    MEMBER_CORRECTED,
+    MEMBER_CORRECTED_NOTICE,
+    MEMBER_ENTERED,
+    MEMBER_ENTERED_NOTICE,
+    NEW_MEMBER,
     PATH,
     REENTERED,
     REENTERED_NOTICE,
@@ -33,6 +39,8 @@ from .census_components import (
     RETURNED_NOTICE,
     STALE,
     STALE_NOTICE,
+    UNDONE,
+    UNDONE_NOTICE,
     WRONG,
 )
 from .test_bulk_bar import assert_accessible
@@ -41,6 +49,13 @@ from .waits import available, has_attribute, has_text, hidden, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "webkit"], indirect=True
+)
+
+# The row editor's own body, which the Edit icon must not replace (R40c F1).
+BODY = (
+    "Record this value as the reviewer's value. The item is Accepted (edited), "
+    "and the Family's answer stays beside it. The Family will see this value "
+    "the next time it signs in."
 )
 
 
@@ -124,8 +139,9 @@ def test_staff_accept_an_automatic_change_in_place(page, component_origin):
 
 def test_entered_by_hand_on_a_to_review_row_is_one_step(page, component_origin):
     """A To review By hand row offers Entered by hand beside Accept, Edit and
-    Ignore; its dialog says it is final, and the redrawn row is Entered by
-    hand with its mark selected and no box."""
+    Ignore; its dialog says to check ParishSoft first and that Back to review
+    undoes the mark, and the redrawn row is Entered by hand with its mark
+    selected and Back to review its box's one kind (#1840)."""
     page.goto(component_origin + PATH)
     page.evaluate(MARK)
     sent = posts(page, component_origin, ENTERED)
@@ -139,14 +155,50 @@ def test_entered_by_hand_on_a_to_review_row_is_one_step(page, component_origin):
     has_text(dialog.locator("h2"), f"Mark {name(1)} entered by hand?")
     has_text(
         dialog.locator("[data-confirm-body]"),
-        "Record that you typed this into ParishSoft. Check ParishSoft first: "
-        "this is final.",
+        "Record that you typed this into ParishSoft. Check ParishSoft first; "
+        "Back to review undoes the mark.",
     )
     dialog.get_by_role("button", name="Record").click()
     has_text(page.locator("#census-notice"), ENTERED_NOTICE)
     assert "decide=entered_by_hand" in sent[-1]
     has_text(row(page, 1).locator(".stage-chip .status-word"), "Entered by hand")
-    assert row(page, 1).locator("input[data-select-row]").count() == 0
+    box = row(page, 1).locator("input[data-select-row]")
+    assert box.get_attribute("data-confirm-kind") == "back_to_review"
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_back_to_review_undoes_entered_by_hand_with_a_note(page, component_origin):
+    """An Entered by hand row offers Back to review (#1840): its dialog says
+    the mark is undone and where the change goes, the note is required
+    before Record is available, and the redrawn row is To enter by hand,
+    Accepted, in place."""
+    page.goto(component_origin + ENTERED)
+    page.evaluate(MARK)
+    sent = posts(page, component_origin, UNDONE)
+    assert actions(page, 1) == [
+        ("accept", "true"),
+        ("back_to_review", None),
+        ("entered_by_hand", "true"),
+    ]
+    icon(page, 1, "Send").click()
+    dialog = page.locator("#census-decide-dialog")
+    has_text(dialog.locator("h2"), f"Send {name(1)} back to review?")
+    has_text(
+        dialog.locator("[data-confirm-body]"),
+        "Entered by hand is undone: the item goes back to To enter by hand, "
+        "with its decision kept. Say why.",
+    )
+    record = dialog.get_by_role("button", name="Record")
+    assert record.get_attribute("aria-disabled") == "true" or record.is_disabled()
+    has_text(dialog.locator("[data-complete-hint]"), "Say why this item goes back.")
+    dialog.get_by_label("Note (required)").fill("Typed the wrong number")
+    available(record)
+    record.click()
+    has_text(page.locator("#census-notice"), UNDONE_NOTICE)
+    hidden(dialog)
+    assert "decide=back_to_review" in sent[-1] and "item=1" in sent[-1]
+    assert "note=Typed+the+wrong+number" in sent[-1]
+    has_text(row(page, 1).locator(".stage-chip .status-word"), "To enter by hand")
     assert page.evaluate(MARKED) == "kept"
 
 
@@ -222,6 +274,7 @@ def test_an_address_is_edited_part_by_part(page, component_origin):
     page.route("**" + PATH, answer)
     icon(page, 2, "Edit").click()
     editor = page.locator("#census-edit-dialog-2")
+    has_text(editor.locator("[data-confirm-body]"), BODY)
     street = editor.get_by_label("Street", exact=True)
     assert street.input_value() == "9 Census Way"
     assert editor.get_by_label("Country").input_value() == "US"
@@ -414,10 +467,10 @@ def test_entered_by_hand_again_on_an_entered_incorrectly_row(page, component_ori
 
 
 def test_back_to_review_on_an_entered_incorrectly_row(page, component_origin):
-    """Back to review on an Entered incorrectly row needs no note; its dialog
-    says to edit the item to ParishSoft's value (no confirmation is promised:
-    a refresh before the Edit makes it a Conflict), and the redrawn row is
-    To review, in place."""
+    """Back to review on an Entered incorrectly row undoes the mark (#1840):
+    its dialog says the change goes back to To enter by hand with its
+    decision kept, the note is required, and the redrawn row is To enter by
+    hand, in place."""
     page.goto(component_origin + INCORRECT)
     page.evaluate(MARK)
     sent = posts(page, component_origin, RETURNED)
@@ -426,16 +479,18 @@ def test_back_to_review_on_an_entered_incorrectly_row(page, component_origin):
     has_text(dialog.locator("h2"), f"Send {name(3)} back to review?")
     has_text(
         dialog.locator("[data-confirm-body]"),
-        "The item goes back to To review. If ParishSoft's value is right, edit "
-        "the item to that value.",
+        "Entered incorrectly is undone: the item goes back to To enter by hand, "
+        "with its decision kept. Say why.",
     )
     record = dialog.get_by_role("button", name="Record")
+    assert record.get_attribute("aria-disabled") == "true" or record.is_disabled()
+    dialog.get_by_label("Note (required)").fill("Wrong value")
     available(record)
     record.click()
     has_text(page.locator("#census-notice"), RETURNED_NOTICE)
     hidden(dialog)
     assert "decide=back_to_review" in sent[-1] and "item=3" in sent[-1]
-    has_text(row(page, 3).locator(".stage-chip .status-word"), "To review")
+    has_text(row(page, 3).locator(".stage-chip .status-word"), "To enter by hand")
     assert page.evaluate(MARKED) == "kept"
 
 
@@ -490,3 +545,159 @@ def test_an_edited_value_shows_as_the_reviewers_value(page, component_origin):
     cells = row(page, 0).locator("th, td")
     reviewer = cells.nth(headings.index("Reviewer's value")).inner_text()
     assert "555-9999" in reviewer
+
+
+def test_a_new_members_entered_by_hand_asks_for_its_member_id(
+    page, component_origin, axe_source
+):
+    """A New Member's Entered by hand opens its own dialog with an optional
+    ParishSoft Member ID (#1749); a refused ID is shown at the field, and
+    the recorded mark answers with the row Entered by hand, naming the ID,
+    in place. A refresh Conflict row says why under its stage."""
+    page.goto(component_origin + NEW_MEMBER)
+    page.evaluate(MARK)
+    has_text(
+        row(page, 5).locator(".help"),
+        "ParishSoft no longer holds the update.",
+    )
+    refusal = {
+        "errors": [{"code": "invalid", "field_id": "value_member", "message": "x"}],
+        "refusal": {
+            "message": "Enter the ParishSoft Member ID as a whole number.",
+            "fix": "Correct the Member ID, or leave it blank, then record it again.",
+            "link": None,
+        },
+    }
+    sent = []
+
+    def answer(route):
+        """Refuse the first mark at its Member ID; answer the next with the
+        page after it."""
+        if route.request.method != "POST":
+            route.continue_()
+            return
+        sent.append(route.request.post_data)
+        if len(sent) == 1:
+            route.fulfill(
+                status=400, content_type="application/json", body=json.dumps(refusal)
+            )
+            return
+        route.fulfill(
+            response=route.fetch(url=component_origin + MEMBER_ENTERED, method="GET")
+        )
+
+    page.route("**" + PATH, answer)
+    row(page, 4).locator('[data-row-action="entered_by_hand"]').click()
+    dialog = page.locator("#census-entered-dialog-4")
+    visible(dialog)
+    has_text(
+        dialog.locator("h2"),
+        "Mark New Member for New Member: Newly Sample entered by hand?",
+    )
+    has_text(
+        dialog.locator("[data-confirm-body]"),
+        "Record that you typed this into ParishSoft. Check ParishSoft first; "
+        "Back to review undoes the mark.",
+    )
+    member_id = dialog.get_by_label("ParishSoft Member ID (optional)")
+    assert member_id.input_value() == ""
+    assert_accessible(page, axe_source)
+    member_id.fill("seven")
+    dialog.get_by_role("button", name="Record").click()
+    has_text(
+        dialog.locator(".errorlist"),
+        "Enter the ParishSoft Member ID as a whole number. Correct the Member ID, "
+        "or leave it blank, then record it again.",
+    )
+    assert member_id.get_attribute("aria-invalid") == "true"
+    assert "value_member=seven" in sent[0] and "decide=entered_by_hand" in sent[0]
+    member_id.fill("7")
+    record = dialog.get_by_role("button", name="Record")
+    available(record)
+    record.click()
+    has_text(page.locator("#census-notice"), MEMBER_ENTERED_NOTICE)
+    hidden(dialog)
+    assert "value_member=7" in sent[-1] and "item=4" in sent[-1]
+    has_text(row(page, 4).locator(".stage-chip .status-word"), "Entered by hand")
+    has_text(row(page, 4).locator(".help"), "Accepted. ParishSoft Member ID 7.")
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_correcting_a_new_members_member_id(page, component_origin, axe_source):
+    """An entered New Member keeps Entered by hand selected and offers
+    Correct the ParishSoft Member ID after it (#1773): its own dialog asks
+    for the ID, required and filled in with the mark's; the same ID is
+    refused at the field; a new one answers with the row naming it, in
+    place, focus back on the selected mark."""
+    page.goto(component_origin + MEMBER_ENTERED)
+    page.evaluate(MARK)
+    marks = row(page, 4).locator('[data-row-action="entered_by_hand"]')
+    assert marks.count() == 2
+    assert marks.nth(0).get_attribute("aria-pressed") == "true"
+    label = (
+        "Correct the ParishSoft Member ID of New Member for New Member: Newly Sample"
+    )
+    correct = row(page, 4).get_by_role("button", name=label)
+    assert correct.get_attribute("aria-pressed") is None
+    refusal = {
+        "errors": [{"code": "invalid", "field_id": "value_member", "message": "x"}],
+        "refusal": {
+            "message": "That is the ParishSoft Member ID already recorded. "
+            "Enter the corrected ID.",
+            "fix": "Correct the Member ID, then record it again.",
+            "link": None,
+        },
+    }
+    sent = []
+
+    def answer(route):
+        """Refuse the first correction at its Member ID; answer the next
+        with the page after it."""
+        if route.request.method != "POST":
+            route.continue_()
+            return
+        sent.append(route.request.post_data)
+        if len(sent) == 1:
+            route.fulfill(
+                status=400, content_type="application/json", body=json.dumps(refusal)
+            )
+            return
+        route.fulfill(
+            response=route.fetch(url=component_origin + MEMBER_CORRECTED, method="GET")
+        )
+
+    page.route("**" + PATH, answer)
+    correct.click()
+    dialog = page.locator("#census-entered-dialog-4")
+    visible(dialog)
+    has_text(dialog.locator("h2"), f"{label}?")
+    has_text(
+        dialog.locator("[data-confirm-body]"),
+        "Record the ID of the Member you added. Check the Member in ParishSoft "
+        "first: the next refresh checks the entry again.",
+    )
+    member_id = dialog.get_by_label("ParishSoft Member ID", exact=True)
+    assert member_id.input_value() == "7"
+    assert member_id.get_attribute("required") is not None
+    assert_accessible(page, axe_source)
+    record = dialog.get_by_role("button", name="Record")
+    record.click()
+    has_text(
+        dialog.locator(".errorlist"),
+        "That is the ParishSoft Member ID already recorded. Enter the corrected "
+        "ID. Correct the Member ID, then record it again.",
+    )
+    assert "value_member=7" in sent[0] and "decide=entered_by_hand" in sent[0]
+    member_id.fill("9")
+    record.click()
+    has_text(page.locator("#census-notice"), MEMBER_CORRECTED_NOTICE)
+    hidden(dialog)
+    assert "value_member=9" in sent[-1] and "item=4" in sent[-1]
+    has_text(row(page, 4).locator(".stage-chip .status-word"), "Entered by hand")
+    has_text(row(page, 4).locator(".help"), "Accepted. ParishSoft Member ID 9.")
+    focused = page.evaluate(
+        "() => [document.activeElement.dataset.rowAction,"
+        " document.activeElement.getAttribute('aria-pressed')]"
+    )
+    assert focused == ["entered_by_hand", "true"]
+    assert page.evaluate(MARKED) == "kept"

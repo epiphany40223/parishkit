@@ -614,11 +614,12 @@
   // refresh-schedule-v1.js holds the ParishSoft Save while its schedule has
   // problems (data-schedule-gated), alongside the change gate (#1330).
   // The mail schedule pages hold theirs while a send date falls outside
-  // the campaign (data-window-gated, #1787).
+  // the campaign (data-window-gated, #1787), and New scheduled email while
+  // its Repeat gives no date to add (data-repeat-gated, #1915).
   const GATE_MARKS = [
     "data-time-gated", "data-acknowledgment-gated", "data-complete-gated", "data-change-gated",
     "data-live-stale-gated", "data-schedule-gated", "data-download-ended-gated",
-    "data-save-spent-gated", "data-window-gated",
+    "data-save-spent-gated", "data-window-gated", "data-repeat-gated",
   ];
   const gated = (node) => GATE_MARKS.some((mark) => node.hasAttribute(mark));
   document.querySelectorAll("button[disabled], input[disabled]").forEach((node) => {
@@ -634,6 +635,40 @@
     if (!node.hasAttribute(mark)) return;
     node.removeAttribute(mark);
     node.disabled = gated(node);
+  };
+  // Add (``on``) or take away the id ``id`` in ``node``'s aria-describedby.
+  const describeBy = (node, id, on) => {
+    const ids = (node.getAttribute("aria-describedby") || "").split(/\s+/)
+      .filter((other) => other && other !== id);
+    if (on) ids.push(id);
+    if (ids.length) node.setAttribute("aria-describedby", ids.join(" "));
+    else node.removeAttribute("aria-describedby");
+  };
+  // Hold ``form``'s submit buttons (not a formnovalidate cancel) with the
+  // gate ``mark`` while ``reason`` is set, each named by a visually hidden
+  // line holding those words. The words themselves show where the reader
+  // is (a field's error line, a summary line), so the hidden line, made
+  // the first time a reason comes, after the last button, never moves
+  // anything. ``hints`` keeps each form's line; ``suffix`` ends its id.
+  // Used by the send-date window check (#1787) and New scheduled email's
+  // Repeat (#1915).
+  const holdFormButtons = (form, {mark, hints, suffix}, reason) => {
+    const buttons = [...form.elements].filter((node) => isSubmit(node) && !node.formNoValidate);
+    let hint = hints.get(form);
+    if (!hint && reason && buttons.length) {
+      hint = document.createElement("span");
+      hint.className = "visually-hidden";
+      hint.id = `${form.id || "schedule"}-${suffix}`;
+      const last = buttons[buttons.length - 1];
+      (last.parentElement === form ? last : last.parentElement).after(hint);
+      hints.set(form, hint);
+    }
+    if (hint) hint.textContent = reason;
+    buttons.forEach((node) => {
+      if (hint) describeBy(node, hint.id, Boolean(reason));
+      if (reason) holdButton(node, mark);
+      else releaseButton(node, mark);
+    });
   };
   // Keep a form's submit buttons unavailable while a shown time entry cannot
   // be read, with a hint after them saying why. As with the complete gate,
@@ -1540,6 +1575,20 @@
     if (loose) fresh.prepend(loose);
     return loose || null;
   };
+  // A successful swap can remove the fields an earlier refusal's summary
+  // (outside every region) links to: Backup encryption key's Start over
+  // after a wrong code (#750). Such an item names nothing any more, so it
+  // goes, and the summary with it once it lists nothing; a summary item
+  // whose field is still shown stays until that field is edited.
+  const dropOrphanedSummaries = () => {
+    document.querySelectorAll("[data-error-summary]").forEach((summary) => {
+      if (summary.closest(REGIONS)) return;
+      summary.querySelectorAll('li a[href^="#"]').forEach((link) => {
+        if (!document.getElementById(link.hash.slice(1))) link.closest("li")?.remove();
+      });
+      if (!summary.querySelector("li")) summary.remove();
+    });
+  };
   // Show an answer as the whole page, as a native submission would have shown
   // it. document.open keeps this window: it erases the old page's event
   // listeners but not its timers, which would keep running beside the new
@@ -1952,6 +2001,7 @@
     } finally {
       swappingFor = null;
     }
+    if (!refused) dropOrphanedSummaries();
     if (!anywhere) syncControls(parsed);
     // Clear filters (#1651) asked the server for the unfiltered view, so the
     // form takes that answer's values, as after a cross-link that sets them.
@@ -6375,7 +6425,9 @@
   //   - [data-editor-mode-panel="advanced"]: the full configuration. It is
   //     only ever hidden, never disabled: its fields carry the configuration
   //     the server validates and stores in either mode (the recorded
-  //     exception to conditional fields).
+  //     exception to conditional fields). An additive editor (#1129) has
+  //     no Basic panel and one Advanced panel per extra tool, each off in
+  //     Basic; its adapter has only toBasic and clearBasic.
   // The editor's script registers an adapter by the editor's name with
   // ParishEditorMode.register(name, adapter). It is looked up by name when
   // an event fires, so it still applies after an in-place answer redraws
@@ -6410,14 +6462,18 @@
     .find((node) => node.closest("[data-editor-modes]") === root);
   const modeChoice = (root, mode) => modeToggle(root)
     ?.querySelector(`input[data-editor-mode-choice][value="${mode}"]`);
-  const modePanel = (root, mode) => [...root.querySelectorAll(
-    `[data-editor-mode-panel="${mode}"]`)].find((node) => node.closest("[data-editor-modes]") === root);
+  // root's panels for mode (not a nested editor's). An additive editor
+  // (New and Edit scheduled email, #1129) has several Advanced panels, one
+  // where each of its tools is drawn; other editors have one of each.
+  const modePanels = (root, mode) => [...root.querySelectorAll(
+    `[data-editor-mode-panel="${mode}"]`)].filter((node) => node.closest("[data-editor-modes]") === root);
+  const modePanel = (root, mode) => modePanels(root, mode)[0];
   // The Advanced fields that are in error: marked by the server or a live
   // check, or invalid in the browser's own terms (an unreadable time). A
   // field only waiting for its group's first choice (data-require-one, such
   // as Parish logos' sizes with no file chosen) is incomplete, not in error.
-  const advancedErrors = (root) => [...(modePanel(root, "advanced")
-    ?.querySelectorAll("input, select, textarea") || [])]
+  const advancedErrors = (root) => modePanels(root, "advanced")
+    .flatMap((panel) => [...panel.querySelectorAll("input, select, textarea")])
     .filter((node) => node.getAttribute("aria-invalid") === "true"
       || node.hasAttribute("data-field-error") || node.hasAttribute("data-client-error")
       || (node.willValidate && !node.validity.valid
@@ -6671,11 +6727,17 @@
   // anyway (configuration.validate_campaign_sections stays the authority):
   // inside the campaign dates, strictly after the initial invitation, not at
   // the instant of another Family mailing, at most REPEAT_LIMIT dates per
-  // rule and the form's MAX_NUM_FORMS rows in all. Here every comparison is
-  // of date and time text in the browser's zone, which the date-change
-  // review's rows use (#558). The campaign-date check compares calendar
+  // rule and the form's MAX_NUM_FORMS rows in all. One more check is the
+  // page's own: a date whose send time has already passed is never offered
+  // (#1948), since a missed reminder would send at once; the date-change
+  // review's saved rows may be past, so its server cannot refuse that,
+  // while New's server refuses it for a repeat (schedule_entry_views).
+  // Here every comparison is of date and time text in the browser's zone,
+  // which the date-change review's rows use (#558). The campaign-date check compares calendar
   // days, so the server decides a time near either edge (New scheduled
-  // email compares moments instead; see repeatDates).
+  // email compares moments instead; see repeatDates). A rule the expander
+  // refuses is shown at its fields (markRepeatRule, #1915) in
+  // REPEAT_ERRORS' words, the server's recurrence.RULE_ERRORS.
   const REPEAT_LIMIT = 30;
   const REPEAT_ERRORS = {
     dates: "Choose the first and last dates to repeat on.",
@@ -6728,7 +6790,10 @@
   // time, or "" when it does not read yet; ``email`` whether an email is
   // chosen and ``emails`` whether any reminder email exists. Returns the
   // dates that fit (``ready``), one {text, reason} item per date or skipped
-  // month, the summary line and the list's heading.
+  // month, the summary line and the list's heading; for a rule
+  // expandRecurrence refuses, only its ``error`` (a REPEAT_ERRORS key),
+  // which is shown at its fields (markRepeatRule, #1915), not in the
+  // summary.
   // New scheduled email takes dates and times in the browser's zone (#558)
   // and passes ``at`` (localMoment), ``bounds`` (the campaign's [start, end)
   // moments) and each existing mailing's ``at`` moment, so the timed checks
@@ -6745,10 +6810,7 @@
     // cannot run, so no count is offered rather than one that is too high.
     let summary = "";
     const expanded = expandRecurrence(rule);
-    if (expanded.error) {
-      if (rule.start || rule.end) summary = REPEAT_ERRORS[expanded.error];
-      return {ready, items, summary, heading: ""};
-    }
+    if (expanded.error) return {ready, items, summary, heading: "", error: expanded.error};
     const sends = (mailing) => (at ? mailing.at : `${mailing.date} ${mailing.time}`);
     const initial = existing.find((mailing) => mailing.kind === "initial");
     const taken = new Set(existing.map(sends));
@@ -6758,6 +6820,9 @@
       // Without a send time the remaining checks wait; the date is
       // listed but not counted.
       else if (!sendTime) reason = "";
+      // Both panels' dates and times are in the browser's zone, so
+      // localMoment gives the moment to compare with the clock (#1948).
+      else if (localMoment(date, sendTime) <= Date.now()) reason = "its time has passed";
       else if (bounds && !(when(date) >= bounds.start && when(date) < bounds.end)) {
         reason = "outside the campaign dates";
       } else if (initial && when(date) <= sends(initial)) {
@@ -6820,6 +6885,101 @@
       }, 300);
     };
   };
+  // Where a repeat rule's error is shown (#1915; UX conventions "Field
+  // errors and live checks"), as the server's rule_place
+  // (schedule_entry_views) places its refusal: the controls it marks and
+  // the line (components/repeat-rule-error.html) after the last of them,
+  // which says it once. A missing date marks whichever date is empty, or
+  // both; the weekdays share the group's line.
+  const repeatErrorPlace = (panel, error) => {
+    const control = (name) => panel.querySelector(`[data-repeat="${name}"]`);
+    const dates = [control("from"), control("until")];
+    const empty = dates.filter((field) => !field.value);
+    let fields = [control("frequency")];
+    if (error === "dates") fields = empty.length ? empty : dates;
+    else if (error === "order" || error === "span") fields = dates;
+    else if (error === "weekdays") fields = [...panel.querySelectorAll('[data-repeat="weekday"]')];
+    else if (error === "monthly") {
+      fields = control("by").value === "weekday"
+        ? [control("ordinal"), control("month-weekday")] : [control("day")];
+    }
+    const owner = error === "weekdays" ? "repeat-weekdays" : fields[fields.length - 1].id;
+    return {fields, line: panel.querySelector(`#${owner}_error`)};
+  };
+  // Show a repeat panel's rule ``error`` (a REPEAT_ERRORS key, or "" for
+  // none) at its fields: each is marked aria-invalid and described by the
+  // line, which holds the words, with the shared field-error styles. As
+  // with the browser's own checks, a field is marked only once the reader
+  // has edited or left one of the error's fields (``repeatReached``): a
+  // fresh rule's missing weekday is not an error yet, and the caller says
+  // it in the summary line as what is missing. A new error also waits for
+  // ``show`` (typing paused or focus left, which the caller passes), so a
+  // half-typed date flashes nothing, as the send-date check waits; one
+  // that no longer applies goes at once. The marks are this check's own,
+  // not data-field-error: a refusal the server drew (data-field-error)
+  // stays until that field's first edit (wireValidity), and the panel's
+  // controls re-apply these marks on blur, after wireValidity's own blur
+  // check. Returns the error's line (null for none) and whether the error
+  // is said at its fields (``atField``) rather than in the summary.
+  const repeatMarks = new WeakMap(); // panel -> {fields, line, message} shown
+  const repeatReached = new WeakSet(); // rule controls edited or left
+  const markRepeatRule = (panel, error, show) => {
+    const found = error ? repeatErrorPlace(panel, error) : null;
+    const atField = Boolean(found?.line) && found.fields.some((field) => repeatReached.has(field));
+    const place = atField ? found : null;
+    const message = place ? REPEAT_ERRORS[error] : "";
+    const before = repeatMarks.get(panel);
+    const same = Boolean(before && place) && before.line === place.line
+      && before.message === message && before.fields.length === place.fields.length
+      && before.fields.every((field, index) => field === place.fields[index]);
+    if (before && !same) {
+      const kept = before.fields.filter((field) => field.hasAttribute("data-field-error"));
+      before.fields.forEach((field) => {
+        if (kept.includes(field)) return;
+        field.setAttribute("aria-invalid", "false");
+        describeBy(field, before.line.id, false);
+      });
+      if (!kept.length) {
+        before.line.hidden = true;
+        before.line.querySelectorAll("li").forEach((item) => { item.textContent = ""; });
+      }
+      repeatMarks.delete(panel);
+    }
+    const result = {line: found?.line ?? null, atField};
+    if (!place || !(show || same)) return result;
+    place.fields.forEach((field) => {
+      field.setAttribute("aria-invalid", "true");
+      describeBy(field, place.line.id, true);
+    });
+    // Unchanged words stay untouched, so a screen reader hears them once.
+    const item = place.line.querySelector("li") || place.line.appendChild(document.createElement("li"));
+    if (place.line.hidden || item.textContent !== message) {
+      place.line.hidden = false;
+      item.textContent = message;
+    }
+    repeatMarks.set(panel, {fields: place.fields, line: place.line, message});
+    return result;
+  };
+  // Whether ``event`` is typing in a date or number box, whose new error
+  // waits for a pause (markRepeatRule).
+  const repeatTyping = (event) => ["input", "change"].includes(event?.type)
+    && event.target instanceof HTMLInputElement && ["date", "number"].includes(event.target.type);
+  // Note each of ``panel``'s rule controls the reader edits or leaves
+  // (repeatReached; one the server marked counts as reached), before the
+  // panel's own listeners run, and re-check with ``update`` when one loses
+  // focus, which shows a waiting error at once.
+  const wireRepeatControls = (panel, update) => {
+    panel.querySelectorAll("[data-repeat]").forEach((control) => {
+      if (control.getAttribute("aria-invalid") === "true") repeatReached.add(control);
+      const reach = () => repeatReached.add(control);
+      control.addEventListener("input", reach);
+      control.addEventListener("change", reach);
+      control.addEventListener("blur", () => {
+        reach();
+        update();
+      });
+    });
+  };
   const repeatPanel = ({form, panel, template, rows, maximum, status, count, addScheduleRow}) => {
     const control = (name) => panel.querySelector(`[data-repeat="${name}"]`);
     const list = panel.querySelector("[data-repeat-dates]");
@@ -6844,7 +7004,11 @@
     });
     const windowDay = (name) => form.querySelector(`[name="window-${name}"]`)?.value
       || panel.dataset[`repeat${name === "start_date" ? "Start" : "End"}`];
-    const update = () => {
+    const summary = panel.querySelector("[data-repeat-summary]");
+    let pause; // the timer that shows an error typed into a date
+    let reason = ""; // the id of the line naming why Add waits
+    const update = (event) => {
+      window.clearTimeout(pause);
       showRepeatParts(panel);
       // The send time is a shared time entry field (data-time-entry, #1117):
       // its reading, refusal, blur rewrite and Save gate are drawn by that
@@ -6862,9 +7026,19 @@
         emails: reminders.length > 0,
       });
       ready = result.ready;
-      announce(result.summary);
+      // A rule error shows at its fields (#1915); typed into a date, after
+      // a pause. One the reader has not reached is said in the summary.
+      const show = !repeatTyping(event);
+      const {line, atField} = markRepeatRule(panel, result.error || "", show);
+      if (!show) pause = window.setTimeout(update, TIME_PAUSE);
+      announce(result.error && !atField ? REPEAT_ERRORS[result.error] : result.summary);
       showRepeatDates(list, result);
       button.disabled = !ready.length || !email.value;
+      // While Add waits it is named by its reason: the rule error's line,
+      // or the summary, which says what is missing (prerequisite gates).
+      if (reason) describeBy(button, reason, false);
+      reason = !button.disabled ? "" : (atField ? line.id : summary.id);
+      if (reason) describeBy(button, reason, true);
       // Rewrite the label only when it changes. Pressing the button blurs the
       // send time, whose change event runs this update between mousedown and
       // mouseup; replacing the text node under the pointer then makes WebKit
@@ -6904,14 +7078,17 @@
     });
     panel.addEventListener("input", update);
     panel.addEventListener("change", update);
+    wireRepeatControls(panel, update);
     // Edits to the rows (an initial invitation's time, a removed row) change
     // which dates fit.
-    rows.addEventListener("input", update);
-    rows.addEventListener("change", update);
-    form.addEventListener("schedules-changed", update);
+    rows.addEventListener("input", () => update());
+    rows.addEventListener("change", () => update());
+    form.addEventListener("schedules-changed", () => update());
     form.querySelectorAll('[name^="window-"]').forEach((field) => {
-      field.addEventListener("change", update);
+      field.addEventListener("change", () => update());
     });
+    // The browser can restore the rule on Back (#563).
+    window.addEventListener("pageshow", () => update());
     // Prefill the dates with the campaign's own, so the first list is useful.
     control("from").value ||= windowDay("start_date") || "";
     control("until").value ||= windowDay("end_date") || "";
@@ -7155,6 +7332,7 @@
   // date as an ordinary reminder. Repeat and its rule show only for a
   // Reminder; with another mail type nothing of the rule is posted as a
   // date, and the server refuses a repeat that is not a reminder anyway.
+  const repeatHints = new WeakMap(); // form -> its visually hidden reason
   document.querySelectorAll("[data-repeat-entry]").forEach((panel) => {
     const form = panel.closest("form");
     const kind = form?.querySelector('[data-schedule-field="kind"] select');
@@ -7182,8 +7360,17 @@
     const limit = Number(panel.dataset.repeatLimit);
     const announce = quietLine(summary);
     const control = (name) => panel.querySelector(`[data-repeat="${name}"]`);
-    const update = () => {
+    // While the rule gives no date to add, the form's buttons wait
+    // (#1915), named by the rule error's words or the summary's.
+    const gate = {mark: "data-repeat-gated", hints: repeatHints, suffix: "repeat-hint"};
+    let pause; // the timer that shows an error typed into a date
+    const update = (event) => {
+      window.clearTimeout(pause);
       const reminder = kind.value === "reminder";
+      // Repeat is a Reminder's: with another mail type its panel is hidden,
+      // so the box is unticked rather than posted hidden (conditional
+      // fields), and it does not count as a tool in use for Basic.
+      if (!reminder) enabled.checked = false;
       const on = reminder && enabled.checked;
       panel.hidden = !reminder;
       rule.hidden = !on;
@@ -7196,6 +7383,8 @@
       if (!on) {
         summary.textContent = "";
         list.replaceChildren();
+        markRepeatRule(panel, "", true);
+        holdFormButtons(form, gate, "");
         return;
       }
       showRepeatParts(panel);
@@ -7214,8 +7403,15 @@
         email: Boolean(email.value),
         emails: [...email.options].some((option) => option.dataset.kind === "reminder"),
       });
-      announce(result.summary);
+      // A rule error shows at its fields (#1915); typed into a date, after
+      // a pause. One the reader has not reached is said in the summary.
+      const show = !repeatTyping(event);
+      const {atField} = markRepeatRule(panel, result.error || "", show);
+      if (!show) pause = window.setTimeout(update, TIME_PAUSE);
+      announce(result.error && !atField ? REPEAT_ERRORS[result.error] : result.summary);
       showRepeatDates(list, result);
+      holdFormButtons(form, gate, result.ready.length ? ""
+        : REPEAT_ERRORS[result.error] || result.summary);
       result.ready.forEach((day) => {
         const field = document.createElement("input");
         field.type = "hidden";
@@ -7230,8 +7426,9 @@
     control("until").value ||= panel.dataset.repeatEnd || "";
     form.addEventListener("input", update);
     form.addEventListener("change", update);
+    wireRepeatControls(panel, update);
     // The browser can restore the checkbox and the rule on Back.
-    window.addEventListener("pageshow", update);
+    window.addEventListener("pageshow", () => update());
     update();
   });
 
@@ -7369,29 +7566,8 @@
   // line shows them), as the time-entry gate does.
   const gateSendWindow = (form) => {
     const refused = [...form.querySelectorAll(SEND_DATES)].find((date) => windowRefused.has(date));
-    const buttons = [...form.elements].filter((node) => isSubmit(node) && !node.formNoValidate);
-    let hint = windowHints.get(form);
-    if (!hint && refused && buttons.length) {
-      hint = document.createElement("span");
-      hint.className = "visually-hidden";
-      hint.id = `${form.id || "schedule"}-window-hint`;
-      const last = buttons[buttons.length - 1];
-      (last.parentElement === form ? last : last.parentElement).after(hint);
-      windowHints.set(form, hint);
-    }
-    if (hint) hint.textContent = refused ? refused.validationMessage : "";
-    buttons.forEach((node) => {
-      const described = (node.getAttribute("aria-describedby") || "").split(/\s+/)
-        .filter((id) => id && id !== hint?.id);
-      if (refused) {
-        holdButton(node, "data-window-gated");
-        described.push(hint.id);
-      } else {
-        releaseButton(node, "data-window-gated");
-      }
-      if (described.length) node.setAttribute("aria-describedby", described.join(" "));
-      else node.removeAttribute("aria-describedby");
-    });
+    holdFormButtons(form, {mark: "data-window-gated", hints: windowHints, suffix: "window-hint"},
+      refused ? refused.validationMessage : "");
   };
   // Judge every send date of ``form`` and gate its buttons. With ``show``
   // the refusals are also shown, and an editor holding one is opened; a
@@ -7855,6 +8031,28 @@
       // does not replace it.
       edited = true;
     });
+  });
+
+  // New and Edit scheduled email's Basic and Advanced modes (#1129; UX
+  // conventions, "Basic and Advanced modes", additive editors). Both modes
+  // show the schedule's fields; Advanced adds Repeat and "Edit this
+  // schedule's email", each an Advanced panel where it is drawn. Basic is
+  // the page with both off, so Advanced → Basic switches at once while
+  // they are off and otherwise asks. Switch to Basic unticks them through
+  // their own change events, so the repeat rule and the email fields close
+  // as if the reader had unticked them, and nothing hidden is posted.
+  // A Repeat ticked under another mail type is unticked as it hides (the
+  // repeat script), so a tool in use is always one on screen.
+  const scheduleTools = (root) => [...root.querySelectorAll(
+    'input[data-repeat="enabled"], input[name="edit_email"]')];
+  window.ParishEditorMode.register("schedule-entry", {
+    toBasic: (root) => scheduleTools(root).every((box) => !box.checked),
+    clearBasic(root) {
+      scheduleTools(root).filter((box) => box.checked).forEach((box) => {
+        box.checked = false;
+        box.dispatchEvent(new Event("change", {bubbles: true}));
+      });
+    },
   });
 
   // "Send a test of this text" under a scheduled email's own email (#446,

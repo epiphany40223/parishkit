@@ -97,7 +97,11 @@ def submit_family(request, service, *, baseline_id, payload):
             baseline_id, family=family, session=session, campaign=campaign
         )
         if validated.review_required:
-            return SubmissionResult(refreshed=issue_baseline(request, service))
+            # The fresh form keeps the open one's rule and its untouched
+            # items' shown values (#1705, "Reviewed form concurrency").
+            return SubmissionResult(
+                refreshed=issue_baseline(request, service, replacing=validated)
+            )
         answers = validate_answers(
             payload,
             validated.current,
@@ -164,6 +168,10 @@ def submit_family(request, service, *, baseline_id, payload):
             actor_id=family.pk,
             # Staff entered it for the Family through Open form (#529).
             entered_by_id=entered_by(request, session),
+            # What the form showed (#1705), copied unchanged from the locked
+            # baseline so the response keeps it after the baseline is gone.
+            reviewed_view=validated.baseline.reviewed_view,
+            shown_items=validated.baseline.shown_items,
         )
         submission.refresh_from_db(fields=["submitted_at", "submitted_on"])
         for source_id in sorted(

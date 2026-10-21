@@ -188,6 +188,9 @@ def test_current_intent_history_and_contact_projection(response_service):
     assert "1960-01-01" not in str(scoped) and "birthdate" not in scoped
 
 
+# The rule before the reviewed Family form (#1705): forms drawn before
+# its release, as one open across the deploy is.
+@pytest.mark.usefixtures("earlier_rule")
 def test_parishsoft_gender_code_reads_as_census_word(response_service):
     """An existing Member's ParishSoft code reads as the census word (#1621)."""
     harness = setup(response_service, sex="F")

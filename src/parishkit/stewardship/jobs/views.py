@@ -17,6 +17,8 @@ from parishkit.stewardship.accounts.authentication import runtime
 from parishkit.stewardship.accounts.authority import AuthorityChanging
 from parishkit.stewardship.accounts.limiting import LimiterUnavailable
 from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.accounts.role_refusal import response as role_response
+from parishkit.stewardship.accounts.role_refusal import role_denied
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.activation_hold import WEB_HOLD_SECONDS, wait_out_activation
@@ -103,8 +105,11 @@ def _read_once(request, identifier, *, counts_only, audit):
     try:
         service = runtime()
         principal = authenticated_admin(request, store=service.store, activity=False)
-        if not allows(principal, Capability.BACKGROUND_WORK):
+        if principal is None:
             return _error(ErrorCode.DENIED, 403)
+        if not allows(principal, Capability.BACKGROUND_WORK):
+            # A current session whose role lacks the page (#1924).
+            return role_response(role_denied(Capability.BACKGROUND_WORK))
         try:
             if counts_only:
                 filters(request.GET, allowed=set())
@@ -253,6 +258,7 @@ TASK_NAMES = {
     "report_fact_verification": _("Checking report figures"),
     "security_prepare": _("Preparing a security alert email"),
     "leader_email_prepare": _("Preparing Ministry leader emails"),
+    "report_email_prepare": _("Preparing a report email"),
 }
 
 

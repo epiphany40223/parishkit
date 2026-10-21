@@ -106,6 +106,7 @@ def proposal_index(submission):
     indexed = {(row.entity_kind, row.entity_key, row.field): row for row in preserved}
     census = census_submission(submission)
     indexed.update(_entered_still_answered(census))
+    indexed.update(_shown_still_answered(census))
     indexed.update(
         {
             (row.entity_kind, row.entity_key, row.field): row
@@ -152,6 +153,49 @@ def _entered_still_answered(census):
         answer = _answer(census, row.entity_kind, row.entity_key, row.field)
         if answer is not _ABSENT and same_answer(kind, answer, row):
             found[(row.entity_kind, row.entity_key, row.field)] = row
+    return found
+
+
+def _shown_still_answered(census):
+    """Changes a reviewed form showed that ``census`` left as shown (#1705).
+
+    A Family that leaves a reviewed form's shown value as it was makes no
+    new row: the change it showed stays in force on its earlier response
+    (the review pipeline's reviewed rule 1). Such a response's
+    ``shown_items`` name that change, so the next form finds it here. A
+    change ``census`` answered differently (rule 2) has a row of its own on
+    ``census``, which ``proposal_index`` lets win; one ``census`` set back
+    to ParishSoft's value (rule 3) is left out, so an entered one that the
+    Family withdrew is not shown again. An Ignored change the form showed
+    as the baseline stays Ignored whatever the answer that made no row.
+    """
+    if census is None or not census.reviewed_view:
+        return {}
+    from .reviewed import (
+        CENSUS,
+        census_answer,
+        census_key,
+        census_rows,
+        entries_of,
+        left_as_shown,
+    )
+
+    entries = entries_of(census.shown_items, CENSUS)
+    if not entries:
+        return {}
+    rows, reviews = census_rows(entries)
+    found = {}
+    for entry in entries:
+        row = rows.get(entry["item"])
+        if row is None or row.execution in {"cancelled", "superseded"}:
+            continue
+        if entry["shown"] != "baseline":
+            answer = census_answer(census.answers, *census_key(entry))
+            review = reviews.get(entry["decision"] or "")
+            # The baseline is not needed for a value the form showed.
+            if not left_as_shown(entry, row, review, KnownValue(False), answer):
+                continue
+        found[census_key(entry)] = row
     return found
 
 

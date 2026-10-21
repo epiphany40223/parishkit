@@ -115,11 +115,14 @@ def private_response(message, *, status=200):
 DENIAL_KINDS = frozenset({"", "code", "link", "unavailable"})
 
 
-def login_denial(*, admin=False, status=403, public_content="", kind=""):
+def login_denial(*, admin=False, status=403, public_content="", kind="", sign_in=False):
     """Accessible uniform error with a fixed retry route, never an input redirect.
 
     Callers choose ``kind`` from ``DENIAL_KINDS`` by denial category alone, so
     every reason within one category renders byte-identical content.
+    ``sign_in`` marks a refusal of sign-in itself, which adds the Admin
+    Google Account guidance (#1593); it is chosen by call site, never by
+    reason, so every sign-in refusal still renders the same bytes.
     """
     if kind not in DENIAL_KINDS:
         raise ValueError("Unsupported denial kind.")
@@ -133,6 +136,7 @@ def login_denial(*, admin=False, status=403, public_content="", kind=""):
                 "retry_path": "/admin/login" if admin else "/",
                 "public_content": public_content,
                 "kind": kind,
+                "sign_in": sign_in,
             },
         ),
         status=status,

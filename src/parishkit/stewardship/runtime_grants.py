@@ -398,6 +398,9 @@ ADDRESS_RETRIES_FUNCTION = "stewardship_delivery_address_retries_v1(uuid, uuid)"
 # renderings that hold them.
 ADDRESS_DELIVERIES_FUNCTION = "stewardship_delivery_ids_for_address_v1(text, uuid)"
 PAGE_RECIPIENTS_FUNCTION = "stewardship_delivery_page_recipients_v1(uuid[], uuid)"
+# The ParishSoft Member name of each of a page's emails to people (0145,
+# #1562), for the same caller: one name per email, never an address.
+PAGE_MEMBER_NAMES_FUNCTION = "stewardship_delivery_page_member_names_v1(uuid[], uuid)"
 # An Administrator's report that a delivered email bounced at one address
 # (#806 slice 4): the report's only writer, so web keeps SELECT only on the
 # refusal table; the definer and the refusal guard admit it only from web.
@@ -450,6 +453,11 @@ DEBUG_OFF_CLEAR_FUNCTION = "stewardship_debug_off_clear_v2()"
 PUBLICATION_AUDITED_FUNCTION = (
     "stewardship_publication_audited_v1(text, uuid, uuid, jsonb)"
 )
+# Added Member links (#1670, migration 0141): the links a promoted
+# snapshot's evidence supports, which promotion records, the quick update's
+# skip check asks and the link table's guard checks again. Identifiers only;
+# the worker has no grant on the answers it reads.
+ADDED_MEMBER_CANDIDATES_FUNCTION = "stewardship_added_member_candidates_v1(uuid, uuid)"
 # Point-in-time exports (#1398, migration 0109): the scheduler discards the
 # saved data of every ended export, a small batch at a time, through the
 # owner-run discard functions (reports.export_cleanup.produce_discards); a
@@ -498,6 +506,11 @@ CLOSURE_FUNCTIONS = {
     ),
     # Ministry leader changes (0070, #1034) follow 0069.
     LEADER_CHANGES_FUNCTION: ("stewardship_accounts", "0018_leader_changes"),
+    # Added Member links (0141, #1670, provisional number).
+    ADDED_MEMBER_CANDIDATES_FUNCTION: (
+        "stewardship_responses",
+        "0021_added_member_links",
+    ),
     # Mail dispatch's one token read (0073, #389 L1) follows 0072.
     DISPATCH_TOKEN_FUNCTION: ("stewardship_jobs", "0025_dispatch_token_access"),
     # The daily limit's resume time (0076, #530) follows 0075.
@@ -554,6 +567,8 @@ CLOSURE_FUNCTIONS = {
     LEADER_EMAILS_FUNCTION: ("stewardship_jobs", "0035_leader_emails"),
     # The pledges a refresh re-evaluates (0135, provisional, #1747).
     PLEDGE_REFRESH_ITEMS_FUNCTION: ("stewardship_reports", "0034_pledge_conflicts"),
+    # Sent mail's Member names (0145, #1562).
+    PAGE_MEMBER_NAMES_FUNCTION: ("stewardship_jobs", "0036_page_member_names"),
 }
 
 
@@ -606,6 +621,11 @@ CLOSURE_TABLES = {
     "stewardship_comparison_export_snapshot": (
         "stewardship_reports",
         "0020_comparison_exports",
+    ),
+    # The Response dashboard's Summary capture (0142, #1557).
+    "stewardship_participation_export_snapshot": (
+        "stewardship_reports",
+        "0036_participation_summary",
     ),
     # A delivered email's follow-ups to addresses refused for now (0077, #806).
     "stewardship_outbox_address_retry": ("stewardship_jobs", "0027_address_retry"),
@@ -678,6 +698,26 @@ CLOSURE_TABLES = {
     # A To review pledge's refresh checks (0135, provisional number, #1747),
     # which the worker records in promotion and web and the worker read.
     "stewardship_pledge_open_check": ("stewardship_reports", "0034_pledge_conflicts"),
+    # Added Member links (0141, #1670, provisional number): the worker
+    # records them in promotion, and web and the worker read them in the
+    # Ministry selections.
+    "stewardship_added_member_link": (
+        "stewardship_responses",
+        "0021_added_member_links",
+    ),
+    # The report email pipeline (0156, #1786): web records
+    # Send now requests, the scheduler allocates preparations, the worker
+    # captures and fans them out, and mail dispatch reads the snapshots.
+    **dict.fromkeys(
+        (
+            "stewardship_report_email_manual_request",
+            "stewardship_report_email_preparation",
+            "stewardship_report_email_snapshot",
+            "stewardship_report_email_recipient",
+            "stewardship_report_email_completion_ready",
+        ),
+        ("stewardship_reports", "0040_report_pipeline"),
+    ),
 }
 
 
@@ -811,7 +851,8 @@ def runtime_functions(role, *, target=None):
     and, for an Administrator, reads the emails meant for one address and
     the addresses of a Sent mail page's reports and notices (#1562).
     The general worker asks whether a publication plan's or outcome's audit
-    event is recorded (#528), since it cannot read audit rows itself.
+    event is recorded (#528), since it cannot read audit rows itself, and
+    which added Member links a promoted snapshot supports (#1670).
     The scheduler discards ended exports' saved data (#1398), through the
     owner-run batch that rechecks each export has ended.
     Every login a running service or an operator command uses reads whether
@@ -847,6 +888,7 @@ def runtime_functions(role, *, target=None):
                 BOUNCE_REPORT_FUNCTION,
                 ADDRESS_DELIVERIES_FUNCTION,
                 PAGE_RECIPIENTS_FUNCTION,
+                PAGE_MEMBER_NAMES_FUNCTION,
                 DEBUG_OFF_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {
@@ -874,6 +916,7 @@ def runtime_functions(role, *, target=None):
                 ARCHIVE_ANSWERS_FUNCTION,
                 PUBLICATION_AUDITED_FUNCTION,
                 PLEDGE_REFRESH_ITEMS_FUNCTION,
+                ADDED_MEMBER_CANDIDATES_FUNCTION,
             },
             "download": {LEADER_SCOPE_FUNCTION},
             ServiceRole.ADMIN_RECOVERY: {
@@ -1218,6 +1261,9 @@ def runtime_grants(role, *, target=None):
         from .jobs.leader_email_grants import add_leader_email_web_grants
 
         add_leader_email_web_grants(tables, columns)
+        from .reports.report_email_grants import add_report_email_web_grants
+
+        add_report_email_web_grants(tables, columns)
         from .reports.archive_grants import add_archive_web_grants
 
         add_archive_web_grants(tables, columns)

@@ -201,9 +201,10 @@ def _mark_upstream(record, plans):
     values unchanged, so it leaves the To do list. A Testing-mode plan marks
     nothing. The derived guard (frozen migration 0112) admits exactly this,
     for a field row at the change's current version in a non-Testing plan
-    recorded in this transaction; ``resolved_upstream`` is terminal there,
-    so the mark is final. The rows are locked in pk order first, as every
-    other proposal writer locks them.
+    recorded in this transaction; ``resolved_upstream`` is terminal there:
+    no writer but Staff's Back to review (#1840, frozen migration 0146,
+    which undoes the mark with a note) moves the change on. The rows are
+    locked in pk order first, as every other proposal writer locks them.
     """
     ids = sorted(
         item.proposal_id

@@ -51,6 +51,9 @@ def field(form, name):
     return next(item for item in form["members"][0]["fields"] if item["name"] == name)
 
 
+# The rule before the reviewed Family form (#1705): forms drawn before
+# its release, as one open across the deploy is.
+@pytest.mark.usefixtures("earlier_rule")
 def test_all_existing_fields_http_and_revisit_under_exact_web_role(
     live_response_service,
 ):

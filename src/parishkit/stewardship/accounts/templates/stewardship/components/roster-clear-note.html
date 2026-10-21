@@ -1,0 +1,10 @@
+{% load i18n %}{% comment %}
+  The required note of a Ministry request page's Clear Entered in
+  ParishSoft dialog (roster-tick.html, #1840), included by
+  components/confirm-dialog.html (fields_template) inside the clear form:
+  clearing the mark is Back to review of Entered by hand, which needs a
+  reason, as on Ministry requests. Record waits for it, saying why in the
+  reserved line below (the dialog's accept_hint), and it goes back to
+  empty whenever the dialog opens (data-confirm-reset).
+{% endcomment %}<div class="dialog-fields" data-missing-hint="{% translate 'Say why the mark is cleared.' %}"><label for="{{ dialog_id }}-note">{% translate "Note (required)" %}</label><input id="{{ dialog_id }}-note" name="note" maxlength="2000" value="" required data-confirm-reset></div>
+<p class="help" id="{{ accept_hint }}" data-complete-hint="reserve"></p>

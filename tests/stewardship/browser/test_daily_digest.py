@@ -309,3 +309,99 @@ def test_the_saved_comparison_section_draws_its_charts(
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
     assert_clean(page, errors)
+
+
+# Each Campaign totals tile's value, how far its text runs past the tile's
+# border box (0 when inside), how many lines it takes and its height in
+# rem. The text is measured on a range: a tile is a flex column, so the
+# value's element is stretched to the tile's width (test_response_dashboard).
+# The range holds only the value's own text ("—" for an unknown value), not
+# its toggletip, whose hidden tip text would count as more lines.
+TOTALS_FIT = """() => [...document.querySelectorAll(
+    '[data-digest-totals] .stat-tile[data-stat]')].map((tile) => {
+  const value = tile.querySelector('.stat-value');
+  const outer = tile.getBoundingClientRect();
+  const range = document.createRange();
+  range.selectNodeContents(value.firstChild);
+  const inner = range.getBoundingClientRect();
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+  return {
+    key: tile.dataset.stat,
+    overflow: Math.max(0, outer.left - inner.left, inner.right - outer.right),
+    lines: new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size,
+    height: Math.round(value.getBoundingClientRect().height / rem * 100) / 100,
+  };
+})"""
+
+
+@pytest.mark.parametrize("width", [320, 375, 768, 1280])
+def test_the_saved_report_draws_its_totals_as_tiles_that_fit(
+    page, component_origin, axe_source, width
+):
+    """The Campaign totals are stat tiles that fit at every width (#1639).
+
+    With four-digit counts and a seven-figure pledge total each value stays
+    on one line inside its tile, the page never scrolls sideways, and the
+    tiles read as the email's figures: the Families count with its "out of"
+    line and share bar.
+    """
+    from playwright.sync_api import expect
+
+    from .test_charts import assert_clean, watch
+    from .test_components import axe_violations
+
+    page.set_viewport_size({"width": width, "height": 900})
+    errors = watch(page)
+    page.goto(component_origin + "/daily-digest-wide")
+    totals = page.get_by_role("list", name="Campaign totals")
+    tiles = totals.locator(".stat-tile")
+    expect(tiles).to_have_count(3)
+    expect(tiles.locator(".stat-value")).to_have_text(
+        ["1,234", "1,088", "$1,234,567.89"]
+    )
+    responded = totals.locator("[data-stat=responded]")
+    expect(responded.locator(".stat-detail")).to_have_text("out of 2,345 (52.6%)")
+    expect(responded.locator("progress")).to_have_attribute("max", "2345")
+    expect(totals.locator("progress")).to_have_count(1)
+    assert page.locator("[data-digest-totals] dl").count() == 0
+    drawn = page.evaluate(TOTALS_FIT)
+    assert [tile["key"] for tile in drawn] == ["responded", "first", "pledges"]
+    assert all(
+        (tile["overflow"], tile["lines"], tile["height"]) == (0, 1, 2.1)
+        for tile in drawn
+    ), drawn
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
+    assert_clean(page, errors)
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_an_unknown_saved_total_reads_a_dash_with_its_reason(
+    page, component_origin, axe_source, width
+):
+    """A pledge total the email read "Unavailable" is "—" on the page, with
+    a toggletip saying why, and still fits (#1639)."""
+    from playwright.sync_api import expect
+
+    from .test_charts import assert_clean, watch
+    from .test_components import axe_violations
+
+    page.set_viewport_size({"width": width, "height": 900})
+    errors = watch(page)
+    page.goto(component_origin + "/daily-digest-unknown")
+    pledges = page.locator("[data-digest-totals] [data-stat=pledges]")
+    expect(pledges.locator(".stat-value")).to_contain_text("—")
+    assert "Unavailable" not in page.locator("[data-digest-totals]").inner_text()
+    button = pledges.get_by_role("button")
+    expect(button).to_have_accessible_description(
+        "The total is added up only when every responding Family's pledge "
+        "amount is known."
+    )
+    drawn = page.evaluate(TOTALS_FIT)
+    assert all(
+        (tile["overflow"], tile["lines"], tile["height"]) == (0, 1, 2.1)
+        for tile in drawn
+    ), drawn
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
+    assert_clean(page, errors)
