@@ -54,19 +54,21 @@ PURPOSES = (
     "weekly_digest",
 )
 # Sent mail lists every email of every kind (#1562): also the operational
-# and security notices, which belong to no campaign, so their page shows
-# their history but offers no resolution.
-LISTED_PURPOSES = PURPOSES + ("operational", "security_event")
+# and security notices and the Ministry leader emails (#1592), which belong
+# to no campaign, so their page shows their history but offers no
+# resolution.
+LISTED_PURPOSES = PURPOSES + ("operational", "security_event", "leader_email")
 # Sent mail is a log of emails (#931): it sorts on the server by When
 # (changed: the time of the email's current state, its last change; the
 # default, newest first), Recipient (name), Family DUID (duid), Purpose and
 # Delivery (state). The command line's --sort also takes the tokens of the
 # columns Sent mail no longer shows (#1562): Mode, Provider attempts
-# (attempts) and created (when the email was created). Emails to
-# Administrators, which have no Family, sort last under name and duid in
-# either direction, as do, under name, Families the latest ParishSoft data
-# no longer has; under name, the Administrators' emails then sort by the
-# Name or address Recipient shows (recipient_sort_key). Only the state filter is indexed
+# (attempts) and created (when the email was created). Emails to people
+# (Administrators' reports and notices, Ministry leader emails), which have
+# no Family, sort last under name and duid in either direction, as do,
+# under name, Families the latest ParishSoft data no longer has; under
+# name, the emails to people then sort by the Name or address Recipient
+# shows (recipient_sort_key). Only the state filter is indexed
 # (outbox_due, outbox_campaign_state); the orderings themselves are not, so
 # a page is a top-N sort of the filtered messages. The default "all" view
 # therefore scans the outbox, as its newest-first order always did; the
@@ -193,31 +195,31 @@ PURPOSE_GROUPS = {"family": ("initial", "reminder")}
 # Sent mail's Purpose filter, and its Production / Testing choice.
 PURPOSE_CHOICES = ("all", *PURPOSE_GROUPS, *LISTED_PURPOSES)
 MODES = ("production", "testing")
-RECIPIENT_HINT = "Use a Family DUID, an email address or a delivery ID."
+RECIPIENT_HINT = "Use a name, a whole Family DUID, one email address or a delivery ID."
 # An email address as Sent mail's Recipient filter takes it: one "@" with
 # no spaces around it. The provider and the render guard check the rest.
 _ADDRESS = re.compile(r"[^@\s]+@[^@\s]+")
 # Sent mail's Recipient as the page refuses it at its field (#1562, UX
 # conventions "Field errors and live checks"): the server's words, and the
 # same words as the field's data-missing-hint, so Apply waits saying them.
-# A name is the likeliest wrong value (the column shows names), so it says
-# names are not searched.
+# Any text is a name (#1849), so only a malformed DUID or address is refused.
 RECIPIENT_REFUSAL = _(
-    "Enter a Family DUID, an email address or a delivery ID, or clear it. "
-    "Names are not searched."
+    "Enter a name, a whole Family DUID, one email address or a delivery ID, "
+    "or clear it."
 )
-# The Recipient field's HTML pattern: a coarse browser check of
-# ``recipient_scope``, so a name holds Apply before anything is sent. It
-# admits every value the server admits apart from exotic padding (a
-# non-breaking space around it), and refuses any value with a letter
-# outside a-f, A-F and a UUID's own "urn:" and "uuid:" prefix unless it has
-# an "@" (so any name a Family has, bar a short hex-like one such as
-# "Abbe", or a malformed DUID such as ",", which the server then refuses at
-# the field in place). It is in
-# the subset both Python's ``re`` and the browser's "v" flag read alike
-# (see ``web.field_rules``).
+# The Recipient field's HTML pattern, the browser's check of
+# ``recipient_scope``: a whole DUID (DUID_TEXT's shape) or one address,
+# with spaces or tabs around it, or any text with no "@" and some
+# character other than a digit, a comma or a space (a name or a delivery
+# ID). It refuses what the server refuses (digits and commas that are no
+# DUID, an "@" that is no address) and admits all it admits apart from an
+# address padded with exotic spaces (a non-breaking space); a DUID out of
+# range ("0") it admits, and the server then refuses at the field in place.
+# It is in the subset both Python's ``re`` and the browser's "v" flag read
+# alike (see ``web.field_rules``).
 RECIPIENT_PATTERN = (
-    r"[ \t]*([0-9,]+|[^@ \t]+@[^@ \t]+|(urn:)?(uuid:)?[0-9A-Fa-f\{\}\-]+)?[ \t]*"
+    r"[ \t]*(?:(?:[0-9]+|[1-9][0-9]{0,2}(?:,[0-9]{3})+|[^@ \t]+@[^@ \t]+)[ \t]*)?"
+    r"|[^@]*[^0-9,@ \t][^@]*"
 )
 
 
@@ -237,16 +239,20 @@ def recipient_scope(value):
     Returns None for a blank filter, else ``(kind, value)``: ``("duid",
     int)`` for a Family DUID (with or without its thousands commas),
     ``("address", text)`` for an email address (lower-cased; the definer
-    read compares in lower case) or ``("id", UUID)`` for a delivery ID
-    (which also matches the Family record with that id, as before). Anything
-    else raises ``ValueError``.
+    read compares in lower case), ``("id", UUID)`` for a delivery ID
+    (which also matches the Family record with that id, as before), or
+    ``("name", text)`` for any other text, a name (#1849). Text of only
+    digits and commas that is not a whole DUID, or with an "@" that is not
+    one address, raises ``ValueError``.
     """
     if type(value) is not str or len(value) > 254:
         raise ValueError(RECIPIENT_HINT)
     value = value.strip()
     if not value:
         return None
-    if value.isascii() and (value.isdecimal() or "," in value):
+    # Digits with commas, spaces or tabs between are a DUID typed or pasted
+    # (family_duid refuses all but its own shapes), never a name.
+    if re.fullmatch("[0-9, \t]+", value):
         return ("duid", family_duid(value))
     if "@" in value:
         if _ADDRESS.fullmatch(value) is None:
@@ -255,7 +261,7 @@ def recipient_scope(value):
     try:
         return ("id", UUID(value))
     except ValueError:
-        raise ValueError(RECIPIENT_HINT) from None
+        return ("name", value)
 
 
 def unknown_count():
@@ -339,7 +345,7 @@ def listing(
     until=None,
     actor=None,
 ):
-    """Sent mail's filtered page: closed choices and exact identifiers only.
+    """Sent mail's filtered page: closed choices, identifiers and names.
 
     Returns (window, rows, has_next, total): ``total`` is a bounded count of
     every matching message (``web.tables.bounded_count``), and ``window`` the
@@ -370,6 +376,21 @@ def listing(
             selected = selected.filter(family__family_duid=value)
         elif kind == "id":
             selected = selected.filter(Q(pk=value) | Q(family_id=value))
+        elif kind == "name":
+            # A name (#1849): Families by their shown ParishSoft name, and
+            # people by what Recipient shows for them (a name, or the
+            # address when they have none); both contain it, ignoring
+            # case. As for an address, the definer reads refuse no actor.
+            needle = value.casefold()
+            people = [
+                message
+                for message, shown in person_recipients(selected, actor).items()
+                if needle in shown.casefold()
+            ]
+            selected = selected.filter(
+                Q(family__family_duid__in=named_families(value, snapshot))
+                | Q(pk__in=people)
+            )
         else:
             # Imported here: delivery_reads imports this module.
             from .delivery_reads import address_deliveries
@@ -518,31 +539,76 @@ def needs_attention(selected):
     )
 
 
+def person_recipients(selected, actor):
+    """``{message id: what Recipient shows}`` for each email to a person.
+
+    Every email in ``selected`` with no Family (a report or notice, or a
+    Ministry leader email) is named as the page names it: its address's
+    Users-page Name, else a ParishSoft Member's name, else the address
+    (``delivery_reads.person_names``). One id query, then per 500 such
+    emails one address read, and one query of the users and a Member-name
+    read for those without a Users-page Name. ``actor`` is the admitted
+    Administrator the definer reads name.
+    """
+    from .delivery_reads import administrator_addresses, person_names
+
+    ids = list(selected.filter(family__isnull=True).values_list("pk", flat=True))
+    addresses = administrator_addresses(ids, actor)
+    names = person_names(addresses, actor)
+    return {
+        message: names.get(message) or address for message, address in addresses.items()
+    }
+
+
+def named_families(text, snapshot):
+    """The Family DUIDs whose shown name in ``snapshot`` contains ``text``.
+
+    The name is the one Sent mail shows (``SnapshotFamilyName``: the
+    surname and the active heads, or "Name not recorded in ParishSoft" for
+    a blank surname), compared ignoring case as the other Admin search
+    boxes compare it (``icontains``, which escapes LIKE wildcards). One
+    query over the snapshot's Families; none without a snapshot.
+    """
+    from parishkit.stewardship.source.version_models import SnapshotFamily
+
+    if snapshot is None:
+        return []
+    keys = (
+        SnapshotFamily.objects.filter(snapshot_id=snapshot)
+        .annotate(
+            shown=SnapshotFamilyName(
+                snapshot, F("source_key"), default=NAME_NOT_RECORDED
+            )
+        )
+        .filter(shown__icontains=text)
+        .values_list("source_key", flat=True)
+    )
+    return [int(key) for key in keys if key.isdigit()]
+
+
 def recipient_sort_key(selected, actor):
-    """The Recipient sort's key for each Administrator email (#1562).
+    """The Recipient sort's key for each email to a person (#1562).
 
     Emails with no Family (reports and notices, to one Administrator
-    address each) have no Family name to sort by, so under the name sort
-    they come after every Family; among themselves they sort by what
-    Recipient shows, the Users-page Name or else the address, case-folded.
+    address each, and Ministry leader emails, to one leader each) have no
+    Family name to sort by, so under the name sort they come after every
+    Family; among themselves they sort by what
+    Recipient shows (``delivery_reads.person_names``: the Users-page Name,
+    else a ParishSoft Member's name, else the address), case-folded.
     Those keys come from the definer read of their addresses
     (``delivery_reads.administrator_addresses``), so they are read in
     Python for every such email the filters match, and the database then
     looks each one up by id in a JSON object: one id query, one definer
-    read per 500 such emails and one query of the users. Family emails get
+    read per 500 such emails and one query of the users (and one of the
+    Member names when an address has no Users-page Name). Family emails get
     NULL. Without an actor (no definer read is possible) every key is NULL,
     so they keep newest first, as before.
     """
-    from .delivery_reads import administrator_addresses, administrator_names
-
     keys = {}
     if actor is not None:
-        ids = list(selected.filter(family__isnull=True).values_list("pk", flat=True))
-        addresses = administrator_addresses(ids, actor)
-        names = administrator_names(addresses.values())
         keys = {
-            str(message): (names.get(address.lower()) or address).casefold()
-            for message, address in addresses.items()
+            str(message): shown.casefold()
+            for message, shown in person_recipients(selected, actor).items()
         }
     return Func(
         Cast(Value(json.dumps(keys)), JSONField()),

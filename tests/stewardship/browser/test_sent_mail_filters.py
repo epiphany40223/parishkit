@@ -310,22 +310,42 @@ def test_a_through_day_before_from_holds_apply(page, component_origin):
 
 
 RECIPIENT_WORDS = (
-    "Enter a Family DUID, an email address or a delivery ID, or clear it. "
-    "Names are not searched."
+    "Enter a name, a whole Family DUID, one email address or a delivery ID, "
+    "or clear it."
 )
 
 
-def test_a_name_in_recipient_holds_apply_on_the_page(page, component_origin):
-    """A name typed in Recipient (R40b, #1562) holds Apply filters, saying
-    why in the gate's reserved line, which keeps its height; nothing is
-    sent and the page stays, unreloaded, at its own address."""
+def test_a_name_in_recipient_applies_in_place(page, component_origin):
+    """A name typed in Recipient (R40b, #1849) is a filter like any other:
+    Apply posts it, the list is redrawn in place without a reload, and the
+    name never reaches the address bar."""
+    sent = answer_with(page, component_origin, "/deliveries-applied")
+    open_list(page, component_origin)
+    page.locator("#delivery-recipient").fill("Thompson")
+    page.get_by_role("button", name="Apply filters").click()
+    eventually(
+        page,
+        "document.querySelector('tbody tr td:last-child').textContent.trim()",
+        "Failed",
+    )
+    assert page.evaluate(MARKED) == "kept"
+    recorded(page, sent, 1)
+    assert sent[0]["recipient"] == ["Thompson"]
+    assert "Thompson" not in page.url and "recipient" not in page.url
+
+
+def test_a_malformed_recipient_holds_apply_on_the_page(page, component_origin):
+    """Digits and commas that are no Family DUID (R40b, #1562) hold Apply
+    filters, saying why in the gate's reserved line, which keeps its
+    height; nothing is sent and the page stays, unreloaded, at its own
+    address."""
     sent = answer_with(page, component_origin, "/deliveries-applied")
     open_list(page, component_origin)
     address = page.url
     hint = page.locator("#delivery-filter-hint")
     height = hint.evaluate("node => node.getBoundingClientRect().height")
     field = page.locator("#delivery-recipient")
-    field.fill("Thompson")
+    field.fill("1,2")
     field.blur()
     eventually(
         page, "document.querySelector('#table-filters button[type=submit]').disabled"
@@ -337,8 +357,13 @@ def test_a_name_in_recipient_holds_apply_on_the_page(page, component_origin):
     page.wait_for_timeout(300)
     assert sent == []
     assert page.url == address and page.evaluate(MARKED) == "kept"
-    # A Family DUID, an address and a delivery ID are each let through.
-    for value in ("12,345", "Pat@Example.org", "0f8fad5b-d9cb-469f-a165-70867728950e"):
+    # A name, a Family DUID, an address and a delivery ID are let through.
+    for value in (
+        "Smith, John",
+        "12,345",
+        "Pat@Example.org",
+        "0f8fad5b-d9cb-469f-a165-70867728950e",
+    ):
         field.fill(value)
         eventually(
             page,
@@ -347,8 +372,8 @@ def test_a_name_in_recipient_holds_apply_on_the_page(page, component_origin):
 
 
 def test_a_refused_recipient_is_marked_in_place(page, component_origin):
-    """A Recipient the server refuses at its field (a hex-like name the
-    pattern lets through) is answered 400 with the page drawn again; the
+    """A Recipient the server refuses at its field (a DUID out of range,
+    which the pattern lets through) is answered 400 with the page drawn again; the
     Apply swaps it in without a reload, keeps what was typed, marks the
     field with the message in the hint row, and the address never shows
     the Recipient. The first edit clears the mark."""
@@ -367,16 +392,16 @@ def test_a_refused_recipient_is_marked_in_place(page, component_origin):
     page.route(component_origin + PAGE + "*", handle)
     open_list(page, component_origin)
     field = page.locator("#delivery-recipient")
-    field.fill("Abbe")
+    field.fill("0")
     page.get_by_role("button", name="Apply filters").click()
     eventually(
         page, "document.querySelector('#delivery-recipient').ariaInvalid", "true"
     )
     assert page.evaluate(MARKED) == "kept"
     recorded(page, sent, 1)
-    assert sent[0]["recipient"] == ["Abbe"]
-    assert field.input_value() == "Abbe"
-    assert "Abbe" not in page.url and "recipient" not in page.url
+    assert sent[0]["recipient"] == ["0"]
+    assert field.input_value() == "0"
+    assert "recipient" not in page.url
     message = page.locator("#delivery-filters_error")
     visible(message)
     has_text(message, RECIPIENT_WORDS)

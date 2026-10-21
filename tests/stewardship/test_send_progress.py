@@ -15,7 +15,7 @@ from decimal import Decimal
 import pytest
 from django.template.loader import render_to_string
 
-from parishkit.stewardship.jobs.delivery_metadata import other_mode
+from parishkit.stewardship.jobs.delivery_metadata import LISTED_PURPOSES, other_mode
 from parishkit.stewardship.jobs.mail_queue import (
     QUEUE_PURPOSES,
     KindCounts,
@@ -471,9 +471,9 @@ def test_queue_table_draws_every_kind_and_links_only_kinds_with_mail():
     """Every kind always has a row; a Kind links Sent mail only while queued."""
     html = render(None, queued=queue(initial=(4, 1, 0, 0)))
     rows = re.findall(r'<tr data-kind="([a-z_]+)">', html)
-    # Every kind Sent mail lists, in its order, then the Ministry leader
-    # emails it does not list yet (#1562).
-    assert tuple(rows) == QUEUE_PURPOSES
+    # Every kind Sent mail lists, in its order, the Ministry leader emails
+    # last (#1562).
+    assert tuple(rows) == QUEUE_PURPOSES == LISTED_PURPOSES
     assert rows[-1] == "leader_email"
     assert (
         '<a href="/admin/mail/sent/?purpose=initial&amp;state=still_sending'
@@ -497,10 +497,13 @@ def test_queue_other_mode_line_counts_and_links_that_mode():
     assert "1 email queued in Production</a>" in single
 
 
-def test_a_kind_sent_mail_does_not_list_yet_is_counted_but_not_linked():
-    """Ministry leader emails are queued today; Sent mail lists them later."""
+def test_queued_ministry_leader_emails_link_sent_mail():
+    """Sent mail lists Ministry leader emails (#1562), so their Kind links
+    it while one is queued, as every other kind's does."""
     html = render(None, queued=queue(leader_email=(1, 0, 0, 0)))
     row = html.split('<tr data-kind="leader_email">')[1].split("</tr>")[0]
-    assert '<th scope="row">Ministry leader email</th>' in row
-    assert "<a" not in row
+    assert (
+        '<a href="/admin/mail/sent/?purpose=leader_email&amp;state=still_sending'
+        '&amp;mode=production">Ministry leader email</a>' in row
+    )
     assert '<td class="numeric">1</td>' in row

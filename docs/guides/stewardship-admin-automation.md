@@ -2138,18 +2138,21 @@ pk-admin delivery bounce-report MESSAGE_ID --address ADDRESS \
 ```
 
 `delivery list` takes Sent mail's filters: `--recipient` (a Family DUID, an
-email address or a delivery id, as input only), `--purpose` (`initial`,
+email address, a delivery id, or any other text as part of a Family's or a
+person's name, ignoring case, as input only), `--purpose` (`initial`,
 `reminder`, `receipt`, `family_test`, `daily_digest`, `weekly_digest`,
-`operational` or `security_event`, or the group `family`: invitations and
-reminders), `--state` (a state, or the groups `needs_attention`,
+`operational`, `security_event` or `leader_email`, or the group `family`:
+invitations and reminders), `--state` (a state, or the groups `needs_attention`,
 `needs_review`, `not_delivered` and `still_sending`, as the page defines
 them), `--mode`
 (`production` or `testing`; both when left out), `--from` and `--to` (whole
 days, in the time zone `--zone` names, the parish's time zone by default),
 `--send` (send history's `send` value), `--page`, `--size` and `--sort`. The
-list includes operational and security notices, as the page does. `--sort` takes the page's tokens:
+list includes operational and security notices and Ministry leader emails,
+as the page does. `--sort` takes the page's tokens:
 `changed` (when the email last changed; the default is `-changed`, latest
-first), `name` (emails to Administrators last, by their Name or address),
+first), `name` (emails to people, Administrators and Ministry leaders, last,
+by their Name or address),
 `duid`, `purpose`, `mode`, `state` and `attempts`, and also
 `created`. `delivery refusals` takes `--duid`, and its `--sort` takes
 `refused`, `name` (the Family's name, as `delivery list`), `duid`
@@ -4259,3 +4262,5 @@ Each change is recorded in System logs as on the page
 - `pk-admin/1` (#1747): additive. `report pledges` and `export pledges`
   take the Pledges page's `conflict` stage, and `report pledges` counts
   it in `stages`.
+- `pk-admin/1` (#1562): additive. `delivery list` also lists the Ministry
+  leader emails, as Sent mail does, and `--purpose` takes `leader_email`.

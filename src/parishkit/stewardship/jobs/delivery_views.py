@@ -30,7 +30,10 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
-from parishkit.stewardship.reports.family_links import link_families
+from parishkit.stewardship.reports.family_links import (
+    family_record_ids,
+    link_families,
+)
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import (
     MESSAGES,
@@ -317,8 +320,9 @@ REFUSED_KEEPS = ("mode", "zone", "sort", "size")
 def _recipient_refusal(parameters):
     """A ``FilterError`` when Sent mail's Recipient is unusable, else None.
 
-    A Recipient that is not a Family DUID, an email address or a delivery
-    ID (a name, the likeliest) is a rule the reader fixes at that one field
+    A malformed Recipient (digits and commas that are no whole Family
+    DUID, or an "@" that is no one address; any other text is a name,
+    #1849) is a rule the reader fixes at that one field
     (UX conventions, Field errors and live checks), so the page is drawn
     again with the error there, not replaced by an error page. Every
     structural rule (an unknown or repeated field, a sort or size the table
@@ -371,10 +375,12 @@ def _mode_fields(parameters, table):
 def _recipient_fields(row, mode):
     """The fields that list everything a row's recipient was sent (#1562).
 
-    A Family email's recipient is its Family (by DUID), any other email's its
-    Administrator address; the form keeps the mode shown and posts them, so
-    neither reaches a URL. None when the address is unknown. The recipient
-    history pages of a later #1562 slice replace this control.
+    A Family email's recipient is its Family (by DUID), any other email's
+    its one address (an Administrator's, or a Ministry leader's); the form
+    keeps the mode shown and posts them, so neither reaches a URL. None
+    when the address is unknown. A Production Family email the current
+    campaign has a record of links its Family's Timeline instead
+    (``_with_timelines``); the template then leaves these fields unused.
     """
     duid = row["family__family_duid"]
     recipient = str(duid) if duid else row.get("recipient_address")
@@ -383,13 +389,41 @@ def _recipient_fields(row, mode):
     return [("recipient", recipient), ("mode", mode)]
 
 
+def _with_timelines(rows):
+    """Each row with ``timeline_family_id``, for its Recipient's Timeline link.
+
+    A Production Family email gets its Family's record in the current
+    campaign, the one the Timeline address serves (#1570), or None when
+    that campaign has no record of the Family; every other email gets None
+    and keeps the in-place recipient filter (#1562): a Testing email, since
+    the Timeline shows only Production records, and an email to a person,
+    who has no Timeline yet. One read of the page's record ids, none when
+    the page lists no Production Family email. The email's own
+    ``family_id`` is its own campaign's record, so it is left as it is.
+    """
+    ids = family_record_ids(
+        None,
+        (row["family__family_duid"] for row in rows if row["mode"] == "production"),
+    )
+    return [
+        row
+        | {
+            "timeline_family_id": ids.get(row["family__family_duid"])
+            if row["mode"] == "production"
+            else None
+        }
+        for row in rows
+    ]
+
+
 @require_http_methods(["GET", "HEAD", "POST"])
 @sensitive_post_parameters("note", "recipient")
 def delivery_list(request):
     """Sent mail: every email, filtered by exact or closed choices (#1562).
 
-    Never fetches message content: an Administrator email's address comes
-    from a definer read that returns only addresses. A POST naming an
+    Never fetches message content: the address of an email to a person (an
+    Administrator's report or notice, a Ministry leader's sign-in email)
+    comes from a definer read that returns only addresses. A POST naming an
     ``action`` is one of the page's bulk actions (#382 M4, ``_bulk``): it is
     answered with this page, whose bulk review region shows the preview,
     the result or the refusal in place. Any other POST reads the page with
@@ -442,9 +476,11 @@ def delivery_list(request):
             else {"state": "all", "purpose": "all"}
             | {name: value for name, value in sent.items() if value}
         )
-        rows = with_recipients(
-            with_refusal_counts(with_family_names(data["rows"], data["snapshot"])),
-            actor.identity,
+        rows = _with_timelines(
+            with_recipients(
+                with_refusal_counts(with_family_names(data["rows"], data["snapshot"])),
+                actor.identity,
+            )
         )
         table = replace(
             window_table(
