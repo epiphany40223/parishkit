@@ -391,14 +391,15 @@ def test_a_member_with_changes_from_two_families_plans_the_current_one(
 
 
 def test_the_waiting_count_leaves_out_a_member_who_left(world):
-    """The Publish page counts only what preflight would plan, so a change
-    whose Member left the Family cannot offer Check ParishSoft alone."""
+    """Update ParishSoft counts only what preflight would plan, so a change
+    whose Member left the Family cannot offer Check ParishSoft alone; it is
+    counted apart (#1688, #1749's note)."""
     from parishkit.stewardship.reports.census_publication import waiting
 
     campaign = world.first.submission.campaign_id
-    assert waiting(campaign) == {"changes": 1, "members": 1}
+    assert waiting(campaign) == {"changes": 1, "members": 1, "away": 0}
     leave(world.first, "moved")
-    assert waiting(campaign) == {"changes": 0, "members": 0}
+    assert waiting(campaign) == {"changes": 0, "members": 0, "away": 1}
 
 
 def test_the_queueing_transaction_checks_the_member_again(world, monkeypatch):
@@ -672,3 +673,129 @@ def test_do_block_refuses_the_maps_it_replaces(name):
     ):
         cursor.execute(_replaced(old, name))
         cursor.execute(check)
+
+
+def final_refreshes():
+    """Every source refresh command recorded so far."""
+    from parishkit.stewardship.source.refresh_models import SourceRefreshCommand
+
+    return SourceRefreshCommand.objects.select_related("request")
+
+
+def test_an_update_requests_one_final_refresh_as_its_administrator(world):
+    """A run that updated a Member asks for one full refresh once it has
+    released the lease (#1688): a manual refresh attributed to the
+    Administrator who confirmed the plan, under the run's correlation id,
+    audited as following an update; the page sees it unfinished. The run
+    reports its Members done as it goes."""
+    from parishkit.stewardship.reports.census_publication import refreshing
+
+    plan = world.planned(uuid4())
+    _, run = world.confirm(plan)
+    assert not final_refreshes().exists()
+    assert world.execute(run.run_id) and state(run) == "succeeded"
+    assert proposal(world.first) == "published"
+    (command,) = final_refreshes()
+    task = TaskRun.objects.get(pk=run.run_id)
+    assert command.pk == tasks.final_refresh_command(run.run_id)
+    assert (command.cause, command.kind, command.actor_id) == (
+        "manual",
+        "full",
+        world.admin,
+    )
+    assert command.correlation_id == task.correlation_id
+    assert TaskRun.objects.filter(
+        root_id=command.request.task_root_id, task_type="source_refresh"
+    ).exists()
+    assert audited("census_publication_refresh_requested") == [
+        (None, command.pk, "started")
+    ]
+    assert refreshing([run.run_id])
+    assert (task.progress_current, task.progress_total) == (1, 1)
+
+
+def test_a_run_that_wrote_nothing_requests_no_refresh(world):
+    """A run whose Member changed since the check writes nothing, so it
+    asks for no refresh and audits none."""
+    plan = world.planned(uuid4())
+    _, run = world.confirm(plan)
+    world.gateway.records[world.first.entity_key]["firstName"] = "Changed"
+    assert world.execute(run.run_id) and state(run) == "succeeded"
+    assert world.gateway.writes == []
+    assert not final_refreshes().exists()
+    assert audited("census_publication_refresh_requested") == []
+
+
+def test_a_refused_final_refresh_leaves_the_run_as_it_ended(world, monkeypatch):
+    """A refresh the request path refuses (here, no configured organization)
+    leaves the run's outcome as it is, logged at WARNING, with nothing
+    audited; the next scheduled refresh catches up."""
+    import logging
+
+    warned = []
+
+    def refused(**_):
+        raise PermissionError("Source refresh requires its configured organization.")
+
+    monkeypatch.setattr(tasks, "request_refresh", refused)
+    monkeypatch.setattr(
+        tasks,
+        "emit_failure",
+        lambda error, **options: warned.append((type(error), options["level"])),
+    )
+    plan = world.planned(uuid4())
+    _, run = world.confirm(plan)
+    assert world.execute(run.run_id) and state(run) == "succeeded"
+    assert proposal(world.first) == "published"
+    assert not final_refreshes().exists()
+    assert audited("census_publication_refresh_requested") == []
+    assert warned == [(PermissionError, logging.WARNING)]
+
+
+def test_a_run_refused_after_writing_still_refreshes(world, monkeypatch):
+    """A run refused partway after updating a Member (here, the switch
+    found off once the Member is written) still asks for the final
+    refresh, and its task is failed for Run again."""
+    real = tasks.publish_plan
+
+    def then_switched_off(*args, **options):
+        """Write as usual, then meet the switch off."""
+        real(*args, **options)
+        raise PublicationDisabled("ParishSoft publication is switched off.")
+
+    monkeypatch.setattr(tasks, "publish_plan", then_switched_off)
+    plan = world.planned(uuid4())
+    _, run = world.confirm(plan)
+    assert world.execute(run.run_id) and state(run) == "failed"
+    assert proposal(world.first) == "published"
+    (command,) = final_refreshes()
+    assert command.pk == tasks.final_refresh_command(run.run_id)
+    assert audited("census_publication_switched_off") == [(None, run.run_id, "failed")]
+
+
+def test_a_crash_before_the_final_refresh_is_retried_for_it(world, monkeypatch):
+    """A run that crashed after updating its Member but before asking for
+    the final refresh is retried by recovery although nothing is left to
+    write, and the retry asks once, writing nothing again (#1688)."""
+    plan = world.planned(uuid4())
+    _, run = world.confirm(plan)
+    real = tasks._request_final_refresh
+
+    def crash(*args, **options):
+        """The worker dies between the writes and the refresh."""
+        raise Crash
+
+    monkeypatch.setattr(tasks, "_request_final_refresh", crash)
+    with pytest.raises(Crash):
+        world.execute(run.run_id)
+    monkeypatch.setattr(tasks, "_request_final_refresh", real)
+    assert proposal(world.first) == "published" and not final_refreshes().exists()
+    assert tasks.refresh_owed(plan.pk)
+    due(run)
+    assert world.recover(run.run_id) and state(run) == "retry_wait"
+    due(run)
+    assert world.execute(run.run_id) and state(run) == "succeeded"
+    assert len(world.gateway.writes) == 1
+    (command,) = final_refreshes()
+    assert command.pk == tasks.final_refresh_command(run.run_id)
+    assert not tasks.refresh_owed(plan.pk)

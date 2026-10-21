@@ -431,10 +431,9 @@ def report(request, campaign_id):
                 "add_fields": add_fields(),
                 "add_replaceable": result["replaceable"],
                 "administrator": result["administrator"],
-                # Publish to ParishSoft's link (#528, ADM-09), the
+                # Update ParishSoft's link (#528, ADM-09; #1688), the
                 # Administrator's: unavailable, with its reason, while the
-                # deployment's parishsoft_publication setting is off. #1688
-                # renames it Update ParishSoft.
+                # deployment's parishsoft_publication setting is off.
                 "publication_on": census_publication.enabled(),
             },
             request=request,
