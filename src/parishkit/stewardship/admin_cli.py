@@ -78,7 +78,7 @@ preview reads the image from standard input after the preamble.
 in ``admin_workgroup``) read and change the No-reminders WorkGroup.
 ``campaign show``, ``campaign preview`` and ``campaign confirm`` (PR 10, in
 ``admin_campaign``) read and change Campaign settings.
-``campaign create-preview`` and ``campaign create`` (#1899, in
+``campaign create-preview`` and ``campaign create-confirm`` (#1899, in
 ``admin_campaign_create``) are Create the campaign's Review and Apply.
 ``campaign shares-preview`` and ``campaign shares-confirm`` (PR 10, in
 ``admin_shares``) change a campaign's Share options.
@@ -1929,7 +1929,7 @@ def campaign_create_preview(args, preamble, runtime, context):
     )
 
 
-def campaign_create(args, preamble, runtime, context):
+def campaign_create_confirm(args, preamble, runtime, context):
     """Confirm a reviewed first campaign as a request (#1899)."""
     from .admin_campaign_create import confirm_create
     from .admin_changes import TOKEN_LIMIT
@@ -5018,8 +5018,8 @@ def _campaign_create_preview_options(parser):
     )
 
 
-def _campaign_create_options(parser):
-    """Options of ``campaign create``: the preview's token."""
+def _campaign_create_confirm_options(parser):
+    """Options of ``campaign create-confirm``: the preview's token."""
     parser.add_argument(
         "--token",
         required=True,
@@ -6248,14 +6248,17 @@ def _campaign_specs():
             audit_event=None,
         ),
         CommandSpec(
-            "campaign create",
+            "campaign create-confirm",
             "Create the reviewed first campaign.",
-            campaign_create,
+            campaign_create_confirm,
             "full",
             True,
             CampaignCreate.field_names(),
             10,
-            options=(_campaign_create_options,),
+            options=(_campaign_create_confirm_options,),
+            # The event keeps the name System logs already hold for this
+            # Apply; the command's name is not the event's (#1913).
+            audit_event="admin_cmd_campaign_create",
         ),
     )
 

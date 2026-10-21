@@ -1343,7 +1343,7 @@ with the same token returns the same request.
 
 ## Create the campaign
 
-`campaign create-preview` and `campaign create` are **Create the
+`campaign create-preview` and `campaign create-confirm` are **Create the
 campaign**'s **Create the campaign and continue** review and the review
 dialog's **Apply**: they add the deployment's first campaign as a
 Testing-mode draft, with the default text for each of its pages and
@@ -1358,7 +1358,7 @@ parish's time zone, Census and Additional information ticked, the default
 Ministry leader roles, and everything else blank, so give at least
 `name`, `start_date` and `end_date`. `--expected-version` is the
 configuration version `parish show` prints. Nothing changes until
-`campaign create`.
+`campaign create-confirm`.
 
 ```sh
 VERSION=$(pk-admin parish show | jq -r .result.version)
@@ -1366,7 +1366,7 @@ pk-admin campaign create-preview --expected-version "$VERSION" \
     --changes '{"campaign": {"name": "Stewardship 2028",
       "start_date": "2027-10-01", "end_date": "2027-11-30",
       "ministry": false}}' |
-  jq -r .result.preview.token | pk-admin campaign create --token -
+  jq -r .result.preview.token | pk-admin campaign create-confirm --token -
 ```
 
 | Field | What it holds |
@@ -1374,16 +1374,16 @@ pk-admin campaign create-preview --expected-version "$VERSION" \
 | `version` (`campaign create-preview`) | The version the new campaign was reviewed against |
 | `settings` | Every setting as it was reviewed: the document over the form's starting values |
 | `content` | How many pages and emails the campaign starts with, in the default text |
-| `preview.token` | What `campaign create --token` takes, valid for fifteen minutes |
-| `created`, `request` (`campaign create`) | As `parish confirm` prints them; follow the change with `config request show --watch` |
+| `preview.token` | What `campaign create-confirm --token` takes, valid for fifteen minutes |
+| `created`, `request` (`campaign create-confirm`) | As `parish confirm` prints them; follow the change with `config request show --watch` |
 
 Once the request is applied, load the campaign's Families with `refresh
 start`, as the page's status offers. A value the page refuses is exit 1
 (`invalid`), naming the setting (`campaign.<field>`). A version that is
 no longer current, or an expired token, is exit 1 (`stale_version`). Once
 a campaign exists, or before ParishSoft data is loaded, each command is
-exit 1 (`not_available`). `campaign create` records
-`admin_cmd_campaign_create` in System logs with the request; repeating it
+exit 1 (`not_available`). `campaign create-confirm` records
+`admin_cmd_campaign_create` (an event name that did not change with the command) in System logs with the request; repeating it
 with the same token returns the same request, even after the campaign
 exists. Copying a campaign has no command: Copy campaign is retired until
 the single-campaign change
@@ -3991,10 +3991,10 @@ Each change is recorded in System logs as on the page
   full-scope one); `campaign confirm` records `admin_cmd_campaign_confirm`
   and the page's own events.
 - `pk-admin/1` (#1899): additive. `campaign create-preview --changes
-  JSON|- --expected-version VERSION` and `campaign create --token
+  JSON|- --expected-version VERSION` and `campaign create-confirm --token
   TOKEN|-`, Create the campaign's Review and Apply for the deployment's
   first campaign (Administrators only, full scope, neither fresh-gated nor
-  prompting); `campaign create` records `admin_cmd_campaign_create`.
+  prompting); `campaign create-confirm` records `admin_cmd_campaign_create`.
 - `pk-admin/1` (#632): additive. `integration schedule-preview
   [--refresh-schedule DOCUMENT|-]`, the ParishSoft page's live refresh
   schedule check (any session, Administrators only, no event).

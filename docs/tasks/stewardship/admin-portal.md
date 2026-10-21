@@ -958,7 +958,7 @@ locked field refused, its leader roles, its end date with
 `campaign_ministries_requested`, no current campaign, a read-only session
 and Staff denied, an ended session) and the unchanged Campaign settings,
 live end date and live Ministries page suites. Another part (#1899) adds
-`campaign create-preview` and `campaign create`, Create the campaign's
+`campaign create-preview` and `campaign create-confirm`, Create the campaign's
 Review and Apply for the deployment's first campaign, in
 `parishkit.stewardship.admin_campaign_create`, through the page's own
 admission, form, Review, salt and Apply recheck and

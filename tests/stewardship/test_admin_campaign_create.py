@@ -1,4 +1,4 @@
-"""Create the campaign commands: ``campaign create-preview`` and ``create``.
+"""Create the campaign commands: ``campaign create-preview`` and ``create-confirm``.
 
 Pure tests: the catalog entries, the described event, the documents' member
 names, the ledger and usage errors. The commands against a real database are
@@ -24,7 +24,7 @@ def test_the_catalog_entries():
     records its own event."""
     entries = {entry["name"]: entry for entry in admin_cli.catalog()}
     preview = entries["campaign create-preview"]
-    create = entries["campaign create"]
+    create = entries["campaign create-confirm"]
     for entry in (preview, create):
         assert entry["pr"] == 10 and entry["arguments"] == []
         assert entry["scope"] == "full"
@@ -63,7 +63,7 @@ def test_the_ledger_covers_the_page_and_defers_copying():
     waits on #145, which retires or restores it."""
     parity = LEDGER["campaign_create"]
     assert parity.kind == "command" and parity.owed is None
-    assert parity.detail == ("campaign create-preview", "campaign create")
+    assert parity.detail == ("campaign create-preview", "campaign create-confirm")
     clone = LEDGER["campaign_clone"]
     assert clone.kind == "deferred" and "#145" in clone.detail[0]
 
@@ -82,8 +82,8 @@ def test_a_refused_creation_is_not_available():
         ["campaign", "create-preview", "--expected-version", VERSION],
         ["campaign", "create-preview", "--changes", "{}"],
         ["campaign", "create-preview", "--changes", "{}", "--expected-version", "x"],
-        ["campaign", "create"],
-        ["campaign", "create", "--token", "-", "extra"],
+        ["campaign", "create-confirm"],
+        ["campaign", "create-confirm", "--token", "-", "extra"],
     ],
 )
 def test_malformed_commands_are_usage_errors(argv):

@@ -1814,7 +1814,7 @@ signatures:
   live and Ministries reviews, each returning the review instead of a
   response), and `campaign confirm` its Apply routing into
   `campaign_views.confirm_route`; the page now calls both.
-  `campaign create-preview` and `campaign create` (#1899) needed none:
+  `campaign create-preview` and `campaign create-confirm` (#1899) needed none:
   Create the campaign's admission, form, Review and Apply recheck
   (`campaign_create_views._admitted`, `creation_form`, `creation_review`,
   `_scope`) were already request-free.
@@ -2030,7 +2030,7 @@ none.
 | `schedule_calendar` | `schedule show` (PR 3a): the read-only Campaign calendar (#469) draws the saved schedules and campaign dates that `schedule show` lists |
 | `campaign_end_date_check` | `schedule preview` (PR 4): Campaign settings' no-save live check of a live campaign's end date answers what a preview of that end date would refuse |
 | `configuration_request` | `config request show --watch` (PR 4); `config request cancel` ([#944](https://github.com/epiphany40223/parishkit/pull/944)), an operator recovery with no page button |
-| `campaign_settings`, `campaign_create`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), Campaign settings' read, Review and Apply, a live campaign's Ministries included (#1119); `campaign create-preview`, `campaign create` ([#1899](https://github.com/epiphany40223/parishkit/issues/1899)), [Create the campaign](../admin-portal/spec.md#create-the-campaign)'s Review and Apply for the first campaign (#142); `campaign_clone` is deferred on #145: until then creating or copying a campaign is refused, except the first campaign ([navigation rule 10](../ui-conventions/spec.md#navigation-rules)), and Copy campaign refuses every request before reading anything, so a command could only repeat that refusal. Commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
+| `campaign_settings`, `campaign_create`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), Campaign settings' read, Review and Apply, a live campaign's Ministries included (#1119); `campaign create-preview`, `campaign create-confirm` ([#1899](https://github.com/epiphany40223/parishkit/issues/1899)), [Create the campaign](../admin-portal/spec.md#create-the-campaign)'s Review and Apply for the first campaign (#142); `campaign_clone` is deferred on #145: until then creating or copying a campaign is refused, except the first campaign ([navigation rule 10](../ui-conventions/spec.md#navigation-rules)), and Copy campaign refuses every request before reading anything, so a command could only repeat that refusal. Commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
 | `share_settings` | `campaign shares`, `campaign shares-preview`, `campaign shares-confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), Share options' read, Review and Apply |
 | `reminder_workgroup` (its review and apply, #750) | `workgroup show`, `workgroup preview`, `workgroup confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
 | `content_catalog`, `content_edit`, `content_revision`, `content_delete`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content history`, `content preview` (the Delete and the plain-text preview), `content confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the editor's Review and Apply (PR 10) |
@@ -2484,7 +2484,7 @@ preview` when #1119 made the page one editor. The document shape and
 lists the fields.
 
 `campaign create-preview --changes … --expected-version …` and `campaign
-create --token …` are [Create the campaign](../admin-portal/spec.md#create-the-campaign)'s
+create-confirm --token …` are [Create the campaign](../admin-portal/spec.md#create-the-campaign)'s
 Review and its review dialog's Apply (#1899): they add the deployment's
 first campaign, and nothing else, through the page's own pieces
 (`campaign_create_views._admitted`, `_scope`, `creation_form`,
@@ -2509,7 +2509,7 @@ is `invalid`, and another version is `stale_version`. It prints
 shape), `content` (the number of default pages and emails the campaign
 starts with) and `preview.token`, the page's own signed binding, so a
 token from either channel confirms on the other; it records nothing.
-`campaign create` records the configuration request as the dialog's
+`campaign create-confirm` records the configuration request as the dialog's
 Apply does, through `admin_editing.confirm_intent` with the page's salt,
 `_scope` (admission rechecked under the work lock; refused as
 `not_available`) and `first_campaign`; it adds `admin_cmd_campaign_create`

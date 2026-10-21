@@ -1,4 +1,4 @@
-"""``campaign create-preview`` and ``campaign create`` (#1899, ADM-11 PR 10).
+"""``campaign create-preview`` and ``campaign create-confirm`` (#1899, ADM-11 PR 10).
 
 Process admission is replaced by the test's own Django assembly; everything
 after it is the real command line on the restricted web login. The commands
@@ -86,8 +86,8 @@ def preview(admin, secret, settings, version=None):
 
 
 def create(admin, secret, signed):
-    """Run ``campaign create`` with ``signed``."""
-    return admin("campaign", "create", "--token", signed, secret=secret)
+    """Run ``campaign create-confirm`` with ``signed``."""
+    return admin("campaign", "create-confirm", "--token", signed, secret=secret)
 
 
 def reviewed(admin, secret, settings):
@@ -104,12 +104,12 @@ def refused(result, code):
 
 
 def events():
-    """How many ``campaign create`` events are recorded."""
+    """How many ``campaign create-confirm`` events are recorded."""
     return AuditEvent.objects.filter(event_type=EVENT).count()
 
 
 def install(admin, created):
-    """Install the request a successful ``campaign create`` recorded."""
+    """Install the request a successful ``campaign create-confirm`` recorded."""
     assert created["result"]["created"], created
     request_id = UUID(created["result"]["request"]["request_id"])
     receipt = install_request(

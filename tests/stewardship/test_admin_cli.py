@@ -134,7 +134,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "campaign preview",
         "campaign confirm",
         "campaign create-preview",
-        "campaign create",
+        "campaign create-confirm",
         "campaign shares-preview",
         "campaign shares-confirm",
     }
@@ -1012,7 +1012,8 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_parish_confirm",
         "admin_cmd_workgroup_confirm",
         "admin_cmd_campaign_confirm",
-        # campaign create: Create the campaign's Apply (#1899).
+        # campaign create-confirm: Create the campaign's Apply (#1899; the event
+        # keeps the name System logs already hold).
         "admin_cmd_campaign_create",
         # campaign shares-confirm: Share options' Apply (PR 10).
         "admin_cmd_campaign_shares_confirm",

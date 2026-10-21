@@ -162,7 +162,7 @@ LEDGER = {
     # only, admitted through the page's own ``_admitted`` and ``_scope``
     # (``single_campaign.first_campaign_admitted``) and confirmed with
     # ``first_campaign=True``, as the page does.
-    "campaign_create": command("campaign create-preview", "campaign create"),
+    "campaign_create": command("campaign create-preview", "campaign create-confirm"),
     # Copy campaign refuses every request before reading anything until
     # #145 (navigation rule 10), so a command could only repeat that
     # refusal; #145 decides whether copying comes back.

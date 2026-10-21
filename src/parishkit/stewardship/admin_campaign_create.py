@@ -1,4 +1,4 @@
-"""Create the campaign commands (#1899): ``campaign create-preview`` and ``create``.
+"""Create the campaign commands (#1899): ``campaign create-preview``, ``-confirm``.
 
 Create the campaign (``admin:campaign_create``, #142) adds the deployment's
 first campaign, and only that one: ``single_campaign.first_campaign_admitted``
@@ -14,7 +14,7 @@ and its Apply's recheck under the work lock (``_scope``).
   page's form and runs the page's Review, printing ``preview.token``, the
   same signed binding the dialog's Apply posts. It changes nothing and
   records no event, as the page's Review records none.
-- ``campaign create`` takes that token (or one the page signed) and records
+- ``campaign create-confirm`` takes that token (or one the page signed) and records
   the configuration request exactly as the dialog's Apply does, through
   ``admin_editing.confirm_intent`` with ``first_campaign=True``. In the
   request's own durable transaction it also records one
@@ -44,7 +44,7 @@ class CampaignCreatePreview(ReadModel):
     ``settings`` is every form field as posted (the document over the form's
     starting values), in ``campaign show``'s shape. ``content`` is how many
     default pages and emails the campaign starts with. ``preview.token`` is
-    the signed binding ``campaign create`` takes, valid for fifteen minutes.
+    the signed binding ``campaign create-confirm`` takes, valid for fifteen minutes.
     """
 
     version: str
@@ -146,7 +146,7 @@ def preview_create(caller, service, *, expected_version, changes):
 
 
 def confirm_create(caller, service, *, token, context):
-    """``campaign create``: the review dialog's **Apply** for a new campaign.
+    """``campaign create-confirm``: the review dialog's **Apply** for a new campaign.
 
     Admits as the page does, then ``confirm_intent`` checks the token with the
     page's salt (expired, or reviewed before the settings changed, is
