@@ -18,7 +18,10 @@ as the fields' values, so the page's change gate (#750) counts them as part
 of the blank form, not as an edit.
 data-repeat-room says how many more schedules fit, of data-repeat-limit. The
 summary line and the date list are drawn by schedule-entry.html around Review
-changes.
+changes. A rule error is shown at its fields (#1915), and while the rule gives
+no date to add the form's buttons wait (data-repeat-gated), named by that
+error's words or the summary's; a refused New draws the server's refusal at
+the same fields (RepeatRule.refuse_rule).
 {% endcomment %}<div class="schedule-repeat-entry" data-repeat-panel data-repeat-entry data-repeat-start="{{ values.start_date }}" data-repeat-end="{{ values.end_date }}" data-repeat-window-start="{{ window_start }}" data-repeat-window-end="{{ window_end }}" data-repeat-mailings="{{ mailings_json }}" data-repeat-room="{{ room }}" data-repeat-limit="{{ limit }}" hidden>
 <div class="field">{{ repeat.repeat.errors }}<label><input type="checkbox" name="{{ repeat.repeat.html_name }}" id="{{ repeat.repeat.auto_id }}" data-repeat="enabled" aria-describedby="repeat-help"{% if repeat.repeat.value %} checked{% endif %}> {% translate "Repeat" %}</label>
 <p class="help" id="repeat-help">{% translate "Send this reminder on several dates. Each date is saved as its own reminder." %}</p></div>

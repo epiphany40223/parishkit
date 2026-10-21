@@ -50,7 +50,9 @@ checks need no database:
   stays Applying; ``NEW_INVALID``: New, whose Review answers 400 with the page
   drawn again with the send date's error and the summary, as the server does;
   ``NEW_STALE``: New, whose Review answers 409 with a refusal in the server's
-  words (``STALE_REFUSAL``).
+  words (``STALE_REFUSAL``); ``NEW_RULE_REFUSED``: New, whose Review answers
+  400 with the page drawn again with a Repeat whose last date is before its
+  first, refused at From and Until as the view refuses it (#1915).
 - ``DATES``: the date-change review (Campaign settings' proposed end date,
   ``DATES_END``, with every schedule's editor); its Review answers with the
   review for the shared review dialog (#750), whose Apply posts to ``LIST``
@@ -116,6 +118,7 @@ from parishkit.stewardship.accounts.schedule_entry_views import (
     DAY_MOVED,
     SERIES_DELETED,
     RepeatRule,
+    _check_repeat,
     _edit_notes,
     _sends_once,
     _summary,
@@ -181,6 +184,7 @@ NEW_BLOCKED = "/schedule-new-blocked"
 NEW_PENDING = "/schedule-new-pending"
 NEW_INVALID = "/schedule-new-invalid"
 NEW_STALE = "/schedule-new-stale"
+NEW_RULE_REFUSED = "/schedule-new-rule-refused"
 APPLY = "/schedule-list/apply"
 APPLY_PENDING = "/schedule-list/apply-pending"
 PENDING = "/schedule-change-pending"
@@ -513,6 +517,47 @@ def _invalid(values, owner, emails, rows):
     return render_to_string("stewardship/schedule-entry.html", values | context)
 
 
+def _rule_refused(values, owner, emails, rows):
+    """New refused for its Repeat, drawn again as ``_entry_page`` draws it.
+
+    A daily Repeat from October 20 to October 10 posts no dates; the view's
+    own check (``_check_repeat``) refuses it at From and Until (#1915).
+    """
+    reminder = next(row for row in emails if row["values"]["slot"] == "reminder")
+    data = QueryDict(mutable=True)
+    data.update(
+        {
+            "schedule-kind": "reminder",
+            "schedule-time": "06:00",
+            "schedule-template_version": reminder["id"],
+            "repeat-repeat": "on",
+            "repeat-frequency": "daily",
+            "repeat-start": "2054-10-20",
+            "repeat-until": "2054-10-10",
+        }
+    )
+    entry = entry_form(data, emails, rows)
+    repeat = RepeatRule(data, prefix="repeat")
+    assert entry.is_valid() and repeat.is_valid(), (entry.errors, repeat.errors)
+    _check_repeat(entry, repeat)
+    assert repeat.errors
+    context = {
+        "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
+        "values": owner["values"],
+        "entry": entry,
+        "repeat": repeat,
+        "new": True,
+        "schedule": None,
+        "base_digest": "a" * 64,
+        "post_url": f"{NEW_RULE_REFUSED}/review",
+        "list_url": LIST,
+        "apply_url": APPLY,
+        "window_text": window_text(owner["values"]),
+        "errors": _summary(entry, repeat),
+    } | entry_times(owner["values"], rows, None, NOW, bound=True)
+    return render_to_string("stewardship/schedule-entry.html", values | context)
+
+
 def _dates(values, owner, emails, rows, *, post_url, data=None):
     """The date-change review with ``DATES_END`` proposed, as ``_page`` draws it.
 
@@ -817,6 +862,9 @@ def components(context, admin):
             values, owner, emails, rows, post_url=f"{NEW_INVALID}/review"
         ),
         NEW_STALE: _entry(values, owner, emails, rows, post_url=f"{NEW_STALE}/review"),
+        NEW_RULE_REFUSED: _entry(
+            values, owner, emails, rows, post_url=f"{NEW_RULE_REFUSED}/review"
+        ),
         DATES: (
             "text/html",
             _dates(values, owner, emails, rows, post_url=f"{DATES}/review"),
@@ -1007,6 +1055,11 @@ def components(context, admin):
                 _invalid(values, owner, emails, rows),
             ),
             f"{NEW_STALE}/review": POSTS_STALE,
+            f"{NEW_RULE_REFUSED}/review": (
+                400,
+                None,
+                _rule_refused(values, owner, emails, rows),
+            ),
             f"{EDIT_EMAIL_REFUSED}/review": (
                 400,
                 None,

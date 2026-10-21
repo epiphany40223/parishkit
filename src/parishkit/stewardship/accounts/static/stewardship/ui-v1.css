@@ -1819,6 +1819,10 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
    instead of a tall single column; each keeps its 44px touch target. */
 .repeat-days { display: flex; flex-wrap: wrap; column-gap: 1.25rem; }
 .repeat-days > label { display: inline-block; }
+/* No weekday chosen, once the reader has reached the days (#1915): the
+   group is outlined in the error colour, which takes no room, so the mark
+   moves nothing; its message is in the reserved line after the group. */
+.repeat-days:has(> label > input[aria-invalid=true]) { outline: 2px solid var(--error-border); outline-offset: .25rem; border-radius: .25rem; }
 /* The Repeat panel's Send time reading (#1117) reserves two lines, and on
    desktop takes the field's full width rather than the short-field 14rem,
    so a refusal such as "“9xx” isn't a time. Try 2:00 PM, …" appearing moves
@@ -2034,14 +2038,15 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
    (#1410; its scope is in :where(), so the list keeps its specificity),
    and so would a report filter's range ends, refused in place (#1332),
    a System logs filter field (#1332), and the Campaign calendar Move
-   dialog's date, whose buttons sit under it (#1521).
+   dialog's date, whose buttons sit under it (#1521), and a repeat rule's
+   boxes, whose Until has the summary and Add below it (#1915).
    A select is held at its minimum height and keeps the global 2px border. */
-:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(.calendar-move-dialog) input, :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
-:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(.calendar-move-dialog) input, :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(.calendar-move-dialog) input, :where([data-repeat-panel]) input, :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
+:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(.calendar-move-dialog) input, :where([data-repeat-panel]) input, :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 /* Forced colors draw no shadow: an outline inside the border marks it,
    except under keyboard focus, where the global 3px focus ring shows. */
 @media (forced-colors: active) {
-  :is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(.calendar-move-dialog) input, :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
+  :is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(.calendar-move-dialog) input, :where([data-repeat-panel]) input, :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
 }
 .schedule-row-messages { padding-top: .5rem; min-height: calc(1lh + .5rem); }
 .schedule-row-messages > * { margin: 0; }
