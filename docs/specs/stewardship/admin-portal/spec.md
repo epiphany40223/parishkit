@@ -6595,8 +6595,13 @@ table says (`pipeline.ministry_placement`):
   Duplicate request, Other, or Closed: no response, whose stored outcome is
   kept as the decision's label under the stage ("Ignored: Stayed in the
   Ministry").
-- **Confirmed**: resolved by a ParishSoft refresh whose roster already shows
-  the change.
+- **Confirmed**: ticked Entered in ParishSoft, then found by a ParishSoft
+  refresh whose roster shows the change (and, from before
+  [#1890](https://github.com/epiphany40223/parishkit/issues/1890), a request a refresh resolved because its roster already
+  showed the change). A To review or To enter by hand request whose roster
+  already shows the change keeps its stage and says "ParishSoft already
+  holds this value." under it, read from the current ParishSoft data
+  ([rule 1](../review-pipeline/spec.md#baseline-refresh-re-evaluation)).
 
 A Ministry leader never sees the update phase ([#1160](https://github.com/epiphany40223/parishkit/issues/1160)):
 for a leader an accepted request is at the stage **Accepted** (or Accepted
@@ -6863,9 +6868,11 @@ request resolved by a person as *joined* or *leave confirmed* carries an
 **Entered in ParishSoft** tick that Staff and Admin set or clear
 [in place](../ui-conventions/spec.md#in-place-controls), on the request's
 page and on Ministry requests at To enter by hand; who and when
-are kept as history. A request resolved because the ParishSoft roster already
-shows the change (it has a resolution source) needs no tick and shows
-*Already in ParishSoft* (the stage Confirmed). For Staff and Admin, the
+are kept as history. A request a refresh resolved before #1890 because the
+ParishSoft roster already showed the change (it has a resolution source)
+needs no tick and shows *Already in ParishSoft* (the stage Confirmed); a
+refresh no longer resolves requests, so every new request is decided and
+ticked first. For Staff and Admin, the
 worklist's Stage says To enter by hand or Entered by hand, its Entered by
 hand icon sets the tick, and the request page gives who and when. Ministry
 leaders have no ParishSoft access, so they

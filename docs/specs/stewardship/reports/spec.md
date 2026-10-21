@@ -2434,14 +2434,21 @@ A By hand change is reviewed like any other
 ([decision 2](../review-pipeline/spec.md#decisions)): **Accept** moves it
 from *To review* to *To enter by hand*, and **Entered by hand** (a check in
 a box) records that someone typed it into ParishSoft (execution
-*resolved_external*). On a *To review* By hand row, Entered by hand accepts
-and marks it in one step, so Staff working through a list are not slowed
-down. Before #1683 these rows were *To do* and went straight to Entered in
-ParishSoft or Ignore; the page's help says that they are now To review. A
-Conflict By hand row is accepted first, then entered. A mistaken mark is
-undone by Back to review, with a required note, which returns the change to
-the stage before the mark, To enter by hand with its decision kept (one
-accepted and marked in one step stays Accepted), as every terminal outcome is
+*resolved_external*). Entered by hand is offered only once the change is
+accepted: on a *To review* or *Conflict* By hand row it is neither shown nor
+admitted, so Staff working through a list Accept (in bulk if they like) and
+then mark Entered by hand (in bulk too). Until [#1890](https://github.com/epiphany40223/parishkit/issues/1890) Entered by hand
+on a To review row accepted and marked it in one step; such changes keep
+their history and are shown Accepted. Before #1683 these rows were *To do*
+and went straight to Entered in ParishSoft or Ignore; the page's help says
+that they are now To review. A To review, Ready or To enter by hand row whose
+value ParishSoft already holds says "ParishSoft already holds this value."
+under its stage and keeps its stage
+([rule 1](../review-pipeline/spec.md#baseline-refresh-re-evaluation)). A
+mistaken mark is undone by Back to review, with a required note, which
+returns the change to the stage before the mark, To enter by hand with its
+decision kept (one accepted and marked in one step stays Accepted), as every
+terminal outcome is
 ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
 [#1840](https://github.com/epiphany40223/parishkit/issues/1840)); a later different Family answer creates a new row (the same answer
 again keeps the entered change,
@@ -2458,7 +2465,8 @@ database pairs with the proposal's result and a `census_change_updated`
 audit event naming only the versions. The web role may set
 *resolved_external* only with such a row, and the row's own guard checks the
 actor, the campaign, the proposal's version and its starting state again (a
-By hand change, pending or in conflict, not ignored). The page records
+By hand change, pending and accepted since #1890; before it, pending or in
+conflict, not ignored). The page records
 Ignore and Back to review as reviews (below); the resolution row's
 *ignored* and *reopened* actions remain for `pk-admin census resolve`.
 
@@ -2566,7 +2574,11 @@ review in view. If a refresh brings a new ParishSoft value first, the
 accepted base no longer counts either: an open change's approval goes back
 to *To review* and the change is compared with the Family's baseline again
 (a change already queued for publication keeps its approval, and its
-publication then meets a conflict). A Family's later same answer does not
+publication then meets a conflict). A new value that is the change itself
+keeps the approval and the change's stage (Ready to update or To enter by
+hand): nothing is left to write, and the row says ParishSoft already holds
+it ([rule 1](../review-pipeline/spec.md#baseline-refresh-re-evaluation),
+[#1890](https://github.com/epiphany40223/parishkit/issues/1890)). A Family's later same answer does not
 carry the accepted base either
 ([resubmission](../review-pipeline/spec.md#resubmission-before-the-reviewed-form)):
 the change comes back as a *Conflict* that shows the earlier Accepted as
@@ -2848,8 +2860,10 @@ changed, **ParishSoft at the check**, **Will write**, and **Outcome**:
 - **Already in ParishSoft**: ParishSoft already holds the value to write,
   so ParishSoft at the check and Will write both show that value (the
   reviewer's value, else the Family's answer). Nothing is written, and the
-  change is marked *Already in ParishSoft* (`resolved_upstream`) at the
-  check, so it is *Confirmed* (Production mode only). Back to review on
+  change is marked *Updated in ParishSoft* (`published`) at the check
+  (Production mode only); the run's final refresh, or the next one,
+  confirms it ([#1890](https://github.com/epiphany40223/parishkit/issues/1890); before, it was marked `resolved_upstream`,
+  *Confirmed* at once). Back to review on
   Census changes undoes the mark, with a required note, and returns the
   change to Ready to update
   ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)).
@@ -3037,8 +3051,9 @@ rows name the fields written), `census_publication_rerun_requested`,
 `census_publication_refresh_requested` (the final refresh, above), and the
 refusals `census_publication_switched_off`,
 `census_publication_read_unconfirmed` and `census_publication_refused`. A
-change marked *Already in ParishSoft* at the check is recorded by the plan's
-field rows and its version, not by an event of its own. Their System logs
+change the publication check finds ParishSoft already holding, and so marks
+Updated in ParishSoft with nothing written, is recorded by the plan's field
+rows and its version, not by an event of its own. Their System logs
 descriptions use the pipeline's words (updating ParishSoft, never
 publishing). The [activity groups](../admin-portal/spec.md#activity-groups)
 of System logs put these types in **ParishSoft refreshes and updates**; the
@@ -3251,13 +3266,23 @@ section is the page.
   ([#1889](https://github.com/epiphany40223/parishkit/issues/1889)); a To
   enter by hand row Entered by hand and Back to review; an Entered
   by hand, Entered incorrectly or Confirmed row Back to review, with a
-  required note, which returns it to the stage before its mark (To enter by
-  hand, or To review for a pledge ParishSoft already held;
-  [undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage));
+  required note, which returns it to the stage before its mark, To enter by
+  hand
+  ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage));
   Entered by hand again on Entered incorrectly waits for
-  [#1737](https://github.com/epiphany40223/parishkit/issues/1737); a Confirmed row with no decision says "Already in
-  ParishSoft." under its stage, or "Nothing to enter: ParishSoft holds no
-  pledge." when both the Family's answer and ParishSoft are $0.00. An
+  [#1737](https://github.com/epiphany40223/parishkit/issues/1737). Entered
+  by hand is never offered on a To review or Conflict row. A To review or To
+  enter by hand row whose amount ParishSoft already holds keeps its stage
+  and says "ParishSoft already holds this value." under it, or "Nothing to
+  enter: ParishSoft holds no pledge." when both the amount to enter and
+  ParishSoft are $0.00 (such as a Family that cannot contribute); the words
+  stay through Accept or an Edit to the same amount, from the pledge's
+  latest check, until the next refresh checks the decided pledge; it is
+  Accepted, then Entered by hand, then Confirmed by the next refresh
+  ([#1890](https://github.com/epiphany40223/parishkit/issues/1890); before,
+  a To review one was Confirmed with no decision, saying "Already in
+  ParishSoft."; a pledge's stage is derived from its checks, so such a
+  pledge from before reads To review now, with these words). An
   Ignored row ParishSoft now matches says "ParishSoft now matches the
   Family's answer" under its stage. The bulk bar offers Accept, Ignore, Back
   to review and Entered by hand, so the Administrator's flow ("a handful of

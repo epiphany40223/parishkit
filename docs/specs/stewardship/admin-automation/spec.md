@@ -2850,10 +2850,14 @@ lists the fields.
 ([#463](https://github.com/epiphany40223/parishkit/issues/463)) is a Census
 changes row's Mark entered in ParishSoft, Ignore and Reopen
 ([#528](https://github.com/epiphany40223/parishkit/issues/528)): full scope,
-keyed, and not fresh-gated, as the page's action is not privileged. Reopen
+keyed, and not fresh-gated, as the page's action is not privileged.
+`entered` takes only an accepted change (#1890: Entered by hand follows an
+Accept, so a To review one is invalid; accept it with `census review`
+first), and `export census` lists it among a row's actions only then. Reopen
 also undoes a terminal outcome (Entered by hand, Entered incorrectly,
-Confirmed, Updated in ParishSoft, Already in ParishSoft) as the page's Back
-to review does
+Confirmed, Updated in ParishSoft, and Already in ParishSoft from before
+[#1890](https://github.com/epiphany40223/parishkit/issues/1890)) as the
+page's Back to review does
 ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
 [#1840](https://github.com/epiphany40223/parishkit/issues/1840)), so no action asks first any more. The command keeps its
 `--yes` option, which does nothing, so scripts written for the prompt keep

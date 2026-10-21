@@ -998,6 +998,14 @@ upper pager can change its height and move the forms and the evidence list
 below it. The Administrator accepted this so the page reads in the order
 asked for.
 
+Recorded exception (Administrator, 2026-10-21, on
+[#1905](https://github.com/epiphany40223/parishkit/pull/1905)): on the
+[review worklists](../review-pipeline/spec.md#individual-actions), the line
+under a row's stage ("ParishSoft already holds this value.") appears only
+when it has text and is not reserved, since an empty line on every row would
+cost vertical space. A click never changes a row, because the line survives
+Accept.
+
 ### Disclosures
 
 **Rule.** Two rules for Admin disclosures (Administrator, pk-local batch
