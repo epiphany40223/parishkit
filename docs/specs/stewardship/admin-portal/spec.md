@@ -8813,9 +8813,7 @@ so for scheduled runs the panel can only say that none has finished since a
 given time; a copy made outside the application (for example with `rsync`)
 leaves no record; and the schedule itself is a cron entry on the server,
 which the application cannot read, so there is no "next backup" time. It
-links the runbook's
-[nightly backup](../../../guides/stewardship-backup-runbook.md#the-nightly-backup)
-schedule.
+names the runbook's nightly backup schedule as plain text, without a link.
 
 #### Debug logging panel
 

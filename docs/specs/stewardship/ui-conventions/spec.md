@@ -3516,9 +3516,14 @@ learned once. **Shared code.**
 - **Limits** are refused at the field in plain words, with the limit named,
   such as the 30-date limit on a reminder repeat.
 - **Host schedules.** Off-site backups are not edited in the Admin portal.
-  The host's scheduled job runs them, and
-  [System health](https://github.com/epiphany40223/parishkit/issues/530)
-  shows that schedule read-only, in the same plain words (the #1129 default).
+  A cron entry on the server runs them, which the application cannot read,
+  so no page shows a backup schedule or a next backup time. The
+  [Backups panel](../admin-portal/spec.md#backups-panel) on System health
+  says so in System health's About this page, under Backups, which names the
+  backup runbook's nightly schedule (it does not link it). This replaces the #1129 default of showing that schedule
+  read-only: a copy of the timing in configuration could drift from the
+  cron entry and show a wrong time
+  ([#1898](https://github.com/epiphany40223/parishkit/issues/1898)).
 
 **Adoption.** The ParishSoft refresh schedule follows all of these rules
 except the browser-zone entry, which is its recorded exception
