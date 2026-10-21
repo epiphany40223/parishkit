@@ -5,7 +5,7 @@ then its step (Updated in ParishSoft, Entered by hand), then confirmation,
 in order (review pipeline spec, "Baseline refresh re-evaluation" rule 1 and
 decision 2, reversed): a refresh confirms only an item already past its
 step, and Entered by hand follows an Accept. Frozen migration 0159
-(provisional number, ``schema/migrations/0159_strict_phase_order.sql``)
+(``schema/migrations/0159_strict_phase_order.sql``)
 enforces both in the database. These tests promote real refreshes and read
 the real pages' rows for census changes and Ministry requests (pledges are
 in the pledge refresh and conflict tests), force the old behaviour past the
@@ -56,9 +56,9 @@ FROZEN = SCHEMA / "migrations/0159_strict_phase_order.sql"
 # Each function 0159 replaces, and the file holding the body it replaces.
 EARLIER = {
     "stewardship_proposal_resolution_guard_v1": "0158_ignored_note_optional.sql",
-    "stewardship_response_derived_guard_v1": "0216_reviewed_census_resubmission.sql",
+    "stewardship_response_derived_guard_v1": "0153_reviewed_census_resubmission.sql",
     "stewardship_publication_confirmation_guard_v1": "0124_guard_wording.sql",
-    "stewardship_ministry_request_guard_v1": "0217_reviewed_ministry_resubmission.sql",
+    "stewardship_ministry_request_guard_v1": "0154_reviewed_ministry_resubmission.sql",
     "stewardship_refresh_check_guard_v1": "0138_published_refresh_conflicts.sql",
     "stewardship_pledge_stages_v1": "0136_submission_upcoming_pledge.sql",
     "stewardship_pledge_refresh_check_guard_v1": "0135_pledge_conflicts.sql",
@@ -68,9 +68,9 @@ EARLIER = {
 # a 0159 written on these would lose those rules, so its DO block refuses
 # each of them too.
 WITHOUT_SIBLINGS = {
-    "stewardship_proposal_resolution_guard_v1": "0210_census_terminal_undo.sql",
-    "stewardship_response_derived_guard_v1": "0210_census_terminal_undo.sql",
-    "stewardship_ministry_request_guard_v1": "0212_ministry_terminal_undo.sql",
+    "stewardship_proposal_resolution_guard_v1": "0146_census_terminal_undo.sql",
+    "stewardship_response_derived_guard_v1": "0146_census_terminal_undo.sql",
+    "stewardship_ministry_request_guard_v1": "0148_ministry_terminal_undo.sql",
 }
 
 
@@ -355,7 +355,7 @@ class Rollback(Exception):
 def test_the_do_block_refuses_each_earlier_body():
     """The file's closing check passes as installed and raises once any one
     replaced function is put back to the body it replaced, or to the one
-    before a sibling PR's rules (0210's, 0212's); on the earlier bodies the
+    before a sibling PR's rules (0146's, 0148's); on the earlier bodies the
     whole file installs again, with no definer among them."""
     text = FROZEN.read_text(encoding="utf-8")
     captured = text[

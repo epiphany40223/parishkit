@@ -1,5 +1,5 @@
--- Frozen forward migration file 0159 (the repository-wide file sequence;
--- provisional, the number is assigned centrally in merge order): strict
+-- Frozen forward migration file 0159 (the repository-wide file
+-- sequence): strict
 -- phase order in the review pipeline (#1890). This file is installed by its
 -- Django migration in the responses app and must never change once
 -- released; tests/stewardship/test_schema_migration_files.py pins its
@@ -18,7 +18,7 @@
 --       resolution needs an approved, pending change: the one-step mark of
 --       a To review By hand change (decision 2, which 0128 widened the
 --       review for) and a mark on a Conflict are refused.
---   stewardship_response_derived_guard_v1     (0216's, #1705's reviewed
+--   stewardship_response_derived_guard_v1     (0153's, #1705's reviewed
 --       view rules; guards.sql has the same body) reconciliation may
 --       resolve a change upstream only from queued, so an open change
 --       ParishSoft already holds stays pending (To review, Ready, To enter
@@ -30,7 +30,7 @@
 --   stewardship_publication_confirmation_guard_v1 (0124's) a field row the
 --       check marked is published at the next version (resolved_upstream
 --       still passes, for a plan checked before this file).
---   stewardship_ministry_request_guard_v1     (0217's, #1705's reviewed
+--   stewardship_ministry_request_guard_v1     (0154's, #1705's reviewed
 --       view rules; guards.sql has the same body) the source worker may no
 --       longer resolve a request (its
 --       only change there): a refresh never resolves an open request.
@@ -1360,7 +1360,7 @@ BEGIN
               AND prosrc LIKE '%OR (OLD.execution IN (''pending'',''failed'') AND NEW.execution=''published''%'
               AND prosrc NOT LIKE '%AND NEW.execution=''resolved_upstream''%'
               AND prosrc LIKE '%AND NEW.execution=''pending'' AND NEW.current_available%'
-              -- 0216's reviewed view rules (#1705), kept.
+              -- 0153's reviewed view rules (#1705), kept.
               AND prosrc LIKE '%carries_intent := FOUND AND NOT response.reviewed_view%'
               AND prosrc LIKE '%WHERE shown->>''stream''=''census'' AND shown->>''item''=OLD.id::text)))%')
     THEN RAISE EXCEPTION 'The census guard still confirms a change before its step'; END IF;
@@ -1374,7 +1374,7 @@ BEGIN
               AND NOT prosecdef
               AND prosrc LIKE '%RAISE EXCEPTION ''A refresh does not resolve a Ministry request''%'
               AND prosrc NOT LIKE '%Ministry resolution requires fenced scoped roster evidence%'
-              -- 0217's reviewed view rules (#1705), kept.
+              -- 0154's reviewed view rules (#1705), kept.
               AND prosrc LIKE '%AND later.reviewed_view AND NOT OLD.parish_added%'
               AND prosrc LIKE '%A replaced Ministry request keeps no outcome%')
     THEN RAISE EXCEPTION 'The Ministry request guard still lets a refresh resolve a request'; END IF;

@@ -488,8 +488,8 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # those files (``CLOSURE_REPLACED``) bring back older, so
 # ``CLOSURE_REPLACED_LAST`` runs its file again after them.
 # 0159 (#1890, provisional number) creates nothing: it replaces seven
-# functions in place (0158's resolution guard, 0216's derived guard, 0124's
-# publication confirmation guard, 0217's Ministry request guard, 0138's
+# functions in place (0158's resolution guard, 0153's derived guard, 0124's
+# publication confirmation guard, 0154's Ministry request guard, 0138's
 # refresh check guard, 0136's pledge stage selection and 0135's pledge
 # refresh check guard), each copied whole from that latest body, which the
 # reruns above bring back; so ``CLOSURE_REPLACED_ONLY`` puts each 0159 body
@@ -1337,7 +1337,7 @@ CLOSURE_REPLACED_ONLY = {
         )
     },
     # 0159 (#1890) replaces seven functions last, each on its latest body
-    # (these keys' later values win over the 0216, 0217, 0138 and 0124
+    # (these keys' later values win over the 0153, 0154, 0138 and 0124
     # entries above), for strict phase order.
     **{
         name: (("stewardship_responses", "0029_strict_phase_order"), phrase)

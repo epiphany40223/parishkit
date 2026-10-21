@@ -1,7 +1,7 @@
 """Forward migration: strict phase order in the review pipeline (#1890).
 
 Its SQL is the frozen file ``schema/migrations/0159_strict_phase_order.sql``
-(number 0159, provisional until the coordinator assigns it in merge order),
+(number 0159 in the repository-wide file sequence),
 read whole and never parsed. It re-creates seven guards and selections from
 their latest bodies so that a refresh confirms an item only after its
 processing step (Updated in ParishSoft, Entered by hand) and Entered by hand
