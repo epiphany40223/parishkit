@@ -268,3 +268,20 @@ def test_email_page_shows_what_each_address_got(page, component_origin):
     # The count is the outcome panel's summary, above the addresses (#1563).
     assert text.index(reached) < text.index(line) < text.index("Attempt history")
     assert "Testing mode sends it to" not in text
+
+
+def test_email_page_links_a_users_address(page, component_origin):
+    """#1885: an intended address that is a current user's links that
+    user's Timeline by the user's record id, the address staying the text;
+    another address, and the Testing recipient, stay plain text."""
+    from .delivery_components import SPOUSE_TIMELINE
+
+    page.goto(component_origin + "/delivery")
+    recipients = page.locator("#email-recipients")
+    assert recipients.inner_text() == "To: head@example.org, spouse@example.org"
+    links = recipients.get_by_role("link")
+    assert links.count() == 1
+    assert links.first.inner_text() == "spouse@example.org"
+    assert links.first.get_attribute("href") == SPOUSE_TIMELINE
+    assert "@" not in SPOUSE_TIMELINE
+    assert page.locator("#email-routed").get_by_role("link").count() == 0

@@ -8,6 +8,7 @@ time cell wraps. Layout is the same in every engine, so Chromium suffices.
 
 import pytest
 
+from .delivery_components import MORGAN_TIMELINE
 from .send_history_components import PAGE as HISTORY
 from .waits import eventually
 
@@ -133,7 +134,8 @@ def test_sent_mail_names_each_recipient(page, component_origin):
     assert "Changed" not in table.inner_text()
 
     # Recipient lists everything sent to that recipient, in the same mode:
-    # a link-styled button posting it, never a link (#1562).
+    # a link-styled button posting it, never a link (#1562). A current
+    # user's name is the exception: it links that user's Timeline (#1885).
     def posted(row, name):
         """The recipient and mode a row's Recipient button posts."""
         form = (
@@ -151,15 +153,10 @@ def test_sent_mail_names_each_recipient(page, component_origin):
         "12345",
         "production",
     ]
-    assert posted(2, "Morgan Administrator") == ["morgan@example.org", "production"]
+    assert rows.nth(2).get_by_role("button").count() == 0
+    link = rows.nth(2).get_by_role("link", name="Morgan Administrator")
+    assert link.get_attribute("href") == MORGAN_TIMELINE
     assert table.locator("a[href*=recipient]").count() == 0
-    # It reads as a link in its cell: link colour, no button box.
-    button = rows.nth(2).get_by_role("button", name="Morgan Administrator")
-    assert button.evaluate("node => getComputedStyle(node).borderTopStyle") == "none"
-    assert (
-        button.evaluate("node => getComputedStyle(node).backgroundColor")
-        == "rgba(0, 0, 0, 0)"
-    )
     # A Family the latest data no longer has shows the shared badge (#1216),
     # boxed so it does not read as a name.
     gone = rows.nth(1).locator('td .status-badge[data-source-status="missing"]')
