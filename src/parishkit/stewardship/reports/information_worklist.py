@@ -37,10 +37,12 @@ from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.presentation import duid
 from parishkit.stewardship.web.review_worklist import (
     EVERY_STAGE,
+    RETIRED_DATES,
     WORDS,
     Column,
     StaleDecision,
     build,
+    page_address,
 )
 from parishkit.stewardship.web.tables import Sorting
 
@@ -111,8 +113,8 @@ EXPORT_FILTERS = {
 class WorklistQuery:
     """The worklist's filters: the Stage, then the selection's own.
 
-    ``information`` is the selection's query (search, dates and their
-    browser zone) over every request; the Stage is applied here, since the
+    ``information`` is the selection's query (search and, from the CLI, dates
+    and their ``--zone``) over every request; the Stage is applied here, since the
     selection cannot tell an Ignored request from one To review.
     """
 
@@ -123,7 +125,7 @@ class WorklistQuery:
     def parse(cls, parameters):
         """Single bounded values: a known Stage, then the selection's filters.
 
-        A date the browser sent without its zone raises ``UnknownZone``, and
+        A date given without a known ``--zone`` raises ``UnknownZone``, and
         any other bad value a ValueError, as the selection's own parse does.
         """
         if not hasattr(parameters, "getlist"):
@@ -285,7 +287,9 @@ def worklist_page(counts, query, table, action, *, mutable):
     worklist's rows. ``mutable`` is false while other campaign work holds
     the campaign: the reader is then offered no action, as the service
     would refuse them. History is a Stage choice of its own, which Every
-    stage does not count.
+    stage does not count. The view's address carries its Stage alone
+    (To review is the plain address), the one choice its GET takes
+    (#1818), so a reload after an in-place answer draws the same Stage.
     """
     rows = worklist_rows(table.rows)
     table = replace(table, rows=rows, method="post", action=action)
@@ -304,10 +308,16 @@ def worklist_page(counts, query, table, action, *, mutable):
         baseline=False,
         reviewer=False,
         fields={
-            key: value for key, value in query.form_values().items() if key != "stage"
+            key: value
+            for key, value in query.form_values().items()
+            if key not in {"stage", *RETIRED_DATES}
         },
         filters_template="stewardship/information-worklist-filters.html",
         export_template="stewardship/information-worklist-export.html",
+        address=page_address(
+            action,
+            [("stage", "" if query.stage == Stage.TO_REVIEW.value else query.stage)],
+        ),
     )
     history = Stage.HISTORY.value
     worklist.stage_choices.insert(

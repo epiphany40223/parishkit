@@ -128,7 +128,7 @@ def test_missing_ministry_recipient_or_integration_is_explicitly_reported():
 
 
 def test_selected_family_email_that_lost_its_code_blocks_readiness():
-    """Sending refuses it, so go-live readiness does too (#838)."""
+    """Sending refuses it, so Go live does too (#838)."""
     document, owner = configured()
     values = document["sections"]["content"][0]["values"]
     values["html"] = "<p>Open {{ family_url }}</p><!-- {{ family_code }} -->"

@@ -45,15 +45,12 @@ INFORMATION_SORTING = Sorting(
     "newest",
 )
 # What each date filter says when the server refuses it at its field
-# (#1332): the words of the page's own hints (data-missing-hint), which the
-# browser shows first, so the two never disagree. The end's message covers
-# both its own date and its order after the start.
+# (#1332). The page no longer has date fields (#1888), so only pk-admin's
+# --start and --end reach these; they name those options. The end's message
+# covers both its own date and its order after the start.
 FIELD_MESSAGES = {
-    "start": _("Enter a whole Submitted on or after date, or clear it."),
-    "end": _(
-        "Enter a Submitted on or before date no earlier than Submitted on or "
-        "after, or clear it."
-    ),
+    "start": _("Enter --start as a whole date, or leave it out."),
+    "end": _("Enter --end as a date no earlier than --start, or leave it out."),
 }
 
 

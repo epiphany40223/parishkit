@@ -310,12 +310,16 @@ def test_readiness_of_a_draft_ready_to_go_live(
     ]
     # Never the Admin report recipients or a Testing Family.
     assert "@" not in json.dumps(document)
-    # A cleanup started from the command line is PR 12; nothing started one.
+    # Readiness is a read: it started nothing.
     assert not ProductionTransitionRequest.objects.exists()
 
 
 def test_readiness_once_cleanup_has_started(ready_links, monkeypatch):
-    """The page's problem and its recent cleanup requests, as the page lists them."""
+    """The command lists the problem and the cleanup request the page shows.
+
+    The Go live page's Check step shows that request as the go-live in
+    progress (#1585) instead of listing its readiness problems.
+    """
     login = ready_links[3]
     service = runtime()
     command = runner(service, monkeypatch)
@@ -333,8 +337,8 @@ def test_readiness_once_cleanup_has_started(ready_links, monkeypatch):
     }
     with web_login():
         page = page_browser(login).get(reverse("admin:go_live"))
-    assert [str(row.pk) for row in page.context["cleanup_requests"]] == [listed["id"]]
-    assert result["problems"] == list(page.context["preview"].problems)
+    assert page.context["state"] == "started"
+    assert str(page.context["stage"].request.pk) == listed["id"]
 
 
 # ------------------------------------------------- Production confirmation
@@ -411,10 +415,8 @@ def test_progress_of_an_active_confirmation_is_followed(request, monkeypatch):
     with web_login():
         page = browser.get(state.path)
         assert page.context["control"]
-        assert (
-            post(browser, state.path, {"control": page.context["control"]}).status_code
-            == 302
-        )
+        retry = {"action": "retry", "control": page.context["control"]}
+        assert post(browser, state.path, retry).status_code == 303
     latest = TaskRun.objects.filter(root_id=demand.task_root_id).latest(
         "retry_sequence"
     )

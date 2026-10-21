@@ -1,4 +1,9 @@
-"""Typed, formula-free participation workbooks over the shared frozen document."""
+"""Typed, formula-free participation workbooks over the shared frozen document.
+
+The workbook holds the Response dashboard's sections, a sheet each (#1557;
+UX conventions, "Downloaded files"): Summary, when the export captured one,
+then Daily participation, then the "Report information" sheet.
+"""
 
 from datetime import date, datetime
 from decimal import Decimal
@@ -8,6 +13,8 @@ from openpyxl import Workbook
 
 from .information_rendering import MONEY_FORMAT, excel_amount, xlsx_cell
 from .participation import participation_columns, participation_table
+from .participation_summary import COLUMNS as SUMMARY_COLUMNS
+from .participation_summary import DAILY, SUMMARY
 from .xlsx_design import describe, style_information, style_table
 
 
@@ -17,6 +24,37 @@ def _cell(sheet, row, column, value):
     if isinstance(value, str):
         cell.data_type = "s"
     return cell
+
+
+def summary_sheet(sheet, document):
+    """The Summary sheet: the page's Summary tiles under the Summary columns.
+
+    Counts are number cells, an amount a dollar-formatted number (or its
+    exact text past Excel's precision), Data as of a native date-time in
+    the requester's display time zone, and a share a percentage cell of the
+    exact ratio, which Excel shows rounded as the page does. An unknown
+    value reads "Unavailable", never zero.
+    """
+    sheet.title = SUMMARY
+    for column, heading in enumerate(SUMMARY_COLUMNS, 1):
+        _cell(sheet, 1, column, heading)
+    zone = ZoneInfo(document.browser_timezone)
+    for index, row in enumerate(document.summary.rows(), 2):
+        group, figure, value, ratio, note = row
+        _cell(sheet, index, 1, group)
+        _cell(sheet, index, 2, figure)
+        if value is None:
+            _cell(sheet, index, 3, "Unavailable")
+        else:
+            if isinstance(value, datetime):
+                value = value.astimezone(zone)
+            cell = xlsx_cell(sheet, index, 3, value)
+            if type(value) is int:
+                cell.number_format = "#,##0"
+        if ratio is not None:
+            sheet.cell(index, 4, ratio[0] / ratio[1]).number_format = "0%"
+        _cell(sheet, index, 5, note or None)
+    style_table(sheet, title=SUMMARY)
 
 
 def participation_xlsx(document, output):
@@ -29,7 +67,11 @@ def participation_xlsx(document, output):
     rows = participation_table(document)
     book = Workbook()
     sheet = book.active
-    sheet.title = "Participation"
+    if document.summary is not None:
+        summary_sheet(sheet, document)
+        sheet = book.create_sheet(DAILY)
+    else:
+        sheet.title = DAILY
     columns = participation_columns(document)
     keys = [key for key, _ in columns]
     for column, (_, heading) in enumerate(columns, 1):
@@ -59,7 +101,7 @@ def participation_xlsx(document, output):
                 cell.number_format = MONEY_FORMAT
             elif type(value) is int:
                 cell.number_format = "#,##0"
-    style_table(sheet, title="Participation")
+    style_table(sheet, title=DAILY)
     metadata = book.create_sheet("Report information")
     for index, (label, value) in enumerate(
         (

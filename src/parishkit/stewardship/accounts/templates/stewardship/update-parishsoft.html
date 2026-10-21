@@ -1,0 +1,69 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
+{% block title %}{% translate "Update ParishSoft" %}{% endblock %}
+{% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
+{% block content %}
+<h1>{% translate "Update ParishSoft" %}</h1>
+{% aboutpage "update-parishsoft" %}<p>{% translate "This page writes Ready to update census changes into ParishSoft: changes accepted on Census changes that ParishSoft's API can write. Only Member contact details can be written: names, birth date, language, email and phones. Gender, Family addresses and every other census change, and Ministry rosters, are entered by hand from Census changes. An update never clears a value, never changes a Family's code or link and never sends mail." %}</p>
+<p>{% translate "Check ParishSoft reads each affected Member from ParishSoft again and shows what the update would do with each Ready to update change, without writing anything. It runs in the background, and this page shows its progress below the button and then the check's results." %}</p>
+<p>{% translate "Will be written: ParishSoft still holds the value the change was compared with. Already in ParishSoft: ParishSoft already holds the value, so nothing is written and the change is Confirmed. Conflict: ParishSoft changed since the Family answered; decide it again on Census changes. Cannot check: ParishSoft could not be read for this Member; check again later. Held back: a change on a Member that has a Conflict or Cannot check, since a Member is written whole or not at all." %}</p>
+<p>{% translate "Update writes the newest check's changes once you confirm it, within an hour of the check. Its progress shows under the summary, and the Outcome column then says what happened to each change: Updated in ParishSoft (and Confirmed once a refresh shows it), Not written because something changed since the check, or Failed with the reason. After an update that wrote something, ParishSoft is refreshed so Census changes shows the new values. If an update stops before it finishes, Run again tries the Members it did not finish." %}</p>
+<p>{% translate "The page shows the newest check, whoever made it; times use your computer's time zone. Values are shown in full, as on Census changes, and opening this page is recorded." %}</p>
+{% if not enabled %}<p>{% translate "Updating ParishSoft is switched off, so nothing is read or written here. Ready to update changes wait on Census changes." %}</p>{% endif %}{% endaboutpage %}
+<p><a href="{% url 'admin:census_changes' %}">{% translate "Census changes" %}</a></p>
+{% if not enabled %}<p class="notice" id="publication-off">{% translate "Updating ParishSoft is switched off, so nothing is read or written here. Ready to update changes wait on Census changes." %}</p>
+{% else %}
+{# What waits, in a region of its own, so the in-place re-read when a check ends updates it; data-keep-height keeps that re-read from moving the button below. #}<div id="publication-waiting" data-in-place-region data-keep-height>
+<p>{% if waiting.changes %}{% blocktranslate count changes=waiting.changes with count_text=waiting.changes|number members=waiting.members|number trimmed %}{{ count_text }} change is Ready to update, for {{ members }} Member.{% plural %}{{ count_text }} changes are Ready to update, for {{ members }} Members.{% endblocktranslate %}{% else %}{% translate "No changes are Ready to update." %}{% endif %} <a href="{% url 'admin:census_changes' %}">{% translate "Review more on Census changes" %}</a></p>
+{# Rule 4 (#1738): a Ready change whose Member left the Family is never checked, so it is counted apart (#1749's note). #}{% if waiting.away %}<p>{% blocktranslate count away=waiting.away with away_text=waiting.away|number trimmed %}{{ away_text }} Ready to update change is for a Member no longer in their Family in ParishSoft, so it is not checked.{% plural %}{{ away_text }} Ready to update changes are for Members no longer in their Family in ParishSoft, so they are not checked.{% endblocktranslate %}</p>{% endif %}
+</div>
+{% comment %}Check ParishSoft acts in place (#528), as Refresh now does on Refresh from ParishSoft: the server remembers the check in the signed-in session and redirects back, and only this region is replaced (data-in-place-only). Below the button, the remembered check's live status polls the task's passive status fragment (?view=publication); when the check ends, live-status-v1.js re-reads this page in place, so the plan below appears. While the check cannot run, the button is drawn unavailable, described by its reason in the reserved line after it.{% endcomment %}<div id="publication-check" data-in-place-region>
+<form method="post" action="{% url 'admin:update_parishsoft' %}#publication-check" data-in-place="publication-check" data-in-place-only data-in-place-message="{% translate 'Check requested.' %}">
+  {% csrf_token %}<input type="hidden" name="request_key" value="{{ request_key }}">
+  {% if gate %}{% button type="submit" disabled=True aria-describedby="publication-check-reason" %}{% translate "Check ParishSoft" %}{% endbutton %}{% else %}{% button type="submit" %}{% translate "Check ParishSoft" %}{% endbutton %}{% endif %}
+  <p class="help reserve-line" id="publication-check-reason">{% if gate %}{{ gate.message }}{% endif %}</p>
+</form>
+{% if run_task_id %}{% include 'stewardship/background-task-status.html' %}
+<p><a href="{% url 'admin:background_task_page' run_task_id %}">{% translate "View this check's Background task" %}</a></p>{% endif %}
+</div>
+{% comment %}The newest check and its update (#1688). Update N changes and Run again each open the shared review dialog with a confirmation (their forms post the review step and the plan without a page load); only one of them is ever offered, so the region has one primary button, and while one is unavailable its reason is the reserved line after it. Once the plan is confirmed, its run's live status shows below the summary (?view=update) and, when the run ends, live-status-v1.js re-reads this page in place, so the Outcome column shows each change's result. While Update is offered, a hidden link re-reads the page when it is shown again (data-reread-on-show), so an hour-old check comes back with Update unavailable.{% endcomment %}<div id="publication-plan" data-in-place-region>
+<h2>{% translate "Newest check" %}</h2>
+{% if not view %}<p>{% translate "ParishSoft has not been checked for this campaign yet." %}</p>
+{% else %}<p>{% translate "Checked by" %} {{ view.checked_by }} {% translate "at" %} <time datetime="{{ view.plan.created_at|instant }}" data-local-instant>{{ view.plan.created_at|instant }}</time>.</p>
+{% if view.plan.testing %}<p class="notice">{% translate "Testing mode: ParishSoft was checked, and nothing is written or marked." %}</p>{% endif %}
+<p id="publication-summary">{{ view.summary }}</p>
+{% with offer=view.offer %}{% if offer.kind == "update" %}<form id="update-offer" method="post" action="{% url 'admin:update_parishsoft_confirmation' %}" data-review-open="update-review" data-review-outcome="update-outcome">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="plan" value="{{ view.plan.pk }}">
+  {% if offer.gate %}{% button type="submit" disabled=True aria-describedby="update-reason" %}{{ view.update_label }}{% endbutton %}{% else %}{% button type="submit" %}{{ view.update_label }}{% endbutton %}{% endif %}
+  <p class="help reserve-line" id="update-reason">{% if offer.gate %}{{ offer.gate.message }}{% endif %}</p>
+</form>{% if not offer.gate %}<a hidden data-reread-on-show data-in-place data-in-place-quiet href="#publication-plan">{% translate "Check this page again" %}</a>{% endif %}
+{% elif offer.kind == "rerun" %}<form id="rerun-offer" method="post" action="{% url 'admin:update_parishsoft_retries' %}" data-review-open="rerun-review" data-review-outcome="update-outcome">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="plan" value="{{ view.plan.pk }}">
+  {% if offer.gate %}{% button type="submit" disabled=True aria-describedby="rerun-reason" %}{% translate "Run again" %}{% endbutton %}{% else %}{% button type="submit" %}{% translate "Run again" %}{% endbutton %}{% endif %}
+  <p class="help reserve-line" id="rerun-reason">{% if offer.gate %}{{ offer.gate.message }}{% endif %}</p>
+</form>{% endif %}{% endwith %}
+{% include 'stewardship/components/review-outcome.html' with outcome_id="update-outcome" %}
+{% if update_status %}{% with update_status as status %}{% include 'stewardship/background-task-status.html' with task=status.task work=status.work phase_text=status.phase_text retry_text=status.retry_text wait=status.wait is_refresh=False refresh_result=None region_id=status.region_id update_run=True publication_check=False read_unconfirmed=False status_url=status.status_url %}{% endwith %}
+<p><a href="{% url 'admin:background_task_page' update_task_id %}">{% translate "View this update's Background task" %}</a></p>{% endif %}
+{% if view.refreshing %}<p>{% translate "ParishSoft is being refreshed so Census changes shows the new values." %} <a href="{% url 'admin:source_refresh' %}">{% translate "Refresh from ParishSoft" %}</a></p>{% endif %}
+<div id="{{ table.anchor }}" data-table-region>
+{% translate "Check result pages" as pages_label %}{% include "stewardship/table-navigator.html" with table=table label=pages_label %}
+<div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Newest check' %}"><table>
+{# Columns in the Census changes order (UX conventions, "Table column order", #932). #}
+<caption>{% translate "Newest check" %}</caption><thead><tr>{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "Family DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}{% translate "Who" as heading %}{% sort_heading table "who" heading %}{% translate "Member DUID" as heading %}{% sort_heading table "member_duid" heading "numeric" %}{% translate "What changed" as heading %}{% sort_heading table "what" heading %}<th scope="col">{% translate "ParishSoft at the check" %}</th><th scope="col">{% translate "Will write" %}</th>{% translate "Outcome" as heading %}{% sort_heading table "outcome" heading %}</tr></thead><tbody>
+{% for row in table.rows %}<tr data-outcome="{{ row.outcome }}">
+{# The shared Family-name link (#1570): the name opens its Timeline; a Family the current ParishSoft data no longer has shows only the shared mark (ui-conventions, #1216). #}<td>{% family_link row.family_id row.family_name %}</td>
+<td class="numeric">{{ row.family_duid|duid }}</td>
+<th scope="row">{{ row.who }}</th>
+<td class="numeric">{% if row.member_duid %}{{ row.member_duid|duid }}{% endif %}</td>
+<td>{{ row.label }}</td>
+<td>{{ row.at_check }}</td>
+<td>{{ row.will_write }}</td>
+<td>{{ row.outcome_label }}</td></tr>
+{% empty %}<tr><td colspan="8">{% translate "This check found no Ready to update changes to write. Accept changes on Census changes, then check ParishSoft again." %}</td></tr>{% endfor %}</tbody></table></div>
+{% include "stewardship/table-navigator.html" with table=table label=pages_label %}
+</div>
+{% if view.others %}<p>{% blocktranslate count others=view.others with count_text=view.others|number trimmed %}{{ count_text }} other change for these Members is not accepted and stays as it is in ParishSoft.{% plural %}{{ count_text }} other changes for these Members are not accepted and stay as they are in ParishSoft.{% endblocktranslate %}</p>{% endif %}
+{% endif %}
+</div>
+{% comment %}The confirmations of Update and Run again in the shared review dialog (#1688), outside every region so a redraw never removes an open dialog. Each form names the plan it showed, which its review answer carries into Apply; once the run is queued the dialog closes and every region is read again in place.{% endcomment %}{% translate "Update ParishSoft?" as update_title %}{% url 'admin:update_parishsoft_confirmation' as update_url %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="update-review" title=update_title apply_url=update_url outcome_id="update-outcome" fallback="update-outcome" describedby="update-review-summary" %}
+{% translate "Run again?" as rerun_title %}{% url 'admin:update_parishsoft_retries' as rerun_url %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="rerun-review" title=rerun_title apply_url=rerun_url outcome_id="update-outcome" fallback="update-outcome" describedby="rerun-review-summary" %}
+{% endif %}
+{% endblock %}

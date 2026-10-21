@@ -340,6 +340,10 @@ def build_preview(
         for row in schedule_changes
     ]
     blocking = sum(change["impact"].get("blocking", 0) for change in changes)
+    # Email the changed schedules already sent (each schedule's fulfillment,
+    # across its revisions): only then does the review say a sent email
+    # cannot be recalled. A future send's edit or move has sent nothing.
+    delivered = sum(change["impact"].get("delivered", 0) for change in changes)
     return {
         "campaign": campaign,
         "changes": changes,
@@ -347,6 +351,7 @@ def build_preview(
         "before_window": campaign.active_configuration.values,
         "after_window": window.values(),
         "blocking": blocking,
+        "delivered": delivered,
         "series": [
             {
                 "id": row["id"],

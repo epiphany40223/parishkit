@@ -192,31 +192,43 @@ def test_packet_request_posts_its_selection(page, component_origin):
     assert packet.locator("input[name=ministries]:checked").count() == 0
     page.route(
         "**" + reverse("admin:ministry_packet"),
-        lambda route: route.fulfill(body="Queued"),
+        lambda route: route.fulfill(
+            body="file",
+            headers={"Content-Disposition": 'attachment; filename="packet.pdf"'},
+        ),
     )
-    with page.expect_request(lambda request: request.method == "POST") as sent:
+    with (
+        page.expect_request(lambda request: request.method == "POST") as sent,
+        page.expect_download() as download,
+    ):
         packet_button(page).click()
     assert "ministries=" not in sent.value.post_data
     assert "format=pdf" in sent.value.post_data
-    # Let the routed answer finish loading before the next navigation,
-    # which it would otherwise interrupt (#623).
-    visible(page.get_by_text("Queued", exact=True))
+    # The file downloads in place (#1778), before the next navigation.
+    assert download.value.suggested_filename == "packet.pdf"
     page.goto(component_origin + REQUESTS)
     page.get_by_role("checkbox", name="Example <Ministry>", exact=True).check()
     page.get_by_label("Also include resolved and withdrawn requests").check()
     zone = page.evaluate("Intl.DateTimeFormat().resolvedOptions().timeZone")
     page.route(
         "**" + reverse("admin:ministry_packet"),
-        lambda route: route.fulfill(body="Queued"),
+        lambda route: route.fulfill(
+            body="file",
+            headers={"Content-Disposition": 'attachment; filename="packet.xlsx"'},
+        ),
     )
-    with page.expect_request(lambda request: request.method == "POST") as sent:
+    with (
+        page.expect_request(lambda request: request.method == "POST") as sent,
+        page.expect_download() as download,
+    ):
         packet_button(page, "Export XLSX").click()
     body = sent.value.post_data
     assert body.count("ministries=") == 1 and "ministries=9" in body
     assert "history=yes" in body and "format=xlsx" in body
     assert "browser_timezone=" + quote(zone, safe="") in body
     assert "?" not in sent.value.url
-    visible(page.get_by_text("Queued", exact=True))
+    # The packet downloads in place (#1778): the file arrives on this page.
+    assert download.value.suggested_filename == "packet.xlsx"
     page.goto(component_origin + GATED_REQUESTS)
     assert packet_button(page, "Export XLSX").is_disabled()
 

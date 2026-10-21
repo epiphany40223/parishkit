@@ -19,6 +19,7 @@ from parishkit.stewardship import (
     admin_delivery_control,
     admin_digests,
     admin_followup,
+    admin_go_live,
     admin_history,
     admin_hosted_files,
     admin_integration_changes,
@@ -67,6 +68,16 @@ ROLE_FIRST = {
     "send confirm": None,
     # The Email Ministry leaders Apply (#1622); its --confirm path.
     "users email-leaders": Capability.MANAGE_USERS,
+    # The Go live page's prompting actions (PR 12, #1809).
+    "go-live start": None,
+    "go-live refresh-again": None,
+    "go-live stop": None,
+    "go-live confirm": None,
+    "go-live cancel": None,
+    # Update ParishSoft's Update and Run again (#1755): an Administrator's,
+    # before the request key is made or the page's checks run.
+    "census update-confirm": Capability.PUBLISH_CENSUS,
+    "census update-rerun": Capability.PUBLISH_CENSUS,
 }
 
 # The prompting commands Staff may run, as on their pages.
@@ -118,6 +129,14 @@ LATER = (
     (admin_backup_key, "prompt_lines"),
     (admin_delivery_control, "confirm_prompt_lines"),
     (admin_delivery_control, "confirm_control"),
+    (admin_go_live, "start_prompt_lines"),
+    (admin_go_live, "start"),
+    (admin_go_live, "prepare_control"),
+    (admin_go_live, "apply_prepare"),
+    (admin_go_live, "confirm_prompt_lines"),
+    (admin_go_live, "confirm"),
+    (admin_go_live, "cancel_prompt_lines"),
+    (admin_go_live, "cancel"),
 )
 
 

@@ -105,8 +105,9 @@ def test_tally_sums_groups_and_skips_report_only():
 
 def test_staff_panels_in_order_with_every_stage_counted():
     """Every stream Staff may open, in the spec's order, each stage counted
-    (a stage with no items reads 0); Ministry To review is the menu's count
-    and its To enter by hand opens Ministry requests at that Stage."""
+    (a stage with no items reads 0); Ministry To review is the menu's count.
+    Every card opens its stream's page at its Stage (#1818); Cannot
+    participate, with only To review, opens its plain page."""
     review = staff_counts(
         census={"to_review": 4, "conflict": 1, "ignored": 9},
         ministry={"to_enter_by_hand": 2, "entered_by_hand": 7},
@@ -124,12 +125,18 @@ def test_staff_panels_in_order_with_every_stage_counted():
     ]
     by_stream = {panel.stream: panel for panel in panels}
     assert cards(by_stream["census"]) == [
-        ("To review", "/census_changes/", None, 4, "changes"),
-        ("Conflict", "/census_changes/", None, 1, "changes"),
-        ("To enter by hand", "/census_changes/", None, 0, "changes"),
+        ("To review", "/census_changes/?stage=to_review", None, 4, "changes"),
+        ("Conflict", "/census_changes/?stage=conflict", None, 1, "changes"),
+        (
+            "To enter by hand",
+            "/census_changes/?stage=to_enter_by_hand",
+            None,
+            0,
+            "changes",
+        ),
     ]
     assert cards(by_stream["ministry"]) == [
-        ("To review", "/ministry_report/", None, 5, "requests"),
+        ("To review", "/ministry_report/?stage=to_review", None, 5, "requests"),
         (
             "To enter by hand",
             "/ministry_report/?stage=to_enter_by_hand",
@@ -150,8 +157,11 @@ def test_staff_panels_in_order_with_every_stage_counted():
         ),
     ]
     assert cards(by_stream["additional_information"]) == [
-        ("To review", "/information_queue/", None, 0, "items"),
-        ("To handle", "/information_queue/", None, 6, "items"),
+        ("To review", "/information_queue/?stage=to_review", None, 0, "items"),
+        ("To handle", "/information_queue/?stage=to_handle", None, 6, "items"),
+    ]
+    assert cards(by_stream["cannot_participate"]) == [
+        ("To review", "/limitations_report/", None, 3, "answers"),
     ]
 
 
@@ -173,7 +183,9 @@ def test_ministry_without_a_roster_count_shows_only_to_review():
     with no menu count it has no number rather than a wrong one."""
     review = staff_counts()
     (panel,) = review_work.panels(chrome(names=["ministry_report"]), review)
-    assert cards(panel) == [("To review", "/ministry_report/", None, None, "requests")]
+    assert cards(panel) == [
+        ("To review", "/ministry_report/?stage=to_review", None, None, "requests")
+    ]
 
 
 def test_a_leaders_ministry_panel_has_one_card_per_ministry():
@@ -205,16 +217,24 @@ def test_a_leaders_ministry_panel_has_one_card_per_ministry():
     ]
 
 
-def test_a_stage_linked_stream_links_each_stage(monkeypatch):
-    """Once a stream's page reads ``?stage=``, each card links its stage."""
-    monkeypatch.setattr(review_work, "STAGE_LINKED", frozenset({Stream.CENSUS}))
+def test_every_stage_linked_stream_is_the_decisions_four():
+    """The Administrator's decision (#1818): Census changes, Ministry
+    requests, Additional information and Financial link each stage."""
+    linked = {
+        Stream.CENSUS,
+        Stream.MINISTRY,
+        Stream.ADDITIONAL_INFORMATION,
+        Stream.FINANCIAL,
+    }
+    assert linked == review_work.STAGE_LINKED
+
+
+def test_a_stream_not_stage_linked_links_its_plain_page(monkeypatch):
+    """A stream outside ``STAGE_LINKED`` links its page with no Stage."""
+    monkeypatch.setattr(review_work, "STAGE_LINKED", frozenset())
     review = staff_counts(census={"conflict": 1})
     (panel,) = review_work.panels(chrome(names=["census_changes"]), review)
-    assert [card.url for card in panel.cards] == [
-        "/census_changes/?stage=to_review",
-        "/census_changes/?stage=conflict",
-        "/census_changes/?stage=to_enter_by_hand",
-    ]
+    assert {card.url for card in panel.cards} == {"/census_changes/"}
 
 
 def test_link_cards_read_label_count_then_note():
@@ -227,7 +247,8 @@ def test_link_cards_read_label_count_then_note():
         {"cards": panel.cards[:1], "cards_labelledby": "x"},
     )
     assert (
-        '<a href="/census_changes/"><span class="link-card-label">To review</span> '
+        '<a href="/census_changes/?stage=to_review">'
+        '<span class="link-card-label">To review</span> '
         '<span class="link-card-count">1,234</span> '
         '<span class="link-card-note">changes</span></a>'
     ) in html
@@ -243,7 +264,7 @@ def test_link_cards_read_label_count_then_note():
 
 def test_an_administrator_also_gets_ready_to_update():
     """Ready to update is the Administrator's alone (only an Administrator
-    starts an update run), and opens Publish to ParishSoft."""
+    starts an update run), and opens Update ParishSoft."""
     from django.urls import reverse
 
     review = staff_counts(census={"ready_to_update": 3})
@@ -254,7 +275,7 @@ def test_an_administrator_also_gets_ready_to_update():
     )
     assert cards(admin[0])[2] == (
         "Ready to update",
-        reverse("admin:census_publication"),
+        reverse("admin:update_parishsoft"),
         None,
         3,
         "changes",

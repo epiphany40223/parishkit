@@ -71,7 +71,7 @@ configuration row, the current campaign with its configuration, the
 campaign's credential row, its work gate and catch-up state) are read at
 most once per loop, without locks, and only when a producer asks; the clock
 is read afresh by every producer, so work that falls due (a reminder, a
-boundary, a refresh slot, a digest day) starts on the loop it falls due, as
+boundary, a refresh slot, a report email send) starts on the loop it falls due, as
 before. These reads are hints only. A producer that finds work reads
 everything again under the lock with its usual row locks and admission
 checks, and the SQL guards, pause and withdrawal checks included, stay
@@ -326,7 +326,7 @@ never delays short work queued behind it
 
 | Process | Queues | Work |
 | --- | --- | --- |
-| Main worker process | `general`, `restore-general` | Exports, report facts and verification, operational collection and alert fanout, digests, campaign lifecycle and every other general task |
+| Main worker process | `general`, `restore-general` | Exports, report facts and verification, operational collection and alert fanout, report emails, campaign lifecycle and every other general task |
 | Source process | `general-source` | ParishSoft refresh (full, delta and manual), setup source load, final setup load and setup staging cleanup: every task that holds the `SourceMutationLease` |
 
 The handler registered for a task type names its queue; the scheduler publishes
@@ -457,9 +457,9 @@ Family portal access, submission, invitation, and reminder admission always
 check both lifecycle state and the authoritative resolved half-open interval.
 They deny that work immediately at close and never wait for the stored
 transition; similarly, they do not admit it before start merely because a stale
-state exists. Receipts and Admin daily/weekly reporting mail whose covered event
+state exists. Receipts and Administrator report emails whose covered event
 or local-day interval completed while the campaign was active remain eligible
-for their explicit post-close hold/resolution and digest policies. Boundary
+for their explicit post-close hold/resolution and report email policies. Boundary
 recovery therefore reconciles durable state and side effects without creating
 an access or delivery gap.
 
@@ -542,13 +542,12 @@ completed deletions intact.
 
 ### Go-live sequencing
 
-> **Status:** target of
-> [#462](https://github.com/epiphany40223/parishkit/issues/462). The producer
-> and the hold are built (`campaigns/go_live_sequencing.py`) but idle,
-> because nothing begins an attempt yet; slice 3 of
-> [#1585](https://github.com/epiphany40223/parishkit/issues/1585) makes
-> **Start go-live** begin attempt 1. Until then, the Administrator prepares
-> the links by hand after cleanup.
+> **Status:** built ([#462](https://github.com/epiphany40223/parishkit/issues/462)
+> for the producer and the hold, `campaigns/go_live_sequencing.py`; slice 3
+> of [#1585](https://github.com/epiphany40223/parishkit/issues/1585) for
+> **Start go-live** beginning attempt 1 and the Prepare step's Retry,
+> Refresh and prepare again and Stop go-live). The local seeding tool still
+> starts cleanup without an attempt and prepares the links itself.
 
 Between **Start go-live** and **Confirm Production** on the
 [Go live page](../admin-portal/spec.md#go-live-page), the system runs the
@@ -652,8 +651,10 @@ Admin confirms, the UI presents counts for successful fulfillment, safely
 cancellable work, terminal failures, and blocking in-flight/unknown work.
 
 Changing the campaign timezone replaces affected schedule revisions. Changing
-campaign start/end dates also replaces daily/weekly digest revisions, because
-their date range determines the semantic slots; unchanged in-range Family
+campaign start/end dates also replaces the revisions of
+[report emails](../report-emails/spec.md#repeating-sends) whose repeat bounds
+follow the campaign's dates, because those dates determine their semantic
+slots; unchanged in-range Family
 mailings retain their revision. Returning to an earlier date range creates a
 new revision, never rewinds cancelled history, and still excludes fulfilled
 semantic slots. The same preview, blocking and atomic cancellation rules apply.
@@ -690,30 +691,34 @@ transaction records old/new revisions, all affected counts, and the confirming
 Admin in audit history. Failure rolls back both the revision change and every
 cancellation.
 
-A Daily or Weekly Admin digest's revision may carry `skip_dates`
-([#1658](https://github.com/epiphany40223/parishkit/issues/1658), Edit's
-[This email only](../admin-portal/spec.md#delete-a-scheduled-email)): slot
-dates, as the slot keys name them, that it never sends. Skipping is a
-revision replacement like any other edit, so its old-revision work is
-cancelled and counted as above. Every evaluator skips those slots
-(`SchedulePlan.page` and `next_slot` advance their cursor past them, as past
-a wholly skipped civil day), so planning, catch-up, recovery and every
-forecast agree. The database enforces them in three places (frozen
-migration 0121): the canonical slot check
-(`stewardship_catchup_due_v1`) answers no slot for a skipped date, so no
-page or catch-up proof requires an occurrence for it; the occurrence guard
-(`stewardship_occurrence_guard_v1`) refuses to insert a digest occurrence for
-a skipped slot from any writer, in any mode; and the weekly page proof
-(`stewardship_weekly_digest_page_v1`) accepts a skipped week without an
-occurrence while still refusing any other week with no slot. A skipped slot
-has no fulfillment, so a later revision would otherwise re-arm it as missed:
-every later revision of the digest keeps its past skip dates, even one that
-is no longer a send. A revision that moves the digest's sends (a new weekday
-or campaign dates) drops each skip of a send still ahead that is no longer a
-send, so it cannot apply again if the digest later moves back; the review
-lists those. A skip is refused once the slot's time has passed or it has a
-Production occurrence; a Testing rehearsal's occurrence does not block it.
-Only digests take skip dates; Family mail never reads them.
+A report email's revision may carry `skip_dates`
+([#1658](https://github.com/epiphany40223/parishkit/issues/1658), the
+editor's [Skip this send](../report-emails/spec.md#skip-one-send)): slot
+keys, as its [slot basis](../report-emails/spec.md#slot-keys) names them,
+that it never sends, and `paused_ranges`, the intervals in which it sent
+nothing ([pause and resume](../report-emails/spec.md#pause-and-resume)).
+Skipping, pausing and resuming are revision replacements like any other
+edit, so old-revision work is cancelled and counted as above. Every
+evaluator leaves those sends out (`SchedulePlan.page` and `next_slot`
+advance their cursor past them, as past a wholly skipped civil day), so
+planning, catch-up, recovery and every forecast agree. The database
+enforces them in three places: the canonical slot check
+(`stewardship_catchup_due_v1`) answers no slot for a skipped or paused send,
+so no page or catch-up proof requires an occurrence for it; the occurrence
+guard (`stewardship_occurrence_guard_v1`) refuses to insert a report
+occurrence for one from any writer, in any mode; and the report page proof
+accepts such a send without an occurrence while still refusing any other
+missing slot (frozen migration 0121 introduced this for the digests; the
+[conversion](../report-emails/spec.md#database-functions) carries it to
+reports). A skipped or paused send has no fulfillment, so a later revision
+would otherwise re-arm it as missed: every later revision keeps its past
+skip dates and closed pause intervals. A revision that moves the report's
+sends (a new rule, time or campaign dates) drops each skip of a send still
+ahead that is no longer a send, so it cannot apply again if the report
+later moves back; the review lists those. A skip is refused once the send's
+time has passed or it has a Production occurrence; a Testing rehearsal's
+occurrence does not block it. Only report emails take skip dates; Family
+mail never reads them.
 
 Missed occurrences catch up once when services recover. Before executing, the
 worker rechecks global system mode, campaign state, and recipient eligibility.
@@ -723,8 +728,10 @@ names the selected replacement occurrence and reason and transactionally writes
 a `coalesced` ScheduleFulfillment for the original semantic slot. The coverage
 row prevents a later schedule revision from rearming that slot and never counts
 as provider success. A missed Family mail after campaign close is skipped with
-a durable reason, while reports for completed campaign days use the recovery-
-digest behavior below.
+a durable reason, while report emails coalesce their missed sends into one
+recovery send as
+[catch-up, recovery and holds](../report-emails/spec.md#catch-up-recovery-and-holds)
+defines.
 
 A semantic occurrence covered by an unreviewed or assumed-delivered
 `RestoreDeliveryHold` is excluded from automatic missed-work selection and
@@ -747,17 +754,17 @@ email or delivery identity.
 
 The general worker enumerates targets/slots through the cutoff with stable
 keyset cursors and bounded transactions: one Family of the activation-time
-cohort per batch (planned by the shared Family planner), then each digest
-schedule in batches of at most 100 occurrence outcomes. Persist occurrence/outbox/coverage changes and progress
+cohort per batch (planned by the shared Family planner), then each report
+email schedule in batches of at most 100 occurrence outcomes. Persist occurrence/outbox/coverage changes and progress
 checkpoints atomically. No batch performs provider calls or holds the global
 activation locks while scanning the corpus. For a Family with many overdue
-schedules, or a digest covering many days, stage the coalescing decision and
+schedules, or a report email covering many days, stage the coalescing decision and
 coverage across bounded batches; release no selected message until all of that
 group's covered slots are durable. Interrupted retries resume the same demand
 and checkpoints; explicit failed-task retry uses the canonical linked retry
 chain without resetting the demand or duplicating semantic work.
 
-While the demand is unfinished, all initial/reminder and scheduled Admin-digest
+While the demand is unfinished, all initial/reminder and scheduled report email
 dispatch for that campaign observes a durable preparation hold, including mail
 materialized by ordinary scheduler scans or source-triggered catch-up. Check
 the hold at claim and immediately before provider submission; it is not a
@@ -774,8 +781,8 @@ its pinned activation version. Work newly due after the cutoff belongs to the
 ordinary scheduler; it remains held until preparation completes, then follows
 ordinary missed-work/coalescing checks before dispatch rather than sending a
 backlog blindly. If the campaign closes first, remaining Family invitations/
-reminders receive durable skipped outcomes, while required completed-day and
-weekly reporting follows its existing post-close policy.
+reminders receive durable skipped outcomes, while report emails follow
+[archive and post-close sends](../report-emails/spec.md#archive-and-post-close-sends).
 
 When replacement cancels an aggregate that already has committed coverage,
 retain and follow the [immutable recovery lineage](../data/spec.md#schedule-revisions-and-fulfillment).
@@ -797,7 +804,8 @@ live-delivery-pause semantics.
 ### Mode routing
 
 Testing routing is global for campaign communication: Family mail, submission
-receipts, Admin campaign digests, manual report mail, previews, and test sends,
+receipts, report emails (scheduled, manual and test sends, and previews), and
+test sends,
 including the chosen-Family test sends (outbox purpose `family_test`, Testing
 mode only), which never create or satisfy a scheduled occurrence. The general
 worker's `family_mail_test` task prepares each one; a restore review, a campaign
@@ -815,7 +823,7 @@ applies none of these overrides.
 [Ministry leader emails](#ministry-leader-emails) are routed the same way,
 although they belong to no campaign: in Testing each goes only to the Testing
 recipient recorded with its request, its subject starts "[TEST]" and both
-bodies first name the leader it was meant for, as Administrator digests do.
+bodies first name the leader it was meant for, as report emails do.
 
 Safety-critical operational notifications are exempt. Operational incident
 alerts (see [critical errors](#critical-errors-and-notification)) and
@@ -1442,12 +1450,11 @@ unchanged.
 
 #### Refreshes wait for go-live
 
-> **Status:** the scheduler side is built (`campaigns/go_live_sequencing.py`:
-> the hold, its logging and the data-age shift), but it is idle: nothing
-> begins an attempt until the Go live page's **Start go-live** does, which is
-> the rest of [#462](https://github.com/epiphany40223/parishkit/issues/462)
-> (slice 3 of [#1585](https://github.com/epiphany40223/parishkit/issues/1585)).
-> The "waiting for go-live" health line below is not built yet either.
+> **Status:** built (`campaigns/go_live_sequencing.py`: the hold, its
+> logging and the data-age shift); the Go live page's **Start go-live**
+> begins attempt 1 since slice 3 of
+> [#1585](https://github.com/epiphany40223/parishkit/issues/1585). The
+> "waiting for go-live" health line below is not built yet.
 
 From the start of a go-live [attempt](../admin-portal/spec.md#go-live-page)
 (**Start go-live**, or **Refresh and prepare again**) until its hold end, the
@@ -1779,7 +1786,7 @@ that count, and each try must fit under the bulk limit (1,600 recipients
 a day, as invitations and reminders do). A try that holds push past 24
 hours after the message goes uncounted in Stewardship's 24-hour total,
 though Google still counts it. Such tries are few, a handful of addresses
-against the 200 recipients the count holds back for receipts, digests and
+against the 200 recipients the count holds back for receipts, report emails and
 alerts, so they fit within that margin in practice; nothing enforces it.
 
 ### Family schedule sweep
@@ -1863,7 +1870,7 @@ instead. A loop with nothing queued plans nothing and takes no work-order lock.
 ### Send statistics
 
 Every outcome the mail consumers record (Family mail, receipts, Family tests
-and digests, and the helper part for operational and security alerts) carries
+and report emails, and the helper part for operational and security alerts) carries
 **send statistics** in its evidence note
 ([#343](https://github.com/epiphany40223/parishkit/pull/343)): per-phase
 timings in whole milliseconds, how the batched helper and its SMTP
@@ -1959,7 +1966,7 @@ describes.
   further batches of due rows itself for up to 30 seconds, waiting up to
   5 seconds (polling without the lock) when it finds none, so newly prepared
   mail is sent without waiting for a scheduler loop. Any other hint, such as
-  a receipt, digest or alert, is handled at once by the one-at-a-time path.
+  a receipt, report email or alert, is handled at once by the one-at-a-time path.
   The process heartbeat is beaten between batches and between sends.
 
 Testing routing and the daily sending limit are unchanged; near the daily
@@ -1999,7 +2006,7 @@ Mail dispatch respects the sending mailbox's daily limits. It sends nothing
 more once the recipients of the last 24 hours' accepted or uncertain
 submissions reach a fixed 1,800 (a little under Google Workspace's 2,000
 unique external recipients), stopping invitations, reminders and Family test
-mail 200 earlier so receipts, digests and alerts keep a reserve; capped mail
+mail 200 earlier so receipts, report emails and alerts keep a reserve; capped mail
 waits as a hold, not a failed attempt. A provider refusal at Gmail's own
 daily or rate limit defers the message without spending its attempt budget,
 suppressing an address, or counting as a provider outage; a rate limit in
@@ -2069,7 +2076,7 @@ unfulfilled), without suppressing any recipient, and it needs no resend
 admission (see the
 [unsent resolution guide](../../../guides/stewardship-unsent-resolution.md));
 for an Administrator report, the
-[digest completion rule](#administrator-digests) decides whether that failure
+[report email completion rule](#administrator-report-emails) decides whether that failure
 settles its cohort. Every resolution, evidence note, and resend authorization
 is audited. Until resolution, the row is not treated as successful for
 delivery statistics or as eligible for an automatic catch-up duplicate.
@@ -2318,274 +2325,82 @@ abbreviation; asynchronous email rendering never assumes a browser timezone.
 A delivery failure does not roll back the already accepted submission; it is
 visible/retryable to Admins. In Testing, it routes only to the test recipient.
 
-## Administrator digests
+## Administrator report emails
 
-Recipients are the current Administrator users at execution time. Each
-Admin receives an individual message so
-addresses are not exposed to other recipients.
+Administrator report emails, which replaced the Daily and Weekly
+Administrator digests
+([#1786](https://github.com/epiphany40223/parishkit/issues/1786)), are
+defined in the [report emails](../report-emails/spec.md) specification: what
+a report holds, its schedule and as-of rules, its recipients and their
+recheck, the shared layout and blocks, and the conversion of each campaign's
+Daily and Weekly digest. They are schedules of the kind `report` and use the
+durable scheduling, occurrence, fulfillment, hold, catch-up and mode routing
+rules of this document unchanged; the rules below are the delivery rules
+every report send shares.
 
-The generation-time recipient cohort is immutable. Before each submission,
-recheck the recipient's current Administrator authority. Safely cancel a revoked
-recipient's unsent message with `recipient_revoked`, retaining the cancellation
-as an audited withdrawal of that recipient obligation, never as delivery. A
-message that ended in `permanent_failure` (a provider refusal or an Admin's
+Each recipient receives an individual message so addresses are not exposed
+to other recipients. The generation-time recipient cohort is immutable.
+Before each submission, recheck the recipient's current authority as the
+report emails specification's
+[resolving recipients](../report-emails/spec.md#resolving-recipients)
+defines it (a portal user's Administrator or Staff role, a group's role, or
+an outside address's place in the report's current recipients). Safely
+cancel a revoked recipient's unsent message with `recipient_revoked`,
+retaining the cancellation as an audited withdrawal of that recipient
+obligation, never as delivery. A message that ended in `permanent_failure`
+(a provider refusal or an Admin's
 [confirmed-unsent record](../../../guides/stewardship-unsent-resolution.md))
-whose recipient is not currently an Administrator can never be retried, so it
+whose recipient no longer passes that recheck can never be retried, so it
 settles that recipient's obligation the same way, never as delivery. The
 occurrence completes when every original recipient is accepted (including
-proven earlier accepted coverage), has this guarded withdrawal, or has such a
-failure. If no recipient was accepted, record
-`daily_digest_no_current_recipients` (weekly:
-`weekly_digest_no_current_recipients`) and an `empty` fulfillment, not a
-delivered fulfillment. Because the failure settles by the current roster, an
-address re-added as an Administrator before completion reopens its still
-pending cohort, and its failed message may be retried again; newly added or
-later re-added Administrators never reopen completed historical cohorts. A
-failure to a current Administrator holds the cohort open until an explicit
-retry. Provider-submitting or uncertain messages still require ordinary
+proven earlier accepted coverage), has this guarded withdrawal, or has such
+a failure. If no recipient was accepted, record
+`report_email_no_current_recipients` and an `empty` fulfillment, not a
+delivered fulfillment. Because the failure settles by the current recheck,
+a recipient who passes it again before completion reopens its still pending
+cohort, and its failed message may be retried again; recipients added later
+never reopen completed historical cohorts. A failure to a recipient who
+still passes the recheck holds the cohort open until an explicit retry.
+Provider-submitting or uncertain messages still require ordinary
 reconciliation before cancellation or settlement.
 
-### Daily campaign digest
-
-After every active local campaign day, at the local time its schedule on
-[Dates and mail schedules](../admin-portal/spec.md#campaign-configuration)
-sets (the Administrator chooses it; there is no preset time), send:
-
-- the report day's first submissions, cumulative participation and
-  percentage;
-- the report day's cumulative annual pledges (USD), the same label as the
-  table column, when financial stewardship is enabled;
-- in a Production digest, the
-  [response funnel](../reports/spec.md#response-funnel) at the end of the
-  report day ([#477](https://github.com/epiphany40223/parishkit/issues/477)):
-  each stage's Families compared with the first stage, which the digest
-  names "Email invites sent" (the dashboard's "Invited": Families whose
-  invitation email was delivered, so fewer than the campaign totals'
-  Families when some have no usable email address), after the campaign
-  totals, with no caption. The digest leaves out the "Link followed" stage
-  ([#1016](https://github.com/epiphany40223/parishkit/issues/1016)) and all
-  three figures reported beside the funnel ("Invitations not sent (already
-  responded)", "Submitted without a delivered invitation" and "Submitted
-  more than once",
-  [#1532](https://github.com/epiphany40223/parishkit/issues/1532)); the
-  [Response dashboard](../reports/spec.md#response-funnel) and
-  `pk-admin report responses` still show them
-  ([#969](https://github.com/epiphany40223/parishkit/issues/969)). The email
-  shows every stage as a row with a share bar; the saved report page shows
-  the stages as a table. A report compiled before #1532 and retained for a
-  retry still carries its "Submitted more than once" row. The section
-  has no charts: the Administrator removed its Response funnel and Response
-  activity charts
-  ([#1370](https://github.com/epiphany40223/parishkit/issues/1370)). The
-  [Response dashboard](../reports/spec.md#response-dashboard) no longer
-  draws them either: its stage tiles give the funnel's counts, shares and
-  bars ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)). A
-  digest compiled before that removal keeps its retained chart images, so a
-  retry of it still sends them, but its saved page no longer draws them. The
-  compiling worker counts the funnel and the page counts it again from the
-  same durable timestamps, so the two agree unless the engagement record is
-  backfilled later. The saved page of a digest sent before the funnel
-  existed also shows it (or the Testing note), although that email did not;
-  the web login does not read compiled mail text to tell them apart. A
-  Testing digest omits it, because a rehearsal's records are cleaned
-  up and could not be counted again, and says that the Response dashboard's
-  Testing view has it; and
-- the same participation chart/data basis as the web report, rendered as an
-  inline accessible image plus textual summary; and
-- when its schedule includes it (off by default), the
-  [Compared with past campaigns](../campaign-history/spec.md#digest-section)
-  section after the Response dashboard button: this campaign on the report day
-  beside last year and the imported years' average, from the same pinned
-  facts, retained with the digest so its saved page shows it unchanged.
-
-The report day is the schedule slot's local date: the campaign day before the
-scheduled send. A late, retried or recovery send never moves it. Every figure
-in the email, its table and its chart comes from the report day's end-of-day
-row of one exact ready `CampaignDailyFactSet`, so the text always matches the
-chart's last point. The email's opening line states this, for example
-"Here is yesterday’s report; all data is as of the end of October 6, 2026
-(EDT)." ([#1532](https://github.com/epiphany40223/parishkit/issues/1532));
-a recovery digest names its dates instead: "Here is the report for October
-4, 2026 through October 6, 2026; all data is as of …". The saved report page
-states it as "All data is as of the end of October 6, 2026 (EDT).", since
-it is not "yesterday" when read later. It is body text in the body's size
-and colour, not small muted print
-([#1016](https://github.com/epiphany40223/parishkit/issues/1016)). The zone
-abbreviation is the one in
-force at the end of the report day (EST after daylight saving time ends). The
-email's day-by-day table is captioned "Day by day". Live population figures
-(Members, eligible or deliverable email, comparison pledges) are not in the
-digest, because they cannot be stated as of the end of a past day; the
-Statistics report shows them. The digest retains its send-time observation
-and source pin with the snapshot. The digest's ParishSoft line, labeled as
-the state when the email was made, states the data age and the connection as
-[ParishSoft data age and connection](../operations/spec.md#parishsoft-data-age-and-connection)
-defines them ("ParishSoft data as of …", "Connection: working"). Digest execution waits and
-retries while that exact generation is building; a failed materialization makes
-the digest visibly failed/retryable rather than substituting stale or mixed
-facts. Later source/status changes do not rewrite the sent digest.
-
-The email is desktop-first and visual
-([#720](https://github.com/epiphany40223/parishkit/issues/720)): a 960px
-column (fixed at 960px in Outlook for Windows; a narrower window shrinks it),
-not the 600px column of Family mail. It says each fact once and opens with its
-content. The subject names the report, its report day, the campaign and the
-parish, each once. The Administrator's subject is kept and only what it lacks
-is appended: the report's short name ("daily report", or just "report" when
-it already says daily or weekly) unless it already names a report, digest or
-summary as a whole word; the date; and, in parentheses, "manual" or
-"recovery" and the campaign or parish name when missing. A subject too long
-for the limit loses the end of the Administrator's text, never what is
-appended. The default subject
-"{{ campaign_name }} — daily report" (weekly: "— weekly report") reads
-"Annual campaign — daily report, October 6, 2026 (Example Parish)". The body has no title
-or name line; it starts with the opening line, the only place that names
-the time zone, with an "Open the Response dashboard" link right-aligned on
-the same line (a two-cell presentation table, so it adds no height; the
-link does not wrap). Any Administrator-written intro stays above the
-report. The default intro is empty, because the compiled opening line
-already says "Here is yesterday’s report" (#1532). An intro still holding
-an earlier default, current or retired ("Here is yesterday’s report.",
-whose saved text is kept until the Administrator resets it), is left out
-of the email when it is sent, so the sentence is not said twice; an edited
-intro is kept. **Campaign totals** follow, one line per
-figure on a desktop: its label (which never wraps), a bar drawn with table
-cells (so it shows in every mail program, with images off too) and the exact
-value, for example "Families that have responded — 10 out of 93 (10.8%)"
-([#1844](https://github.com/epiphany40223/parishkit/issues/1844)). On a
-phone the label moves above its bar and value, and the value breaks only
-before its parenthesis, so with four-digit counts the totals still fit a
-320px phone without scrolling sideways
-([#1564](https://github.com/epiphany40223/parishkit/issues/1564)). Families that have responded are
-drawn against the Families they are out of, and "First submissions that day"
-against the busiest campaign day so far, which is stated beside the number; a
-bar is never drawn full unless the share is complete. Pledges have no bar,
-since their only comparison is a live figure. The chart follows (its date axis
-names no zone), with alt text carrying the same totals, then the day-by-day
-table of the last five campaign days (every covered date of a recovery
-digest, however many), and an "Open the Response dashboard" button, drawn
-like the Admin portal's primary button (its accent colour, radius, padding
-and bold label, as a table cell so every mail program shows it). On a desktop the
-table gives each day one row, its date first (never wrapped), then that
-day's first submissions, participation and pledges (#1844). On a phone each
-day takes two rows instead: the date across the table, then its values under
-their column headings, so the table fits a 320px phone without scrolling
-sideways, which mail programs cannot do for a table
-([#1559](https://github.com/epiphany40223/parishkit/issues/1559)). The
-phone layouts come from the email's style block, as the
-[UX conventions](../ui-conventions/spec.md#devices-and-browsers) require;
-a mail program that drops it shows the desktop layout, which needs about
-560px with four-digit values and so scrolls sideways on a phone there.
-The text part keeps one line per day. Both
-dashboard links go to the
-[Response dashboard](../reports/spec.md#response-dashboard), its Testing
-view in a Testing digest; the text part lists the link after the opening
-line and at the end. The email does not link its own saved copy, which
-stays on Reports › Emailed reports. There is no small
-print: the ParishSoft connection is on the saved report page. The digest validator
-admits only the compiler's closed set of inline styles, bar colours and table
-attributes, so this markup cannot carry anything else.
-
-If multiple daily digest occurrences are overdue at recovery, the system sends
-one recovery digest per campaign covering the complete missed local-date range.
-It includes per-day rows and the end-of-range cumulative statistics/chart rather
-than sending several messages together. Each original daily occurrence is
-retained as `coalesced` and references the recovery-digest occurrence; the
-recovery record stores every pinned daily input needed to reproduce its values.
-
-### Weekly additional-information digest
-
-At the configured local weekday/time, send newly created live
-AdditionalInformationItems since the last successful weekly occurrence only if
-they remain `current_actionable` at generation. Include Family name/DUID,
-submitted time, bounded text, and secure Admin link. A correction section names
-previously digested items that have since become `superseded` or `withdrawn`,
-without repeating withdrawn text unnecessarily. Skip the message if there are
-no new actionable items or corrections; record a successful empty occurrence
-so it does not reconsider the same interval.
-
-The weekly and manual emails use the daily digest's desktop layout and its
-closed set of report markup ([daily campaign digest](#daily-campaign-digest)),
-with no image, and likewise open straight into their content: the subject
-names the report and its capture date, the campaign and the parish, in the
-same way as the daily digest's, so the body has no header line. Each section's heading
-carries its count ("5 new actionable requests", "1 correction to previously
-reported requests"), then one table row per request: the Family, DUID, link
-and submitted time (no zone) on the left and the text on the right. The
-actionable requests are numbered 1, 2, 3 in number cells, not list markers,
-so the numbers are the same in every mail program and a reader can refer back
-to them. A request's text longer than 240 characters is shortened at a word
-boundary and ends with "…" and a "Read the full request" link to its page;
-complete text has neither. Links use the portal's link colour, and the
-report button is the portal's primary button. There is no small print.
-
-After the requests and before the report button, a Production weekly report
-shows the daily digest's
-[response funnel](../reports/spec.md#response-funnel) section, with the same
-rows and bars ([#477](https://github.com/epiphany40223/parishkit/issues/477)).
-Instead of at a report-day end, it is counted at the capture instant from
-durable timestamps, so every Admin's email shows the same figures. The saved report's list pages show the same
-funnel panel as the daily digest's saved page, counted again at the capture
-instant, including the saved page of a report emailed before the funnel
-existed, as for the daily digest. The email and the saved page agree unless
-the engagement record is backfilled later or rows were still committing at
-the capture instant (see the funnel's
-[as-of rule](../reports/spec.md#response-funnel)). A single request's page
-shows only that request. A Testing report shows the daily digest's Testing
-note in place of the funnel. The funnel does not change when a weekly report
-is sent: an interval with no new requests or corrections still sends no
-email.
-
-Changing Admin recipients does not resend past successful digests. An Admin may
-manually generate/send a new report occurrence, visibly labeled manual and
-independently audited. The saved weekly report pages are
-Administrator-only, like the email's recipients; Staff work the same items
-on the [Additional information](../reports/spec.md#additional-information)
-report.
-
-The manual-report confirmation explicitly explains that it selects all current
-actionable live items and corrections to previously delivered items, and may
-repeat earlier reports. Bind the confirmation to the reviewed configuration;
-reject a changed configuration rather than silently changing mode or mail policy.
-Replaying the same command returns its original task, not a second report.
-Manual occurrences do not advance the regular weekly success watermark or
-satisfy regular per-recipient item/correction coverage. Actual manual deliveries
-still establish that an item was reported, so later withdrawal or supersession
-can be corrected. Apply the same current-Admin, campaign, pause, restore,
-unresolved-delivery and Testing restrictions as scheduled reports.
+Report sends made before the conversion keep the outcome reasons they were
+recorded with (`daily_digest_no_current_recipients`,
+`weekly_digest_no_current_recipients`).
 
 ### Post-close reporting obligations
 
-The scheduler and archive-preparation workflow share a deterministic inventory
-of receipt/digest obligations, derived from accepted live submissions, active
-campaign-local days, applicable schedule definitions/revisions, and weekly
-additional-information/correction coverage. It includes every required daily
-slot through the final active day and the weekly slot needed to cover the
-remaining eligible items/corrections, even when its due time is after close.
-It does not invent an endless series of empty weekly obligations after close.
-Previously coalesced slots are resolved only when their selected replacement
-has completed or has itself been explicitly resolved. A receipt's recorded
-no-deliverable-recipient outcome and a digest's audited empty outcome already
-resolve their respective obligations.
+The scheduler and archive-preparation workflow share a deterministic
+inventory of receipt and report email obligations: every accepted live
+submission's receipt, and every report send whose due time is at or before
+the archive check and whose occurrence is not settled, as
+[archive and post-close sends](../report-emails/spec.md#archive-and-post-close-sends)
+defines. A report send due after the archive check is not an obligation:
+archive lists it and cancels it. Previously coalesced slots are resolved
+only when their selected replacement has completed or has itself been
+explicitly resolved. A receipt's recorded no-deliverable-recipient outcome
+and a report send's audited empty outcome already resolve their respective
+obligations.
 
-Archive preparation can inspect future obligations without dispatching them
-before their due times. Explicit skip decisions use the durable
+Archive preparation can inspect obligations without dispatching them before
+their due times. Explicit skip decisions use the durable
 `PostCloseMailResolution` record defined by the
-[data model](../data/spec.md#schedule-revisions-and-fulfillment). Applying a skip
-locks/rechecks the Campaign and affected work, records the covered semantic
-slot and input coverage, marks the occurrence skipped (creating it if absent),
-and cancels only safely cancellable related outbox/tasks in one transaction.
-The reason is `admin_post_close_skip`; it is never counted as delivery success.
-Uncertain or provider-submitting work requires existing reconciliation first.
+[data model](../data/spec.md#schedule-revisions-and-fulfillment). Applying a
+skip locks/rechecks the Campaign and affected work, records the covered
+semantic slot and input coverage, marks the occurrence skipped (creating it
+if absent), and cancels only safely cancellable related outbox/tasks in one
+transaction. The reason is `admin_post_close_skip`; it is never counted as
+delivery success. Uncertain or provider-submitting work requires existing
+reconciliation first.
 
 Scheduler creation, worker claim, schedule replacement, and archive/Return
 checks consult these resolutions, so retries, new revisions, and later
-unarchive/reopen cannot recreate skipped coverage. New submissions or item/
-correction versions outside the recorded coverage remain new obligations; an
-old skip cannot silently cover them. A newly authorized manual digest is a
-distinct, audited request. The final archive/Return recheck uses the same
-Campaign locking protocol as producers and workers, preventing new obligations
-from racing a successful lifecycle transition.
+unarchive/reopen cannot recreate skipped coverage. New submissions outside
+the recorded coverage remain new obligations; an old skip cannot silently
+cover them. A report's Send now is a distinct, audited request. The final
+archive/Return recheck uses the same Campaign locking protocol as producers
+and workers, preventing new obligations from racing a successful lifecycle
+transition.
 
 ## Ministry leader emails
 
@@ -2694,10 +2509,11 @@ unavailability, not a retry conflict.
 ## ParishSoft publication
 
 Not in use yet: publication is ADM-09
-([#528](https://github.com/epiphany40223/parishkit/issues/528)), its
-[Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft) page is
-built only up to its check so far, and it ships switched off, so today
-census changes reach ParishSoft by hand from the
+([#528](https://github.com/epiphany40223/parishkit/issues/528)), run from
+the [Update ParishSoft](../reports/spec.md#update-parishsoft) page
+([#1688](https://github.com/epiphany40223/parishkit/issues/1688)), and it
+ships switched off, so until the Administrator turns it on census changes
+reach ParishSoft by hand from the
 [Census changes](../reports/spec.md#pending-census-changes) page.
 
 Publication runs on the worker's source queue (the low-concurrency
@@ -2726,8 +2542,9 @@ and requires a new confirmation. Execution owns and heartbeats the lease
 through final ParishSoft verification, releases it, and then, when it
 published at least one entity, requests the final full refresh as the
 [data workflow](../data/spec.md#review-and-publication) says, which claims
-the lease normally (not yet built). The worker may already create
-`source_refresh` tasks, so this needs no task-creator change. The preflight
+the lease normally. The worker may already create `source_refresh` tasks,
+so this needs no task-creator change. The preflight
+
 also marks already-matching changes `resolved_upstream` in a Production-mode
 plan (frozen migration 0112).
 
@@ -2858,7 +2675,7 @@ is then judged on its own, and is late only when either:
   deltas back for; a launch-size send takes 30 to 75 minutes.
 
 Every other task type, Family delivery tasks whose worker lease expired, other
-delivery tasks (receipts, digests, tests and alerts) and a send's last few
+delivery tasks (receipts, report emails, tests and alerts) and a send's last few
 messages, once fewer than 10 remain, keep the 90-second rule. While Production
 delivery is paused only messages count towards "in progress", as for the delta
 wait.

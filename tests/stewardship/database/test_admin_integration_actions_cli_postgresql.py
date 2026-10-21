@@ -173,7 +173,8 @@ def test_workspace_not_set_up_is_invalid(admin):
 
 
 def test_the_local_environment_never_checks(backup, monkeypatch):
-    """The local laptop environment never reaches Google Drive."""
+    """Without a mail redirect the local laptop environment never reaches
+    Google Drive (#1399)."""
     from parishkit.stewardship import deployment
 
     monkeypatch.setattr(
