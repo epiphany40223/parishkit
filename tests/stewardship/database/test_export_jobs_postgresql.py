@@ -142,8 +142,12 @@ def test_real_worker_publishes_complete_artifact_then_one_use_download(
     ) as stream:
         value = stream.read()
     assert value.startswith(
-        {"csv": b"Campaign date,Population,", "png": b"\x89PNG", "pdf": b"%PDF"}[format]
+        {"csv": b"Section,Group,Figure,", "png": b"\x89PNG", "pdf": b"%PDF"}[format]
     )
+    if format == "csv":
+        # The Response dashboard's Summary leads, then the daily rows (#1557).
+        assert b"\r\nSummary,Families by stage,Invited," in value
+        assert b"\r\nDaily participation,,,,,,2054-10-02," in value
     grant = issue_download(store, principal.pk, request.pk)
     assert consume_download(store, principal.pk, grant.pk).pk == publication.pk
     with pytest.raises(IntegrityError), transaction.atomic():

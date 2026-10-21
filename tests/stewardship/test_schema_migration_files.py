@@ -456,6 +456,9 @@ FROZEN = {
     "0141_added_member_links.sql": (
         "01bf1e8b13a9f293d3c3713984a6b8e3cfab64288b22784688e10ff02d917820"
     ),
+    "0142_participation_export_summary.sql": (
+        "e8eecd8555cfd8f4cfee650b6974b92551ab1f52d592b3ae0b513445d5fce073"
+    ),
 }
 
 

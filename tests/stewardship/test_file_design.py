@@ -44,6 +44,7 @@ from .test_limitations_report import result as limitations_result
 from .test_ministry_packets import item as member
 from .test_ministry_packets import packet
 from .test_participation_rendering import document as participation
+from .test_participation_rendering import summary
 
 # --- XLSX -----------------------------------------------------------------
 
@@ -193,8 +194,10 @@ def census(result):
 
 def test_participation_census_and_limitations_workbooks_share_the_style():
     """The previously unstyled census and Limitations workbooks match the rest."""
-    book = saved(participation_xlsx, participation())
-    assert_styled_table(book["Participation"])
+    book = saved(participation_xlsx, replace(participation(), summary=summary()))
+    assert book.sheetnames == ["Summary", "Daily participation", "Report information"]
+    assert_styled_table(book["Summary"])
+    assert_styled_table(book["Daily participation"])
     assert_information_sheet(book["Report information"])
     row = dict(
         family_name="Example",
@@ -638,30 +641,57 @@ def chart_document(days, *, families=3, pledge="1234.56"):
     )
 
 
-def test_participation_chart_pdf_is_one_framed_page():
-    """The chart PDF is a Letter page in the shared frame (#926).
+def test_participation_pdf_holds_the_dashboard_sections_in_page_order(monkeypatch):
+    """The participation PDF is the Response dashboard's sections (#1557).
 
-    The frame names the parish, campaign and scope and numbers the page, but
-    states no request or capture time: the chart's provenance stays in the
-    file's metadata (#575).
+    Landscape pages in the shared frame (#926): the Summary table, the chart
+    page, then the daily table, each page naming its section and numbered
+    in the file. The frame states no request or capture time: the chart's
+    provenance stays in the file's metadata (#575).
     """
-    value = chart_document(3)
+    value = replace(chart_document(3), summary=summary())
+    from matplotlib.backends.backend_pdf import PdfPages
+
+    drawn, figures = [], []
+
+    original = PdfPages.savefig
+
+    def keep(self, figure=None, **options):
+        """Keep each page's drawn text, then save it as usual."""
+        figures.append([text.get_text() for text in figure.texts])
+        return original(self, figure, **options)
+
+    monkeypatch.setattr(PdfPages, "savefig", keep)
     output = io.BytesIO()
     charts.render_participation(value, output, format="pdf")
     data = output.getvalue()
-    assert len(re.findall(rb"/Type /Page\b", data)) == 1
+    assert len(re.findall(rb"/Type /Page\b", data)) == 3
     assert b"/MediaBox [ 0 0 792 612 ]" in data
     assert f"/Creator ({charts.PDF_RENDERER_VERSION})".encode() in data
-    with charts.participation_figure(value, pdf=True) as figure:
-        drawn = [text.get_text() for text in figure.texts]
-        assert "Family participation — Historical as of day" in drawn
-        assert "EXAMPLE PARISH · ANNUAL STEWARDSHIP" in drawn
-        assert "Page 1 of 1" in drawn
-        assert "Missing observations are gaps, not zero." in drawn
-        assert charts.RENDERER_VERSION not in " ".join(drawn)
-        assert not any(
-            word in text for text in drawn for word in ("Requested", "Captured")
-        )
+    assert [[line for line in page if line in SECTIONS] for page in figures] == [
+        ["Summary"],
+        ["Daily participation"],
+        ["Daily participation"],
+    ]
+    for number, page in enumerate(figures, 1):
+        assert "Family participation — Historical as of day" in page
+        assert "EXAMPLE PARISH · ANNUAL STEWARDSHIP" in page
+        assert f"Page {number} of 3" in page
+        drawn += page
+    assert "Missing observations are gaps, not zero." in figures[1]
+    assert "Link followed" in figures[0] and "60%" in figures[0]
+    assert charts.RENDERER_VERSION not in " ".join(drawn)
+    assert not any(word in text for text in drawn for word in ("Requested", "Captured"))
+
+
+def test_participation_pdf_without_a_summary_has_the_daily_section_only():
+    """A latest-data handoff's PDF (no captured Summary): chart, then table."""
+    output = io.BytesIO()
+    charts.render_participation(chart_document(3), output, format="pdf")
+    assert len(re.findall(rb"/Type /Page\b", output.getvalue())) == 2
+
+
+SECTIONS = ("Summary", "Daily participation")
 
 
 @pytest.mark.parametrize(

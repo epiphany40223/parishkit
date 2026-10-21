@@ -23,10 +23,12 @@ from .export_models import (
     ExportDownloadUse,
     ExportPublication,
     ExportRequest,
+    ParticipationExportSnapshot,
 )
 from .export_window import download_end, retry_end
 from .facts import FactUnavailable
 from .models import CampaignDailyFactSet
+from .participation_summary import capture as summary_capture
 from .retention import pin_facts
 
 TASK_TYPE = "report_export"
@@ -242,6 +244,16 @@ def create_export(
             admit=lambda action, inputs: _creation_admission(
                 store, user_id, campaign_id
             ),
+        )
+        # The page's Summary, frozen with the request (#1557, migration
+        # 0142): the statistics and the funnel read now, in this
+        # transaction, so the file holds what the page showed when asked.
+        ParticipationExportSnapshot.objects.create(
+            request=request,
+            campaign_id=campaign_id,
+            actor_id=user_id,
+            correlation_id=correlation_id,
+            document=summary_capture(campaign_id),
         )
         audit(Action.EXPORT_REQUESTED, request, user_id, outcome=Outcome.STARTED)
         return request

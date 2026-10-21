@@ -146,9 +146,11 @@ cannot draw become visible escapes. Inside the frame, the Family-code
 directory is a zebra-striped table whose heading row repeats on every page,
 with each phone number and each head's emails on its own line; each response
 list and the Census changes list is the same table; the postal mail merge is a
-grid of address cards. The [participation chart](#participation-graph)'s PDF
-is one page with the chart in the frame's body, titled with the population
-scope; like its picture it states no request or capture time. The
+grid of address cards. The [participation export](#participation-graph)'s
+PDF, titled with the population scope, holds the Response dashboard's
+sections in page order, each page naming its section under the title: the
+Summary table, one page with the chart in the frame's body, then the daily
+table; like its picture it states no request or capture time. The
 [Campaign comparison](../campaign-history/spec.md#downloads-and-sharing)
 PDF is a summary (headline tiles, then full-width day-by-day charts that
 flow onto following pages) followed by its table, whose type is set
@@ -410,16 +412,53 @@ of" and "Requested" times use the zone the page was drawn in (the
 browser's), which the file names
 ([time zones](../ui-conventions/spec.md#downloaded-files)).
 
-The participation CSV and XLSX exports carry one row per campaign date
-under the same columns, in this order: Campaign date, Population, First
-submissions, Families that have responded, Families in population,
-Cumulative participation, Source as of, and Cumulative annual pledges (USD)
-when financial is enabled. An unavailable value is blank in the CSV and
-the word "Unavailable" in the XLSX, never zero. Neither
-carries the campaign or fact-generation UUIDs, source generation numbers
-or the submission cutoff
-([#966](https://github.com/epiphany40223/parishkit/issues/966)); the PNG
-and PDF are the chart, not a table.
+The participation export (the Response dashboard's export, and `pk-admin
+export create`) carries all the data on the
+[Response dashboard](#response-dashboard)
+([#1557](https://github.com/epiphany40223/parishkit/issues/1557)), in two
+sections in page order, each with the same columns in every format:
+
+- **Summary**: Group, Figure, Value, Share compared with Invited and Note.
+  The Active population group holds Active Families, Active Members and,
+  with giving enabled, Current annual pledges and Last year's pledges (all
+  Families), then Data as of, the moment these were counted; the Families
+  by stage group holds one row per [funnel stage](#funnel-stages) with its
+  count. A stage's share compared with Invited is given once an invitation
+  has been delivered, except for Invited itself; Note is the tile's note
+  (Link followed's mail-scanner prefetches) or, for an unknown figure, the
+  reason the page gives for it.
+- **Daily participation**: one row per campaign date, in this order:
+  Campaign date, Population, First submissions, Families that have
+  responded, Families in population, Cumulative participation, Source as
+  of, and Cumulative annual pledges (USD) when financial is enabled.
+
+The formats lay the sections out as every multi-section download does
+([downloaded files](../ui-conventions/spec.md#downloaded-files)): the XLSX
+sheets are Summary, Daily participation and "Report information", and the
+PDF puts the chart between the two tables ([file design](#file-design)). An unavailable value is blank in
+the CSV and the word "Unavailable" in the XLSX and PDF, never zero. No
+format carries the campaign or fact-generation UUIDs, source generation
+numbers or the submission cutoff
+([#966](https://github.com/epiphany40223/parishkit/issues/966)); the PNG,
+which only the command line still offers, is the chart alone.
+
+The Summary is frozen when the export is requested: the request's own
+transaction reads the statistics and the funnel as the page does (the
+[campaign statistics](#campaign-statistics) and the Production
+[response funnel](#response-funnel) at that instant) and stores them in the
+request's immutable capture, `stewardship_participation_export_snapshot`
+(frozen migration 0142), so a response or ParishSoft update after the
+request never changes the file, and a retried rendering writes the same
+figures. The page offers no export while the statistics cannot be read; a
+request made just as they became unreadable still captures the funnel, with
+every Active population figure unknown and the page's reason, never zero.
+The database admits a capture only for a new participation
+request in the same transaction, from the web, by its requester, and
+requires one on every participation request but a latest-data export's
+handoff (`pk-admin export exact create`), whose files hold the Daily
+participation section only, as do requests made before this release. The
+capture is cleared when its export ends, like every export's
+([point-in-time exports](../operations/spec.md#point-in-time-exports)).
 A report email states a plain as-of line instead
 ([shared email layout](../report-emails/spec.md#shared-email-layout)),
 and its chart PNG keeps the metadata. The PNG and PDF exports and the report
@@ -818,9 +857,12 @@ heading, and the page sends `Cache-Control: no-store`. Top to bottom:
 5. **Export**: the export buttons **Export XLSX**, **Export CSV** and
    **Export PDF**, with no sentence on what they export
    ([export actions](../ui-conventions/spec.md#downloaded-files)), which
-   export every daily row of the chart shown
-   ([file design](#file-design); the statistics and the funnel join the
-   file in [#1557](https://github.com/epiphany40223/parishkit/issues/1557)). While no complete chart has
+   export all the data on the page
+   ([#1557](https://github.com/epiphany40223/parishkit/issues/1557)): the
+   Summary (every Active population and Families by stage tile, with its
+   share and note, and the Data as of time) and every daily row of the chart
+   shown ([participation graph](#participation-graph);
+   [file design](#file-design)). While no complete chart has
    been calculated, or other campaign work holds new exports, the buttons are
    shown unavailable with the sentence that says why
    ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)). The
