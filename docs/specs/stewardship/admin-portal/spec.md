@@ -3584,7 +3584,13 @@ Its **Preview changes** reviews in the shared
 review: a fictional sample of the current and proposed content (subject,
 the page or email as Families see it, and its plain-text version, with
 placeholders filled in with sample values and disallowed markup removed),
-and the schedules the new text switches at once. Apply records the change;
+and the schedules the new text switches at once, in sending order and named
+as Dates and mail schedules names them (Reminder 1, Reminder 2, ...). Apply
+switches every schedule that sends the email, since the old text is
+removed, but a schedule that already sent is listed apart under Already
+sent: Families who already got it are not sent it again. A schedule whose
+send failed for every Family stays with the others, since nobody got it.
+Apply records the change;
 once it is applied the dialog closes and the reader returns to Pages and
 emails, whose status line says what was applied and when ("Family welcome
 changed. Applied at 3:04 PM."), as New and Edit scheduled email return to

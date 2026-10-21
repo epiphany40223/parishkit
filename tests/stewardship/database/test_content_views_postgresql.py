@@ -176,6 +176,83 @@ def test_email_edit_reconciles_subject_and_preserves_unrelated_templates(
     assert browser.get(path).status_code == 404
 
 
+def test_email_review_lists_schedules_in_order_by_name_and_sent_apart(
+    auth_service, google, monkeypatch
+):
+    """The review lists the email's schedules in sending order, named as Dates
+    and mail schedules names them, with the ones that already sent apart
+    (pk-local R40c F2): Apply switches them too, but never resends them.
+    """
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts import content_views
+
+    from ..campaign_factory import schedule as schedule_record
+
+    store = auth_service.store
+    campaign, catalog, _ = setup(store)
+    row = content(str(campaign.pk), kind="email", slot="reminder")
+    # Saved out of date order; each sends the same reminder email.
+    reminders = [
+        schedule_record(
+            str(campaign.pk),
+            kind="reminder",
+            date=day,
+            subject=row["values"]["subject"],
+            template_version=row["id"],
+        )
+        for day in ("2054-10-20", "2054-10-06", "2054-10-13")
+    ]
+    assert (
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [{"operation": "add", "section": "content", **row}]
+            + [
+                {"operation": "add", "section": "schedules", **reminder}
+                for reminder in reminders
+            ],
+        ).state
+        == "applied"
+    )
+    # The October 6 reminder has sent and the October 13 one failed with no
+    # delivery; the review reads the same counts as Dates and mail
+    # schedules, at a moment after both. The failed one sent to no Family, so
+    # it stays with the schedules the change switches, not under Already sent.
+    sent = reminders[1]["id"]
+    failed = reminders[2]["id"]
+    monkeypatch.setattr(
+        content_views,
+        "work_summary",
+        lambda _campaign: {sent: {"delivered": 3}, failed: {"failed": 2}},
+    )
+    monkeypatch.setattr(
+        content_views,
+        "timezone",
+        SimpleNamespace(now=lambda: datetime(2054, 10, 14, tzinfo=UTC)),
+    )
+    browser, _ = signed_in()
+    path = catalog + "email/reminder/" + row["id"] + "/"
+    preview = post(
+        browser,
+        path,
+        values(
+            store,
+            subject="Revised reminder",
+            html="<p>{{ family_code }} {{ family_url }}</p>",
+        ),
+    )
+    assert preview.status_code == 200
+    section = preview.content.decode().split("Schedules using this template")[1]
+    upcoming, already = section.split("</section>")[0].split("Already sent</h4>")
+    assert re.findall(r"<li>(Reminder \d) — ", upcoming) == ["Reminder 2", "Reminder 3"]
+    assert "switches these schedules" in upcoming
+    assert re.findall(r"<li>(Reminder \d) — ", already) == ["Reminder 1"]
+    assert "not sent them again" in already
+
+
 def test_email_create_and_explicit_page_remove_with_web_grants(auth_service, google):
     """Narrow web grants suffice for preview/intake, without installer authority."""
     store = auth_service.store

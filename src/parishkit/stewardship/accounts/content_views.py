@@ -8,6 +8,7 @@ from django.db import DatabaseError
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods, require_POST
 
@@ -33,7 +34,7 @@ from parishkit.stewardship.web.refusals import (
     with_default_code,
 )
 
-from . import admin_navigation, campaign_wizard, schedule_local, setup_help
+from . import admin_navigation, campaign_wizard, setup_help
 from .admin_editing import (
     confirm,
     direct_key,
@@ -64,6 +65,8 @@ from .policy import Capability, allows
 from .receipt_note import fold, legacy_note
 from .request_patch import build_candidate
 from .schedule_forms import KINDS, email_usage, excerpt, schedule_order
+from .schedule_preview import work_summary
+from .schedule_table import schedule_rows
 from .sessions import authenticated_admin
 
 # The refusal of a Preview changes or save that changes nothing.
@@ -720,6 +723,7 @@ def _preview(
         return _page(
             request, form, campaign, label, status=400, stale=stale, summary=True
         )
+    upcoming, sent = _affected_rows(affected, campaign, base.document())
     return render(
         request,
         "stewardship/content-review.html",
@@ -727,31 +731,56 @@ def _preview(
             "label": label,
             "before": before,
             "after": after,
-            "affected": _affected_rows(affected, campaign),
+            "affected": upcoming,
+            "already_sent": sent,
             "preview": token,
         },
     )
 
 
-def _affected_rows(affected, campaign):
+def _affected_rows(affected, campaign, document):
     """The schedules a content change switches, as the review lists them.
 
-    Each row is the saved schedule with its mail type's label and, for a
-    dated mailing, the UTC moment its campaign-local date and time stand
-    for, which the page shows in the browser's time zone (#558); a digest
-    has no one moment and is listed as recurring.
+    Returns ``(upcoming, sent)``: ``schedule_table.ScheduleRow`` rows in
+    sending order, named as Dates and mail schedules names them (Reminder 1,
+    Reminder 2, ...), split by whether each has already run. Apply switches
+    every one of them (``revision_patch``: the old email is removed, so no
+    schedule may keep it), but a Family that already got a schedule's email
+    is never sent it again, so the review lists the sent ones apart. The
+    numbering covers all the campaign's schedules, not only these, so a
+    reminder keeps the number it has everywhere else. Each dated row's
+    ``due`` is its UTC moment, shown in the browser's time zone (#558); a
+    digest has none and is listed as recurring.
     """
-    zone = campaign.active_configuration.values["timezone"]
-    return [
-        schedule
-        | {
-            "label": EMAIL_LABELS.get(schedule["values"]["kind"], ""),
-            "due_at": schedule_local.instant(schedule["values"], zone, None)
-            if schedule["values"].get("date")
-            else None,
-        }
-        for schedule in affected
+    saved = sorted(
+        (
+            row
+            for row in document["sections"].get("schedules", [])
+            if row["values"]["campaign_id"] == str(campaign.pk)
+        ),
+        key=schedule_order,
+    )
+    ids = {str(schedule["id"]) for schedule in affected}
+    rows = [
+        row
+        for row in schedule_rows(
+            saved,
+            campaign.active_configuration.values,
+            work_summary(campaign.pk),
+            timezone.now(),
+        )
+        if row.id in ids
     ]
+    # Preparing and sending ones are still in progress: the change waits for
+    # them (the review says so), so only finished sends are listed apart. A
+    # failed one (status() gives it only when no Family was delivered) sent
+    # nothing, so no Family is protected from a resend: it stays listed with
+    # the schedules the change switches.
+    done = {"sent", "done"}
+    return (
+        [row for row in rows if row.status not in done],
+        [row for row in rows if row.status in done],
+    )
 
 
 @require_http_methods(["GET", "HEAD", "POST"])

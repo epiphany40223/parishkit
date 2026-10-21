@@ -837,8 +837,12 @@ def test_the_content_review_is_a_full_review_fragment_for_the_dialog():
     """Pages and emails' Preview changes (#750) answers a fragment: the
     fictional sample's current and proposed content, the schedules the
     text switches with their instant for the browser to show, and the
-    signed preview; no page, form, Apply button or second-screen link."""
+    signed preview; no page, form, Apply button or second-screen link.
+    Schedules that already sent are listed apart, so "switches these
+    schedules" never claims a finished send (pk-local R40c F2)."""
     from datetime import UTC, datetime
+
+    from parishkit.stewardship.accounts.schedule_table import ScheduleRow
 
     text = render_to_string(
         "stewardship/content-review.html",
@@ -847,11 +851,24 @@ def test_the_content_review_is_a_full_review_fragment_for_the_dialog():
             "before": None,
             "after": {"subject": "", "html": "<p>Hello</p>", "text": "Hello"},
             "affected": [
-                {
-                    "label": "Reminder",
-                    "due_at": datetime(2054, 10, 15, 13, 0, tzinfo=UTC),
-                    "values": {"kind": "reminder", "subject": "Please reply"},
-                }
+                ScheduleRow(
+                    id="b",
+                    label="Reminder 2",
+                    kind="reminder",
+                    subject="Please reply",
+                    status="upcoming",
+                    due=datetime(2054, 10, 15, 13, 0, tzinfo=UTC),
+                )
+            ],
+            "already_sent": [
+                ScheduleRow(
+                    id="a",
+                    label="Reminder 1",
+                    kind="reminder",
+                    subject="Please reply",
+                    status="sent",
+                    due=datetime(2054, 10, 8, 13, 0, tzinfo=UTC),
+                )
             ],
             "preview": "signed",
         },
@@ -862,6 +879,10 @@ def test_the_content_review_is_a_full_review_fragment_for_the_dialog():
     assert "Empty — no content will be shown in this slot." in text
     assert "<p>Hello</p>" in text and "Schedules using this template" in text
     assert '<time datetime="2054-10-15T13:00:00+00:00" data-local-instant>' in text
+    upcoming, sent = text.split('<h4 id="content-review-sent">Already sent</h4>')
+    assert "<li>Reminder 2 — " in upcoming and "Reminder 1" not in upcoming
+    assert "switches these schedules" in upcoming
+    assert "<li>Reminder 1 — " in sent and "not sent them again" in sent
     assert re.search(r'name="preview" value="signed" data-review-preview', text)
     assert "<form" not in text and "<h1" not in text and "<h2" not in text
     assert "Apply changes" not in text and "Return to" not in text

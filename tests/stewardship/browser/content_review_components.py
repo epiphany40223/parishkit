@@ -8,11 +8,12 @@ editor drawn again, so the browser checks need no database.
 posting to itself, with Remove available and the campaign banner box; its
 dialog's Apply returns to Pages and emails (``content_catalog_components``'
 ``CATALOG``). A test answers Preview changes with ``REVIEW`` (the full
-review: a fictional sample of the current and proposed email and the
-schedule the new text switches), ``REFUSED`` (the editor drawn again with
-an HTML source error, status 400) or ``UNCHANGED`` (the server's refusal of
-a Preview that changes nothing, for the dialog). Apply is redirected by the
-fixture server (``POSTS``) to the change's status page, Applied.
+review: a fictional sample of the current and proposed email, the
+schedule the new text switches and one that already sent), ``REFUSED``
+(the editor drawn again with an HTML source error, status 400) or
+``UNCHANGED`` (the server's refusal of a Preview that changes nothing, for
+the dialog). Apply is redirected by the fixture server (``POSTS``) to the
+change's status page, Applied.
 """
 
 import json
@@ -23,6 +24,7 @@ from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts.admin_editing import summary_errors
 from parishkit.stewardship.accounts.content_forms import ContentForm
+from parishkit.stewardship.accounts.schedule_table import ScheduleRow
 from parishkit.stewardship.web.content import sanitize_html
 
 from .content_catalog_components import APPLIED, CATALOG
@@ -33,8 +35,10 @@ REFUSED = "/content-review-refused"
 UNCHANGED = "/content-review-unchanged"
 POSTS = {EDITOR: (303, APPLIED, "")}
 SAVED = "<p>Please respond by Friday.</p>"
-# The schedule the review lists, at an instant the browser shows locally.
+# The schedules the review lists, at instants the browser shows locally: one
+# still to send and one that already sent, which the review lists apart.
 DUE = datetime(2054, 10, 15, 13, 0, tzinfo=UTC)
+SENT = datetime(2054, 10, 8, 13, 0, tzinfo=UTC)
 
 
 def components(context, admin):
@@ -92,11 +96,24 @@ def components(context, admin):
                     "before": sample,
                     "after": sample | {"html": "<p>Please respond by Monday.</p>"},
                     "affected": [
-                        {
-                            "label": "Reminder",
-                            "due_at": DUE,
-                            "values": {"kind": "reminder", "subject": "Please respond"},
-                        }
+                        ScheduleRow(
+                            id="b",
+                            label="Reminder 2",
+                            kind="reminder",
+                            subject="Please respond",
+                            status="upcoming",
+                            due=DUE,
+                        )
+                    ],
+                    "already_sent": [
+                        ScheduleRow(
+                            id="a",
+                            label="Reminder 1",
+                            kind="reminder",
+                            subject="Please respond",
+                            status="sent",
+                            due=SENT,
+                        )
                     ],
                     "preview": "synthetic-signed-preview",
                 },

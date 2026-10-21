@@ -53,7 +53,8 @@ def test_preview_changes_reviews_in_the_dialog_and_returns_to_the_list(
     page, component_origin, axe_source
 ):
     """Preview changes opens the full review on its title, with the
-    schedule's time in this browser's zone and only the signed preview to
+    schedules by name (the sent one listed apart), their times in this
+    browser's zone and only the signed preview to
     post; Apply returns to Pages and emails, whose status line says what was
     applied and when and takes focus."""
     reviews = answer_reviews(page, component_origin, REVIEW, address=EDITOR)
@@ -72,7 +73,12 @@ def test_preview_changes_reviews_in_the_dialog_and_returns_to_the_list(
         visible(dialog.get_by_role("heading", name=heading))
     assert "Please respond by Monday." in dialog.inner_text()
     visible(dialog.get_by_text("Schedules using this template"))
-    shown = dialog.locator("time[data-local-instant]").inner_text()
+    # Named as Dates and mail schedules names them, the sent one apart.
+    visible(dialog.get_by_role("heading", name="Already sent"))
+    lists = dialog.locator("#content-review-schedules ~ ul")
+    assert lists.nth(0).inner_text().startswith("Reminder 2 — ")
+    assert lists.nth(1).inner_text().startswith("Reminder 1 — ")
+    shown = dialog.locator("time[data-local-instant]").first.inner_text()
     assert "2054" in shown and "+00:00" not in shown and "T13" not in shown
     carried = dialog.locator("form[data-review-apply] input[data-review-carried]")
     assert carried.evaluate_all("nodes => nodes.map((node) => node.name)") == [
