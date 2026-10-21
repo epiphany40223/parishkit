@@ -1,4 +1,4 @@
--- Frozen forward migration file 0170 (the repository-wide file sequence;
+-- Frozen forward migration file 0167 (the repository-wide file sequence;
 -- number assigned centrally): the Ministries one user's address leads, for
 -- that user's Timeline (#1925; admin portal spec, User timeline). This file
 -- is installed by its Django migration in the accounts app and must never
@@ -77,7 +77,7 @@ REVOKE ALL ON FUNCTION public.stewardship_address_leader_scope_v1(text, uuid) FR
 DO $check$
 BEGIN
     IF to_regprocedure('public.stewardship_address_leader_scope_v1(text,uuid)') IS NULL THEN
-        RAISE EXCEPTION 'Migration 0170 (address leader scope) is not installed as declared';
+        RAISE EXCEPTION 'Migration 0167 (address leader scope) is not installed as declared';
     END IF;
     IF NOT EXISTS (
         SELECT 1 FROM pg_proc p
@@ -93,7 +93,7 @@ BEGIN
                             WHERE grant_row.grantee<>p.proowner))
        OR has_function_privilege('public',
           'public.stewardship_address_leader_scope_v1(text,uuid)', 'EXECUTE') THEN
-        RAISE EXCEPTION 'Migration 0170 (address leader scope) is not installed as declared';
+        RAISE EXCEPTION 'Migration 0167 (address leader scope) is not installed as declared';
     END IF;
 END
 $check$;

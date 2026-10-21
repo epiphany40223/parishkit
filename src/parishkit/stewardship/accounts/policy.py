@@ -138,7 +138,7 @@ def address_leader_scope(address, actor_id):
     The same answer ``leader_scope`` gives a Google account with this
     address, for a user who has never signed in and so has no portal user
     row. SQL holds it (stewardship_address_leader_scope_v1, frozen
-    migration 0170), built on the one leader definition. The definer admits
+    migration 0167), built on the one leader definition. The definer admits
     only the web login and an Administrator ``actor_id``; a refusal raises
     ``PermissionError``, so the page answers with its denial. The call runs
     in its own savepoint, so a refusal does not abort the caller's

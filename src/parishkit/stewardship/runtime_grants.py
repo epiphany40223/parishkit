@@ -593,7 +593,7 @@ CLOSURE_FUNCTIONS = {
     # The report conversion's open digest work check (0161,
     # #1786), which the admin-recovery login's offline conversion asks.
     DIGEST_WORK_FUNCTION: ("stewardship_reports", "0041_report_conversion"),
-    # A user's Timeline's Ministries by address (0170, #1925).
+    # A user's Timeline's Ministries by address (0167, #1925).
     ADDRESS_LEADER_SCOPE_FUNCTION: (
         "stewardship_accounts",
         "0031_address_leader_scope",

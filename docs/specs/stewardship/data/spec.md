@@ -1026,7 +1026,7 @@ portal user's Ministries, empty unless the user's role is Ministry leader or
 higher (until #952 lands, the interim code reads the current login rule's
 roles instead); database-grants lets the web, worker and download logins
 execute it. `stewardship_address_leader_scope_v1(address, actor)` (frozen
-migration 0170, [#1925](https://github.com/epiphany40223/parishkit/issues/1925))
+migration 0167, [#1925](https://github.com/epiphany40223/parishkit/issues/1925))
 returns the same answer for an address, compared in lower case, so a
 user's [Timeline](../admin-portal/spec.md#user-timeline) can show the
 Ministries of a user who never signed in and so has no portal user row. It

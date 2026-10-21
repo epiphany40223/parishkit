@@ -6649,7 +6649,7 @@ migration 0152, which adds that index), the emails
 through the Administrator-only address read of
 [Sent mail](#sent-mail) (frozen migration 0116), and the leader scope (for a
 user with no Google account, the Administrator-only address form of it,
-frozen migration 0170, described under
+frozen migration 0167, described under
 [Ministry leaders](../data/spec.md#ministry-leaders)). Each
 view sends `Cache-Control: no-store` and records one `user_timeline_viewed`
 audit event ("Someone opened a user's timeline") whose subject is the user's

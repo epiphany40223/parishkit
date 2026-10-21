@@ -1,7 +1,7 @@
 """Forward migration: the Ministries a user's address leads (#1925).
 
-Its SQL is the frozen file ``schema/migrations/0170_address_leader_scope.sql``
-(prefix 0170, a number assigned centrally), read whole and never parsed. It
+Its SQL is the frozen file ``schema/migrations/0167_address_leader_scope.sql``
+(prefix 0167, a number assigned centrally), read whole and never parsed. It
 adds ``stewardship_address_leader_scope_v1``, a read-only,
 Administrator-only definer the web login calls for a user's Timeline: the
 Ministries the shared leader scope would give a Google account with that
@@ -22,7 +22,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0170_address_leader_scope.sql"
+    / "0167_address_leader_scope.sql"
 )
 
 

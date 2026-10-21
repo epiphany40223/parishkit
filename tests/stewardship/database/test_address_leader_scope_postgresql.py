@@ -1,4 +1,4 @@
-"""The Ministries one user's address leads (#1925, frozen migration 0170).
+"""The Ministries one user's address leads (#1925, frozen migration 0167).
 
 A user's Timeline shows "Ministry leader of" from the shared leader scope,
 which is keyed by a Google account. A Ministry leader who never signed in
@@ -37,7 +37,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 FROZEN = (
     Path(__file__).resolve().parents[3]
-    / "src/parishkit/stewardship/schema/migrations/0170_address_leader_scope.sql"
+    / "src/parishkit/stewardship/schema/migrations/0167_address_leader_scope.sql"
 ).read_text(encoding="utf-8")
 CHECK = FROZEN[FROZEN.index("DO $check$") :]
 FUNCTION = "public.stewardship_address_leader_scope_v1(text,uuid)"
@@ -261,7 +261,7 @@ def test_the_migration_check_accepts_the_catalog():
 def test_the_migration_check_refuses_a_changed_function(statement):
     """The DO block raises for a missing, widened or rewritten function."""
     with (
-        pytest.raises(DatabaseError, match="Migration 0170"),
+        pytest.raises(DatabaseError, match="Migration 0167"),
         transaction.atomic(),
         connection.cursor() as cursor,
     ):
@@ -288,7 +288,7 @@ def test_the_migration_check_refuses_a_changed_function(statement):
 def test_the_migration_check_refuses_a_dropped_leader_join_or_role_gate(old, new):
     """The installed body is rewritten without one clause; the DO block raises."""
     with (
-        pytest.raises(DatabaseError, match="Migration 0170"),
+        pytest.raises(DatabaseError, match="Migration 0167"),
         transaction.atomic(),
         connection.cursor() as cursor,
     ):
