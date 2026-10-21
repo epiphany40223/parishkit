@@ -3599,8 +3599,8 @@ learned once. **Shared code.**
 except the browser-zone entry, which is its recorded exception
 ([#1122](https://github.com/epiphany40223/parishkit/issues/1122)), so its
 note names its schedule zone instead. The date-change review draws the
-shared zone note, as do System logs and Ministry requests; New and Edit
-scheduled email follows once its open changes land. The two mail
+shared zone note, as do System logs, Ministry requests, and New and Edit
+scheduled email. The two mail
 repeat panels, New scheduled email's Repeat and the date-change review's
 Repeat a reminder, draw one repeat rule, so they offer the same choices in
 the same order and one page script expands both. New and Edit scheduled
