@@ -1015,7 +1015,13 @@ derivation), where the design leaves a choice:
   submission completeness check), 0154 (Ministry: the request guard and the
   Ministry completeness check) and 0155 (the pledge item selection), each
   with a self-verifying block. A response not drawn as the reviewed form
-  takes exactly the earlier paths.
+  takes exactly the earlier paths, except that it may follow one that was:
+  a change that response showed and left as shown (the Family's answer, a
+  reviewer's Edit, or the baseline of an Ignored change) stays on its
+  earlier response, and the census guard finds it as `proposal_index` does,
+  as the predecessor whose decision a same answer carries and as the change
+  a new answer supersedes or a set-back withdraws (frozen file 0163,
+  [#1909](https://github.com/epiphany40223/parishkit/issues/1909)).
 
 #### Reviewed form decisions
 
