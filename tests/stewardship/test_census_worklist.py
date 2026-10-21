@@ -555,8 +555,8 @@ def test_downloads_list_an_addition_as_the_page_does():
         [added(added_note="Phoned in")], CensusQuery(stage="all"), administrator=False
     )
     (line,) = export_rows(result, UTC)
-    assert line[7:11] == ("", "555-0123", "By hand", "To enter by hand")
-    assert line[12] == "staff@example.org" and line[14] == "Phoned in"
+    assert line[8:12] == ("", "555-0123", "By hand", "To enter by hand")
+    assert line[13] == "staff@example.org" and line[15] == "Phoned in"
     assert result["rows"][0]["baseline"] == "555-0100"
 
 
