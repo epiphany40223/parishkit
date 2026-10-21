@@ -53,7 +53,8 @@ from django.views.decorators.http import require_http_methods
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.admin_editing import error_response, principal
 from parishkit.stewardship.accounts.authentication import runtime
-from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.accounts.policy import Capability
+from parishkit.stewardship.accounts.role_refusal import require
 from parishkit.stewardship.accounts.sessions import csrf_header_only
 from parishkit.stewardship.archive import imports
 from parishkit.stewardship.archive.workbook import note_flagged
@@ -143,9 +144,7 @@ def _no_store(response):
 def _administrator(request):
     """The signed-in Administrator: ``CONFIGURE`` and ``FINANCIAL_DETAIL``."""
     actor = principal(request, runtime())
-    if not allows(actor, Capability.FINANCIAL_DETAIL):
-        raise PermissionError("Past campaigns are the Administrator's.")
-    return actor
+    return require(actor, Capability.FINANCIAL_DETAIL)
 
 
 def _emails(ids):

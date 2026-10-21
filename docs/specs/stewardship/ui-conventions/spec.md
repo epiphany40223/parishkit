@@ -62,6 +62,7 @@ when it lands.
   [addresses and legacy URLs](#addresses-and-legacy-urls),
   [not-found pages](#not-found-pages),
   [unavailable menu pages](#unavailable-menu-pages),
+  [pages the role may not open](#pages-the-role-may-not-open),
   [navigation rules](#navigation-rules), [wizards](#wizards).
 - Admin page layout: [page help](#page-help),
   [button labels](#button-labels), [button emphasis](#button-emphasis),
@@ -2332,10 +2333,11 @@ opens one page per kind of reason. **Precedent.** #1128.
   with the same reason, by any method (`admin_navigation.refuse_greyed`).
 - **Only for a viewer who sees the entry greyed.** The role still hides an
   entry ([stable menu shape](../admin-portal/spec.md#stable-menu-shape)), so
-  a page the viewer's role may not open is refused by its own view (403) as
-  before, without the reason; a signed-out visitor, or a session the page
-  would rotate or end, also goes to the view. The session is checked
-  read-only, renewing no idle time.
+  a page the viewer's role may not open is refused by its own view (403),
+  which says the role is the reason
+  ([pages the role may not open](#pages-the-role-may-not-open)); a signed-out
+  visitor, or a session the page would rotate or end, also goes to the view.
+  The session is checked read-only, renewing no idle time.
 - **Server checks stay.** The page shows only the menu's words and grants
   nothing; every view keeps its own checks, which still refuse anything the
   gate lets through.
@@ -2360,6 +2362,39 @@ opens one page per kind of reason. **Precedent.** #1128.
   (a stale page, busy configuration) is still retried. **Shared code.**
   `live-status-v1.js`. **Precedent.**
   [#1805](https://github.com/epiphany40223/parishkit/issues/1805).
+
+### Pages the role may not open
+
+**Rule.** A signed-in Staff user or Ministry leader who opens a page their
+role may not open (from a bookmark, a shared link or a typed address) is
+told the role is the reason, never to sign in again: the page keeps the
+"Access unavailable" heading and says "This page is for Administrators.
+Your access doesn't include it." ("for Administrators and Staff" on a Staff
+page), then "Choose a page from the menu, or ask a parish administrator if
+you need this one.", with the usual Administration home link and no Sign in
+again link. Only a missing or ended session keeps the sign-in wording
+("Your sign-in has ended…" or "Your session may have ended…", with Sign in
+again). The answer stays HTTP 403 with the closed `denied` code and
+refusal-log reason, and scripts and in-place regions get the same refusal as
+JSON. A Ministry leader's refusal within its scope (a Ministry it does not
+lead, or none at all) is about scope, not role, and keeps its own wording.
+The same holds for a page's role-only parts: Staff asking a report for its
+Testing responses, the Administrator-only timeline export, the weekly digest
+snapshot or an export cleanup retry get the role refusal too. **Deliberate
+exceptions.** Three refusals keep the generic denial: the setup-only steps
+(setup staging and cancelling setup), which only the setup Administrator
+reaches; a service's recheck after its page already admitted the session,
+which refuses only a role changed during the request; and the Admin command
+line, which has no sign-in page. **Why.** Signing in again cannot help when the role is the reason, and the
+old wording sent people round in a loop. Naming the page's roles tells a
+signed-in user nothing the 403 and their own menu do not already show; a
+visitor without a current session never gets past the session check to see
+it. **Shared code.** `accounts/role_refusal.py` (`role_denied` and `require`
+for a capability, `role_denied_for` and `require_role` for a role level,
+`RoleDenied`, `response`), used by `admin_editing.principal` and the
+page-level role checks; `web/error_pages.py` drops Sign in again for a
+refusal that says signing in cannot fix it (`Refusal.sign_in`).
+**Precedent.** #1924.
 
 ### Navigation rules
 

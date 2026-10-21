@@ -102,9 +102,14 @@ class NoRehearsal(ValueError):
 
 
 def admit_mode(principal, mode):
-    """Testing responses are shown to Administrators only (#933)."""
-    if mode == "testing" and "administrator" not in principal.roles:
-        raise PermissionError("Testing responses are shown to Administrators only.")
+    """Testing responses are shown to Administrators only (#933).
+
+    Staff asking for them get the role refusal (#1924), not sign-in wording.
+    """
+    from parishkit.stewardship.accounts.role_refusal import require_role
+
+    if mode == "testing":
+        require_role(principal, "administrator")
 
 
 # A row the Response filter lists although the current ParishSoft data no
