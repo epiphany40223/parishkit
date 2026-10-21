@@ -593,6 +593,9 @@ A valid Family may return during the campaign using the same code/token. The
 form is built from the current source snapshot merged with the latest effective
 live response according to the [effective-value rules](../data/spec.md#effective-value-merge).
 All prior Family proposals still differing from source are visibly marked.
+From the release with #1705's last slice, a live form instead shows the
+result of the parish's review, with the same markers and no new wording
+([reviewed Family form](../review-pipeline/spec.md#reviewed-family-form)).
 
 The new final submission is a complete replacement effective answer, not a
 partial patch, while the old immutable version remains in history. Current

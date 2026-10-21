@@ -21,6 +21,13 @@ the reader's scope; a Ministry the report cannot read (for example one
 removed from the campaign whose requests were all withdrawn) has no details,
 which the page and file say, rather than failing.
 
+A request is read under its current Ministry (``current_ministry``): the one
+review's Edit carried forward (#1684), whose leaders now decide it, else the
+Family's. Both selections list an edited request with its details under that
+Ministry only (frozen migration 0140, #1718), so a leader of only the
+carried-forward Ministry gets its details and a leader of only the Family's
+Ministry, who sees it read only, does not.
+
 The leader contact rule: Administrators and Staff get operational contact.
 A Ministry leader gets the values the Member publishes in ParishSoft and
 "Not published" for the rest, except that on a standing request (the
@@ -46,6 +53,11 @@ from .ministries import MinistryQuery, ministry_page, within_principal
 # Every version and status of one Ministry's requests of one kind, so any
 # request the queue lists (its history option included) is found by id.
 EVERY_REQUEST = MinistryQuery(history="all", state="any")
+
+
+def current_ministry(row):
+    """The Ministry a follow-up row is decided and read under (#1718)."""
+    return row.get("reviewed_ministry_duid") or row["ministry_duid"]
 
 
 def _visible(row):
@@ -109,16 +121,18 @@ def packet_contacts(campaign_id, principal, ministries):
 def request_contacts(campaign_id, principal, requests):
     """The contact details of each request in ``requests``, by request id.
 
-    ``requests`` are follow-up rows (``id``, ``ministry_duid``, ``action``)
-    the reader may already see. Each value holds ``kind`` (``join`` or
-    ``leave``), ``proposed`` (a Member the Family added on the form, whose
-    details are what the Family entered), ``proposed_id``, the email and
-    phone values with their visibility, and for a join ``gender``, ``age``
-    and ``address_lines``, for a leave ``current_role``. A request with no
-    readable details is left out. The report is read once per Ministry and
-    kind present, and the packet once for every leave request.
+    ``requests`` are follow-up rows (``id``, ``ministry_duid``, any
+    ``reviewed_ministry_duid``, ``action``) the reader may already see; each
+    is read under its current Ministry (``current_ministry``). Each value
+    holds ``kind`` (``join`` or ``leave``), ``proposed`` (a Member the
+    Family added on the form, whose details are what the Family entered),
+    ``proposed_id``, the email and phone values with their visibility, and
+    for a join ``gender``, ``age`` and ``address_lines``, for a leave
+    ``current_role``. A request with no readable details is left out. The
+    report is read once per Ministry and kind present, and the packet once
+    for every leave request.
     """
-    pairs = sorted({(row["ministry_duid"], row["action"]) for row in requests})
+    pairs = sorted({(current_ministry(row), row["action"]) for row in requests})
     wanted = {row["id"] for row in requests}
     found, report_date = {}, None
     for ministry, action in pairs:

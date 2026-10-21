@@ -86,7 +86,10 @@ def _unchanged(snapshot, corpus, execution, claim, *, suppressions):
       (``proposals_current``, ``ministry_requests_current``), so a new
       submission or a staff edit does not force a promotion, and no final
       or decided item's refresh check would change
-      (``refresh_checks_current``, #1689).
+      (``refresh_checks_current``, #1689);
+    - added Member links (#1670): none is waiting to be recorded
+      (``added_members_current``, against the current snapshot, whose
+      corpus equals this one).
 
     Runs in the caller's work-order transaction. Anything unexpected answers
     False, and the quick update stages and promotes as before.
@@ -95,6 +98,7 @@ def _unchanged(snapshot, corpus, execution, claim, *, suppressions):
     from parishkit.stewardship.campaigns.link_tokens import (
         require_current_generation,
     )
+    from parishkit.stewardship.responses.added_members import added_members_current
     from parishkit.stewardship.responses.ministry_reconciliation import (
         ministry_requests_current,
     )
@@ -121,6 +125,7 @@ def _unchanged(snapshot, corpus, execution, claim, *, suppressions):
         proposals_current(corpus, campaign_id=campaign.pk)
         and ministry_requests_current(corpus, campaign_id=campaign.pk)
         and refresh_checks_current(snapshot, corpus, campaign_id=campaign.pk)
+        and added_members_current(current.snapshot_id, campaign_id=campaign.pk)
         and population_current(
             campaign,
             source_snapshot_id=current.snapshot_id,

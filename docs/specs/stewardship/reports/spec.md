@@ -146,9 +146,11 @@ cannot draw become visible escapes. Inside the frame, the Family-code
 directory is a zebra-striped table whose heading row repeats on every page,
 with each phone number and each head's emails on its own line; each response
 list and the Census changes list is the same table; the postal mail merge is a
-grid of address cards. The [participation chart](#participation-graph)'s PDF
-is one page with the chart in the frame's body, titled with the population
-scope; like its picture it states no request or capture time. The
+grid of address cards. The [participation export](#participation-graph)'s
+PDF, titled with the population scope, holds the Response dashboard's
+sections in page order, each page naming its section under the title: the
+Summary table, one page with the chart in the frame's body, then the daily
+table; like its picture it states no request or capture time. The
 [Campaign comparison](../campaign-history/spec.md#downloads-and-sharing)
 PDF is a summary (headline tiles, then full-width day-by-day charts that
 flow onto following pages) followed by its table, whose type is set
@@ -410,16 +412,53 @@ of" and "Requested" times use the zone the page was drawn in (the
 browser's), which the file names
 ([time zones](../ui-conventions/spec.md#downloaded-files)).
 
-The participation CSV and XLSX exports carry one row per campaign date
-under the same columns, in this order: Campaign date, Population, First
-submissions, Families that have responded, Families in population,
-Cumulative participation, Source as of, and Cumulative annual pledges (USD)
-when financial is enabled. An unavailable value is blank in the CSV and
-the word "Unavailable" in the XLSX, never zero. Neither
-carries the campaign or fact-generation UUIDs, source generation numbers
-or the submission cutoff
-([#966](https://github.com/epiphany40223/parishkit/issues/966)); the PNG
-and PDF are the chart, not a table.
+The participation export (the Response dashboard's export, and `pk-admin
+export create`) carries all the data on the
+[Response dashboard](#response-dashboard)
+([#1557](https://github.com/epiphany40223/parishkit/issues/1557)), in two
+sections in page order, each with the same columns in every format:
+
+- **Summary**: Group, Figure, Value, Share compared with Invited and Note.
+  The Active population group holds Active Families, Active Members and,
+  with giving enabled, Current annual pledges and Last year's pledges (all
+  Families), then Data as of, the moment these were counted; the Families
+  by stage group holds one row per [funnel stage](#funnel-stages) with its
+  count. A stage's share compared with Invited is given once an invitation
+  has been delivered, except for Invited itself; Note is the tile's note
+  (Link followed's mail-scanner prefetches) or, for an unknown figure, the
+  reason the page gives for it.
+- **Daily participation**: one row per campaign date, in this order:
+  Campaign date, Population, First submissions, Families that have
+  responded, Families in population, Cumulative participation, Source as
+  of, and Cumulative annual pledges (USD) when financial is enabled.
+
+The formats lay the sections out as every multi-section download does
+([downloaded files](../ui-conventions/spec.md#downloaded-files)): the XLSX
+sheets are Summary, Daily participation and "Report information", and the
+PDF puts the chart between the two tables ([file design](#file-design)). An unavailable value is blank in
+the CSV and the word "Unavailable" in the XLSX and PDF, never zero. No
+format carries the campaign or fact-generation UUIDs, source generation
+numbers or the submission cutoff
+([#966](https://github.com/epiphany40223/parishkit/issues/966)); the PNG,
+which only the command line still offers, is the chart alone.
+
+The Summary is frozen when the export is requested: the request's own
+transaction reads the statistics and the funnel as the page does (the
+[campaign statistics](#campaign-statistics) and the Production
+[response funnel](#response-funnel) at that instant) and stores them in the
+request's immutable capture, `stewardship_participation_export_snapshot`
+(frozen migration 0142), so a response or ParishSoft update after the
+request never changes the file, and a retried rendering writes the same
+figures. The page offers no export while the statistics cannot be read; a
+request made just as they became unreadable still captures the funnel, with
+every Active population figure unknown and the page's reason, never zero.
+The database admits a capture only for a new participation
+request in the same transaction, from the web, by its requester, and
+requires one on every participation request but a latest-data export's
+handoff (`pk-admin export exact create`), whose files hold the Daily
+participation section only, as do requests made before this release. The
+capture is cleared when its export ends, like every export's
+([point-in-time exports](../operations/spec.md#point-in-time-exports)).
 A report email states a plain as-of line instead
 ([shared email layout](../report-emails/spec.md#shared-email-layout)),
 and its chart PNG keeps the metadata. The PNG and PDF exports and the report
@@ -818,9 +857,12 @@ heading, and the page sends `Cache-Control: no-store`. Top to bottom:
 5. **Export**: the export buttons **Export XLSX**, **Export CSV** and
    **Export PDF**, with no sentence on what they export
    ([export actions](../ui-conventions/spec.md#downloaded-files)), which
-   export every daily row of the chart shown
-   ([file design](#file-design); the statistics and the funnel join the
-   file in [#1557](https://github.com/epiphany40223/parishkit/issues/1557)). While no complete chart has
+   export all the data on the page
+   ([#1557](https://github.com/epiphany40223/parishkit/issues/1557)): the
+   Summary (every Active population and Families by stage tile, with its
+   share and note, and the Data as of time) and every daily row of the chart
+   shown ([participation graph](#participation-graph);
+   [file design](#file-design)). While no complete chart has
    been calculated, or other campaign work holds new exports, the buttons are
    shown unavailable with the sentence that says why
    ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)). The
@@ -920,9 +962,13 @@ validate and read; nothing records them now.
 
 ### Timeline
 
-**Access:** Administrators see the full timeline; Staff see the summary only
-(`CAMPAIGN_REPORT`; the Administrator's decision of 2026-10-04 on
-[#523](https://github.com/epiphany40223/parishkit/issues/523)). Ministry
+**Access:** Administrators and Staff see the full timeline
+(`CAMPAIGN_REPORT`; the Administrator's decision of 2026-10-19 on
+[#1774](https://github.com/epiphany40223/parishkit/issues/1774), which
+replaced Staff's summary-only view, the decision of 2026-10-04 on
+[#523](https://github.com/epiphany40223/parishkit/issues/523)). Both
+may [export](#timeline-export) it
+([#1799](https://github.com/epiphany40223/parishkit/issues/1799)). Ministry
 leaders have no access.
 
 `/admin/reports/families/<family>/` (**Timeline**) answers "what happened
@@ -959,11 +1005,12 @@ names stay unlinked where the page must not open a Timeline: the Additional
 information queue (each name is already the link to its request, and the
 request page links the Timeline), Go-live's Testing submissions and the
 chosen-Family test send (Testing only), and the examples of a refused
-ParishSoft load. Sent mail's Recipient stays the button that lists
-everything that recipient was sent, in place
-([#1571](https://github.com/epiphany40223/parishkit/issues/1571); see
-[Sent mail](../admin-portal/spec.md#sent-mail)), so it is not a Timeline
-link, and the Mail message page follows
+ParishSoft load. Sent mail's Recipient links a Production Family email's
+Family here; every other Recipient stays the button that lists everything
+that recipient was sent, in place
+([#1562](https://github.com/epiphany40223/parishkit/issues/1562); see
+[Sent mail](../admin-portal/spec.md#sent-mail) for which), and the Mail
+message page follows
 [#1563](https://github.com/epiphany40223/parishkit/issues/1563). Its breadcrumb
 parent is the active parishioner family directory. The page reads the
 Family's records at the database's current instant (**Counted at**).
@@ -989,8 +1036,9 @@ the campaign's name and Counted at, then, in the Timeline tab, a summary that bo
   message page name each email's state in the same words, from one shared
   table, adding where a Still sending email is (queued, waiting to retry, or
   being handed to the mail service) and Not sent (cancelled). The Admin
-  status bar, the pause and resume pages, Family email progress and sends,
-  and the test-email results use the same words.
+  status bar, the pause and resume pages, the Mail queue's Family send
+  panel, Family email history and the test-email results use the same
+  words.
 - **Family code**, for roles that may see Family codes (`FAMILY_CODES`; the
   code is neither decrypted nor shown otherwise), as the directory shows it,
   with **Open form** (described below), as the directory has. Unlike the
@@ -1010,7 +1058,7 @@ While the Family is in the campaign's No-reminders WorkGroup, both roles see
 whose Families are skipped now, which is the previous one while a rename
 waits for a refresh (#1305); while the named WorkGroup is missing in
 ParishSoft and the earlier set is kept, it is the configured name.
-Administrators also see whether campaign email can reach the Family (or why
+Both roles also see whether campaign email can reach the Family (or why
 not), the furthest form step reached and when the Family was last seen on the
 form (live values of the
 [Family engagement record](../data/spec.md#family-engagement)), and the
@@ -1040,7 +1088,8 @@ directions. A Family has few lines, so the table
 shows them all, with no paging or row navigator. Its lines are:
 
 - each Family email with its outcome (including Not sent (cancelled)),
-  linked to its Mail message page;
+  linked to its Mail message page for Administrators (Staff cannot open
+  that page, so their lines are not linked);
 - the invitation skipped because the Family had already responded (the
   [funnel's](#funnel-stages) skip), which stands in for that invitation's
   cancelled email, so the one planned email is listed once; likewise each
@@ -1064,12 +1113,16 @@ shows them all, with no paging or row navigator. Its lines are:
 - each form open, getting past the first step and the furthest step
   reached;
 - each submission, noting when Staff entered it for the Family and when no
-  receipt was sent because the Family had no email address.
+  receipt was sent because the Family had no email address;
+- each review action Staff, Administrators and Ministry leaders took on the
+  Family's answers ([Timeline review lines](#timeline-review-lines)).
 
-Staff get none of these lines. For a Staff view the server reads only the
-sign-ins, session ends and engagement record behind the
+Staff see every line, as Administrators do (#1774). The page keeps one
+reduced view for a role that holds `CAMPAIGN_REPORT` without being Staff or
+an Administrator (no such role exists today): it reads only the sign-ins,
+session ends and engagement record behind the
 [Last portal action](../admin-portal/spec.md#hub-header-strip), and keeps
-only the lines that can be it.
+only the lines that can be it, so no other line reaches that page.
 
 **Filters.** One compact filter bar above the table (it wraps on a phone)
 narrows the lines; it is an
@@ -1080,9 +1133,10 @@ closed values in the address (`kind`, `start`, `end` and the browser's
 too:
 
 - **Kind:** All (the default), Family form activity (form opens, progress
-  and submissions), Emails (every email line and the not-sent lines), or
+  and submissions), Emails (every email line and the not-sent lines),
   Sign-ins and sign-outs (sign-ins, Staff opened the form, Signed out,
-  Session ended and Earlier session ended). A person's timeline will add
+  Session ended and Earlier session ended), or Reviews (the
+  [review lines](#timeline-review-lines)). A person's timeline will add
   Admin actions and Role changes; a Family's shows only the kinds it can have
   ([conditional fields](../ui-conventions/spec.md#conditional-fields)).
 - **From** and **Through:** whole days in the browser's time zone, as on
@@ -1115,8 +1169,81 @@ reads are a handful of small statements and none runs per row: the emails,
 form opens and submissions through their Family indexes, the skips through
 the campaign's invitation schedules, and the sign-ins, sign-outs and session
 ends in one read through the audit's event-type and time index, which scans
-the campaign's Family session events rather than one Family's. The filters
-narrow the lines in memory, so they add no statement.
+the campaign's Family session events rather than one Family's. The
+[review lines](#timeline-review-lines) add one statement, plus one for the
+Ministry names when there is a Ministry line, only while the Timeline tab is
+chosen. The filters narrow the lines in memory, so they add no statement.
+
+#### Timeline review lines
+
+The timeline lists each review action taken on the Family's answers through
+the stream pages and the [review pipeline](../review-pipeline/spec.md)
+([#1774](https://github.com/epiphany40223/parishkit/issues/1774)), one line
+per stored decision, with the Kind **Reviews**. The lines come from each
+stream's own stored decision history, the records the review pages already
+keep, never from the audit log, whose context deliberately names no item or
+value. Nothing new is stored or audited: the page's one
+`family_timeline_viewed` event covers them.
+
+Each line's **What happened** is the action in the pipeline's words: a
+decision reads as its
+[pipeline vocabulary](../review-pipeline/spec.md#pipeline-vocabulary) word
+(Accepted, Accepted (edited) or Ignored), undoing one reads **Back to
+review**, and the other steps read **Entered by hand**, **Entered by hand
+cleared**, **Handled**, **Handled cleared**, **Edited**, **Edit cleared** or,
+for a step that changes no decision or stage (a note, a contact attempt or a
+move to In progress), **Follow-up updated**. Each is worded from the
+item's state before and after the step, so the words never depend on what
+the row is called in storage. A census change that a resubmission carried
+over with its decision and Reviewer's value (the same answer, neither
+resolved nor cancelled) starts from what it carried, so its first step reads
+as what the reviewer did. **Details** names the item and who acted:
+
+- a census change: the field and whom it is about ("Email address for Smith, Anne",
+  "Home address for the Family"), the Member named as the Family answered,
+  else as ParishSoft has them;
+- a Ministry request: Join or Leave, the Ministry and the Member, and a
+  decided request's outcome in Ministry requests' words;
+- Additional information: "Additional information";
+- then "by" and the acting user's address ("Former portal user" when the
+  user record is gone, as Ministry requests says). A line never shows a
+  value the Family gave or a reviewer typed (the Member tabs show them) nor
+  a note, since notes can hold personal detail.
+
+In this release the lines cover the decisions stored today:
+
+- census: each Administrator review (Accept, Ignore, Back to review, Edit,
+  Clear edit and Use the Family's value anyway,
+  `stewardship_proposal_review`) and each Staff or Administrator resolution
+  (Entered by hand, Ignore and Back to review,
+  `stewardship_proposal_resolution`);
+- Ministry: each follow-up edit (`stewardship_ministry_revision`), by Staff,
+  an Administrator or a Ministry leader, and each Entered in ParishSoft tick
+  set or cleared (`stewardship_ministry_roster_entry`); a tick that Back to
+  review's undo clears
+  ([#1840](https://github.com/epiphany40223/parishkit/issues/1840)) is part
+  of that one Back to review line, not a line of its own;
+- Additional information: each follow-up edit
+  (`stewardship_information_revision`).
+
+Pledges, cannot-participate answers and Limitations store no decision yet;
+their lines, Staff's Add, Update ParishSoft and the refresh checks
+(Confirmed, Entered incorrectly, Not seen in ParishSoft, attributed to the
+system) join when the review-pipeline slices that store them land
+([#1734](https://github.com/epiphany40223/parishkit/pull/1734),
+[#1736](https://github.com/epiphany40223/parishkit/pull/1736),
+[#1758](https://github.com/epiphany40223/parishkit/pull/1758),
+[#1741](https://github.com/epiphany40223/parishkit/pull/1741)), each
+reading its own history the same way. Lines are read from the Family's live
+responses in this campaign (Production), so Testing rehearsal decisions are
+never listed, and only while the Timeline tab is chosen; the
+[timeline export](#timeline-export) always includes them.
+
+Administrators and Staff see the same review lines, since Staff review
+every stream. Ministry leaders cannot open the page; if a leader view is
+ever added, a leader would see only decisions on requests for the
+Ministries they lead, as Ministry requests scopes them, and never a census,
+financial, Limitations or Additional information line.
 
 #### Open form
 
@@ -1155,15 +1282,20 @@ created, replaced or cancelled, so emailed codes and links keep working.
 
 #### Timeline export
 
-The Administrator's full view offers **Export this timeline** (the shared
-[export buttons](../ui-conventions/spec.md#downloaded-files) for XLSX, CSV
-and PDF, in the browser's time zone), the shared export lifecycle's
-`family_timeline` kind (ADM-11 PR 8g, frozen migration 0063, unchanged by
-#1570). Its form posts to `reports/families/<family>/exports/`, which only
-an Administrator may use, as only an Administrator sees the full timeline;
-Staff get no form, and their post is denied. The form carries the format,
-the browser's time zone and a one-time request key, and nothing else; the
-export is always of Production records (the capture's `mode` is
+The full view offers **Export this timeline** (the shared [export
+buttons](../ui-conventions/spec.md#downloaded-files) for XLSX, CSV and PDF,
+in the browser's time zone), the shared export lifecycle's `family_timeline`
+kind (ADM-11 PR 8g, frozen migration 0063, unchanged by #1570).
+Administrators and Staff may use it: Staff see the full timeline since #1774,
+and frozen migration 0144 (#1799) opened the export's capture
+trigger, request guard and request authorization to a current Staff member
+as well. Its form posts to `reports/families/<family>/exports/`; a Ministry
+leader, who cannot open the page, is refused there and by the capture's SQL.
+Regenerating or downloading another requester's timeline export stays
+Administrator-only, as for every shared export. The file holds no links, so
+Staff's email lines are as unlinked there as on their page. The form carries
+the format, the browser's time zone and a one-time request key, and nothing
+else; the export is always of Production records (the capture's `mode` is
 `production`), and old Testing exports keep their status pages, whose
 breadcrumb opens the timeline. The file holds every line of the timeline,
 whatever the page's Kind and day filters show, and keeps the title "Family
@@ -1198,14 +1330,21 @@ page's heading shows its badge. As for every shared export, the CSV is the
 table alone; the XLSX's Report information sheet and the PDF's summary cards
 carry the rest, including the code. The PDF is an infographic sheet
 ([File design](#file-design)); its Sign-ins and form opens kind counts the
-sign-out and session-end lines too. The page builds its timeline in Python,
+sign-out and session-end lines too, and its Reviews kind counts the
+[review lines](#timeline-review-lines). The page builds its timeline in Python,
 so the web supplies that document; the capture trigger admits it only from
-the web login, for a current Administrator, an admitted campaign, the active
-configuration and a Family of that campaign (with its DUID), with the
-document's keys and value types checked and its size bounded, and sets the
-event count itself. The Family code is never captured: the worker decrypts it
-into the file, under the key-set lock, only when the requester may see
-Family codes. The status page, download, Retry, Cancel and the short
+the web login, for a current Administrator or Staff member (a Testing
+capture, which the page no longer makes, for an Administrator only), an
+admitted campaign, the active configuration and a Family of that campaign
+(with its DUID), with the document's keys and value types checked and its
+size bounded, and sets the event count itself. The bound is 1 MiB of JSON
+since migration 0144 (it was 128 KiB): the review lines (#1774) made a busy
+Family's file longer, and 1 MiB holds several thousand lines, far beyond
+any Family's timeline. A document over it is refused like any malformed
+capture, with no message of its own: the bound was raised rather than
+given a "too many lines" error (#1799). The Family code is never
+captured: the worker decrypts it into the file, under the key-set lock,
+only when the requester may see Family codes. The status page, download, Retry, Cancel and the short
 download window are the shared
 [point-in-time](../operations/spec.md#point-in-time-exports) lifecycle's.
 The request records `export_requested` with its line count, and the download
@@ -1266,8 +1405,11 @@ Staff and Administrators decide each request as the pipeline's
 allow: on a To review request, **Accept** (the parish will follow it up: To
 handle) or **Ignore** (nothing to follow up); on a To handle request,
 **Handled** once the follow-up is done, or **Back to review**; on an
-Ignored request, Back to review, which needs a note saying why. Handled is
-final. Each decision takes an optional note, which becomes the request's
+Ignored request, Back to review, which needs a note saying why; on a
+Handled request, Back to review, which needs a note too and returns it to
+To handle, clearing its completion (who and when) and keeping the history
+([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)).
+Each decision takes an optional note, which becomes the request's
 Staff notes (the export's and the search's); a decision with no note keeps
 the notes as they were. The bulk bar records
 Accept, Ignore, Back to review or Handled on every ticked row, all or none.
@@ -1949,11 +2091,10 @@ into another Ministry is in the scope of both Ministries' leaders
 ([follow-up workflows](../admin-portal/spec.md#follow-up-workflows)). By
 Ministry and the packet's choices read the Ministry report selection with
 its own cross-check, so a reader needs both scopes, which the same roles
-hold; they still count and list each request under the Family's Ministry,
-while the worklist's Ministry filter also finds an edited request under its
-Edit's Ministry, so after an Edit a count link can show one request more
-or less than its count ([#1718](https://github.com/epiphany40223/parishkit/issues/1718)
-tracks counting by the Edit).
+hold. By Ministry counts a request edited into another Ministry under both
+its Ministries, as the worklist's Ministry filter finds it under either, so
+each count link lists exactly what it counts
+([#1718](https://github.com/epiphany40223/parishkit/issues/1718)).
 The page's view audit is
 the queue's `ministry_followup_viewed`; it no longer records
 `ministry_report_viewed`, which the host `report ministry` command still
@@ -2041,12 +2182,30 @@ their rows stay distinct in every format. A request whose Ministry the report
 cannot read (one removed from the campaign whose requests were all withdrawn)
 shows no details and says so.
 
+A request is read under its current Ministry: the one review's Edit carried
+forward ([follow-up workflows](../admin-portal/spec.md#follow-up-workflows)),
+whose leaders decide it from then on, else the Family's. The Ministry report
+selection and the packet list an edited request, with its details, under
+that Ministry only, so its leaders see the Member's details and a leader of
+only the Family's Ministry, who still sees the request read only, sees none
+([#1718](https://github.com/epiphany40223/parishkit/issues/1718), frozen
+migration 0140). An earlier version of the request, shown with the history
+option, stays under the Family's Ministry but is not consent there (the
+rule below): its leaders see only published values on it. Both selections
+keep both Ministries of an edited request listed, so a packet for the
+Family's Ministry, which By Ministry still offers, gets its section, empty
+of that request; a one-Ministry read of the report can therefore count a
+request (By Ministry counts it under both) that it does not list. Nothing
+else changes: each selection still reads only the reader's SQL-derived
+scope, and the rule below applies to the current Ministry's leaders.
+
 Leader phone and email values honor ParishSoft publish flags and show "Not
 published" rather than leaking a value, with one exception (Administrator
 decision, 2026-10-17, "show own contacts" on
 [#1591](https://github.com/epiphany40223/parishkit/issues/1591)): asking to
 join or leave a Ministry is consent to be contacted about it, so on a
-Member's standing request that Ministry's leaders see the requesting
+Member's standing request that Ministry's leaders (the leaders of its
+current Ministry, above) see the requesting
 Member's own email and phones even when ParishSoft does not publish them.
 A request stands while the Member's latest version of it is neither
 withdrawn (cancelled) nor replaced; an earlier version shown with the
@@ -2070,14 +2229,19 @@ response that answers the question for that Member (lists them in its
 not an answer). Only a later live response that answers it for the
 Member without the checkbox lets their standing requests share again; a
 response that leaves the Member out, such as one reporting them moved out
-or deceased, does not, and a Member never answered is not withheld. For a
-Member the Family added, the answer is the one for the form's own entry for
-that person: such a Member is not linked to the ParishSoft record Staff
-create for them later, so a later answer for that ParishSoft Member does
-not cover their earlier added-Member requests
-([#1670](https://github.com/epiphany40223/parishkit/issues/1670)). Both
-selections read the same answer, so the request page, Export these
-requests and the packet agree.
+or deceased, does not, and a Member never answered is not withheld. A
+Member the Family added on the form and the ParishSoft Member a refresh
+later linked them to
+([added Member links](../data/spec.md#proposed-changes),
+[#1670](https://github.com/epiphany40223/parishkit/issues/1670)) are one
+person: a checked box as either key's current answer withholds the
+requests under both, so a later cannot-participate answer for the
+ParishSoft Member also covers the earlier added-Member requests. The link
+only adds a checked box: each key's requests share again only once neither
+key's current answer is checked, so a link the evidence got wrong can only
+hide more, never share more. An added Member with no link is answered by
+the form's own entry for that person. Both selections read the same answer,
+so the request page, Export these requests and the packet agree.
 Every other Member's standing requests share as above. Nothing else
 widens: a Member with no standing request to the Ministry (so every other
 Member of the Family), a withdrawn request and other Ministries' requests
@@ -2343,13 +2507,15 @@ a box) records that someone typed it into ParishSoft (execution
 and marks it in one step, so Staff working through a list are not slowed
 down. Before #1683 these rows were *To do* and went straight to Entered in
 ParishSoft or Ignore; the page's help says that they are now To review. A
-Conflict By hand row is accepted first, then entered. Entered by hand is
-final, as every resolved outcome is: a mistaken mark is corrected in
-ParishSoft, and a later different Family answer creates a new row (the same
-answer again keeps the entered change,
-[resubmission](../review-pipeline/spec.md#resubmission-while-the-setting-is-off)).
-Its dialog says it
-is final and to check ParishSoft first. Who, when and the note are kept as
+Conflict By hand row is accepted first, then entered. A mistaken mark is
+undone by Back to review, with a required note, which returns the change to
+the stage before the mark, To enter by hand with its decision kept (one
+accepted and marked in one step stays Accepted), as every terminal outcome is
+([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
+[#1840](https://github.com/epiphany40223/parishkit/issues/1840)); a later different Family answer creates a new row (the same answer
+again keeps the entered change,
+[resubmission](../review-pipeline/spec.md#resubmission-before-the-reviewed-form)).
+Its dialog says to check ParishSoft first. Who, when and the note are kept as
 history.
 
 Before #528 the web role could change a proposal only after a later Family
@@ -2368,6 +2534,35 @@ Ignore and Back to review as reviews (below); the resolution row's
 Since Family addresses are not yet written by publication (see the
 [data workflow](../data/spec.md#review-and-publication)), an address
 entered in ParishSoft stays *To enter by hand* until it is marked.
+
+On a New Member row, Entered by hand (from the row's own icon) asks for
+the **ParishSoft Member ID** of the Member Staff added, optional, with its
+help: "The new Member's ID in ParishSoft. The next refresh confirms the
+entry when ParishSoft lists this Member in the Family. Leave it blank if you
+do not have it: you can add it later." A value that is not a whole
+number, that is a Member the Family already listed, or that another New
+Member of the Family is entered as, is refused with its reason in the
+dialog. The row then says "ParishSoft Member ID N." under its
+stage. The bulk bar asks for none. While such a row is Entered by hand and
+not Confirmed, it also offers **Correct the ParishSoft Member ID** (**Add
+the ParishSoft Member ID** when the mark names none; a pencil, after the
+selected Entered by hand icon, which stays selected and where focus
+returns) to Staff and Administrators. Its
+dialog says "Record the ID of the Member you added. Check the Member in
+ParishSoft first: the next refresh checks the entry again." and asks for
+the **ParishSoft Member ID**,
+required, filled in with the ID the mark names (blank when it names none),
+with its help: "The ID ParishSoft gave the Member you added. The next
+refresh checks the entry again with this ID." Recording it marks the row
+Entered by hand again with that ID; an ID the
+[rules](../review-pipeline/spec.md#refresh-checks) refuse (the same ID as
+now among them) is refused at the field, with "Correct the Member ID, then
+record it again." The notice says "… had its ParishSoft Member ID
+corrected." (or "added."). What the refresh does with it is the
+review pipeline's
+[refresh checks](../review-pipeline/spec.md#refresh-checks); so is an
+Updated in ParishSoft row a later refresh puts back in Conflict, To review
+again, which says "ParishSoft no longer holds the update." under its stage.
 
 ### Automatic census review
 
@@ -2460,7 +2655,7 @@ to *To review* and the change is compared with the Family's baseline again
 (a change already queued for publication keeps its approval, and its
 publication then meets a conflict). A Family's later same answer does not
 carry the accepted base either
-([resubmission](../review-pipeline/spec.md#resubmission-while-the-setting-is-off)):
+([resubmission](../review-pipeline/spec.md#resubmission-before-the-reviewed-form)):
 the change comes back as a *Conflict* that shows the earlier Accepted as
 held, not in force, with the history line "Reopened: the Family answered
 again, so the earlier Accept over ParishSoft's changed value no longer
@@ -2554,11 +2749,15 @@ drawn selected, and *How it reaches ParishSoft* is *By hand*: until the
 update run is rebuilt
 ([#1688](https://github.com/epiphany40223/parishkit/issues/1688)) nothing
 writes an addition to ParishSoft, whatever the handling registry says of its
-field. It offers only **Entered by hand** (final, as for any change) and
-**Back to review**, which withdraws it: it moves to *History*, and the field
-may be added again. Both are in the bulk bar too, together with the
-Family's own changes, all or none; the bulk dialog says a ticked added
-change is withdrawn. Each ignored change it replaced shows "Added in its
+field. It offers only **Entered by hand** and **Back to review**, which
+withdraws it: it moves to *History*, and the field may be added again. Once
+Entered by hand, Back to review undoes the mark instead, with a required
+note, as on every terminal stage
+([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)):
+the added change is *To enter by hand* again, at its next version, and may
+be entered again or withdrawn; every step stays in its history. Both are in
+the bulk bar too, together with the Family's own changes, all or none; the
+bulk dialog says a ticked added change still to enter by hand is withdrawn. Each ignored change it replaced shows "Added in its
 place:" with the field and value of every addition made for it under its
 stage, and the added change says it was added in place of an ignored change.
 
@@ -2566,7 +2765,10 @@ The field never has two open changes by the worklist's own decisions: while
 an addition of the field is open, an ignored change of the same field
 offers no Back to review, and one posted anyway is refused (`reopen_added`;
 withdraw the addition first), as is `pk-admin census review` or `census
-resolve` reopening it; the check runs under the work order. A later Family response may still ask for the
+resolve` reopening it; the check runs under the work order. Likewise an
+entered addition's Back to review is refused while the field has another open
+change, another open addition or the Family's own change that is not ignored
+(`reopen_open_change`; decide or withdraw that one first), in SQL too. A later Family response may still ask for the
 same field again; the open addition then says the Family has an open change
 of this field too, so Staff decide that one and withdraw the addition if it
 is no longer needed. Its Baseline is ParishSoft's value of the field when it
@@ -2732,9 +2934,12 @@ changed, **ParishSoft at the check**, **Will write**, and **Outcome**:
   so ParishSoft at the check and Will write both show that value (the
   reviewer's value, else the Family's answer). Nothing is written, and the
   change is marked *Already in ParishSoft* (`resolved_upstream`) at the
-  check, so it is *Confirmed* (Production mode only). The mark is final:
-  Back to review on Census changes cannot undo it (see the
-  [data workflow](../data/spec.md#review-and-publication), step 4).
+  check, so it is *Confirmed* (Production mode only). Back to review on
+  Census changes undoes the mark, with a required note, and returns the
+  change to Ready to update
+  ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)).
+  Nothing in ParishSoft changes, so the next run finds it Already in
+  ParishSoft again.
 - **Conflict**: ParishSoft changed since the Family answered. Nothing for
   this Member is written until the change is decided again on Census
   changes (Accept against ParishSoft's value once the next refresh shows
@@ -3133,11 +3338,13 @@ section is the page.
   pledge, such as a Conflict found or ParishSoft's amount moving under one,
   is refused as someone else's change and the page is redrawn); an Ignored
   row Back to review, with a required
-  note; a To enter by hand row Entered by hand and Back to review; an Entered by
-  hand row nothing (the mark is final), and neither does an Entered
-  incorrectly row until its fixes land
-  ([#1737](https://github.com/epiphany40223/parishkit/issues/1737)) or a
-  Confirmed one; a Confirmed row with no decision says "Already in
+  note; a To enter by hand row Entered by hand and Back to review; an Entered
+  by hand, Entered incorrectly or Confirmed row Back to review, with a
+  required note, which returns it to the stage before its mark (To enter by
+  hand, or To review for a pledge ParishSoft already held;
+  [undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage));
+  Entered by hand again on Entered incorrectly waits for
+  [#1737](https://github.com/epiphany40223/parishkit/issues/1737); a Confirmed row with no decision says "Already in
   ParishSoft." under its stage, or "Nothing to enter: ParishSoft holds no
   pledge." when both the Family's answer and ParishSoft are $0.00. An
   Ignored row ParishSoft now matches says "ParishSoft now matches the
@@ -3247,7 +3454,10 @@ it), Ignore, mark Handled, and send a decision Back to review (a note is
 needed to reopen an Ignored answer), one row at a time or in bulk, all or
 none, as the pipeline's
 [role-specific actions](../review-pipeline/spec.md#role-specific-actions)
-allow. Handled is final. There is no Add.
+allow. Back to review of a Handled answer needs a note too and returns it
+to To handle
+([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)).
+There is no Add.
 
 No item is stored when a Family submits: each row is a current live answer,
 as the report has always read it, so the Family's form and its submission do
@@ -3260,7 +3470,7 @@ in force until a later live response from the Family answers the other way,
 so answering again unchanged keeps it; a response that answers the other way
 removes the row from the page, and a later response that gives the answer
 again starts a new To review row (the pipeline's
-[resubmission rule](../review-pipeline/spec.md#resubmission-while-the-setting-is-off)).
+[resubmission rule](../review-pipeline/spec.md#resubmission-before-the-reviewed-form)).
 A response that leaves the answer out (a section not shown, a Member out of
 scope) changes nothing: the row is shown only while the current response
 gives the answer, and its decision is still in force when it does again.

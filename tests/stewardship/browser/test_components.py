@@ -217,7 +217,6 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/clone-preview",
         "/integrations",
         "/integration-settings",
-        "/integration-preview",
         "/backup-key",
         "/backup-key-proof",
         "/branding-settings",

@@ -200,8 +200,9 @@ def test_a_third_amount_is_entered_incorrectly_until_corrected(
 def test_an_accepted_pledge_parishsoft_holds_is_confirmed_and_closed(
     response_service,
 ):
-    """Rule 1 before the mark: To enter by hand is Confirmed, and nothing is
-    offered on it then; a third amount before it is a Conflict (#1747)."""
+    """Rule 1 before the mark: To enter by hand is Confirmed, and no mark is
+    offered on it then (only Back to review, #1840); a third amount before
+    it is a Conflict (#1747)."""
     harness, submission = accepted(response_service, marked=False)
     refresh(harness, "99.00")
     assert checks() == [("conflict", Decimal("99.00"))]

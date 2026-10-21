@@ -35,6 +35,9 @@ EDITED = "/pledges-edited"
 # bar when the path is the page's own.
 ADDRESS = "/admin/reports/financial/pledges/"
 EVERY_ADDRESS = ADDRESS + "?stage=all"
+# The page after Back to review undid Family 05's mark (#1840).
+UNDONE = "/pledges-undone"
+UNDONE_NOTICE = "Family 05 sent back to review."
 ACCEPTED_NOTICE = "2 pledges accepted."
 EDITED_NOTICE = "Family 03 accepted (edited)."
 STAFF = frozenset({"staff"})
@@ -110,9 +113,10 @@ def checked_rows():
     ]
 
 
-def rows(edited=False, accepted=False):
-    """Every stage a Staff reader meets; ``edited`` and ``accepted`` apply the
-    decisions the tests take (an Edit of Family 03, a bulk Accept of 01, 02)."""
+def rows(edited=False, accepted=False, undone=False):
+    """Every stage a Staff reader meets; ``edited``, ``accepted`` and
+    ``undone`` apply the decisions the tests take (an Edit of Family 03, a
+    bulk Accept of 01, 02, Back to review on Family 05's mark)."""
     edit = review("accepted_edited", amount=Decimal("1500.00"), frequency="annual")
     found = [
         _row(1),
@@ -134,6 +138,9 @@ def rows(edited=False, accepted=False):
         )
     if edited:
         found[2] = _row(3, "to_enter_by_hand", edit)
+    if undone:
+        # The undo keeps the Accept: To enter by hand again.
+        found[4] = _row(5, "to_enter_by_hand", review("accepted"))
     return found
 
 
@@ -162,4 +169,5 @@ def components(context, admin):
         ),
         EDITED: _page(context, admin, rows(edited=True), "to_review", EDITED_NOTICE),
         CHECKED: _page(context, admin, checked_rows(), "all"),
+        UNDONE: _page(context, admin, rows(undone=True), "all", UNDONE_NOTICE),
     }

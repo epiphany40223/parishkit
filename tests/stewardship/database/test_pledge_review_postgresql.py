@@ -166,8 +166,9 @@ def test_decisions_move_the_pledge_through_its_stages_with_audit(
         {"outcome": "changed", "before_version": 0, "after_version": 1},
         {"outcome": "changed", "before_version": 1, "after_version": 2},
     ]
-    # The mark is final: nothing more is offered.
-    with pytest.raises(ValueError):
+    # Undoing the mark needs a note (#1840,
+    # test_pledge_terminal_undo_postgresql.py).
+    with pytest.raises(ValueError, match="needs a note"):
         decide(harness, actor, "back_to_review", [submission])
 
 

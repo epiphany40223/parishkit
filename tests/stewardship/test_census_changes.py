@@ -510,8 +510,18 @@ def test_csv_xlsx_and_pdf_carry_the_same_columns_and_rows():
         ({}, False, False),
         # Ignored: only reopen (offered to Administrators by the page).
         ({"handling": "manual", "decision": "ignored"}, False, True),
-        # Final outcomes take nothing.
-        ({"handling": "manual", "execution": "resolved_external"}, False, False),
+        # A terminal outcome takes only Reopen, which undoes its step
+        # (#1840), unless a later response replaced it; history and a run
+        # in flight take nothing.
+        ({"handling": "manual", "execution": "resolved_external"}, False, True),
+        ({"execution": "published", "decision": "approved"}, False, True),
+        ({"execution": "resolved_upstream"}, False, True),
+        (
+            {"handling": "manual", "execution": "resolved_external", "replaced": True},
+            False,
+            False,
+        ),
+        ({"execution": "queued", "decision": "approved"}, False, False),
         ({"handling": "manual", "execution": "superseded"}, False, False),
     ],
 )

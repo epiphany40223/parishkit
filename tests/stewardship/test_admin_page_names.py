@@ -58,7 +58,7 @@ TEMPLATES = {
     "go_live_confirm": "go-live-confirm.html",
     "production_progress": "production-progress.html",
     "delivery_control": "delivery-control.html",
-    "family_email_progress": "family-email-progress.html",
+    "mail_queue": "mail-queue.html",
     "family_email_sends": "family-email-sends.html",
     "deliveries": "deliveries.html",
     "delivery_refusals": "delivery-refusals.html",
@@ -255,13 +255,12 @@ UNNAMED_RETURNS = {
 # "Return to {{ … }}" links, by template, and the variable each names its
 # target with. Each variable holds a registry label: the trail's parent
 # crumb (admin_chrome.back), the page a test email was opened from
-# (refusals.return_link), the integration's name (integration_views.LABELS)
-# and the export's report page (export_ui's report_name). A new one must
-# be added here once its variable is known to hold a page's name.
+# (refusals.return_link) and the export's report page (export_ui's
+# report_name). A new one must be added here once its variable is known to
+# hold a page's name.
 VARIABLE_RETURNS = {
     ("campaign-mail.html", "return_link.label"),
     ("configuration-request.html", "admin_chrome.back.label"),
-    ("integration-preview.html", "label"),
     ("report-export.html", "report_name"),
 }
 VARIABLE_RETURN = re.compile(
@@ -283,7 +282,7 @@ def test_return_links_name_a_page(template):
     # The Census changes worklist's "Back to To review" is a review decision,
     # not a link back to a page (see ALLOWED), as is the review pipeline's
     # Back to review on Ministry requests (#1684), Additional information
-    # and Limitations (#1685).
+    # and Limitations (#1685), and Pledges (#1840).
     if template not in {"census-changes.html", *REVIEW_PIPELINE_PAGES}:
         assert "Back to " not in source
     for target in re.findall(r'"Return to ([^"]+)"', source):
@@ -487,12 +486,17 @@ REVIEW_PIPELINE_PAGES = frozenset(
         # Additional information and Limitations (#1685).
         "information.html",
         "limitations-report.html",
+        # Pledges, whose help names Back to review's undo (#1840).
+        "pledges-to-enter.html",
     }
 )
 ALLOWED = {
     # "Back to edit" steps back inside the Family form, outside the Admin
     # portal and its page names.
     ("accounts/static/stewardship/family-v1.js", "Back to "),
+    # The Timeline's review lines (#1774) name the review pipeline's Back to
+    # review action, not a page.
+    ("reports/timeline_reviews.py", "Back to "),
     # "Back to To review" is the Census changes review button that undoes an
     # Approve or Ignore (#528), not a link back to a page.
     ("accounts/templates/stewardship/census-changes.html", "Back to "),
