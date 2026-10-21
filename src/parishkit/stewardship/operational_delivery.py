@@ -155,6 +155,7 @@ def deliver_operational_mail(
     profile,
     smtp_factory=smtplib.SMTP_SSL,
     session_factory=CheckSession,
+    redirect=None,
 ):
     """Reuse proven SMTP outcome handling without widening ordinary-mail types."""
     settings = delivery_settings(settings)
@@ -169,6 +170,7 @@ def deliver_operational_mail(
         profile=profile,
         smtp_factory=smtp_factory,
         session_factory=session_factory,
+        redirect=redirect,
     )
 
 

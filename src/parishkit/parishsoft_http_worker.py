@@ -11,9 +11,9 @@ it exits when stdin closes or its parent process disappears.
 
 It is read-only unless its key frame also carries ``"contact_writes": true``,
 which only the census publication session sends (#528, BG-09). Such a
-helper additionally admits the one Member contact PUT, but never in a
-``local`` request; every other helper refuses any PUT frame, whatever its
-parent asks.
+helper additionally admits the one Member contact PUT, but in a ``local``
+request only to the local fake (``contact_put_admitted``, #1884); every
+other helper refuses any PUT frame, whatever its parent asks.
 """
 
 import json
@@ -85,6 +85,19 @@ def admitted_base_url(profile, base_url):
     return base_url
 
 
+def contact_put_admitted(profile, base_url):
+    """Whether a request under ``profile`` to ``base_url`` may send the PUT.
+
+    The one rule for ParishSoft writes (#1884), applied by the deployment
+    loader, the publication session and every helper request. Outside LOCAL
+    it admits every admitted base URL, as before. A ``local`` request may
+    write only to the local fake, never to the real API, so pk-local can run
+    census publication end to end while it cannot reach a real record.
+    """
+    base_url = admitted_base_url(profile, base_url)
+    return profile != LOCAL_PROFILE or base_url == LOCAL_SOURCE_BASE_URL
+
+
 class InvalidSourceResponse(ValueError):
     """A deterministic body-contract failure must not be retried as an outage."""
 
@@ -112,9 +125,9 @@ CONTACT_WRITES = re.compile(r"members/[1-9][0-9]{0,17}/contact")
 def validate_request(value, *, contact_writes=False):
     """Reject arbitrary origins/methods, redirects, large input and extra options.
 
-    ``contact_writes`` admits the Member contact PUT too, except in a
-    ``local`` request; only a helper started for census publication passes
-    it.
+    ``contact_writes`` admits the Member contact PUT too, where
+    ``contact_put_admitted`` allows it (in a ``local`` request, only to
+    the fake); only a helper started for census publication passes it.
     """
     if type(value) is not dict or set(value) != REQUEST_FIELDS | {"api_key"}:
         raise ValueError("Invalid bounded source request.")
@@ -128,9 +141,10 @@ def validate_request(value, *, contact_writes=False):
         or (method == "GET" and READ_GETS.fullmatch(endpoint))
         or (
             # A LOCAL deployment may read the real ParishSoft (#1399) but
-            # never writes to it, whatever its parent asks.
+            # never writes to it, whatever its parent asks; it writes only
+            # to the local fake (#1884).
             contact_writes is True
-            and value["profile"] != LOCAL_PROFILE
+            and contact_put_admitted(value["profile"], value["base_url"])
             and method == "PUT"
             and CONTACT_WRITES.fullmatch(endpoint)
         )

@@ -218,6 +218,59 @@ def test_unknown_query_options_are_refused(auth_service, google):
     assert views() == []
 
 
+def test_a_slow_recheck_runs_the_page_load_checks_and_stays_passive(
+    auth_service, google, monkeypatch
+):
+    """#1790: an ordinary poll never runs the two page-load checks; only
+    ``?slow=1`` does, once each, and answers the tiles' lasting copies and
+    the fragment address carrying their fresh states. Neither poll records
+    an audited view or renews the sign-in's idle time; ``slow`` takes only
+    ``1``."""
+    from parishkit.stewardship.accounts import system_health_views
+    from parishkit.stewardship.accounts.models import PortalSession
+
+    calls = []
+
+    def form(campaign_id):
+        """Three Families the form cannot open."""
+        calls.append("form")
+        return 3
+
+    def resave(service, campaign_id):
+        """Nothing to re-save."""
+        calls.append("resave")
+        return []
+
+    monkeypatch.setattr(system_health_views, "source_form_summary", form)
+    monkeypatch.setattr(system_health_views, "resave_summary", resave)
+    running_services()
+    browser, _ = signed_in()
+    before = PortalSession.objects.get().last_activity_at
+    assert browser.get(STATUS + "?slow=2").status_code == 400
+    assert browser.get(STATUS + "?slow=1&all=1").status_code == 400
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        echoed = browser.get(STATUS + "?loaded=resave:error")
+        assert echoed.status_code == 200 and calls == []
+        body = echoed.content.decode()
+        assert "1 error" in body[: body.index("</h2>")]
+        assert "data-live-mirror-lasting" not in body
+        assert "data-live-url" not in body
+        assert 'data-live-slow-every="300000"' in body
+        slow = browser.get(STATUS + "?loaded=resave:error&slow=1")
+        assert slow.status_code == 200 and calls == ["form", "resave"]
+        assert slow["Cache-Control"] == "no-store"
+        body = slow.content.decode()
+    # The fresh reads replace the states the page passed.
+    line = body[: body.index("</h2>")]
+    assert "1 warning" in line and "error" not in line
+    assert f'data-live-url="{STATUS}?loaded=source-form%3Awarning"' in body
+    assert body.count("data-live-mirror-lasting") == 4
+    assert "3 Families cannot open the form" in body
+    assert "No saved page or email needs re-saving." in body
+    assert views() == []
+    assert PortalSession.objects.get().last_activity_at == before
+
+
 def test_a_refused_load_shows_its_counts_until_a_full_refresh_follows(tmp_path):
     """The web login reads the newest refused attempt's counts in check order."""
     attempt, execution, lease = refused_attempt(tmp_path)

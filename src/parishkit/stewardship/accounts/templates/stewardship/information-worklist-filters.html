@@ -1,11 +1,6 @@
 {% load i18n %}{% comment %}
   Additional information's own filters after the worklist's Stage (#1685),
   inside the shared filters form (components/review-worklist.html): the
-  search and the submitted days. The browser's time zone is filled by
-  ui-v1.js (#558): the server places the days in it, as on System logs; a
-  date sent without it is refused, never read in another zone.
-{% endcomment %}{% with q=query.information %}<input type="hidden" name="zone" value="{{ q.zone }}" data-browser-zone data-zone-missing-hint="{% translate "Your browser didn't report a time zone, so these dates can't be used. Clear the dates, or check your computer's time zone setting." %}">
-<div><label for="information-search">{% translate "Search Family name, DUID, submitted text or Staff notes" %}</label><input id="information-search" name="search" maxlength="200" value="{{ q.search }}"></div>
-<div class="short" data-missing-hint="{% translate 'Enter a whole Submitted on or after date, or clear it.' %}"><label for="information-start">{% translate "Submitted on or after" %}</label><input id="information-start" type="date" name="start" value="{{ q.start }}" aria-describedby="information-zone-help" data-browser-zone-field></div>
-<div class="short"><label for="information-end">{% translate "Submitted on or before" %}</label><input id="information-end" type="date" name="end" value="{{ q.end }}" aria-describedby="information-zone-help" data-not-before="information-start" data-missing-hint="{% translate 'Enter a Submitted on or before date no earlier than Submitted on or after, or clear it.' %}" data-order-hint="{% translate 'Enter a Submitted on or before date no earlier than Submitted on or after, or clear it.' %}" data-browser-zone-field></div>
-<p class="help" id="information-zone-help" data-browser-zone-note hidden>{% translate "The dates are days in this computer's time zone:" %} <span data-browser-zone-name></span>.</p>{% endwith %}
+  search. There is no submitted-date filter (#1888), as on the other
+  review worklists.
+{% endcomment %}{% with q=query.information %}<div><label for="information-search">{% translate "Search Family name, DUID, submitted text or Staff notes" %}</label><input id="information-search" name="search" maxlength="200" value="{{ q.search }}"></div>{% endwith %}

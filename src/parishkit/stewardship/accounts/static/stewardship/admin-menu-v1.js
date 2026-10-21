@@ -36,9 +36,15 @@
   const GAP = 6;
   const entries = Array.from(document.querySelectorAll("[data-menu-tip]"));
   const tipOf = (entry) => document.getElementById(entry.getAttribute("aria-describedby"));
-  // The wrapper holds the entry and its tip: the menu's list item, or an
-  // in-page control's span.
-  const wrapperOf = (entry) => entry.parentElement;
+  // The areas the pointer may rest on while the tip stays: the wrapper that
+  // holds the entry and its tip (the menu's list item, or an in-page
+  // control's span), or, for an unavailable tab (components/tabs.html,
+  // #1712), the tab and its tip, since the tab row may hold only tabs and
+  // its tip sits after the row (WCAG 1.4.13: the pointer can move onto it).
+  const areasOf = (entry) => (entry.matches("[role=tab]")
+    ? [entry, tipOf(entry)].filter(Boolean) : [entry.parentElement]);
+  const inside = (entry, node) => areasOf(entry).some((area) => area.contains(node));
+  const hovered = (entry) => areasOf(entry).some((area) => area.matches(":hover"));
   let shown = null;
   let showTimer = null;
   let hideTimer = null;
@@ -89,24 +95,23 @@
   };
 
   entries.forEach((entry) => {
-    const wrapper = wrapperOf(entry);
-    wrapper.addEventListener("mouseenter", () => {
+    areasOf(entry).forEach((area) => area.addEventListener("mouseenter", () => {
       if (tapped || lastPointer === "touch") return;
       if (shown === entry) { clearTimers(); return; }
       if (shown) hide();
       clearTimers();
       showTimer = setTimeout(() => show(entry, false), SHOW_DELAY);
-    });
-    wrapper.addEventListener("mouseleave", () => {
+    }));
+    areasOf(entry).forEach((area) => area.addEventListener("mouseleave", () => {
       clearTimeout(showTimer);
       if (tapped) return;
       if (shown === entry && document.activeElement !== entry) {
         hideTimer = setTimeout(hide, HIDE_GRACE);
       }
-    });
+    }));
     entry.addEventListener("focus", () => show(entry, false));
     entry.addEventListener("blur", () => {
-      if (shown === entry && (tapped || !wrapper.matches(":hover"))) hide();
+      if (shown === entry && (tapped || !hovered(entry))) hide();
     });
     entry.addEventListener("pointerdown", (event) => { lastPointer = event.pointerType; });
     // Activating an unavailable entry does nothing but show its reason. A
@@ -127,12 +132,12 @@
     // content that is not interactive, and that tap must still dismiss.
     document.addEventListener("pointerdown", (event) => {
       lastPointer = event.pointerType;
-      if (shown && !wrapperOf(shown).contains(event.target)) hide();
+      if (shown && !inside(shown, event.target)) hide();
     });
     // Reaching another link or control hides the tip at once.
     document.addEventListener("mouseover", (event) => {
       if (
-        shown && !tapped && !wrapperOf(shown).contains(event.target) &&
+        shown && !tapped && !inside(shown, event.target) &&
         event.target.closest && event.target.closest("a, button, summary, input, select, textarea")
       ) {
         hide();

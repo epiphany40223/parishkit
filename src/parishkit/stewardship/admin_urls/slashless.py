@@ -62,15 +62,9 @@ SLASHLESS = (
     (f"campaign/{REMINDER_WORKGROUP_SLUG}", "reminder_workgroup"),
     ("campaign/go-live", "go_live"),
     ("campaign/go-live/families", "go_live_families"),
-    ("campaign/go-live/cleanup/<uuid:request_id>", "go_live_cleanup"),
-    ("campaign/go-live/cleanup/<uuid:request_id>/links", "go_live_links"),
-    (
-        "campaign/go-live/cleanup/<uuid:request_id>/links/<uuid:preparation_id>"
-        "/confirmation",
-        "production_confirmation",
-    ),
+    ("campaign/go-live/preparing", "go_live_prepare"),
+    ("campaign/go-live/confirmation", "go_live_confirm"),
     ("campaign/production", "production_progress"),
-    ("campaign/production/cancellation", "production_withdrawal"),
     ("reports", "reports"),
     ("reports/responses", "response_dashboard"),
     ("reports/comparison", "campaign_comparison"),

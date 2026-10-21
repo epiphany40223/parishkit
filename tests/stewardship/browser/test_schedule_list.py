@@ -199,7 +199,8 @@ def test_delete_asks_in_a_dialog_then_redraws_the_table_in_place(
     delete.click()
     visible(dialog(page))
     assert dialog(page).locator("h2").inner_text() == "Delete Reminder 1?"
-    assert "never recalled" in dialog(page).inner_text()
+    # Reminder 1 has sent nothing, so nothing is said about recalling (R40b).
+    assert "never recalled" not in dialog(page).inner_text()
     # The safe choice has focus, and Tab stays inside the dialog.
     assert page.evaluate("document.activeElement.textContent.trim()") == "Cancel"
     page.keyboard.press("Tab")
@@ -245,6 +246,8 @@ def test_delete_selected_names_the_count(page, component_origin):
     bulk.click()
     visible(dialog(page))
     assert dialog(page).locator("h2").inner_text() == "Delete 2 scheduled emails?"
+    # Neither reminder has sent: no word about recalling sent email (R40b).
+    assert "never recalled" not in dialog(page).inner_text()
     with page.expect_request(lambda request: request.method == "POST") as sent:
         dialog(page).get_by_role("button", name="Delete", exact=True).click()
     assert len(posted(sent.value)["schedule_id"]) == 2
@@ -254,6 +257,41 @@ def test_delete_selected_names_the_count(page, component_origin):
         page.locator("main > [role=status]", has_text="Deleted 2 scheduled emails.")
     )
     assert page.evaluate("window.notReloaded === true")
+    assert not failures
+
+
+def test_delete_says_sent_email_is_not_recalled_only_for_one_that_sent(
+    page, component_origin
+):
+    """The Delete confirmation's caution (R40b) is said only while a chosen
+    schedule has sent email: the Weekly Admin digest has, the reminders
+    have not. Delete selected says it once the digest is ticked too."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + BULK)
+    failures = watch(page)
+    caution = dialog(page).get_by_text("Email already sent is never recalled")
+    page.get_by_role("button", name="Delete Weekly Admin digest").click()
+    visible(dialog(page))
+    visible(caution)
+    page.keyboard.press("Escape")
+    hidden(dialog(page))
+    page.get_by_role("button", name="Delete Reminder 2").click()
+    visible(dialog(page))
+    hidden(caution)
+    page.keyboard.press("Escape")
+    hidden(dialog(page))
+    boxes = page.locator("input[data-select-row]")
+    boxes.nth(1).check()
+    page.get_by_role("button", name="Delete selected").click()
+    visible(dialog(page))
+    hidden(caution)
+    page.keyboard.press("Escape")
+    hidden(dialog(page))
+    boxes.nth(0).check()
+    page.get_by_role("button", name="Delete selected").click()
+    visible(dialog(page))
+    assert dialog(page).locator("h2").inner_text() == "Delete 2 scheduled emails?"
+    visible(caution)
     assert not failures
 
 
@@ -848,14 +886,18 @@ def test_once_applying_nothing_dismisses_the_dialog(page, component_origin):
 
 
 def test_a_field_error_stays_on_the_form(page, component_origin):
-    """A date after the campaign: the dialog stays shut, the date is marked
-    with its message where the server draws it, and the summary has focus."""
+    """A date the server refuses: the dialog stays shut, the date is marked
+    with its message where the server draws it, and the summary has focus.
+
+    The page's own window check (#1787) admits October 15, so this is a
+    refusal only the server makes (its answer here refuses any date).
+    """
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + NEW_INVALID)
     failures = watch(page)
     choose(page, "kind", "reminder")
     date = page.locator('[name="schedule-date"]')
-    date.fill("2054-11-15")
+    date.fill("2054-10-15")
     page.locator('[name="schedule-time"]').fill("6am")
     choose(page, "template_version", email_for(page, "reminder"))
     page.get_by_role("button", name=ADD).click()
@@ -866,14 +908,17 @@ def test_a_field_error_stays_on_the_form(page, component_origin):
     message = page.locator("#id_schedule-date_error")
     visible(message)
     assert message.inner_text() == DATE_REFUSAL
-    # Just before the field, as on a page the server drew.
-    assert message.evaluate("node => node.nextElementSibling.id") == "id_schedule-date"
+    # In the date's reserved line just before it, as the server draws it.
+    assert (
+        message.evaluate("node => node.parentElement.nextElementSibling.id")
+        == "id_schedule-date"
+    )
     assert date.get_attribute("aria-invalid") == "true"
     assert "id_schedule-date_error" in date.get_attribute("aria-describedby")
     # The reader's values stay, and the form can be edited again.
-    assert date.input_value() == "2054-11-15"
+    assert date.input_value() == "2054-10-15"
     assert not page.evaluate("document.getElementById('schedule-entry-form').inert")
-    date.fill("2054-10-15")
+    date.fill("2054-10-16")
     assert date.get_attribute("aria-invalid") == "false"
     hidden(message)
     assert page.evaluate("window.notReloaded === true")
@@ -945,13 +990,14 @@ def test_tab_reaches_the_review_body_and_arrow_keys_scroll_it(page, component_or
 
 def test_an_accepted_review_clears_an_earlier_field_error(page, component_origin):
     """A date refused, then a Review the server accepts without the date
-    edited: the message placed at the date and its mark go."""
+    edited: the message placed at the date and its mark go. (October 15 is
+    inside the campaign; the refusing answer refuses any date.)"""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + NEW_INVALID)
     failures = watch(page)
     choose(page, "kind", "reminder")
     date = page.locator('[name="schedule-date"]')
-    date.fill("2054-11-15")
+    date.fill("2054-10-15")
     page.locator('[name="schedule-time"]').fill("6am")
     choose(page, "template_version", email_for(page, "reminder"))
     page.get_by_role("button", name=ADD).click()
@@ -1037,7 +1083,8 @@ def test_date_change_review_applies_in_the_dialog_and_returns_to_the_list(
     assert page.evaluate(FOCUSED) == "schedule-dates-review-title"
     text = shown.inner_text()
     assert "Campaign window" in text and "Reminder — Update" in text
-    assert "Email already sent cannot be recalled." in text
+    # The re-planned reminder has sent nothing: nothing to recall (R40b).
+    assert "Email already sent cannot be recalled." not in text
     assert axe_violations(page, axe_source) == []
     assert page.evaluate("window.notReloaded === true")
     with page.expect_request(lambda request: request.method == "POST") as sent:
@@ -1643,3 +1690,38 @@ def test_the_test_waits_for_an_email_and_for_an_open_campaign(page, component_or
     visible(button)
     assert button.is_disabled() and status.inner_text() == NOT_OPEN
     assert not failures
+
+
+@pytest.mark.parametrize("path", [NEW, EDIT])
+def test_send_date_and_time_boxes_line_up_and_stack(page, component_origin, path):
+    """Send date's box is level with Send time's at desktop width (#1851).
+
+    The date field's reserved answer line used to sit above its box and push
+    it about 38px below the time's. At phone width the two fields stack in
+    one column, the date first, without overlapping or scrolling sideways.
+    """
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + path)
+    if path == NEW:
+        choose(page, "kind", "reminder")
+    date = page.locator('[name="schedule-date"]')
+    time = page.locator('[name="schedule-time"]')
+    visible(date)
+    visible(time)
+    assert abs(date.bounding_box()["y"] - time.bounding_box()["y"]) <= 1
+    page.set_viewport_size({"width": 390, "height": 900})
+    # Both boxes are read in one script step, so the page cannot reflow
+    # between the two measurements.
+    first, second = page.evaluate(
+        """() => ['schedule-date', 'schedule-time'].map((name) => {
+            const box = document.querySelector(`[name="${name}"]`)
+                .getBoundingClientRect();
+            return {x: box.x, y: box.y, width: box.width, height: box.height};
+        })"""
+    )
+    assert first["y"] + first["height"] <= second["y"]
+    assert first["x"] >= 0 and first["x"] + first["width"] <= 390
+    assert second["x"] >= 0 and second["x"] + second["width"] <= 390
+    assert page.evaluate(
+        "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
+    )

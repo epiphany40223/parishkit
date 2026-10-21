@@ -106,7 +106,8 @@ def family_contacts(principal, snapshot_id, family_duid):
     and then each active head in DUID order (each from ``_details``);
     ``{"state": "missing"}`` when the snapshot has no such Family; or
     ``{"state": "unavailable"}`` when the snapshot was compacted or replaced
-    before this read (the page then asks for a reload). Raises
+    before this read (the page's notice then brings the details in by
+    itself, #1863, ``web.part_status``). Raises
     ``PermissionError`` for a reader without ``ADDITIONAL_FOLLOWUP``, before
     anything is read.
     """

@@ -1,4 +1,4 @@
-"""Home's Next steps and Today line, for ``home.html`` (NAV-18)."""
+"""Home's Next steps, for ``home.html`` (NAV-18)."""
 
 from django import template
 

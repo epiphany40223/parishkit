@@ -68,7 +68,9 @@ def offsite(tmp_path, monkeypatch):
     monkeypatch.setattr(key_files, "read_private", lambda path: b"key")
     return SimpleNamespace(
         configuration=SimpleNamespace(
-            paths={"backups": backups}, profile=DeploymentProfile.PRODUCTION
+            paths={"backups": backups},
+            profile=DeploymentProfile.PRODUCTION,
+            mail_redirect=None,
         ),
         drive=drive,
         target=target,

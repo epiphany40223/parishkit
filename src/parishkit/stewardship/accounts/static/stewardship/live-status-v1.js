@@ -47,6 +47,16 @@
 // sentence, #1398) replaces the region's contents and watching stops; a 410
 // without one is treated as a refusal (below).
 //
+// A status read answered 409 with the closed not_available code (the
+// region's own menu page became unavailable while it was watched, such as
+// Production activation once go-live was cancelled elsewhere, #1805; UX
+// conventions, "Unavailable menu pages") settles the region too: the
+// refusal's own sentence and link (the menu's reason and its way forward)
+// replace the region's contents, are read out, and watching stops. Any
+// other 409 (a stale page, busy configuration) is retried as before. The
+// JSON form comes from the browser's Sec-Fetch-Mode on fetch(); a browser
+// that sends none gets the HTML page instead, which is retried as before.
+//
 // A pending region may hold a template[data-live-refused]: when a status
 // read is refused (signed out, or no longer allowed, such as after a change
 // that removed the reader's own access), its content replaces the region as
@@ -58,7 +68,9 @@
 // A region may also set data-live-give-up="<ms>" (at most 3 hours) to
 // replace the one-hour limit; the limit then counts from the last poll that
 // brought new content, so a long send watched from well before it starts
-// keeps its pace. Past the limit the region is checked every SLOW_MS.
+// keeps its pace. Past the limit the region is checked every SLOW_MS, or
+// at its own fixed pace when that is slower (a figures status retrying
+// figures it could not read, every 60 s, #1586): slowing never speeds up.
 //
 // A region may hold an element marked [data-live-keep="<name>"] for a control
 // that must sit inside the status it answers but that a poll must never
@@ -119,6 +131,25 @@
 // and coming times worded against today (time[data-time-day]) in mirror
 // targets outside the region are kept up to date as the region's are.
 //
+// A region marked [data-live-slow-every="<ms>"] has a part that is costly to
+// check (System health's two page-load tiles, #1790): its status read does
+// not compute that part, but echoes what the address says. The first check
+// after that long since watching began, or since the last such check that
+// was answered, adds slow=1 to the address, and that answer checks the part
+// again. A hidden tab makes no check at all, so it never asks; the first
+// check once it is shown asks if the time has passed. A slow answer may
+// carry a new data-live-url (the address with the fresh results), which
+// later checks read: the region's address is read at each check, and a
+// fresh region without one keeps the address it has. Its copies of the
+// costly part are template[data-live-mirror] elements marked
+// data-live-mirror-lasting: they are taken out of the region (the page's
+// when watching starts, each answer's as it arrives), so they never count
+// as a change to it, and the last such copy stays in effect through the
+// checks that carry none, so a target held back while the reader points at
+// it or uses it still catches up. A slow answer's copies and address are
+// taken even while the reader holds the region's swap, so a held answer
+// never makes the next checks ask again.
+//
 // An in-place refresh (ui-v1.js, #519) can replace the region itself, such
 // as when Dismiss on an integration's settings page swaps in the page's
 // fresh status. The old region's watcher then stops (its page-wide
@@ -174,6 +205,11 @@
   // The copy each mirror target last took (see mirror()), kept across a
   // restart's new watcher, so a target that was held still catches up.
   const mirrored = new WeakMap();
+  // Each region's lasting mirror copies by name (data-live-mirror-lasting),
+  // and when its last slow check (data-live-slow-every) was answered, both
+  // kept across a restart's new watcher.
+  const lastingCopies = new WeakMap();
+  const slowChecked = new WeakMap();
   // Each region's way to check again at once (data-live-recheck).
   const restarts = new WeakMap();
   // The regions that said they are not current (data-live-not-current),
@@ -204,11 +240,37 @@
     const signal = listening.signal;
 
     const name = region.getAttribute("data-live-status");
-    // A page whose own view counts as activity names a passive status URL to
-    // read instead (same-origin paths only); otherwise it re-reads itself.
-    const own = region.getAttribute("data-live-url");
-    const source = own && own.startsWith("/") && !own.startsWith("//")
-      ? own : window.location.href;
+    // A costly part's slow pace (see the header), and the copies of it that
+    // stay in effect between slow checks.
+    const slowEvery = Number(region.getAttribute("data-live-slow-every"));
+    if (!slowChecked.has(region)) slowChecked.set(region, Date.now());
+    if (!lastingCopies.has(region)) lastingCopies.set(region, new Map());
+    const lasting = lastingCopies.get(region);
+
+    function takeLasting(node) {
+      // Move ``node``'s lasting copies into ``lasting`` (see the header).
+      node.querySelectorAll("template[data-live-mirror-lasting]").forEach((source) => {
+        lasting.set(source.getAttribute("data-live-mirror"), document.importNode(source, true));
+        source.remove();
+      });
+    }
+    takeLasting(region);
+
+    function address() {
+      // The address to read now, and whether it asks for a slow check. A
+      // page whose own view counts as activity names a passive status URL
+      // to read instead (same-origin paths only); otherwise it re-reads
+      // itself. It is read each time, because a slow answer can change it.
+      const own = region.getAttribute("data-live-url");
+      const base = own && own.startsWith("/") && !own.startsWith("//")
+        ? own : window.location.href;
+      if (!(slowEvery > 0) || Date.now() - slowChecked.get(region) < slowEvery) {
+        return { url: base, slow: false };
+      }
+      const url = new URL(base, window.location.href);
+      url.searchParams.set("slow", "1");
+      return { url: url.pathname + url.search, slow: true };
+    }
     // When watching started, or (for a region with its own limit) when it
     // last brought new content.
     let started = Date.now();
@@ -307,6 +369,60 @@
       if (once && !problem.textContent) problem.remove();
     }
 
+    function sameOrigin(url) {
+      // Whether ``url`` (a server-sent path) stays on this site.
+      try {
+        return new URL(url, window.location.href).origin === window.location.origin;
+      } catch {
+        return false;
+      }
+    }
+
+    function settleUnavailable(refusal) {
+      // Replace the region with the not_available refusal's sentence and
+      // its same-origin link, read it out, and stop watching (see the
+      // header). Text only: nothing from the answer is parsed as HTML.
+      // Unlike an ordinary swap it does not wait for a focused control:
+      // the controls it removes (Cancel go-live) can no longer act, so
+      // focus moves to the way forward instead of dropping to the page.
+      const line = document.createElement("p");
+      line.setAttribute("data-live-unavailable", "");
+      line.textContent = refusal.message;
+      const link = refusal.link;
+      let target = line;
+      if (link && link.url && sameOrigin(link.url)) {
+        const anchor = document.createElement("a");
+        anchor.href = link.url;
+        anchor.textContent = link.label || "";
+        line.append(" ", anchor);
+        target = anchor;
+      } else {
+        line.tabIndex = -1;
+      }
+      const hadFocus = region.contains(document.activeElement);
+      region.replaceChildren(line);
+      if (hadFocus) target.focus({ preventScroll: true });
+      region.removeAttribute("data-live-pending");
+      region.setAttribute("data-live-state", "unavailable");
+      region.setAttribute("data-live-announce", line.textContent);
+      speak(region);
+      stop("");
+    }
+
+    async function unavailableRefusal(response) {
+      // The refusal of a 409 answered with the closed not_available code,
+      // or null for any other 409 (or a body that is not that JSON).
+      try {
+        const body = await response.json();
+        const refused = (body.errors || []).find((error) => error.code === "not_available");
+        if (!refused) return null;
+        // The closed code's own message when the answer has no refusal.
+        return { message: refused.message || "", ...(body.refusal || {}) };
+      } catch {
+        return null;
+      }
+    }
+
     function current(value) {
       // Tell the page whether the region is current (data-live-not-current
       // regions only), once per change. Once current again, the region's
@@ -332,14 +448,15 @@
     }
 
     function schedule() {
-      // The next check: the region's pace, or SLOW_MS once the watch has
-      // passed its limit. Nothing is scheduled while the tab is hidden; the
-      // visibilitychange and pageshow listeners below check again at once.
+      // The next check: the region's pace, or SLOW_MS (or a slower fixed
+      // pace) once the watch has passed its limit. Nothing is scheduled while
+      // the tab is hidden; the visibilitychange and pageshow listeners below
+      // check again at once.
       window.clearTimeout(timer);
       if (stopped || gone() || document.visibilityState !== "visible") return;
       const slow = asked - started > giveUp;
-      timer = window.setTimeout(check,
-        slow ? SLOW_MS : fixed || DELAYS[Math.min(attempt, DELAYS.length - 1)]);
+      timer = window.setTimeout(check, slow
+        ? Math.max(SLOW_MS, fixed) : fixed || DELAYS[Math.min(attempt, DELAYS.length - 1)]);
       attempt += 1;
     }
 
@@ -514,8 +631,14 @@
       //
       // A target inside a kept element (data-live-keep) is the reader's, not
       // the status, so it is mirrored too, as one outside the region is.
+      //
+      // The lasting copies (data-live-mirror-lasting) are kept outside the
+      // region and used alongside its own (see the header).
+      const sources = new Map(lasting);
       region.querySelectorAll("template[data-live-mirror]").forEach((source) => {
-        const mirrorName = source.getAttribute("data-live-mirror");
+        sources.set(source.getAttribute("data-live-mirror"), source);
+      });
+      sources.forEach((source, mirrorName) => {
         const html = source.innerHTML;
         document.querySelectorAll("[data-live-mirror-target]").forEach((target) => {
           if (target.getAttribute("data-live-mirror-target") !== mirrorName) return;
@@ -564,7 +687,7 @@
     // the first poll would replace an unchanged button, and a click landing
     // just then (WebKit) could be lost with the old button. A target an
     // earlier watcher of this page already filled keeps what it took.
-    region.querySelectorAll("template[data-live-mirror]").forEach((source) => {
+    [...region.querySelectorAll("template[data-live-mirror]"), ...lasting.values()].forEach((source) => {
       const mirrorName = source.getAttribute("data-live-mirror");
       document.querySelectorAll("[data-live-mirror-target]").forEach((target) => {
         if (target.getAttribute("data-live-mirror-target") === mirrorName
@@ -697,6 +820,7 @@
       if (stopped || gone() || inFlight || document.visibilityState !== "visible") return;
       inFlight = true;
       asked = Date.now();
+      const { url: source, slow } = address();
       try {
         const response = await fetch(source, {
           credentials: "same-origin",
@@ -728,6 +852,16 @@
             return;
           }
         }
+        if (response.status === 409) {
+          // The page became unavailable while watched (see the header);
+          // any other 409 falls through and is retried.
+          const refusal = await unavailableRefusal(response);
+          if (stopped || gone()) return;
+          if (refusal) {
+            settleUnavailable(refusal);
+            return;
+          }
+        }
         if ([400, 401, 403, 404, 410].includes(response.status) || response.redirected) {
           // Signed out, no longer allowed, gone, or refused as a bad request
           // (such as Slack turned off): retrying cannot help.
@@ -751,6 +885,15 @@
         if (!fresh) throw new Error("status region missing");
         failures = 0;
         say("");
+        // A slow answer's lasting copies and address are taken at once,
+        // even while the swap below is held, and the slow check counts from
+        // when it was sent (see the header).
+        takeLasting(fresh);
+        if (slow) {
+          const own = fresh.getAttribute("data-live-url");
+          if (own) region.setAttribute("data-live-url", own);
+          slowChecked.set(region, asked);
+        }
         if (busy()) {
           // Wait for the Admin; check again later without replacing their
           // input. "Last checked" stays put: the region was not brought up

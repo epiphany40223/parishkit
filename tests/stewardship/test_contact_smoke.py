@@ -13,10 +13,13 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import requests
 
 import parishkit
 from parishkit import __version__
 from parishkit.config import ConfigError
+from parishkit.parishsoft import DEFAULT_API_BASE_URL
+from parishkit.parishsoft_http_worker import LOCAL_SOURCE_BASE_URL
 from parishkit.stewardship import provider_check_worker, smoke
 from parishkit.stewardship.accounts.key_files import write_private
 from parishkit.stewardship.deployment import ServiceRole
@@ -435,25 +438,112 @@ def test_the_command_refuses_without_an_explicit_confirmed_member(
         smoke.check_parishsoft_contact(configuration, **contact_args(**changes))
 
 
-def test_the_command_never_runs_in_the_local_profile(
-    tmp_path, monkeypatch, no_database
-):
-    """pk-local never writes to ParishSoft (#1399): refused before the
-    database, the tenant read or the gateway."""
+def local_worker(tmp_path, base_url=None, key=b"key"):
+    """A LOCAL worker reading the fake (the default) or ``base_url``."""
     from dataclasses import replace
 
     from parishkit.stewardship.deployment import DeploymentProfile
 
-    configuration = replace(
-        consumer(tmp_path, ServiceRole.WORKER, parishsoft=b"key"),
+    return replace(
+        consumer(tmp_path, ServiceRole.WORKER, parishsoft=key),
         profile=DeploymentProfile.LOCAL,
+        parishsoft_base_url=base_url,
     )
+
+
+def test_the_command_in_the_local_profile_with_the_real_api_is_refused(
+    tmp_path, monkeypatch, no_database
+):
+    """pk-local never writes to the real ParishSoft (#1399, #1884): with the
+    real API it is refused before the database, the tenant read or the
+    gateway, by the shared write rule."""
+    configuration = local_worker(tmp_path, DEFAULT_API_BASE_URL)
     monkeypatch.setattr(
         smoke, "check_parishsoft", lambda *a, **k: pytest.fail("checked")
     )
-    with pytest.raises(ConfigError, match="local profile"):
-        smoke.check_parishsoft_contact(configuration, **contact_args(send=True))
+    monkeypatch.setattr(
+        ParishSoftContactGateway,
+        "open_operator",
+        classmethod(lambda cls, *a, **k: pytest.fail("opened")),
+    )
+    for send in (False, True):
+        with pytest.raises(ConfigError, match="only against the local fake"):
+            smoke.check_parishsoft_contact(configuration, **contact_args(send=send))
     assert no_database == []
+
+
+def test_the_command_in_the_local_profile_runs_against_the_fake(
+    tmp_path, monkeypatch, no_database
+):
+    """A LOCAL deployment reading the fake runs the same check as Production,
+    and its gateway is opened for the fake's base URL only."""
+    configuration = local_worker(tmp_path)
+    gateway = FakeGateway(member())
+    gateway.close = lambda: None
+    opened = []
+    monkeypatch.setattr(
+        ParishSoftContactGateway,
+        "open_operator",
+        classmethod(lambda cls, credential, **kwargs: opened.append(kwargs) or gateway),
+    )
+    monkeypatch.setattr(provider_check_worker, "_parishsoft", outcome("valid"))
+    result = smoke.check_parishsoft_contact(configuration, **contact_args(send=True))
+    assert result["confirmed"] is True and no_database == [configuration]
+    assert opened[0]["profile"] == "local"
+    assert opened[0]["base_url"] == LOCAL_SOURCE_BASE_URL
+
+
+def test_the_local_tenant_check_reaches_the_in_process_fake(
+    tmp_path, monkeypatch, no_database
+):
+    """The tenant check is not stubbed on the LOCAL path: it asks the fake's
+    organizations/search, so drift in the fake's answer (organization 1001)
+    fails here instead of stopping the pk-local smoke check at
+    ``credential != valid``. The Member read stays on the fake gateway."""
+    from parishkit.stewardship.local import LOCAL_ORGANIZATION_ID, LOCAL_PARISHSOFT_KEY
+    from parishkit.stewardship.local.fake_parishsoft import (
+        BASE_PATH,
+        FakeConfiguration,
+        FakeParishSoft,
+    )
+
+    from .test_provider_checks import Response
+
+    path = tmp_path / "fake-parishsoft.json"
+    path.write_text(
+        json.dumps(
+            {"seed": 1, "families": 40, "anchor_date": "2026-09-16", "release_at": None}
+        )
+    )
+    fake = FakeParishSoft(FakeConfiguration.read(path))
+    asked = []
+
+    def request(session, method, url, **kwargs):
+        """Answer the check's request from the fake, with no socket."""
+        asked.append((method, url))
+        assert url.startswith(LOCAL_SOURCE_BASE_URL)
+        status, content = fake.handle(
+            method,
+            BASE_PATH + url[len(LOCAL_SOURCE_BASE_URL) :].lstrip("/"),
+            kwargs.get("json"),
+            {"x-api-key": session.headers["x-api-key"]},
+        )
+        return Response(status=status, body=content)
+
+    monkeypatch.setattr(requests.Session, "request", request)
+    configuration = local_worker(tmp_path, key=LOCAL_PARISHSOFT_KEY.encode())
+    gateway = FakeGateway(member())
+    gateway.close = lambda: None
+    monkeypatch.setattr(
+        ParishSoftContactGateway,
+        "open_operator",
+        classmethod(lambda cls, credential, **kwargs: gateway),
+    )
+    result = smoke.check_parishsoft_contact(
+        configuration, **contact_args(organization_id=LOCAL_ORGANIZATION_ID)
+    )
+    assert asked == [("POST", LOCAL_SOURCE_BASE_URL + "/organizations/search")]
+    assert result["credential"] == "valid"
 
 
 def test_the_command_runs_only_in_the_worker(tmp_path, no_database):
@@ -487,6 +577,7 @@ def test_the_command_checks_the_tenant_then_round_trips_the_one_member(
     assert result["credential"] == "valid" and result["confirmed"] is True
     assert gateway.reads == [42, 42, 42] and {w[0] for w in gateway.writes} == {42}
     assert opened[0]["profile"] == configuration.profile.value
+    assert opened[0]["base_url"] == DEFAULT_API_BASE_URL
     assert opened[0]["on_timeout"] is smoke._contact_timeout
     assert gateway.closed is True
     # The marker step went to standard error before the restore.

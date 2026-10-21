@@ -14,10 +14,12 @@ import pytest
 from .pledges_components import (
     ACCEPTED,
     ACCEPTED_NOTICE,
+    ADDRESS,
     CHECKED,
     EDITED,
     EDITED_NOTICE,
     EVERY,
+    EVERY_ADDRESS,
     PATH,
 )
 from .test_bulk_bar import assert_accessible
@@ -118,6 +120,20 @@ def test_every_stage_shows_each_decision_in_force(page, component_origin):
     )
     assert "Entered by staff@example.org" in marked.inner_text()
     visible(row(page, 6).get_by_role("button", name="Send Family 06 back to review"))
+
+
+def test_a_reload_keeps_the_applied_stage(page, component_origin):
+    """Changing the Stage in place puts the view's own address in the address
+    bar, so a reload draws the Stage on screen, not the old one (#1820)."""
+    page.goto(component_origin + ADDRESS)
+    posts_to(page, component_origin, EVERY)
+    page.get_by_label("Stage").select_option("all")
+    page.get_by_role("button", name="Apply filters").click()
+    page.wait_for_url(component_origin + EVERY_ADDRESS)
+    page.reload()
+    assert page.url == component_origin + EVERY_ADDRESS
+    assert page.get_by_label("Stage").input_value() == "all"
+    assert page.locator("#table tbody tr").count() == 6
 
 
 def test_bulk_accept_records_in_place(page, component_origin):

@@ -10,7 +10,7 @@ from parishkit.stewardship.campaigns.work_locks import (
     require_work_order,
     work_transaction,
 )
-from parishkit.stewardship.deployment import recorded_profile
+from parishkit.stewardship.deployment import recorded_mail_redirect, recorded_profile
 from parishkit.stewardship.mail_catcher import MailTransport, workspace_transport
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.web.contracts import check_version
@@ -83,21 +83,27 @@ def _context(attempt, target, organization_id):
     return validated_context(target, values)
 
 
-def admit_candidate(target, candidate, profile):
+def admit_candidate(target, candidate, profile, *, redirect):
     """Parse a Workspace or Slack candidate under the deployment profile (#476).
 
-    This is the web intake's half of the Workspace two-way refusal, repeated
-    by the isolated installer's provider check. The Workspace candidate must
-    be the mail-catcher document in LOCAL and a Google service account
-    anywhere else. A Slack token is parsed the same way in every profile
-    (#1399): LOCAL may hold a test token, so pk-local runs Production's Slack
-    code. Every refusal is a ConfigError, so the pages show their one generic
-    format message and never echo the candidate.
+    This is the web intake's half of the Workspace transport rule, repeated
+    by the isolated installer's provider check. The Workspace candidate may
+    be the mail-catcher document only in LOCAL; a Google service account is
+    admitted in every other profile and, in LOCAL, only beside the
+    deployment's mail ``redirect`` on the normal clock (#1399,
+    ``mail_catcher.admit_real_workspace``). A Slack token is parsed the same
+    way in every profile (#1399): LOCAL may hold a test token, so pk-local
+    runs Production's Slack code. Every refusal is a ConfigError, so the
+    pages show their one generic format message and never echo the
+    candidate.
     """
     if target == "slack":
         slack_candidate(candidate)
-    elif workspace_transport(candidate, profile) is MailTransport.GMAIL:
-        # Outside LOCAL the candidate must be a well-formed service account,
+    elif (
+        workspace_transport(candidate, profile, redirect=redirect)
+        is MailTransport.GMAIL
+    ):
+        # Anything but the mail catcher must be a well-formed service account,
         # exactly as before the mail catcher existed.
         workspace_info(candidate)
 
@@ -163,7 +169,12 @@ def stage_credential(
                 ) from None
         else:
             try:
-                admit_candidate(target, candidate, recorded_profile())
+                admit_candidate(
+                    target,
+                    candidate,
+                    recorded_profile(),
+                    redirect=recorded_mail_redirect(),
+                )
             except ConfigError:
                 raise ValueError("The credential has an invalid format.") from None
         # A token discarded by turning Slack off stays as a scrubbed
