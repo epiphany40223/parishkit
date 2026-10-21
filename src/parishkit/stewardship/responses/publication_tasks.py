@@ -56,7 +56,7 @@ from .models import ProposedChange
 from .publication import PLANNABLE_EXECUTIONS, plan_entity
 from .publication_gateway import ContactGatewayError
 from .publication_models import PublicationConfirmation, PublicationPlan
-from .publication_plans import confirm_plan, record_plan
+from .publication_plans import confirm_plan, record_plan, unlisted_changes
 from .publication_worker import (
     REQUEST_SECONDS,
     PublicationDisabled,
@@ -198,8 +198,10 @@ def _request_binding(execution):
 def approved_changes(campaign_id):
     """Every open, approved, Automatic Member change of the campaign.
 
-    The changes a preflight plans, from the campaign's live responses; the
-    Publish to ParishSoft page counts the same ones as waiting (#528).
+    The changes a preflight considers, from the campaign's live responses.
+    Preflight and the Publish to ParishSoft page's waiting count (#528)
+    both leave out those whose Member left the Family
+    (``publication_plans.unlisted_changes``, #1738).
     """
     return ProposedChange.objects.filter(
         submission__campaign_id=campaign_id,
@@ -230,7 +232,12 @@ def _preflight_scope():
     """The campaign, promoted snapshot, organization and changes to plan.
 
     The changes are every open, approved, Automatic Member change from a
-    live response in the current campaign; they are grouped by Member.
+    live response in the current campaign; they are grouped by Member. A
+    change whose Member the promoted data no longer lists, active and
+    living, in that change's Family (``unlisted_changes``, #1738) is left
+    out: it stays open and unplanned, and its Member is not read for it.
+    So a Member with changes from two Families (one they left, kept by
+    rule 4, and the one they are in now) plans only the current Family's.
     """
     campaign_id = _current_campaign()
     current = SourceCurrent.objects.get(singleton=True)
@@ -243,6 +250,8 @@ def _preflight_scope():
             "entity_key", "field", "pk"
         )
     )
+    unlisted = unlisted_changes(row.pk for row in rows)
+    rows = [row for row in rows if row.pk not in unlisted]
     members = {}
     for row in rows:
         members.setdefault(row.entity_key, []).append(row)

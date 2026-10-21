@@ -355,6 +355,10 @@ def test_the_page_fits_and_has_no_wcag_violation(
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + PATH)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    # A Member who left the Family (#1738): the shared badge beside the name.
+    badge = page.locator('[data-source-status="moved"]')
+    has_text(badge, "Not in ParishSoft")
+    assert "Member 01" in badge.locator("xpath=..").inner_text()
     assert_accessible(page, axe_source)
     icon(page, 2, "Edit").click()
     visible(page.locator("#census-edit-dialog-2"))
