@@ -28,22 +28,12 @@ BEGIN
         USING ERRCODE='23514'; END IF;
     SELECT * INTO prior FROM stewardship_information_revision
         WHERE item_id=item.id ORDER BY expected_version DESC LIMIT 1;
-    -- An Ignored request (its latest revision ignored it, or, saved before
-    -- migration 0126, left follow-up not needed) leaves Ignored, whether
-    -- back to review or straight to follow-up, only with a new note saying
-    -- why, as the review pipeline requires: the request's earlier notes,
-    -- which a revision carries forward, are not one.
-    IF NEW.review_decision<>'ignored'
-       AND (NEW.notes !~ '\S' OR NEW.notes=prior.notes)
-       AND prior.id IS NOT NULL AND NOT item.follow_up_needed
-       AND item.followed_up_at IS NULL
-       AND coalesce(prior.review_decision,'ignored')='ignored'
-    THEN RAISE EXCEPTION 'Reopening an ignored request needs a note'
-        USING ERRCODE='23514'; END IF;
+    -- An Ignored request leaves Ignored, whether back to review or
+    -- straight to follow-up, with an optional note, as every decision
+    -- takes one (#1889).
     -- Leaving Handled (a completed follow-up cleared, whether by the
     -- worklist's Back to review or the command line's clear) undoes a
-    -- terminal step, which needs a new note saying why, as reopening an
-    -- Ignored request does (#1840).
+    -- terminal step, which needs a new note saying why (#1840).
     IF item.followed_up_at IS NOT NULL AND NOT NEW.followed_up
        AND (NEW.notes !~ '\S' OR NEW.notes=prior.notes)
     THEN RAISE EXCEPTION 'Undoing a handled request needs a note'

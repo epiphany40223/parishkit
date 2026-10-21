@@ -429,15 +429,20 @@ def test_testing_responses_take_no_resolution(response_service):
         forge_pair(home, admin, "entered", "execution='resolved_external'")
 
 
-def test_reopen_needs_a_note(response_service):
-    """Undoing an Ignore says why, in the service and in SQL."""
+def test_reopen_takes_an_optional_note(response_service):
+    """Undoing an Ignore takes an optional note (#1889), in SQL and in the
+    service; a blank one is no note."""
+
+    class Admitted(Exception):
+        """Rolls back a resolution the guard admitted."""
+
     harness, admin, staff, home, _ = prepared(response_service)
     resolve(harness, staff, home, "ignored")
     home.refresh_from_db()
-    with pytest.raises(ValueError):
-        resolve(harness, admin, home, "reopened", note="   ")
+    # The guard is a BEFORE INSERT trigger, so the row is admitted once the
+    # statement returns; raising then rolls it back unrecorded.
     with (
-        pytest.raises((IntegrityError, DatabaseError)),
+        pytest.raises(Admitted),
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
         work_transaction(),
         connection.cursor() as cursor,
@@ -449,3 +454,7 @@ def test_reopen_needs_a_note(response_service):
             "gen_random_uuid(),'reopened',E'\\t\\n ')",
             [admin, home.pk, home.version],
         )
+        raise Admitted
+    resolve(harness, admin, home, "reopened", note="   ")
+    home.refresh_from_db()
+    assert (home.decision, home.execution) == ("unreviewed", "pending")

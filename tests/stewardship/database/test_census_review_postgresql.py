@@ -82,10 +82,9 @@ def test_approve_ignore_and_back_to_review_keep_history_and_audit(response_servi
         "after_version": first.expected_version + 1,
     }
     review(harness, admin, name, "ignored")
-    # Sending an ignored change back to review says why (#1683).
-    with pytest.raises(ValueError):
-        review(harness, admin, fresh(name), "unreviewed", note=" ")
-    review(harness, admin, fresh(name), "unreviewed", note="Asked again")
+    # Sending an ignored change back to review takes an optional note
+    # (#1889); a blank one is none.
+    review(harness, admin, fresh(name), "unreviewed", note=" ")
     name = fresh(name)
     assert name.decision == "unreviewed"
     assert [row.decision for row in name.reviews.order_by("expected_version")] == [
@@ -198,25 +197,19 @@ def forge(proposal, actor, decision, *, update=True, assignments=None, version=N
             )
 
 
-@pytest.mark.parametrize(
-    "case", ["leader", "reopen_without_note", "stale", "unchanged", "unknown"]
-)
+@pytest.mark.parametrize("case", ["leader", "stale", "unchanged", "unknown"])
 def test_sql_refuses_a_forged_review(response_service, case):
     """The review guard holds even when the service is bypassed: a Ministry
-    leader, an ignored change sent back without a note (#1683), a stale
-    version, an unchanged decision and an unknown actor are refused."""
-    harness, admin, staff, home, name = prepared(response_service)
-    if case == "reopen_without_note":
-        review(harness, staff, home, "ignored")
-        home = fresh(home)
+    leader, a stale version, an unchanged decision and an unknown actor are
+    refused. (An ignored change sent back without a note is admitted since
+    #1889; test_census_pipeline_review_postgresql checks that.)"""
+    harness, admin, _, _, name = prepared(response_service)
     target, actor, decision, version = {
         "leader": (name, leader(harness, admin) if case == "leader" else None),
-        "reopen_without_note": (home, staff),
         "stale": (name, admin),
         "unchanged": (name, admin),
         "unknown": (name, uuid4()),
     }[case] + {
-        "reopen_without_note": ("unreviewed", None),
         "stale": ("approved", name.version + 1),
         "unchanged": ("unreviewed", None),
     }.get(case, ("approved", None))

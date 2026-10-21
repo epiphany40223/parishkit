@@ -38,8 +38,6 @@ from .admin_roster_tick import admit_with, scoped_write
 # The longest Staff notes the page's form takes (its textarea's maxlength,
 # which ``update_information`` enforces again).
 MAX_NOTES = 5000
-# Reopening an ignored request needs a reason (#1685), as on the page.
-REOPEN_NOTE = "This request is Ignored; give --notes saying why it is reopened."
 # Clearing a completed follow-up undoes Handled, which needs a reason too
 # (#1840), as Back to review on the worklist does.
 UNDO_NOTE = "This request is Handled; give new --notes saying why it is undone."
@@ -237,8 +235,9 @@ def update_information_item(
     (``_kept``). The item must be a Live item of the current campaign (else
     ``not_available``); then the page's service checks the version (else
     ``stale_version``), the clearing confirmation (``invalid`` at
-    ``confirm_clear``) and, for clearing a completed follow-up or reopening
-    an Ignored request, new notes (``invalid`` at ``notes``), and records
+    ``confirm_clear``) and, for clearing a completed follow-up, new notes
+    (``invalid`` at ``notes``; reopening an Ignored request needs none,
+    #1889), and records
     ``information_updated``. The key binds the revision: a repeat with the
     same change returns it and records nothing, and the key with another
     change is ``invalid``. A new revision records
@@ -249,7 +248,6 @@ def update_information_item(
     from .campaigns.work_locks import require_work_order
     from .responses.information import (
         ClearUnconfirmed,
-        ReopenNeedsNote,
         UndoNeedsNote,
         update_information,
     )
@@ -292,8 +290,6 @@ def update_information_item(
             raise InvalidFollowup([problem("confirm_clear", CONFIRM_CLEAR)]) from None
         except UndoNeedsNote:
             raise InvalidFollowup([problem("notes", UNDO_NOTE)]) from None
-        except ReopenNeedsNote:
-            raise InvalidFollowup([problem("notes", REOPEN_NOTE)]) from None
         if previous is None:
             _record_command(
                 Action.ADMIN_CMD_FOLLOWUP_INFORMATION_UPDATE, actor, caller, written

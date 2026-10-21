@@ -5,7 +5,7 @@
 {% if bound %}{% include 'stewardship/export-request-bound.html' %}
 {% elif zone %}<p role="alert">{% translate "The dates came without your computer's time zone. Go back, reload the page and apply the filters again; if this repeats, check your computer's time zone setting." %}</p>
 {% elif status == 503 %}<p role="alert">{% translate "This information is temporarily unavailable. Please retry later." %}</p>
-{% else %}<p role="alert">{% translate "Check the filters and the choice you made. Sending an ignored request back to review needs a note. Nothing was recorded." %}</p>{% endif %}
+{% else %}<p role="alert">{% translate "Check the filters and the choice you made. Undoing Handled, for example, needs a note saying why. Nothing was recorded." %}</p>{% endif %}
 {% if item_id %}<p><a href="{% url 'admin:information_item' item_id %}">{% translate "Reload this item" %}</a></p>{% endif %}
 <p><a href="{% url 'admin:information_queue' %}">{% translate "Return to Additional information" %}</a></p>
 {% endblock %}

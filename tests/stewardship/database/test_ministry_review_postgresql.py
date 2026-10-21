@@ -181,9 +181,9 @@ def view(harness, principal, **values):
 
 
 def test_accept_ignore_and_back_to_review(response_service):
-    """Staff decide in one step and undo it; reopening an ignored one needs a
-    note, and so does undoing Entered by hand, which keeps the Accept
-    (#1840)."""
+    """Staff decide in one step and undo it; reopening an ignored one takes
+    an optional note (#1889), and undoing Entered by hand, which keeps the
+    Accept, needs one (#1840)."""
     harness = setup(response_service)
     staff = actor(harness, {"staff"}, ())
     join, leave = requests()
@@ -198,12 +198,17 @@ def test_accept_ignore_and_back_to_review(response_service):
     assert rows[str(join.pk)]["placement"].stage is Stage.TO_ENTER_BY_HAND
     assert rows[str(leave.pk)]["placement"].stage is Stage.IGNORED
     assert rows[str(leave.pk)]["decision_label"] == "Ignored: Stayed in the Ministry"
-    # Reopening the ignored request needs its note.
-    with pytest.raises(ValueError):
-        decide(harness, staff, "back_to_review", leave)
-    decide(harness, staff, "back_to_review", leave, note="Asked again by phone")
+    # Reopening the ignored request takes an optional note (#1889).
+    decide(harness, staff, "back_to_review", leave)
     assert (leave.state, leave.outcome) == ("in_progress", None)
     assert leave.resolved_at is None
+    decide(harness, staff, "ignore", leave)
+    decide(harness, staff, "back_to_review", leave, note="Asked again by phone")
+    assert (leave.state, leave.outcome) == ("in_progress", None)
+    revision = MinistryWorkflowRevision.objects.filter(request=leave).latest(
+        "expected_version"
+    )
+    assert revision.decision_note == "Asked again by phone"
     # Entered by hand ticks the accepted join; Back to review undoes the
     # tick, with a note, back to To enter by hand.
     decide(harness, staff, "entered_by_hand", join)
@@ -223,7 +228,8 @@ def test_accept_ignore_and_back_to_review(response_service):
     stale.version = 1
     with pytest.raises(StaleDecision):
         decide(harness, staff, "accept", stale)
-    assert MinistryWorkflowRevision.objects.count() == 4
+    # Accept, two Ignores, two reopenings and the undo of Entered by hand.
+    assert MinistryWorkflowRevision.objects.count() == 6
 
 
 def test_bulk_decisions_are_all_or_none(response_service):
@@ -406,8 +412,13 @@ def test_replays_and_a_family_answer_after_back_to_review(response_service):
 
 
 def test_the_sql_guard_refuses_unpaired_reopens(response_service):
-    """Directly, the revision guard refuses a reopen with no note of an
-    ignored request and a withdrawal of a Family's request."""
+    """Directly, the revision guard admits a reopen with no note of an
+    ignored request (#1889) and refuses a withdrawal of a Family's
+    request."""
+
+    class Admitted(Exception):
+        """Rolls back a write the guard admitted."""
+
     harness = setup(response_service)
     staff = actor(harness, {"staff"}, ())
     join, _leave = requests()
@@ -419,15 +430,20 @@ def test_the_sql_guard_refuses_unpaired_reopens(response_service):
         expected_version=join.version,
     )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        for values in (
-            dict(state="in_progress", decision_note=""),
-            dict(state="cancelled", decision_note="Withdraw it"),
+        # The guard is a BEFORE INSERT trigger, so the row is admitted once
+        # create returns; raising then rolls it back unrecorded.
+        with pytest.raises(Admitted), work_transaction():
+            MinistryWorkflowRevision.objects.create(
+                **(base | dict(state="in_progress", decision_note=""))
+            )
+            raise Admitted
+        with (
+            pytest.raises(DatabaseError, match="not valid for this request"),
+            work_transaction(),
         ):
-            with (
-                pytest.raises(DatabaseError, match="not valid for this request"),
-                work_transaction(),
-            ):
-                MinistryWorkflowRevision.objects.create(**(base | values))
+            MinistryWorkflowRevision.objects.create(
+                **(base | dict(state="cancelled", decision_note="Withdraw it"))
+            )
 
 
 def test_staff_add_a_request_in_place_of_an_ignored_one(response_service):

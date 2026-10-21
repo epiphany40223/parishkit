@@ -224,13 +224,14 @@ def test_information_counts_ids_and_decisions(live_response_service, google, cli
     assert code == 0 and document["result"]["requests"][0]["item_id"] == str(item.pk)
 
 
-def test_ignored_needs_a_note_and_bulk_is_all_or_none(
+def test_ignored_takes_an_optional_note_and_bulk_is_all_or_none(
     live_response_service,
     google,
     cli,  # noqa: F811
 ):
-    """Back to review from Ignored needs a new note, as the page's dialog
-    asks; a bulk decision with one stale request records nothing."""
+    """Back to review from Ignored takes an optional note (#1889), as the
+    page's dialog does; a bulk decision with one stale request records
+    nothing."""
     harness = live_response_service
     old = requested(harness, "PRIVATE first words")
     # Answering again with other words replaces the request: the first one
@@ -245,8 +246,9 @@ def test_ignored_needs_a_note_and_bulk_is_all_or_none(
     code, document = inform(run, "ignore", item)
     assert code == 0, document
     code, document = inform(run, "back_to_review", item)
-    assert code == 1 and document["error"]["code"] == "invalid", document
-    assert [field["field"] for field in document["error"]["fields"]] == ["note"]
+    assert code == 0, document
+    code, document = inform(run, "ignore", item)
+    assert code == 0, document
     # Standard input carries the note, and needs nothing else (no --yes): no
     # decision command prompts any more (#1840).
     code, document = inform(run, "back_to_review", item, note="-", answer=NOTE.encode())
@@ -261,7 +263,7 @@ def test_ignored_needs_a_note_and_bulk_is_all_or_none(
     code, document = inform(run, "accept", old, item)
     assert code == 1 and document["error"]["code"] == "stale_version", document
     assert AdditionalInformationRevision.objects.count() == revisions
-    assert count(INFORMATION_EVENT) == 2
+    assert count(INFORMATION_EVENT) == 4
 
 
 def test_information_refusals(live_response_service, google, cli, monkeypatch):  # noqa: F811
@@ -430,7 +432,8 @@ def test_limitations_counts_files_and_decisions(response_service, google, cli): 
     assert code == 1 and refused["error"]["code"] == "stale_version", refused
     assert count(REVIEWED) == 3
     # Handled asks nothing, as Back to review undoes it (#1840) with a
-    # note, back to To handle; Ignore then reopening needs a note too.
+    # note, back to To handle; Ignore then reopening takes an optional note
+    # (#1889).
     code, document = limit(run, "handled", {member: 1})
     assert code == 0, document
     code, document = limit(run, "back_to_review", {member: 2})
@@ -446,9 +449,6 @@ def test_limitations_counts_files_and_decisions(response_service, google, cli): 
     code, document = limit(run, "ignore", {family: 2})
     assert code == 0, document
     code, document = limit(run, "back_to_review", {family: 3})
-    assert code == 1 and document["error"]["code"] == "invalid", document
-    assert [field["field"] for field in document["error"]["fields"]] == ["note"]
-    code, document = limit(run, "back_to_review", {family: 3}, "--note", "Reopen")
     assert code == 0, document
     code, document = run("report", "limitations", "--stage", "to_review")
     assert code == 0, document

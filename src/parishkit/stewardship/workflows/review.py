@@ -50,7 +50,6 @@ from parishkit.stewardship.pipeline import (
     Action,
     Decision,
     NoteRequired,
-    Stage,
     Stream,
     allowed_actions,
     ministry_placement,
@@ -406,8 +405,8 @@ class MinistryDecisions:
             and undo_needs_note(current.stage)
             and not decision.note.strip()
         ):
-            if current.stage is Stage.IGNORED:
-                raise NoteRequired("Reopening an ignored request needs a note.")
+            # Only a terminal step's undo needs one; reopening an Ignored
+            # request takes an optional note (#1889).
             raise NoteRequired(f"Undoing {current.stage.label} needs a note.")
         if action is Action.BACK_TO_REVIEW and current.stage in TERMINAL_STAGES:
             _undo(principal.identity, target, version, key, decision.note, current)
@@ -431,9 +430,8 @@ class MinistryDecisions:
 
         Notes carry forward unchanged (they are the request page's); the
         decision's own note is ``decision_note``. Back to review reopens a
-        request as In progress, or withdraws one the parish added (the note
-        an ignored request's reopening needs is checked by the caller, on
-        the locked stage); ``kept`` is Back to review of a terminal step,
+        request as In progress, or withdraws one the parish added (its note
+        is optional, #1889); ``kept`` is Back to review of a terminal step,
         which keeps the decision in force (``undo_intent``).
         """
         action = decision.action

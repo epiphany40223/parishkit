@@ -169,6 +169,7 @@
 !src/parishkit/stewardship/schema/migrations/0142_participation_export_summary.sql
 !src/parishkit/stewardship/schema/migrations/0143_reviewed_form_shown_items.sql
 !src/parishkit/stewardship/schema/migrations/0144_staff_timeline_export.sql
+!src/parishkit/stewardship/schema/migrations/0158_ignored_note_optional.sql
 !src/parishkit/stewardship/schema/migrations/0146_census_terminal_undo.sql
 !src/parishkit/stewardship/schema/migrations/0147_census_addition_undo.sql
 !src/parishkit/stewardship/schema/migrations/0148_ministry_terminal_undo.sql

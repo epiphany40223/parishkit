@@ -254,7 +254,7 @@ def _respond(request, campaign_id, *, export, render):
             )
         except ValueError:
             # A malformed form, or a decision the answer does not take (a
-            # reopening with no note): a 400, nothing recorded.
+            # Handled undo with no note): a 400, nothing recorded.
             return _error(campaign_id, status=400)
         # What the audit records: the parsed choices, and the snapshot once
         # the read has named it.
