@@ -29,10 +29,8 @@ from parishkit.stewardship.reports.information_worklist import (
     worklist_page,
 )
 from parishkit.stewardship.web.part_status import part_status
+from parishkit.stewardship.web.review_worklist import page_fields
 from parishkit.stewardship.web.tables import paginate
-
-# The browser zone of the dated fixtures, named alike by every engine.
-DATED_ZONE = "America/Havana"
 
 CAMPAIGN, ITEM_ID = UUID(int=80), UUID(int=81)
 # The worklist's own path: what every heading, navigator, filter and dialog
@@ -155,7 +153,10 @@ def components(context, admin):
             if stage == "all" or row["placement"].stage.value == stage
         ]
         table = paginate(
-            shown, paging, carry=list(query.form_values().items()), sorting=SORTING
+            shown,
+            paging,
+            carry=list(page_fields(query.form_values()).items()),
+            sorting=SORTING,
         )
         worklist, table = worklist_page(counts, query, table, PATH, mutable=mutable)
         return (
@@ -165,8 +166,10 @@ def components(context, admin):
                 "worklist": worklist,
                 "table": table,
                 "query": query,
-                "query_fields": query.form_values(),
-                "export_fields": query.export_values(paging.get("sort", "")),
+                "query_fields": page_fields(query.form_values()),
+                "export_fields": page_fields(
+                    query.export_values(paging.get("sort", ""))
+                ),
                 "notice": notice,
                 "mutable": mutable,
                 "request_key": UUID(int=83),
@@ -225,16 +228,6 @@ def components(context, admin):
         "/information-all": page(size),
         "/information-page-2": page({"size": "25", "page": "2"}),
         "/information-by-name": page({"size": "25", "sort": "-family"}),
-        # What Apply returns for submitted days in the browser's zone (#558).
-        "/information-dated": page(
-            size,
-            information=InformationQuery(
-                disposition="all",
-                start="2026-11-01",
-                end="2026-11-02",
-                zone=DATED_ZONE,
-            ),
-        ),
         ACCEPTED: page(size, ACCEPTED_NOTICE, accepted={0}),
         IGNORED: page(size, IGNORED_NOTICE, ignored={1}),
         REOPENED: page(size, REOPENED_NOTICE),

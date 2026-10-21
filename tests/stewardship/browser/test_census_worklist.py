@@ -358,23 +358,25 @@ def test_the_page_fits_and_has_no_wcag_violation(
 def test_apply_follows_the_last_filter_with_no_line_between(
     page, component_origin, width
 ):
-    """No zone line sits under Census changes' filters (R38 finding 8), and
-    Apply filters with Clear filters follow Through, beside it at 1280 px
-    (R38 finding 9); the page never scrolls sideways."""
+    """Census changes has no submitted-date filter (#1888): no date input,
+    zone field or zone note. Apply filters with Clear filters follow the
+    last filter, Kind of change: beside it on its row, or (when the four
+    fields fill the row, as at 1280 px) on the next one, with no line
+    between (R38 findings 8 and 9); the step chosen is the shared rule's,
+    test_filter_actions_place. The page never scrolls sideways."""
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + PATH)
     form = page.locator("#table-filters")
     assert form.locator("[data-browser-zone-note]").count() == 0
-    through = form.locator("#census-end").locator("xpath=..").bounding_box()
+    assert form.locator("input[type=date], [name=zone]").count() == 0
+    last = form.locator("#census-kind").locator("xpath=..").bounding_box()
     actions = form.locator(".filter-actions").bounding_box()
-    if width == 1280:
-        assert actions["x"] >= through["x"] + through["width"]
-        assert (
-            abs((actions["y"] + actions["height"]) - (through["y"] + through["height"]))
-            <= 2
-        )
-    else:
-        assert through["y"] + through["height"] <= actions["y"]
+    beside = actions["x"] >= last["x"] + last["width"] and (
+        abs((actions["y"] + actions["height"]) - (last["y"] + last["height"])) <= 2
+    )
+    assert beside or last["y"] + last["height"] <= actions["y"]
+    # Nothing sits between the last filter's row and the pair.
+    assert actions["y"] - (last["y"] + last["height"]) <= 16
     assert page.evaluate("document.documentElement.scrollWidth") <= width
 
 

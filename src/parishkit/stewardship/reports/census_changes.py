@@ -202,8 +202,9 @@ class CensusQuery:
     ``history`` are not used. ``pk-admin report census`` and ``export
     census`` still filter by ``status``, whose "open" default is To do and
     Conflict, plus To review for an Administrator, until #1688 renames
-    them. ``start`` and ``end`` are whole days in the browser's ``zone``, as
-    on System logs.
+    them. ``start`` and ``end`` are whole days in ``zone``, as on System
+    logs; only those commands set them, since the page has no date filter
+    (#1888) and drops a stale one unread.
     """
 
     search: str = ""
@@ -242,7 +243,7 @@ class CensusQuery:
         if query.start and query.end and query.start > query.end:
             raise ValueError("Invalid census change date interval.")
         if query.zone not in timezone_names():
-            # Days cannot be placed without the browser's zone; without days
+            # Days cannot be placed without the CLI's --zone; without days
             # the zone is unused, so an unknown one is simply dropped.
             if query.start or query.end:
                 raise UnknownZone("Census change dates need the browser's zone.")
