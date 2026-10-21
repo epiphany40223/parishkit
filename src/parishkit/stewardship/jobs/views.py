@@ -249,6 +249,7 @@ TASK_NAMES = {
     "report_fact_verification": _("Checking report figures"),
     "security_prepare": _("Preparing a security alert email"),
     "leader_email_prepare": _("Preparing Ministry leader emails"),
+    "report_email_prepare": _("Preparing a report email"),
 }
 
 
