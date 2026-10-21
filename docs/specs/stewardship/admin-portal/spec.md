@@ -354,7 +354,12 @@ warns five minutes before sign-out and lets the Admin stay signed in, which
 also keeps the setup attempt. The progress page names the three parts of the load
 (download, save, check) as
 [stage boxes](../ui-conventions/spec.md#stage-boxes), as Finishing setup
-names its steps, and, during the download, each ParishSoft collection
+names its steps; each starts its queued load with the shared Start the
+load box, whose queued sentence the progress page's summary line also
+says while the load waits for a worker
+([#1916](https://github.com/epiphany40223/parishkit/issues/1916)), and a
+load that stopped for good marks the box it stopped in Failed. During the
+download, each ParishSoft collection
 as done, in progress (Ministry rosters as "N of M") or waiting, with its
 record count; the saved-record bar appears once saving starts. The worker
 encodes one step per finished collection in the task's two monotonic
@@ -3768,9 +3773,14 @@ live.
   not a refresh to repeat (Administrator, 2026-10-17). Below its summary
   line, the full refresh's major stages are
   [stage boxes](../ui-conventions/spec.md#stage-boxes), left to right:
-  Download from ParishSoft, Save the downloaded records, Check the new data
-  and Make the new data current, the phases the refresh's worker reports,
-  each marked not started, in progress, done or failed in words.
+  the shared **Start the load** box for the time the run waits for a
+  worker, then Download from ParishSoft, Save the downloaded records, Check
+  the new data and Make the new data current, the phases the refresh's
+  worker reports, each marked not started, in progress, done or failed in
+  words. While the run waits for a worker, the line after the boxes says
+  so in the stage boxes' queued sentence; that line keeps the sentence's
+  height in every state, so nothing moves when the first stage starts
+  ([#1916](https://github.com/epiphany40223/parishkit/issues/1916)).
   The step's state follows only the campaign's *full* refreshes, those
   requested since the campaign was created. A quick (delta) refresh, such as
   a scheduled one, is never "the load": it neither shows the step as

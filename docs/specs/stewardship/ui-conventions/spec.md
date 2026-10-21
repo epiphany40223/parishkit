@@ -3292,7 +3292,29 @@ the work runs, the page updates the boxes in place from a passive status
 read, and announces a change of state politely through the page's
 announcer, once per change, not on every poll; every state draws the same
 boxes and keeps the lines around them reserved, so an update moves nothing
-([no layout shift](#no-layout-shift)). **Why.** The Administrator,
+([no layout shift](#no-layout-shift)).
+Work that waits in the background queue before a worker takes it starts
+with one more box, **Start the load**, ahead of its first real stage. It
+is In progress, with the spinner, from the moment the request is accepted,
+in the page's in-place answer to the button rather than after the first
+status read, and it says "Waiting for the background service to pick up
+the job. This can take a minute or two." (on Finishing setup that is the
+box's own detail line; on the other two pages it is the page's own line
+under the boxes, which keeps its place). It is Done as soon as
+a worker picks the job up, when the next box becomes In progress; a job
+that ends before any worker took it shows Failed on this box. The task's
+own state decides it: a worker's claim moves the task off its first
+phase, so no page guesses from elapsed time. Every page with a queued job
+in stage boxes draws this box and says that sentence, the one phrasing
+for a queued job. **Why.** The Administrator, 2026-10-21 (pk-local R40a):
+a load waited over a minute with every box Not started, and "if they have
+to wait 2-3 minutes before any visual progress occurs, they'll think
+something is wrong"; a first box "named ‘Setup’ or some benign name like
+that, and its spinner starts automatically. Then when the backend picks up
+and starts downloading from PS, it automatically completes the ‘Setup’
+pane and moves to the ‘Download from parishsoft’ pane"
+([#1916](https://github.com/epiphany40223/parishkit/issues/1916)).
+**Why (the boxes).** The Administrator,
 2026-10-17, on the campaign wizard's Load ParishSoft data: "one box for
 each major step in the loading process, proceeding from left to right",
 and the same boxes, from the same code, as setup's Loading parish data and
@@ -3303,7 +3325,8 @@ while running, and light green when done"; and on the spinner
 that stage is actively In progress, to show progress visually. **Shared
 code.** The
 `components/stage-boxes.html` include, `accounts/stages.py` (`rows`, which
-marks the stages before the current one done, and the state words) and
+marks the stages before the current one done, and the state words;
+`START`, `QUEUED` and `queued_index` for the Start the load box) and
 `.stage-boxes` in `ui-v1.css`. **Precedent.** Setup's Loading parish data
 and Finishing setup (#1354), Load ParishSoft data
 ([#1404](https://github.com/epiphany40223/parishkit/issues/1404) PR 5),
