@@ -588,6 +588,40 @@ if [ "$advisory" != t ]; then
     fi
 fi
 
+# The digest retirement (#1834, frozen file 0162) needs the report email
+# conversion done first: its migration (stewardship_reports.0041, frozen
+# file 0161) applied and `upgrade-reports` run, so that no schedule
+# definition is still a digest. On a database without it, step 4 would
+# commit 0161 and then stop at 0162, leaving a restore as the only way
+# back, so refuse here instead, before anything stops. The image answers
+# whether it has the file (test exits 0 or 1; anything else is a failure to
+# ask); the database, in a read-only session, whether it is converted.
+if [ "$mode" = upgrade ]; then
+    retirement=/app/src/parishkit/stewardship/schema/migrations/0162_retire_digests.sql
+    rc=0
+    "${isolated[@]}" --entrypoint test "$image" -f "$retirement" || rc=$?
+    if [ "$rc" -gt 1 ]; then
+        echo "Could not ask $image whether it retires the digests (exit $rc); refusing." >&2
+        exit 1
+    fi
+    if [ "$rc" -eq 0 ]; then
+        converted=$("${dc[@]}" exec -T -e PGOPTIONS='-c default_transaction_read_only=on' postgres \
+            psql -U pk_stewardship_operator -d "$database" -At -v ON_ERROR_STOP=1 -c \
+            "SELECT EXISTS (SELECT 1 FROM public.django_migrations WHERE app='stewardship_reports' AND name='0041_report_conversion') AND NOT EXISTS (SELECT 1 FROM public.stewardship_schedule_definition WHERE kind IN ('daily_digest','weekly_digest'))" \
+            2>&1 || true)
+        if [ "$converted" != t ]; then
+            echo "This release retires the Daily and Weekly digests (migration 0162), but the" >&2
+            echo "database has not finished the report email conversion: the conversion's" >&2
+            echo "migration is not applied or a schedule definition is still a digest (answer:" >&2
+            echo "$(head -3 <<<"$converted"))." >&2
+            echo "Nothing was stopped or changed. Deploy the release that converts the digests" >&2
+            echo "first (its run includes pk-stewardship upgrade-reports), then this one; see" >&2
+            echo "$runbook (Report email conversion)." >&2
+            exit 1
+        fi
+    fi
+fi
+
 step "1. Stopping the background services (web keeps serving)"
 background=$("${dc[@]}" ps --services --status running | grep -vxE 'web|caddy|postgres|valkey' || true)
 restart_background() {
@@ -785,9 +819,13 @@ if [ "$mode" = upgrade ]; then
             # Report emails' migration refuses while digest work is open.
             echo "If it refused because a Daily or Weekly digest send is unfinished, see the" >&2
             echo "operations specification, Report email conversion." >&2
-            # The digest retirement (#1834) refuses a database not yet converted.
+            # The digest retirement (#1834) refuses a database not yet
+            # converted; step 1 checks for that, so this is the fallback.
             echo "If it refused because schedule definitions are still Daily or Weekly digests," >&2
-            echo "upgrade to the release that converts them first (the same section)." >&2
+            echo "the conversion's migration (0161) may already have committed: do not run the" >&2
+            echo "conversion on this database. Restore the pre-upgrade backup with the previous" >&2
+            echo "release first ($runbook#rollback), then upgrade through the release that" >&2
+            echo "converts the digests (the same section)." >&2
             exit 1
         fi
         grants grants
