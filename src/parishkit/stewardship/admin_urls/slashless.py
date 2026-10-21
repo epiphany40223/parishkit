@@ -101,6 +101,7 @@ SLASHLESS = (
     ("users", "users"),
     ("users/new", "user_new"),
     ("users/<uuid:user_id>/edit", "user_edit"),
+    ("users/<uuid:user_id>/timeline", "user_timeline"),
     ("users/sessions", "signed_in_sessions"),
     ("users/automation", "automation_access"),
     ("users/automation/approval", "automation_approval"),

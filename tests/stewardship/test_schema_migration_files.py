@@ -486,6 +486,9 @@ FROZEN = {
     "0151_limitation_handled_undo.sql": (
         "576d22f2d53cb5093794e599ef8f8a0384a187dcd9ee2c8d8505b9291d5d020e"
     ),
+    "0152_audit_actor_time.sql": (
+        "1f7ac38ef615a918afcc7a6ff87d743484b013b5af31b5174b743c87868b96fb"
+    ),
 }
 
 

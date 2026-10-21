@@ -3875,6 +3875,7 @@ unknown email `not_available`, and a key used with another intent `invalid`.
 | `user_name_suggestions` | Covered by `users preview` (#952 slice 5): a new user in the change document without a `name` gets the [default from ParishSoft](../admin-portal/spec.md#name-from-parishsoft), which the preview shows; the other suggested Member names are only counted, under the [personal data](#personal-data-on-the-command-line) rule. Each such lookup is audited and counts toward the Administrator's 60 lookups an hour; past that the preview is `unavailable`. The lookup definer checks the command session itself, so a session it refuses (ended, begun before a recovery, or no longer an Administrator's) is `session_ended` |
 | `user_leader_import`, `user_leaders_status` (the leaders section's passive status, [#1863](https://github.com/epiphany40223/parishkit/issues/1863)) | `users import-leaders --preview`, `users import-leaders --confirm` (#952 leaders slice) |
 | `user_leader_emails` | `users email-leaders --preview`, `users email-leaders --confirm` ([#1622](https://github.com/epiphany40223/parishkit/issues/1622)) |
+| `user_timeline` | `users timeline --user ID [--kind K] [--from DAY] [--to DAY] [--zone ZONE]` ([#1866](https://github.com/epiphany40223/parishkit/issues/1866)); see below |
 | `user_rules`, `rule_apply`, `rule_base`, `rule_request` | Retired by #952: removed with the rule tables and autosave when the users commands land; no rule commands are built |
 | `chair_confirmations`, `chair_reviews`, `assignments` | Retired by #922: removed with Ministry assignments and Chairperson flows; no commands are built |
 | `security_event_acknowledge`, `critical_events_acknowledge` | `events list`, `events acknowledge` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); see below |
@@ -3957,9 +3958,21 @@ checks, audit and alerts:
   `admin_cmd_users_email_leaders` with the page's
   `user_leader_emails_requested`, once: applying the same review again
   returns the first request. No document names a parishioner.
+- `users timeline --user ID` prints one user's
+  [Timeline](../admin-portal/spec.md#user-timeline): the summary (Name,
+  role or when the user was removed, address, Ministries led, last sign-in
+  and last email) and every line, newest first, each with its instant,
+  kind, what happened, detail and, for an email, its delivery ID. `--kind`
+  takes the page's Kind keys (`all`, `sessions`, `actions`, `roles`,
+  `emails`) and `--from` and `--to` whole days in `--zone` (an IANA time
+  zone, required with a day), as the page's From and Through do; the
+  command prints every matching line, unpaged. An unknown user is
+  `not_available` and a refused filter `invalid`. It is read-only, runs
+  the page's own reads, and records the page's `user_timeline_viewed`
+  with the user's record ID.
 
-These need a full-scope session, except `users list` and
-`users preview-upgrade`; none is fresh-gated, as the page asks for no fresh
+These need a full-scope session, except `users list`,
+`users preview-upgrade` and `users timeline`; none is fresh-gated, as the page asks for no fresh
 sign-in. The command shapes are defaults, pending Administrator confirmation.
 
 `users list` and `users preview-upgrade` record the page's view event,
