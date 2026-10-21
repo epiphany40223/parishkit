@@ -13,8 +13,8 @@ from .markup import TABLE, bar, plain, style
 from .registry import STATUS, Block, Section
 
 
-def report_day_bars(document):
-    """Pair each report-day card with what its bar measures, if anything.
+def report_day_figures(document):
+    """Each report-day card: (label, value, bar part, bar whole, note).
 
     Families that have responded are drawn against the Families they are out
     of; the day's first submissions against the campaign's busiest day so far,
@@ -34,13 +34,29 @@ def report_day_bars(document):
             f" (busiest day: {peak:,})" if peak else "",
         ),
     }
-    bars = []
+    figures = []
     for label, value in report_day_cards(document):
         part, whole, note = measures.get(label, (None, None, ""))
         if not day.population_available:
             part, note = None, ""
-        bars.append((label, value, bar(part, whole), note))
-    return tuple(bars)
+        figures.append((label, value, part, whole, note))
+    return tuple(figures)
+
+
+def report_day_bars(document):
+    """Each report-day card with its bar drawn: (label, value, bar HTML, note)."""
+    return tuple(
+        (label, value, bar(part, whole), note)
+        for label, value, part, whole, note in report_day_figures(document)
+    )
+
+
+def capture(document, options):
+    """The report day and its figures, as the snapshot keeps them."""
+    return {
+        "report_day": document.report_day.local_date.isoformat(),
+        "figures": [list(figure) for figure in report_day_figures(document)],
+    }
 
 
 def unbroken(text):
@@ -98,5 +114,6 @@ BLOCK = Block(
     kind=STATUS,
     fact=True,
     draw=draw,
+    capture=capture,
     empty="No campaign day has ended yet.",
 )

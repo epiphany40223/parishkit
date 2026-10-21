@@ -39,7 +39,7 @@ follows the change and then opens the next step not done yet. The
 sub-pages that save (Pages and emails' editor, New and Edit scheduled email;
 ``DIRECT_SUBPAGES``, #1404 PR 4b) save the same way with **Save and go
 back**, and then open their step again. Outside the wizard those pages keep
-their own Save and review dialog (or Preview changes page). Dates and mail
+their own Save (or Preview changes) and review dialog. Dates and mail
 schedules with no schedule saved proposes a starting set (``suggest``, #1404
 PR 6, ``schedule_suggestions``): its primary is then **Add these schedules
 and continue**, which saves them directly the same way, and Continue without

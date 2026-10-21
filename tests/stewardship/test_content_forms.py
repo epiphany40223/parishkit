@@ -450,3 +450,22 @@ def test_an_html_source_error_is_shown_at_the_visual_editor_too():
     assert valid.is_valid()
     shown = render_to_string("stewardship/content-fields.html", {"form": valid})
     assert "visual-content-error" not in shown
+
+
+def test_the_content_is_greyed_and_the_subject_optional_while_removing():
+    """While "Remove this selected content" is ticked the content's fields
+    are greyed in place (data-enabled-when), the banner box excepted, and a
+    removal posted without the greyed (unsent) subject is accepted (#563
+    item 6, #750). An unavailable box needs no marks; without the tick the
+    subject is required as before."""
+    form = ContentForm(kind="email", slot="initial", banner=True)
+    for name in ("subject", "html", "generate_text", "text"):
+        assert 'data-enabled-when="clear!=on"' in str(form[name]), name
+    assert "data-enabled-when" not in str(form["show_banner"])
+    unavailable = ContentForm(kind="email", slot="initial", clear_unavailable="Why.")
+    assert "data-enabled-when" not in str(unavailable["subject"])
+    removal = ContentForm({"base_digest": "a" * 64, "clear": "on"}, kind="email")
+    assert removal.is_valid(), removal.errors
+    assert removal.values(campaign_id=UUID(int=1), slot="initial") is None
+    edit = ContentForm(fields(), kind="email")
+    assert not edit.is_valid() and list(edit.errors) == ["subject"]

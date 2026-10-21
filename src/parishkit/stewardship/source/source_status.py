@@ -33,6 +33,10 @@ NAME_NOT_RECORDED = gettext_noop("Name not recorded in ParishSoft")
 # A download's own column for these words, beside the name it describes:
 # blank when current, so the name cell holds only a name (#1216).
 STATUS_HEADING = gettext_noop("ParishSoft status")
+# The same column for the Member, in a download that also has the Family's
+# (Census changes, #1752): two columns both headed "ParishSoft status" would
+# not say which name each describes.
+MEMBER_STATUS_HEADING = gettext_noop("Member's ParishSoft status")
 
 # A Member who moved to another Family is no longer in this Family's
 # ParishSoft record, so it reads as not in ParishSoft, as a deleted one does.

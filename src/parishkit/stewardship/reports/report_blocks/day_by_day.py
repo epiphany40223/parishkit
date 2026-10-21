@@ -92,6 +92,25 @@ def draw(document, frame, options):
     return Section(day_table_html(names, rows), text)
 
 
+# The most days the table may show (spec, "Day by day table block").
+MAX_DAYS = 14
+
+
+def capture(document, options):
+    """The table's headings and rows, as the snapshot keeps them."""
+    return {
+        "headings": headings(document),
+        "rows": [list(row) for row in digest_rows(document, options["days"])],
+    }
+
+
+def check(options):
+    """Refuse a "days shown" value other than a whole number from 1 to 14."""
+    days = options.get("days", TABLE_DAYS)
+    if type(days) is not int or not 1 <= days <= MAX_DAYS:
+        raise ValueError("The day by day table shows 1 to 14 days.")
+
+
 BLOCK = Block(
     key="day_by_day",
     label="Day by day table",
@@ -104,4 +123,6 @@ BLOCK = Block(
     draw=draw,
     empty="No campaign day has ended yet.",
     options={"days": TABLE_DAYS},
+    check=check,
+    capture=capture,
 )

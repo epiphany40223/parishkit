@@ -52,6 +52,7 @@ TASK_QUEUES = {
     "report_export_cleanup": WorkQueue.GENERAL,
     "report_fact_verification": WorkQueue.GENERAL,
     "report_facts": WorkQueue.GENERAL,
+    "report_email_prepare": WorkQueue.GENERAL,
     "weekly_digest_finalize": WorkQueue.GENERAL,
     "weekly_digest_prepare": WorkQueue.GENERAL,
     "setup_mail_test": WorkQueue.MAIL,
@@ -66,7 +67,7 @@ TASK_QUEUES = {
 BLOCKER_NAMES = {
     "source_refresh": _("the ParishSoft update"),
     "census_publication_preflight": _("the census check against ParishSoft"),
-    "census_publication": _("publishing census changes to ParishSoft"),
+    "census_publication": _("updating ParishSoft with census changes"),
     "setup_source_load": _("the initial ParishSoft data load"),
     "setup_finalize": _("the final initial-setup step"),
     "setup_source_cleanup": _("the initial setup cleanup"),

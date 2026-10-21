@@ -83,6 +83,10 @@ class DeliveryIdentity:
             "operational",
             "security_event",
             "leader_email",
+            # A report email's message (#1786). The outbox's purpose checks
+            # admit it only with the conversion (report-emails spec,
+            # "Database functions").
+            "admin_report",
         ):
             raise ValueError("Invalid delivery identity.")
         family_purpose = self.purpose in (
@@ -282,9 +286,20 @@ class WeeklyRenderInput(RenderInput):
         return MAX_WEEKLY_BODY_BYTES
 
 
+class ReportRenderInput(WeeklyRenderInput):
+    """A report email's render: the weekly digest's larger bound (#1786).
+
+    A report lists every open request, as the weekly report did its new
+    ones, so it keeps that bound; binding still requires the report purpose.
+    """
+
+
 def validate_render_purpose(identity, render):
-    """Reject weekly-only capacity when a render is bound to any other purpose."""
-    if isinstance(render, WeeklyRenderInput) and identity.purpose != "weekly_digest":
+    """Reject the larger report capacity when a render is bound to another purpose."""
+    if isinstance(render, ReportRenderInput):
+        if identity.purpose != "admin_report":
+            raise ValueError("Report rendering requires report delivery identity.")
+    elif isinstance(render, WeeklyRenderInput) and identity.purpose != "weekly_digest":
         raise ValueError("Weekly rendering requires weekly delivery identity.")
 
 

@@ -1,11 +1,12 @@
 {% load i18n %}{% comment %}
 The review dialog's answer for an integration's settings page (#750;
-integration_views._preview, _remove and _key_review, and
-integration_selection_views.review_finish), drawn in the shared review dialog
+integration_views._preview, _remove and _key_review,
+integration_selection_views.review_finish, and backup_key._review), drawn in the shared review dialog
 (UX conventions, "Review dialog") that integration-settings.html includes,
 never as a page of its own: ui-v1.js moves this fragment's content into the
 dialog's body. It shows public settings only, never a key, a key's
-fingerprint or the key field's signed request; the one hidden field is the
+fingerprint (except the Backup encryption key's, below) or the key field's
+signed request; the one hidden field is the
 signed preview (data-review-preview) the dialog's Apply posts back to the
 settings page.
 
@@ -30,6 +31,10 @@ old value"):
   file, so it is named without them.
 - "finish": Finish switching to the new key (#1568), a confirmation, with
   the signed preview and the key change's id (request_id) that Apply posts.
+- "backup_key": the Backup encryption key change once its code is proved
+  (backup-key.html, #750), a compact review: the old and new public key
+  fingerprints (a public key's fingerprint, never any key), with what the
+  change means for backups already made.
 {% endcomment %}{% if kind == "key" %}{% if target == "parishsoft" %}{% translate "Replace the ParishSoft key?" as question %}{% translate "New ParishSoft key saved; it is being checked." as done %}{% translate "The new key is checked with ParishSoft in the background. This usually takes a minute. If the check fails, the current key stays in use." as next %}{% elif target == "google_workspace" %}{% translate "Replace the Google Workspace key?" as question %}{% translate "New Google Workspace key saved; it is being checked." as done %}{% translate "The new key is checked with Google in the background. This usually takes a minute. If the check fails, the current key stays in use." as next %}{% elif setup %}{% translate "Set up Slack?" as question %}{% translate "Slack bot token saved; it is being checked." as done %}{% translate "The bot token is checked with Slack in the background. This usually takes a minute. Slack is set up once the check passes; if it fails, nothing changes." as next %}{% else %}{% translate "Replace the Slack bot token?" as question %}{% translate "New Slack bot token saved; it is being checked." as done %}{% translate "The new bot token is checked with Slack in the background. This usually takes a minute. If the check fails, the current token stays in use." as next %}{% endif %}<div data-review-answer data-review-key data-review-done="{{ done }}" data-review-title="{{ question }}" data-review-describedby="integration-review-summary">
 <div id="integration-review-summary">{% if target == "google_workspace" %}<p>{% translate "The service-account key you pasted replaces the current one." %}</p>{% elif target == "slack" %}<p data-review-key-tail="{% translate 'The bot token you pasted, ending in {tail}, is used from now on.' %}">{% translate "The bot token you pasted is used from now on." %}</p>{% else %}<p data-review-key-tail="{% translate 'The key you pasted, ending in {tail}, replaces the current one.' %}">{% translate "The key you pasted replaces the current one." %}</p>{% endif %}
 {% if changes %}{% include 'stewardship/components/compact-review.html' with changes=changes summary_id="integration-review-lines" %}{% endif %}
@@ -41,6 +46,11 @@ old value"):
 {% include 'stewardship/components/compact-review.html' with changes=changes summary_id="integration-review-lines" %}{% endif %}
 <input type="hidden" name="preview" value="{{ preview }}" data-review-preview>
 <input type="hidden" name="request_id" value="{{ request_id }}">
+</div>
+{% elif kind == "backup_key" %}<div data-review-answer data-review-done="{% translate 'Backup encryption key replaced.' %}" data-review-title="{% translate 'Replace the backup encryption key?' %}" data-review-describedby="integration-review-lines">
+{% include 'stewardship/components/compact-review.html' with changes=changes summary_id="integration-review-lines" %}
+<p>{% translate "You proved you hold the new private key. The next backup is encrypted with the new key. Backups already made still need the old private key: keep it until they have all been deleted by retention." %}</p>
+<input type="hidden" name="preview" value="{{ preview }}" data-review-preview>
 </div>
 {% elif kind == "schedule" %}{% blocktranslate asvar done %}{{ label }} settings changed.{% endblocktranslate %}<div data-review-answer data-review-done="{{ done }}">
 {% if changes %}{% include 'stewardship/components/compact-review.html' with changes=changes summary_id="integration-review-lines" %}{% endif %}

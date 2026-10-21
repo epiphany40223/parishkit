@@ -8,6 +8,7 @@ import pytest
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.pipeline import (
+    Action,
     Decision,
     Placement,
     Stage,
@@ -33,6 +34,7 @@ from parishkit.stewardship.responses.census import address_editor
 from parishkit.stewardship.responses.census_additions import AddRefusal, parse_add
 from parishkit.stewardship.responses.comparison import ADDRESS_COMPONENTS
 from parishkit.stewardship.responses.refresh_checks import CheckState
+from parishkit.stewardship.web.review_worklist import INCORRECT_BODIES, WORDS
 from parishkit.stewardship.web.tables import paginate
 
 from .test_census_changes import SUBMITTED, row
@@ -174,9 +176,9 @@ def test_staff_review_by_hand_and_automatic_rows():
         "back_to_review",
         "entered_by_hand",
     ]
-    # Publish to ParishSoft is the Administrator's alone.
-    assert "Publish to ParishSoft" not in html
-    assert "Publish to ParishSoft" in page(rows, roles=ADMINISTRATOR)[1]
+    # Update ParishSoft is the Administrator's alone.
+    assert "Update ParishSoft" not in html
+    assert "Update ParishSoft" in page(rows, roles=ADMINISTRATOR)[1]
 
 
 def test_a_conflict_with_an_unknown_parishsoft_value_waits():
@@ -519,9 +521,51 @@ def added(**values):
             "step_note": None,
             "step_at": None,
             "step_by": None,
+            "step_sequence": None,
         }
         | values
     )
+
+
+def test_an_entered_addition_is_undone_back_to_enter_by_hand():
+    """Back to review on an entered addition undoes the mark (#1840): its
+    icon asks for a note and says where it goes, not that it is withdrawn;
+    once reopened, it is To enter by hand, Added by the parish, at the next
+    version, its last decision the undo with its note."""
+    entered = added(step="entered", step_sequence=1, step_at=SUBMITTED)
+    assert (entered["stage"], entered["version"]) == ("entered_by_hand", 2)
+    reopened = added(
+        id="a2",
+        step="reopened",
+        step_sequence=2,
+        step_note="Typo",
+        step_at=SUBMITTED,
+        step_by="staff@example.org",
+    )
+    assert (reopened["stage"], reopened["version"]) == ("to_enter_by_hand", 3)
+    assert reopened["placement"] == Placement(Stage.TO_ENTER_BY_HAND, Decision.ADDED)
+    assert (reopened["resolution_action"], reopened["resolution_note"]) == (
+        "reopened",
+        "Typo",
+    )
+    worklist, _ = page([entered, reopened], replacements={})
+    rows = {row["id"]: row for row in worklist.rows}
+    (undo,) = [
+        icon
+        for icon in rows["add-a1"]["icons"]
+        if icon["action"] == "back_to_review" and not icon["selected"]
+    ]
+    assert undo["body"] == (
+        "Entered by hand is undone: the item goes back to To enter by hand, "
+        "with its decision kept. Say why."
+    )
+    assert rows["add-a1"]["choice"] == "reopen"
+    (withdraw,) = [
+        icon
+        for icon in rows["add-a2"]["icons"]
+        if icon["action"] == "back_to_review" and not icon["selected"]
+    ]
+    assert withdraw["body"].startswith("The added change is withdrawn")
 
 
 def test_additions_are_tied_to_the_familys_changes_of_their_field():
@@ -546,6 +590,78 @@ def test_additions_are_tied_to_the_familys_changes_of_their_field():
     assert back["body"].endswith("is withdrawn instead.")
 
 
+def test_every_terminal_row_offers_back_to_review_with_a_note():
+    """#1840: Entered by hand, Updated in ParishSoft and Confirmed each offer
+    Back to review, whose dialog names the stage the change returns to and
+    requires a note; undoing Updated in ParishSoft says nothing is written
+    to ParishSoft. A terminal change a later response replaced, a change an
+    open addition covers and an entered addition offer none."""
+    entered = shaped(
+        id="entered",
+        handling="manual",
+        field="suffix",
+        decision="approved",
+        execution="resolved_external",
+    )
+    one_step = shaped(
+        id="one_step",
+        handling="manual",
+        field="suffix",
+        execution="resolved_external",
+    )
+    updated = shaped(id="updated", decision="approved", execution="published")
+    held = shaped(id="held", execution="resolved_upstream")
+    gone = shaped(
+        id="gone",
+        handling="manual",
+        field="suffix",
+        decision="approved",
+        execution="resolved_external",
+        entity_key="42",
+    ) | {"replaced": True}
+    covered = shaped(
+        id="covered", decision="approved", execution="published", entity_key="43"
+    )
+    addition = added(id="a1", entity_key="43")
+    marked = added(id="a2", entity_key="44", step="entered", step_at=SUBMITTED)
+    link_additions([covered], [addition, marked])
+    assert covered["covered"]
+    worklist, _ = page([entered, one_step, updated, held, gone, covered, marked])
+    rows = {row["id"]: row for row in worklist.rows}
+
+    def back(name):
+        """The row's Back to review icon, or None."""
+        found = [
+            icon
+            for icon in rows[name]["icons"]
+            if icon["action"] == "back_to_review" and not icon["selected"]
+        ]
+        return found[0] if found else None
+
+    assert back("entered")["body"] == (
+        "Entered by hand is undone: the item goes back to To enter by hand, "
+        "with its decision kept. Say why."
+    )
+    # Accepted and marked in one step: shown Accepted, so it keeps it.
+    assert back("one_step")["body"] == back("entered")["body"]
+    assert back("updated")["body"] == (
+        "Updated in ParishSoft is undone: the item goes back to Ready to "
+        "update, with its decision kept. Say why. Nothing is written to "
+        "ParishSoft: only this portal's record changes, and a later update "
+        "reads ParishSoft again first."
+    )
+    # Already in ParishSoft with no reviewer: nothing was decided.
+    assert back("held")["body"] == (
+        "Confirmed is undone: the item goes back to To review. Say why."
+    )
+    for name in ("entered", "one_step", "updated", "held", "add-a2"):
+        assert back(name)["choice"] == "reopen", name
+        assert rows[name]["kinds"] == "back_to_review", name
+        assert rows[name]["choice"] == "reopen", name
+    for name in ("gone", "covered"):
+        assert back(name) is None, name
+
+
 def test_downloads_list_an_addition_as_the_page_does():
     """The files carry an addition's row: no Family's answer, the added value
     as the reviewer's, By hand, To enter by hand and who added it."""
@@ -553,14 +669,14 @@ def test_downloads_list_an_addition_as_the_page_does():
         [added(added_note="Phoned in")], CensusQuery(stage="all"), administrator=False
     )
     (line,) = export_rows(result, UTC)
-    assert line[7:11] == ("", "555-0123", "By hand", "To enter by hand")
-    assert line[12] == "staff@example.org" and line[14] == "Phoned in"
+    assert line[8:12] == ("", "555-0123", "By hand", "To enter by hand")
+    assert line[13] == "staff@example.org" and line[15] == "Phoned in"
     assert result["rows"][0]["baseline"] == "555-0100"
 
 
 def test_refresh_checks_place_final_changes_and_flag_not_seen():
     """A final change's latest refresh check (#1689): Entered incorrectly
-    shows ParishSoft's value and offers no action yet (#1737); Not seen in
+    shows ParishSoft's value and offers its two fixes (#1737, #1840); Not seen in
     ParishSoft is a chip and a Stage choice of its own; an Ignored change
     ParishSoft now matches says so under its stage."""
     entered = {
@@ -581,8 +697,30 @@ def test_refresh_checks_place_final_changes_and_flag_not_seen():
     worklist, html = page(rows, stage="all")
     by_id = {row["id"]: row for row in worklist.rows}
     assert by_id["wrong"]["stage_label"] == "Entered incorrectly"
-    # Only the decision in force is drawn (selected); nothing is offered.
-    assert all(icon["selected"] for icon in by_id["wrong"]["icons"])
+    # The decision in force is drawn selected, and the two fixes beside it:
+    # Back to review, and the mark made again, worded so (#1737).
+    icons = {icon["action"]: icon for icon in by_id["wrong"]["icons"]}
+    assert list(icons) == ["accept", "back_to_review", "entered_by_hand"]
+    assert icons["accept"]["selected"]
+    again = icons["entered_by_hand"]
+    assert not again["selected"]
+    assert again["label"] == f"Mark {by_id['wrong']['name']} entered by hand again"
+    assert again["title_one"] == "Mark {name} entered by hand again?"
+    assert again["done"] == "{name} marked entered by hand again."
+    assert again["body"] == INCORRECT_BODIES[Action.ENTERED_BY_HAND]
+    # Back to review undoes the mark (#1840): back to To enter by hand with
+    # its decision kept, with a required note.
+    back = icons["back_to_review"]
+    assert back["body"] == (
+        "Entered incorrectly is undone: the item goes back to To enter by "
+        "hand, with its decision kept. Say why."
+    )
+    assert (
+        back["choice"] == "reopen"
+        and back["title_one"] == WORDS[Action.BACK_TO_REVIEW].title_one
+    )
+    # Both are bulk kinds of the row's box.
+    assert by_id["wrong"]["kinds"] == "back_to_review entered_by_hand"
     assert by_id["wrong"]["shows_now"]
     assert by_id["wrong"]["parishsoft_now"] == "III"
     assert by_id["unseen"]["stage_label"] == "Entered by hand"
@@ -597,6 +735,43 @@ def test_refresh_checks_place_final_changes_and_flag_not_seen():
     assert choices["all"] == "Every stage (3)"
     worklist, _ = page(rows, stage="not_seen")
     assert [row["id"] for row in worklist.rows] == ["unseen"]
+
+
+@pytest.mark.parametrize(
+    "status,label",
+    [
+        ("moved", "Not in ParishSoft"),
+        ("missing", "Not in ParishSoft"),
+        ("inactive", "Inactive in ParishSoft"),
+        ("deceased", "Deceased in ParishSoft"),
+    ],
+)
+def test_a_member_who_left_keeps_the_stage_with_the_shared_badge(status, label):
+    """Rule 4 (#1738): the change keeps its stage, and the Who cell shows the
+    shared ParishSoft status badge beside the name; the row's name for
+    screen readers and notices stays the plain name."""
+    worklist, html = page([shaped(member_status=status)])
+    (found,) = worklist.rows
+    assert found["placement"].stage is Stage.TO_REVIEW
+    assert found["name"] == "Mobile phone for Pat Sample"
+    assert (
+        f'Pat Sample <span class="status-badge" data-source-status="{status}">'
+        f"{label}</span>"
+    ) in html
+
+
+def test_a_current_member_has_no_badge():
+    """A Member the data still lists in the Family (and a household change)
+    reads as the name alone."""
+    _, html = page(
+        [
+            shaped(member_status="current"),
+            shaped(
+                id="2", entity_kind="family", field="email_opt_out", handling="manual"
+            ),
+        ]
+    )
+    assert "data-source-status" not in html
 
 
 def test_link_pairs_carry_only_the_link_safe_choices():
@@ -615,3 +790,172 @@ def test_link_pairs_carry_only_the_link_safe_choices():
     assert page_address("/c", link_pairs(chosen, {"sort": "-who"})) == (
         "/c?stage=all&route=automatic&sort=-who"
     )
+
+
+def test_a_refresh_conflict_and_a_member_id_say_so_under_the_stage():
+    """#1749: an Updated in ParishSoft change a refresh put back in Conflict
+    says why (an ordinary Conflict does not), and a New Member's mark names
+    the Member ID Staff gave; a New Member's Entered by hand opens its own
+    dialog asking for it."""
+    undone = shaped(execution="conflict", decision="unreviewed", refresh_conflict=True)
+    changed = shaped(
+        id="2", execution="conflict", decision="approved", refresh_conflict=False
+    )
+    added = shaped(
+        id="3",
+        entity_kind="proposed_member",
+        entity_key="local",
+        field="new_member",
+        handling="manual",
+        submitted_value={"first_name": "Newly", "last_name": "Sample"},
+        current_available=False,
+        current_value=None,
+        baseline_available=False,
+        baseline_value=None,
+        decision="approved",
+        execution="resolved_external",
+        resolution_action="entered",
+        resolution_member=7,
+    )
+    fresh = shaped(
+        id="4",
+        entity_kind="proposed_member",
+        entity_key="local",
+        field="new_member",
+        handling="manual",
+        submitted_value={"first_name": "Newly", "last_name": "Sample"},
+        current_available=False,
+        current_value=None,
+        baseline_available=False,
+        baseline_value=None,
+    )
+    worklist, html = page([undone, changed, added, fresh])
+    rows = {row["id"]: row for row in worklist.rows}
+    assert rows["1"]["decision_label"].endswith(
+        "ParishSoft no longer holds the update."
+    )
+    assert "no longer holds" not in rows["2"]["decision_label"]
+    assert rows["3"]["decision_label"].endswith("ParishSoft Member ID 7.")
+    assert rows["4"]["offers_entered"] and not rows["1"]["offers_entered"]
+    assert 'id="census-entered-dialog-4"' in html
+    # Census Add's dialog (#1710) has a value_member field of its own.
+    assert html.count("ParishSoft Member ID (optional)") == 1
+    # Row 3's mark may be made again with another ID (#1773, below), and
+    # Census Add's dialog has a value_member field of its own.
+    assert html.count('name="value_member"') == 3
+
+
+def entered_new_member(**values):
+    """A New Member Staff marked Entered by hand, by default naming ID 7."""
+    return shaped(
+        **{
+            "id": "3",
+            "entity_kind": "proposed_member",
+            "entity_key": "local",
+            "field": "new_member",
+            "handling": "manual",
+            "submitted_value": {"first_name": "Newly", "last_name": "Sample"},
+            "current_available": False,
+            "current_value": None,
+            "baseline_available": False,
+            "baseline_value": None,
+            "decision": "approved",
+            "execution": "resolved_external",
+            "resolution_action": "entered",
+            "resolution_member": 7,
+        }
+        | values
+    )
+
+
+def test_an_entered_new_member_offers_correcting_its_member_id():
+    """#1773: a New Member Entered by hand and not Confirmed keeps its mark
+    drawn selected and gains Correct the ParishSoft Member ID after it,
+    which opens the row's own dialog asking for the ID (required, filled in
+    with the mark's) and posts Entered by hand. It is one row at a time, so
+    it gives the row no bulk kind; Back to review, which undoes the mark
+    (#1840), is the row's one bulk kind."""
+    worklist, html = page([entered_new_member()])
+    (shown,) = worklist.rows
+    assert icons(worklist) == [
+        ("accept", True),
+        ("back_to_review", False),
+        ("entered_by_hand", True),
+        ("entered_by_hand", False),
+    ]
+    correct = shown["icons"][3]
+    name = shown["name"]
+    assert correct["remark"] and correct["icon"] == "edit"
+    assert correct["label"] == f"Correct the ParishSoft Member ID of {name}"
+    assert correct["dialog"] == "census-entered-dialog-3"
+    assert "decide=entered_by_hand" in correct["post"]
+    assert correct["title_one"] == "Correct the ParishSoft Member ID of {name}?"
+    assert correct["done"] == "{name} had its ParishSoft Member ID corrected."
+    assert correct["focus"] == "entered_by_hand" and correct["pressed"] is None
+    assert shown["kinds"] == "back_to_review" and shown["offers_entered"]
+    dialog = html.split('id="census-entered-3"')[1].split("</form>")[0]
+    field = re.search(r"<input[^>]*name=\"value_member\"[^>]*>", dialog)[0]
+    assert "required" in field and 'value="7"' in field
+    assert "ParishSoft Member ID (optional)" not in dialog
+    assert "The next refresh checks the entry again with this ID." in dialog
+    # A mark that named no ID may gain one: Add, the field starts blank.
+    worklist, html = page([entered_new_member(resolution_member=None)])
+    add = worklist.rows[0]["icons"][3]
+    assert add["label"] == f"Add the ParishSoft Member ID of {name}"
+    assert add["done"] == "{name} had its ParishSoft Member ID added."
+    dialog = html.split('id="census-entered-3"')[1].split("</form>")[0]
+    field = re.search(r"<input[^>]*name=\"value_member\"[^>]*>", dialog)[0]
+    assert 'value=""' in field and "required" in field
+
+
+def test_a_not_seen_new_member_offers_the_correction():
+    """A New Member flagged Not seen in ParishSoft (a mistyped ID, most
+    likely) is still Entered by hand and offers the correction, out of
+    bulk."""
+    unseen = CheckState(outcome="unchanged", unseen=2, not_seen_after=2)
+    worklist, _ = page([shape(entered_new_member() | {"check": unseen})])
+    (shown,) = worklist.rows
+    assert shown["not_seen"]
+    assert [icon.get("remark", False) for icon in shown["icons"]] == [
+        False,
+        False,
+        False,
+        True,
+    ]
+    assert shown["kinds"] == "back_to_review"
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        # Confirmed: the refresh found the Member; nothing to correct.
+        {"check": CheckState(outcome="confirmed")},
+        # A later response of the Family replaced it: history.
+        {"replaced": True},
+    ],
+)
+def test_no_correction_once_confirmed_or_replaced(values):
+    """The correction is offered only while the mark is in question."""
+    worklist, _ = page([shape(entered_new_member() | values)])
+    assert not any(icon.get("remark") for icon in worklist.rows[0]["icons"])
+    assert not worklist.rows[0]["offers_entered"]
+
+
+def test_no_correction_without_the_census_roles_or_on_other_rows():
+    """A reader the campaign's work holds is offered nothing; an entered
+    Member field (not a New Member) has no correction."""
+    worklist, _ = page([entered_new_member()], mutable=False)
+    assert worklist.rows[0]["icons"] == []
+    suffix = shaped(
+        handling="manual",
+        field="suffix",
+        decision="approved",
+        execution="resolved_external",
+        resolution_action="entered",
+    )
+    worklist, _ = page([suffix])
+    assert icons(worklist) == [
+        ("accept", True),
+        ("back_to_review", False),
+        ("entered_by_hand", True),
+    ]

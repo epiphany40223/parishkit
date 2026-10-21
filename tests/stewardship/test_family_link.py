@@ -123,7 +123,7 @@ FAMILY_NAME_PAGES = {
     "directory.html": "Active parishioner family directory",
     "find-family-results.html": "Find a Family results",
     "financial-report.html": "Financial stewardship",
-    "census-publication.html": "Publish to ParishSoft, newest check",
+    "update-parishsoft.html": "Update ParishSoft, newest check",
     # The shared review worklist (#1681) draws the worklists' names: Census
     # changes (#1683), Ministry requests (#1684), Limitations (#1685) and the
     # others on it.
@@ -137,12 +137,11 @@ FAMILY_NAME_PAGES = {
     "go-live-families.html": "Testing submissions (no link: Testing only)",
     "campaign-mail-families.html": "Send to chosen Families (no link: Testing)",
     "system-health-accept.html": "Refused load examples (no link)",
+    "deliveries.html": "Sent mail Recipient (Production Family emails, #1562)",
 }
 
 # The justified exceptions: pages another open change converts. The Mail
 # message page's Family line follows #1563; remove the entry when it lands.
-# (Sent mail's Recipient, #1571, is its in-place recipient filter, a
-# button drawn without a printed name, so the guard needs no entry for it.)
 NOT_YET = {"delivery.html": "#1563"}
 
 # A printed Family name: a {{ ... }} expression naming family_name.

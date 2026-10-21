@@ -118,7 +118,7 @@ def test_active_campaign_steps_and_counts(response_service, google):
         "Ministry requests to enter by hand",
         "Additional information",
         "Ministry requests",
-        "Family email progress",
+        "Mail queue",
         "Sent mail",
     ]
     # No request is resolved yet, so nothing waits to be entered (#1590).

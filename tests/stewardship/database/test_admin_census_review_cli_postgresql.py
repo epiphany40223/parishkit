@@ -61,18 +61,18 @@ def test_an_administrator_approves_ignores_and_sends_back(
     _, name = rows()
 
     key = uuid4()
-    code, document = review(run, name, "approved", "--note", "Checked", key=key)
+    code, document = review(run, name, "accepted", "--note", "Checked", key=key)
     assert code == 0, document
     result = document["result"]
     name.refresh_from_db()
     assert result["created"] and result["request_key"] == str(key)
     assert result["review"]["proposal_id"] == str(name.pk)
-    assert result["review"]["decision"] == "approved"
+    assert result["review"]["decision"] == "accepted"
     assert result["review"]["expected_version"] == name.version - 1
     assert result["proposal"] == {
         "id": str(name.pk),
         "version": name.version,
-        "decision": "approved",
+        "decision": "accepted",
         "execution": "pending",
     }
     assert "Checked" not in str(document) and "Requested" not in str(document)
@@ -84,7 +84,7 @@ def test_an_administrator_approves_ignores_and_sends_back(
     # A repeat with the same key returns the first review and records
     # nothing new; the same key for another intent is invalid.
     code, document = review(
-        run, name, "approved", "--note", "Checked", key=key, version=name.version - 1
+        run, name, "accepted", "--note", "Checked", key=key, version=name.version - 1
     )
     assert code == 0 and not document["result"]["created"], document
     assert document["result"]["review"] == result["review"]
@@ -95,7 +95,7 @@ def test_an_administrator_approves_ignores_and_sends_back(
     assert code == 1 and document["error"]["code"] == "invalid", document
 
     # The same decision again is no change: the page's 400.
-    code, document = review(run, name, "approved")
+    code, document = review(run, name, "accepted")
     assert code == 1 and document["error"]["code"] == "invalid", document
 
     # Ignore, then Back to To review; each advances the version.
@@ -117,17 +117,17 @@ def test_an_administrator_approves_ignores_and_sends_back(
 @pytest.mark.parametrize(
     ("execution", "decision", "allowed"),
     [
-        ("failed", "approved", True),
+        ("failed", "accepted", True),
         ("conflict", "ignored", True),
-        # A Conflict is not approved until it is resolved.
-        ("conflict", "approved", False),
+        # A Conflict is not accepted until it is resolved.
+        ("conflict", "accepted", False),
         # Queued for publication: the publish worker owns it (#1245 review
         # note 5), so no review is taken. A queued change is already
         # approved, so these are the decisions that would change it.
         ("queued", "ignored", False),
         ("queued", "unreviewed", False),
         ("published", "ignored", False),
-        ("resolved_upstream", "approved", False),
+        ("resolved_upstream", "accepted", False),
     ],
 )
 def test_only_an_open_change_is_reviewed(
@@ -173,20 +173,20 @@ def test_by_hand_stale_unknown_and_read_only_refusals(
     signed_in()
     run = cli()
     home, name = rows()
-    code, document = review(run, name, "approved", version=name.version + 1)
+    code, document = review(run, name, "accepted", version=name.version + 1)
     assert code == 1 and document["error"]["code"] == "stale_version", document
     code, document = run(
-        *("census", "review", str(uuid4()), "--decision", "approved"),
+        *("census", "review", str(uuid4()), "--decision", "accepted"),
         *("--expected-version", "1", "--request-key", str(uuid4())),
     )
     assert code == 1 and document["error"]["code"] == "not_available", document
     reader = read_only_session(run.service)
-    code, document = review(run, name, "approved", secret=reader)
+    code, document = review(run, name, "accepted", secret=reader)
     assert code == 1 and document["error"]["code"] == "denied", document
     assert (count(EVENT), count(UPDATED)) == (0, 0)
     assert not ProposalReview.objects.exists()
-    code, document = review(run, home, "approved")
-    assert code == 0 and document["result"]["proposal"]["decision"] == "approved"
+    code, document = review(run, home, "accepted")
+    assert code == 0 and document["result"]["proposal"]["decision"] == "accepted"
 
 
 def test_staff_and_a_ministry_leader_are_denied(
@@ -203,11 +203,11 @@ def test_staff_and_a_ministry_leader_are_denied(
     _, name = rows()
     with monkeypatch.context() as patch:
         as_staff(patch)
-        code, document = review(run, name, "approved")
+        code, document = review(run, name, "accepted")
         assert code == 1 and document["error"]["code"] == "denied", document
     with monkeypatch.context() as patch:
         with_roles(patch, {"ministry_leader"}, frozenset({4}))
-        code, document = review(run, name, "approved")
+        code, document = review(run, name, "accepted")
         assert code == 1 and document["error"]["code"] == "denied", document
     assert (count(EVENT), count(UPDATED)) == (0, 0)
 
@@ -231,7 +231,7 @@ def test_another_campaign_s_change_is_not_available(
     other = uuid4()
     monkeypatch.setattr(admin_report_reads, "_current", lambda: other)
     monkeypatch.setattr(read_admission, "admit_report_read", lambda campaign: None)
-    code, document = review(run, name, "approved")
+    code, document = review(run, name, "accepted")
     assert code == 1 and document["error"]["code"] == "not_available", document
     assert (count(EVENT), count(UPDATED)) == (0, 0)
 
@@ -243,7 +243,7 @@ def test_an_ended_session_changes_nothing(response_service, google, cli):  # noq
     run = cli()
     _, name = rows()
     revoke(run.service, run.secret)
-    code, document = review(run, name, "approved")
+    code, document = review(run, name, "accepted")
     assert code == 5 and document["error"]["code"] == "session_ended", document
     assert (count(EVENT), count(UPDATED)) == (0, 0)
 
@@ -253,7 +253,7 @@ def test_without_a_current_campaign(admin, google):  # noqa: F811
     secret = session(admin)
     code, document = one(
         admin,
-        *("census", "review", str(uuid4()), "--decision", "approved"),
+        *("census", "review", str(uuid4()), "--decision", "accepted"),
         *("--expected-version", "1", "--request-key", str(uuid4())),
         secret=secret,
     )
