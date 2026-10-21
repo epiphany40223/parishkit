@@ -1,5 +1,6 @@
 """The manual refresh confirmation page: accessible, plain, posts its key."""
 
+import re
 from uuid import UUID
 
 import pytest
@@ -7,7 +8,7 @@ import pytest
 from .live_status_components import REFRESH, REFRESH_REQUESTED, TASK_STATUS
 from .test_in_place import MARK, MARKED, VIEWPORT
 from .test_live_status_in_place import answer_reads
-from .waits import has_text, has_value, visible
+from .waits import has_value, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -109,10 +110,12 @@ def test_refresh_now_stays_on_the_page_and_follows_the_run(page, component_origi
     first_age = data_age.get_attribute("datetime")
     assert page.get_by_role("heading", name="Current status").count() == 0
     button.click()
-    has_text(
-        page.get_by_role("status").filter(has_text="Refresh requested."),
-        "Refresh requested.",
-    )
+    # Only the run's own announcer speaks (Refresh now is data-in-place-spoken),
+    # so there is no "Refresh requested." ahead of the state sentence.
+    from playwright.sync_api import expect
+
+    expect(page.locator('[data-live-announcer="task"]')).to_have_text(re.compile(r"\S"))
+    assert page.get_by_text("Refresh requested.").count() == 0
     region = page.locator("#refresh-run")
     visible(region.get_by_role("heading", name="Current status"))
     visible(region.get_by_text("of 4,000 records checked"))

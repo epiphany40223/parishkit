@@ -39,7 +39,7 @@ follows the change and then opens the next step not done yet. The
 sub-pages that save (Pages and emails' editor, New and Edit scheduled email;
 ``DIRECT_SUBPAGES``, #1404 PR 4b) save the same way with **Save and go
 back**, and then open their step again. Outside the wizard those pages keep
-their own Save and review dialog (or Preview changes page). Dates and mail
+their own Save (or Preview changes) and review dialog. Dates and mail
 schedules with no schedule saved proposes a starting set (``suggest``, #1404
 PR 6, ``schedule_suggestions``): its primary is then **Add these schedules
 and continue**, which saves them directly the same way, and Continue without
@@ -574,6 +574,36 @@ def load_stages(load, phase):
         return stages.rows(LOAD_STAGES, index)
     if load == "failed":
         return stages.rows(LOAD_STAGES, max(index, 0), "failed")
+    return stages.rows(LOAD_STAGES, -1)
+
+
+def task_stages(task):
+    """The stage boxes for one refresh run's ``task`` on its Background task page.
+
+    The task page's Current status, which Refresh from ParishSoft also
+    draws, shows the same boxes as Load ParishSoft data (#1579), marked by
+    the task's own state rather than the campaign's load: every box waiting
+    while the run is queued, waiting to retry or being recovered, since
+    each attempt starts again from the download (source/refreshing.py);
+    the boxes before the run's phase done and its phase in progress while
+    it runs; every box done once it succeeded; the stage it stopped in
+    failed when it failed; and, when cancelled, the stages it finished done
+    and the rest waiting, since nothing failed.
+    """
+    from . import stages
+
+    keys = [key for key, _label in LOAD_STAGES]
+    phase = task["progress"]["phase"]
+    index = keys.index(phase) if phase in keys else -1
+    state = task["state"]
+    if state == "succeeded":
+        return stages.rows(LOAD_STAGES, len(keys))
+    if state == "running":
+        return stages.rows(LOAD_STAGES, index)
+    if state == "failed":
+        return stages.rows(LOAD_STAGES, max(index, 0), "failed")
+    if state == "cancelled":
+        return stages.rows(LOAD_STAGES, index, "waiting")
     return stages.rows(LOAD_STAGES, -1)
 
 

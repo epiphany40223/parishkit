@@ -5,7 +5,8 @@ roster changes at its Stage To enter by hand, served by
 ``followup_components`` with the real worklist context; each POST is
 answered with the fixture page after the decision, as the view answers with
 its page redrawn. A mark outside every region shows the page never
-reloaded. In Chromium and WebKit.
+reloaded. In Chromium and WebKit. Clearing a mark on the request page is
+Back to review of Entered by hand (#1840): its dialog needs the note.
 """
 
 import pytest
@@ -19,6 +20,7 @@ from .followup_components import (
     ENTRY_NOTICE,
     REQUESTS,
     TICK_ITEM,
+    TICKED,
 )
 from .test_bulk_bar import assert_accessible
 from .test_table_sorting import MARK, MARKED, fulfil_post_with
@@ -142,4 +144,50 @@ def test_the_request_page_ticks_in_place(page, component_origin):
     page.get_by_role("button", name="Mark entered in ParishSoft").click()
     visible(page.get_by_text("Entered in ParishSoft by staff@example.org"))
     visible(page.get_by_role("button", name="Clear Entered in ParishSoft"))
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_the_request_page_clear_asks_for_the_note(page, component_origin):
+    """Clear Entered in ParishSoft opens the shared dialog, which says the
+    mark is undone and waits for the required note; Record posts it with
+    the clear, and the page is redrawn in place, not yet entered."""
+    page.goto(component_origin + TICKED)
+    page.evaluate(MARK)
+    sent = []
+
+    def answer(route):
+        """Keep the clear's body; afterwards the page reads as cleared."""
+        if route.request.method == "POST":
+            sent.append(route.request.post_data)
+            route.fulfill(
+                response=route.fetch(url=component_origin + TICK_ITEM, method="GET")
+            )
+        elif sent:
+            route.fulfill(
+                response=route.fetch(url=component_origin + TICK_ITEM, method="GET")
+            )
+        else:
+            route.continue_()
+
+    page.route(lambda url: TICK_ITEM in url, answer)
+    page.get_by_role("button", name="Clear Entered in ParishSoft").click()
+    dialog = page.locator("#followup-roster-clear-dialog")
+    visible(dialog)
+    has_text(dialog.locator("h2"), "Clear Entered in ParishSoft?")
+    has_text(
+        dialog.locator("[data-confirm-body]"),
+        "Entered by hand is undone: the request goes back to To enter by hand, "
+        "with its decision kept. Nothing changes in ParishSoft. Say why.",
+    )
+    record = dialog.get_by_role("button", name="Record")
+    assert record.is_disabled()
+    has_text(dialog.locator("[data-complete-hint]"), "Say why the mark is cleared.")
+    dialog.get_by_label("Note (required)").fill("Marked the wrong request")
+    available(record)
+    record.click()
+    hidden(dialog)
+    visible(page.get_by_text("Not yet entered in ParishSoft"))
+    body = sent[-1]
+    assert "entered=no" in body and "sequence=2" in body
+    assert "note=Marked+the+wrong+request" in body
     assert page.evaluate(MARKED) == "kept"

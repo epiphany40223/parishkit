@@ -39,7 +39,10 @@ def test_schedule_preview_shows_send_times_only_in_browser_time(
         parish_clock = parish_time("09:00:00")
     assert parish_clock == "9:00 AM"
     assert parish_clock not in text
-    assert "not a list of who will receive it" in text
+    # The shared schedule preview (#1129) draws the zone-less review's
+    # sends; the always-on sentences are gone.
+    assert "When it sends (shown in your computer's time zone):" in text
+    assert "not a list of who will receive it" not in text
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
 
@@ -179,6 +182,7 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/home-key-change",
         "/availability",
         "/denied",
+        "/denied-admin",
         "/denied-code",
         "/denied-link",
         "/denied-unavailable",
@@ -204,7 +208,6 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/export-cleanup-conflict",
         "/export-cleanup-invalid",
         "/content-settings",
-        "/content-preview",
         "/content-history",
         "/campaign-mail",
         "/campaign-mail-unknown",
@@ -218,7 +221,6 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/clone-preview",
         "/integrations",
         "/integration-settings",
-        "/integration-preview",
         "/backup-key",
         "/backup-key-proof",
         "/branding-settings",
@@ -1285,5 +1287,11 @@ def test_refresh_task_page_says_what_it_is_doing(page, component_origin):
     visible(page.get_by_text("Full refresh", exact=True))
     visible(page.get_by_text("Downloading from ParishSoft…"))
     visible(page.get_by_text("1,000 of 4,000 records checked"))
+    # Its step is the shared stage boxes (#1579), not a "Step:" line.
+    stages = page.get_by_role("list", name="Parts of the refresh")
+    visible(
+        stages.locator('[data-refresh-stage="fetching"][data-stage-state="active"]')
+    )
+    assert page.get_by_text("Step:", exact=False).count() == 0
     visible(page.get_by_text("server restarted", exact=False))
     assert page.get_by_text("Waiting for progress details").count() == 0

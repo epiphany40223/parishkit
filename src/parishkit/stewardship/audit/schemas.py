@@ -144,7 +144,11 @@ class Action(StrEnum):
     CENSUS_PUBLICATION_SWITCHED_OFF = "census_publication_switched_off"
     CENSUS_PUBLICATION_READ_UNCONFIRMED = "census_publication_read_unconfirmed"
     CENSUS_PUBLICATION_REFUSED = "census_publication_refused"
-    # Someone opened Publish to ParishSoft (#528, ADM-09); count: plan rows.
+    # The final full refresh an update run requested once its plan updated a
+    # Member (#1688); the subject is the refresh command, so System logs
+    # says the refresh followed an update.
+    CENSUS_PUBLICATION_REFRESH_REQUESTED = "census_publication_refresh_requested"
+    # Someone opened Update ParishSoft (#528, ADM-09; #1688); count: plan rows.
     CENSUS_PUBLICATION_VIEWED = "census_publication_viewed"
     ROSTER_CHANGES_VIEWED = "roster_changes_viewed"
     ROSTER_CHANGES_EXPORTED = "roster_changes_exported"
@@ -201,6 +205,9 @@ class Action(StrEnum):
     # The operator's one-time engagement backfill (#477), with its counts.
     FAMILY_ENGAGEMENT_BACKFILLED = "family_engagement_backfilled"
     USERS_VIEWED = "portal_users_viewed"
+    # One user's timeline (#1866): the subject is the user's record id,
+    # never the address.
+    USER_TIMELINE_VIEWED = "user_timeline_viewed"
     # A Users page change recorded as a configuration request (#952): its
     # subject is the request, whose patch names the user; ``count`` is how
     # many users it touches.
@@ -273,7 +280,8 @@ class Action(StrEnum):
     # review dialog's Apply (#1865).
     ADMIN_CMD_BRANDING_PREVIEW = "admin_cmd_branding_preview"
     ADMIN_CMD_BRANDING_CONFIRM = "admin_cmd_branding_confirm"
-    # content confirm: Pages and emails' Delete of unused emails (ADM-11 PR 10).
+    # content confirm: Pages and emails' Delete of unused emails (ADM-11 PR 10)
+    # and the content editor's review Apply (#1873).
     ADMIN_CMD_CONTENT_CONFIRM = "admin_cmd_content_confirm"
     # integration confirm: an integration settings page's Apply (ADM-11 PR 10).
     ADMIN_CMD_INTEGRATION_CONFIRM = "admin_cmd_integration_confirm"
@@ -387,6 +395,11 @@ class Action(StrEnum):
     # census resolve-conflict: an Automatic Conflict's Use the Family's value
     # anyway (#1434, ADM-09.03).
     ADMIN_CMD_CENSUS_RESOLVE_CONFLICT = "admin_cmd_census_resolve_conflict"
+    # census update-check, update-confirm and update-rerun: Update
+    # ParishSoft's Check ParishSoft, Update and Run again (#1755).
+    ADMIN_CMD_CENSUS_UPDATE_CHECK = "admin_cmd_census_update_check"
+    ADMIN_CMD_CENSUS_UPDATE_CONFIRM = "admin_cmd_census_update_confirm"
+    ADMIN_CMD_CENSUS_UPDATE_RERUN = "admin_cmd_census_update_rerun"
     # followup roster-entered and followup roster-bulk: a resolved request's
     # Entered in ParishSoft tick and a bulk Entered by hand;
     # followup information-update: an Additional information item's Save

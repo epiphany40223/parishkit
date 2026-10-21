@@ -228,6 +228,9 @@ SHAPING_STEPS = frozenset(
         # stored state has no stage (#1678 slice 4).
         "hub_ministry_stage",
         "hub_information_stage",
+        # The upcoming pledge a Family submit records, absorbed as none
+        # (#1753, reports.pledge_refresh.answered_pledge).
+        "answered_pledge",
     }
 )
 DRIVE_FAILURES = frozenset(

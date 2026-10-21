@@ -527,13 +527,15 @@ def test_live_status_pages_update_themselves_and_dismiss_in_place():
     Retry) brings a fresh one live-status-v1.js watches. An integration's
     Dismiss acts in place (#519 PR 7a)."""
     for name, region in (
-        ("family-email-progress.html", "send-progress"),
+        ("mail-queue.html", "mail-queue"),
         ("campaign-mail-families.html", "family-tests"),
     ):
         text = (TEMPLATES / name).read_text()
         assert 'data-in-place="refresh"' not in text, name
         body = text.split(f'<div id="{region}" data-in-place-region>', 1)[1]
-        assert "data-live-status" in body or "progress-status.html" in body, name
+        # The live-status element is in the region or in the status template
+        # it includes (the Mail queue's, which the polled fragment also draws).
+        assert "data-live-status" in body or "-status.html" in body, name
     settings = (TEMPLATES / "integration-settings.html").read_text()
     assert '<div id="integration-status" data-in-place-region>' in settings
     summary = (TEMPLATES / "integration-summary.html").read_text()

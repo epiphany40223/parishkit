@@ -1268,7 +1268,7 @@ def test_the_backup_confirmation_says_only_what_the_page_does_not():
     )
     assert "off-site copies are not set up, so it stays on the server only" in held
     assert "A Family email send is in progress, so the backup will wait" in held
-    assert f'<a href="{reverse("admin:family_email_progress")}">' in held
+    assert f'<a href="{reverse("admin:mail_queue")}">' in held
 
 
 def test_the_backup_request_and_refusals_answer_the_dialog():

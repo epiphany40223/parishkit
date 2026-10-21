@@ -2,9 +2,11 @@
 
 Staff and Administrators add a census change no Family answer asked for,
 checked as an Edit's value is and against the Family, the Member and the
-field's open changes; its one later step is Entered by hand or withdrawn.
-The frozen file 0129 creates the tables; their guards are tested here with
-the service bypassed. The worklist's side is test_census_add_page.
+field's open changes; its later steps are Entered by hand, withdrawn, or
+reopened (Back to review undoing the mark, #1840:
+test_census_addition_undo_postgresql). The frozen file 0129 creates the
+tables; their guards are tested here with the service bypassed. The
+worklist's side is test_census_add_page.
 """
 
 from pathlib import Path
@@ -158,9 +160,10 @@ def test_an_open_change_of_the_field_refuses_a_second(response_service):
     assert refused.value.code == "add_exists"
 
 
-def test_a_resolution_is_final_and_frees_the_field_when_withdrawn(response_service):
-    """Entered by hand or withdrawn is one step: another is stale. Once one
-    is withdrawn, the field may be added again; a replay records nothing."""
+def test_a_step_needs_its_state_and_withdrawn_frees_the_field(response_service):
+    """An entered addition is not withdrawn (its Back to review undoes the
+    mark instead, and needs the version it is at). Once one is withdrawn,
+    the field may be added again; a replay records nothing."""
     harness, _, staff, rows = prepared(response_service)
     campaign = campaign_of(rows)
     first, _ = add(harness, staff, campaign, member_form(rows, "nickname", "Bo"))
@@ -180,8 +183,8 @@ def test_a_resolution_is_final_and_frees_the_field_when_withdrawn(response_servi
                 staff,
                 campaign,
                 {first.pk: 1},
-                "withdrawn",
-                note="",
+                "back_to_review",
+                note="Mistake",
                 request_key=uuid4(),
             )
     second, _ = add(harness, staff, campaign, member_form(rows, "suffix", "Jr."))
@@ -191,7 +194,7 @@ def test_a_resolution_is_final_and_frees_the_field_when_withdrawn(response_servi
             staff,
             campaign,
             {second.pk: 1},
-            "withdrawn",
+            "back_to_review",
             note="Wrong Member",
             request_key=uuid4(),
         )
@@ -277,15 +280,17 @@ def test_sql_keeps_additions_and_their_steps_immutable(response_service):
     with pytest.raises((IntegrityError, DatabaseError), match="current authority"):
         forge(
             "INSERT INTO stewardship_census_addition_resolution (id,correlation_id,"
-            "actor_id,request_key,addition_id,action,note) VALUES (gen_random_uuid(),"
-            "gen_random_uuid(),%s,gen_random_uuid(),%s,'entered','')",
+            "actor_id,request_key,addition_id,action,note,sequence) VALUES ("
+            "gen_random_uuid(),gen_random_uuid(),%s,gen_random_uuid(),%s,"
+            "'entered','',1)",
             [leader(harness, admin), first.pk],
         )
     with pytest.raises((IntegrityError, DatabaseError), match="requires its audit"):
         forge(
             "INSERT INTO stewardship_census_addition_resolution (id,correlation_id,"
-            "actor_id,request_key,addition_id,action,note) VALUES (gen_random_uuid(),"
-            "gen_random_uuid(),%s,gen_random_uuid(),%s,'entered','')",
+            "actor_id,request_key,addition_id,action,note,sequence) VALUES ("
+            "gen_random_uuid(),gen_random_uuid(),%s,gen_random_uuid(),%s,"
+            "'entered','',1)",
             [staff, first.pk],
         )
     assert CensusAdditionResolution.objects.count() == 0

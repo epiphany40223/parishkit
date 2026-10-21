@@ -56,6 +56,16 @@ def draw(document, frame, options):
     return Section(funnel_html(document), text)
 
 
+def capture(document, options):
+    """Each stage's count and share, or that a Testing send has none."""
+    if document.funnel is None:
+        return {"testing": document.mode == "testing", "stages": []}
+    return {
+        "testing": False,
+        "stages": [list(row) for row in stage_rows(document.funnel)],
+    }
+
+
 BLOCK = Block(
     key="response_funnel",
     label="Response funnel",
@@ -67,4 +77,5 @@ BLOCK = Block(
     # Counted from durable timestamps, not the pinned daily fact set.
     fact=False,
     draw=draw,
+    capture=capture,
 )
