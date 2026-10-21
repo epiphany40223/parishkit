@@ -267,7 +267,7 @@ def state_after(row, before):
             state=a, outcome=b, source_resolved=False, roster_entered=False
         )
         # Back to review of a terminal step (#1840) records the decision
-        # again, keeping it in force, and clears the tick if one was set
+        # again, keeping it in force, and clears the tick if one was ticked
         # (that clearing, written with it, is no line of its own:
         # ``_HISTORY``), or, for a request a refresh resolved with no
         # decision behind it, reopens it with the required note.
