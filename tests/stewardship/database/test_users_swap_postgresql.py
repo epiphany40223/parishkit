@@ -948,10 +948,10 @@ CLOSURE_CREATED = {
         "stewardship_reports",
         "0042_report_recovery_coverage",
     ),
-    # 0260 (provisional, #1872) creates the coverage decision table (in
-    # CLOSURE_TABLES) with its guard and replaces 0250's comparison; after
-    # 0250's file runs again (its entry is above), 0260's, whole, puts back
-    # the table, guard and its comparison. 0261's waiting read is in
+    # 0164 (#1872) creates the coverage decision table (in
+    # CLOSURE_TABLES) with its guard and replaces 0162's comparison; after
+    # 0162's file runs again (its entry is above), 0164's, whole, puts back
+    # the table, guard and its comparison. 0165's waiting read is in
     # runtime_grants.CLOSURE_FUNCTIONS, which installs it again on its own.
     "public.stewardship_report_email_coverage_decision_guard_v1()": (
         "stewardship_reports",

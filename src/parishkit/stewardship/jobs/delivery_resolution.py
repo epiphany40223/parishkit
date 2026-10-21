@@ -181,7 +181,7 @@ def resolve_delivery(
     send of its report would otherwise wait on for good. Each is recorded
     as an evidence note (the journal's ``note``, which changes nothing)
     plus a ``ReportEmailCoverageDecision`` of the same id, in this one
-    commit; the decision's own guard (frozen file 0260) admits it. A
+    commit; the decision's own guard (frozen file 0164) admits it. A
     replay finds both and returns the note.
     """
     if any(not isinstance(value, UUID) for value in (user_id, message_id, command_id)):

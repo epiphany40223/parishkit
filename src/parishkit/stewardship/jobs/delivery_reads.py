@@ -944,7 +944,7 @@ def coverage_undecided(message):
     It must be a report email that ended cancelled after its outcome was
     once unknown, with no decision yet: no outcome can ever settle it, so a
     later send of its report would wait on it for good. The decision guard
-    (frozen file 0260) checks the same when one is recorded, and also that
+    (frozen file 0164) checks the same when one is recorded, and also that
     the email belongs to a report cohort, that the evidence note of the same
     id is this Administrator's, at the email's current version and from the
     same transaction, and that the campaign accepts Admin changes.
@@ -995,7 +995,7 @@ def report_waiting(actor_id):
     """The report sends waiting on an earlier email, for an Administrator (#1872).
 
     Read through ``stewardship_report_email_waiting_v1`` (frozen file
-    0261): one row per waiting send and per earlier email it waits on, as
+    0165): one row per waiting send and per earlier email it waits on, as
     ``{"send", "due_at", "message_id"}``, ids and times only, never an
     address. Raises ``PermissionError`` when the read refuses ``actor_id``
     (see ``_definer_rows``).

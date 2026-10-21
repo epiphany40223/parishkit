@@ -1,10 +1,10 @@
 """Seeing and ending a report send's wait on an earlier message (#1872).
 
-Frozen file 0260's coverage decision (an Administrator's "counts as
+Frozen file 0164's coverage decision (an Administrator's "counts as
 delivered" or "counts as not delivered" about an earlier report message
 that was once unknown and then cancelled), its insert guard, and the
 comparison that reads it and names what an uncertain answer waits on;
-frozen file 0261's Administrator-only read of the sends that wait. As in
+frozen file 0165's Administrator-only read of the sends that wait. As in
 #1835's tests (``test_report_recovery_coverage_postgresql``), no report
 send can run end to end before the conversion, so the earlier sends are
 fixture rows inserted without their guards, in the test's own transaction,
@@ -360,7 +360,7 @@ def test_the_waiting_read_requires_an_administrator(decisions):
 
 
 @pytest.mark.parametrize(
-    "name", ["0260_report_coverage_decisions.sql", "0261_report_waiting_read.sql"]
+    "name", ["0164_report_coverage_decisions.sql", "0165_report_waiting_read.sql"]
 )
 def test_each_files_check_passes_as_installed(name):
     """The DO block of each file passes on the migrated database."""
@@ -371,11 +371,11 @@ def test_each_files_check_passes_as_installed(name):
 
 
 def test_the_files_check_refuses_an_older_comparison():
-    """0260's check fails when 0250's comparison is back in place."""
-    old = (MIGRATIONS / "0250_report_recovery_coverage.sql").read_text(encoding="utf-8")
+    """0164's check fails when 0162's comparison is back in place."""
+    old = (MIGRATIONS / "0162_report_recovery_coverage.sql").read_text(encoding="utf-8")
     start = old.index("CREATE FUNCTION public.stewardship_report_email_prior_v1(")
     body = old[start : old.index("$$;", old.index("AS $$", start)) + 3]
-    text = (MIGRATIONS / "0260_report_coverage_decisions.sql").read_text(
+    text = (MIGRATIONS / "0164_report_coverage_decisions.sql").read_text(
         encoding="utf-8"
     )
     with transaction.atomic(), connection.cursor() as cursor:

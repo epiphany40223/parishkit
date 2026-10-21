@@ -221,7 +221,7 @@ class ReportEmailCoverageDecision(ImmutableRecord):
     then ended cancelled (#1872): ``delivered`` counts it as having reached
     its recipient, so it covers its slots for a later send; ``unsent``
     counts it as never sent, so a later send gives that recipient its own
-    message (``stewardship_report_email_prior_v1``, frozen file 0260). Its
+    message (``stewardship_report_email_prior_v1``, frozen file 0164). Its
     id is the evidence note (``DeliveryResolution``) recorded with it, in
     the same transaction. One per message, never changed.
     """

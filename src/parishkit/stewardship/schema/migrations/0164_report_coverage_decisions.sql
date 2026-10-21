@@ -1,7 +1,5 @@
--- Frozen forward migration file 0260 (provisional: the repository-wide file
--- sequence assigns the final number when the pull request merges): a report
--- send that waits on an earlier message says which message, and an
--- Administrator can settle an earlier message that nothing else ever will
+-- Frozen forward migration file 0164: a report send that waits on an
+-- earlier message says which message, and an Administrator can settle an earlier message that nothing else ever will
 -- (#1872, report-emails spec "Catch-up, recovery and holds"). This file is
 -- installed by its Django migration in the reports app and must never
 -- change once released; tests/stewardship/test_schema_migration_files.py
@@ -12,13 +10,13 @@
 -- once unknown and which then ended cancelled: delivered (it covers its
 -- slots) or unsent (it never did). Its insert guard admits only such a
 -- message, at its current version, together with the evidence note of the
--- same id, and records the audit event. It replaces frozen file 0250's
+-- same id, and records the audit event. It replaces frozen file 0162's
 -- comparison stewardship_report_email_prior_v1 so that a decided message
 -- counts as decided and an uncertain answer names the messages it waits on
 -- ("waiting"); the recipient guard, which compares only the answer's state
 -- and covered messages, is unchanged. The Administrator-only read of the
--- sends that wait is frozen file 0261's. Every object here depends on
--- frozen files 0156 and 0250 being installed first.
+-- sends that wait is frozen file 0165's. Every object here depends on
+-- frozen files 0156 and 0162 being installed first.
 -- Nothing writes a report message until the conversion admits report
 -- schedules. The file ends with a DO block that refuses to commit unless
 -- all of it is installed as declared.
@@ -81,15 +79,15 @@ CREATE TRIGGER report_email_coverage_decision_insert BEFORE INSERT
     ON public.stewardship_report_email_coverage_decision
     FOR EACH ROW EXECUTE FUNCTION public.stewardship_report_email_coverage_decision_guard_v1();
 
--- 0250's comparison of one cohort address with the report's earlier sends,
+-- 0162's comparison of one cohort address with the report's earlier sends,
 -- with two changes (#1872):
 --   - an earlier message an Administrator decided about counts as decided:
 --     delivered covers its slots (and is named in "messages"), unsent never
 --     does and is final. Only a cancelled, once-unknown message can have a
---     decision, so every other rule reads as 0250's;
+--     decision, so every other rule reads as 0162's;
 --   - an uncertain answer names, in "waiting" (sorted ids), the earlier
 --     messages that make it uncertain, for the waiting read (frozen file
---     0261). The recipient guard reads only "state" and "messages".
+--     0165). The recipient guard reads only "state" and "messages".
 -- Every doubt still answers uncertain, never none: a send waits rather
 -- than risk a second copy.
 CREATE OR REPLACE FUNCTION public.stewardship_report_email_prior_v1(snapshot uuid, recipient text)
@@ -159,7 +157,7 @@ BEGIN
           AND contype='u' AND conkey=ARRAY[(SELECT attnum FROM pg_attribute
               WHERE attrelid='public.stewardship_report_email_coverage_decision'::regclass
                 AND attname='message_id')]) THEN
-        RAISE EXCEPTION 'Migration 0260: the coverage decision table is not installed';
+        RAISE EXCEPTION 'Migration 0164: the coverage decision table is not installed';
     END IF;
     IF NOT EXISTS(SELECT 1 FROM pg_proc p
         WHERE p.oid=to_regprocedure('public.stewardship_report_email_coverage_decision_guard_v1()')
@@ -173,7 +171,7 @@ BEGIN
           AND strpos(p.prosrc,'m.state<>''cancelled''')>0)
        OR has_function_privilege('public',
           'public.stewardship_report_email_coverage_decision_guard_v1()','EXECUTE') THEN
-        RAISE EXCEPTION 'Migration 0260: the coverage decision guard is not installed as declared';
+        RAISE EXCEPTION 'Migration 0164: the coverage decision guard is not installed as declared';
     END IF;
     IF (SELECT count(*) FROM pg_trigger t
         WHERE t.tgrelid='public.stewardship_report_email_coverage_decision'::regclass
@@ -182,7 +180,7 @@ BEGIN
                 AND t.tgfoid=to_regprocedure('public.stewardship_report_email_coverage_decision_guard_v1()'))
             OR (t.tgname='report_email_coverage_decision_immutable'
                 AND t.tgfoid=to_regprocedure('public.stewardship_recipient_immutable_v1()'))))<>2 THEN
-        RAISE EXCEPTION 'Migration 0260: the coverage decision triggers are missing';
+        RAISE EXCEPTION 'Migration 0164: the coverage decision triggers are missing';
     END IF;
     IF NOT EXISTS(SELECT 1 FROM pg_proc p
         WHERE p.oid=to_regprocedure('public.stewardship_report_email_prior_v1(uuid,text)')
@@ -192,18 +190,18 @@ BEGIN
           AND strpos(p.prosrc,'''waiting''')>0
           AND strpos(p.prosrc,'was_unknown')>0
           AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']) THEN
-        RAISE EXCEPTION 'Migration 0260: the coverage comparison is not installed as declared';
+        RAISE EXCEPTION 'Migration 0164: the coverage comparison is not installed as declared';
     END IF;
-    -- 0250's recipient guard still reads the comparison it replaces here.
+    -- 0162's recipient guard still reads the comparison it replaces here.
     IF NOT EXISTS(SELECT 1 FROM pg_proc p
         WHERE p.oid=to_regprocedure('public.stewardship_report_email_recipient_guard_v1()')
           AND strpos(p.prosrc,'stewardship_report_email_prior_v1(NEW.snapshot_id,NEW.address)')>0) THEN
-        RAISE EXCEPTION 'Migration 0260: the recipient guard no longer reads the comparison';
+        RAISE EXCEPTION 'Migration 0164: the recipient guard no longer reads the comparison';
     END IF;
     -- A send that covers no slot (here: no such snapshot) is never covered.
     IF public.stewardship_report_email_prior_v1(gen_random_uuid(),'nobody@example.org')
        IS DISTINCT FROM '{"state":"none"}'::jsonb THEN
-        RAISE EXCEPTION 'Migration 0260: the coverage comparison does not answer as declared';
+        RAISE EXCEPTION 'Migration 0164: the coverage comparison does not answer as declared';
     END IF;
 END
 $check$;

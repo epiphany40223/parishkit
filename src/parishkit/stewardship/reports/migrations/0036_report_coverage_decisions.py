@@ -1,19 +1,17 @@
 """Forward migration: show and settle a report send's wait (#1872).
 
 Its SQL is the frozen file
-``schema/migrations/0260_report_coverage_decisions.sql`` (prefix 0260,
-provisional until the repository-wide file sequence assigns the final
-number), read whole and never parsed. It creates the Administrator's
-coverage decision about an earlier report message that was once unknown and
-then cancelled, with its insert guard, replaces frozen file 0250's coverage
-comparison so it reads those decisions and names what an uncertain answer
-waits on (the read of the sends that wait is 0037's, frozen file 0261). It
-ends with a DO block that refuses to commit unless all of it is installed
-as declared. The state operation records the same model, so
-``makemigrations --check`` stays clean. Reversing needs its own forward
-migration.
+``schema/migrations/0164_report_coverage_decisions.sql``, read whole and
+never parsed. It creates the Administrator's coverage decision about an
+earlier report message that was once unknown and then cancelled, with its
+insert guard, replaces frozen file 0162's coverage comparison so it reads
+those decisions and names what an uncertain answer waits on (the read of the
+sends that wait is 0037's, frozen file 0165). It ends with a DO block that
+refuses to commit unless all of it is installed as declared. The state
+operation records the same model, so ``makemigrations --check`` stays clean.
+Reversing needs its own forward migration.
 
-It follows the users swap (#952), as 0156's and 0250's migrations do.
+It follows the users swap (#952), as 0156's and 0162's migrations do.
 """
 
 import uuid
@@ -29,14 +27,14 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0260_report_coverage_decisions.sql"
+    / "0164_report_coverage_decisions.sql"
 )
 
 
 class Migration(migrations.Migration):
     dependencies = [
         # The reports app's previous migration, which installs the previous
-        # frozen file (0250, provisional), so the files apply in prefix order.
+        # frozen file (0162), so the files apply in prefix order.
         ("stewardship_reports", "0035_report_recovery_coverage"),
     ]
 

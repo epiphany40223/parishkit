@@ -18,7 +18,7 @@ SNAPSHOT = "stewardship_report_email_snapshot"
 RECIPIENT = "stewardship_report_email_recipient"
 MANUAL = "stewardship_report_email_manual_request"
 COMPLETION = "stewardship_report_email_completion_ready"
-# An Administrator's coverage decision about an earlier report email (0260,
+# An Administrator's coverage decision about an earlier report email (0164,
 # #1872), which web records, with its evidence note, and reads, and the
 # worker's coverage comparison reads.
 DECISION = "stewardship_report_email_coverage_decision"

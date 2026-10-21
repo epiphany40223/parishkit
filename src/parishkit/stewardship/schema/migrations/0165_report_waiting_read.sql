@@ -1,5 +1,4 @@
--- Frozen forward migration file 0261 (provisional: the repository-wide file
--- sequence assigns the final number when the pull request merges): the
+-- Frozen forward migration file 0165: the
 -- Administrator-only read of the report sends waiting on an earlier message
 -- (#1872, report-emails spec "Catch-up, recovery and holds"). This file is
 -- installed by its Django migration in the reports app and must never
@@ -10,7 +9,7 @@
 -- so it installs on its own: the users swap's base must lack it (it is
 -- granted to web, runtime_grants.CLOSURE_FUNCTIONS), and the swap installs
 -- it again whatever else is pending. It reads frozen files 0156's tables
--- and 0260's comparison when it runs. The file ends with a DO block that
+-- and 0164's comparison when it runs. The file ends with a DO block that
 -- refuses to commit unless the read is installed as declared.
 SET LOCAL check_function_bodies = false;
 SET LOCAL search_path = public;
@@ -67,7 +66,7 @@ BEGIN
           AND strpos(p.prosrc,'stewardship_report_email_current_v1(')>0
           AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp'])
        OR has_function_privilege('public','public.stewardship_report_email_waiting_v1(uuid)','EXECUTE') THEN
-        RAISE EXCEPTION 'Migration 0261: the waiting read is not installed as declared';
+        RAISE EXCEPTION 'Migration 0165: the waiting read is not installed as declared';
     END IF;
 END
 $check$;

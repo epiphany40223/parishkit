@@ -388,7 +388,7 @@ LEADERS_WITHOUT_USER_FUNCTION = "stewardship_leaders_without_user_v1(text, uuid)
 # parishioner data, only counts and Ministry names.
 LEADER_EMAILS_FUNCTION = "stewardship_leader_emails_v1(text, uuid)"
 # The report sends waiting on an earlier email, for an Administrator's Sent
-# mail and Mail message page (0261, #1872): ids and times, never an address.
+# mail and Mail message page (0165, #1872): ids and times, never an address.
 REPORT_WAITING_FUNCTION = "stewardship_report_email_waiting_v1(uuid)"
 # One email's recipient addresses for its Mail message page (#1024): web
 # reads them, for an Administrator only, without any grant on the email's
@@ -591,7 +591,7 @@ CLOSURE_FUNCTIONS = {
     # The report conversion's open digest work check (0161,
     # #1786), which the admin-recovery login's offline conversion asks.
     DIGEST_WORK_FUNCTION: ("stewardship_reports", "0041_report_conversion"),
-    # The report sends waiting on an earlier email (0261, provisional, #1872).
+    # The report sends waiting on an earlier email (0165, #1872).
     REPORT_WAITING_FUNCTION: (
         "stewardship_reports",
         "0037_report_waiting_read",
@@ -746,7 +746,7 @@ CLOSURE_TABLES = {
         ("stewardship_reports", "0040_report_pipeline"),
     ),
     # An Administrator's coverage decision about an earlier report email
-    # (0260, provisional, #1872), which web records and reads.
+    # (0164, #1872), which web records and reads.
     "stewardship_report_email_coverage_decision": (
         "stewardship_reports",
         "0036_report_coverage_decisions",

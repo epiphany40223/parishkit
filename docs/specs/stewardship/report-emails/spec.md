@@ -549,7 +549,7 @@ Report sends use the shared machinery unchanged:
   emails page's [past sends](#past-sends) list such a send as "Waiting"
   from the same read. The read
   (`stewardship_report_email_waiting_v1`, Administrators only, frozen file
-  0261, provisional) returns
+  0165) returns
   each waiting send's preparation, due time and the ids of the messages
   it waits on, never an address.
 
@@ -566,8 +566,8 @@ Report sends use the shared machinery unchanged:
   delivered** (it never did, so the address gets its own message). Each
   is recorded once per message, as an evidence note and a
   `ReportEmailCoverageDecision`
-  (`stewardship_report_email_coverage_decision`, frozen file 0260,
-  provisional) with the note's id, which the comparison reads. Its insert
+  (`stewardship_report_email_coverage_decision`, frozen file 0164)
+  with the note's id, which the comparison reads. Its insert
   guard admits it only from an Administrator, for a cancelled report email
   whose history includes `delivery_unknown`, at the email's current
   version, with that note. `pk-admin delivery resolve` offers them as
