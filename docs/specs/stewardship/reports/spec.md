@@ -1236,8 +1236,11 @@ the Family writes it) and no Reviewer's value (the stream has no Edit).
 
 The filters are always open: **Stage** first, To review by default, each
 choice with its count, then a search (Family name, DUID, the text and Staff
-notes) and the submitted-date filters. History, a Stage choice of its own
-after the stages, lists requests a later answer from the Family replaced
+notes). There is no submitted-date filter: the four review worklists offer
+the same kinds of filter, and the Administrator judged a submitted date
+range not useful (2026-10-20,
+[#1888](https://github.com/epiphany40223/parishkit/issues/1888)). History,
+a Stage choice of its own after the stages, lists requests a later answer from the Family replaced
 (superseded) or cleared (withdrawn); Every stage counts the current
 requests only. The installed SQL selection searches the shown name (surname,
 then heads), as the directory does; the table sorts by Family (surname, then
@@ -1252,7 +1255,9 @@ carry is a Stage alone (`?stage=<value>`, a
 [My review work](../review-pipeline/spec.md#role-views) card's,
 [#1818](https://github.com/epiphany40223/parishkit/issues/1818)), and any
 other query string, or a Stage the filter does not offer, is refused with
-the page's plain-language filter error (a 400). The page's address carries
+the page's plain-language filter error (a 400). The removed date filter's
+`start`, `end` and `zone`, in a query string or a POST body (a page drawn
+before #1888), are ignored, never refused. The page's address carries
 its Stage the same way (To review is the plain address), so a reload after
 an in-place answer draws the same Stage.
 
@@ -1331,7 +1336,7 @@ The export pane below the table queues the complete export, which includes
 complete text and a workflow history option, and names each Family as the
 page does, from the snapshot its capture was read from; a Family without a
 surname is "Name not recorded in ParishSoft", as the selection names it.
-It takes the worklist's view: the search, the dates and the sort, and the
+It takes the worklist's view: the search and the sort, and the
 Stage as the stored follow-up choices it stands for (To handle: needed, not
 completed; Handled: completed; History: every request, current or not).
 To review and Ignored are both "not needed, not completed" there, so either
@@ -1357,17 +1362,19 @@ to a reader even after the sheet is sorted or filtered. A superseded item's
 request that replaced it, which finds that request's row, or "Not in this
 export" when the export's filters left that request out.
 
-The submitted-date filters (from, through) are whole days in the
-viewer's browser time zone, under the
-[global presentation rules](../spec.md#global-presentation-rules), and work as
-the [Logs screen's date filters](../admin-portal/spec.md#logs) do: the form
-sends the browser's zone with the dates, and a date without a known zone is
-refused, never read in another zone. An export captures the filters with their
-zone, and its retry asks for exactly those filters; a capture made before
-schema migration 0064 has no zone, keeps its campaign-zone days and is retried
-unchanged. The page checks both dates before Apply (a whole date, and
-through no earlier than from); a request that reaches the server with one
-broken is refused, as a bad filter is.
+The selection itself keeps its submitted-date filters (from, through), which
+the host command line still takes (`--start`, `--end` and `--zone`, see
+[Admin automation](../admin-automation/spec.md#reports-and-exports)):
+whole days in the given zone, as the
+[Logs screen's date filters](../admin-portal/spec.md#logs) are in the
+browser's, and a date without a known zone is refused, never read in another
+zone. An export captures the filters with their zone, and its retry asks for
+exactly those filters; a capture made before schema migration 0064 has no
+zone, keeps its campaign-zone days and is retried unchanged. The export pane
+posts no dates; a pane drawn before #1888 still posts its empty ones, which
+are dropped unread. A file whose capture has no dates names no date range:
+its "Filters and sort" leaves out the empty days and zone, and it has no
+"Campaign date-filter timezone" line; a dated capture keeps both.
 
 Every decision is checked against the request's version the row showed; a
 request someone else changed first is left as it is and the notice says so
@@ -2276,15 +2283,18 @@ Updating, To enter by hand, Entered by hand, Updated in ParishSoft,
 Confirmed, Ignored, History for superseded and cancelled rows, and Every
 stage, which counts everything but History), then a Family name or DUID
 search, how the change reaches ParishSoft (Automatic and by hand, Automatic
-only, By hand only), kind of change (contact details, moved, deceased, new
-Member) and submitted date. The page has no summary: the counts are the
-Stage filter's. Sorting, paging and filters act
+only, By hand only) and kind of change (contact details, moved, deceased,
+new Member). There is no submitted-date filter, as on
+[Additional information](#additional-information) (#1888). The page has no
+summary: the counts are the Stage filter's. Sorting, paging and filters act
 [in place](../ui-conventions/spec.md#in-place-controls), and the address
 bar then shows the view's own address with its Stage, closed filters and
 table choices, so a reload draws the same view; the name search stays in
 POST bodies, so a reload clears only it, and a link carrying a search is
-refused (R38). Submitted from and Through are days in the browser's time
-zone; no zone line sits under the filters (R38).
+refused (R38). The removed Submitted from and Through filter's `start`,
+`end` and `zone`, in a link or a form (a page drawn before #1888), are
+ignored, never refused; `pk-admin report census` and `export census` keep
+their own `--start`, `--end` and `--zone`.
 
 The filtered list downloads, from the pane below the table, as CSV, XLSX or
 PDF, every format with the page's values
@@ -2938,9 +2948,8 @@ the projection leaves the column blank, never No (#794).
 Filters include active/inactive, first/latest submission dates, pledge range,
 zero/nonzero/cannot contribute, frequency, and share method. The first and
 latest response dates (From, Through) are whole days in the viewer's browser
-time zone and work as the [Additional information](#additional-information)
-submitted-date filters do: the form sends the browser's zone with the dates,
-and a date without a known zone is refused, never read in another zone
+time zone: the form sends the browser's zone with the dates, and a date
+without a known zone is refused, never read in another zone
 (schema migration 0110). Filters without a zone, from a release before 0110
 or a retained export capture, keep their campaign-zone days. The summary of
 the matching pledges comes first, as visuals

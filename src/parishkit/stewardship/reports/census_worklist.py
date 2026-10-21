@@ -63,6 +63,7 @@ from parishkit.stewardship.source.source_status import source_status_label
 from parishkit.stewardship.web.presentation import duid
 from parishkit.stewardship.web.review_worklist import (
     NOT_SEEN,
+    RETIRED_DATES,
     WORDS,
     Column,
     StaleDecision,
@@ -199,24 +200,19 @@ LINK_DEFAULTS = {
     "stage": Stage.TO_REVIEW.value,
     "route": "any",
     "kind": "any",
-    "start": "",
-    "end": "",
-    "zone": "",
 }
 
 
 def link_pairs(query, paging=None):
     """The view's choices a link may carry, as ``(name, value)`` pairs.
 
-    The Stage and the closed filters other than their defaults, the zone
-    only while a day needs it, then the table's ``paging`` (its page, size
-    and sort as the form sent them). ``page_address`` drops empty values.
+    The Stage and the closed filters other than their defaults, then the
+    table's ``paging`` (its page, size and sort as the form sent them).
+    ``page_address`` drops empty values.
     """
-    days = bool(query.start or query.end)
     pairs = [
-        (name, "" if value == LINK_DEFAULTS[name] else value)
-        for name, value in ((name, getattr(query, name)) for name in LINK_DEFAULTS)
-        if name != "zone" or days
+        (name, "" if getattr(query, name) == default else getattr(query, name))
+        for name, default in LINK_DEFAULTS.items()
     ]
     return pairs + sorted((paging or {}).items())
 
@@ -249,7 +245,7 @@ def worklist_page(result, query, table, action, *, mutable, paging=None):
         fields={
             name: value
             for name, value in query.form_values().items()
-            if name not in {"status", "history"}
+            if name not in {"status", "history", *RETIRED_DATES}
         },
         filters_template="stewardship/census-worklist-filters.html",
         editor_template="stewardship/census-worklist-value.html",

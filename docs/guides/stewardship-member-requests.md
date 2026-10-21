@@ -120,6 +120,11 @@ contact changes to ParishSoft with the v2 Member contact PUT. It ships
    section says how a confirmed result is recorded on #528 before step 1's
    change is made.
 
+pk-local is the one exception to both: while it reads its fake ParishSoft
+the switch is on and the read is the fake's own, so every write reaches only
+the fake. pk-local never writes to the real ParishSoft (see the
+[local environment guide](stewardship-local-environment.md#updating-the-fake-parishsoft)).
+
 The switch is the deployment setting `parishsoft_publication: true` (or
 `PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION=1`), set on both the web and
 worker services. While it is off the web refuses to queue a preflight or to

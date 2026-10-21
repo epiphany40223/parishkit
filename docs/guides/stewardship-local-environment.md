@@ -49,8 +49,9 @@ localhost-only one ([below](#signing-in-with-google)). ParishSoft is a fake
 service with a synthetic parish unless you choose the real ParishSoft API
 with `deploy --parishsoft real`; pk-local then reads real parish data,
 which stays on the laptop and must never be committed, and it never writes
-to ParishSoft. The other real provider the VM can reach is Slack, and only
-with a test token you install yourself.
+to the real ParishSoft. With the fake, Update ParishSoft writes to the fake
+([below](#updating-the-fake-parishsoft)). The other real provider the VM can
+reach is Slack, and only with a test token you install yourself.
 
 ## Prerequisites
 
@@ -472,6 +473,32 @@ ParishSoft before, C the answer being carried forward):
 Edits live in the fake's configuration file, which snapshots carry: `reset
 --seeded` (or a switch) brings back that snapshot's data, edits and all, so
 one pull request's edits never leak into the next check.
+
+### Updating the fake ParishSoft
+
+While pk-local reads the fake, census publication is on, so Check ParishSoft
+and Update ParishSoft run exactly as in Production and write the approved
+changes to the fake
+([specification](../specs/stewardship/local-environment/spec.md#fake-parishsoft-writes)).
+With `deploy --parishsoft real` publication is off and every write is
+refused: pk-local never writes to the real ParishSoft. As in Production,
+Testing mode stops a run after Check ParishSoft, so switch to Production
+mode to update.
+
+Each write the fake accepts is recorded as one more `member` edit, so
+`fake-parishsoft show` lists it and `undo` drops it. A full `refresh` then
+reads the written values back and the published changes become Confirmed.
+A `fake-parishsoft` edit stops the fake while it runs, so a write sent at
+that moment fails as ParishSoft unavailable, as in an outage, and is never
+lost after it was answered; run the update again for any change it left
+failed.
+
+Writes share the fake's bound of 500 edits with your own edits. Once it is
+reached, every further write fails as ParishSoft unavailable, and the fake's
+log says so; `fake-parishsoft clear` (or `undo`) or `reset --seeded` frees
+edits. A Member of the late-added Family, which the fake serves after
+`seed`, cannot be written: a change for that Member fails as refused by
+ParishSoft.
 
 ## Rehearsing a bulk send
 

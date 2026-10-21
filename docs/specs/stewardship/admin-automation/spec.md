@@ -3016,7 +3016,9 @@ then the shared report read (current campaign, `admit_report_read`, the
 campaign read guard and the session recheck), the page's `CensusQuery`
 with every filter but the search (`--status`, `--history`, `--route`,
 `--kind`, and `--start`, `--end` and `--zone` as `report information`
-takes them) and the page's `census_changes`. The filters are parsed once
+takes them; the page no longer offers the dates, which these commands keep,
+[#1888](https://github.com/epiphany40223/parishkit/issues/1888)) and the
+page's `census_changes`. The filters are parsed once
 the reader is admitted, so a refused one is `invalid` after the session
 recheck. Its rows name Families and Members with their contact details, so
 it prints counts only: the rows the filters keep, by route and by kind,
@@ -3289,7 +3291,8 @@ the two cannot drift.
   stage (`all`, the default, keeps the earlier summary), with `stage` and
   `stages`, every answer by stage, zeros included. `report information
   --stage to_review|to_handle|ignored|handled|history|all [--start --end
-  --zone]` counts the worklist instead of the old queue filters (combining
+  --zone]` (the dates are the command's own; the page has none, #1888)
+  counts the worklist instead of the old queue filters (combining
   it with `--disposition`, `--needed` or `--completed` is `invalid`):
   `matching` is the requests at the stage, as the page's
   `information_worklist.requests` places them, and `stages` every stage's

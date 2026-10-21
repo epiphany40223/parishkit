@@ -37,6 +37,7 @@ from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.presentation import duid
 from parishkit.stewardship.web.review_worklist import (
     EVERY_STAGE,
+    RETIRED_DATES,
     WORDS,
     Column,
     StaleDecision,
@@ -112,8 +113,8 @@ EXPORT_FILTERS = {
 class WorklistQuery:
     """The worklist's filters: the Stage, then the selection's own.
 
-    ``information`` is the selection's query (search, dates and their
-    browser zone) over every request; the Stage is applied here, since the
+    ``information`` is the selection's query (search and, from the CLI, dates
+    and their ``--zone``) over every request; the Stage is applied here, since the
     selection cannot tell an Ignored request from one To review.
     """
 
@@ -124,7 +125,7 @@ class WorklistQuery:
     def parse(cls, parameters):
         """Single bounded values: a known Stage, then the selection's filters.
 
-        A date the browser sent without its zone raises ``UnknownZone``, and
+        A date given without a known ``--zone`` raises ``UnknownZone``, and
         any other bad value a ValueError, as the selection's own parse does.
         """
         if not hasattr(parameters, "getlist"):
@@ -307,7 +308,9 @@ def worklist_page(counts, query, table, action, *, mutable):
         baseline=False,
         reviewer=False,
         fields={
-            key: value for key, value in query.form_values().items() if key != "stage"
+            key: value
+            for key, value in query.form_values().items()
+            if key not in {"stage", *RETIRED_DATES}
         },
         filters_template="stewardship/information-worklist-filters.html",
         export_template="stewardship/information-worklist-export.html",

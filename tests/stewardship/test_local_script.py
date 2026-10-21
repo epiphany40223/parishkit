@@ -1076,6 +1076,9 @@ def test_up_follows_the_runbook_first_installation_order(tmp_path):
         first(calls, " up --detach web"),
     ]
     assert order == sorted(order), calls
+    # A new deployment reads the fake ParishSoft, so census publication is
+    # rendered on from the start (#1884), as an operational switch.
+    assert "-e PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION=1 " in calls[order[1]]
     # The persistent dependencies start before the offline steps.
     assert first(calls, "postgres valkey") < order[3]
     # Every Compose call names the fixed project and the initial file.
@@ -2809,6 +2812,9 @@ def test_a_fake_parishsoft_edit_rewrites_the_file_and_recreates_only_the_fake(
     assert " -i " in calls[edit] and IMAGE in calls[edit]
     recreate = first(calls, "up --detach --no-deps --force-recreate fake-parishsoft")
     assert recreate > edit
+    # The fake stops before its file is read, so no contact PUT it records
+    # there (#1884) is lost when the new document replaces the file.
+    assert first(calls, " stop fake-parishsoft") < edit
     file = root / "run" / "local" / "fake-parishsoft.json"
     assert json.loads(file.read_text()) == {"seed": 7, "edited": True}
     # The Compose selection, which can refuse, runs before the edit and write.
@@ -2832,6 +2838,10 @@ def test_a_refused_fake_parishsoft_edit_changes_nothing(tmp_path):
     file = root / "run" / "local" / "fake-parishsoft.json"
     assert file.read_text() == '{"seed": 7}\n'
     assert not any("--force-recreate" in call for call in calls)
+    # The fake, stopped for the edit, is started again on the same file.
+    assert first(calls, " stop fake-parishsoft") < first(
+        calls, " start fake-parishsoft"
+    )
 
 
 def test_fake_parishsoft_show_prints_and_writes_nothing(tmp_path):

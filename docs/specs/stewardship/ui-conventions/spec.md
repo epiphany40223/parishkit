@@ -151,10 +151,7 @@ day and the active window keep their campaign-zone definitions. Shown
 timestamps include a time zone abbreviation in detail views. A form that
 accepts a date and time carries the browser's IANA zone in a hidden field that
 the page script fills, and the server converts the typed wall-clock time to
-UTC; the page names the zone next to the fields. Exception: Census changes'
-From and Through filters (days, not times) leave that line out and its
-About panel says the days are in this computer's time zone (Administrator,
-2026-10-19, R38 finding 8). The Admin portal requires
+UTC; the page names the zone next to the fields. The Admin portal requires
 JavaScript ([#565](https://github.com/epiphany40223/parishkit/issues/565)), so
 a missing or unknown zone is refused rather than guessed, and when the browser
 reports none the page keeps Save unavailable, saying why. A typed time that
@@ -174,7 +171,8 @@ logs date filters the second ([Admin portal](../admin-portal/spec.md#logs)),
 New and Edit scheduled email the third ([Admin
 portal](../admin-portal/spec.md#new-and-edit-scheduled-email)), and the
 submitted-date filters of the Additional information and Ministry reports the
-fourth ([Reports](../reports/spec.md#additional-information)), then the
+fourth ([Reports](../reports/spec.md#additional-information); the Additional
+information page no longer has one, #1888), then the
 date-change review ([Admin
 portal](../admin-portal/spec.md#dates-and-mail-schedules)) and the Financial
 stewardship response-date filters
@@ -3518,9 +3516,14 @@ learned once. **Shared code.**
 - **Limits** are refused at the field in plain words, with the limit named,
   such as the 30-date limit on a reminder repeat.
 - **Host schedules.** Off-site backups are not edited in the Admin portal.
-  The host's scheduled job runs them, and
-  [System health](https://github.com/epiphany40223/parishkit/issues/530)
-  shows that schedule read-only, in the same plain words (the #1129 default).
+  A cron entry on the server runs them, which the application cannot read,
+  so no page shows a backup schedule or a next backup time. The
+  [Backups panel](../admin-portal/spec.md#backups-panel) on System health
+  says so in System health's About this page, under Backups, which names the
+  backup runbook's nightly schedule (it does not link it). This replaces the #1129 default of showing that schedule
+  read-only: a copy of the timing in configuration could drift from the
+  cron entry and show a wrong time
+  ([#1898](https://github.com/epiphany40223/parishkit/issues/1898)).
 
 **Adoption.** The ParishSoft refresh schedule follows all of these rules
 except the browser-zone entry, which is its recorded exception
