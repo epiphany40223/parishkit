@@ -8,10 +8,12 @@ Member's or Family's fields, a Ministry roster entry added or removed, and a
 Family's pledge set or removed. ``apply_edits`` replays them in order on the
 generated parish when the fake starts, then re-derives the copies the
 generator derives (contact rows, member counts, roster Family ids), so the
-served collections stay mutually consistent. The fake stays read-only over
-HTTP: edits reach it only through its file, which the operator script
-rewrites and then recreates the service (see "Fake ParishSoft edits" in
-docs/specs/stewardship/local-environment/spec.md).
+served collections stay mutually consistent. Edits reach the fake through
+its file, which the operator script rewrites and then recreates the service
+(see "Fake ParishSoft edits" in
+docs/specs/stewardship/local-environment/spec.md). Over HTTP the fake takes
+only census publication's Member contact PUT, which it records here as one
+more ``member`` edit (``fake_contact``, #1884).
 
 ``pk-stewardship fake-parishsoft-edit WORDS...`` (``execute``) is the
 command-line half: it reads the current configuration on stdin, checks the
@@ -179,6 +181,15 @@ def _iso_date(value, what):
     return parsed
 
 
+def served_date(value, what):
+    """A YYYY-MM-DD civil date as the fake serves it, a midnight timestamp.
+
+    EditError names ``what`` unless ``value`` is exactly YYYY-MM-DD. Public
+    for ``fake_contact``, whose PUT dates are stored the same way.
+    """
+    return _day(_iso_date(value, what))
+
+
 def _identifier(value, what):
     """A positive whole-number record id."""
     if type(value) is str and value.isdecimal():
@@ -201,7 +212,7 @@ def coerce(field, raw, kind):
             raise EditError(f"{field} cannot be empty.")
         return None
     if kind == DATE:
-        return _day(_iso_date(raw, field))
+        return served_date(raw, field)
     if kind == FLAG:
         if raw not in ("true", "false"):
             raise EditError(f"{field} must be true or false.")

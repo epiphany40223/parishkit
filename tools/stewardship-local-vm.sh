@@ -467,9 +467,14 @@ ENV
 
     step "Provisioning the runtime root"
     install -d -o 10001 -g 10001 -m 0700 "$root"
+    # Census publication (#1884) is on from the start: a new deployment reads
+    # the fake ParishSoft, the only one pk-local may write to. An operational
+    # switch, so it reaches the service documents but not the provisioning
+    # record; every deploy renders it again (stewardship-upgrade-host.sh).
     "${isolated[@]}" \
         --mount "type=bind,source=$root,target=$root" \
         --mount "type=bind,source=$yaml,target=/run/operator.yaml,readonly" \
+        -e PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION=1 \
         "$IMAGE" provision-runtime --config /run/operator.yaml --image "$IMAGE" | tail -1
     # The marker can only be written now: provisioning requires an empty
     # root. From here on every destructive command recognizes this root.
@@ -1421,6 +1426,8 @@ cmd_seed() {
     printf 'normal\n' >"$clock_dir/mode"
     chown 10001:10001 "$clock_dir/mode" "$clock_dir/offset"
     # The late-added Family is served from now on (specification, "Fake configuration").
+    # stop_services above stopped the fake too, so no contact PUT it records
+    # in this file (#1884) can land between the read and the rewrite.
     jq --arg at "$(date -u +%FT%TZ)" '.release_at = $at' "$root/run/local/fake-parishsoft.json" |
         private_file "$root/run/local/fake-parishsoft.json"
     start_services --force-recreate
@@ -1893,7 +1900,7 @@ cmd_fake_parishsoft() {
     # show it, or run the Admin's full refresh of it. Every form refuses
     # unless this is a marked pk-local root whose deployment reads the fake
     # and has the fake's configuration file; Production has neither.
-    local file="$root/run/local/fake-parishsoft.json" new line defaults
+    local file="$root/run/local/fake-parishsoft.json" new line defaults status
     local -a words=("$@")
     require_marker
     load_env
@@ -1924,11 +1931,24 @@ cmd_fake_parishsoft() {
                     [ -z "$line" ] || words+=("$line")
                 done <<<"$defaults"
             fi
+            # The fake stops before its file is read (#1884): it records each
+            # contact PUT that Update ParishSoft sends in this file, so a PUT
+            # answered while the edit runs would be lost when the new
+            # document replaces the file. A stopped fake answers no PUT (the
+            # write fails as unavailable, as in any ParishSoft outage); a
+            # refusal starts it again unchanged.
+            step "Stopping the fake ParishSoft for the edit"
+            "${dc[@]}" stop fake-parishsoft 2>&1 | quiet
             # The image checks the edit against the generated parish and
             # prints the new document; nothing is written unless it is one.
-            new=$("${isolated[@]}" -i "$IMAGE" fake-parishsoft-edit "${words[@]}" <"$file")
-            jq -e 'type == "object" and has("seed")' >/dev/null <<<"$new" ||
+            status=0
+            new=$("${isolated[@]}" -i "$IMAGE" fake-parishsoft-edit "${words[@]}" <"$file") || status=$?
+            if [ "$status" -ne 0 ] || ! jq -e 'type == "object" and has("seed")' >/dev/null <<<"$new"; then
+                "${dc[@]}" start fake-parishsoft 2>&1 | quiet
+                wait_until 120 "the fake ParishSoft to turn healthy" all_healthy fake-parishsoft
+                [ "$status" -eq 0 ] || exit "$status"
                 refuse "The edit command did not answer with a configuration document; nothing was changed."
+            fi
             printf '%s\n' "$new" | private_file "$file"
             # A container keeps a bind mount on the inode it started with,
             # and private_file replaces the file, so the service is recreated.

@@ -252,8 +252,9 @@ LOCAL_SMTP_LATENCY_MAX_MS = 5000
 # docs/guides/stewardship-member-requests.md#parishsoft-publication). While
 # it is off the publish worker refuses before it takes the source lease or
 # makes any ParishSoft call. "1" (or ``parishsoft_publication: true`` in the
-# deployment YAML) on the worker turns it on. The local profile refuses it:
-# pk-local may read the real ParishSoft (#1399) but never writes to it.
+# deployment YAML) on the worker turns it on. The local profile admits it
+# only while it reads the local fake (#1884): pk-local may read the real
+# ParishSoft (#1399) but never writes to it.
 PARISHSOFT_PUBLICATION_VARIABLE = "PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION"
 # The ParishSoft base URL (#1399): the real API or, in the local profile
 # only, the local fake (``parishsoft_http_worker.BASE_URLS``). Unset means
@@ -796,9 +797,6 @@ def load_deployment(
     window = _integer(
         window, "export_download_window_minutes", MINIMUM_MINUTES, MAXIMUM_MINUTES
     )
-    if publication and profile is DeploymentProfile.LOCAL:
-        # pk-local may read the real ParishSoft (#1399); it never writes.
-        raise ConfigError("parishsoft_publication is refused in the local profile")
     base_url = select("PARISHSOFT_BASE_URL", None)
     if base_url in (None, ""):
         base_url = deployment.get("parishsoft_base_url")
@@ -820,6 +818,22 @@ def load_deployment(
         if base_url == default_base_url(profile.value):
             # The default is recorded as unset, so naming it renders nothing.
             base_url = None
+    if publication and profile is DeploymentProfile.LOCAL:
+        # pk-local may read the real ParishSoft (#1399) but never writes to
+        # it; publication is admitted only while it reads the fake (#1884).
+        # The shared rule decides, and every publication session and helper
+        # request applies it again. Lazy, as above.
+        from parishkit.parishsoft_http_worker import (
+            contact_put_admitted,
+            default_base_url,
+        )
+
+        chosen = default_base_url(profile.value) if base_url is None else base_url
+        if not contact_put_admitted(profile.value, chosen):
+            raise ConfigError(
+                "parishsoft_publication is refused in the local profile unless "
+                "it reads the local fake ParishSoft"
+            )
     redirect = select("MAIL_REDIRECT", None)
     if redirect in (None, ""):
         # Empty means unset, as for the switches above.
