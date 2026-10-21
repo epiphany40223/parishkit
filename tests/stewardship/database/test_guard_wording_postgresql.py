@@ -303,6 +303,11 @@ def test_migration_check_refuses_each_earlier_or_weakened_install():
         # 0125 (#1763) has since replaced the sealed intake check, so 0124's
         # own body goes back first (rolled back below).
         cursor.execute(statement(FROZEN, "stewardship_sealed_intake_admission_v1"))
+        # 0159 (#1890) has since replaced the publication confirmation guard
+        # too, so 0124's own body goes back the same way.
+        cursor.execute(
+            statement(FROZEN, "stewardship_publication_confirmation_guard_v1")
+        )
         cursor.execute(capture)
         cursor.execute(check)
         for change, message in changes:

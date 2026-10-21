@@ -154,9 +154,11 @@ def test_source_death_date_catchup_does_not_resolve_semantics(live_response_serv
     snapshot, claim = prepare(data)
     with task_login(ServiceRole.WORKER, exact=True):
         promote(snapshot, claim, harness.campaign, harness.rings)
-    assert (
-        ProposedChange.objects.get(field="death_date").execution == "resolved_upstream"
-    )
+    # ParishSoft holds the date, but nothing confirms a change before its
+    # review and entry (strict phase order, #1890): it stays To review with
+    # ParishSoft's value stored.
+    held = ProposedChange.objects.get(field="death_date")
+    assert (held.execution, held.current_value) == ("pending", "2026-01-01")
     assert ProposedChange.objects.get(field="deceased_status").execution == "pending"
     assert ProposedChange.objects.get(field="new_member").execution == "pending"
 
@@ -303,14 +305,8 @@ def test_date_work_survives_terminal_source_and_later_household_response(
     with task_login(ServiceRole.WORKER, exact=True):
         promote(snapshot, claim, harness.campaign, harness.rings)
     date_change = ProposedChange.objects.get(field="death_date")
-    expected = (
-        "pending"
-        if change in {"moved", "removed"}
-        else "resolved_upstream"
-        if caught_up
-        else "pending"
-    )
-    assert date_change.execution == expected
+    # A date ParishSoft caught up with keeps its stage too (#1890).
+    assert date_change.execution == "pending"
     if change in {"moved", "removed"}:
         # Rule 4 (#1738): a Member no longer in the Family gives no value,
         # so the change keeps its stage and stored comparison untouched.
@@ -355,7 +351,7 @@ def test_date_work_survives_terminal_source_and_later_household_response(
         assert [value["id"] for value in form["members"]] == ["4"]
         send(harness, form, answers_for(form))
     date_change.refresh_from_db()
-    assert date_change.execution == expected
+    assert date_change.execution == "pending"
     assert ProposedChange.objects.get(field="deceased_status").execution == "pending"
 
 

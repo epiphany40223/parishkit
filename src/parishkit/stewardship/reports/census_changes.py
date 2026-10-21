@@ -931,6 +931,37 @@ def now_matches(row):
     )
 
 
+# The stages before a change's step: ParishSoft already holding the value
+# leaves the change there (strict phase order, #1890), and its row says so.
+BEFORE_STEP = frozenset(
+    {Stage.TO_REVIEW, Stage.READY_TO_UPDATE, Stage.TO_ENTER_BY_HAND}
+)
+
+
+def already_held(row, stage):
+    """Whether ParishSoft already holds an open change's carried-forward value.
+
+    Refresh rule 1 (#1890): a refresh no longer confirms a change before its
+    review and step, so a To review, Ready or To enter by hand change keeps
+    its stage and its row says ParishSoft already holds the value. C is the
+    reviewer's value when it was Edited, else the Family's answer; the
+    stored ParishSoft value is the latest refresh's (reconciliation keeps
+    it current while the change is open), compared by the census compare
+    rules, as ``now_matches`` compares an Ignored one. Only a Member field
+    has a verified read.
+    """
+    kind = MEMBER_KINDS.get(row["field"])
+    if (
+        stage not in BEFORE_STEP
+        or row["entity_kind"] != "member"
+        or kind is None
+        or not row["current_available"]
+    ):
+        return False
+    carried = row["admin_value"] if row["admin_value_set"] else row["submitted_value"]
+    return canonical_value(kind, row["current_value"]) == canonical_value(kind, carried)
+
+
 def family_answer(row):
     """The Family's answer as text. A birth date given as Unknown is stored
     as None, which would otherwise show blank like a removed value."""
@@ -992,6 +1023,7 @@ def shape(row):
     shown["now_matches"] = shown["placement"].stage is Stage.IGNORED and now_matches(
         row
     )
+    shown["already_held"] = already_held(row, shown["placement"].stage)
     # What a person may record on this row now (#528): the page offers only
     # these, and the service and SQL check them again. Reopening an Ignore
     # is the Administrator's; the page shows it only to them. Reopen of a
@@ -1006,6 +1038,7 @@ def shape(row):
         current_available=row["current_available"],
     )
     shown["can_resolve"] = allowed(state, "entered")
+    shown["can_ignore"] = allowed(state, "ignored")
     shown["can_reopen"] = allowed(state, "reopened", replaced=bool(row.get("replaced")))
     # An Administrator's Review of an Automatic row (ADM-09): the form values
     # (census_change_views.REVIEWS) it may record now, in the page's order.

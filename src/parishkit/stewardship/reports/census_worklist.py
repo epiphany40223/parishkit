@@ -75,6 +75,7 @@ from parishkit.stewardship.responses.refresh_checks import (
 from parishkit.stewardship.source.source_status import source_status_label
 from parishkit.stewardship.web.presentation import duid
 from parishkit.stewardship.web.review_worklist import (
+    ALREADY_HELD,
     INCORRECT_WORDS,
     NOT_SEEN,
     WORDS,
@@ -206,9 +207,12 @@ def _last_decision(row):
 
 def _stage_note(row):
     """The census line under a row's stage (``REFRESH_CONFLICT``,
-    ``MEMBER_ID``), or empty."""
+    ``ALREADY_HELD`` for a change ParishSoft already holds before its step,
+    #1890, ``MEMBER_ID``), or empty."""
     if row.get("refresh_conflict"):
         return REFRESH_CONFLICT
+    if row.get("already_held"):
+        return ALREADY_HELD
     if row.get("resolution_member") and row.get("resolution_action") == "entered":
         return MEMBER_ID.format(duid(row["resolution_member"]))
     return ""

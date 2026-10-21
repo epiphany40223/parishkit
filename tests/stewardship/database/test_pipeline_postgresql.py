@@ -98,9 +98,9 @@ def test_ministry_requests_map_through_outcome_and_tick(response_service):
     )
 
 
-def test_ministry_request_resolved_by_the_roster_is_confirmed(response_service):
-    """A refresh whose roster shows the join resolves it: Confirmed, with no
-    reviewer; the untouched leave stays To review."""
+def test_ministry_request_the_roster_shows_stays_to_review(response_service):
+    """A refresh whose roster shows the join no longer resolves it (strict
+    phase order, #1890): it stays To review, as the untouched leave does."""
     harness = setup(response_service)
     data = ministry_source()
     data.ministry_type_memberships[9]["membership"] = [
@@ -115,6 +115,6 @@ def test_ministry_request_resolved_by_the_roster_is_confirmed(response_service):
     snapshot, claim = prepare(data)
     promote(snapshot, claim, harness.campaign, harness.rings)
     join, leave = requests()
-    assert join.resolution_source_id is not None
-    assert ministry(join) == Placement(Stage.CONFIRMED, outcome="joined")
+    assert join.resolution_source_id is None
+    assert ministry(join) == Placement(Stage.TO_REVIEW)
     assert ministry(leave) == Placement(Stage.TO_REVIEW)

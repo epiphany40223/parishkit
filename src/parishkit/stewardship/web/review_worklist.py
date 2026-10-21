@@ -189,6 +189,11 @@ NOT_SEEN = "not_seen"
 # Family's answer (refresh rule 1, #1689): the reviewer's note, never a
 # change of stage.
 NOW_MATCHES = "ParishSoft now matches the Family's answer."
+# The line an item before its step gains when ParishSoft already holds its
+# value (refresh rule 1, strict phase order, #1890): the item keeps its
+# stage, so the reviewer can Accept quickly and Staff know there is nothing
+# to type. Every ParishSoft-backed stream uses it.
+ALREADY_HELD = "ParishSoft already holds this value."
 EVERY_STAGE = "all"
 
 

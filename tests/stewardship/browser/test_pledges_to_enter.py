@@ -292,21 +292,22 @@ def test_refresh_checks_show_on_the_worklist(page, component_origin, axe_source,
     as a flag on Entered by hand, chosen on its own; Confirmed; each
     offering only Back to review (#1840); an Ignored pledge only noted; and
     (#1747) a Conflict offering Accept, Edit and Ignore beside ParishSoft
-    now, its earlier Accept shown not in force, and a To review pledge
-    already in ParishSoft. The page fits a phone and has no WCAG violation."""
+    now, its earlier Accept shown not in force, and a To review and a To
+    enter by hand pledge ParishSoft already holds, which keep their stage
+    and say so (#1890). The page fits a phone and has no WCAG violation."""
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + CHECKED)
     stage = page.locator("#table-filters").get_by_label("Stage")
     assert stage.locator("option").all_inner_texts() == [
-        "To review (0)",
+        "To review (1)",
         "Conflict (2)",
-        "To enter by hand (0)",
+        "To enter by hand (1)",
         "Entered by hand (1)",
         "Entered incorrectly (1)",
-        "Confirmed (2)",
+        "Confirmed (1)",
         "Ignored (1)",
         "Not seen in ParishSoft (1)",
-        "Every stage (7)",
+        "Every stage (8)",
     ]
     headings = page.locator("#table thead th").all_inner_texts()
     assert "ParishSoft now" in [text.strip() for text in headings]
@@ -328,8 +329,10 @@ def test_refresh_checks_show_on_the_worklist(page, component_origin, axe_source,
     assert confirmed.locator(".stage-chip").inner_text().strip() == "Confirmed"
     visible(confirmed.get_by_role("button", name="Send Family 09 back to review"))
     assert "ParishSoft now matches the Family's answer." in row(page, 6).inner_text()
-    # #1747: a Conflict is decided again against ParishSoft now; a To review
-    # pledge already in ParishSoft is Confirmed, and can go back to review.
+    # #1747: a Conflict is decided again against ParishSoft now. #1890: a
+    # pledge ParishSoft already holds keeps its stage and says so: To review
+    # offers the decisions (never Entered by hand), To enter by hand its
+    # mark.
     for index, amount in ((10, "$900.00"), (11, "$950.00")):
         conflict = row(page, index)
         assert conflict.locator(".stage-chip").inner_text().strip() == "Conflict"
@@ -338,12 +341,19 @@ def test_refresh_checks_show_on_the_worklist(page, component_origin, axe_source,
             visible(icon(page, index, label))
     assert "Earlier: Accepted, not in force." in row(page, 11).inner_text()
     assert "Earlier:" not in row(page, 10).inner_text()
-    already = row(page, 12)
-    assert "Already in ParishSoft." in already.inner_text()
-    assert [
-        node.get_attribute("data-row-action")
-        for node in already.locator(".table-actions button:not([aria-disabled])").all()
-    ] == ["back_to_review"]
+    for index, stage_word, offered in (
+        (12, "To review", ["accept", "edit", "ignore"]),
+        (13, "To enter by hand", ["back_to_review", "entered_by_hand"]),
+    ):
+        already = row(page, index)
+        assert already.locator(".stage-chip").inner_text().strip() == stage_word
+        assert "ParishSoft already holds this value." in already.inner_text()
+        assert [
+            node.get_attribute("data-row-action")
+            for node in already.locator(
+                ".table-actions button:not([aria-disabled])"
+            ).all()
+        ] == offered
     assert page.evaluate(
         "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
     )

@@ -73,6 +73,7 @@ from parishkit.stewardship.web.exports import (
 from parishkit.stewardship.web.refusals import Refusal, with_status_code
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.review_worklist import (
+    ALREADY_HELD,
     NOT_SEEN,
     Column,
     build,
@@ -193,13 +194,19 @@ ENTERING = frozenset(
         Stage.CONFIRMED.value,
     }
 )
+# The stages before a pledge's mark, where ParishSoft already holding the
+# amount leaves it (strict phase order, #1890).
+BEFORE_STEP = frozenset({Stage.TO_REVIEW, Stage.TO_ENTER_BY_HAND})
 NO_FREQUENCY = "No frequency"
 CHANGED = "The Family changed its pledge after the last decision."
-# A To review pledge a refresh found in ParishSoft (refresh rule 1, #1747):
-# Confirmed with no reviewer.
-ALREADY = "Already in ParishSoft."
-# The same at $0.00: no pledge in ParishSoft and none answered, so the
-# words do not claim ParishSoft holds something.
+# A To review or To enter by hand pledge ParishSoft already holds (refresh
+# rule 1, strict phase order, #1890): it keeps its stage, saying so. Until
+# #1890 such a To review pledge was Confirmed with no reviewer ("Already in
+# ParishSoft."); its stage is derived, so it now reads as this too.
+HELD = ALREADY_HELD
+# The same at $0.00: no pledge in ParishSoft and none to enter (such as a
+# Family that cannot contribute), so the words do not claim ParishSoft
+# holds something.
 NOTHING = "Nothing to enter: ParishSoft holds no pledge."
 EDIT_REFUSED = "Correct the value, then save it again."
 # The worklist's default filters, as the Financial stewardship selection
@@ -715,17 +722,19 @@ def _stage_line(row, decision):
     """The line under a row's Stage, as safe HTML (or "").
 
     The decision the stage word does not already say (Accepted (edited)),
-    that a Confirmed pledge with no decision was already in ParishSoft, or
-    at $0.00 that there is nothing to enter (#1747), who marked an entered
+    that a To review or To enter by hand pledge ParishSoft already holds
+    keeps its stage (#1890; its latest counting check, or the submit's,
+    found the amount to enter), or at $0.00 that there is nothing to enter
+    (#1747), who marked an entered
     pledge and when, and, for a pledge the Family changed after its last
     decision, that the decision is no longer in force.
     """
     parts = [format_html("{}", decision)] if decision else []
     found = row["placement"]
     item = row["item"]
-    if found.stage is Stage.CONFIRMED and found.decision is None:
+    if found.stage in BEFORE_STEP and item.check == "confirmed":
         nothing = item.observed is not None and item.observed == 0
-        parts.append(format_html("{}", NOTHING if nothing else ALREADY))
+        parts.append(format_html("{}", NOTHING if nothing else HELD))
     if item.review and not item.in_force:
         parts.append(format_html("{}", CHANGED))
     by, at = mark(row)

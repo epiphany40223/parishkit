@@ -44,6 +44,12 @@ ADDRESS = {
 # The answers the tests receive after a decision, and their notices.
 ACCEPTED = "/census-changes-accepted"
 ACCEPTED_NOTICE = "Mobile phone for Member DUID 100 in Family DUID 1000 accepted."
+# Row 1 (By hand) accepted, then marked Entered by hand: Entered by hand
+# follows an Accept (#1890, decision 2 reversed).
+ACCEPTED_BY_HAND = "/census-changes-accepted-by-hand"
+ACCEPTED_BY_HAND_NOTICE = (
+    "Mobile phone for Member DUID 101 in Family DUID 1001 accepted."
+)
 ENTERED = "/census-changes-entered"
 ENTERED_NOTICE = (
     "Mobile phone for Member DUID 101 in Family DUID 1001 marked entered by hand."
@@ -192,9 +198,10 @@ def components(context, admin):
             "current_available": False,
             "current_value": None,
             "handling": "manual",
-            "decision": "approved" if entered else "unreviewed",
+            # Accepted: Entered by hand follows an Accept (#1890).
+            "decision": "approved",
             "execution": "resolved_external" if entered else "pending",
-            "version": (2 if member == 7 else 3) if entered else 1,
+            "version": (3 if member == 7 else 4) if entered else 2,
             "resolution_action": "entered" if entered else None,
             "resolution_member": member if entered else None,
             "member_status": None,
@@ -304,7 +311,8 @@ def components(context, admin):
         "/census-changes-page-2": page({"size": "25", "page": "2"}),
         "/census-changes-who": page({"size": "25", "sort": "-who"}),
         ACCEPTED: page(size, ACCEPTED_NOTICE, accepted={0}),
-        ENTERED: page(size, ENTERED_NOTICE, entered={1}),
+        ACCEPTED_BY_HAND: page(size, ACCEPTED_BY_HAND_NOTICE, accepted={1}),
+        ENTERED: page(size, ENTERED_NOTICE, accepted={1}, entered={1}),
         BULKED: page(size, BULK_NOTICE, accepted={0, 1}),
         STALE: page(size, STALE_NOTICE),
         EDITED: page(size, EDITED_NOTICE, accepted={2}),

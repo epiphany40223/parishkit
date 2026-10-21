@@ -17,6 +17,8 @@ import pytest
 
 from .census_components import (
     ACCEPTED,
+    ACCEPTED_BY_HAND,
+    ACCEPTED_BY_HAND_NOTICE,
     ACCEPTED_NOTICE,
     BULK_NOTICE,
     BULKED,
@@ -137,19 +139,27 @@ def test_staff_accept_an_automatic_change_in_place(page, component_origin):
     assert page.evaluate(MARKED) == "kept"
 
 
-def test_entered_by_hand_on_a_to_review_row_is_one_step(page, component_origin):
-    """A To review By hand row offers Entered by hand beside Accept, Edit and
-    Ignore; its dialog says to check ParishSoft first and that Back to review
-    undoes the mark, and the redrawn row is Entered by hand with its mark
-    selected and Back to review its box's one kind (#1840)."""
+def test_entered_by_hand_follows_an_accept(page, component_origin):
+    """A To review By hand row offers Accept, Edit and Ignore but no Entered
+    by hand (#1890, decision 2 reversed); once accepted, in place, it offers
+    Entered by hand, whose dialog says to check ParishSoft first and that
+    Back to review undoes the mark, and the redrawn row is Entered by hand
+    with its mark selected and Back to review its box's one kind (#1840)."""
     page.goto(component_origin + PATH)
     page.evaluate(MARK)
-    sent = posts(page, component_origin, ENTERED)
-    actions = [
-        node.get_attribute("data-row-action")
-        for node in row(page, 1).locator(".table-actions button").all()
+    sent = posts(page, component_origin, ACCEPTED_BY_HAND)
+    assert [name for name, _ in actions(page, 1)] == ["accept", "edit", "ignore"]
+    assert row(page, 1).locator('[data-row-action="entered_by_hand"]').count() == 0
+    icon(page, 1, "Accept").click()
+    page.locator("#census-decide-dialog").get_by_role("button", name="Record").click()
+    has_text(page.locator("#census-notice"), ACCEPTED_BY_HAND_NOTICE)
+    assert "decide=accept" in sent[-1] and "item=1" in sent[-1]
+    assert actions(page, 1) == [
+        ("accept", "true"),
+        ("back_to_review", None),
+        ("entered_by_hand", "false"),
     ]
-    assert actions == ["accept", "edit", "ignore", "entered_by_hand"]
+    sent = posts(page, component_origin, ENTERED)
     icon(page, 1, "Mark").click()
     dialog = page.locator("#census-decide-dialog")
     has_text(dialog.locator("h2"), f"Mark {name(1)} entered by hand?")

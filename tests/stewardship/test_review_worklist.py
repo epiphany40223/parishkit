@@ -43,16 +43,12 @@ def icons(stream, placement, roles=STAFF, **flags):
             {},
             [("accept", False, False), ("edit", False, None), ("ignore", False, False)],
         ),
-        # A By hand To review change also offers Entered by hand (decision 2).
+        # A By hand To review change offers no Entered by hand: it follows
+        # an Accept (#1890, decision 2 reversed).
         (
             Placement(Stage.TO_REVIEW),
             {"by_hand": True},
-            [
-                ("accept", False, False),
-                ("edit", False, None),
-                ("ignore", False, False),
-                ("entered_by_hand", False, False),
-            ],
+            [("accept", False, False), ("edit", False, None), ("ignore", False, False)],
         ),
         # The decision in force is drawn selected, beside its undo.
         (
@@ -514,7 +510,6 @@ def test_a_withheld_action_is_left_out_of_one_row():
     ) == [
         ("accept", False, False),
         ("ignore", False, False),
-        ("entered_by_hand", False, False),
     ]
 
 
@@ -623,7 +618,10 @@ def test_a_row_with_its_own_entered_fields_gets_its_own_dialog():
     The stream's stage note joins the line under the stage."""
     from django.template.loader import render_to_string
 
-    shown = rows()[:1]
+    # Accepted, so it offers Entered by hand (#1890).
+    shown = [
+        rows()[0] | {"placement": Placement(Stage.TO_ENTER_BY_HAND, Decision.ACCEPTED)}
+    ]
     shown[0] |= {
         "entered_template": "stewardship/census-worklist-member.html",
         "by_hand": True,
@@ -634,7 +632,7 @@ def test_a_row_with_its_own_entered_fields_gets_its_own_dialog():
     entered = next(icon for icon in row["icons"] if icon["action"] == "entered_by_hand")
     assert entered["dialog"] == "census-entered-dialog-0"
     assert row["offers_entered"] and "entered_by_hand" in row["kinds"]
-    assert row["decision_label"] == "ParishSoft Member ID 7."
+    assert row["decision_label"] == "Accepted. ParishSoft Member ID 7."
     table = paginate(built.rows, {"size": "25"}, carry=[("stage", "all")])
     html = render_to_string(
         "stewardship/components/review-worklist.html",

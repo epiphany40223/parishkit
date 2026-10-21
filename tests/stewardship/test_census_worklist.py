@@ -142,33 +142,33 @@ def test_the_stage_filter_lists_one_stage_and_counts_them_all():
 
 
 def test_staff_review_by_hand_and_automatic_rows():
-    """Staff get Accept, Edit and Ignore on every To review row, and Entered
-    by hand on a By hand one; every actionable row has a box (#1680)."""
+    """Staff get Accept, Edit and Ignore on every To review row, By hand or
+    not, and Entered by hand only once a By hand one is accepted (strict
+    phase order, #1890: no one-step mark); every actionable row has a box
+    (#1680)."""
     rows = [
         shaped(id="1"),
         shaped(id="2", handling="manual", field="suffix"),
         shaped(id="3", entity_kind="family", field="email_opt_out", handling="manual"),
+        shaped(id="4", handling="manual", field="suffix", decision="approved"),
     ]
-    worklist, html = page(rows)
+    worklist, html = page(rows, stage="all")
     assert icons(worklist, 0) == [("accept", False), ("edit", False), ("ignore", False)]
-    assert icons(worklist, 1) == [
-        ("accept", False),
-        ("edit", False),
-        ("ignore", False),
-        ("entered_by_hand", False),
-    ]
+    assert icons(worklist, 1) == [("accept", False), ("edit", False), ("ignore", False)]
     # The email opt-out takes no Edit.
-    assert icons(worklist, 2) == [
-        ("accept", False),
-        ("ignore", False),
+    assert icons(worklist, 2) == [("accept", False), ("ignore", False)]
+    assert icons(worklist, 3) == [
+        ("accept", True),
+        ("back_to_review", False),
         ("entered_by_hand", False),
     ]
     assert [row["kinds"] for row in worklist.rows] == [
         "accept ignore",
-        "accept ignore entered_by_hand",
-        "accept ignore entered_by_hand",
+        "accept ignore",
+        "accept ignore",
+        "back_to_review entered_by_hand",
     ]
-    assert html.count("data-select-row") == 3
+    assert html.count("data-select-row") == 4
     assert [button["value"] for button in worklist.bulk] == [
         "accept",
         "ignore",
@@ -734,6 +734,7 @@ def test_a_refresh_conflict_and_a_member_id_say_so_under_the_stage():
         resolution_action="entered",
         resolution_member=7,
     )
+    # Accepted: Entered by hand follows an Accept (#1890).
     fresh = shaped(
         id="4",
         entity_kind="proposed_member",
@@ -745,6 +746,7 @@ def test_a_refresh_conflict_and_a_member_id_say_so_under_the_stage():
         current_value=None,
         baseline_available=False,
         baseline_value=None,
+        decision="approved",
     )
     worklist, html = page([undone, changed, added, fresh])
     rows = {row["id"]: row for row in worklist.rows}

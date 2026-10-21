@@ -26,7 +26,7 @@ from parishkit.stewardship.responses.models import ProposalResolution, ProposedC
 from parishkit.stewardship.workflows.models import RefreshCheck
 
 from .test_background_grants_postgresql import task_login
-from .test_census_pipeline_review_postgresql import decide
+from .test_census_pipeline_review_postgresql import decide, mark
 from .test_census_review_postgresql import fresh
 from .test_refresh_checks_postgresql import (
     census_row,
@@ -42,7 +42,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 def incorrect(response_service):
     """Member 3's prefix marked Entered by hand ("Dr."), then found "Rev."."""
     harness, staff, rows = prepared(response_service)
-    decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+    mark(harness, staff, [rows["prefix"]])
     refresh(harness, member={"salutation": "Rev."})
     proposal = fresh(rows["prefix"])
     assert census_row(harness, proposal)["stage"] == Stage.ENTERED_INCORRECTLY
@@ -59,7 +59,7 @@ def test_entered_by_hand_again_compares_with_parishsofts_value(response_service)
     harness, staff, proposal = incorrect(response_service)
     decide(harness, staff, [proposal], "entered_by_hand", note="Fixed")
     again = fresh(proposal)
-    assert (again.decision, again.execution) == ("unreviewed", "resolved_external")
+    assert (again.decision, again.execution) == ("approved", "resolved_external")
     assert again.version == proposal.version + 1
     assert ProposalResolution.objects.filter(proposal=again).count() == 2
     row = census_row(harness, again)
@@ -129,7 +129,13 @@ def test_back_to_review_undoes_the_mark_then_reviews_it_for_an_edit(
     edited = fresh(proposal)
     assert (edited.decision, edited.admin_value) == ("approved", "Rev.")
     refresh(harness, member={"salutation": "Rev."})
-    assert fresh(proposal).execution == "resolved_upstream"
+    # ParishSoft holds the Edit's value: To enter by hand, saying so; marked
+    # (nothing to type), the next refresh Confirms it (#1890).
+    assert fresh(proposal).execution == "pending"
+    row = census_row(harness, proposal)
+    assert row["stage"] == Stage.TO_ENTER_BY_HAND and row["already_held"]
+    mark(harness, staff, [proposal])
+    refresh(harness, member={"salutation": "Rev."})
     assert census_row(harness, proposal)["stage"] == Stage.CONFIRMED
 
 
@@ -138,7 +144,7 @@ def test_marking_again_is_refused_unless_it_is_entered_incorrectly(response_serv
     again, nor Back to review without a note; nothing is recorded. (Back to
     review with a note undoes either, #1840.)"""
     harness, staff, rows = prepared(response_service)
-    decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+    mark(harness, staff, [rows["prefix"]])
     entered = fresh(rows["prefix"])
     for action in ("entered_by_hand", "back_to_review"):
         with pytest.raises(ValueError):
@@ -200,7 +206,12 @@ def forge(proposal, actor, action, assignments=None, note=""):
             "new final Family response",
         ),
         # #1737's old result (pending, no decision) is no longer it.
-        (True, "reopened", "execution='pending'", "new final Family response"),
+        (
+            True,
+            "reopened",
+            "execution='pending', decision='unreviewed'",
+            "new final Family response",
+        ),
         (
             True,
             "reopened",
@@ -225,7 +236,7 @@ def test_sql_refuses_a_forged_fix(
         _, staff, proposal = incorrect(response_service)
     else:
         harness, staff, rows = prepared(response_service)
-        decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+        mark(harness, staff, [rows["prefix"]])
         proposal = fresh(rows["prefix"])
     before = ProposalResolution.objects.count()
     # An undo with its result carries a note, so only its result is wrong.
@@ -282,7 +293,7 @@ def test_the_check_guard_compares_with_the_value_at_the_mark(
         decide(harness, staff, [proposal], "entered_by_hand")
     else:
         harness, staff, rows = prepared(response_service)
-        decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+        mark(harness, staff, [rows["prefix"]])
     target = ProposedChange.objects.get(field="prefix")
     before = RefreshCheck.objects.count()
 
@@ -369,7 +380,7 @@ def test_a_replaced_change_takes_no_check_and_no_fix(response_service, monkeypat
             forge(fresh(old), staff, action)
     with pytest.raises((IntegrityError, DatabaseError), match="new final Family"):
         forge(fresh(old), staff, None, "execution='cancelled'")
-    decide(harness, staff, [new], "entered_by_hand")
+    mark(harness, staff, [new])
     refresh(harness, member={"salutation": "Sir"})
     assert checks(proposal=old) == ["entered_incorrectly"]
     assert checks(proposal=new) == ["confirmed"]
@@ -398,13 +409,13 @@ def test_both_fixes_in_bulk_and_their_replay(response_service):
     bulk key posted again records nothing more; a bulk Back to review
     undoes each mark, with its one note, keeping each decision (#1840)."""
     harness, staff, rows = prepared(response_service)
-    decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+    mark(harness, staff, [rows["prefix"]])
     # Member 3 has a ParishSoft suffix before the Family answers one, so the
     # mark records it (an unknown one would stand in, never incorrectly).
     refresh(harness, member={"salutation": "Rev.", "suffix": "Sr."})
     answer_again(harness, suffix="Jr.")
     suffix = ProposedChange.objects.get(field="suffix")
-    decide(harness, staff, [suffix], "entered_by_hand")
+    mark(harness, staff, [suffix])
     refresh(harness, member={"salutation": "Rev.", "suffix": "III"})
     chosen = [fresh(rows["prefix"]), fresh(suffix)]
     for change in chosen:

@@ -23,7 +23,7 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.pipeline import Decision, Stage
 from parishkit.stewardship.reports.pledge_models import PledgeOpenCheck, PledgeReview
-from parishkit.stewardship.reports.pledge_review_views import ALREADY, NOTHING
+from parishkit.stewardship.reports.pledge_review_views import HELD, NOTHING
 from parishkit.stewardship.responses import submission as submit_module
 from parishkit.stewardship.responses.models import Submission
 
@@ -120,47 +120,65 @@ def test_an_unproven_giving_read_records_none_and_the_submit_goes_on(
     )
 
 
-def test_a_new_pledge_parishsoft_already_holds_is_confirmed_at_submit(
+def test_a_new_pledge_parishsoft_already_holds_goes_through_every_phase(
     response_service,
 ):
-    """Rule 4 with A known: a first answer ParishSoft already holds is
-    Confirmed at once ("Already in ParishSoft."), nothing is offered, the
-    guard refuses a decision and no refresh checks it again."""
+    """Rule 4 with A known, in strict phase order (#1890): a first answer
+    ParishSoft already holds stays To review, saying so ("ParishSoft already
+    holds this value."), never Confirmed at the submit; Entered by hand is
+    refused on it, by the service and the guard. Accepted, it is To enter by
+    hand, and saying so again after a refresh; marked Entered by hand, the
+    next refresh Confirms it."""
     harness, submission = answered(response_service, "1000.00", "234.50")
     assert submission.upcoming_pledge == Decimal(ANSWER)
     assert stage_row(harness, submission)[:3] == (
-        "confirmed",
+        "to_review",
         "confirmed",
         Decimal(ANSWER),
     )
     found = row(harness, submission)
     assert (found["placement"].stage, found["placement"].decision) == (
-        Stage.CONFIRMED,
+        Stage.TO_REVIEW,
         None,
     )
-    assert ALREADY in line(harness, submission)
+    assert HELD in line(harness, submission)
     with pytest.raises(ValueError):
-        decide(harness, admin(), "accept", [submission])
+        decide(harness, admin(), "entered_by_hand", [submission])
     with (
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
         pytest.raises(DatabaseError, match="authority, version or state"),
         work_transaction(),
     ):
-        forge(submission, admin())
-    refresh(harness, "1.00")
-    assert not PledgeOpenCheck.objects.exists() and checks() == []
+        forge(submission, admin(), action="entered_by_hand", entered=True, known=True)
+    # A refresh still finding the amount records nothing new.
+    refresh(harness, "1000.00", "234.50")
+    assert not PledgeOpenCheck.objects.exists()
+    decide(harness, admin(), "accept", [submission])
+    refresh(harness, "1000.00", "234.50")
+    assert checks() == [("confirmed", Decimal(ANSWER))]
+    found = row(harness, submission)
+    assert found["placement"].stage is Stage.TO_ENTER_BY_HAND
+    assert HELD in line(harness, submission)
+    decide(harness, admin(), "entered_by_hand", [submission])
+    refresh(harness, "1000.00", "234.50")
+    found = row(harness, submission)
+    assert (found["placement"].stage, found["placement"].decision) == (
+        Stage.CONFIRMED,
+        Decision.ACCEPTED,
+    )
+    assert HELD not in line(harness, submission)
 
 
 def test_a_zero_pledge_parishsoft_holds_none_of_has_nothing_to_enter(
     response_service,
 ):
-    """A $0.00 answer with no ParishSoft pledge is Confirmed at submit with
-    the $0.00 words."""
+    """A $0.00 answer with no ParishSoft pledge stays To review with the
+    $0.00 words (#1890; it was Confirmed at the submit)."""
     harness, submission = answered(
         response_service, annual_pledge="0", frequency="", shares={}
     )
     assert submission.upcoming_pledge == Decimal("0.00")
-    assert row(harness, submission)["placement"].stage is Stage.CONFIRMED
+    assert row(harness, submission)["placement"].stage is Stage.TO_REVIEW
     assert NOTHING in line(harness, submission)
 
 
@@ -169,7 +187,8 @@ def test_a_pledge_set_back_to_parishsoft_value_is_withdrawn_as_confirmed(
 ):
     """Rule 3: a Family changing its pledge to the amount ParishSoft holds
     at the submit leaves To enter by hand (the earlier Accept is no longer
-    in force) and is Confirmed with no decision."""
+    in force) and is To review with no decision, saying ParishSoft holds it
+    (#1890; it was Confirmed)."""
     harness, submission = pledged(response_service)
     decide(harness, admin(), "accept", [submission])
     refresh(harness, "500.00")
@@ -177,10 +196,11 @@ def test_a_pledge_set_back_to_parishsoft_value_is_withdrawn_as_confirmed(
     changed = again(harness, annual_pledge="500")
     found = row(harness, changed)
     assert (found["placement"].stage, found["placement"].decision) == (
-        Stage.CONFIRMED,
+        Stage.TO_REVIEW,
         None,
     )
     assert found["placement"].held_decision is None
+    assert HELD in line(harness, changed)
 
 
 def test_an_entered_earlier_version_keeps_the_new_answer_to_review(

@@ -17,6 +17,7 @@ from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.responses.census_resolution import resolve_census_change
+from parishkit.stewardship.responses.census_review import decide_census_changes
 from parishkit.stewardship.responses.models import ProposalResolution, ProposedChange
 from parishkit.stewardship.storage import StaleRecordError
 
@@ -75,8 +76,32 @@ def leader(harness, admin):
     return user("leader@example.org").pk
 
 
-def resolve(harness, actor, proposal, action, *, version=None, key=None, note=""):
-    """Resolve through the service on the restricted web login."""
+def resolve(
+    harness, actor, proposal, action, *, version=None, key=None, note="", accept=True
+):
+    """Resolve through the service on the restricted web login.
+
+    Entered by hand follows an Accept (strict phase order, #1890: the old
+    one-step mark of a To review change is refused), so an ``entered`` with
+    no ``version`` first accepts a change still To review through the
+    review service, as Staff now do, unless ``accept`` is False. ``proposal``
+    is refreshed from the database then.
+    """
+    stored = ProposedChange.objects.get(pk=proposal.pk)
+    waiting = (stored.decision, stored.execution) == ("unreviewed", "pending")
+    if action == "entered" and version is None and accept and waiting:
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            decide_census_changes(
+                harness.service.store,
+                actor,
+                "accept",
+                {stored.pk: stored.version},
+                note="",
+                request_key=uuid4(),
+                bulk=False,
+                value=None,
+            )
+        proposal.refresh_from_db()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         return resolve_census_change(
             harness.service.store,
@@ -103,8 +128,10 @@ def test_staff_enter_a_by_hand_change_with_history_and_audit(response_service):
         and home.version == first.expected_version + 1
     )
     assert first.actor_id == staff and first.note == "Typed it in" and first.created_at
-    event = AuditEvent.objects.get(event_type="census_change_updated")
-    assert event.subject_id == first.pk
+    # The Accept before the mark (#1890) is audited too; this is the mark's.
+    event = AuditEvent.objects.get(
+        event_type="census_change_updated", subject_id=first.pk
+    )
     assert AuditContext.objects.get(event=event).context == {
         "outcome": "changed",
         "before_version": first.expected_version,
@@ -187,6 +214,10 @@ def test_sql_refuses_a_forged_resolution(response_service, case):
 def test_sql_refuses_a_resolution_without_its_result_or_audit(response_service):
     """A resolution row alone, with no proposal change or audit, cannot commit."""
     harness, _, staff, home, _ = prepared(response_service)
+    from .test_publication_plans_postgresql import approve
+
+    # Accepted, so only the missing result and audit refuse it (#1890).
+    home = approve(home)
     with pytest.raises((IntegrityError, DatabaseError), match="result and audit"):
         forge(harness, home, staff, "entered")
     assert ProposalResolution.objects.count() == 0

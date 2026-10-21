@@ -761,9 +761,10 @@ def _decide(proposal, action, actor_id, version, key, note, parish, value, membe
     does. Edit is Accept with a value, the same way, and an edit equal to
     the fields the change already has is a plain Accept. Ignore and Back to
     review are decisions. Entered by hand is a resolution
-    (``census_resolution``), which on a To review By hand change accepts and
-    marks it in one step (decision 2), and on a change Entered incorrectly
-    marks it again. Back to review on a terminal change (Entered by hand,
+    (``census_resolution``), only on an accepted By hand change (strict
+    phase order, #1890: until then a To review one was accepted and marked
+    in one step, decision 2), and on a change Entered incorrectly marks it
+    again. Back to review on a terminal change (Entered by hand,
     Entered incorrectly, Confirmed, Updated in ParishSoft) is a resolution
     too (``reopened``, #1840), which undoes the step and keeps the decision:
     a terminal change takes no review.
