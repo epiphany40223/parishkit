@@ -52,6 +52,7 @@ TASK_QUEUES = {
     "report_export_cleanup": WorkQueue.GENERAL,
     "report_fact_verification": WorkQueue.GENERAL,
     "report_facts": WorkQueue.GENERAL,
+    "report_email_prepare": WorkQueue.GENERAL,
     "weekly_digest_finalize": WorkQueue.GENERAL,
     "weekly_digest_prepare": WorkQueue.GENERAL,
     "setup_mail_test": WorkQueue.MAIL,
