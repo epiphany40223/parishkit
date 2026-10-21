@@ -1257,7 +1257,8 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `delivery_refusal` | Refused address | Refused addresses | Administrator | Verify refused address | `/admin/mail/refusals/<refusal>/` | (same) |  |
 | `family_portal` | Family portal availability | Menu: Family portal availability | Administrator | (same) | `/admin/mail/family-portal/` | (same) |  |
 | `report_emails` | Report emails | Menu: Report emails | Administrator, Staff | (new, #1786) | `/admin/mail/report-emails/` | (same) | [Report emails page](../report-emails/spec.md#report-emails-page); Staff read-only. Replaced `emailed_reports` and `weekly_digest_manual` (delivery PR 5), which are gone with no redirect (#864). |
-| `report_email_edit` | _report name_ | Report emails | Administrator | (new, #1786) | `/admin/mail/report-emails/<report>/`; New at `/admin/mail/report-emails/new/` | (same) | Object-named (exception). [New and Edit report email](../report-emails/spec.md#new-and-edit-report-email). |
+| `report_email_new` | New report email | Report emails | Administrator | (new, #1786) | `/admin/mail/report-emails/new/` | (same) | [New and Edit report email](../report-emails/spec.md#new-and-edit-report-email); its Review and Apply post to it. |
+| `report_email_edit` | _report name_ | Report emails | Administrator | (new, #1786) | `/admin/mail/report-emails/<report>/` | (same) | Object-named (exception). [New and Edit report email](../report-emails/spec.md#new-and-edit-report-email). |
 | `report_email_send` | _report name and date_ | Report emails | Administrator, Staff (when every block allows) | (new, #1786) | `/admin/mail/report-emails/sends/<send>/`, with `items/<item>/` for one request | (same) | Object-named (exception). A [saved copy](../report-emails/spec.md#saved-copies). Until [#1946](https://github.com/epiphany40223/parishkit/issues/1946) draws it as web components it shows the email as it was sent, named by its subject. |
 | `presence` | Families on the form now | Menu: Families on the form now | Administrator | (same) | `/admin/mail/presence/` | (same) | The header's count is still polled at `/admin/presence?format=count` (decision 8); any other read of that address is 404. |
 | `held_emails` | Held emails | Reached from: Home | Administrator | (new, #757) | `/admin/mail/held-emails/` | (same) | Not a menu entry: Home links to it while a held email is undecided. Its trail is Home › Mail and Family portal. See [restore release](#restore-release). |
@@ -3553,7 +3554,7 @@ directly; the wizard's list has its own Delete.
   (`series_edits.plan`, scope `delete`); its reminders that sent stay as
   ordinary reminders. The review names the series' rule and says so.
 - **Report emails** are not here: a report email's single send is skipped
-  with [Skip this send](../report-emails/spec.md#skip-one-send) and a report
+  with [Skip selected sends](../report-emails/spec.md#skip-and-unskip-sends) and a report
   is deleted with [Delete a report email](../report-emails/spec.md#delete-a-report-email),
   both on Report emails (#1786; the digests' This email only choice moved
   there).
@@ -3645,7 +3646,7 @@ email's send whose time has passed (editing the report changes only its later
 sends) or that is skipped or paused. A report email send still to come links
 to its [Edit report email](../report-emails/spec.md#new-and-edit-report-email)
 page with that send's slot key (`?send=2054-11-03`), so it can offer
-[Skip this send](../report-emails/spec.md#skip-one-send); a `send` that is
+[Skip selected sends](../report-emails/spec.md#skip-and-unskip-sends), with that send's box ticked; a `send` that is
 not a date is refused as an unknown address.
 A muted send is told apart by its status, in words in the table and read to
 screen readers in the grid. A week view,
@@ -3741,7 +3742,7 @@ checks it exactly as that page does.
 - **Not movable:** a send that has run, is being prepared or was missed, and
   every send of a report email (a report keeps its own schedule; one of its
   sends can only be skipped, through
-  [Skip this send](../report-emails/spec.md#skip-one-send)). These keep their look on the
+  [Skip selected sends](../report-emails/spec.md#skip-and-unskip-sends)). These keep their look on the
   calendar and offer neither Move… nor a drag, and the server refuses a
   move of any of them, from an old page or a crafted request, in the
   review dialog, changing nothing.

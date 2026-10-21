@@ -322,7 +322,8 @@ day-of-week picker, the shared zone note, the shared
 daylight-saving rule. Times are typed and shown in the browser's zone and
 stored as campaign-local wall-clock values, with the shared conversion of
 [New and Edit scheduled email](../admin-portal/spec.md#new-and-edit-scheduled-email).
-A repeating report's time and days are converted at its next send; where the
+A repeating report's time is converted at its next send (its days of the
+week are the campaign's days, as the calendar shows them); where the
 browser's and the campaign's zones change their clocks on different dates,
 the report keeps its campaign wall-clock time between them, as the digests
 did. Edit posts the moment the page drew the schedule from, so a page drawn
@@ -345,7 +346,7 @@ A repeat rule is the shared repeat rule
 `campaigns/recurrence.py`, `components/repeat-rule.html`) with a time, and
 with bounds that may follow the campaign's dates:
 
-- **How often:** every day, or every week on the chosen days. (The monthly
+- **Frequency:** every day, or every week on the chosen days. (The monthly
   choices of the shared rule are not offered for report emails in this
   release; a campaign lasts weeks.)
 - **From:** the campaign's first day (the default), the day after the
@@ -370,19 +371,19 @@ An every-day rule leaves out a wholly skipped civil day (a day a time zone
 change removes), as the Daily digest's evaluator does today, so no send is
 invented for a day that has no moments.
 
-Basic mode offers these presets, each named in plain words with the time
-the Administrator types:
+Basic mode's **Frequency** offers these presets, named by how often they
+send; the time the Administrator types may be any time of day, so no
+preset names one ("Every morning" was dropped, Administrator, R42):
 
-- **Every morning during the campaign** ("Every day at 7:00 AM, from the
-  day after the campaign starts until the day after it ends"): every day,
-  From the day after the campaign's first day, Until the day after its last
-  day. With `as_of` at the end of the previous day, each send reports one
-  campaign day, as the Daily digest does.
-- **Every week during the campaign** ("Every Monday at 8:00 AM, from the
-  campaign's first day until the first Monday after it ends"): every week on
-  one chosen day, From the campaign's first day, Until the first send after
-  its last day.
-- **Once** (a date and time).
+- **Daily** (described as "Every day at 7:00 AM, from the day after the
+  campaign starts until the day after it ends"): every day, From the day
+  after the campaign's first day, Until the day after its last day. With
+  `as_of` at the end of the previous day, each send reports one campaign
+  day, as the Daily digest does.
+- **Weekly** ("Every Monday at 8:00 AM, from the campaign's first day until
+  the first Monday after it ends"): every week on one chosen day, From the
+  campaign's first day, Until the first send after its last day.
+- **Once** (a date and time) is the Sends choice, not a preset.
 
 Advanced mode shows the full rule. A rule Basic cannot show opens in
 Advanced, as the [modes](../ui-conventions/spec.md#basic-and-advanced-modes)
@@ -423,17 +424,22 @@ rewrite a sent report.
 
 ### Skipped sends
 
-One send of a repeating report can be skipped
+Single sends of a repeating report can be skipped
 ([#1658](https://github.com/epiphany40223/parishkit/issues/1658)), from the
-editor's [Skip this send](#skip-one-send) or the calendar. A skip adds the
-send's slot key to `skip_dates` in a new revision, reviewed, applied and
-audited like any other change, with today's rules unchanged: only a send
-whose time is still ahead, that is a send of this report, is not skipped
-already and has no Production work (a Testing rehearsal's work does not
-count); every later revision keeps past skip dates; a change that moves the
-report's sends drops each skip of a send still ahead that is no longer a
-send, and its review lists the dropped skips; a skip cannot be undone in
-this release. Every evaluator and the database's slot check, occurrence
+editor's [Skip selected sends](#skip-and-unskip-sends) or the calendar's
+link to it, one or several in one change. A skip adds each send's slot key
+to `skip_dates` in a new revision, reviewed, applied and audited like any
+other change, with today's rules checked for each send on its own: only a
+send whose time is still ahead, that is a send of this report, is not
+skipped already and has no Production work (a Testing rehearsal's work
+does not count); one refused send refuses the whole change. Every later
+revision keeps past skip dates; a change that moves the report's sends
+drops each skip of a send still ahead that is no longer a send, and its
+review lists the dropped skips. A skip of a send still ahead can be undone
+(**unskip**, Send selected sends, Administrator, R42): it removes the slot
+key again, by the same rules turned round (a send still ahead, of this
+report, skipped now, without Production work), so a past skip is never
+removed and a past send is never sent late. Every evaluator and the database's slot check, occurrence
 guard and page proof honour skip dates as they do today
 ([schedule replacement and removal](../background-processing/spec.md#schedule-replacement-and-removal)).
 
@@ -477,7 +483,8 @@ pauses around one delivery never send it twice.
 Reports may send until the campaign is archived (decision 9). Saving a
 report asks for confirmation first, in the review dialog, when its one-time
 send is after the campaign's last day, or when its repeat rule has any send
-after the campaign's last day. The dialog names the campaign's last day and
+after the campaign's last day that is still ahead (once every such send has
+passed, there is nothing left to confirm). The dialog names the campaign's last day and
 the sends after it (the [schedule preview](../ui-conventions/spec.md#schedule-previews)
 marks them), and Apply stays unavailable until the Administrator ticks
 "Send after the campaign ends" ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)).
@@ -1066,21 +1073,31 @@ New first offers **Start from**: Blank, Daily report or Weekly report (the
 form in place and changes nothing saved. The page has these sections, in
 this order:
 
-1. **Name** and **Subject**, with the placeholders listed in the help and
-   the [subject rule](#subject) explained in one sentence ("The report's
-   name, date, campaign and parish are added when the subject does not
-   already say them.").
+1. **Report name** and **Email subject line**. The report name is the
+   report's own name, never the From name: its help says it is shown on
+   Report emails, the Campaign calendar and Sent mail, and added to the
+   email's subject line when the subject does not say it (Administrator
+   question D2, R42). The email subject line is the subject recipients see,
+   with the placeholders listed in the help and the [subject rule](#subject)
+   explained in one sentence ("The report's name, date, campaign and parish
+   are added when the subject does not already say them."). The review
+   table uses the same two names.
 2. **Recipients** ([recipients field](#recipients-field)).
 3. **Schedule** ([schedule fields](#schedule-fields)) and **As of**, a
-   [binary choice](../ui-conventions/spec.md#binary-choices): "End of the
-   previous day (campaign time zone)" or "When the email is made", with help
-   saying it applies to every figure.
+   [binary choice](../ui-conventions/spec.md#binary-choices) drawn as a
+   stored setting's segmented pair: "End of the previous day (campaign time
+   zone)" or "When the email is made", with help saying it applies to every
+   figure.
 4. **Blocks** ([blocks field](#blocks-field)) and **Send only when there is
    something to report**, a checkbox always shown, with help saying it
    skips a send only when every block is empty
    ([sending only when there is content](#sending-only-when-there-is-content)).
-5. **Introduction** (optional), the HTML and plain-text editor every
-   authored email part uses, with "Generate plain text from HTML".
+5. **Introduction** (optional), the one HTML and plain-text editor every
+   authored email part uses (`components/html-content-editor.html`, the
+   Pages and emails editor): the visual editor with its formatting tools,
+   the HTML source folded under it, the server's sanitizer redrawing the
+   pane, and "Generate plain text from HTML" with the server's own
+   generated text. No second editor is built for it.
 6. On Edit, the report's **past sends** and **Delete**.
 
 The primary button reads **Add the report email** on New and **Review
@@ -1092,40 +1109,109 @@ as it is now, unsaved. **Cancel** returns to the list without saving.
 Field errors follow the
 [field error conventions](../ui-conventions/spec.md#field-errors-and-live-checks):
 a value the server refuses is shown at its field, with the error summary,
-and the review dialog stays shut; a stale page, another Administrator's
-change or work that blocks the change is shown in the dialog.
+and the review dialog stays shut. The name, the recipients and the blocks
+are each checked even when another field is refused, so a name another
+report has is shown in the same round as a missing recipient or block. A
+stale page, another Administrator's change or work that blocks the change
+is shown in the dialog.
 
 ### Recipients field
 
-One combined picker. Typing filters the campaign's eligible portal users
-(Administrators and Staff, by name and address) and the two groups; Enter or
-a click adds the highlighted choice. Text that is a valid email address and
-matches no user adds an outside address, after one plain confirmation line
-under the field: "This address has no portal account. It will receive the
-whole report, including any Family names and request text." Each chosen
-entry is a removable chip naming what it is ("All Staff (group)", "Pat
-Doe — Staff", "council@example.org — outside address"). The field rejects a
-duplicate entry and an invalid address at the field. The groups' current
-members are counted beside each group chip ("All Staff (group, 4 people
-now)"); the count is read when the page is drawn. Ministry leaders and
-deactivated users are never offered.
+One combined picker: a text box whose suggestion list holds the campaign's
+eligible portal users (Administrators and Staff, by name and address) and
+the two groups, which the browser filters as the reader types; Enter or
+**Add** adds the chosen one. A user is matched by name or by address, in
+any letter case, so typing a listed user's address adds that user. Text
+that is a valid email address and matches no user adds an outside address,
+after one plain confirmation line under the field: "This address has no
+portal account. It will receive the whole report, including any Family
+names and request text." Each chosen entry is a removable chip naming what
+it is ("All Staff (group)", "Pat Doe — Staff", "council@example.org —
+outside address"). The field rejects a duplicate entry and an invalid
+address at the field. The server makes the same check for the page and
+`report-email preview` alike: a user must be a current Administrator or
+Staff user, and an outside address that is a portal user's own address
+(compared without regard to letter case) is stored as that user's entry, so
+the user's role and removal still apply to it. A Ministry leader's address
+is refused at the field with its own message naming the address ("… is a
+Ministry leader; Ministry leaders don't receive report emails"); the picker
+knows the leaders' addresses without offering them and refuses one as it
+is typed, so it is never shown as an outside address. The groups' current
+members are counted
+beside each group chip ("All Staff (group, 4 people now)"); the count is
+read when the page is drawn. Ministry leaders and deactivated users are
+never offered.
 
 ### Schedule fields
 
-Basic mode offers the three [presets](#repeating-sends) as a radio group,
-each with its time field (and, for the weekly preset, its day). Advanced
-shows the full rule: how often, the days, From and Until with their campaign
-choices and dates, and the time. A one-time report has a date and time. The
-zone note names the browser's zone. Under the fields, the shared
-[schedule preview](../ui-conventions/spec.md#schedule-previews) lists the
-next five sends in its compact layout and count-from-now scope, redrawn in
+**Sends** is a [binary choice](../ui-conventions/spec.md#binary-choices)
+first, a stored setting's segmented pair: **Once** (a date and a time) or
+**Repeating**, never two stacked radio buttons. Once the report has made a
+scheduled send, the segment not chosen stays where it is, unavailable, with
+the reason in a tip beside the label ("This report has made a scheduled
+send, so whether it sends once or repeats can no longer change."). A
+repeating report's rule has the [Basic and Advanced
+modes](../ui-conventions/spec.md#basic-and-advanced-modes), whose toggle has
+the shared label "Mode". The Sends, As of and Frequency pairs are the UX
+conventions' [stored two-way
+settings](../ui-conventions/spec.md#binary-choices). Basic's **Frequency** is the pair **Daily** |
+**Weekly** of the two repeating [presets](#repeating-sends) (Weekly with
+its Day), with one help line describing both; Advanced shows the full rule:
+**Frequency** (Daily | Weekly, the same pair), the days, From and Until
+with their campaign choices and dates. No word of it says "Repeat" again
+under Repeating, or names a time of day. One time field, shared by both
+modes, follows them. The Once preset of Basic is the Sends choice's
+Once, so the two cannot disagree. A repeating report's days are the
+campaign's days ([decisions](#decisions-made-in-this-specification)); when
+the browser's zone is not the campaign's, a help line under the weekly day
+and On these days says so: "These are the days where the parish is, in the
+campaign's time zone; only the time is read in your computer's time zone."
+The
+zone note names the browser's zone. Under the fields, the
+[Next sends table](#next-sends-table) lists the next five sends, redrawn in
 place as the fields change, in a region that keeps its place
-([no layout shift](../ui-conventions/spec.md#no-layout-shift)). Each line
-names the send and, for a report as of the end of the previous day, the day
-it reports on ("Daily report for Monday, October 19"); sends after the
-campaign's last day are marked "after the campaign ends"; skipped and paused
-sends stay listed, struck through, with their reason in words. While live
-delivery is paused, the preview shows its paused notice.
+([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
+
+A one-time send's refusals that concern its date and its time together
+("This send time has passed.", "That time happens twice that day") mark
+both fields and are said once, after the time; an edit of either clears
+both ([field errors](../ui-conventions/spec.md#field-errors-and-live-checks)).
+The time field's reserved error line keeps its list hidden until there is
+an error, as every field's does, so a valid time such as "7am" is never
+marked.
+
+### Next sends table
+
+The editor's Next sends is an [Admin table](../ui-conventions/spec.md#admin-tables)
+built from the shared [schedule preview](../ui-conventions/spec.md#schedule-previews)'s
+lines (count from now, the next five, its "more" line), one row per send:
+**When** (browser-local), **Email** (the send and, for a report as of the
+end of the previous day, the day it reports on, "Daily report for Monday,
+October 19"; a send after the campaign's last day is marked "after the
+campaign ends") and **Status** in words: Will send, Skipped, Paused, or
+Being prepared (a send with Production work). Skipped and paused rows are
+struck through, the Status word not, so the strike is never the only
+signal.
+
+On Edit of a repeating report the table has the shared selection column and
+bulk bar ([row actions](../ui-conventions/spec.md#row-actions-and-confirmation)):
+each send that will send or is skipped, still ahead and without Production
+work, has a box; a paused send or one being prepared has none. **Skip
+selected sends** and **Send selected sends** (both secondary) are each
+available only while every ticked row is of its kind (a send that will
+send, or a skipped one), and the reserved line says why otherwise ("Select
+at least one send first."; "Send selected sends is for skipped sends; these
+sends will send already."; "Skip selected sends is for sends that will
+send; these are skipped already."; or, for a mix, "Select only sends that
+will send, to skip them, or only skipped sends, to send them."). While the
+schedule fields differ from the saved schedule, no row has a box and the
+line says "Review and apply your schedule change first: skipping and
+sending act on the saved schedule." New, and Edit of a one-time report,
+draw the table without the selection column. The table is not a live
+region; the status line under it announces an applied skip. Skip selected
+sends and Send selected sends replaced a "Skip this send" button in each
+line of the shared schedule preview, which now draws no control (R42 review
+of [#1962](https://github.com/epiphany40223/parishkit/pull/1962)).
 
 ### Blocks field
 
@@ -1134,7 +1220,9 @@ not yet in the report, with each block's help shown under the select when it
 is chosen; a block already in the report is not offered (decision 10), and
 the control is unavailable with its reason when all six are in. Each block
 in the list is a row with its label, its help, its options (if any) and
-**Move up**, **Move down** and **Remove** buttons; there is no drag-only
+**Move up**, **Move down** and **Remove** buttons (the Day by day table's
+days shown is a number field; Participation charts' which charts arrives
+with [#1956](https://github.com/epiphany40223/parishkit/issues/1956)); there is no drag-only
 control ([accessibility](../ui-conventions/spec.md#accessibility-and-client-behavior)).
 Moving or removing acts in place and keeps focus on the moved row's button
 (or, after Remove, on the next row's Remove or on Add a block), announcing
@@ -1210,22 +1298,28 @@ stale. Send now is unavailable while another send of the report is being
 prepared or delivered. The row's last send then shows the manual send, and
 the status line links its saved copy once it is made.
 
-### Skip one send
+### Skip and unskip sends
 
-On Edit of a repeating report, each send still ahead in the schedule
-preview that may be skipped (the [rules](#skipped-sends)) has **Skip this
-send**. It opens the review dialog with the report's change and names the
-skipped send by its browser-local time (and, as of the end of the previous
-day, the day it reports on). Apply records it as any change; the status
-line says "Send skipped." The calendar's link to a send opens Edit with that
-send named (`?send=<slot key>`), its Skip this send focused. As today for a
-digest send: skipping a send whose time has passed, or that has Production
-work (prepared, sending, sent or failed), is refused (403) with nothing
-recorded, and so is one skipped again (409, a stale page); a send that is
-not one of the report's is refused as an unknown request (400). The
+On Edit of a repeating report, **Skip selected sends** and **Send selected
+sends** act on the sends ticked in the [Next sends table](#next-sends-table)
+(the [rules](#skipped-sends)). Each opens one review dialog for all the
+ticked sends, naming each by its browser-local time ("Weekly report skips
+these 2 sends:", "Weekly report makes this skipped send again:"). Apply
+records it as one change and redraws the table in place, keeping what the
+Administrator has typed in the editor; the status line under it says "2
+sends skipped." or "Skipped send will send." The calendar's link to a send
+opens Edit with that send named (`?send=<slot key>`, with the month the
+calendar showed, `calendar=<year-month>`, to which Cancel returns), its box
+ticked and focused, so its action is one step away. Each send is checked on
+its own, as today for a digest send: skipping (or sending again) a send
+whose time has passed, or that has Production work (prepared, sending, sent
+or failed), is refused (403) with nothing recorded; one skipped already,
+or for Send selected sends one not skipped, is a stale page (409); a send
+that is not one of the report's, or one named twice, is refused as an
+unknown request (400). One refused send refuses the whole change. Every
 reviewed send's time is signed into the review, so Apply refuses under the
-work lock once it has passed, and the review's work fingerprint refuses
-once any work for the report has changed since it was drawn.
+work lock once any of them has passed, and the review's work fingerprint
+refuses once any work for the report has changed since it was drawn.
 
 ### Pause and Resume actions
 
@@ -1326,11 +1420,11 @@ The campaign wizard's schedule step and New report email offer two starting
 points (decision 12), each the converted report's values with no time chosen
 yet:
 
-- **Daily report:** Every morning during the campaign, as of the end of the
+- **Daily report:** Daily during the campaign, as of the end of the
   previous day, to All Administrators, with Campaign totals, Response
   funnel, Participation charts (all three) and Day by day table (5 days);
   subject "{{ campaign_name }} — daily report"; no introduction.
-- **Weekly report:** Every week during the campaign on Monday (until the
+- **Weekly report:** Weekly during the campaign on Monday (until the
   first Monday after it ends), as of when
   the email is made, to All Administrators, with Open additional information
   requests and Response funnel, Send only when there is something to report
@@ -1357,7 +1451,7 @@ entries of the schedule commands (a daily digest's `comparison`, a digest's
 | --- | --- |
 | `report-email list [--campaign C]` | The Report emails table: each report's id, name, schedule in plain words, recipient count, next send, last send and status, the deleted reports that have past sends, and the configuration `version`. Any session; Staff get the read-only fields (no recipients, no version). |
 | `report-email show REPORT` | One report's values (recipients by kind; outside addresses to Administrators only), blocks with options, skip dates, pause intervals, the configuration `version`, and its next five sends. |
-| `report-email preview --expected-version V --changes FILE` | The review of a change document: `create`, `edit` (by `id`, keeping what it leaves out), `delete`, `pause`, `resume` and `skip` (one slot key) entries, validated, previewed and signed as the page does; prints the review and its token, and whether the after-campaign confirmation is required. The document is `{"changes": [ENTRY, ...]}`, each entry `{"operation": OPERATION, "id": REPORT}` (a `skip` adds `"send": SLOT`, the slot key `show` lists), at most one entry per report; `V` is the version `show` or `list` printed. |
+| `report-email preview --expected-version V --changes FILE` | The review of a change document: `create`, `edit` (by `id`, keeping what it leaves out), `delete`, `pause`, `resume`, `skip` and `unskip` entries, validated, previewed and signed as the page does; prints the review and its token, and whether the after-campaign confirmation is required. The document is `{"changes": [ENTRY, ...]}`, each entry `{"operation": OPERATION, "id": REPORT}` (a `skip` or `unskip` adds `"sends": [SLOT, ...]`, one to fifty slot keys, each once: for a skip those `show` lists in its next sends, for an unskip those of its skip dates still ahead; the review lists each with its `due_at`; `create` has no `id` and holds `"values"`, and `edit` holds the `"values"` it changes, each in the [stored form](#stored-form) with times in the campaign's zone, of `name`, `subject`, `intro_html`, `intro_text`, `recipients`, `schedule`, `as_of`, `blocks` and `content_required`), at most one entry per report; `V` is the version `show` or `list` printed. A `create` or `edit` is checked by the page's own checks ([recipients](#recipients-field) included), and a refusal names each field and its problem as the page would show it at that field ("Recipients: …"). |
 | `report-email confirm --token TOKEN\|-` | Applies a previewed change; the after-campaign confirmation is asked at the [prompt](../admin-automation/spec.md#command-line-confirmation) or given by `--yes`, else exit 4 (`confirmation_required`). |
 | `report-email render REPORT` | Preview: the report drawn from current data, its subject and text part (never the HTML), and who it would go to now. Records the page's audit event. |
 | `report-email send-test REPORT` | Send a test to me. |
@@ -1702,11 +1796,20 @@ require.
    Administrator's pk-local check.
 6. **New and Edit report email**: the editor with the recipients, schedule,
    as-of and blocks fields, review and Apply, the after-campaign
-   confirmation and Skip this send (the calendar's send links move to it), with the `create` and `edit` entries of `report-email
-   preview`/`confirm`, and the Participation charts block's "which charts"
-   option, the first place a report can choose its charts (until then
-   every report draws all three). Removes the digest editors on Dates and mail
-   schedules and the schedule commands' digest entries. Needs the
+   confirmation and the Next sends table's Skip and Send selected sends
+   (the calendar's send links move to it), with the `create`, `edit`,
+   `skip` (several sends) and `unskip` entries of `report-email
+   preview`/`confirm`. Edit also lists the report's past sends (which stay
+   under its row on the list too) and has Delete. Until PR 7 the editor has
+   no Preview or Send a test to me, and until PR 8 New has no Start from.
+   The Participation charts block's "which charts" option, the first place
+   a report could choose its charts, moved to
+   [#1956](https://github.com/epiphany40223/parishkit/issues/1956) (until
+   then every report draws all three). Removes the digest editors on Dates
+   and mail schedules and the schedule commands' digest entries (a digest's
+   `comparison` and `skip`, and digests in `schedule show` and `schedule
+   preview`); the code they leave unreachable is removed by
+   [#1957](https://github.com/epiphany40223/parishkit/issues/1957). Needs the
    Administrator's pk-local check.
 7. **Preview and Send a test to me**, with `report-email render` and
    `send-test`.
@@ -1762,7 +1865,8 @@ reason; the Administrator may change any of them.
   is no longer a post-close weekly obligation, since nothing is owed.
 - **Recipients.** Portal users are limited to Administrators and Staff;
   outside addresses are rechecked only against the report's current
-  recipient list; addresses are deduplicated; at most 50 entries and 25
+  recipient list, so a current user's own address is stored as that user,
+  never as an outside address; addresses are deduplicated; at most 50 entries and 25
   outside addresses per report.
 - **Staff on the page.** Staff may open Report emails read-only, to reach
   saved copies, as they reached Emailed reports.
@@ -1770,6 +1874,14 @@ reason; the Administrator may change any of them.
   still open; only the list page and Send a weekly report now are removed.
 - **Test sends in Production** go to the signed-in Administrator's own
   address; they are never saved copies.
+- **Sends: Once or Repeating, then Basic and Advanced.** A one-time send is
+  chosen apart from the repeat rule, so Basic and Advanced describe only a
+  rule and a one-time report never shows a mode toggle; the Once preset is
+  that choice.
+- **Days of the week stay the campaign's.** Only a repeating report's time
+  of day is read in the browser's zone; its days are the campaign's
+  calendar days, as the Campaign calendar shows them, so a day chosen is
+  the day it sends where the parish is.
 
 ## Rejected alternatives
 

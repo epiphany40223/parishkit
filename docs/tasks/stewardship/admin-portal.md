@@ -545,9 +545,11 @@ no schema change; proven by `tests/stewardship/test_admin_digests.py`
 (golden documents, a reader who is not an Administrator),
 `tests/stewardship/test_admin_cli.py`,
 `tests/stewardship/test_admin_route_parity.py`,
-`tests/stewardship/database/test_admin_digest_list_cli_postgresql.py` (the
-page's reports, read-only and ended sessions, no event, `--requested`, no
-current campaign) and the unchanged Emailed reports page suite. Another
+the digest list database suite (the page's reports, read-only and ended
+sessions, no event, `--requested`, no current campaign; retired with the
+command in #1786, replaced by
+`tests/stewardship/database/test_admin_report_email_cli_postgresql.py`) and
+the unchanged Emailed reports page suite. Another
 follow-up adds `report source-form`, System health's Families the form
 cannot open (#774) by DUID, through the page's own admission and
 `blocked_families`, with no schema change; proven by
