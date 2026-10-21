@@ -244,6 +244,16 @@ def error_page(request, response):
         page_fix = refusal.page_fix if request.method == "POST" else None
         guidance = page_fix or refusal.fix or guidance
         title = refusal.title or title
+    home = ADMIN_HOME if admin else "/"
+    sign_in = ("/admin/login" if admin else "/") if code == ErrorCode.DENIED else None
+    if refusal is not None and not refusal.sign_in:
+        # A refusal that signing in cannot fix (a role that lacks the page,
+        # #1924) offers no Sign in again (Refusal.sign_in).
+        sign_in = None
+    fix_link = refusal.link if refusal else None
+    if fix_link == home:
+        # The actions row already shows the home link; never show it twice.
+        fix_link = None
     context = {
         # Admin errors extend the JavaScript-gated Admin base (#565); Family
         # errors keep the ungated base.
@@ -252,13 +262,11 @@ def error_page(request, response):
         "guidance": guidance,
         # Distinct closed messages only; field errors have no field to link here.
         "error_messages": messages,
-        "fix_link": refusal.link if refusal else None,
-        "fix_label": refusal.link_label if refusal else None,
-        "sign_in": ("/admin/login" if admin else "/")
-        if code == ErrorCode.DENIED
-        else None,
+        "fix_link": fix_link,
+        "fix_label": refusal.link_label if fix_link else None,
+        "sign_in": sign_in,
         "back": _back_path(request),
-        "home": ADMIN_HOME if admin else "/",
+        "home": home,
         "home_label": _("Administration home") if admin else _("Family portal home"),
         # The chrome's forms need this even without request context.
         "csrf_token": get_token(request),

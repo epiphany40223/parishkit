@@ -463,6 +463,7 @@ sections:
     "Addresses and legacy URLs": [ADM-03, ADM-12]
     "Not-found pages": [ARC-03]
     "Unavailable menu pages": [ADM-03, ADM-12]
+    "Pages the role may not open": [ADM-03, ADM-12]
     "Navigation rules": [ADM-03, ADM-12]
     "Wizards": [ADM-02, ADM-03]
     "Admin page layout and help": [ADM-03]

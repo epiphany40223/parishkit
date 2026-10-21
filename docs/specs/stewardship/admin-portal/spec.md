@@ -901,7 +901,9 @@ entry's accessible description (`aria-describedby`), so screen readers
 announce it with the entry. The reason names what to do when there
 is something to do. An unavailable entry's page, opened directly, shows the
 same reason and a way forward
-([unavailable menu pages](../ui-conventions/spec.md#unavailable-menu-pages)).
+([unavailable menu pages](../ui-conventions/spec.md#unavailable-menu-pages)),
+and a page the role hides, opened directly, says the role is the reason
+([pages the role may not open](../ui-conventions/spec.md#pages-the-role-may-not-open)).
 The conditions come from the campaign
 state, modules and mode the chrome already reads, and from whether
 ParishSoft data has been downloaded yet (#1242): one small query, run once

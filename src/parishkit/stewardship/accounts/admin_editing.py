@@ -36,7 +36,6 @@ from parishkit.stewardship.web.contracts import (
     validation_response,
 )
 from parishkit.stewardship.web.refusals import (
-    AccessDenied,
     UserFacingDenied,
     UserFacingGone,
     UserFacingUnavailable,
@@ -56,6 +55,7 @@ from .configuration_request_reads import receipt as configuration_receipt
 from .configuration_requests import record_request
 from .policy import Capability, allows
 from .request_models import ConfigurationChangeRequest
+from .role_refusal import role_denied
 from .sessions import authenticated_admin, sign_in_instant
 
 
@@ -80,7 +80,9 @@ def principal(
         # rather than implying the signed-in account lacks a capability.
         raise signed_out()
     if not allows(value, capability):
-        raise AccessDenied(f"This page requires the {capability} capability.")
+        # A current session without the role: say the role is the reason,
+        # not the session (#1924).
+        raise role_denied(capability)
     return value
 
 

@@ -66,3 +66,101 @@ def test_access_gate_rate_limits_and_outages_use_the_family_route(status):
     assert response.status_code == status and response["Retry-After"] == "5"
     assert TEXTS["unavailable"] in response.content
     assert b'href="/"' in response.content
+
+
+# A current Admin session whose role lacks the page (#1924): one wording per
+# role level, never the sign-in prompt.
+ROLE_TEXTS = {
+    "administrator": "This page is for Administrators. Your access doesn't include it.",
+    "staff": (
+        "This page is for Administrators and Staff. Your access doesn't include it."
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "capability,level",
+    [
+        ("configure", "administrator"),
+        ("manage_users", "administrator"),
+        ("system_logs", "administrator"),
+        ("background_work", "administrator"),
+        ("publish_census", "administrator"),
+        ("campaign_report", "staff"),
+        ("financial_detail", "staff"),
+        ("family_codes", "staff"),
+    ],
+)
+def test_a_role_refusal_names_the_roles_that_hold_the_page(capability, level):
+    """The refusal names the page's roles and links home, as a closed 403."""
+    from parishkit.stewardship.accounts.policy import Capability
+    from parishkit.stewardship.accounts.role_refusal import RoleDenied, role_denied
+
+    error = role_denied(Capability(capability))
+    assert isinstance(error, RoleDenied) and isinstance(error, PermissionError)
+    assert str(error.refusal.message) == ROLE_TEXTS[level]
+    assert error.refusal.link == "/admin/" and error.reason == "denied"
+
+
+@pytest.mark.parametrize(
+    "capability", ["ministry_report", "ministry_followup", "report_export"]
+)
+def test_a_leader_capability_keeps_the_generic_denial(capability):
+    """A Ministry leader's refusals are about scope, so no role wording."""
+    from parishkit.stewardship.accounts.policy import Capability
+    from parishkit.stewardship.accounts.role_refusal import role_denied
+    from parishkit.stewardship.web.refusals import AccessDenied
+
+    error = role_denied(Capability(capability))
+    assert type(error) is AccessDenied and getattr(error, "refusal", None) is None
+
+
+def test_require_tells_an_ended_session_apart_from_a_role():
+    """No current session keeps the generic denial; a role gets its own."""
+    from uuid import uuid4
+
+    from parishkit.stewardship.accounts.policy import Capability, Principal
+    from parishkit.stewardship.accounts.role_refusal import RoleDenied, require
+    from parishkit.stewardship.web.refusals import AccessDenied
+
+    with pytest.raises(AccessDenied) as ended:
+        require(None, Capability.SYSTEM_LOGS)
+    assert getattr(ended.value, "refusal", None) is None
+    staff = Principal(uuid4(), frozenset({"staff"}))
+    with pytest.raises(RoleDenied):
+        require(staff, Capability.SYSTEM_LOGS)
+    assert require(staff, Capability.CAMPAIGN_REPORT) is staff
+
+
+@pytest.mark.parametrize("level", ["administrator", "staff"])
+def test_a_role_level_refusal_names_that_level(level):
+    """``role_denied_for`` serves pages gated by role, not one capability."""
+    from parishkit.stewardship.accounts.role_refusal import RoleDenied, role_denied_for
+
+    error = role_denied_for(level)
+    assert type(error) is RoleDenied and str(error.refusal.message) == ROLE_TEXTS[level]
+    assert error.refusal.sign_in is False
+    with pytest.raises(ValueError):
+        role_denied_for("ministry_leader")
+
+
+def test_require_role_admits_the_level_and_those_above_it():
+    """Administrators pass both levels; Staff only ``staff``; ``None`` stays generic."""
+    from uuid import uuid4
+
+    from parishkit.stewardship.accounts.policy import Principal
+    from parishkit.stewardship.accounts.role_refusal import RoleDenied, require_role
+    from parishkit.stewardship.web.refusals import AccessDenied
+
+    admin = Principal(uuid4(), frozenset({"administrator"}))
+    staff = Principal(uuid4(), frozenset({"staff"}))
+    leader = Principal(uuid4(), frozenset({"ministry_leader"}))
+    assert require_role(admin, "administrator") is admin
+    assert require_role(admin, "staff") is admin
+    assert require_role(staff, "staff") is staff
+    with pytest.raises(RoleDenied):
+        require_role(staff, "administrator")
+    with pytest.raises(RoleDenied):
+        require_role(leader, "staff")
+    with pytest.raises(AccessDenied):
+        require_role(None, "staff")

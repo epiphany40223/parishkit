@@ -32,7 +32,8 @@ from django.views.decorators.http import require_GET, require_http_methods
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.models import PortalUser
-from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.accounts.policy import Capability
+from parishkit.stewardship.accounts.role_refusal import require
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin, passive_read
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
@@ -111,9 +112,7 @@ def _principal(request, store, *, read_only=False):
     principal = authenticated_admin(
         request, store=store, activity=not read_only, read_only=read_only
     )
-    if not allows(principal, Capability.ADDITIONAL_FOLLOWUP):
-        raise PermissionError("Staff follow-up is unavailable.")
-    return principal
+    return require(principal, Capability.ADDITIONAL_FOLLOWUP)
 
 
 def _error(campaign_id, *, item_id=None, status=400, bound=False):
