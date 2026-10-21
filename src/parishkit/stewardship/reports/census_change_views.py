@@ -35,6 +35,7 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.pipeline import Stage
 from parishkit.stewardship.responses.census_additions import AddRefusal
+from parishkit.stewardship.responses.census_resolution import InvalidMemberId
 from parishkit.stewardship.responses.census_review import (
     InvalidEdit,
     KeyRebound,
@@ -243,6 +244,10 @@ def _edit_refusal(error):
     return validation_response(fields, refusal=Refusal(str(error), EDIT_REFUSED))
 
 
+# A refused ParishSoft Member ID's fix (#1749), beside its static reason.
+MEMBER_ID_REFUSED = "Correct the Member ID, or leave it blank, then record it again."
+
+
 def _add_refusal(error):
     """The page's answer to an Add, or a reopen, the reader can correct (#1710).
 
@@ -309,6 +314,13 @@ def _respond(request, campaign_id, *, export, render):
             return _add_refusal(error)
         except InvalidEdit as error:
             return _edit_refusal(error)
+        except InvalidMemberId as error:
+            # A New Member's Member ID the mark cannot take, shown in place
+            # at the dialog's field (#1749).
+            return validation_response(
+                [FieldError(ErrorCode.INVALID, "value_member")],
+                refusal=Refusal(str(error), MEMBER_ID_REFUSED),
+            )
         except ValueError:
             # A malformed form, or a decision the change's stage does not
             # offer: a 400, as a bad filter is.
