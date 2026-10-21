@@ -6727,9 +6727,13 @@
   // anyway (configuration.validate_campaign_sections stays the authority):
   // inside the campaign dates, strictly after the initial invitation, not at
   // the instant of another Family mailing, at most REPEAT_LIMIT dates per
-  // rule and the form's MAX_NUM_FORMS rows in all. Here every comparison is
-  // of date and time text in the browser's zone, which the date-change
-  // review's rows use (#558). The campaign-date check compares calendar
+  // rule and the form's MAX_NUM_FORMS rows in all. One more check is the
+  // page's own: a date whose send time has already passed is never offered
+  // (#1948), since a missed reminder would send at once; the date-change
+  // review's saved rows may be past, so its server cannot refuse that,
+  // while New's server refuses it for a repeat (schedule_entry_views).
+  // Here every comparison is of date and time text in the browser's zone,
+  // which the date-change review's rows use (#558). The campaign-date check compares calendar
   // days, so the server decides a time near either edge (New scheduled
   // email compares moments instead; see repeatDates). A rule the expander
   // refuses is shown at its fields (markRepeatRule, #1915) in
@@ -6816,6 +6820,9 @@
       // Without a send time the remaining checks wait; the date is
       // listed but not counted.
       else if (!sendTime) reason = "";
+      // Both panels' dates and times are in the browser's zone, so
+      // localMoment gives the moment to compare with the clock (#1948).
+      else if (localMoment(date, sendTime) <= Date.now()) reason = "its time has passed";
       else if (bounds && !(when(date) >= bounds.start && when(date) < bounds.end)) {
         reason = "outside the campaign dates";
       } else if (initial && when(date) <= sends(initial)) {

@@ -434,6 +434,43 @@ def test_a_repeat_adds_one_ordinary_reminder_per_date(auth_service, google):
     assert "This rule gives no date that can be added" not in page
 
 
+def test_a_repeat_date_whose_time_has_passed_is_refused(
+    auth_service, google, monkeypatch
+):
+    """#1948: on October 10 a repeat posting October 6 would add a reminder
+    in the past, which would send at once. Refused at Repeat, naming the
+    date and time, and nothing is recorded; the later date alone reviews."""
+    store = auth_service.store
+    _, emails = setup(store)
+    now = datetime(2054, 10, 10, 13, tzinfo=UTC)
+    monkeypatch.setattr(
+        schedule_entry_views, "timezone", SimpleNamespace(now=lambda: now)
+    )
+    browser, _ = signed_in()
+    data = entry(
+        store, kind="reminder", time="09:00", template_version=emails["reminder"]["id"]
+    ) | {
+        "repeat-repeat": "on",
+        "repeat-frequency": "weekly",
+        "repeat-weekdays": "1",
+        "repeat-start": "2054-10-01",
+        "repeat-until": "2054-10-14",
+        "repeat-dates": ["2054-10-06", "2054-10-13"],
+    }
+    before = ConfigurationChangeRequest.objects.count()
+    refused = post(browser, NEW, data)
+    assert refused.status_code == 400
+    assert (
+        "The reminder on October 6, 2054 at 9:00 AM would send at a time that "
+        "has already passed" in unescape(refused.content.decode())
+    )
+    errors = refused.context["repeat"].errors.as_data()["repeat"]
+    assert [error.code for error in errors] == ["repeat_time_passed"]
+    assert ConfigurationChangeRequest.objects.count() == before
+    review = post(browser, NEW, data | {"repeat-dates": ["2054-10-13"]})
+    assert review.status_code == 200, review.content
+
+
 def test_a_refused_new_schedule_shows_its_errors_and_records_nothing(
     auth_service, google
 ):

@@ -3246,7 +3246,9 @@ first, second, third, fourth or last chosen weekday) and the first and last
 dates (the campaign's dates to start with). The send time and Email to send
 apply to every date. Only the fields of the chosen repeat show. As the Admin
 types, the page lists every date the rule gives, with its weekday, and says
-which it will not add and why: outside the campaign dates, not after the
+which it will not add and why: outside the campaign dates, its time has
+passed (a reminder added in the past would send at once,
+[#1948](https://github.com/epiphany40223/parishkit/issues/1948)), not after the
 initial invitation, at the same moment as a saved invitation or reminder, over
 30 reminders from one rule, or over the campaign's limit of schedules (the
 schedule form set's maximum, 100). A short summary above **Review changes**
@@ -3287,8 +3289,9 @@ dates that fit as ordinary reminders, each its own schedule, reviewed,
 confirmed and delivered exactly like reminders added one at a time (see [Family
 invitations and
 reminders](../background-processing/spec.md#family-invitations-and-reminders)).
-The server checks each date as it checks any reminder, and refuses more than 30
-at once. The page script's expansion and the server's
+The server checks each date as it checks any reminder, refuses more than 30
+at once, and refuses a repeat whose send time on any date has already passed,
+naming that date and time at Repeat. The page script's expansion and the server's
 (`campaigns/recurrence.py`, used by the command line's
 [repeat entry](../admin-automation/spec.md#schedules-and-configuration)) both
 run the shared case table
