@@ -14,7 +14,7 @@
 -- and none apart for one cohort address. It replaces frozen file 0156's
 -- recipient guard, which now admits a covered row only with exactly the
 -- comparison's messages and a queued row only when the comparison finds no
--- coverage and nothing unsettled, and frozen file 0191's completion view
+-- coverage and nothing unsettled, and frozen file 0161's completion view
 -- (0156's view as the conversion replaced it), in which a covered
 -- recipient is settled and counts as delivered. Every function is
 -- invoker's rights, as 0156's recipient guard is. Nothing writes a report
@@ -163,9 +163,9 @@ BEGIN
     RETURN NEW;
 END $$;
 
--- 0191's completion view, with a covered recipient settled and counted as
+-- 0161's completion view, with a covered recipient settled and counted as
 -- delivered: the provider accepted its earlier messages, and delivered is
--- final. Everything else is 0191's, including its own answer for a skipped
+-- final. Everything else is 0161's, including its own answer for a skipped
 -- send, which the scheduler's finalizer can read without
 -- stewardship_report_email_skipped_v1. Its columns and grants are
 -- unchanged.
@@ -239,7 +239,7 @@ BEGIN
               '''covered''')=0 THEN
         RAISE EXCEPTION 'Migration 0250: the completion view does not settle covered recipients';
     END IF;
-    -- 0191's change holds: the view answers a skipped send itself.
+    -- 0161's change holds: the view answers a skipped send itself.
     IF strpos(pg_get_viewdef('public.stewardship_report_email_completion_ready'::regclass),
               'stewardship_report_email_skipped_v1')>0 THEN
         RAISE EXCEPTION 'Migration 0250: the completion view calls the skipped check';

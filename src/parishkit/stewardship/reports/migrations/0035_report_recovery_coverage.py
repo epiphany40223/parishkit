@@ -6,7 +6,7 @@ provisional until the repository-wide file sequence assigns the final
 number), read whole and never parsed. It adds ``covered_messages`` and the
 ``covered`` disposition to the report email recipient, the coverage
 comparison ``stewardship_report_email_prior_v1``, and replaces frozen file
-0156's recipient guard and 0191's completion view so a covered recipient is
+0156's recipient guard and 0161's completion view so a covered recipient is
 admitted only with exactly its accepted messages and settles as delivered.
 It ends with a DO block that refuses to commit unless all of it is installed
 as declared. The state operations record the same field and check, so
@@ -32,8 +32,8 @@ class Migration(migrations.Migration):
     dependencies = [
         # The reports app's previous migration, the report conversion
         # (#1839, earlier in the report email stack), which installs the
-        # previous frozen file (0191), so the files apply in prefix order
-        # and 0191's completion view is the one this file replaces.
+        # previous frozen file (0161), so the files apply in prefix order
+        # and 0161's completion view is the one this file replaces.
         ("stewardship_reports", "0034_report_conversion"),
     ]
 

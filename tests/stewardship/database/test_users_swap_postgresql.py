@@ -914,8 +914,8 @@ CLOSURE_CREATED = {
     ),
     # 0250 (provisional, #1835) creates the coverage comparison, adds a
     # column to 0156's recipient table (in CLOSURE_TABLES) and replaces
-    # 0156's recipient guard and 0191's completion view. All three files'
-    # objects are dropped, so 0156's file runs again first, then 0191's
+    # 0156's recipient guard and 0161's completion view. All three files'
+    # objects are dropped, so 0156's file runs again first, then 0161's
     # (their entries are above, in that order), and then 0250's, whole,
     # puts back the column, guard, view and function.
     "public.stewardship_report_email_prior_v1(uuid,text)": (

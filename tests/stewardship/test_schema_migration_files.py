@@ -506,7 +506,7 @@ FROZEN = {
     ),
     # Provisional number (#1835): renumbered when its pull request merges.
     "0250_report_recovery_coverage.sql": (
-        "60230b2f72f8db40e2e1b48a43cae84534ed5be1d76915a4b26c2c49f8ae8368"
+        "68f6932304ffc106883efbe12ba380f517999936cf9b642bd4335a4282c62d9a"
     ),
 }
 
