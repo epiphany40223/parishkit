@@ -8,7 +8,9 @@ statement against rows the real review services store.
 """
 
 from datetime import timedelta
+from uuid import uuid4
 
+from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.reports import timeline_pdf
 from parishkit.stewardship.reports.timeline_reviews import WORDS, steps
 
@@ -35,6 +37,7 @@ def row(stream, item, minute, a=None, b=None, c=None, d=None, **values):
         "seed_decision": None,
         "seed_set": None,
         "seed_value": None,
+        "note": None,
         "answer_first": '"Anne"',
         "answer_last": '"Smith"',
         "source_first": "Ann",
@@ -309,3 +312,96 @@ def test_every_word_has_the_pdf_reviews_marker():
         | timeline_pdf.EMAILS
     )
     assert not WORDS & others
+
+
+def reader(*roles, ministries=()):
+    """A portal principal with ``roles`` (and a led Ministry scope)."""
+    return Principal(uuid4(), frozenset(roles), frozenset(ministries))
+
+
+def details(rows, who):
+    """Each line's Details, as ``who`` reads them."""
+    return [detail for _at, _what, detail in steps(rows, reader=who)]
+
+
+def test_back_to_review_lines_show_their_note_to_the_streams_readers():
+    """A Back to review line ends with its note for a reader of that
+    stream's work page (#1893); a decision line never shows its note, and a
+    blank note shows nothing."""
+    by = "; by staff@example.org"
+    rows = [
+        row("census_review", "p", 1, "approved", "false", None, "false", note="Ok"),
+        row("census_review", "p", 2, "unreviewed", "false", None, "false", note="Why"),
+        row("census_resolution", "q", 3, "entered", entity_kind="family"),
+        row("census_resolution", "q", 4, "reopened", entity_kind="family", note=" "),
+        row("census_resolution", "q", 5, "entered", entity_kind="family"),
+        row("census_resolution", "q", 6, "reopened", entity_kind="family", note="X"),
+    ]
+    assert words(rows) == [
+        "Accepted",
+        "Back to review",
+        "Entered by hand",
+        "Back to review",
+        "Entered by hand",
+        "Back to review",
+    ]
+    field, family = "Email address for Smith, Anne", "Email address for the Family"
+    for who in (reader("staff"), reader("administrator")):
+        assert details(rows, who) == [
+            field + by,
+            field + by + "; note: Why",
+            family + by,
+            family + by,
+            family + by,
+            family + by + "; note: X",
+        ]
+    # A reader who may not open Census changes, and no reader at all, see
+    # the lines without a note.
+    for who in (reader("ministry_leader", ministries=[9]), None):
+        assert not any("note:" in detail for detail in details(rows, who))
+
+
+def test_a_ministry_note_follows_the_requests_ministry_scope():
+    """A Ministry line's note is for the readers of that request's
+    Ministry on Ministry requests: Staff, and a leader of that Ministry
+    only, never a leader of another."""
+    ministry = {"subject": "9"}
+    rows = [
+        row("ministry_revision", "m", 1, "resolved", "joined", "join", **ministry),
+        row("ministry_roster", "m", 2, "true", None, "join", **ministry),
+        row(
+            "ministry_revision",
+            "m",
+            3,
+            "resolved",
+            "joined",
+            "join",
+            "true",
+            note="Ticked the wrong one",
+            **ministry,
+        ),
+    ]
+    assert words(rows)[-1] == "Back to review"
+    shown = "; by staff@example.org; note: Ticked the wrong one"
+    for who in (reader("staff"), reader("ministry_leader", ministries=[9])):
+        assert details(rows, who)[-1].endswith(shown)
+    assert "note:" not in details(rows, reader("ministry_leader", ministries=[8]))[-1]
+
+
+def test_an_information_line_shows_only_the_notes_its_step_changed():
+    """Additional information revisions store the whole Staff notes, so a
+    Back to review line shows them only when its step changed them."""
+    item = {"entity_kind": None, "subject": None}
+    rows = [
+        row("information", "i", 1, "true", "true", note="Called them", **item),
+        # Handled undone with a new note, then needed cleared, notes kept.
+        row("information", "i", 2, "true", "false", note="Not done yet", **item),
+        row("information", "i", 3, "false", "false", note="Not done yet", **item),
+    ]
+    assert words(rows) == ["Handled", "Back to review", "Back to review"]
+    line = "Additional information; by staff@example.org"
+    assert details(rows, reader("staff")) == [
+        line,
+        line + "; note: Not done yet",
+        line,
+    ]

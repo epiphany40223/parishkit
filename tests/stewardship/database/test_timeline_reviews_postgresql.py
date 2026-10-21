@@ -48,14 +48,15 @@ pytestmark = pytest.mark.django_db(transaction=True)
 REVIEW_SQL = "JOIN stewardship_proposal_review v ON v.proposal_id=p.id"
 
 
-def reviews(campaign_id, family_id):
+def reviews(campaign_id, family_id, reader=None):
     """The review lines as the restricted web login, and the statements run."""
     with (
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
         transaction.atomic(),
         CaptureQueriesContext(connection) as queries,
     ):
-        lines = read_reviews(scope_values(ResponseScope(campaign_id), family_id))
+        values = scope_values(ResponseScope(campaign_id), family_id)
+        lines = read_reviews(values, reader)
     return [(str(what), detail) for _at, what, detail in lines], len(queries)
 
 
@@ -228,3 +229,82 @@ def test_additional_information_follow_up(live_response_service, google):
         ("Accepted", "Additional information; by admin@example.org"),
         ("Handled", "Additional information; by admin@example.org"),
     ]
+
+
+def test_back_to_review_notes_reach_their_readers_page_and_file(
+    response_service, google
+):
+    """A Back to review line carries its note (#1893) for the readers of
+    Census changes, on the page and in the Timeline export captured for its
+    requester; a decision's note never shows, and a reader who may not open
+    Census changes reads the line without it."""
+    from parishkit.stewardship.accounts.policy import Principal, current_principal
+    from parishkit.stewardship.reports.export_models import TimelineExportSnapshot
+    from parishkit.stewardship.reports.timeline_exports import (
+        create_timeline_export,
+    )
+
+    harness, admin, staff, home, name = prepared(response_service)
+    store = harness.service.store
+    family_id = home.submission.family_id
+    review(harness, admin, name, "approved", note="Private note")
+    review(harness, admin, fresh(name), "unreviewed", note="Asked the Family")
+    resolve(harness, staff, home, "entered")
+    home.refresh_from_db()
+    resolve(harness, staff, home, "reopened", note="Typed the wrong street")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        principals = {who: current_principal(store, who) for who in (admin, staff)}
+    for principal in principals.values():
+        lines, statements = reviews(harness.campaign.pk, family_id, principal)
+        assert statements == 1
+        assert [what for what, _detail in lines] == [
+            "Accepted",
+            "Back to review",
+            "Entered by hand",
+            "Back to review",
+        ]
+        assert lines[1][1].endswith("; by admin@example.org; note: Asked the Family")
+        assert lines[3][1] == (
+            "Home address for the Family; by staff@example.org; "
+            "note: Typed the wrong street"
+        )
+        assert not any("Private" in detail for _w, detail in lines)
+    # No reader, or one who may not open Census changes: no note at all.
+    leader = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({1}))
+    for reader in (None, leader):
+        lines, _ = reviews(harness.campaign.pk, family_id, reader)
+        assert not any("note:" in detail for _w, detail in lines)
+
+    # The page, for an Administrator and for Staff.
+    path = reverse("admin:timeline", args=[family_id])
+    for email, sub in (("admin@example.org", None), ("staff@example.org", "s")):
+        if sub:
+            google[0].update(email=email, sub="synthetic-staff")
+        client, login = signed_in()
+        assert login.status_code == 302
+        body, _ = page(client, path + "?kind=reviews")
+        shown = dict(reversed(rows(body)))
+        assert "; note: Typed the wrong street" in body
+        assert "Private note" not in body
+        assert shown["Entered by hand"].endswith("; by staff@example.org")
+
+    # The export's capture, for its requester.
+    for who in (admin, staff):
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            made = create_timeline_export(
+                store,
+                who,
+                campaign_id=harness.campaign.pk,
+                family_id=family_id,
+                mode="production",
+                format="csv",
+                browser_timezone="UTC",
+                request_key=uuid4(),
+            )
+        capture = TimelineExportSnapshot.objects.get(pk=made.timeline_snapshot_id)
+        details = [event["detail"] for event in capture.document["events"]]
+        assert (
+            "Home address for the Family; by staff@example.org; "
+            "note: Typed the wrong street"
+        ) in details
+        assert not any("Private" in detail for detail in details)

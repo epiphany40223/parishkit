@@ -705,7 +705,9 @@ class Timeline:
         )
 
 
-def read_timeline(scope, family_id, *, full, current_mode="production", reviews=False):
+def read_timeline(
+    scope, family_id, *, full, current_mode="production", reviews=False, reader=None
+):
     """Read one Family's records in ``scope``; ``full`` adds the timeline.
 
     Runs inside the report's read guard and read-only transaction. Both
@@ -715,7 +717,9 @@ def read_timeline(scope, family_id, *, full, current_mode="production", reviews=
     from. The reduced view keeps only the portal lines; the full view
     (Administrators and Staff) adds the skips and form opens and keeps every
     line, and with ``reviews`` the review lines too (``timeline_reviews``,
-    read only while the hub's Timeline tab is chosen, and by the export).
+    read only while the hub's Timeline tab is chosen, and by the export),
+    worded for ``reader``, the principal they are read for (only the Back to
+    review notes depend on it, #1893).
     """
     values = scope_values(scope, family_id)
     bounds = lifetime(scope)
@@ -751,7 +755,7 @@ def read_timeline(scope, family_id, *, full, current_mode="production", reviews=
         mode=values["response_mode"],
         rehearsal_epoch_id=scope.rehearsal_epoch_id,
     ).values_list("created_at", flat=True)
-    review_lines = read_reviews(values) if reviews else ()
+    review_lines = read_reviews(values, reader) if reviews else ()
     return Timeline(
         summary(emails, submissions),
         events(

@@ -627,6 +627,8 @@ def timeline(request, campaign_id, family_id):
                 full=full,
                 current_mode=system.mode,
                 reviews=full and chosen == "timeline",
+                # Back to review notes, for the streams this reader works.
+                reader=principal,
             )
             # The chosen tab's other stream (slices 3 and 4), if any.
             streams = hub_reads(

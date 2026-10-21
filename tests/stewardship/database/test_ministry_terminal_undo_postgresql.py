@@ -337,6 +337,7 @@ def test_the_timeline_reads_the_undo_as_back_to_review():
         seed_decision=None,
         seed_set=None,
         seed_value=None,
+        note=None,
         answer_first=None,
         answer_last=None,
         source_first=None,
