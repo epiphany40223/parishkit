@@ -10,7 +10,7 @@
   the field until it is edited (ui-v1.js refuseAtFields). It ends with the
   worklist's note, as every decision does.
 {% endcomment %}<div class="dialog-fields"><label for="{{ dialog_id }}-member">{% translate "ParishSoft Member ID (optional)" %}</label><input id="{{ dialog_id }}-member" name="value_member" inputmode="numeric" autocomplete="off" maxlength="19" value="" aria-describedby="{{ dialog_id }}-member-help" data-confirm-reset>
-<p class="help" id="{{ dialog_id }}-member-help">{% translate "The new Member's ID in ParishSoft. The next refresh confirms the entry when ParishSoft lists this Member in the Family. Leave it blank if you do not have it: the mark is then final." %}</p>
+<p class="help" id="{{ dialog_id }}-member-help">{% translate "The new Member's ID in ParishSoft. The next refresh confirms the entry when ParishSoft lists this Member in the Family. Leave it blank if you do not have it: you can add it later." %}</p>
 <div class="field-error-line"><ul class="errorlist" id="{{ dialog_id }}-error" hidden><li></li></ul></div>
 </div>
 {% include "stewardship/components/review-worklist-note.html" with note_name="note" %}

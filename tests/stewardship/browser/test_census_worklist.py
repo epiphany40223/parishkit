@@ -7,7 +7,8 @@ behaviour (selected icons, bulk gates, the reopen note) is tested on its
 own fixture page (``test_review_worklist``); these tests check what Census
 changes adds: its filters and sorts, By hand rows reviewed like the rest,
 Entered by hand, Entered incorrectly's two fixes, the address editor and
-a refusal at its fields, and a New Member's ParishSoft Member ID (#1749).
+a refusal at its fields, and a New Member's ParishSoft Member ID (#1749)
+and its correction (#1773).
 """
 
 import json
@@ -26,6 +27,8 @@ from .census_components import (
     ENTERED,
     ENTERED_NOTICE,
     INCORRECT,
+    MEMBER_CORRECTED,
+    MEMBER_CORRECTED_NOTICE,
     MEMBER_ENTERED,
     MEMBER_ENTERED_NOTICE,
     NEW_MEMBER,
@@ -568,4 +571,84 @@ def test_a_new_members_entered_by_hand_asks_for_its_member_id(
     assert "value_member=7" in sent[-1] and "item=4" in sent[-1]
     has_text(row(page, 4).locator(".stage-chip .status-word"), "Entered by hand")
     has_text(row(page, 4).locator(".help"), "Accepted. ParishSoft Member ID 7.")
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_correcting_a_new_members_member_id(page, component_origin, axe_source):
+    """An entered New Member keeps Entered by hand selected and offers
+    Correct the ParishSoft Member ID after it (#1773): its own dialog asks
+    for the ID, required and filled in with the mark's; the same ID is
+    refused at the field; a new one answers with the row naming it, in
+    place, focus back on the selected mark."""
+    page.goto(component_origin + MEMBER_ENTERED)
+    page.evaluate(MARK)
+    actions = row(page, 4).locator('[data-row-action="entered_by_hand"]')
+    assert actions.count() == 2
+    assert actions.nth(0).get_attribute("aria-pressed") == "true"
+    label = (
+        "Correct the ParishSoft Member ID of New Member for New Member: Newly Sample"
+    )
+    correct = row(page, 4).get_by_role("button", name=label)
+    assert correct.get_attribute("aria-pressed") is None
+    refusal = {
+        "errors": [{"code": "invalid", "field_id": "value_member", "message": "x"}],
+        "refusal": {
+            "message": "That is the ParishSoft Member ID already recorded. "
+            "Enter the corrected ID.",
+            "fix": "Correct the Member ID, then record it again.",
+            "link": None,
+        },
+    }
+    sent = []
+
+    def answer(route):
+        """Refuse the first correction at its Member ID; answer the next
+        with the page after it."""
+        if route.request.method != "POST":
+            route.continue_()
+            return
+        sent.append(route.request.post_data)
+        if len(sent) == 1:
+            route.fulfill(
+                status=400, content_type="application/json", body=json.dumps(refusal)
+            )
+            return
+        route.fulfill(
+            response=route.fetch(url=component_origin + MEMBER_CORRECTED, method="GET")
+        )
+
+    page.route("**" + PATH, answer)
+    correct.click()
+    dialog = page.locator("#census-entered-dialog-4")
+    visible(dialog)
+    has_text(dialog.locator("h2"), f"{label}?")
+    has_text(
+        dialog.locator("[data-confirm-body]"),
+        "Record the ID of the Member you added. Check the Member in ParishSoft "
+        "first: the next refresh checks the entry again.",
+    )
+    member_id = dialog.get_by_label("ParishSoft Member ID", exact=True)
+    assert member_id.input_value() == "7"
+    assert member_id.get_attribute("required") is not None
+    assert_accessible(page, axe_source)
+    record = dialog.get_by_role("button", name="Record")
+    record.click()
+    has_text(
+        dialog.locator(".errorlist"),
+        "That is the ParishSoft Member ID already recorded. Enter the corrected "
+        "ID. Correct the Member ID, then record it again.",
+    )
+    assert "value_member=7" in sent[0] and "decide=entered_by_hand" in sent[0]
+    member_id.fill("9")
+    record.click()
+    has_text(page.locator("#census-notice"), MEMBER_CORRECTED_NOTICE)
+    hidden(dialog)
+    assert "value_member=9" in sent[-1] and "item=4" in sent[-1]
+    has_text(row(page, 4).locator(".stage-chip .status-word"), "Entered by hand")
+    has_text(row(page, 4).locator(".help"), "Accepted. ParishSoft Member ID 9.")
+    focused = page.evaluate(
+        "() => [document.activeElement.dataset.rowAction,"
+        " document.activeElement.getAttribute('aria-pressed')]"
+    )
+    assert focused == ["entered_by_hand", "true"]
     assert page.evaluate(MARKED) == "kept"
