@@ -1699,7 +1699,8 @@ Family's due reminders as `workgroup_excluded`, in the same order of reasons
 ([#866](https://github.com/epiphany40223/parishkit/issues/866)). The preview
 counts them as skipped, confirming the resume writes them so, and none
 coalesces into the Family's due invitation, which is still selected and sent.
-Family email progress
+The Mail queue's
+[Family send progress](../admin-portal/spec.md#family-send-progress) panel
 counts these skips separately ("Skipped: No-reminders WorkGroup"), never as owed
 or remaining, and the Family's
 [Timeline](../reports/spec.md#timeline) names them.
@@ -2509,10 +2510,11 @@ unavailability, not a retry conflict.
 ## ParishSoft publication
 
 Not in use yet: publication is ADM-09
-([#528](https://github.com/epiphany40223/parishkit/issues/528)), its
-[Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft) page is
-built only up to its check so far, and it ships switched off, so today
-census changes reach ParishSoft by hand from the
+([#528](https://github.com/epiphany40223/parishkit/issues/528)), run from
+the [Update ParishSoft](../reports/spec.md#update-parishsoft) page
+([#1688](https://github.com/epiphany40223/parishkit/issues/1688)), and it
+ships switched off, so until the Administrator turns it on census changes
+reach ParishSoft by hand from the
 [Census changes](../reports/spec.md#pending-census-changes) page.
 
 Publication runs on the worker's source queue (the low-concurrency
@@ -2541,8 +2543,9 @@ and requires a new confirmation. Execution owns and heartbeats the lease
 through final ParishSoft verification, releases it, and then, when it
 published at least one entity, requests the final full refresh as the
 [data workflow](../data/spec.md#review-and-publication) says, which claims
-the lease normally (not yet built). The worker may already create
-`source_refresh` tasks, so this needs no task-creator change. The preflight
+the lease normally. The worker may already create `source_refresh` tasks,
+so this needs no task-creator change. The preflight
+
 also marks already-matching changes `resolved_upstream` in a Production-mode
 plan (frozen migration 0112).
 

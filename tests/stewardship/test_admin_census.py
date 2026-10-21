@@ -31,7 +31,31 @@ CREATED = datetime(2026, 10, 12, 18, 30, tzinfo=UTC)
 def test_the_actions_are_the_services():
     """The parser's choices, spelled out before Django, are the service's."""
     assert admin_cli.CENSUS_ACTIONS == RESOLUTION_ACTIONS
-    assert admin_cli.CENSUS_DECISIONS == REVIEW_DECISIONS
+    # In the pipeline's words (decision 7, #1755): accepted, stored approved.
+    assert (
+        tuple(map(admin_census.decision_word, REVIEW_DECISIONS))
+        == admin_cli.CENSUS_DECISIONS
+    )
+    assert admin_cli.CENSUS_DECISIONS[0] == "accepted"
+    assert tuple(map(admin_census.stored_decision, admin_cli.CENSUS_DECISIONS)) == (
+        REVIEW_DECISIONS
+    )
+
+
+def test_only_the_words_change_not_the_stored_values():
+    """Decision 7 (#1755): the command line says accepted for the stored
+    approved, both ways, and leaves every other decision and record as is."""
+    assert admin_census.decision_word("approved") == "accepted"
+    assert admin_census.stored_decision("accepted") == "approved"
+    for decision in ("ignored", "unreviewed"):
+        assert admin_census.decision_word(decision) == decision
+        assert admin_census.stored_decision(decision) == decision
+    assert admin_census._worded({"id": 1, "decision": "approved"}) == {
+        "id": 1,
+        "decision": "accepted",
+    }
+    assert admin_census._worded({"id": 1}) == {"id": 1}
+    assert admin_census._worded(None) is None
 
 
 def test_the_review_document_names_ids_versions_and_states_only():
@@ -172,9 +196,14 @@ def test_the_document_names_ids_versions_and_states_only():
             *("--action", "entered", "--expected-version", "1", "--note", "-"),
         ],
         # census review: each required piece missing, and its vocabulary.
-        ["census", "review", "--decision", "approved", "--expected-version", "1"],
+        ["census", "review", "--decision", "accepted", "--expected-version", "1"],
         ["census", "review", str(PROPOSAL), "--expected-version", "1"],
-        ["census", "review", str(PROPOSAL), "--decision", "approved"],
+        ["census", "review", str(PROPOSAL), "--decision", "accepted"],
+        # Decision 7 (#1755): no alias for the old word.
+        [
+            *("census", "review", str(PROPOSAL)),
+            *("--decision", "approved", "--expected-version", "1"),
+        ],
         [
             *("census", "review", str(PROPOSAL)),
             *("--decision", "approve", "--expected-version", "1"),
@@ -185,7 +214,7 @@ def test_the_document_names_ids_versions_and_states_only():
         ],
         [
             *("census", "review", str(PROPOSAL)),
-            *("--decision", "approved", "--expected-version", "0"),
+            *("--decision", "accepted", "--expected-version", "0"),
         ],
         # census edit: a value or --clear, never both nor neither.
         ["census", "edit", str(PROPOSAL), "--expected-version", "1"],

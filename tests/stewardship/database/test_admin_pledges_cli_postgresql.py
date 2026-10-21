@@ -106,8 +106,11 @@ def test_counts_and_the_page_s_files(response_service, google, cli):  # noqa: F8
         "total": 1,
         "stages": {
             "to_review": 1,
+            "conflict": 0,
             "to_enter_by_hand": 0,
             "entered_by_hand": 0,
+            "entered_incorrectly": 0,
+            "confirmed": 0,
             "ignored": 0,
         },
     }
@@ -218,17 +221,33 @@ def test_decisions_go_through_the_page_s_service_and_guard(
     )
     assert "1,300" not in str(document) and "Recheck" not in str(document)
 
-    # Entered by hand is final, so it asks first.
+    # Entered by hand can be undone (#1840), so it asks nothing.
     code, document = decide(run, submission, "entered_by_hand")
-    assert code == 4 and document["error"]["code"] == "confirmation_required"
-    code, document = decide(run, submission, "entered_by_hand", "--yes")
     assert code == 0, document
     assert document["result"]["decisions"][0]["entered"]
     assert state(harness, submission).stage == "entered_by_hand"
     assert (count(EVENT), count(UPDATED)) == (4, 4)
-    code, document = decide(run, submission, "back_to_review", "--note", "Undo")
+    # Back to review undoes the mark only with a note, keeping the Edit.
+    code, document = decide(run, submission, "back_to_review")
     assert code == 1 and document["error"]["code"] == "invalid", document
     assert (count(EVENT), count(UPDATED)) == (4, 4)
+    code, document = decide(run, submission, "back_to_review", "--note", "Undo")
+    assert code == 0, document
+    (undone,) = document["result"]["decisions"]
+    assert (undone["action"], undone["decision"], undone["entered"]) == (
+        "back_to_review",
+        "accepted_edited",
+        False,
+    )
+    assert state(harness, submission).stage == "to_enter_by_hand"
+    assert (count(EVENT), count(UPDATED)) == (5, 5)
+    # --yes is gone (#1893): a usage error that records nothing.
+    code, document = decide(run, submission, "entered_by_hand", "--yes")
+    assert code == 2 and document["error"]["code"] == "usage", document
+    assert (count(EVENT), count(UPDATED)) == (5, 5)
+    code, document = decide(run, submission, "entered_by_hand")
+    assert code == 0, document
+    assert (count(EVENT), count(UPDATED)) == (6, 6)
 
 
 def test_unknown_read_only_and_leader_refusals(
@@ -366,3 +385,33 @@ def test_bulk_decisions_are_all_or_none_and_a_key_is_used_once(
     code, document = decide(run, first, "entered_by_hand", "--amount", "1")
     assert code == 1 and document["error"]["code"] == "invalid", document
     assert (count(EVENT), count(UPDATED)) == (3, 5)
+
+
+def test_a_confirmed_pledge_is_undone_at_the_exported_version(
+    response_service,
+    google,
+    cli,  # noqa: F811
+):
+    """After a refresh Confirmed a pledge ParishSoft already held, JSON
+    Lines gives the page's version (with the check) and Back to review as
+    its action; ``pledges decide`` at that version needs the note, then
+    sends the pledge back to To review (#1840)."""
+    from .test_pledge_refresh_postgresql import ANSWER, refresh
+
+    harness, submission = pledged(response_service)
+    refresh(harness, ANSWER)
+    signed_in()
+    run = cli()
+    code, body, document = export(run, "--stage", "confirmed", "--format", "jsonl")
+    assert code == 0, document
+    [record] = [json.loads(line) for line in body.decode().splitlines()]
+    assert (record["version"], record["actions"]) == (1, ["back_to_review"])
+    version = record["version"]
+    code, document = decide(run, submission, "back_to_review", version=version)
+    assert code == 1 and document["error"]["code"] == "invalid", document
+    code, document = decide(
+        run, submission, "back_to_review", "--note", "Recheck", version=version
+    )
+    assert code == 0, document
+    assert document["result"]["decisions"][0]["decision"] is None
+    assert state(harness, submission).stage == "to_review"

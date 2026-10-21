@@ -23,7 +23,6 @@ from .test_admin_page_names import TEMPLATE_DIR, TEMPLATES, VARIABLE_RETURNS
 # rule 3 lets an error page offer a way back.
 EXTRA = {
     ("content_edit", "content-settings.html"),
-    ("content_edit", "content-preview.html"),
     ("daily_digest_snapshot", "daily-digest.html"),
     ("schedule_settings", "schedule-reconcile.html"),
     ("reports", "report-empty.html"),
@@ -85,15 +84,13 @@ PAIRS = sorted(set(TEMPLATES.items()) | EXTRA)
 # trail's parent crumb. A link that can is drawn only when its URL differs
 # from the crumb's, as the export page's is, so a "Return to" link remains
 # only where it carries a report's filters (the directory and participation
-# exports). The others name a page outside the trail: Preview and test
+# exports). The other names a page outside the trail: Preview and test
 # email's opener, which its view offers only when the trail does not lead
-# there, and an integration's own settings page, of which its review is a
-# step.
+# there.
 PARENT, ELSEWHERE = "parent", "elsewhere"
 VARIABLE_TARGETS = {
     ("campaign-mail.html", "return_link.label"): ELSEWHERE,
     ("configuration-request.html", "admin_chrome.back.label"): PARENT,
-    ("integration-preview.html", "label"): ELSEWHERE,
     ("report-export.html", "report_name"): PARENT,
 }
 # Parent-crumb links drawn from the trail itself (``admin_chrome.back``), at

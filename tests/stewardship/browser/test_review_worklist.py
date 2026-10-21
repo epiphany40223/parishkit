@@ -107,18 +107,21 @@ def test_icons_show_the_decision_in_force(page, component_origin, axe_source, wi
         icon(page, 3, "Accept").get_attribute("title").startswith("Accepted (edited);")
     )
     assert icon(page, 4, "Ignore").get_attribute("aria-pressed") == "true"
-    # Entered by hand: Accept and the mark selected, final; Not seen flagged.
+    # Entered by hand: Accept and the mark selected; Back to review undoes
+    # the mark (#1840), its box's one kind; Not seen flagged.
     marked = row(page, 6)
     assert icon(page, 6, "Mark").get_attribute("aria-pressed") == "true"
-    assert marked.locator("input[data-select-row]").count() == 0
+    box = marked.locator("input[data-select-row]")
+    assert box.get_attribute("data-confirm-kind") == "back_to_review"
     visible(marked.locator(".stage-chip.status-warning"))
     # Entered incorrectly: the Error look and ParishSoft now beside it.
     wrong = row(page, 5)
     has_text(wrong.locator(".stage-chip.status-error"), "Entered incorrectly")
     assert "555-0177" in wrong.inner_text()
     assert "555-0177" not in row(page, 0).inner_text()
-    # Every row with a bulk action has a box (UX conventions, "Several rows").
-    assert page.locator("input[data-select-row]").count() == 7
+    # Every row with a bulk action has a box (UX conventions, "Several rows"),
+    # the Entered by hand row too since its Back to review undoes it (#1840).
+    assert page.locator("input[data-select-row]").count() == 8
     visible(page.locator(".bulk-bar").get_by_role("button", name="Add"))
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     assert_accessible(page, axe_source)
@@ -211,9 +214,7 @@ def test_reopening_an_ignored_item_needs_a_note(page, component_origin):
         "The ignored item goes back to To review. Say why it is reopened.",
     )
     assert record.is_disabled()
-    has_text(
-        dialog.locator("[data-complete-hint]"), "Say why this ignored item is reopened."
-    )
+    has_text(dialog.locator("[data-complete-hint]"), "Say why this item goes back.")
     dialog.get_by_label("Note (required)").fill("Asked")
     available(record)
     record.click()

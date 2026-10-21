@@ -35,7 +35,7 @@
     <th scope="row"><span class="cell-line">{{ row.listed.name }}</span>
       <span class="cell-detail">{{ row.listed.key.mode|delivery_label }}{% if row.earlier %} {% translate "(before a return to Testing)" %}{% endif %}</span>
       {% if row.listed.replaced %}<span class="cell-detail">{% translate "Schedule changed later" %}</span>{% endif %}
-      {% if row.send.active %}<span class="cell-detail">{% if row.live %}<a href="{% url 'admin:family_email_progress' %}">{% translate "In progress: watch it live" %}</a>{% else %}{% translate "In progress" %}{% endif %} ({% if row.send.total is None %}{% translate "total not known yet" %}{% else %}{% blocktranslate with remaining=row.send.counts.remaining|number %}{{ remaining }} to send{% endblocktranslate %}{% endif %})</span>{% endif %}</th>
+      {% if row.send.active %}<span class="cell-detail">{% if row.live %}<a href="{% url 'admin:mail_queue' %}">{% translate "In progress: watch it live" %}</a>{% else %}{% translate "In progress" %}{% endif %} ({% if row.send.total is None %}{% translate "total not known yet" %}{% else %}{% blocktranslate with remaining=row.send.counts.remaining|number %}{{ remaining }} to send{% endblocktranslate %}{% endif %})</span>{% endif %}</th>
     <td class="numeric nowrap">{% if row.send.total is None %}{% translate "Not known yet" %}{% else %}{{ row.send.total|number }}{% endif %}</td>
     <td class="numeric nowrap">{% include "stewardship/family-email-send-outcome.html" with outcome=row.sent %}</td>
     <td class="numeric nowrap">{% include "stewardship/family-email-send-outcome.html" with outcome=row.failed %}</td>

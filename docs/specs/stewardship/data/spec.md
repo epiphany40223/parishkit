@@ -296,7 +296,7 @@ Campaign exists. Clearing the pointer through Return to Testing permanently
 makes that archived Campaign historical and ineligible for unarchive.
 
 v1 does not build reopen, archive, unarchive, Return to Testing or purge
-([v1 launch scope](../../plans/stewardship/v1-launch.md#cut-from-v1), items 1
+([v1 launch scope](../../../plans/stewardship/v1-launch.md#cut-from-v1), items 1
 and 2; the close-out wizard is
 [#527](https://github.com/epiphany40223/parishkit/issues/527)). Their
 lifecycle registry entries (`campaigns/lifecycle.py`) and some storage
@@ -592,6 +592,8 @@ the corpus:
   corpus would change none of them, with the same decision promotion makes,
   so a new submission, a staff review edit or a row the last promotion
   itself reconciled does not force another promotion;
+- no added Member link (see [Proposed changes](#proposed-changes)) is
+  waiting to be recorded;
 - an active Family link generation is still current (a stale one fails the
   refresh, as promotion would).
 
@@ -1092,11 +1094,21 @@ Every final click creates an immutable `Submission` version containing:
 - submitted UTC time and date derived from the Campaign's immutable timezone;
 - complete normalized answers for all enabled sections;
 - validation/content/schema versions;
-- request/session correlation without storing credentials; and
+- request/session correlation without storing credentials;
 - `entered_by_id`, the portal user who entered it for the Family through
   [Open form](../reports/spec.md#open-form), or null when the Family
   entered it (a soft reference with no foreign key, added by frozen migration
-  0065).
+  0065); and
+- `upcoming_pledge`, ParishSoft's pledge for the campaign's upcoming
+  financial period in the validation snapshot, recorded only for a response
+  that answers the financial questions and only when that snapshot's giving
+  read is proven complete, else null (frozen migration 0136, provisional
+  number; the review pipeline's A for the pledge,
+  [Financial stream](../review-pipeline/spec.md#financial-stream)); and
+- `reviewed_view` and `shown_items`, what the response's form showed, copied
+  unchanged from its form baseline
+  ([shown items](../review-pipeline/spec.md#shown-items); added by frozen
+  migration 0143).
 
 The current effective live response points to the latest accepted live version.
 Test versions are isolated from live calculations, response prefilling,
@@ -1124,18 +1136,47 @@ Decision and execution are orthogonal:
   `resolved_external`, `failed`, `superseded`, or `cancelled`.
 
 Ignored decisions remain searchable and may return to unreviewed/approved.
-Published or resolved records are immutable outcomes; a later response creates
-new proposed-change records where necessary. A later census response that
+Published or resolved records are outcomes no worker changes; only Back to
+review on Census changes, a paired `reopened` resolution with its required
+note, returns one to `pending` with its decision kept
+([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)).
+A later response creates new proposed-change records where necessary. A later census response that
 gives the same answer again for an ordinary field already *published* or
 *resolved_external* (not yet in the promoted download) creates none: the
 entered change stays as it is
-([resubmission rule](../review-pipeline/spec.md#resubmission-while-the-setting-is-off),
+([resubmission rule](../review-pipeline/spec.md#resubmission-before-the-reviewed-form),
 [#1683](https://github.com/epiphany40223/parishkit/issues/1683)). The
 submission's completeness check admits that absence, and the effective-value
 index keeps that change for the next response while each census response
 answers it the same way. A terminal request (moved, deceased, a death date)
 asked for again after it was entered is a new request, since an entered one
 is no longer presented.
+
+A Member the Family added on the form has only the form's local UUID, and
+the form drops that entry once its New Member change is Entered by hand;
+from then on the Family answers for the person under the new ParishSoft
+Member, once a refresh shows them. Each promotion
+records an added Member link (`stewardship_added_member_link`, one
+immutable row per Family campaign and added Member: the local UUID, the
+ParishSoft Member DUID, the Entered by hand New Member change it rests on
+and the snapshot that showed the Member;
+[#1670](https://github.com/epiphany40223/parishkit/issues/1670)) when the
+evidence is causal and unique, never by matching names, email or birth
+dates:
+
+- the added Member's New Member change is Entered by hand (Staff created
+  the person in ParishSoft);
+- it is the Family's only Entered by hand New Member without a link; and
+- the promoted snapshot has exactly one active, living Member of the Family
+  who was not in the Family's ParishSoft household on any live response up
+  to the one that first added the person (its `members` answers) and who has
+  no link yet.
+
+Anything ambiguous records nothing, and a recorded link never changes. Only
+the promoting source worker may insert a link, and its guard checks the
+change, the snapshot's Member and the earlier responses again. The Ministry
+leader contact rule reads the link
+([cannot participate](../reports/spec.md#ministry-change-summary)).
 
 Writability is `api`, `manual`, or `report-only`. It is derived from a shared
 ParishSoft capability registry, not guessed in views. The initial registry is:
@@ -1253,9 +1294,12 @@ it, attached to the Family's latest live response; and
 `added_in_place_of`, the Ignored request of the same Member it was added
 in place of. Each revision also keeps its decision's note
 (`decision_note`). The SQL guards admit, besides today's edits: a revision
-that sends a resolved or closed request back to In progress (never one a
-refresh resolved or one ticked Entered in ParishSoft; reopening an ignored
-one needs a note), or that withdraws (cancels) a request the parish added;
+that sends a resolved or closed request back to In progress (reopening an
+ignored one needs a note), one that undoes a terminal step (the Entered in
+ParishSoft tick, a Confirmed refresh check or a refresh resolution; with a
+required note,
+[undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)),
+or that withdraws (cancels) a request the parish added;
 an Edit only by someone who may follow up both the request's Ministry and
 the one chosen, which must be another of the campaign's Ministries; and an
 added request only from a current Staff member or Administrator, for a
@@ -1750,6 +1794,18 @@ most 500 ids per call, so the list can name each such email's
 Administrator; a Family email's addresses never leave it. Neither returns any
 other column of the rendering.
 
+It names those people with a third read of the same kind (frozen migration
+0145, [#1562](https://github.com/epiphany40223/parishkit/issues/1562)):
+`stewardship_delivery_page_member_names_v1(messages, actor)` returns, for
+each given email with no Family (at most 500 ids) whose current rendering's
+first intended address a ParishSoft Member's contact record in the current
+snapshot lists (matched trimmed and case-insensitively), the single best
+name, ranked as `stewardship_member_names_v1` ranks the Users page's default
+Name. It returns only `(message, name)`, never an address, another contact
+field, a DUID or a Family, and only to the web login for an enabled
+Administrator. It takes email ids rather than addresses, so it cannot name
+an arbitrary address.
+
 The same page says what the latest attempt recorded for each address
 ([#806](https://github.com/epiphany40223/parishkit/issues/806)). An attempt's
 evidence (`stewardship_outbox_event.evidence_note`, outside the web login's
@@ -1926,7 +1982,13 @@ each check that the other has not happened.
 ## Effective-value merge
 
 The value displayed on a repeat Family visit is computed from the immutable
-Family-submitted value, never an Admin review edit:
+Family-submitted value, never an Admin review edit, until the release
+with [#1705](https://github.com/epiphany40223/parishkit/issues/1705)'s last
+slice deploys. From then on a live form shows the
+[reviewed Family form](../review-pipeline/spec.md#reviewed-family-form)
+instead ([Families see reviewed changes](../review-pipeline/spec.md#families-see-reviewed-changes)),
+and the census slice of #1705 rewrites these rules for it; a Testing form
+keeps these rules:
 
 1. Start with the current ParishSoft value.
 2. If there is no prior effective response change, use current.
@@ -2057,6 +2119,10 @@ Snapshot promotion performs these effects transactionally:
   applying provider-suppression records;
 - resolve proposals that now match upstream;
 - mark three-way conflicts;
+- keep, unchanged, an open census change whose Member is no longer an
+  active, living Member of its Family (the review pipeline's
+  [rule 4](../review-pipeline/spec.md#refresh-checks)), since publication
+  refuses such a Member ([review and publication](#review-and-publication));
 - resolve Ministry requests whose requested roster state is now current;
 - re-evaluate final census changes and decided Ministry requests against
   the new data, recording a refresh check for each whose outcome changed
@@ -2090,13 +2156,21 @@ filter, bulk approve/ignore/reset, and inline proposed-value edits. Bulk actions
 must display exact affected counts and cannot operate on records outside the
 current authorization/filter snapshot.
 
-`Publish to ParishSoft` performs an asynchronous mandatory preflight:
+`Update ParishSoft` performs an asynchronous mandatory preflight:
 
 1. In a short transaction, create the preflight record with the configured
    expected-organization and promoted source-version identifiers. Preflight
    does not claim the mutation lease.
 2. Validate the upstream organization without cache and fetch uncached current
    contact payloads for every affected entity without holding a database lock.
+   A change whose Member the promoted data no longer lists as an active,
+   living Member of the change's Family (moved to another Family, inactive,
+   deceased or gone) is left out of the plan: it stays open and unplanned,
+   and the Member is not read for it, so a change a Family made is never
+   written to a Member of another household
+   ([#1738](https://github.com/epiphany40223/parishkit/issues/1738)). A
+   Member with changes from two Families plans only those of the Family
+   they are in now.
 3. Re-evaluate each approved field against baseline/proposed/current. After
    an Administrator resolved a conflict with *Use the Family's value anyway*
    ([reports](../reports/spec.md#automatic-census-review), ADM-09.03), the
@@ -2121,9 +2195,12 @@ current authorization/filter snapshot.
    refresh brings the snapshot level. It is also the only path that
    recognizes an Administrator's edited value already in ParishSoft, which
    reconciliation, comparing with the Family's answer, would call a
-   conflict. The mark is final: the derived-proposal guard treats
-   `resolved_upstream` as immutable, so Reopen on Census changes cannot
-   undo it, and a wrong mark is corrected only in ParishSoft. Because it
+   conflict. Back to review on Census changes undoes the mark with a
+   required note (#1840,
+   [undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)):
+   the derived-proposal guard admits the web role's paired `reopened`
+   resolution, which returns the change to `pending` with its decision
+   kept; nothing is written to ParishSoft. Because it
    rests on one uncached read whose value decoding is provisional until
    the Member contact round trip is confirmed, it can happen only after
    that confirmation: the switch, which must be on before any check runs,
@@ -2147,7 +2224,7 @@ current authorization/filter snapshot.
    `stewardship_publication_confirmation_guard_v1` (neither SECURITY
    DEFINER) with a self-verifying DO block, under the
    [post-launch schema policy](../operations/spec.md#post-launch-schema-policy)
-   ([Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft)).
+   ([Update ParishSoft](../reports/spec.md#update-parishsoft)).
 5. If any field the API would write on an entity is a three-way conflict,
    block all writes to that entity and return it for re-review. A field
    reported *By hand* (step 6) is never evaluated, so it never blocks.
@@ -2192,7 +2269,12 @@ revalidates its fencing token, confirms the system is still in Production mode
 database also refuses to queue an entity's changes outside Production mode,
 though no guard can refuse the PUT itself),
 fetches the uncached contact record, and repeats
-canonical merge/conflict evaluation against the confirmed plan digest. Any
+canonical merge/conflict evaluation against the confirmed plan digest. As it
+queues the entity's changes it also confirms the current promoted data still
+lists the Member, active and living, in each written change's Family (a
+refresh may have promoted since the preflight); an entity none of whose
+changes it has queued yet is checked before its read, so such a Member is
+not read either. Any
 difference invalidates that entity without writing and returns it for
 confirmation; a conditional-write primitive is used when ParishSoft exposes
 one. Publication then groups fields by entity and uses idempotent v2 `PUT`
@@ -2231,8 +2313,10 @@ while its PUT may have landed. Turning publication off never needs them
 cleared first. After releasing the lease, a run that published at least one
 entity requests one full refresh through the shared refresh request path,
 as a manual refresh attributed to the Administrator who confirmed the plan,
-carrying the publication's correlation id and logged as following a
-publication, which coalesces with a full refresh already waiting; it reconciles the
+carrying the run's correlation id and audited as following an update
+(`census_publication_refresh_requested`), which coalesces with a full
+refresh already waiting; it reconciles the
+
 promoted snapshot under a new lease claim. A failed request leaves the
 run's outcomes as they are and logs a WARNING, and the next scheduled
 refresh catches up. Publication ships switched off;

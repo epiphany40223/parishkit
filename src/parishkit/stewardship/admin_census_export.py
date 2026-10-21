@@ -52,6 +52,7 @@ JSONL_KEYS = (
     "parishsoft_status",
     "family_duid",
     "who",
+    "member_parishsoft_status",
     "member_duid",
     "what",
     "parishsoft_now",
@@ -89,17 +90,23 @@ def actions(row, actor, *, mutable=True):
 
     Entered in ParishSoft and Ignore on a By-hand row still open (the census
     capability Staff hold too); Reopen on an ignored row, for an
-    Administrator only. None while other campaign work holds the campaign
-    (``mutable`` false), as the page then offers no row actions.
+    Administrator only, and on a terminal row, which undoes its step
+    (#1840), for Staff too (``census_resolution.capability``). None while
+    other campaign work holds the campaign (``mutable`` false), as the page
+    then offers no row actions.
     """
+    from types import SimpleNamespace
+
     from .accounts.policy import Capability, allows
+    from .responses.census_resolution import capability
 
     found = []
     if not mutable:
         return found
     if row["can_resolve"] and allows(actor, Capability.MANUAL_CENSUS):
         found += ["entered", "ignored"]
-    if row["can_reopen"] and allows(actor, Capability.PUBLISH_CENSUS):
+    state = SimpleNamespace(execution=row["execution"])
+    if row["can_reopen"] and allows(actor, capability("reopened", state)):
         found.append("reopened")
     return found
 
@@ -114,12 +121,14 @@ def reviews(row, actor, *, mutable=True):
     false), as the page then offers no Review.
     """
     from .accounts.policy import Capability, allows
+    from .admin_census import decision_word
     from .reports.census_changes import REVIEW_CHOICES
 
     if not mutable or not allows(actor, Capability.PUBLISH_CENSUS):
         return []
     decisions = dict(REVIEW_CHOICES)
-    return [decisions[action] for action in row["review_actions"]]
+    # In the command line's words (decision 7): ``accepted``, not ``approved``.
+    return [decision_word(decisions[action]) for action in row["review_actions"]]
 
 
 def offered(row, actor, key, *, mutable=True):

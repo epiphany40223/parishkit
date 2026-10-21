@@ -88,14 +88,29 @@ REASONS = frozenset(
         # send work in progress blocks (#1404 PR 4b): INFO, the reader waits
         # for it or resolves it on Sent mail, then saves again.
         "send_work_blocks",
-        # Publish to ParishSoft's Check ParishSoft (#528, ADM-09): the
-        # switch off, nothing approved, a run unfinished, or other campaign
-        # work holding the campaign. INFO: the page already draws each one
-        # unavailable with its reason, so only a stale page meets them.
+        # Update ParishSoft's Check ParishSoft (#528, ADM-09; #1688): the
+        # switch off, nothing Ready to update, a run unfinished, or other
+        # campaign work holding the campaign. INFO: the page already draws
+        # each one unavailable with its reason, so only a stale page meets
+        # them.
         "publication_off",
         "publication_nothing_approved",
         "publication_running",
         "publication_campaign_held",
+        # Update's and Run again's own (#1688), shown in the review dialog:
+        # Testing mode, a plan that writes nothing, is an hour old, changed
+        # since the check or is not the newest, another plan still writing
+        # its changes, a rerun with nothing unfinished, and a check while
+        # an update stopped before finishing. INFO, as above.
+        "publication_testing",
+        "publication_nothing_to_write",
+        "publication_plan_expired",
+        "publication_plan_changed",
+        "publication_plan_superseded",
+        "publication_overlap",
+        "publication_finished",
+        "publication_stopped",
+        "publication_checking",
         "unclassified",
         "usage",
         "configuration",

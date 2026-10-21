@@ -187,9 +187,11 @@ LEDGER = {
         "workgroup show", "workgroup preview", "workgroup confirm"
     ),
     "content_catalog": command("content list"),
-    # The editor as it opens; its Review and Apply are still owed.
-    "content_edit": command("content show", owed="PR 10"),
-    "content_revision": command("content show", owed="PR 10"),
+    # The editor as it opens, and its Preview changes and review dialog
+    # Apply (``content preview --edit`` and ``content confirm --edit``,
+    # #1873); the campaign wizard's direct save is the same change.
+    "content_edit": command("content show", "content preview", "content confirm"),
+    "content_revision": command("content show", "content preview", "content confirm"),
     # The email tables' Delete, as a preview and a confirm (#879).
     "content_delete": command("content preview", "content confirm"),
     "content_history": command("content history"),
@@ -253,8 +255,8 @@ LEDGER = {
         "go-live cancel",
     ),
     # Family email history and Pause and resume mail.
-    "family_email_progress": command("send progress"),
-    "family_email_progress_status": command("send progress"),
+    "mail_queue": command("mail queue"),
+    "mail_queue_status": command("mail queue"),
     "family_email_sends": command("send history"),
     # Its read, and its pause, resume and resolution previews and their
     # confirmation (PR 7b, #463).
@@ -322,11 +324,12 @@ LEDGER = {
         "census edit",
         "census resolve-conflict",
     ),
-    # Publish to ParishSoft (#528, ADM-09): its check and plan come to the
-    # command line in the page's own fourth slice.
-    "census_publication": pending(
-        "#528 slice 4", "census publish-check", "census publish-plan"
-    ),
+    # Update ParishSoft (#528, ADM-09; #1688): its check and plan, Update
+    # and Run again (#1755), renamed from #528's fourth slice (decision 7:
+    # update, not publish), through the page's own checks and services.
+    "update_parishsoft": command("census update-check", "census update-plan"),
+    "update_parishsoft_confirmation": command("census update-confirm"),
+    "update_parishsoft_retries": command("census update-rerun"),
     # Additional information's review worklist (#1685) posts its decisions
     # to the page itself: ``information decide`` (#1735), through the page's
     # own InformationDecisions service, with ``information list`` the rows'

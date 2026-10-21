@@ -105,6 +105,8 @@ from .chart_components import components as chart_components
 from .comparison_components import components as comparison_components
 from .content_catalog_components import POSTS as CONTENT_CATALOG_POSTS
 from .content_catalog_components import components as content_catalog_components
+from .content_review_components import POSTS as CONTENT_REVIEW_POSTS
+from .content_review_components import components as content_review_components
 from .data_to_fix_components import components as data_to_fix_components
 from .delivery_components import POSTS as DELIVERY_POSTS
 from .delivery_components import components as delivery_components
@@ -781,28 +783,11 @@ def component_origin():
             },
         ),
         (
-            # The Backup encryption key change's review page; the other
-            # integrations review in the review dialog (#750).
-            "/integration-preview",
-            "integration-preview",
-            {
-                "target": "backup_key",
-                "label": "Backup encryption key",
-                "preview": "synthetic-preview",
-                "changes": [
-                    {
-                        "label": "Key fingerprint",
-                        "before": "0123456789abcdef",
-                        "after": "fedcba9876543210",
-                    }
-                ],
-            },
-        ),
-        (
             "/backup-key",
             "backup-key",
             {
                 "label": "Backup encryption key",
+                "page_url": "/admin/system/integrations/backup_key/",
                 "current": KeyStatus("installed", "0123456789abcdef", backup_at=NOW),
                 "key_error": "This is not a backup public key.",
             },
@@ -812,6 +797,7 @@ def component_origin():
             "backup-key",
             {
                 "label": "Backup encryption key",
+                "page_url": "/admin/system/integrations/backup_key/",
                 "current": KeyStatus("configured", "0123456789abcdef"),
                 "new_fingerprint": "fedcba9876543210",
                 # A real challenge line is one unbroken 87-character word.
@@ -1440,22 +1426,6 @@ def component_origin():
                     "text": "Hello Sample Family",
                     "subject": None,
                 },
-            },
-        ),
-        (
-            "/content-preview",
-            "content-preview",
-            {
-                "campaign": {"pk": uuid4()},
-                "label": "Family welcome",
-                "before": None,
-                "after": {
-                    "html": "<p>Hello Sample Family</p>",
-                    "text": "Hello Sample Family",
-                    "subject": None,
-                },
-                "preview": "synthetic-preview",
-                "affected": [],
             },
         ),
         (
@@ -2239,6 +2209,7 @@ def component_origin():
     responses.update(workgroup_components(context, admin))
     responses.update(schedule_list_components(context, admin))
     responses.update(content_catalog_components(context, admin))
+    responses.update(content_review_components(context, admin))
     responses.update(in_place_components(context, admin))
     responses.update(live_status_components(context, admin))
     responses.update(
@@ -2298,6 +2269,7 @@ def component_origin():
         | ARTWORK_POSTS
         | BRANDING_POSTS
         | CONTENT_CATALOG_POSTS
+        | CONTENT_REVIEW_POSTS
         | open_form_posts(context, admin)
         | family_test_posts(context, admin)
         | upload_defaults_posts()

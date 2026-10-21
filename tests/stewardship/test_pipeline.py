@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SPEC = ROOT / "docs/specs/stewardship/review-pipeline/spec.md"
 
 A, AE, IG = Decision.ACCEPTED, Decision.ACCEPTED_EDITED, Decision.IGNORED
+ADD = Decision.ADDED
 
 
 def spec_vocabulary():
@@ -466,18 +467,35 @@ ALLOWED_TABLE = [
     ("census", Stage.TO_ENTER_BY_HAND, STAFF, True, MARK),
     ("census", Stage.ENTERED_INCORRECTLY, STAFF, True, MARK),
     ("census", Stage.UPDATING, ADMIN, False, set()),
-    ("census", Stage.UPDATED, ADMIN, False, set()),
-    ("census", Stage.ENTERED_BY_HAND, ADMIN, True, set()),
-    ("census", Stage.CONFIRMED, ADMIN, True, set()),
+    # Every census terminal stage takes Back to review (#1840), never for a
+    # Ministry leader.
+    ("census", Stage.UPDATED, ADMIN, False, {"back_to_review"}),
+    ("census", Stage.ENTERED_BY_HAND, ADMIN, True, {"back_to_review"}),
+    ("census", Stage.ENTERED_BY_HAND, STAFF, True, {"back_to_review"}),
+    ("census", Stage.CONFIRMED, ADMIN, True, {"back_to_review"}),
+    ("census", Stage.CONFIRMED, STAFF, False, {"back_to_review"}),
+    ("census", Stage.ENTERED_BY_HAND, {"ministry_leader"}, True, set()),
     ("census", Stage.HISTORY, ADMIN, True, set()),
     ("census", Stage.TO_REVIEW, {"ministry_leader"}, True, set()),
     ("ministry", Stage.TO_REVIEW, STAFF, False, DECIDE),
     ("ministry", Stage.TO_ENTER_BY_HAND, STAFF, False, MARK),
+    ("ministry", Stage.ENTERED_BY_HAND, STAFF, False, {"back_to_review"}),
+    ("ministry", Stage.CONFIRMED, ADMIN, False, {"back_to_review"}),
+    ("ministry", Stage.ENTERED_BY_HAND, {"ministry_leader"}, False, set()),
+    ("ministry", Stage.CONFIRMED, {"ministry_leader"}, False, set()),
     ("financial", Stage.TO_REVIEW, STAFF, False, DECIDE),
+    ("financial", Stage.TO_ENTER_BY_HAND, STAFF, False, MARK),
+    # Back to review undoes a pledge's terminal step (#1840), Staff and
+    # Administrators only.
+    ("financial", Stage.ENTERED_BY_HAND, STAFF, False, {"back_to_review"}),
+    ("financial", Stage.ENTERED_INCORRECTLY, ADMIN, False, MARK),
+    ("financial", Stage.CONFIRMED, ADMIN, False, {"back_to_review"}),
+    ("financial", Stage.CONFIRMED, {"ministry_leader"}, False, set()),
     ("cannot_participate", Stage.TO_REVIEW, STAFF, False, {"accept", "ignore"}),
     ("cannot_participate", Stage.TO_HANDLE, STAFF, False, HANDLE),
+    ("cannot_participate", Stage.HANDLED, STAFF, False, {"back_to_review"}),
     ("additional_information", Stage.TO_REVIEW, ADMIN, False, {"accept", "ignore"}),
-    ("additional_information", Stage.HANDLED, ADMIN, False, set()),
+    ("additional_information", Stage.HANDLED, ADMIN, False, {"back_to_review"}),
 ]  # fmt: skip
 
 
@@ -490,6 +508,54 @@ def test_row_actions_are_stage_and_role(stream, stage, roles, manual, expected):
         pipeline.allowed_actions(stream, stage, roles, leads=True, by_hand=manual)
         == expected
     )
+
+
+# (stream, placement, by_hand) -> where Back to review sends the item (#1840).
+UNDO_TABLE = [
+    ("census", Placement(Stage.TO_ENTER_BY_HAND, A), True, Stage.TO_REVIEW),
+    ("census", Placement(Stage.IGNORED, IG), True, Stage.TO_REVIEW),
+    ("census", Placement(Stage.ENTERED_BY_HAND, A), True, Stage.TO_ENTER_BY_HAND),
+    ("census", Placement(Stage.ENTERED_INCORRECTLY, AE), True, Stage.TO_ENTER_BY_HAND),
+    ("census", Placement(Stage.CONFIRMED, A), True, Stage.TO_ENTER_BY_HAND),
+    ("census", Placement(Stage.CONFIRMED, A), False, Stage.READY_TO_UPDATE),
+    ("census", Placement(Stage.CONFIRMED), False, Stage.TO_REVIEW),
+    ("census", Placement(Stage.UPDATED, A), False, Stage.READY_TO_UPDATE),
+    ("census", Placement(Stage.ENTERED_BY_HAND, ADD), True, Stage.TO_ENTER_BY_HAND),
+    ("ministry", Placement(Stage.ENTERED_BY_HAND, A), False, Stage.TO_ENTER_BY_HAND),
+    ("ministry", Placement(Stage.CONFIRMED), False, Stage.TO_REVIEW),
+    ("financial", Placement(Stage.CONFIRMED, AE), False, Stage.TO_ENTER_BY_HAND),
+    ("financial", Placement(Stage.CONFIRMED), False, Stage.TO_REVIEW),
+    ("cannot_participate", Placement(Stage.HANDLED, A), False, Stage.TO_HANDLE),
+    ("additional_information", Placement(Stage.HANDLED, A), False, Stage.TO_HANDLE),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(("stream", "placement", "manual", "expected"), UNDO_TABLE)
+def test_back_to_review_returns_to_the_stage_before_the_step(
+    stream, placement, manual, expected
+):
+    """A terminal step's undo keeps the decision; a decision's undo reviews."""
+    assert pipeline.undo_stage(stream, placement, by_hand=manual) is expected
+
+
+@pytest.mark.parametrize("stage", sorted(pipeline.TERMINAL_STAGES))
+def test_every_stream_offers_the_terminal_undo(stage):
+    """Back to review on a terminal stage: Staff and Administrators, a note.
+
+    Every stream offers it (uniform handling, #1840), never to a Ministry
+    leader; reopening Ignored needs a note too, an accepted stage's undo
+    does not.
+    """
+    for stream in Stream:
+        offered = pipeline.allowed_actions(stream, stage, STAFF, by_hand=True)
+        assert Action.BACK_TO_REVIEW in offered
+        leader = pipeline.allowed_actions(
+            stream, stage, {"ministry_leader"}, leads=True, by_hand=True
+        )
+        assert leader == set()
+    assert pipeline.undo_needs_note(stage)
+    assert pipeline.undo_needs_note(Stage.IGNORED)
+    assert not pipeline.undo_needs_note(Stage.TO_ENTER_BY_HAND)
 
 
 def test_confirmable_covers_the_handling_registry():
