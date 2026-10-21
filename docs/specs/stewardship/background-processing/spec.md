@@ -81,7 +81,30 @@ bound as a change committed just after a locked read. When no scan is part
 way through the due rows, a loop first publishes the hints for at most 20 of
 them before its producers run, then a full page after them, so newly due work
 is not held up behind slow producers (#394); the second scan continues from
-where the first stopped. A loop in which any step failed waits twice as long
+where the first stopped. These two scans page the due rows oldest first, and a
+due row the scheduler refuses (a paused send's messages, a held task) stays due
+and is checked again on every pass, so with a few hundred of them a pass takes
+several loops. So that a newly requested task (a refresh, a load, an export)
+does not wait for the pass to reach it, every loop starts, before anything
+else, with a newest-due scan (#1921): at most 10 queued or retry-waiting rows
+that fell due since the previous loop's newest-due scan, with a minute's
+overlap for a request that committed late, newest first. It admits and
+publishes them exactly as the other scans do, one locked transaction per row,
+and passes over rows an earlier newest-due scan already looked at while they
+are inside that window and unchanged (a row that failed and is retrying is
+looked at again). The window never reaches back more than five minutes beyond
+the overlap, however long scans have been failing. It moves no cursor and adds nothing to the due-work
+health sample, so the oldest-first pass still reaches every due row in order.
+No row is checked twice in a loop: the later scans skip a row the newest-due
+scan checked whose version has not changed, as they skip a row published in
+the last 45 seconds, and the next loop's newest-due scan checks a row skipped
+this way again, so a hold that clears during a loop delays it one loop while
+the row is still inside the newest-due window, and otherwise until the
+oldest-first pass reaches it, as before. A hint for a delivery task goes first
+in its bulk send batch, so sends are not strictly oldest-first across
+Families; the order within one Family is enforced in SQL. How
+many hints it published goes only to the debug log. A loop in which any step
+failed waits twice as long
 as the last one, up to 60 seconds, and a clean loop returns to two seconds.
 Export cleanup lists
 the attempts no cleanup task owns yet with a plain indexed query and
