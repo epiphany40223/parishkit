@@ -7041,7 +7041,7 @@ outcomes: a contact attempt is recorded on the request page, which keeps
 Status, Outcome, Notes and Record a contact attempt as below.
 
 **Family asked again**
-([resubmission rule](../review-pipeline/spec.md#resubmission-while-the-setting-is-off)):
+([resubmission rule](../review-pipeline/spec.md#resubmission-before-the-reviewed-form)):
 the Family form offers only undecided requests, so an accepted request not
 yet in the roster, or an ignored one, shows unticked, and leaving it
 unticked is not a withdrawal. When the Family ticks the same action for the

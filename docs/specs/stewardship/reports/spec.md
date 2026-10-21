@@ -2411,7 +2411,7 @@ Conflict By hand row is accepted first, then entered. Entered by hand is
 final, as every resolved outcome is: a mistaken mark is corrected in
 ParishSoft, and a later different Family answer creates a new row (the same
 answer again keeps the entered change,
-[resubmission](../review-pipeline/spec.md#resubmission-while-the-setting-is-off)).
+[resubmission](../review-pipeline/spec.md#resubmission-before-the-reviewed-form)).
 Its dialog says it
 is final and to check ParishSoft first. Who, when and the note are kept as
 history.
@@ -2553,7 +2553,7 @@ to *To review* and the change is compared with the Family's baseline again
 (a change already queued for publication keeps its approval, and its
 publication then meets a conflict). A Family's later same answer does not
 carry the accepted base either
-([resubmission](../review-pipeline/spec.md#resubmission-while-the-setting-is-off)):
+([resubmission](../review-pipeline/spec.md#resubmission-before-the-reviewed-form)):
 the change comes back as a *Conflict* that shows the earlier Accepted as
 held, not in force, with the history line "Reopened: the Family answered
 again, so the earlier Accept over ParishSoft's changed value no longer
@@ -3353,7 +3353,7 @@ in force until a later live response from the Family answers the other way,
 so answering again unchanged keeps it; a response that answers the other way
 removes the row from the page, and a later response that gives the answer
 again starts a new To review row (the pipeline's
-[resubmission rule](../review-pipeline/spec.md#resubmission-while-the-setting-is-off)).
+[resubmission rule](../review-pipeline/spec.md#resubmission-before-the-reviewed-form)).
 A response that leaves the answer out (a section not shown, a Member out of
 scope) changes nothing: the row is shown only while the current response
 gives the answer, and its decision is still in force when it does again.
