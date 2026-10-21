@@ -127,6 +127,9 @@ def replace_join(harness, join):
     join.refresh_from_db()
 
 
+# The rule before the reviewed Family form (#1705): forms drawn before
+# its release, as one open across the deploy is.
+@pytest.mark.usefixtures("earlier_rule")
 def test_a_replaced_revision_takes_only_its_roster_tick(response_service):
     """An accepted request a later response replaced (the worklist's latest
     False) offers Entered by hand alone: a forged Back to review, Ignore or
@@ -363,6 +366,9 @@ def test_a_leader_edits_only_into_a_ministry_they_lead(response_service):
     assert (row["ministry_duid"], row["ministry_name"]) == (4, "Choir")
 
 
+# The rule before the reviewed Family form (#1705): forms drawn before
+# its release, as one open across the deploy is.
+@pytest.mark.usefixtures("earlier_rule")
 def test_replays_and_a_family_answer_after_back_to_review(response_service):
     """Posting the same Back to review again replays it, as does withdrawing
     an added request twice; a request sent back to review is open again, so
@@ -505,6 +511,9 @@ def test_staff_add_a_request_in_place_of_an_ignored_one(response_service):
     assert refused.value.code == "add_withdrawn"
 
 
+# The rule before the reviewed Family form (#1705): forms drawn before
+# its release, as one open across the deploy is.
+@pytest.mark.usefixtures("earlier_rule")
 def test_family_asked_again_creates_no_second_request(response_service):
     """A Family that ticks a decided join again gets no new request; the
     decided one keeps its decision and its row says when they asked."""

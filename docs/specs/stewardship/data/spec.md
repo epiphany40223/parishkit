@@ -1987,8 +1987,8 @@ with [#1705](https://github.com/epiphany40223/parishkit/issues/1705)'s last
 slice deploys. From then on a live form shows the
 [reviewed Family form](../review-pipeline/spec.md#reviewed-family-form)
 instead ([Families see reviewed changes](../review-pipeline/spec.md#families-see-reviewed-changes)),
-and the census slice of #1705 rewrites these rules for it; a Testing form
-keeps these rules:
+drawn by the rules after this list; a Testing form, and a form drawn
+before that release, keep these rules:
 
 1. Start with the current ParishSoft value.
 2. If there is no prior effective response change, use current.
@@ -2002,6 +2002,15 @@ keeps these rules:
    Admin edit, preserve the Family-submitted value, mark a source conflict, and
    say only that the Family's previously supplied value remains new; never show
    or attribute the Admin edit and never mention ParishSoft.
+
+A live form drawn as the reviewed form draws each census field from the
+item its baseline's [shown items](../review-pipeline/spec.md#shown-items)
+name instead: the Family's own answer by the rules above (so its change
+and conflict markers are these), a reviewer's value marked changed when it
+differs from the current ParishSoft value, and an Ignored item's current
+ParishSoft value unmarked; a field with no shown item (none in force, or
+Confirmed) shows the current ParishSoft value
+([What the reviewed form shows](../review-pipeline/spec.md#what-the-reviewed-form-shows)).
 
 Every equality test uses the field type's canonical comparison value, not its
 display or raw upstream representation. Email is Unicode/case normalized;
