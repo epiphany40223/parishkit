@@ -493,6 +493,9 @@ ALLOWED = {
     # "Back to edit" steps back inside the Family form, outside the Admin
     # portal and its page names.
     ("accounts/static/stewardship/family-v1.js", "Back to "),
+    # The Timeline's review lines (#1774) name the review pipeline's Back to
+    # review action, not a page.
+    ("reports/timeline_reviews.py", "Back to "),
     # "Back to To review" is the Census changes review button that undoes an
     # Approve or Ignore (#528), not a link back to a page.
     ("accounts/templates/stewardship/census-changes.html", "Back to "),
