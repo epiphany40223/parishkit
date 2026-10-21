@@ -574,6 +574,10 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
             icon["body"] = undo_body(
                 stream, placement, by_hand=row.get("by_hand", False)
             )
+        elif action is Action.EDIT:
+            # Edit opens the row's own editor, which draws its own body (the
+            # Family will see the reviewer's value); an empty body keeps it.
+            icon["body"] = ""
         else:
             icon["body"] = bodies.get(action, DECIDE_BODY)
         if action is Action.IGNORE and row.get("shown_baseline"):
