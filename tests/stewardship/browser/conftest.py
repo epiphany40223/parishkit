@@ -254,7 +254,7 @@ def _history(events):
 # answers them with a route.
 SETUP_MAIL_STATUS = "/admin/setup/mail-test/status?format=status"
 SETUP_SLACK_STATUS = "/admin/setup/slack-test/status?format=status"
-SETUP_FINISHING_STATUS = "/admin/setup/cancel?format=status"
+SETUP_FINISHING_STATUS = "/admin/setup/finishing?format=status"
 SETUP_LOAD_STATUS = "/admin/setup/source/progress-status?format=status"
 
 
