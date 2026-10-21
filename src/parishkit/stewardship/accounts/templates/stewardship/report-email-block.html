@@ -1,0 +1,14 @@
+{% load i18n stewardship %}{% comment %}
+One row of New and Edit report email's Blocks list (report-email-entry.html):
+the block's hidden field (its place in the list is its place in the email),
+its label and help, its options, and Move up, Move down and Remove, which
+report-email-editor-v1.js runs in place. A block placed after the dashboard
+button (block.last) stays last and has neither move button.
+{% endcomment %}<li class="report-block" data-block="{{ block.key }}"{% if block.last %} data-block-last{% endif %} tabindex="-1"><input type="hidden" name="block" value="{{ block.key }}" data-change-setting>
+<p class="report-block-label"><strong>{{ block.label }}</strong></p>
+<p class="help">{{ block.help }}{% if block.last %} {% translate "This block always follows the dashboard button." %}{% endif %}</p>
+{% if block.key == "day_by_day" %}<div class="field"><label for="report-days_shown">{% translate "Days shown" %}</label>
+<input type="number" name="days_shown" id="report-days_shown" min="1" max="14" step="1" inputmode="numeric" value="{{ form.days_shown.value|default:5 }}" required aria-describedby="report-days_shown_error" data-missing-hint="{% translate 'Days shown is a whole number from 1 to 14.' %}"{% if form.days_shown.errors %} aria-invalid="true"{% endif %}>
+<div class="field-error-line" role="status"><ul class="errorlist" id="report-days_shown_error"{% if not form.days_shown.errors %} hidden{% endif %}>{% for error in form.days_shown.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></div>{% endif %}
+<p class="report-block-actions">{% if not block.last %}{% blocktranslate asvar up_label with name=block.label %}Move {{ name }} up{% endblocktranslate %}{% button type="button" variant="secondary" data-block-up aria-label=up_label %}{% translate "Move up" %}{% endbutton %} {% blocktranslate asvar down_label with name=block.label %}Move {{ name }} down{% endblocktranslate %}{% button type="button" variant="secondary" data-block-down aria-label=down_label %}{% translate "Move down" %}{% endbutton %} {% endif %}{% blocktranslate asvar remove_label with name=block.label %}Remove {{ name }}{% endblocktranslate %}{% button type="button" variant="secondary" data-block-remove aria-label=remove_label %}{% translate "Remove" %}{% endbutton %}</p>
+<p class="help reserve-line" data-block-reason></p></li>

@@ -78,20 +78,18 @@ def live_end_held(state, campaign):
 
 
 def campaign_schedules(configuration, campaign_id):
-    """The campaign's schedule records from the exact applied YAML document.
+    """The campaign's Family mail schedule records from the applied YAML.
 
-    A converted Daily or Weekly report (#1786) is read as the digest it was
-    (``report_rows.view_rows``), which these editors change until the Report
-    emails page's editor ships; its own values ride along under "report".
+    Report emails (#1786) are schedule records too, but they are edited on
+    Report emails (``reports.report_email_editor_views``), so Dates and mail
+    schedules, its date-change review and the ``schedule`` commands list
+    Family mail only (report-emails spec, delivery plan item 6).
     """
-    from .report_rows import view_rows
-
-    return view_rows(
-        [
-            row
-            for row in configuration.active_configuration.canonical_document[
-                "sections"
-            ].get("schedules", [])
-            if row["values"]["campaign_id"] == str(campaign_id)
-        ]
-    )
+    return [
+        row
+        for row in configuration.active_configuration.canonical_document[
+            "sections"
+        ].get("schedules", [])
+        if row["values"]["campaign_id"] == str(campaign_id)
+        and row["values"].get("kind") != "report"
+    ]

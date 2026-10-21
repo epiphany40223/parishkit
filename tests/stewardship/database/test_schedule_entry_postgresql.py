@@ -12,7 +12,7 @@ Angeles, three hours behind.
 
 import json
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from html import unescape
 from types import SimpleNamespace
 from uuid import uuid4
@@ -33,7 +33,6 @@ from ..content_factory import content
 from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import add_draft, change
-from .report_builders import add_digest
 from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_campaign_views_postgresql import apply, post
 from .test_content_views_postgresql import assert_lacks_capability
@@ -331,31 +330,6 @@ def test_new_scheduled_email_cannot_add_a_digest(auth_service, google, kind, fie
     assert refused.status_code == 400, refused.content
     assert "data-error-summary" in refused.content.decode()
     assert ConfigurationChangeRequest.objects.count() == before
-
-
-def test_an_applied_digest_is_listed_at_its_next_send(
-    auth_service, google, monkeypatch
-):
-    """A converted Daily report sorts among the dated sends (#1652, #1786).
-
-    Added as a configuration change, shaped as the converted Daily digest.
-    At 9 AM in New York on October 10 its 9:30 AM send is next, after the
-    Initial invitation (October 1) and before Reminder 1 (October 25), in
-    both directions of the When heading; it is not listed last.
-    """
-    monkeypatch.setattr(campaign_wizard, "shown", lambda *_, **__: False)
-    store = auth_service.store
-    campaign, _ = setup(store)
-    add_digest(store, campaign, time="09:30:00")
-    browser, _ = signed_in()
-    now = datetime(2054, 10, 10, 13, tzinfo=UTC)
-    monkeypatch.setattr(schedule_views, "timezone", SimpleNamespace(now=lambda: now))
-    order = ["Initial invitation", "Daily report", "Reminder 1"]
-    for path, expected in ((LIST, order), (f"{LIST}?sort=-when", order[::-1])):
-        response = browser.get(path)
-        assert response.status_code == 200
-        page = unescape(response.content.decode())
-        assert re.findall(r'<th scope="row">([^<]*)</th>', page) == expected
 
 
 def test_a_repeat_adds_one_ordinary_reminder_per_date(auth_service, google):

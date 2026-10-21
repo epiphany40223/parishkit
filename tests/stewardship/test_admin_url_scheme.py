@@ -66,6 +66,8 @@ SPEC_NAMED = {
     "user_new": {"new"},
     "user_name_suggestions": {"new"},
     "user_edit": {"edit"},
+    # New report email (#1786), as the placement table names it.
+    "report_email_new": {"new"},
 }
 # JSON reads that scripts poll; they keep their old addresses (decision 8).
 POLLED = {"background_counts", "background_tasks", "background_task"}
@@ -287,6 +289,8 @@ SLASHLESS_EXPECTED = {
     # Exports and emailed reports (NAV-12).
     f"/admin/reports/exports/{T}": f"/admin/reports/exports/{T}/",
     "/admin/mail/report-emails": "/admin/mail/report-emails/",
+    "/admin/mail/report-emails/new": "/admin/mail/report-emails/new/",
+    f"/admin/mail/report-emails/{T}": f"/admin/mail/report-emails/{T}/",
     f"/admin/reports/emailed/weekly/{T}": f"/admin/reports/emailed/weekly/{T}/",
     f"/admin/reports/emailed/weekly/{T}/items/{T}": (
         f"/admin/reports/emailed/weekly/{T}/items/{T}/"

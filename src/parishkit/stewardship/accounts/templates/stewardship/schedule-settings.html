@@ -69,7 +69,8 @@ the same set out again.
 {% translate "Delete {name}?" as title_one %}{% translate "Delete {count} scheduled emails?" as title_many %}{% translate "Deleting cancels the sends of these schedules that have not started. A schedule that starts sending first can't be deleted." as body %}{% translate "Delete" as accept %}
 {% include "stewardship/components/confirm-dialog.html" with dialog_id="schedule-delete" form_id="schedule-actions" fallback="schedule-table-title" title_one=title_one title_many=title_many body=body caution=caution caution_marked=True accept=accept done_one=_("Deleted {name}.") done_many=_("Deleted {count} scheduled emails.") %}
 {% elif suggest and suggested %}<p>{% translate "No emails are scheduled yet. The suggested schedules below are not saved until you add them." %}</p>{% else %}<p>{% translate "No emails are scheduled yet. Choose New scheduled email to add the Initial invitation first." %}</p>{% endif %}
-<p class="help">{% translate "Every reminder sends after the Initial invitation, no two Family emails share a date and time, and there is at most one Daily and one Weekly report." %}</p>
+<p class="help">{% translate "Every reminder sends after the Initial invitation, and no two Family emails share a date and time." %}</p>
+<p>{% translate "Report emails to Administrators, Staff and others are on" %} {% menu_link "report_emails" _("Report emails") %}.</p>
 </section>
 {% if suggest and suggested %}<section id="suggested-schedules" class="panel" aria-labelledby="suggested-schedules-title">
 <h2 id="suggested-schedules-title">{% translate "Suggested schedules" %}</h2>

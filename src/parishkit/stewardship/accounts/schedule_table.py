@@ -52,6 +52,8 @@ STATUS_LABELS = {
     # A suggested schedule Dates and mail schedules proposes in the campaign
     # wizard (#1404 PR 6), listed but not saved.
     "suggested": _("Not saved yet"),
+    # One send of a report email while it is paused (#1786, the calendar).
+    "paused": _("Paused"),
 }
 # A schedule in one of these states has run, is running, or has work
 # prepared ahead of its time: it sent its email, failed to, or settled every
@@ -61,7 +63,7 @@ STATUS_LABELS = {
 # one past send of a digest on the Campaign calendar, and "skipped" one it
 # skips (#1658), shown read-only too.
 PAST = frozenset(
-    {"preparing", "sending", "sent", "failed", "done", "passed", "skipped"}
+    {"preparing", "sending", "sent", "failed", "done", "passed", "skipped", "paused"}
 )
 
 
@@ -95,6 +97,9 @@ class ScheduleRow:
     failed: int = 0
     open: bool = False
     slot: str | None = None
+    # A report email's send on the Campaign calendar (#1786) opens its own
+    # Edit page on Report emails, not Edit scheduled email.
+    link: str | None = None
 
     @property
     def status_label(self):
@@ -108,8 +113,12 @@ class ScheduleRow:
 
     @property
     def digest(self):
-        """Whether this is a repeating Admin digest rather than a Family send."""
-        return self.kind in DIGESTS
+        """Whether this is a repeating Admin report rather than a Family send.
+
+        A report email's send on the Campaign calendar (#1786) is one too:
+        it is never moved from there, and has no Family send results.
+        """
+        return self.kind in DIGESTS or self.kind == "report"
 
     @property
     def movable(self):
@@ -138,7 +147,7 @@ class ScheduleRow:
         """
         if self.read_only:
             return None
-        url = reverse("admin:schedule_edit", args=[self.id])
+        url = self.link or reverse("admin:schedule_edit", args=[self.id])
         return f"{url}?send={self.slot}" if self.slot else url
 
 

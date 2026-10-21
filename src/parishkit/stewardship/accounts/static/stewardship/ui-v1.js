@@ -584,10 +584,22 @@
   // The server's own error under a field (Django's ul.errorlist, id
   // "<field id>_error") is removed on the first edit; the live check then
   // speaks for the field.
-  const serverTimeError = (field) => field.id && document.getElementById(`${field.id}_error`);
+  // A page that reserves a time field's line keeps the list out of it until
+  // there is an error (report-email-entry.html): a list here always reads as
+  // the server's refusal.
+  // A list already cleared (hidden by clearFieldError, when the other field
+  // sharing its message was edited) is no refusal any more.
+  const serverTimeError = (field) => {
+    const error = field.id && document.getElementById(`${field.id}_error`);
+    return error && !error.hidden ? error : null;
+  };
   const clearServerTimeError = (field) => {
     const error = serverTimeError(field);
     if (!error) return;
+    // A refusal shared with another field (a one-time send's date and time)
+    // clears from both, as any shared server message does (wireValidity),
+    // before its list goes.
+    if (field.hasAttribute("data-field-error")) clearFieldError(field);
     error.remove();
     const described = (field.getAttribute("aria-describedby") || "").split(/\s+/)
       .filter((id) => id && id !== error.id);
@@ -1345,6 +1357,9 @@
     enhanceTable(fresh);
     fresh.dispatchEvent(new CustomEvent("parishkit:swap", {bubbles: true}));
   };
+  // A page script that redraws a part of its page itself (New and Edit
+  // report email's live Next sends table) enhances it the same way.
+  window.ParishRegions = Object.freeze({enhance: enhanceSwapped});
   // The min-height (a CSS length, or "" for none) that keeps `element` tall
   // enough that the page's foot stays at or below the viewport's bottom edge
   // however its content shrinks. A reader scrolled to the foot of the page
@@ -7908,12 +7923,15 @@
   // the stored (sanitized) content; while the Admin edits the HTML source, the
   // source is posted to the server's sanitizer after a pause and the pane is
   // redrawn from the sanitized result, never from the raw source. Paste/drop
-  // into the pane are plain text.
-  document.querySelectorAll("[data-content-form]").forEach((form) => {
-    const visual = form.querySelector("[data-visual-content]");
-    const editor = form.querySelector("[data-content-editor]");
+  // into the pane are plain text. It is the one editor of every authored
+  // email part (components/html-content-editor.html: Pages and emails, a
+  // report email's Introduction), wired wherever that include is drawn in a
+  // form whose HTML source is its "html" field.
+  document.querySelectorAll("form [data-visual-content]").forEach((visual) => {
+    const form = visual.closest("form");
+    const editor = visual.querySelector("[data-content-editor]");
     const source = form.querySelector('textarea[name="html"]');
-    if (!visual || !editor || !source) return;
+    if (!editor || !source) return;
     visual.hidden = false;
     form.querySelector("[data-html-source]").open = false;
     // Enter starts a <p> rather than a <div> where the browser supports it.

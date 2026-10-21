@@ -480,7 +480,7 @@ def test_an_empty_added_entry_cannot_shift_a_remembered_repeat():
     rule = weekly(end="2054-10-05")
     document = {
         "schedules": [
-            {"comparison": False},
+            {"time": ""},
             {"repeat": rule, "time": "08:00", "remember": True},
             {"repeat": rule, "time": "09:00"},
         ]
@@ -839,25 +839,11 @@ def test_an_unknown_outcome_names_the_request_to_read(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "moved", [{"weekday": 3}, {"time": "01:30:00"}, {"date": "2054-10-02"}]
+    "entry",
+    [{"id": SCHEDULE, "skip": "2054-10-02"}, {"id": SCHEDULE, "comparison": True}],
 )
-def test_a_digest_skip_with_a_moved_send_is_refused(moved):
-    """``skip`` names a saved send, so it cannot move the digest too (#1658)."""
-    entry = {"id": SCHEDULE, "skip": "2054-10-02", **moved}
-    with pytest.raises(admin_changes.InvalidChange) as raised:
+def test_the_digest_entries_are_gone(entry):
+    """A digest's ``skip`` and ``comparison`` left with the digests (#1786):
+    report emails are changed with ``report-email preview``."""
+    with pytest.raises(ValueError, match="not valid"):
         admin_changes.parse_changes(json.dumps({"schedules": [entry]}))
-    assert raised.value.fields == [
-        {
-            "field": f"schedules.{SCHEDULE}.skip",
-            "code": "invalid",
-            "message": admin_changes.SKIP_MOVED,
-        }
-    ]
-
-
-def test_a_digest_skip_is_kept_on_its_saved_entry():
-    """``skip`` stays on the saved digest's entry, for the review (#1658)."""
-    parsed = admin_changes.parse_changes(
-        f'{{"schedules": [{{"id": "{SCHEDULE}", "skip": "2054-10-02"}}]}}'
-    )
-    assert parsed["schedules"] == [{"id": SCHEDULE, "skip": "2054-10-02"}]

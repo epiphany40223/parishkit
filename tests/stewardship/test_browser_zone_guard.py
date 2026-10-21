@@ -55,6 +55,10 @@ CALENDAR_INPUTS = {
     # dates of the zoned schedule form around it, never instants.
     ("repeat-rule.html", "repeat-from"): "Repeat range day",
     ("repeat-rule.html", "repeat-until"): "Repeat range day",
+    # A repeating report email's chosen From and Until days (#1786): the
+    # campaign's calendar days its rule's bounds name, never instants.
+    ("report-email-entry.html", "report-from_date"): "Report repeat bound day",
+    ("report-email-entry.html", "report-until_date"): "Report repeat bound day",
 }
 # Date controls that still filter instants by a campaign-zone day, waiting
 # for their own #558 slice. Remove an entry when its page moves. Empty since
@@ -89,6 +93,11 @@ FORM_DATES = {
     # opts in (schedule_local, browser_times); the retired Copy campaign page
     # keeps campaign-local values (ui-conventions, "Until a page's PR lands").
     ("ScheduleForm", "date"): "browser zone: send date",
+    # A report email (#1786): its one-time send date is read with its time
+    # in the browser zone; its repeat bounds are campaign calendar days.
+    ("EditorForm", "once_date"): "browser zone: report send date",
+    ("EditorForm", "from_date"): "calendar: report repeat bound",
+    ("EditorForm", "until_date"): "calendar: report repeat bound",
 }
 # Modules that format an instant as text on the server in a fixed zone.
 SERVER_INSTANTS = {

@@ -57,6 +57,8 @@ ROLE_FIRST = {
     "export family-timeline": Capability.CAMPAIGN_REPORT,
     # Report emails' Send now (#1786): Send now is a background action.
     "report-email send-now": Capability.BACKGROUND_WORK,
+    # Its confirm asks about a send after the campaign ends (#1786).
+    "report-email confirm": None,
     "census resolve": Capability.VIEW_CENSUS,
     "history remove": None,
     "integration confirm": None,

@@ -22,9 +22,9 @@ Its row actions act in place through the row actions' confirmation dialog:
   It answers with this page naming the request (``?requested=``), whose
   status line links the send's saved copy once it is made.
 
-Until the report editor ships (delivery plan item 6) a row's Edit opens the
-digest editor on Dates and mail schedules, for the converted Daily and
-Weekly reports only.
+A row's name and Edit open Edit report email, and New report email, above
+the table, opens New (``report_email_editor_views``); New is unavailable at
+the limit of 20, with its reason.
 """
 
 from uuid import UUID, uuid4
@@ -146,10 +146,14 @@ def _context(system, *, administrator, requested):
         requested = _requested(requested, campaign.pk)
         if requested is not None:
             requested["name"] = names.get(requested["report"], "")
+    from parishkit.stewardship.campaigns.report_values import REPORT_LIMIT
+
     return (
         context
         | view
         | {
+            "at_limit": len(view["rows"]) >= REPORT_LIMIT,
+            "limit": REPORT_LIMIT,
             "requested": requested,
             "base_digest": system.active_configuration.digest,
             "configuration_id": system.active_configuration_id,
