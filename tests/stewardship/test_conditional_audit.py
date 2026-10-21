@@ -134,18 +134,35 @@ def test_locked_report_actions_name_the_notice_that_says_why(
 
 @pytest.mark.parametrize("entered", [False, True])
 def test_a_held_roster_tick_is_shown_unavailable_with_why(entered):
-    """While other campaign work holds follow-up, the request page's Mark or
-    Clear Entered in ParishSoft is drawn disabled, named by the locked
-    notice; otherwise it is the plain enabled button. (Clear opens its
-    dialog, so it is no submit button and has no data-server-disabled.)"""
-    label = "Clear Entered in ParishSoft" if entered else "Mark entered in ParishSoft"
+    """While other campaign work holds follow-up, the request page's Mark
+    entered in ParishSoft or Back to review is drawn disabled, named by the
+    locked notice; otherwise it is the plain enabled button. (Back to review
+    opens its dialog, so it is no submit button and has no
+    data-server-disabled; since #1893 it carries the worklist's undo icon.)"""
+    label = (
+        r'<svg class="action-icon"[^>]*>.*?</svg>\s+Back to review'
+        if entered
+        else "Mark entered in ParishSoft"
+    )
     row = {
         "id": uuid4(),
         "roster_eligible": True,
         "roster_entered": entered,
         "roster_sequence": 1,
     }
-    context = {"row": row, "can_tick": True, "roster_key": uuid4()}
+    undo = {
+        "label": "Back to review",
+        "title": "Send Anne — Choir back to review",
+        "dialog_title": "Send Anne — Choir back to review?",
+        "body": "Entered by hand is undone.",
+        "done": "Anne — Choir sent back to review.",
+    }
+    context = {
+        "row": row,
+        "can_tick": True,
+        "roster_key": uuid4(),
+        "roster_undo": undo,
+    }
     template = "stewardship/roster-tick.html"
     held = render_to_string(template, context | {"mutable": False})
     assert re.search(

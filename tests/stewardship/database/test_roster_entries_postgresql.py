@@ -299,7 +299,14 @@ def test_ministry_requests_lists_ticks_and_downloads_the_roster_changes(
         assert response.status_code == 200 and b"Entered by hand (1)" in body
         assert b"Entered by admin@example.org" in body
         item = f"/admin/reports/ministries/follow-up/{join.pk}/"
-        assert b"Clear Entered in ParishSoft" in get(browser, item)[1]
+        # Its Back to review is the worklist's (#1893): the row's title and
+        # the dialog's words for this request's placement.
+        page = get(browser, item)[1]
+        assert re.search(rb"Send [^<]+ back to review\?", page)
+        assert (
+            b"Entered by hand is undone: the item goes back to To enter by hand, "
+            b"with its decision kept. Say why."
+        ) in page
         response, body = search(
             browser,
             EXPORT,
@@ -372,7 +379,7 @@ def test_a_leader_never_sees_the_tick_nor_the_list(response_service, google):
     assert login.status_code == 302
     _, body = get(staff, item)
     assert b"Entered in ParishSoft by admin@example.org" in body
-    assert b"Clear Entered in ParishSoft" in body
+    assert b'data-confirm-open="followup-roster-clear-dialog"' in body
     assert b"update ParishSoft yourself" in body
     assert b"Staff enter roster changes" not in body
     shown = search(staff, queue, {"stage": "all"})[1]
@@ -529,7 +536,7 @@ def test_a_gated_campaign_takes_no_tick_and_draws_no_form(response_service, goog
     assert b'id="followup-locked"' in body
     assert re.search(
         rb'<button[^>]*disabled aria-describedby="followup-locked"'
-        rb"[^>]*>Clear Entered in ParishSoft</button>",
+        rb"[^>]*><svg class=\"action-icon\".*?</svg>\s+Back to review</button>",
         body,
     )
     refused = dict(form, sequence="2", entered="no", request_key=str(uuid4()))

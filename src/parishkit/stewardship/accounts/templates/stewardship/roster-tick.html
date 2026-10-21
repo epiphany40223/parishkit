@@ -12,18 +12,22 @@
   line, so nothing invites them to mark it (#1160). Ministry requests
   marks through its review worklist at To enter by hand (R39); clearing a
   mistaken mark is this page's. Clearing is the review pipeline's undo of
-  Entered by hand (#1840): its button opens the shared confirmation dialog
-  (components/confirm-dialog.html), which says what is undone and waits
-  for the required note, then answers in place; the mark itself asks
-  nothing.
+  Entered by hand (#1840), so since #1893 it is that worklist's Back to
+  review: its undo-arrow icon and name (roster_undo, from the view, in
+  review_worklist.WORDS' words) open the shared confirmation dialog
+  (components/confirm-dialog.html) with the worklist dialog's title and
+  words (undo_body), which waits for the required note, then answers in
+  place; the mark itself asks nothing.
 
   - row: a follow-up row or request with the roster_* fields (workflows.roster.mark).
   - compact: the follow-up queue's Status cell: one short line ("Entered"
     or "Not yet entered"); who and when are on the request page, and the
     form is never drawn there.
   - can_tick: the viewer may set or clear the tick (workflows.roster.can_tick).
+  - roster_undo: the worklist undo's label, tooltip, dialog title, words and
+    done line (ministry_followup_views._roster_undo), while the tick is set.
 {% endcomment %}{% if can_tick %}{% if compact %}{% if row.roster_entered %}<br>{% translate "Entered" %}{% elif row.roster_eligible %}<br>{% translate "Not yet entered" %}{% endif %}{% elif row.roster_entered %}<p>{% translate "Entered in ParishSoft" %}{% if row.roster_by %} {% translate "by" %} {{ row.roster_by }}{% endif %}{% if row.roster_at %}, <time datetime="{{ row.roster_at|date:'c' }}" data-local-instant>{{ row.roster_at|date:'c' }}</time>{% endif %}</p>{% elif row.roster_eligible %}<p>{% translate "Not yet entered in ParishSoft" %}</p>{% elif row.source_resolved %}<p>{% translate "Already in ParishSoft" %}</p>{% endif %}
 {% if row.roster_eligible and not compact %}{% if row.roster_entered %}<form id="followup-roster-clear" method="post" action="{% url 'admin:ministry_followup_roster' row.id %}" data-require-complete>{% csrf_token %}<input type="hidden" name="sequence" value="{{ row.roster_sequence|add:1 }}"><input type="hidden" name="request_key" value="{{ roster_key }}"><input type="hidden" name="return_to" value="item">{% if queue_token %}<input type="hidden" name="queue" value="{{ queue_token }}">{% endif %}
-{% button type="button" variant="secondary" enabled=mutable aria-describedby=mutable|yesno:",followup-locked" name="entered" value="no" data-confirm-open="followup-roster-clear-dialog" %}{% translate "Clear Entered in ParishSoft" %}{% endbutton %}
-{% translate "Clear Entered in ParishSoft?" as title %}{% translate "Entered by hand is undone: the request goes back to To enter by hand, with its decision kept. Nothing changes in ParishSoft. Say why." as body %}{% translate "Record" as accept %}{% translate "Mark cleared." as done %}{% include "stewardship/components/confirm-dialog.html" with dialog_id="followup-roster-clear-dialog" form_id="followup-roster-clear" fallback="followup-item" title_one=title title_many=title body=body accept=accept done_one=done done_many=done plain_accept=True accept_type="submit" accept_hint="followup-roster-clear-hint" fields_template="stewardship/components/roster-clear-note.html" %}</form>{% else %}<form method="post" action="{% url 'admin:ministry_followup_roster' row.id %}#followup-item" data-in-place data-in-place-message="{% translate 'Marked entered in ParishSoft.' %}">{% csrf_token %}<input type="hidden" name="sequence" value="{{ row.roster_sequence|add:1 }}"><input type="hidden" name="entered" value="yes"><input type="hidden" name="request_key" value="{{ roster_key }}"><input type="hidden" name="return_to" value="item">{% if queue_token %}<input type="hidden" name="queue" value="{{ queue_token }}">{% endif %}
+{% button type="button" variant="secondary" enabled=mutable aria-describedby=mutable|yesno:",followup-locked" title=roster_undo.title name="entered" value="no" data-confirm-open="followup-roster-clear-dialog" %}{% include "stewardship/components/action-icon.html" with icon="clear" %} {{ roster_undo.label }}{% endbutton %}
+{% translate "Record" as accept %}{% include "stewardship/components/confirm-dialog.html" with dialog_id="followup-roster-clear-dialog" form_id="followup-roster-clear" fallback="followup-item" title_one=roster_undo.dialog_title title_many=roster_undo.dialog_title body=roster_undo.body accept=accept done_one=roster_undo.done done_many=roster_undo.done plain_accept=True accept_type="submit" accept_hint="followup-roster-clear-hint" fields_template="stewardship/components/roster-clear-note.html" %}</form>{% else %}<form method="post" action="{% url 'admin:ministry_followup_roster' row.id %}#followup-item" data-in-place data-in-place-message="{% translate 'Marked entered in ParishSoft.' %}">{% csrf_token %}<input type="hidden" name="sequence" value="{{ row.roster_sequence|add:1 }}"><input type="hidden" name="entered" value="yes"><input type="hidden" name="request_key" value="{{ roster_key }}"><input type="hidden" name="return_to" value="item">{% if queue_token %}<input type="hidden" name="queue" value="{{ queue_token }}">{% endif %}
 {% button type="submit" enabled=mutable aria-describedby=mutable|yesno:",followup-locked" %}{% translate "Mark entered in ParishSoft" %}{% endbutton %}</form>{% endif %}{% endif %}{% endif %}
