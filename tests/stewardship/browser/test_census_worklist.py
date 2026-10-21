@@ -6,7 +6,9 @@ region shows the page never reloaded. The shared worklist's general
 behaviour (selected icons, bulk gates, the reopen note) is tested on its
 own fixture page (``test_review_worklist``); these tests check what Census
 changes adds: its filters and sorts, By hand rows reviewed like the rest,
-Entered by hand, the address editor and a refusal at its fields.
+Entered by hand, Entered incorrectly's two fixes, the address editor and
+a refusal at its fields, and a New Member's ParishSoft Member ID (#1749)
+and its correction (#1773).
 """
 
 import json
@@ -24,9 +26,20 @@ from .census_components import (
     EDITED_PHONE_NOTICE,
     ENTERED,
     ENTERED_NOTICE,
+    INCORRECT,
+    MEMBER_CORRECTED,
+    MEMBER_CORRECTED_NOTICE,
+    MEMBER_ENTERED,
+    MEMBER_ENTERED_NOTICE,
+    NEW_MEMBER,
     PATH,
+    REENTERED,
+    REENTERED_NOTICE,
+    RETURNED,
+    RETURNED_NOTICE,
     STALE,
     STALE_NOTICE,
+    WRONG,
 )
 from .test_bulk_bar import assert_accessible
 from .test_table_sorting import MARK, MARKED, fulfil_post_with, sort_heading
@@ -218,7 +231,7 @@ def test_an_address_is_edited_part_by_part(page, component_origin):
     street = editor.get_by_label("Street", exact=True)
     assert street.input_value() == "9 Census Way"
     assert editor.get_by_label("Country").input_value() == "US"
-    zip_code = editor.get_by_label("ZIP or postal code")
+    zip_code = editor.get_by_label("ZIP code")
     zip_code.fill("402")
     editor.get_by_role("button", name="Save").click()
     has_text(
@@ -235,6 +248,109 @@ def test_an_address_is_edited_part_by_part(page, component_origin):
     assert page.evaluate(MARKED) == "kept"
 
 
+def box(locator):
+    """The vertical place and height of ``locator`` on the page."""
+    found = locator.bounding_box()
+    return round(found["y"]), round(found["height"])
+
+
+def test_an_address_edit_asks_for_country_first(page, component_origin):
+    """The address editor asks for Country first, as the Family form does
+    (#1785): for the United States a State drop-down of named choices and a
+    ZIP code; for another country free text and a Postal code, swapped in
+    the same place, each State control keeping its value meanwhile. Only
+    the shown State is sent."""
+    page.goto(component_origin + PATH)
+    page.evaluate(MARK)
+    sent = posts(page, component_origin, EDITED)
+    icon(page, 2, "Edit").click()
+    editor = page.locator("#census-edit-dialog-2")
+    country = editor.get_by_label("Country")
+    labels = editor.locator("label:visible").all_inner_texts()
+    assert labels[:6] == [
+        "Country",
+        "Street",
+        "Street, second line (optional)",
+        "City",
+        "State",
+        "ZIP code",
+    ]
+    assert editor.get_by_role("textbox", name="ZIP code", exact=True).count() == 1
+    state = editor.get_by_label("State", exact=True)
+    assert state.evaluate("(node) => node.tagName") == "SELECT"
+    assert state.input_value() == "KY"
+    assert state.evaluate("(node) => node.selectedOptions[0].text") == "Kentucky (KY)"
+    postal = editor.locator('[name="value_postal_code"]')
+    before = (box(state), box(postal))
+    country.select_option("CA")
+    region = editor.get_by_label("State, province or region")
+    visible(region)
+    hidden(state)
+    assert region.input_value() == ""
+    # The postal code's accessible name is its shown wording only.
+    named = editor.get_by_role("textbox", name="Postal code", exact=True)
+    assert named.input_value() == "40223"
+    assert editor.get_by_role("textbox", name="ZIP code", exact=True).count() == 0
+    # The swap moves nothing: the State control and the postal code below
+    # it keep their places.
+    assert (box(region), box(postal)) == before
+    region.fill("ON")
+    country.select_option("US")
+    visible(state)
+    assert state.input_value() == "KY"
+    country.select_option("CA")
+    assert region.input_value() == "ON"
+    save = editor.get_by_role("button", name="Save")
+    available(save)
+    save.click()
+    has_text(page.locator("#census-notice"), EDITED_NOTICE)
+    assert sent[-1].count("value_region=") == 1
+    assert "value_region=ON" in sent[-1] and "value_country=CA" in sent[-1]
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_a_refused_state_is_marked_where_it_is_shown(page, component_origin):
+    """A refusal naming State (both State controls share its name) marks
+    the drop-down shown, never the hidden free text (#1785)."""
+    page.goto(component_origin + PATH)
+    refusal = {
+        "errors": [
+            {"code": "invalid", "field_id": "value_region", "message": "Check."}
+        ],
+        "refusal": {
+            "message": "Choose a state from the list.",
+            "fix": "Correct the value, then save it again.",
+            "link": None,
+        },
+    }
+    page.route(
+        "**" + PATH,
+        lambda route: (
+            route.continue_()
+            if route.request.method != "POST"
+            else route.fulfill(
+                status=400, content_type="application/json", body=json.dumps(refusal)
+            )
+        ),
+    )
+    icon(page, 2, "Edit").click()
+    editor = page.locator("#census-edit-dialog-2")
+    state = editor.get_by_label("State", exact=True)
+    state.select_option("IN")
+    editor.get_by_role("button", name="Save").click()
+    has_text(
+        editor.locator(".errorlist"),
+        "Choose a state from the list. Correct the value, then save it again.",
+    )
+    assert state.get_attribute("aria-invalid") == "true"
+    assert (
+        editor.locator('[name="value_region"]:not(select)').get_attribute(
+            "aria-invalid"
+        )
+        is None
+    )
+
+
 @pytest.mark.parametrize("width", [320, 1280])
 def test_the_page_fits_and_has_no_wcag_violation(
     page, component_origin, axe_source, width
@@ -245,33 +361,113 @@ def test_the_page_fits_and_has_no_wcag_violation(
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + PATH)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    # A Member who left the Family (#1738): the shared badge beside the name.
+    badge = page.locator('[data-source-status="moved"]')
+    has_text(badge, "Not in ParishSoft")
+    assert "Member 01" in badge.locator("xpath=..").inner_text()
     assert_accessible(page, axe_source)
     icon(page, 2, "Edit").click()
     visible(page.locator("#census-edit-dialog-2"))
     assert_accessible(page, axe_source)
 
 
+def actions(page, index):
+    """Row ``index``'s icons: (action, pressed) in drawing order."""
+    return [
+        (node.get_attribute("data-row-action"), node.get_attribute("aria-pressed"))
+        for node in row(page, index).locator(".table-actions button").all()
+    ]
+
+
+def test_entered_by_hand_again_on_an_entered_incorrectly_row(page, component_origin):
+    """An Entered incorrectly row shows ParishSoft's value and offers its two
+    fixes beside the Accept in force (#1737): the mark is worded "again", its
+    dialog says the next refresh checks it, and the redrawn row is Entered by
+    hand, in place."""
+    page.goto(component_origin + INCORRECT)
+    page.evaluate(MARK)
+    sent = posts(page, component_origin, REENTERED)
+    has_text(row(page, 3).locator(".stage-chip"), "Entered incorrectly")
+    visible(row(page, 3).get_by_text(WRONG, exact=True))
+    assert actions(page, 3) == [
+        ("accept", "true"),
+        ("back_to_review", None),
+        ("entered_by_hand", "false"),
+    ]
+    # Both fixes are bulk kinds of its box.
+    assert (
+        row(page, 3)
+        .locator("input[data-select-row]")
+        .get_attribute("data-confirm-kind")
+        == "back_to_review entered_by_hand"
+    )
+    icon(page, 3, "Mark").click()
+    dialog = page.locator("#census-decide-dialog")
+    has_text(dialog.locator("h2"), f"Mark {name(3)} entered by hand again?")
+    has_text(
+        dialog.locator("[data-confirm-body]"),
+        "Record that you corrected this in ParishSoft. Check ParishSoft first: "
+        "the next refresh checks it again.",
+    )
+    available(dialog.get_by_role("button", name="Record"))
+    dialog.get_by_role("button", name="Record").click()
+    has_text(page.locator("#census-notice"), REENTERED_NOTICE)
+    hidden(dialog)
+    assert "decide=entered_by_hand" in sent[-1] and "item=3" in sent[-1]
+    assert "version=2" in sent[-1]
+    has_text(row(page, 3).locator(".stage-chip .status-word"), "Entered by hand")
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_back_to_review_on_an_entered_incorrectly_row(page, component_origin):
+    """Back to review on an Entered incorrectly row needs no note; its dialog
+    says to edit the item to ParishSoft's value (no confirmation is promised:
+    a refresh before the Edit makes it a Conflict), and the redrawn row is
+    To review, in place."""
+    page.goto(component_origin + INCORRECT)
+    page.evaluate(MARK)
+    sent = posts(page, component_origin, RETURNED)
+    icon(page, 3, "Send").click()
+    dialog = page.locator("#census-decide-dialog")
+    has_text(dialog.locator("h2"), f"Send {name(3)} back to review?")
+    has_text(
+        dialog.locator("[data-confirm-body]"),
+        "The item goes back to To review. If ParishSoft's value is right, edit "
+        "the item to that value.",
+    )
+    record = dialog.get_by_role("button", name="Record")
+    available(record)
+    record.click()
+    has_text(page.locator("#census-notice"), RETURNED_NOTICE)
+    hidden(dialog)
+    assert "decide=back_to_review" in sent[-1] and "item=3" in sent[-1]
+    has_text(row(page, 3).locator(".stage-chip .status-word"), "To review")
+    assert page.evaluate(MARKED) == "kept"
+
+
 @pytest.mark.parametrize("width", [390, 1280])
 def test_apply_follows_the_last_filter_with_no_line_between(
     page, component_origin, width
 ):
-    """No zone line sits under Census changes' filters (R38 finding 8), and
-    Apply filters with Clear filters follow Through, beside it at 1280 px
-    (R38 finding 9); the page never scrolls sideways."""
+    """Census changes has no submitted-date filter (#1888): no date input,
+    zone field or zone note. Apply filters with Clear filters follow the
+    last filter, Kind of change: beside it on its row, or (when the four
+    fields fill the row, as at 1280 px) on the next one, with no line
+    between (R38 findings 8 and 9); the step chosen is the shared rule's,
+    test_filter_actions_place. The page never scrolls sideways."""
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + PATH)
     form = page.locator("#table-filters")
     assert form.locator("[data-browser-zone-note]").count() == 0
-    through = form.locator("#census-end").locator("xpath=..").bounding_box()
+    assert form.locator("input[type=date], [name=zone]").count() == 0
+    last = form.locator("#census-kind").locator("xpath=..").bounding_box()
     actions = form.locator(".filter-actions").bounding_box()
-    if width == 1280:
-        assert actions["x"] >= through["x"] + through["width"]
-        assert (
-            abs((actions["y"] + actions["height"]) - (through["y"] + through["height"]))
-            <= 2
-        )
-    else:
-        assert through["y"] + through["height"] <= actions["y"]
+    beside = actions["x"] >= last["x"] + last["width"] and (
+        abs((actions["y"] + actions["height"]) - (last["y"] + last["height"])) <= 2
+    )
+    assert beside or last["y"] + last["height"] <= actions["y"]
+    # Nothing sits between the last filter's row and the pair.
+    assert actions["y"] - (last["y"] + last["height"]) <= 16
     assert page.evaluate("document.documentElement.scrollWidth") <= width
 
 
@@ -300,3 +496,159 @@ def test_an_edited_value_shows_as_the_reviewers_value(page, component_origin):
     cells = row(page, 0).locator("th, td")
     reviewer = cells.nth(headings.index("Reviewer's value")).inner_text()
     assert "555-9999" in reviewer
+
+
+def test_a_new_members_entered_by_hand_asks_for_its_member_id(
+    page, component_origin, axe_source
+):
+    """A New Member's Entered by hand opens its own dialog with an optional
+    ParishSoft Member ID (#1749); a refused ID is shown at the field, and
+    the recorded mark answers with the row Entered by hand, naming the ID,
+    in place. A refresh Conflict row says why under its stage."""
+    page.goto(component_origin + NEW_MEMBER)
+    page.evaluate(MARK)
+    has_text(
+        row(page, 5).locator(".help"),
+        "ParishSoft no longer holds the update.",
+    )
+    refusal = {
+        "errors": [{"code": "invalid", "field_id": "value_member", "message": "x"}],
+        "refusal": {
+            "message": "Enter the ParishSoft Member ID as a whole number.",
+            "fix": "Correct the Member ID, or leave it blank, then record it again.",
+            "link": None,
+        },
+    }
+    sent = []
+
+    def answer(route):
+        """Refuse the first mark at its Member ID; answer the next with the
+        page after it."""
+        if route.request.method != "POST":
+            route.continue_()
+            return
+        sent.append(route.request.post_data)
+        if len(sent) == 1:
+            route.fulfill(
+                status=400, content_type="application/json", body=json.dumps(refusal)
+            )
+            return
+        route.fulfill(
+            response=route.fetch(url=component_origin + MEMBER_ENTERED, method="GET")
+        )
+
+    page.route("**" + PATH, answer)
+    row(page, 4).locator('[data-row-action="entered_by_hand"]').click()
+    dialog = page.locator("#census-entered-dialog-4")
+    visible(dialog)
+    has_text(
+        dialog.locator("h2"),
+        "Mark New Member for New Member: Newly Sample entered by hand?",
+    )
+    has_text(
+        dialog.locator("[data-confirm-body]"),
+        "Record that you typed this into ParishSoft. Check ParishSoft first: "
+        "this is final.",
+    )
+    member_id = dialog.get_by_label("ParishSoft Member ID (optional)")
+    assert member_id.input_value() == ""
+    assert_accessible(page, axe_source)
+    member_id.fill("seven")
+    dialog.get_by_role("button", name="Record").click()
+    has_text(
+        dialog.locator(".errorlist"),
+        "Enter the ParishSoft Member ID as a whole number. Correct the Member ID, "
+        "or leave it blank, then record it again.",
+    )
+    assert member_id.get_attribute("aria-invalid") == "true"
+    assert "value_member=seven" in sent[0] and "decide=entered_by_hand" in sent[0]
+    member_id.fill("7")
+    record = dialog.get_by_role("button", name="Record")
+    available(record)
+    record.click()
+    has_text(page.locator("#census-notice"), MEMBER_ENTERED_NOTICE)
+    hidden(dialog)
+    assert "value_member=7" in sent[-1] and "item=4" in sent[-1]
+    has_text(row(page, 4).locator(".stage-chip .status-word"), "Entered by hand")
+    has_text(row(page, 4).locator(".help"), "Accepted. ParishSoft Member ID 7.")
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_correcting_a_new_members_member_id(page, component_origin, axe_source):
+    """An entered New Member keeps Entered by hand selected and offers
+    Correct the ParishSoft Member ID after it (#1773): its own dialog asks
+    for the ID, required and filled in with the mark's; the same ID is
+    refused at the field; a new one answers with the row naming it, in
+    place, focus back on the selected mark."""
+    page.goto(component_origin + MEMBER_ENTERED)
+    page.evaluate(MARK)
+    actions = row(page, 4).locator('[data-row-action="entered_by_hand"]')
+    assert actions.count() == 2
+    assert actions.nth(0).get_attribute("aria-pressed") == "true"
+    label = (
+        "Correct the ParishSoft Member ID of New Member for New Member: Newly Sample"
+    )
+    correct = row(page, 4).get_by_role("button", name=label)
+    assert correct.get_attribute("aria-pressed") is None
+    refusal = {
+        "errors": [{"code": "invalid", "field_id": "value_member", "message": "x"}],
+        "refusal": {
+            "message": "That is the ParishSoft Member ID already recorded. "
+            "Enter the corrected ID.",
+            "fix": "Correct the Member ID, then record it again.",
+            "link": None,
+        },
+    }
+    sent = []
+
+    def answer(route):
+        """Refuse the first correction at its Member ID; answer the next
+        with the page after it."""
+        if route.request.method != "POST":
+            route.continue_()
+            return
+        sent.append(route.request.post_data)
+        if len(sent) == 1:
+            route.fulfill(
+                status=400, content_type="application/json", body=json.dumps(refusal)
+            )
+            return
+        route.fulfill(
+            response=route.fetch(url=component_origin + MEMBER_CORRECTED, method="GET")
+        )
+
+    page.route("**" + PATH, answer)
+    correct.click()
+    dialog = page.locator("#census-entered-dialog-4")
+    visible(dialog)
+    has_text(dialog.locator("h2"), f"{label}?")
+    has_text(
+        dialog.locator("[data-confirm-body]"),
+        "Record the ID of the Member you added. Check the Member in ParishSoft "
+        "first: the next refresh checks the entry again.",
+    )
+    member_id = dialog.get_by_label("ParishSoft Member ID", exact=True)
+    assert member_id.input_value() == "7"
+    assert member_id.get_attribute("required") is not None
+    assert_accessible(page, axe_source)
+    record = dialog.get_by_role("button", name="Record")
+    record.click()
+    has_text(
+        dialog.locator(".errorlist"),
+        "That is the ParishSoft Member ID already recorded. Enter the corrected "
+        "ID. Correct the Member ID, then record it again.",
+    )
+    assert "value_member=7" in sent[0] and "decide=entered_by_hand" in sent[0]
+    member_id.fill("9")
+    record.click()
+    has_text(page.locator("#census-notice"), MEMBER_CORRECTED_NOTICE)
+    hidden(dialog)
+    assert "value_member=9" in sent[-1] and "item=4" in sent[-1]
+    has_text(row(page, 4).locator(".stage-chip .status-word"), "Entered by hand")
+    has_text(row(page, 4).locator(".help"), "Accepted. ParishSoft Member ID 9.")
+    focused = page.evaluate(
+        "() => [document.activeElement.dataset.rowAction,"
+        " document.activeElement.getAttribute('aria-pressed')]"
+    )
+    assert focused == ["entered_by_hand", "true"]
+    assert page.evaluate(MARKED) == "kept"

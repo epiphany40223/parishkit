@@ -18,6 +18,7 @@ from django.urls import reverse
 from parishkit.stewardship.accounts.integration_credentials import CredentialSummary
 from parishkit.stewardship.accounts.integration_forms import IntegrationForm
 from parishkit.stewardship.campaigns.domain import Percentage
+from parishkit.stewardship.jobs.queue_wait import QueueWait
 from parishkit.stewardship.jobs.send_progress_views import (
     GIVE_UP_MILLISECONDS,
     POLL_MILLISECONDS,
@@ -84,11 +85,18 @@ KEEP = "/live-keep"
 KEEP_STATUS = "/live-keep/status"
 KEEP_EMPTY = "/live-keep-empty"
 KEEP_EMPTY_STATUS = "/live-keep-empty/status"
-# The fixture server's answers to Dismiss and Refresh now (status, Location,
-# body).
+# A queued export's answer, as the create views give it (#1778): a redirect
+# to its status address, pending (test_export_in_place.py).
+EXPORT_QUEUED = "/live-export-queued"
+# A queued export waiting behind a ParishSoft refresh, with its queue-wait
+# sentence (#340).
+EXPORT_WAITING = "/live-export-waiting"
+# The fixture server's answers to Dismiss and Refresh now and the queued
+# export (status, Location, body).
 POSTS = {
     DISMISS: (303, INTEGRATION + "?dismissed=1", ""),
     REFRESH: (303, REFRESH_REQUESTED + "#refresh-run", ""),
+    EXPORT_QUEUED: (302, EXPORT_PENDING, ""),
 }
 
 
@@ -188,10 +196,10 @@ def components(context, admin):
             f"stewardship/{template}.html", refresh_values(state, steps, sort=sort)
         )
 
-    def export(state, mutable=True, expires_at=None):
+    def export(state, mutable=True, expires_at=None, wait=None):
         """A participation export's page in ``state``; while ``mutable`` is
         false, other campaign work holds its commands. ``expires_at`` is a
-        ready file's window end."""
+        ready file's window end, and ``wait`` a queued one's QueueWait."""
         job = SimpleNamespace(
             pk=UUID(int=720),
             format="xlsx",
@@ -211,6 +219,7 @@ def components(context, admin):
                     "expires_at": expires_at.isoformat() if expires_at else None,
                 },
                 "mutable": mutable,
+                "wait": wait,
                 "retry_key": UUID(int=723),
                 "report_url": "/participation",
                 "report_name": "Participation",
@@ -386,6 +395,15 @@ def components(context, admin):
         EXPORT_EXPIRING: export("ready", expires_at=now + EXPORT_WINDOW_LEFT),
         EXPORT_ENDED: export("ready", expires_at=now - timedelta(seconds=1)),
         EXPORT_PENDING: export("queued"),
+        EXPORT_WAITING: export(
+            "queued",
+            wait=QueueWait(
+                since=now - timedelta(minutes=3),
+                waited="3 minutes",
+                blocker="a ParishSoft refresh",
+                blocker_started=now - timedelta(minutes=4),
+            ),
+        ),
         EXACT: exact("failed"),
         "/live-exact-ready": exact("succeeded", export_id=UUID(int=725)),
         CHANGE: change("staged"),

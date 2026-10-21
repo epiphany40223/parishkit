@@ -88,7 +88,10 @@ def test_stepper_follows_an_applied_change_and_offers_the_next_step(
     whole = browser.get(settings).content
     page = stepper(whole)
     assert "Step 1 of 8:" in page and b"data-campaign-step-back" not in whole
-    assert "Step 8 of 8:" in stepper(browser.get(reverse("admin:go_live")).content)
+    # Go live, the last step, draws only its own step bar (#1585), with its
+    # Back to the step before it.
+    check = browser.get(reverse("admin:go_live")).content
+    assert stepper(check) is None and b"data-go-live-back" in check
     # Pages that are not steps, Home among them, draw none.
     assert stepper(browser.get("/admin/").content) is None
     # Once the campaign leaves draft there is no stepper and no Continue.

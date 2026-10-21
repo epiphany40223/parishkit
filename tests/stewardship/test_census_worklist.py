@@ -8,6 +8,7 @@ import pytest
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.pipeline import (
+    Action,
     Decision,
     Placement,
     Stage,
@@ -29,9 +30,11 @@ from parishkit.stewardship.reports.census_worklist import (
     add_fields,
     worklist_page,
 )
+from parishkit.stewardship.responses.census import address_editor
 from parishkit.stewardship.responses.census_additions import AddRefusal, parse_add
 from parishkit.stewardship.responses.comparison import ADDRESS_COMPONENTS
 from parishkit.stewardship.responses.refresh_checks import CheckState
+from parishkit.stewardship.web.review_worklist import INCORRECT_BODIES, WORDS
 from parishkit.stewardship.web.tables import paginate
 
 from .test_census_changes import SUBMITTED, row
@@ -173,9 +176,9 @@ def test_staff_review_by_hand_and_automatic_rows():
         "back_to_review",
         "entered_by_hand",
     ]
-    # Publish to ParishSoft is the Administrator's alone.
-    assert "Publish to ParishSoft" not in html
-    assert "Publish to ParishSoft" in page(rows, roles=ADMINISTRATOR)[1]
+    # Update ParishSoft is the Administrator's alone.
+    assert "Update ParishSoft" not in html
+    assert "Update ParishSoft" in page(rows, roles=ADMINISTRATOR)[1]
 
 
 def test_a_conflict_with_an_unknown_parishsoft_value_waits():
@@ -322,6 +325,88 @@ def test_an_address_editor_has_its_parts():
     )
     for part in answer:
         assert f'name="value_{part}"' in html
+    # Country first, then the street lines, City, both State controls (the
+    # US drop-down with KY chosen; the free text empty) and the postal code.
+    (dialog,) = set(re.findall(r'id="([^"]*-edit-dialog-[^"]*)-country"', html))
+    order = [
+        html.index(f'id="{dialog}-{part}"')
+        for part in (
+            "country",
+            "line1",
+            "line2",
+            "city",
+            "region",
+            "region-text",
+            "postal_code",
+        )
+    ]
+    assert order == sorted(order)
+    assert '<option value="KY" selected>Kentucky (KY)</option>' in html
+    assert f'id="{dialog}-region-text" name="value_region" value=""' in html
+    assert html.count('name="value_region"') == 4  # Edit's two, Add's two
+    assert '<span data-show-when="value_country=US">ZIP code</span>' in html
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, {"country": "US", "us_region": "", "text_region": ""}),
+        (
+            {"line1": "1 Main", "city": "Louisville", "region": "ky", "country": "us"},
+            {"country": "US", "us_region": "KY", "unlisted_region": ""},
+        ),
+        (
+            {"line1": "1 Main", "city": "Louisville", "region": " Kentucky "},
+            {"country": "", "us_region": "", "text_region": " Kentucky "},
+        ),
+        (
+            {"line1": "1 Main", "city": "Toronto", "region": "ON", "country": "CA"},
+            {
+                "country": "CA",
+                "us_region": "",
+                "unlisted_region": "",
+                "text_region": "ON",
+            },
+        ),
+        (
+            {
+                "line1": "1 Main",
+                "city": "Louisville",
+                "region": " Kentucky ",
+                "country": "US",
+            },
+            {"us_region": "", "unlisted_region": "Kentucky", "text_region": ""},
+        ),
+    ],
+)
+def test_the_address_editor_shows_its_country_and_one_state_control(value, expected):
+    """The editor's Country is the address's own, or United States for a
+    blank one; its State is the US drop-down's code (an unlisted US region
+    kept as its own choice) or, for another country, the free text (#1785)."""
+    found = address_editor(value)
+    assert {key: found[key] for key in expected} == expected
+    assert found["regions"][0] == ("AL", "Alabama (AL)")
+
+
+def test_an_unlisted_us_region_is_drawn_selected():
+    """A US region the drop-down does not offer is its own selected choice,
+    so Save sends it and the server refuses it at State (#1785)."""
+    html = render_to_string(
+        "stewardship/components/census-address-editor.html",
+        {
+            "dialog_id": "edit",
+            "address": address_editor(
+                {
+                    "line1": "1 Main",
+                    "city": "Louisville",
+                    "region": "Kentuky",
+                    "country": "US",
+                }
+            ),
+        },
+    )
+    assert '<option value="Kentuky" selected>Kentuky</option>' in html
+    assert html.count(" selected>") == 2  # the country and the region
 
 
 def test_the_edit_value_is_read_from_the_editors_fields():
@@ -470,14 +555,14 @@ def test_downloads_list_an_addition_as_the_page_does():
         [added(added_note="Phoned in")], CensusQuery(stage="all"), administrator=False
     )
     (line,) = export_rows(result, UTC)
-    assert line[7:11] == ("", "555-0123", "By hand", "To enter by hand")
-    assert line[12] == "staff@example.org" and line[14] == "Phoned in"
+    assert line[8:12] == ("", "555-0123", "By hand", "To enter by hand")
+    assert line[13] == "staff@example.org" and line[15] == "Phoned in"
     assert result["rows"][0]["baseline"] == "555-0100"
 
 
 def test_refresh_checks_place_final_changes_and_flag_not_seen():
     """A final change's latest refresh check (#1689): Entered incorrectly
-    shows ParishSoft's value and offers no action yet (#1737); Not seen in
+    shows ParishSoft's value and offers its two fixes (#1737); Not seen in
     ParishSoft is a chip and a Stage choice of its own; an Ignored change
     ParishSoft now matches says so under its stage."""
     entered = {
@@ -498,8 +583,25 @@ def test_refresh_checks_place_final_changes_and_flag_not_seen():
     worklist, html = page(rows, stage="all")
     by_id = {row["id"]: row for row in worklist.rows}
     assert by_id["wrong"]["stage_label"] == "Entered incorrectly"
-    # Only the decision in force is drawn (selected); nothing is offered.
-    assert all(icon["selected"] for icon in by_id["wrong"]["icons"])
+    # The decision in force is drawn selected, and the two fixes beside it:
+    # Back to review, and the mark made again, worded so (#1737).
+    icons = {icon["action"]: icon for icon in by_id["wrong"]["icons"]}
+    assert list(icons) == ["accept", "back_to_review", "entered_by_hand"]
+    assert icons["accept"]["selected"]
+    again = icons["entered_by_hand"]
+    assert not again["selected"]
+    assert again["label"] == f"Mark {by_id['wrong']['name']} entered by hand again"
+    assert again["title_one"] == "Mark {name} entered by hand again?"
+    assert again["done"] == "{name} marked entered by hand again."
+    assert again["body"] == INCORRECT_BODIES[Action.ENTERED_BY_HAND]
+    back = icons["back_to_review"]
+    assert back["body"] == INCORRECT_BODIES[Action.BACK_TO_REVIEW]
+    assert (
+        back["choice"] == ""
+        and back["title_one"] == WORDS[Action.BACK_TO_REVIEW].title_one
+    )
+    # Both are bulk kinds of the row's box.
+    assert by_id["wrong"]["kinds"] == "back_to_review entered_by_hand"
     assert by_id["wrong"]["shows_now"]
     assert by_id["wrong"]["parishsoft_now"] == "III"
     assert by_id["unseen"]["stage_label"] == "Entered by hand"
@@ -516,10 +618,47 @@ def test_refresh_checks_place_final_changes_and_flag_not_seen():
     assert [row["id"] for row in worklist.rows] == ["unseen"]
 
 
+@pytest.mark.parametrize(
+    "status,label",
+    [
+        ("moved", "Not in ParishSoft"),
+        ("missing", "Not in ParishSoft"),
+        ("inactive", "Inactive in ParishSoft"),
+        ("deceased", "Deceased in ParishSoft"),
+    ],
+)
+def test_a_member_who_left_keeps_the_stage_with_the_shared_badge(status, label):
+    """Rule 4 (#1738): the change keeps its stage, and the Who cell shows the
+    shared ParishSoft status badge beside the name; the row's name for
+    screen readers and notices stays the plain name."""
+    worklist, html = page([shaped(member_status=status)])
+    (found,) = worklist.rows
+    assert found["placement"].stage is Stage.TO_REVIEW
+    assert found["name"] == "Mobile phone for Pat Sample"
+    assert (
+        f'Pat Sample <span class="status-badge" data-source-status="{status}">'
+        f"{label}</span>"
+    ) in html
+
+
+def test_a_current_member_has_no_badge():
+    """A Member the data still lists in the Family (and a household change)
+    reads as the name alone."""
+    _, html = page(
+        [
+            shaped(member_status="current"),
+            shaped(
+                id="2", entity_kind="family", field="email_opt_out", handling="manual"
+            ),
+        ]
+    )
+    assert "data-source-status" not in html
+
+
 def test_link_pairs_carry_only_the_link_safe_choices():
     """The view's own address keeps the Stage and closed filters other than
-    their defaults, the zone only with a day, and the table's choices; the
-    name search never (R38 finding 6)."""
+    their defaults and the table's choices; the name search never (R38
+    finding 6), nor the retired submitted dates (#1888)."""
     from parishkit.stewardship.reports.census_changes import CensusQuery
     from parishkit.stewardship.reports.census_worklist import link_pairs
     from parishkit.stewardship.web.review_worklist import page_address
@@ -530,5 +669,167 @@ def test_link_pairs_carry_only_the_link_safe_choices():
         stage="all", route="automatic", start="2054-10-01", zone="UTC", search="Smith"
     )
     assert page_address("/c", link_pairs(chosen, {"sort": "-who"})) == (
-        "/c?stage=all&route=automatic&start=2054-10-01&zone=UTC&sort=-who"
+        "/c?stage=all&route=automatic&sort=-who"
     )
+
+
+def test_a_refresh_conflict_and_a_member_id_say_so_under_the_stage():
+    """#1749: an Updated in ParishSoft change a refresh put back in Conflict
+    says why (an ordinary Conflict does not), and a New Member's mark names
+    the Member ID Staff gave; a New Member's Entered by hand opens its own
+    dialog asking for it."""
+    undone = shaped(execution="conflict", decision="unreviewed", refresh_conflict=True)
+    changed = shaped(
+        id="2", execution="conflict", decision="approved", refresh_conflict=False
+    )
+    added = shaped(
+        id="3",
+        entity_kind="proposed_member",
+        entity_key="local",
+        field="new_member",
+        handling="manual",
+        submitted_value={"first_name": "Newly", "last_name": "Sample"},
+        current_available=False,
+        current_value=None,
+        baseline_available=False,
+        baseline_value=None,
+        decision="approved",
+        execution="resolved_external",
+        resolution_action="entered",
+        resolution_member=7,
+    )
+    fresh = shaped(
+        id="4",
+        entity_kind="proposed_member",
+        entity_key="local",
+        field="new_member",
+        handling="manual",
+        submitted_value={"first_name": "Newly", "last_name": "Sample"},
+        current_available=False,
+        current_value=None,
+        baseline_available=False,
+        baseline_value=None,
+    )
+    worklist, html = page([undone, changed, added, fresh])
+    rows = {row["id"]: row for row in worklist.rows}
+    assert rows["1"]["decision_label"].endswith(
+        "ParishSoft no longer holds the update."
+    )
+    assert "no longer holds" not in rows["2"]["decision_label"]
+    assert rows["3"]["decision_label"].endswith("ParishSoft Member ID 7.")
+    assert rows["4"]["offers_entered"] and not rows["1"]["offers_entered"]
+    assert 'id="census-entered-dialog-4"' in html
+    # Census Add's dialog (#1710) has a value_member field of its own.
+    assert html.count("ParishSoft Member ID (optional)") == 1
+    # Row 3's mark may be made again with another ID (#1773, below), and
+    # Census Add's dialog has a value_member field of its own.
+    assert html.count('name="value_member"') == 3
+
+
+def entered_new_member(**values):
+    """A New Member Staff marked Entered by hand, by default naming ID 7."""
+    return shaped(
+        **{
+            "id": "3",
+            "entity_kind": "proposed_member",
+            "entity_key": "local",
+            "field": "new_member",
+            "handling": "manual",
+            "submitted_value": {"first_name": "Newly", "last_name": "Sample"},
+            "current_available": False,
+            "current_value": None,
+            "baseline_available": False,
+            "baseline_value": None,
+            "decision": "approved",
+            "execution": "resolved_external",
+            "resolution_action": "entered",
+            "resolution_member": 7,
+        }
+        | values
+    )
+
+
+def test_an_entered_new_member_offers_correcting_its_member_id():
+    """#1773: a New Member Entered by hand and not Confirmed keeps its mark
+    drawn selected and gains Correct the ParishSoft Member ID after it,
+    which opens the row's own dialog asking for the ID (required, filled in
+    with the mark's) and posts Entered by hand. It is one row at a time, so
+    it gives the row no bulk kind."""
+    worklist, html = page([entered_new_member()])
+    (shown,) = worklist.rows
+    assert icons(worklist) == [
+        ("accept", True),
+        ("entered_by_hand", True),
+        ("entered_by_hand", False),
+    ]
+    correct = shown["icons"][2]
+    name = shown["name"]
+    assert correct["remark"] and correct["icon"] == "edit"
+    assert correct["label"] == f"Correct the ParishSoft Member ID of {name}"
+    assert correct["dialog"] == "census-entered-dialog-3"
+    assert "decide=entered_by_hand" in correct["post"]
+    assert correct["title_one"] == "Correct the ParishSoft Member ID of {name}?"
+    assert correct["done"] == "{name} had its ParishSoft Member ID corrected."
+    assert correct["focus"] == "entered_by_hand" and correct["pressed"] is None
+    assert shown["kinds"] == "" and shown["offers_entered"]
+    dialog = html.split('id="census-entered-3"')[1].split("</form>")[0]
+    field = re.search(r"<input[^>]*name=\"value_member\"[^>]*>", dialog)[0]
+    assert "required" in field and 'value="7"' in field
+    assert "ParishSoft Member ID (optional)" not in dialog
+    assert "The next refresh checks the entry again with this ID." in dialog
+    # A mark that named no ID may gain one: Add, the field starts blank.
+    worklist, html = page([entered_new_member(resolution_member=None)])
+    add = worklist.rows[0]["icons"][2]
+    assert add["label"] == f"Add the ParishSoft Member ID of {name}"
+    assert add["done"] == "{name} had its ParishSoft Member ID added."
+    dialog = html.split('id="census-entered-3"')[1].split("</form>")[0]
+    field = re.search(r"<input[^>]*name=\"value_member\"[^>]*>", dialog)[0]
+    assert 'value=""' in field and "required" in field
+
+
+def test_a_not_seen_new_member_offers_the_correction():
+    """A New Member flagged Not seen in ParishSoft (a mistyped ID, most
+    likely) is still Entered by hand and offers the correction, out of
+    bulk."""
+    unseen = CheckState(outcome="unchanged", unseen=2, not_seen_after=2)
+    worklist, _ = page([shape(entered_new_member() | {"check": unseen})])
+    (shown,) = worklist.rows
+    assert shown["not_seen"]
+    assert [icon.get("remark", False) for icon in shown["icons"]] == [
+        False,
+        False,
+        True,
+    ]
+    assert shown["kinds"] == ""
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        # Confirmed: the refresh found the Member; nothing to correct.
+        {"check": CheckState(outcome="confirmed")},
+        # A later response of the Family replaced it: history.
+        {"replaced": True},
+    ],
+)
+def test_no_correction_once_confirmed_or_replaced(values):
+    """The correction is offered only while the mark is in question."""
+    worklist, _ = page([shape(entered_new_member() | values)])
+    assert not any(icon.get("remark") for icon in worklist.rows[0]["icons"])
+    assert not worklist.rows[0]["offers_entered"]
+
+
+def test_no_correction_without_the_census_roles_or_on_other_rows():
+    """A reader the campaign's work holds is offered nothing; an entered
+    Member field (not a New Member) has no correction."""
+    worklist, _ = page([entered_new_member()], mutable=False)
+    assert worklist.rows[0]["icons"] == []
+    suffix = shaped(
+        handling="manual",
+        field="suffix",
+        decision="approved",
+        execution="resolved_external",
+        resolution_action="entered",
+    )
+    worklist, _ = page([suffix])
+    assert icons(worklist) == [("accept", True), ("entered_by_hand", True)]

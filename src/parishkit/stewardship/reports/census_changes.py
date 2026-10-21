@@ -35,10 +35,8 @@ from parishkit.stewardship.pipeline import (
     census_placement,
 )
 from parishkit.stewardship.responses.census import (
-    ADDRESS_LIMITS,
     FAMILY_FIELDS,
-    blank_address,
-    country_choices,
+    address_editor,
 )
 from parishkit.stewardship.responses.census_additions import ADDED_PREFIX
 from parishkit.stewardship.responses.census_resolution import allowed
@@ -64,6 +62,7 @@ from parishkit.stewardship.responses.refresh_checks import (
 )
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.source.source_status import (
+    MEMBER_STATUS_HEADING,
     NAME_NOT_RECORDED,
     STATUS_HEADING,
     family_status,
@@ -145,14 +144,17 @@ EARLIEST, LATEST = date(2000, 1, 1), date(2999, 12, 31)
 # The download's columns: the page's columns, names and order (#932), so
 # Member DUID sits right after Who in every format. ParishSoft status follows
 # Family, blank unless the data no longer has it: the page's badge beside the
-# name has a column of its own in a file (#1216). The latest Entered in
-# ParishSoft, Ignore or Reopen (#528) follows Submitted, as on the page: who,
-# when and its note.
+# name has a column of its own in a file (#1216). Member's ParishSoft status
+# follows Who in the same way, for the badge the page shows beside a Member
+# no longer active and living in the Family (rule 4, #1738; #1752). The
+# latest Entered in ParishSoft, Ignore or Reopen (#528) follows Submitted, as
+# on the page: who, when and its note.
 HEADINGS = (
     "Family",
     STATUS_HEADING,
     "Family DUID",
     "Who",
+    MEMBER_STATUS_HEADING,
     "Member DUID",
     "What changed",
     "ParishSoft now",
@@ -165,30 +167,31 @@ HEADINGS = (
     "Recorded at",
     "Note",
 )
-# Relative PDF column widths, in percent of the page's body width. Fifteen
+# Relative PDF column widths, in percent of the page's body width. Sixteen
 # columns share one landscape page, so a compact time ("Sep 30, 2026
 # 12:04 PM") keeps its date on one line and its time on the next, and a
 # status may take two lines ("Being" / "published"); a whole DUID and
-# "Automatic" stay on one line, and ParishSoft status, blank on most rows,
-# takes Family's narrow width. The resolution's who and note get room of
-# their own, and the values Families typed and ParishSoft holds share the
+# "Automatic" stay on one line, and each ParishSoft status, blank on most
+# rows, takes its name's narrow width. The resolution's who and note get room
+# of their own, and the values Families typed and ParishSoft holds share the
 # rest, long ones wrapping within their column.
 PDF_WEIGHTS = {
     "Family": 5,
     STATUS_HEADING: 5,
     "Family DUID": 7,
     "Who": 5,
+    MEMBER_STATUS_HEADING: 5,
     "Member DUID": 7,
     "What changed": 5,
-    "ParishSoft now": 6,
+    "ParishSoft now": 5,
     "Family's answer": 6,
     "Reviewer's value": 4,
     "How it reaches ParishSoft": 8,
     "Stage": 8,
     "Submitted": 10,
-    "Recorded by": 7,
+    "Recorded by": 5,
     "Recorded at": 10,
-    "Note": 7,
+    "Note": 5,
 }
 PRIVACY = "Sensitive parish report. Share only with authorized recipients."
 # The report's name: the PDF's page title, the XLSX sheet and workbook title.
@@ -204,8 +207,9 @@ class CensusQuery:
     ``history`` are not used. ``pk-admin report census`` and ``export
     census`` still filter by ``status``, whose "open" default is To do and
     Conflict, plus To review for an Administrator, until #1688 renames
-    them. ``start`` and ``end`` are whole days in the browser's ``zone``, as
-    on System logs.
+    them. ``start`` and ``end`` are whole days in ``zone``, as on System
+    logs; only those commands set them, since the page has no date filter
+    (#1888) and drops a stale one unread.
     """
 
     search: str = ""
@@ -244,7 +248,7 @@ class CensusQuery:
         if query.start and query.end and query.start > query.end:
             raise ValueError("Invalid census change date interval.")
         if query.zone not in timezone_names():
-            # Days cannot be placed without the browser's zone; without days
+            # Days cannot be placed without the CLI's --zone; without days
             # the zone is unused, so an unknown one is simply dropped.
             if query.start or query.end:
                 raise UnknownZone("Census change dates need the browser's zone.")
@@ -307,7 +311,29 @@ SELECT p.id::text, p.entity_kind, p.entity_key, p.field,
           AND NOT EXISTS (SELECT 1 FROM stewardship_proposal_review later
               WHERE later.proposal_id=pr.id
                 AND later.expected_version>base.expected_version
-                AND later.decision<>'approved')) AS reopened
+                AND later.decision<>'approved')) AS reopened,
+    -- A Member change's Member standing in the current data, by the shared
+    -- status (#1217): a change whose Member left the Family keeps its stage
+    -- (rule 4, #1738), and the Who cell shows the shared badge for it.
+    CASE WHEN p.entity_kind='member' THEN stewardship_member_source_status_v1(
+        sc.snapshot_id, p.entity_key, f.family_duid) END AS member_status,
+    -- The response's place in its Family's order, which tells a final change
+    -- a later response replaced (#1737).
+    s.family_version,
+    -- The ParishSoft Member ID a New Member's latest mark named (#1749).
+    latest.member_duid,
+    -- Whether a refresh put this Updated in ParishSoft change back in
+    -- Conflict (#1749): its latest check says so and no review has decided
+    -- it since.
+    p.execution='conflict' AND coalesce((
+        SELECT true
+        FROM (SELECT k.outcome, k.item_version
+            FROM stewardship_refresh_check k WHERE k.proposal_id=p.id
+            ORDER BY k.created_at DESC, k.id DESC LIMIT 1) k
+        WHERE k.outcome='conflict'
+          AND NOT EXISTS (SELECT 1 FROM stewardship_proposal_review v
+              WHERE v.proposal_id=p.id AND v.expected_version>k.item_version)),
+        false) AS refresh_conflict
 FROM stewardship_campaign c
 LEFT JOIN stewardship_source_current sc ON sc.singleton
 JOIN stewardship_submission s ON s.campaign_id=c.id AND s.mode='live'
@@ -320,12 +346,14 @@ LEFT JOIN stewardship_source_member sm ON sm.id=mm.payload_id
 -- with who made it. Each advances the proposal's version, so the two
 -- histories never share one.
 LEFT JOIN LATERAL (
-    SELECT h.action, h.note, h.created_at, u.email
+    SELECT h.action, h.note, h.created_at, u.email, h.member_duid
     FROM (
-        SELECT r.action, r.note, r.created_at, r.actor_id, r.expected_version
+        SELECT r.action, r.note, r.created_at, r.actor_id, r.expected_version,
+            r.member_duid
         FROM stewardship_proposal_resolution r WHERE r.proposal_id=p.id
         UNION ALL
-        SELECT v.decision, v.note, v.created_at, v.actor_id, v.expected_version
+        SELECT v.decision, v.note, v.created_at, v.actor_id, v.expected_version,
+            NULL
         FROM stewardship_proposal_review v WHERE v.proposal_id=p.id
     ) h
     LEFT JOIN stewardship_portal_user u ON u.id=h.actor_id
@@ -414,6 +442,10 @@ COLUMNS = (
     "resolution_at",
     "resolution_by",
     "reopened",
+    "member_status",
+    "family_version",
+    "resolution_member",
+    "refresh_conflict",
 )
 
 # The menu's open count (#585, #1590; admin_context.OPEN_COUNTS embeds it):
@@ -462,7 +494,7 @@ def open_count(groups):
     ``census_placement`` puts at To review or Conflict, for every role that
     may read the page (Administrator decision, 2026-10-18). It is the
     mapping the page itself places rows with, so the count cannot drift
-    from the page's stages. Ready to update is not counted: Publish to
+    from the page's stages. Ready to update is not counted: Update
     ParishSoft and the manual-entry report own it. An edited value never
     changes a stage, so the groups need not carry it.
     """
@@ -566,7 +598,7 @@ def link_additions(changes, added):
 def census_rows(campaign_id):
     """Every census change of the campaign, read and worded, unfiltered.
 
-    The caller has checked who may read them. Publish to ParishSoft (#528)
+    The caller has checked who may read them. Update ParishSoft (#528)
     reads its plan's values from these rows, so both pages word a change
     the same way.
     """
@@ -576,9 +608,30 @@ def census_rows(campaign_id):
             raise ReadUnavailable("Census change inputs are unavailable.")
         cursor.execute(ROWS, [NAME_NOT_RECORDED, campaign_id])
         rows = [dict(zip(COLUMNS, values, strict=True)) for values in cursor]
-    # The refresh checks (#1689) of the final changes, which place them.
+
+    # The refresh checks (#1689) of the final changes, which place them: only
+    # those at the change's current version, since a mark made again over
+    # Entered incorrectly moves it on and the checks before no longer count
+    # (#1737).
+    # A final change a later response of the Family replaced (the same field
+    # answered again; ``refresh_checks.replaced``) is history and placed by
+    # its execution alone.
+    def key(row):
+        """The Family's field a change answers."""
+        return (row["family_duid"], row["entity_kind"], row["entity_key"], row["field"])
+
+    latest = {}
+    for row in rows:
+        latest[key(row)] = max(latest.get(key(row), 0), row["family_version"])
+    final = [
+        row
+        for row in rows
+        if row["execution"] in FINAL_EXECUTIONS
+        and row["family_version"] == latest[key(row)]
+    ]
     checks = check_states(
-        proposals=[row["id"] for row in rows if row["execution"] in FINAL_EXECUTIONS]
+        proposals=[row["id"] for row in final],
+        versions={row["id"]: row["version"] for row in final},
     )
     for row in rows:
         # JSON values arrive as text (cast in ROWS), whatever the driver's
@@ -586,6 +639,8 @@ def census_rows(campaign_id):
         for name in JSON_COLUMNS:
             row[name] = None if row[name] is None else json.loads(row[name])
         row["check"] = checks.get(row["id"])
+        # A New Member's ID correction (#1773) is not offered on history.
+        row["replaced"] = row["family_version"] != latest[key(row)]
     return [shape(row) for row in rows]
 
 
@@ -785,23 +840,19 @@ def editor(row):
 
     The editor starts with the value carried forward (the reviewer's value,
     else the Family's answer), in the form the Family form shows it. A
-    Family address is its parts (``parts``, with the country choices); a
-    Member field is a date, a choice or text no longer than the field takes
-    (for an Automatic change, ParishSoft's request schema;
-    ``census_review.edit_limit``). None for a field no value can be typed
-    for.
+    Family address is ``census.address_editor``'s (its parts, the country
+    shown and both State controls' values); a Member field is a date, a
+    choice or text no longer than the field takes (for an Automatic change,
+    ParishSoft's request schema; ``census_review.edit_limit``). None for a
+    field no value can be typed for.
     """
     value = row["admin_value"] if row["admin_value_set"] else row["submitted_value"]
     if row["entity_kind"] == "family":
         if row["field"] not in ADDRESS_FIELDS:
             return None
-        known = value if isinstance(value, dict) else {}
-        return {
-            "kind": "address",
-            "parts": {part: known.get(part) or "" for part in blank_address()},
-            "limits": dict(ADDRESS_LIMITS),
-            "countries": country_choices(),
-        }
+        # Country first, with the US State drop-down (#1785).
+        known = value if isinstance(value, dict) else None
+        return {"kind": "address", **address_editor(known)}
     definition = FIELDS.get(row["field"]) if row["entity_kind"] == "member" else None
     if definition is None or definition.kind is ValueKind.BOOLEAN:
         return None
@@ -913,7 +964,7 @@ def shape(row):
     # value now (the change's own stored value is frozen at its mark), and
     # whether an Entered by hand change is still not seen there.
     check = row.get("check")
-    if check is not None and check.observed and row["entity_kind"] == "member":
+    if check is not None and check.observed:
         shown["parishsoft_read"] = bool(check.observed.get("available"))
         shown["parishsoft_now"] = display(check.observed.get("value"))
     shown["not_seen"] = bool(
@@ -1065,6 +1116,8 @@ def export_rows(result, zone, *, time_text=iso_time):
             source_status_label(family_status(row["family_name"])),
             str(row["family_duid"]),
             row["who"],
+            # The Who cell's badge (rule 4, #1738) in its own column (#1752).
+            source_status_label(row.get("member_status")),
             export_member_duid(row),
             row["label"],
             row["parishsoft_now"],

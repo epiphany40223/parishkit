@@ -390,7 +390,24 @@ def information_placement(
 FINANCIAL_DECISIONS = frozenset({"accepted", "accepted_edited", "ignored"})
 
 
-def financial_placement(*, decision=None, entered=False):
+# The refresh check outcomes (#1704, #1747) that move a pledge on, as
+# ``CENSUS_CHECKS`` do a final census change; an Ignored pledge's notes
+# (ParishSoft now matching its answer) never change its stage.
+FINANCIAL_CHECKS = frozenset(
+    {
+        None,
+        "unchanged",
+        "confirmed",
+        "entered_incorrectly",
+        "ignored_now_matches",
+        "conflict",
+    }
+)
+# The outcomes a To review pledge's check can hold (#1747).
+FINANCIAL_OPEN_CHECKS = frozenset({None, "unchanged", "confirmed", "conflict"})
+
+
+def financial_placement(*, decision=None, entered=False, check=None):
     """A Family's current pledge answer's stage from its decision in force (#1686).
 
     ``decision`` is the stored decision of the item's latest
@@ -399,18 +416,40 @@ def financial_placement(*, decision=None, entered=False):
     the decision: ``reports.pledge_review`` reads that), and ``entered``
     its Entered by hand mark. With no argument, as before any decision is
     stored, every answer is To review.
+
+    ``check`` is the latest pledge refresh check's outcome that counts
+    (``reports.pledge_refresh``, #1704, #1747): a refresh that found the
+    pledge in ParishSoft Confirms it (an accepted one keeps its decision; a
+    To review one has none, "Already in ParishSoft"), one that found a
+    third amount makes an entered one Entered incorrectly and a To review
+    or accepted, unmarked one a Conflict, keeping that decision visible but
+    not in force.
     """
-    if (decision is not None and decision not in FINANCIAL_DECISIONS) or type(
-        entered
-    ) is not bool:
+    if (
+        (decision is not None and decision not in FINANCIAL_DECISIONS)
+        or type(entered) is not bool
+        or check not in FINANCIAL_CHECKS
+    ):
         raise ValueError("Unknown pledge review state.")
     if entered and decision not in ("accepted", "accepted_edited"):
         raise ValueError("Only an accepted pledge is entered by hand.")
     if decision is None:
+        if check not in FINANCIAL_OPEN_CHECKS:
+            raise ValueError("A To review pledge has no such refresh check.")
+        if check == "confirmed":
+            return Placement(Stage.CONFIRMED)
+        if check == "conflict":
+            return Placement(Stage.CONFLICT)
         return Placement(Stage.TO_REVIEW)
     if decision == "ignored":
         return Placement(Stage.IGNORED, Decision.IGNORED)
     accepted = Decision(decision)
+    if check == "confirmed":
+        return Placement(Stage.CONFIRMED, accepted)
+    if check == "entered_incorrectly" and entered:
+        return Placement(Stage.ENTERED_INCORRECTLY, accepted)
+    if check == "conflict" and not entered:
+        return Placement(Stage.CONFLICT, held_decision=accepted)
     stage = Stage.ENTERED_BY_HAND if entered else Stage.TO_ENTER_BY_HAND
     return Placement(stage, accepted)
 

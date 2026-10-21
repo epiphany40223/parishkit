@@ -63,6 +63,7 @@ def test_the_command_line_vocabularies_are_the_pages():
         "Reviewer's frequency": "reviewer_frequency",
         "Annual pledge to enter": "annual_pledge_to_enter",
         "Frequency to enter": "frequency_to_enter",
+        "ParishSoft annual pledge": "parishsoft_annual_pledge",
         "Stage": "stage",
         "Decision": "decision",
         "Entered by": "entered_by",

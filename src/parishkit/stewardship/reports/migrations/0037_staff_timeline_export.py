@@ -26,14 +26,13 @@ FROZEN_SQL = (
 
 class Migration(migrations.Migration):
     dependencies = [
-        # The reports app's previous migration on main (0127's).
-        ("stewardship_reports", "0032_pledge_review"),
+        # The reports app's previous migration (0142's).
+        ("stewardship_reports", "0036_participation_summary"),
         # Leader emails (0120, #1592), which this branch was written on.
         ("stewardship_jobs", "0035_leader_emails"),
-        # The migration that installs main's last frozen file (0132), so the
-        # files apply in prefix order. Its number and these dependencies
-        # follow the R40 pipeline's (0133 to 0143) once that lands first.
-        ("stewardship_workflows", "0004_refresh_checks"),
+        # The migration that installs the previous frozen file (0143), so
+        # the files apply in prefix order.
+        ("stewardship_responses", "0022_reviewed_form_shown_items"),
     ]
 
     operations = [

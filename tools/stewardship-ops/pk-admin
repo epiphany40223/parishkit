@@ -598,7 +598,7 @@ esac
 # Commands that stream a file to standard output, as AREA_VERB words
 # separated by spaces. Their bytes are never written to a terminal: redirect
 # standard output to a file.
-STREAMING="logs_export export_download export_census export_limitations export_roster followup_export export_pledges"
+STREAMING="logs_export export_download export_census export_limitations export_roster followup_export export_pledges go-live_families"
 # The work file the command's document is read from (see `reports`).
 documents=output
 for command in $STREAMING; do
@@ -636,7 +636,7 @@ fi
 # Every catalog command with `prompts` is listed, except one that accepts
 # only `--yes` (YES_ONLY in tests/stewardship/test_pk_admin.py, which checks
 # this list).
-PROMPTING="integration_backup-key_confirm integration_key_replace test_sample test_families digest_weekly-request export_financial export_directory export_postal export_archive delivery_resend delivery_refusal-clear delivery_bounce-report portal_maintenance_set files_delete history_confirm history_remove system_backup-now system_debug-off system_debug-allow system_refresh-accept system_mail-clear export_family-timeline census_resolve integration_confirm integration_key_finish-switching send_confirm followup_bulk followup_roster-bulk users_email-leaders information_decide limitations_decide pledges_decide"
+PROMPTING="integration_backup-key_confirm integration_key_replace test_sample test_families digest_weekly-request export_financial export_directory export_postal export_archive delivery_resend delivery_refusal-clear delivery_bounce-report portal_maintenance_set files_delete history_confirm history_remove system_backup-now system_debug-off system_debug-allow system_refresh-accept system_mail-clear export_family-timeline census_resolve integration_confirm integration_key_finish-switching send_confirm followup_bulk followup_roster-bulk users_email-leaders information_decide limitations_decide pledges_decide go-live_start go-live_refresh-again go-live_stop go-live_confirm go-live_cancel census_update-confirm census_update-rerun"
 
 # Commands that take a value the wrapper reads itself: an integration key,
 # a new backup public key or a backup key proof code. The value is never an

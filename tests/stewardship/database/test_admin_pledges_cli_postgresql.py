@@ -106,8 +106,11 @@ def test_counts_and_the_page_s_files(response_service, google, cli):  # noqa: F8
         "total": 1,
         "stages": {
             "to_review": 1,
+            "conflict": 0,
             "to_enter_by_hand": 0,
             "entered_by_hand": 0,
+            "entered_incorrectly": 0,
+            "confirmed": 0,
             "ignored": 0,
         },
     }

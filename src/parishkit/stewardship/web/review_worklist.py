@@ -21,7 +21,7 @@ What a reader is offered never decides what is allowed: each stream's
 service and its database guards refuse an action the reader may not take.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Protocol
 from urllib.parse import urlencode
 from uuid import UUID, uuid4
@@ -143,6 +143,18 @@ WORDS = {
     ),
 }
 
+# Entered incorrectly's two fixes (#1737), worded for that stage: the mark is
+# made again once ParishSoft is corrected. Back to review keeps its words;
+# its dialog says what follows (``INCORRECT_BODIES``).
+INCORRECT_WORDS = {
+    Action.ENTERED_BY_HAND: replace(
+        WORDS[Action.ENTERED_BY_HAND],
+        label="Mark {name} entered by hand again",
+        title_one="Mark {name} entered by hand again?",
+        done="marked entered by hand again.",
+    ),
+}
+
 # The status look (ui-v1.css .status-*) a selected icon is filled with: an
 # accepted decision or a mark in force is the Working look, Ignored (nothing
 # carried forward) the neutral one.
@@ -191,6 +203,18 @@ BODIES = {
     Action.HANDLED: "Record that this was handled. This is final.",
     Action.BACK_TO_REVIEW: "The item goes back to To review, to be decided again.",
 }
+# What an Entered incorrectly row's dialogs say (#1737): the two ways to fix
+# it, as the review pipeline spec names them.
+INCORRECT_BODIES = {
+    Action.ENTERED_BY_HAND: (
+        "Record that you corrected this in ParishSoft. Check ParishSoft first: "
+        "the next refresh checks it again."
+    ),
+    Action.BACK_TO_REVIEW: (
+        "The item goes back to To review. If ParishSoft's value is right, edit "
+        "the item to that value."
+    ),
+}
 REOPEN_BODY = "The ignored item goes back to To review. Say why it is reopened."
 REOPEN = "reopen"
 # The choice of an action whose decision records no note (a Ministry roster
@@ -201,6 +225,14 @@ BULK_BODY = (
     "Each item is recorded as its own icon would record it. If someone "
     "else changed one of them first, nothing is recorded."
 )
+
+
+def words_for(action, stage):
+    """How ``action`` is worded on an item at ``stage``: its own words, or
+    Entered incorrectly's for the mark made again there (#1737)."""
+    if stage is Stage.ENTERED_INCORRECTLY:
+        return INCORRECT_WORDS.get(action, WORDS[action])
+    return WORDS[action]
 
 
 def selected_actions(placement):
@@ -257,7 +289,7 @@ def row_icons(
     for action in ROW_ORDER:
         if action not in offered and action not in selected:
             continue
-        words = WORDS[action]
+        words = words_for(action, placement.stage)
         on = action in selected
         icons.append(
             {
@@ -383,6 +415,56 @@ def decision_label(placement):
     return " ".join(parts)
 
 
+@dataclass(frozen=True, slots=True)
+class Remark:
+    """How a row words making its Entered by hand mark again (``remark``).
+
+    ``label`` names the icon ("Correct … of {name}"), ``title_one`` the
+    dialog, ``done`` what it announces and ``body`` what the dialog says.
+    """
+
+    icon: str
+    label: str
+    title_one: str
+    done: str
+    body: str
+
+
+def remark_icon(words, row, prefix, *, name):
+    """The icon that makes a row's Entered by hand mark again, in ``words``
+    (a ``Remark``).
+
+    It opens the row's own Entered by hand dialog (``entered_template``) and
+    posts Entered by hand, so the stream's service tells the mark made again
+    from a first one. It records the same state again, so it is no toggle;
+    the mark in force stays drawn selected beside it, and focus returns to
+    that mark once the row is redrawn (the first ``data-row-action`` match).
+    """
+    return {
+        "action": Action.ENTERED_BY_HAND.value,
+        "icon": words.icon,
+        "label": words.label.format(name=name),
+        "title": words.label.format(name=name),
+        "selected": False,
+        "css": "icon-button",
+        "focus": Action.ENTERED_BY_HAND.value,
+        "pressed": None,
+        "post": urlencode(
+            {
+                "decide": Action.ENTERED_BY_HAND.value,
+                "version": row["version"],
+                "request_key": uuid4(),
+            }
+        ),
+        "dialog": f"{prefix}-entered-dialog-{row['id']}",
+        "title_one": words.title_one,
+        "done": "{name} " + words.done,
+        "choice": "",
+        "body": words.body,
+        "remark": True,
+    }
+
+
 def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
     """Give one row what its cells, box and icons need.
 
@@ -391,7 +473,12 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
     dialog serves every row. Back to review on an Ignored item carries the
     ``reopen`` choice, which makes the dialog's note required, and a
     ``silent`` action the ``no_note`` choice, which hides it (ui-v1.js
-    data-confirm-choice).
+    data-confirm-choice). A row whose Entered by hand asks for fields of its
+    own (``entered_template``: a census New Member's ParishSoft Member ID,
+    #1749) opens a dialog of its own for it, drawn per row as Edit's is.
+    A row that may make its Entered by hand mark again over the one in force
+    (``remark``: a census New Member's Member ID correction, #1773) gains
+    that icon (``remark_icon``) after its selected mark.
     """
     placement = row["placement"]
     name = row["name"]
@@ -413,17 +500,20 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
     )
     key = uuid4()
     reopen = placement.stage is Stage.IGNORED
+    own_entered = bool(row.get("entered_template"))
     for icon in icons:
         if icon["selected"]:
             continue
         action = Action(icon["action"])
-        words = WORDS[action]
+        words = words_for(action, placement.stage)
         icon["post"] = urlencode(
             {"decide": action.value, "version": row["version"], "request_key": key}
         )
         icon["dialog"] = (
             f"{prefix}-edit-dialog-{row['id']}"
             if action is Action.EDIT
+            else f"{prefix}-entered-dialog-{row['id']}"
+            if action is Action.ENTERED_BY_HAND and own_entered
             else f"{prefix}-decide-dialog"
         )
         icon["title_one"] = words.title_one
@@ -432,11 +522,24 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
         icon["choice"] = (
             NO_NOTE if action in silent else REOPEN if back and reopen else ""
         )
-        icon["body"] = (
-            REOPEN_BODY if icon["choice"] else BODIES.get(action, DECIDE_BODY)
+        bodies = (
+            INCORRECT_BODIES if placement.stage is Stage.ENTERED_INCORRECTLY else BODIES
         )
+        icon["body"] = (
+            REOPEN_BODY if icon["choice"] else bodies.get(action, DECIDE_BODY)
+        )
+    remark = row.get("remark")
+    if remark is not None and any(
+        icon["action"] == Action.ENTERED_BY_HAND and icon["selected"] for icon in icons
+    ):
+        icons.append(remark_icon(remark, row, prefix, name=name))
     row["icons"] = icons
-    kinds = [icon["action"] for icon in icons if not icon["selected"]]
+    # A remark is one row at a time: it asks for the row's own fields.
+    kinds = [
+        icon["action"]
+        for icon in icons
+        if not icon["selected"] and not icon.get("remark")
+    ]
     row["kinds"] = " ".join(kind for kind in kinds if Action(kind) in BULK)
     # A bulk Back to review asks for a note while a ticked row is Ignored.
     row["choice"] = REOPEN if reopen else ""
@@ -455,11 +558,22 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
     row["decision_label"] = decision_label(placement)
     if row.get("now_matches"):
         row["decision_label"] = f"{row['decision_label']} {NOW_MATCHES}".strip()
+    # A stream's own line about the row's stage (a census change a refresh
+    # put back in Conflict says why, #1749).
+    if row.get("stage_note"):
+        row["decision_label"] = f"{row['decision_label']} {row['stage_note']}".strip()
     row["edit_form"] = f"{prefix}-edit-{row['id']}"
     row["edit_dialog"] = f"{prefix}-edit-dialog-{row['id']}"
     row["edit_hint"] = f"{prefix}-edit-hint-{row['id']}"
     row["offers_edit"] = any(
         icon["action"] == Action.EDIT and not icon["selected"] for icon in icons
+    )
+    row["entered_form"] = f"{prefix}-entered-{row['id']}"
+    row["entered_dialog"] = f"{prefix}-entered-dialog-{row['id']}"
+    row["entered_hint"] = f"{prefix}-entered-hint-{row['id']}"
+    row["offers_entered"] = own_entered and any(
+        icon["action"] == Action.ENTERED_BY_HAND and not icon["selected"]
+        for icon in icons
     )
     # The ParishSoft now cell shows only where the value is in question.
     row["shows_now"] = placement.stage in (
@@ -612,8 +726,12 @@ def build(
     and ``caption`` the table's name; optionally ``leads`` (the reader
     leads its Ministry), ``by_hand`` (a By hand census change),
     ``not_seen`` (the Not seen in ParishSoft flag), ``now_matches``
-    (ParishSoft now holds an Ignored item's Family answer) and ``withheld``
-    (actions this item cannot take). ``roles`` is the reader's role set.
+    (ParishSoft now holds an Ignored item's Family answer), ``stage_note``
+    (the stream's own line under the stage), ``entered_template`` (the
+    fields its Entered by hand asks for, in a dialog of its own), ``remark``
+    (a ``Remark``: the row may make its Entered by hand mark again, in that
+    dialog) and ``withheld`` (actions this item cannot take). ``roles`` is
+    the reader's role set.
     ``stage`` is the Stage filter's value and ``fields`` the stream's other
     filters, posted by every form; ``baseline`` and ``reviewer`` say whether
     the stream has those columns. ``address`` is the view's own address
@@ -663,6 +781,30 @@ def page_address(action, pairs):
     """
     kept = [(name, value) for name, value in pairs if value not in ("", None)]
     return f"{action}?{urlencode(kept)}" if kept else action
+
+
+# The Submitted From / Through filter Census changes and Additional
+# information offered until #1888, with its browser zone. A page drawn
+# before then, a bookmark or a typed address may still send them: the
+# pages drop them unread (no error page, no redirect), while the
+# ``pk-admin`` commands keep their own date options.
+RETIRED_DATES = frozenset({"start", "end", "zone"})
+
+
+def drop_retired_dates(parameters):
+    """Remove the retired date filter's fields from a mutable QueryDict copy."""
+    for name in RETIRED_DATES:
+        parameters.pop(name, None)
+    return parameters
+
+
+def page_fields(values):
+    """A query's ``form_values`` without the retired date fields.
+
+    The pages' forms carry no date field (#1888); the shared query classes
+    keep theirs for ``pk-admin``, whose output is unchanged.
+    """
+    return {name: value for name, value in values.items() if name not in RETIRED_DATES}
 
 
 # --- The decision POST ------------------------------------------------------
