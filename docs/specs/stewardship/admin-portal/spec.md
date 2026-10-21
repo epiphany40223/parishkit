@@ -3933,13 +3933,12 @@ live.
   schedules", after the (empty) Scheduled emails table, drawn as the table
   draws saved schedules and marked "Not saved yet": the initial invitation on
   the campaign's start date at 9:00 AM in the campaign's time zone, one
-  reminder seven days before its end date at 9:00 AM, and the Weekly Admin
-  digest every Monday at 6:00 AM (there is no configured default, so this is
-  the default; #1404, 2026-10-17, changed from 8:00 AM 2026-10-19; once
-  [report emails](../report-emails/spec.md) replace the digests, the
-  Daily report and Weekly report are offered instead, as
-  [starting points](../report-emails/spec.md#campaign-wizard-starting-points));
-  like every schedule, they are shown in the browser's time
+  reminder seven days before its end date at 9:00 AM. No Weekly Admin digest
+  is proposed, because [report emails](../report-emails/spec.md) replace the
+  digests and a digest schedule can no longer be added; the Daily report and
+  Weekly report are offered instead as
+  [starting points](../report-emails/spec.md#campaign-wizard-starting-points)
+  when that page ships (#1786). Like every schedule, they are shown in the browser's time
   ([dates and times](../ui-conventions/spec.md#dates-and-times)). Each sends
   the first saved email of its mail type. A mail type with no saved email is
   left out, and so is the reminder when its day would not fall after the

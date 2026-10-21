@@ -70,13 +70,12 @@ def test_add_these_schedules_and_continue(page, component_origin, axe_source, wi
     panel = page.locator("#suggested-schedules")
     visible(panel)
     rows = panel.locator("tbody tr")
-    assert rows.count() == 3
-    assert [rows.nth(index).locator("th").inner_text() for index in range(3)] == [
+    assert rows.count() == 2
+    assert [rows.nth(index).locator("th").inner_text() for index in range(2)] == [
         "Initial invitation",
         "Reminder 1",
-        "Weekly Admin digest",
     ]
-    assert panel.locator(".status-badge").all_inner_texts() == ["Not saved yet"] * 3
+    assert panel.locator(".status-badge").all_inner_texts() == ["Not saved yet"] * 2
     # Send times are drawn in the browser's zone, as every schedule's are.
     when = rows.nth(0).locator("time")
     assert re.search(r"\d{1,2}:\d{2}", when.inner_text())

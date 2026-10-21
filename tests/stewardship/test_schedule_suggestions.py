@@ -1,10 +1,10 @@
 """Dates and mail schedules' suggested starting schedules (#1404 PR 6a).
 
 ``schedule_suggestions`` works out the set from the campaign's values and
-saved emails alone: the Initial invitation on the start date at 9:00 AM, one
-Reminder seven days before the end date at 9:00 AM, and the Weekly Admin
-digest every Monday at 6:00 AM, each sending the first saved email of its
-mail type, with the rules that leave one out.
+saved emails alone: the Initial invitation on the start date at 9:00 AM and
+one Reminder seven days before the end date at 9:00 AM, each sending the
+first saved email of its mail type, with the rules that leave one out. No
+report is suggested (#1786).
 """
 
 from datetime import UTC, datetime
@@ -29,7 +29,7 @@ def values(**overrides):
 
 
 def test_the_full_set_sends_each_types_first_email():
-    """Initial, Reminder and Weekly digest, at the decided times."""
+    """Initial and Reminder, at the decided times; no report is suggested."""
     records = [
         content(OWNER, slot="welcome"),
         *emails("initial", "reminder", "weekly_digest", "initial"),
@@ -47,17 +47,11 @@ def test_the_full_set_sends_each_types_first_email():
             "time": "09:00",
             "template_version": records[2]["id"],
         },
-        {
-            "kind": "weekly_digest",
-            "weekday": 0,
-            "time": "06:00",
-            "template_version": records[3]["id"],
-        },
     ]
 
 
 def test_a_type_without_an_email_is_left_out():
-    """No reminder or digest email: only what can be sent is suggested."""
+    """No reminder email: only what can be sent is suggested."""
     entries = schedule_suggestions.entries(values(), emails("initial"), NOW)
     assert [entry["kind"] for entry in entries] == ["initial"]
     # Without an Initial invitation email nothing is suggested at all.
@@ -91,20 +85,16 @@ def test_rows_are_drawn_as_saved_schedules_marked_not_saved_yet():
     assert [row.label for row in rows] == [
         "Initial invitation",
         "Reminder 1",
-        "Weekly Admin digest",
     ]
     assert {row.status_label for row in rows} == {"Not saved yet"}
     assert not any(row.read_only for row in rows)
     assert [row.email for row in rows] == [
         "name of initial",
         "name of reminder",
-        "name of weekly_digest",
     ]
     # 9:00 AM in the parish zone (Eastern daylight time on these dates).
     assert rows[0].due == datetime(2054, 10, 1, 13, tzinfo=UTC)
     assert rows[1].due == datetime(2054, 10, 24, 13, tzinfo=UTC)
-    assert rows[2].weekday == "Monday" and rows[2].due is None
-    assert rows[2].next_due is not None
 
 
 def test_nothing_is_suggested_once_the_initial_send_time_has_passed():
@@ -117,7 +107,6 @@ def test_nothing_is_suggested_once_the_initial_send_time_has_passed():
     assert [entry["kind"] for entry in kinds] == [
         "initial",
         "reminder",
-        "weekly_digest",
     ]
     assert schedule_suggestions.entries(values(), records, at) == []
     assert schedule_suggestions.rows(values(), records, OWNER, at, {}) == []
