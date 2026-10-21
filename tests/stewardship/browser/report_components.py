@@ -32,6 +32,11 @@ REAL = reverse("admin:response_dashboard")
 # The figures status read's fixed answers (#1586, test_report_figures.py).
 FIGURES_PENDING = "/figures-status-pending"
 FIGURES_NEWER = "/figures-status-newer"
+# The Response dashboard that could not read its figures (#1586), and its
+# slow figures status's answers: still nothing newer, then figures ready.
+UNAVAILABLE = "/participation-unavailable"
+FIGURES_RETRY = "/figures-status-retry"
+FIGURES_RETRY_NEWER = "/figures-status-retry-newer"
 
 
 # Answered after a pause (see the server in conftest.py): applying this
@@ -236,6 +241,27 @@ def components(context, admin):
         page
         | statistics_panel(refreshed)
         | figures_status("dashboard", "historical", UUID(int=50), False),
+    )
+    # The page that could not read its figures (#1586): Families by stage
+    # and the unavailable line, its figures status beside it at the slow
+    # retry pace; its status answers, and the same page's re-read once
+    # figures are ready (the later page above).
+    pages[UNAVAILABLE] = (
+        "response-dashboard",
+        viewing(
+            ReportQuery(timezone="America/Los_Angeles"),
+            participation_unavailable=True,
+            participation_cause="facts",
+            **figures_status("dashboard", "historical", None, False, retry=True),
+        ),
+    )
+    pages[FIGURES_RETRY] = (
+        "report-figures-status",
+        figures_status("dashboard", "historical", None, False, retry=True),
+    )
+    pages[FIGURES_RETRY_NEWER] = (
+        "report-figures-status",
+        figures_status("dashboard", "historical", None, False, newer=True, retry=True),
     )
     # The status read's answers: still Updating, and newer figures ready.
     pages[FIGURES_PENDING] = (

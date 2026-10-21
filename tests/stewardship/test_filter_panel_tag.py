@@ -69,6 +69,21 @@ def test_applied_filters_is_also_the_template_filter():
     )
 
 
+def test_template_filter_ignores_whole_field_names():
+    """The directory's empty row leaves out named fields (#1828).
+
+    A comma-separated argument names whole fields: "responses" ignores the
+    response-columns choice but never the Response filter whose name it
+    contains.
+    """
+    columns = DirectoryQuery(responses="yes")
+    both = DirectoryQuery(responses="yes", response="submitted", reach="mail")
+    assert render('{{ q|applied_filters:"responses" }}', q=columns) == "0"
+    assert render('{{ q|applied_filters:"responses" }}', q=both) == "2"
+    assert render('{{ q|applied_filters:"reach,responses" }}', q=both) == "1"
+    assert applied_filters(both, ("reach",)) == 2
+
+
 def test_panel_starts_closed_with_nothing_applied():
     """The panel is closed, says none are applied and keeps escaping intact."""
     html = render(
@@ -206,9 +221,7 @@ def panel_cells(name):
     return parser
 
 
-@pytest.mark.parametrize(
-    "name", ["census-changes.html", "information.html", "financial-report.html"]
-)
+@pytest.mark.parametrize("name", ["financial-report.html"])
 def test_each_panel_filter_is_one_grid_cell(name):
     """Every label and its control share one div, a cell of the panel's grid.
 

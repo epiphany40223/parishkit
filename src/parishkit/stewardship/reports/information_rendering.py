@@ -167,18 +167,30 @@ def information_csv(document, output):
 
 
 def information_xlsx(document, output):
-    """Literal cells retain complete values; metadata survives empty reports too."""
+    """Literal cells retain complete values; metadata survives empty reports too.
+
+    A document about one subject may have ``title_rows`` (label, value pairs,
+    the Family timeline's Family, code, campaign and time): they open the
+    table's sheet, then a blank row, then the table, as a packet's Ministry
+    details do (reports spec, "File design"; #1841).
+    """
     from openpyxl import Workbook
     from openpyxl.styles import Alignment
 
-    from .xlsx_design import describe, style_information, style_table
+    from .xlsx_design import describe, style_details, style_information, style_table
 
+    titles = tuple(getattr(document, "title_rows", ()))
+    # The table's heading row: right after the title rows and a blank row.
+    head = len(titles) + 2 if titles else 1
     book = Workbook()
     try:
         sheet = book.active
         sheet.title = document.sheet_name
+        for row_index, (label, value) in enumerate(titles, 1):
+            xlsx_cell(sheet, row_index, 1, label)
+            xlsx_cell(sheet, row_index, 2, value)
         for row_index, values in enumerate(
-            chain((document.headings,), document.rows), 1
+            chain((document.headings,), document.rows), head
         ):
             for column, value in enumerate(values, 1):
                 cell = xlsx_cell(sheet, row_index, column, value)
@@ -187,10 +199,19 @@ def information_xlsx(document, output):
         # stays in view while scrolling across its contact columns.
         style_table(
             sheet,
+            header_row=head,
             widths={"Submitted text": 70, "Staff notes": 70},
             freeze_first_column=document.headings[0] == "Family",
             title=document.title,
         )
+        if titles:
+            # Styled after the table, which sized the columns the values span.
+            style_details(
+                sheet,
+                range(1, len(titles) + 1),
+                widths=False,
+                span=len(document.headings),
+            )
         metadata = book.create_sheet("Report information")
         for index, (key, value) in enumerate(
             chain(document.metadata, (("Text representation", FORMAT_NOTE),)), 1

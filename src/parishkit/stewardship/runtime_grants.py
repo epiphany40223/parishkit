@@ -450,11 +450,21 @@ DEBUG_OFF_CLEAR_FUNCTION = "stewardship_debug_off_clear_v2()"
 PUBLICATION_AUDITED_FUNCTION = (
     "stewardship_publication_audited_v1(text, uuid, uuid, jsonb)"
 )
+# Added Member links (#1670, migration 0141): the links a promoted
+# snapshot's evidence supports, which promotion records, the quick update's
+# skip check asks and the link table's guard checks again. Identifiers only;
+# the worker has no grant on the answers it reads.
+ADDED_MEMBER_CANDIDATES_FUNCTION = "stewardship_added_member_candidates_v1(uuid, uuid)"
 # Point-in-time exports (#1398, migration 0109): the scheduler discards the
 # saved data of every ended export, a small batch at a time, through the
 # owner-run discard functions (reports.export_cleanup.produce_discards); a
 # batch of 0 only asks whether any is due.
 EXPORT_DISCARD_FUNCTION = "stewardship_export_discard_due_v1(integer)"
+# The pledges a refresh re-evaluates (0135, #1747, superseding 0134's v1 of
+# #1704), with each one's carried-forward, marked and baseline amounts and
+# latest check: the source worker's one read of them, so it is granted no
+# response answers or decision rows.
+PLEDGE_REFRESH_ITEMS_FUNCTION = "stewardship_pledge_refresh_items_v2(uuid, uuid, uuid)"
 # Publication plans and outcomes (#528, DAT-09.01, migration 0087): the
 # worker writes a preflight's plan and each write attempt's outcome; web
 # reads them all and writes only an Administrator's confirmation.
@@ -493,6 +503,11 @@ CLOSURE_FUNCTIONS = {
     ),
     # Ministry leader changes (0070, #1034) follow 0069.
     LEADER_CHANGES_FUNCTION: ("stewardship_accounts", "0018_leader_changes"),
+    # Added Member links (0141, #1670, provisional number).
+    ADDED_MEMBER_CANDIDATES_FUNCTION: (
+        "stewardship_responses",
+        "0021_added_member_links",
+    ),
     # Mail dispatch's one token read (0073, #389 L1) follows 0072.
     DISPATCH_TOKEN_FUNCTION: ("stewardship_jobs", "0025_dispatch_token_access"),
     # The daily limit's resume time (0076, #530) follows 0075.
@@ -547,6 +562,8 @@ CLOSURE_FUNCTIONS = {
     ),
     # The Email Ministry leaders review (0120, #1592).
     LEADER_EMAILS_FUNCTION: ("stewardship_jobs", "0035_leader_emails"),
+    # The pledges a refresh re-evaluates (0135, provisional, #1747).
+    PLEDGE_REFRESH_ITEMS_FUNCTION: ("stewardship_reports", "0034_pledge_conflicts"),
 }
 
 
@@ -600,6 +617,11 @@ CLOSURE_TABLES = {
         "stewardship_reports",
         "0020_comparison_exports",
     ),
+    # The Response dashboard's Summary capture (0142, #1557).
+    "stewardship_participation_export_snapshot": (
+        "stewardship_reports",
+        "0036_participation_summary",
+    ),
     # A delivered email's follow-ups to addresses refused for now (0077, #806).
     "stewardship_outbox_address_retry": ("stewardship_jobs", "0027_address_retry"),
     # System health's debug-off switch (0078, #530), which web sets and reads.
@@ -624,6 +646,18 @@ CLOSURE_TABLES = {
     # An Administrator's review of an Automatic census change (0096, #528),
     # which web records and reads.
     "stewardship_proposal_review": ("stewardship_responses", "0006_proposal_review"),
+    # Review decisions on cannot-participate and cannot-attend answers
+    # (0126, #1685), which web records and reads.
+    "stewardship_limitation_review": (
+        "stewardship_responses",
+        "0013_information_limitation_review",
+    ),
+    # A census change the parish added and its later step (0129, #1710),
+    # which web records and reads.
+    **dict.fromkeys(
+        ("stewardship_census_addition", "stewardship_census_addition_resolution"),
+        ("stewardship_responses", "0015_census_additions"),
+    ),
     # A Campaign setup step an Administrator kept as is (0105, #1404), which
     # web records and reads.
     "stewardship_campaign_setup_review": (
@@ -639,6 +673,32 @@ CLOSURE_TABLES = {
             "stewardship_leader_email_recipient",
         ),
         ("stewardship_jobs", "0035_leader_emails"),
+    ),
+    # The baseline refresh re-evaluation's checks and their start (0132,
+    # #1689, provisional number): the worker records checks in promotion,
+    # and web and the worker read both.
+    **dict.fromkeys(
+        ("stewardship_refresh_check", "stewardship_refresh_check_start"),
+        ("stewardship_workflows", "0004_refresh_checks"),
+    ),
+    # A pledge's review history (0127, provisional number, #1686), which
+    # web records and reads.
+    "stewardship_pledge_review": ("stewardship_reports", "0032_pledge_review"),
+    # A decided pledge's refresh checks (0134, provisional number, #1704),
+    # which the worker records in promotion and web and the worker read.
+    "stewardship_pledge_refresh_check": (
+        "stewardship_reports",
+        "0033_pledge_refresh_checks",
+    ),
+    # A To review pledge's refresh checks (0135, provisional number, #1747),
+    # which the worker records in promotion and web and the worker read.
+    "stewardship_pledge_open_check": ("stewardship_reports", "0034_pledge_conflicts"),
+    # Added Member links (0141, #1670, provisional number): the worker
+    # records them in promotion, and web and the worker read them in the
+    # Ministry selections.
+    "stewardship_added_member_link": (
+        "stewardship_responses",
+        "0021_added_member_links",
     ),
 }
 
@@ -660,6 +720,12 @@ CLOSURE_COLUMNS = {
     ("stewardship_daily_digest_ready", "funnel_chart"): (
         "stewardship_reports",
         "0022_digest_funnel_charts",
+    ),
+    # The review pipeline's Ministry Edit (0131, #1684): web updates a
+    # request's edited Ministry with its paired revision.
+    ("stewardship_ministry_request", "reviewed_ministry_duid"): (
+        "stewardship_workflows",
+        "0003_ministry_review_pipeline",
     ),
 }
 
@@ -767,7 +833,8 @@ def runtime_functions(role, *, target=None):
     and, for an Administrator, reads the emails meant for one address and
     the addresses of a Sent mail page's reports and notices (#1562).
     The general worker asks whether a publication plan's or outcome's audit
-    event is recorded (#528), since it cannot read audit rows itself.
+    event is recorded (#528), since it cannot read audit rows itself, and
+    which added Member links a promoted snapshot supports (#1670).
     The scheduler discards ended exports' saved data (#1398), through the
     owner-run batch that rechecks each export has ended.
     Every login a running service or an operator command uses reads whether
@@ -829,6 +896,8 @@ def runtime_functions(role, *, target=None):
                 DEBUG_OFF_FUNCTION,
                 ARCHIVE_ANSWERS_FUNCTION,
                 PUBLICATION_AUDITED_FUNCTION,
+                PLEDGE_REFRESH_ITEMS_FUNCTION,
+                ADDED_MEMBER_CANDIDATES_FUNCTION,
             },
             "download": {LEADER_SCOPE_FUNCTION},
             ServiceRole.ADMIN_RECOVERY: {
@@ -923,6 +992,27 @@ def runtime_grants(role, *, target=None):
             for table in PUBLICATION_WORKER_TABLES:
                 tables[table] = {"SELECT", "INSERT"}
             tables["stewardship_publication_confirmation"] = {"SELECT"}
+            # Refresh checks (#1689): promotion records one per final census
+            # change or decided Ministry request whose outcome changed, and
+            # reads the latest ones, the Not seen start and each request's
+            # Entered in ParishSoft tick. Its guard admits INSERT alone.
+            tables["stewardship_refresh_check"] = {"SELECT", "INSERT"}
+            tables["stewardship_refresh_check_start"] = {"SELECT"}
+            tables.setdefault("stewardship_ministry_roster_entry", set()).add("SELECT")
+            # A census change a later response of the Family replaced gets
+            # no check (#1737): promotion and the check's guard compare the
+            # responses' places in the Family's order.
+            columns.setdefault("stewardship_submission", {}).setdefault(
+                "SELECT", set()
+            ).update({"family_version", "mode"})
+            # A decided pledge's refresh checks (#1704): promotion reads the
+            # decided pledges through their definer selection
+            # (PLEDGE_REFRESH_ITEMS_FUNCTION) and records a check whose
+            # outcome changed. Its guard admits INSERT alone.
+            tables["stewardship_pledge_refresh_check"] = {"SELECT", "INSERT"}
+            # A To review pledge's refresh checks (#1747), recorded the same
+            # way; the definer selection gives their state.
+            tables["stewardship_pledge_open_check"] = {"SELECT", "INSERT"}
             add_service_status_housekeeping_grants(tables, columns)
         else:
             add_service_status_writer_grants(tables, columns)

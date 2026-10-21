@@ -506,7 +506,8 @@ def test_reports_and_notices_name_their_administrator(response_service, google):
     assert own.status_code == 200
     page = own.content.decode()
     assert "Administrator email" in page
-    assert "Resolve this email" not in page
+    # A notice belongs to no campaign: nothing to answer or send (#1563).
+    assert 'id="outcome-heading"' in page
     assert 'name="action"' not in page
     # By address, in any case: that Administrator's notice only.
     status, html = sent_mail(browser, recipient="Morgan@Example.org")

@@ -1,4 +1,12 @@
-"""Passive Production status and exact, current-Admin catch-up retry controls."""
+"""Passive Production status and exact, current-Admin catch-up retry controls.
+
+The page's Retry control (``progress``'s ``control``) is signed without a
+time, so every read of the same failure draws the same text: the page's
+self-updating region stays unchanged between polls, and no page age
+reaches the Administrator. ``retry_shown`` mints the owner's own
+five-minute control (``retry``'s ``token``) at the click, from the failure
+read then (admin-portal spec, "Go live page", Activation; #1585 slice 5).
+"""
 
 from uuid import UUID, uuid4
 
@@ -25,11 +33,14 @@ from parishkit.stewardship.web.refusals import (
     return_link,
 )
 
+from .admin_caller import as_caller
 from .admin_editing import editable_configuration, principal
 from .confirmation_digest_outcomes import digest_outcomes
 from .withdrawal_commands import available
 
 SALT = "stewardship-production-progress-v1"
+# The page's own Retry control, signed without a time (``progress``).
+PAGE_SALT = "stewardship-production-progress-page-v1"
 
 COUNT_LABELS = (
     ("family_messages", _("Family message candidates")),
@@ -48,8 +59,8 @@ COUNT_LABELS = (
 def _current(caller, service, campaign_id, *, passive=True):
     """Authorize before reading any receipt; historical campaigns cannot retry.
 
-    ``caller`` is an ``AdminCaller``, or (until PR 12 moves ``retry``) the
-    retry's request, which ``principal`` converts.
+    ``caller`` is an ``AdminCaller``, or the page's retry request, which
+    ``principal`` converts.
     """
     actor = principal(caller, service, passive=passive)
     configuration = editable_configuration(service)
@@ -104,7 +115,7 @@ def progress(caller, service, campaign_id):
                 for key, label in COUNT_LABELS
             ]
             if task and task.state == "failed" and not ready and eligible(demand):
-                control = signing.dumps(
+                control = signing.Signer(salt=PAGE_SALT).sign_object(
                     {
                         "actor": str(actor.identity),
                         "campaign": str(campaign_id),
@@ -112,9 +123,7 @@ def progress(caller, service, campaign_id):
                         "demand": str(demand.pk),
                         "task": str(task.pk),
                         "version": task.version,
-                        "key": str(uuid4()),
-                    },
-                    salt=SALT,
+                    }
                 )
         return {
             "campaign": receipt.request.campaign,
@@ -128,6 +137,41 @@ def progress(caller, service, campaign_id):
                 receipt.request.campaign, editable_configuration(service), _now()
             ),
         }
+
+
+def retry_shown(request, service, campaign_id, *, control):
+    """Retry the failed mail preparation the page's ``control`` names, once.
+
+    A forged control is refused (``BadSignature``, a 400), and another
+    sign-in's is a 403. When the control names the failure the page shows
+    now, the owner's control is minted now and the preparation retried
+    through ``retry``, which re-checks the Administrator, the campaign and
+    the task version; read and retry share one work transaction, so the
+    failure checked is the one retried. Otherwise it was already retried (a
+    resend after a lost answer) or has moved on: nothing is done, and the
+    page shows how it stands now. Returns whether a retry was asked for.
+    ``request`` is the page's request or ``pk-admin go-live retry``'s
+    ``AdminCaller`` (#1809).
+    """
+    if type(control) is not str or len(control) > 4096:
+        raise signing.BadSignature("Invalid Production progress control.")
+    binding = signing.Signer(salt=PAGE_SALT).unsign_object(control)
+    if type(binding) is not dict:
+        raise signing.BadSignature("Invalid Production progress control.")
+    with work_transaction():
+        actor = principal(request, service)
+        if binding.get("actor") != str(actor.identity):
+            raise PermissionError("Production retry belongs to another sign-in.")
+        shown = progress(as_caller(request), service, campaign_id)
+        if shown["control"] != control:
+            return False
+        retry(
+            request,
+            service,
+            campaign_id,
+            token=signing.dumps(binding | {"key": str(uuid4())}, salt=SALT),
+        )
+    return True
 
 
 def retry(request, service, campaign_id, *, token):
@@ -168,7 +212,7 @@ def retry(request, service, campaign_id, *, token):
             pk=UUID(binding["task"]), root_id=demand.task_root_id
         )
         if task.version != binding["version"]:
-            raise StaleRecordError("Preparation changed; refresh before retrying.")
+            raise StaleRecordError("Preparation changed since the step was read.")
 
         def admit(action, status):
             """An identical retry replay also requires current authority and scope."""
@@ -191,5 +235,5 @@ def retry(request, service, campaign_id, *, token):
             )
         except TaskRetryConflict:
             raise StaleRecordError(
-                "Preparation changed; refresh before retrying."
+                "Preparation changed since the step was read."
             ) from None

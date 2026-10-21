@@ -1,0 +1,38 @@
+{% load i18n stewardship %}{% comment %}
+  The Start go-live dialog's answers (admin-portal spec, "Go live page",
+  Check; #1585 slice 2), drawn by go_live_views._start_answer into the
+  shared review dialog of go-live-check.html, never a page of its own.
+  ``start`` holds the step's result:
+
+  - ``preview`` and ``token``: a full review. Three short lines say what
+    happens next, then the Testing cleanup counts with a link to Testing
+    submissions, and the caution that deleted Testing data cannot be
+    restored. Apply posts the signed preview (data-review-preview); Apply is
+    the acknowledgement that cleanup cannot be undone, so there is no tick
+    box.
+  - ``refused``: why Start was refused, marked data-review-refusal so the
+    dialog shows it as drawn: another Administrator's Start already applied, with the way to the step in progress; a stop
+    still running or failed; the campaign closed; the public web address
+    check, run again at Apply, failed; or something the check covered
+    changed. Go-live the same Administrator already started is no refusal:
+    go_live_views answers it with the step in progress instead.
+{% endcomment %}{% if start.preview %}{% with cleanup=start.preview.cleanup %}<div data-review-answer data-review-done="{% translate 'Go-live started.' %}">
+<ul id="go-live-start-summary" class="go-live-start-steps">
+<li>{% translate "Testing data is deleted." %}</li>
+<li>{% translate "The system refreshes ParishSoft data and prepares new Family links by itself." %}</li>
+<li>{% translate "Nothing reaches Families until you confirm." %}</li>
+</ul>
+<dl><dt>{% translate "Testing submissions" %}</dt><dd>{{ cleanup.submissions|number }}</dd>
+<dt>{% translate "Families with Testing submissions" %}</dt><dd>{{ cleanup.families|number }}</dd>
+<dt>{% translate "Testing messages" %}</dt><dd>{{ cleanup.messages|number }}</dd>
+<dt>{% translate "Testing records to delete" %}</dt><dd>{{ cleanup.inventory.total|number }}</dd></dl>
+<p><a href="{% url 'admin:go_live_families' %}">{% translate "View Testing submissions" %}</a></p>
+<p class="notice">{% translate "Deleted Testing data cannot be restored, even if you stop going live later. Testing links and codes stop working now." %}</p>
+<input type="hidden" name="preview_token" value="{{ start.token }}" data-review-preview>
+</div>{% endwith %}
+{% else %}<div data-review-refusal>{% if start.refused == "started" %}<p data-go-live-start-refused="started">{% translate "Another Administrator already started go-live." %}</p>{% if start.stage.in_progress_url %}<p><a href="{{ start.stage.in_progress_url }}">{% translate "Continue to Prepare" %}</a></p>{% endif %}
+{% elif start.refused == "stopping" %}<p data-go-live-start-refused="stopping">{% translate "Go-live is still stopping. Start go-live is available again once stopping finishes." %}</p>
+{% elif start.refused == "stop_failed" %}<p data-go-live-start-refused="stop_failed">{% translate "Stopping go-live did not finish. Close this, then select Retry stopping go-live." %}</p>
+{% elif start.refused == "origin_unverified" %}<p data-go-live-start-refused="origin_unverified">{% translate "The public web address check failed or timed out, so go-live was not started. Check the site's configured URL and its DNS record, then select Check readiness and public web address again." %}</p>
+{% elif start.refused == "closed" %}<p data-go-live-start-refused="closed">{% translate "The campaign has ended, so it cannot go live." %}</p>
+{% else %}<p data-go-live-start-refused="changed">{% translate "Something the check covered changed since it ran, so go-live was not started. Close this, then select Check readiness and public web address again." %}</p>{% endif %}</div>{% endif %}

@@ -1474,6 +1474,17 @@
       }
       if (node instanceof HTMLFormElement) {
         syncHidden(node, fresh);
+        // A menu whose choices carry counts (the review worklist's Stage,
+        // #1684) takes the fresh page's choice labels, so its counts follow
+        // a decision or an Apply; the reader's own choice is kept.
+        fresh.querySelectorAll("select[data-sync-options][id]").forEach((copy) => {
+          const menu = node.querySelector(`#${CSS.escape(copy.id)}`);
+          if (!menu) return;
+          [...copy.options].forEach((option, index) => {
+            const shown = menu.options[index];
+            if (shown?.value === option.value) shown.textContent = option.textContent;
+          });
+        });
         // The state a submit-on-change box's form now shows (see
         // reconcileBoxes); the box keeps the reader's own tick.
         fresh.querySelectorAll("[data-submit-on-change][data-applied][id]").forEach((copy) => {
@@ -2271,6 +2282,131 @@
   if (window.history.state?.inPlaceView && document.querySelector(VIEWS_FORM)) {
     window.history.replaceState({...window.history.state, inPlaceView: null}, "");
   }
+  // Tabs (ui-conventions "Tabs", #1712; components/tabs.html): a tablist of
+  // in-place links (role="tab", data-in-place, data-in-place-only) above
+  // one panel per tab, each panel a region of its own (data-in-place-own).
+  // The server draws only the chosen tab's panel (data-tab-loaded). The
+  // first time another tab is chosen, its panel is fetched from the tab's
+  // address and swapped in alone through refreshTable, so the request,
+  // fallback, focus and announcement follow the in-place mechanism's rules;
+  // a drawn panel stays until the next load, so choosing its tab again needs
+  // no request. The chosen tab is the address's bare ?tab=. Choosing a tab
+  // adds a history entry (a tab is navigation, not a view choice, whose
+  // address is replaced), and Back or Forward shows the tab the address
+  // names, quietly. Activation is manual (a click, Enter or Space), so
+  // arrowing past a tab never loads its panel.
+  const TAB_ROW = "[data-tabs] > [role=tablist]";
+  const tabRowOf = (node) => node.closest(TAB_ROW);
+  const tabsIn = (row) => [...row.querySelectorAll(":scope > [role=tab]")];
+  const tabUnavailable = (tab) => tab.getAttribute("aria-disabled") === "true";
+  const tabPanel = (tab) => document.getElementById(tab.getAttribute("aria-controls") || "");
+  // Mark `tab` chosen in its row: aria-selected, the roving tabindex (only
+  // the chosen tab is in the Tab order) and the one panel shown. The panel
+  // area first keeps the height the reader's place needs (heldHeight), so a
+  // shorter panel, or an empty one while it loads, never pulls the page and
+  // the tab row down under the pointer (#736).
+  const showTab = (row, tab) => {
+    const area = row.closest("[data-tabs]").querySelector(".tabs-panels");
+    if (area) area.style.minHeight = heldHeight(area);
+    tabsIn(row).forEach((other) => {
+      const chosen = other === tab;
+      other.setAttribute("aria-selected", String(chosen));
+      if (!tabUnavailable(other)) other.tabIndex = chosen ? 0 : -1;
+      const panel = tabPanel(other);
+      if (panel) panel.hidden = !chosen;
+    });
+  };
+  // Choose `tab`: show it, put its address (without the panel's fragment,
+  // so a reload does not scroll to it) in a new history entry, and fetch its
+  // panel unless it is already drawn. `popped` is a Back or Forward: the
+  // entry is already there, and the switch is quiet (focus stays where it
+  // is and nothing is announced). An unavailable tab does nothing.
+  const chooseTab = (tab, popped = false) => {
+    const row = tabRowOf(tab);
+    const panel = tabPanel(tab);
+    if (!row || !panel || tabUnavailable(tab)) return;
+    if (tab.getAttribute("aria-selected") === "true") {
+      if (!popped) tab.focus({preventScroll: true});
+      return;
+    }
+    // A save in flight holds every in-place control, as refreshTable does.
+    if (saving) {
+      announce("Still saving…");
+      return;
+    }
+    const address = new URL(tab.href);
+    address.hash = "";
+    if (!popped) window.history.pushState(null, "", address.href);
+    showTab(row, tab);
+    if (panel.hasAttribute("data-tab-loaded")) {
+      // Another tab's panel still loading is overtaken, so its answer can
+      // neither show that panel nor take focus. Its region keeps no busy
+      // mark: the aborted request leaves it to a newer request, and there
+      // is none. Any other read in flight (a control inside a panel) is
+      // left to finish, as its region is that panel's own.
+      if (tableRequest && busyRegion?.matches("[role=tabpanel]:not([data-tab-loaded])")) {
+        tableRequest.abort();
+        busyRegion.removeAttribute("aria-busy");
+      }
+      // A click does not focus a link in every engine (Safari).
+      if (!popped) tab.focus({preventScroll: true});
+      return;
+    }
+    // With no usable answer the page is loaded the ordinary way. The address
+    // already names the tab, and assigning it with the panel's fragment
+    // would only scroll to the empty panel, so the fallback reloads.
+    refreshTable(panel, tab, address.href, {method: "GET"}, () => window.location.reload(),
+      {owner: tab, quiet: popped});
+  };
+  // A plain click on a tab, or Enter on it (a link's click), chooses it.
+  // Capture phase, so the generic a[data-in-place] handler (above, which
+  // listens in the bubble phase) never sees
+  // it; a modified click (a new tab or window) keeps its ordinary meaning.
+  document.addEventListener("click", (event) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey
+        || event.shiftKey || event.altKey || !(event.target instanceof Element)) return;
+    const tab = event.target.closest("[role=tab]");
+    if (!tab || !tabRowOf(tab)) return;
+    event.preventDefault();
+    chooseTab(tab);
+  }, true);
+  // The tab row's keys (WAI-ARIA tabs, manual activation): Left and Right
+  // move focus to the previous and next tab, wrapping at the ends, Home and
+  // End to the first and last, and Space chooses the focused tab without
+  // scrolling the page. An unavailable tab is reached too, so its tip
+  // (admin-menu-v1.js) says why it cannot be opened. Moving focus scrolls
+  // only the row's own box when the tab is out of its view.
+  document.addEventListener("keydown", (event) => {
+    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey
+        || !(event.target instanceof Element)) return;
+    const tab = event.target.closest("[role=tab]");
+    const row = tab && tabRowOf(tab);
+    if (!row) return;
+    if (event.key === " ") {
+      event.preventDefault();
+      chooseTab(tab);
+      return;
+    }
+    const tabs = tabsIn(row);
+    const at = tabs.indexOf(tab);
+    const step = {ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: tabs.length - 1}[event.key];
+    if (step === undefined) return;
+    event.preventDefault();
+    const next = tabs[(step + tabs.length) % tabs.length];
+    next.focus({preventScroll: true});
+    next.scrollIntoView({block: "nearest", inline: "nearest"});
+  });
+  // Back or Forward to an entry of this page shows the tab its address
+  // names (the row's default when it names none), in place.
+  window.addEventListener("popstate", () => {
+    const row = document.querySelector(TAB_ROW);
+    if (!row) return;
+    const key = new URL(window.location.href).searchParams.get("tab");
+    const tabs = tabsIn(row).filter((tab) => !tabUnavailable(tab));
+    const tab = tabs.find((each) => each.dataset.tab === key)
+      || tabs.find((each) => each.dataset.tab === row.dataset.tabsDefault) || tabs[0];
+    if (tab) chooseTab(tab, true);
+  });
   // Clear filters (#1651, UX conventions "Clear filters"): the button
   // beside a filter form's apply button (components/filter-actions.html)
   // puts every filter back to the page's default in place. The server owns
@@ -2727,11 +2863,15 @@
     });
     return new Set(keys.map((key) => key.replace(/#\d+$/, "")));
   };
+  // Campaign images' slot upload forms in the campaign wizard
+  // (data-wizard-upload) whose enabled file field holds a chosen image.
+  const chosenUploads = () => [...document.querySelectorAll("form[data-wizard-upload]")]
+    .filter((upload) => [...upload.querySelectorAll('input[type="file"]')]
+      .some((node) => !node.matches(":disabled") && node.files?.length > 0));
   // A Campaign setup step's Continue (#1404, campaign-step-actions.html)
   // records the step kept as is, so it waits while the page holds a change:
-  // a change-gated form that differs from its saved values, or an upload
-  // form (Campaign images) with a file chosen but not uploaded yet. The
-  // page's own Review stays the way on. Its hint after the row keeps its
+  // a change-gated form that differs from its saved values. The page's own
+  // Review stays the way on. Its hint after the row keeps its
   // line (data-idle hides it with visibility), and names the button only
   // while it is shown.
   // On a step that saves directly (Campaign settings, Share options, #1404
@@ -2741,13 +2881,16 @@
   // again. The one not offered is data-step-inactive (hidden with
   // visibility, so the cell keeps its width) and inert. Save and continue
   // is described by the form's complete hint, as the page's Save was.
+  // On Campaign images (data-direct-uploads, #1404 PR 4c) the change is a
+  // chosen image in any slot's upload form (chosenUploads, below).
   const gateStepContinue = () => {
     const form = document.querySelector("form[data-campaign-continue]");
     if (!form) return;
     const save = document.querySelector("[data-campaign-save]");
     const direct = save?.form;
     if (direct?.matches("[data-direct-save]")) {
-      const changed = direct.hasAttribute("data-holds-change");
+      const changed = direct.hasAttribute("data-direct-uploads")
+        ? chosenUploads().length > 0 : direct.hasAttribute("data-holds-change");
       form.toggleAttribute("data-step-inactive", changed);
       form.inert = changed;
       save.toggleAttribute("data-step-inactive", !changed);
@@ -2756,9 +2899,7 @@
       if (hint) save.setAttribute("aria-describedby", hint.id);
       return;
     }
-    const held = Boolean(document.querySelector("form[data-require-change][data-holds-change]"))
-      || [...document.querySelectorAll('form input[type="file"]')]
-        .some((node) => !node.matches(":disabled") && node.files?.length > 0);
+    const held = Boolean(document.querySelector("form[data-require-change][data-holds-change]"));
     const hint = document.getElementById("campaign-continue-hint");
     hint?.toggleAttribute("data-idle", !held);
     form.querySelectorAll("button[type=submit]").forEach((node) => {
@@ -2898,7 +3039,7 @@
   const submitControls = (form) => [...form.elements].filter((node) =>
     (node instanceof HTMLButtonElement || node instanceof HTMLInputElement)
     && node.type === "submit");
-  // Forms marked data-submit-waits (export queueing) can legitimately wait
+  // Forms marked data-submit-waits (long server steps) can legitimately wait
   // on the server for a minute or two, e.g. behind a ParishSoft refresh's
   // final step. They stay busy much longer and say so visibly, instead of
   // silently re-enabling after ten seconds, which looked like nothing happened.
@@ -2925,9 +3066,9 @@
       note = document.createElement("p");
       note.className = "help submit-wait";
       note.setAttribute("role", "status");
-      // An export's buttons share one row (export-actions.html, #1679), so
-      // the note goes below the row rather than between two buttons.
-      (submitter?.closest(".export-actions") || submitter || form).insertAdjacentElement("afterend", note);
+      // An export row's submit never reaches here: exports download in
+      // place (below, #1778), with their note in the row's own status line.
+      (submitter || form).insertAdjacentElement("afterend", note);
       waitNotes.set(form, note);
     }
     note.textContent = text;
@@ -2973,6 +3114,327 @@
       if (window.crypto?.randomUUID) input.value = window.crypto.randomUUID();
     });
   });
+
+  // Every Admin export downloads in place (#1778; ui-conventions "Downloads
+  // happen in place"): a submit from an export row (.export-actions) or a
+  // form[data-export-in-place] (the campaign archive) is posted with fetch,
+  // and the page never leaves. The answer is one of:
+  // - the file itself (an in-memory export such as Limitations), saved at
+  //   once;
+  // - a redirect to the export's status address (a queued export), which is
+  //   then read passively at the live-status pace (live-status-v1.js) until
+  //   its [data-export-state] says ready; its Download form is then posted
+  //   the same way and the file saved;
+  // - a refusal, said in the row's reserved status line
+  //   ([data-export-status]), in the server's own words where it gives some.
+  // The clicked button is busy and the form's other buttons wait until the
+  // file arrives or the export is refused; after five seconds the line says
+  // the export is still being worked on (a queued export's own status
+  // sentence, such as why it has not started, #340). The server is
+  // unchanged: freezing, auditing, limits, windows and one-use download
+  // grants are its own.
+  const EXPORT_PACE = [2000, 2000, 3000, 4000, 6000, 8000, 10000];
+  // A queued export is usually ready in seconds. Past this the page stops
+  // watching, so a stuck export never holds the buttons for good.
+  const EXPORT_GIVE_UP_MS = 30 * 60 * 1000;
+  // How long one request may take before it counts as unanswered: the
+  // start may wait behind a ParishSoft refresh's last step (up to two
+  // minutes), a status read is a quick passive page, and a download carries
+  // the file.
+  const EXPORT_START_MS = 180000;
+  const EXPORT_READ_MS = 30000;
+  const EXPORT_DOWNLOAD_MS = 120000;
+  // A ready file's Download answered busy (503) is posted again at the pace
+  // this many times; trying the button again would start a new export.
+  const EXPORT_DOWNLOAD_TRIES = 5;
+  const EXPORT_TEXT = {
+    waiting: "Still working… If a ParishSoft refresh is finishing, this can take up to two minutes. Keep this page open.",
+    failed: "The file could not be created. Try again; if it fails again, check System logs or ask your system administrator.",
+    gone: "This export ended before it was downloaded. Try again.",
+    cancelled: "This export was cancelled. Try again.",
+    signedOut: "Couldn't check on the file: your sign-in may have ended. Reload the page or sign in again.",
+    slow: "The file is taking longer than usual. Try again later; if it keeps happening, ask your system administrator.",
+    noAnswer: "No response from the server yet. Your export may still have been started; try again in a few minutes.",
+    unreachable: "The server could not be reached. Check your connection, then try again.",
+    empty: "No file came back. Reload the page, then try again.",
+  };
+  // The running exports, keyed by their form's id (the form itself when it
+  // has none), each with the clicked button's {name, value}. An in-place
+  // redraw may bring in a fresh copy of a running export's form (Campaign
+  // comparison's Compare on day) or of its buttons (Ministry requests'
+  // synced row), which must show the export busy and must not start a
+  // second one beside it.
+  const runningExports = new Map();
+  const exportKey = (form) => form.id || form;
+  // fetch() that gives up after ``ms`` (an AbortError, as a lost answer).
+  const fetchWithin = (url, init, ms) => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), ms);
+    return fetch(url, {...init, credentials: "same-origin", signal: controller.signal})
+      .finally(() => window.clearTimeout(timer));
+  };
+  // The file name a download answer gives (RFC 6266's filename* first, as
+  // web/exports.py writes both), or a plain fallback.
+  const downloadName = (header) => {
+    const value = header || "";
+    const encoded = /filename\*=UTF-8''([^;]+)/i.exec(value);
+    if (encoded) {
+      try { return decodeURIComponent(encoded[1]); } catch { /* fall through */ }
+    }
+    return /filename="([^"]+)"/i.exec(value)?.[1] || "export";
+  };
+  // Whether an answer is the file itself (web/exports.download_headers).
+  const isDownload = (response) => response.ok
+    && /^\s*attachment\b/i.test(response.headers.get("Content-Disposition") || "");
+  // Whether an unanswered or failed read may be tried again: no answer, a
+  // server or proxy failure, or too many requests. Any other refusal is
+  // final.
+  const transient = (response) => !response || response.status >= 500 || response.status === 429;
+  // Save a download answer's body through a blob link with the server's
+  // file name; the link is never part of the page.
+  const saveDownload = async (response) => {
+    const name = downloadName(response.headers.get("Content-Disposition"));
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    link.hidden = true;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    // Long enough for the browser to have taken the file.
+    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+  };
+  // At most the first two sentences of ``text``: an error page's notice is
+  // written for a whole page, and the row's line keeps room for two lines.
+  const twoSentences = (text) => squeeze(text).split(/(?<=[.!?])\s+/).slice(0, 2).join(" ");
+  // The sentence a refusal gives: a JSON refusal's message; a plain-text
+  // answer's text; for the page drawn again (the campaign archive's 409),
+  // the reason its copy of ``form`` names on a button; for an error page,
+  // its notice's first paragraph; else the status's default.
+  const exportRefusal = (response, text, form) => {
+    const status = response.status;
+    const type = response.headers.get("Content-Type") || "";
+    try {
+      if (JSON.parse(text)?.refusal) return refusalText(status, text);
+    } catch { /* not JSON: a page or plain text */ }
+    if (/^text\/plain\b/i.test(type)) return twoSentences(text) || refusalText(status, "");
+    const parsed = new DOMParser().parseFromString(text || "", "text/html");
+    const same = form?.id ? parsed.getElementById(form.id) : null;
+    if (same) {
+      const reason = [...same.querySelectorAll("button[aria-describedby]")]
+        .flatMap((node) => node.getAttribute("aria-describedby").split(/\s+/))
+        .map((id) => squeeze(parsed.getElementById(id)?.textContent)).find(Boolean);
+      return reason || refusalText(status, "");
+    }
+    const node = parsed.querySelector("main [role=alert], main [role=status], main .notice-error");
+    const sentence = node && (node.matches("p") ? node : node.querySelector("p") || node);
+    return twoSentences(sentence?.textContent) || refusalText(status, "");
+  };
+  // The form an export runs for, as the page has it now: an in-place
+  // redraw (a Compare-on-day change, a refreshed table) may have replaced
+  // it with a fresh copy of the same id.
+  const liveForm = (form) => (form.isConnected || !form.id ? form
+    : document.getElementById(form.id) || form);
+  // Say ``text`` in the export row's reserved line, in the error colour for
+  // a refusal. An unchanged sentence is left alone, so a screen reader does
+  // not hear it again at every status read.
+  const sayExport = (form, text, error = false) => {
+    const line = liveForm(form).querySelector("[data-export-status]");
+    if (!line) return;
+    if (line.textContent !== text) line.textContent = text;
+    line.classList.toggle("error", Boolean(text) && error);
+  };
+  // A one-time request key is spent by each start, so the next click is a
+  // new export (a reused key would be refused as an already-bound form).
+  const renewRequestKey = (form) => {
+    const input = liveForm(form).querySelector('input[type="hidden"][name="request_key"]');
+    if (input && window.crypto?.randomUUID) input.value = window.crypto.randomUUID();
+  };
+  // The status page's own sentence for the row's line: a copy without the
+  // parts hidden from screen readers (queue-wait.html's ticking "queued"
+  // time, which would make every read a new announcement), its times in
+  // this browser's zone as date-format-v1.js shows them, and at most two
+  // sentences.
+  const statusSentence = (node) => {
+    if (!node) return "";
+    const copy = node.cloneNode(true);
+    copy.querySelectorAll("[aria-hidden=true]").forEach((part) => part.remove());
+    window.ParishDates?.localize(copy);
+    return twoSentences(copy.textContent);
+  };
+  // A queued export's status page answer: {state, pending, sentence,
+  // download, token} from it, {retry} for a read worth repeating, or
+  // {refusal} when it settled otherwise.
+  const parseExport = (response, text) => {
+    if (transient(response)) return {retry: true};
+    if (response.status === 410) {
+      // An ended export, or a campaign that is no longer current, whose
+      // typed refusal says so.
+      try {
+        if (JSON.parse(text)?.refusal) return {refusal: refusalText(410, text)};
+      } catch { /* the fixed "no longer available" page */ }
+      return {refusal: EXPORT_TEXT.gone};
+    }
+    const parsed = new DOMParser().parseFromString(text, "text/html");
+    const region = parsed.querySelector("[data-export-state]");
+    // Signed out (a redirect to sign-in) or no longer allowed.
+    if (!region) {
+      return {refusal: response.ok ? EXPORT_TEXT.signedOut : exportRefusal(response, text, null)};
+    }
+    const download = region.querySelector("form[data-live-autosubmit]");
+    return {
+      state: region.getAttribute("data-export-state"),
+      pending: region.hasAttribute("data-live-pending"),
+      sentence: statusSentence(region.querySelector(".export-state")),
+      download: download && new URL(download.getAttribute("action"), response.url).href,
+      token: download?.querySelector('input[name="csrfmiddlewaretoken"]')?.value,
+    };
+  };
+  // One passive read of the status address, as live-status-v1.js reads it.
+  // An unanswered read is {retry}, as a server failure is.
+  const readExport = async (url) => {
+    try {
+      const response = await fetchWithin(url, {cache: "no-store",
+        headers: {Accept: "text/html"}}, EXPORT_READ_MS);
+      return parseExport(response, await response.text());
+    } catch {
+      return {retry: true};
+    }
+  };
+  // Post a ready file's Download and save the file. A busy answer (503) is
+  // posted again at the pace; returns the refusal sentence, or "" once the
+  // file is saved.
+  const downloadExport = async (status) => {
+    for (let attempt = 0; ; attempt += 1) {
+      const body = new URLSearchParams();
+      if (status.token) body.set("csrfmiddlewaretoken", status.token);
+      let response;
+      try {
+        response = await fetchWithin(status.download, {method: "POST", body,
+          headers: {"X-Requested-With": "fetch"}}, EXPORT_DOWNLOAD_MS);
+      } catch {
+        return EXPORT_TEXT.unreachable;
+      }
+      if (isDownload(response)) {
+        await saveDownload(response);
+        return "";
+      }
+      if (response.status === 410) return EXPORT_TEXT.gone;
+      const text = await response.text();
+      if (response.status !== 503 || attempt + 1 >= EXPORT_DOWNLOAD_TRIES) {
+        return exportRefusal(response, text, null);
+      }
+      await pause(EXPORT_PACE[Math.min(attempt, EXPORT_PACE.length - 1)]);
+    }
+  };
+  // Follow a queued export from its first reading until it is ready, then
+  // download it. ``progress`` is the export's {slow, sentence}: the latest
+  // status sentence is kept there, and said once the export is slow. A
+  // read worth repeating (no answer, a server failure) is read again at
+  // the pace, as live-status-v1.js does. Returns the refusal sentence, or
+  // "" once the file is saved.
+  const followExport = async (form, url, first, progress) => {
+    const started = Date.now();
+    let status = first;
+    for (let attempt = 0; ; attempt += 1) {
+      if (status.refusal) return status.refusal;
+      if (!status.retry) {
+        if (status.state === "ready" && status.download) return downloadExport(status);
+        if (!status.pending) {
+          return status.state === "cancelled" ? EXPORT_TEXT.cancelled : EXPORT_TEXT.failed;
+        }
+        progress.sentence = status.sentence;
+        if (progress.slow) sayExport(form, status.sentence || EXPORT_TEXT.waiting);
+      }
+      if (Date.now() - started > EXPORT_GIVE_UP_MS) return EXPORT_TEXT.slow;
+      await pause(EXPORT_PACE[Math.min(attempt, EXPORT_PACE.length - 1)]);
+      // A hidden tab is not read; it is checked again once shown.
+      while (document.visibilityState !== "visible") await pause(1000);
+      status = await readExport(url);
+    }
+  };
+  // Show ``form``'s export busy (or released): the form aria-busy, its
+  // buttons waiting, the clicked one (by name and value) with its spinner.
+  // One helper for an export's start, a redraw while it runs and its end.
+  const showExportBusy = (form, clicked, busy) => {
+    if (busy) form.setAttribute("aria-busy", "true");
+    else form.removeAttribute("aria-busy");
+    submitControls(form).forEach((control) => {
+      const mine = Boolean(clicked) && control.name === clicked.name
+        && control.value === clicked.value;
+      control.classList.toggle("is-busy", busy && mine);
+      if (busy) control.setAttribute("aria-disabled", "true");
+      else control.removeAttribute("aria-disabled");
+    });
+  };
+  // A redraw brought in fresh copies: show each running export busy again
+  // on the form as the page has it now.
+  document.addEventListener("parishkit:swap", () => {
+    runningExports.forEach((clicked, key) => {
+      const form = typeof key === "string" ? document.getElementById(key) : key;
+      if (form instanceof HTMLFormElement && form.isConnected) showExportBusy(form, clicked, true);
+    });
+  });
+  // Run one export for ``form`` from the clicked ``submitter``: mark the
+  // form busy, post it, save the file or follow the queued export, and say
+  // any refusal in the row's line. The buttons are released, on the form as
+  // the page has it then, whatever happens.
+  const exportInPlace = async (form, submitter) => {
+    const clicked = submitter ? {name: submitter.name, value: submitter.value} : null;
+    runningExports.set(exportKey(form), clicked);
+    showExportBusy(form, clicked, true);
+    busyStatus.textContent = "Working…";
+    sayExport(form, "");
+    // Five seconds in, the line says the export is still being worked on:
+    // its latest status sentence once there is one.
+    const progress = {slow: false, sentence: ""};
+    const timer = window.setTimeout(() => {
+      progress.slow = true;
+      sayExport(form, progress.sentence || EXPORT_TEXT.waiting);
+    }, 5000);
+    const fields = new FormData(form, submitter || undefined);
+    let refusal = "";
+    try {
+      const response = await fetchWithin(form.getAttribute("action") || "", {method: "POST",
+        body: new URLSearchParams(fields), headers: {"X-Requested-With": "fetch"}},
+      EXPORT_START_MS);
+      if (isDownload(response)) {
+        await saveDownload(response);
+      } else if (response.ok && response.redirected) {
+        // A queued export: the redirect's answer is the status address's
+        // first read (or, signed out, the sign-in page: no export state).
+        const first = parseExport(response, await response.text());
+        refusal = await followExport(form, response.url, first, progress);
+      } else {
+        const text = await response.text();
+        refusal = response.ok && !text ? EXPORT_TEXT.empty : exportRefusal(response, text, form);
+      }
+    } catch (error) {
+      refusal = error?.name === "AbortError" ? EXPORT_TEXT.noAnswer : EXPORT_TEXT.unreachable;
+    } finally {
+      window.clearTimeout(timer);
+      // Renewed whatever the answer: even a lost one may have reached the
+      // server and bound the key.
+      renewRequestKey(form);
+      runningExports.delete(exportKey(form));
+      [form, liveForm(form)].forEach((node) => showExportBusy(node, clicked, false));
+    }
+    sayExport(form, refusal, Boolean(refusal));
+    busyStatus.textContent = refusal ? "" : "Download started.";
+  };
+  // Capture phase, so this runs before the busy-state handler above, which
+  // leaves a submission script took over alone.
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (event.defaultPrevented || !(form instanceof HTMLFormElement)) return;
+    if (!form.hasAttribute("data-export-in-place") && !event.submitter?.closest(".export-actions")) return;
+    if (!sameOrigin(form.getAttribute("action") || "")) return;
+    event.preventDefault();
+    // A repeat (a double click, Enter pressed twice) while it runs is ignored.
+    if (runningExports.has(exportKey(form))) return;
+    exportInPlace(form, event.submitter);
+  }, true);
 
   // Required acknowledgments: a form's submit buttons stay disabled (muted by
   // button:disabled) until every visible [data-acknowledgment] checkbox that
@@ -3214,6 +3676,8 @@
   // The status poll's pace after the third failed follow-up read, then
   // after each later one.
   const FOLLOW_BACKOFF_MS = [30000, 60000];
+  // The pace of a figures status retrying figures it could not read.
+  const RETRY_PACE_MS = 60000;
   // Said when a read is refused, and when reads keep failing and will be
   // tried again; live-status-v1.js says the same (#1647).
   const UPDATES_REFUSED = "Couldn't check for updates. Reload the page or sign in again.";
@@ -3362,7 +3826,10 @@
     follow = null;
     const status = link.closest("[data-live-status]");
     if (!status) return;
-    const pace = FOLLOW_BACKOFF_MS[Math.min(followFailures - REREAD_FAILURES, FOLLOW_BACKOFF_MS.length - 1)];
+    // A region retrying figures it could not read (data-live-retry) never
+    // goes faster than its own 60 s (#1586).
+    const backoff = FOLLOW_BACKOFF_MS[Math.min(followFailures - REREAD_FAILURES, FOLLOW_BACKOFF_MS.length - 1)];
+    const pace = status.hasAttribute("data-live-retry") ? Math.max(backoff, RETRY_PACE_MS) : backoff;
     status.setAttribute("data-live-pending", "");
     status.setAttribute("data-live-interval", String(pace));
     status.dispatchEvent(new CustomEvent("parishkit:live-watch", {bubbles: true}));
@@ -3491,6 +3958,14 @@
       node.required = Boolean(control) && !control.disabled
         && control.validity?.valid !== false
         && anyValue(control, value, sameValue) !== negated;
+      // A label with both words (data-required-label, data-optional-label)
+      // says "required" only while the rule holds, so it follows the choice
+      // in place (the review worklist's note, required only to reopen an
+      // ignored item, #1681).
+      const label = node.labels?.[0];
+      if (label?.dataset.requiredLabel && label.dataset.optionalLabel) {
+        label.textContent = node.required ? label.dataset.requiredLabel : label.dataset.optionalLabel;
+      }
     });
   };
   const requireOne = (form) => {
@@ -3557,6 +4032,11 @@
       else if (field.dataset.clientError === hint) delete field.dataset.clientError;
     });
   };
+  // Whether a field still holds the value it was drawn with (a select: its
+  // drawn choice), for data-require-edit below.
+  const openedValue = (field) => (field instanceof HTMLSelectElement
+    ? [...field.options].every((option) => option.selected === option.defaultSelected)
+    : field.value === field.defaultValue);
   const gateComplete = (form) => {
     if (!form || !form.hasAttribute("data-require-complete")) return;
     requiredWhen(form);
@@ -3571,9 +4051,18 @@
       && SERVER_SPACE.test(node.value);
     // A live check (the follow-up contact time) marks a field it found in
     // error with data-client-error, whose text is the hint.
-    const missing = [...form.elements].find((node) => node.willValidate
+    const invalid = [...form.elements].find((node) => node.willValidate
       && !node.closest("[hidden]")
       && (node.hasAttribute("data-client-error") || !node.validity.valid || blank(node)));
+    // An editor marked data-require-edit (the review worklist's Edit, R38
+    // finding 4) also holds Save until one of its fields differs from the
+    // value it opened with, saying so in its data-unchanged-hint: saving
+    // the value the item already carries forward records no edit, only a
+    // plain Accept, which reads as a lost edit.
+    const unchanged = invalid ? null : [...form.querySelectorAll("[data-require-edit]")]
+      .find((group) => !group.closest("[hidden]") && [...group.querySelectorAll("[name]")]
+        .filter((field) => field.willValidate).every(openedValue));
+    const missing = invalid || unchanged?.querySelector("[name]") || null;
     const hint = form.querySelector("[data-complete-hint]");
     // An empty required field may say what to type (data-empty-hint) where
     // its data-missing-hint describes the format (a placeholder name, #563).
@@ -3585,7 +4074,9 @@
       // or going never moves what follows it (no layout shift: the System
       // logs table under its filter bar, #953). Any other hint hides.
       hint.hidden = !missing && hint.dataset.completeHint !== "reserve";
-      hint.textContent = missing
+      hint.textContent = unchanged
+        ? (unchanged.dataset.unchangedHint || "Change the value to save it.")
+        : missing
         ? (missing.dataset.clientError
           // An unreadable time entry (#398) or DUID list (#1577) says why
           // itself.
@@ -3683,7 +4174,13 @@
           });
         }
         controls.forEach((item) => {
-          item.disabled = !shown;
+          // A group inside another (the census address editor's State
+          // controls inside Add's "What changed" group, #1785) is sent only
+          // while every group around it is shown: showing the outer group
+          // never enables a control the inner rule hides, nor the inner
+          // one a control inside a hidden outer group.
+          item.disabled = !shown || showWhenUpdates.some((entry) => entry.wrapper !== wrapper
+            && entry.wrapper?.hidden && entry.wrapper.contains(item));
           // A hidden file field's size refusal goes with it (#1062).
           if (!shown && item.dataset.sizeRule) {
             item.setCustomValidity("");
@@ -3698,7 +4195,38 @@
       // buttons is listened to instead.
       (control instanceof RadioNodeList ? [...control] : [control])
         .forEach((item) => item.addEventListener("change", update));
-      showWhenUpdates.push({node, update});
+      showWhenUpdates.push({node, update, wrapper: hides ? wrapper : null});
+      update();
+    });
+  };
+  // Question-led choices (the Mail message page's resolution question,
+  // #1563). An element marked data-choice-panel="name=value" is the part of
+  // a question shown while the radio button group "name" has that value
+  // ("name=" while none is chosen yet). The group is found in the panel's
+  // nearest [data-choice-scope], and is in no form, so choosing an answer
+  // sends nothing: each answer is its own form, and only the chosen one is
+  // ever visible. A panel not chosen is hidden by visibility (ui-v1.css,
+  // [data-choice-hidden]) and made inert, never removed from the layout:
+  // every panel of a question shares one reserved grid cell (.choice-slot),
+  // so choosing, or changing, an answer never moves the button or what
+  // follows (#736). Applied again on pageshow, for a browser that restores
+  // a ticked radio button from history, and after an in-place swap.
+  let choiceUpdates = []; // {node, update} for each data-choice-panel
+  const wireChoices = (root) => {
+    within(root, "[data-choice-panel]").forEach((panel) => {
+      const [name, value] = panel.dataset.choicePanel.split("=");
+      const scope = panel.closest("[data-choice-scope]") || document;
+      const radios = [...scope.querySelectorAll("input[type=radio]")]
+        .filter((radio) => radio.name === name);
+      const update = () => {
+        if (!panel.isConnected) return;
+        const chosen = radios.find((radio) => radio.checked);
+        const shown = value === "" ? !chosen : chosen?.value === value;
+        panel.toggleAttribute("data-choice-hidden", !shown);
+        panel.inert = !shown;
+      };
+      radios.forEach((radio) => radio.addEventListener("change", update));
+      choiceUpdates.push({node: panel, update});
       update();
     });
   };
@@ -4225,12 +4753,14 @@
   const wireConditional = (root) => {
     wireMaxBytes(root);
     showWhenUpdates = showWhenUpdates.filter(({node}) => node.isConnected);
+    choiceUpdates = choiceUpdates.filter(({node}) => node.isConnected);
     lockedUpdates = lockedUpdates.filter(({node}) => node.isConnected);
     completeForms = completeForms.filter((form) => form.isConnected);
     notFutureChecks = notFutureChecks.filter(({date}) => date.isConnected);
     patternChecks = patternChecks.filter(({field}) => field.isConnected);
     liveChecks = liveChecks.filter(({form}) => form.isConnected);
     wireShowWhen(root);
+    wireChoices(root);
     wireLockedWhen(root);
     wireNotBefore(root);
     wirePattern(root);
@@ -4252,6 +4782,7 @@
   });
   window.addEventListener("pageshow", () => {
     showWhenUpdates.forEach(({update}) => update());
+    choiceUpdates.forEach(({update}) => update());
     lockedUpdates.forEach(({update}) => update());
     document.querySelectorAll("input[data-not-before]").forEach(checkNotBefore);
     patternChecks.forEach(({check}) => check());
@@ -4543,6 +5074,24 @@
     dialog.querySelector("[data-confirm-cancel]")?.addEventListener("click", () => {
       if (!confirming?.busy) dialog.close();
     });
+    // A review answer's typed field (data-review-require, the Confirm
+    // Production dialog's "Type Production to confirm", #1585) is gated
+    // while it is edited, and Enter in it is Apply, never a native submit of
+    // the Apply form it names: Apply always posts from acceptReview. The
+    // Enter that commits an input method's composition is not Apply.
+    dialog.addEventListener("input", (event) => {
+      if (event.target instanceof Element && event.target.matches("[data-review-require]")) gateReview(dialog);
+    });
+    dialog.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || event.isComposing || !(event.target instanceof Element)
+        || !event.target.matches("[data-review-require]")) return;
+      event.preventDefault();
+      const accept = dialog.querySelector("[data-confirm-accept]");
+      if (accept && !accept.disabled && !accept.hidden) accept.click();
+    });
+    dialog.querySelector("form[data-review-apply]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+    });
     dialog.querySelector("[data-confirm-accept]")?.addEventListener("click", (event) => {
       // A dialog with fields makes Confirm its form's submit button, so the
       // form's complete gate holds it (confirm-dialog.html fields_template);
@@ -4580,6 +5129,15 @@
     const values = {count: chosen.length.toLocaleString("en-US"), name: chosen[0].name || ""};
     dialog.querySelector("[data-confirm-title]").textContent = fillIn(
       chosen.length === 1 ? text("titleOne") : text("titleMany"), values);
+    // A caution for marked rows only (confirm-dialog.html caution_marked):
+    // said while some chosen row's control carries data-confirm-caution.
+    const caution = dialog.querySelector("[data-confirm-caution-marked]");
+    if (caution) {
+      caution.hidden = !(bulk
+        ? [...form.elements].some((box) => box.matches("input[data-select-row]:checked")
+          && !box.disabled && box.hasAttribute("data-confirm-caution"))
+        : opener.hasAttribute("data-confirm-caution"));
+    }
     const body = dialog.querySelector("[data-confirm-body]");
     if (body) {
       if (body.dataset.default === undefined) body.dataset.default = body.textContent;
@@ -4606,6 +5164,26 @@
         field.value = field.defaultValue;
       }
       field.dispatchEvent(new Event("change", {bubbles: true}));
+    });
+    // The review worklist's choice field (#1681): a nameless hidden input
+    // marked data-confirm-choice, which a data-required-when rule on the
+    // dialog's note reads, so one dialog asks for a note only when the
+    // action needs one. A row's icon gives its data-confirm-choice
+    // ("reopen" when it sends an Ignored item back to review); a bulk button's
+    // holds only while some ticked row's box carries the same choice, so
+    // sending items back to review in bulk asks for a reason only when it reopens an
+    // Ignored item (review pipeline spec, "Reviewed stage"). The "no_note"
+    // choice is an action that records no note (a Ministry roster tick, R39):
+    // it holds for every ticked row, and it hides the note (data-note-field),
+    // which data-confirm-reset has just emptied, so an empty one is posted.
+    const want = opener.dataset.confirmChoice || "";
+    const holds = !bulk || want === "no_note" || [...form.elements].some((box) =>
+      box.matches("input[data-select-row]:checked") && box.dataset.confirmChoice === want);
+    dialog.querySelectorAll("input[data-confirm-choice]").forEach((field) => {
+      field.value = want && holds ? want : "";
+    });
+    dialog.querySelectorAll("[data-note-field]").forEach((field) => {
+      field.hidden = want === "no_note";
     });
     if (form.hasAttribute("data-require-complete")) gateComplete(form);
     confirming = {
@@ -4690,8 +5268,13 @@
     try {
       ids = (JSON.parse(raw)?.errors || []).map((item) => item?.field_id).filter(Boolean);
     } catch { return false; }
-    const fields = [...new Set(ids)].map((id) => document.getElementById(id)
-      || state.form.elements.namedItem(id))
+    // A name two controls share (the census address editor's State: a
+    // drop-down for the United States, free text otherwise, #1785) is a
+    // RadioNodeList; the enabled one, which was sent, is marked.
+    const fields = [...new Set(ids)].flatMap((id) => {
+      const found = document.getElementById(id) || state.form.elements.namedItem(id);
+      return found instanceof RadioNodeList ? [...found] : [found];
+    })
       .filter((node) => node instanceof HTMLElement && state.dialog.contains(node)
         && node.matches("input, select, textarea") && !node.disabled);
     const list = state.dialog.querySelector(".errorlist[id]");
@@ -4833,9 +5416,13 @@
       return false;
     }
     onRecorded?.();
-    // Follow the change until it is applied (a passive status read).
+    // Follow the change until it is applied (a passive status read). A
+    // review dialog that leaves for the page Apply's answer redirected to
+    // (data-review-redraw="leave": Start go-live, #1585) follows nothing:
+    // that page follows its own work.
     const statusUrl = answer.response.url;
-    const {status, outcome} = await settleChange(statusUrl, changeStatus(answer.text));
+    const {status, outcome} = await settleChange(statusUrl,
+      dialog.dataset.reviewRedraw === "leave" ? null : changeStatus(answer.text));
     if (outcome === "waiting") {
       refuseConfirm(state, "The change is saved but not applied yet, so the list is unchanged for now.",
         {href: statusUrl, text: "See the change's status"});
@@ -4908,6 +5495,12 @@
     // returns focus to that row's first action once it is redrawn, so the
     // reader stays where they were; when the row is gone, the fallback.
     const row = state.opener.closest("tr[id]")?.id;
+    // A review worklist icon (data-row-action, #1681) returns focus to the
+    // same action's icon in the redrawn row, now drawn selected, so the
+    // reader hears the decision in force (data-focus-action names another
+    // when the decision is drawn on it: an Edit's is its Accept); otherwise
+    // to the row's first action, as above.
+    const kind = state.opener.dataset.focusAction || state.opener.dataset.rowAction || "";
     const fresh = dialog.hasAttribute("data-confirm-answer-page")
       ? new DOMParser().parseFromString(answer.text, "text/html")
       : await freshPage(region?.dataset.refreshUrl || window.location.href);
@@ -4916,8 +5509,10 @@
     dialog.close();
     const fallback = dialog.dataset.confirmFallback || "";
     redrawFrom(fresh);
+    const redrawn = row ? document.getElementById(row) : null;
     const target = (state.opener.isConnected && state.opener)
-      || (row && document.getElementById(row)?.querySelector("[data-confirm-open]:not(:disabled)"))
+      || (kind && redrawn?.querySelector(`[data-row-action="${CSS.escape(kind)}"]`))
+      || redrawn?.querySelector("[data-confirm-open]:not(:disabled)")
       || document.getElementById(fallback) || document.querySelector("main h1");
     target?.focus({preventScroll: true});
     target?.scrollIntoView({block: "nearest"});
@@ -5041,9 +5636,14 @@
   // a field named "action" shadows.
   const formUrl = (form) => new URL(form.getAttribute("action") || "", document.baseURI).href;
   // A form that names its pane's own reserved status line (Campaign images'
-  // slots, data-review-outcome) shows a refused Review there (#1410).
-  const paneLine = (form) => (form.dataset.reviewOutcome
-    ? document.getElementById(form.dataset.reviewOutcome) : null);
+  // slots, data-review-outcome) shows a refused Review there (#1410). A
+  // form inside a dialog of its own (the Campaign calendar's Move…, #1521)
+  // names its refusal line with data-review-refused instead, so a refusal
+  // stays in its dialog while Apply's status goes to the page's line.
+  const paneLine = (form) => {
+    const id = form.dataset.reviewRefused || form.dataset.reviewOutcome;
+    return id ? document.getElementById(id) : null;
+  };
   // A refusal written to a pane's line goes once it no longer applies: on
   // an edit of a form naming the line, when a Review from the pane is
   // accepted, or when the line takes another refusal. The pane's forms
@@ -5156,6 +5756,33 @@
     wireSummaryLinks(placed.parentElement);
     placed.focus();
   };
+  // Hold a review dialog's Apply until every field of its answer marked
+  // data-review-require is valid (prerequisite gates): the Confirm
+  // Production dialog's typed word, whose pattern ignores spaces around it,
+  // as the server does (#1585). While it holds, the reserved status line
+  // under the buttons says what is missing (the field's data-missing-hint)
+  // and describes Apply, so nothing moves when it clears. Not while Apply
+  // runs or after a refusal, which keeps Apply unavailable itself.
+  const gateReview = (dialog) => {
+    const fields = [...dialog.querySelectorAll("[data-review-body] [data-review-require]")];
+    const accept = dialog.querySelector("[data-confirm-accept]");
+    const status = dialog.querySelector("[data-confirm-status]");
+    if (!accept) return;
+    if (!fields.length) {
+      // Another answer in the same dialog: Apply no longer names the line.
+      if (status.id && accept.getAttribute("aria-describedby") === status.id) {
+        accept.removeAttribute("aria-describedby");
+      }
+      return;
+    }
+    if (confirming?.dialog !== dialog || confirming.busy
+      || !dialog.querySelector("[data-confirm-error]").hidden) return;
+    const missing = fields.find((field) => !field.checkValidity());
+    accept.disabled = Boolean(missing);
+    status.textContent = missing ? missing.dataset.missingHint || "" : "";
+    if (missing && status.id) accept.setAttribute("aria-describedby", status.id);
+    else accept.removeAttribute("aria-describedby");
+  };
   const openReview = (dialog, form, opener, answer, refusal) => {
     wireDialog(dialog);
     const apply = dialog.querySelector("form[data-review-apply]");
@@ -5216,6 +5843,7 @@
         // setup step, #1404), in place of the dialog's own.
         back: answer?.getAttribute("data-review-return") || "",
         backOutcome: answer?.getAttribute("data-review-return-outcome") || ""}};
+    gateReview(dialog);
     dialog.showModal();
     if (refusal) refuseConfirm(confirming, refusal);
     // The title first, so the reader hears what is reviewed.
@@ -5376,6 +6004,15 @@
     dialog.querySelector("[data-confirm-status]").textContent = dialog.dataset.applied || "Applied.";
     const text = [review.done, fillIn(dialog.dataset.appliedAt || "Applied at {time}.",
       {time: clockTime()})].filter(Boolean).join(" ");
+    // A dialog marked data-review-redraw="leave" (Start go-live, #1585)
+    // ends on the page Apply's answer redirected to, opened as a page: its
+    // address, not this one, is then the history entry a reload shows.
+    if (dialog.dataset.reviewRedraw === "leave" && sameOrigin(answer.response.url)) {
+      state.done = true;
+      dialog.close();
+      window.location.assign(answer.response.url);
+      return;
+    }
     const own = review.back && sameOrigin(review.back) ? review.back : "";
     const back = own || dialog.dataset.reviewReturn;
     const outcome = (own && review.backOutcome) || state.form.dataset.reviewOutcome || dialog.dataset.reviewOutcome || "";
@@ -5417,7 +6054,8 @@
 
   // A campaign wizard step's direct save (#1404 PR 4; UX conventions,
   // "Wizards", rules 4 and 5): a form marked data-direct-save (Campaign
-  // settings, Share options and the sub-pages that save, while the wizard
+  // settings, Share options, the sub-pages that save and Dates and mail
+  // schedules' suggested schedules, #1404 PR 6, while the wizard
   // applies) is posted by the action row's Save and continue (a sub-page's
   // Save and go back) without a page load and without the review dialog. The form is inert and aria-busy meanwhile, and the
   // row's reserved status line (#campaign-step-status) says "Saving…".
@@ -5449,6 +6087,53 @@
   //   When the page cannot be read again (the sign-in ended), Save and
   //   continue is held (data-save-spent-gated) and the line says to reload.
   const SAVE_UNREACHABLE = "The server could not be reached, so nothing was saved. Try again in a moment.";
+  // Campaign images' Save and continue (#1404 PR 4c) first stages each
+  // chosen image at its slot's own upload address (data-wizard-upload),
+  // one at a time, as an upload outside the wizard does; the answer is
+  // that upload's review, of which only the staged bundle is read. Each
+  // staged bundle becomes the save form's bundle_<slot> field, so a retry
+  // after a refusal stages only what is not staged yet; changing a slot's
+  // file drops its field (below). A refused image (status 400 drawing the
+  // page) is marked at its field and said in its slot's line; any other
+  // refusal is said in the row's line. An answer that is neither (the
+  // sign-in page once the session ended) holds Save and continue until a
+  // reload (``hold``), as a save whose status is lost does. Returns whether
+  // every chosen image is staged; ``finish`` or ``hold`` ends the save with
+  // a line otherwise.
+  const stageUploads = async (form, finish, hold) => {
+    for (const upload of chosenUploads()) {
+      const name = `bundle_${upload.dataset.wizardUpload}`;
+      if (form.elements.namedItem(name)) continue;
+      let answer = null;
+      try {
+        answer = await readPage(formUrl(upload), {method: "POST", body: new FormData(upload)});
+      } catch { /* no answer: said below */ }
+      if (!answer) {
+        finish(SAVE_UNREACHABLE);
+        return false;
+      }
+      const parsed = new DOMParser().parseFromString(answer.text, "text/html");
+      const bundle = answer.response.ok
+        ? parsed.querySelector('input[type=hidden][name="bundle"]')?.value : "";
+      if (!bundle) {
+        if (answer.response.ok) {
+          hold(`The image could not be uploaded. ${SAVE_RELOAD}`);
+        } else if (answer.response.status === 400 && parsed.getElementById(upload.id)) {
+          finish("");
+          showFieldErrors(upload, parsed);
+        } else {
+          finish(refusalText(answer.response.status, answer.text), refusalLink(answer.text));
+        }
+        return false;
+      }
+      const field = document.createElement("input");
+      field.type = "hidden";
+      field.name = name;
+      field.value = bundle;
+      form.append(field);
+    }
+    return true;
+  };
   const SAVE_RELOAD = "Reload the page to make another change.";
   const SAVE_STATUS_LOST = "The change was saved, but its status can no longer be checked: your sign-in ended or your account no longer has access. " + SAVE_RELOAD;
   const saveStep = async (form, submitter) => {
@@ -5467,29 +6152,42 @@
       }
     };
     const opener = submitter || form;
-    const body = new URLSearchParams(new FormData(form, submitter || undefined));
     // Read before the save: the form's drawn (saved) state against the
     // posted one. Only Campaign settings carries the note.
     const financial = form.elements.namedItem("financial_enabled");
     const removes = financial instanceof HTMLInputElement && financial.defaultChecked
       && !financial.checked;
-    form.setAttribute("aria-busy", "true");
+    // Campaign images (data-direct-uploads) stages from the slots' own
+    // forms, so the whole slots region is held: a file changed, or an image
+    // removed, while an upload is in flight would otherwise save an image
+    // the page no longer shows, or post from a redrawn region.
+    const busy = form.hasAttribute("data-direct-uploads")
+      ? form.closest("[data-in-place-region]") || form : form;
+    busy.setAttribute("aria-busy", "true");
     opener.setAttribute("aria-disabled", "true");
     opener.classList.add("is-busy");
-    form.inert = true;
+    busy.inert = true;
+    // The row's Continue (Continue without schedules for now beside Add
+    // these schedules and continue) waits too, so the step is not kept as
+    // is while its save is under way; each gets back its own state.
+    const paused = [...document.querySelectorAll("form[data-campaign-continue]")]
+      .map((node) => [node, node.inert]);
+    paused.forEach(([node]) => { node.inert = true; });
     say("Saving…");
     const finish = (text, link) => {
-      form.inert = false;
-      form.removeAttribute("aria-busy");
+      busy.inert = false;
+      paused.forEach(([node, inert]) => { node.inert = inert; });
+      busy.removeAttribute("aria-busy");
       opener.removeAttribute("aria-disabled");
       opener.classList.remove("is-busy");
       reviewing.delete(form);
       say(text, link);
     };
-    // Hold Save and continue for good (until a reload), saying why.
+    // Hold Save and continue (or Add these schedules and continue, #1404
+    // PR 6) for good (until a reload), saying why.
     const hold = (text, link) => {
       finish(text, link);
-      document.querySelectorAll("[data-campaign-save]")
+      document.querySelectorAll("[data-campaign-save], [data-campaign-add]")
         .forEach((node) => holdButton(node, "data-save-spent-gated"));
     };
     // The change is recorded but the page stays: keep what was typed (at
@@ -5512,6 +6210,9 @@
       form.elements.namedItem("request_key").value = key.value;
       finish(text, link);
     };
+    if (form.hasAttribute("data-direct-uploads") && !(await stageUploads(form, finish, hold))) return;
+    // Read once any images are staged, so the save names them.
+    const body = new URLSearchParams(new FormData(form, submitter || undefined));
     let answer = null;
     try {
       answer = await readPage(formUrl(form), {method: "POST", body});
@@ -5581,6 +6282,14 @@
     redrawFrom(fresh);
     if (!showOutcome("campaign-step-outcome", text)) announce(text);
   };
+  // A slot whose file changes after its image was staged stages it again.
+  document.addEventListener("change", (event) => {
+    const upload = event.target instanceof HTMLInputElement && event.target.type === "file"
+      && event.target.closest("form[data-wizard-upload]");
+    if (!upload) return;
+    document.querySelector(`form[data-direct-uploads] input[name="bundle_${upload.dataset.wizardUpload}"]`)
+      ?.remove();
+  });
   document.addEventListener("submit", (event) => {
     const form = event.target;
     if (event.defaultPrevented || !(form instanceof HTMLFormElement)

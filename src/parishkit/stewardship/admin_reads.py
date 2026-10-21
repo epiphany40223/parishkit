@@ -40,7 +40,8 @@ class Unavailable(Exception):
 class NotAvailable(Exception):
     """The record the command names does not exist (``not_available``, exit 1).
 
-    A missing task, an unknown campaign, or no current campaign at all. Only
+    A missing task, an unknown campaign, no current campaign at all, or the
+    first campaign can't be created now. Only
     this, never a bare ``LookupError``, is reported as ``not_available``.
     """
 
@@ -866,14 +867,15 @@ def _page_read(caller, service, actor, campaign_id, read):
 
 @dataclass(frozen=True)
 class GoLiveReadiness(ReadModel):
-    """Go-live readiness for the current Testing draft: codes and counts only.
+    """Go live readiness for the current Testing draft: codes and counts only.
 
     ``problems`` are the stored codes the page translates; ``checks_passed``
     is true when there are none (the public web address check and cleanup
-    still follow, in PR 12). ``version`` is the preview's binding digest,
-    which changes whenever anything the preview counts changes. The Admin
-    report recipients and the Testing Families are never shown: the
-    Families are an export (PR 12).
+    still follow: ``go-live preview`` and ``go-live start``). ``version``
+    is the preview's binding digest, which changes whenever anything the
+    preview counts changes. The Admin report recipients and the Testing
+    Families are never shown: the Families are ``go-live families``, a
+    streamed file.
     """
 
     campaign_id: UUID
@@ -958,7 +960,7 @@ class GoLiveReadiness(ReadModel):
 
 
 def read_go_live_readiness(caller, service, campaign_id):
-    """``go-live readiness``: the Go-live readiness page's read, without its forms.
+    """``go-live readiness``: the Go live page's Check step read, without its forms.
 
     Through ``go_live_inputs.collect_inputs`` under the work lock, as the
     page. The page records no view event, so neither does this. The

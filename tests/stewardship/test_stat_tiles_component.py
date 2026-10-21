@@ -20,8 +20,6 @@ from parishkit.stewardship.reports import (
     comparison_views,
     digest_presentation,
     financial_views,
-    limitation_views,
-    ministry_followup_views,
 )
 from parishkit.stewardship.reports.money import MoneyAmount
 from parishkit.stewardship.web.stat_tiles import StatTile, shown, tile
@@ -253,15 +251,6 @@ def test_home_family_participation_tiles():
     assert testing.details == ("Testing responses, while in Testing mode",)
 
 
-def test_ministry_request_totals_tiles():
-    """Ministry requests: the Join and Leave request counts."""
-    found = ministry_followup_views.totals_tiles({"joining": 1234, "leaving": 0})
-    assert [(t.key, t.label, t.text) for t in found] == [
-        ("joining", "Join requests", "1,234"),
-        ("leaving", "Leave requests", "0"),
-    ]
-
-
 def test_financial_summary_tiles_never_read_an_unknown_total_as_zero():
     """Financial stewardship: Families, the total in dollars and cents and
     the Families that cannot contribute; a total not added up is "—"."""
@@ -276,15 +265,6 @@ def test_financial_summary_tiles_never_read_an_unknown_total_as_zero():
         summary | {"annual_total": MoneyAmount(None)}
     )[1]
     assert unknown.text == "—" and "every matching Family" in unknown.unknown_reason
-
-
-def test_limitations_summary_tiles():
-    """Limitations: its two counts."""
-    found = limitation_views.summary_tiles({"cannot_serve": 2, "cannot_attend": 0})
-    assert [(t.label, t.text) for t in found] == [
-        ("Cannot participate in ministries", "2"),
-        ("Families that cannot attend Mass", "0"),
-    ]
 
 
 def test_campaign_comparison_tiles_keep_the_shared_wording():
@@ -344,6 +324,104 @@ def test_saved_daily_report_figures_are_drawn_as_emailed():
     assert found[1].unknown_reason == (
         "This figure was not available on the report day."
     )
+
+
+def report_day(**changes):
+    """The digest fixture with its report day (the last day) changed."""
+    from dataclasses import replace
+
+    from .test_daily_digest_content import document
+
+    value = document()
+    chart = value.participation
+    last = replace(chart.days[-1], **changes)
+    return replace(value, participation=replace(chart, days=(*chart.days[:-1], last)))
+
+
+def test_saved_daily_report_totals_read_as_emailed():
+    """The saved page's Campaign totals take the email's text word for word
+    (#1639): the Families value is its count, with "out of …" as its line
+    and a share bar, as Home draws a share; the rest are the email's text."""
+    from .test_daily_digest_content import document
+
+    value = document()
+    day = value.report_day
+    found = digest_presentation.total_tiles(value)
+    families = f"{day.cumulative_responses:,}"
+    assert [(t.key, t.label, t.text, t.details, t.bar) for t in found] == [
+        (
+            "responded",
+            "Families that have responded",
+            families,
+            (day.participation.removeprefix(families + " "),),
+            (day.cumulative_responses, day.cohort_denominator),
+        ),
+        ("first", "First submissions that day", f"{day.first_responses:,}", (), None),
+        (
+            "pledges",
+            "Cumulative annual pledges (USD)",
+            f"${day.pledge_total:,.2f}",
+            (),
+            None,
+        ),
+    ]
+    assert found[0].details[0].startswith("out of ")
+    assert not any(t.unknown_reason for t in found)
+
+
+def test_saved_daily_report_unknown_totals_read_a_dash_with_a_reason():
+    """The email's "Unavailable" reads "—" on the page with a plain reason,
+    chosen by the report day's availability, never by the text (#1639)."""
+    missing = digest_presentation.total_tiles(
+        report_day(
+            first_responses=0,
+            cumulative_responses=0,
+            cohort_denominator=0,
+            source_generation=None,
+            source_as_of=None,
+            population_available=False,
+            pledge_available=False,
+            pledge_total=None,
+        )
+    )
+    no_data = (
+        "The ParishSoft data for this day was not available, so this figure "
+        "is not known."
+    )
+    assert [(t.text, t.unknown_reason, t.details, t.bar) for t in missing] == [
+        ("—", no_data, (), None)
+    ] * 3
+    unpledged = digest_presentation.total_tiles(
+        report_day(pledge_available=False, pledge_total=None)
+    )
+    assert [t.text == "—" for t in unpledged] == [False, False, True]
+    assert unpledged[2].unknown_reason == (
+        "The total is added up only when every responding Family's pledge "
+        "amount is known."
+    )
+
+
+def test_saved_daily_report_share_of_nothing_has_no_bar():
+    """A known day with no Families reads "0", "out of 0 (—)" and no bar."""
+    found = digest_presentation.total_tiles(
+        report_day(first_responses=0, cumulative_responses=0, cohort_denominator=0)
+    )
+    assert (found[0].text, found[0].details, found[0].bar) == (
+        "0",
+        ("out of 0 (—)",),
+        None,
+    )
+
+
+def test_saved_daily_report_totals_are_drawn_by_the_component():
+    """The Campaign totals panel draws the shared include, named by its
+    heading, and no hand-drawn list of figures (#1639)."""
+    template = (TEMPLATES / "daily-digest.html").read_text()
+    start = template.index('<section class="panel" aria-labelledby="digest-totals')
+    panel = template[start : template.index("</section>", start)]
+    assert 'stat-tiles.html" with tiles=total_tiles' in panel
+    assert 'tiles_labelledby="digest-totals-heading"' in panel
+    assert "<dl" not in panel and "cards" not in panel
 
 
 def test_the_include_hides_every_arrow_of_a_line_and_escapes_its_text():

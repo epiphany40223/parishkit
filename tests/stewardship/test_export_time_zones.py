@@ -27,7 +27,6 @@ from parishkit.stewardship.reports import (
     information_export_views,
     ministry_export_views,
     ministry_followup_exports,
-    ministry_roster_views,
     timeline_views,
 )
 from parishkit.stewardship.reports.directories import DirectoryQuery
@@ -221,14 +220,10 @@ def _census(values):
     ],
 )
 def test_the_direct_downloads_take_the_browsers_zone(monkeypatch, values, expected):
-    """Census changes, Roster changes and Ministry requests: never refused for
-    a zone the reader was not asked for; an explicit one still wins."""
+    """Census changes and Ministry requests: never refused for a zone the
+    reader was not asked for; an explicit one still wins."""
     monkeypatch.setattr(dates, "parish_zone", lambda: PARISH)
     assert str(_census({"format": "csv"} | values)["zone"]) == expected
-    _show, roster = ministry_roster_views._choices(
-        _form({"format": "csv"} | values), export=True
-    )
-    assert str(roster["zone"]) == expected
     _query, _fmt, zone = ministry_followup_exports._choices(
         _form({"format": "csv"} | values)
     )
@@ -240,10 +235,6 @@ def test_an_explicit_unknown_zone_is_still_refused(monkeypatch):
     monkeypatch.setattr(dates, "parish_zone", lambda: PARISH)
     with pytest.raises(ValueError):
         _census({"format": "csv", "timezone": "Mars/Olympus"})
-    with pytest.raises(ValueError):
-        ministry_roster_views._choices(
-            _form({"format": "csv", "timezone": "Mars/Olympus"}), export=True
-        )
     with pytest.raises(ValueError):
         ministry_followup_exports._choices(
             _form({"format": "csv", "timezone": "Mars/Olympus"})

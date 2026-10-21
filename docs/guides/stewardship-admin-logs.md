@@ -53,12 +53,13 @@ filters), so it never puts one in the browser's history.
 
 Text search matches the stored type, the explanation the page shows and each
 recorded detail value the page shows, on its own, never key names or a value
-too long to show. It has no index: it reads the entries in the date range,
-about one to three seconds per million entries on a laptop when nothing
-matches, so a narrower range answers faster. Every read runs under the
+too long to show. Trigram indexes
+([#765](https://github.com/epiphany40223/parishkit/issues/765)) answer a
+phrase holding three letters or digits in a row without reading the other
+entries. A shorter phrase has nothing to look up and reads the entries in the
+date range, so a narrower range answers it faster. Every read runs under the
 60-second interactive statement limit, and a stopped read is recorded as a
-timeout; a trigram index is
-[#765](https://github.com/epiphany40223/parishkit/issues/765). The Ministry filter matches a single Ministry
+timeout. The Ministry filter matches a single Ministry
 DUID or any Ministry list in the detail, which includes the retained result
 scope of a Ministry report download. The page offers the current ParishSoft
 Ministries by name and never shows the DUID it filters by

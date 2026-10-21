@@ -2,13 +2,21 @@
 
 Each role sees only its sections, in the decided order, and the Parish data
 menu group ends with this page; nothing on the page moves once it has
-loaded, and showing a greyed-out link's reason moves nothing either.
+loaded, and showing a greyed-out link's reason moves nothing either. A
+minute on, the counts update by themselves from the passive status
+fragment, in place (#1859).
 """
 
 import pytest
 
-from .data_to_fix_components import PATH, STAFF_PATH
-from .waits import painted, visible
+from .conftest import NOW
+from .data_to_fix_components import PATH, STAFF_PATH, later_status
+from .test_in_place import MARK, MARKED
+
+# Autouse: answer the header's Background work poll, which the component
+# server does not serve, so the minute the clock moves draws nothing else.
+from .test_system_health import background_counts  # noqa: F401
+from .waits import has_text, painted, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "webkit"], indirect=True
@@ -79,3 +87,38 @@ def test_nothing_moves_after_the_page_loads(page, component_origin):
     visible(page.locator("#" + greyed.get_attribute("aria-describedby")))
     painted(page)
     assert _boxes(page) == loaded
+
+
+def test_the_counts_update_by_themselves(page, component_origin):
+    """A minute on, the status fragment's newer counts replace the old ones
+    in place: no reload, no reload instruction, and the change announced
+    once in one sentence."""
+    reads = []
+
+    def answer(route):
+        """The status fragment, a minute on."""
+        reads.append(route.request.url)
+        route.fulfill(content_type="text/html", body=later_status())
+
+    page.route("**/admin/parish/data-to-fix/status/", answer)
+    page.clock.install(time=NOW)
+    page.goto(component_origin + PATH)
+    page.evaluate(MARK)
+    main = page.locator("main")
+    assert main.get_by_text("Reload", exact=False).count() == 0
+    refused = page.locator('[data-section="refused_addresses"] [data-count]')
+    has_text(refused, "3 refused email addresses are not cleared yet, from 2 Families.")
+    page.clock.fast_forward(61 * 1000)
+    has_text(refused, "1 refused email address is not cleared yet, from 1 Family.")
+    has_text(
+        page.locator('[data-section="form_cannot_open"] [data-count]'),
+        "1 Family cannot open the Family form because a Member's ParishSoft data "
+        "has a value the form cannot accept.",
+    )
+    assert page.evaluate(MARKED) == "kept"
+    assert page.url == component_origin + PATH
+    assert len(reads) == 1
+    has_text(
+        page.locator('[data-live-announcer="data-to-fix"]'),
+        "2 problems to fix in ParishSoft.",
+    )

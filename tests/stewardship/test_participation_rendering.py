@@ -26,6 +26,7 @@ from parishkit.stewardship.reports.participation import (
     participation_csv,
     participation_table,
 )
+from parishkit.stewardship.reports.participation_summary import ParticipationSummary
 
 
 def document():
@@ -63,6 +64,45 @@ def document():
     )
 
 
+def summary():
+    """A captured Response dashboard Summary, as the request stores it (#1557).
+
+    Built from the capture's own JSON shape, so the renderers read exactly
+    what the worker loads: four Active population figures (one unknown,
+    with its reason) and the five funnel stages with Link followed's note.
+    """
+    return ParticipationSummary.from_document(
+        {
+            "observed_at": "2026-11-02T05:30:00+00:00",
+            "population": [
+                {"label": "Active Families", "value": 1234, "note": ""},
+                {"label": "Active Members", "value": 3456, "note": ""},
+                {
+                    "label": "Current annual pledges",
+                    "value": {"money": "123456.78"},
+                    "note": "",
+                },
+                {
+                    "label": "Last year's pledges (all Families)",
+                    "value": None,
+                    "note": "The total is not added up.",
+                },
+            ],
+            "stages": [
+                {"label": "Invited", "count": 1000, "note": ""},
+                {
+                    "label": "Link followed",
+                    "count": 600,
+                    "note": "Includes mail-scanner prefetches.",
+                },
+                {"label": "Form opened", "count": 500, "note": ""},
+                {"label": "Progressed past the first step", "count": 450, "note": ""},
+                {"label": "Submitted", "count": 409, "note": ""},
+            ],
+        }
+    )
+
+
 def encoded(value, format):
     """Return artifact bytes while confirming ownership of the output stream."""
     stream = io.BytesIO()
@@ -89,7 +129,15 @@ def test_table_and_csv_keep_exact_money_counts_without_internal_ids():
     assert data.count(b"\r\n") == 4
     reader = csv.DictReader(io.StringIO(data.decode()))
     exported = list(reader)
+    # The Section column and the Summary's columns lead (#1557); this
+    # document has no captured Summary, so every row is a daily one.
     assert reader.fieldnames == [
+        "Section",
+        "Group",
+        "Figure",
+        "Value",
+        "Share compared with Invited",
+        "Note",
         "Campaign date",
         "Population",
         "First submissions",
@@ -100,6 +148,8 @@ def test_table_and_csv_keep_exact_money_counts_without_internal_ids():
         "Cumulative annual pledges (USD)",
     ]
     assert len(exported) == 3
+    assert {row["Section"] for row in exported} == {"Daily participation"}
+    assert {row["Group"] for row in exported} == {""}
     for raw, row in zip(rows, exported, strict=True):
         assert row["Cumulative annual pledges (USD)"] == raw["pledge_usd"]
         assert row["Cumulative participation"] == raw["participation"]

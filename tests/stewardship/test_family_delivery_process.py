@@ -34,7 +34,8 @@ def request():
 def test_private_request_roundtrip():
     """The helper preserves the closed envelope and has no arbitrary SMTP target."""
     value = request()
-    key, settings, mail, profile = decode_request(json.dumps(value).encode())
+    key, settings, mail, profile, redirect = decode_request(json.dumps(value).encode())
+    assert redirect is None
     assert key == b"synthetic-key" and settings == SETTINGS
     assert profile is DeploymentProfile.TEST
     assert mail == FamilyDeliveryMail.from_payload(value["mail"])

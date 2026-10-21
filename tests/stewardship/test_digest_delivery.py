@@ -76,7 +76,7 @@ def request(mail=None):
 def test_private_decoder_accepts_maximum_valid_escaped_text():
     """JSON's six-byte control escapes must fit the validated plain-body budget."""
     mail = replace(sample(), text="\x01" * MAX_BODY_BYTES)
-    _, _, decoded, _ = decode_request(request(mail))
+    _, _, decoded, _, _ = decode_request(request(mail))
     assert decoded == mail
 
 
@@ -90,7 +90,7 @@ def test_compiled_report_roundtrips_through_actual_private_decoder_and_mime():
         text=compiled.text,
         chart=compiled.chart.data,
     )
-    candidate, settings, decoded, _ = decode_request(request(mail))
+    candidate, settings, decoded, _, _ = decode_request(request(mail))
     assert candidate == b"synthetic" and settings == SETTINGS and decoded == mail
     mime = decoded.message()
     assert mime["To"] == "admin@example.org"

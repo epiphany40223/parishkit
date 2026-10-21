@@ -177,7 +177,7 @@ def test_the_page_s_files_and_json_lines(response_service, google, cli):  # noqa
     assert records["First name"]["actions"] == []
     # The automatic rename is the Administrator's to review (census
     # review); the By-hand address has no Review.
-    assert records["First name"]["reviews"] == ["approved", "ignored"]
+    assert records["First name"]["reviews"] == ["accepted", "ignored"]
     assert records["Home address"]["reviews"] == []
     # Its value may be edited (census edit); it is in no conflict to resolve
     # (census resolve-conflict). The By-hand address has neither (#1434).
@@ -192,10 +192,17 @@ def test_the_page_s_files_and_json_lines(response_service, google, cli):  # noqa
     assert sorted(
         [
             record[key]
-            for key in ("family", "parishsoft_status", "family_duid", "who", "what")
+            for key in (
+                "family",
+                "parishsoft_status",
+                "family_duid",
+                "who",
+                "member_parishsoft_status",
+                "what",
+            )
         ]
         for record in records.values()
-    ) == sorted([*cells[:4], cells[5]] for cells in table[1:])
+    ) == sorted([*cells[:5], cells[6]] for cells in table[1:])
 
     # The filters narrow the file as they do the page's. The command
     # records the page's event and nothing else: no admin_cmd_* event.
