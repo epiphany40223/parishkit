@@ -469,7 +469,7 @@ def test_repeat_refuses_too_many_repeated_or_unreadable_dates(dates):
 
 
 def test_repeat_is_for_reminders_with_at_least_one_date():
-    """An invitation cannot repeat; a rule with no date that fits says so."""
+    """An invitation cannot repeat; a rule giving no date is refused at its fields."""
     templates = emails()
     rows = saved(templates)
     invitation = valid_entry(
@@ -497,7 +497,10 @@ def test_repeat_is_for_reminders_with_at_least_one_date():
     empty = RepeatRule(posted(**{"repeat-repeat": "on"}), prefix="repeat")
     assert empty.is_valid()
     _check_repeat(reminder, empty)
-    assert "no date that can be added" in empty.errors["repeat"][0]
+    # A rule with no dates is refused at its fields, in the rule's own words
+    # (#1915), not by the generic "no date that can be added" line.
+    assert empty.errors["until"] == ["Choose the first and last dates to repeat on."]
+    assert "repeat" not in empty.errors
 
 
 def test_review_errors_come_back_to_the_page_field_or_its_top():
