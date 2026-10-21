@@ -51,6 +51,13 @@ pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "webkit"], indirect=True
 )
 
+# The row editor's own body, which the Edit icon must not replace (R40c F1).
+BODY = (
+    "Record this value as the reviewer's value. The item is Accepted (edited), "
+    "and the Family's answer stays beside it. The Family will see this value "
+    "the next time it signs in."
+)
+
 
 def name(index):
     """How the page names row ``index``'s change (its Who is the Member)."""
@@ -267,6 +274,7 @@ def test_an_address_is_edited_part_by_part(page, component_origin):
     page.route("**" + PATH, answer)
     icon(page, 2, "Edit").click()
     editor = page.locator("#census-edit-dialog-2")
+    has_text(editor.locator("[data-confirm-body]"), BODY)
     street = editor.get_by_label("Street", exact=True)
     assert street.input_value() == "9 Census Way"
     assert editor.get_by_label("Country").input_value() == "US"

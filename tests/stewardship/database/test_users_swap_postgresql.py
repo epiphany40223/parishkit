@@ -1196,13 +1196,34 @@ CLOSURE_REPLACED_ONLY = {
         ("stewardship_workflows", "0003_ministry_review_pipeline"),
         "AS reviewed_ministry_name",
     ),
-    # 0146 (#1840) replaces it last, on 0138's body (0138 replaced 0133's
-    # for the published Conflict, and 0133 replaced 0118's for Entered
-    # incorrectly's two fixes), for Back to review undoing a terminal step.
+    # 0138 (#1749) replaced it on 0133's body (0133 replaced 0118's for
+    # Entered incorrectly's two fixes), for the published Conflict; 0146
+    # (#1840) replaced it on 0138's body, for Back to review undoing a
+    # terminal step; 0153 (#1705) replaces it last, on 0146's body, for
+    # the reviewed Family form.
     "stewardship_response_derived_guard_v1": (
-        ("stewardship_responses", "0023_census_terminal_undo"),
-        "IF OLD.execution='published' AND current_user<>'pk_stewardship_web' "
-        "AND NOT EXISTS (",
+        ("stewardship_responses", "0027_reviewed_census_resubmission"),
+        "carries_intent := FOUND AND NOT response.reviewed_view",
+    ),
+    # 0154 (#1705) replaces 0148's Ministry request guard and 0131's
+    # Ministry completeness check, which the reruns of 0131's file
+    # (CLOSURE_ALTERED) and 0148's (CLOSURE_REPLACED) put back; only its
+    # replacements run again.
+    **{
+        name: (("stewardship_workflows", "0008_reviewed_ministry_resubmission"), phrase)
+        for name, phrase in (
+            ("stewardship_ministry_request_guard_v1", "AND later.reviewed_view"),
+            (
+                "stewardship_ministry_submission_effects_v1",
+                "AND NOT (NEW.reviewed_view AND EXISTS (",
+            ),
+        )
+    },
+    # 0155 (#1705) replaces 0127's pledge item selection, which 0127's
+    # rerun puts back.
+    "stewardship_pledge_review_states_v1": (
+        ("stewardship_reports", "0039_reviewed_pledge_resubmission"),
+        "AND NOT (x.reviewed_view AND EXISTS (",
     ),
     # 0138 (#1749) replaces the refresh check guard last, on 0137's body
     # (0133's with #1738's fields); the rerun of 0133's file

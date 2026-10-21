@@ -31,12 +31,19 @@ def option_labels(option, definition, *, parish_name):
     }
 
 
-def financial_presentation(inputs, prior, *, parish_name):
-    """Keep unavailable source data distinct from blank new or prior pledge answers."""
+def financial_presentation(inputs, prior, *, parish_name, shown=None):
+    """Keep unavailable source data distinct from blank new or prior pledge answers.
+
+    ``shown`` is the pledge answer a reviewed form shows (#1705: an edited
+    pledge's reviewer's amount and frequency), or None to show the Family's
+    own last answer, as every other form does.
+    """
     if inputs is None:
         return None
     definition = inputs.definition
     previous = prior.answers.get("financial") if prior else None
+    if previous is not None and shown is not None:
+        previous = shown
     answers = {
         "annual_pledge": previous["annual_pledge"] if previous else "",
         "frequency": previous["frequency"] if previous else "",

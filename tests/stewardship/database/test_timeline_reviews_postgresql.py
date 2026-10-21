@@ -149,6 +149,9 @@ def test_census_reviews_and_resolutions_reach_both_roles(response_service, googl
     assert viewed.count() == before + 4
 
 
+# The rule before the reviewed Family form (#1705): forms drawn before
+# its release, as one open across the deploy is.
+@pytest.mark.usefixtures("earlier_rule")
 def test_a_resubmitted_change_keeps_its_carried_decision(response_service):
     """A resubmission that keeps an accepted answer carries the decision to
     its new change row with no history row; Back to review on that row
