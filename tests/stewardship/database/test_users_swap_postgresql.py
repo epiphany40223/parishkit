@@ -497,6 +497,8 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0160 (#1895, provisional number) creates nothing: it replaces 0159's
 # derived guard and 0153's submission effects check in place, so
 # ``CLOSURE_REPLACED_ONLY`` puts each 0160 body back last, after 0159's.
+# 0163 (#1909) creates nothing: it replaces 0160's derived guard in place,
+# so ``CLOSURE_REPLACED_ONLY`` puts its body back last, after 0160's.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -1389,6 +1391,15 @@ CLOSURE_REPLACED_ONLY = {
                 "stewardship_submission_effects_v1",
                 "IF NOT NEW.reviewed_view AND prior.entity_kind IN",
             ),
+        )
+    },
+    # 0163 (#1909) replaces the derived guard last, on 0160's body (its
+    # value wins over the 0160 entry above), so a response not drawn as the
+    # reviewed form finds a change a reviewed form showed.
+    **{
+        "stewardship_response_derived_guard_v1": (
+            ("stewardship_responses", "0031_edit_replacement"),
+            "AND shown->>'stream'='census' AND shown->>'item'=candidate.id::text",
         )
     },
 }
