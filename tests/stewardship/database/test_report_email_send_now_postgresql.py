@@ -1,10 +1,10 @@
-"""Send a weekly report now: Send now of the converted Weekly report (#1786).
+"""Send now of a report email, from Report emails' row action (#1786).
 
-An explicit, separately audited, idempotent Administrator request. Report
-emails replaced the Weekly digest: the page and ``digest weekly-request``
-send the Weekly report through its Send now (``report_email_manual``),
-whose database guard checks the report's current revision and that no other
-send of it is still being prepared.
+An explicit, separately audited, idempotent Administrator request: the
+page's Send now (``report_email_views.report_email_send_now``) and
+``report-email send-now`` call ``report_email_manual.request_send_now``,
+whose database guard checks the report's current revision and that no
+other send of it is still being prepared or delivered.
 """
 
 from uuid import uuid4
@@ -16,6 +16,7 @@ from django.urls import reverse
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.schedule_models import (
+    ScheduleDefinition,
     ScheduleFulfillment,
     ScheduleOccurrence,
 )
@@ -23,12 +24,12 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.storage import enqueue
+from parishkit.stewardship.reports.report_email_manual import request_send_now
 from parishkit.stewardship.reports.report_email_models import (
     ReportEmailManualRequest,
     ReportEmailPreparation,
     ReportEmailSnapshot,
 )
-from parishkit.stewardship.reports.weekly_manual import request_manual_report
 
 from .auth_builders import signed_in
 from .campaign_builders import campaign_clock, complete_empty_catchup
@@ -41,13 +42,21 @@ from .test_policy_postgresql import user
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
+def _weekly_definition(harness):
+    """The campaign's one report (shaped as the converted Weekly)."""
+    return ScheduleDefinition.objects.get(campaign=harness.campaign, kind="report")
+
+
 def request(harness, principal, command):
     """Use the actual restricted Web identity, not schema-owner write access."""
+    definition = _weekly_definition(harness)
     with task_login(ServiceRole.WEB, exact=True):
-        return request_manual_report(
+        return request_send_now(
             harness.service.store,
             principal.pk,
             harness.campaign.pk,
+            definition.pk,
+            definition.current_revision_id,
             command_id=command,
             configuration_id=SystemConfiguration.objects.get().active_configuration_id,
         )
@@ -118,17 +127,18 @@ def test_send_now_waits_for_an_earlier_send_still_being_prepared(
 
 def test_send_now_waits_for_an_earlier_sends_email(live_response_service, google):
     """While a scheduled send's email is undelivered, Send now is refused
-    (spec, "Send now"), and the page says so on GET; once it is delivered,
+    (spec, "Send now"), and the row says so on GET; once it is delivered,
     Send now is allowed."""
     harness = live_response_service
     with campaign_clock(INSTANT):
         allocated(harness)
         browser, _ = signed_in()
-        path = reverse("admin:weekly_digest_manual")
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            page = browser.get(path)
+            page = browser.get(reverse("admin:report_emails"))
         assert page.status_code == 200
-        assert b"still being prepared or delivered" in page.content
+        # The row's Send now is unavailable, with why, from the page's read.
+        assert b"A send of this report is in progress" in page.content
+        assert b'data-confirm-open="report-send-now-dialog"' not in page.content
         before = TaskRun.objects.count()
         with pytest.raises(DatabaseError, match="no open send"):
             request(harness, user("admin@example.org"), uuid4())
@@ -197,112 +207,83 @@ def test_a_send_now_request_is_immutable(response_service):
             )
 
 
+def _send_now_values(definition, configuration):
+    """The page's Send now post for ``definition``."""
+    return {
+        "report": str(definition.pk),
+        "revision": str(definition.current_revision_id),
+        "command_id": str(uuid4()),
+        "configuration_id": str(configuration),
+    }
+
+
 @pytest.mark.parametrize("stale", [False, True])
-def test_the_form_requires_csrf_confirmation_and_reviewed_configuration(
+def test_the_rows_send_now_requires_csrf_and_the_reviewed_revision(
     response_service, google, stale
 ):
-    """A reviewed form cannot silently authorize a changed configuration."""
+    """A drawn Send now cannot silently send a report changed since."""
     harness = response_service
     with campaign_clock(INSTANT):
         weekly(harness)
         configuration = SystemConfiguration.objects.get().active_configuration_id
+        definition = _weekly_definition(harness)
+        values = _send_now_values(definition, configuration)
         browser, _ = signed_in()
-        path = reverse("admin:weekly_digest_manual")
-        values = {
-            "command_id": str(uuid4()),
-            "configuration_id": str(configuration),
-            "acknowledge": "on",
-        }
+        path = reverse("admin:report_email_send_now")
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            page = browser.get(path)
+            page = browser.get(reverse("admin:report_emails"))
+            assert page.status_code == 200
+            assert b'data-confirm-open="report-send-now-dialog"' in page.content
             assert (
-                page.status_code == 200 and b"Queue new manual report" in page.content
-            )
-            # The trail is the way back (navigation rule 3), not a link of
-            # its own (#521).
-            emailed = reverse("admin:emailed_reports")
-            assert f'<li><a href="{emailed}">Emailed reports</a></li>'.encode() in (
-                page.content
+                f'data-confirm-with="revision={definition.current_revision_id}"'.encode()
+                in (page.content)
             )
             assert browser.post(path, values).status_code == 403
             assert (
                 browser.post(
                     path,
-                    values | {"acknowledge": ""},
+                    values | {"extra": "x"},
                     HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
                 ).status_code
                 == 400
             )
         if stale:
-            # Any applied change makes the reviewed configuration stale.
             from .report_builders import edit_report
 
-            store = harness.service.store
-            weekly_id = next(
-                row["id"]
-                for row in store.active().document()["sections"]["schedules"]
-                if row["values"]["kind"] == "report"
-            )
-            edit_report(store, weekly_id, subject="Changed")
+            edit_report(harness.service.store, definition.pk, subject="Changed")
         before = TaskRun.objects.count()
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            for _ in range(2):
-                response = browser.post(
-                    path,
-                    values,
-                    HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
-                )
-                assert response.status_code == (409 if stale else 302)
-                assert response["Cache-Control"] == "no-store"
+            response = browser.post(
+                path, values, HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value
+            )
+        assert response.status_code == (409 if stale else 302)
         if stale:
-            # The refusal links the pages it names (navigation rule 6, #521).
-            for name, label in (
-                ("background", "Background work"),
-                ("deliveries", "Sent mail"),
-            ):
-                link = f'<a href="{reverse(f"admin:{name}")}">{label}</a>'
-                assert link.encode() in response.content
+            refusal = response.json()["refusal"]
+            assert "changed since this page was drawn" in refusal["message"]
+        else:
+            assert response["Location"] == (
+                f"{reverse('admin:report_emails')}?requested={values['command_id']}"
+            )
+            with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+                page = browser.get(response["Location"])
+            assert b"was requested." in page.content
         assert ReportEmailManualRequest.objects.count() == (0 if stale else 1)
         assert TaskRun.objects.count() == before + (0 if stale else 1)
 
 
-def test_the_form_explains_a_missing_weekly_report(response_service, google):
-    """Without a Weekly report the page says so instead of refusing blindly."""
-    with campaign_clock(INSTANT):
-        browser, _ = signed_in()
-        path = reverse("admin:weekly_digest_manual")
-        before = TaskRun.objects.count()
-        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            page = browser.get(path)
-        assert page.status_code == 409
-        assert b"This campaign has no Weekly report" in page.content
-        # Queue is in view but unavailable, named by why; no form (#1331).
-        assert (
-            b'disabled aria-describedby="manual-no-schedule">'
-            b"Queue new manual report</button>"
-        ) in page.content
-        assert b'name="acknowledge"' not in page.content
-        assert ReportEmailManualRequest.objects.count() == 0
-        assert TaskRun.objects.count() == before
-
-
-def test_the_form_shows_queue_unavailable_while_a_send_is_being_prepared(
-    live_response_service, google
-):
-    """An earlier send still being prepared is found on GET, as the guard
-    would refuse it: Queue is shown unavailable with why, and nothing runs."""
-    harness = live_response_service
+def test_send_now_of_an_unknown_report_is_refused(response_service, google):
+    """A post naming no report of the campaign records nothing (400)."""
+    harness = response_service
     with campaign_clock(INSTANT):
         weekly(harness)
-        assert produce()
+        configuration = SystemConfiguration.objects.get().active_configuration_id
+        values = _send_now_values(_weekly_definition(harness), configuration)
         browser, _ = signed_in()
-        path = reverse("admin:weekly_digest_manual")
-        before = TaskRun.objects.count()
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            page = browser.get(path)
-        assert page.status_code == 200
-        assert b"an earlier send of it is still being prepared" in page.content
-        assert b'disabled aria-describedby="manual-unavailable"' in page.content
-        assert b'name="acknowledge"' not in page.content
-        assert TaskRun.objects.count() == before
+            response = browser.post(
+                reverse("admin:report_email_send_now"),
+                values | {"report": str(uuid4())},
+                HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
+            )
+        assert response.status_code == 400
         assert not ReportEmailManualRequest.objects.exists()

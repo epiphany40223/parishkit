@@ -245,7 +245,6 @@ def test_rename_waits_for_a_new_valid_name(page, component_origin):
 @pytest.mark.parametrize(
     ("path", "button", "reason"),
     [
-        ("/weekly-manual-no-schedule", "Queue new manual report", "manual-no-schedule"),
         # The resolution question's answers are radio buttons (#1563).
         ("/delivery-held", ("radio", "It was sent"), "reason-found-held"),
         ("/delivery-held", ("radio", "It was not sent"), "reason-found-held"),

@@ -1,17 +1,18 @@
-"""A report send's saved copy, as its email was sent (#1786, interim).
+"""A report send's saved copy, as its email was sent (#1786).
 
 Every report email links its send's saved copy
 (``report_document.send_path``): its "Open protected report" button and the
-additional information block's request links. The Report emails page's own
-saved copy, drawn as web components from the snapshot, ships with that page
-(report-emails spec, "Saved copies", delivery plan item 5); until then this
-page shows the email exactly as the send made it, from its snapshot, with
-its retained chart images, so no link in a sent email is broken. A request
-link opens that request's own page on Additional information.
+additional information block's request links, and Report emails lists it
+under its report's past sends. Until #1946 draws it as web components from
+the snapshot (report-emails spec, "Saved copies"), this page shows the
+email exactly as the send made it, from its snapshot, with its retained
+chart images. A request link opens that request's own page on Additional
+information.
 
-Administrators and Staff may open it (decision 3; every block's reader role
-is Staff). Each opening is audited (``report_email_viewed``) with the send
-only, never its content.
+Every Administrator may open it; Staff only when every block in it may be
+read by Staff (decision 11, each block's reader role, which is Staff for
+every block today). Each opening is audited (``report_email_viewed``) with
+the send only, never its content.
 """
 
 import base64
@@ -38,19 +39,37 @@ from parishkit.stewardship.web.security import private_response
 
 from .export_services import admit_campaign
 from .export_views import _principal
+from .report_blocks import REGISTRY
 from .report_email_models import ReportEmailSnapshot
 
 # The kept email's chart references, as the compiler writes them.
 _CID = re.compile(r'src="cid:([A-Za-z0-9._@-]{1,64})"')
 
 
-def _snapshot(send_id):
-    """The send's snapshot, admitted for reading its campaign's data."""
+def _snapshot(send_id, principal):
+    """The send's snapshot, admitted for reading its campaign's data.
+
+    A reader who is not an Administrator may open it only when every block
+    in it allows their role (decision 11): a block unknown to this release
+    allows nobody but Administrators.
+    """
     snapshot = ReportEmailSnapshot.objects.only(
         "id", "preparation_id", "campaign_id", "subject", "html", "images", "blocks"
     ).get(preparation_id=send_id)
+    if not readable(snapshot.blocks, principal.roles):
+        raise PermissionError("This saved copy holds a block the reader may not read.")
     admit_campaign(snapshot.campaign_id, mutating=False)
     return snapshot
+
+
+def readable(blocks, roles):
+    """Whether a reader with ``roles`` may open a copy of ``blocks`` (decision 11)."""
+    if "administrator" in roles:
+        return True
+    return all(
+        entry.get("block") in REGISTRY and REGISTRY[entry["block"]].reader_role in roles
+        for entry in blocks
+    )
 
 
 def _record(principal, send_id, campaign_id):
@@ -84,7 +103,7 @@ def saved_copy(request, send_id):
             return private_response("Invalid saved copy request.\n", status=400)
         service = runtime()
         principal = _principal(request, service.store)
-        snapshot = _snapshot(send_id)
+        snapshot = _snapshot(send_id, principal)
         _record(principal, send_id, snapshot.campaign_id)
         # The compiled email is the validator's closed report markup; only
         # its inline chart references are pointed at this page's images.
@@ -114,8 +133,8 @@ def saved_image(request, send_id, name):
     """One chart image the send kept, as the email carried it."""
     try:
         service = runtime()
-        _principal(request, service.store, read_only=True)
-        snapshot = _snapshot(send_id)
+        principal = _principal(request, service.store, read_only=True)
+        snapshot = _snapshot(send_id, principal)
         data = next(
             (base64.b64decode(png) for cid, png in snapshot.images if cid == name),
             None,
@@ -140,8 +159,8 @@ def saved_item(request, send_id, item_id):
     """A request the send listed: its own page on Additional information."""
     try:
         service = runtime()
-        _principal(request, service.store, read_only=True)
-        snapshot = _snapshot(send_id)
+        principal = _principal(request, service.store, read_only=True)
+        snapshot = _snapshot(send_id, principal)
         listed = {
             str(item[0])
             for block in snapshot.blocks

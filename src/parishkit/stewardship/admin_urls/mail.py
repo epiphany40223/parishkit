@@ -20,7 +20,7 @@ from ..accounts import (
 )
 from ..accounts.group_root_views import group_root
 from ..jobs import delivery_views, mail_queue_views, send_history_views
-from ..reports import report_email_copy_views
+from ..reports import report_email_copy_views, report_email_views
 from ..web.admin_routes import current_campaign
 
 patterns = [
@@ -46,8 +46,25 @@ patterns = [
         name="family_email_sends",
     ),
     path("mail/sent/", delivery_views.delivery_list, name="deliveries"),
-    # A report send's saved copy (#1786): the address every report email
-    # links, shown as the email was sent until the Report emails page ships.
+    # Report emails (#1786): the list, its row actions' form actions (Pause,
+    # Resume and Delete as changes; Send now as a manual send), and each
+    # send's saved copy, the address every report email links, shown as the
+    # email was sent until #1946 draws it as web components.
+    path(
+        "mail/report-emails/",
+        report_email_views.report_emails,
+        name="report_emails",
+    ),
+    path(
+        "mail/report-emails/changes/",
+        current_campaign(report_email_views.report_email_changes),
+        name="report_email_changes",
+    ),
+    path(
+        "mail/report-emails/manual-sends/",
+        current_campaign(report_email_views.report_email_send_now),
+        name="report_email_send_now",
+    ),
     path(
         "mail/report-emails/sends/<uuid:send_id>/",
         report_email_copy_views.saved_copy,

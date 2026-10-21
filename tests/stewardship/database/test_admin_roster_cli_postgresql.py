@@ -17,9 +17,9 @@ from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.reports import ministry_roster_views
 
 from .auth_builders import signed_in
-from .test_admin_digest_list_cli_postgresql import revoke
 from .test_admin_export_cli_postgresql import read_only_session
 from .test_admin_report_cli_postgresql import cli, parity  # noqa: F401
+from .test_admin_report_email_cli_postgresql import revoke
 from .test_admin_status_cli_postgresql import (
     admin,  # noqa: F401
     one,

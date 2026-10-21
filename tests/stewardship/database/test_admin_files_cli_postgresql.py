@@ -21,7 +21,7 @@ from parishkit.stewardship.audit.models import AuditEvent
 from .. import hosted_file_samples as samples
 from ..content_factory import content
 from .automation_builders import paired
-from .test_admin_digest_list_cli_postgresql import revoke
+from .test_admin_report_email_cli_postgresql import revoke
 from .test_admin_test_sample_cli_postgresql import runner
 from .test_hosted_files_postgresql import (
     ORIGIN,

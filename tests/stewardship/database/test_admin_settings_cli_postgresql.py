@@ -21,7 +21,7 @@ from ..test_source_corpus import source
 from .automation_builders import paired
 from .campaign_builders import add_draft, command
 from .test_admin_content_cli_postgresql import as_staff
-from .test_admin_digest_list_cli_postgresql import revoke
+from .test_admin_report_email_cli_postgresql import revoke
 from .test_admin_test_sample_cli_postgresql import runner
 from .test_branding_postgresql import asset, bundle
 from .test_ministry_views_postgresql import two_ministries

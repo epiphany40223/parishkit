@@ -92,7 +92,7 @@ def test_closed_campaign_lists_the_campaign_end_work_with_counts(
     page, component_origin, axe_source, width
 ):
     """At campaign end Home has a card for each work list with its count,
-    linking its page, then Emailed reports, and nothing moves on hover or
+    linking its page, then Report emails, and nothing moves on hover or
     focus (#1590, #1673)."""
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + CLOSED_PATH)
@@ -106,7 +106,7 @@ def test_closed_campaign_lists_the_campaign_end_work_with_counts(
             "Ministry requests to enter by hand 5 to enter by hand",
             "Additional information 3 open",
             "Ministry requests 2 open",
-            "Emailed reports",
+            "Report emails",
         ]
     )
     for name, href in {
