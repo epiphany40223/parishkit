@@ -23,7 +23,6 @@ from parishkit.stewardship.campaigns.models import ScheduleDefinition
 
 from .auth_builders import signed_in
 from .campaign_builders import advance, campaign_clock, claimed_task
-from .report_builders import add_digest
 from .test_campaign_series_postgresql import (
     FIRST,
     LAST,
@@ -179,21 +178,6 @@ def test_a_send_in_progress_refuses_the_delete(auth_service, google):
     message = json.loads(refused.content)["refusal"]["message"]
     assert "already run, or is being prepared" in message
     assert ConfigurationChangeRequest.objects.count() == before
-
-
-def test_a_digest_delete_stops_the_whole_digest(auth_service, google):
-    """A digest has no single-day exceptions: Delete removes it all."""
-    store = auth_service.store
-    campaign, _emails = setup(store)
-    digest = add_digest(store, campaign)
-    browser, _ = signed_in()
-    page = unescape(browser.get(edit_path(digest)).content.decode())
-    assert "This report repeats, so deleting it stops every send" in page
-    review = post(browser, DELETE, deletion(store, digest))
-    text = unescape(review.content.decode())
-    assert "deleting it stops every send of it still to come" in text
-    apply(store, post(browser, LIST, {"action": "confirm", "preview": token(review)}))
-    assert str(digest) not in schedule_ids(store)
 
 
 def test_a_series_reminder_deletes_itself_or_the_whole_series(auth_service, google):

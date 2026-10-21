@@ -3165,12 +3165,18 @@ def report_email_confirm(args, preamble, runtime, context):
     from .admin_report_emails import TOKEN_LIMIT
     from .admin_report_emails import confirm as confirm_change
 
+    # The role first (#1341): denied before the token is read or anything
+    # is asked.
+    _role_first(context, runtime)
     return confirm_change(
         context["caller"],
         runtime,
         args.campaign,
         token=_input(args.token, context, TOKEN_LIMIT),
         context=context,
+        # A send after the campaign's end is asked at the prompt, as the
+        # page's tick asks (decision 9); --yes answers it.
+        ask=lambda lines: confirm(context, lines),
     )
 
 
@@ -4913,9 +4919,15 @@ def _report_email_preview_options(parser):
         "--changes",
         required=True,
         help=(
-            'the change document as JSON, {"changes": [{"operation": '
-            '"pause|resume|delete|skip", "id": REPORT}]} (a skip adds "send": '
-            "SLOT), or - to read it from standard input"
+            'the change document as JSON, {"changes": [ENTRY, ...]}: '
+            '{"operation": "create", "values": VALUES}, {"operation": "edit", '
+            '"id": REPORT, "values": VALUES}, or {"operation": '
+            '"pause|resume|delete|skip|unskip", "id": REPORT} (a skip or '
+            'unskip adds "sends": [SLOT, ...], the slot keys report-email '
+            "show lists, each once); VALUES holds the stored values it sets "
+            "(name, subject, intro_html, intro_text, recipients, schedule, "
+            "as_of, blocks, content_required). Or - to read it from standard "
+            "input"
         ),
     )
 
@@ -7134,7 +7146,8 @@ def _report_specs():
         ),
         CommandSpec(
             "report-email preview",
-            "Review a pause, resume, deletion or skipped send of report emails.",
+            "Review a new report email, an edit, a pause, resume, deletion or "
+            "skipped send of report emails.",
             report_email_preview,
             "full",
             False,
@@ -7146,13 +7159,15 @@ def _report_specs():
         ),
         CommandSpec(
             "report-email confirm",
-            "Confirm a reviewed report email change.",
+            "Confirm a reviewed report email change. A change that makes a "
+            "report send after the campaign ends asks first; --yes answers it.",
             report_email_confirm,
             "full",
             True,
             ReportEmailConfirm.field_names(),
             8,
             options=(_report_email_confirm_options,),
+            prompts=True,
         ),
         # The aggregate report reads (PR 8c, ``admin_report_reads``).
         CommandSpec(

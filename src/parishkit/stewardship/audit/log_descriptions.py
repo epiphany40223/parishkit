@@ -156,9 +156,9 @@ DESCRIPTIONS = {
         "or campaign dates, which became a configuration request."
     ),
     "admin_cmd_report_email_confirm": _(
-        "An automation session confirmed a reviewed pause, resume, deletion "
-        "or skipped send of report emails, which became a configuration "
-        "request."
+        "An automation session confirmed a reviewed new report email, edit, "
+        "pause, resume, deletion or skipped send of report emails, which "
+        "became a configuration request."
     ),
     "admin_cmd_users_confirm": _(
         "An automation session confirmed a reviewed change to Admin portal "

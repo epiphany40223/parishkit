@@ -562,14 +562,15 @@ def test_a_missed_send_or_a_digest_does_not_move(auth_service, google, monkeypat
     first = f"/admin/campaign/schedules/{initial.pk}/"
     assert f'data-edit-url="{first}"' in page
     assert f'data-move-url="{first}"' not in page
-    daily = f"/admin/campaign/schedules/{definition('report').pk}/"
+    # A report email's send links its own Edit page on Report emails, with
+    # the send named (#1786), and is never moved from the calendar.
+    daily = f"/admin/mail/report-emails/{definition('report').pk}/"
     assert f'data-edit-url="{daily}?send=' in page
     assert f'data-move-url="{daily}' not in page
     before = ConfigurationChangeRequest.objects.count()
-    for path in (first, daily):
-        refused = post(browser, path, move(store, date="2054-10-20"))
-        assert refused.status_code == 403, path
-        assert "can't be moved from the calendar" in unescape(refused.content.decode())
+    refused = post(browser, first, move(store, date="2054-10-20"))
+    assert refused.status_code == 403
+    assert "can't be moved from the calendar" in unescape(refused.content.decode())
     assert ConfigurationChangeRequest.objects.count() == before
 
 

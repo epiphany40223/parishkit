@@ -103,6 +103,7 @@ TEMPLATES = {
     "ministry_followup_item": "ministry-followup.html",
     "family_directory": "directory.html",
     "report_emails": "report-emails.html",
+    "report_email_new": "report-email-entry.html",
     "timeline": "timeline.html",
     "index": "home.html",
     "configuration_request": "configuration-request.html",
@@ -116,8 +117,10 @@ OBJECT_NAMED = {
     "content_revision",
     "integration_settings",
     "report_export",
-    # A report send's saved copy is named by its subject (#1786).
+    # A report send's saved copy is named by its subject (#1786), and
+    # Edit report email by the report's name.
     "report_email_send",
+    "report_email_edit",
 }
 # Pages whose heading the view supplies. The reports root renders the "no
 # campaign" page named after the report opened (checked below), and a daily

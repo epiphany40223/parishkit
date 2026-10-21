@@ -21,7 +21,8 @@ line"; admin-automation, "Rules for new Admin actions"):
 - ``report-email send-now REPORT`` is the row's Send now, keyed by its
   request key, with the dialog's words asked at the prompt (or ``--yes``).
 - ``report-email preview`` and ``confirm`` are the row's Pause, Resume and
-  Delete and the editor's Skip this send (``report_email_changes``): the
+  Delete and the editor's Skip and Send selected sends (``skip`` and
+  ``unskip``, ``report_email_changes``): the
   change is built, validated and signed as the page builds it, and the
   token is confirmed under the work lock as every schedule change is.
 
@@ -133,7 +134,12 @@ class ReportEmailPreview(ReadModel):
     """A reviewed change of report emails and the token that confirms it.
 
     ``changes`` names each report changed (``id``, ``operation``, ``name``
-    and, for a skip, the ``send`` and its ``due_at``). While ``blocking``
+    and, for a skip or unskip, its ``sends``, each a ``send`` slot key and
+    its ``due_at``, earliest first; a ``create`` or
+    ``edit`` its ``before`` and ``after`` values, the ``dropped_skips`` and
+    its first send after the campaign's last day, ``after_campaign``).
+    ``after_campaign`` says the change makes a report send after the
+    campaign ends, which ``confirm`` asks about (decision 9). While ``blocking``
     is above zero (a send in progress or uncertain), as on the page, there
     is no ``preview``; otherwise ``preview.token`` is valid for fifteen
     minutes.
@@ -143,6 +149,7 @@ class ReportEmailPreview(ReadModel):
     version: str
     changes: list
     blocking: int
+    after_campaign: bool
     preview: dict | None
 
 
@@ -648,7 +655,7 @@ def parse_document(text):
 
 
 def preview(caller, service, campaign_id, *, expected_version, changes):
-    """``report-email preview``: the review of Pause, Resume, Delete or Skip.
+    """``report-email preview``: review New, Edit, Pause, Resume, Delete or Skip.
 
     Admits as the page's post does, then, in one work transaction, finds
     the campaign as the page does (one that is not current, or that work
@@ -685,6 +692,7 @@ def preview(caller, service, campaign_id, *, expected_version, changes):
                 version=expected_version,
                 changes=reviewed["changes"],
                 blocking=reviewed["blocking"],
+                after_campaign=reviewed["after_campaign"],
                 preview=None
                 if reviewed["preview"] is None
                 else {"token": reviewed["preview"]},
@@ -698,13 +706,15 @@ def preview(caller, service, campaign_id, *, expected_version, changes):
     return model
 
 
-def confirm(caller, service, campaign_id, *, token, context):
+def confirm(caller, service, campaign_id, *, token, context, ask=None):
     """``report-email confirm``: apply a reviewed change of report emails.
 
     As ``schedule confirm`` (``admin_changes.confirm_schedule``), with this
     page's salt and recheck: an expired or out-of-date token is
     ``stale_version``, an altered one or another campaign's ``invalid``,
-    another Administrator's ``denied``. Records
+    another Administrator's ``denied``. A change that makes a report send
+    after the campaign ends is asked about first (``ask(lines)``, the
+    prompt or ``--yes``), as the page's tick asks. Records
     ``admin_cmd_report_email_confirm`` with the request it created.
     """
     from django.core import signing
@@ -732,6 +742,15 @@ def confirm(caller, service, campaign_id, *, token, context):
         key = None
     if key is not None:
         context["request_id"] = str(policy_operation_id(actor.identity, key))
+    from .reports.report_email_changes import needs_after_campaign
+
+    if ask is not None and needs_after_campaign(token, target):
+        ask(
+            (
+                "This change makes a report email send after the campaign ends.",
+                "Send after the campaign ends.",
+            )
+        )
     created = []
 
     def attach(request, extra):

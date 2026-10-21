@@ -424,14 +424,22 @@ LEDGER = {
     "weekly_digest_item": command("report-email copy"),
     # Report emails (#1786, delivery plan item 5): the page and its row
     # actions (Pause, Resume and Delete as one change; Send now), and each
-    # send's saved copy. The editor's New, Edit and Skip this send come
-    # with delivery plan item 6 (``report-email preview``'s skip entry is
-    # already here).
+    # send's saved copy. The editor's New, Edit and Skip and Send selected
+    # sends come with delivery plan item 6 (``report-email preview``'s skip
+    # and unskip entries).
     "report_emails": command(
         "report-email list", "report-email show", "report-email sends"
     ),
     "report_email_changes": command("report-email preview", "report-email confirm"),
     "report_email_send_now": command("report-email send-now"),
+    # New and Edit report email (item 6): their Review and Apply are
+    # report-email preview's create, edit, skip, unskip and delete entries and
+    # confirm; the live schedule preview is show's next sends.
+    "report_email_new": command("report-email preview", "report-email confirm"),
+    "report_email_edit": command(
+        "report-email show", "report-email preview", "report-email confirm"
+    ),
+    "report_email_schedule_preview": command("report-email show"),
     "report_email_send": command("report-email copy"),
     "report_email_send_item": command("report-email copy"),
     "report_email_send_image": permanent(IMAGES),

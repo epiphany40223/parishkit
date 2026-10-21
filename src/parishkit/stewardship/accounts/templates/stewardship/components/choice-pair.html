@@ -1,0 +1,32 @@
+{% load i18n stewardship %}{% comment %}
+  A stored two-way setting of a form, saved with the form's own Review
+  (ui-conventions spec, "Binary choices", stored settings): a visible
+  legend and two equal segments, drawn as every binary choice is, as two
+  native radios in a fieldset, so arrow keys move between them and a screen
+  reader names the group and the chosen one. Choosing one changes only the
+  form (the fields it shows, data-show-when), never the page's address.
+
+    {% include "stewardship/components/choice-pair.html" with pair_id="report-sends" name="sends" legend=_("Sends") first_value="once" first_label=_("Once") second_value="repeat" second_label=_("Repeating") chosen=form.sends.value errors=form.sends.errors %}
+
+  - pair_id: the fieldset's id, and the prefix of its radios' ids
+    (<pair_id>_0, <pair_id>_1) and its error list's (<pair_id>_error).
+  - name: the field the radios post.
+  - legend: the visible label; first_* / second_*: each segment's value
+    and words; chosen: the value checked (none: neither).
+  - help_id (optional): a help line after the pair that describes it.
+  - fixed (optional): the setting can't change now, so the segment not
+    chosen is disabled where it is, and tip gives the reason in a
+    toggletip beside the legend (ui-conventions, "Basic and Advanced
+    modes": a setting that can't change keeps its place, the reason in its
+    tip).
+  - errors: the server's refusals of the field, shown in a reserved line
+    after the pair and marking both radios, which they describe.
+  - required (optional): the radios are required (the complete gate).
+  - data_not_a_change (optional): the pair is left out of the change gate
+    (a Basic panel's choice that only writes the Advanced fields).
+{% endcomment %}<fieldset class="choice-pair" id="{{ pair_id }}" aria-labelledby="{{ pair_id }}-legend"{% if help_id or errors %} aria-describedby="{% if help_id %}{{ help_id }}{% endif %}{% if errors %} {{ pair_id }}_error{% endif %}"{% endif %}{% if data_not_a_change %} data-not-a-change{% endif %}><legend id="{{ pair_id }}-legend">{{ legend }}</legend>{% if fixed and tip %}{% include "stewardship/components/toggletip.html" with tip_id=pair_id|add:"-tip" tip_label_id=pair_id|add:"-legend" tip_text=tip %}{% endif %}
+<span class="choice-pair-options">
+<label for="{{ pair_id }}_0"><input type="radio" id="{{ pair_id }}_0" name="{{ name }}" value="{{ first_value }}"{% if chosen == first_value %} checked{% endif %}{% if fixed and chosen != first_value %} disabled{% endif %}{% if required %} required{% endif %}{% if errors %} aria-invalid="true" aria-describedby="{{ pair_id }}_error"{% endif %}>{{ first_label }}</label>
+<label for="{{ pair_id }}_1"><input type="radio" id="{{ pair_id }}_1" name="{{ name }}" value="{{ second_value }}"{% if chosen == second_value %} checked{% endif %}{% if fixed and chosen != second_value %} disabled{% endif %}{% if required %} required{% endif %}{% if errors %} aria-invalid="true" aria-describedby="{{ pair_id }}_error"{% endif %}>{{ second_label }}</label>
+</span>
+<div class="field-error-line" role="status"><ul class="errorlist" id="{{ pair_id }}_error"{% if not errors %} hidden{% endif %}>{% for error in errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></fieldset>

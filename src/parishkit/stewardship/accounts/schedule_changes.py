@@ -140,6 +140,32 @@ PAUSED_SENDS = _(
 SHOWN_SENDS = 5
 
 
+def report_window_rows(configuration, campaign, after, explicit):
+    """The report email rows a change of the campaign's dates or zone replaces.
+
+    Each is an update with the report's own saved values, for every report
+    of the campaign that ``schedule_window_changed`` says the change
+    reinterprets; ``explicit`` are the ids the change already names.
+    """
+    return [
+        {
+            "operation": "update",
+            "section": "schedules",
+            "id": row["id"],
+            "values": row["values"],
+        }
+        for row in configuration.active_configuration.canonical_document[
+            "sections"
+        ].get("schedules", [])
+        if row["values"].get("kind") == "report"
+        and row["values"]["campaign_id"] == str(campaign.pk)
+        and row["id"] not in explicit
+        and schedule_window_changed(
+            campaign.active_configuration.values, after, kind="report"
+        )
+    ]
+
+
 def _day_words(day):
     """A campaign day in words: its weekday and its date in the parish format."""
     return f"{WEEKDAYS[day.weekday()]}, {parish_date(day)}"
@@ -408,6 +434,13 @@ def build_preview(
         admin_editing.database_now,
     )
     schedule_changes = list(patch)
+    # Report emails (#1786) are edited on Report emails, not here, but a
+    # report's rule follows the campaign's dates and zone: a change of them
+    # replaces each report's revision too, so its planned sends are made
+    # again, as the digests' were (``schedule_window_changed``). The review
+    # names them.
+    reports = report_window_rows(configuration, campaign, window.values(), explicit)
+    patch.extend(reports)
     if changed or campaign_values:
         patch.append(
             {
@@ -475,7 +508,9 @@ def build_preview(
         }
         for row in schedule_changes
     ]
-    blocking = sum(change["impact"].get("blocking", 0) for change in changes)
+    blocking = sum(change["impact"].get("blocking", 0) for change in changes) + sum(
+        summary.get(row["id"], {}).get("blocking", 0) for row in reports
+    )
     # Email the changed schedules already sent (each schedule's fulfillment,
     # across its revisions): only then does the review say a sent email
     # cannot be recalled. A future send's edit or move has sent nothing.
@@ -483,6 +518,7 @@ def build_preview(
     return {
         "campaign": campaign,
         "changes": changes,
+        "reports": [row["values"]["name"] for row in reports],
         "window_changes": changed,
         "before_window": campaign.active_configuration.values,
         "after_window": window.values(),

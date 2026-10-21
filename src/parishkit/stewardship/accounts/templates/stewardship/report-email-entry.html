@@ -1,0 +1,167 @@
+{% extends 'stewardship/admin-base.html' %}{% load static i18n stewardship %}
+{% block title %}{% if new %}{% translate "New report email" %}{% else %}{{ saved.name }}{% endif %}{% endblock %}
+{% block head %}<script src="{% static 'stewardship/report-email-editor-v1.js' %}" defer></script>{% endblock %}
+{% block content %}{% comment %}
+New and Edit report email (report-emails spec, "New and Edit report email",
+#1786; report_email_editor_views). One form in the spec's order: Name and
+Subject, Recipients, Schedule with As of, Blocks with Send only when there
+is something to report, and the Introduction. Its button (Add the report
+email on New, Review changes on Edit) reviews the change in the shared
+review dialog (UX conventions, "Review dialog"): a field refusal answers
+this page again with the errors at their fields; an accepted review opens
+the dialog, whose Apply confirms here and returns to Report emails. Review
+changes waits for a real change (data-require-change) and every required
+field (data-require-complete), with its reason after it.
+
+Sends (Once | Repeating), As of and Frequency are stored two-way settings,
+each a segmented pair of radios (components/choice-pair.html; UX
+conventions, "Binary choices"). The Introduction is the shared HTML and
+plain-text editor every authored email part uses
+(components/html-content-editor.html).
+
+report-email-editor-v1.js runs the recipients picker (a text box with the
+eligible users and groups as its suggestion list; Add makes a chip holding
+a hidden recipient field), the Blocks list (Add a block, Move up, Move down
+and Remove, each in place, focus kept and the new position announced; each
+row holds its hidden block field, in order), the Basic and Advanced modes of
+a repeating schedule (ParishEditorMode), the live Next sends table (a read
+of schedule_preview, redrawn in a region that keeps its height) and the
+line that a repeating report's days are the campaign's, shown when this
+browser's zone differs from the campaign's (data-campaign-days). The review
+dialog's "Send after the campaign ends" tick is its Apply form's own field,
+held by the shared review gate (report-email-review.html).
+
+Dates and times are typed in this browser's zone (data-browser-zone); on an
+unbound Edit page ui-v1.js fills the time (and a one-time date) from the
+moment drawn (data-schedule-local), as Edit scheduled email does. A
+repeating report's days are the campaign's days.
+
+A one-time send's "time has passed" (or "happens twice") refusal concerns
+its date and its time, so it marks both and is said once, after the time
+(date_time_error); an edit of either clears both (UX conventions, "Field
+errors and live checks").
+
+On Edit of a repeating report, the Next sends table's ticked sends go to
+Skip selected sends or Send selected sends (report-skip-form, one review
+dialog, which redraws the table in place), the report's past sends follow
+the form, and Delete has a section of its own whose review returns to the
+list.
+{% endcomment %}
+<h1>{% if new %}{% translate "New report email" %}{% else %}{{ saved.name }}{% endif %}</h1>
+{% aboutpage "report-email-entry" %}<p>{% translate "A report email is made of blocks, sent to the people you choose, once or on a repeating schedule. Times are in this computer's time zone. Nothing changes until you review the change and apply it; then you return to Report emails." %}</p>
+<p>{% translate "Recipients may be Administrators and Staff, the groups All Administrators and All Staff (counted when each email is made), and other email addresses. An outside address receives the whole report, including any Family names and request text." %}</p>{% endaboutpage %}
+<p>{{ campaign.active_configuration.name }}</p>
+<p class="campaign-dates">{% blocktranslate trimmed with start=values.start_date|parish_date end=values.end_date|parish_date %}Campaign dates: {{ start }} – {{ end }}{% endblocktranslate %}</p>
+{% if busy %}<p class="notice">{% translate "A send of this report is being prepared or delivered, so it can't be changed until that finishes." %}</p>{% endif %}
+<form method="post" action="{{ post_url }}" id="report-email-form" class="report-email-form" data-review-open="report-review" data-require-complete{% if not new %} data-require-change="base_digest"{% endif %} data-schedule-entry{% if drawn_at %} data-schedule-local="{{ drawn_at }}"{% endif %} data-report-editor data-campaign-zone="{{ campaign_zone }}" data-preview-url="{{ preview_url }}"{% if report_id %} data-report-id="{{ report_id }}"{% endif %} data-outside-note="{% translate 'This address has no portal account. It will receive the whole report, including any Family names and request text.' %}" data-chip-outside="{% translate '{address} — outside address' %}" data-remove-label="{% translate 'Remove {name}' %}" data-remove-text="{% translate 'Remove' %}" data-recipient-unknown="{% translate 'Choose a listed name or group, or type a whole email address.' %}" data-recipient-twice="{% translate 'That recipient is chosen already.' %}" data-recipient-leader="{% translate "{address} is a Ministry leader; Ministry leaders don't receive report emails, so it can't be added." %}" data-first-block="{% translate 'It is first, so it cannot move up.' %}" data-last-block="{% translate 'It is last, so it cannot move down.' %}" data-only-block="{% translate 'It is the only block that moves.' %}" data-moved="{% translate '{name} moved to position {position} of {count}.' %}" data-removed="{% translate '{name} removed.' %}" data-added="{% translate '{name} added.' %}" data-recipient-added="{% translate '{name} added to the recipients.' %}" data-recipient-removed="{% translate '{name} removed from the recipients.' %}">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="zone" value="" data-browser-zone>{% if drawn_at %}<input type="hidden" name="drawn" value="{{ drawn_at }}">{% endif %}
+
+<section class="panel" aria-labelledby="report-section-name"><h2 id="report-section-name">{% translate "Name and subject" %}</h2>
+<div class="field"><label for="report-name">{{ form.name.label }}</label>
+<input type="text" name="name" id="report-name" maxlength="80" required value="{{ form.name.value|default:'' }}" aria-describedby="report-name-help{% if form.name.errors %} report-name_error{% endif %}" data-missing-hint="{% translate 'Name the report email to save it.' %}"{% if form.name.errors %} aria-invalid="true"{% endif %}>
+<p class="help" id="report-name-help">{% translate "The report's own name, not the From name: shown on Report emails, the Campaign calendar and Sent mail, and added to the email's subject line when the subject doesn't say it. No two report emails of a campaign share a name." %}</p>
+<div class="field-error-line" role="status"><ul class="errorlist" id="report-name_error"{% if not form.name.errors %} hidden{% endif %}>{% for error in form.name.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></div>
+<div class="field"><label for="report-subject">{% translate "Email subject line (optional)" %}</label>
+<input type="text" name="subject" id="report-subject" maxlength="254" value="{{ form.subject.value|default:'' }}" aria-describedby="report-subject-help{% if form.subject.errors %} report-subject_error{% endif %}"{% if form.subject.errors %} aria-invalid="true"{% endif %}>
+<p class="help" id="report-subject-help">{% translate "The subject line recipients see. The report's name, date, campaign and parish are added when the subject does not already say them. It may use {{ campaign_name }} and {{ parish_name }}." %}</p>
+<div class="field-error-line" role="status"><ul class="errorlist" id="report-subject_error"{% if not form.subject.errors %} hidden{% endif %}>{% for error in form.subject.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></div>
+</section>
+
+<section class="panel" aria-labelledby="report-section-recipients"><h2 id="report-section-recipients">{% translate "Recipients" %}</h2>
+<div class="field report-recipients"><label for="report-recipient">{% translate "Add a recipient" %}</label>
+<div class="report-picker"><input type="text" id="report-recipient" list="report-recipient-choices" autocomplete="off" aria-describedby="report-recipient-help report-recipient-note{% if form.errors.recipient %} report-recipient_error{% endif %}"{% if form.errors.recipient %} aria-invalid="true"{% endif %} data-recipient-input data-not-a-change>
+{% button type="button" variant="secondary" data-recipient-add %}{% translate "Add" %}{% endbutton %}</div>
+<datalist id="report-recipient-choices">{% for choice in choices %}<option value="{{ choice.label }}" data-value="{{ choice.value }}">{% if choice.email %}{{ choice.email }}{% endif %}</option>{% endfor %}</datalist>{{ leader_addresses|json_script:"report-leader-addresses" }}
+<p class="help" id="report-recipient-help">{% translate "Type a name, an address or a group, and choose it; or type any other email address. Ministry leaders are not offered." %}</p>
+<p class="help reserve-line" id="report-recipient-note" role="status" data-recipient-note></p>
+<ul class="report-chips" id="report-recipient-chips" data-recipient-chips aria-label="{% translate 'Chosen recipients' %}">{% for chip in chips %}<li data-chip><input type="hidden" name="recipient" value="{{ chip.value }}" data-change-setting><span>{{ chip.label }}</span> {% blocktranslate asvar remove_label with name=chip.label %}Remove {{ name }}{% endblocktranslate %}{% button type="button" variant="secondary" aria-label=remove_label data-chip-remove %}{% translate "Remove" %}{% endbutton %}</li>{% endfor %}</ul>
+<div class="field-error-line" role="status"><ul class="errorlist" id="report-recipient_error"{% if not form.errors.recipient %} hidden{% endif %}>{% for error in form.errors.recipient %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></div>
+</section>
+
+<section class="panel" aria-labelledby="report-section-schedule"><h2 id="report-section-schedule">{% translate "Schedule" %}</h2>
+{% translate "This report has made a scheduled send, so whether it sends once or repeats can no longer change." as sends_fixed %}{% include "stewardship/components/choice-pair.html" with pair_id="report-sends" name="sends" legend=_("Sends") first_value="once" first_label=_("Once") second_value="repeat" second_label=_("Repeating") chosen=form.sends.value fixed=sent tip=sends_fixed errors=form.sends.errors required=True %}
+<div data-show-when="sends=once" data-required-when-shown="once_date">
+<div class="field" data-schedule-field="date"><label for="report-once_date">{% translate "Date" %}</label>
+<input type="date" name="once_date" id="report-once_date" data-browser-zone-field value="{{ form.once_date.value|default:'' }}" data-missing-hint="{% translate 'Choose the date it sends.' %}"{% if form.once_date.errors or date_time_error %} aria-invalid="true" aria-describedby="{% if form.once_date.errors %}report-once_date_error{% endif %}{% if date_time_error %} report-time_error{% endif %}"{% endif %}>
+<div class="field-error-line" role="status"><ul class="errorlist" id="report-once_date_error"{% if not form.once_date.errors %} hidden{% endif %}>{% for error in form.once_date.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></div>
+</div>
+<div data-show-when="sends=repeat">
+<div data-editor-modes="report-schedule">
+{% translate "This schedule has no Basic choice." as no_basic_title %}{% translate "Switching to Basic clears the schedule's rule; choose one of the Basic choices then." as no_basic_body %}
+{% include "stewardship/components/editor-mode.html" with mode_id="report-mode" mode=editor_mode no_basic_title=no_basic_title no_basic_body=no_basic_body %}
+<fieldset class="editor-mode-panel" data-editor-mode-panel="basic" data-not-a-change data-missing-hint="{% translate 'Choose Daily or Weekly.' %}"{% if editor_mode != "basic" %} hidden disabled{% endif %}><legend class="visually-hidden">{% translate "Basic schedule" %}</legend>
+{% include "stewardship/components/choice-pair.html" with pair_id="report-preset" name="preset" legend=_("Frequency") first_value="daily" first_label=_("Daily") second_value="weekly" second_label=_("Weekly") chosen=form.preset.value help_id="report-preset-help" errors=form.preset.errors required=True %}
+<p class="help" id="report-preset-help">{% translate "Daily: every day, from the day after the campaign starts until the day after it ends; as of the end of the previous day, each email reports one campaign day. Weekly: every week on the day you choose, from the campaign's first day until the first send after it ends." %}</p>
+<div class="field" data-show-when="preset=weekly"><label for="report-preset_weekday">{% translate "Day" %}</label>
+<select name="preset_weekday" id="report-preset_weekday"{% if form.preset_weekday.errors %} aria-invalid="true" aria-describedby="report-preset_weekday_error"{% endif %}>{% for value, label in form.fields.preset_weekday.choices %}<option value="{{ value }}"{% if form.preset_weekday.value|stringformat:"s" == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+<p class="help" data-campaign-days hidden>{% translate "These are the days where the parish is, in the campaign's time zone; only the time is read in your computer's time zone." %}</p>
+<div class="field-error-line" role="status"><ul class="errorlist" id="report-preset_weekday_error"{% if not form.preset_weekday.errors %} hidden{% endif %}>{% for error in form.preset_weekday.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></div>
+</fieldset>
+<div data-editor-mode-panel="advanced"{% if editor_mode == "basic" %} hidden{% endif %}>
+{% include "stewardship/components/choice-pair.html" with pair_id="report-frequency" name="frequency" legend=_("Frequency") first_value="daily" first_label=_("Daily") second_value="weekly" second_label=_("Weekly") chosen=form.frequency.value errors=form.frequency.errors %}
+<fieldset class="field" data-show-when="frequency=weekly" id="report-weekdays"{% if form.weekdays.errors %} aria-describedby="report-weekdays_error"{% endif %}><legend>{{ form.weekdays.label }}</legend>
+<div class="repeat-days">{% for value, label in form.fields.weekdays.choices %}<label><input type="checkbox" name="weekdays" value="{{ value }}"{% if value in form.weekdays.value %} checked{% endif %}{% if form.weekdays.errors %} aria-invalid="true"{% endif %}> {{ label }}</label> {% endfor %}</div>
+<p class="help" data-campaign-days hidden>{% translate "These are the days where the parish is, in the campaign's time zone; only the time is read in your computer's time zone." %}</p>
+<div class="field-error-line" role="status"><ul class="errorlist" id="report-weekdays_error"{% if not form.weekdays.errors %} hidden{% endif %}>{% for error in form.weekdays.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></fieldset>
+<div class="field"><label for="report-from_kind">{{ form.from_kind.label }}</label>
+<select name="from_kind" id="report-from_kind"{% if form.from_kind.errors %} aria-invalid="true" aria-describedby="report-from_kind_error"{% endif %}>{% for value, label in form.fields.from_kind.choices %}<option value="{{ value }}"{% if form.from_kind.value == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+<div class="field-error-line" role="status"><ul class="errorlist" id="report-from_kind_error"{% if not form.from_kind.errors %} hidden{% endif %}>{% for error in form.from_kind.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></div>
+<div class="field" data-show-when="from_kind=date"><label for="report-from_date">{{ form.from_date.label }}</label>
+<input type="date" name="from_date" id="report-from_date" value="{{ form.from_date.value|default:'' }}" required data-missing-hint="{% translate 'Choose the From date.' %}"{% if form.from_date.errors %} aria-invalid="true" aria-describedby="report-from_date_error"{% endif %}>
+<div class="field-error-line" role="status"><ul class="errorlist" id="report-from_date_error"{% if not form.from_date.errors %} hidden{% endif %}>{% for error in form.from_date.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></div>
+<div class="field"><label for="report-until_kind">{{ form.until_kind.label }}</label>
+<select name="until_kind" id="report-until_kind"{% if form.until_kind.errors %} aria-invalid="true" aria-describedby="report-until_kind_error"{% endif %}>{% for value, label in form.fields.until_kind.choices %}<option value="{{ value }}"{% if form.until_kind.value == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+<div class="field-error-line" role="status"><ul class="errorlist" id="report-until_kind_error"{% if not form.until_kind.errors %} hidden{% endif %}>{% for error in form.until_kind.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></div>
+<div class="field" data-show-when="until_kind=date"><label for="report-until_date">{{ form.until_date.label }}</label>
+<input type="date" name="until_date" id="report-until_date" value="{{ form.until_date.value|default:'' }}" required data-missing-hint="{% translate 'Choose the Until date.' %}"{% if form.until_date.errors %} aria-invalid="true" aria-describedby="report-until_date_error"{% endif %}>
+<div class="field-error-line" role="status"><ul class="errorlist" id="report-until_date_error"{% if not form.until_date.errors %} hidden{% endif %}>{% for error in form.until_date.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></div>
+</div>
+</div>
+</div>
+<div class="field" data-schedule-field="time"><label for="report-time">{% translate "Time" %}</label>
+<input type="text" name="time" id="report-time" value="{{ form.time.value|default:'' }}" required autocomplete="off" spellcheck="false" autocapitalize="off" data-time-entry="time"{% if form.fields.time.kept %} data-time-kept="{{ form.time.value }}"{% endif %} aria-describedby="report-zone-note{% if form.time.errors %} report-time_error{% endif %}" data-missing-hint="{% translate 'Enter the time it sends.' %}"{% if form.time.errors %} aria-invalid="true"{% endif %}>
+{% translate "Enter the date and time in this computer's time zone:" as note_text %}{% include "stewardship/components/zone-note.html" with note_text=note_text note_id="report-zone-note" %}
+<div class="field-error-line" role="status"><ul class="errorlist" id="report-time_error"{% if not form.time.errors %} hidden{% endif %}>{% for error in form.time.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></div>
+<p class="notice notice-error" id="report-zone-missing" data-zone-missing hidden>{% translate "Your browser didn't report a time zone, so the send time can't be read. Check your computer's time zone setting, then reload this page." %}</p>
+{% include "stewardship/components/choice-pair.html" with pair_id="report-as_of" name="as_of" legend=_("As of") first_value="previous_day_end" first_label=as_of_labels.previous_day_end second_value="send_time" second_label=as_of_labels.send_time chosen=form.as_of.value help_id="report-as_of-help" errors=form.as_of.errors required=True %}
+<p class="help" id="report-as_of-help">{% translate "End of the previous day: every figure is as it stood at midnight before the send, where the parish is, so each email reports whole days. When the email is made: every figure is as it stands when the email is made." %}</p>
+<h3 id="report-preview-title">{% translate "Next sends" %}</h3>
+<div class="report-schedule-preview" id="report-schedule-preview" data-schedule-preview data-in-place-region data-in-place-own data-keep-height data-base-digest="{{ base_digest }}">{% include "stewardship/report-email-schedule-preview.html" %}</div>
+{% if not new %}<p class="review-outcome" id="report-skip-outcome" role="status" tabindex="-1" data-review-outcome></p>{% endif %}
+</section>
+
+<section class="panel" aria-labelledby="report-section-blocks"><h2 id="report-section-blocks">{% translate "Blocks" %}</h2>
+<ol class="report-blocks" id="report-blocks" data-block-list aria-labelledby="report-section-blocks">{% for block in blocks %}{% include "stewardship/report-email-block.html" %}{% endfor %}</ol>
+<div class="field"><label for="report-add-block">{% translate "Add a block" %}</label>
+<div class="report-picker"><select id="report-add-block" data-block-choice data-not-a-change aria-describedby="report-add-block-help report-add-block-reason{% if form.errors.block %} report-block_error{% endif %}"{% if form.errors.block %} aria-invalid="true"{% endif %}>{% for block in available_blocks %}<option value="{{ block.key }}" data-help="{{ block.help }}">{{ block.label }}</option>{% endfor %}</select>
+{% button type="button" variant="secondary" data-block-add aria-describedby="report-add-block-reason" %}{% translate "Add" %}{% endbutton %}</div>
+<p class="help reserve-line" id="report-add-block-help" data-block-help>{% if available_blocks %}{{ available_blocks.0.help }}{% endif %}</p>
+<p class="help reserve-line" id="report-add-block-reason" data-block-reason data-all-in="{% translate 'Every block is in the report already; each block is in it at most once.' %}">{% if not available_blocks %}{% translate "Every block is in the report already; each block is in it at most once." %}{% endif %}</p>
+<div class="field-error-line" role="status"><ul class="errorlist" id="report-block_error"{% if not form.errors.block %} hidden{% endif %}>{% for error in form.errors.block %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></div>
+<template id="report-block-templates">{% for block in available_blocks %}{% include "stewardship/report-email-block.html" %}{% endfor %}</template>
+<div class="field"><div class="choice"><input type="checkbox" name="content_required" id="report-content_required"{% if form.content_required.value %} checked{% endif %} aria-describedby="report-content_required-help"> <label for="report-content_required">{{ form.content_required.label }}</label></div>
+<p class="help" id="report-content_required-help">{% translate "Skips a send only when every block is empty. Blocks that show where the campaign stands, such as the Response funnel, always count, so a report with one always sends." %}</p></div>
+</section>
+
+<section class="panel" aria-labelledby="report-section-intro"><h2 id="report-section-intro">{% translate "Introduction (optional)" %}</h2>
+<p class="help">{% translate "Shown at the top of the email, before the blocks. It is edited as every page and email of the portal is, with the same visual editor and generated plain text." %}</p>
+{% if new %}{% translate "Add the report email" as review_action %}{% else %}{% translate "Review changes" as review_action %}{% endif %}{% include "stewardship/components/html-content-editor.html" with html=form.html generate=form.generate_text text=form.text visual=visual heading="h3" review_action=review_action %}
+</section>
+
+<p>{% if new %}{% button type="submit" autocomplete="off" aria-describedby="report-complete-hint" %}{% translate "Add the report email" %}{% endbutton %}{% else %}{% button type="submit" autocomplete="off" aria-describedby="report-complete-hint" %}{% translate "Review changes" %}{% endbutton %}{% endif %} <a href="{{ cancel_url }}">{% translate "Cancel" %}</a>{% if not new %} <span class="help unchanged-hint" data-unchanged-hint data-idle>{% translate "Change a field to review it." %}</span>{% endif %}</p>
+<p class="help" id="report-complete-hint" data-complete-hint="reserve"></p>
+</form>
+{% if new %}{% translate "Review new report email" as review_title %}{% else %}{% translate "Review report email change" as review_title %}{% endif %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="report-review" title=review_title apply_url=post_url return_url=list_url outcome_id="report-emails-outcome" fallback="report-email-form" %}
+{% if not new %}
+<form method="post" action="{{ post_url }}" id="report-skip-form" data-review-open="report-skip-review" data-review-region="report-schedule-preview" data-table-sync>{% csrf_token %}<input type="hidden" name="base_digest" value="{{ base_digest }}"></form>
+{% translate "Review the selected sends" as skip_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="report-skip-review" title=skip_title apply_url=post_url outcome_id="report-skip-outcome" fallback="report-preview-title" %}
+<section class="panel" aria-labelledby="report-past-title"><h2 id="report-past-title">{% translate "Past sends" %}</h2>
+{% if sends %}{% include "stewardship/components/report-sends.html" with sends=sends name=saved.name administrator=True %}{% else %}<p>{% translate "This report email has not sent yet." %}</p>{% endif %}</section>
+<section class="panel report-delete" aria-labelledby="report-delete-title">
+<h2 id="report-delete-title">{% translate "Delete this report email" %}</h2>
+<form method="post" action="{{ post_url }}" id="report-delete-form" data-review-open="report-delete-review" data-table-sync>{% csrf_token %}<input type="hidden" name="action" value="delete_preview"><input type="hidden" name="base_digest" value="{{ base_digest }}">
+<p class="help" id="report-delete-help">{% translate "Deleting stops its sends that are still to come. Sends already made are not recalled, and its past sends stay listed on Report emails. You review it before anything changes." %}</p>
+<p>{% button type="submit" class="button-danger" autocomplete="off" aria-describedby="report-delete-help" %}{% translate "Delete" %}{% endbutton %}</p>
+</form></section>
+{% translate "Delete this report email?" as delete_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="report-delete-review" title=delete_title apply_url=post_url return_url=list_url outcome_id="report-emails-outcome" fallback="report-delete-form" %}
+{% endif %}
+{% endblock %}

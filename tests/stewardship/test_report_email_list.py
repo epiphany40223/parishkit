@@ -152,9 +152,15 @@ def test_status_and_the_action_matrix():
         "pause",
         [{"operation": "edit", "id": ID}],
         [{"operation": "pause", "id": "not-an-id"}],
-        [{"operation": "pause", "id": ID, "send": "2026-10-21"}],
+        [{"operation": "pause", "id": ID, "sends": ["2026-10-21"]}],
         [{"operation": "skip", "id": ID}],
-        [{"operation": "skip", "id": ID, "send": "21 Oct"}],
+        [{"operation": "skip", "id": ID, "send": "2026-10-21"}],
+        [{"operation": "skip", "id": ID, "sends": "2026-10-21"}],
+        [{"operation": "skip", "id": ID, "sends": []}],
+        [{"operation": "skip", "id": ID, "sends": ["21 Oct"]}],
+        [{"operation": "skip", "id": ID, "sends": ["2026-10-21", "2026-10-21"]}],
+        [{"operation": "unskip", "id": ID, "sends": ["2026-10-1"]}],
+        [{"operation": "skip", "id": ID, "sends": ["2026-10-21"] * 51}],
         [{"operation": "pause", "id": ID}, {"operation": "delete", "id": ID}],
     ],
 )
@@ -204,30 +210,77 @@ def test_change_rows_name_each_report_and_its_values():
         )
 
 
-def test_a_skip_names_one_send_still_ahead(monkeypatch):
-    """A send of the report ahead is skipped and signed; others are refused."""
-    monkeypatch.setattr(changes, "_worked", lambda identifier, slot: False)
+def test_a_skip_names_sends_still_ahead(monkeypatch):
+    """Each send of the report ahead is skipped and its time signed; one
+    refused send refuses the whole skip."""
+    monkeypatch.setattr(changes, "send_worked", lambda identifier, slot: False)
     records = {ID: report()}
     patch, due, described = changes.change_rows(
-        [{"operation": "skip", "id": ID, "send": "2026-10-22"}],
+        [{"operation": "skip", "id": ID, "sends": ["2026-10-23", "2026-10-22"]}],
         records,
         NEW_YORK,
         NOW,
     )
-    assert patch[0]["values"] == {"skip_dates": ["2026-10-22"]}
-    assert due == [datetime(2026, 10, 22, 11, tzinfo=UTC)]
-    assert described[0]["send"] == "2026-10-22"
-    past = [{"operation": "skip", "id": ID, "send": "2026-10-19"}]
+    assert patch[0]["values"] == {"skip_dates": ["2026-10-22", "2026-10-23"]}
+    assert sorted(due) == [
+        datetime(2026, 10, 22, 11, tzinfo=UTC),
+        datetime(2026, 10, 23, 11, tzinfo=UTC),
+    ]
+    assert [send["send"] for send in described[0]["sends"]] == [
+        "2026-10-22",
+        "2026-10-23",
+    ]
+    past = [{"operation": "skip", "id": ID, "sends": ["2026-10-22", "2026-10-19"]}]
     with pytest.raises(PermissionError):
         changes.change_rows(past, records, NEW_YORK, NOW)
-    beyond = [{"operation": "skip", "id": ID, "send": "2026-12-01"}]
+    beyond = [{"operation": "skip", "id": ID, "sends": ["2026-12-01"]}]
     with pytest.raises(UserFacingError):
         changes.change_rows(beyond, records, NEW_YORK, NOW)
     skipped = {ID: report(skip_dates=["2026-10-22"])}
     with pytest.raises(UserFacingStale):
         changes.change_rows(
-            [{"operation": "skip", "id": ID, "send": "2026-10-22"}],
+            [{"operation": "skip", "id": ID, "sends": ["2026-10-23", "2026-10-22"]}],
             skipped,
+            NEW_YORK,
+            NOW,
+        )
+
+
+def test_an_unskip_sends_skipped_sends_again(monkeypatch):
+    """Unskip removes the skips of sends still ahead, keeping every other
+    skip, past ones included; a send not skipped is a stale page (409), a
+    past one or one with Production work is refused (403)."""
+    worked = set()
+    monkeypatch.setattr(changes, "send_worked", lambda identifier, slot: slot in worked)
+    records = {ID: report(skip_dates=["2026-10-19", "2026-10-22", "2026-10-23"])}
+    patch, due, described = changes.change_rows(
+        [{"operation": "unskip", "id": ID, "sends": ["2026-10-22"]}],
+        records,
+        NEW_YORK,
+        NOW,
+    )
+    assert patch[0]["values"] == {"skip_dates": ["2026-10-19", "2026-10-23"]}
+    assert due == [datetime(2026, 10, 22, 11, tzinfo=UTC)]
+    assert described[0]["operation"] == "unskip"
+    with pytest.raises(UserFacingStale):
+        changes.change_rows(
+            [{"operation": "unskip", "id": ID, "sends": ["2026-10-24"]}],
+            records,
+            NEW_YORK,
+            NOW,
+        )
+    with pytest.raises(PermissionError):
+        changes.change_rows(
+            [{"operation": "unskip", "id": ID, "sends": ["2026-10-19"]}],
+            records,
+            NEW_YORK,
+            NOW,
+        )
+    worked.add("2026-10-23")
+    with pytest.raises(PermissionError):
+        changes.change_rows(
+            [{"operation": "unskip", "id": ID, "sends": ["2026-10-22", "2026-10-23"]}],
+            records,
             NEW_YORK,
             NOW,
         )
@@ -254,3 +307,18 @@ def test_a_resume_signs_the_first_send_it_makes():
             refuse_passed_sends([moment.isoformat() for moment in due], None)
     finally:
         editing.database_now = original
+
+
+def test_the_after_campaign_question_names_only_a_send_still_ahead():
+    """Every morning until the day after the campaign's last day sends once
+    after it ends; once that send is past, there is nothing to ask (A8)."""
+    from parishkit.stewardship.reports.report_email_editor import (
+        PRESETS,
+        after_campaign,
+    )
+
+    values = report(schedule={"type": "repeat", **PRESETS["daily"], "time": "07:00:00"})
+    late = after_campaign(values, NEW_YORK, NOW)
+    # November 7, 2026, 7:00 AM in New York.
+    assert late.due_at == datetime(2026, 11, 7, 12, 0, tzinfo=UTC)
+    assert after_campaign(values, NEW_YORK, late.due_at) is None

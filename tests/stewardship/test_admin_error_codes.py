@@ -29,6 +29,11 @@ ALLOWED = {
     # AdminForm.add_error passes every caller's error on to Django, then
     # checks its code at run time (strict test settings).
     ("web/admin_forms.py", "super().add_error(field, error)"),
+    # EditorForm (an AdminForm, which checks each code at run time): the
+    # coded errors name_taken and value_problems build for the page and the
+    # command line alike.
+    ("reports/report_email_editor.py", 'self.add_error("name", taken)'),
+    ("reports/report_email_editor.py", "self.add_error(field, error)"),
 }
 # The same for the tests, by path under tests/stewardship.
 TEST_ALLOWED = {

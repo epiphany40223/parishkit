@@ -226,19 +226,20 @@ def _pauses(ranges):
         previous = end
 
 
-def report_values(values):
-    """Validate one ``report`` record's values; return them unchanged.
-
-    Every key is present (spec, "Stored form"). The subject and introduction
-    accept only the placeholders today's digests accept and no hosted files;
-    the introduction is checked as the sanitizer would store it, as the
-    digest templates are, so a later sanitizer change cannot invalidate a
-    saved report.
-    """
+def _form(values):
+    """Every key present, of a ``report`` record of a campaign."""
     if type(values) is not dict or set(values) != KEYS or values["kind"] != "report":
         invalid()
     typed(values["campaign_id"], "uuid")
-    text(values["name"], NAME_LIMIT)
+
+
+def _content(values):
+    """The subject and introduction: only the digests' placeholders, no files.
+
+    The introduction is checked as the sanitizer would store it, as the
+    digest templates are, so a later sanitizer change cannot invalidate a
+    saved report.
+    """
     if values["subject"] != "":
         text(values["subject"], 254)
     html, plain = values["intro_html"], values["intro_text"]
@@ -250,16 +251,74 @@ def report_values(values):
         )
     except ValueError:
         invalid()
-    _recipients(values["recipients"])
-    _schedule(values["schedule"])
-    if values["as_of"] not in AS_OF or values["slot_basis"] not in SLOT_BASES:
+
+
+def _choice(value, allowed):
+    """Refuse ``value`` unless it is one of ``allowed``."""
+    if value not in allowed:
         invalid()
-    _blocks(values["blocks"])
-    if type(values["content_required"]) is not bool:
+
+
+def _flag(value):
+    """Refuse anything but ``True`` or ``False``."""
+    if type(value) is not bool:
         invalid()
+
+
+def _sends(values):
+    """What the report's own actions keep: slot basis, skips and pauses."""
+    _choice(values["slot_basis"], SLOT_BASES)
     skip_dates(values["skip_dates"])
     _pauses(values["paused_ranges"])
+
+
+# The parts of a report's values, each checked on its own (``refused_parts``
+# names the ones a document gets wrong), in the order ``report_values``
+# checks them. "form" comes first: the others read keys it guarantees.
+PARTS = (
+    ("form", _form),
+    ("name", lambda values: text(values["name"], NAME_LIMIT)),
+    ("content", _content),
+    ("recipients", lambda values: _recipients(values["recipients"])),
+    ("schedule", lambda values: _schedule(values["schedule"])),
+    ("as_of", lambda values: _choice(values["as_of"], AS_OF)),
+    ("blocks", lambda values: _blocks(values["blocks"])),
+    ("content_required", lambda values: _flag(values["content_required"])),
+    ("sends", _sends),
+)
+
+
+def report_values(values):
+    """Validate one ``report`` record's values; return them unchanged.
+
+    Every key is present (spec, "Stored form"), and each part (``PARTS``)
+    is valid: the subject and introduction accept only the placeholders
+    today's digests accept and no hosted files.
+    """
+    for _part, check in PARTS:
+        check(values)
     return values
+
+
+def refused_parts(values):
+    """The names of the parts of ``values`` that ``report_values`` refuses.
+
+    Empty when the values are valid. A document whose form is wrong (a key
+    missing or extra) is ``["form"]`` alone, since the other parts cannot
+    be read then. ``report-email preview`` names the field and problem of
+    each refused part from these (``report_email_editor.value_problems``).
+    """
+    found = []
+    for part, check in PARTS:
+        try:
+            check(values)
+        except (ValueError, TypeError, KeyError):
+            # A malformed document can fail a part with a TypeError (a
+            # list where a string belongs) as well as a refusal.
+            if part == "form":
+                return ["form"]
+            found.append(part)
+    return found
 
 
 def schedule_fields(values):
