@@ -1192,8 +1192,22 @@ as what the reviewer did. **Details** names the item and who acted:
 - Additional information: "Additional information";
 - then "by" and the acting user's address ("Former portal user" when the
   user record is gone, as Ministry requests says). A line never shows a
-  value the Family gave or a reviewer typed (the Member tabs show them) nor
-  a note, since notes can hold personal detail.
+  value the Family gave or a reviewer typed (the Member tabs show them),
+  and shows no note, since notes can hold personal detail, except on a
+  Back to review line (below);
+- on a **Back to review** line, then "note:" and the note the step was
+  recorded with, when it has one
+  ([#1893](https://github.com/epiphany40223/parishkit/issues/1893)). The
+  note is shown only to a reader who may open that stream's work page,
+  where the same note is already on the item's row: Census changes for a
+  census line, Ministry requests (for the request's Ministry) for a
+  Ministry line, Additional information for an Additional information
+  line. A reader who may not sees the line without it. The Administrator
+  chose this on 2026-10-21 ("If staff can see the changes in
+  Census/Ministry work pages, it's ok for them to see the changes
+  (including back to review) in the timeline, too"); it is an exception
+  for Back to review, whose note is the reason for the undo, and every
+  other line keeps showing no note.
 
 In this release the lines cover the decisions stored today:
 
@@ -1224,11 +1238,15 @@ responses in this campaign (Production), so Testing rehearsal decisions are
 never listed, and only while the Timeline tab is chosen; the
 [timeline export](#timeline-export) always includes them.
 
-Administrators and Staff see the same review lines, since Staff review
-every stream. Ministry leaders cannot open the page; if a leader view is
+Administrators and Staff see the same review lines, and the same Back to
+review notes, since Staff review every stream. Ministry leaders cannot open the page; if a leader view is
 ever added, a leader would see only decisions on requests for the
 Ministries they lead, as Ministry requests scopes them, and never a census,
 financial, Limitations or Additional information line.
+
+A Back to review line made by `pk-admin followup information-update` shows the
+item's Staff notes as that command saved them (the whole edited text), since
+that command stores the notes along with the revision.
 
 #### Open form
 
@@ -1292,7 +1310,11 @@ Family's name, DUID, envelope number, email reach and the Reminder WorkGroup
 holding it now (the page's Reminders line), the mode, the page's Summary
 (submitted and when, the last email, the furthest step and the last time the
 Family was seen) and every timeline line with its time, words and detail,
-into an immutable `stewardship_timeline_export_snapshot`. The file follows
+into an immutable `stewardship_timeline_export_snapshot`. A Back to review
+line's detail carries its note exactly as the requester's page shows it
+([review lines](#timeline-review-lines)), decided for the requester when the
+capture is taken, so a file never holds a note its requester could not
+read on that stream's work page. The file follows
 its page
 ([Downloaded files](../ui-conventions/spec.md#downloaded-files)): its table
 is the page's Timeline table, When, What happened and Details, with the lines

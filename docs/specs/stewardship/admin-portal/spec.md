@@ -6878,8 +6878,8 @@ say Staff enter roster changes in ParishSoft, where Staff and Admin read
 either. A later Family response never replaces a decided request: a
 Family that asks for it again is shown on it ("Family asked again"), not
 given a second request (#1684), so the tick stays with the request it was
-made on. Back to review is refused once a request is ticked; clear the tick
-first. The tick is not a field on the request: each set or clear is an
+made on. Back to review on a ticked request undoes only the tick, with its
+decision kept (below). The tick is not a field on the request: each set or clear is an
 immutable row of its own history table, added by forward migration 0061, and
 the request row never changes. Marking a request resolved never changes
 ParishSoft, and this tick only records that a person did.
@@ -6920,10 +6920,15 @@ offers only Entered by hand: its review decisions stay where they were. A
 mistaken mark is undone by the row's **Back to review**, with a required
 note, which returns the request to To enter by hand with its decision kept
 ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage));
-a Confirmed request offers the same. The request's own page's Clear Entered
-in ParishSoft button is that undo too: it asks for the required note in the
-shared [confirmation dialog](../ui-conventions/spec.md#row-actions-and-confirmation)
-first (#1840). A tick someone else changed first records
+a Confirmed request offers the same. The request's own page offers that
+undo too, as **Back to review** with the worklist's undo-arrow icon, and
+opens the worklist's dialog: "Send Member — Ministry back to review?", the
+same words for the step undone and where the request goes, and the
+required note, in the shared
+[confirmation dialog](../ui-conventions/spec.md#row-actions-and-confirmation)
+(#1840; renamed from "Clear Entered in ParishSoft" by
+[#1893](https://github.com/epiphany40223/parishkit/issues/1893)). A tick
+someone else changed first records
 nothing, and the page answers with its current state and the notice that
 says so. Every control acts in place and keeps the applied view.
 

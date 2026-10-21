@@ -3841,15 +3841,15 @@ inventory on #879 lists.
   records rather than removes, and that the row's other action undoes, also
   takes an icon of its own and acts [in place](#in-place-controls) without a
   dialog; so far only the request page's tick, "Mark … entered in
-  ParishSoft" (a check mark), whose undo, "Clear Entered in ParishSoft for
-  …" (an undo arrow), opens the confirmation dialog for its required note
+  ParishSoft" (a check mark), whose undo is the review worklist's own
+  Back to review (its undo arrow, name and dialog, with the required note),
   like every undo of a terminal step (below). An action that carries a note opens the confirmation dialog
   instead, which holds the note, with an ordinary confirm button unless the
   action cannot be undone: Census changes ([#879](https://github.com/epiphany40223/parishkit/issues/879)), whose
   decisions take an optional note and Reopen a required one; every review
   worklist's Back to review on a terminal stage, which needs a note
   ([#1840](https://github.com/epiphany40223/parishkit/issues/1840)); and the
-  Ministry request page's Clear Entered in ParishSoft, the same undo. A note field
+  Ministry request page's Back to review, the same undo. A note field
   shared by several actions is labelled by the action chosen: "Note
   (optional)", and "Note (required)" only while that action needs one,
   changing in place as the dialog opens (the review worklist, R38). An

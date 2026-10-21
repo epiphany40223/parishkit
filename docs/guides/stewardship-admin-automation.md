@@ -3457,7 +3457,7 @@ takes no tick (only a join or leave a person resolved as joined or leave
 confirmed takes one) is exit 1 (`invalid`, `error.fields` naming
 `request`), and so is a tick that already says so (naming `set` or
 `clear`). `--clear` is the request's Back to review of the mark, as the
-page's Clear Entered in ParishSoft is: it needs `--note TEXT` (or `--note -`
+page's Back to review is: it needs `--note TEXT` (or `--note -`
 to read it from standard input), saying why, and records that undo with the
 note; the request is To enter by hand again, its decision kept. Without a
 note it is exit 1 (`invalid`, naming `note`); `--set` takes no note.
