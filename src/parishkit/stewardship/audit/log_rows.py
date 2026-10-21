@@ -316,6 +316,10 @@ ACTIVITY_TYPES = {
         "census_publication_switched_off",
         "census_publication_read_unconfirmed",
         "census_publication_refused",
+        # The command line's Check ParishSoft, Update and Run again (#1755).
+        "admin_cmd_census_update_check",
+        "admin_cmd_census_update_confirm",
+        "admin_cmd_census_update_rerun",
     ),
     "downloads": (
         *(
