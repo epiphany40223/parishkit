@@ -264,7 +264,7 @@ def test_link_cards_read_label_count_then_note():
 
 def test_an_administrator_also_gets_ready_to_update():
     """Ready to update is the Administrator's alone (only an Administrator
-    starts an update run), and opens Publish to ParishSoft."""
+    starts an update run), and opens Update ParishSoft."""
     from django.urls import reverse
 
     review = staff_counts(census={"ready_to_update": 3})
@@ -275,7 +275,7 @@ def test_an_administrator_also_gets_ready_to_update():
     )
     assert cards(admin[0])[2] == (
         "Ready to update",
-        reverse("admin:census_publication"),
+        reverse("admin:update_parishsoft"),
         None,
         3,
         "changes",

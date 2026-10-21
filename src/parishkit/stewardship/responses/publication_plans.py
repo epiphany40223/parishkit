@@ -296,7 +296,7 @@ def confirm_plan(
         raise ValueError("Invalid publication confirmation.")
     with work_transaction():
         if not allows(current_principal(store, actor_id), Capability.PUBLISH_CENSUS):
-            raise PermissionError("Publishing to ParishSoft is unavailable.")
+            raise PermissionError("Updating ParishSoft is unavailable.")
         previous = PublicationConfirmation.objects.filter(
             actor_id=actor_id, request_key=request_key
         ).first()

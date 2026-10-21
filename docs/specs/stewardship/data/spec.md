@@ -2100,7 +2100,7 @@ filter, bulk approve/ignore/reset, and inline proposed-value edits. Bulk actions
 must display exact affected counts and cannot operate on records outside the
 current authorization/filter snapshot.
 
-`Publish to ParishSoft` performs an asynchronous mandatory preflight:
+`Update ParishSoft` performs an asynchronous mandatory preflight:
 
 1. In a short transaction, create the preflight record with the configured
    expected-organization and promoted source-version identifiers. Preflight
@@ -2165,7 +2165,7 @@ current authorization/filter snapshot.
    `stewardship_publication_confirmation_guard_v1` (neither SECURITY
    DEFINER) with a self-verifying DO block, under the
    [post-launch schema policy](../operations/spec.md#post-launch-schema-policy)
-   ([Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft)).
+   ([Update ParishSoft](../reports/spec.md#update-parishsoft)).
 5. If any field the API would write on an entity is a three-way conflict,
    block all writes to that entity and return it for re-review. A field
    reported *By hand* (step 6) is never evaluated, so it never blocks.
@@ -2254,8 +2254,10 @@ while its PUT may have landed. Turning publication off never needs them
 cleared first. After releasing the lease, a run that published at least one
 entity requests one full refresh through the shared refresh request path,
 as a manual refresh attributed to the Administrator who confirmed the plan,
-carrying the publication's correlation id and logged as following a
-publication, which coalesces with a full refresh already waiting; it reconciles the
+carrying the run's correlation id and audited as following an update
+(`census_publication_refresh_requested`), which coalesces with a full
+refresh already waiting; it reconciles the
+
 promoted snapshot under a new lease claim. A failed request leaves the
 run's outcomes as they are and logs a WARNING, and the next scheduled
 refresh catches up. Publication ships switched off;

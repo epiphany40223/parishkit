@@ -20,9 +20,12 @@ case ([#1684](https://github.com/epiphany40223/parishkit/issues/1684);
 [follow-up workflows](../admin-portal/spec.md#follow-up-workflows)), and
 the refresh re-evaluation of census and Ministry, with the cases it leaves
 for later ([#1689](https://github.com/epiphany40223/parishkit/issues/1689);
-[as built](#refresh-checks)); and My review work for Staff and leaders
+[as built](#refresh-checks)); My review work for Staff and leaders
 ([#1690](https://github.com/epiphany40223/parishkit/issues/1690),
-`accounts/review_work.py`), linking to those pages. Every Staff
+`accounts/review_work.py`), linking to those pages; and the automatic
+update on Update ParishSoft
+([#1688](https://github.com/epiphany40223/parishkit/issues/1688);
+[as built](#automatic-update)), switched off in Production. Every Staff
 and Ministry leader part ships during the current campaign. The
 Family-facing view of reviewed changes
 ([#1705](https://github.com/epiphany40223/parishkit/issues/1705)) comes
@@ -45,7 +48,7 @@ It links to the stream specs rather than restating them:
 - census: [Proposed changes](../data/spec.md#proposed-changes),
   [Review and publication](../data/spec.md#review-and-publication),
   [Pending census changes](../reports/spec.md#pending-census-changes) and
-  [Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft);
+  [Update ParishSoft](../reports/spec.md#update-parishsoft);
 - Ministry: [Follow-up records](../data/spec.md#follow-up-records),
   [Ministry change summary](../reports/spec.md#ministry-change-summary),
   [Follow-up workflows](../admin-portal/spec.md#follow-up-workflows) and
@@ -643,14 +646,13 @@ only when a value was recorded and ParishSoft holds another one.
 Left for later, each in its own issue:
 
 - [#1749](https://github.com/epiphany40223/parishkit/issues/1749): an
-  Updated in ParishSoft change found back at A or at a third value
-  (publication is switched off until
-  [#1688](https://github.com/epiphany40223/parishkit/issues/1688)), which
-  needs the derived guard to admit `published` to `conflict`; and
-  confirming an entered New Member (matching a new ParishSoft Member to the
-  proposed one is a staff association not yet built) and the Family's
-  primary address (after #1688's smoke test maps it), which stay final when
-  Entered by hand.
+  Updated in ParishSoft change found back at A or at a third value (the
+  update is switched off in Production, so none exists yet), which needs
+  the derived guard to admit `published` to `conflict`; and confirming an
+  entered New Member (matching a new ParishSoft Member to the proposed one
+  is a staff association not yet built) and the Family's primary address
+  (with the smoke test's [mapping](#family-addresses)), which stay final
+  when Entered by hand.
 
 ### What is confirmable
 
@@ -1040,7 +1042,7 @@ changes what each role lands on:
   As built (#1690), they are one **Review work** panel on Home, just before
   Next steps, with each stream a group in it; Ready to update is on Census
   changes only (the one stream ParishSoft's API writes) and opens
-  [Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft).
+  [Update ParishSoft](../reports/spec.md#update-parishsoft).
 
 ## Review worklist
 
@@ -1120,12 +1122,24 @@ marks API-writable can be updated automatically: Member contact fields
 (names, birth date, language, email, phones; gender stays by hand while
 [#1616](https://github.com/epiphany40223/parishkit/issues/1616) is open).
 Family addresses stay by hand ([Family addresses](#family-addresses)). The
-run is the existing
-[Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft) page,
-renamed **Update ParishSoft**, Administrator-only, still behind the
-`parishsoft_publication` switch. Its result stage is Updated in ParishSoft;
-the final refresh then moves each item to Confirmed by the
-[re-evaluation rules](#baseline-refresh-re-evaluation).
+run is the [Update ParishSoft](../reports/spec.md#update-parishsoft) page,
+renamed from Publish to ParishSoft, Administrator-only, still behind the
+`parishsoft_publication` switch (off in Production until the Administrator
+turns it on). Its result stage is Updated in ParishSoft; the final refresh
+the run requests then moves each item to Confirmed by its
+[refresh check](#refresh-checks).
+
+As built by [#1688](https://github.com/epiphany40223/parishkit/issues/1688):
+the page counts and checks exactly the Ready to update items (an accepted
+change in Conflict is not counted, but the check still holds its Member
+back), counts apart a Ready item whose Member left the Family (rule 4),
+and adds the confirmation and run that
+[#528](https://github.com/epiphany40223/parishkit/issues/528) had specified
+but not built: Update in the review dialog, the run's live status and
+per-Member outcomes, Run again and the final refresh. The machinery
+underneath is unchanged. The `pk-admin census update-*` commands and the
+`--decision accepted` rename (decision 7) are
+[#1755](https://github.com/epiphany40223/parishkit/issues/1755).
 
 ### Manual handling reports
 
@@ -1226,21 +1240,45 @@ schemas (read 2026-10-18; no ParishSoft data was read):
   addresses afresh and every census address answer is a change against an
   unavailable baseline.
 
-What follows: addresses stay **To enter by hand** for now, but they become
-**confirmable** in part once a human-run smoke test on the Test Family
-writes a known home and a different mailing address, reads the Family
-back, records which block (and which `primaryAddress` value) the primary
-fields follow, and restores the Family. With that mapping, the refresh
-confirms (or flags Entered incorrectly for) the block ParishSoft reports as
-primary, comparing street lines, city, state and postal code; the other
-block stays unconfirmable. The same mapping would let the Family form show
-the primary address as that block's baseline. Writing addresses through the
-API stays out until a write is shown to apply, since the non-primary block
-could still not be verified.
-[#1688](https://github.com/epiphany40223/parishkit/issues/1688) carries the
-smoke test and
+The human-run smoke test on the Test Family (2026-10-18, Administrator
+approved, recorded on
+[#1688](https://github.com/epiphany40223/parishkit/issues/1688); the
+Family was restored and the Administrator checked it in ParishSoft's own
+screens) wrote a marker into the home block's second line with `PUT
+families/{familyDUID}/contact` and read the Family back:
+
+- **The v2 primary fields follow the home block, for a Family whose primary
+  address is home.** The marker appeared at once in `primaryAddress2` and
+  `primaryAddressFull` (`GET families/{id}`, `families/search`) and in the
+  Members' `familyAddres_PrimaryAddressFull`; nothing else changed. The
+  read-after-write mapping is `homeAddressLine1` → `primaryAddress1`,
+  `homeAddressLine2` → `primaryAddress2`, `homeCity` → `primaryCity`,
+  `homeState` → `primaryState`, `homePostalCode` → `primaryPostalCode` and
+  `homePostalCodePlus4` → `primaryZipPlus` (line 2 shown by the marker, the
+  others inferred from unchanged values). The home country and address
+  phone, and every mailing and other field, are not readable.
+- **The mailing block was not written**, since no read returns it, so a
+  mailing write still cannot be verified. A Family whose primary address
+  is mailing (or other) was not tested; a home write probably shows in no
+  read for it.
+- `families/change/list` showed no row for the write, so it is no
+  read-after-write for addresses.
+
+What follows: addresses stay **To enter by hand**, and writing them
+through the API stays out, since the mailing block cannot be verified and
+no read returns the `primaryAddress` selector, so ParishKit cannot tell
+which block a Family's primary fields follow. A hand-entered home address
+is **confirmable** for a Family known to have home as its primary address,
+comparing street lines, city, state and postal code; the mailing block,
+and any Family whose primary block is unknown, stay unconfirmable. How the
+refresh learns that a Family's primary is home (no read returns it, so it
+may have to be treated as unknown) and the change to
+`pipeline.CENSUS_CONFIRMABLE` are
+[#1749](https://github.com/epiphany40223/parishkit/issues/1749)'s; until
+then Entered by hand is final for both blocks. The same mapping would let
+the Family form show the primary address as the home block's baseline.
 [#528](https://github.com/epiphany40223/parishkit/issues/528) records the
-finding.
+schema reading above.
 
 ## Audit
 
@@ -1377,8 +1415,10 @@ land before the campaign closes):
     confirm entered pledges; frequency after its smoke check.
 12. [#1688](https://github.com/epiphany40223/parishkit/issues/1688)
     Automatic update: Publish to ParishSoft becomes Update ParishSoft over
-    Ready items, commands renamed with no aliases, and the Family address
-    smoke test.
+    Ready items, with the confirmation and run it lacked, and the Family
+    address smoke test; the renamed commands with no aliases moved to
+    [#1755](https://github.com/epiphany40223/parishkit/issues/1755).
+
 13. [#1705](https://github.com/epiphany40223/parishkit/issues/1705)
     Families see reviewed changes: the working change set in
     the Family form, the resubmission rule, the per-campaign setting.

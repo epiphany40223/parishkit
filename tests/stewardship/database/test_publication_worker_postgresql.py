@@ -139,6 +139,10 @@ class FakeExecution:
         """No renewal thread is needed within these short tests."""
         return nullcontext()
 
+    def progress(self, current, total, *, phase=None):
+        """Keep each progress count the run reports, in order."""
+        self.__dict__.setdefault("counts", []).append((current, total))
+
 
 def as_owner(statement, params=()):
     """Run ``owner(statement)`` from inside a restricted login, then go back."""

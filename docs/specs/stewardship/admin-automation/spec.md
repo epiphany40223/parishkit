@@ -2995,7 +2995,7 @@ deleted when the export ends, so nothing regenerates it.
 | `family_open_form` (new, #529) | Permanent: Open form signs this browser in to the Family form for a Family on the phone, a browser hand-off by nature; Families' responses are read through `report responses` and the directory exports with its Response filters |
 | `limitations_export` | `export limitations [--stage S] [--show S] [--format F] [--timezone Z]` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)): the page's download through the page's own writer (`limitation_views.export_body`), with #752's audit fields; `--format jsonl` adds each answer's item id, version and actions for `limitations decide` ([#1735](https://github.com/epiphany40223/parishkit/issues/1735)) |
 | `census_changes`, `census_changes_export` | `report census`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export census` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command is `census resolve PROPOSAL_ID --action entered\|ignored\|reopened` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), through the same `census_resolution` service. An Automatic row's Review (Approve, Ignore, Back to To review; ADM-09) posts there too; its command is `census review PROPOSAL_ID --decision approved\|ignored\|unreviewed` ([#528](https://github.com/epiphany40223/parishkit/issues/528)), through the same `census_review` service. The Review's Edit value and Clear edit (ADM-09.04) are `census edit PROPOSAL_ID --value TEXT\|- \| --clear`, and its Use the Family's value anyway (ADM-09.03) is `census resolve-conflict PROPOSAL_ID` ([#1434](https://github.com/epiphany40223/parishkit/issues/1434)), through the same service |
-| `census_publication`, `census_publication_confirmation`, `census_publication_retries` (new, [#528](https://github.com/epiphany40223/parishkit/issues/528); not built yet) | `census publish-check`, `census publish-plan`, `census publish-confirm` and `census publish-rerun`: the [Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft) page's Check ParishSoft, plan, Apply and Run again, through the same `publication_tasks` and `publication_plans` services; see [the commands](#publish-to-parishsoft-commands) |
+| `update_parishsoft`, `update_parishsoft_confirmation`, `update_parishsoft_retries` ([#528](https://github.com/epiphany40223/parishkit/issues/528), [#1688](https://github.com/epiphany40223/parishkit/issues/1688)) | `census update-check`, `census update-plan`, `census update-confirm` and `census update-rerun` ([#1755](https://github.com/epiphany40223/parishkit/issues/1755)): the [Update ParishSoft](../reports/spec.md#update-parishsoft) page's Check ParishSoft, plan, Apply and Run again, through the same `publication_tasks` and `publication_plans` services; see [the commands](#update-parishsoft-commands) |
 | `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_download` | `export create` (and `export exact create`, the latest-data export, whose page form [#1537](https://github.com/epiphany40223/parishkit/issues/1537) removed), `export status --watch`, `export cancel`, `export retry`, `export download --stream` (PR 8b; `report_export_regenerate` and `export regenerate` were removed by [#1398](https://github.com/epiphany40223/parishkit/issues/1398)); an exact request's status, cancel and retry, which these pages also serve, are `export exact status --watch`, `export exact cancel` and `export exact retry` (PR 8h) |
 | `report_emails`, `report_email_edit` | `report-email list`, `report-email show`, `report-email preview`, `report-email confirm`, `report-email render`, `report-email send-test`, `report-email send-now` ([#1786](https://github.com/epiphany40223/parishkit/issues/1786), [report emails](../report-emails/spec.md#command-line)) |
 | `report_email_send`, `daily_digest_snapshot`, `weekly_digest_snapshot`, `weekly_digest_item` | `report-email sends`, `report-email copy SEND`: each block's figures, each request's identifier and states; a request's text stays on the page (#1786; replaced `digest daily` and `digest weekly`, PR 8d) |
@@ -3476,38 +3476,41 @@ above and `--fact-set` naming the generation). The
 [operator guide](../../../guides/stewardship-admin-automation.md#report-exports)
 lists the fields and refusals.
 
-#### Publish to ParishSoft commands
+#### Update ParishSoft commands
 
-The [Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft) page's
+The [Update ParishSoft](../reports/spec.md#update-parishsoft) page's
 four steps are commands
 ([#528](https://github.com/epiphany40223/parishkit/issues/528); specified,
-not built). Each checks the Administrator's `PUBLISH_CENSUS` first, so Staff
+not built: [#1755](https://github.com/epiphany40223/parishkit/issues/1755)).
+They were specified as `publish-*`; decision 7 of the
+[review pipeline](../review-pipeline/spec.md#decisions) renames them
+`update-*`, with no aliases. Each checks the Administrator's `PUBLISH_CENSUS` first, so Staff
 are `denied` before anything is read, then runs the page's own service in
 the page's command scope. While the `parishsoft_publication` setting is off
 (the command line reads the web service's setting) every one of them is
 `not_available` with the page's `publication_off`, and nothing is queued.
 The page's reason codes travel in the document; a plan that changed,
 expired or was superseded is `stale_version`, the switch off, Testing mode,
-a held campaign or a running publication `not_available`, and the rest
+a held campaign or a running update `not_available`, and the rest
 `invalid`. They print ids, versions, counts, outcomes and times, never a
 value, name or note; the values stay in `export census`.
 
-- `census publish-check [--request-key KEY] [--watch]` is Check ParishSoft:
+- `census update-check [--request-key KEY] [--watch]` is Check ParishSoft:
   `request_preflight`, keyed, so a repeat returns the same check. It is not
   fresh-gated and does not prompt, as the page asks nothing. Like the
-  page's button it is unavailable while a publication run of the campaign
+  page's button it is unavailable while an update run of the campaign
   is queued or running (`not_available`, `publication_running`); the
   command checks this itself, because the preflight service does not. It
   prints the preflight task; `--watch` follows it as
   [watching progress](#watching-progress) says and then prints the plan's
   id and counts.
-- `census publish-plan [PLAN_ID]` reads the current campaign's newest plan,
+- `census update-plan [PLAN_ID]` reads the current campaign's newest plan,
   or the one named: who checked and when, whether it was made in Testing
   mode, its counts, its age against the hour it may be confirmed in,
   whether it is confirmed and its run's state, and one line per field row
   (proposal id and version, field, Member DUID, outcome, and once run, the
   Member's result). It records the page's `census_publication_viewed`.
-- `census publish-confirm PLAN_ID [--request-key KEY] [--watch]` is Apply.
+- `census update-confirm PLAN_ID [--request-key KEY] [--watch]` is Apply.
   Before prompting it refuses a plan that is not the campaign's newest
   (`stale_version`, `publication_plan_superseded`), through the same Python
   helper as the page, since no service or SQL guard checks it. It prompts
@@ -3518,20 +3521,20 @@ value, name or note; the values stay in `export census`.
   live automation session runs it, as the confirmation's SQL guard
   (migration 0087, without the sign-in age since 0114) accepts. The service records
   `census_publication_confirmed`, and the command
-  `admin_cmd_census_publish_confirm` in the same transaction, once per
+  `admin_cmd_census_update_confirm` in the same transaction, once per
   key. `--watch` follows the run.
-- `census publish-rerun PLAN_ID [--request-key KEY] [--watch]` is Run
+- `census update-rerun PLAN_ID [--request-key KEY] [--watch]` is Run
   again: `rerun_publication`, keyed by the request key as its command id.
   As on the page it applies only when the plan's run task ended without
   completing and a Member has no final outcome; a Failed Member is finished
-  and needs a new `publish-check`. It prompts with the number of Members
+  and needs a new `update-check`. It prompts with the number of Members
   the run did not finish, as the page's dialog asks, and records
-  `admin_cmd_census_publish_rerun` with the service's
+  `admin_cmd_census_update_rerun` with the service's
   `census_publication_rerun_requested`. `--watch` follows the run.
 
-`publish-confirm` and `publish-rerun` are prompting commands and join the
+`update-confirm` and `update-rerun` are prompting commands and join the
 host wrapper's `PROMPTING` list. The two new `admin_cmd_*` types join the
-other publication types in their
+other update types in their
 [activity group](../admin-portal/spec.md#activity-groups).
 
 ### Operations
@@ -4372,9 +4375,11 @@ uploads, with `pk-stewardship bootstrap` as its offline counterpart. See
   [rules for new Admin actions](#rules-for-new-admin-actions); whether their
   final confirmations may run from the command line is decided in each
   workflow's own specification.
-- **ParishSoft publication** (ADM-09) is not built; its final confirmation
-  may run from the command line, as
-  [Publish to ParishSoft commands](#publish-to-parishsoft-commands) says.
+- **Update ParishSoft** (ADM-09)'s commands are not built
+  ([#1755](https://github.com/epiphany40223/parishkit/issues/1755)); its
+  final confirmation may run from the command line, as
+
+  [Update ParishSoft commands](#update-parishsoft-commands) says.
 
 ## Existing operator commands
 
