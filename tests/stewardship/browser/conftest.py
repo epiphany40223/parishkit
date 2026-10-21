@@ -105,6 +105,8 @@ from .chart_components import components as chart_components
 from .comparison_components import components as comparison_components
 from .content_catalog_components import POSTS as CONTENT_CATALOG_POSTS
 from .content_catalog_components import components as content_catalog_components
+from .content_review_components import POSTS as CONTENT_REVIEW_POSTS
+from .content_review_components import components as content_review_components
 from .data_to_fix_components import components as data_to_fix_components
 from .delivery_components import POSTS as DELIVERY_POSTS
 from .delivery_components import components as delivery_components
@@ -1426,22 +1428,6 @@ def component_origin():
             },
         ),
         (
-            "/content-preview",
-            "content-preview",
-            {
-                "campaign": {"pk": uuid4()},
-                "label": "Family welcome",
-                "before": None,
-                "after": {
-                    "html": "<p>Hello Sample Family</p>",
-                    "text": "Hello Sample Family",
-                    "subject": None,
-                },
-                "preview": "synthetic-preview",
-                "affected": [],
-            },
-        ),
-        (
             "/home",
             "home",
             {"configuration": {"mode": "testing"}, "admin_chrome": admin},
@@ -2221,6 +2207,7 @@ def component_origin():
     responses.update(workgroup_components(context, admin))
     responses.update(schedule_list_components(context, admin))
     responses.update(content_catalog_components(context, admin))
+    responses.update(content_review_components(context, admin))
     responses.update(in_place_components(context, admin))
     responses.update(live_status_components(context, admin))
     responses.update(
@@ -2280,6 +2267,7 @@ def component_origin():
         | ARTWORK_POSTS
         | BRANDING_POSTS
         | CONTENT_CATALOG_POSTS
+        | CONTENT_REVIEW_POSTS
         | open_form_posts(context, admin)
         | family_test_posts(context, admin)
         | upload_defaults_posts()

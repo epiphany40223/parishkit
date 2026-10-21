@@ -204,7 +204,6 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/export-cleanup-conflict",
         "/export-cleanup-invalid",
         "/content-settings",
-        "/content-preview",
         "/content-history",
         "/campaign-mail",
         "/campaign-mail-unknown",

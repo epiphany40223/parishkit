@@ -23,7 +23,6 @@ from .test_admin_page_names import TEMPLATE_DIR, TEMPLATES, VARIABLE_RETURNS
 # rule 3 lets an error page offer a way back.
 EXTRA = {
     ("content_edit", "content-settings.html"),
-    ("content_edit", "content-preview.html"),
     ("daily_digest_snapshot", "daily-digest.html"),
     ("schedule_settings", "schedule-reconcile.html"),
     ("reports", "report-empty.html"),
