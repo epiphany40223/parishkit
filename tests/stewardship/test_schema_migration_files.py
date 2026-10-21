@@ -501,9 +501,8 @@ FROZEN = {
     "0156_report_pipeline.sql": (
         "dc04b332bc79d4ebeb52f4349e426744b79a83aac233fe9eea833ede7ee43a69"
     ),
-    # Provisional number (#1786): renumbered when its pull request merges.
-    "0191_report_conversion.sql": (
-        "443fd6d215aedfa43a1708222ac31c0dd92dbf9532c04294f709318d68067111"
+    "0161_report_conversion.sql": (
+        "3975fdd2e5ae5e7a8781d91d71897625e050dc92e868a88516584296d42fe3ac"
     ),
 }
 
@@ -673,13 +672,13 @@ def view_bodies(text, *, replace):
 
 
 # The views whose final definition reads a table or view that only a frozen
-# file creates (#1786's 0191 reads the report email records of 0156): the
+# file creates (#1786's 0161 reads the report email records of 0156): the
 # baseline cannot create them in that form, since a view is checked when it
 # is created, so it keeps the last definition it can install and the frozen
 # file replaces it on every install path. The upgrade-parity test compares
 # the results.
 MIGRATION_FINAL_VIEWS = {
-    "0191_report_conversion.sql": frozenset(
+    "0161_report_conversion.sql": frozenset(
         {
             "stewardship_admin_digest_work_row",
             "stewardship_schedule_work_row",

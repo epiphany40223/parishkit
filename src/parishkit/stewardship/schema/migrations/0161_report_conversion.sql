@@ -1,5 +1,4 @@
--- Frozen forward migration file 0191 (provisional: the repository-wide file
--- sequence assigns the final number when the pull request merges): report
+-- Frozen forward migration file 0161: report
 -- emails replace the Daily and Weekly digests (#1786, report-emails spec
 -- "Migration of the Daily and Weekly digests" and "Database functions",
 -- delivery plan item 4). This file is installed by its Django migration in
@@ -75,7 +74,7 @@ BEGIN
                 WHERE task_type IN ('daily_digest_prepare','daily_digest_finalize',
                     'weekly_digest_prepare','weekly_digest_finalize')
                   AND state IN ('queued','running','retry_wait','abandoned')) THEN
-            RAISE EXCEPTION 'Migration 0191: a Daily or Weekly digest send is still in progress (% pending, running or uncertain sends; % unfinished messages; % open tasks); see the operations specification, Report email conversion',
+            RAISE EXCEPTION 'Migration 0161: a Daily or Weekly digest send is still in progress (% pending, running or uncertain sends; % unfinished messages; % open tasks); see the operations specification, Report email conversion',
                 (SELECT count(*) FROM public.stewardship_schedule_occurrence o
                     JOIN public.stewardship_schedule_definition d ON d.id=o.definition_id
                     WHERE d.kind IN ('daily_digest','weekly_digest')
@@ -4086,7 +4085,7 @@ BEGIN
           AND p.prosecdef=expected.definer
           AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']);
     IF missing IS NOT NULL THEN
-        RAISE EXCEPTION 'Migration 0191: not installed as declared: %', missing;
+        RAISE EXCEPTION 'Migration 0161: not installed as declared: %', missing;
     END IF;
     -- Each replaced function carries its report change, and the definers
     -- the baseline alters are definers again.
@@ -4146,7 +4145,7 @@ BEGIN
         WHERE p.oid=to_regprocedure('public.'||expected.name)
           AND strpos(p.prosrc, expected.marker)>0 AND p.prosecdef=expected.definer);
     IF missing IS NOT NULL THEN
-        RAISE EXCEPTION 'Migration 0191: a replaced function lacks its report change: %', missing;
+        RAISE EXCEPTION 'Migration 0161: a replaced function lacks its report change: %', missing;
     END IF;
     -- No gate admits a digest write any more, and no task map names a
     -- digest task type.
@@ -4158,7 +4157,7 @@ BEGIN
        OR public.stewardship_task_type_login_v1('report_email_finalize') IS DISTINCT FROM 'pk_stewardship_worker'
        OR public.stewardship_task_type_creators_v1('report_email_finalize')
            IS DISTINCT FROM ARRAY['pk_stewardship_scheduler','pk_stewardship_web'] THEN
-        RAISE EXCEPTION 'Migration 0191: a digest write or task type is still admitted';
+        RAISE EXCEPTION 'Migration 0161: a digest write or task type is still admitted';
     END IF;
     -- The constraints admit what the conversion and report sends write.
     SELECT string_agg(name, ', ') INTO missing FROM (VALUES
@@ -4175,7 +4174,7 @@ BEGIN
         WHERE c.conrelid=to_regclass('public.'||expected.relation) AND c.conname=expected.name
           AND strpos(pg_get_constraintdef(c.oid), expected.marker)>0);
     IF missing IS NOT NULL THEN
-        RAISE EXCEPTION 'Migration 0191: a constraint does not admit report emails: %', missing;
+        RAISE EXCEPTION 'Migration 0161: a constraint does not admit report emails: %', missing;
     END IF;
     -- The views read the report records.
     SELECT string_agg(name, ', ') INTO missing FROM (VALUES
@@ -4193,10 +4192,10 @@ BEGIN
     WHERE to_regclass('public.'||expected.name) IS NULL
        OR strpos(pg_get_viewdef(to_regclass('public.'||expected.name)), expected.marker)=0;
     IF missing IS NOT NULL THEN
-        RAISE EXCEPTION 'Migration 0191: a view does not read report emails: %', missing;
+        RAISE EXCEPTION 'Migration 0161: a view does not read report emails: %', missing;
     END IF;
     IF has_table_privilege('public','public.stewardship_report_email_work_row','SELECT') THEN
-        RAISE EXCEPTION 'Migration 0191: the report work row is readable by PUBLIC';
+        RAISE EXCEPTION 'Migration 0161: the report work row is readable by PUBLIC';
     END IF;
     SELECT string_agg(name, ', ') INTO missing FROM (VALUES
         ('stewardship_report_email_preparation'),('stewardship_report_email_snapshot'),
@@ -4206,7 +4205,7 @@ BEGIN
         WHERE t.tgrelid=to_regclass('public.'||expected.name)
           AND t.tgname='activation_impact' AND NOT t.tgisinternal AND t.tgenabled='O');
     IF missing IS NOT NULL THEN
-        RAISE EXCEPTION 'Migration 0191: an activation impact trigger is missing: %', missing;
+        RAISE EXCEPTION 'Migration 0161: an activation impact trigger is missing: %', missing;
     END IF;
     -- The definition guards are enabled again, and only definitions the
     -- applied configuration selects still have a digest kind.
@@ -4218,11 +4217,11 @@ BEGIN
             SELECT 1 FROM public.stewardship_system_configuration r
             JOIN public.stewardship_schedule_revision v ON v.configuration_id=r.active_configuration_id
             WHERE v.record_id=d.id)) THEN
-        RAISE EXCEPTION 'Migration 0191: an unselected digest definition was not retyped';
+        RAISE EXCEPTION 'Migration 0161: an unselected digest definition was not retyped';
     END IF;
     -- The slot inventory answers nothing for a definition that is no report.
     IF (SELECT count(*) FROM public.stewardship_report_slots_v1(NULL, now())) <> 0 THEN
-        RAISE EXCEPTION 'Migration 0191: the report slot inventory is not installed as declared';
+        RAISE EXCEPTION 'Migration 0161: the report slot inventory is not installed as declared';
     END IF;
     -- The new definer is no one's but the activating logins' to call, and
     -- the completion proof answers a skipped send without a function the
@@ -4233,7 +4232,7 @@ BEGIN
        OR strpos(pg_get_viewdef('public.stewardship_report_email_completion_ready'::regclass),
            'stewardship_report_email_skipped_v1')>0
        OR has_table_privilege('public','public.stewardship_report_email_completion_ready','SELECT') THEN
-        RAISE EXCEPTION 'Migration 0191: the conversion check or completion proof is not installed as declared';
+        RAISE EXCEPTION 'Migration 0161: the conversion check or completion proof is not installed as declared';
     END IF;
 END
 $check$;

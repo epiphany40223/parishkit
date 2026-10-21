@@ -1,7 +1,7 @@
 """Model state for the report email conversion (#1786).
 
 It admits the configuration schema ``campaign-series-v12`` and the
-conversion's request format ``operator-upgrade-reports-v12``. The frozen file 0191
+conversion's request format ``operator-upgrade-reports-v12``. The frozen file 0161
 (``stewardship_reports.0034_report_conversion``) changes the constraints
 in the database; this records them in Django's model state only, so
 ``makemigrations --check`` stays clean.

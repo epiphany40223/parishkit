@@ -325,7 +325,7 @@ AUTOMATION_REQUEST_FUNCTION = (
 # The credential installers whose secret requests an automation session may
 # make (key replacement); the other targets have no such request.
 AUTOMATION_SECRET_TARGETS = frozenset({"parishsoft", "google_workspace", "slack"})
-# What still holds the report email conversion back (0191, #1786): the
+# What still holds the report email conversion back (0161, #1786): the
 # schedule activation trigger asks it only while converting the digests,
 # which the offline admin-recovery login's ``upgrade-reports`` does; counts
 # only.
@@ -574,7 +574,7 @@ CLOSURE_FUNCTIONS = {
     PLEDGE_REFRESH_ITEMS_FUNCTION: ("stewardship_reports", "0034_pledge_conflicts"),
     # Sent mail's Member names (0145, #1562).
     PAGE_MEMBER_NAMES_FUNCTION: ("stewardship_jobs", "0036_page_member_names"),
-    # The report conversion's open digest work check (0191, provisional,
+    # The report conversion's open digest work check (0161,
     # #1786), which the admin-recovery login's offline conversion asks.
     DIGEST_WORK_FUNCTION: ("stewardship_reports", "0034_report_conversion"),
 }

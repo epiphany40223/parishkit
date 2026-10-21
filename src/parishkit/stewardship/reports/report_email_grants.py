@@ -10,7 +10,7 @@
   sends; the scheduler's dispatch reads see only bindings.
 
 Every write is admitted by the tables' own guards (frozen file 0156);
-the conversion (0191, #1786) admits report schedules.
+the conversion (0161, #1786) admits report schedules.
 """
 
 PREPARATION = "stewardship_report_email_preparation"
@@ -71,7 +71,7 @@ def add_report_email_web_grants(tables, columns):
     add_report_email_dispatch_grants(tables, columns, private=False)
     _columns(columns, SNAPSHOT, COPY_COLUMNS)
     # Sent mail's retry admission and a retry's seed (the report branches
-    # 0191 gave stewardship_delivery_retry_admitted_v1 and the retry render)
+    # 0161 gave stewardship_delivery_retry_admitted_v1 and the retry render)
     # ask whether the recipient is still one of the report's, by its kind,
     # reference and address, as the digests' retry reads did.
     _columns(columns, RECIPIENT, {"kind", "ref", "address"})

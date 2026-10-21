@@ -301,7 +301,7 @@ def test_migration_check_refuses_each_earlier_or_weakened_install():
     ]
     with transaction.atomic(), connection.cursor() as cursor:
         # 0125 (#1763) has since replaced the sealed intake check, and report
-        # emails' 0191 (#1786) the delivery control guard, so 0124's own
+        # emails' 0161 (#1786) the delivery control guard, so 0124's own
         # bodies go back first (rolled back below); CREATE OR REPLACE drops
         # the guard's SECURITY DEFINER, which 0124 sets again too.
         cursor.execute(statement(FROZEN, "stewardship_sealed_intake_admission_v1"))

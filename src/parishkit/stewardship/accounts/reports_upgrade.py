@@ -7,7 +7,7 @@ else changes. The converted document is installed through the
 configuration installer's ordinary checkpoint protocol as one tagged
 ``operator_upgrade`` request (operator "system", reason "#1786 conversion"),
 so the YAML and the database stay in step, and its activation retypes each
-digest definition in place (frozen file 0191). The activation is refused,
+digest definition in place (frozen file 0161). The activation is refused,
 and the request recorded as failed, while any digest send is in progress.
 
 It runs only offline, as ``pk-stewardship upgrade-reports`` under the

@@ -5,7 +5,7 @@ Daily or Weekly whose revision carries ``skip_dates`` gets no occurrence for
 those slots from the report producer and worker, the database's occurrence
 guard refuses one even from a planner that ignored them, and the canonical
 slot check answers no slot for them. Frozen migration 0121's closing DO
-block passes on the bodies 0121 installed (migration 0191 has since
+block passes on the bodies 0121 installed (migration 0161 has since
 replaced them for report emails) and refuses each older body, a weakened
 body (a guard that enforces Weekly skips alone, a slot check whose skip
 line can never run) and a guard that lost its definer rights.
@@ -179,7 +179,7 @@ def check():
 def as_0121(cursor):
     """Install the three bodies 0121 made, as it left them, in this transaction.
 
-    Migration 0191 replaced them for report emails (#1786), so 0121's check
+    Migration 0161 replaced them for report emails (#1786), so 0121's check
     is run on its own bodies; each test's transaction rolls them back.
     """
     for name, terminator in (

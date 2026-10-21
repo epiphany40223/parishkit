@@ -64,7 +64,7 @@ def _has_weekly_schedule(campaign_id):
 # (stewardship_report_email_manual_guard_v1), which still decides every
 # submission.
 # An earlier send still being prepared, or whose email is still being
-# delivered or uncertain: the Send now guard's refusals (0191), found on GET.
+# delivered or uncertain: the Send now guard's refusals (0161), found on GET.
 _UNRESOLVED = (
     "SELECT EXISTS(SELECT 1 FROM stewardship_report_email_preparation p "
     "JOIN stewardship_task_run t ON t.root_id=p.task_id "

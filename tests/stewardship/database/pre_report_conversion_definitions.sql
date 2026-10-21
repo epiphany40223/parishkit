@@ -1,4 +1,4 @@
--- Frozen copy (#1786): each function and view migration 0191 replaces,
+-- Frozen copy (#1786): each function and view migration 0161 replaces,
 -- as it was before 0156 (the baseline and frozen files at commit
 -- ce2bf9513, before the report conversion), for test_users_swap's
 -- swap_pending. Functions first, then views in definition order.

@@ -1,10 +1,10 @@
 """Forward migration: report emails replace the digests (#1786, delivery item 4).
 
-Its SQL is the frozen file ``schema/migrations/0191_report_conversion.sql``
-(prefix 0191, provisional until the repository-wide file sequence assigns
-the final number), read whole and never parsed. It admits report schedules,
-the ``campaign-series-v12`` configuration schema, the conversion's request
-format and the report outbox purposes, and replaces every shared function
+Its SQL is the frozen file ``schema/migrations/0161_report_conversion.sql``
+(prefix 0161 in the repository-wide file sequence), read whole and never
+parsed. It admits report schedules, the ``campaign-series-v12``
+configuration schema, the conversion's request format and the report
+outbox purposes, and replaces every shared function
 and view that named a digest so report emails run end to end. It refuses
 to run while a digest send is in progress. The rows are converted after it,
 by the offline ``pk-stewardship upgrade-reports``, because the configuration
@@ -24,7 +24,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0191_report_conversion.sql"
+    / "0161_report_conversion.sql"
 )
 
 

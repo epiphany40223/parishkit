@@ -806,7 +806,7 @@ EARLIER = {
 }
 CHECK = MIGRATION[MIGRATION.index("DO $check$") :]
 # The functions as 0075 left them: #1267's 0091 replaced the first Ministry
-# activity function and dropped the second, and report emails' 0191 (#1786)
+# activity function and dropped the second, and report emails' 0161 (#1786)
 # replaced the rest, so each check below first puts them back (rolled back
 # with it) to see what 0075 installed.
 AS_0075_LEFT_THEM = (

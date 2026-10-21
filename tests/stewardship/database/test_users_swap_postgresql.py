@@ -901,7 +901,7 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_reports", "0040_report_pipeline"),
     ),
-    # 0191 (provisional, #1786) creates these two and replaces many base
+    # 0161 (#1786) creates these two and replaces many base
     # and closure functions and views in place (``before_report_conversion``
     # puts those back while the swap is pending), so its file installs
     # whole again after 0156's.
@@ -1623,17 +1623,17 @@ def before_submission_upcoming_pledge():
     ]
 
 
-# 0191 (provisional, #1786) replaces, in place, functions and views of the
+# 0161 (#1786) replaces, in place, functions and views of the
 # base and of earlier closure files so that they read 0156's report email
 # tables and functions, which ``swap_pending`` drops; 0156's table drops take
 # many of those views with them. While the swap is pending each gets the
 # definition it had before 0156, from the frozen copy ``PRE_CONVERSION``
 # (``before_report_conversion``), as a database at the users upgrade's base
-# has them, and every view a drop took is made again. Afterwards 0191's file
+# has them, and every view a drop took is made again. Afterwards 0161's file
 # runs whole again after 0156's (its two new functions are in
 # ``CLOSURE_CREATED``), and any view still missing is made again from its
 # current definition (``restore_views``).
-REPORT_CONVERSION = MIGRATIONS / "migrations/0191_report_conversion.sql"
+REPORT_CONVERSION = MIGRATIONS / "migrations/0161_report_conversion.sql"
 REPORT_PIPELINE = MIGRATIONS / "migrations/0156_report_pipeline.sql"
 PRE_CONVERSION = Path(__file__).with_name("pre_report_conversion_definitions.sql")
 
@@ -1735,10 +1735,10 @@ def create_views(cursor, definitions):
 
 
 def before_report_conversion(cursor, views_before):
-    """Put back what 0191 replaced as it was before 0156; remake lost views.
+    """Put back what 0161 replaced as it was before 0156; remake lost views.
 
     Functions keep their grants (CREATE OR REPLACE) and their SECURITY
-    DEFINER, which 0191's file repeats for the three the baseline alters.
+    DEFINER, which 0161's file repeats for the three the baseline alters.
     """
     text = REPORT_CONVERSION.read_text(encoding="utf-8")
     names = {
@@ -1773,7 +1773,7 @@ def before_report_conversion(cursor, views_before):
             if name in definers:
                 cursor.execute(f"ALTER FUNCTION public.{name} SECURITY DEFINER")
     cursor.execute("SET LOCAL check_function_bodies = true")
-    # The views 0156 and 0191 create stay absent, as on the base.
+    # The views 0156 and 0161 create stay absent, as on the base.
     created = {
         name
         for path in (REPORT_CONVERSION, REPORT_PIPELINE)
@@ -1854,10 +1854,8 @@ def swap_pending():
     (``before_branding_bundle_mode``), and the digest ready row's funnel
     charts as they were before 0083 (``before_digest_funnel_charts``), and
     form baselines and submissions as they were before 0143
-    (``before_reviewed_form_shown_items``).
-    charts as they were before 0083 (``before_digest_funnel_charts``), and
-    the functions and views 0191 replaced as they were before 0156
-    (``before_report_conversion``).
+    (``before_reviewed_form_shown_items``), and the functions and views 0161
+    replaced as they were before 0156 (``before_report_conversion``).
     """
     from django.db.migrations.loader import MigrationLoader
 
