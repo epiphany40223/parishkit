@@ -347,11 +347,11 @@ def test_each_export_button_posts_its_format(page, component_origin):
     assert_clean(page, errors)
 
 
-def test_staff_get_no_export_form(page, component_origin):
-    """Staff see the full timeline but may not export it yet (#1799)."""
+def test_staff_get_the_export_form(page, component_origin):
+    """Staff see the full timeline and may export it (#1799)."""
     page.goto(component_origin + STAFF)
     visible(page.get_by_role("heading", name="Summary"))
-    assert export_form(page).count() == 0
+    visible(export_form(page))
 
 
 def test_the_hub_strip_and_tabs_frame_the_timeline(page, component_origin):
