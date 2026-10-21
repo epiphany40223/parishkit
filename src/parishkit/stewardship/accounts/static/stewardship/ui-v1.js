@@ -1540,6 +1540,20 @@
     if (loose) fresh.prepend(loose);
     return loose || null;
   };
+  // A successful swap can remove the fields an earlier refusal's summary
+  // (outside every region) links to: Backup encryption key's Start over
+  // after a wrong code (#750). Such an item names nothing any more, so it
+  // goes, and the summary with it once it lists nothing; a summary item
+  // whose field is still shown stays until that field is edited.
+  const dropOrphanedSummaries = () => {
+    document.querySelectorAll("[data-error-summary]").forEach((summary) => {
+      if (summary.closest(REGIONS)) return;
+      summary.querySelectorAll('li a[href^="#"]').forEach((link) => {
+        if (!document.getElementById(link.hash.slice(1))) link.closest("li")?.remove();
+      });
+      if (!summary.querySelector("li")) summary.remove();
+    });
+  };
   // Show an answer as the whole page, as a native submission would have shown
   // it. document.open keeps this window: it erases the old page's event
   // listeners but not its timers, which would keep running beside the new
@@ -1952,6 +1966,7 @@
     } finally {
       swappingFor = null;
     }
+    if (!refused) dropOrphanedSummaries();
     if (!anywhere) syncControls(parsed);
     // Clear filters (#1651) asked the server for the unfiltered view, so the
     // form takes that answer's values, as after a cross-link that sets them.
