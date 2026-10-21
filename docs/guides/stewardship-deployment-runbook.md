@@ -933,7 +933,15 @@ lists what to do if the migration or the conversion refuses. In short: if
 the migration refuses because a digest send is unfinished, restore the
 pre-upgrade backup with the previous release ([Rollback](#rollback)), let
 the send finish and upgrade again; if `upgrade-reports` fails after the migration, fix the
-cause and repeat the run (fail forward). Run the precheck before the
+cause and repeat the run (fail forward). The later release that retires
+the digests (#1834, migration 0162) needs the conversion done first: the
+scripted upgrade refuses it in step 1, with nothing stopped or changed,
+while the database has not applied the conversion's migration or still
+has a digest definition; deploy the conversion's release first, then the
+later one. If its migration refuses anyway, 0161 may already have
+committed: restore the pre-upgrade backup with the previous release
+([Rollback](#rollback)) before anything else, then upgrade through the
+conversion's release. Run the precheck before the
 window, with the previous release still running, through the operator
 login as the backup runbook does for its queries. Every count must be 0:
 

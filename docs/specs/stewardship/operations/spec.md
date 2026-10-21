@@ -937,6 +937,23 @@ configuration still holds a digest.
   conversion step resumes; only a catastrophic failure restores the
   pre-upgrade backup with the previous release, as
   [production upgrades](#production-upgrades) allow.
+- **The digest retirement, a later release.** A later release's migration
+  ([#1834](https://github.com/epiphany40223/parishkit/issues/1834);
+  [database functions](../report-emails/spec.md#database-functions))
+  drops the digest kinds and the digest write functions. It refuses, naming
+  the count, while any schedule definition is still a digest, so upgrade
+  to it only from a release whose conversion has already run. The scripted
+  upgrade checks this in its step 1, before it stops anything: when the new
+  image has the retirement file (0162) and the database has not applied
+  the conversion's migration (`stewardship_reports.0041`) or still has a
+  digest definition, it refuses with nothing changed. Deploy the
+  conversion's release first (its run includes `pk-stewardship
+  upgrade-reports`), then the later one. If the migration refuses anyway,
+  the conversion's migration (0161) may already have committed in the
+  same run: do not run the conversion on that database; restore the
+  pre-upgrade backup with the previous release, as
+  [production upgrades](#production-upgrades) allow, upgrade to the
+  conversion's release first, and then to the later one.
 
 ### Offline bootstrap profile
 
