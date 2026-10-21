@@ -3746,6 +3746,13 @@ its feature spec: the
   time on the server and marks the instant `data-other-zone-time`, which
   the same script fills with the browser's time when the zones differ, in
   the list's own 24-hour `HH:MM` form so the two times read alike.
+  A list of schedules that names each one's next send rather than a
+  schedule's occurrences (the Pages and emails review's "Schedules using
+  this template") writes that send in the same words, its weekday, date
+  and time in the browser's zone with no zone name
+  ("Thursday, October 22, 2026, 9:00 AM"), as
+  `<time datetime="…" data-local-instant data-day-time>`
+  ([#1949](https://github.com/epiphany40223/parishkit/issues/1949)).
 - **Daylight saving** follows the [one rule](#schedules). A day whose
   clocks change in the shown zone says so beside its name ("clocks go
   forward", "clocks go back"). An occurrence whose wall time the change
