@@ -25,11 +25,11 @@ FROZEN = MIGRATIONS / "0158_ignored_note_optional.sql"
 # Each replaced guard and the frozen file holding the body 0158 copied.
 PREVIOUS = {
     "stewardship_proposal_review_guard_v1": "0130_census_address_guard.sql",
-    "stewardship_proposal_resolution_guard_v1": "0210_census_terminal_undo.sql",
-    "stewardship_ministry_revision_guard_v1": "0212_ministry_terminal_undo.sql",
-    "stewardship_pledge_review_guard_v1": "0213_pledge_terminal_undo.sql",
-    "stewardship_information_revision_guard_v1": "0214_information_handled_undo.sql",
-    "stewardship_limitation_review_guard_v1": "0215_limitation_handled_undo.sql",
+    "stewardship_proposal_resolution_guard_v1": "0146_census_terminal_undo.sql",
+    "stewardship_ministry_revision_guard_v1": "0148_ministry_terminal_undo.sql",
+    "stewardship_pledge_review_guard_v1": "0149_pledge_terminal_undo.sql",
+    "stewardship_information_revision_guard_v1": "0150_information_handled_undo.sql",
+    "stewardship_limitation_review_guard_v1": "0151_limitation_handled_undo.sql",
 }
 
 

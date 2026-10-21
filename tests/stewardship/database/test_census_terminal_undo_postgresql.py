@@ -428,7 +428,7 @@ def test_the_migration_check_refuses_the_old_bodies_which_refuse_the_undo(
     check = re.search(r"^DO \$check\$.*?\$check\$;", text, re.M | re.S)[0]
     # 0158 (#1889) has since replaced the resolution guard without the
     # Ignore's reopening note this check looks for, so the check runs on
-    # 0210's own body, rolled back, and 0158's comes back after this file's
+    # 0146's own body, rolled back, and 0158's comes back after this file's
     # reinstall below.
     guard = "stewardship_proposal_resolution_guard_v1"
     own = function_text(FROZEN, guard)

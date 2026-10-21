@@ -484,7 +484,7 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # limitation review guard), which 0126's rerun brings back older, so
 # ``CLOSURE_REPLACED`` runs each file again after it.
 # 0158 (#1889) creates nothing: it replaces six guards in place on 0130's,
-# 0210's, 0212's, 0213's, 0214's and 0215's bodies, which the reruns of
+# 0146's, 0148's, 0149's, 0150's and 0151's bodies, which the reruns of
 # those files (``CLOSURE_REPLACED``) bring back older, so
 # ``CLOSURE_REPLACED_LAST`` runs its file again after them.
 CLOSURE_CREATED = {
@@ -1115,7 +1115,7 @@ CLOSURE_REPLACED_LAST = {
         "IF attempt.state='collecting' THEN",
     ),
     # 0158 (#1889) drops the Ignored-reopen note from six guards whose files
-    # (0130, 0210, 0212 to 0215) ``CLOSURE_REPLACED`` reruns above; it
+    # (0130, 0146, 0148 to 0151) ``CLOSURE_REPLACED`` reruns above; it
     # creates nothing, so its file runs again whole. Each new body names
     # the issue.
     **dict.fromkeys(

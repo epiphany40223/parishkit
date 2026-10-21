@@ -26,12 +26,12 @@ FROZEN_SQL = (
 
 class Migration(migrations.Migration):
     dependencies = [
-        # This app's previous migration (#1705's 0216), so the app keeps one
-        # leaf; it depends, transitively, on the one installing 0215, the
+        # This app's previous migration (#1705's 0153), so the app keeps one
+        # leaf; it depends, transitively, on the one installing 0151, the
         # last file whose guard bodies this one replaces, and so on those
-        # installing 0130, 0210, 0212, 0213 and 0214.
+        # installing 0130, 0146, 0148, 0149 and 0150.
         ("stewardship_responses", "0027_reviewed_census_resubmission"),
-        # The migration that installs #1705's last frozen file (0218), so
+        # The migration that installs #1705's last frozen file (0155), so
         # this file applies after every file merged before it.
         ("stewardship_reports", "0039_reviewed_pledge_resubmission"),
     ]

@@ -13,21 +13,20 @@
 -- "Undoing a terminal stage"). Replaced, each copied whole from its latest
 -- body with only its Ignored-note check dropped (and the comments saying
 -- so); every terminal step's required note, every role, version and state
--- rule stays (0210-0215 are #1856's provisional file numbers; a renumber
--- of those files renames them here too):
+-- rule stays:
 --   stewardship_proposal_review_guard_v1      (0130's) an ignored census
 --       change sent back to review (decision unreviewed) with no note;
---   stewardship_proposal_resolution_guard_v1  (0210's) a 'reopened'
+--   stewardship_proposal_resolution_guard_v1  (0146's) a 'reopened'
 --       resolution of an open ignored change (still the Administrator's)
 --       with no note; the undo of a terminal step still needs one;
---   stewardship_ministry_revision_guard_v1    (0212's) an ignored Ministry
+--   stewardship_ministry_revision_guard_v1    (0148's) an ignored Ministry
 --       request reopened with no decision note;
---   stewardship_pledge_review_guard_v1        (0213's) an ignored pledge's
+--   stewardship_pledge_review_guard_v1        (0149's) an ignored pledge's
 --       Back to review with no note;
---   stewardship_information_revision_guard_v1 (0214's) an Ignored request
+--   stewardship_information_revision_guard_v1 (0150's) an Ignored request
 --       leaving Ignored (back to review, or straight to follow-up from
 --       pk-admin) with no new notes;
---   stewardship_limitation_review_guard_v1    (0215's) an Ignored
+--   stewardship_limitation_review_guard_v1    (0151's) an Ignored
 --       cannot-participate or cannot-attend answer's Back to review with no
 --       note.
 -- None of them is SECURITY DEFINER, before or after (each was created

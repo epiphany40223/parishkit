@@ -466,7 +466,7 @@ FROZEN = {
         "adfde07b256d584b99de8ae7cdc2910cd982bf4bc1d505404e7b4fc957b522b6"
     ),
     "0158_ignored_note_optional.sql": (
-        "e4eabd627b8f4e5b3065d9d3ae6cd254d37397416f5bb7bf94aac5a61ef25c2f"
+        "2ad8ec09cab596393c02b32175b1510a163068a4953ba72ff1b5388744fe063a"
     ),
     "0146_census_terminal_undo.sql": (
         "4bdbbda58daa0aecda124bb36bab4157c2898d27a5d86392e5833d0c7684c456"
