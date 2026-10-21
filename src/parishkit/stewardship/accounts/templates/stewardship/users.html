@@ -15,6 +15,8 @@ column. The reader's own row has no Delete (an Administrator never deletes
 themselves, Administrator decision 2026-10-11), and neither has the only
 Administrator's, who is always the reader; the line under the table says
 why, and the server refuses it anyway.
+Each row's Email links that user's Timeline (#1866), where the user's
+sign-ins, actions, role changes and emails are listed.
 The rows have no Sign-in activity control (Administrator, 2026-10-11): the
 link above the table opens all sign-in activity in System logs, and Edit user
 lists one button per recorded Google identity (#953).
@@ -25,6 +27,12 @@ leaders redraws both tables in place, and its own line, just above the
 leaders table where the reader acted, says so instead. Both lines
 (components/review-outcome.html) sit outside the table regions, so a
 redraw keeps them.
+The line under the table counts Ministry leader users who never signed in,
+across every page (#1593), and is always shown so a redraw moves nothing;
+the About panel repeats the shared Google Account guidance
+(google_account_help tag) for the Administrator to pass on; the local
+laptop environment shows it only when it offers Google sign-in, as the
+sign-in page does.
 Last successful sign-in uses the compact parish date format in the browser's
 time zone (data-compact, date-format-v1.js), as other dense tables do
 (Administrator, 2026-10-11); the server sorts by the timestamp itself.
@@ -35,7 +43,10 @@ time zone (data-compact, date-format-v1.js), as other dense tables do
 <p>{% translate "New user adds someone; Edit changes a user's Name or role. Either shows what would change before you apply it, and nothing takes effect until the status says Applied. Delete asks first; the person can no longer sign in, and their open sessions end on their next request. To change an address, delete the user and add the new address." %}</p>
 <p>{% translate "A successful sign-in is one that was allowed and opened a session; a refused attempt is not counted. Times are shown in your computer's time zone." %}</p>
 <p>{% translate "Below the users, ParishSoft Ministry leaders without a user lists the people who lead one of this campaign's Ministries in ParishSoft but can't sign in yet. Import selected or Import all shows them as new Ministry leader users before anything is saved; anyone who became a user meanwhile is skipped. Import never changes an existing user." %}</p>
-<p>{% translate "Email Ministry leaders, at the foot of the page, sends each chosen Ministry leader user one email saying they can sign in, which address to sign in with, and how many requests are open in each Ministry they lead. It names no parishioner. Nothing is sent until you apply its review, and nothing is ever sent automatically, on import or on a schedule. Last emailed says when a leader was last emailed here and how that email has ended so far; Outgoing mail does not list these emails yet." %}</p>{% endaboutpage %}
+<p>{% translate "Email Ministry leaders, at the foot of the page, sends each chosen Ministry leader user one email saying they can sign in, which address to sign in with, and how many requests are open in each Ministry they lead. It names no parishioner. Nothing is sent until you apply its review, and nothing is ever sent automatically, on import or on a schedule. Last emailed says when a leader was last emailed here and how that email has ended so far; Outgoing mail does not list these emails yet." %}</p>
+{% if google_sign_in or not local_environment %}<p>{% translate "Users sign in with a Google Account for their own address. It need not be a Gmail address, but many Ministry leaders' addresses have no Google Account yet, and Import doesn't tell them anything, so let them know. The sign-in page and the refusal page show them this:" %}</p>
+{% google_account_help %}{% endif %}
+<p>{% translate "The line under the users table counts the Ministry leaders who have never signed in; their Last successful sign-in reads Never." %}</p>{% endaboutpage %}
 <p id="users-sign-in-activity"><a href="{% url 'admin:logs' %}?applied=yes&amp;audit=yes&amp;activity=sign_in">{% translate "See sign-in activity in System logs" %}</a></p>
 <p>{% button href=new_url %}{% translate "New user" %}{% endbutton %}</p>
 {% include "stewardship/components/review-outcome.html" with outcome_id="users-outcome" %}
@@ -56,7 +67,7 @@ time zone (data-compact, date-format-v1.js), as other dense tables do
   </tr></thead>
   <tbody>
   {% for row in table.rows %}<tr>
-    <th scope="row"><span class="cell-ellipsis" title="{{ row.email }}">{{ row.email }}</span></th>
+    <th scope="row"><a href="{{ row.timeline_url }}" class="cell-ellipsis" title="{{ row.email }}">{{ row.email }}</a></th>
     <td><span class="cell-ellipsis" title="{{ row.name }}">{{ row.name }}</span></td>
     <td class="nowrap">{{ row.role_label }}</td>
     <td class="nowrap">{% if row.last_login %}<time datetime="{{ row.last_login|instant }}" data-local-instant data-compact>{{ row.last_login|instant }}</time>{% else %}{% translate "Never" %}{% endif %}</td>
@@ -67,6 +78,7 @@ time zone (data-compact, date-format-v1.js), as other dense tables do
 </div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <p class="help" id="users-delete-reason">{{ delete_reason }}</p>
+<p class="help" id="users-never-signed-in">{% if never_signed_in %}{% blocktranslate count count=never_signed_in %}{{ count }} Ministry leader has never signed in.{% plural %}{{ count }} Ministry leaders have never signed in.{% endblocktranslate %}{% else %}{% translate "Every Ministry leader has signed in." %}{% endif %}</p>
 {% translate "Delete {name}?" as title_one %}{% translate "Delete {count} users?" as title_many %}{% translate "This person can no longer sign in to the Admin portal, and their open sessions end on their next request. The address can be added again later as a new user." as body %}{% translate "Delete" as accept %}
 {% include "stewardship/components/confirm-dialog.html" with dialog_id="user-delete" form_id="user-actions" fallback="users-table-title" title_one=title_one title_many=title_many body=body accept=accept done_one=_("Deleted {name}.") done_many=_("Deleted {count} users.") %}
 </section>

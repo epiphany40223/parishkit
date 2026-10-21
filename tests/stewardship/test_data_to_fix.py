@@ -386,14 +386,23 @@ def _view(monkeypatch, principal, *, query="", current=None):
     )
 
 
-def test_a_ministry_leader_gets_the_shared_denial(monkeypatch):
-    """403 from the shared denial, never Sent mail's error page."""
-    from parishkit.stewardship.accounts.authentication import denial
-
+def test_a_ministry_leader_gets_the_role_refusal(monkeypatch):
+    """403 naming the page's roles (#1924), never Sent mail's error page."""
     response = _view(monkeypatch, LEADER)
     assert response.status_code == 403
-    assert response.content == denial().content
+    assert json.loads(response.content)["refusal"]["message"] == (
+        "This page is for Administrators and Staff. Your access doesn't include it."
+    )
     assert b"Delivery" not in response.content
+
+
+def test_no_current_session_gets_the_shared_denial(monkeypatch):
+    """Without a current session the refusal stays the generic one."""
+    from parishkit.stewardship.accounts.authentication import denial
+
+    response = _view(monkeypatch, None)
+    assert response.status_code == 403
+    assert response.content == denial().content
 
 
 @pytest.mark.parametrize("principal", [STAFF, ADMIN], ids=["staff", "administrator"])
@@ -471,8 +480,6 @@ def test_only_the_page_records_activity(monkeypatch, view, activity):
     does. A Ministry leader is refused either way."""
     from django.test import RequestFactory
 
-    from parishkit.stewardship.accounts.authentication import denial
-
     seen = []
 
     def admit(*args, **kwargs):
@@ -486,7 +493,8 @@ def test_only_the_page_records_activity(monkeypatch, view, activity):
     monkeypatch.setattr(data_to_fix_views, "authenticated_admin", admit)
     response = getattr(data_to_fix_views, view)(RequestFactory().get("/x/"))
     assert response.status_code == 403
-    assert response.content == denial().content
+    # The role refusal (#1924), not the generic sign-in denial.
+    assert b"for Administrators and Staff" in response.content
     assert seen == [{"store": None, "activity": activity, "read_only": False}]
 
 

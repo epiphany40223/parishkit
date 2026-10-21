@@ -107,12 +107,14 @@ def test_placement_agrees_with_the_shared_selection():
     assert checked(entered) and not checked(item())
 
 
-def test_entered_incorrectly_and_confirmed_offer_nothing_a_conflict_is_decided():
-    """Entered incorrectly's fixes wait for #1737; Confirmed is closed; a
-    Conflict is decided again (#1747)."""
+def test_entered_incorrectly_and_confirmed_go_back_a_conflict_is_decided():
+    """Entered incorrectly and Confirmed offer Back to review (#1840; Entered
+    by hand again waits for #1737), never to a leader; a Conflict is decided
+    again (#1747)."""
     roles = STAFF
-    assert offered(Stage.ENTERED_INCORRECTLY, roles) == frozenset()
-    assert offered(Stage.CONFIRMED, roles) == frozenset()
+    assert offered(Stage.ENTERED_INCORRECTLY, roles) == {Action.BACK_TO_REVIEW}
+    assert offered(Stage.CONFIRMED, roles) == {Action.BACK_TO_REVIEW}
+    assert offered(Stage.CONFIRMED, {"ministry_leader"}) == frozenset()
     assert Action.ENTERED_BY_HAND in offered(Stage.TO_ENTER_BY_HAND, roles)
     assert offered(Stage.CONFLICT, roles) == {
         Action.ACCEPT,
@@ -157,8 +159,9 @@ def offered_icons(row):
     return [icon["action"] for icon in row["icons"] if not icon["selected"]]
 
 
-def test_entered_incorrectly_shows_parishsoft_now_and_no_action():
-    """ParishSoft now sits beside the Reviewer's value; no icon is offered."""
+def test_entered_incorrectly_shows_parishsoft_now_and_back_to_review():
+    """ParishSoft now sits beside the Reviewer's value; Back to review undoes
+    the mark (#1840), and Entered by hand again waits for #1737."""
     found = item(
         "entered_incorrectly",
         review(entered=True),
@@ -172,7 +175,7 @@ def test_entered_incorrectly_shows_parishsoft_now_and_no_action():
     assert drawn_row["stage_label"] == "Entered incorrectly"
     assert drawn_row["stage_look"] == "error"
     assert worklist.shows_now and drawn_row["parishsoft_now"] == "$1,100.00"
-    assert offered_icons(drawn_row) == []
+    assert offered_icons(drawn_row) == ["back_to_review"]
 
 
 def test_a_to_review_conflict_is_decided_against_parishsoft_now():
@@ -209,12 +212,13 @@ def test_an_accepted_conflict_shows_its_earlier_decision_not_in_force():
 
 
 def test_a_confirmed_to_review_pledge_was_already_in_parishsoft():
-    """Confirmed with no reviewer says so under its stage and offers nothing."""
+    """Confirmed with no reviewer says so under its stage; Back to review
+    (with a note) sends it to To review (#1840)."""
     found = item("confirmed", check="confirmed", observed="1200.00", base="to_review")
     row = shown(found)
     (drawn_row,) = drawn([row], Stage.CONFIRMED.value).rows
     assert drawn_row["stage_label"] == "Confirmed"
-    assert offered_icons(drawn_row) == []
+    assert offered_icons(drawn_row) == ["back_to_review"]
     # The page's line under the stage (``page_context``).
     assert str(views._stage_line(row, "")) == views.ALREADY
     decided = shown(

@@ -10,7 +10,11 @@ report email already shares.
 The Daily and Weekly digests are drawn through it (``daily_digest`` and
 ``weekly_digest`` name their blocks), byte for byte as before the blocks
 existed; ``test_report_blocks`` gates that against frozen copies of the old
-compilers.
+compilers. A report email's ``ReportDocument`` is drawn through it too: it
+opens with its as-of line also without a fact block when it reports as of
+the end of the previous day, and a block with nothing to show draws its
+empty statement. ``capture_report`` keeps each block's data for the
+snapshot.
 """
 
 from dataclasses import dataclass
@@ -70,6 +74,54 @@ def opening_html(opening, url):
     )
 
 
+def drawable(document, block):
+    """Whether the source has something for ``block``; a digest always has."""
+    check = getattr(document, "drawable", None)
+    return check is None or check(block)
+
+
+def empty_section(block):
+    """A block's one empty line (spec, decision 6), under its label."""
+    if not block.empty:
+        return "", ""
+    return (
+        f"<h2{style('heading')}>{plain(block.label)}</h2>"
+        f"<p{style('caption')}>{plain(block.empty)}</p>",
+        f"{block.label}\n{block.empty}",
+    )
+
+
+def capture_report(document, entries):
+    """Each block's captured data, ``[{block, version, data}]`` in report order.
+
+    ``entries`` are the report's stored blocks (``{block, version,
+    options}``). Data is None for a block with nothing to show, which draws
+    its empty statement. Capture runs in the date format the source pinned,
+    as drawing does, so formatted values agree.
+    """
+    blocks = report_blocks([entry["block"] for entry in entries])
+    with dates.using(document.date_format):
+        return [
+            {
+                "block": block.key,
+                "version": block.version,
+                "data": (
+                    block.capture(document, block.options | entry["options"])
+                    if drawable(document, block)
+                    else None
+                ),
+            }
+            for block, entry in zip(blocks, entries, strict=True)
+        ]
+
+
+def has_content(captured):
+    """Whether any captured block has content (spec, decision 16)."""
+    from . import REGISTRY
+
+    return any(REGISTRY[item["block"]].has_content(item["data"]) for item in captured)
+
+
 def compile_report(document, keys, *, public_origin, copy_path=None, options=None):
     """Draw ``document`` as the report email made of the blocks ``keys``.
 
@@ -83,11 +135,15 @@ def compile_report(document, keys, *, public_origin, copy_path=None, options=Non
     """
     blocks = report_blocks(keys)
     facts = any(block.fact for block in blocks)
+    # A report as of the end of the previous day says so first, with or
+    # without a fact block (spec, "Shared email layout"); digests have no
+    # ``opens``, so only the Daily's facts open them.
+    opens = facts or getattr(document, "opens", False)
     with dates.using(document.date_format):
         frame = Frame(
             public_origin,
             dashboard_url=(
-                response_dashboard_url(public_origin, document.mode) if facts else None
+                response_dashboard_url(public_origin, document.mode) if opens else None
             ),
             copy_url=report_url(public_origin, copy_path) if copy_path else None,
         )
@@ -103,16 +159,17 @@ def compile_report(document, keys, *, public_origin, copy_path=None, options=Non
         def draw(placement):
             """Draw the report's blocks placed at ``placement``, in order."""
             for block in blocks:
-                if block.placement == placement:
-                    chosen = block.options | (options or {}).get(block.key, {})
-                    section = block.draw(document, frame, chosen)
-                    add(section.html, section.text, section.images)
+                if block.placement != placement:
+                    continue
+                if not drawable(document, block):
+                    add(*empty_section(block))
+                    continue
+                chosen = block.options | (options or {}).get(block.key, {})
+                section = block.draw(document, frame, chosen)
+                add(section.html, section.text, section.images)
 
         url = frame.dashboard_url
-        # The spec also opens a report as of the end of the previous day
-        # with this line; reports gain that as-of choice with the report
-        # pipeline (delivery plan item 3), and today only the Daily has it.
-        if facts:
+        if opens:
             # Say each fact once (#720): the opening line carries the
             # report-day definition (#721) and is the only place that names
             # the time zone; whitespace collapses as the strict HTML

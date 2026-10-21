@@ -126,7 +126,7 @@ def test_a_new_backup_key_waits_for_a_well_formed_public_key(page, component_ori
 def test_the_backup_prove_code_waits_for_all_twelve_characters(page, component_origin):
     """Check code waits for twelve characters, typed any way the server reads."""
     page.goto(component_origin + "/backup-key-code")
-    check = page.get_by_role("button", name="Check code and review")
+    check = page.get_by_role("button", name="Check code and continue")
     hint = page.locator("#backup-key-code-hint")
     code = page.get_by_label("Code from backup-prove")
     waits_with(check, hint, CODE_HINT)

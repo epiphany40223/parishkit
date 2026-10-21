@@ -185,7 +185,7 @@ These read what the matching Admin page shows, as counts, states,
 identifiers and UTC instants only: no Family names, email addresses, codes
 or other personal data. A read-only session can run every one of them. Each
 records the same view event in System logs as its page (`status` the home
-page's, `task list` and `task show` Background work's, `send progress` and
+page's, `task list` and `task show` Background work's, `mail queue` and
 `send history` Sent mail's, `system health` System health's);
 `schedule show`, `go-live readiness` and `go-live progress` record none,
 like their pages. `system health` needs an Administrator's session, as its
@@ -195,7 +195,7 @@ page does.
 pk-admin status
 pk-admin task list --state failed --size 20
 pk-admin task show TASK_ID --watch 5
-pk-admin send progress --watch 10
+pk-admin mail queue --watch 10
 pk-admin send history
 pk-admin schedule show
 pk-admin go-live readiness
@@ -236,13 +236,20 @@ your roles would not show on the page is `null`.
 | `tasks` or `task` | Each task's `id`, `root_id`, `parent_id`, `retry_sequence`, `type`, `state`, `action`, `version`, `attempt`, `initiator_id`, `progress` (`phase`, `current`, `total`, `percent`), its instants and `active` |
 | `latest_run_id`, `events` | `task show` only: the newest retry, and the history (`version`, `at`, `action`, `state`, `attempt`, `progress`) |
 
-### `send progress` and `send history`
+### `mail queue` and `send history`
+
+`mail queue` reads the Mail queue page: every email waiting to go out, of
+every kind, and the Family send in progress. It replaced `send progress`
+(#1562).
 
 | Field | What it holds |
 | --- | --- |
-| `campaign_id` | The current campaign |
-| `mode`, `paused`, `upcoming` | `send progress` only: the mode, whether delivery is paused, and whether a Production send is about to start |
-| `send` | `send progress` only: the send in progress or the latest, or `null` |
+| `campaign_id` | The current campaign, or `null` |
+| `mode`, `paused`, `upcoming` | `mail queue` only: the operating mode, whether delivery is paused, and whether a Production send is about to start |
+| `counts` | `mail queue` only: the operating mode's queued emails as `queued`, `sending`, `retry_wait` and `paused` |
+| `other_mode_queued` | `mail queue` only: how many emails of the other mode are queued (never added to `counts`) |
+| `kinds` | `mail queue` only: one row per kind (`purpose`, as Sent mail's `--purpose` names it) with the same four counts |
+| `send` | `mail queue` only: the Family send in progress or the latest, or `null` |
 | `page`, `pages`, `count`, `size`, `sends` | `send history` only: one page of sends, newest first |
 
 Each send has `kind`, `active`, `paused`, `stalled`, `held`, `total`,
@@ -584,10 +591,11 @@ pk-admin system mail-clear --token TOKEN
 
 ### Watching and errors
 
-`--watch SECONDS` (2 to 300) on `task show`, `send progress`,
+`--watch SECONDS` (2 to 300) on `task show`, `mail queue`,
 `go-live progress` and `system health` prints one document per poll,
 `final` false until the last. It stops with exit 0 once the task has
-finished, once no send is in progress or about to start, once System
+finished, once nothing is queued and no send is in progress or about to
+start, once System
 health lists no problem except those waiting cannot clear (off-site copies
 not set up, `offsite_missing`, and a requested backup that failed, did not
 finish or was never picked up, `backup_request_failed`: the
@@ -1121,8 +1129,7 @@ its `id`, `kind` (`page` or `email`), `slot`, `name` and `subject`. With
 `kind`, `slot`, `name` and `sample`: the page's fictional sample, its
 `subject`, `html` and `text`; without it, `revision` is null. An ID the
 campaign did not retain, a purged campaign, or a campaign whose retained
-configuration is gone is exit 1 (`not_available`). Editing a page's or
-email's text stays on the page for now.
+configuration is gone is exit 1 (`not_available`).
 
 `content preview --delete` and `content confirm` are the email tables'
 **Delete**, split in two as `schedule preview` and `schedule confirm` are
@@ -1163,6 +1170,62 @@ records nothing. It prints `action` (`plain_text`) and `plain_text`:
 `html` (the cleaned HTML), `text` (the plain text "Generate plain text
 from HTML" would save) and `removed` (the markup cleaning drops, in plain
 words). HTML longer than the editor accepts is exit 1 (`invalid`).
+
+### Changing a page's or email's text
+
+`content preview --edit` and `content confirm --edit` are the content
+editor's **Preview changes** and its review's **Apply**: the preview
+checks the new text as the editor does and prints the review, with a
+token; nothing changes until `content confirm`. They need a full-scope
+session and an Administrator, and work outside the campaign wizard (in the
+wizard, the editor's Save and go back makes the same change). Name the page
+or email as for `content show`. The fields go on standard input as one
+JSON object after `-`:
+
+```sh
+VERSION=$(pk-admin content list | jq -r .result.version)
+printf '%s' '{"subject": "Our {{ campaign_name }} campaign"}' |
+  pk-admin content preview --edit email initial --revision ID \
+  --expected-version "$VERSION" - | jq -r .result.preview.token |
+  pk-admin content confirm --edit email initial --revision ID --token -
+```
+
+| Field on standard input | What it sets |
+| --- | --- |
+| `subject` | The email subject (emails only) |
+| `html` | The HTML source |
+| `text` | The plain-text version (emails only) |
+| `generate_text` | "Generate plain text from HTML" (emails only), true or false |
+| `show_banner` | "Show the campaign banner" (Family emails only), true or false |
+| `clear` | "Remove this selected content", true or false |
+
+A field you leave out keeps the value the editor opens with (`content
+show`); while `generate_text` is true, the plain text is generated from the
+HTML, and a different `text` is refused (set `generate_text` to false to
+keep typed text). With `clear` true, give no `subject`, `html`,
+`generate_text` or `text`: removing sends no text.
+
+| Field | What it holds |
+| --- | --- |
+| `action` | `edit` |
+| `version`, `campaign_id` | The configuration version the change was built against, and the current campaign |
+| `edit.kind`, `edit.slot`, `edit.revision_id`, `edit.name` | The page or email, and its name on the page |
+| `edit.before`, `edit.after` | The fictional sample of the current and the proposed content: `subject`, `html` and `text`, or null when empty |
+| `edit.schedules` | The schedules the new text switches at once, in sending order: `id`, `kind`, `name` (as Dates and mail schedules names it, such as Reminder 2), `subject`, `due_at` (null for a recurring digest) and `sent` (true when it already sent: it switches too, but Families who got it are not sent it again) |
+| `preview.token` | What `content confirm --edit --token` takes, valid for fifteen minutes |
+| `created`, `request` (`content confirm`) | As `parish confirm` prints them; follow the change with `config request show --watch` |
+
+A value the editor refuses (an unknown placeholder, a missing subject, a
+field the editor does not have, a wrong type) is exit 1 (`invalid`), with
+the editor's explanation at `content.<field>`. No change at all, or
+removing an email a schedule still sends, is exit 1 (`invalid`) with the
+page's explanation and fix. A version that is no longer current,
+background work holding the campaign, or an expired token is exit 1
+(`stale_version`): read `content list` again. An unknown slot or revision
+is exit 1 (`not_available`). A token for another page or email, or an
+altered one, is exit 1 (`invalid`). The preview records nothing; `content
+confirm` records `admin_cmd_content_confirm` in System logs with the
+request, and repeating it with the same token returns the same request.
 
 ## Campaign images
 
@@ -2091,8 +2154,7 @@ the prompt or from `--yes`.
 A prompting command checks your role first: if your user no longer may do
 the action (an Administrator who is now Staff, say), it exits 1 (`denied`)
 before it reads any input, looks anything up or prompts. A command Staff
-may run, such as `export financial` or `census resolve`, still prompts
-Staff.
+may run, such as `export financial`, still prompts Staff.
 
 Since [#1547](https://github.com/epiphany40223/parishkit/issues/1547) no
 Admin page asks for a recent sign-in, so a session never stands in for one.
@@ -2130,18 +2192,21 @@ pk-admin delivery bounce-report MESSAGE_ID --address ADDRESS \
 ```
 
 `delivery list` takes Sent mail's filters: `--recipient` (a Family DUID, an
-email address or a delivery id, as input only), `--purpose` (`initial`,
+email address, a delivery id, or any other text as part of a Family's or a
+person's name, ignoring case, as input only), `--purpose` (`initial`,
 `reminder`, `receipt`, `family_test`, `daily_digest`, `weekly_digest`,
-`operational` or `security_event`, or the group `family`: invitations and
-reminders), `--state` (a state, or the groups `needs_attention`,
+`operational`, `security_event` or `leader_email`, or the group `family`:
+invitations and reminders), `--state` (a state, or the groups `needs_attention`,
 `needs_review`, `not_delivered` and `still_sending`, as the page defines
 them), `--mode`
 (`production` or `testing`; both when left out), `--from` and `--to` (whole
 days, in the time zone `--zone` names, the parish's time zone by default),
 `--send` (send history's `send` value), `--page`, `--size` and `--sort`. The
-list includes operational and security notices, as the page does. `--sort` takes the page's tokens:
+list includes operational and security notices and Ministry leader emails,
+as the page does. `--sort` takes the page's tokens:
 `changed` (when the email last changed; the default is `-changed`, latest
-first), `name` (emails to Administrators last, by their Name or address),
+first), `name` (emails to people, Administrators and Ministry leaders, last,
+by their Name or address),
 `duid`, `purpose`, `mode`, `state` and `attempts`, and also
 `created`. `delivery refusals` takes `--duid`, and its `--sort` takes
 `refused`, `name` (the Family's name, as `delivery list`), `duid`
@@ -2494,28 +2559,31 @@ pk-admin pledges decide --action accept --item ITEM_ID:0 --item ITEM_ID:2
 pk-admin pledges decide --action edit --item ITEM_ID:0 \
     --amount 1,300 --frequency monthly
 pk-admin pledges decide --action entered_by_hand --item ITEM_ID:1
+pk-admin pledges decide --action back_to_review --item ITEM_ID:2 \
+    --note "Marked by mistake"
 ```
 
 `pledges decide` records one decision, as a row's icon or the bulk bar does:
 `accept`, `edit` (one pledge, with `--amount` and, for a pledge above zero,
 `--frequency`: `weekly`, `monthly`, `quarterly` or `annual`), `ignore`,
-`back_to_review` (a `--note` saying why is required to reopen an ignored
-pledge) or `entered_by_hand`. It needs a full-scope session; Administrators
-and Staff may run it. Entered by hand is final, so it asks for `yes` first
-(see [Confirmations](#confirmations)), or takes `--yes`; the others ask
-nothing. Each `--item` is a pledge's `item_id` and `version` from the JSON
+`back_to_review` or `entered_by_hand`. It needs a full-scope session;
+Administrators and Staff may run it. Nothing asks first: every decision can
+be changed again, Entered by hand too. `back_to_review` on an Ignored pledge
+reopens it, and on an Entered by hand, Entered incorrectly or Confirmed one
+undoes that step, so the pledge goes back to To enter by hand with its
+decision kept (To review for a pledge ParishSoft already held); both need a
+`--note` saying why. There is no `--yes`. Each `--item` is a pledge's `item_id` and `version` from the JSON
 Lines; up to 100 at once, all or none. A campaign without Financial
 stewardship is exit 1 (`not_available`). A pledge someone decided since, or
 that the Family answered again, is exit 1 (`stale_version`): export again.
 A decision the pledge's stage does not offer, or an amount the Family form
 would refuse, is exit 1 (`invalid`, the amount's problem at `amount` or
-`frequency`). `--note -` reads the note from standard input (then
-`entered_by_hand` needs `--yes`). `--request-key` is made for you when left
+`frequency`). `--note -` reads the note from standard input. `--request-key` is made for you when left
 out; repeating with the same key, pledges, decision and value returns the
 same rows (`created` false), and using the key for other pledges, another
 decision or another value is `invalid`. A note longer than 2,000
-characters, or an amount the Edit would refuse, is refused before the
-question is asked. The result has
+characters, or an amount the Edit would refuse, is refused before anything
+is recorded. The result has
 `created`, `request_key` and `decisions` (each row's `id`, `item_id`,
 `sequence`, `action`, `decision`, `entered` and `created_at`), never the
 amount or the note. System logs show the page's `pledge_review_updated` and
@@ -2527,32 +2595,35 @@ the command's `admin_cmd_pledges_decide`.
 (`entered`), **Ignore** (`ignored`) or **Reopen** (`reopened`) icon. Like the
 page's buttons it needs a full-scope session; Administrators and Staff may
 record Entered and Ignore, and only an Administrator may reopen an ignored
-change (Staff get `denied`).
-Entered in ParishSoft cannot be undone, so, as the page's dialog does,
-`--action entered` shows the change's id and version and asks for `yes`
-(see [Confirmations](#confirmations)), or takes `--yes`; Ignore and Reopen
-ask nothing.
+change (Staff get `denied`). Reopen of a change that is Entered by hand
+(also Entered incorrectly or Confirmed), Updated in ParishSoft or Already in
+ParishSoft is the page's **Back to review** of that step, which Staff may
+record too: the change goes back to the stage before it with its decision
+kept (To enter by hand or Ready to update; To review when nobody had
+decided it), and nothing is written to ParishSoft.
+Every outcome can be undone that way, so no action asks first, and there
+is no `--yes`.
 
 ```sh
 pk-admin census resolve PROPOSAL_ID --action entered --expected-version 3
 pk-admin census resolve PROPOSAL_ID --action reopened --expected-version 4 \
-    --note - --yes < note.txt
+    --note - < note.txt
 ```
 
 `PROPOSAL_ID` and the `--expected-version` are the change's id and version,
 which `export census --format jsonl` prints (`proposal_id` and `version`,
 with the `actions` the change takes now; the page's own downloads leave
-them out). `--note` is optional, except to reopen; `-` reads it from
-standard input, which keeps a note that names people out of shell history
-and the process list, and then needs `--yes`, because standard input cannot
-carry both the note and an answer. `--request-key` is made for you and
+them out). `--note` is optional, except to reopen (an ignored change, or a
+terminal step); `-` reads it from standard input, which keeps a note that
+names people out of shell history and the process list. `--request-key` is made for you and
 written to standard error when left out. Repeating the command with the
 same key returns the same resolution (`created` false) and records nothing
 new; the key used for another outcome or note is exit 1 (`invalid`). A
 change someone updated since that version is exit 1 (`stale_version`):
 read it again on the page. An outcome the change's status does not allow
-(an automatic change, or one already entered), or reopening without a
-note, is exit 1 (`invalid`); a change that is not the current campaign's
+(an automatic change, an entered one marked again before a refresh found
+it wrong, one queued for an update run, or one a later response of the
+Family replaced), or reopening without a note, is exit 1 (`invalid`); a change that is not the current campaign's
 is exit 1 (`not_available`), and so is a repeat after the current campaign
 changed.
 
@@ -3168,12 +3239,12 @@ pk-admin limitations decide --action handled --item m41-3:1
 
 Each takes `--action` (`accept`, `ignore`, `back_to_review` or `handled`),
 one `--item ID:VERSION` for each item (up to 100, all or none), `--note TEXT`
-(at most 2,000 characters; `-` reads standard input, which then needs
-`--yes`) and `--request-key`. Handled is final, so it asks for `yes` first
-(see [Confirmations](#confirmations)), or takes `--yes`; the others ask
-nothing, as they can be changed again. Taking an Ignored item back to
-review needs a `--note` saying why (for a request, a new one, not its
-current notes) (exit 1, `invalid`, naming `note`,
+(at most 2,000 characters; `-` reads standard input) and
+`--request-key`. None asks first, as every decision can be
+changed again, Handled too, and none takes `--yes`. Taking an Ignored
+item back to review, or a Handled one (which returns it to To handle,
+with its Accept kept), needs a `--note` saying why (for a request, a new
+one, not its current notes) (exit 1, `invalid`, naming `note`,
 otherwise). An item someone decided since, or that the Family answered
 again, is exit 1 (`stale_version`): list or export again. An action the
 item's stage does not offer is `stale_version` too, as on the page. A
@@ -3357,6 +3428,29 @@ never signed in come last either way.
 | `form` | `users` once the configuration holds users, else `sign_in_rules` |
 | `sort` | The sort used |
 | `users` | Each user's `email`, `name`, `role` (`administrator`, `staff` or `ministry_leader`) and `last_login`, the newest successful sign-in of any Google account with that address, or `null` |
+
+`users timeline` prints one user's
+[Timeline](../specs/stewardship/admin-portal/spec.md#user-timeline)
+([#1866](https://github.com/epiphany40223/parishkit/issues/1866)): the
+user's sign-ins and sign-outs, Admin actions, role changes and emails,
+newest first, unpaged. Name the user by the `id` that `users list` prints.
+Any session may run it, and it records the page's `user_timeline_viewed`.
+
+```sh
+pk-admin users timeline --user USER_ID
+pk-admin users timeline --user USER_ID --kind emails
+pk-admin users timeline --user USER_ID --from 2026-10-01 --to 2026-10-07 --zone America/New_York
+```
+
+`--kind` is `all` (the default), `sessions`, `actions`, `roles` or
+`emails`; `--from` and `--to` are whole days in `--zone`, which a day needs.
+
+| `users timeline` field | What it holds |
+| --- | --- |
+| `user` | The user's `id`, `email`, `name`, `role` (`null` once no longer a user) and `removed_at` |
+| `summary` | `last_sign_in`, `last_email` (a line, or `null`) and the `ministries` the user leads now |
+| `kind` | The Kind used |
+| `lines` | Each line, newest first: `at`, `kind`, `what`, `detail` and, for an email Sent mail lists, its `message_id` |
 
 Until the users upgrade, the users are the exact-address rules that grant a
 role, each with its highest role and a `null` name. Deny rules and
@@ -3624,7 +3718,8 @@ notes; read those on the page, or download them with `export information`.
 ```sh
 pk-admin followup show REQUEST_ID
 pk-admin followup roster-entered REQUEST_ID --set --expected-version 0
-pk-admin followup roster-entered REQUEST_ID --clear --expected-version 1
+pk-admin followup roster-entered REQUEST_ID --clear --expected-version 1 \
+  --note "Marked by mistake"
 pk-admin followup roster-bulk --request REQUEST_ID:0 --request OTHER_ID:2
 pk-admin followup information-show ITEM_ID
 pk-admin followup information-update ITEM_ID --expected-version 3 \
@@ -3637,7 +3732,12 @@ adds one. A tick changed since is exit 1 (`stale_version`). A request that
 takes no tick (only a join or leave a person resolved as joined or leave
 confirmed takes one) is exit 1 (`invalid`, `error.fields` naming
 `request`), and so is a tick that already says so (naming `set` or
-`clear`). `followup roster-bulk` takes each chosen request as `ID:VERSION`,
+`clear`). `--clear` is the request's Back to review of the mark, as the
+page's Clear Entered in ParishSoft is: it needs `--note TEXT` (or `--note -`
+to read it from standard input), saying why, and records that undo with the
+note; the request is To enter by hand again, its decision kept. Without a
+note it is exit 1 (`invalid`, naming `note`); `--set` takes no note.
+`followup roster-bulk` takes each chosen request as `ID:VERSION`,
 up to 250, and only marks; it asks for confirmation first (or takes
 `--yes`), and saves nothing if any request is stale or already marked.
 Find the requests with `followup list --state resolved`: a row whose
@@ -3661,8 +3761,9 @@ current is exit 1 (`stale_version`). The flags give the request its
 worklist stage: needed is To handle, completed is Handled, and setting both
 to no keeps a To review or Ignored request as it was, or sends a To handle
 or Handled one back to review; the command never ignores a request. An
-Ignored request leaves Ignored only with new `--notes` saying why (exit 1,
-`invalid`, naming `notes`, otherwise).
+Ignored request leaves Ignored only with new `--notes` saying why, and
+clearing a completed follow-up undoes Handled, which needs new `--notes`
+saying why too (exit 1, `invalid`, naming `notes`, otherwise).
 
 Each change takes `--request-key`; without one it makes a key and prints it
 to standard error. A repeat with the key records nothing twice; the key
@@ -4190,6 +4291,12 @@ Each change is recorded in System logs as on the page
   operational and security notices. The document adds `purpose`, `mode`,
   `start` and `end`; each row keeps its `mode` and `attempt`. Its only
   readers are the Administrator and the operator, who keep no legacy forms.
+- `pk-admin/1` (#1562): a change of meaning, kept on version 1.
+  `send progress` is replaced by `mail queue`, with no alias. Its document
+  keeps `campaign_id`, `mode`, `paused`, `upcoming` and `send` unchanged
+  and adds `counts`, `other_mode_queued` and `kinds`; a watch also runs on
+  while any email is queued. Its only readers are the Administrator and
+  the operator, who keep no legacy forms.
 - `pk-admin/1` (#1622): additive. `users email-leaders --preview` and
   `--confirm`, the Users page's Email Ministry leaders review and Apply
   (full scope, the page's audit events and `admin_cmd_users_email_leaders`;
@@ -4245,3 +4352,12 @@ Each change is recorded in System logs as on the page
 - `pk-admin/1` (#1747): additive. `report pledges` and `export pledges`
   take the Pledges page's `conflict` stage, and `report pledges` counts
   it in `stages`.
+- `pk-admin/1` (#1562): additive. `delivery list` also lists the Ministry
+  leader emails, as Sent mail does, and `--purpose` takes `leader_email`.
+- `pk-admin/1` (#1873): additive. `content preview --edit {page,email}
+  SLOT [--revision ID] --expected-version VERSION -` and `content confirm
+  --edit {page,email} SLOT [--revision ID] --token TOKEN|-`, the content
+  editor's Preview changes and its review's Apply (full scope,
+  Administrators only; the fields as one JSON object on standard input;
+  `content confirm` records `admin_cmd_content_confirm`). `content preview`
+  prints `edit` (null for the Delete and the plain-text preview).

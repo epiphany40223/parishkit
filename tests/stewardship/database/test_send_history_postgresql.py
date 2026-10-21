@@ -228,7 +228,7 @@ def test_the_web_login_lists_a_real_send_during_a_work_order_hold(
     body = page.content.decode()
     assert "Invitation" in body
     # In progress in the current mode, so the row links to the live panel.
-    assert 'href="/admin/mail/family-progress/">In progress: watch it live' in body
+    assert 'href="/admin/mail/queue/">In progress: watch it live' in body
     assert "1 to send" in body
     # In the sidebar beside the progress panel, and in the breadcrumb trail.
     assert f'<a href="{PAGE}" aria-current="page">' in body
@@ -578,5 +578,5 @@ def test_only_the_send_the_panel_shows_links_to_it(
         (live,) = [row for row in rows if row.live]
         assert live.send.counts == panel
         body = browser.get(PAGE).content.decode()
-        assert body.count('href="/admin/mail/family-progress/">In progress') == 1
+        assert body.count('href="/admin/mail/queue/">In progress') == 1
         assert body.count("In progress") >= 2

@@ -517,6 +517,10 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
   .stat-tiles:has(> [data-stat]:nth-child(5):last-child) { grid-template-columns: repeat(auto-fit, minmax(max(clamp(12.5rem, (65.5rem - 100%) * 100000, (100% - 1.5rem) / 3), min(100%, (39rem - 100%) * 100000)), 1fr)); }
 }
 .stat-detail { color: var(--muted); font-size: .875rem; }
+/* Mail queue (#1562): the other mode's line keeps one line's height while empty, so the
+   table below never moves when it appears (no layout shift); a kind's zero counts are muted. */
+.mail-queue-other { min-height: 1.6em; min-height: 1lh; margin-block: .5rem 0; }
+.mail-queue-zero { color: var(--muted); }
 /* An unknown value's "—" carries its reason in a toggletip beside it (#1540), its "i" at the
    size it has elsewhere. The 1.75rem button is centred in the value's 2.1rem line from its top,
    so it never makes the line taller: a value that becomes unknown in place moves nothing. */
@@ -865,13 +869,25 @@ button.is-busy[aria-disabled=true], .button.is-busy[aria-disabled=true], input[t
 #table-filters .filter-actions[data-filter-place=row] { display: flex; width: max-content; flex-basis: 100%; grid-column: 1 / -1; justify-self: start; }
 .filter-clear { position: relative; display: inline-block; }
 button[data-clear-unavailable][aria-disabled=true], button[data-clear-unavailable][aria-disabled=true]:not(:disabled):hover { cursor: not-allowed; opacity: .55; background: var(--paper); color: var(--accent); box-shadow: none; }
-button.is-busy::after, .button.is-busy::after { content: ""; display: inline-block; width: .85em; height: .85em; margin-inline-start: .5em; vertical-align: -.1em; border: 2px solid currentColor; border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
+/* The working spinner (ui-conventions "Working spinner", #1847): the ONE
+   spinning icon of the portal, a ring with a quarter open. It is drawn
+   by components/spinner.html (.spinner) or, on a button whose request is
+   in flight, by the button's ::after (is-busy is a class ui-v1.js
+   toggles, so the ring is a pseudo-element there). Both share this one
+   rule and keyframes; test_spinner_guard.py fails on any other spinning
+   rule. A context changes only its size, colour (--spinner-ink, the
+   accent by default) or placement, in its own rule. Under reduced motion
+   it stands still (the rule at the end of this file). */
+.spinner, :is(button, .button).is-busy::after { display: inline-block; width: 1em; height: 1em; vertical-align: -.15em; border: 2px solid var(--spinner-ink, var(--accent)); border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
 @keyframes busy-spin { to { transform: rotate(360deg); } }
+/* A busy button: a slightly smaller ring after its label, in the
+   label's own colour. */
+:is(button, .button).is-busy::after { content: ""; --spinner-ink: currentColor; width: .85em; height: .85em; margin-inline-start: .5em; vertical-align: -.1em; }
 /* Live status regions (live-status-v1.js, live-running.html): a still-running
    indicator that says so in words, and prominent finished/failed outcomes. */
 .live-running { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .5rem; margin: 0 0 .75rem; }
 .live-running .help { flex-basis: 100%; margin: 0; }
-.live-spinner { display: inline-block; width: 1em; height: 1em; align-self: center; border: 2px solid var(--accent); border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
+.live-running > .spinner { align-self: center; }
 .live-done { color: var(--accent-strong); }
 .live-failed { color: var(--error-ink); }
 .live-status-problem { margin-top: .5rem; }
@@ -1182,6 +1198,8 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 .export-live > :first-child { margin-top: 0; }
 .export-state { font-size: 1.15rem; font-weight: 650; }
 .export-state-ready { color: var(--accent-strong); }
+/* A pending export's working spinner, before its words. */
+.export-state > .spinner { margin-inline-end: .35em; }
 /* A ready export's "until" line (#1398): its two sentences share one grid
    cell, so the line is as tall as the longer one from the start and the
    switch when the download window ends moves nothing (#736). */
@@ -1191,9 +1209,10 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 /* Stage boxes (components/stage-boxes.html, UX conventions "Stage boxes"):
    one box per major stage of a long piece of work, left to right, wrapping
    on a phone with no sideways scroll. The status word always carries the
-   state; the mark (a bullet, a pointer, a check, a cross or a pause) and
-   the colour only reinforce it. Loading parish data and Finishing setup
-   (setup wizard) and Load ParishSoft data (Campaign setup) draw it. */
+   state; the mark (a bullet, the working spinner, a check, a cross or a
+   pause) and the colour only reinforce it. Loading parish data and
+   Finishing setup (setup wizard) and Load ParishSoft data (Campaign setup)
+   draw it. */
 .stage-boxes { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); }
 /* The status sits on its own line under the stage's name, so a box keeps
    its height when its status word changes (Not started, then Done). */
@@ -1214,7 +1233,12 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
    box keeps its size as its state changes (no layout shift). */
 .stage-boxes > .stage-done::before { content: "\2713"; color: var(--accent); }
 .stage-boxes > .stage-done { background: var(--accent-soft); border-color: var(--accent-line); }
-.stage-boxes > .stage-active::before { content: "\25B8"; color: var(--warning-ink); }
+/* In progress shows the working spinner (components/spinner.html) in the
+   mark's place: absolutely positioned in the same reserved slot as every
+   state's mark (left .55rem, 1rem wide, centred on the label's first
+   line), so its arrival or departure moves nothing (#1847). */
+.stage-boxes > .stage-active::before { content: none; }
+.stage-boxes > li > .spinner { --spinner-ink: var(--warning-ink); position: absolute; left: calc(.55rem + (1rem - 1em) / 2); top: calc(.5rem + (1.6em - 1em) / 2); top: calc(.5rem + (1lh - 1em) / 2); }
 .stage-boxes > .stage-active { background: var(--warning-bg); border-color: var(--warning-border); }
 .stage-boxes > .stage-waiting .stage-label { color: var(--muted); }
 .stage-boxes > .stage-operator::before { content: "\23F8"; color: var(--ink); }
@@ -1252,7 +1276,6 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 .campaign-load-ghost { visibility: hidden; }
 .campaign-load-ghost::before { content: attr(data-label); }
 .button-large { font-size: 1.1rem; padding: .8rem 1.75rem; }
-.spinner { display: inline-block; width: 1em; height: 1em; margin-inline-end: .35em; vertical-align: -.15em; border: 2px solid var(--accent); border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
 /* Export actions (#1679, components/export-actions.html): one row of small
    outlined buttons, one per format, smaller and quieter than the primary
    green buttons, wrapping on a phone instead of widening the page. They are
@@ -1358,6 +1381,10 @@ section.filter-panel > h2 { margin: 0; padding-block: .6rem; font-size: 1rem; li
    6.5rem, so the button wrapped and pushed that field's control below the
    others'. */
 .filter-bar.mail-filters > div:not(.short):has(> .label-row) { min-width: 7.5rem; }
+/* Sent mail's hint row (the gate's hint and a refused Recipient's message,
+   #1562) keeps its own full-width line under the fields, as the plain hint
+   paragraph did, rather than taking a field's share of the row. */
+.filter-bar.mail-filters > .hint-row-messages { flex: 0 1 100%; }
 /* From and Through are wide enough for the empty "mm/dd/yyyy" placeholder
    beside the calendar button, with Linux's wider fonts too. They drop the
    desktop short-field rule's end margin: the bar's gap spaces them, and
@@ -1493,6 +1520,8 @@ details.technical-details dd { overflow-wrap: anywhere; }
 [data-visual-content][aria-busy="true"] .content-editor { opacity: .55; }
 /* An HTML source error is marked at the visual editor too, as a field's (#563). */
 .content-editor[aria-invalid="true"] { border: 2px solid var(--error-border); }
+/* Greyed in place, as a disabled textarea is, while "Remove this selected content" is ticked (#563, #750). */
+.content-editor[aria-disabled="true"] { background: var(--paper-soft); color: var(--muted); cursor: not-allowed; }
 .content-sample, pre { overflow-wrap: anywhere; white-space: pre-wrap; }
 .light-card { background: var(--paper); color: var(--ink); }
 .content-sample { padding: 1rem; border: 1px dashed var(--control-border); border-radius: var(--radius-small); background: var(--paper); }
@@ -1572,6 +1601,11 @@ fieldset.artwork-upload { border: 0; border-radius: 0; background: none; padding
    phone) grows the line rather than being cut short. */
 .artwork-slot .review-outcome { white-space: normal; min-height: 2lh; }
 @media (max-width: 40rem) { .artwork-slot .review-outcome { min-height: 3lh; } }
+/* Backup encryption key's status line also says why a code was refused
+   (#750), a sentence or two. It ends the page's content, so it wraps,
+   whole, instead of being cut short: growing moves nothing but the
+   footer. */
+#backup-key-outcome { white-space: normal; }
 .family-summary .family-name { font-size: 1.2rem; font-weight: 650; }
 .family-nav { position: sticky; bottom: 0; z-index: 1; background: var(--paper-soft, var(--paper)); padding-block: .75rem max(.75rem, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); margin-top: 1.5rem; }
 .family-nav > button { margin-block: 0; }
@@ -2182,6 +2216,10 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
 /* Email Ministry leaders (#1592): the review lists each leader's Ministries
    and open requests one per line, with no list markers. */
 .leader-emails-review ul { list-style: none; margin: 0; padding: 0; }
+/* The never-signed-in count under the table can wrap to two lines on a phone
+   while the empty text fits one, so a narrow screen reserves two lines and
+   the line never changes height between those forms (#1593, #736). */
+@media (max-width: 40rem) { #users-never-signed-in { min-height: 3.2em; min-height: 2lh; } }
 /* New user's Name help line says what the lookup found (#952). It is one
    line high in every state, cut short with an ellipsis (whole in its title
    and to screen readers), so a long answer never moves the Role choices
