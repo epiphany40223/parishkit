@@ -601,8 +601,8 @@ def test_refresh_checks_place_final_changes_and_flag_not_seen():
 
 def test_link_pairs_carry_only_the_link_safe_choices():
     """The view's own address keeps the Stage and closed filters other than
-    their defaults, the zone only with a day, and the table's choices; the
-    name search never (R38 finding 6)."""
+    their defaults and the table's choices; the name search never (R38
+    finding 6), nor the retired submitted dates (#1888)."""
     from parishkit.stewardship.reports.census_changes import CensusQuery
     from parishkit.stewardship.reports.census_worklist import link_pairs
     from parishkit.stewardship.web.review_worklist import page_address
@@ -613,5 +613,5 @@ def test_link_pairs_carry_only_the_link_safe_choices():
         stage="all", route="automatic", start="2054-10-01", zone="UTC", search="Smith"
     )
     assert page_address("/c", link_pairs(chosen, {"sort": "-who"})) == (
-        "/c?stage=all&route=automatic&start=2054-10-01&zone=UTC&sort=-who"
+        "/c?stage=all&route=automatic&sort=-who"
     )

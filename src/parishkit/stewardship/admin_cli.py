@@ -4473,7 +4473,8 @@ def _report_responses_options(parser):
 
 def _date_options(parser):
     """--start, --end and --zone: submitted on or after, and on or before, a
-    day in a time zone, as the pages take them in the browser's zone (#558)."""
+    day in a time zone. The review worklist pages no longer offer them
+    (#1888); these host-only commands keep them (#463)."""
     parser.add_argument(
         "--start", metavar="DATE", help="submitted on or after this day (YYYY-MM-DD)"
     )
