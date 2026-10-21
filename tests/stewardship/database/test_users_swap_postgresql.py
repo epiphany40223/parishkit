@@ -952,7 +952,7 @@ CLOSURE_CREATED = {
     # nothing, so its file installs whole again.
     "public.stewardship_address_leader_scope_v1(text,uuid)": (
         "stewardship_accounts",
-        "0031_address_leader_scope",
+        "0033_address_leader_scope",
     ),
 }
 

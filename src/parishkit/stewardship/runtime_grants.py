@@ -596,7 +596,7 @@ CLOSURE_FUNCTIONS = {
     # A user's Timeline's Ministries by address (0167, #1925).
     ADDRESS_LEADER_SCOPE_FUNCTION: (
         "stewardship_accounts",
-        "0031_address_leader_scope",
+        "0033_address_leader_scope",
     ),
 }
 

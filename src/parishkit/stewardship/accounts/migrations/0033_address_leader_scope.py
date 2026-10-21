@@ -28,12 +28,11 @@ FROZEN_SQL = (
 
 class Migration(migrations.Migration):
     dependencies = [
-        # The accounts app's previous migration (0125, #1763).
-        ("stewardship_accounts", "0030_secret_request_session"),
-        # The migration that installs the previous frozen file (0152,
-        # #1866), so the files apply in prefix order. Re-point this when
-        # the frozen files numbered between them land.
-        ("stewardship_audit", "0007_audit_actor_time"),
+        # The accounts app's previous migration (0032, the report conversion).
+        ("stewardship_accounts", "0032_report_conversion"),
+        # The migration that installs the previous frozen file (0166, the
+        # share short labels), so the files apply in prefix order.
+        ("stewardship_campaigns", "0016_share_short_labels"),
     ]
 
     operations = [migrations.RunSQL(FROZEN_SQL.read_text(encoding="utf-8"))]
