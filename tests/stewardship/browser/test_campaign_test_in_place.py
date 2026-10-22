@@ -88,9 +88,9 @@ def test_send_shows_the_test_and_its_result_in_place(page, component_origin):
     details.locator("summary").click()
     for number in (5411, 5410):
         expect(details.locator("code", has_text=str(UUID(int=number)))).to_be_visible()
-    expect(details).to_contain_text(
-        "As of when this page was opened; reload the page to update."
-    )
+    # Polls keep the references current (test_technical_details_live.py),
+    # so the disclosure never says to reload the page (#1586).
+    expect(details).not_to_contain_text("reload")
 
 
 def test_first_settled_test_shows_continue_in_place(page, component_origin):
