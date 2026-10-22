@@ -173,7 +173,8 @@ A report's values are stored with the schedule record's `campaign_id` and
   slot basis.
 - `blocks`: `[{"block": KEY, "version": 1, "options": {...}}, ...]`, the
   options holding only the values a block declares, each checked by the
-  block.
+  block: Day by day table's `{"days": N}` and Participation charts'
+  `{"charts": [...]}` ([its block](#participation-charts-block)).
 - `skip_dates`: ascending slot keys, as a digest's are.
 - `paused_ranges`: `[{"start": INSTANT, "end": INSTANT or null}, ...]` in
   UTC ISO form, ascending and not overlapping; only the last may be open
@@ -956,6 +957,28 @@ left out with the alt text's figures in its place on the last attempt, as
 today; a report is never left unsent for a chart. Empty statement: "No
 campaign day has ended yet."
 
+The option is stored as `{"charts": [...]}`, its values
+`first_submissions`, `cumulative_families` and `pledges` in that order
+(the panels' order top to bottom); a report with no `charts` value draws
+all of them, as the converted Daily does. The block's check refuses an
+empty list, an unknown or repeated value, or one out of that order, and a
+new or changed choice of `pledges` in a campaign without financial
+stewardship ("Effective annual pledges needs financial stewardship, which
+this campaign does not have."); an unchanged saved choice stays. The
+editor and `report-email preview` store a choice the same way: every chart
+the campaign offers is stored as no `charts` value (the default, all, which
+then follows the campaign, so a report gains the pledges chart if financial
+stewardship is turned on later), and only a strict subset as its list; an
+unchanged saved choice is kept as saved. The block
+draws the chosen charts the campaign has (pledges only with financial
+stewardship) in their order on the one date axis, and the alt text carries
+only their figures; if none remains (only pledges chosen and financial
+stewardship turned off since), it draws all the charts the campaign has,
+so a report is never left without its chart. Its snapshot records the
+charts drawn. With every chart chosen the email is byte for byte the one
+drawn without the option
+([#1956](https://github.com/epiphany40223/parishkit/issues/1956)).
+
 ### Day by day table block
 
 **Status block**, fact block; reader role Staff. Option: **days shown**, 1
@@ -1230,9 +1253,19 @@ is chosen; a block already in the report is not offered (decision 10), and
 the control is unavailable with its reason when all six are in. Each block
 in the list is a row with its label, its help, its options (if any) and
 **Move up**, **Move down** and **Remove** buttons (the Day by day table's
-days shown is a number field; Participation charts' which charts arrives
-with [#1956](https://github.com/epiphany40223/parishkit/issues/1956)); there is no drag-only
+days shown is a number field); there is no drag-only
 control ([accessibility](../ui-conventions/spec.md#accessibility-and-client-behavior)).
+Participation charts' which charts is a **Charts** group of checkboxes
+under its help, one per line: First submissions of the day, Cumulative
+participating Families and, only when the campaign has financial
+stewardship, Effective annual pledges, every one ticked when the block is
+added. With none ticked, Review refuses at the group: "Choose at least one
+chart." Ticking every chart offered saves the default, all; boxes left as
+Edit ticked them keep the saved choice, even one naming pledges after
+financial stewardship was turned off, while changed boxes save what is
+ticked, and the review names a kept chart the campaign cannot draw, so it
+shows when a change drops one
+([#1956](https://github.com/epiphany40223/parishkit/issues/1956)).
 Moving or removing acts in place and keeps focus on the moved row's button
 (or, after Remove, on the next row's Remove or on Add a block), announcing
 the new position. Move up on the first row and Move down on the last are
@@ -1816,8 +1849,8 @@ require.
    no Preview or Send a test to me, and until PR 8 New has no Start from.
    The Participation charts block's "which charts" option, the first place
    a report could choose its charts, moved to
-   [#1956](https://github.com/epiphany40223/parishkit/issues/1956) (until
-   then every report draws all three). Removes the digest editors on Dates
+   [#1956](https://github.com/epiphany40223/parishkit/issues/1956), which
+   adds it to the renderer, the editor and `report-email preview`. Removes the digest editors on Dates
    and mail schedules and the schedule commands' digest entries (a digest's
    `comparison` and `skip`, and digests in `schedule show` and `schedule
    preview`); the code they leave unreachable is removed by
