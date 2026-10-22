@@ -8,6 +8,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 
 from parishkit.stewardship.accounts import (
+    campaign_wizard,
     confirmation_views,
     go_live_check,
     go_live_confirm_views,
@@ -43,6 +44,25 @@ CANCEL_INVENTORY = {
     "delivered": 0,
     "blocking": 0,
 }
+
+# Go live's summary of a Financial stewardship campaign part set up, drawn
+# from the real steps (campaign_wizard.summary_lines, #1404 PR 7).
+_PROGRESS = campaign_wizard.Progress(
+    done=frozenset({"settings", "load", "share_options", "images", "mail_test"}),
+    saved=frozenset({"images"}),
+    kept=frozenset({"share_options"}),
+)
+SUMMARY = campaign_wizard.summary_lines(
+    campaign_wizard.build(
+        True,
+        "go_live",
+        done=set(_PROGRESS.done),
+        mail_test_url="/admin/campaign/content/test/1/",
+    ).steps,
+    _PROGRESS,
+    content={"edited": 3, "kept": 2, "default": 14},
+    schedules={"initial": 1, "reminder": 3},
+)
 
 # Rows as content_views.resave_recommended builds them; the long subject
 # checks wrapping at phone width.
@@ -292,12 +312,14 @@ def check_pages(context, admin, ready):
     )
     stopped_row = Value(**(vars(started_row) | {"state": "cancelled"}))
     # A Back to Preview and test email, from the Campaign setup stepper the
-    # chrome builds for this page (drawn nowhere else on it).
+    # chrome builds for this page (drawn nowhere else on it), with the
+    # summary lines it holds there (campaign_wizard.summary_lines, #1404 PR 7).
     stepper = Value(
         current=Value(key="go_live"),
         previous=Value(
             url="/admin/campaign/content/test/1/", label="Preview and test email"
         ),
+        summary=SUMMARY,
     )
     states = (
         ("/go-live", "not_ready", None, idle | {"problems": problems}),

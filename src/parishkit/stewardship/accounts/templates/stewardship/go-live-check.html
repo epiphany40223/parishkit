@@ -19,6 +19,11 @@
 
   ``state`` is go_live_check's: started, stopping, stop_failed, closed,
   not_ready, unchecked or passed.
+
+  While the Campaign setup stepper applies, the step lists one summary line
+  per earlier step under Campaign setup (campaign_wizard.summary_lines,
+  #1404 PR 7), each step's name linking its page, so no step needs a review
+  dialog of its own.
 {% endcomment %}
 {% block title %}{% translate "Go live" %}{% endblock %}
 {% block head %}{% if not admin_chrome.campaign_wizard %}<link rel="stylesheet" href="{% static 'stewardship/stepper-v1.css' %}">{% endif %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
@@ -42,6 +47,8 @@
 {% elif state == 'closed' %}<p>{% translate "Review the campaign's dates, then check readiness again." %}</p>
 {% else %}{% if problems %}<ul class="go-live-problems">{% for problem in problems %}<li>{{ problem.text }}{% for url, label in problem.links %} <a href="{{ url }}">{{ label }}</a>{% endfor %}</li>{% endfor %}</ul>{% endif %}
 {% if preview.resave %}<div id="resave-content"><p>{% translate "These saved pages and emails have markup that sending now removes. Open each one, then preview and apply it again to store the cleaned version. An invitation or reminder marked “Can't be sent until fixed” cannot be sent until its Family code or link is put back." %}</p>{% include "stewardship/resave-list.html" with items=preview.resave %}</div>{% endif %}
+{% with summary=admin_chrome.campaign_wizard.summary %}{% if summary %}<h3 id="go-live-summary-heading">{% translate "Campaign setup" %}</h3>
+<ul class="go-live-summary" aria-labelledby="go-live-summary-heading" data-go-live-summary>{% for line in summary %}<li>{% if line.url %}<a href="{{ line.url }}">{{ line.label }}</a>{% else %}{{ line.label }}{% endif %}: {{ line.text }}</li>{% endfor %}</ul>{% endif %}{% endwith %}
 <ul class="go-live-warnings">{% if warnings.backup_at %}<li>{% translate "Last backup completed" %} <time data-local-instant datetime="{{ warnings.backup_at|instant }}">{{ warnings.backup_at|instant }}</time>. {% menu_link "system_health" _("System health") %}</li>{% else %}<li>{% translate "No backup has completed yet." %} {% menu_link "system_health" _("System health") %}</li>{% endif %}{% if warnings.debug %}<li>{% translate "Debug logging is on. Turn it off before going live." %} {% menu_link "system_health" _("System health") %}</li>{% endif %}</ul>
 <p data-go-live-impact>{% if preview.target_state == 'scheduled' %}{% translate "The campaign is scheduled to start" %} <time data-local-instant datetime="{{ campaign.active_configuration.starts_at|instant }}">{{ campaign.active_configuration.starts_at|instant }}</time>{% translate "; nothing is sent until then." %}{% else %}{% blocktranslate trimmed with count_text=counts.messages|number count counter=counts.messages %}The campaign becomes active at once and about {{ count_text }} Family email is sent.{% plural %}The campaign becomes active at once and about {{ count_text }} Family emails are sent.{% endblocktranslate %}{% endif %}</p>
 <details class="go-live-counts" data-keep-open><summary>{% translate "Mail and Testing data counts" %}</summary>

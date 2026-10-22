@@ -149,6 +149,16 @@ def test_keep_as_is_refuses_an_item_the_list_does_not_show(auth_service, google)
     assert keep(browser, "page:login_help").status_code == 303
     assert CampaignSetupReview.objects.get().item == "page:login_help"
     assert "content" not in campaign_wizard.completed(campaign, None)
+    # Go live's summary reads the item's mark in the same statements as
+    # the steps' completion (#1942): the patches applied since the creation
+    # and one UNION of the marks and the campaign's Families.
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    with CaptureQueriesContext(connection) as queries:
+        read = campaign_wizard.progress(campaign, None)
+    assert len(queries) == 2, [query["sql"] for query in queries]
+    assert read.items == {"page:login_help"} and "content" not in read.kept
     with web():
         listing = browser.get(CATALOG).content.decode()
     assert "Family login help</a> — Empty" in listing

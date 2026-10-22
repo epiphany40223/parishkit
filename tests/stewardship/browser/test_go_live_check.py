@@ -8,6 +8,7 @@ dialog's review, and Apply redirects to the step in progress.
 """
 
 import pytest
+from django.urls import reverse
 
 from .go_live_components import GO_LIVE, PREPARE
 from .test_components import axe_violations
@@ -118,6 +119,37 @@ def test_back_returns_to_preview_and_test_email(page, component_origin):
     assert "Back" in back.inner_text()
     assert page.locator("#campaign-stepper").count() == 0
     assert page.locator(".setup-track").count() == 1
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_check_lists_one_summary_line_per_setup_step(
+    page, component_origin, axe_source, width
+):
+    """Campaign setup's summary: one line per earlier step (#1404 PR 7).
+
+    Each line names its step, linking the step's page, and says what it
+    holds, so no step needs a review dialog of its own. The list fits a
+    phone and passes the accessibility scan.
+    """
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + "/go-live-back")
+    summary = page.get_by_role("list", name="Campaign setup")
+    assert summary.locator("li").all_inner_texts() == [
+        "Campaign settings: as created",
+        "Load ParishSoft data: loaded",
+        "Share options: kept the defaults",
+        "Pages and emails: 3 edited, 2 kept as is, 14 default text",
+        "Dates and mail schedules: 1 invitation, 3 reminders",
+        "Campaign images: changed",
+        "Preview and test email: test accepted",
+    ]
+    link = summary.get_by_role("link", name="Share options")
+    assert link.get_attribute("href") == reverse("admin:share_settings")
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
+    # Outside the stepper (any other Check page) there is no summary.
+    page.goto(component_origin + "/go-live-unchecked")
+    assert page.locator("[data-go-live-summary]").count() == 0
 
 
 def test_check_readiness_is_in_place_and_survives_a_reload(page, component_origin):

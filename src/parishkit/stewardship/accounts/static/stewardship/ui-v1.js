@@ -3045,6 +3045,57 @@
     // Continue, and a redraw that empties its file inputs releases it.
     gateStepContinue();
   };
+  // Campaign setup's Back never saves (ui-conventions Wizards rule 6,
+  // #1942): while the page holds a change, Back (or a sub-page's Return to
+  // <step>, the same data-campaign-step-back link) and the stepper's step
+  // links first ask in the shared confirmation dialog
+  // (campaign-step-actions.html, #campaign-step-discard). A change is a
+  // change-gated form that differs from its saved values (the gate's
+  // data-holds-change), a chosen image (Campaign images), or a directly
+  // saved form without a gate (an editor offering to save the default text
+  // as it is) that differs from what it was drawn with. Discard and go back
+  // follows the link, posting nothing; Stay, Escape or closing keeps the
+  // typed values and returns focus to the link. An unchanged page, and a
+  // click that opens a new tab or window (which discards nothing), are left
+  // to the browser. Leave campaign setup and the Admin menu leave as always.
+  const stepHoldsChange = () => chosenUploads().length > 0
+    || [...document.querySelectorAll("form[data-require-change], form[data-direct-save]")]
+      .some((form) => (form.hasAttribute("data-require-change")
+        ? form.hasAttribute("data-holds-change")
+        : changedNames(form, formState(form, true)).size > 0));
+  const askBeforeDiscard = (dialog, link) => {
+    wireDialog(dialog);
+    if (!dialog.parishDiscard) {
+      dialog.parishDiscard = {link, leaving: false};
+      dialog.querySelector("[data-confirm-accept]")?.addEventListener("click", () => {
+        const state = dialog.parishDiscard;
+        state.leaving = true;
+        dialog.close();
+        window.location.assign(state.link.href);
+      });
+      dialog.addEventListener("close", () => {
+        const state = dialog.parishDiscard;
+        // Stay, Escape or closing: nothing changes, and focus goes back to
+        // the link, for browsers that do not restore it themselves.
+        if (!state.leaving && state.link.isConnected) state.link.focus();
+      });
+    }
+    dialog.parishDiscard.link = link;
+    dialog.parishDiscard.leaving = false;
+    dialog.showModal();
+    // The safe choice takes focus first.
+    dialog.querySelector("[data-confirm-cancel]")?.focus();
+  };
+  document.addEventListener("click", (event) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey
+      || event.shiftKey || event.altKey || !(event.target instanceof Element)) return;
+    const link = event.target.closest(
+      "a[href][data-campaign-step-back], #campaign-stepper .setup-track a[href], #campaign-stepper .setup-steps a[href]");
+    const dialog = document.getElementById("campaign-step-discard");
+    if (!link || !(dialog instanceof HTMLDialogElement) || !stepHoldsChange()) return;
+    event.preventDefault();
+    askBeforeDiscard(dialog, link);
+  });
   // Note what each Review sends, and which Review an Apply applies: an Apply
   // sits in the review of its form (data-review-of names it). The in-place
   // handler (above) calls this only once a request really starts, so a
