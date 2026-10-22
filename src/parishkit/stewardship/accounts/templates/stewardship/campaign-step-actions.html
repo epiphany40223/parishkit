@@ -71,7 +71,14 @@ alternative (Continue without schedules for now) centered on every step.
   (``wizard.creating``): nothing here; the page draws its own row inside its
   form, whose one primary is Create the campaign and continue (#1404 PR 3).
 
-Back and Continue never save or discard the page's form. The row is an
+Back and Continue never save the page's form. While the page holds a
+change, Back (or Return to <step>) and the stepper's step links first ask
+"Discard your changes and go back?" in the shared confirmation dialog drawn
+after the row (#1942, ui-conventions Wizards rule 6; ui-v1.js
+askBeforeDiscard): Discard and go back follows the link, posting nothing;
+Stay keeps the typed values and returns focus to the link. An unchanged page
+navigates at once. The dialog sits outside the row's in-place region, so a
+redraw never removes it while it is open. The row is an
 in-place region, so the page's redraw after a review dialog's Apply also
 renames Continue when the change altered the steps (Financial stewardship
 turned on or off adds or removes Share options).
@@ -87,4 +94,5 @@ turned on or off adds or removes Share options).
 </div>{% if wizard.direct and wizard.sub or wizard.direct and upcoming.url %}
 <p class="help campaign-step-status" id="campaign-step-status" role="status" data-step-status></p>{% elif wizard.reviewable and upcoming.url and not wizard.sub %}
 <p class="help unchanged-hint" id="campaign-continue-hint" data-continue-hint data-idle>{% translate "Review and apply your changes, or undo them, to continue." %}</p>{% endif %}
+{% translate "Discard your changes and go back?" as discard_title %}{% translate "Your changes on this page are not saved. Leaving the page discards them." as discard_body %}{% translate "Discard and go back" as discard_accept %}{% translate "Stay" as discard_stay %}{% include "stewardship/components/confirm-dialog.html" with dialog_id="campaign-step-discard" form_id="" fallback="campaign-step-actions" title_one=discard_title title_many=discard_title body=discard_body caution="" accept=discard_accept cancel=discard_stay done_one="" done_many="" only %}
 {% endwith %}{% endif %}{% endwith %}

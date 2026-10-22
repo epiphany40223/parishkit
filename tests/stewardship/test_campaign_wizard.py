@@ -1145,3 +1145,25 @@ def test_a_queued_load_says_it_waits_in_start_the_load():
     offer = load_region(load="offer", stages=wizard.load_stages("offer", None))
     ghost = f'<span class="campaign-load-summary-ghost" aria-hidden="true">{QUEUED}<'
     assert all(ghost in html for html in (queued, running, offer))
+
+
+def test_the_action_row_draws_the_discard_dialog_outside_its_region():
+    """Back's shared confirmation (Wizards rule 6, #1942), after the row.
+
+    It is the action tables' confirmation dialog, with the rule's words,
+    outside the in-place row so a redraw never removes it while open, and
+    it posts nothing (no form of its own).
+    """
+    stepper = wizard.build(
+        True, "share_options", done={"settings"}, mail_test_url=TEST_URL
+    )
+    html = actions(stepper)
+    assert html.index("</div>") < html.index('<dialog id="campaign-step-discard"')
+    dialog = html[html.index("<dialog") : html.index("</dialog>")]
+    assert "Discard your changes and go back?" in dialog
+    assert "Discard and go back" in dialog and ">Stay<" in dialog
+    assert 'data-confirm-form=""' in dialog and "<form" not in dialog
+    # Create the campaign and Go live draw no row, so no dialog either.
+    for current in ("go_live",):
+        page = wizard.build(True, current, done={"settings"}, mail_test_url=TEST_URL)
+        assert "campaign-step-discard" not in actions(page)
