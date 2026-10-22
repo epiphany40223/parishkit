@@ -1,0 +1,9 @@
+{% load i18n stewardship %}{% comment %}
+  The test references under Technical details on Preview and test email and
+  Send to chosen Families, in the recent tests' order: one term per test (a
+  Family test names its Family DUID) and its reference. Each page draws it
+  twice: in the disclosure's list, and in a template[data-live-mirror] copy
+  inside the polled status region, so live-status-v1.js replaces only the
+  list's contents on each poll that changes it and an open disclosure stays
+  open (#1586; UX conventions, "Open disclosures stay open").
+{% endcomment %}{% for item in items %}<dt>{% translate "Test reference" %}{% if item.duid %} ({% translate "Family DUID" %} {{ item.duid|duid }}){% endif %}</dt><dd><code>{{ item.id }}</code></dd>{% endfor %}

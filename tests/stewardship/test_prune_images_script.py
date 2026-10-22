@@ -9,12 +9,13 @@ that a dry run removes nothing, that a failure is reported without
 stopping the rest, and that a failed lookup of what to keep stops it. The
 local half of `tools/stewardship-upgrade.sh` is run with a recording `ssh`
 to pin that it prunes only after a successful run that reported a
-different replaced release, protects that release, is a dry run by
-default, and never fails because pruning did.
+different replaced release, protects that release, removes by default
+(a dry run only when asked), and never fails because pruning did.
 """
 
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -375,12 +376,17 @@ echo "pruned"; exit {prune_rc}""",
 def test_a_successful_upgrade_prunes_keeping_both_releases(tmp_path):
     """The pruning protects the started and the replaced release.
 
-    By default it is a dry run until the Administrator has reviewed one
-    Production dry-run log; STEWARDSHIP_PRUNE=on removes.
+    By default it removes (#1671); STEWARDSHIP_PRUNE=on says so explicitly
+    and STEWARDSHIP_PRUNE=dry-run only lists what it would remove.
     """
     for n, mode in enumerate(((), ("--rollback",))):
-        for prune, tail in (({}, " --dry-run"), ({"STEWARDSHIP_PRUNE": "on"}, "")):
-            result, calls = run_upgrade(tmp_path / f"{n}{tail}", *mode, env=prune)
+        for prune, tail in (
+            ({}, ""),
+            ({"STEWARDSHIP_PRUNE": "on"}, ""),
+            ({"STEWARDSHIP_PRUNE": "dry-run"}, " --dry-run"),
+        ):
+            tag = prune.get("STEWARDSHIP_PRUNE", "default")
+            result, calls = run_upgrade(tmp_path / f"{n}{tag}", *mode, env=prune)
             assert result.returncode == 0, result.stderr
             assert len(calls) == 2
             assert (
@@ -454,11 +460,72 @@ def test_the_pruning_settings_reach_the_host(tmp_path):
 
 
 def test_a_failed_pruning_never_fails_the_upgrade(tmp_path):
-    """The upgrade succeeded, so a pruning failure is only a warning."""
-    result, calls = run_upgrade(tmp_path, prune_rc=1, env={"STEWARDSHIP_PRUNE": "on"})
-    assert result.returncode == 0
-    assert len(calls) == 2
-    assert "WARNING: pruning old release images failed" in result.stderr
+    """The upgrade succeeded, so a pruning failure is only a warning.
+
+    That holds for the default (real removal), an explicit mode, a
+    rollback, and an ssh failure (255) as much as the script's own exit 1.
+    """
+    cases = [
+        ((), {}, 1),
+        ((), {}, 255),
+        (("--rollback",), {}, 1),
+        ((), {"STEWARDSHIP_PRUNE": "on"}, 1),
+        ((), {"STEWARDSHIP_PRUNE": "dry-run"}, 1),
+    ]
+    for n, (mode, env, rc) in enumerate(cases):
+        result, calls = run_upgrade(tmp_path / str(n), *mode, prune_rc=rc, env=env)
+        assert result.returncode == 0, (mode, env, rc, result.stderr)
+        assert len(calls) == 2
+        assert "WARNING: pruning old release images failed" in result.stderr
+
+
+def test_a_hung_pruning_is_killed_logged_and_never_fails_the_upgrade(tmp_path):
+    """A pruning ssh that outlives its limit is killed and only warned about.
+
+    The stand-in's second call sleeps far past a 1 s limit; the run must end
+    well before that sleep, exit 0, and log what was killed, the limit and
+    the elapsed time.
+    """
+    bin_dir = tmp_path / "bin"
+    executable_stub(
+        bin_dir,
+        "ssh",
+        f"""cat >/dev/null
+if [ ! -e "$0.seen" ]; then
+    touch "$0.seen"
+    echo "==> Upgraded"
+    printf '%s\\n' {shlex.quote(NOTES + REPLACED)}
+    exit 0
+fi
+exec sleep 60""",
+    )
+    env = {
+        **{k: v for k, v in os.environ.items() if not k.startswith("STEWARDSHIP_")},
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "STEWARDSHIP_HOST": "host.invalid",
+        "STEWARDSHIP_UUID": UUID,
+        "STEWARDSHIP_IMAGE": IMAGE,
+        "STEWARDSHIP_PRUNE_TIMEOUT": "1",
+    }
+    result = subprocess.run(
+        ["bash", str(SCRIPT)], env=env, text=True, capture_output=True, timeout=40
+    )
+    assert result.returncode == 0, result.stderr
+    assert re.search(
+        r"TIMEOUT: the pruning ssh to host.invalid killed after \d+s \(limit 1s\)",
+        result.stderr,
+    )
+    assert "pruning old release images timed out" in result.stderr
+
+
+def test_a_bad_prune_timeout_is_refused_before_ssh(tmp_path):
+    """A zero, non-numeric or absurd limit never reaches a host."""
+    for n, value in enumerate(("0", "soon", "86401")):
+        result, calls = run_upgrade(
+            tmp_path / str(n), env={"STEWARDSHIP_PRUNE_TIMEOUT": value}
+        )
+        assert result.returncode == 1, value
+        assert calls == [], value
 
 
 def test_a_failed_upgrade_does_not_prune(tmp_path):

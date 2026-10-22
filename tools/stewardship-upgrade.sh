@@ -51,17 +51,22 @@
 #                           lists. Step 4 then converts the sign-in rules
 #                           between the release's two migrations (host
 #                           half's header). Refused with --rollback.
-#   STEWARDSHIP_PRUNE       dry-run (default), on or off: after a successful
+#   STEWARDSHIP_PRUNE       on (default), dry-run or off: after a successful
 #                           run, remove old release images from the host
 #                           with tools/stewardship-prune-images.sh (#1661),
 #                           keeping the started and the replaced release;
-#                           dry-run only lists what it would remove. It is
-#                           skipped, with a message, unless the host half
-#                           reported the replaced release as a digest of
-#                           the repository different from the started one.
-#                           A pruning failure is a warning, never a failure.
-#                           The default becomes on once the Administrator
-#                           has reviewed one Production dry-run log.
+#                           dry-run only lists what it would remove, off
+#                           skips pruning. It is skipped, with a message,
+#                           unless the host half reported the replaced
+#                           release as a digest of the repository different
+#                           from the started one. A pruning failure is a
+#                           warning, never a failure. The default was
+#                           dry-run until the Administrator reviewed a
+#                           Production dry-run log (#1671).
+#   STEWARDSHIP_PRUNE_TIMEOUT  seconds the pruning ssh may run (default
+#                           1200, 1-86400); on expiry it is killed, what
+#                           was killed, the limit and the elapsed time are
+#                           logged, and the run still exits 0.
 #   STEWARDSHIP_KEEP_RELEASES  how many newest other release images the
 #                           pruning keeps besides those (1-99, default 4)
 #   STEWARDSHIP_KEEP_BUILD_CACHE  1 to leave Docker's build cache alone
@@ -83,8 +88,13 @@ project=${STEWARDSHIP_PROJECT:-stewardship}
 yaml=${STEWARDSHIP_YAML:-/etc/parishkit/stewardship-deployment.yaml}
 repo=${STEWARDSHIP_IMAGE_REPO:-ghcr.io/epiphany40223/parishkit/stewardship}
 schema_change=${STEWARDSHIP_SCHEMA_CHANGE:-0}
-prune=${STEWARDSHIP_PRUNE:-dry-run}
+prune=${STEWARDSHIP_PRUNE:-on}
 keep=${STEWARDSHIP_KEEP_RELEASES:-4}
+# Removing roughly 70 images one at a time and clearing the build cache takes
+# a few minutes on the host; 1200 s leaves a wide margin while still
+# bounding an unattended run that would otherwise hang on a stuck ssh or
+# Docker daemon.
+prune_timeout=${STEWARDSHIP_PRUNE_TIMEOUT:-1200}
 
 hex=${image#"${repo}@sha256:"}
 if [ "$hex" = "$image" ] || ! [[ $hex =~ ^[0-9a-f]{64}$ ]]; then
@@ -94,6 +104,9 @@ fi
 case "$prune" in on | dry-run | off) ;; *)
     echo "STEWARDSHIP_PRUNE must be on, dry-run or off; refusing." >&2; exit 1 ;;
 esac
+if ! [[ $prune_timeout =~ ^[1-9][0-9]{0,4}$ ]] || [ "$prune_timeout" -gt 86400 ]; then
+    echo "STEWARDSHIP_PRUNE_TIMEOUT must be 1-86400 seconds; refusing." >&2; exit 1
+fi
 [[ $keep =~ ^[1-9][0-9]?$ ]] || { echo "STEWARDSHIP_KEEP_RELEASES must be 1-99; refusing." >&2; exit 1; }
 if [ "$mode" = rollback ] && [ "$schema_change" != 0 ]; then
     echo "A rollback never migrates; unset STEWARDSHIP_SCHEMA_CHANGE. Refusing." >&2
@@ -163,7 +176,28 @@ prune_args=(--repo "$repo" --keep "$keep" --protect "$image" --protect "$previou
 [ "$prune" = on ] || prune_args+=(--dry-run)
 [ "${STEWARDSHIP_KEEP_BUILD_CACHE:-0}" = 0 ] || prune_args+=(--keep-build-cache)
 args=$(printf '%q ' "${prune_args[@]}")
+# The pruning runs unattended after the upgrade, so it is bounded: a hung
+# ssh or Docker daemon must not hold the run open forever. A kill is logged
+# with what was killed, the limit and the elapsed time. The host-side
+# script is killed with the ssh session only if sshd hangs it up, which is
+# why the message tells the operator to check the host. Without a
+# timeout command (coreutils, or gtimeout on macOS) the pruning is unbounded.
+limiter=()
+for t in timeout gtimeout; do
+    if command -v "$t" >/dev/null 2>&1; then
+        limiter=("$t" --kill-after=10 "$prune_timeout")
+        break
+    fi
+done
+[ "${#limiter[@]}" -gt 0 ] || echo "WARNING: no timeout or gtimeout command; the pruning has no time limit." >&2
+started=$(date -u +%s)
+prune_rc=0
 # shellcheck disable=SC2029 # as above
-if ! ssh "$host" "f=\$(mktemp) && cat > \"\$f\" && bash \"\$f\" $args; rc=\$?; rm -f \"\$f\"; exit \$rc" <"$prune_script"; then
+"${limiter[@]}" ssh "$host" "f=\$(mktemp) && cat > \"\$f\" && bash \"\$f\" $args; rc=\$?; rm -f \"\$f\"; exit \$rc" <"$prune_script" || prune_rc=$?
+if [ "$prune_rc" -eq 124 ] || [ "$prune_rc" -eq 137 ]; then
+    echo "TIMEOUT: the pruning ssh to $host killed after $(( $(date -u +%s) - started ))s (limit ${prune_timeout}s)" >&2
+    echo "WARNING: pruning old release images timed out; the $mode itself succeeded." >&2
+    echo "         Check the host's /var/log/stewardship-prune-*.log and re-run the pruning if needed." >&2
+elif [ "$prune_rc" -ne 0 ]; then
     echo "WARNING: pruning old release images failed (see above); the $mode itself succeeded." >&2
 fi
