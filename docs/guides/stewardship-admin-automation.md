@@ -3442,15 +3442,18 @@ pk-admin users timeline --user USER_ID --kind emails
 pk-admin users timeline --user USER_ID --from 2026-10-01 --to 2026-10-07 --zone America/New_York
 ```
 
-`--kind` is `all` (the default), `sessions`, `actions`, `roles` or
-`emails`; `--from` and `--to` are whole days in `--zone`, which a day needs.
+`--kind` is `all` (the default), `sessions`, `actions`, `roles`, `emails`
+or `form` (Family form activity, for a user who is a ParishSoft Family
+member, [#1867](https://github.com/epiphany40223/parishkit/issues/1867));
+`--from` and `--to` are whole days in `--zone`, which a day needs.
 
 | `users timeline` field | What it holds |
 | --- | --- |
 | `user` | The user's `id`, `email`, `name`, `role` (`null` once no longer a user) and `removed_at` |
 | `summary` | `last_sign_in`, `last_email` (a line, or `null`) and the `ministries` the user leads now |
+| `families` | Each ParishSoft Family the user's address belongs to: its `duid`, `family_id` (the Family's record in the current campaign, or `null`) and `state` (`shown`, `unavailable` while other campaign work holds the reports, or `not_in_campaign`); no names or codes |
 | `kind` | The Kind used |
-| `lines` | Each line, newest first: `at`, `kind`, `what`, `detail` and, for an email Sent mail lists, its `message_id` |
+| `lines` | Each line, newest first: `at`, `kind`, `what`, `detail`, `family_duid` (the Family a Family line is about, else `null`) and, for an email Sent mail lists, its `message_id` |
 
 Until the users upgrade, the users are the exact-address rules that grant a
 role, each with its highest role and a `null` name. Deny rules and

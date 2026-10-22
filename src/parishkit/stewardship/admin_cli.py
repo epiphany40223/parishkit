@@ -5173,7 +5173,7 @@ def _users_timeline_options(parser):
         "--user", required=True, type=_uuid, help="the user's ID, as users list prints"
     )
     parser.add_argument(
-        "--kind", help="all (default), sessions, actions, roles or emails"
+        "--kind", help="all (default), sessions, actions, roles, emails or form"
     )
     parser.add_argument("--from", dest="start", help="first day, YYYY-MM-DD, in --zone")
     parser.add_argument("--to", dest="end", help="last day, YYYY-MM-DD, in --zone")

@@ -1252,14 +1252,19 @@ class UserTimelineRead(ReadModel):
 
     ``user`` is the person (record ID, email, Name, ``role`` or null for a
     former user with ``removed_at``); ``summary`` the page's summary
-    (``last_sign_in``, ``last_email`` and ``ministries``); ``lines`` every
-    line the filters keep, newest first, each with its instant, kind, what
-    happened, detail and, for an email Sent mail lists, its delivery ID.
-    The command prints them all, unpaged.
+    (``last_sign_in``, ``last_email`` and ``ministries``); ``families`` the
+    ParishSoft Families the address belongs to, by ``duid`` and
+    ``family_id`` (the Family's record in the current campaign, or null)
+    only: their names and codes are Family-level personal data, which the
+    command line leaves to exports (#1867); ``lines`` every line the
+    filters keep, newest first, each with its instant, kind, what happened,
+    detail, the ``family_duid`` of a Family's line and, for an email Sent
+    mail lists, its delivery ID. The command prints them all, unpaged.
     """
 
     user: dict
     summary: dict
+    families: list
     kind: str
     lines: list
 
@@ -1271,6 +1276,7 @@ def _timeline_line(line):
         "kind": line.kind,
         "what": str(line.what),
         "detail": str(line.detail),
+        "family_duid": line.family_duid,
         "message_id": line.message_id,
     }
 
@@ -1284,12 +1290,13 @@ def read_user_timeline(
     with the page's own ``UserTimelineQuery`` before anything is read (a refused
     one is ``invalid``), reads in one read-only snapshot through the page's
     reader, rechecks the session and records the page's
-    ``user_timeline_viewed`` with the user's record ID. An unknown user is
-    ``not_available``, with no audit record.
+    ``user_timeline_viewed`` with the user's record ID, and its
+    ``family_timeline_viewed`` per Family whose lines it prints (#1867). An
+    unknown user is ``not_available``, with no audit record.
     """
     from .accounts.policy import Capability
     from .accounts.user_timeline_views import UserTimelineQuery
-    from .accounts.user_timelines import read_timeline
+    from .accounts.user_timelines import read_timeline, record_family_views
     from .audit.schemas import Action
     from .campaigns.work_locks import read_transaction
     from .reports.timelines import narrow
@@ -1308,14 +1315,22 @@ def read_user_timeline(
                 timeline = read_timeline(user_id, actor.identity)
             except LookupError:
                 raise NotAvailable("No such user.") from None
+        lines = narrow(timeline.events, query.kind, query.bounds)
         with transaction.atomic():
             current = _recheck(caller, service.store, actor, Capability.MANAGE_USERS)
             _audit(Action.USER_TIMELINE_VIEWED, current, subject_id=user_id)
-        return timeline, query
+            # The Family lines it prints are those Families' records (#1867);
+            # it prints no Family summary, so a Family whose lines the
+            # filters all leave out was not looked at.
+            record_family_views(
+                timeline,
+                current.identity,
+                printed={line.family_duid for line in lines},
+            )
+        return timeline, query, lines
 
-    timeline, query = _held(step)
+    timeline, query, lines = _held(step)
     person, summary = timeline.person, timeline.summary
-    lines = narrow(timeline.events, query.kind, query.bounds)
     return UserTimelineRead(
         user={
             "id": person.id,
@@ -1331,6 +1346,12 @@ def read_user_timeline(
             else _timeline_line(summary.last_email),
             "ministries": list(summary.ministries),
         },
+        families=[
+            # ``state`` says why a Family has no lines: ``shown``,
+            # ``unavailable`` or ``not_in_campaign`` (``FamilyPart``).
+            {"duid": part.duid, "family_id": part.family_id, "state": part.state}
+            for part in timeline.families
+        ],
         kind=query.kind,
         lines=[_timeline_line(line) for line in reversed(lines)],
     )

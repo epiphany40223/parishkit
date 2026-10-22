@@ -980,9 +980,11 @@ address, so nothing is redirected or aliased
 "Family timeline" is retired from the page, its navigation and its help.
 People's own timelines (Administrators, Staff and Ministry leaders) are
 each user's [Timeline](../admin-portal/spec.md#user-timeline) under Users,
-which shares this page's table and filter rules; the Family part of a
-person's timeline (for users who are also ParishSoft Family members)
-follows in [#1867](https://github.com/epiphany40223/parishkit/issues/1867).
+which shares this page's table and filter rules; a user who is also a
+ParishSoft Family member sees that Family's summary and lines there too,
+and this page names the Family's users for Administrators
+([Family part](../admin-portal/spec.md#user-timeline-family-part),
+[#1867](https://github.com/epiphany40223/parishkit/issues/1867)).
 
 `<family>` is the Family's campaign record id, an opaque random identifier
 like a Mail message's; the Family's name, DUID, envelope number and code never
@@ -1063,7 +1065,10 @@ ParishSoft and the earlier set is kept, it is the configured name.
 Both roles also see whether campaign email can reach the Family (or why
 not), the furthest form step reached and when the Family was last seen on the
 form (live values of the
-[Family engagement record](../data/spec.md#family-engagement)), and the
+[Family engagement record](../data/spec.md#family-engagement)), **People in
+this Family who are users** when there are any (each linking the user's
+[Timeline](../admin-portal/spec.md#user-timeline-family-part); never their
+Admin activity, which stays on that Administrator-only page), and the
 timeline table described next.
 
 **Records shown.** The page shows Production records only: there is no

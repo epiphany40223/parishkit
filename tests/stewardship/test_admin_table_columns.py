@@ -212,6 +212,8 @@ FAMILY_ROWS = {
     ("go-live-families.html", "row.duid"),
     ("presence.html", "row.duid"),
     ("system-health-accept.html", "duid"),
+    # Each ParishSoft Family section of a user's Timeline (#1867).
+    ("user-timeline.html", "part.duid"),
 }
 # Bare "DUID" labels that name a Family's DUID in a line about one Family.
 FAMILY_LABELS = {
