@@ -468,6 +468,15 @@ FROZEN = {
     "0145_page_member_names.sql": (
         "9391e8c99018c8b7c5f7c996d4530e89d4d533864876cb2d5dc859321f1cc3b9"
     ),
+    "0158_ignored_note_optional.sql": (
+        "2ad8ec09cab596393c02b32175b1510a163068a4953ba72ff1b5388744fe063a"
+    ),
+    "0159_strict_phase_order.sql": (
+        "6e22e18665523982160c73cbba0802e1458b39d55c6b1e7d184c50a56fb19579"
+    ),
+    "0160_resubmission_phase_order.sql": (
+        "59c093bb0fef3623bcb4e927fe4643ac77dc594afba2e16ea553963833b7cee7"
+    ),
     "0146_census_terminal_undo.sql": (
         "4bdbbda58daa0aecda124bb36bab4157c2898d27a5d86392e5833d0c7684c456"
     ),
@@ -500,6 +509,9 @@ FROZEN = {
     ),
     "0156_report_pipeline.sql": (
         "dc04b332bc79d4ebeb52f4349e426744b79a83aac233fe9eea833ede7ee43a69"
+    ),
+    "0157_person_identity_reads.sql": (
+        "85466fd212f85c2efe5d184d2485fad66a5022df25df531b235020ecdd85cb37"
     ),
     "0161_report_conversion.sql": (
         "3e723f78dcd1ac826e1d7b31309f34f513d6d9e31c23e713e279b41fc9f8a016"

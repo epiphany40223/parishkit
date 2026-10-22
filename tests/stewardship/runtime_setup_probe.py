@@ -174,7 +174,7 @@ def main():
     )
     deadline = time.monotonic() + 180
     while True:
-        response = get("/admin/setup/cancel")
+        response = get("/admin/setup/finishing")
         if fixture.get("abort"):
             from parishkit.stewardship.accounts.secret_models import (
                 CredentialConsumerAcknowledgement,
@@ -194,7 +194,7 @@ def main():
                 ).count()
                 == 2
             ):
-                post("/admin/setup/cancel", {"attempt": str(attempt_id)})
+                post("/admin/setup/finishing", {"attempt": str(attempt_id)})
                 assert (
                     not runtime().configured() and not SetupCompletion.objects.exists()
                 )

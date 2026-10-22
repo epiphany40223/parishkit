@@ -4698,10 +4698,55 @@ BEGIN
               AND history.family_version<=previous.family_version
               AND (history.id=public.stewardship_response_census_anchor_v1(previous.id)
                    OR (proposal.entity_kind='member'
-                       AND proposal.field IN ('moved_household','deceased_status','death_date')))
+                       AND proposal.field IN ('moved_household','deceased_status','death_date'))
+                   -- An open change kept on an earlier response (#1895).
+                   OR proposal.id=(SELECT newest.id FROM (
+                           SELECT kept.id, kept.execution, kept.submitted_value
+                           FROM public.stewardship_proposed_change kept
+                           JOIN public.stewardship_submission kept_response ON kept_response.id=kept.submission_id
+                           JOIN public.stewardship_submission kept_prior ON kept_prior.id=previous.id
+                           WHERE kept_response.family_id=kept_prior.family_id
+                             AND kept_response.campaign_id=kept_prior.campaign_id
+                             AND kept_response.mode=kept_prior.mode
+                             AND kept_response.rehearsal_epoch_id IS NOT DISTINCT FROM kept_prior.rehearsal_epoch_id
+                             AND kept_response.family_version<=kept_prior.family_version
+                             AND ROW(kept.entity_kind,kept.entity_key,kept.field)=ROW(proposal.entity_kind,proposal.entity_key,proposal.field)
+                           ORDER BY kept_response.family_version DESC LIMIT 1) newest
+                       JOIN public.stewardship_submission kept_census
+                           ON kept_census.id=public.stewardship_response_census_anchor_v1(previous.id)
+                       CROSS JOIN LATERAL (SELECT kept_census.answers #> CASE proposal.entity_kind
+                             WHEN 'family' THEN ARRAY['family',proposal.field]
+                             ELSE ARRAY['members',proposal.entity_key,proposal.field] END AS value) given
+                       WHERE proposal.entity_kind IN ('family','member')
+                         AND newest.execution NOT IN ('published','resolved_upstream','resolved_external','cancelled','superseded')
+                         AND given.value IS NOT NULL
+                         AND public.stewardship_response_comparison_v1(proposal.field,given.value)
+                             IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(proposal.field,newest.submitted_value)))
             ORDER BY proposal.entity_kind,proposal.entity_key,proposal.field,history.family_version DESC
         LOOP
             IF prior.execution IN ('published','resolved_upstream','resolved_external','cancelled','superseded') THEN
+                CONTINUE;
+            END IF;
+            -- Strict phase order (#1895): the same answer again for an open
+            -- change ParishSoft already holds keeps it as it is, its stage
+            -- and decision, until its review and step (the resubmission
+            -- rule 1; rule 3 withdraws only an item whose previous answer
+            -- ParishSoft does not hold). responses/proposals.py derives the
+            -- same; a reviewed form's own rules are above and below.
+            IF NOT NEW.reviewed_view AND prior.entity_kind IN ('family','member') AND EXISTS (
+                SELECT 1 FROM (SELECT NEW.answers #> CASE prior.entity_kind
+                      WHEN 'family' THEN ARRAY['family',prior.field]
+                      ELSE ARRAY['members',prior.entity_key,prior.field] END AS value,
+                    CASE prior.entity_kind
+                      WHEN 'family' THEN public.stewardship_response_household_source_v1(
+                          NEW.validation_source_id,NEW.family_id,prior.entity_key,prior.field)
+                      ELSE public.stewardship_response_field_source_v1(
+                          NEW.validation_source_id,NEW.family_id,prior.entity_key,prior.field) END AS source) held
+                WHERE held.value IS NOT NULL AND held.source->'available'='true'::jsonb
+                  AND public.stewardship_response_comparison_v1(prior.field,held.value)
+                      IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(prior.field,prior.submitted_value)
+                  AND public.stewardship_response_comparison_v1(prior.field,held.value)
+                      IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(prior.field,held.source->'value')) THEN
                 CONTINUE;
             END IF;
             -- A change a reviewed form (#1705) showed, which this response
@@ -4936,6 +4981,10 @@ BEGIN
             -- Terminal/date work may survive an intervening response that has
             -- no active source Member to display. Mirror the Family namespace
             -- and latest-record selection used by effective.proposal_index.
+            -- So may an open change ParishSoft already holds that the Family
+            -- answered again unchanged (strict phase order, #1895): it stays
+            -- on its earlier response while each later census response gives
+            -- its answer, the newest change for the field and still open.
             SELECT candidate.* INTO predecessor FROM public.stewardship_proposed_change candidate
             JOIN public.stewardship_submission earlier ON earlier.id=candidate.submission_id
             JOIN public.stewardship_submission prior ON prior.id=response.prior_submission_id
@@ -4944,7 +4993,29 @@ BEGIN
               AND earlier.rehearsal_epoch_id IS NOT DISTINCT FROM response.rehearsal_epoch_id
               AND earlier.family_version<=prior.family_version
               AND (earlier.id=public.stewardship_response_census_anchor_v1(prior.id) OR (NEW.entity_kind='member'
-                   AND NEW.field IN ('moved_household','deceased_status','death_date')))
+                   AND NEW.field IN ('moved_household','deceased_status','death_date'))
+                   OR candidate.id=(SELECT newest.id FROM (
+                           SELECT kept.id, kept.execution, kept.submitted_value
+                           FROM public.stewardship_proposed_change kept
+                           JOIN public.stewardship_submission kept_response ON kept_response.id=kept.submission_id
+                           JOIN public.stewardship_submission kept_prior ON kept_prior.id=prior.id
+                           WHERE kept_response.family_id=kept_prior.family_id
+                             AND kept_response.campaign_id=kept_prior.campaign_id
+                             AND kept_response.mode=kept_prior.mode
+                             AND kept_response.rehearsal_epoch_id IS NOT DISTINCT FROM kept_prior.rehearsal_epoch_id
+                             AND kept_response.family_version<=kept_prior.family_version
+                             AND ROW(kept.entity_kind,kept.entity_key,kept.field)=ROW(NEW.entity_kind,NEW.entity_key,NEW.field)
+                           ORDER BY kept_response.family_version DESC LIMIT 1) newest
+                       JOIN public.stewardship_submission kept_census
+                           ON kept_census.id=public.stewardship_response_census_anchor_v1(prior.id)
+                       CROSS JOIN LATERAL (SELECT kept_census.answers #> CASE NEW.entity_kind
+                             WHEN 'family' THEN ARRAY['family',NEW.field]
+                             ELSE ARRAY['members',NEW.entity_key,NEW.field] END AS value) given
+                       WHERE NEW.entity_kind IN ('family','member')
+                         AND newest.execution NOT IN ('published','resolved_upstream','resolved_external','cancelled','superseded')
+                         AND given.value IS NOT NULL
+                         AND public.stewardship_response_comparison_v1(NEW.field,given.value)
+                             IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(NEW.field,newest.submitted_value)))
               AND ROW(candidate.entity_kind,candidate.entity_key,candidate.field)=ROW(NEW.entity_kind,NEW.entity_key,NEW.field)
             ORDER BY earlier.family_version DESC LIMIT 1;
             -- A response drawn as the reviewed form (#1705) never carries a
@@ -5047,9 +5118,10 @@ BEGIN
                 -- publication lease's task is running; it then publishes it
                 -- when the entity's latest outcome is published, or returns
                 -- it to pending or failed when that outcome is invalidated.
-                -- The publication check also marks it resolved upstream when
-                -- its plan, recorded in this transaction, found the value
-                -- already in ParishSoft. It queues a change only while the
+                -- The publication check also marks it Updated in ParishSoft
+                -- (published, nothing written; #1890) when its plan, recorded
+                -- in this transaction, found the value already in
+                -- ParishSoft. It queues a change only while the
                 -- current data lists its Member as an active, living Member
                 -- of the change's Family (#1738, #1749), as preflight and the
                 -- worker check before they read or write.
@@ -5104,13 +5176,16 @@ BEGIN
                            THEN 'published' ELSE 'invalidated' END)
                    -- The publication check (#528, ADM-09): a Production-mode
                    -- plan recorded in this same transaction found the value
-                   -- already in ParishSoft, so the change is resolved
-                   -- upstream at the next version and nothing is written. The
-                   -- plan guard stamps created_at with transaction_timestamp(),
-                   -- so a plan committed earlier never matches; resolved_upstream
-                   -- is terminal: only the web login's Back to review (#1840,
+                   -- already in ParishSoft, so the change is Updated in
+                   -- ParishSoft (published) at the next version and nothing
+                   -- is written; the refresh then confirms it after that step,
+                   -- as every update (#1890, strict phase order; it was
+                   -- resolved upstream, Confirmed at once, before). The plan
+                   -- guard stamps created_at with transaction_timestamp(), so a
+                   -- plan committed earlier never matches; published is
+                   -- terminal: only the web login's Back to review (#1840,
                    -- with its resolution row) undoes the mark.
-                   OR (OLD.execution IN ('pending','failed') AND NEW.execution='resolved_upstream'
+                   OR (OLD.execution IN ('pending','failed') AND NEW.execution='published'
                        AND OLD.decision='approved' AND OLD.handling='api' AND OLD.entity_kind='member'
                        AND EXISTS (SELECT 1 FROM public.stewardship_publication_field f
                            JOIN public.stewardship_publication_entity e ON e.id=f.entity_id
@@ -5122,7 +5197,13 @@ BEGIN
                     RAISE EXCEPTION 'Proposal publication requires its confirmed plan and outcome' USING ERRCODE='23514';
                 END IF;
             ELSIF current_user='pk_stewardship_worker' THEN
+                -- Strict phase order (#1890): a refresh confirms a change only
+                -- after its step, so reconciliation resolves upstream only a
+                -- change an update run has queued; an open change ParishSoft
+                -- already holds keeps its stage (To review, Ready, To enter by
+                -- hand) with ParishSoft's value stored on it.
                 IF NEW.execution NOT IN ('pending','conflict','resolved_upstream','cancelled')
+                   OR (NEW.execution='resolved_upstream' AND OLD.execution<>'queued')
                    OR NEW.current_source_id=OLD.current_source_id
                    OR NOT public.stewardship_response_source_owner_v1(NEW.current_source_id)
                    OR NOT EXISTS (SELECT 1 FROM public.stewardship_source_pin
@@ -5146,6 +5227,17 @@ BEGIN
                 -- by a later refresh or the Family's same answer back
                 -- into force over the undo in ParishSoft. Nothing else
                 -- here changes the decision.
+                -- Strict phase order (#1890) leaves a change ParishSoft
+                -- caught up with open (pending) instead of resolving it
+                -- upstream, and then nothing is left to write, so the stale
+                -- base protects nothing: an approval kept over a Conflict
+                -- keeps its stage (Ready, To enter by hand). The worker's
+                -- merge says when ParishSoft holds the carried value, as it
+                -- chose resolved_upstream before; this guard, which cannot
+                -- compare field values canonically, admits the kept
+                -- approval only on a pending outcome whose ParishSoft value
+                -- moved off the baseline, which every caught-up value does
+                -- unless the reviewer's Edit is the baseline value itself.
                 IF NEW.decision IS DISTINCT FROM (CASE WHEN OLD.execution='published'
                        THEN 'unreviewed' WHEN OLD.decision='approved'
                        AND OLD.execution IN ('pending','failed')
@@ -5159,6 +5251,10 @@ BEGIN
                             AND later.expected_version<OLD.version
                             AND later.decision<>'approved'))
                        THEN 'unreviewed' ELSE OLD.decision END)
+                   AND NOT (OLD.execution<>'published' AND NEW.decision=OLD.decision
+                       AND NEW.execution='pending' AND NEW.current_available
+                       AND (OLD.admin_value_set
+                           OR NEW.current_value IS DISTINCT FROM OLD.baseline_value))
                 THEN
                     RAISE EXCEPTION 'Proposal reconciliation must return a stale accepted approval to review' USING ERRCODE='23514';
                 END IF;
@@ -5169,7 +5265,10 @@ BEGIN
                 -- execution (entered) or the decision (ignored, reopened),
                 -- nothing else, and advances the version by one. Any other
                 -- web change must be a replacement by a later Family response,
-                -- which never changes the decision. A change Entered by hand
+                -- which never changes the decision and never resolves a change
+                -- upstream (strict phase order, #1895: an unchanged answer
+                -- keeps a change ParishSoft already holds, and an answer set
+                -- back withdraws one). A change Entered by hand
                 -- takes only a resolution (#1737): Entered by hand again keeps
                 -- it entered. Back to review (reopened) of a terminal step
                 -- (#1840: Entered by hand, Updated in ParishSoft, Already in
@@ -5242,7 +5341,7 @@ BEGIN
                           THEN NEW.execution='conflict'
                           ELSE NEW.execution=OLD.execution END)
                    AND (NEW.decision<>OLD.decision
-                   OR NEW.execution NOT IN ('superseded','cancelled','resolved_upstream')
+                   OR NEW.execution NOT IN ('superseded','cancelled')
                    OR NOT EXISTS (
                        SELECT 1 FROM public.stewardship_submission later
                        JOIN public.stewardship_family_form_baseline baseline ON baseline.id=later.baseline_id
@@ -5267,6 +5366,32 @@ BEGIN
                                AND ROW(candidate.entity_kind,candidate.entity_key,candidate.field)=
                                    ROW(OLD.entity_kind,OLD.entity_key,OLD.field)
                              ORDER BY history.family_version DESC LIMIT 1))
+                           -- An open change ParishSoft already holds, which
+                           -- the Family answered again unchanged, stays on its
+                           -- earlier response (#1895): the predecessor lookup
+                           -- above finds it the same way.
+                           OR OLD.id=(SELECT newest.id FROM (
+                                   SELECT kept.id, kept.execution, kept.submitted_value
+                                   FROM public.stewardship_proposed_change kept
+                                   JOIN public.stewardship_submission kept_response ON kept_response.id=kept.submission_id
+                                   JOIN public.stewardship_submission kept_prior ON kept_prior.id=later.prior_submission_id
+                                   WHERE kept_response.family_id=kept_prior.family_id
+                                     AND kept_response.campaign_id=kept_prior.campaign_id
+                                     AND kept_response.mode=kept_prior.mode
+                                     AND kept_response.rehearsal_epoch_id IS NOT DISTINCT FROM kept_prior.rehearsal_epoch_id
+                                     AND kept_response.family_version<=kept_prior.family_version
+                                     AND ROW(kept.entity_kind,kept.entity_key,kept.field)=ROW(OLD.entity_kind,OLD.entity_key,OLD.field)
+                                   ORDER BY kept_response.family_version DESC LIMIT 1) newest
+                               JOIN public.stewardship_submission kept_census
+                                   ON kept_census.id=public.stewardship_response_census_anchor_v1(later.prior_submission_id)
+                               CROSS JOIN LATERAL (SELECT kept_census.answers #> CASE OLD.entity_kind
+                                     WHEN 'family' THEN ARRAY['family',OLD.field]
+                                     ELSE ARRAY['members',OLD.entity_key,OLD.field] END AS value) given
+                               WHERE OLD.entity_kind IN ('family','member')
+                                 AND newest.execution NOT IN ('published','resolved_upstream','resolved_external','cancelled','superseded')
+                                 AND given.value IS NOT NULL
+                                 AND public.stewardship_response_comparison_v1(OLD.field,given.value)
+                                     IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(OLD.field,newest.submitted_value))
                            -- A reviewed form (#1705) names each change it
                            -- showed, which a Family that left it as shown kept
                            -- on its earlier response: such a change, on any
@@ -5836,22 +5961,12 @@ BEGIN
         RAISE EXCEPTION 'Ministry provenance and closed outcomes are immutable' USING ERRCODE='23514';
     END IF;
     IF current_user='pk_stewardship_worker' THEN
-        IF NEW.state<>'resolved' OR NEW.outcome IS DISTINCT FROM
-            (CASE WHEN NEW.action='join' THEN 'joined' ELSE 'leave_confirmed' END)
-           OR NEW.assignee_id IS DISTINCT FROM OLD.assignee_id
-           OR NEW.reviewed_ministry_duid IS NOT NULL
-           OR NEW.resolution_source_id IS NULL
-           OR NOT public.stewardship_response_source_owner_v1(NEW.resolution_source_id)
-           OR NEW.entity_kind<>'member'
-           OR public.stewardship_response_ministry_current_v1(
-                NEW.resolution_source_id,response.family_id,NEW.entity_key,NEW.ministry_duid)
-              IS DISTINCT FROM (NEW.action='join')
-           OR NOT EXISTS (SELECT 1 FROM public.stewardship_source_pin
-               WHERE snapshot_id=NEW.resolution_source_id AND parent_kind='submission'
-                 AND parent_id=NEW.submission_id AND expires_at IS NULL) THEN
-            RAISE EXCEPTION 'Ministry resolution requires fenced scoped roster evidence' USING ERRCODE='23514';
-        END IF;
-        NEW.resolved_at := clock_timestamp();
+        -- Strict phase order (#1890): a refresh no longer resolves an open
+        -- request whose roster already shows it (the worker's only change
+        -- here was that resolution). The request keeps its stage and is
+        -- decided, ticked and then confirmed by a refresh check. Requests a
+        -- refresh resolved before keep their resolution source as history.
+        RAISE EXCEPTION 'A refresh does not resolve a Ministry request' USING ERRCODE='23514';
     ELSIF current_user='pk_stewardship_web' AND (NEW.state NOT IN ('superseded','cancelled')
         OR (NEW.state='cancelled' AND OLD.parish_added AND OLD.state='resolved')) THEN
         -- Staff follow-up. Its revision guard already proved current authority,

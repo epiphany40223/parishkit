@@ -2569,8 +2569,10 @@ published at least one entity, requests the final full refresh as the
 the lease normally. The worker may already create `source_refresh` tasks,
 so this needs no task-creator change. The preflight
 
-also marks already-matching changes `resolved_upstream` in a Production-mode
-plan (frozen migration 0112).
+also marks already-matching changes in a Production-mode plan (frozen
+migration 0112): `published`, Updated in ParishSoft with nothing written,
+since #1890 (forward migration 0159, provisional), `resolved_upstream`
+before it.
 
 Writes use shared v2 `PUT` contact primitives, expected-tenant guard, a PUT
 body holding only the changed fields (the

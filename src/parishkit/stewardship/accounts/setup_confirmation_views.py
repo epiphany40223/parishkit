@@ -37,7 +37,7 @@ def setup_confirmation(request):
             freeze_setup(
                 request, service, preview_token=form.cleaned_data["preview_token"]
             )
-            response = HttpResponseRedirect("/admin/setup/cancel")
+            response = HttpResponseRedirect("/admin/setup/finishing")
             response["Cache-Control"] = "no-store"
             return response
         preview = prepare_preview(request, service)

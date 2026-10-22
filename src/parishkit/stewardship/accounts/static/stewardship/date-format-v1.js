@@ -18,6 +18,9 @@
     eu_dot: ["{dd}.{mm}.{yyyy}", "{dd}.{mm}.{yy}"],
     iso: ["{yyyy}-{mm}-{dd}", "{yyyy}-{mm}-{dd}"]
   };
+  // Date.getDay() order, for data-day-time's weekday.
+  const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
+    "Saturday"];
   const two = (value) => String(value).padStart(2, "0");
 
   function style() {
@@ -132,7 +135,10 @@
   // with it a coming instant that may fall tomorrow (dayTime), and
   // data-day-only an instant's day alone, in this browser's time zone and
   // compact when data-compact is set (the Financial report's Latest
-  // response, #1544).
+  // response, #1544), and data-day-time a send in the shared schedule
+  // preview's words: its weekday, full date and clock time, with no zone
+  // name ("Thursday, October 22, 2026, 9:00 AM"; the Pages and emails
+  // review's schedule list, #1949).
   function localize(scope) {
     otherZoneTimes(scope);
     (scope || document).querySelectorAll("time[data-local-instant]").forEach((node) => {
@@ -141,6 +147,9 @@
         node.textContent = node.hasAttribute("data-day-only")
           ? fields(date.getFullYear(), date.getMonth() + 1, date.getDate(),
             node.hasAttribute("data-compact"))
+          : node.hasAttribute("data-day-time")
+          ? `${WEEKDAYS[date.getDay()]}, ${fields(date.getFullYear(), date.getMonth() + 1,
+            date.getDate(), false)}, ${clock(date)}`
           : node.hasAttribute("data-time-only")
           ? (node.hasAttribute("data-time-day") ? dayTime(date, new Date()) : clock(date))
           : instant(date, {

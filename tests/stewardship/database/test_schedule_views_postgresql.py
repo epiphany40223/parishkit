@@ -197,7 +197,14 @@ def test_preview_resolves_applied_and_proposed_times_in_their_own_campaign_zones
     assert b"America/New_York" in response.content
     assert b"America/Los_Angeles" in response.content
     assert b"data-local-instant" in response.content
-    assert b"not a list of who will receive it" in response.content
+    # The shared schedule preview (#1129): the posted browser zone groups
+    # each side's sends by day, so each time is written alone after its
+    # day; the always-on sentences are gone (no send here is on a
+    # daylight-saving day).
+    assert b"data-time-only" in response.content
+    assert b"Thursday, October 1, 2054, <time" in response.content
+    assert b"not a list of who will receive it" not in response.content
+    assert b"When clocks change" not in response.content
     # Merely inspecting candidate instants cannot allocate or apply anything.
     assert ConfigurationChangeRequest.objects.count() == requests_before
     campaign.refresh_from_db()
@@ -231,8 +238,11 @@ def test_daily_preview_is_bounded_and_labels_reported_days(auth_service, google)
     data[f"schedules-{indexes['daily_digest']}-time"] = "00:30:00"
     response = post(browser, path, data)
     assert response.status_code == 200
-    assert b"Only the first five dates are shown" in response.content
-    assert b"campaign day the report covers" in response.content
+    assert b"Only the next 5 sends are shown" in response.content
+    # Each line names the campaign day it reports on, which replaces the
+    # general sentence about digest dates (#1129).
+    assert b"Daily Admin digest for Thursday, October 1, 2054" in response.content
+    assert b"campaign day the digest reports on" not in response.content
     assert b"2054-10-02T04:15:00+00:00" in response.content
     assert b"2054-10-02T04:30:00+00:00" in response.content
     assert response.content.count(b"data-local-instant") == 10

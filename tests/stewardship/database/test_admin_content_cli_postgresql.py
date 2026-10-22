@@ -12,7 +12,10 @@ from uuid import uuid4
 import pytest
 
 from parishkit.stewardship.accounts import sessions
-from parishkit.stewardship.accounts.content_forms import EMAIL_LABELS, page_slots
+from parishkit.stewardship.accounts.content_forms import (
+    OFFERED_EMAIL_LABELS,
+    page_slots,
+)
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.models import Campaign, CampaignWorkGate
 
@@ -92,7 +95,7 @@ def test_content_list_is_the_pages_list(admin):
         "resave": None,
     }
     assert pages["login_help"]["state"] == "empty"
-    assert [email["slot"] for email in result["emails"]] == list(EMAIL_LABELS)
+    assert [email["slot"] for email in result["emails"]] == list(OFFERED_EMAIL_LABELS)
     emails = {email["slot"]: email for email in result["emails"]}
     initial = emails["initial"]
     assert initial["name"] == "Initial invitation"

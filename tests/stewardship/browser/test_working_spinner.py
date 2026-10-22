@@ -42,7 +42,10 @@ WORDS = """boxes => boxes.map(box => {
 # would otherwise grow its bounding rectangle as it turns.
 SLOT = """spinner => {
   const box = spinner.parentElement;
-  const label = spinner.nextElementSibling;
+  // A stage box's label is inside its words' body (#1903); a collection
+  // row's label follows the spinner directly.
+  const next = spinner.nextElementSibling;
+  const label = next.querySelector('.stage-label') || next;
   const pad = parseFloat(getComputedStyle(box).paddingLeft);
   const right = spinner.offsetLeft + spinner.offsetWidth;
   // Level with the label's first line: their middles within 2px. A label
@@ -123,8 +126,9 @@ def test_in_progress_box_spinner_comes_and_goes_in_place(
     assert spinner.get_attribute("aria-hidden") == "true"
     assert spinner.evaluate(SLOT)
     # The words carry the state; the spinner adds nothing to them.
-    assert "In progress" in boxes.first.inner_text()
-    assert boxes.first.evaluate("node => node.textContent").startswith("Download")
+    download = boxes.nth(1)  # after Start the load (#1916)
+    assert "In progress" in download.inner_text()
+    assert download.evaluate("node => node.textContent").startswith("Download")
     ink, ring = spinner.evaluate(INK)
     assert ring == ink
     assert spinner.evaluate("node => getComputedStyle(node).animationName") == (

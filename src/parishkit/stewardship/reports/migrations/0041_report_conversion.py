@@ -30,10 +30,11 @@ FROZEN_SQL = (
 
 class Migration(migrations.Migration):
     dependencies = [
-        # The reports app's previous migration, which installs the previous
-        # frozen file (0156, the report pipeline), so the files apply in
-        # prefix order.
+        # The reports app's previous migration (0156, the report pipeline).
         ("stewardship_reports", "0040_report_pipeline"),
+        # The migration that installs the previous frozen file (0160, #1908),
+        # so the files apply in prefix order.
+        ("stewardship_responses", "0030_resubmission_phase_order"),
     ]
 
     operations = [migrations.RunSQL(FROZEN_SQL.read_text(encoding="utf-8"))]

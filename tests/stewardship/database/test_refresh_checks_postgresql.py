@@ -38,6 +38,7 @@ from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_campaign_end_counts_postgresql import roster_count
 from .test_census_pipeline_review_postgresql import decide as census_decide
+from .test_census_pipeline_review_postgresql import mark as census_mark
 from .test_census_review_postgresql import fresh
 from .test_ministry_reports_postgresql import actor, setup
 from .test_ministry_responses_postgresql import ministry_source, respond, start
@@ -158,7 +159,7 @@ def test_an_entered_census_change_is_confirmed_by_the_refresh(response_service):
     the Family's prefix in ParishSoft records a confirmed check, the change
     is Confirmed (keeping its Accepted), and it is never checked again."""
     harness, staff, rows = prepared(response_service)
-    census_decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+    census_mark(harness, staff, [rows["prefix"]])
     assert census_row(harness, rows["prefix"])["stage"] == Stage.ENTERED_BY_HAND
     refresh(harness, member={"salutation": "Dr."})
     proposal = fresh(rows["prefix"])
@@ -179,7 +180,7 @@ def test_not_seen_after_two_full_refreshes_at_the_old_value(response_service, st
     after two full refreshes, without changing its stage; the checks stop
     once the flag is reached, and deleting the start row turns it off."""
     harness, staff, rows = prepared(response_service)
-    census_decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+    census_mark(harness, staff, [rows["prefix"]])
     refresh(harness)
     assert checks(proposal=rows["prefix"]) == ["unchanged"]
     assert not census_row(harness, rows["prefix"])["not_seen"]
@@ -200,7 +201,7 @@ def test_a_third_value_is_entered_incorrectly_until_corrected(
     ParishSoft's value shown and no action offered; correcting ParishSoft
     confirms it."""
     harness, staff, rows = prepared(response_service)
-    census_decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+    census_mark(harness, staff, [rows["prefix"]])
     refresh(harness, member={"salutation": "Rev."})
     row = census_row(harness, rows["prefix"])
     assert row["stage"] == Stage.ENTERED_INCORRECTLY
@@ -232,14 +233,18 @@ def test_an_ignored_change_stays_ignored_when_parishsoft_matches(response_servic
 
 def test_an_edited_change_compares_with_the_reviewers_value(response_service):
     """C is the reviewer's value: ParishSoft holding the Family's answer
-    instead is a third value (Conflict), and the reviewer's value confirms."""
+    instead is a third value (Conflict), and ParishSoft at the reviewer's
+    value holds it, which before its update leaves it Ready to update,
+    saying so (strict phase order, #1890)."""
     harness, staff, rows = prepared(response_service)
     census_decide(harness, staff, [rows["first_name"]], "edit", value="Corrected")
     assert fresh(rows["first_name"]).admin_value == "Corrected"
     refresh(harness, member={"firstName": "Requested"})
     assert fresh(rows["first_name"]).execution == "conflict"
     refresh(harness, member={"firstName": "Corrected"})
-    assert fresh(rows["first_name"]).execution == "resolved_upstream"
+    assert fresh(rows["first_name"]).execution == "pending"
+    row = census_row(harness, fresh(rows["first_name"]))
+    assert row["stage"] == Stage.READY_TO_UPDATE and row["already_held"]
 
 
 def test_an_edit_back_to_the_baseline_is_still_re_evaluated(response_service):
@@ -252,7 +257,8 @@ def test_an_edit_back_to_the_baseline_is_still_re_evaluated(response_service):
     refresh(harness, member={"firstName": "Someone else"})
     assert fresh(rows["first_name"]).execution == "conflict"
     refresh(harness, member={"firstName": baseline})
-    assert fresh(rows["first_name"]).execution == "resolved_upstream"
+    assert fresh(rows["first_name"]).execution == "pending"
+    assert census_row(harness, fresh(rows["first_name"]))["already_held"]
 
 
 def view(harness, principal, stage="all"):
@@ -266,9 +272,11 @@ def view(harness, principal, stage="all"):
 def test_an_accepted_request_is_confirmed_and_back_to_review_undoes_it(
     response_service,
 ):
-    """A join Staff accepted is Confirmed by the refresh that finds the
-    Member in the roster, keeping its Accepted; Back to review, with its
-    required note, undoes that (#1840): To enter by hand again."""
+    """A join Staff accepted is still To enter by hand when the refresh
+    finds the Member in the roster (strict phase order, #1890); once ticked
+    it is Confirmed by the next refresh, keeping its Accepted; Back to
+    review, with its required note, undoes that (#1840): To enter by hand
+    again."""
     harness = setup(response_service)
     staff = actor(harness, {"staff"}, ())
     join, _ = requests()
@@ -286,8 +294,12 @@ def test_an_accepted_request_is_confirmed_and_back_to_review_undoes_it(
 
     assert to_enter() == (1, 1)
     refresh(harness, joins=(9,))
-    # Already in ParishSoft: nothing left to enter; Every stage lists it as
-    # Confirmed (below).
+    # ParishSoft already holds it, but it is not ticked: still to enter.
+    assert to_enter() == (1, 1)
+    assert checks(request=join) == []
+    ministry_decide(harness, staff, "entered_by_hand", join)
+    refresh(harness, joins=(9,))
+    # Confirmed: nothing left to enter; Every stage lists it (below).
     assert to_enter() == (0, 0)
     join.refresh_from_db()
     assert (join.state, join.resolution_source_id) == ("resolved", None)
@@ -355,7 +367,7 @@ def test_the_guard_admits_only_the_promotion_and_keeps_checks(response_service):
     """Outside a promotion no check can be written, even by the owner; a
     check is never updated or deleted."""
     harness, staff, rows = prepared(response_service)
-    census_decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+    census_mark(harness, staff, [rows["prefix"]])
     proposal = fresh(rows["prefix"])
     with pytest.raises(DatabaseError), transaction.atomic():
         RefreshCheck.objects.create(
@@ -382,7 +394,7 @@ def test_the_worker_login_records_checks_in_promotion(response_service):
     and inserts them under its grants (the other tests promote as the
     database owner)."""
     harness, staff, rows = prepared(response_service)
-    census_decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+    census_mark(harness, staff, [rows["prefix"]])
     data = ministry_source()
     data.members[3].update(BASE | {"salutation": "Dr."})
     snapshot, claim = prepare(data)
@@ -417,12 +429,13 @@ def test_an_edited_request_is_judged_by_the_ministry_carried_forward(
     response_service,
 ):
     """Staff edit the join of Food pantry into Ministry 4: the roster of the
-    Family's Ministry no longer counts, the Edit's does."""
+    Family's Ministry no longer counts, the Edit's does (once ticked, #1890)."""
     harness = setup(response_service)
     staff = actor(harness, {"staff"}, ())
     join = withdraw_leave(harness)
     ministry_decide(harness, staff, "edit", join, fields={"value": ["4"]})
     assert join.reviewed_ministry_duid == 4
+    ministry_decide(harness, staff, "entered_by_hand", join)
     refresh(harness, joins=(9,), leaves=(4,))
     assert checks(request=join) == []
     refresh(harness)
@@ -442,7 +455,7 @@ def test_the_guard_refuses_a_forged_check_inside_a_promotion(
 
     if stream == "census":
         harness, staff, rows = prepared(response_service)
-        census_decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+        census_mark(harness, staff, [rows["prefix"]])
         target = fresh(rows["prefix"])
         forged = {
             "proposal_id": target.pk,
@@ -453,6 +466,8 @@ def test_the_guard_refuses_a_forged_check_inside_a_promotion(
         staff = actor(harness, {"staff"}, ())
         target, _ = requests()
         ministry_decide(harness, staff, "accept", target)
+        # Ticked, so the forged confirmation meets the roster evidence check.
+        ministry_decide(harness, staff, "entered_by_hand", target)
         forged = {"request_id": target.pk}
 
     def lying(snapshot, corpus, campaign_id, full):
@@ -508,7 +523,7 @@ def test_the_quick_update_check_agrees_with_what_promotion_writes(
     from parishkit.stewardship.source.families import PreparedPromotion
 
     harness, staff, rows = prepared(response_service)
-    census_decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+    census_mark(harness, staff, [rows["prefix"]])
     data = ministry_source()
     data.members[3].update({"salutation": "Dr."})
     snapshot, claim = prepare(data)
@@ -592,7 +607,7 @@ def test_the_guard_refuses_each_forgery_inside_a_promotion(
     options = dict(options)
     if stream == "census":
         harness, staff, rows = prepared(response_service)
-        census_decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+        census_mark(harness, staff, [rows["prefix"]])
         target = fresh(rows["prefix"])
         base = {
             "proposal_id": target.pk,

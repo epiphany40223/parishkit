@@ -2,7 +2,7 @@
   Finishing setup's live status region (#1354): each step, the time since
   confirmation, a failure's notice and the server operator's instructions,
   or, once setup is complete, the result with Continue. The page and the
-  passive status fragment it polls (/admin/setup/cancel?format=status, which
+  passive status fragment it polls (/admin/setup/finishing?format=status, which
   never renews idle time) both draw it, and live-status-v1.js swaps in the
   fresh region while setup is still finishing (data-live-pending), then
   stops at completion or failure. Only the page passes status_url. The

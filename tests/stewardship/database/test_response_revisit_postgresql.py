@@ -245,7 +245,8 @@ def test_additional_text_replacement_and_withdrawal_keep_history(live_response_s
 @pytest.mark.parametrize(
     "source_name,execution,display,conflict",
     [
-        ("Family update", "resolved_upstream", "Family update", False),
+        # ParishSoft caught up: the change keeps its stage (#1890).
+        ("Family update", "pending", "Family update", False),
         ("Source update", "conflict", "Family update", True),
         ("Member", "pending", "Family update", False),
     ],
@@ -284,7 +285,8 @@ def test_promotion_reconciles_same_transaction_and_revisit_uses_merged_value(
     harness, form, answers, fields = revisit(harness)
     effective = next(field for field in fields if field.field == "first_name").effective
     assert effective.value.value == display and effective.conflict is conflict
-    assert effective.changed is (execution != "resolved_upstream")
+    # The form shows no change once ParishSoft holds the answer.
+    assert effective.changed is (source_name != "Family update")
     assert Submission.objects.count() == 1
     first.refresh_from_db()
     assert first.answers["members"]["3"]["first_name"] == "Family update"

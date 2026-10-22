@@ -30,6 +30,7 @@ from .test_admin_status_cli_postgresql import (
     one,
     session,
 )
+from .test_publication_plans_postgresql import approve
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -48,9 +49,20 @@ def count(event_type):
     return AuditEvent.objects.filter(event_type=event_type).count()
 
 
-def resolve(run, proposal, action, *extra, version=None, key=None, secret=None):
-    """``census resolve`` for ``proposal`` at its current (or given) version."""
+def resolve(
+    run, proposal, action, *extra, version=None, key=None, secret=None, accept=True
+):
+    """``census resolve`` for ``proposal`` at its current (or given) version.
+
+    Entered by hand follows an Accept (strict phase order, #1890), so an
+    ``entered`` at the current version first approves a change still To
+    review (as the schema owner, with no review row or event, as the other
+    command tests set up their approvals), unless ``accept`` is False.
+    """
     proposal.refresh_from_db()
+    waiting = (proposal.decision, proposal.execution) == ("unreviewed", "pending")
+    if action == "entered" and version is None and accept and waiting:
+        approve(proposal)
     argv = [
         *("census", "resolve", str(proposal.pk), "--action", action),
         *("--expected-version", str(proposal.version if version is None else version)),
@@ -122,19 +134,20 @@ def test_an_administrator_enters_ignores_and_reopens(response_service, google, c
     )
     assert code == 1 and document["error"]["code"] == "invalid", document
 
-    # Reopening needs a note; with one, the change is to review again.
+    # Reopening an Ignore takes an optional note (#1889): the change is to
+    # review again.
     code, document = resolve(run, home, "reopened")
-    assert code == 1 and document["error"]["code"] == "invalid", document
-    code, document = resolve(run, home, "reopened", "--note", "Not a duplicate")
     assert code == 0, document
     assert document["result"]["proposal"]["decision"] == "unreviewed"
 
     # Entered in ParishSoft can be undone (#1840), so it asks nothing; on a
-    # To review change it accepts and marks in one step.
+    # To review change it is refused (#1890: it follows an Accept).
+    code, document = resolve(run, home, "entered", accept=False)
+    assert code == 1 and document["error"]["code"] == "invalid", document
     code, document = resolve(run, home, "entered")
     assert code == 0, document
     assert document["result"]["proposal"]["execution"] == "resolved_external"
-    assert document["result"]["proposal"]["decision"] == "unreviewed"
+    assert document["result"]["proposal"]["decision"] == "accepted"
     assert (count(EVENT), count(UPDATED)) == (3, 3)
     assert ProposalResolution.objects.filter(proposal=home).count() == 3
 
@@ -146,9 +159,15 @@ def test_an_administrator_enters_ignores_and_reopens(response_service, google, c
     assert count(EVENT) == 3
 
     # Reopen undoes the mark (#1840), with a required note: the change is
-    # To enter by hand again, Accepted, as it was shown.
-    code, document = resolve(run, home, "reopened")
-    assert code == 1 and document["error"]["code"] == "invalid", document
+    # To enter by hand again, Accepted, as it was shown. With no note, or
+    # only white space, it is invalid and records nothing: since #1889 the
+    # service's NoteRequired, not an early check, refuses it.
+    for blank in ((), ("--note", "   ")):
+        code, document = resolve(run, home, "reopened", *blank)
+        assert code == 1 and document["error"]["code"] == "invalid", document
+    assert (count(EVENT), count(UPDATED)) == (3, 3)
+    home.refresh_from_db()
+    assert home.execution == "resolved_external"
     code, document = resolve(run, home, "reopened", "--note", "Typed it wrong")
     assert code == 0, document
     assert document["result"]["proposal"]["decision"] == "accepted"

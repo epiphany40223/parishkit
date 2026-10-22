@@ -187,3 +187,35 @@ def test_day_only_instants_show_the_day_in_every_style(page, component_origin, c
             assert shown[0] == day
             # Without the attribute the same instant keeps its clock time.
             assert shown[1].startswith(day) and len(shown[1]) > len(day)
+
+
+def test_day_time_instants_read_as_the_schedule_preview(page, component_origin):
+    """data-day-time writes a send as the shared schedule preview does (#1949).
+
+    Its weekday, full date and clock time in the browser's zone, with no
+    "at" and no zone name, in every style, on instants whose UTC day
+    differs from their Los Angeles day.
+    """
+    page.goto(component_origin + "/logs")
+    for style in dates.FORMATS:
+        for value in INSTANTS:
+            local = datetime.fromisoformat(value).astimezone(ZoneInfo(ZONE))
+            shown = page.evaluate(
+                """([style, value]) => {
+                    document.body.dataset.dateFormat = style;
+                    const node = document.createElement("time");
+                    node.setAttribute("data-local-instant", "");
+                    node.setAttribute("data-day-time", "");
+                    node.dateTime = value;
+                    document.body.append(node);
+                    ParishDates.localize(document);
+                    const text = node.textContent;
+                    node.remove();
+                    return text;
+                }""",
+                [style, value],
+            )
+            assert shown == (
+                f"{local:%A}, {dates.format_date(local.date(), style)}, "
+                f"{dates.format_time(local.time(), style)}"
+            )

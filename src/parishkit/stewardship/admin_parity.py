@@ -158,6 +158,9 @@ LEDGER = {
     ),
     # The live end-date check validates what ``schedule preview`` reviews.
     "campaign_end_date_check": command("schedule preview"),
+    # The campaign work status those pages poll while work holds them
+    # (#1619): ``campaign show`` reports the same locks.
+    "campaign_work_status": command("campaign show"),
     # Create the campaign's Review and Apply (#1899): the first campaign
     # only, admitted through the page's own ``_admitted`` and ``_scope``
     # (``single_campaign.first_campaign_admitted``) and confirmed with
@@ -540,7 +543,7 @@ LEDGER = {
         name: permanent(SETUP)
         for name in (
             "setup",
-            "setup_cancel",
+            "setup_finishing",
             "setup_source",
             "setup_source_progress",
             "setup_branding",

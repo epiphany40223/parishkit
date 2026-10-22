@@ -878,7 +878,10 @@ def test_the_content_review_is_a_full_review_fragment_for_the_dialog():
     assert '<h3 id="content-review-current">Current content</h3>' in text
     assert "Empty — no content will be shown in this slot." in text
     assert "<p>Hello</p>" in text and "Schedules using this template" in text
-    assert '<time datetime="2054-10-15T13:00:00+00:00" data-local-instant>' in text
+    assert (
+        '<time datetime="2054-10-15T13:00:00+00:00" data-local-instant data-day-time>'
+        in text
+    )
     upcoming, sent = text.split('<h4 id="content-review-sent">Already sent</h4>')
     assert "<li>Reminder 2 — " in upcoming and "Reminder 1" not in upcoming
     assert "switches these schedules" in upcoming

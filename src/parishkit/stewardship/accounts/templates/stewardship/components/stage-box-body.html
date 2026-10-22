@@ -1,0 +1,9 @@
+{% comment %}
+One stage box's words (components/stage-boxes.html): the stage's name, its
+state in words and, when given, its ``detail`` template with the stage as
+``step``. A ``ghost`` copy draws a form the box can take while the
+work runs, invisible and hidden from assistive technology, in the same
+grid cell as the shown words, so the box is as tall as its longest form
+and never grows or shrinks as the work moves on (#1903). A ghost carries
+no data attributes, so scripts and tests find only the shown words.
+{% endcomment %}<div class="stage-body{% if ghost %} reserve-ghost{% endif %}"{% if ghost %} aria-hidden="true"{% endif %}><span class="stage-label">{{ stage.label }}</span><span class="visually-hidden">:</span> <span class="stage-status"{% if not ghost %} data-load-status{% endif %}>{{ stage.status }}</span>{% if detail %}{% include detail with step=stage %}{% endif %}</div>

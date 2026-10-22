@@ -406,6 +406,12 @@ PAGE_RECIPIENTS_FUNCTION = "stewardship_delivery_page_recipients_v1(uuid[], uuid
 # The ParishSoft Member name of each of a page's emails to people (0145,
 # #1562), for the same caller: one name per email, never an address.
 PAGE_MEMBER_NAMES_FUNCTION = "stewardship_delivery_page_member_names_v1(uuid[], uuid)"
+# The person identity reads (#1867), for an Administrator only: the
+# ParishSoft Families and Members whose contacts hold one address, and the
+# user record ids whose address is a contact of one Family or its Members;
+# identifiers only, without any grant on the contact records.
+ADDRESS_PEOPLE_FUNCTION = "stewardship_address_people_v1(text, uuid)"
+FAMILY_USERS_FUNCTION = "stewardship_family_users_v1(bigint, uuid)"
 # An Administrator's report that a delivered email bounced at one address
 # (#806 slice 4): the report's only writer, so web keeps SELECT only on the
 # refusal table; the definer and the refusal guard admit it only from web.
@@ -574,6 +580,11 @@ CLOSURE_FUNCTIONS = {
     PLEDGE_REFRESH_ITEMS_FUNCTION: ("stewardship_reports", "0034_pledge_conflicts"),
     # Sent mail's Member names (0145, #1562).
     PAGE_MEMBER_NAMES_FUNCTION: ("stewardship_jobs", "0036_page_member_names"),
+    # The person identity reads (0157, #1867).
+    **dict.fromkeys(
+        (ADDRESS_PEOPLE_FUNCTION, FAMILY_USERS_FUNCTION),
+        ("stewardship_accounts", "0031_person_identity_reads"),
+    ),
     # The report conversion's open digest work check (0161,
     # #1786), which the admin-recovery login's offline conversion asks.
     DIGEST_WORK_FUNCTION: ("stewardship_reports", "0041_report_conversion"),
@@ -857,7 +868,8 @@ def runtime_functions(role, *, target=None):
     opens that follow-up and reads its link token. Web records an
     Administrator's report that a delivered email bounced (#806 slice 4),
     and, for an Administrator, reads the emails meant for one address and
-    the addresses of a Sent mail page's reports and notices (#1562).
+    the addresses of a Sent mail page's reports and notices (#1562), and
+    the Families an address belongs to and a Family's users (#1867).
     The general worker asks whether a publication plan's or outcome's audit
     event is recorded (#528), since it cannot read audit rows itself, and
     which added Member links a promoted snapshot supports (#1670).
@@ -899,6 +911,8 @@ def runtime_functions(role, *, target=None):
                 ADDRESS_DELIVERIES_FUNCTION,
                 PAGE_RECIPIENTS_FUNCTION,
                 PAGE_MEMBER_NAMES_FUNCTION,
+                ADDRESS_PEOPLE_FUNCTION,
+                FAMILY_USERS_FUNCTION,
                 DEBUG_OFF_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {

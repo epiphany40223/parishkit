@@ -127,7 +127,10 @@ def test_a_terminal_pledge_offers_back_to_review():
                 observed="900",
             )
         ),
-        pledge_row(item("confirmed", None, base="to_review", check="confirmed")),
+        # Only a marked pledge is Confirmed (#1890).
+        pledge_row(
+            item("confirmed", marked, base="entered_by_hand", check="confirmed")
+        ),
     ]
     assert [record["actions"] for record in records(rows, STAFF)] == [
         ["back_to_review"]

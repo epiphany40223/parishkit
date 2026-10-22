@@ -145,7 +145,9 @@ def test_an_entered_incorrectly_pledge_is_undone_and_judged_open_again(
     """Back to review on Entered incorrectly returns it to To enter by hand
     with its Accept; the check of the undone mark stays in history, and the
     next refresh judges the pledge as not marked: the same wrong amount is
-    now a Conflict on the new row, and the Family's amount Confirms it."""
+    now a Conflict on the new row; the Family's amount returns it to To
+    enter by hand (ParishSoft holds it, #1890), and marked again it is
+    Confirmed."""
     harness, submission = accepted(response_service)
     refresh(harness, "1243.50")
     assert placed(harness, submission) == (Stage.ENTERED_INCORRECTLY, Decision.ACCEPTED)
@@ -162,17 +164,19 @@ def test_an_entered_incorrectly_pledge_is_undone_and_judged_open_again(
     assert second.item_version == latest().sequence
     assert placed(harness, submission)[0] is Stage.CONFLICT
     refresh(harness, ANSWER)
+    assert placed(harness, submission) == (Stage.TO_ENTER_BY_HAND, Decision.ACCEPTED)
+    decide(harness, admin(), "entered_by_hand", [submission])
+    refresh(harness, ANSWER)
     assert placed(harness, submission) == (Stage.CONFIRMED, Decision.ACCEPTED)
 
 
-@pytest.mark.parametrize("marked", [True, False])
-def test_a_confirmed_accepted_pledge_is_undone_and_checked_again(
-    response_service, marked
-):
-    """Confirmed (marked or not) is undone to To enter by hand, Accepted;
-    the confirmed check no longer places it, and the next refresh, which
-    skipped it while Confirmed, checks the new row and Confirms it again."""
-    harness, submission = accepted(response_service, marked=marked)
+def test_a_confirmed_accepted_pledge_is_undone_and_checked_again(response_service):
+    """Confirmed (only a marked pledge is, #1890) is undone to To enter by
+    hand, Accepted; the confirmed check no longer places it, and the next
+    refresh, which skipped it while Confirmed, checks the new row, which
+    stays To enter by hand (ParishSoft holds it); marked again it is
+    Confirmed again."""
+    harness, submission = accepted(response_service)
     refresh(harness, ANSWER)
     assert placed(harness, submission) == (Stage.CONFIRMED, Decision.ACCEPTED)
     undo(harness, submission)
@@ -181,26 +185,29 @@ def test_a_confirmed_accepted_pledge_is_undone_and_checked_again(
     refresh(harness, ANSWER)
     assert checks() == [("confirmed", Decimal(ANSWER))] * 2
     assert PledgeRefreshCheck.objects.filter(review=latest()).count() == 1
+    assert placed(harness, submission) == (Stage.TO_ENTER_BY_HAND, Decision.ACCEPTED)
+    decide(harness, admin(), "entered_by_hand", [submission])
+    refresh(harness, ANSWER)
     assert placed(harness, submission) == (Stage.CONFIRMED, Decision.ACCEPTED)
 
 
-def test_already_in_parishsoft_is_undone_to_to_review(response_service):
-    """A To review pledge Confirmed with no reviewer goes back to To review,
-    with no decision; the open check at the old version no longer counts,
-    and the next refresh writes one at the new version (here a Conflict)."""
+def test_already_in_parishsoft_is_not_confirmed_and_takes_no_undo(response_service):
+    """A To review pledge ParishSoft already holds is no longer Confirmed
+    (#1890): it stays To review, with no decision, and Back to review (a
+    terminal undo) is refused on it; the next refresh at another amount
+    writes a Conflict at the same version."""
     harness, submission = pledged(response_service)
     refresh(harness, ANSWER)
-    assert placed(harness, submission) == (Stage.CONFIRMED, None)
-    undo(harness, submission, note="Not this year's pledge")
-    undone = latest()
-    assert (undone.sequence, undone.decision) == (1, None)
     assert placed(harness, submission) == (Stage.TO_REVIEW, None)
+    with pytest.raises(ValueError):
+        undo(harness, submission, note="Not this year's pledge")
+    assert not PledgeReview.objects.exists()
     refresh(harness, "99.00")
     assert list(
         PledgeOpenCheck.objects.order_by("created_at", "id").values_list(
             "outcome", "item_version"
         )
-    ) == [("confirmed", 0), ("conflict", 1)]
+    ) == [("confirmed", 0), ("conflict", 0)]
     assert placed(harness, submission) == (Stage.CONFLICT, None)
 
 

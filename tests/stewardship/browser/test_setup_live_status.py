@@ -186,8 +186,10 @@ def test_finishing_setup_moves_on_in_place(page, component_origin, axe_source, w
     page.clock.fast_forward(2000)
     recorded(page, polls, 1)
     step = page.locator('[data-finishing-step="parishsoft"]')
-    has_text(step.locator(".stage-status"), "In progress")
-    visible(step.get_by_text("Checking the credential with the provider."))
+    # The box's shown words, not its invisible reserved forms (#1903).
+    shown = step.locator(".stage-body:not(.reserve-ghost)")
+    has_text(shown.locator(".stage-status"), "In progress")
+    visible(shown.get_by_text("Checking the credential with the provider."))
     assert "sign-in" not in page.locator("main").inner_text()
     focused(summary)
     assert page.evaluate(MARKED) == "kept"

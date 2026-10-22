@@ -181,8 +181,8 @@ def reader_roles(principal):
 # pledge once ParishSoft holds the reviewer's amount. Its Back to review
 # undoes the mark like any terminal step's (#1840).
 WITHHELD = {Stage.ENTERED_INCORRECTLY: frozenset({Action.ENTERED_BY_HAND})}
-# Why a Back to review needing a note was refused without one.
-REOPEN_NEEDS_NOTE = "Reopening an ignored pledge needs a note."
+# Why a Back to review needing a note (a terminal step's undo; reopening
+# an Ignored pledge takes an optional one, #1889) was refused without one.
 UNDO_NEEDS_NOTE = "Undoing a pledge's mark or confirmation needs a note."
 
 
@@ -333,16 +333,14 @@ class PledgeDecisions:
             stage = placement(item).stage
             if decision.action not in offered(stage, roles):
                 raise ValueError("That decision is not offered for this pledge.")
-            # Reopening an Ignored pledge, and undoing a terminal step
-            # (#1840), need a reason; the guard requires it too.
+            # Undoing a terminal step (#1840) needs a reason; the guard
+            # requires it too.
             if (
                 decision.action is Action.BACK_TO_REVIEW
                 and undo_needs_note(stage)
                 and not decision.note
             ):
-                raise NoteRequired(
-                    REOPEN_NEEDS_NOTE if stage is Stage.IGNORED else UNDO_NEEDS_NOTE
-                )
+                raise NoteRequired(UNDO_NEEDS_NOTE)
             action = decision.action
             if action is Action.EDIT and value == family_value(responses[item_id]):
                 action, matched = Action.ACCEPT, True

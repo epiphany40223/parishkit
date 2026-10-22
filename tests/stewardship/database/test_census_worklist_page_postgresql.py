@@ -46,8 +46,9 @@ def decide(proposal, action, **fields):
 
 def test_staff_see_and_take_every_review_decision(response_service, google):
     """Staff's page lists every change To review, By hand ones too, with
-    Accept on each and Entered by hand on the By hand ones; Accept answers
-    with the page, its notice and the row Ready to update."""
+    Accept on each and Entered by hand on none (it follows an Accept,
+    #1890); Accept answers with the page, its notice and the row Ready to
+    update."""
     harness, _, _, rows = prepared(response_service)
     browser = staff_browser(google)
     response, body = search(browser, ROUTE, {})
@@ -55,7 +56,7 @@ def test_staff_see_and_take_every_review_decision(response_service, google):
     page = body.decode()
     assert "To review (4)" in page and "Summary" not in page
     assert page.count('data-row-action="accept"') == 4
-    assert page.count('data-row-action="entered_by_hand"') == 3
+    assert page.count('data-row-action="entered_by_hand"') == 0
     # Staff do not start an update run.
     assert "Update ParishSoft" not in page
     response, body = search(
@@ -73,17 +74,20 @@ def test_staff_see_and_take_every_review_decision(response_service, google):
 
 
 def test_entered_by_hand_and_bulk_accept_over_http(response_service, google):
-    """Entered by hand on a To review By hand row accepts and marks it; a
-    bulk Accept covers the rest, each at the version its row showed."""
+    """Entered by hand on a To review By hand row is not offered, so the
+    page refuses it (#1890: no one-step mark); a bulk Accept covers every
+    row, each at the version its row showed, and Entered by hand then marks
+    an accepted By hand one."""
     harness, _, _, rows = prepared(response_service)
     browser = staff_browser(google)
-    response, body = search(
+    response, _ = search(
         browser, ROUTE, decide(rows["email_opt_out"], "entered_by_hand")
     )
-    assert response.status_code == 200 and b"marked entered by hand." in body
-    assert state(rows["email_opt_out"])[1] == "resolved_external"
-    assert ProposalResolution.objects.count() == 1
+    assert response.status_code == 400
+    assert state(rows["email_opt_out"])[:2] == ("unreviewed", "pending")
+    assert not ProposalResolution.objects.exists()
     chosen = [rows["first_name"], rows["prefix"], rows["home_address"]]
+    chosen.append(rows["email_opt_out"])
     form = {
         "stage": "all",
         "bulk": "accept",
@@ -92,8 +96,14 @@ def test_entered_by_hand_and_bulk_accept_over_http(response_service, google):
         "item": [f"{row.pk}:{row.version}" for row in chosen],
     }
     response, body = search(browser, ROUTE, form)
-    assert response.status_code == 200 and b"3 changes accepted." in body
+    assert response.status_code == 200 and b"4 changes accepted." in body
     assert {state(row)[0] for row in chosen} == {"approved"}
+    response, body = search(
+        browser, ROUTE, decide(fresh(rows["email_opt_out"]), "entered_by_hand")
+    )
+    assert response.status_code == 200 and b"marked entered by hand." in body
+    assert state(rows["email_opt_out"])[1] == "resolved_external"
+    assert ProposalResolution.objects.count() == 1
 
 
 def test_an_edit_is_checked_and_refused_at_its_field(response_service, google):
@@ -144,19 +154,18 @@ def test_a_malformed_or_unoffered_decision_is_a_400(response_service, google, br
     assert not ProposalReview.objects.exists()
 
 
-def test_reopening_an_ignored_change_needs_a_note_over_http(response_service, google):
-    """Back to review on an ignored change is a 400 without a note."""
+def test_reopening_an_ignored_change_takes_an_optional_note_over_http(
+    response_service, google
+):
+    """Back to review on an ignored change records with no note (#1889)."""
     harness, _, _, rows = prepared(response_service)
     browser = staff_browser(google)
     response, _ = search(browser, ROUTE, decide(rows["prefix"], "ignore"))
     assert response.status_code == 200
     prefix = fresh(rows["prefix"])
-    response, _ = search(browser, ROUTE, decide(prefix, "back_to_review"))
-    assert response.status_code == 400
-    response, body = search(
-        browser, ROUTE, decide(prefix, "back_to_review", note="Asked again")
-    )
+    response, body = search(browser, ROUTE, decide(prefix, "back_to_review"))
     assert response.status_code == 200 and b"sent back to review." in body
+    assert fresh(rows["prefix"]).decision == "unreviewed"
 
 
 def test_only_what_the_stage_offers_is_recorded(response_service, google):
@@ -181,7 +190,12 @@ def test_a_rebound_entered_by_hand_key_is_a_409(response_service, google):
     """The same drawn form sent again with another note asks for a reload."""
     harness, _, _, rows = prepared(response_service)
     browser = staff_browser(google)
-    form = decide(rows["email_opt_out"], "entered_by_hand")
+    # Accepted first: Entered by hand follows an Accept (#1890).
+    assert (
+        search(browser, ROUTE, decide(rows["email_opt_out"], "accept"))[0].status_code
+        == 200
+    )
+    form = decide(fresh(rows["email_opt_out"]), "entered_by_hand")
     assert search(browser, ROUTE, form)[0].status_code == 200
     response, _ = search(browser, ROUTE, form | {"note": "Another"})
     assert response.status_code == 409

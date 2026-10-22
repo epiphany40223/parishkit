@@ -459,8 +459,12 @@ does, so the scheduled quick updates find nothing.
 To produce each refresh outcome for an item a Family submitted (value A in
 ParishSoft before, C the answer being carried forward):
 
-- **Confirmed**: set ParishSoft to C (the Family's answer, or the
-  reviewer's edited value), then `refresh`.
+- **Confirmed**: mark the item Entered by hand (or update it), set
+  ParishSoft to C (the Family's answer, or the reviewer's edited value),
+  then `refresh`. An item still To review, Ready to update or To enter by
+  hand keeps its stage and says "ParishSoft already holds this value."
+  instead ([strict phase order](../specs/stewardship/review-pipeline/spec.md#baseline-refresh-re-evaluation),
+  [#1890](https://github.com/epiphany40223/parishkit/issues/1890)).
 - **Entered incorrectly**: mark the item Entered by hand, set ParishSoft to a
   third value, then `refresh`.
 - **Not seen in ParishSoft**: mark the item Entered by hand and change

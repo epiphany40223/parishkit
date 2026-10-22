@@ -70,7 +70,7 @@ from django.db import DatabaseError
 from django.http import QueryDict
 
 from .admin_reads import NotAvailable, ReadModel, _held, _recheck, config_request
-from .campaigns.recurrence import canonical_rule, expand
+from .campaigns.recurrence import RULE_ERRORS, canonical_rule, expand
 
 # The page's limits: a signed preview of at most 256,000 characters, and a
 # formset of at most 101 rows.
@@ -87,15 +87,6 @@ REPEAT_FIELDS = ("time", "template_version")
 REPEAT_LIMIT = 30
 # A series entry's members (#469): which series, how much of it, from where.
 SERIES_FIELDS = ("series", "scope", "from", "repeat", *REPEAT_FIELDS)
-# The page script's messages for each rule ``recurrence.expand`` refuses.
-RULE_ERRORS = {
-    "dates": "Choose the first and last dates to repeat on.",
-    "order": "The last date is before the first.",
-    "span": "Repeat over at most a year.",
-    "weekdays": "Choose at least one day of the week.",
-    "monthly": "Choose a day of the month from 1 to 31, or a weekday.",
-    "frequency": "Choose how often to repeat.",
-}
 # The internal key naming an added entry in field errors: ``new<n>``, or
 # ``new<n>.<date>`` for one date of a repeat. A document cannot carry it,
 # since parse_changes refuses unknown members before adding it.

@@ -40,7 +40,7 @@ from parishkit.stewardship.reports.export_services import admit_campaign
 from parishkit.stewardship.web.content import bounded_text
 
 from .census_review import KeyRebound, bulk_key_for
-from .information import MAX_BULK, MAX_NOTE, ReopenNeedsNote, StaleItem, UndoNeedsNote
+from .information import MAX_BULK, MAX_NOTE, StaleItem, UndoNeedsNote
 from .models import LimitationReview, Submission
 
 # What each worklist decision records and the stages it is offered at
@@ -219,12 +219,10 @@ def _decide_one(family, answer, actor_id, action, version, key, note, parish):
     if current != version or stage not in DECISIONS[action][1]:
         raise StaleItem(answer.id)
     if action is Decide.BACK_TO_REVIEW and undo_needs_note(stage) and not note.strip():
-        # Reopening an ignored answer, or undoing Handled, needs a reason
-        # (review pipeline spec, "Reviewed stage", "Undoing a terminal
-        # stage"); the dialog asks for it first.
-        if stage is Stage.HANDLED:
-            raise UndoNeedsNote("Undoing a handled answer needs a note.")
-        raise ReopenNeedsNote("Reopening an ignored answer needs a note.")
+        # Undoing Handled needs a reason (review pipeline spec, "Undoing a
+        # terminal stage"); the dialog asks for it first. Reopening an
+        # Ignored answer takes an optional note (#1889).
+        raise UndoNeedsNote("Undoing a handled answer needs a note.")
     decision = recorded(action, placement)
     review = LimitationReview.objects.create(
         actor_id=actor_id,

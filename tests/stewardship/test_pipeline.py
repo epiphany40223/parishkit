@@ -458,8 +458,11 @@ MARK = {"back_to_review", "entered_by_hand"}
 HANDLE = {"back_to_review", "handled"}
 # (stream, stage, roles, by_hand) -> the row's actions.
 ALLOWED_TABLE = [
-    ("census", Stage.TO_REVIEW, STAFF, True, DECIDE | {"entered_by_hand"}),
+    # Entered by hand follows an Accept (#1890, decision 2 reversed): never
+    # on a To review or Conflict row, By hand or not.
+    ("census", Stage.TO_REVIEW, STAFF, True, DECIDE),
     ("census", Stage.TO_REVIEW, STAFF, False, DECIDE),
+    ("census", Stage.CONFLICT, STAFF, True, DECIDE),
     ("census", Stage.CONFLICT, STAFF, False, DECIDE),
     ("census", Stage.IGNORED, STAFF, True, {"back_to_review"}),
     ("census", Stage.READY_TO_UPDATE, STAFF, False, {"back_to_review"}),
@@ -478,12 +481,14 @@ ALLOWED_TABLE = [
     ("census", Stage.HISTORY, ADMIN, True, set()),
     ("census", Stage.TO_REVIEW, {"ministry_leader"}, True, set()),
     ("ministry", Stage.TO_REVIEW, STAFF, False, DECIDE),
+    ("ministry", Stage.TO_REVIEW, STAFF, True, DECIDE),
     ("ministry", Stage.TO_ENTER_BY_HAND, STAFF, False, MARK),
     ("ministry", Stage.ENTERED_BY_HAND, STAFF, False, {"back_to_review"}),
     ("ministry", Stage.CONFIRMED, ADMIN, False, {"back_to_review"}),
     ("ministry", Stage.ENTERED_BY_HAND, {"ministry_leader"}, False, set()),
     ("ministry", Stage.CONFIRMED, {"ministry_leader"}, False, set()),
     ("financial", Stage.TO_REVIEW, STAFF, False, DECIDE),
+    ("financial", Stage.CONFLICT, ADMIN, True, DECIDE),
     ("financial", Stage.TO_ENTER_BY_HAND, STAFF, False, MARK),
     # Back to review undoes a pledge's terminal step (#1840), Staff and
     # Administrators only.
@@ -543,8 +548,8 @@ def test_every_stream_offers_the_terminal_undo(stage):
     """Back to review on a terminal stage: Staff and Administrators, a note.
 
     Every stream offers it (uniform handling, #1840), never to a Ministry
-    leader; reopening Ignored needs a note too, an accepted stage's undo
-    does not.
+    leader. Only a terminal step's undo needs a note: reopening Ignored
+    (#1889) and an accepted stage's undo do not.
     """
     for stream in Stream:
         offered = pipeline.allowed_actions(stream, stage, STAFF, by_hand=True)
@@ -554,7 +559,7 @@ def test_every_stream_offers_the_terminal_undo(stage):
         )
         assert leader == set()
     assert pipeline.undo_needs_note(stage)
-    assert pipeline.undo_needs_note(Stage.IGNORED)
+    assert not pipeline.undo_needs_note(Stage.IGNORED)
     assert not pipeline.undo_needs_note(Stage.TO_ENTER_BY_HAND)
 
 
@@ -595,10 +600,21 @@ OPEN_STAGES = [
     Stage.UPDATED,
     Stage.TO_ENTER_BY_HAND,
 ]
+# The stages before an item's processing step (strict phase order, #1890).
+BEFORE_STEP = [
+    Stage.TO_REVIEW,
+    Stage.CONFLICT,
+    Stage.READY_TO_UPDATE,
+    Stage.TO_ENTER_BY_HAND,
+]
 # (stage, R, A, C, options) -> outcome, following the spec's rules in order.
 REFRESH_TABLE = [
-    # Rule 1: R = C confirms from any re-evaluated stage.
-    *[((stage, "new", "old", "new", {}), OUT.CONFIRMED) for stage in OPEN_STAGES],
+    # Rule 1: R = C confirms only after the processing step (an update run
+    # in flight counts as one)...
+    ((Stage.UPDATING, "new", "old", "new", {}), OUT.CONFIRMED),
+    ((Stage.UPDATED, "new", "old", "new", {}), OUT.CONFIRMED),
+    # ...before it the item keeps its stage, saying ParishSoft holds it.
+    *[((stage, "new", "old", "new", {}), OUT.ALREADY_HELD) for stage in BEFORE_STEP],
     ((Stage.ENTERED_BY_HAND, "new", "old", "new", {}), OUT.CONFIRMED),
     ((Stage.ENTERED_INCORRECTLY, "new", "old", "new", {}), OUT.CONFIRMED),
     # ...but an Ignored item is only noted.
@@ -655,10 +671,12 @@ REFRESH_TABLE = [
     # Rule 4: the Member or Family left the baseline.
     ((Stage.TO_REVIEW, None, "old", "new", {"present": False}), OUT.ENTITY_GONE),
     ((Stage.ENTERED_BY_HAND, None, "old", "new", {"present": False}), OUT.ENTITY_GONE),
-    # Ministry roster state: rule 3 cannot apply to booleans.
-    ((Stage.TO_ENTER_BY_HAND, True, False, True, {}), OUT.CONFIRMED),
+    # Ministry roster state: rule 3 cannot apply to booleans. A request is
+    # confirmed only once ticked (#1890).
+    ((Stage.TO_ENTER_BY_HAND, True, False, True, {}), OUT.ALREADY_HELD),
+    ((Stage.ENTERED_BY_HAND, True, False, True, {}), OUT.CONFIRMED),
     ((Stage.ENTERED_BY_HAND, False, False, True, {}), OUT.UNCHANGED),
-    ((Stage.TO_REVIEW, False, True, False, {}), OUT.CONFIRMED),
+    ((Stage.TO_REVIEW, False, True, False, {}), OUT.ALREADY_HELD),
 ]
 
 
