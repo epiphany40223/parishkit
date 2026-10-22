@@ -104,6 +104,11 @@ def capture(document, options):
     }
 
 
+def copy(data, frame):
+    """The kept table's headings and rows, for the saved copy's table."""
+    return {"headings": data["headings"], "rows": data["rows"]}
+
+
 def check(options):
     """Refuse a "days shown" value other than a whole number from 1 to 14."""
     days = options.get("days", TABLE_DAYS)
@@ -125,4 +130,5 @@ BLOCK = Block(
     options={"days": TABLE_DAYS},
     check=check,
     capture=capture,
+    copy=copy,
 )

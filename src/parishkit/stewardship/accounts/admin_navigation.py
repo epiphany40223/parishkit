@@ -254,6 +254,9 @@ PAGES = {
     # A report send's saved copy (#1786), named by its subject, listed with
     # its report on Report emails.
     "report_email_send": Page("mail", _("Report email"), "report_emails"),
+    # One request a send listed (#1946), under its saved copy, which the
+    # view names by its report and date in the trail.
+    "report_email_send_item": Page("mail", _("Saved request"), "report_email_send"),
     # Ministry requests is the follow-up queue (#1133); Ministry follow-up,
     # once a page of its own, was merged into it.
     "ministry_report": Page("review", _("Ministry requests")),
@@ -781,10 +784,8 @@ NON_PAGES = frozenset(
         "report_email_send_now",
         # The editor's live schedule preview (#1786), a fragment it reads.
         "report_email_schedule_preview",
-        # A report send's chart images, and its listed requests, which
-        # redirect to their Additional information pages (#1786).
+        # A report send's chart images (#1786), PNG files, not pages.
         "report_email_send_image",
-        "report_email_send_item",
         "security_event_acknowledge",
         # New user's in-place Email check and Name suggestions (#952), JSON.
         "user_name_suggestions",

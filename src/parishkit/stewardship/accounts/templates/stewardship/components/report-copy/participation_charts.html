@@ -1,0 +1,3 @@
+{% load i18n %}{# A report email's saved copy: its Participation charts block (#1946), the participation graph drawn by the chart engine from the fact generation the snapshot pinned, with its Exact values table (report_blocks.participation_charts.copy). #}<section class="panel" aria-labelledby="copy-participation-heading" data-copy-block="participation_charts"><h2 id="copy-participation-heading">{% translate "Daily participation" %}</h2>
+{% include 'stewardship/components/chart.html' with chart=data.chart %}
+</section>

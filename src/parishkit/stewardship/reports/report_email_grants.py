@@ -73,9 +73,20 @@ def add_report_email_dispatch_grants(tables, columns, *, private):
     _columns(columns, RECIPIENT, RECIPIENT_BINDING)
 
 
-# What a saved copy shows (#1786's interim page, report_email_copy_views):
-# the email as sent, its images, and the blocks' listed request ids.
-COPY_COLUMNS = {"subject", "html", "images", "blocks"}
+# What a saved copy shows (report_email_copy_views, #1946): the email as
+# sent and its images, each block's kept data, the report's values (its
+# name and as-of choice), the frozen recipients by kind, and the pinned
+# configuration (date format, names) and fact generation (its charts).
+COPY_COLUMNS = {
+    "subject",
+    "html",
+    "images",
+    "blocks",
+    "values",
+    "recipients",
+    "configuration_id",
+    "fact_set_id",
+}
 
 
 def add_report_email_web_grants(tables, columns):

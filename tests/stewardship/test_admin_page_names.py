@@ -104,6 +104,7 @@ TEMPLATES = {
     "family_directory": "directory.html",
     "report_emails": "report-emails.html",
     "report_email_new": "report-email-entry.html",
+    "report_email_send_item": "report-email-copy-item.html",
     "timeline": "timeline.html",
     "index": "home.html",
     "configuration_request": "configuration-request.html",

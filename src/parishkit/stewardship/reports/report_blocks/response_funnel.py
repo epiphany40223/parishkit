@@ -66,6 +66,20 @@ def capture(document, options):
     }
 
 
+def copy(data, frame):
+    """The kept stages as the saved report pages' funnel table, or the Testing note.
+
+    None when neither was kept (no funnel outside Testing), as the email
+    drew nothing then.
+    """
+    if not data["stages"] and not data["testing"]:
+        return None
+    return {
+        "funnel_stages": [tuple(row) for row in data["stages"]],
+        "funnel_testing_note": TESTING_NOTE if data["testing"] else "",
+    }
+
+
 BLOCK = Block(
     key="response_funnel",
     label="Response funnel",
@@ -78,4 +92,5 @@ BLOCK = Block(
     fact=False,
     draw=draw,
     capture=capture,
+    copy=copy,
 )

@@ -94,6 +94,10 @@ SLASHLESS = (
     ("mail/report-emails/new", "report_email_new"),
     ("mail/report-emails/<uuid:report_id>", "report_email_edit"),
     ("mail/report-emails/sends/<uuid:send_id>", "report_email_send"),
+    (
+        "mail/report-emails/sends/<uuid:send_id>/items/<uuid:item_id>",
+        "report_email_send_item",
+    ),
     ("mail/sent/<uuid:message_id>", "delivery"),
     ("mail/refusals", "delivery_refusals"),
     ("mail/refusals/<uuid:refusal_id>", "delivery_refusal"),

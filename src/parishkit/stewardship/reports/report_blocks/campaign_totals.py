@@ -104,6 +104,13 @@ def draw(document, frame, options):
     return Section(html, text)
 
 
+def copy(data, frame):
+    """The saved copy's Campaign totals: stat tiles in the email's words (#1639)."""
+    from ..digest_presentation import saved_total_tiles
+
+    return {"tiles": saved_total_tiles(data["figures"])}
+
+
 BLOCK = Block(
     key="campaign_totals",
     label="Campaign totals",
@@ -115,5 +122,6 @@ BLOCK = Block(
     fact=True,
     draw=draw,
     capture=capture,
+    copy=copy,
     empty="No campaign day has ended yet.",
 )

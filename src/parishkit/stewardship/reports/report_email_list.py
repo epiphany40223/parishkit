@@ -131,11 +131,14 @@ def report_records(configuration, campaign_id):
 
 def user_names(configuration):
     """Each Admin portal user's name (or address), by record id."""
+    return version_user_names(configuration.active_configuration)
+
+
+def version_user_names(version):
+    """Each Admin portal user's name (or address) in one applied version."""
     return {
         row["id"]: row["values"].get("name") or row["values"].get("email", "")
-        for row in configuration.active_configuration.canonical_document[
-            "sections"
-        ].get("login_rules", [])
+        for row in version.canonical_document["sections"].get("login_rules", [])
         if row["values"].get("kind") == "user"
     }
 

@@ -1,0 +1,3 @@
+{% load i18n %}{# A report email's saved copy: its Response funnel block (#1946), the stages the snapshot kept in the saved report pages' funnel table, or a Testing send's note (report_blocks.response_funnel.copy). #}{% if data.funnel_stages %}<div data-copy-block="response_funnel">{% include 'stewardship/components/digest-funnel.html' with funnel_stages=data.funnel_stages funnel_testing_note="" %}</div>{% else %}<section class="panel" aria-labelledby="copy-funnel-heading" data-copy-block="response_funnel"><h2 id="copy-funnel-heading">{{ block.label }}</h2>
+<p>{{ data.funnel_testing_note }}</p>
+</section>{% endif %}

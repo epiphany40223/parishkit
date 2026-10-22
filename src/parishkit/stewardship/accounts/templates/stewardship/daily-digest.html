@@ -16,8 +16,7 @@
 <p>{{ document.as_of }}</p>
 <dl>
 <dt>{% translate "Made at" %}</dt><dd><time datetime="{{ document.statistics.observed_at|date:'c' }}" data-local-instant>{{ document.statistics.observed_at|date:'c' }}</time></dd>
-{% with age=document.source_age %}<dt>{% translate "ParishSoft data as of" %}</dt><dd>{% if age.data_as_of %}<time datetime="{{ age.data_as_of|date:'c' }}" data-local-instant>{{ age.data_as_of|date:'c' }}</time>{% if age.full_started_at and age.full_started_at != age.data_as_of %}, {% translate "last full refresh" %} <time datetime="{{ age.full_started_at|date:'c' }}" data-local-instant>{{ age.full_started_at|date:'c' }}</time>{% endif %}{% else %}<time datetime="{{ chart.source_as_of|date:'c' }}" data-local-instant>{{ chart.source_as_of|date:'c' }}</time>{% endif %}</dd>
-{% if age %}<dt>{% translate "Connection" %}</dt><dd>{% if age.connection.state == "failing" %}{% translate "failing since" %} <time datetime="{{ age.connection.at|date:'c' }}" data-local-instant>{{ age.connection.at|date:'c' }}</time>{% elif age.connection.state == "not_checked" %}{% translate "not checked since" %} <time datetime="{{ age.connection.at|date:'c' }}" data-local-instant>{{ age.connection.at|date:'c' }}</time>{% elif age.connection.state == "working" %}{% translate "working" %} ({% translate "last answered" %} <time datetime="{{ age.connection.at|date:'c' }}" data-local-instant>{{ age.connection.at|date:'c' }}</time>){% else %}{% translate "not checked yet" %}{% endif %}</dd>{% endif %}{% endwith %}
+{% include 'stewardship/components/data-age.html' with age=document.source_age source_as_of=chart.source_as_of %}
 <dt>{% translate "Campaign timezone" %}</dt><dd>{{ chart.campaign_timezone }}</dd>
 </dl>
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "ParishSoft data load" %}</dt><dd>{{ chart.source_generation|number }}</dd>
@@ -47,13 +46,5 @@
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
 </section>
-{% if comparison %}<section class="panel" aria-labelledby="digest-comparison-heading" data-digest-comparison>
-<h2 id="digest-comparison-heading">{% translate "Compared with past campaigns" %}</h2>
-<p>{{ comparison_line }}</p>
-{% for chart in comparison.charts %}<section aria-labelledby="{{ chart.key }}-heading"><h3 id="{{ chart.key }}-heading">{{ chart.title }}</h3>
-{% include 'stewardship/components/chart.html' %}</section>{% endfor %}
-{% include "stewardship/components/stat-tiles.html" with tiles=comparison_tiles tiles_label=_("Headline figures") %}
-<details class="technical-details"><summary>{% translate "Past campaigns compared" %}</summary><dl>{% for archive in comparison.archives %}<dt>{{ archive.year }}</dt><dd>{% translate "SHA-256" %} <code>{{ archive.checksum }}</code></dd>{% endfor %}</dl></details>
-<p><a href="{{ comparison_url }}">{% translate "Open the Campaign comparison report" %}</a></p>
-</section>{% endif %}
+{% if comparison %}{% include 'stewardship/components/digest-comparison.html' %}{% endif %}
 {% endblock %}

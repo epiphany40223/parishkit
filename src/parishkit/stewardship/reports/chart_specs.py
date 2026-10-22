@@ -923,7 +923,16 @@ def participation_panel(
     }
 
 
-def participation_chart(document):
+# Each participation panel's key, by its row field: the values of the
+# report emails' Participation charts "which charts" option (#1956).
+PARTICIPATION_CHART_KEYS = {
+    "first": "first_submissions",
+    "families": "cumulative_families",
+    "pledges": "pledges",
+}
+
+
+def participation_chart(document, charts=None):
     """The Response dashboard's daily chart, drawn by the chart engine (#720).
 
     It is the same design as the static drawing the exports and the daily
@@ -934,6 +943,11 @@ def participation_chart(document):
     and there is never a second y-axis. Dates are labelled once, under the
     last panel. The page's daily table is the chart's exact values, so the
     page shows no table of its own here (``table`` is kept for completeness).
+
+    ``charts`` keeps only the panels (and table columns) with those keys,
+    as a report email's Participation charts block recorded them
+    (``participation_charts.capture``, #1956); None, or a list naming no
+    panel the document has, draws every panel, the same spec as before.
     """
     rows = participation_rows(document)
     tooltip = {"field": "tip"}
@@ -955,7 +969,7 @@ def participation_chart(document):
     }
     fill, stroke = PANEL_COLORS["bars"]
     # (title, field, unit, mark, axis overrides), top to bottom.
-    shown = [
+    candidates = [
         (
             "First submissions that day",
             "first",
@@ -988,7 +1002,7 @@ def participation_chart(document):
         ),
     ]
     if document.financial_enabled:
-        shown.append(
+        candidates.append(
             (
                 "Effective annual pledges",
                 "pledges",
@@ -1009,6 +1023,16 @@ def participation_chart(document):
                 {"format": None, "labelExpr": SHORT_DOLLARS},
             )
         )
+    # The panels' keys follow the report emails' "which charts" values
+    # (charts.CHARTS on #1956), keyed here by each panel's field.
+    keep = (
+        [PARTICIPATION_CHART_KEYS[field] in charts for _, field, *_ in candidates]
+        if charts is not None
+        else []
+    )
+    if not any(keep):
+        keep = [True] * len(candidates)
+    shown = [panel for panel, kept in zip(candidates, keep, strict=True) if kept]
     # Only the last panel labels the dates, in the parish's compact date
     # style, as many as fit without overlapping and none past the plot's
     # ends. The title names the campaign's time zone, as the static page
@@ -1047,7 +1071,8 @@ def participation_chart(document):
         )
         for index, (title, field, unit, mark, axis) in enumerate(shown)
     ]
-    summary = participation_summary(document)
+    # The sentence names only the drawn panels' figures (#1946).
+    summary = participation_summary(document, {field for _, field, *_ in shown})
     spec = {
         "$schema": VEGA_LITE_SCHEMA,
         "description": summary,
@@ -1060,13 +1085,15 @@ def participation_chart(document):
         "spacing": 12,
         "vconcat": panels,
     }
-    headings = ["Campaign date", "First submissions", "Cumulative participation"]
-    cells = [(row["label"], row["first_text"], row["participation"]) for row in rows]
-    if document.financial_enabled:
-        headings.append("Effective annual pledges")
-        cells = [
-            (*cell, row["pledge_text"]) for cell, row in zip(cells, rows, strict=True)
-        ]
+    # The table's columns are the panels shown, in the same order.
+    columns = [
+        ("First submissions", "first_text"),
+        ("Cumulative participation", "participation"),
+        ("Effective annual pledges", "pledge_text"),
+    ][: len(candidates)]
+    columns = [column for column, kept in zip(columns, keep, strict=True) if kept]
+    headings = ["Campaign date", *(heading for heading, _ in columns)]
+    cells = [(row["label"], *(row[name] for _, name in columns)) for row in rows]
     title = f"Daily participation — {document.scope_label}"
     return ChartDocument(
         "daily-participation",
@@ -1077,15 +1104,22 @@ def participation_chart(document):
     )
 
 
-def participation_summary(document):
+def participation_summary(document, fields=None):
     """One sentence for the daily chart: its date range and the last day's figures.
 
     It is the view's accessible description; the page does not show it, since
     the daily table under the chart has every date's figures (#720).
+
+    ``fields`` names the panels drawn, by row field ("first", "families",
+    "pledges"): the sentence states only their figures, so a report email's
+    saved copy that drew one chart (#1946) does not describe the others.
+    None means every panel, the sentence the dashboard has always had.
     """
     days = document.days
     if not days:
         return f"Daily participation, {document.scope_label}: no campaign dates yet."
+    if fields is None:
+        fields = set(PARTICIPATION_CHART_KEYS)
     last = days[-1]
     text = (
         f"Daily participation, {document.scope_label}, from "
@@ -1093,10 +1127,22 @@ def participation_summary(document):
     )
     if not last.population_available:
         return text + "; the last date's figures are unavailable."
-    text += (
-        f"; by the last date {last.participation} Families had responded, "
-        f"{number(last.first_responses)} of them for the first time that day"
-    )
-    if document.financial_enabled and last.pledge_available:
-        text += f", with {whole_dollars(last.pledge_total)} in effective annual pledges"
-    return text + "."
+    # Every panel drawn reads as it always has; a subset keeps the same
+    # phrases, with the first-time count standing alone when the cumulative
+    # line is not drawn.
+    first = number(last.first_responses)
+    clause = ""
+    if "families" in fields:
+        clause = f"by the last date {last.participation} Families had responded"
+        if "first" in fields:
+            clause += f", {first} of them for the first time that day"
+    elif "first" in fields:
+        clause = f"on the last date first submissions numbered {first}"
+    if "pledges" in fields and document.financial_enabled and last.pledge_available:
+        dollars = whole_dollars(last.pledge_total)
+        clause = (
+            f"{clause}, with {dollars} in effective annual pledges"
+            if clause
+            else f"by the last date effective annual pledges totaled {dollars}"
+        )
+    return text + (f"; {clause}." if clause else ".")

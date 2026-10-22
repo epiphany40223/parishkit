@@ -134,6 +134,16 @@ def test_list_show_sends_and_copy_read_the_page(
             "additional_information",
             "response_funnel",
         ]
+        # The page's statements about the send (#1946): its as-of line and
+        # recipients by kind, as the saved copy page shows them.
+        assert copy["as_of_line"].startswith("All data is as of ")
+        assert copy["covers"] == ""
+        assert copy["recipients"] == {
+            "users": [],
+            "groups": [{"name": "All Administrators", "people": 1}],
+            "outside": [],
+            "outside_count": 0,
+        }
         # A Family's text and name never reach the document.
         assert "family_name" not in json.dumps(copy)
         assert count("report_email_viewed") == viewed + 1

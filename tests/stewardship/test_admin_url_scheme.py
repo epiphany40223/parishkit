@@ -252,6 +252,9 @@ SLASHLESS_EXPECTED = {
     "/admin/mail/family-history": "/admin/mail/family-history/",
     "/admin/mail/sent": "/admin/mail/sent/",
     f"/admin/mail/report-emails/sends/{T}": f"/admin/mail/report-emails/sends/{T}/",
+    f"/admin/mail/report-emails/sends/{T}/items/{T}": (
+        f"/admin/mail/report-emails/sends/{T}/items/{T}/"
+    ),
     f"/admin/mail/sent/{T}": f"/admin/mail/sent/{T}/",
     "/admin/mail/refusals": "/admin/mail/refusals/",
     f"/admin/mail/refusals/{T}": f"/admin/mail/refusals/{T}/",
