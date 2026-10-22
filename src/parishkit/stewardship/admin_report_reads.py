@@ -215,8 +215,9 @@ class MinistryReport(ReadModel):
     """The Ministry summary page, or one Ministry's request count.
 
     Without ``ministry``: one page of ``summaries`` (each Ministry's DUID as
-    ``ministry``, its name, state and request counts) and ``matching``, every matching
-    Ministry. With ``ministry`` and ``requests`` (``join`` or ``leave``):
+    ``ministry``, its name, state and request counts and, for Staff and
+    Administrators, its ``leaders`` status, #1594) and ``matching``, every
+    matching Ministry. With ``ministry`` and ``requests`` (``join`` or ``leave``):
     ``matching`` is that list's request count under ``filters``, and
     ``summaries`` that Ministry's row; no Member is listed.
     """
@@ -1052,8 +1053,22 @@ MINISTRY_SUMMARY = {
 }
 
 
-def ministry_model(campaign_id, query, result, *, ministry, requests):
-    """The command's projection of ``ministry_page``: summaries and a count."""
+def ministry_model(campaign_id, query, result, *, ministry, requests, coverage=None):
+    """The command's projection of ``ministry_page``: summaries and a count.
+
+    With ``coverage`` (the Leaders column's counts, #1594, read for Staff
+    and Administrators only), each summary also carries its ``leaders``
+    status, as the page's Leaders cell shows it.
+    """
+    from .reports.leader_coverage import leader_status
+
+    def summary(row):
+        """One printed summary row, with its Leaders status when read."""
+        shown = {name: row.get(key) for key, name in MINISTRY_SUMMARY.items()}
+        if coverage is not None:
+            shown["leaders"] = leader_status(coverage.get(int(row["duid"]))).as_json()
+        return shown
+
     return MinistryReport(
         campaign_id=campaign_id,
         ministry=ministry,
@@ -1066,10 +1081,7 @@ def ministry_model(campaign_id, query, result, *, ministry, requests):
         page=query.page,
         size=query.page_size,
         matching=result["total"],
-        summaries=[
-            {name: row.get(key) for key, name in MINISTRY_SUMMARY.items()}
-            for row in result["summaries"]
-        ],
+        summaries=[summary(row) for row in result["summaries"]],
     )
 
 
@@ -1087,8 +1099,17 @@ def read_ministry(caller, service, filters, *, ministry, requests):
     the page's ``clamp_query`` does. Records the page's
     ``ministry_report_viewed`` as the page does: started, then one per
     Ministry shown, with ``count`` the summary rows shown (0 for a list).
+    For Staff and Administrators the summary also reads the page's Leaders
+    column (#1594) through its audited definer under this command's own
+    session, before the guarded read, as the page does.
     """
-    from .reports.ministries import MinistryQuery, campaign_ids, ministry_page
+    from .reports.leader_coverage import read_coverage
+    from .reports.ministries import (
+        MinistryQuery,
+        campaign_ids,
+        ministry_page,
+        reads_every_ministry,
+    )
     from .reports.ministry_views import _audit, _principal
     from .reports.report_paging import clamp_query
 
@@ -1111,6 +1132,11 @@ def read_ministry(caller, service, filters, *, ministry, requests):
         campaign; otherwise the page shows its "no campaign" page."""
         if campaign_id not in campaign_ids(actor):
             raise NotAvailable("No Ministry report is available for this campaign.")
+        # The Leaders column, on the summary only: its definer writes its own
+        # audit event, so it cannot run inside the read-only guard. A
+        # refused session is a refusal like any other (PermissionError).
+        if ministry is None and reads_every_ministry(actor):
+            shown["coverage"] = read_coverage(caller.session.session_key)
 
     def read(guard, actor, campaign_id):
         """The page's read of the summary page or the chosen list."""
@@ -1131,8 +1157,15 @@ def read_ministry(caller, service, filters, *, ministry, requests):
         if moved is not None:
             shown["query"] = moved
             result = page()
+        # Shown only while the reader, rechecked inside the guard, still
+        # reads every Ministry, as on the page.
         model = ministry_model(
-            campaign_id, shown["query"], result, ministry=ministry, requests=requests
+            campaign_id,
+            shown["query"],
+            result,
+            ministry=ministry,
+            requests=requests,
+            coverage=shown.get("coverage") if reads_every_ministry(actor) else None,
         )
         values = {
             "count": 0 if ministry is not None else len(result["summaries"]),

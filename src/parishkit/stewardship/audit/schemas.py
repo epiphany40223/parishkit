@@ -104,6 +104,10 @@ class Action(StrEnum):
     INFORMATION_UPDATED = "information_updated"
     LIMITATION_REVIEWED = "limitation_reviewed"
     MINISTRY_FOLLOWUP_VIEWED = "ministry_followup_viewed"
+    # Ministry requests' Leaders column (#1594): each read, which the
+    # definer records itself (``count`` is the Ministries answered, never an
+    # address).
+    MINISTRY_LEADER_COVERAGE_VIEWED = "ministry_leader_coverage_viewed"
     # The queue's Export these requests download (#1157).
     MINISTRY_FOLLOWUP_EXPORTED = "ministry_followup_exported"
     MINISTRY_REQUEST_UPDATED = "ministry_request_updated"
