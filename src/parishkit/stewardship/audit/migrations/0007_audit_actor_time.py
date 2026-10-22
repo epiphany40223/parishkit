@@ -32,9 +32,9 @@ class Migration(migrations.Migration):
     dependencies = [
         # The audit app's previous migration (0122, #1620).
         ("stewardship_audit", "0006_automatic_report_views"),
-        # The migration that installs the previous frozen file (0132,
-        # #1689), so the files apply in prefix order.
-        ("stewardship_workflows", "0004_refresh_checks"),
+        # The migration that installs the previous frozen file (0151,
+        # #1840), so the files apply in prefix order.
+        ("stewardship_responses", "0026_limitation_handled_undo"),
     ]
 
     operations = [

@@ -7,8 +7,10 @@ pages' own pieces, so the two cannot drift:
 
 - ``followup roster-entered`` is a request's tick (``admin:
   ministry_followup_roster``): the request page's admission
-  (``ministry_followup_views._principal``) and its service
-  (``workflows.roster.set_roster_entered``), which records
+  (``ministry_followup_views._principal``) and its services
+  (``workflows.roster.set_roster_entered`` to mark;
+  ``workflows.review.undo_entered`` to clear, which is Back to review of
+  the mark with its required note, #1840), which record
   ``ministry_roster_entered``.
 - ``followup roster-bulk`` is the roster list's bulk Entered by hand
   (#879; on the page, Ministry requests' To enter by hand Stage since
@@ -40,6 +42,10 @@ NOT_ELIGIBLE = (
     "or leave a person resolved as joined or leave confirmed does."
 )
 ALREADY = "The tick already says so."
+# Clearing the tick is Back to review of the mark, which needs a note
+# (#1840); the mark itself takes none, as on the page.
+NOTE_NEEDED = "Clearing the mark is Back to review: say why with --note."
+NO_NOTE = "The mark takes no note."
 
 
 def admit_with(principal, caller, store, *, final=False):
@@ -181,25 +187,41 @@ class RosterEntered(ReadModel):
 
 
 def roster_entered(
-    caller, service, request_id, *, expected_version, entered, request_key, context
+    caller,
+    service,
+    request_id,
+    *,
+    expected_version,
+    entered,
+    request_key,
+    context,
+    note=None,
 ):
     """``followup roster-entered``: set or clear one request's tick.
 
     ``expected_version`` is the tick's current sequence (``followup show``'s
     ``roster.sequence``, 0 before any tick); the page's form posts the next
     one, so the service gets ``expected_version + 1`` and refuses a tick
-    someone changed since as stale. The same key with the same change
-    returns its first entry and records nothing; with another change it is
-    ``invalid``. A new entry records the service's ``ministry_roster_entered``
-    and the command's ``admin_cmd_followup_roster_entered``.
+    someone changed since as stale. Clearing is Back to review of the mark
+    (#1840): ``note`` is required (``invalid`` at ``note`` without one) and
+    the undo's revision is recorded with it; the mark takes none. The same
+    key with the same change returns its first entry and records nothing;
+    with another change it is ``invalid``. A new entry records the
+    service's ``ministry_roster_entered`` and the command's
+    ``admin_cmd_followup_roster_entered``.
     """
     from .admin_report_reads import _current
     from .audit.schemas import Action
     from .campaigns.work_locks import require_work_order
     from .workflows.models import MinistryRosterEntry
+    from .workflows.review import undo_entered
     from .workflows.roster import set_roster_entered
 
     actor = _tick_admission(caller, service.store)
+    if entered and note is not None:
+        raise InvalidFollowup([problem("note", NO_NOTE)])
+    if not entered and not note:
+        raise InvalidFollowup([problem("note", NOTE_NEEDED)])
     context["request_id"] = str(request_key)
 
     def step(actor, written):
@@ -211,14 +233,24 @@ def roster_entered(
             actor_id=actor.identity, request_key=request_key
         ).exists()
         try:
-            entry = set_roster_entered(
-                service.store,
-                actor.identity,
-                request_id,
-                sequence=expected_version + 1,
-                entered=entered,
-                request_key=request_key,
-            )
+            if entered:
+                entry = set_roster_entered(
+                    service.store,
+                    actor.identity,
+                    request_id,
+                    sequence=expected_version + 1,
+                    entered=True,
+                    request_key=request_key,
+                )
+            else:
+                entry = undo_entered(
+                    service.store,
+                    actor.identity,
+                    request_id,
+                    sequence=expected_version + 1,
+                    note=note,
+                    request_key=request_key,
+                )
         except ValueError as error:
             raise _refused(error, field="set" if entered else "clear") from None
         if not repeat:

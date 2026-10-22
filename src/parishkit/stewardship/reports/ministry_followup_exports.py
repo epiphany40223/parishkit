@@ -61,7 +61,7 @@ from parishkit.stewardship.web.responses import campaign_response
 from .export_views import SAFE_FAILURES
 from .information_rendering import render_information
 from .ministries import reads_every_ministry
-from .ministry_contacts import request_contacts
+from .ministry_contacts import current_ministry, request_contacts
 from .ministry_documents import MinistryDocument, new_member_labels
 from .ministry_followup import EXPORT_PDF_LIMIT, STATES, FollowupQuery, followup_page
 from .ministry_followup_views import _error, _principal
@@ -409,7 +409,8 @@ def export_body(campaign_id, query, principal, fmt, zone, progress):
             followup_page(campaign_id, query, principal, whole=True), principal
         )
     progress["count"] = count = len(result["rows"])
-    progress["ministries"] = tuple(row["ministry_duid"] for row in result["rows"])
+    # The Ministries the rows' contacts are read under (#1718).
+    progress["ministries"] = tuple(current_ministry(row) for row in result["rows"])
     # Refused before any contact is read or page drawn. The page opens its
     # content before its response is returned, so this reaches the view as
     # an exception, never as a broken download.

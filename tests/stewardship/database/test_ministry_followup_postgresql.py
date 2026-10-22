@@ -326,6 +326,9 @@ def test_queue_names_members_last_first(response_service):
         assert found["member_name"] == "Aardvark, Zed"
 
 
+# The rule before the reviewed Family form (#1705): forms drawn before
+# its release, as one open across the deploy is.
+@pytest.mark.usefixtures("earlier_rule")
 def test_family_resubmission_retains_staff_work(response_service):
     """Same intent inherits state and history; withdrawal ends the workflow.
 

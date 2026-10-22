@@ -30,10 +30,9 @@ class Migration(migrations.Migration):
     dependencies = [
         # The accounts app's previous migration (0125, #1763).
         ("stewardship_accounts", "0030_secret_request_session"),
-        # The migration that installs the previous frozen file on this
-        # branch (#1866's audit actor index), so the files apply in prefix
-        # order.
-        ("stewardship_audit", "0007_audit_actor_time"),
+        # The migration that installs the previous frozen file (0156, the
+        # report pipeline, #1825), so the files apply in prefix order.
+        ("stewardship_reports", "0040_report_pipeline"),
     ]
 
     operations = [migrations.RunSQL(FROZEN_SQL.read_text(encoding="utf-8"))]

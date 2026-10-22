@@ -57,7 +57,7 @@ def test_staff_see_and_take_every_review_decision(response_service, google):
     assert page.count('data-row-action="accept"') == 4
     assert page.count('data-row-action="entered_by_hand"') == 3
     # Staff do not start an update run.
-    assert "Publish to ParishSoft" not in page
+    assert "Update ParishSoft" not in page
     response, body = search(
         browser, ROUTE, decide(rows["first_name"], "accept", note=" Checked ")
     )

@@ -398,6 +398,9 @@ ADDRESS_RETRIES_FUNCTION = "stewardship_delivery_address_retries_v1(uuid, uuid)"
 # renderings that hold them.
 ADDRESS_DELIVERIES_FUNCTION = "stewardship_delivery_ids_for_address_v1(text, uuid)"
 PAGE_RECIPIENTS_FUNCTION = "stewardship_delivery_page_recipients_v1(uuid[], uuid)"
+# The ParishSoft Member name of each of a page's emails to people (0145,
+# #1562), for the same caller: one name per email, never an address.
+PAGE_MEMBER_NAMES_FUNCTION = "stewardship_delivery_page_member_names_v1(uuid[], uuid)"
 # The person identity reads (#1867), for an Administrator only: the
 # ParishSoft Families and Members whose contacts hold one address, and the
 # user record ids whose address is a contact of one Family or its Members;
@@ -456,11 +459,21 @@ DEBUG_OFF_CLEAR_FUNCTION = "stewardship_debug_off_clear_v2()"
 PUBLICATION_AUDITED_FUNCTION = (
     "stewardship_publication_audited_v1(text, uuid, uuid, jsonb)"
 )
+# Added Member links (#1670, migration 0141): the links a promoted
+# snapshot's evidence supports, which promotion records, the quick update's
+# skip check asks and the link table's guard checks again. Identifiers only;
+# the worker has no grant on the answers it reads.
+ADDED_MEMBER_CANDIDATES_FUNCTION = "stewardship_added_member_candidates_v1(uuid, uuid)"
 # Point-in-time exports (#1398, migration 0109): the scheduler discards the
 # saved data of every ended export, a small batch at a time, through the
 # owner-run discard functions (reports.export_cleanup.produce_discards); a
 # batch of 0 only asks whether any is due.
 EXPORT_DISCARD_FUNCTION = "stewardship_export_discard_due_v1(integer)"
+# The pledges a refresh re-evaluates (0135, #1747, superseding 0134's v1 of
+# #1704), with each one's carried-forward, marked and baseline amounts and
+# latest check: the source worker's one read of them, so it is granted no
+# response answers or decision rows.
+PLEDGE_REFRESH_ITEMS_FUNCTION = "stewardship_pledge_refresh_items_v2(uuid, uuid, uuid)"
 # Publication plans and outcomes (#528, DAT-09.01, migration 0087): the
 # worker writes a preflight's plan and each write attempt's outcome; web
 # reads them all and writes only an Administrator's confirmation.
@@ -499,6 +512,11 @@ CLOSURE_FUNCTIONS = {
     ),
     # Ministry leader changes (0070, #1034) follow 0069.
     LEADER_CHANGES_FUNCTION: ("stewardship_accounts", "0018_leader_changes"),
+    # Added Member links (0141, #1670, provisional number).
+    ADDED_MEMBER_CANDIDATES_FUNCTION: (
+        "stewardship_responses",
+        "0021_added_member_links",
+    ),
     # Mail dispatch's one token read (0073, #389 L1) follows 0072.
     DISPATCH_TOKEN_FUNCTION: ("stewardship_jobs", "0025_dispatch_token_access"),
     # The daily limit's resume time (0076, #530) follows 0075.
@@ -553,6 +571,10 @@ CLOSURE_FUNCTIONS = {
     ),
     # The Email Ministry leaders review (0120, #1592).
     LEADER_EMAILS_FUNCTION: ("stewardship_jobs", "0035_leader_emails"),
+    # The pledges a refresh re-evaluates (0135, provisional, #1747).
+    PLEDGE_REFRESH_ITEMS_FUNCTION: ("stewardship_reports", "0034_pledge_conflicts"),
+    # Sent mail's Member names (0145, #1562).
+    PAGE_MEMBER_NAMES_FUNCTION: ("stewardship_jobs", "0036_page_member_names"),
     # The person identity reads (0157, #1867).
     **dict.fromkeys(
         (ADDRESS_PEOPLE_FUNCTION, FAMILY_USERS_FUNCTION),
@@ -610,6 +632,11 @@ CLOSURE_TABLES = {
     "stewardship_comparison_export_snapshot": (
         "stewardship_reports",
         "0020_comparison_exports",
+    ),
+    # The Response dashboard's Summary capture (0142, #1557).
+    "stewardship_participation_export_snapshot": (
+        "stewardship_reports",
+        "0036_participation_summary",
     ),
     # A delivered email's follow-ups to addresses refused for now (0077, #806).
     "stewardship_outbox_address_retry": ("stewardship_jobs", "0027_address_retry"),
@@ -673,6 +700,35 @@ CLOSURE_TABLES = {
     # A pledge's review history (0127, provisional number, #1686), which
     # web records and reads.
     "stewardship_pledge_review": ("stewardship_reports", "0032_pledge_review"),
+    # A decided pledge's refresh checks (0134, provisional number, #1704),
+    # which the worker records in promotion and web and the worker read.
+    "stewardship_pledge_refresh_check": (
+        "stewardship_reports",
+        "0033_pledge_refresh_checks",
+    ),
+    # A To review pledge's refresh checks (0135, provisional number, #1747),
+    # which the worker records in promotion and web and the worker read.
+    "stewardship_pledge_open_check": ("stewardship_reports", "0034_pledge_conflicts"),
+    # Added Member links (0141, #1670, provisional number): the worker
+    # records them in promotion, and web and the worker read them in the
+    # Ministry selections.
+    "stewardship_added_member_link": (
+        "stewardship_responses",
+        "0021_added_member_links",
+    ),
+    # The report email pipeline (0156, #1786): web records
+    # Send now requests, the scheduler allocates preparations, the worker
+    # captures and fans them out, and mail dispatch reads the snapshots.
+    **dict.fromkeys(
+        (
+            "stewardship_report_email_manual_request",
+            "stewardship_report_email_preparation",
+            "stewardship_report_email_snapshot",
+            "stewardship_report_email_recipient",
+            "stewardship_report_email_completion_ready",
+        ),
+        ("stewardship_reports", "0040_report_pipeline"),
+    ),
 }
 
 
@@ -807,7 +863,8 @@ def runtime_functions(role, *, target=None):
     the addresses of a Sent mail page's reports and notices (#1562), and
     the Families an address belongs to and a Family's users (#1867).
     The general worker asks whether a publication plan's or outcome's audit
-    event is recorded (#528), since it cannot read audit rows itself.
+    event is recorded (#528), since it cannot read audit rows itself, and
+    which added Member links a promoted snapshot supports (#1670).
     The scheduler discards ended exports' saved data (#1398), through the
     owner-run batch that rechecks each export has ended.
     Every login a running service or an operator command uses reads whether
@@ -843,6 +900,7 @@ def runtime_functions(role, *, target=None):
                 BOUNCE_REPORT_FUNCTION,
                 ADDRESS_DELIVERIES_FUNCTION,
                 PAGE_RECIPIENTS_FUNCTION,
+                PAGE_MEMBER_NAMES_FUNCTION,
                 ADDRESS_PEOPLE_FUNCTION,
                 FAMILY_USERS_FUNCTION,
                 DEBUG_OFF_FUNCTION,
@@ -871,6 +929,8 @@ def runtime_functions(role, *, target=None):
                 DEBUG_OFF_FUNCTION,
                 ARCHIVE_ANSWERS_FUNCTION,
                 PUBLICATION_AUDITED_FUNCTION,
+                PLEDGE_REFRESH_ITEMS_FUNCTION,
+                ADDED_MEMBER_CANDIDATES_FUNCTION,
             },
             "download": {LEADER_SCOPE_FUNCTION},
             ServiceRole.ADMIN_RECOVERY: {
@@ -972,6 +1032,20 @@ def runtime_grants(role, *, target=None):
             tables["stewardship_refresh_check"] = {"SELECT", "INSERT"}
             tables["stewardship_refresh_check_start"] = {"SELECT"}
             tables.setdefault("stewardship_ministry_roster_entry", set()).add("SELECT")
+            # A census change a later response of the Family replaced gets
+            # no check (#1737): promotion and the check's guard compare the
+            # responses' places in the Family's order.
+            columns.setdefault("stewardship_submission", {}).setdefault(
+                "SELECT", set()
+            ).update({"family_version", "mode"})
+            # A decided pledge's refresh checks (#1704): promotion reads the
+            # decided pledges through their definer selection
+            # (PLEDGE_REFRESH_ITEMS_FUNCTION) and records a check whose
+            # outcome changed. Its guard admits INSERT alone.
+            tables["stewardship_pledge_refresh_check"] = {"SELECT", "INSERT"}
+            # A To review pledge's refresh checks (#1747), recorded the same
+            # way; the definer selection gives their state.
+            tables["stewardship_pledge_open_check"] = {"SELECT", "INSERT"}
             add_service_status_housekeeping_grants(tables, columns)
         else:
             add_service_status_writer_grants(tables, columns)
@@ -1201,6 +1275,9 @@ def runtime_grants(role, *, target=None):
         from .jobs.leader_email_grants import add_leader_email_web_grants
 
         add_leader_email_web_grants(tables, columns)
+        from .reports.report_email_grants import add_report_email_web_grants
+
+        add_report_email_web_grants(tables, columns)
         from .reports.archive_grants import add_archive_web_grants
 
         add_archive_web_grants(tables, columns)

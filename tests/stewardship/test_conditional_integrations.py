@@ -181,7 +181,11 @@ def backup_key_page(**context):
     """Render the backup encryption key page."""
     return render_to_string(
         "stewardship/backup-key.html",
-        {"label": "Backup encryption key", "current": Value(source="unknown")}
+        {
+            "label": "Backup encryption key",
+            "page_url": "/key/",
+            "current": Value(source="unknown"),
+        }
         | context,
     )
 
@@ -201,10 +205,12 @@ def test_the_new_public_key_is_checked_in_the_browser():
     assert key.fullmatch(public) and key.fullmatch(public.strip())
     for wrong in ("", public.strip()[:-1], '{"public_key": "x"}', public * 2):
         assert not key.fullmatch(wrong)
+    # Continue posts in place (#750), to the page's own address.
     assert (
-        '<form method="post" class="panel" autocomplete="off" data-require-complete>'
-        in html
-    )
+        '<form method="post" action="/key/#backup-key-change" class="panel"'
+        ' id="backup-key-form" autocomplete="off" data-require-complete'
+        ' data-in-place="backup-key-continue">'
+    ) in html
     assert 'data-missing-hint="Paste the public_key value' in field(html, "public_key")
 
 
@@ -249,7 +255,8 @@ def test_backup_key_refusals_are_shown_at_their_field(context, name, message):
     assert (
         error_id in re.search(r'aria-describedby="([^"]*)"', control).group(1).split()
     )
-    assert "notice-error" not in html
+    # The review dialog's refusal area (empty and hidden) is no notice.
+    assert "notice-error" not in re.sub(r"<dialog.*?</dialog>", "", html, flags=re.S)
 
 
 def test_a_share_row_ticked_delete_greys_its_fields():

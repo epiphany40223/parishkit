@@ -1,0 +1,13 @@
+{% comment %}
+One repeat rule error line (components/repeat-rule.html, #1915): an
+.errorlist with the id "<line_id>_error", which a marked control names in its
+aria-describedby, holding the server's ``errors`` for that field (none on a
+page drawn without a refusal). The page script (ui-v1.js markRepeatRule)
+writes a rule error it finds into the same line, so the browser's error and
+the server's refusal show in one place. With ``size`` (the longest message
+the line can hold) the line is reserved: it keeps that message's height while
+empty, so a message coming or going never moves the controls below (UX
+conventions "No layout shift"). A line without ``size`` belongs to a control
+whose error only a request built by hand can give (a choice no menu offers),
+so it takes no room until it shows. Both are polite live regions.
+{% endcomment %}<div{% if size %} class="field-error-line"{% endif %} role="status">{% if size %}<span class="field-error-size" aria-hidden="true">{{ size }}</span>{% endif %}<ul class="errorlist" id="{{ line_id }}_error"{% if not errors %} hidden{% endif %}>{% for error in errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div>

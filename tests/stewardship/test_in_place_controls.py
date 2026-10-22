@@ -527,13 +527,15 @@ def test_live_status_pages_update_themselves_and_dismiss_in_place():
     Retry) brings a fresh one live-status-v1.js watches. An integration's
     Dismiss acts in place (#519 PR 7a)."""
     for name, region in (
-        ("family-email-progress.html", "send-progress"),
+        ("mail-queue.html", "mail-queue"),
         ("campaign-mail-families.html", "family-tests"),
     ):
         text = (TEMPLATES / name).read_text()
         assert 'data-in-place="refresh"' not in text, name
         body = text.split(f'<div id="{region}" data-in-place-region>', 1)[1]
-        assert "data-live-status" in body or "progress-status.html" in body, name
+        # The live-status element is in the region or in the status template
+        # it includes (the Mail queue's, which the polled fragment also draws).
+        assert "data-live-status" in body or "-status.html" in body, name
     settings = (TEMPLATES / "integration-settings.html").read_text()
     assert '<div id="integration-status" data-in-place-region>' in settings
     summary = (TEMPLATES / "integration-summary.html").read_text()
@@ -1039,6 +1041,21 @@ def test_no_refresh_this_page_instructions():
         path.name
         for path in (*pages, *modules, *scripts)
         if REFRESH_THIS_PAGE.search(path.read_text())
+    }
+    assert found == set()
+
+
+def test_no_reload_then_instructions():
+    """No page tells the reader to reload once background work finishes
+    (UX conventions, "Pages that update themselves": controls that
+    background work holds, #1619): Campaign settings and Home follow the
+    hold instead. A refusal's fix ("Reload this page to start again.") is
+    not a wait, so it is not checked here."""
+    pattern = re.compile(r"reload\s+this\s+page\s+then", re.IGNORECASE)
+    found = {
+        path.name
+        for path in (*TEMPLATES.rglob("*.html"), *PACKAGE.rglob("*.py"))
+        if pattern.search(path.read_text())
     }
     assert found == set()
 

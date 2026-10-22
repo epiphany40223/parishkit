@@ -114,7 +114,7 @@ def test_tip_shows_on_hover_beside_the_entry_after_a_short_delay(
     page.wait_for_timeout(300)
     visible(tip)
     # Moving onto another entry hides it at once.
-    _sidebar(page).get_by_role("link", name="Family email progress").hover()
+    _sidebar(page).get_by_role("link", name="Mail queue").hover()
     expect(tip).to_be_hidden(timeout=100)
     # Escape dismisses a hover tip without moving the pointer.
     entry.hover()
@@ -173,7 +173,7 @@ def test_tip_shows_on_tap_and_a_tap_elsewhere_dismisses_it(
         # (even where the tip is drawn) both hides the tip and opens it.
         entry.tap(force=True)
         visible(tip)
-        target = _sidebar(page).get_by_role("link", name="Family email progress")
+        target = _sidebar(page).get_by_role("link", name="Mail queue")
         href = target.get_attribute("href")
         with page.expect_navigation():
             target.tap()

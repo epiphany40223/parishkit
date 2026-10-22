@@ -517,6 +517,10 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
   .stat-tiles:has(> [data-stat]:nth-child(5):last-child) { grid-template-columns: repeat(auto-fit, minmax(max(clamp(12.5rem, (65.5rem - 100%) * 100000, (100% - 1.5rem) / 3), min(100%, (39rem - 100%) * 100000)), 1fr)); }
 }
 .stat-detail { color: var(--muted); font-size: .875rem; }
+/* Mail queue (#1562): the other mode's line keeps one line's height while empty, so the
+   table below never moves when it appears (no layout shift); a kind's zero counts are muted. */
+.mail-queue-other { min-height: 1.6em; min-height: 1lh; margin-block: .5rem 0; }
+.mail-queue-zero { color: var(--muted); }
 /* An unknown value's "—" carries its reason in a toggletip beside it (#1540), its "i" at the
    size it has elsewhere. The 1.75rem button is centred in the value's 2.1rem line from its top,
    so it never makes the line taller: a value that becomes unknown in place moves nothing. */
@@ -558,6 +562,13 @@ label + .help, label + .helptext, .label-row + .help, .label-row + .helptext { m
 .field-error-line:has(> .field-error-size) { display: grid; }
 .field-error-line:has(> .field-error-size) > * { grid-area: 1 / 1; }
 .field-error-size { visibility: hidden; font-weight: 600; }
+/* A sentence that another one replaces in place (a status region's swap)
+   keeps the room of both: each is drawn over an invisible copy of the
+   other, so the swap never moves what follows, however the reader's fonts
+   wrap them (Home's Create the campaign reason, #1619). */
+.sized-text { display: grid; }
+.sized-text > * { grid-area: 1 / 1; }
+.sized-text > [aria-hidden=true] { visibility: hidden; }
 .error { color: var(--error-ink); font-weight: 600; }
 /* Legends float inside the box so a fieldset reads as a titled card. */
 fieldset { border: 1px solid var(--border); border-radius: var(--radius); background: var(--paper); margin-block: 1.25rem; min-width: 0; padding: 1rem 1.25rem 1.25rem; }
@@ -865,13 +876,25 @@ button.is-busy[aria-disabled=true], .button.is-busy[aria-disabled=true], input[t
 #table-filters .filter-actions[data-filter-place=row] { display: flex; width: max-content; flex-basis: 100%; grid-column: 1 / -1; justify-self: start; }
 .filter-clear { position: relative; display: inline-block; }
 button[data-clear-unavailable][aria-disabled=true], button[data-clear-unavailable][aria-disabled=true]:not(:disabled):hover { cursor: not-allowed; opacity: .55; background: var(--paper); color: var(--accent); box-shadow: none; }
-button.is-busy::after, .button.is-busy::after { content: ""; display: inline-block; width: .85em; height: .85em; margin-inline-start: .5em; vertical-align: -.1em; border: 2px solid currentColor; border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
+/* The working spinner (ui-conventions "Working spinner", #1847): the ONE
+   spinning icon of the portal, a ring with a quarter open. It is drawn
+   by components/spinner.html (.spinner) or, on a button whose request is
+   in flight, by the button's ::after (is-busy is a class ui-v1.js
+   toggles, so the ring is a pseudo-element there). Both share this one
+   rule and keyframes; test_spinner_guard.py fails on any other spinning
+   rule. A context changes only its size, colour (--spinner-ink, the
+   accent by default) or placement, in its own rule. Under reduced motion
+   it stands still (the rule at the end of this file). */
+.spinner, :is(button, .button).is-busy::after { display: inline-block; width: 1em; height: 1em; vertical-align: -.15em; border: 2px solid var(--spinner-ink, var(--accent)); border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
 @keyframes busy-spin { to { transform: rotate(360deg); } }
+/* A busy button: a slightly smaller ring after its label, in the
+   label's own colour. */
+:is(button, .button).is-busy::after { content: ""; --spinner-ink: currentColor; width: .85em; height: .85em; margin-inline-start: .5em; vertical-align: -.1em; }
 /* Live status regions (live-status-v1.js, live-running.html): a still-running
    indicator that says so in words, and prominent finished/failed outcomes. */
 .live-running { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .5rem; margin: 0 0 .75rem; }
 .live-running .help { flex-basis: 100%; margin: 0; }
-.live-spinner { display: inline-block; width: 1em; height: 1em; align-self: center; border: 2px solid var(--accent); border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
+.live-running > .spinner { align-self: center; }
 .live-done { color: var(--accent-strong); }
 .live-failed { color: var(--error-ink); }
 .live-status-problem { margin-top: .5rem; }
@@ -1182,6 +1205,8 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 .export-live > :first-child { margin-top: 0; }
 .export-state { font-size: 1.15rem; font-weight: 650; }
 .export-state-ready { color: var(--accent-strong); }
+/* A pending export's working spinner, before its words. */
+.export-state > .spinner { margin-inline-end: .35em; }
 /* A ready export's "until" line (#1398): its two sentences share one grid
    cell, so the line is as tall as the longer one from the start and the
    switch when the download window ends moves nothing (#736). */
@@ -1191,17 +1216,27 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 /* Stage boxes (components/stage-boxes.html, UX conventions "Stage boxes"):
    one box per major stage of a long piece of work, left to right, wrapping
    on a phone with no sideways scroll. The status word always carries the
-   state; the mark (a bullet, a pointer, a check, a cross or a pause) and
-   the colour only reinforce it. Loading parish data and Finishing setup
-   (setup wizard) and Load ParishSoft data (Campaign setup) draw it. */
+   state; the mark (a bullet, the working spinner, a check, a cross or a
+   pause) and the colour only reinforce it. Loading parish data and
+   Finishing setup (setup wizard), Load ParishSoft data (Campaign setup)
+   and a ParishSoft refresh's Background task status (#1579) draw it. */
 .stage-boxes { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); }
 /* The status sits on its own line under the stage's name, so a box keeps
-   its height when its status word changes (Not started, then Done). */
+   its height when its status word changes (Not started, then Done). The
+   box is one grid cell: its shown words (.stage-body) share it with
+   invisible, aria-hidden copies of every form it can take while the
+   work runs (.reserve-ghost, a stage's ``reserve``), so the box is as tall
+   as its longest form at every width and engine's wrapping, and longer
+   words never grow the box or its row (#1903). The mark and the spinner
+   are absolutely placed, outside the cell. */
 .stage-boxes > li {
-  display: flex; flex-direction: column; gap: .1rem;
+  display: grid;
   padding: .45rem .6rem .45rem 2rem; position: relative; min-width: 0;
   border: 1px solid var(--border); border-radius: var(--radius-small);
 }
+.stage-boxes > li > .stage-body { grid-area: 1 / 1; display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+/* A reserved form: it keeps its space but is never seen or read. */
+.reserve-ghost { visibility: hidden; }
 .stage-boxes > li::before {
   position: absolute; left: .55rem; top: .5rem; width: 1rem; text-align: center;
   font-weight: 700; content: "\2022"; color: var(--muted);
@@ -1214,7 +1249,12 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
    box keeps its size as its state changes (no layout shift). */
 .stage-boxes > .stage-done::before { content: "\2713"; color: var(--accent); }
 .stage-boxes > .stage-done { background: var(--accent-soft); border-color: var(--accent-line); }
-.stage-boxes > .stage-active::before { content: "\25B8"; color: var(--warning-ink); }
+/* In progress shows the working spinner (components/spinner.html) in the
+   mark's place: absolutely positioned in the same reserved slot as every
+   state's mark (left .55rem, 1rem wide, centred on the label's first
+   line), so its arrival or departure moves nothing (#1847). */
+.stage-boxes > .stage-active::before { content: none; }
+.stage-boxes > li > .spinner { --spinner-ink: var(--warning-ink); position: absolute; left: calc(.55rem + (1rem - 1em) / 2); top: calc(.5rem + (1.6em - 1em) / 2); top: calc(.5rem + (1lh - 1em) / 2); }
 .stage-boxes > .stage-active { background: var(--warning-bg); border-color: var(--warning-border); }
 .stage-boxes > .stage-waiting .stage-label { color: var(--muted); }
 .stage-boxes > .stage-operator::before { content: "\23F8"; color: var(--ink); }
@@ -1227,6 +1267,12 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
    after the stage boxes (records checked, or the Family count) is reserved
    in every state, so its text coming and going moves nothing below it. */
 .campaign-load-count { min-height: 1lh; }
+/* While the load waits for a worker, that line says so (stages.QUEUED,
+   #1916). It shares one grid cell with an invisible copy of that sentence,
+   so the line is as tall as the sentence at every width in every state, and
+   nothing below moves when the sentence gives way to the records checked. */
+.campaign-load-count-slot { display: grid; margin-block: 0 1rem; }
+.campaign-load-count-slot > * { grid-area: 1 / 1; margin: 0; }
 /* Its summary line shares one grid cell with invisible, aria-hidden copies
    of every state's wording (with all its links), so the cell is as tall as
    the longest wording at every width, zoom and engine's text metrics, and
@@ -1241,6 +1287,11 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 .campaign-load-summary-slot > * { grid-area: 1 / 1; margin: 0; }
 .campaign-load-summary-ghost { visibility: hidden; }
 @media (max-width: 40rem) { .campaign-load-count { min-height: 2lh; } }
+/* Setup's load lines under the saved-record bar ("The load started: 3
+   minutes ago", "Last sign of activity: ..."): their times grow as the load
+   runs and can wrap on a phone (Firefox at 320 px), so a phone reserves two
+   lines for each and nothing below moves (UX conventions "No layout shift"). */
+@media (max-width: 40rem) { .setup-load-line { min-height: 3.2em; min-height: 2lh; } }
 /* Its button's slot (source-refresh.html) is one grid cell holding the
    button, when there is one, over invisible copies of both its labels
    (Load and Try again), so it is as tall as the taller button at every width
@@ -1252,7 +1303,6 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 .campaign-load-ghost { visibility: hidden; }
 .campaign-load-ghost::before { content: attr(data-label); }
 .button-large { font-size: 1.1rem; padding: .8rem 1.75rem; }
-.spinner { display: inline-block; width: 1em; height: 1em; margin-inline-end: .35em; vertical-align: -.15em; border: 2px solid var(--accent); border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
 /* Export actions (#1679, components/export-actions.html): one row of small
    outlined buttons, one per format, smaller and quieter than the primary
    green buttons, wrapping on a phone instead of widening the page. They are
@@ -1358,6 +1408,10 @@ section.filter-panel > h2 { margin: 0; padding-block: .6rem; font-size: 1rem; li
    6.5rem, so the button wrapped and pushed that field's control below the
    others'. */
 .filter-bar.mail-filters > div:not(.short):has(> .label-row) { min-width: 7.5rem; }
+/* Sent mail's hint row (the gate's hint and a refused Recipient's message,
+   #1562) keeps its own full-width line under the fields, as the plain hint
+   paragraph did, rather than taking a field's share of the row. */
+.filter-bar.mail-filters > .hint-row-messages { flex: 0 1 100%; }
 /* From and Through are wide enough for the empty "mm/dd/yyyy" placeholder
    beside the calendar button, with Linux's wider fonts too. They drop the
    desktop short-field rule's end margin: the bar's gap spaces them, and
@@ -1493,6 +1547,8 @@ details.technical-details dd { overflow-wrap: anywhere; }
 [data-visual-content][aria-busy="true"] .content-editor { opacity: .55; }
 /* An HTML source error is marked at the visual editor too, as a field's (#563). */
 .content-editor[aria-invalid="true"] { border: 2px solid var(--error-border); }
+/* Greyed in place, as a disabled textarea is, while "Remove this selected content" is ticked (#563, #750). */
+.content-editor[aria-disabled="true"] { background: var(--paper-soft); color: var(--muted); cursor: not-allowed; }
 .content-sample, pre { overflow-wrap: anywhere; white-space: pre-wrap; }
 .light-card { background: var(--paper); color: var(--ink); }
 .content-sample { padding: 1rem; border: 1px dashed var(--control-border); border-radius: var(--radius-small); background: var(--paper); }
@@ -1572,20 +1628,54 @@ fieldset.artwork-upload { border: 0; border-radius: 0; background: none; padding
    phone) grows the line rather than being cut short. */
 .artwork-slot .review-outcome { white-space: normal; min-height: 2lh; }
 @media (max-width: 40rem) { .artwork-slot .review-outcome { min-height: 3lh; } }
+/* Backup encryption key's status line also says why a code was refused
+   (#750), a sentence or two. It ends the page's content, so it wraps,
+   whole, instead of being cut short: growing moves nothing but the
+   footer. */
+#backup-key-outcome { white-space: normal; }
 .family-summary .family-name { font-size: 1.2rem; font-weight: 650; }
 .family-nav { position: sticky; bottom: 0; z-index: 1; background: var(--paper-soft, var(--paper)); padding-block: .75rem max(.75rem, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); margin-top: 1.5rem; }
 .family-nav > button { margin-block: 0; }
+/* The bar's three fixed slots (ui-conventions "Stepper button row", #1933):
+   Back left, the action (Cancel and sign out, or Submit on Review) centered,
+   Next right. Each button names its slot (data-nav-slot); a slot whose button
+   is hidden keeps its space, so nothing moves from step to step. The two side
+   columns share the free space equally, which keeps the action centered.
+   Each has the same fixed minimum, wide enough for Back to edit (about
+   8.5rem): a minimum sized from each column's own button would make Review's
+   Back column wider than its empty Next column and push a long Submit (a
+   long parish name) off center, so that Submit wraps instead. The buttons
+   align to the line's top, so a wrapped Submit moves no other button.
+   Rows have no gap: the note's own margin spaces it, so its row takes no
+   height while the note is hidden. */
+.family-nav { display: grid; grid-template-columns: minmax(10rem, 1fr) auto minmax(10rem, 1fr); grid-template-areas: "note note note" "back action next"; align-items: start; column-gap: 1rem; row-gap: 0; }
+.family-nav > [data-nav-slot="back"] { grid-area: back; justify-self: start; }
+.family-nav > [data-nav-slot="action"] { grid-area: action; justify-self: center; }
+.family-nav > [data-nav-slot="next"] { grid-area: next; justify-self: end; }
+/* Only the centered action may wrap (a long parish name in Submit): Back to
+   edit breaking onto two lines would look broken. */
+.family-nav > [data-nav-slot="back"], .family-nav > [data-nav-slot="next"] { white-space: nowrap; }
+/* A phone keeps the same one line (#1933): tighter spacing, and each long
+   label shows only its first word ("Back · Cancel · Next", "Back · Submit").
+   family-v1.js keeps the full label as the button's accessible name. One
+   44px-tall line keeps the bar short, so it covers little of the screen and
+   a Member page's first control stays above it (#292). The short labels
+   leave plenty of room, so the side columns need no fixed minimum here. */
+@media (max-width: 40rem) {
+  .family-nav { grid-template-columns: 1fr auto 1fr; column-gap: .5rem; }
+  .family-nav > button { padding-inline: .75rem; white-space: nowrap; }
+  .family-nav-long { display: none; }
+}
 /* Why Next or Review didn't advance: a full-width line above the buttons. */
-.family-nav-error { flex: 1 1 100%; margin: 0; }
+.family-nav-error { grid-area: note; margin: 0 0 .75rem; }
 /* On a phone the note must not crowd out the form under the sticky bar. */
 @media (max-width: 40rem) { .family-nav-error { padding: .5rem .75rem; font-size: .9rem; } }
 /* A note for screen readers only (the field shows its own error line): the
-   note's flex, padding and border would otherwise undo .visually-hidden. */
-.family-nav-error.visually-hidden { flex: none; padding: 0; border: 0; }
+   note's padding, margin and border would otherwise undo .visually-hidden. */
+.family-nav-error.visually-hidden { padding: 0; border: 0; margin: -1px; }
 /* Keep a field that receives focus (Next to an error, Tab) clear of the
    sticky bar instead of scrolling it underneath. */
 html:has(.family-nav) { scroll-padding-bottom: 6rem; }
-.family-nav [data-page-back] { margin-inline-end: auto; }
 /* Step bars (ui-conventions "Step bars", #1402): the Family step bar and the
    Admin steppers' bar (stepper-steps.html, for the setup wizard and Campaign
    setup) share these segment rules. Each segment is a 44px-tall control (a
@@ -1660,7 +1750,6 @@ label.limitation { display: block; margin-block: 1rem; font-weight: 600; }
 @media (max-width: 36rem) {
   main { padding-top: 1.25rem; }
   .actions > button { flex: 1 1 auto; }
-  .family-nav [data-page-back] { margin-inline-end: 0; }
   th, td { padding: .6rem .7rem; }
   caption { padding: .85rem .7rem; }
 }
@@ -1819,6 +1908,10 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
    instead of a tall single column; each keeps its 44px touch target. */
 .repeat-days { display: flex; flex-wrap: wrap; column-gap: 1.25rem; }
 .repeat-days > label { display: inline-block; }
+/* No weekday chosen, once the reader has reached the days (#1915): the
+   group is outlined in the error colour, which takes no room, so the mark
+   moves nothing; its message is in the reserved line after the group. */
+.repeat-days:has(> label > input[aria-invalid=true]) { outline: 2px solid var(--error-border); outline-offset: .25rem; border-radius: .25rem; }
 /* The Repeat panel's Send time reading (#1117) reserves two lines, and on
    desktop takes the field's full width rather than the short-field 14rem,
    so a refusal such as "“9xx” isn't a time. Try 2:00 PM, …" appearing moves
@@ -1864,25 +1957,81 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
    Warning looks with their icon (UX conventions, "Status indicators"). */
 .stage-chip { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .55rem; border: 1px solid var(--border); border-radius: 999px; background: var(--paper-soft); color: var(--ink); font-size: .8125rem; font-weight: 600; white-space: nowrap; }
 .stage-chip:is(.status-error, .status-warning) { border-color: var(--status-line); background: var(--status-bg); color: var(--status-ink); }
-/* A worklist's filters are always open (no Filters disclosure), in rows
-   that wrap: each field cell is 13rem and does not grow, so the room left
-   at a row's end is kept for the buttons. Apply filters and Clear filters
-   (.filter-actions) are placed by the shared three-step rule like every
-   filter form's (#table-filters rules above, ui-conventions "Clear
-   filters"). A wrapping row, not the Filters panel's equal grid columns,
-   because a grid cell can be narrower than the pair with Linux's or
-   WebKit's wider fonts. On a phone each field takes the whole row. The
-   reserved hint takes its own row. */
-.worklist-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .5rem 1rem; margin-block: .5rem; }
+/* A worklist's filters are always open (no Filters disclosure), on one
+   compact row that wraps only when the window is too narrow for it
+   (#1653), so a laptop window (1366 px, Admin menu beside) holds a
+   stream's fields and Apply filters and Clear filters on one row and its
+   first rows show on the first screen. A select's cell starts at 8rem and
+   shares the row's spare room up to 11rem, so a choice such as "All my
+   Ministries" reads whole when there is room; a search's cell is a fixed
+   10.5rem (24rem when Stage is the only other field, below), its long
+   label wrapping above it rather than being cut. Only the selects grow,
+   and their labels are short, so the fields' row keeps its height with
+   Apply and Clear beside it or not, which the shared placement's
+   measurement needs. The form takes the content's whole width (not the
+   60rem of other forms), the cells' gap is narrower, and a select's inner
+   padding is slimmer. The fields line up along the row's foot. Apply
+   filters and Clear filters (.filter-actions) are placed by the shared
+   three-step rule like every filter form's (#table-filters rules above,
+   ui-conventions "Clear filters"): beside the last field, or Clear under
+   Apply when a two-line label already makes the row that tall (Ministry
+   requests' five fields). A wrapping row, not the Filters panel's equal
+   grid columns, because a grid cell can be narrower than the pair with
+   Linux's or WebKit's wider fonts. On a phone each field takes the whole
+   row. The reserved hint takes its own row. */
+.worklist-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .5rem; max-width: none; margin-block: .5rem; }
 .worklist-filters label { margin: 0 0 .25rem; font-size: .925rem; }
-.worklist-filters > div:not(.filter-actions) { flex: 0 1 13rem; margin: 0; }
-.worklist-filters > div > :is(input, select) { max-width: none; }
+.worklist-filters > div:not(.filter-actions) { flex: 1 1 8rem; min-width: 0; max-width: 11rem; margin: 0; }
+.worklist-filters > div:has(> input[name=search]) { flex: 0 0 10.5rem; max-width: none; }
+/* With Stage and a search alone (Additional information, Pledges), the row
+   has room to spare, so the search takes 24rem and its long label one or
+   two lines rather than three. The form's divs are then Stage, the search
+   and the buttons' pair: no fourth. */
+.worklist-filters:not(:has(> div:nth-of-type(4))) > div:has(> input[name=search]) { flex-basis: 24rem; }
+.worklist-filters select:not([multiple]):not([size]) { padding-inline: .6rem 2rem; background-position: right .6rem center; }
+.worklist-filters > div > :is(input, select) { width: 100%; max-width: none; }
 .worklist-filters > :is(p, [data-complete-hint]) { flex-basis: 100%; margin: 0; }
 /* A worklist filter whose choices are long phrases (Limitations' Show,
-   #1685) takes two field cells and their gap, so its chosen text reads
-   whole; on a phone it takes the whole row like every field (below). */
-.worklist-filters > div.wide { flex-basis: 27rem; }
-@media (max-width: 40rem) { .worklist-filters > div:not(.filter-actions) { flex-basis: 100%; } }
+   #1685) starts at two cells and their gap, and grows further, so its
+   chosen text reads whole; on a phone it takes the whole row like every
+   field (below). */
+.worklist-filters > div.wide { flex-basis: 16.5rem; max-width: 24rem; }
+/* The search's own widths name the form, so their phone rule does too. */
+@media (max-width: 40rem) { .worklist-filters > div:not(.filter-actions), .worklist-filters > div:has(> input[name=search]), .worklist-filters:not(:has(> div:nth-of-type(4))) > div:has(> input[name=search]) { flex-basis: 100%; max-width: none; } }
+/* Ministry requests' By Ministry counts (#1133, #1653): a closed
+   disclosure whose control sits on the heading's line after About this
+   page, drawn like it (a quiet summary with a fixed chevron), so the
+   counts cost the page no line until the reader opens them and the
+   worklist starts on a laptop's first screen; each browser remembers it
+   open (remember-open-v1.js). Its summary holds the section's h2, drawn
+   at the summary's size. */
+details.by-ministry, details.by-ministry[open] { margin: 0; padding: 0; border: 0; background: none; }
+details.by-ministry > summary { display: inline-flex; align-items: center; gap: .5rem; margin-inline-start: 1.25rem; list-style: none; }
+details.by-ministry > summary::-webkit-details-marker { display: none; }
+details.by-ministry > summary::before { content: ""; flex: none; width: .5rem; height: .5rem; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); }
+details.by-ministry[open] > summary::before { transform: rotate(45deg); }
+details.by-ministry > summary > h2 { display: inline; margin: 0; font: inherit; color: inherit; }
+details.by-ministry > section { display: block; margin-block: 0 .5rem; }
+/* A heading with two disclosures (Ministry requests: About this page and
+   By Ministry) is a grid, as the System health tiles are: the h1 and both
+   controls share the first row, and each disclosure's content takes a
+   full-width row of its own below it, About's first. The details elements
+   draw no box (display: contents), so their summaries and contents are
+   the grid's cells. Opening either one, while the page is read or when
+   ui-v1.js reopens a remembered About after the page shows, then moves
+   only what follows the controls' row, never the other control (UX
+   conventions, "No layout shift" and "Disclosures"). A closed content box
+   is empty and has no height. On a phone the h1 takes the first row and
+   the two controls the second. */
+.heading-row { display: grid; grid-template-columns: auto auto minmax(0, 1fr); grid-template-areas: "heading about other" "about-body about-body about-body" "other-body other-body other-body"; align-items: baseline; }
+.heading-row > h1 { grid-area: heading; }
+.heading-row > details, .heading-row > details[open] { display: contents; }
+.heading-row > details.about-page > summary { grid-area: about; }
+.heading-row > details.about-page::details-content { grid-area: about-body; }
+.heading-row > details:not(.about-page) > summary { grid-area: other; justify-self: start; }
+.heading-row > details:not(.about-page)::details-content { grid-area: other-body; }
+.heading-row > details::details-content { align-self: start; }
+@media (max-width: 40rem) { .heading-row { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "heading heading" "about other" "about-body about-body" "other-body other-body"; } }
 .button-danger { background: var(--error-border); border-color: var(--error-border); color: var(--paper); }
 .button-danger:not(:disabled):hover { background: var(--error-ink); border-color: var(--error-ink); }
 .confirm-dialog { margin: 12vh auto auto; width: min(34rem, calc(100vw - 2rem)); padding: 1.25rem 1.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--paper); color: var(--ink); box-shadow: var(--shadow); }
@@ -2034,14 +2183,15 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
    (#1410; its scope is in :where(), so the list keeps its specificity),
    and so would a report filter's range ends, refused in place (#1332),
    a System logs filter field (#1332), and the Campaign calendar Move
-   dialog's date, whose buttons sit under it (#1521).
+   dialog's date, whose buttons sit under it (#1521), and a repeat rule's
+   boxes, whose Until has the summary and Add below it (#1915).
    A select is held at its minimum height and keeps the global 2px border. */
-:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(.calendar-move-dialog) input, :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
-:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(.calendar-move-dialog) input, :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(.calendar-move-dialog) input, :where([data-repeat-panel]) input, :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
+:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(.calendar-move-dialog) input, :where([data-repeat-panel]) input, :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 /* Forced colors draw no shadow: an outline inside the border marks it,
    except under keyboard focus, where the global 3px focus ring shows. */
 @media (forced-colors: active) {
-  :is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(.calendar-move-dialog) input, :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
+  :is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(.calendar-move-dialog) input, :where([data-repeat-panel]) input, :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
 }
 .schedule-row-messages { padding-top: .5rem; min-height: calc(1lh + .5rem); }
 .schedule-row-messages > * { margin: 0; }
@@ -2126,6 +2276,10 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
 /* Email Ministry leaders (#1592): the review lists each leader's Ministries
    and open requests one per line, with no list markers. */
 .leader-emails-review ul { list-style: none; margin: 0; padding: 0; }
+/* The never-signed-in count under the table can wrap to two lines on a phone
+   while the empty text fits one, so a narrow screen reserves two lines and
+   the line never changes height between those forms (#1593, #736). */
+@media (max-width: 40rem) { #users-never-signed-in { min-height: 3.2em; min-height: 2lh; } }
 /* New user's Name help line says what the lookup found (#952). It is one
    line high in every state, cut short with an ellipsis (whole in its title
    and to screen readers), so a long answer never moves the Role choices

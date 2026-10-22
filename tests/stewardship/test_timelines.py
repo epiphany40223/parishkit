@@ -17,11 +17,13 @@ from django.http import QueryDict
 from django.template.loader import render_to_string
 from django.urls import reverse
 
+from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAME
 from parishkit.stewardship.reports.response_metrics import ResponseScope
 from parishkit.stewardship.reports.timeline_views import (
     Identity,
     TimelineQuery,
+    _full,
     open_form,
     page_context,
     parse_query,
@@ -301,8 +303,10 @@ def test_open_form_needs_the_current_campaign_and_an_eligible_family():
 
 
 def render(timeline, *, full=True, identity=IDENTITY, **options):
-    """The page as the view renders it; codes are shown unless told otherwise."""
+    """The page as the view renders it; codes and Mail message links are
+    shown unless told otherwise (the Administrator's page)."""
     options.setdefault("show_codes", True)
+    options.setdefault("mail_links", True)
     with using("us_long"):
         context = page_context(
             CAMPAIGN,
@@ -348,7 +352,7 @@ def test_administrator_page_shows_summary_and_timeline():
     ) in page
     assert '<input type="hidden" name="size" value="all">' in page
     assert '<input type="hidden" name="sort" value="-when">' in page
-    for kind in ("all", "form", "emails", "sessions"):
+    for kind in ("all", "form", "emails", "sessions", "reviews"):
         assert f'<option value="{kind}"' in page
     assert '<option value="all" selected>All</option>' in page
     assert 'name="mode"' not in page
@@ -414,8 +418,12 @@ def test_the_filters_narrow_the_lines_and_the_heading_keeps_them():
     assert "Nothing recorded for this Family yet." not in page
 
 
-def test_staff_page_is_the_reduced_view():
-    """Submitted, last email and code with Open form; nothing else."""
+def test_the_reduced_view_keeps_the_summary_only():
+    """Submitted, last email and code with Open form; nothing else.
+
+    No role gets it since Staff see the full timeline (#1774); it stays for
+    a role that may open the page without being Staff (``_full``).
+    """
     reduced = Timeline(TIMELINE.summary)
     page = render(reduced, full=False)
     assert "Yes, <time" in page and "Submission receipt, <time" in page
@@ -435,6 +443,73 @@ def test_staff_page_is_the_reduced_view():
     # (Administrator decision, 2026-10-18).
     assert "Last portal action: None recorded" in page
     assert "Last portal action is the newest action" in page
+
+
+# The export form's values as ``export_context`` gives them, without the
+# database read that decides whether exports may be made now.
+EXPORT = {
+    "url": "/admin/reports/families/x/exports/",
+    "request_key": UUID(int=5),
+    "timezones": ["UTC"],
+    "mutable": True,
+}
+
+
+def test_staff_see_the_full_timeline_and_export_without_mail_links():
+    """Staff's view (#1774): every line, the filters and the engagement
+    values, and the export form (#1799), but email lines unlinked (Staff
+    cannot open Mail message pages)."""
+    page = render(TIMELINE, mail_links=False, export=EXPORT)
+    assert 'id="table-filters"' in page and "data-table-region" in page
+    assert page.count("<tr>") == 1 + len(TIMELINE.events)
+    assert '<th scope="row">Invitation</th>' in page
+    assert "/admin/mail/sent/" not in page
+    assert "Open an email to see its delivery history." not in page
+    assert "Campaign email can reach this Family" in page
+    assert "Export this timeline" in page
+    assert 'action="/admin/reports/families/x/exports/"' in page
+    assert '<option value="reviews">Reviews</option>' in page
+    # The Administrator's page links each email and explains the link.
+    page = render(TIMELINE)
+    assert "Open an email to see its delivery history." in page
+    assert "each review action taken on the Family's answers" in page
+
+
+def test_full_view_and_export_follow_the_role():
+    """Administrators and Staff see the full timeline and export it (#1799);
+    any other role would get the reduced view and no export."""
+    identity = UUID(int=1)
+    administrator = Principal(identity, frozenset({"administrator", "staff"}))
+    staff = Principal(identity, frozenset({"staff"}))
+    leader = Principal(identity, frozenset({"ministry_leader"}), frozenset({9}))
+    assert (_full(administrator), _full(staff), _full(leader)) == (True, True, False)
+
+
+def test_review_lines_join_the_timeline_after_same_instant_steps():
+    """Review lines (#1774) are Kind Reviews, sort with When, and a review
+    at a Family step's instant is built after it."""
+    at = SECOND.at
+    lines = events(
+        [],
+        [SECOND],
+        reviews=[
+            (at, "Accepted", "Email address for Smith, Anne; by a@example.org"),
+            (at - MINUTE, "Handled", "Additional information; by a@example.org"),
+        ],
+    )
+    assert [(str(line.what), line.kind) for line in lines] == [
+        ("Handled", "reviews"),
+        ("Submitted a response", "form"),
+        ("Accepted", "reviews"),
+    ]
+    assert [line.rank for line in lines] == [0, 1, 2]
+    assert not any(line.portal for line in lines if line.kind == "reviews")
+    assert [str(line.what) for line in narrow(lines, "reviews")] == [
+        "Handled",
+        "Accepted",
+    ]
+    page = render(Timeline(TIMELINE.summary, lines))
+    assert '<th scope="row">Accepted</th><td>Email address for Smith, Anne; ' in page
 
 
 def test_open_form_is_unavailable_with_its_reason():
@@ -671,7 +746,8 @@ def test_last_portal_action_ignores_what_an_email_reader_makes():
     assert Timeline(summary([INVITATION], []), lines).last_action is None
     page = render(Timeline(summary([INVITATION], []), lines))
     assert "Last portal action: None recorded</p>" in page
-    # Staff's reduced view reads none of these lines and shows no value.
+    # The reduced view (no role today) reads none of these lines and
+    # shows no value.
     assert Timeline(TIMELINE.summary).last_action is None
 
 
@@ -751,8 +827,8 @@ def test_the_page_is_a_hub_with_the_timeline_tab():
     # A campaign without any content tab: Timeline alone.
     page = render(TIMELINE)
     assert page.count('role="tab"') == 1
-    # Staff get the tabs, the summary and the Last portal action
-    # (Administrator decision, 2026-10-18), from the portal lines alone.
+    # The reduced view (no role today) gets the tabs, the summary and the
+    # Last portal action, from the portal lines alone.
     portal = tuple(line for line in TIMELINE.events if line.portal)
     page = render(
         Timeline(TIMELINE.summary, portal), full=False, sections=("financial",)

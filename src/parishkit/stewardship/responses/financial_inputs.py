@@ -16,7 +16,7 @@ from parishkit.stewardship.source.windows import (
     RefreshWindow,
     refresh_window,
 )
-from parishkit.stewardship.web.presentation import campaign_year
+from parishkit.stewardship.web.presentation import campaign_year, period_years
 
 from .financial import ShareOption
 
@@ -91,10 +91,9 @@ def financial_definition(configuration, *, campaign_id):
         )
         if len(window.periods) != 2:
             raise ValueError
-        start, end = window.periods[0].start, window.periods[0].end
-        year = configuration["year_label"] or (
-            str(start.year) if start.year == end.year else f"{start.year}–{end.year}"
-        )
+        # The pledge is labeled by the period it is for, not by the campaign's
+        # Stewardship year label, so the label matches its start date (#1923).
+        year = period_years(window.periods[0].start, window.periods[0].end)
         options = tuple(
             ShareOption(**value) for value in configuration["share_options"]
         )

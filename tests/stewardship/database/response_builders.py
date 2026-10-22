@@ -172,3 +172,19 @@ def response_service(auth_service, settings):
         yield ResponseHarness(
             campaign, rings, service, snapshot, client, response.wsgi_request, code
         )
+
+
+@pytest.fixture
+def earlier_rule(monkeypatch):
+    """Issue every form as one drawn before the reviewed Family form (#1705).
+
+    A form open across the deploy of #1705's last slice, and every Testing
+    form, records ``reviewed_view`` false and is judged by the rule before
+    the reviewed form (review pipeline spec, "Resubmission before the
+    reviewed form"). Tests of that rule use this so their live forms are
+    drawn that way too; everything else about issue and submit is the
+    production path.
+    """
+    from parishkit.stewardship.responses import baselines
+
+    monkeypatch.setattr(baselines, "_shown", lambda *args: (False, None))

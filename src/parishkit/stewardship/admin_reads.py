@@ -479,22 +479,34 @@ def _send_counts(sent):
 
 
 @dataclass(frozen=True)
-class SendProgressRead(ReadModel):
-    """The Family send in progress, or the most recent one; counts only.
+class MailQueueRead(ReadModel):
+    """The Mail queue (#1562): queued emails by kind, and the Family send.
 
-    A watch stops once no send is in progress and none is about to start.
+    ``counts`` holds the four headline figures and ``kinds`` one row per
+    ``mail_queue.QUEUE_PURPOSES`` kind, in that order, each with the same
+    four counts, all for the operating ``mode``; ``other_mode_queued`` counts the other
+    mode's queued emails. ``send`` is the Family send panel's document (the
+    send in progress, or the most recent one). A watch stops once nothing
+    is queued, no send is in progress and none is about to start.
     """
 
     campaign_id: UUID | None
     mode: str
     paused: bool
+    counts: dict
+    other_mode_queued: int
+    kinds: list
     upcoming: bool
     send: dict | None
 
     @property
     def terminal(self):
-        """Nothing is sending and nothing is about to start."""
-        return not (self.send and self.send["active"]) and not self.upcoming
+        """Nothing is queued, nothing is sending and nothing is about to start."""
+        return (
+            not any(self.counts.values())
+            and not (self.send and self.send["active"])
+            and not self.upcoming
+        )
 
 
 @dataclass(frozen=True)
@@ -532,26 +544,34 @@ def send_row(row):
     }
 
 
-def read_send_progress(caller, service, *, audit=True):
-    """``send progress``: Family email progress (``send_reads.read_progress``).
+def read_mail_queue(caller, service, *, audit=True):
+    """``mail queue``: the Mail queue page (``send_reads.read_mail_queue``).
 
     Audited as the page (``delivery_viewed``), never on a watch's polls.
     """
     from .accounts.policy import Capability
     from .audit.schemas import Action
-    from .jobs.send_reads import audited_count, read_progress
+    from .jobs.mail_queue import COLUMNS
+    from .jobs.send_reads import audited_count
+    from .jobs.send_reads import read_mail_queue as read_queue_page
 
     def step():
         """Admit, read in the page's snapshot, recheck and audit."""
         actor = _admit(caller, service.store, Capability.BACKGROUND_WORK)
-        data = read_progress()
+        data = read_queue_page()
         if data is None:
             raise Unavailable("A restore is under review.")
-        sent = data["send"]
-        model = SendProgressRead(
+        sent, queue = data["send"], data["queue"]
+        model = MailQueueRead(
             campaign_id=data["campaign"].pk if data["campaign"] else None,
-            mode="testing" if data["testing"] else "production",
+            mode=queue.mode,
             paused=data["paused"],
+            counts={name: queue.column(name) for name in COLUMNS},
+            other_mode_queued=queue.other_mode_queued,
+            kinds=[
+                {"purpose": kind.purpose} | dict(zip(COLUMNS, kind.counts, strict=True))
+                for kind in queue.kinds
+            ],
             upcoming=data["upcoming"],
             send=None if sent is None else _send_counts(sent),
         )
@@ -560,7 +580,7 @@ def read_send_progress(caller, service, *, audit=True):
             if _restore_review():
                 raise Unavailable("A restore is under review.")
             if audit:
-                _audit(Action.DELIVERY_VIEWED, current, count=audited_count(sent))
+                _audit(Action.DELIVERY_VIEWED, current, count=audited_count(queue))
         return model
 
     return _held(step)
@@ -610,8 +630,8 @@ class ScheduleShow(ReadModel):
     change (PR 4) is previewed against. ``editable`` says whether the
     campaign's dates may still change. Each schedule lists its civil values
     (a daily digest's ``comparison`` too, #1018)
-    and its first resolved send times (``resolved``, at most five, with
-    ``more`` when there are others). ``series`` lists the campaign's
+    and its next resolved send times after now (``resolved``, at most five,
+    with ``more`` when there are others). ``series`` lists the campaign's
     remembered reminder series (#469): each one's ``id``, repeat ``rule``
     and the ids of the reminders it holds (``schedules``).
     """
@@ -624,15 +644,17 @@ class ScheduleShow(ReadModel):
     series: list
 
 
-def schedule_entry(row, campaign):
-    """One schedule record with its first resolved send times.
+def schedule_entry(row, campaign, *, now):
+    """One schedule record with its next resolved send times after ``now``.
 
-    ``campaign`` is the campaign's applied values (its time zone and dates).
+    ``campaign`` is the campaign's applied values (its time zone and dates);
+    ``now`` is the database's clock, so the sends listed are the ones the
+    Dates and mail schedules review lists (#1129).
     """
-    from .campaigns.schedule_evaluation import preview_slots
+    from .campaigns.schedule_evaluation import upcoming_slots
 
     values = row["values"]
-    page = preview_slots(values, campaign)
+    page = upcoming_slots(values, campaign, now=now)
     return {
         "id": row["id"],
         "kind": values["kind"],
@@ -674,6 +696,7 @@ def read_schedule(caller, service, campaign_id):
     at all, is ``not_available``; a campaign that is not the current one,
     or that background work holds, is ``stale_version``.
     """
+    from .accounts.admin_editing import database_now
     from .accounts.policy import Capability
     from .accounts.schedule_reads import campaign_schedules, schedule_state
     from .campaigns.work_locks import read_transaction
@@ -698,6 +721,8 @@ def read_schedule(caller, service, campaign_id):
             except LookupError:
                 raise NotAvailable("No such campaign.") from None
             values = campaign.active_configuration.values
+            # Every schedule lists its sends from the database's one now.
+            now = database_now()
             model = ScheduleShow(
                 campaign_id=campaign.pk,
                 version=state[0].active_configuration.digest,
@@ -708,7 +733,7 @@ def read_schedule(caller, service, campaign_id):
                     "timezone": values["timezone"],
                 },
                 schedules=[
-                    schedule_entry(row, values)
+                    schedule_entry(row, values, now=now)
                     for row in campaign_schedules(state[0], target)
                 ],
                 series=campaign_series(state[0], target),

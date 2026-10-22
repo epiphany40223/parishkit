@@ -1,0 +1,20 @@
+{% load i18n %}{% comment %}
+  A census New Member's ParishSoft Member ID correction on the review
+  worklist (#1773), drawn per row (row.entered_template,
+  reports/census_worklist.CORRECT_TEMPLATE): the row is Entered by hand and
+  not Confirmed, and its Correct (or, over a mark that named none, Add) the
+  ParishSoft Member ID icon marks it
+  Entered by hand again with the ID given here (review pipeline spec,
+  "Refresh checks"). The field is named value_member, as the first mark's
+  (census-worklist-member.html), is required, and starts each time the
+  dialog opens from the ID the mark in force names (blank when it names
+  none). A value the server refuses (blank, not a whole number, the same
+  ID, a Member the Family already listed, or another New Member's) is shown in
+  the one reserved error line and marks the field until it is edited
+  (ui-v1.js refuseAtFields). It ends with the worklist's note, as every
+  decision does.
+{% endcomment %}<div class="dialog-fields"><label for="{{ dialog_id }}-member">{% translate "ParishSoft Member ID" %}</label><input id="{{ dialog_id }}-member" name="value_member" inputmode="numeric" autocomplete="off" maxlength="19" required value="{{ row.resolution_member|default_if_none:'' }}" aria-describedby="{{ dialog_id }}-member-help" data-confirm-reset>
+<p class="help" id="{{ dialog_id }}-member-help">{% translate "The ID ParishSoft gave the Member you added. The next refresh checks the entry again with this ID." %}</p>
+<div class="field-error-line"><ul class="errorlist" id="{{ dialog_id }}-error" hidden><li></li></ul></div>
+</div>
+{% include "stewardship/components/review-worklist-note.html" with note_name="note" %}

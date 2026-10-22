@@ -147,7 +147,9 @@ admin_patterns = [
     ),
     path("setup", setup_views.setup, name="setup"),
     path(
-        "setup/cancel", setup_cancellation_views.setup_cancellation, name="setup_cancel"
+        "setup/finishing",
+        setup_cancellation_views.setup_cancellation,
+        name="setup_finishing",
     ),
     path(
         "setup/source/<uuid:task_id>",

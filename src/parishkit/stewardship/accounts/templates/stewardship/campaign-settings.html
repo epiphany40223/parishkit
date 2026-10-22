@@ -1,5 +1,6 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
 {% block title %}{% translate "Campaign settings" %}{% endblock %}
+{% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block content %}{% comment %}
 Campaign settings (campaign_views.campaign_settings): one editor (#1119).
 Every setting is drawn once, in the same place in every campaign state, by
@@ -30,6 +31,14 @@ primary (campaign-step-actions.html) becomes Save and continue once the form
 holds a change; ui-v1.js follows the saved change and opens the next step
 (its status line adds data-direct-removed once Financial stewardship was
 turned off).
+While background work or going live holds some settings, the form's
+region also holds the campaign work status (campaign-work-status.html,
+#1619), which live-status-v1.js follows; once the hold ends, the page
+re-reads its own address once, quietly and passively, so the freed settings
+open by themselves, never while the Administrator is editing one that is
+open. Its sentence is read out by the announcer after the region (both the
+announcer and live-status-v1.js are always drawn, so a region an Apply
+redraws while work holds the settings is followed too).
 Copy campaign is greyed out until the single-campaign change (#145) removes
 it (navigation rule 10); the server refuses it too.
 The body links no page the menu offers (#1118). Content history is not a
@@ -51,7 +60,9 @@ in every campaign state (navigation rule 1).
 {% include 'stewardship/campaign-fields.html' %}
 {% if wizard.direct %}<p class="help" id="settings-complete-hint" data-complete-hint hidden></p>{% else %}{% if open %}{% translate "Change a setting to save it." as unchanged_hint %}{% else %}{% translate "Nothing on this page can change now; each greyed-out setting's i button says why." as unchanged_hint %}{% endif %}<p>{% translate "Save" as save_label %}{% include 'stewardship/components/review-changes-button.html' with describedby="settings-complete-hint" hint=unchanged_hint label=save_label %}</p><p class="help" id="settings-complete-hint" data-complete-hint hidden></p>{% endif %}
 </form>{% endwith %}
+{% if work %}{% include 'stewardship/campaign-work-status.html' %}{% endif %}
 </div>
+<p class="visually-hidden" role="status" data-live-announcer="campaign-work"></p>
 {% include 'stewardship/components/review-outcome.html' with outcome_id="settings-outcome" %}
 {% translate "Review campaign settings" as review_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="campaign-review" title=review_title apply_url=page_url outcome_id="settings-outcome" fallback="settings-form" %}
 {% endblock %}

@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 
+from parishkit.stewardship.reports import export_services
 from parishkit.stewardship.reports.timeline_documents import (
     HEADINGS,
     timeline_document,
@@ -191,12 +192,21 @@ def test_the_file_follows_its_page():
     """
     text = "".join(
         (TEMPLATES / name).read_text(encoding="utf-8")
-        for name in ("timeline.html", "timeline-panel.html")
+        for name in (
+            "timeline.html",
+            "timeline-panel.html",
+            # The Summary's fields, shared with the user Timeline's Family
+            # sections (#1867).
+            "timeline-family-fields.html",
+        )
     )
     head = text[text.index('id="events-heading"') :]
     head = head[head.index("<thead>") : head.index("</thead>")]
     assert tuple(re.findall(r'translate "([^"]+)"', head)) == HEADINGS
     page_lines = re.findall(r'<dt>{% translate "([^"]+)" %}</dt>', text)
+    # Administrators' page-only field (#1867): the people of the Family who
+    # are users are not part of the report file.
+    page_lines.remove("People in this Family who are users")
     built = timeline_document(
         PAYLOAD
         | {"family": PAYLOAD["family"] | {"reminder_workgroup": "No reminders"}},
@@ -257,6 +267,46 @@ def test_the_pdf_holds_the_family_code(monkeypatch):
     )
     assert "ABCD-EFGH" in pages[0]
     assert any("Family DUID 42" in value for value in pages[0])
+
+
+REQUESTER = "00000000-0000-4000-8000-000000000071"
+OTHER = "00000000-0000-4000-8000-000000000072"
+
+
+@pytest.mark.parametrize(
+    ("roles", "requester", "allowed"),
+    [
+        (frozenset({"administrator", "staff", "ministry_leader"}), REQUESTER, True),
+        (frozenset({"staff", "ministry_leader"}), REQUESTER, True),
+        (frozenset({"ministry_leader"}), REQUESTER, False),
+        # Another requester's export: an Administrator's only, as for every
+        # shared export.
+        (frozenset({"administrator", "staff", "ministry_leader"}), OTHER, True),
+        (frozenset({"staff", "ministry_leader"}), OTHER, False),
+    ],
+)
+def test_administrators_and_staff_may_have_a_timeline_export(
+    monkeypatch, roles, requester, allowed
+):
+    """The service's check mirrors migration 0144's SQL (#1799): Staff may
+    have their own timeline export; a Ministry leader never may."""
+    from uuid import UUID
+
+    from parishkit.stewardship.accounts.policy import Principal
+    from parishkit.stewardship.reports.export_models import ExportRequest
+
+    led = frozenset({9}) if "ministry_leader" in roles else frozenset()
+    monkeypatch.setattr(
+        export_services,
+        "current_principal",
+        lambda store, user_id: Principal(user_id, roles, led),
+    )
+    export = ExportRequest(report="family_timeline", requester_id=UUID(requester))
+    if allowed:
+        assert export_services.authorize(None, UUID(REQUESTER), request=export)
+    else:
+        with pytest.raises(PermissionError):
+            export_services.authorize(None, UUID(REQUESTER), request=export)
 
 
 def xlsx_book(report):

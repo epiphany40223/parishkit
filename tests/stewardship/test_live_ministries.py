@@ -93,6 +93,7 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         "stewardship_report_recipient_bounce_v1(uuid, uuid, text, uuid, text)",
         "stewardship_delivery_ids_for_address_v1(text, uuid)",
         "stewardship_delivery_page_recipients_v1(uuid[], uuid)",
+        "stewardship_delivery_page_member_names_v1(uuid[], uuid)",
         "stewardship_address_people_v1(text, uuid)",
         "stewardship_family_users_v1(bigint, uuid)",
         DEBUG_OFF_FUNCTION,
@@ -118,6 +119,10 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         "stewardship_source_snapshot_analyze_v1(uuid)",
         # The publication plans' audit answer (0087, #528).
         "stewardship_publication_audited_v1(text, uuid, uuid, jsonb)",
+        # The pledges a refresh re-evaluates (0135, #1747), v1's successor.
+        "stewardship_pledge_refresh_items_v2(uuid, uuid, uuid)",
+        # The added Members a promotion may link (0141, #1670).
+        "stewardship_added_member_candidates_v1(uuid, uuid)",
         DEBUG_OFF_FUNCTION,
     }
     assert runtime_functions("download") == {LEADER_SCOPE_FUNCTION}

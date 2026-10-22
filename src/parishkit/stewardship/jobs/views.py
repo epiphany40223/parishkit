@@ -17,6 +17,8 @@ from parishkit.stewardship.accounts.authentication import runtime
 from parishkit.stewardship.accounts.authority import AuthorityChanging
 from parishkit.stewardship.accounts.limiting import LimiterUnavailable
 from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.accounts.role_refusal import response as role_response
+from parishkit.stewardship.accounts.role_refusal import role_denied
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.activation_hold import WEB_HOLD_SECONDS, wait_out_activation
@@ -55,10 +57,14 @@ from .task_wording import (
 # The region of Refresh from ParishSoft that shows the run it requested
 # (accounts.refresh_views); its status poll asks for that page's wording.
 REFRESH_RUN = "refresh-run"
-# The region of Publish to ParishSoft that shows the check it requested
+# The region of Update ParishSoft that shows the check it requested
 # (reports.census_publication_views, #528); its poll asks for that page's
 # wording, and for a check refused for an unconfirmed contact read.
 PUBLICATION_CHECK = "publication-check"
+# The region of Update ParishSoft that shows its newest plan and that plan's
+# update run (#1688); the run's status poll asks for that page's wording
+# (?view=update).
+UPDATE_RUN = "publication-plan"
 
 
 def _error(code, status):
@@ -99,8 +105,11 @@ def _read_once(request, identifier, *, counts_only, audit):
     try:
         service = runtime()
         principal = authenticated_admin(request, store=service.store, activity=False)
-        if not allows(principal, Capability.BACKGROUND_WORK):
+        if principal is None:
             return _error(ErrorCode.DENIED, 403)
+        if not allows(principal, Capability.BACKGROUND_WORK):
+            # A current session whose role lacks the page (#1924).
+            return role_response(role_denied(Capability.BACKGROUND_WORK))
         try:
             if counts_only:
                 filters(request.GET, allowed=set())
@@ -227,7 +236,7 @@ TASK_NAMES = {
     "campaign_boundary": _("Campaign start or end"),
     "campaign_mail_test": _("Campaign test email"),
     "census_publication_preflight": _("Checking census changes against ParishSoft"),
-    "census_publication": _("Publishing census changes to ParishSoft"),
+    "census_publication": _("Updating ParishSoft with census changes"),
     "daily_digest_prepare": _("Preparing the daily Admin report"),
     "daily_digest_finalize": _("Finishing the daily Admin report"),
     "weekly_digest_prepare": _("Preparing the weekly Admin report"),
@@ -249,6 +258,7 @@ TASK_NAMES = {
     "report_fact_verification": _("Checking report figures"),
     "security_prepare": _("Preparing a security alert email"),
     "leader_email_prepare": _("Preparing Ministry leader emails"),
+    "report_email_prepare": _("Preparing a report email"),
 }
 
 
@@ -319,10 +329,18 @@ def _task_read(request, task_id):
         progress["display"] = Percentage(progress["current"], progress["total"])
         # The history names each step in words, as the status line does.
         item["phase_text"] = phase_words(task["type"], progress["phase"])
+    stages = None
+    if task["type"] == REFRESH:
+        # A refresh's Current status draws its phases as the shared stage
+        # boxes (#1579), the same ones Load ParishSoft data draws.
+        from parishkit.stewardship.accounts.campaign_wizard import task_stages
+
+        stages = task_stages(task)
     return result, {
         "work": work,
         "task": task,
         "is_refresh": task["type"] == REFRESH,
+        "stages": stages,
         "phase_text": phase_words(task["type"], task["progress"]["phase"]),
         "retry_text": retry_reason(task),
         # Records checked and changed (#242), once a refresh has finished.
@@ -355,9 +373,10 @@ def task_status(request, task_id):
     """
     # Refresh from ParishSoft polls with ?view=refresh (#521): the region
     # there sits in its own page region and has no history or Retry panel
-    # below it, so it is worded for that page. Publish to ParishSoft's
-    # check polls with ?view=publication (#528) for its own wording. Any
-    # other query is ignored.
+    # below it, so it is worded for that page. Update ParishSoft's check
+    # polls with ?view=publication (#528) and its update run with
+    # ?view=update (#1688), each for its own wording. Any other query is
+    # ignored.
     view = request.GET.get("view")
     region = {"region_id": REFRESH_RUN} if view == "refresh" else {}
     # The region shows no history, so history paging does not apply here.
@@ -383,6 +402,9 @@ def task_status(request, task_id):
             campaign_wizard.load_status(task, families=families),
         )
         return _finish_html(request, result, response, task_id, audit=False)
+    if view == "update":
+        # Update ParishSoft's run (#1688), worded for that page's plan region.
+        region = {"region_id": UPDATE_RUN, "update_run": True}
     if view == "publication":
         # Read the audit table only now: _task_read has checked that the
         # viewer may see this task (#528).

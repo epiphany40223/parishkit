@@ -6,8 +6,9 @@ credential. In Testing it opens the form, gets past the first step and
 submits before the invitations go out, so its invitation is skipped; the
 others are invited. After the real activation it signs in live, opens the
 form and signs out. The page shows Production records only (#1570); it is
-checked for Administrators (the full timeline and its filters) and Staff
-(the summary only), with ``no-store``, the denials and the audit.
+checked for Administrators and Staff (the full timeline and its filters;
+Staff without the export or the Mail message links, #1774), with
+``no-store``, the denials and the audit.
 """
 
 import re
@@ -66,7 +67,7 @@ def as_web(client, path):
 def test_timeline_for_administrators_and_staff(
     request, auth_service, google, monkeypatch
 ):
-    """Production records only (#1570); the full view for Admins, Staff's summary."""
+    """Production records only (#1570); the full view for Admins and Staff."""
     harness, _epoch = request.getfixturevalue("funnel")
     families = dict(FamilyCampaign.objects.values_list("family_duid", "pk"))
     corpus, invited = (
@@ -212,23 +213,23 @@ def test_timeline_for_administrators_and_staff(
     # The When heading keeps the filters.
     assert f"start={later}&amp;zone=UTC&amp;size=all&amp;sort=-when".encode() in body
 
-    # Staff get the summary only (signing in afresh): no table, no filters.
+    # Staff see the full timeline (signing in afresh; Administrator
+    # decision, 2026-10-19, #1774): the same lines and filters and the
+    # export form (#1799), but no Mail message links, which they may not use.
     browser, login = signed_in()
     assert login.status_code == 302
     response, body = as_web(browser, corpus)
     assert response.status_code == 200
     assert f"<code>{code}</code>".encode() in body and b"data-open-form" in body
-    # Staff see the Last portal action too (Administrator decision,
-    # 2026-10-18): the live sign-out above, from the same records.
     assert b"Last portal action: Signed out, <time" in body
-    for absent in (
-        b"Timeline</h2>",
-        b"/admin/mail/sent/",
-        b"table-filters",
-        b"Signed in",
-    ):
-        assert absent not in body, absent
+    assert lines(body) == shown
+    assert b"Timeline</h2>" in body and b"table-filters" in body
+    assert b"Campaign email can reach this Family" in body
+    assert b"/admin/mail/sent/" not in body and b"Export this timeline" in body
+    _, body = as_web(browser, corpus + "?kind=sessions")
+    assert set(lines(body)) == {"Signed in", "Signed out"}
     assert as_web(browser, corpus + "?mode=testing")[0].status_code == 400
+    # Their export (#1799) and the leader's refusals: test_timeline_exports.
 
     # A Ministry leader may not open a Timeline at all, and the refusal is
     # not audited as a view.
@@ -250,17 +251,17 @@ def test_timeline_for_administrators_and_staff(
 
     # Every view is audited: the Family viewed is the subject (its opaque
     # record id), the campaign is kept, and no name, filter or value is
-    # copied. Ten pages of the corpus Family shown: the Administrator's
+    # copied. Eleven pages of the corpus Family shown: the Administrator's
     # in Testing mode, the no-codes view, Staff's in Testing mode, and after
     # activation the Administrator's, oldest first, the four filtered views
-    # and Staff's. Refusals (the 400s, the leader's 403s) are not audited, and
+    # and Staff's two. Refusals (the 400s, the leader's 403s) are not audited, and
     # neither is a failed Family lookup: no row pairs a campaign with a
     # Family that is not in it.
     events = AuditEvent.objects.filter(event_type="family_timeline_viewed")
     viewed = events.filter(
         subject_id=families[1], campaign_reference=harness.campaign.pk
     )
-    assert viewed.count() == 10
+    assert viewed.count() == 11
     assert not events.exclude(campaign_reference=harness.campaign.pk).exists()
     assert not events.filter(subject_id=unknown).exists()
     assert events.filter(subject_id=families[11]).count() == 1

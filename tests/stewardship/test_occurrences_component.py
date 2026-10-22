@@ -32,9 +32,6 @@ HAND_DRAWN = re.compile(
 # Templates that still draw an occurrence list by hand, each with why. A
 # template leaves this list when it draws the include.
 STILL_HAND_DRAWN = {
-    # The mail schedule review's send times move onto the component in
-    # ADM-04 slice 7c.
-    "schedule-summary.html",
     # Copy campaign's review lists each copied schedule's sends; the server
     # refuses it until #145 removes it.
     "clone-preview.html",

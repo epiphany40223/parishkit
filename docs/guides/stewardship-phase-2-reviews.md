@@ -199,8 +199,9 @@ immutable setup-abort decisions. Selected-candidate recovery checks original
 expiry, journals before file restoration, and runs before forward recovery.
 The configured-marker/source/Family activation owner remains deliberately closed.
 
-An original-login-only `/admin/setup/cancel` page can cancel finalization across
-the selected-but-unapplied mismatch without admitting other configuration edits.
+An original-login-only `/admin/setup/finishing` page can cancel finalization
+across the selected-but-unapplied mismatch without admitting other
+configuration edits.
 Real web-grant HTTP tests cover passive reads, CSRF, another login, private-value
 exclusion and durable cancellation. The restricted configuration installer can
 consume that expiry proof without session or source-payload access. Temporary

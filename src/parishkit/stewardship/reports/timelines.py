@@ -1,19 +1,20 @@
 """What happened with one Family: the Timeline page's reads (#477, #1570).
 
 ``reports/families/<family>/`` (the Timeline page, ``timeline_views``)
-answers "what happened with this Family?" for Administrators and "did you get
-my response?" for Staff. Both see a summary: whether the Family submitted and
-when, the last email sent to it (a cancelled email was never sent, so it is
-skipped) and whether that email reached the mail service, and its Family code
-with Open form. Administrators also see the full timeline, newest first
-unless the reader sorts it the other way (the Administrator's choice): each
-Family email and its outcome, the invitation skipped because the Family had
-already responded (in place of its cancelled email), each sign-in, sign-out
-and session end, each form open, getting past the first step and the
-furthest step reached, and each submission with its receipt outcome. Staff
-get the summary only (the Administrator's decision of 2026-10-04): no
-timeline, no Mail message links, nothing about any other Family, and the
-records only the timeline needs are not even read for them.
+answers "what happened with this Family?" for Administrators and Staff.
+Both see a summary: whether the Family submitted and when, the last email
+sent to it (a cancelled email was never sent, so it is skipped) and whether
+that email reached the mail service, and its Family code with Open form, and
+the full timeline, newest first unless the reader sorts it the other way
+(the Administrator's choice): each Family email and its outcome, the
+invitation skipped because the Family had already responded (in place of its
+cancelled email), each sign-in, sign-out and session end, each form open,
+getting past the first step and the furthest step reached, each submission
+with its receipt outcome, and each review action taken on the Family's
+answers (``timeline_reviews``). Staff got the summary only until the
+Administrator's decision of 2026-10-19 (#1774); the reduced view remains
+for any other role that may open the page (none today), and the records
+only the timeline needs are not even read for it.
 
 The reads are of one Family in one scope (``ResponseScope``). The page reads
 Production only since #1570 (the Administrator removed its Testing view), as
@@ -56,6 +57,7 @@ from parishkit.stewardship.responses.models import FamilyFormBaseline
 from parishkit.stewardship.web.tables import Sorting
 
 from .response_metrics import MODES
+from .timeline_reviews import read_reviews
 
 # The Family form's steps (``PRESENCE_SECTIONS``), as a reader names them.
 STEPS = {
@@ -100,6 +102,8 @@ KINDS = {
     "form": _("Family form activity"),
     "emails": _("Emails"),
     "sessions": _("Sign-ins and sign-outs"),
+    # Review actions on the Family's answers (#1774, ``timeline_reviews``).
+    "reviews": _("Reviews"),
 }
 # The audit events of a Family session: its start and its two ends.
 SESSION_EVENTS = ("family_login", "family_logout", "family_session_ended")
@@ -223,7 +227,7 @@ class Submitted:
 
 @dataclass(frozen=True)
 class Engagement:
-    """The engagement record's values this page shows (Administrators only).
+    """The engagement record's values the full view shows.
 
     ``progress_at`` is when the Family got past the first step; ``furthest`` the
     furthest step reached (a ``STEPS`` key, or "") and ``furthest_at`` when;
@@ -368,8 +372,9 @@ def events(
     engagement=None,
     workgroup_skips=(),
     session_ends=(),
+    reviews=(),
 ):
-    """The Administrator's timeline: every line, oldest first.
+    """The full timeline: every line, oldest first.
 
     The page shows it newest first (``TIMELINE_SORTING``); this order is the
     tie order the shared table keeps for equal instants.
@@ -403,6 +408,10 @@ def events(
     earlier session), so the match is by instant: the login path writes both
     events with one transaction's time, and other system ends run in other
     transactions.
+
+    ``reviews`` are ``(instant, what, detail)`` review lines
+    (``timeline_reviews.steps``), built last: a reviewer acts after the
+    Family's step at the same instant, never before it.
     """
 
     def sign_in(value):
@@ -511,6 +520,7 @@ def events(
         for email in emails
         if not (email.state == "cancelled" and email.occurrence in skipped)
     ]
+    lines += [Event(at, what, detail, kind="reviews") for at, what, detail in reviews]
     # sorted() is stable, so equal instants keep the order built above; the
     # rank records that order so the page can reverse it exactly.
     ordered = sorted(lines, key=lambda line: line.at)
@@ -672,7 +682,7 @@ def read_engagement(family_id, scope):
 class Timeline:
     """One Family's records in one scope: the summary, and the full view's extras.
 
-    ``engagement`` is only kept for the full view. For the reduced (Staff)
+    ``engagement`` is only kept for the full view. For the reduced
     view it stays None and ``events`` holds only the ``portal`` lines, which
     ``last_action`` needs, never the rest of the full timeline.
     """
@@ -691,7 +701,7 @@ class Timeline:
         opens never count: a mail scanner fetching the Family's personal
         link makes both exactly as the Family would. Both views read these
         lines: Staff see the Last portal action too (Administrator decision,
-        2026-10-18).
+        2026-10-18), and since #1774 the full timeline as well.
         """
         return max(
             (line for line in self.events if line.portal),
@@ -700,15 +710,17 @@ class Timeline:
         )
 
 
-def read_timeline(scope, family_id, *, full, current_mode="production"):
+def read_timeline(scope, family_id, *, full, current_mode="production", reviews=False):
     """Read one Family's records in ``scope``; ``full`` adds the timeline.
 
     Runs inside the report's read guard and read-only transaction. Both
     views read the emails and submissions the summary needs, and the
     sign-ins, session ends (``current_mode`` is the runtime mode now, for
     attributing them) and engagement record the Last portal action comes
-    from. The reduced (Staff) view keeps only the portal lines; the full
-    view adds the skips and form opens and keeps every line.
+    from. The reduced view keeps only the portal lines; the full view
+    (Administrators and Staff) adds the skips and form opens and keeps every
+    line, and with ``reviews`` the review lines too (``timeline_reviews``,
+    read only while the hub's Timeline tab is chosen, and by the export).
     """
     values = scope_values(scope, family_id)
     bounds = lifetime(scope)
@@ -724,10 +736,11 @@ def read_timeline(scope, family_id, *, full, current_mode="production"):
     engagement = read_engagement(family_id, scope)
     sign_ins, ends = read_sessions(family_id, scope, current_mode, bounds)
     if not full:
-        # Staff see the Last portal action (Administrator decision,
-        # 2026-10-18) but not the timeline: build the lines from what the
-        # action can come from and keep only the portal ones, so no email,
-        # sign-in or form open reaches Staff's page through ``events``.
+        # A role that may open the page without seeing its timeline (none
+        # since Staff got the full view, #1774) still gets the Last portal
+        # action: build the lines from what the action can come from and
+        # keep only the portal ones, so no email, sign-in or form open
+        # reaches its page through ``events``.
         lines = events(
             emails,
             submissions,
@@ -743,6 +756,7 @@ def read_timeline(scope, family_id, *, full, current_mode="production"):
         mode=values["response_mode"],
         rehearsal_epoch_id=scope.rehearsal_epoch_id,
     ).values_list("created_at", flat=True)
+    review_lines = read_reviews(values) if reviews else ()
     return Timeline(
         summary(emails, submissions),
         events(
@@ -754,6 +768,7 @@ def read_timeline(scope, family_id, *, full, current_mode="production"):
             engagement=engagement,
             workgroup_skips=workgroup_skips,
             session_ends=ends,
+            reviews=review_lines,
         ),
         engagement,
     )

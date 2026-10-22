@@ -68,7 +68,11 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.intervals import local_day
-from parishkit.stewardship.campaigns.recurrence import canonical_rule, expand
+from parishkit.stewardship.campaigns.recurrence import (
+    RULE_ERRORS,
+    canonical_rule,
+    expand,
+)
 from parishkit.stewardship.campaigns.work_locks import (
     read_transaction,
     work_transaction,
@@ -180,6 +184,12 @@ REPEAT_FIELDS = (
     "dates",
 )
 REPEAT_MULTIPLE = {"repeat-weekdays", "repeat-dates"}
+# The page's Basic and Advanced toggle (#1129; UX conventions, "Basic and
+# Advanced modes", additive editors). Only the page is drawn by it: Basic is
+# the page with Repeat and the schedule's own email off, so the mode itself
+# is never saved.
+MODE = "editor_mode"
+BASIC, ADVANCED = "basic", "advanced"
 # Edit's choice of which reminders of a series change (#469), posted as
 # ``series-scope``.
 SCOPE = "series-scope"
@@ -216,6 +226,14 @@ TIME_PASSED = _(
     "later time, or change that reminder on its own."
 )
 SERIES_REFUSED = _("This change can't be made to the series. Reload the page.")
+# A repeat on New whose date's send time has already passed (#1948). The page
+# script never offers such a date, so only an old page or a crafted post
+# meets this; an added reminder in the past would send at once.
+REPEAT_PASSED = _(
+    "The reminder on %(date)s at %(time)s would send at a time that has "
+    "already passed, so it would send at once. Choose a later first date or "
+    "a later send time."
+)
 # Another reminder from the cut date whose time has passed without sending
 # (#469): a series change would add it again on its past date, so it would
 # send at once. Only the page refuses this; the command line allows it.
@@ -279,6 +297,9 @@ DELETE_FIELDS = {
     "action",
     "scope",
     "send",
+    # The browser's zone, which the review's send times are shown in
+    # (#1129, #1949), as on Edit's own review.
+    ZONE,
 }
 # The address parameter naming the digest send Edit was opened for from the
 # Campaign calendar (#1658), which Delete's This email only skips.
@@ -310,6 +331,51 @@ BLOCKED = _(
 BLOCKED_FIX = _("Wait for it to finish, or resolve it on Sent mail, then save again.")
 
 
+# The id of each repeat rule control (components/repeat-rule.html), whose
+# reserved error line is "<id>_error"; the weekdays' line is the group's.
+RULE_IDS = {
+    "frequency": "repeat-frequency",
+    "weekdays": "repeat-weekdays",
+    "by": "repeat-by",
+    "day": "repeat-day",
+    "ordinal": "repeat-ordinal",
+    "month_weekday": "repeat-month-weekday",
+    "start": "repeat-from",
+    "until": "repeat-until",
+}
+# Each rule error's closed code, for the refusal log (#1437).
+RULE_CODES = {
+    "dates": "repeat_dates",
+    "order": "repeat_order",
+    "span": "repeat_span",
+    "weekdays": "repeat_weekdays",
+    "monthly": "repeat_monthly",
+    "frequency": "repeat_frequency",
+}
+
+
+def rule_place(error, data):
+    """Where a repeat rule's ``error`` is shown: ``(fields, line field)``.
+
+    The same places as the page script's repeatErrorPlace (ui-v1.js,
+    #1915): the fields marked, and the field whose reserved line holds the
+    message, the last of them (UX conventions "Field errors and live
+    checks": an error about two fields marks both and is said once, after
+    them). A missing date marks whichever date is empty, or both.
+    """
+    if error == "dates":
+        fields = tuple(name for name in ("start", "until") if not data.get(name))
+        fields = fields or ("start", "until")
+    elif error in ("order", "span"):
+        fields = ("start", "until")
+    elif error == "monthly":
+        by_day = data.get("by") != "weekday"
+        fields = ("day",) if by_day else ("ordinal", "month_weekday")
+    else:  # weekdays, frequency
+        fields = (error,)
+    return fields, fields[-1]
+
+
 class RepeatRule(AdminForm):
     """New scheduled email's Repeat checkbox and rule, for reminders only.
 
@@ -317,7 +383,8 @@ class RepeatRule(AdminForm):
     and posts the dates that fit as ``dates``; only ``repeat`` and ``dates``
     decide what is saved. The rule's own fields are kept loose (any choice the
     page offers, or nothing) because they are only drawn again on a refused
-    page, never trusted.
+    page, never trusted, except that a rule giving no date is refused at the
+    field the page marks for it (``refuse_rule``, #1915).
     """
 
     repeat = forms.BooleanField(required=False, label=_("Repeat"))
@@ -343,7 +410,15 @@ class RepeatRule(AdminForm):
             ("weekday", _("A weekday of the month")),
         ],
     )
-    day = forms.IntegerField(required=False, min_value=1, max_value=31)
+    # In the page script's words for a day out of range (#1915).
+    day = forms.IntegerField(
+        required=False,
+        min_value=1,
+        max_value=31,
+        error_messages={
+            key: RULE_ERRORS["monthly"] for key in ("invalid", "min_value", "max_value")
+        },
+    )
     ordinal = forms.ChoiceField(
         required=False,
         choices=[
@@ -358,10 +433,50 @@ class RepeatRule(AdminForm):
         required=False,
         choices=[(str(index), day) for index, day in weekday_choices()],
     )
-    start = forms.DateField(required=False)
-    until = forms.DateField(required=False)
+    start = forms.DateField(
+        required=False, error_messages={"invalid": RULE_ERRORS["dates"]}
+    )
+    until = forms.DateField(
+        required=False, error_messages={"invalid": RULE_ERRORS["dates"]}
+    )
     # Plain text values, checked below: the page script writes them.
     dates = forms.Field(required=False, widget=forms.MultipleHiddenInput)
+
+    # Fields a rule error marks beyond the field that holds it (refuse_rule).
+    rule_marks = ()
+    # The rule errors' words, for the sizes of the reserved error lines.
+    words = RULE_ERRORS
+
+    @property
+    def marks(self):
+        """Each marked rule field's name -> the id of the line describing it.
+
+        A field with its own error is described by its own line; one that
+        ``refuse_rule`` marks with another, by that field's line. The
+        template draws ``aria-invalid`` and ``aria-describedby`` from it.
+        """
+        found = {name: name for name in RULE_IDS if name in self.errors}
+        found |= dict(self.rule_marks)
+        return {name: f"{RULE_IDS[line]}_error" for name, line in found.items()}
+
+    def refuse_rule(self):
+        """Refuse a rule ``expand`` refuses at its fields; True if refused.
+
+        The page script holds Save while the rule gives no date, so this
+        answers only a request that skips it, in the same words and at the
+        same fields (#1915).
+        """
+        rule = _rule_fields(self.cleaned_data)
+        # A monthly weekday choice that is not a number is a monthly error.
+        error = expand(rule).get("error") if rule is not None else "monthly"
+        if not error:
+            return False
+        fields, line = rule_place(error, self.cleaned_data)
+        self.add_error(
+            line, forms.ValidationError(RULE_ERRORS[error], code=RULE_CODES[error])
+        )
+        self.rule_marks = tuple((name, line) for name in fields)
+        return True
 
     def clean_dates(self):
         """The posted dates: distinct calendar days, at most REPEAT_LIMIT."""
@@ -524,6 +639,7 @@ def review(
     series_changes=(),
     key=None,
     skips=None,
+    zone=None,
 ):
     """Bind a change document to the review's forms and build the review.
 
@@ -539,7 +655,9 @@ def review(
     ``build_preview``'s reminder series to remember and series operations
     (#469). ``key`` signs the review with a direct save's request key
     (#1404 PR 4b, ``admin_editing.direct_key``). ``skips`` names the one
-    digest send the change skips (#1658, ``build_preview``'s).
+    digest send the change skips (#1658, ``build_preview``'s). ``zone`` is
+    the browser's posted zone, which the review's send times are shown in
+    (#1129); the command line passes none.
     """
     # The schedule commands' own binding, so the page and the command line
     # cannot read the same change differently.
@@ -580,6 +698,7 @@ def review(
         series_changes=series_changes,
         request_key=key,
         skips=skips,
+        zone=zone,
     )
     return context, window, schedules, identifiers
 
@@ -733,6 +852,7 @@ def _fields(new):
     names = {
         "base_digest",
         ZONE,
+        MODE,
         schedule_email.EDIT,
         *schedule_email.FIELDS,
         *(f"{ENTRY}-{name}" for name in ENTRY_FIELDS),
@@ -742,6 +862,31 @@ def _fields(new):
     else:
         names.update({SCOPE, MOVE})
     return names
+
+
+def editor_mode(posted):
+    """The mode New and Edit scheduled email is drawn in (#1129).
+
+    Basic, unless the page answers a post sent from Advanced or with an
+    Advanced tool in use (Repeat on a Reminder, or "Edit this schedule's email"), so a
+    page drawn again never hides a tool the reader was using. The mode is
+    derived, never stored: Basic is the page with both tools off (UX
+    conventions, "Basic and Advanced modes", additive editors). A posted
+    mode other than Basic or Advanced is refused, as any unknown value is.
+    """
+    if posted is None:
+        return BASIC
+    mode = posted.get(MODE, BASIC)
+    if mode not in {BASIC, ADVANCED}:
+        # No sources: a malformed value of a field the page has.
+        raise unexpected_fields()
+    # Repeat is a Reminder's: a ticked box left over from another mail type
+    # is hidden, so it is not a tool in use.
+    repeating = (
+        posted.get("repeat-repeat") and posted.get("schedule-kind") == "reminder"
+    )
+    in_use = posted.get(schedule_email.EDIT) or repeating
+    return ADVANCED if in_use else mode
 
 
 def _days(entry, repeat):
@@ -817,7 +962,8 @@ def _check_repeat(entry, repeat):
             "repeat",
             forms.ValidationError(_("Only reminders repeat."), code="reminders_only"),
         )
-    elif not repeat.cleaned_data.get("dates"):
+    elif not repeat.cleaned_data.get("dates") and not repeat.refuse_rule():
+        # A valid rule none of whose dates can be added.
         repeat.add_error(
             "repeat",
             forms.ValidationError(
@@ -837,7 +983,16 @@ def _rule(repeat):
     they are read only to remember the rule, so anything incomplete or
     invalid is simply None.
     """
-    data = repeat.cleaned_data
+    rule = _rule_fields(repeat.cleaned_data)
+    return None if rule is None else canonical_rule(rule)
+
+
+def _rule_fields(data):
+    """The rule New's cleaned Repeat fields describe, as ``expand`` takes it.
+
+    None when a monthly weekday choice is not a number (only a request built
+    by hand sends one).
+    """
     frequency = data.get("frequency")
     rule = {
         "frequency": frequency,
@@ -856,7 +1011,7 @@ def _rule(repeat):
             rule["monthly"] = {"day": data.get("day")}
     except (TypeError, ValueError):
         return None
-    return canonical_rule(rule)
+    return rule
 
 
 def _remember(repeat, entries, document):
@@ -924,6 +1079,24 @@ def scope_refusals(record, saved, schedule, campaign, read_only, now):
                 "date": parish_date(date.fromisoformat(missed[0]))
             }
     return result
+
+
+def _repeat_passed(entries, campaign_zone, zone, now):
+    """Words refusing New's repeat when a reminder it adds is already past.
+
+    ``entries`` are the campaign-local schedules ``_entries`` built; the
+    first whose send moment is at or before ``now`` is named in the
+    browser's ``zone``. Returns None when every reminder is still ahead.
+    """
+    for row in entries:
+        moment = schedule_local.instant(row, campaign_zone, now)
+        if moment <= now:
+            shown = moment.astimezone(browser_zone(zone))
+            return REPEAT_PASSED % {
+                "date": parish_date(shown.date()),
+                "time": format_time(shown.time()),
+            }
+    return None
 
 
 class TimePassed(ValueError):
@@ -1139,7 +1312,11 @@ def _summary(entry, repeat, email=None, scope=None):
     page loads, so the reader hears what to fix and can jump to each field.
     ``email`` is the schedule's email form; it counts only while in use
     (bound). ``scope`` is Edit's series scope (#469), linked to its first
-    choice, since a choice group has no control of its own id.
+    choice, since a choice group has no control of its own id. The repeat
+    rule's controls are drawn with their own ids (``RULE_IDS``, not Django's
+    ``id_repeat-...``); the weekdays link to their first box, and an error
+    that marks several fields (a last date before the first) to the first
+    of them (#1915).
     """
     errors = []
     for form in (entry, repeat, email, scope):
@@ -1149,6 +1326,11 @@ def _summary(entry, repeat, email=None, scope=None):
             target = None if field == "__all__" else form[field].auto_id
             if form is scope and target:
                 target = f"{target}_0"
+            if form is repeat and field in RULE_IDS:
+                marked = [name for name, line in repeat.rule_marks if line == field]
+                target = RULE_IDS[marked[0] if marked else field]
+                if target == RULE_IDS["weekdays"]:
+                    target = "repeat-weekday-0"
             errors.extend(
                 {"message": message, "field_id": target} for message in messages
             )
@@ -1406,6 +1588,8 @@ def _entry(request, campaign_id, schedule_id=None):
             # The review dialog's Apply confirms on the list, then returns.
             "apply_url": reverse("admin:schedule_settings"),
             "window_text": window_text(values),
+            # The Basic and Advanced toggle's opening mode (#1129).
+            "editor_mode": editor_mode(posted),
         } | entry_times(values, saved, schedule, now, bound=posted is not None)
         admin_navigation.place(request, flow="change", step="edit")
         if posted is None:
@@ -1454,6 +1638,16 @@ def _entry(request, campaign_id, schedule_id=None):
                     % {"window": window_text(values)},
                     code="outside_campaign",
                 ),
+            )
+            return _entry_page(request, context, status=400)
+        passed = (
+            _repeat_passed(entries, values["timezone"], posted.get(ZONE, ""), now)
+            if repeat is not None and repeat.cleaned_data["repeat"]
+            else None
+        )
+        if passed:
+            repeat.add_error(
+                "repeat", forms.ValidationError(passed, code="repeat_time_passed")
             )
             return _entry_page(request, context, status=400)
         added = (
@@ -1530,6 +1724,7 @@ def _entry(request, campaign_id, schedule_id=None):
             series=series,
             series_changes=series_changes,
             key=key,
+            zone=posted.get(ZONE),
         )
         if reviewed is None and str(NO_CHANGES) in _messages(window.non_field_errors()):
             # Only Edit can post its schedule as saved. Its change gate keeps
@@ -1868,6 +2063,7 @@ def _delete_review(request, service, actor, campaign_id):
             base_digest=posted.get("base_digest"),
             series_changes=series_changes,
             skips={identifier: slot} if slot else None,
+            zone=posted.get(ZONE),
         )
     if reviewed is None:
         raise _refusal(window, schedules)
