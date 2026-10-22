@@ -163,15 +163,18 @@ def parse_entries(entries):
     request (400), which only a crafted or stale request makes.
     """
     if type(entries) is not list or not 1 <= len(entries) <= ENTRY_LIMIT:
+        # No sources: a change document's entry, built by the page or the CLI.
         raise unexpected_fields()
     result, seen = [], set()
     for entry in entries:
         if type(entry) is not dict or entry.get("operation") not in OPERATIONS:
+            # No sources: a change document's entry, built by the page or the CLI.
             raise unexpected_fields()
         keys = {"operation", "id"} | (
             {"send"} if entry["operation"] == "skip" else set()
         )
         if set(entry) != keys:
+            # No sources: a change document's entry, built by the page or the CLI.
             raise unexpected_fields()
         try:
             identifier = str(UUID(str(entry["id"])))
@@ -181,8 +184,10 @@ def parse_entries(entries):
                 else None
             )
         except ValueError:
+            # No sources: a change document's entry, built by the page or the CLI.
             raise unexpected_fields() from None
         if identifier in seen or ("send" in keys and send != entry["send"]):
+            # No sources: a change document's entry, built by the page or the CLI.
             raise unexpected_fields()
         seen.add(identifier)
         result.append(
@@ -223,6 +228,7 @@ def skip_send(identifier, values, campaign, slot, now):
     work, is refused (403). Returns the ``ScheduleSlot``.
     """
     if values["schedule"]["type"] != "repeat":
+        # No sources: the send is checked against the saved report.
         raise unexpected_fields()
     if slot in values["skip_dates"]:
         raise stale_page()
@@ -234,6 +240,7 @@ def skip_send(identifier, values, campaign, slot, now):
     )
     send = next((item for item in page.slots if item.key == slot), None)
     if send is None:
+        # No sources: the send is checked against the saved report.
         raise unexpected_fields()
     if send.due_at <= now:
         raise UserFacingDenied(SKIP_PASSED)
