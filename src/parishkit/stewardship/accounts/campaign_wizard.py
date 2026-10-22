@@ -44,15 +44,20 @@ schedules with no schedule saved proposes a starting set (``suggest``, #1404
 PR 6, ``schedule_suggestions``): its primary is then **Add these schedules
 and continue**, which saves them directly the same way, and Continue without
 schedules for now becomes the secondary.
+
+Go live's Check step lists one summary line per earlier step
+(``summary_lines``, #1404 PR 7), from the same completion read
+(``progress``) and the applied document, so it costs no query.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from uuid import uuid4
 
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+from django.utils.translation import ngettext
 
 from . import stages
 from .admin_navigation import PAGES as NAMES
@@ -145,6 +150,8 @@ class CampaignWizard(Wizard):
     request key that form posts. ``suggest`` marks Dates and mail schedules
     proposing its suggested schedules (no schedule saved, and an Initial
     invitation email to send; #1404 PR 6), which its primary adds directly.
+    ``summary`` is the Go live step's one line per earlier step
+    (``summary_lines``, #1404 PR 7), read only on that step.
     """
 
     upcoming: Step | None = None
@@ -159,6 +166,7 @@ class CampaignWizard(Wizard):
     direct: bool = False
     save_key: object = None
     suggest: bool = False
+    summary: tuple = ()
 
     @property
     def direct_form(self):
@@ -274,6 +282,7 @@ def build(
     load_progress=None,
     families=None,
     suggest=False,
+    summary=(),
 ):
     """Derive the stepper for the page ``current`` (a step key) as a ``Wizard``.
 
@@ -284,10 +293,10 @@ def build(
     invitation's current revision, or None when there is none to test. Every
     other step is always a link: Back and Continue never save or discard
     anything on the page, and each page keeps its own prerequisites.
-    ``sub``, ``no_schedules``, ``direct``, ``suggest`` and the ``load``
-    facts (``load``, ``load_task``, ``load_progress``, ``families``) are
-    carried through (``CampaignWizard``); a ``direct`` (or ``suggest``)
-    stepper draws a fresh ``save_key``.
+    ``sub``, ``no_schedules``, ``direct``, ``suggest``, ``summary`` and the
+    ``load`` facts (``load``, ``load_task``, ``load_progress``,
+    ``families``) are carried through (``CampaignWizard``); a ``direct``
+    (or ``suggest``) stepper draws a fresh ``save_key``.
     """
     pages = [page for page in PAGES if page.key != "share_options" or financial]
     steps = []
@@ -344,7 +353,133 @@ def build(
         direct=direct or suggest,
         save_key=uuid4() if direct or suggest else None,
         suggest=suggest,
+        summary=tuple(summary),
     )
+
+
+@dataclass(frozen=True)
+class SummaryLine:
+    """One line of Go live's summary: a step's name, its page, what it holds."""
+
+    label: object
+    url: str | None
+    text: object
+
+
+# Pages and emails' item states, in the summary's order, in the list's own
+# words (content-catalog.html); "kept" is a Default text item kept as is.
+_CONTENT_WORDS = (
+    ("edited", lambda n: ngettext("%(n)s edited", "%(n)s edited", n)),
+    ("kept", lambda n: ngettext("%(n)s kept as is", "%(n)s kept as is", n)),
+    ("default", lambda n: ngettext("%(n)s default text", "%(n)s default text", n)),
+    ("empty", lambda n: ngettext("%(n)s empty", "%(n)s empty", n)),
+)
+
+
+def _step_summary(key, progress, content, schedules):
+    """The summary text of the step ``key`` (``summary_lines``)."""
+    done = key in progress.done
+    if key == "settings":
+        if key in progress.saved:
+            return _("changed since the campaign was created")
+        return _("as created")
+    if key == "load":
+        return _("loaded") if done else _("not loaded yet")
+    if key == "content":
+        parts = [
+            words(content[state]) % {"n": content[state]}
+            for state, words in _CONTENT_WORDS
+            if content.get(state)
+        ]
+        return ", ".join(str(part) for part in parts) or _("no pages or emails yet")
+    if key == "schedules":
+        initial, reminders = schedules.get("initial", 0), schedules.get("reminder", 0)
+        parts = [
+            ngettext("%(n)s invitation", "%(n)s invitations", initial) % {"n": initial}
+            if initial
+            else None,
+            ngettext("%(n)s reminder", "%(n)s reminders", reminders) % {"n": reminders}
+            if reminders
+            else None,
+        ]
+        return ", ".join(part for part in parts if part) or _(
+            "no Family mail scheduled yet"
+        )
+    if key == "mail_test":
+        return _("test accepted") if done else _("not done yet")
+    if key in progress.saved:
+        return _("changed")
+    if key in progress.kept:
+        return _("kept the defaults")
+    return _("not done yet")
+
+
+def summary_lines(steps, progress, *, content, schedules):
+    """Go live's summary: one ``SummaryLine`` per step before Go live (#1404 PR 7).
+
+    A pure function of the stepper's ``steps``, its ``progress`` read, the
+    Pages and emails item counts (``content``: edited, kept, default and
+    empty) and the campaign's Family mail schedules by kind (``schedules``:
+    initial and reminder), so no step needs a review dialog of its own and
+    every line is unit-testable without a database (admin-portal spec, the
+    Go live step of the stepper).
+    """
+    return tuple(
+        SummaryLine(
+            step.label,
+            step.url,
+            _step_summary(step.key, progress, content, schedules),
+        )
+        for step in steps
+        if step.key != "go_live"
+    )
+
+
+def _window_change(patch, campaign_id):
+    """Whether ``patch`` updates only the campaign's dates and time zone.
+
+    Campaign settings and Dates and mail schedules write the same patch,
+    so ``progress`` credits both steps with it.
+    """
+    owner = str(campaign_id)
+    return any(
+        isinstance(item, dict)
+        and item.get("section") == "campaigns"
+        and item.get("id") == owner
+        and item.get("operation") == "update"
+        and isinstance(item.get("values"), dict)
+        and item["values"]
+        and item["values"].keys() <= _WINDOW_VALUES
+        for item in (patch if isinstance(patch, list) else ())
+    )
+
+
+def _summary_facts(configuration, campaign, items):
+    """The counts ``summary_lines`` takes, from the applied document in hand.
+
+    ``content`` counts the Pages and emails list's rows by the state it
+    shows, ``items`` being the items kept as is (``Progress.items``);
+    ``schedules`` counts the campaign's invitation and reminder schedules.
+    Neither reads the database.
+    """
+    from .content_views import catalog_entries
+
+    pages, emails = catalog_entries(configuration, campaign)
+    content = {}
+    for row in [*pages, *(rev for email in emails for rev in email["revisions"])]:
+        state = row["state"]
+        if state == "default" and row["item"] in items:
+            state = "kept"
+        content[state] = content.get(state, 0) + 1
+    schedules = {}
+    for row in configuration.active_configuration.canonical_document["sections"].get(
+        "schedules", []
+    ):
+        values = row["values"]
+        if values.get("campaign_id") == str(campaign.pk):
+            kind = values.get("kind")
+            schedules[kind] = schedules.get(kind, 0) + 1
+    return content, schedules
 
 
 # Why every later step is unavailable on Create the campaign (#1404 PR 3),
@@ -466,8 +601,46 @@ def _creation_sequence(campaign_id):
     return Coalesce(Subquery(first), Value(0))
 
 
+@dataclass(frozen=True)
+class Progress:
+    """How each Campaign setup step stands, as one read finds it (``progress``).
+
+    ``done`` holds the completed step keys. ``saved`` the steps with an
+    applied change of their own since the creation (Campaign settings' own
+    changes included, which never complete a step but name its summary
+    line), ``kept`` those whose Continue kept them as is, and ``items`` the
+    Pages and emails items kept as is (their ``item`` keys).
+    """
+
+    done: frozenset
+    saved: frozenset = frozenset()
+    kept: frozenset = frozenset()
+    items: frozenset = frozenset()
+
+
 def completed(campaign, revision):
-    """The step keys completed for ``campaign``, read from what was applied.
+    """The step keys completed for ``campaign`` (``progress``'s ``done``)."""
+    return set(progress(campaign, revision).done)
+
+
+def _settings_change(patch, campaign_id):
+    """Whether ``patch`` updates the campaign's own row (``step_keys`` aside).
+
+    It is Campaign settings' change when no step claims it: the summary
+    line then says the settings changed since the creation (#1404 PR 7).
+    """
+    owner = str(campaign_id)
+    return any(
+        isinstance(item, dict)
+        and item.get("section") == "campaigns"
+        and item.get("id") == owner
+        and item.get("operation") == "update"
+        for item in (patch if isinstance(patch, list) else ())
+    )
+
+
+def progress(campaign, revision):
+    """How each step of ``campaign`` stands, read from what was applied.
 
     ``revision`` is the invitation's current revision (or None). Applied
     changes since the campaign's creation, and the steps kept as is
@@ -478,35 +651,51 @@ def completed(campaign, revision):
     It reads every patch applied since the creation: only the step pages,
     an applied step change's status and an Administrator's Home call it,
     while a Testing draft is being prepared, whose history is a few dozen
-    changes, in a constant number of queries.
+    changes, in a constant number of queries. The same read returns the
+    Pages and emails items kept as is, for Go live's summary line.
     """
-    from django.db.models import CharField, Value
+    from django.db.models import CharField, Q, Value
 
     from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 
     from .campaign_mail_models import CampaignMailTest
     from .runtime_models import ConfigurationActivation
 
-    done = {"settings"}
+    saved = set()
     patches = ConfigurationActivation.objects.filter(
         sequence__gt=_creation_sequence(campaign.pk), request__isnull=False
     ).values_list("request__patch", flat=True)
     for patch in patches:
-        done |= step_keys(patch, campaign.pk)
-    # The steps kept as is, and "load" once the campaign has a Family (one
-    # row is enough), in one UNION statement: Home's query budget is fixed.
+        keys = step_keys(patch, campaign.pk)
+        if not keys and _settings_change(patch, campaign.pk):
+            keys = {"settings"}
+        elif _window_change(patch, campaign.pk):
+            # Only the dates or time zone changed: Campaign settings and
+            # Dates and mail schedules both write that patch, so it counts
+            # for both (no added query: the patch is already in hand).
+            keys = keys | {"settings"}
+        saved |= keys
+    # The steps kept as is, Pages and emails' items kept as is, and "load"
+    # once the campaign has a Family (one row is enough), in one UNION
+    # statement: Home's query budget is fixed.
     loaded = (
         FamilyCampaign.objects.filter(campaign_id=campaign.pk)
-        .annotate(step=Value("load", output_field=CharField()))
+        .annotate(
+            step=Value("load", output_field=CharField()),
+            item=Value("", output_field=CharField()),
+        )
         .order_by()
-        .values_list("step", flat=True)[:1]
+        .values_list("step", "item")[:1]
     )
-    done |= set(
-        CampaignSetupReview.objects.filter(campaign_id=campaign.pk, item="")
+    rows = set(
+        CampaignSetupReview.objects.filter(campaign_id=campaign.pk)
+        .filter(Q(item="") | Q(step="content"))
         .order_by()
-        .values_list("step", flat=True)
+        .values_list("step", "item")
         .union(loaded)
     )
+    kept = {step for step, item in rows if not item}
+    done = {"settings"} | saved | kept
     if (
         revision is not None
         and CampaignMailTest.objects.filter(
@@ -514,7 +703,12 @@ def completed(campaign, revision):
         ).exists()
     ):
         done.add("mail_test")
-    return done
+    return Progress(
+        done=frozenset(done),
+        saved=frozenset(saved),
+        kept=frozenset(kept - {"load"}),
+        items=frozenset(item for step, item in rows if item),
+    )
 
 
 def _financial(campaign):
@@ -820,7 +1014,8 @@ def for_request(match, campaign, configuration):
                 )
             )
         )
-    done = completed(campaign, revision)
+    read = progress(campaign, revision)
+    done = set(read.done)
     load, load_task, load_progress = _load_state(campaign, done)
     families = None
     if current == "load" and load is None and not sub:
@@ -829,7 +1024,7 @@ def for_request(match, campaign, configuration):
         from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 
         families = FamilyCampaign.objects.filter(campaign_id=campaign.pk).count()
-    return build(
+    wizard = build(
         financial,
         current,
         done=done,
@@ -843,6 +1038,17 @@ def for_request(match, campaign, configuration):
         direct=name in DIRECT_SUBPAGES if sub else current in DIRECT_STEPS,
         suggest=suggest,
     )
+    if current == "go_live" and not sub:
+        # Go live's Check step lists what each earlier step holds (#1404
+        # PR 7), from the read above and the applied document: no query.
+        content, schedules = _summary_facts(configuration, campaign, read.items)
+        wizard = replace(
+            wizard,
+            summary=summary_lines(
+                wizard.steps, read, content=content, schedules=schedules
+            ),
+        )
+    return wizard
 
 
 # ``current_wizard``'s default: the caller has not read the revision.

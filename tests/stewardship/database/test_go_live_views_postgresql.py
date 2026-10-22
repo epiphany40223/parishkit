@@ -63,6 +63,13 @@ def test_web_preview_is_passive_current_and_never_starts_deletion(campaign_test)
         assert "things to fix before going live" in body
         # Each problem links to the page that fixes it.
         assert f'href="{reverse("admin:source_refresh")}"' in body
+        # One summary line per Campaign setup step (#1404 PR 7, #1942),
+        # each name linking its step.
+        assert "data-go-live-summary" in body
+        settings = reverse("admin:campaign_settings")
+        assert f'<a href="{settings}">Campaign settings</a>: as created</li>' in body
+        load = reverse("admin:source_refresh")
+        assert f'<a href="{load}">Load ParishSoft data</a>: not loaded yet' in body
         # The page updates itself in place (live-status-v1.js).
         assert 'data-live-status="go-live-check"' in body
         assert 'data-live-interval="30000"' in body

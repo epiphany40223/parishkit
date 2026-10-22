@@ -611,7 +611,9 @@ def test_sub_pages_draw_their_steps_stepper(monkeypatch, name, step, sub):
     with that page's own save form (PR 4c).
     """
     monkeypatch.setattr(wizard, "invitation_revision", lambda *_: None)
-    monkeypatch.setattr(wizard, "completed", lambda *_: {"settings"})
+    monkeypatch.setattr(
+        wizard, "progress", lambda *_: wizard.Progress(done=frozenset({"settings"}))
+    )
     monkeypatch.setattr(wizard, "_load_state", lambda *_: (None, None, None))
     monkeypatch.setattr(
         "parishkit.stewardship.accounts.schedule_reads.campaign_schedules",
@@ -1145,6 +1147,104 @@ def test_a_queued_load_says_it_waits_in_start_the_load():
     offer = load_region(load="offer", stages=wizard.load_stages("offer", None))
     ghost = f'<span class="campaign-load-summary-ghost" aria-hidden="true">{QUEUED}<'
     assert all(ghost in html for html in (queued, running, offer))
+
+
+def test_settings_change_is_an_update_of_the_campaigns_own_row():
+    """Campaign settings' own change names its summary line (#1404 PR 7)."""
+
+    def update(owner=CAMPAIGN, operation="update"):
+        """A one-item patch on a campaign row."""
+        return [
+            {"operation": operation, "section": "campaigns", "id": owner, "values": {}}
+        ]
+
+    assert wizard._settings_change(update(), CAMPAIGN)
+    assert not wizard._settings_change(update(owner="other"), CAMPAIGN)
+    assert not wizard._settings_change(update(operation="add"), CAMPAIGN)
+    assert not wizard._settings_change(None, CAMPAIGN)
+    assert not wizard._settings_change(["junk"], CAMPAIGN)
+
+
+def test_window_change_is_a_dates_or_time_zone_only_update():
+    """Such a change counts for Campaign settings too (#1942 review)."""
+
+    def update(values, owner=CAMPAIGN):
+        """A one-item update patch on a campaign row."""
+        return [
+            {
+                "operation": "update",
+                "section": "campaigns",
+                "id": owner,
+                "values": values,
+            }
+        ]
+
+    assert wizard._window_change(update({"timezone": "UTC"}), CAMPAIGN)
+    assert wizard._window_change(
+        update({"start_date": "2054-10-01", "end_date": "2054-11-01"}), CAMPAIGN
+    )
+    assert not wizard._window_change(update({"artwork": {}}), CAMPAIGN)
+    assert not wizard._window_change(update({"timezone": "UTC", "name": "x"}), CAMPAIGN)
+    assert not wizard._window_change(update({}), CAMPAIGN)
+    assert not wizard._window_change(update({"timezone": "UTC"}, "other"), CAMPAIGN)
+    assert not wizard._window_change(None, CAMPAIGN)
+
+
+def go_live_summary(progress, *, content=None, schedules=None, financial=True):
+    """Go live's summary lines as {step label: text}, in order."""
+    stepper = wizard.build(
+        financial, "go_live", done=set(progress.done), mail_test_url=TEST_URL
+    )
+    lines = wizard.summary_lines(
+        stepper.steps, progress, content=content or {}, schedules=schedules or {}
+    )
+    return {str(line.label): str(line.text) for line in lines}
+
+
+def test_go_live_summary_says_what_each_step_holds():
+    """One line per step before Go live, in the step order (#1404 PR 7)."""
+    progress = wizard.Progress(
+        done=frozenset({"settings", "load", "share_options", "images", "mail_test"}),
+        saved=frozenset({"settings", "images"}),
+        kept=frozenset({"share_options"}),
+    )
+    lines = go_live_summary(
+        progress,
+        content={"edited": 3, "kept": 2, "default": 14, "empty": 1},
+        schedules={"initial": 1, "reminder": 3, "daily_digest": 1},
+    )
+    assert lines == {
+        "Campaign settings": "changed since the campaign was created",
+        "Load ParishSoft data": "loaded",
+        "Share options": "kept the defaults",
+        "Pages and emails": "3 edited, 2 kept as is, 14 default text, 1 empty",
+        "Dates and mail schedules": "1 invitation, 3 reminders",
+        "Campaign images": "changed",
+        "Preview and test email": "test accepted",
+    }
+
+
+def test_go_live_summary_of_a_campaign_just_created():
+    """Nothing done yet: each line says so, and a word with no item is left out."""
+    lines = go_live_summary(
+        wizard.Progress(done=frozenset({"settings"})),
+        content={"default": 1},
+        schedules={"reminder": 1},
+        financial=False,
+    )
+    assert lines == {
+        "Campaign settings": "as created",
+        "Load ParishSoft data": "not loaded yet",
+        "Pages and emails": "1 default text",
+        "Dates and mail schedules": "1 reminder",
+        "Campaign images": "not done yet",
+        "Preview and test email": "not done yet",
+    }
+    # Without Financial stewardship there is no Share options line; with no
+    # item and no Family mail, the lines say so.
+    lines = go_live_summary(wizard.Progress(done=frozenset({"settings"})))
+    assert lines["Pages and emails"] == "no pages or emails yet"
+    assert lines["Dates and mail schedules"] == "no Family mail scheduled yet"
 
 
 def test_the_action_row_draws_the_discard_dialog_outside_its_region():
