@@ -803,8 +803,8 @@ class CensusDecisions:
             # (an older page, a script) is refused in plain words at it.
             raise AddRefusal(
                 "note_required",
-                "Back to review of an ignored change, or of a mark or update "
-                "already made, needs a note saying why.",
+                "Back to review of a mark or update already made needs a "
+                "note saying why.",
                 field_ids=("bulk_note" if decision.bulk else "note",),
                 fix="Write a note, then choose Back to review again.",
             ) from None

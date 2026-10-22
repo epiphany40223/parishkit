@@ -4233,7 +4233,8 @@ inventory on #879 lists.
   like every undo of a terminal step (below). An action that carries a note opens the confirmation dialog
   instead, which holds the note, with an ordinary confirm button unless the
   action cannot be undone: Census changes ([#879](https://github.com/epiphany40223/parishkit/issues/879)), whose
-  decisions take an optional note and Reopen a required one; every review
+  decisions take an optional note, Reopen of an Ignore included
+  ([#1889](https://github.com/epiphany40223/parishkit/issues/1889)); every review
   worklist's Back to review on a terminal stage, which needs a note
   ([#1840](https://github.com/epiphany40223/parishkit/issues/1840)); and the
   Ministry request page's Clear Entered in ParishSoft, the same undo. A note field

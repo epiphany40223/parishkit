@@ -524,8 +524,8 @@ def decide_pledges(
     (``not_available`` otherwise), and the page's ``PledgeDecisions``
     records the decision: someone else's decision or a newer answer from
     the Family first is ``stale_version``; an action the stage does not
-    offer, a missing note to reopen an ignored pledge or to undo a terminal
-    step (#1840), or an Edit value the Family form would refuse (at
+    offer, a missing note to undo a terminal step (#1840; reopening an
+    ignored pledge needs none, #1889), or an Edit value the Family form would refuse (at
     ``amount`` or ``frequency``) is ``invalid``. A new key records
     ``admin_cmd_pledges_decide`` once.
     """

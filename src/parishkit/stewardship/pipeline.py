@@ -617,11 +617,11 @@ class NoteRequired(ValueError):
 def undo_needs_note(stage):
     """Whether Back to review from ``stage`` needs a note saying why.
 
-    Reopening an Ignored item always did; undoing a terminal step does too,
-    on every stream (spec, "Undoing a terminal stage").
+    Only undoing a terminal step does, on every stream (spec, "Undoing a
+    terminal stage"). Reopening an Ignored item takes an optional note like
+    any other decision (Administrator decision, 2026-10-21, #1889).
     """
-    stage = Stage(stage)
-    return stage is Stage.IGNORED or stage in TERMINAL_STAGES
+    return Stage(stage) in TERMINAL_STAGES
 
 
 def role_actions(stream, roles, *, leads=False):

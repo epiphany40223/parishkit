@@ -468,6 +468,9 @@ FROZEN = {
     "0145_page_member_names.sql": (
         "9391e8c99018c8b7c5f7c996d4530e89d4d533864876cb2d5dc859321f1cc3b9"
     ),
+    "0158_ignored_note_optional.sql": (
+        "2ad8ec09cab596393c02b32175b1510a163068a4953ba72ff1b5388744fe063a"
+    ),
     "0146_census_terminal_undo.sql": (
         "4bdbbda58daa0aecda124bb36bab4157c2898d27a5d86392e5833d0c7684c456"
     ),

@@ -4776,8 +4776,8 @@ def _census_resolve_options(parser):
     parser.add_argument(
         "--note",
         default="",
-        help="an optional note (required to reopen or undo), or - to read it "
-        "from standard input",
+        help="an optional note (required to undo a terminal step), or - to "
+        "read it from standard input",
     )
     # A mark asked first while it was final; nothing asks now (#1840), and
     # the Administrator removed --yes with no backwards compatibility (#1893).
@@ -8376,8 +8376,8 @@ def _decide_options(chosen, source):
         parser.add_argument(
             "--note",
             default="",
-            help="an optional note (required to reopen an ignored item or to "
-            "undo Handled), or - to read it from standard input",
+            help="an optional note (required to undo Handled), or - to read "
+            "it from standard input",
         )
         # A mark asked first while it was final; nothing asks now (#1840), and
         # the Administrator removed --yes with no backwards compatibility
@@ -8593,9 +8593,9 @@ def _pledges_decide_options(parser):
     parser.add_argument(
         "--note",
         default="",
-        help="an optional note (required to reopen an ignored pledge or to "
-        "undo Entered by hand, Entered incorrectly or Confirmed with "
-        "back_to_review), or - to read it from standard input",
+        help="an optional note (required to undo Entered by hand, Entered "
+        "incorrectly or Confirmed with back_to_review), or - to read it "
+        "from standard input",
     )
     # Entered by hand asked first while it was final; nothing asks now
     # (#1840), and the Administrator removed --yes with no backwards

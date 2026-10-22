@@ -7,8 +7,8 @@ change, once accepted, is entered by hand (``census_resolution``). Since the
 review pipeline (#1683) Staff and Administrators review every census change
 the worklist lists, By hand ones too, and only an Administrator publishes.
 Here a reviewer records **Approve** (the worklist's Accept), **Ignore** or
-**Back to To review** on one change, with an optional note; sending an
-ignored change back to review needs one. Each is one immutable
+**Back to To review** on one change, with an optional note (sending an
+ignored change back to review included, #1889). Each is one immutable
 ``ProposalReview`` row (who, when, the note and the resulting review state)
 plus the proposal's new decision, written under the shared work order. SQL
 independently checks the actor, the campaign, the version, the starting
@@ -74,7 +74,6 @@ from .census_resolution import (
     MAX_NOTE,
     TERMINAL_EXECUTIONS,
     KeyRebound,
-    NoteRequired,
     ReopenCovered,
     covered_by_addition,
     member_id,
@@ -393,12 +392,13 @@ def _record(
     with an edit or without: the decision becomes approved, ParishSoft's
     current value and its source are recorded as the accepted base, and the
     change becomes pending; a later decision away from approved puts it
-    back to conflict. Sending an ignored change back to review needs a
-    note. The same ``request_key`` with the same intent returns the first
-    review unchanged (a repeated submission); with a different intent it is
-    refused. A proposal changed since the page was drawn is refused by
-    ``check_version``, before the review rules, so the reviewer is told the
-    row changed rather than that it cannot be reviewed.
+    back to conflict. Sending an ignored change back to review takes an
+    optional note (#1889). The same ``request_key`` with the same intent
+    returns the first review unchanged (a repeated submission); with a
+    different intent it is refused. A proposal changed since the page was
+    drawn is refused by ``check_version``, before the review rules, so the
+    reviewer is told the row changed rather than that it cannot be
+    reviewed.
     """
     # The kind is part of the intent, so a key bound to one kind of review
     # is never replayed as another.
@@ -434,10 +434,6 @@ def _record(
             proposal.admin_value,
         ):
             raise Unchanged("The edited value is unchanged.")
-    if decision == "unreviewed" and proposal.decision == "ignored" and not note.strip():
-        # Reopening an ignored change says why (the review pipeline's
-        # "Reviewed stage"); the SQL guard requires the same.
-        raise NoteRequired("Sending an ignored census change back needs a note.")
     if (
         decision == "unreviewed"
         and proposal.decision == "ignored"

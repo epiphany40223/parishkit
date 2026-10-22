@@ -543,8 +543,8 @@ def test_every_stream_offers_the_terminal_undo(stage):
     """Back to review on a terminal stage: Staff and Administrators, a note.
 
     Every stream offers it (uniform handling, #1840), never to a Ministry
-    leader; reopening Ignored needs a note too, an accepted stage's undo
-    does not.
+    leader. Only a terminal step's undo needs a note: reopening Ignored
+    (#1889) and an accepted stage's undo do not.
     """
     for stream in Stream:
         offered = pipeline.allowed_actions(stream, stage, STAFF, by_hand=True)
@@ -554,7 +554,7 @@ def test_every_stream_offers_the_terminal_undo(stage):
         )
         assert leader == set()
     assert pipeline.undo_needs_note(stage)
-    assert pipeline.undo_needs_note(Stage.IGNORED)
+    assert not pipeline.undo_needs_note(Stage.IGNORED)
     assert not pipeline.undo_needs_note(Stage.TO_ENTER_BY_HAND)
 
 

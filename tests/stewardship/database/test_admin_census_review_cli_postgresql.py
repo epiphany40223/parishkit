@@ -101,10 +101,8 @@ def test_an_administrator_approves_ignores_and_sends_back(
     # Ignore, then Back to To review; each advances the version.
     code, document = review(run, name, "ignored")
     assert code == 0 and document["result"]["proposal"]["decision"] == "ignored"
-    # Sending an ignored change back needs a note (#1683).
+    # Sending an ignored change back takes an optional note (#1889).
     code, document = review(run, name, "unreviewed")
-    assert code == 1 and document["error"]["code"] == "invalid", document
-    code, document = review(run, name, "unreviewed", "--note", "Asked again")
     assert code == 0 and document["result"]["proposal"]["decision"] == "unreviewed"
     assert (count(EVENT), count(UPDATED)) == (3, 3)
     assert [row.decision for row in ProposalReview.objects.order_by("created_at")] == [

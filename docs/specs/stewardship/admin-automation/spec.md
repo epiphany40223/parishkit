@@ -3175,8 +3175,10 @@ recording activity), then in the page's command scope
 checks the current campaign as the page does (`admit_report_read`), finds
 the Live change in it (any other is `not_available`) and calls the page's
 `census_resolution.resolve_census_change`, which checks the action's
-capability (reopening an Ignore is the Administrator's; undoing a terminal
-outcome, with its required note, is Staff's too), the version and the row's
+capability (reopening an Ignore is the Administrator's, with an optional
+note since [#1889](https://github.com/epiphany40223/parishkit/issues/1889);
+undoing a terminal outcome, with its required note, is Staff's too), the
+version and the row's
 state, and records `census_change_updated`. In the same transaction the
 command records `admin_cmd_census_resolve`, only for a new key: the key is
 the page's `request_key`, so a repeat with the same intent returns the
@@ -3185,7 +3187,8 @@ campaign is checked first, so a repeat after the current campaign changed
 is `not_available`. A
 changed version, or the page's racing second write (a unique violation),
 is `stale_version`; an action the row's state does not allow, or a Reopen
-without a note, is `invalid`, as the page's 400. It prints the resolution's
+that undoes a terminal outcome without a note, is `invalid`, as the page's
+400. It prints the resolution's
 ids, versions and times and the change's state (`version`, `decision`,
 `execution`), never the note, Family, Member or value. A change's id and
 version come from `export census --format jsonl` (`proposal_id`,
@@ -3301,8 +3304,8 @@ post (one item with the key itself, several as the bulk bar with each item's
 key derived from it) for the page's `pledge_review.PledgeDecisions`, so every
 rule is the page's, in Python and in the SQL guard of the
 [financial stream](../review-pipeline/spec.md): the role, the item's version,
-the actions its stage offers, a note to reopen an ignored pledge or to undo
-a terminal stage, and an Edit's amount and frequency checked as the Family form checks them. All or
+the actions its stage offers, a note to undo a terminal stage (reopening
+an ignored pledge takes an optional one, #1889), and an Edit's amount and frequency checked as the Family form checks them. All or
 none: an item someone decided first, or that the Family answered again since,
 is `stale_version`; anything else refused is `invalid`, an Edit value at its
 option (`amount`, `frequency`) with the service's static reason, never the
@@ -3484,9 +3487,10 @@ the two cannot drift.
   several as the bulk bar, each item's key derived from it) for the
   page's `InformationDecisions` or `LimitationDecisions`, so every rule is
   the page's, in Python and in the SQL guard of migration 0126: the role,
-  the version, the actions the stage offers, and a new note to reopen an
-  Ignored item (`invalid` at `note` otherwise), as the page's Back to
-  review asks for one. All or none: an item someone decided first, or
+  the version, the actions the stage offers, and a new note to undo a
+  Handled item (`invalid` at `note` otherwise), as the page's Back to
+  review asks for one; reopening an Ignored item takes an optional note
+  ([#1889](https://github.com/epiphany40223/parishkit/issues/1889)). All or none: an item someone decided first, or
   that the Family answered again since, is `stale_version`. The service
   records `information_updated` or `limitation_reviewed` for each item,
   with the session's user as the actor, and the command
@@ -4180,9 +4184,11 @@ pages' own pieces.
   flags: needed or completed is Accepted; neither keeps a To review or
   Ignored item as it was; and clearing a To handle or Handled item sends it
   back to review, so the command never ignores an item on its own. Taking
-  an Ignored item out of Ignored needs new `--notes` saying why, as the
-  page's Back to review does (`invalid` at `notes` otherwise); so does
-  clearing a completed follow-up, which undoes Handled
+  an Ignored item out of Ignored takes optional `--notes`, as the page's
+  Back to review does
+  ([#1889](https://github.com/epiphany40223/parishkit/issues/1889));
+  clearing a completed follow-up, which undoes Handled, needs new `--notes`
+  saying why (`invalid` at `notes` otherwise)
   ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)).
 - **Keys, scope and audit.** The three changes need a full-scope session,
   run in the page's command scope, and are not fresh-gated, as the pages'

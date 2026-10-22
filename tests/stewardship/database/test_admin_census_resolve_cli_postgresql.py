@@ -122,10 +122,9 @@ def test_an_administrator_enters_ignores_and_reopens(response_service, google, c
     )
     assert code == 1 and document["error"]["code"] == "invalid", document
 
-    # Reopening needs a note; with one, the change is to review again.
+    # Reopening an Ignore takes an optional note (#1889): the change is to
+    # review again.
     code, document = resolve(run, home, "reopened")
-    assert code == 1 and document["error"]["code"] == "invalid", document
-    code, document = resolve(run, home, "reopened", "--note", "Not a duplicate")
     assert code == 0, document
     assert document["result"]["proposal"]["decision"] == "unreviewed"
 
@@ -146,9 +145,15 @@ def test_an_administrator_enters_ignores_and_reopens(response_service, google, c
     assert count(EVENT) == 3
 
     # Reopen undoes the mark (#1840), with a required note: the change is
-    # To enter by hand again, Accepted, as it was shown.
-    code, document = resolve(run, home, "reopened")
-    assert code == 1 and document["error"]["code"] == "invalid", document
+    # To enter by hand again, Accepted, as it was shown. With no note, or
+    # only white space, it is invalid and records nothing: since #1889 the
+    # service's NoteRequired, not an early check, refuses it.
+    for blank in ((), ("--note", "   ")):
+        code, document = resolve(run, home, "reopened", *blank)
+        assert code == 1 and document["error"]["code"] == "invalid", document
+    assert (count(EVENT), count(UPDATED)) == (3, 3)
+    home.refresh_from_db()
+    assert home.execution == "resolved_external"
     code, document = resolve(run, home, "reopened", "--note", "Typed it wrong")
     assert code == 0, document
     assert document["result"]["proposal"]["decision"] == "accepted"
