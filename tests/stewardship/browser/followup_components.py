@@ -46,15 +46,18 @@ from parishkit.stewardship.reports.ministry_followup_views import (
     _refusal_error,
     count_links,
     packet_context,
+    undo_words,
 )
 from parishkit.stewardship.reports.ministry_worklist import (
     WorklistQuery,
     place,
+    row_name,
     worklist_context,
 )
 from parishkit.stewardship.web.filter_errors import FilterError
 from parishkit.stewardship.workflows.followup import FollowupRefusal, outcomes_for
 from parishkit.stewardship.workflows.models import STAFF_STATES
+from parishkit.stewardship.workflows.review import placement
 
 CAMPAIGN, REQUEST = UUID(int=92), UUID(int=93)
 ITEM = reverse("admin:ministry_followup_item", args=[REQUEST])
@@ -678,6 +681,19 @@ def components(context, admin):
             ),
             can_tick=True,
             roster_key=UUID(int=103),
+            # Its Back to review in the view's own words (#1893): an
+            # accepted join, Entered by hand.
+            roster_undo=undo_words(
+                row_name(closed | dict(member_label=closed["member_name"])),
+                placement(
+                    state="resolved",
+                    outcome="joined",
+                    source_resolved=False,
+                    roster_entered=True,
+                    reviewed=False,
+                    added=False,
+                ),
+            ),
             history=[],
         ),
         # Save and next: the next request follows; the last has none, so

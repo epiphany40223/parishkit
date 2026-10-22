@@ -19,6 +19,7 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
+from parishkit.stewardship import pipeline
 from parishkit.stewardship.accounts.admin_navigation import PAGES
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
@@ -28,6 +29,7 @@ from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
+from parishkit.stewardship.responses.refresh_checks import check_states
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 from parishkit.stewardship.time_entry import (
     TimeEntryError,
@@ -47,7 +49,12 @@ from parishkit.stewardship.web.filter_errors import error_context, refused
 from parishkit.stewardship.web.refusals import Refusal, with_codes, with_status_code
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
-from parishkit.stewardship.web.review_worklist import read_decision, record
+from parishkit.stewardship.web.review_worklist import (
+    WORDS,
+    read_decision,
+    record,
+    undo_body,
+)
 from parishkit.stewardship.web.tables import (
     PAGE_SIZES,
 )
@@ -66,6 +73,7 @@ from parishkit.stewardship.workflows.models import (
 from parishkit.stewardship.workflows.review import (
     DecisionRefusal,
     MinistryDecisions,
+    ministry_placement_of,
     undo_entered,
 )
 from parishkit.stewardship.workflows.roster import (
@@ -651,6 +659,13 @@ def _page_response(
                 next_history=history_page + 1 if more_history else None,
                 request_key=uuid4(),
                 roster_key=uuid4(),
+                # Back to review of the tick (#1893), only where it is drawn.
+                roster_undo=_roster_undo(item, marks)
+                if item.get("roster_entered")
+                and item.get("roster_eligible")
+                and can_tick(principal)
+                and not history_only
+                else None,
                 # Admin and Staff see and set the tick; a leader never sees it.
                 can_tick=can_tick(principal),
                 campaign_marks=allows(principal, Capability.MINISTRY_FOLLOWUP),
@@ -1124,6 +1139,42 @@ def roster(request, campaign_id, request_id):
         )
 
     return _mutation(request, campaign_id, request_id, work)
+
+
+def _roster_undo(item, marks):
+    """The request page's Back to review of its tick, in the worklist's words.
+
+    The page's undo of Entered by hand (or of the Confirmed check after it)
+    is the Ministry requests worklist's Back to review (#1840), so since
+    #1893 it is named, titled and worded exactly as that row's icon and
+    dialog are (``review_worklist.WORDS`` and ``undo_body``): the step
+    undone and where the request goes come from its placement, read with
+    its refresh checks as the worklist reads them. Two small statements,
+    run only when the page draws the undo.
+    """
+    checks = check_states(
+        requests=[item["id"]],
+        marks=marks,
+        versions={str(item["id"]): item["version"]},
+    )
+    return undo_words(row_name(item), ministry_placement_of(item, marks, checks))
+
+
+def undo_words(name, placement):
+    """Back to review's words for request ``name`` at ``placement`` (#1893).
+
+    Pure, so a component test draws the page with the view's own words:
+    the worklist row's button word, tooltip, dialog title, dialog body and
+    done line (``review_worklist.WORDS``, ``undo_body``).
+    """
+    words = WORDS[pipeline.Action.BACK_TO_REVIEW]
+    return {
+        "label": words.button,
+        "title": words.label.format(name=name),
+        "dialog_title": words.title_one.format(name=name),
+        "body": undo_body(pipeline.Stream.MINISTRY, placement),
+        "done": f"{name} {words.done}",
+    }
 
 
 def _row_name(campaign_id, principal, request_id):

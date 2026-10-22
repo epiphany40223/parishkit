@@ -42,13 +42,16 @@ REPORT = "family_timeline"
 MODES = ("production",)
 
 
-def capture(campaign_id, family, mode, epoch, *, current_mode):
+def capture(campaign_id, family, mode, epoch, *, current_mode, reader):
     """The page's full timeline of ``family``, as a JSON document.
 
     ``mode`` and ``epoch`` are the page's scope (Testing reads the campaign's
     active rehearsal); ``current_mode`` is the system mode now, which the page
     uses to attribute sign-ins. Instants are ISO 8601 with their offset; the
     words are the page's own, already translated. The code is left out.
+    ``reader`` is the requester's principal: a Back to review line carries
+    its note exactly as the requester's page shows it (#1893), fixed in the
+    immutable snapshot, so the file holds no note they could not read.
     """
     from parishkit.stewardship.accounts.sessions import database_now
     from parishkit.stewardship.campaigns.models import Campaign
@@ -64,6 +67,7 @@ def capture(campaign_id, family, mode, epoch, *, current_mode):
         current_mode=current_mode,
         # The file holds every line, the review lines included (#1774).
         reviews=True,
+        reader=reader,
     )
     # The page's Reminders line (#861) needs the campaign's configuration.
     values = (
@@ -160,8 +164,8 @@ def create_timeline_export(
     if type(browser_timezone) is not str or browser_timezone not in timezone_names():
         raise ValueError("Export timezone must be an IANA name.")
 
-    def admit(*args):
-        """Both enqueue and its owning transaction recheck current authorization."""
+    def requester():
+        """The admitted requester's principal: current policy, reloaded."""
         from .timeline_views import _full
 
         principal = authorize(store, user_id)
@@ -170,10 +174,18 @@ def create_timeline_export(
                 "The Family timeline export is for Administrators and Staff."
             )
         admit_campaign(campaign_id, mutating=True)
+        return principal
+
+    def admit(*args):
+        """Both enqueue and its owning transaction recheck current authorization."""
+        requester()
+        # The task store requires exactly True.
         return True
 
     with export_transaction(campaign_id):
-        admit()
+        # The requester, just admitted: the capture's Back to review notes
+        # are theirs (#1893).
+        principal = requester()
         # A Family of another campaign is refused like a missing one.
         family = FamilyCampaign.objects.get(pk=family_id, campaign_id=campaign_id)
         epoch = rehearsal_epoch(campaign_id) if mode == "testing" else None
@@ -208,7 +220,12 @@ def create_timeline_export(
             correlation_id=correlation_id,
             parameters=parameters,
             document=capture(
-                campaign_id, family, mode, epoch, current_mode=system.mode
+                campaign_id,
+                family,
+                mode,
+                epoch,
+                current_mode=system.mode,
+                reader=principal,
             ),
         )
         # The insert trigger sets the time and the event count.
