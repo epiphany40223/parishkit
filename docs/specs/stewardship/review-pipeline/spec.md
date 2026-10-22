@@ -432,9 +432,13 @@ not been shown:
    [refresh rules](#baseline-refresh-re-evaluation) judge the new version
    only.
 3. **Set back to the ParishSoft value** (the new answer equals the current
-   baseline): the item is **withdrawn** by the Family and leaves every list.
-   If ParishSoft already holds the previous answer, it is Confirmed instead,
-   as today's `resolved_upstream`. An earlier version already Entered by
+   baseline, and the previous answer does not): the item is **withdrawn** by
+   the Family and leaves every list. When ParishSoft already holds the
+   previous answer, the new answer equals both, so rule 1 applies, not this
+   one: the item keeps its stage and decision, and its row says "ParishSoft
+   already holds this value." ([strict phase order](#baseline-refresh-re-evaluation),
+   [#1895](https://github.com/epiphany40223/parishkit/issues/1895); before it, the item was Confirmed at once, as
+   `resolved_upstream`, with no review or step). An earlier version already Entered by
    hand or Updated in ParishSoft is not undone: it stays in history with
    "Withdrawn by the Family after it was entered", shown on its stream's To
    enter by hand report, so Staff can decide whether to undo the entry.
@@ -449,7 +453,12 @@ not been shown:
 
 Rule 1 is what each stream already does for its open items: a census
 proposal resubmitted with the same value is replaced by a successor that
-carries its decision, edited value and baseline; a Ministry request
+carries its decision, edited value and baseline, or, when ParishSoft
+already holds that value, stays as it is on its earlier response with no
+successor, as an entered change does ([#1895](https://github.com/epiphany40223/parishkit/issues/1895); a successor is
+rejected: a new change whose answer ParishSoft already holds would be no
+change at all, which the database refuses for every new change); a
+Ministry request
 resubmitted with the same action keeps its workflow state; repeated
 Additional information text creates no new item. Rules 2 to 5 are today's
 supersede, cancel and withdraw outcomes
@@ -526,7 +535,8 @@ state at submit. The rules apply in order:
    in the history and the refresh rules judge the new version only.
 3. **Withdrawn** (the Family's new answer equals the baseline): the item is
    closed as withdrawn by the Family, whatever its stage, and leaves every
-   list; an item already Entered by hand or Updated is left for the refresh
+   list (also when ParishSoft already holds its earlier answer: withdrawn,
+   never Confirmed, [#1895](https://github.com/epiphany40223/parishkit/issues/1895)); an item already Entered by hand or Updated is left for the refresh
    to judge, with the withdrawal noted so Staff can undo the entry. An item
    added by the parish is never withdrawn by the Family
    ([Ministry changes added by the parish](#what-the-reviewed-form-shows)).
@@ -2214,7 +2224,7 @@ that is done safely.
 | Census | `approved` + `pending`, `api` / `manual` | Ready to update / To enter by hand; Accepted (edited) when an edited value is set |
 | Census | `approved` + `failed` | Ready to update, with the failure shown |
 | Census | `queued` / `published` | Updating / Updated in ParishSoft (Confirmed by its latest [refresh check](#refresh-checks)) |
-| Census | `resolved_external` / `resolved_upstream` | Entered by hand (Confirmed or Entered incorrectly by its latest [refresh check](#refresh-checks)) / Confirmed (since #1890 only for a queued change a refresh finds ParishSoft already holding; no other refresh or update run stores it) |
+| Census | `resolved_external` / `resolved_upstream` | Entered by hand (Confirmed or Entered incorrectly by its latest [refresh check](#refresh-checks)) / Confirmed (since #1890 only for a queued change a refresh finds ParishSoft already holding; no other refresh or update run stores it, and since #1895 no Family resubmission) |
 | Census | `ignored` (any open execution) | Ignored |
 | Census | `superseded`, `cancelled` | history |
 | Ministry | `new`, `assigned`, `in_progress` | To review |

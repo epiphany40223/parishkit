@@ -41,12 +41,19 @@ def first_request(harness, *, ordinary=False):
     return row
 
 
-def response_without_derivation(harness, monkeypatch):
-    """Emulate incomplete derivation, not an alternate production write owner."""
+def response_without_derivation(harness, monkeypatch, *, first_name=None):
+    """Emulate incomplete derivation, not an alternate production write owner.
+
+    ``first_name`` changes Member 3's answer first, so the earlier request is
+    no longer an unchanged resubmission that keeps its decision (#1895).
+    """
     with incomplete_history_fixture(), monkeypatch.context() as patch, web_login():
         patch.setattr(owner, "derive_proposals", lambda *args: [])
         form = revisit(harness)
-        send(harness, form, answers_for(form))
+        answers = answers_for(form)
+        if first_name:
+            answers["members"]["3"]["first_name"] = first_name
+        send(harness, form, answers)
     return Submission.objects.latest("family_version")
 
 
@@ -150,7 +157,13 @@ def test_sql_rejects_review_state_from_unrelated_history(
     old = first_request(harness, ordinary=scope == "ordinary_history")
     if scope == "epoch":
         restart_rehearsal(harness)
-    prior = response_without_derivation(harness, monkeypatch)
+    # An unchanged resubmission keeps the earlier change and its decision
+    # (#1895), so the unrelated history needs a changed answer.
+    prior = response_without_derivation(
+        harness,
+        monkeypatch,
+        first_name="Changed" if scope == "ordinary_history" else None,
+    )
     if scope in {"family", "mode"}:
         foreign_parent_fixture(old, scope)
     with work_transaction():
@@ -160,7 +173,7 @@ def test_sql_rejects_review_state_from_unrelated_history(
         form = revisit(harness)
         answers = answers_for(form)
         if scope == "ordinary_history":
-            answers["members"]["3"]["first_name"] = "Requested"
+            answers["members"]["3"]["first_name"] = "Requested again"
         else:
             assert form["members"][0]["request"] is None
             answers["members"]["3"] = request_answer()

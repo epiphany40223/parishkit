@@ -1183,7 +1183,14 @@ submission's completeness check admits that absence, and the effective-value
 index keeps that change for the next response while each census response
 answers it the same way. A terminal request (moved, deceased, a death date)
 asked for again after it was entered is a new request, since an entered one
-is no longer presented.
+is no longer presented. The same answer again for an open change that
+ParishSoft already holds (the answer equals ParishSoft's value) also
+creates none: the change keeps its stage and decision on its earlier
+response, and the completeness check, the effective-value index and the
+census guard's predecessor lookup find it there the same way, so a later
+different answer replaces it
+([#1895](https://github.com/epiphany40223/parishkit/issues/1895)). A Family response never
+resolves a census change upstream.
 
 A Member the Family added on the form has only the form's local UUID, and
 the form drops that entry once its New Member change is Entered by hand;
@@ -2026,8 +2033,10 @@ before that release, keep these rules:
 
 1. Start with the current ParishSoft value.
 2. If there is no prior effective response change, use current.
-3. If current now equals the prior Family-submitted value, the proposal is
-   resolved upstream and current is used without a change marker.
+3. If current now equals the prior Family-submitted value, ParishSoft
+   already holds the change (which keeps its stage until its step,
+   [#1890](https://github.com/epiphany40223/parishkit/issues/1890)) and
+   current is used without a change marker.
 4. If a published/resolved ProposedChange has an Admin-edited value and current
    equals that edit, use current without attributing the edit to the Family.
 5. If current still equals the prior baseline, overlay the prior Family-
