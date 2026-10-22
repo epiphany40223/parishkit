@@ -4994,6 +4994,39 @@ BEGIN
               AND earlier.family_version<=prior.family_version
               AND (earlier.id=public.stewardship_response_census_anchor_v1(prior.id) OR (NEW.entity_kind='member'
                    AND NEW.field IN ('moved_household','deceased_status','death_date'))
+                   -- A change the prior census response, drawn as the reviewed
+                   -- form (#1705), showed and left as shown, the Family's answer or
+                   -- a reviewer's Edit (#1909): it stays on its earlier response,
+                   -- and effective.proposal_index finds it for the next response
+                   -- (_shown_still_answered), so a response not drawn as the
+                   -- reviewed form carries it or replaces it.
+                   OR EXISTS (SELECT 1 FROM public.stewardship_submission shown_census
+                       CROSS JOIN LATERAL jsonb_array_elements(shown_census.shown_items) shown
+                       CROSS JOIN LATERAL (SELECT shown_census.answers #> CASE NEW.entity_kind
+                             WHEN 'family' THEN ARRAY['family',NEW.field]
+                             WHEN 'member' THEN ARRAY['members',NEW.entity_key,NEW.field]
+                             ELSE ARRAY['proposed_members',NEW.entity_key] END AS value) given
+                       WHERE shown_census.id=public.stewardship_response_census_anchor_v1(prior.id)
+                         AND shown_census.reviewed_view
+                         AND shown->>'stream'='census' AND shown->>'item'=candidate.id::text
+                         AND candidate.execution NOT IN ('cancelled','superseded')
+                         AND CASE shown->>'shown'
+                             WHEN 'baseline' THEN true
+                             WHEN 'family' THEN given.value IS NOT NULL
+                                 AND public.stewardship_response_comparison_v1(NEW.field,given.value)
+                                     IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(NEW.field,candidate.submitted_value)
+                             WHEN 'reviewer' THEN given.value IS NOT NULL AND EXISTS (
+                                 SELECT 1 FROM public.stewardship_proposal_review edit
+                                 JOIN public.stewardship_proposed_change edited ON edited.id=edit.proposal_id
+                                 JOIN public.stewardship_submission edited_response
+                                     ON edited_response.id=edited.submission_id
+                                 WHERE edit.id::text=shown->>'decision' AND edit.admin_value_set
+                                   AND ROW(edited.entity_kind,edited.entity_key,edited.field)
+                                       =ROW(candidate.entity_kind,candidate.entity_key,candidate.field)
+                                   AND edited_response.family_id=shown_census.family_id
+                                   AND public.stewardship_response_comparison_v1(NEW.field,edit.admin_value)
+                                       IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(NEW.field,given.value))
+                             ELSE false END)
                    OR candidate.id=(SELECT newest.id FROM (
                            SELECT kept.id, kept.execution, kept.submitted_value
                            FROM public.stewardship_proposed_change kept
@@ -5392,6 +5425,39 @@ BEGIN
                                  AND given.value IS NOT NULL
                                  AND public.stewardship_response_comparison_v1(OLD.field,given.value)
                                      IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(OLD.field,newest.submitted_value))
+                           -- A change the prior census response, drawn as the reviewed
+                           -- form (#1705), showed and left as shown, the Family's answer or
+                           -- a reviewer's Edit (#1909): it stays on its earlier response,
+                           -- and effective.proposal_index finds it for the next response
+                           -- (_shown_still_answered), so a response not drawn as the
+                           -- reviewed form carries it or replaces it.
+                           OR EXISTS (SELECT 1 FROM public.stewardship_submission shown_census
+                               CROSS JOIN LATERAL jsonb_array_elements(shown_census.shown_items) shown
+                               CROSS JOIN LATERAL (SELECT shown_census.answers #> CASE OLD.entity_kind
+                                     WHEN 'family' THEN ARRAY['family',OLD.field]
+                                     WHEN 'member' THEN ARRAY['members',OLD.entity_key,OLD.field]
+                                     ELSE ARRAY['proposed_members',OLD.entity_key] END AS value) given
+                               WHERE shown_census.id=public.stewardship_response_census_anchor_v1(later.prior_submission_id)
+                                 AND shown_census.reviewed_view
+                                 AND shown->>'stream'='census' AND shown->>'item'=OLD.id::text
+                                 AND OLD.execution NOT IN ('cancelled','superseded')
+                                 AND CASE shown->>'shown'
+                                     WHEN 'baseline' THEN true
+                                     WHEN 'family' THEN given.value IS NOT NULL
+                                         AND public.stewardship_response_comparison_v1(OLD.field,given.value)
+                                             IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(OLD.field,OLD.submitted_value)
+                                     WHEN 'reviewer' THEN given.value IS NOT NULL AND EXISTS (
+                                         SELECT 1 FROM public.stewardship_proposal_review edit
+                                         JOIN public.stewardship_proposed_change edited ON edited.id=edit.proposal_id
+                                         JOIN public.stewardship_submission edited_response
+                                             ON edited_response.id=edited.submission_id
+                                         WHERE edit.id::text=shown->>'decision' AND edit.admin_value_set
+                                           AND ROW(edited.entity_kind,edited.entity_key,edited.field)
+                                               =ROW(OLD.entity_kind,OLD.entity_key,OLD.field)
+                                           AND edited_response.family_id=shown_census.family_id
+                                           AND public.stewardship_response_comparison_v1(OLD.field,edit.admin_value)
+                                               IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(OLD.field,given.value))
+                                     ELSE false END)
                            -- A reviewed form (#1705) names each change it
                            -- showed, which a Family that left it as shown kept
                            -- on its earlier response: such a change, on any

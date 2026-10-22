@@ -179,6 +179,8 @@ def _shown_still_answered(census):
     to ParishSoft's value (rule 3) is left out, so an entered one that the
     Family withdrew is not shown again. An Ignored change the form showed
     as the baseline stays Ignored whatever the answer that made no row.
+    The census guard (frozen file 0163, #1909) finds the same change for a
+    next response not drawn as the reviewed form.
     """
     if census is None or not census.reviewed_view:
         return {}
