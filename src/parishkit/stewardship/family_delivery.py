@@ -27,7 +27,13 @@ from parishkit.email.google_workspace import xoauth2_string
 from .accounts.credential_errors import CredentialValidationUnavailable
 from .accounts.policy_schema import normalized_email
 from .jobs.outbox_validation import mailbox, recipients
-from .mail_catcher import MailTransport, open_mail_catcher, workspace_transport
+from .mail_catcher import (
+    MailTransport,
+    envelope,
+    open_mail_catcher,
+    redirected_message,
+    workspace_transport,
+)
 from .mail_layout import email_document
 from .provider_check_worker import CheckSession
 from .readiness_delivery import _credentials
@@ -457,14 +463,26 @@ def _reply(value):
     return value[0]
 
 
-def _submit(smtp, mail, sender_name="", marks=None):
+def _submit(smtp, mail, sender_name="", marks=None, *, to=None, redirect=None):
     """Preserve per-address refusals across DATA failure without resending a Family.
 
     Explicit MAIL/RCPT staging distinguishes pre-DATA connection loss (definitely
     unsent) from ambiguous DATA loss. Content is serialized before MAIL so MIME
     errors cannot be confused with an external side effect.
+
+    ``to`` is the envelope ``SmtpSession`` routed (``mail_catcher.envelope``,
+    #1399), one address per recipient index; ``redirect`` rewrites the
+    recipient headers to match. An address repeated in ``to`` (only the
+    redirect address ever is) gets one RCPT, whose answer stands for every
+    index it fills. A refusal of the redirect address is a configuration
+    fault (SYSTEMIC), never per-recipient evidence: it says nothing about
+    the real addresses, so none of them is marked refused. A sending limit
+    stays a limit. Without them the mail's own recipients are used.
     """
     count = len(mail.recipients)
+    to = mail.recipients if to is None else tuple(to)
+    if len(to) != count:
+        raise ValueError("The envelope differs from the mail's recipients.")
     permanent, transient = [], []
 
     def result(status, health=None):
@@ -480,7 +498,7 @@ def _submit(smtp, mail, sender_name="", marks=None):
     uncertain = False
     stage = "content"
     try:
-        addresses = (mail.sender, mail.reply_to, *mail.recipients)
+        addresses = (mail.sender, mail.reply_to, *to)
         international = any(not address.isascii() for address in addresses)
         if international and not smtp.has_extn("smtputf8"):
             # A Family's unsupported address must not halt other Families or
@@ -490,7 +508,8 @@ def _submit(smtp, mail, sender_name="", marks=None):
                 if not mail.sender.isascii() or not mail.reply_to.isascii()
                 else FamilyDeliveryStatus.PERMANENT
             )
-        message = apply_sender_name(mail.message(), sender_name, mail.sender).as_bytes(
+        message = redirected_message(mail.message(), redirect)
+        message = apply_sender_name(message, sender_name, mail.sender).as_bytes(
             policy=(policy.SMTPUTF8 if international else policy.SMTP).clone(
                 cte_type="7bit"
             )
@@ -506,13 +525,19 @@ def _submit(smtp, mail, sender_name="", marks=None):
         if code != 250:
             return result(_handshake_failure(code))
         stage = "rcpt"
-        for index, address in enumerate(mail.recipients):
-            reply = smtp.rcpt(address)
+        answered = {}
+        for index, address in enumerate(to):
+            if address not in answered:
+                answered[address] = smtp.rcpt(address)
+            reply = answered[address]
             if kind := sending_limit(reply, stage="rcpt"):
                 return limited(kind)
             code = _reply(reply)
             if code in (250, 251):
                 continue
+            if redirect is not None:
+                # The redirect address was refused, not a Family's address.
+                return result(FamilyDeliveryStatus.SYSTEMIC)
             if 400 <= code <= 499:
                 transient.append(index)
             elif 500 <= code <= 599:
@@ -567,6 +592,7 @@ def deliver_family(
     profile,
     smtp_factory=smtplib.SMTP_SSL,
     session_factory=CheckSession,
+    redirect=None,
 ):
     """Perform exactly one fixed-endpoint submission; never log private errors.
 
@@ -587,11 +613,12 @@ def deliver_family(
         profile=profile,
         smtp_factory=smtp_factory,
         session_factory=session_factory,
+        redirect=redirect,
     )
 
 
 def _deliver_validated(
-    value, settings, mail, *, profile, smtp_factory, session_factory
+    value, settings, mail, *, profile, smtp_factory, session_factory, redirect=None
 ):
     """Share SMTP effects only after a compiled mail adapter validates its contract.
 
@@ -605,6 +632,7 @@ def _deliver_validated(
         profile=profile,
         smtp_factory=smtp_factory,
         session_factory=session_factory,
+        redirect=redirect,
     )
     try:
         return session.deliver(mail)
@@ -637,11 +665,13 @@ class SmtpSession:
 
     The transport follows the installed document and the deployment profile
     (``mail_catcher.workspace_transport``, #476): a Google service account
-    under any profile but LOCAL authenticates to Gmail as above; the
-    mail-catcher document under LOCAL opens a plain, unauthenticated
-    connection to ``LOCAL_SMTP_ENDPOINT`` with no token at all. A document
-    that does not match the profile is a SYSTEMIC result before any
-    connection is opened, so a mismatched file can never send.
+    authenticates to Gmail as above (in LOCAL only beside a mail redirect,
+    #1399); the mail-catcher document under LOCAL opens a plain,
+    unauthenticated connection to ``LOCAL_SMTP_ENDPOINT`` with no token at
+    all. A document the profile does not admit is a SYSTEMIC result before
+    any connection is opened, so a mismatched file can never send. ``redirect``
+    is the LOCAL deployment's mail redirect (#1399): every message's envelope
+    goes through ``mail_catcher.envelope`` before it is sent.
     """
 
     def __init__(
@@ -653,11 +683,13 @@ class SmtpSession:
         smtp_factory=smtplib.SMTP_SSL,
         session_factory=CheckSession,
         clock=time.monotonic,
+        redirect=None,
     ):
         """Hold the key in memory only; nothing is contacted until ``deliver``."""
         self.value = value
         self.settings = delivery_settings(settings)
         self.profile = profile
+        self.redirect = redirect
         self.smtp_factory = smtp_factory
         self.session_factory = session_factory
         self.clock = clock
@@ -742,9 +774,30 @@ class SmtpSession:
         self.stats[key] = self.stats.get(key, 0) + milliseconds
 
     def _attempt(self, mail):
-        """Open a connection when none is kept, then run one SMTP transaction."""
+        """Route the envelope, open a connection when none is kept, then send.
+
+        The transport and the envelope are settled before anything is
+        contacted (``mail_catcher.workspace_transport`` and ``envelope``):
+        a document that does not match the profile, a redirect outside LOCAL
+        or a LOCAL transport beyond the mail catcher without a redirect is a
+        SYSTEMIC result, definitively unsent, with no connection opened.
+        """
+        try:
+            transport = workspace_transport(
+                self.value, self.profile, redirect=self.redirect
+            )
+            to = envelope(
+                mail.recipients,
+                profile=self.profile,
+                transport=transport,
+                redirect=self.redirect,
+            )
+        except ConfigError:
+            return FamilyDeliveryResult(
+                FamilyDeliveryStatus.SYSTEMIC, len(mail.recipients)
+            )
         if self.smtp is None:
-            failure = self._connect(len(mail.recipients))
+            failure = self._connect(len(mail.recipients), transport)
             if failure is not None:
                 return failure
         self.used += 1
@@ -752,7 +805,14 @@ class SmtpSession:
         self.stats["conn_index"] = self.used
         marks = {}
         try:
-            return _submit(self.smtp, mail, self.settings.get("sender_name", ""), marks)
+            return _submit(
+                self.smtp,
+                mail,
+                self.settings.get("sender_name", ""),
+                marks,
+                to=to,
+                redirect=self.redirect,
+            )
         finally:
             # MAIL/RCPT run until DATA starts (or the transaction ends).
             ended = time.monotonic()
@@ -805,20 +865,15 @@ class SmtpSession:
         except Exception:
             return FamilyDeliveryResult(FamilyDeliveryStatus.SYSTEMIC, count)
 
-    def _connect(self, count):
+    def _connect(self, count, transport):
         """Open and authenticate one connection, or return why it failed.
 
         A limit reply ("421 4.7.0 ... (EHLO)", "454 4.7.0" to AUTH, or a
         rate-limited greeting raised by the factory) is a sending limit, not
         an outage. The failed connection is closed; a failing QUIT is ignored.
         The mail-catcher transport (LOCAL only) has no token and no AUTH.
+        ``transport`` is the one ``_attempt`` admitted for the document.
         """
-        try:
-            transport = workspace_transport(self.value, self.profile)
-        except ConfigError:
-            # The document does not match the profile (or is malformed): a
-            # configuration fault, definitively unsent, with nothing contacted.
-            return FamilyDeliveryResult(FamilyDeliveryStatus.SYSTEMIC, count)
         if transport is MailTransport.GMAIL:
             failure = self._token(count)
             if failure is not None:

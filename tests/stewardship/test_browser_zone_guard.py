@@ -96,8 +96,9 @@ SERVER_INSTANTS = {
     "jobs/receipt_content.py": "email",
     "jobs/operational_content.py": "email",
     "reports/daily_digest.py": "email",
-    # The emailed weekly report (its Admin snapshot page shows it as sent).
-    "reports/weekly_digest.py": "email",
+    # The emailed weekly report's requests block (its Admin snapshot page
+    # shows it as sent).
+    "reports/report_blocks/additional_information.py": "email",
     # The Family portal's last-submitted line (campaign zone, named).
     "responses/presentation.py": "Family portal",
     # The shared helper behind responses/presentation.py.
@@ -115,6 +116,10 @@ SERVER_INSTANTS = {
     "reports/ministry_roster_views.py": "export in the chosen zone",
     # Pledges' PDF (#1686), in the zone the download names.
     "reports/pledge_review_views.py": "export in the chosen zone",
+    # The schedule preview's daylight-saving words name the time a shifted
+    # send really happens only when the list is shown in its schedule zone,
+    # which is then the browser's (ui-conventions "Schedule previews", #1129).
+    "occurrence_preview.py": "shown zone is the schedule zone",
 }
 # Form fields whose label, help or errors name a fixed zone, by (form class,
 # field).

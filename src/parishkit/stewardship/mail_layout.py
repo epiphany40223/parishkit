@@ -154,7 +154,17 @@ def _style_block():
         f".pk-body a{{color:{SHARED.link};text-decoration:underline;}}"
         ".pk-body img{max-width:100%;height:auto;border:0;}"
         "@media only screen and (max-width:620px){"
-        ".pk-card{padding:20px 16px !important;}}"
+        ".pk-card{padding:20px 16px !important;}"
+        # The report emails' desktop rows restack for a phone (#1844), only
+        # in mail programs that keep this block: a Campaign totals label
+        # goes above its bar and value, and a day's date moves from its
+        # own column to a row above that day's values (report_markup's
+        # REPORT_CLASSES). Elsewhere the desktop layout shows.
+        ".pk-stack{display:block !important;width:auto !important;"
+        "padding-bottom:0 !important;white-space:normal !important;}"
+        ".pk-wrap{white-space:normal !important;}"
+        ".pk-wide{display:none !important;}"
+        ".pk-narrow{display:table-row !important;}}"
     )
 
 

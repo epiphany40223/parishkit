@@ -50,6 +50,9 @@ TITLE_SIZE = 17.0
 EYEBROW_SIZE = 7.5
 EYEBROW_PITCH = 9.0
 DETAIL_SIZE = 8.0
+# A one-subject report's heading under the title (the timeline's Family).
+SUBJECT_SIZE = 13.0
+SUBJECT_PITCH = 16.0
 BODY_SIZE = 8.75
 LABEL_SIZE = 8.0
 FOOTER_SIZE = 7.5
@@ -183,9 +186,11 @@ class PdfFrame:
 
     ``eyebrow`` is the small line above the title (the parish and campaign,
     wrapped when long), ``stamp`` the right-aligned capture line with the
-    display time zone, ``details`` the short summary lines under
-    the title (counts, filters), ``notice`` the privacy line and ``note`` an
-    optional Testing-mode line. All are plain values; ``safe`` escapes them.
+    display time zone, ``subject`` an optional heading under the title
+    naming whom a one-subject report is about (the timeline's Family, #1841),
+    ``details`` the short summary lines under it (counts, filters),
+    ``notice`` the privacy line and ``note`` an optional Testing-mode line.
+    All are plain values; ``safe`` escapes them.
     """
 
     title: str
@@ -194,9 +199,10 @@ class PdfFrame:
     details: tuple[str, ...] = ()
     notice: str = ""
     note: str = ""
+    subject: str = ""
 
     @classmethod
-    def for_document(cls, document, *, details=(), stamp_key=None):
+    def for_document(cls, document, *, details=(), stamp_key=None, subject=""):
         """The frame for a report document with the usual metadata pairs."""
         metadata = document.metadata
         key = stamp_key or _stamp_key(metadata)
@@ -217,6 +223,7 @@ class PdfFrame:
             details=tuple(details),
             notice=detail(metadata, "Privacy"),
             note=detail(metadata, "Testing mode"),
+            subject=subject,
         )
 
     def _title_face(self):
@@ -235,6 +242,13 @@ class PdfFrame:
     def _shift(self):
         """How far extra eyebrow lines push the title and details down."""
         return EYEBROW_PITCH * max(len(self.eyebrow_lines) - 1, 0)
+
+    @cached_property
+    def subject_lines(self):
+        """The wrapped subject heading (all of it, never cut)."""
+        if not self.subject:
+            return []
+        return wrap_text(safe(self.subject), BODY_WIDTH, SUBJECT_SIZE, "bold")
 
     @cached_property
     def header_lines(self):
@@ -268,8 +282,14 @@ class PdfFrame:
 
     @property
     def body_top(self):
-        """Where the body starts: below the title, details and header rule."""
-        return 74.0 + self._shift + SMALL_PITCH * len(self.header_lines) + 12.0
+        """Where the body starts: below the title, subject, details and rule."""
+        return (
+            74.0
+            + self._shift
+            + SUBJECT_PITCH * len(self.subject_lines)
+            + SMALL_PITCH * len(self.header_lines)
+            + 12.0
+        )
 
     @property
     def body_bottom(self):
@@ -306,6 +326,11 @@ class PdfFrame:
                 ha="right",
             )
         y = 74.0 + self._shift
+        # The subject's larger type sits a little lower than a detail line
+        # would, clear of the title's descenders.
+        for line in self.subject_lines:
+            canvas.text(MARGIN, y + 2, line, SUBJECT_SIZE, "bold", INK)
+            y += SUBJECT_PITCH
         for line in self.header_lines:
             canvas.text(MARGIN, y, line, DETAIL_SIZE, "regular", INK)
             y += SMALL_PITCH

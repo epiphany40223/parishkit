@@ -658,7 +658,8 @@ def test_an_email_counts_each_refused_address_once(response_service, google):
         own = browser.get(f"/admin/mail/sent/{first.message_id}/")
     assert '<a href="/admin/mail/refusals/?duid=1">2 addresses refused</a>' in html
     # The email's own page lists each refused address once, linking its
-    # newest refusal (#1015).
+    # newest refusal (#1015): in the outcome panel of a delivered or failed
+    # email (#1563).
     newest = RecipientRefusal.objects.filter(address=heads[0]).latest("created_at")
     links = [
         f'<a href="/admin/mail/refusals/{newest.pk}/">{heads[0]}</a>',
@@ -666,7 +667,7 @@ def test_an_email_counts_each_refused_address_once(response_service, google):
         f'{RecipientRefusal.objects.get(address=heads[1]).pk}/">{heads[1]}</a>',
     ]
     page = own.content.decode()
-    assert f"Refused addresses: {links[0]}, {links[1]}" in page
+    assert f"{links[0]}, {links[1]}" in page
     assert page.count(f">{heads[0]}</a>") == 1
 
 
@@ -1000,11 +1001,12 @@ def test_delivery_forms_apply_once_with_current_session_and_csrf(
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             page = browser.get(path)
             assert page.status_code == 200
-            # A decision is available, so the forms sit in the "Resolve this
-            # email" section, above the Admin evidence (#1015).
+            # The outcome panel asks its question first, its answer for
+            # this action's form above the Admin evidence (#1563).
             html = page.content.decode()
-            resolve = html.index('<h2 id="resolve-heading">Resolve this email</h2>')
-            assert resolve < html.index("Admin evidence and decisions")
+            panel = html.index('id="outcome-heading"')
+            form = html.index(f'<input type="hidden" name="action" value="{action}">')
+            assert panel < form < html.index("Admin evidence and decisions")
             assert browser.post(path + "resolution/", values).status_code == 403
             for _ in range(2):
                 response = browser.post(
@@ -1021,7 +1023,8 @@ def test_delivery_forms_apply_once_with_current_session_and_csrf(
             # (#806).
             assert (b"(not sure it arrived)" in result.content) == (action == "note")
             if action == "accept":
-                assert b"Retry is not available right now" not in result.content
+                assert b"Sending it again is not available" not in result.content
+                assert b"data-in-place-focus>Delivered</h2>" in result.content
             if action == "confirm_unsent":
                 # The Admin record is not presented as a provider refusal.
                 assert b"Not sent, per provider records; no resend" in result.content
@@ -1211,19 +1214,16 @@ def test_held_decisions_are_shown_unavailable_and_still_refused(
                 ),
                 HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
             )
-    section = html[html.index('id="resolve-heading"') :].split("</section>")[0]
-    assert 'id="delivery-held"' in section
-    assert (
-        'disabled aria-describedby="delivery-held">'
-        "Confirm delivery using external evidence</button>"
-    ) in section
+    section = html[html.index('id="outcome-heading"') :].split("</section>")[0]
+    assert 'id="reason-found-held"' in section
+    # Every answer, the resend's among them, is held, named by the same
+    # notice (#1331, #1563), with no form to send.
+    for value in ("sent", "not_sent", "unsure"):
+        assert (
+            f'name="found" value="{value}" disabled '
+            'aria-describedby="reason-found-held">'
+        ) in section
     assert "<form" not in section
-    # The resend is held with the rest, named by the same notice (#1331).
-    assert (
-        'disabled aria-describedby="delivery-held">'
-        "Authorize potentially duplicate resend</button>"
-    ) in section
-    assert "retry-unavailable" not in html
     assert response.status_code != 302
     assert DeliveryResolution.objects.count() == 0
 

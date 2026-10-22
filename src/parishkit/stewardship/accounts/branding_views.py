@@ -374,7 +374,19 @@ def _upload(request, service):
         raise unexpected_fields(
             request.POST, request.FILES, allowed=allowed | {"logo", *SLOTS}
         )
-    form = LogoUploadForm(request.POST, request.FILES)
+    return stage_upload(request, service, LogoUploadForm(request.POST, request.FILES))
+
+
+def stage_upload(caller, service, form, *, record=None):
+    """Stage a bound upload form's logos, or return the refused form.
+
+    The page's upload and ``pk-admin branding preview`` (#1865) share it:
+    the form's own checks, then (Advanced) the version check and the
+    current logos for the sizes left empty, or (Basic) the four sizes made
+    from one image, then ``stage_branding`` under ``caller``'s sign-in.
+    ``record`` is ``stage_branding``'s. Returns ``(bundle_id, None)`` once
+    the four variants are staged, else ``(None, form)`` with its errors.
+    """
     if form.is_valid():
         graphics = None
         mode = form.cleaned_data["editor_mode"]
@@ -410,7 +422,7 @@ def _upload(request, service):
                 )
         if graphics is not None:
             identifier = stage_branding(
-                request,
+                caller,
                 service,
                 media_root(),
                 graphics,
@@ -418,6 +430,7 @@ def _upload(request, service):
                 # Parish logos opens in this mode once these logos are
                 # applied (#1062).
                 mode=mode,
+                record=record,
             )
             return UUID(str(identifier)), None
     return None, form

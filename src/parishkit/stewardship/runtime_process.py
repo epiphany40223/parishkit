@@ -376,6 +376,7 @@ def serve_credential_installer(configuration, lease):
                 check=lease.check,
                 profile=configuration.profile,
                 base_url=configuration.parishsoft_base_url,
+                redirect=configuration.mail_redirect,
             )
             if configuration.credential_target in TARGETS
             else None
@@ -418,6 +419,7 @@ def serve_credential_installer(configuration, lease):
                 run_pending_probes(
                     installer.files.path,
                     profile=configuration.profile,
+                    redirect=configuration.mail_redirect,
                     check=lease.check,
                 )
             )

@@ -103,7 +103,8 @@ ORDER BY family_duid, family_id
 """
 # Every invitation and reminder send of the mode that had planned an email by
 # as_of (a *send* is one revision of one Family schedule in one mode and
-# Production cycle, as the Family email progress and sends pages count it),
+# Production cycle, as the Mail queue's Family send panel and Family email
+# history count it),
 # with its scheduled time and what it had delivered by then. Each send is
 # keyed by its own occurrences' cycle, so no send depends on the cycle in
 # force when the report is read. The occurrences are read through the

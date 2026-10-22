@@ -8,6 +8,7 @@ Duplicate transport hints remain harmless even across a connection-loss race.
 
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime
 from threading import Event, get_ident, local
 from time import monotonic
 
@@ -15,7 +16,7 @@ from django.db import connection
 
 from parishkit.stewardship.storage import StorageInvariantError
 
-from .scanning import ScanCursor, collect_hints
+from .scanning import RecentHints, ScanCursor, collect_hints, collect_newest_hints
 
 SCHEDULER_LOCK = (736229, 1)
 _scope = local()
@@ -43,6 +44,15 @@ class ScanResult:
     """Transport counts are not task outcomes; failed hints recur on the next sweep."""
 
     cursor: ScanCursor | None
+    published: int
+    unconfirmed: int
+
+
+@dataclass(frozen=True)
+class NewestScanResult:
+    """A newest-due scan's transport counts and the clock its window ended at."""
+
+    now: datetime
     published: int
     unconfirmed: int
 
@@ -186,13 +196,60 @@ def scan_once(
     hints, position = collect_hints(
         handlers=handlers, cursor=cursor, limit=limit, health=health, recent=recent
     )
+    published, unconfirmed, stopped = _publish_all(
+        guard, hints, publish=publish, stop=stop, health=health, recent=recent
+    )
+    if stopped:
+        if health is not None:
+            health.reset()
+        return ScanResult(None, published, unconfirmed)
+    guard.check()
+    if health is not None:
+        if stop is not None and stop.is_set():
+            health.reset()
+        else:
+            health.finish(guard, complete=position is None)
+    return ScanResult(position, published, unconfirmed)
+
+
+def scan_newest(guard, *, handlers, publish, recent, since=None, stop=None):
+    """Publish the newest few hints that fell due since the last loop (#1921).
+
+    The rows come from collect_newest_hints, through the sweep's own
+    admission. Like scan_once, publication runs after every admission
+    transaction has committed, checks ownership before each hint, stops at
+    once on ``stop``, and leaves a failed hint durable for the sweep. It
+    neither moves the fair cursor nor touches the due-work health proof.
+    """
+    if not isinstance(guard, SchedulerGuard) or not callable(publish):
+        raise ValueError("An owned scheduler and bounded publisher are required.")
+    if stop is not None and not isinstance(stop, Event):
+        raise ValueError("Scheduler drainage requires a process-owned stop event.")
+    if not isinstance(recent, RecentHints):
+        raise ValueError("The newest-due scan requires the scheduler's hint memory.")
+    guard.check()
+    hints, now = collect_newest_hints(handlers=handlers, recent=recent, since=since)
+    published, unconfirmed, _ = _publish_all(
+        guard, hints, publish=publish, stop=stop, recent=recent
+    )
+    guard.check()
+    return NewestScanResult(now, published, unconfirmed)
+
+
+def _publish_all(guard, hints, *, publish, stop, health=None, recent=None):
+    """Publish admitted hints in order, outside any transaction.
+
+    Checks ownership before each hint and stops before the next one once
+    ``stop`` is set (warm shutdown leaves the rest durable). A hint the
+    transport cannot confirm stays durable work and counts as unknown for
+    ``health``; a published one is remembered in ``recent``. Returns the
+    published and unconfirmed counts and whether ``stop`` cut it short.
+    """
     published = unconfirmed = 0
     for hint in hints:
         guard.check()
         if stop is not None and stop.is_set():
-            if health is not None:
-                health.reset()
-            return ScanResult(None, published, unconfirmed)
+            return published, unconfirmed, True
         try:
             publish(hint)
         except HintPublicationUnavailable:
@@ -203,10 +260,4 @@ def scan_once(
             published += 1
             if recent is not None:
                 recent.published(hint.run_id)
-    guard.check()
-    if health is not None:
-        if stop is not None and stop.is_set():
-            health.reset()
-        else:
-            health.finish(guard, complete=position is None)
-    return ScanResult(position, published, unconfirmed)
+    return published, unconfirmed, False

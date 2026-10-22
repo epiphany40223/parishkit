@@ -231,15 +231,20 @@ def test_the_catalog_entries(name, model, options):
 
 
 def test_the_ledger_covers_the_pages():
-    """Each page is covered by its read; Parish logos' changes are owed.
+    """Each page is covered by its read and its changes; nothing is owed.
 
     Parish settings' changes are covered too (``test_admin_parish``),
+    Parish logos' by its upload review and Apply (``test_admin_branding``),
     Share options' by its Review and Apply (``test_admin_shares``), and
     Ministries changes nothing since #1267, so nothing is owed for it.
     """
     for route, names, owed in (
         ("ministries", ("ministries list",), None),
-        ("branding_settings", ("branding show",), "PR 10"),
+        (
+            "branding_settings",
+            ("branding show", "branding preview", "branding confirm"),
+            None,
+        ),
         (
             "share_settings",
             ("campaign shares", "campaign shares-preview", "campaign shares-confirm"),

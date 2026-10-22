@@ -99,7 +99,7 @@ Scope and dependencies: [ADM-04 work package](../../plans/stewardship/admin-port
 - [x] ADM-04.04 — Build page previews and readiness-test emails.
 - [x] ADM-04.05 — Build atomic schedule reconciliation previews.
 - [x] ADM-04.06 — Test campaign editing, previews, and schedule races.
-- [ ] ADM-04.07 — Shared schedule preview (#1129), in three slices: 7a specify the component and its adoption (docs only); 7b add the component and draw the refresh schedule's seven-day list with it; 7c draw the mail schedule review's send times with it.
+- [x] ADM-04.07 — Shared schedule preview (#1129), in three slices: 7a specify the component and its adoption (docs only); 7b add the component and draw the refresh schedule's seven-day list with it; 7c draw the mail schedule review's send times with it.
 
 Evidence: Implemented with passing integrated acceptance and review closure. Guarded
 draft creation, archived cloning, structural forms, current-source Ministry/fund
@@ -114,7 +114,7 @@ three-engine browser tests cover these boundaries; see
 Production transitions and live campaign delivery remain with their later
 phase owners, not this preparation package.
 
-ADM-04.07 is post-launch work for #1129. Slice 7b draws the refresh schedule's seven-day list with the shared `occurrence_preview` component and `components/occurrences.html`, render-identical except the `data-day`, `data-today` and `data-other-zone-time` hooks (`test_refresh_preview_render.py`); slice 7c remains. Slice 7a is a docs-only change that adds the [schedule previews](../../specs/stewardship/ui-conventions/spec.md#schedule-previews) convention (with its traceability entry), the adoption paragraphs in the admin-portal spec's seven-day preview and mail schedule review, the command line's from-now send times in the admin-automation spec, and this item's delivery plan.
+ADM-04.07 is post-launch work for #1129. Slice 7b draws the refresh schedule's seven-day list with the shared `occurrence_preview` component and `components/occurrences.html`, render-identical except the `data-day`, `data-today` and `data-other-zone-time` hooks (`test_refresh_preview_render.py`). Slice 7c draws the mail schedule review's send times with it: the next five sends after the database's now (`upcoming_slots`, which `schedule show` and `schedule preview` use too), compact, grouped by the browser's days, with digest lines naming their day, the paused notice and the daylight-saving words only when a send is affected (`test_schedule_review_sends.py`, `test_schedule_views_postgresql.py`, the review dialogs' browser tests). Slice 7a is a docs-only change that adds the [schedule previews](../../specs/stewardship/ui-conventions/spec.md#schedule-previews) convention (with its traceability entry), the adoption paragraphs in the admin-portal spec's seven-day preview and mail schedule review, the command line's from-now send times in the admin-automation spec, and this item's delivery plan.
 
 ## ADM-05: Production transition and pre-start withdrawal
 
@@ -324,7 +324,7 @@ Specification: [Admin automation interface](../../specs/stewardship/admin-automa
 - [x] ADM-11.10 — PR 9: add task retry, delivery and refusal commands.
 - [ ] ADM-11.11 — PR 10: add the remaining configuration commands, including secret replacement.
 - [ ] ADM-11.12 — PR 11: add acknowledgement (`events list`, `events acknowledge`) and follow-up (`followup …`) commands. The users commands (`users list`, `users preview-upgrade`, `users preview`, `users confirm`, `users import-leaders`, including high-impact changes) move to the #952 slices; rule and assignment commands are retired by #952 and #922.
-- [ ] ADM-11.13 — PR 12: add go-live and withdrawal commands.
+- [x] ADM-11.13 — PR 12: add go-live and withdrawal commands (#1809, PR #1816: the Go live page's actions, `admin_go_live`, `test_admin_go_live_actions_cli_postgresql.py`).
 
 Since #1547 an automation session no longer stands in for a recent sign-in,
 because nothing needs one; privileged commands still need a live full-scope
@@ -897,7 +897,27 @@ removed, a stale version, an empty slot, an altered, another slot's or
 another page's token, another Administrator's token denied, a token
 reviewed before the settings changed, no current campaign,
 a read-only session and Staff denied, an ended session) and the unchanged
-Campaign images page suite. Another part adds `workgroup show`,
+Campaign images page suite. Another part (#1865) adds `branding preview`
+and `branding confirm`, Parish logos' upload with its review and the review
+dialog's Apply, in `parishkit.stewardship.admin_branding`, through the
+page's own form, staging (moved into `branding_views.stage_upload`, which
+the page now calls), review and `admin_editing.confirm_intent`, with staged
+uploads owned by the automation session on the command line
+(`branding_staging.sign_in`) and no schema change; proven by
+`tests/stewardship/test_admin_branding.py` (the printed sizes, the bound
+form, the reader's limit, the catalog entries, the described events, the
+ledger, usage errors), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_branding_cli_postgresql.py` (a
+preview and confirm staging under the automation session, recording both
+events and the request, installed and read back by `branding show`, a
+repeat; one size replaced alone; a stale version, a non-image, a size
+outside its rules, a size with nothing to keep and empty input staging
+nothing; logos staged on the page or by another automation session not
+available; an altered, another bundle's or another page's token, another
+Administrator's denied, a token reviewed before the settings changed; a
+read-only session and Staff denied, an ended session) and the unchanged
+Parish logos page suites. Another part adds `workgroup show`,
 `workgroup preview` and `workgroup confirm`, the No-reminders WorkGroup
 page's read, Review and Apply, in `parishkit.stewardship.admin_workgroup`,
 through the page's own campaign check, form, review (moved into
@@ -937,7 +957,27 @@ locked field refused, its leader roles, its end date with
 `campaign_end_date_requested` and its intent, its Ministries with
 `campaign_ministries_requested`, no current campaign, a read-only session
 and Staff denied, an ended session) and the unchanged Campaign settings,
-live end date and live Ministries page suites. Another part adds `campaign
+live end date and live Ministries page suites. Another part (#1899) adds
+`campaign create-preview` and `campaign create`, Create the campaign's
+Review and Apply for the deployment's first campaign, in
+`parishkit.stewardship.admin_campaign_create`, through the page's own
+admission, form, Review, salt and Apply recheck and
+`admin_editing.confirm_intent` with `first_campaign`, and defers
+`campaign_clone` on #145, with no schema change; proven by
+`tests/stewardship/test_admin_campaign_create.py` (the catalog entries,
+the described event, the documents' names, the ledger, the refusal's
+code, usage errors), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_campaign_create_cli_postgresql.py`
+(the first campaign reviewed, created with the event and applied with its
+default content, a repeat once it exists, a second review refused, the
+form's starting values for omitted fields, a command token confirmed on
+the page and a page token by the command, a stale version, field errors,
+an unknown field, a malformed document, an altered, Campaign settings' or
+another Administrator's token, a token reviewed before the settings
+changed, a campaign added since the review, a read-only session and Staff
+denied, an ended session) and the unchanged Create the campaign page
+suite. Another part adds `campaign
 shares-preview` and `campaign shares-confirm`, Share options' Review and
 Apply, in `parishkit.stewardship.admin_shares`, through the page's own
 target and editability checks, formset, review (moved into
@@ -1088,6 +1128,24 @@ Administrator's token denied, a token built before the settings changed,
 no current campaign, the plain-text preview equal to the page's answer
 with no event and no renewed session, a read-only session and Staff
 denied, an ended session) and the unchanged content page suites.
+
+Another part (#1873) adds the `--edit` mode of `content preview` and
+`content confirm`, the content editor's Preview changes and its review
+dialog's Apply, in `parishkit.stewardship.admin_content`: the fields come
+as one JSON object on standard input (`editor_data`), are bound to the
+page's own `ContentForm` and built through the editor's own change (moved
+into `content_views.review_change` and `preview_salt`, which the editor now
+calls), with the existing `admin_cmd_content_confirm` and no schema change;
+proven by `tests/stewardship/test_admin_content_changes.py` (catalog flags,
+usage errors, the fields' defaults and refusals, the salt),
+`tests/stewardship/test_admin_content.py` (the ledger owes nothing),
+`tests/stewardship/database/test_admin_content_edit_cli_postgresql.py` (a
+page changed, confirmed and installed with one event and a repeat, an
+email's switched schedules, the form's refusals at their fields, no
+change, removing a sent email, a stale version, an unknown slot or
+revision, a removal without a subject, another editor's, the Delete's or
+an altered token, a held campaign, a read-only session and Staff denied,
+an ended session) and the unchanged content page suites.
 
 Another part adds `integration list`, `integration show` and `integration
 status`, the Integrations pages' reads, in

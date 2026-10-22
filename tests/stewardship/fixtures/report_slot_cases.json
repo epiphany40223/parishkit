@@ -1,0 +1,292 @@
+{
+  "description": "Report email slot dues (#1786): each slot key's due instant, or null when it is not a send. ReportPlan (campaigns/schedule_evaluation.py) and stewardship_report_slot_due_v1 (frozen migration file report_pipeline) must both give these.",
+  "cases": [
+    {
+      "name": "converted daily",
+      "campaign": {
+        "timezone": "America/New_York",
+        "start_date": "2026-10-05",
+        "end_date": "2026-11-06"
+      },
+      "values": {
+        "schedule": {
+          "type": "repeat",
+          "frequency": "daily",
+          "from": "day_after_campaign_start",
+          "until": "day_after_campaign_end",
+          "time": "07:00:00"
+        },
+        "slot_basis": "report_date",
+        "skip_dates": [
+          "2026-10-08"
+        ],
+        "paused_ranges": []
+      },
+      "slots": {
+        "2026-10-04": null,
+        "2026-10-05": "2026-10-06T11:00:00+00:00",
+        "2026-10-08": null,
+        "2026-10-31": "2026-11-01T12:00:00+00:00",
+        "2026-11-01": "2026-11-02T12:00:00+00:00",
+        "2026-11-06": "2026-11-07T12:00:00+00:00",
+        "2026-11-07": null
+      }
+    },
+    {
+      "name": "converted weekly",
+      "campaign": {
+        "timezone": "America/New_York",
+        "start_date": "2026-10-05",
+        "end_date": "2026-11-06"
+      },
+      "values": {
+        "schedule": {
+          "type": "repeat",
+          "frequency": "weekly",
+          "weekdays": [
+            0
+          ],
+          "from": "campaign_start",
+          "until": "first_send_after_campaign_end",
+          "time": "08:00:00"
+        },
+        "slot_basis": "send_date",
+        "skip_dates": [],
+        "paused_ranges": [
+          {
+            "start": "2026-10-19T12:00:00+00:00",
+            "end": "2026-10-19T13:00:00+00:00"
+          }
+        ]
+      },
+      "slots": {
+        "2026-10-05": "2026-10-05T12:00:00+00:00",
+        "2026-10-06": null,
+        "2026-10-12": "2026-10-12T12:00:00+00:00",
+        "2026-10-19": null,
+        "2026-10-26": "2026-10-26T12:00:00+00:00",
+        "2026-11-02": "2026-11-02T13:00:00+00:00",
+        "2026-11-09": "2026-11-09T13:00:00+00:00",
+        "2026-11-16": null
+      }
+    },
+    {
+      "name": "once after the campaign",
+      "campaign": {
+        "timezone": "America/New_York",
+        "start_date": "2026-10-05",
+        "end_date": "2026-11-06"
+      },
+      "values": {
+        "schedule": {
+          "type": "once",
+          "date": "2026-12-01",
+          "time": "09:00:00"
+        },
+        "slot_basis": "send_date",
+        "skip_dates": [],
+        "paused_ranges": []
+      },
+      "slots": {
+        "2026-11-30": null,
+        "2026-12-01": "2026-12-01T14:00:00+00:00",
+        "2026-12-02": null
+      }
+    },
+    {
+      "name": "once keyed by its report day",
+      "campaign": {
+        "timezone": "America/New_York",
+        "start_date": "2026-10-05",
+        "end_date": "2026-11-06"
+      },
+      "values": {
+        "schedule": {
+          "type": "once",
+          "date": "2026-10-20",
+          "time": "09:00:00"
+        },
+        "slot_basis": "report_date",
+        "skip_dates": [],
+        "paused_ranges": []
+      },
+      "slots": {
+        "2026-10-19": "2026-10-20T13:00:00+00:00",
+        "2026-10-20": null
+      }
+    },
+    {
+      "name": "paused until resumed",
+      "campaign": {
+        "timezone": "America/New_York",
+        "start_date": "2026-10-05",
+        "end_date": "2026-11-06"
+      },
+      "values": {
+        "schedule": {
+          "type": "repeat",
+          "frequency": "daily",
+          "from": "campaign_start",
+          "until": "archive",
+          "time": "07:00:00"
+        },
+        "slot_basis": "send_date",
+        "skip_dates": [],
+        "paused_ranges": [
+          {
+            "start": "2026-10-10T00:00:00+00:00",
+            "end": null
+          }
+        ]
+      },
+      "slots": {
+        "2026-10-04": null,
+        "2026-10-05": "2026-10-05T11:00:00+00:00",
+        "2026-10-09": "2026-10-09T11:00:00+00:00",
+        "2026-10-10": null,
+        "2027-01-01": null
+      }
+    },
+    {
+      "name": "until archived across daylight saving",
+      "campaign": {
+        "timezone": "America/New_York",
+        "start_date": "2026-10-05",
+        "end_date": "2026-11-06"
+      },
+      "values": {
+        "schedule": {
+          "type": "repeat",
+          "frequency": "daily",
+          "from": "campaign_start",
+          "until": "archive",
+          "time": "01:30:00"
+        },
+        "slot_basis": "send_date",
+        "skip_dates": [
+          "2026-10-07"
+        ],
+        "paused_ranges": []
+      },
+      "slots": {
+        "2026-10-07": null,
+        "2026-11-01": "2026-11-01T05:30:00+00:00",
+        "2026-11-02": "2026-11-02T06:30:00+00:00",
+        "2027-03-14": "2027-03-14T06:30:00+00:00",
+        "2027-03-15": "2027-03-15T05:30:00+00:00"
+      }
+    },
+    {
+      "name": "chosen weekdays and dates",
+      "campaign": {
+        "timezone": "America/New_York",
+        "start_date": "2026-10-05",
+        "end_date": "2026-11-06"
+      },
+      "values": {
+        "schedule": {
+          "type": "repeat",
+          "frequency": "weekly",
+          "weekdays": [
+            1,
+            3
+          ],
+          "from": "2026-10-01",
+          "until": "2026-10-15",
+          "time": "18:00:00"
+        },
+        "slot_basis": "send_date",
+        "skip_dates": [],
+        "paused_ranges": []
+      },
+      "slots": {
+        "2026-09-29": null,
+        "2026-10-01": "2026-10-01T22:00:00+00:00",
+        "2026-10-02": null,
+        "2026-10-13": "2026-10-13T22:00:00+00:00",
+        "2026-10-15": "2026-10-15T22:00:00+00:00",
+        "2026-10-20": null
+      }
+    },
+    {
+      "name": "a wholly skipped day, daily",
+      "campaign": {
+        "timezone": "Pacific/Apia",
+        "start_date": "2011-12-28",
+        "end_date": "2012-01-02"
+      },
+      "values": {
+        "schedule": {
+          "type": "repeat",
+          "frequency": "daily",
+          "from": "campaign_start",
+          "until": "day_after_campaign_end",
+          "time": "07:00:00"
+        },
+        "slot_basis": "report_date",
+        "skip_dates": [],
+        "paused_ranges": []
+      },
+      "slots": {
+        "2011-12-28": "2011-12-29T17:00:00+00:00",
+        "2011-12-29": "2011-12-30T10:00:00+00:00",
+        "2011-12-30": null,
+        "2011-12-31": "2011-12-31T17:00:00+00:00"
+      }
+    },
+    {
+      "name": "a wholly skipped day, weekly",
+      "campaign": {
+        "timezone": "Pacific/Apia",
+        "start_date": "2011-12-28",
+        "end_date": "2012-01-02"
+      },
+      "values": {
+        "schedule": {
+          "type": "repeat",
+          "frequency": "weekly",
+          "weekdays": [
+            4
+          ],
+          "from": "campaign_start",
+          "until": "campaign_end",
+          "time": "08:00:00"
+        },
+        "slot_basis": "send_date",
+        "skip_dates": [],
+        "paused_ranges": []
+      },
+      "slots": {
+        "2011-12-30": "2011-12-30T10:00:00+00:00"
+      }
+    },
+    {
+      "name": "slots that are not dates",
+      "campaign": {
+        "timezone": "America/New_York",
+        "start_date": "2026-10-05",
+        "end_date": "2026-11-06"
+      },
+      "values": {
+        "schedule": {
+          "type": "repeat",
+          "frequency": "daily",
+          "from": "campaign_start",
+          "until": "campaign_end",
+          "time": "07:00:00"
+        },
+        "slot_basis": "send_date",
+        "skip_dates": [],
+        "paused_ranges": []
+      },
+      "slots": {
+        "once": null,
+        "2026-1-05": null,
+        "2026-02-30": null,
+        "recovery:x": null,
+        "manual:y": null,
+        " 2026-10-05": null
+      }
+    }
+  ]
+}

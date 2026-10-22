@@ -27,6 +27,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.accounts.role_refusal import require
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin, database_now
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
@@ -56,7 +57,13 @@ from parishkit.stewardship.web.exports import (
 )
 from parishkit.stewardship.web.refusals import Refusal, with_codes, with_status_code
 from parishkit.stewardship.web.responses import campaign_response
-from parishkit.stewardship.web.review_worklist import read_decision, record
+from parishkit.stewardship.web.review_worklist import (
+    RETIRED_DATES,
+    drop_retired_dates,
+    page_fields,
+    read_decision,
+    record,
+)
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
 from . import census_publication
@@ -153,9 +160,8 @@ def _principal(request, store, *, read_only=False, export=False):
     principal = authenticated_admin(
         request, store=store, activity=not read_only, read_only=read_only
     )
-    if not allows(principal, Capability.VIEW_CENSUS) or (
-        export and not allows(principal, Capability.REPORT_EXPORT)
-    ):
+    require(principal, Capability.VIEW_CENSUS)
+    if export and not allows(principal, Capability.REPORT_EXPORT):
         raise PermissionError("Census changes are unavailable.")
     return principal
 
@@ -278,11 +284,13 @@ def _respond(request, campaign_id, *, export, render):
             # A GET carries only the choices a link may (R38 finding 6): the
             # view's own address, which the page puts in the address bar, so
             # a reload draws the same view; the name search never does.
-            if set(request.GET) - LINK_PARAMETERS:
+            # The retired Submitted from and Through (#1888) are dropped
+            # unread, from a link and a form alike, never refused.
+            if set(request.GET) - LINK_PARAMETERS - RETIRED_DATES:
                 raise ValueError("Census change links carry no private filter.")
-            parameters = (
-                request.GET if request.method == "GET" else request.POST
-            ).copy()
+            parameters = drop_retired_dates(
+                (request.GET if request.method == "GET" else request.POST).copy()
+            )
             parameters.pop("csrfmiddlewaretoken", None)
             decision = None if export else read_decision(parameters)
             extra = _choices(parameters, export=export)
@@ -401,7 +409,7 @@ def report(request, campaign_id):
         table = paginate(
             result["rows"],
             extra["paging"],
-            carry=list(query.form_values().items()),
+            carry=list(page_fields(query.form_values()).items()),
             sorting=SORTING,
         )
         # Each shown Family name opens its Timeline (#1570): one read of
@@ -425,7 +433,7 @@ def report(request, campaign_id):
                 "table": table,
                 "campaign_id": campaign_id,
                 "query": query,
-                "query_fields": query.form_values(),
+                "query_fields": page_fields(query.form_values()),
                 "route_choices": ROUTE_LABELS.items(),
                 "kind_choices": KIND_LABELS.items(),
                 "notice": extra.get("notice"),

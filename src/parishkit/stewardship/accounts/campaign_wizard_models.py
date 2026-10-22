@@ -17,7 +17,7 @@ from django.db import models
 from parishkit.stewardship.storage import ImmutableRecord
 
 # The steps a Continue may record: those completed by a page's own change.
-# Load ParishSoft data, Preview and test email and Go-live readiness have a
+# Load ParishSoft data, Preview and test email and Go live have a
 # check of their own instead (Families loaded, a test accepted, going live).
 REVIEW_STEPS = ("settings", "share_options", "content", "schedules", "images")
 # A Pages and emails item key: one page or email slot, such as page:welcome.

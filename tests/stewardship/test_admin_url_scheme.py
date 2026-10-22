@@ -14,7 +14,7 @@ from uuid import UUID
 import pytest
 from django.http import Http404
 from django.test import RequestFactory
-from django.urls import Resolver404, resolve, reverse
+from django.urls import NoReverseMatch, Resolver404, resolve, reverse
 
 from parishkit.stewardship.accounts import admin_navigation as navigation
 from parishkit.stewardship.admin_urls import (
@@ -242,19 +242,11 @@ SLASHLESS_EXPECTED = {
     ),
     "/admin/campaign/go-live": "/admin/campaign/go-live/",
     "/admin/campaign/go-live/families": "/admin/campaign/go-live/families/",
-    f"/admin/campaign/go-live/cleanup/{T}": f"/admin/campaign/go-live/cleanup/{T}/",
-    f"/admin/campaign/go-live/cleanup/{T}/links": (
-        f"/admin/campaign/go-live/cleanup/{T}/links/"
-    ),
-    f"/admin/campaign/go-live/cleanup/{T}/links/{T}/confirmation": (
-        f"/admin/campaign/go-live/cleanup/{T}/links/{T}/confirmation/"
-    ),
+    "/admin/campaign/go-live/preparing": "/admin/campaign/go-live/preparing/",
+    "/admin/campaign/go-live/confirmation": "/admin/campaign/go-live/confirmation/",
     "/admin/campaign/production": "/admin/campaign/production/",
-    "/admin/campaign/production/cancellation": (
-        "/admin/campaign/production/cancellation/"
-    ),
     "/admin/mail/controls": "/admin/mail/controls/",
-    "/admin/mail/family-progress": "/admin/mail/family-progress/",
+    "/admin/mail/queue": "/admin/mail/queue/",
     "/admin/mail/family-history": "/admin/mail/family-history/",
     "/admin/mail/sent": "/admin/mail/sent/",
     f"/admin/mail/sent/{T}": f"/admin/mail/sent/{T}/",
@@ -267,6 +259,7 @@ SLASHLESS_EXPECTED = {
     "/admin/users": "/admin/users/",
     "/admin/users/new": "/admin/users/new/",
     f"/admin/users/{T}/edit": f"/admin/users/{T}/edit/",
+    f"/admin/users/{T}/timeline": f"/admin/users/{T}/timeline/",
     "/admin/users/sessions": "/admin/users/sessions/",
     "/admin/users/automation": "/admin/users/automation/",
     "/admin/users/automation/approval": "/admin/users/automation/approval/",
@@ -325,6 +318,10 @@ OLD_ADDRESSES = (
     "/admin/mail/outgoing/",
     f"/admin/mail/outgoing/{T}/",
     f"/admin/mail/outgoing/{T}/resolution/",
+    # Family email progress, replaced by Mail queue (#1562), and its fragment.
+    "/admin/mail/family-progress/",
+    "/admin/mail/family-progress",
+    "/admin/mail/family-progress/status/",
     f"/admin/deliveries/{T}/resolve",
     "/admin/deliveries/family-sends",
     "/admin/family-portal",
@@ -376,6 +373,25 @@ OLD_ADDRESSES = (
     "/admin/users/rules/base",
     f"/admin/users/rules/requests/{T}",
 )
+
+
+def test_finishing_setup_is_named_for_its_page():
+    """Finishing setup's progress page (which also holds Cancel initial
+    setup) lives at /admin/setup/finishing, with no alias at its old
+    /admin/setup/cancel address (#1903, #864). The old address now falls to
+    the wizard's step route, which answers 404 for a step it does not have
+    (setup_views.setup_step), as for any other unknown step."""
+    from parishkit.stewardship.accounts.setup_cancellation_views import (
+        setup_cancellation,
+    )
+    from parishkit.stewardship.accounts.setup_views import FORMS
+
+    assert reverse("admin:setup_finishing") == "/admin/setup/finishing"
+    assert resolve("/admin/setup/finishing").func is setup_cancellation
+    assert resolve("/admin/setup/cancel").url_name == "setup_step"
+    assert "cancel" not in FORMS
+    with pytest.raises(NoReverseMatch):
+        reverse("admin:setup_cancel")
 
 
 @pytest.mark.parametrize("old", OLD_ADDRESSES)
@@ -476,15 +492,35 @@ def test_test_email_pages_come_before_the_content_editor():
 
 
 def test_the_go_live_chain_names_no_campaign():
-    """Each go-live step sits under the one before it, with no campaign id."""
-    cleanup = reverse("admin:go_live_cleanup", args=[TASK])
-    links = reverse("admin:go_live_links", args=[TASK])
-    confirmation = reverse("admin:production_confirmation", args=[TASK, TASK])
+    """Each go-live step sits under Go live, with no campaign id.
+
+    No step names a request or a preparation either (#1585 slices 3 and
+    4): the retired Testing cleanup, Prepare Family links and old Confirm
+    Production addresses are gone, with no redirect, as is the Cancel
+    go-live page (slice 5), now a dialog on Production activation.
+    """
     assert reverse("admin:go_live") == "/admin/campaign/go-live/"
-    assert cleanup.startswith("/admin/campaign/go-live/") and links.startswith(cleanup)
-    assert confirmation.startswith(links) and confirmation.endswith("/confirmation/")
-    withdrawal = reverse("admin:production_withdrawal")
-    assert withdrawal.startswith(reverse("admin:production_progress"))
+    assert reverse("admin:go_live_prepare") == "/admin/campaign/go-live/preparing/"
+    assert reverse("admin:go_live_confirm") == ("/admin/campaign/go-live/confirmation/")
+    for retired in ("go_live_cleanup", "go_live_links"):
+        with pytest.raises(NoReverseMatch):
+            reverse(f"admin:{retired}", args=[TASK])
+    with pytest.raises(NoReverseMatch):
+        reverse("admin:production_confirmation", args=[TASK, TASK])
+    with pytest.raises(NoReverseMatch):
+        reverse("admin:production_withdrawal")
+    for path in (
+        f"/admin/campaign/go-live/cleanup/{TASK}/",
+        f"/admin/campaign/go-live/cleanup/{TASK}/links/",
+        f"/admin/campaign/go-live/cleanup/{TASK}",
+        f"/admin/campaign/go-live/cleanup/{TASK}/links/{TASK}/confirmation/",
+        f"/admin/campaign/go-live/cleanup/{TASK}/links/{TASK}/confirmation",
+        "/admin/campaign/production/cancellation/",
+        "/admin/campaign/production/cancellation",
+    ):
+        with pytest.raises(Resolver404):
+            resolve(path)
+    assert reverse("admin:production_progress") == "/admin/campaign/production/"
 
 
 @pytest.mark.parametrize(

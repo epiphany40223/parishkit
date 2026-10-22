@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 
+from parishkit.stewardship.accounts import stages
 from parishkit.stewardship.accounts.setup_finishing import finishing
 from parishkit.stewardship.campaigns.domain import Percentage
 
@@ -53,6 +54,7 @@ def test_just_confirmed_setup_is_working_and_waiting():
         "parishsoft",
         "google_workspace",
         "configuration",
+        "start",
         "source",
         "completed",
     ]
@@ -150,11 +152,17 @@ def test_acknowledged_credentials_start_configuration_then_source():
     assert by_key(finishing(status(credentials=installed)))["configuration"][
         "state"
     ] == ("active")
-    source = {"id": uuid4(), "state": "running", "progress": Percentage(3, 10)}
+    source = {
+        "id": uuid4(),
+        "state": "running",
+        "phase": "fetching",
+        "progress": Percentage(3, 10),
+    }
     rows = by_key(
         finishing(status(credentials=installed, prepared=True, source=source))
     )
     assert rows["configuration"]["state"] == "done"
+    assert rows["start"]["state"] == "done"
     assert rows["source"]["state"] == "active"
     assert rows["source"]["progress"] == Percentage(3, 10)
     assert rows["source"]["task"] == source["id"]
@@ -193,10 +201,57 @@ def test_configuration_failures_explain_what_to_do(code, text):
 
 def test_failed_final_load_gives_a_task_reference():
     """A failed final load names its task so the operator can find its logs."""
-    source = {"id": uuid4(), "state": "failed", "progress": Percentage(0, 0)}
+    source = {
+        "id": uuid4(),
+        "state": "failed",
+        "phase": "fetching",
+        "progress": Percentage(0, 0),
+    }
     rows = by_key(finishing(status(prepared=True, source=source)))
+    assert rows["start"]["state"] == "done"
     assert rows["source"]["state"] == "failed"
     assert rows["source"]["task"] == source["id"]
+
+
+def queued_source(state="queued", phase="unspecified"):
+    """The final load as finalization_status reads it, before a worker took it."""
+    return {"id": uuid4(), "state": state, "phase": phase, "progress": None}
+
+
+def test_a_queued_final_load_is_in_start_the_load():
+    """Queued: Start the load in progress with the shared sentence (#1916).
+
+    The final load's own step waits until a worker picks it up, and then
+    Start the load is done and the load in progress at once.
+    """
+    from parishkit.stewardship.accounts.stages import QUEUED
+
+    source = queued_source()
+    rows = by_key(finishing(status(prepared=True, source=source)))
+    assert rows["start"]["state"] == "active"
+    assert rows["start"]["status"] == "In progress"
+    assert rows["start"]["text"] == QUEUED
+    assert str(QUEUED) == (
+        "Waiting for the background service to pick up the job. This can take "
+        "a minute or two."
+    )
+    assert rows["source"]["state"] == "waiting" and "task" not in rows["source"]
+    started = by_key(
+        finishing(status(prepared=True, source=queued_source("running", "starting")))
+    )
+    assert started["start"]["state"] == "done"
+    assert started["source"]["state"] == "active"
+
+
+def test_a_final_load_that_ended_before_pickup_fails_start_the_load():
+    """A final load no worker ever took fails on Start the load, with its task."""
+    source = queued_source("cancelled")
+    result = finishing(status(prepared=True, source=source))
+    rows = by_key(result)
+    assert rows["start"]["state"] == "failed"
+    assert rows["start"]["task"] == source["id"]
+    assert rows["source"]["state"] == "waiting"
+    assert result["overall"] == "failed"
 
 
 def test_signature_changes_only_with_what_the_page_shows():
@@ -219,3 +274,64 @@ def test_enabled_slack_and_unexpected_rows_are_listed():
         )
     )
     assert rows["slack"]["state"] == "active"
+
+
+def forms(row):
+    """A row's reserved forms as (state, text) pairs."""
+    return {(form["state"], str(form["text"])) for form in row["reserve"]}
+
+
+def test_each_box_reserves_every_running_form():
+    """Every step's box reserves each form it can take while setup runs,
+    the one it shows included, so its height holds as it moves on
+    (#1903); Setup complete reserves nothing, since the page's result
+    replaces the boxes."""
+    rows = by_key(finishing(status()))
+    credential_forms = forms(rows["parishsoft"])
+    assert {state for state, _text in credential_forms} == {
+        "waiting",
+        "active",
+        "operator",
+        "done",
+    }
+    assert len(credential_forms) == 6
+    operator = next(
+        form for form in rows["parishsoft"]["reserve"] if form["state"] == "operator"
+    )
+    assert operator["count"] == {"done": 8, "total": 8}
+    assert operator["status"] == "Waiting for the server operator"
+    assert forms(rows["configuration"]) == {
+        ("waiting", "Starts after every credential is installed and acknowledged."),
+        ("active", "Preparing the new configuration."),
+        ("done", "The configuration is prepared."),
+    }
+    # Start the load and the final load reserve the words that swap when a
+    # worker picks the final load up (#1916), so no box resizes at that moment.
+    assert forms(rows["start"]) == {
+        ("waiting", "Starts after the configuration is prepared."),
+        ("active", str(stages.QUEUED)),
+        ("done", "The background service started the load."),
+    }
+    assert forms(rows["source"]) >= {
+        ("waiting", "Starts after the configuration is prepared."),
+        ("waiting", "Starts once the background service picks up the job."),
+    }
+    source = {form["state"]: form for form in rows["source"]["reserve"]}
+    assert set(source) == {"waiting", "active", "done"}
+    # The final load's counts and task reference are reserved before it starts.
+    assert "progress" in source["active"] and len(source["active"]["task"]) == 36
+    assert rows["completed"]["reserve"] == []
+    # A running final load reserves the stand-in counts, not its own.
+    running = {"id": uuid4(), "state": "running", "progress": Percentage(1, 2)}
+    rows = by_key(finishing(status(prepared=True, source=running)))
+    assert len(rows["source"]["reserve"]) == 4
+
+
+def test_a_box_never_reserves_a_failure():
+    """A failure's long explanation is not reserved: it stops the updates
+    and comes with a notice above the boxes (#1903)."""
+    rows = by_key(finishing(status(credentials=[credential("parishsoft", "failed")])))
+    assert rows["parishsoft"]["state"] == "failed"
+    for row in rows.values():
+        assert "failed" not in {form["state"] for form in row["reserve"]}
+    assert len(rows["parishsoft"]["reserve"]) == 6

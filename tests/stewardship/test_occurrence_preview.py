@@ -185,9 +185,11 @@ def test_both_shifted_line_wordings():
         )
         return [item["shift_text"] for day in context["days"] for item in day["items"]]
 
+    # A send list writes the time in the parish's clock, as its "set for"
+    # time; a refresh list in its 24-hour HH:MM.
     assert words(NY) == [
         "sends once, clocks go back",
-        "sends at 03:00, clocks go forward",
+        "sends at 3:00 AM, clocks go forward",
     ]
     assert words(NY, "runs") == [
         "runs once, clocks go back",

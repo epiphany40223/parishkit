@@ -8,6 +8,16 @@ and [ADM-05 implementation package](../plans/stewardship/admin-portal.md#adm-05-
 control this increment; the [automated delivery cycle](../plans/stewardship/overall.md#automated-phase-delivery-cycle)
 controls validation, reviews and protected delivery.
 
+> **Historical.** This guide records how the server side was built and
+> reviewed. The separate withdrawal page it describes (later Cancel
+> go-live), with its tick box and five-minute preview, was replaced by the
+> Cancel go-live dialog on Production activation, the last step of the
+> four-step
+> [Go live page](../specs/stewardship/admin-portal/spec.md#go-live-page)
+> ([#1585](https://github.com/epiphany40223/parishkit/issues/1585)), which
+> reuses the old page's server-side owners. The operator's procedure is the launch
+> runbooks' [Production activation](stewardship-launch-runbooks.md#production-activation).
+
 ## Increment boundary
 
 Deliver the current-Admin pre-start withdrawal workflow: a live Admin session

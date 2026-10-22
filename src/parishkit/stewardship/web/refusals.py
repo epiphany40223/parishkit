@@ -75,6 +75,10 @@ class Refusal:
     # The closed reason code the refusal log records (#1403;
     # ``audit.refusal_context.REASONS``); never shown.
     reason: str | None = None
+    # Whether the browser error page offers Sign in again for a 403. False
+    # for a refusal that signing in cannot fix, such as a role that lacks
+    # the page (#1924).
+    sign_in: bool = True
 
     def as_dict(self):
         """JSON-safe fields for scripts; the link is a same-origin path."""
@@ -111,6 +115,9 @@ class UserFacing(TypedRefusal):
     """
 
     default_reason = None
+    # Copied to ``Refusal.sign_in``: a subclass whose refusal signing in
+    # cannot fix sets it False.
+    offers_sign_in = True
     # What the refusal log adds (#1403): the number of submitted field names
     # the form does not have, and its own fields sent more than once
     # (``unexpected_fields``); never shown.
@@ -147,7 +154,16 @@ class UserFacing(TypedRefusal):
             raise TypeError("A refusal reason must be a closed reason code.")
         self.expected, self.actual = setting_values(reason, expected, actual)
         super().__init__(str(message))
-        self.refusal = Refusal(message, fix, link, link_label, title, page_fix, reason)
+        self.refusal = Refusal(
+            message,
+            fix,
+            link,
+            link_label,
+            title,
+            page_fix,
+            reason,
+            self.offers_sign_in,
+        )
 
     @property
     def reason(self):
@@ -488,6 +504,40 @@ STEP_REASONS = {
     "needs_holds": "release_refused",
     "superseded": "resend_refused",
     "held_elsewhere": "resend_refused",
+    # The Go live page's Start go-live (#1585): another Administrator's
+    # Start applied first, a stop is still running or failed, or the
+    # campaign closed since the check; or the public web address check run
+    # again at Apply failed, which is the deployment's state, not the input.
+    "started": "stale_page",
+    "stopping": "stale_page",
+    "stop_failed": "stale_page",
+    "closed": "stale_page",
+    "origin_unverified": "configuration",
+    # Its Stop go-live (#1585 slice 3): go-live was stopped, or Production
+    # confirmed, since the step was drawn.
+    "stopped": "stale_page",
+    "confirmed": "stale_page",
+    # Its Confirm Production (#1585 slice 4): the target, the hold, the
+    # Family links or readiness changed since the step was drawn. The typed
+    # word missing (``typed``) is an incomplete form the page gates.
+    "target": "stale_page",
+    "hold_ended": "stale_page",
+    "moved": "stale_page",
+    "problems": "stale_page",
+    # The same inputs, but emails fell due since the Review, so the counts
+    # it showed are no longer the ones Apply would confirm.
+    "due": "stale_page",
+    "typed": "unexpected_fields",
+    # Production activation's Cancel go-live (#1585 slice 5): the reason
+    # missing is an incomplete form the dialog gates; mail being sent (or
+    # uncertain, or needing recovery) blocks it until resolved; live
+    # delivery was paused, or another Administrator cancelled, since the
+    # page was drawn. A start that passed is "started" and a changed count
+    # "changed", as above.
+    "no_reason": "unexpected_fields",
+    "blocking": "send_work_blocks",
+    "paused": "stale_page",
+    "cancelled": "stale_page",
 }
 
 

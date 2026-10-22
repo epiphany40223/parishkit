@@ -40,6 +40,7 @@ from django.views.decorators.http import require_http_methods, require_POST
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.policy_models import PortalUser
+from parishkit.stewardship.accounts.role_refusal import require
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin, database_now
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
@@ -76,6 +77,7 @@ from parishkit.stewardship.web.review_worklist import (
     NOT_SEEN,
     Column,
     build,
+    page_address,
     read_decision,
     record,
 )
@@ -228,9 +230,7 @@ def _principal(request, store, *, read_only=False):
     principal = authenticated_admin(
         request, store=store, activity=not read_only, read_only=read_only
     )
-    if not allows(principal, Capability.FINANCIAL_DETAIL):
-        raise PermissionError("Pledges are unavailable.")
-    return principal
+    return require(principal, Capability.FINANCIAL_DETAIL)
 
 
 def _labels(identities):
@@ -842,6 +842,12 @@ def page_context(rows, stage, extra, roles, *, mutable, notice):
         filters_template="stewardship/pledges-filters.html",
         editor_template="stewardship/pledges-edit.html",
         export_template="stewardship/pledges-export.html",
+        # The view's address carries its Stage alone (To review is the plain
+        # address), the one choice the page's GET takes, so a reload after an
+        # in-place Stage change draws the Stage on screen (#1820).
+        address=page_address(
+            action, [("stage", "" if stage == DEFAULT_STAGE else stage)]
+        ),
     )
     for row in worklist.rows:
         row["decision_label"] = _stage_line(row.pop("_source"), row["decision_label"])

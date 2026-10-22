@@ -251,7 +251,10 @@ def test_a_new_reminder_is_reviewed_then_applied_from_the_list(
     dialog = dialog[dialog.index('<dialog id="schedule-review"') :]
     assert f'data-review-return="{LIST}"' in dialog
     assert 'data-review-outcome="schedules-outcome"' in dialog
-    assert f'<form method="post" action="{LIST}" data-review-apply>' in dialog
+    assert (
+        '<form id="schedule-review-apply" method="post" '
+        f'action="{LIST}" data-review-apply>' in dialog
+    )
     assert ConfigurationChangeRequest.objects.count() == before
     accepted = post(browser, LIST, {"action": "confirm", "preview": token(review)})
     apply(store, accepted)
@@ -401,6 +404,71 @@ def test_a_repeat_adds_one_ordinary_reminder_per_date(auth_service, google):
     )
     assert refused.status_code == 400
     assert "Only reminders repeat." in unescape(refused.content.decode())
+    # A rule that gives no date is refused at the fields the page marks:
+    # Until before From marks both, said once in Until's line (#1915).
+    order = post(
+        browser,
+        NEW,
+        data
+        | {
+            "repeat-start": "2054-10-14",
+            "repeat-until": "2054-10-01",
+            "repeat-dates": [],
+            "base_digest": store.active().digest,
+        },
+    )
+    assert order.status_code == 400
+    page = unescape(order.content.decode())
+    assert (
+        '<ul class="errorlist" id="repeat-until_error"><li>The last date is before '
+        "the first.</li></ul>"
+    ) in page
+    # The summary links to the first marked field (a control that exists).
+    assert re.search(r'<a href="#repeat-from">The last date is before', page)
+    for control in ("repeat-from", "repeat-until"):
+        assert re.search(
+            rf'id="{control}"[^>]*aria-invalid="true" '
+            r'aria-describedby="repeat-until_error"',
+            page,
+        )
+    assert "This rule gives no date that can be added" not in page
+
+
+def test_a_repeat_date_whose_time_has_passed_is_refused(
+    auth_service, google, monkeypatch
+):
+    """#1948: on October 10 a repeat posting October 6 would add a reminder
+    in the past, which would send at once. Refused at Repeat, naming the
+    date and time, and nothing is recorded; the later date alone reviews."""
+    store = auth_service.store
+    _, emails = setup(store)
+    now = datetime(2054, 10, 10, 13, tzinfo=UTC)
+    monkeypatch.setattr(
+        schedule_entry_views, "timezone", SimpleNamespace(now=lambda: now)
+    )
+    browser, _ = signed_in()
+    data = entry(
+        store, kind="reminder", time="09:00", template_version=emails["reminder"]["id"]
+    ) | {
+        "repeat-repeat": "on",
+        "repeat-frequency": "weekly",
+        "repeat-weekdays": "1",
+        "repeat-start": "2054-10-01",
+        "repeat-until": "2054-10-14",
+        "repeat-dates": ["2054-10-06", "2054-10-13"],
+    }
+    before = ConfigurationChangeRequest.objects.count()
+    refused = post(browser, NEW, data)
+    assert refused.status_code == 400
+    assert (
+        "The reminder on October 6, 2054 at 9:00 AM would send at a time that "
+        "has already passed" in unescape(refused.content.decode())
+    )
+    errors = refused.context["repeat"].errors.as_data()["repeat"]
+    assert [error.code for error in errors] == ["repeat_time_passed"]
+    assert ConfigurationChangeRequest.objects.count() == before
+    review = post(browser, NEW, data | {"repeat-dates": ["2054-10-13"]})
+    assert review.status_code == 200, review.content
 
 
 def test_a_refused_new_schedule_shows_its_errors_and_records_nothing(
@@ -593,6 +661,44 @@ def test_delete_records_one_change_that_removes_the_schedule(auth_service, googl
     assert definition("initial")
     status = browser.get(accepted["Location"]).content.decode()
     assert "Return to Dates and mail schedules" in status
+
+
+def test_delete_review_draws_its_sends_with_the_schedule_preview(
+    auth_service, google, monkeypatch
+):
+    """#1949: Edit's Delete review lists the Current schedule's send as Add
+    and Update do, by its day in words and a browser-local time (the shared
+    schedule preview's compact layout), not as a full date with a zone.
+    Outside the campaign wizard, where Edit offers Delete."""
+    monkeypatch.setattr(campaign_wizard, "shown", lambda *_, **__: False)
+    store = auth_service.store
+    setup(store)
+    browser, _ = signed_in()
+    reminder = definition("reminder")
+    page = unescape(
+        browser.get(f"/admin/campaign/schedules/{reminder.pk}/").content.decode()
+    )
+    delete_form = page[page.index('id="schedule-delete-form"') :]
+    assert (
+        '<input type="hidden" name="zone" value="" data-browser-zone>'
+        in (delete_form[: delete_form.index("</form>")])
+    )
+    review = post(
+        browser,
+        DELETE,
+        {
+            "action": "preview",
+            "base_digest": store.active().digest,
+            "schedule_id": str(reminder.pk),
+            "zone": "America/New_York",
+        },
+    )
+    assert review.status_code == 200, review.content
+    text = unescape(review.content.decode())
+    assert "Current schedule" in text
+    assert "Sunday, October 25, 2054, <time " in text
+    assert "data-local-instant data-time-only>" in text
+    assert "When it sends (shown in your computer's time zone):" in text
 
 
 def test_delete_cancels_only_the_deleted_schedules_planned_sends(auth_service, google):

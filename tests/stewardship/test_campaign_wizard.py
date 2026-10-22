@@ -44,7 +44,7 @@ def test_steps_are_the_campaign_pages_under_their_own_names():
         "Dates and mail schedules",
         "Campaign images",
         "Preview and test email",
-        "Go-live readiness",
+        "Go live",
     ]
     for step, page in zip(stepper.steps, wizard.PAGES, strict=True):
         # Load ParishSoft data has its own name for Refresh from ParishSoft.
@@ -340,6 +340,16 @@ def test_action_row_saves_a_direct_step_in_the_same_place():
     )
     assert 'id="campaign-step-status" role="status"' in html
     assert "campaign-continue-hint" not in html
+    # Campaign images saves its staged images with its own form (PR 4c).
+    images = wizard.build(
+        True, "images", done={"settings"}, mail_test_url=None, direct=True
+    )
+    assert images.direct_form == "artwork-save-form"
+    assert re.search(
+        r'<button type="submit" form="artwork-save-form" [^>]*data-campaign-save'
+        r" data-step-inactive[^>]*>Save and continue</button>",
+        actions(images),
+    )
     # Any other step, and a stepper drawn without ``direct``, is unchanged.
     for other in (
         wizard.build(True, "share_options", done={"settings"}, mail_test_url=None),
@@ -459,6 +469,49 @@ def test_dates_with_no_schedules_continue_without_them():
     assert "Continue to Campaign images" in actions(stepper)
 
 
+def test_dates_with_suggested_schedules_add_them_and_continue():
+    """Suggested schedules make Add these schedules and continue the primary.
+
+    #1404 PR 6a: Continue without schedules for now stays, as the secondary
+    before it; the primary submits the suggested schedules' form and is not
+    change-gated (data-campaign-add, not data-campaign-save). The row names
+    the next step an applied save opens, and its status line is reserved.
+    """
+    stepper = wizard.build(
+        True,
+        "schedules",
+        done={"settings"},
+        mail_test_url=None,
+        no_schedules=True,
+        suggest=True,
+    )
+    assert stepper.direct and stepper.save_key is not None
+    assert stepper.direct_form == wizard.SUGGESTED_FORM
+    html = actions(stepper)
+    assert re.search(
+        r'<form method="post" action="[^"]+" data-campaign-continue>.*'
+        r'<button type="submit" class="[^"]*secondary[^"]*"[^>]*>Continue without '
+        r'schedules for now</button></form><div class="campaign-step-primary" '
+        r'data-campaign-primary><button type="submit" form="suggested-schedules-'
+        r'form" [^>]*data-campaign-add[^>]*>Add these schedules and continue'
+        r"</button></div>",
+        html,
+        re.S,
+    )
+    assert "data-campaign-save" not in html
+    assert f'data-next-url="{reverse("admin:artwork_settings")}"' in html
+    assert 'id="campaign-step-status" role="status"' in html
+    # Without suggestions the step keeps its one primary Continue, and still
+    # names its next step for a save made elsewhere on the page.
+    plain = actions(
+        wizard.build(
+            True, "schedules", done={"settings"}, mail_test_url=None, no_schedules=True
+        )
+    )
+    assert "Add these schedules" not in plain and "data-campaign-add" not in plain
+    assert f'data-next-url="{reverse("admin:artwork_settings")}"' in plain
+
+
 def test_test_email_continues_only_after_an_accepted_test():
     """Preview and test email's purpose is the test, so Continue waits for it."""
     before = actions(
@@ -469,13 +522,20 @@ def test_test_email_continues_only_after_an_accepted_test():
         wizard.build(True, "mail_test", done={"mail_test"}, mail_test_url=TEST_URL)
     )
     assert f'href="{reverse("admin:go_live")}"' in after
-    assert "Continue to Go-live readiness" in after and "<form" not in after
+    assert "Continue to Go live" in after and "<form" not in after
 
 
 def test_the_last_step_and_sub_pages_have_back_only():
-    """Go-live readiness has Back; a sub-page has Return to its step."""
-    last = actions(wizard.build(True, "go_live", done=set(), mail_test_url=TEST_URL))
-    assert "data-campaign-step-back" in last and "Continue" not in last
+    """Go live draws its own row; a sub-page has Return to its step.
+
+    The last step's page, the Go live page's Check step, draws only its own
+    step bar and action row (#1585), whose Back opens the step before it.
+    """
+    stepper = wizard.build(True, "go_live", done=set(), mail_test_url=TEST_URL)
+    assert actions(stepper).strip() == ""
+    chrome = {"admin_chrome": {"campaign_wizard": stepper}}
+    assert render_to_string("stewardship/campaign-stepper.html", chrome).strip() == ""
+    assert stepper.previous.url == TEST_URL
     sub = actions(
         wizard.build(True, "content", done={"settings"}, mail_test_url=None, sub=True)
     )
@@ -512,7 +572,7 @@ def test_load_notice_offers_the_load_until_families_exist():
         "stewardship/campaign-stepper.html",
         {"admin_chrome": {"campaign_wizard": loading}},
     )
-    assert "ParishSoft data is loading; Go-live readiness waits for it." in html
+    assert "ParishSoft data is loading; going live waits for it." in html
     assert "source_refresh" not in html and "<form" not in html
 
 
@@ -520,6 +580,7 @@ def test_load_notice_offers_the_load_until_families_exist():
     ("name", "step", "sub"),
     [
         ("campaign_settings", "settings", False),
+        ("artwork_settings", "images", False),
         ("content_catalog", "content", False),
         ("content_edit", "content", True),
         ("content_revision", "content", True),
@@ -538,7 +599,9 @@ def test_sub_pages_draw_their_steps_stepper(monkeypatch, name, step, sub):
     Campaign settings' own page (and Share options') saves directly (#1404
     PR 4), and so do the sub-pages that save: Pages and emails' editor and
     New and Edit scheduled email (PR 4b), each with its own form. Content
-    history and the Campaign calendar, which save nothing, do not.
+    history and the Campaign calendar, which save nothing, do not. Campaign
+    images' refused upload, drawing Campaign images again, saves directly
+    with that page's own save form (PR 4c).
     """
     monkeypatch.setattr(wizard, "invitation_revision", lambda *_: None)
     monkeypatch.setattr(wizard, "completed", lambda *_: {"settings"})
@@ -562,6 +625,8 @@ def test_sub_pages_draw_their_steps_stepper(monkeypatch, name, step, sub):
         "content_revision": "content-form",
         "schedule_new": "schedule-entry-form",
         "schedule_edit": "schedule-entry-form",
+        "artwork_settings": "artwork-save-form",
+        "artwork_upload": "artwork-save-form",
     }
     assert stepper.direct is (name in forms)
     assert stepper.direct_form == forms.get(name)
@@ -790,29 +855,36 @@ def states(boxes):
     return [(box["key"], box["state"]) for box in boxes]
 
 
-KEYS = ["fetching", "staging", "validating", "promoting"]
+KEYS = ["start", "fetching", "staging", "validating", "promoting"]
 
 
 @pytest.mark.parametrize(
     ("load", "phase", "expected"),
     [
-        ("offer", None, ["waiting"] * 4),
-        ("loading", "unspecified", ["waiting"] * 4),
-        ("loading", "fetching", ["active", "waiting", "waiting", "waiting"]),
-        ("loading", "validating", ["done", "done", "active", "waiting"]),
-        ("loaded", None, ["done"] * 4),
+        ("offer", None, ["waiting"] * 5),
+        # Queued, not yet picked up by a worker: Start the load (#1916).
+        ("loading", "unspecified", ["active"] + ["waiting"] * 4),
+        # Picked up: Start the load is done and the download in progress at
+        # once, before the worker reports its first phase.
+        ("loading", "starting", ["done", "active", "waiting", "waiting", "waiting"]),
+        ("loading", "fetching", ["done", "active", "waiting", "waiting", "waiting"]),
+        ("loading", "validating", ["done", "done", "done", "active", "waiting"]),
+        ("loaded", None, ["done"] * 5),
         # A load that ran and finished is done, even with no Families.
-        ("empty", None, ["done"] * 4),
-        ("failed", "staging", ["done", "failed", "waiting", "waiting"]),
-        ("failed", "unspecified", ["failed", "waiting", "waiting", "waiting"]),
+        ("empty", None, ["done"] * 5),
+        ("failed", "staging", ["done", "done", "failed", "waiting", "waiting"]),
+        ("failed", "starting", ["done", "failed", "waiting", "waiting", "waiting"]),
+        # Ended before any worker took it: the failure is on Start the load.
+        ("failed", "unspecified", ["failed"] + ["waiting"] * 4),
     ],
 )
 def test_load_stages_follow_the_refresh_phases(load, phase, expected):
     """One box per refresh phase the worker reports, in order (#1404 PR 5).
 
-    Not loaded: every stage waiting; loading: the stages before the run's
-    phase done and its own in progress; loaded: every stage done; failed:
-    the stage it stopped in failed. Each box words its state.
+    Not loaded: every stage waiting; loading: Start the load in progress
+    until a worker picks the run up (#1916), then the stages before the
+    run's phase done and its own in progress; loaded: every stage done;
+    failed: the stage it stopped in failed. Each box words its state.
     """
     boxes = wizard.load_stages(load, phase)
     assert states(boxes) == list(zip(KEYS, expected, strict=True))
@@ -834,7 +906,8 @@ def test_the_loading_stepper_carries_the_run_to_its_stage_boxes():
         load_progress=("staging", 10, 40),
     )
     assert stepper.load_view == "loading" and stepper.load_task == task
-    assert states(stepper.load_stages)[:2] == [
+    assert states(stepper.load_stages)[:3] == [
+        ("start", "done"),
         ("fetching", "done"),
         ("staging", "active"),
     ]
@@ -868,7 +941,7 @@ def test_load_status_region_draws_one_state_each():
     offer = load_region(load="offer", stages=wizard.load_stages("offer", None))
     assert "This campaign's ParishSoft data hasn't been loaded yet." in summary(offer)
     assert "data-live-pending" not in offer and "data-live-url" not in offer
-    assert offer.count('data-stage-state="waiting"') == 4
+    assert offer.count('data-stage-state="waiting"') == 5
     loading = load_region(
         load="loading",
         load_task=task,
@@ -897,7 +970,7 @@ def test_load_status_region_draws_one_state_each():
     )
     assert "is loaded." in summary(loaded) and "1,234 Families, as of" in loaded
     assert 'datetime="2026-10-17T12:00:00+00:00" data-local-instant' in loaded
-    assert loaded.count('data-stage-state="done"') == 4
+    assert loaded.count('data-stage-state="done"') == 5
     # A poll's settled answer follows up by re-reading the page in place.
     polled = load_region(
         **wizard.load_status(task_values("succeeded", task), families=True)
@@ -911,7 +984,7 @@ def test_load_status_region_draws_one_state_each():
     )
     assert "loaded, but no Families matched." in summary(empty)
     assert "is loaded." not in summary(empty)
-    assert empty.count('data-stage-state="done"') == 4
+    assert empty.count('data-stage-state="done"') == 5
     assert reverse("admin:background_task_page", args=[task]) in empty
     assert reverse("admin:source_refresh") in empty
     assert "<button" not in empty and "hasn't been loaded" not in summary(empty)
@@ -946,3 +1019,43 @@ def test_load_status_reads_the_run_state(state, families, load):
     status = wizard.load_status(task_values(state, task, "staging"), families=families)
     assert status["load"] == load and status["load_task"] == str(task)
     assert status["polled"] is True
+
+
+def count_line(html):
+    """The load region's reserved line after the boxes, without its sizing copy."""
+    return re.search(
+        r'<p class="campaign-load-count"[^>]*>(.*?)</p>', html, re.DOTALL
+    ).group(1)
+
+
+def test_a_queued_load_says_it_waits_in_start_the_load():
+    """Queued: Start the load in progress and the shared waiting sentence (#1916).
+
+    The poll's answer for a run no worker has taken yet draws Start the load
+    In progress (with the shared spinner) and, on the reserved line, the
+    queued sentence; once a worker takes it the line gives way to the
+    records checked. Every state draws the sentence's invisible copy, so the
+    line keeps its height and nothing moves when the first stage starts.
+    """
+    from parishkit.stewardship.accounts.stages import QUEUED
+
+    task = uuid4()
+    waiting = wizard.load_status(task_values("queued", task, "unspecified"), families=0)
+    assert states(waiting["stages"])[:2] == [
+        ("start", "active"),
+        ("fetching", "waiting"),
+    ]
+    queued = load_region(**waiting)
+    assert count_line(queued) == str(QUEUED)
+    assert "Start the load: In progress." in queued
+    start = 'data-load-stage="start" data-stage-state="active"><span class="spinner"'
+    assert start in queued
+    running = load_region(
+        **wizard.load_status(task_values("running", task, "fetching"), families=0)
+    )
+    assert "Start the load: In progress." not in running
+    assert "Download from ParishSoft: In progress." in running
+    assert count_line(running) == "4,000 of 4,000 records checked"
+    offer = load_region(load="offer", stages=wizard.load_stages("offer", None))
+    ghost = f'<span class="campaign-load-summary-ghost" aria-hidden="true">{QUEUED}<'
+    assert all(ghost in html for html in (queued, running, offer))
