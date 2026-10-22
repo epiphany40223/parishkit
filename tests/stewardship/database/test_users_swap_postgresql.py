@@ -960,6 +960,12 @@ CLOSURE_CREATED = {
         "stewardship_reports",
         "0043_report_coverage_decisions",
     ),
+    # 0167 (#1925) creates only this Administrator-only read and replaces
+    # nothing, so its file installs whole again.
+    "public.stewardship_address_leader_scope_v1(text,uuid)": (
+        "stewardship_accounts",
+        "0033_address_leader_scope",
+    ),
 }
 
 

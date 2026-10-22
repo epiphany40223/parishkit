@@ -531,6 +531,9 @@ FROZEN = {
     "0166_share_short_labels.sql": (
         "e43201c7e55cdf8ce46508cf48c6e56490cf7d2b807dcb9cab9537fdfa1f7409"
     ),
+    "0167_address_leader_scope.sql": (
+        "46866190315b2caf7787d75760e1931e703a16aed03666d2b38b1f21961d1297"
+    ),
 }
 
 
