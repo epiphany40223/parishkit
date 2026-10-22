@@ -2160,13 +2160,19 @@ Snapshot promotion performs these effects transactionally:
 - restore the existing code if a Family reactivates;
 - recompute eligible head email addresses and current deliverability after
   applying provider-suppression records;
-- resolve proposals that now match upstream;
+- store ParishSoft's new value on each open proposal; one that now matches
+  upstream keeps its stage, To review, Ready or To enter by hand
+  ([#1890](https://github.com/epiphany40223/parishkit/issues/1890): the review pipeline's
+  [rule 1](../review-pipeline/spec.md#baseline-refresh-re-evaluation); until
+  then it was resolved upstream), except one queued for an update run,
+  which is still resolved upstream;
 - mark three-way conflicts;
 - keep, unchanged, an open census change whose Member is no longer an
   active, living Member of its Family (the review pipeline's
   [rule 4](../review-pipeline/spec.md#refresh-checks)), since publication
   refuses such a Member ([review and publication](#review-and-publication));
-- resolve Ministry requests whose requested roster state is now current;
+- nothing for an open Ministry request whose requested roster state is
+  now current: it keeps its stage (#1890; until then it was resolved);
 - re-evaluate final census changes and decided Ministry requests against
   the new data, recording a refresh check for each whose outcome changed
   ([refresh checks](../review-pipeline/spec.md#refresh-checks)).
@@ -2228,14 +2234,17 @@ current authorization/filter snapshot.
    the change stays open (a queued change keeps it, and its plan meets a
    conflict), and a same-intent Family resubmission carries neither the base
    nor such an approval.
-4. Mark already-matching fields resolved upstream: in the transaction that
-   records a Production-mode plan, each approved change whose field row
-   says `already_in_parishsoft` moves from `pending` or `failed` to
-   `resolved_upstream` at the next version, its decision and values
-   unchanged. A Testing-mode plan marks nothing. Unlike reconciliation's
-   `resolved_upstream`, this rests on the plan's uncached read rather than a
-   promoted snapshot; the plan's field row is its record, and the final
-   refresh brings the snapshot level. It is also the only path that
+4. Mark already-matching fields Updated in ParishSoft: in the transaction
+   that records a Production-mode plan, each approved change whose field
+   row says `already_in_parishsoft` moves from `pending` or `failed` to
+   `published` at the next version, its decision and values unchanged, and
+   nothing is written for it. Until [#1890](https://github.com/epiphany40223/parishkit/issues/1890) (forward migration 0159,
+   provisional number) it moved to `resolved_upstream`, Confirmed at once;
+   now the refresh confirms it after the step, as it does every update
+   ([rule 1](../review-pipeline/spec.md#baseline-refresh-re-evaluation)). A
+   Testing-mode plan marks nothing. This rests on the plan's uncached read
+   rather than a promoted snapshot; the plan's field row is its record, and
+   the final refresh brings the snapshot level. It is also the only path that
    recognizes an Administrator's edited value already in ParishSoft, which
    reconciliation, comparing with the Family's answer, would call a
    conflict. Back to review on Census changes undoes the mark with a
@@ -2256,11 +2265,12 @@ current authorization/filter snapshot.
    concretely (the plan row's `xmin` is the current transaction's id, or
    its creation time equals `transaction_timestamp()`), and that a plan
    committed earlier is refused. The confirmation then checks such a row as
-   `resolved_upstream` at the next version instead of refusing the plan.
+   `published` (`resolved_upstream` for a plan marked before #1890) at the
+   next version instead of refusing the plan.
    The worker's pre-PUT comparison (`matches_confirmed`) leaves out exactly
    the plan's `already_in_parishsoft` field rows whose proposals this check
-   moved to `resolved_upstream` at the version after the one the row
-   recorded; any other planned row that left the open states still
+   moved to `published` (or, before #1890, `resolved_upstream`) at the
+   version after the one the row recorded; any other planned row that left the open states still
    invalidates the entity, without relying on a later step to catch it.
    This ships with a new forward migration, which replaces
    `stewardship_response_derived_guard_v1` and

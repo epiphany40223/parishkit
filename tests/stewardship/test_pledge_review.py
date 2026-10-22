@@ -411,19 +411,17 @@ def test_only_accepted_pledges_name_a_pledge_to_enter_in_the_files():
             "Entered incorrectly is undone: the item goes back to To enter by "
             "hand, with its decision kept. Say why.",
         ),
+        # Only a marked pledge is Confirmed (#1890), so no Confirmed pledge
+        # goes back to To review any more.
         (
             item(
                 "confirmed",
-                review("accepted"),
-                base="to_enter_by_hand",
+                review("accepted", entered=True),
+                base="entered_by_hand",
                 check="confirmed",
             ),
             "Confirmed is undone: the item goes back to To enter by hand, with "
             "its decision kept. Say why.",
-        ),
-        (
-            item("confirmed", None, base="to_review", check="confirmed"),
-            "Confirmed is undone: the item goes back to To review. Say why.",
         ),
     ],
 )

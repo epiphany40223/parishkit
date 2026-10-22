@@ -1,19 +1,17 @@
 """Open requests let an identical quick update skip promotion only when
 reconciliation would change none of them (#630).
 
-``proposals_current`` and ``ministry_requests_current`` share their decision
-with ``reconcile_proposals`` and ``reconcile_ministry_requests``. A new
-submission compared against the current snapshot, and the rows a promotion
-itself reconciled, compare equal; a request the corpus now answers does not.
+``proposals_current`` shares its decision with ``reconcile_proposals``. A
+new submission compared against the current snapshot, and the rows a
+promotion itself reconciled, compare equal. A refresh no longer resolves a
+Ministry request the corpus now answers (strict phase order, #1890), so
+there is nothing to compare for one.
 """
 
 from dataclasses import replace
 
 import pytest
 
-from parishkit.stewardship.responses.ministry_reconciliation import (
-    ministry_requests_current,
-)
 from parishkit.stewardship.responses.models import ProposedChange
 from parishkit.stewardship.responses.reconciliation import proposals_current
 from parishkit.stewardship.source.corpus import normalize_core
@@ -62,16 +60,16 @@ def test_submission_against_the_current_snapshot_is_current(response_service):
     assert proposals_current(reconstruct_snapshot(), campaign_id=campaign)
 
 
-def test_ministry_request_the_corpus_answers_is_not_current(response_service):
-    """A join the roster now shows is resolved by promotion, so it promotes."""
+def test_a_ministry_request_the_corpus_answers_stays_open(response_service):
+    """A join the roster now shows keeps its stage after promotion (#1890):
+    it is decided and ticked first, so the refresh resolves nothing."""
     harness = response_service
     form = start(harness)
     answers = answers_for(form)
     answers["ministries"]["members"]["3"]["join"] = [9]
     respond(harness, form, answers)
-    campaign = harness.campaign.pk
-    assert MinistryRequest.objects.get().state != "resolved"
-    assert ministry_requests_current(reconstruct_snapshot(), campaign_id=campaign)
+    before = MinistryRequest.objects.get()
+    assert before.state != "resolved"
     data = ministry_source()
     data.ministry_type_memberships[9]["membership"] = [
         {
@@ -82,8 +80,11 @@ def test_ministry_request_the_corpus_answers_is_not_current(response_service):
             "endDate": None,
         }
     ]
-    assert not ministry_requests_current(corpus_of(data), campaign_id=campaign)
     snapshot, claim = prepare(data)
     promote(snapshot, claim, harness.campaign, harness.rings)
-    assert MinistryRequest.objects.get().state == "resolved"
-    assert ministry_requests_current(reconstruct_snapshot(), campaign_id=campaign)
+    after = MinistryRequest.objects.get()
+    assert (after.state, after.version, after.resolution_source_id) == (
+        before.state,
+        before.version,
+        None,
+    )

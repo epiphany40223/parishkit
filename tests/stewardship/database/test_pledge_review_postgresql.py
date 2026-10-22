@@ -597,12 +597,12 @@ def test_limitations_lists_cannot_contribute_at_its_pledges_stage(response_servi
     assert read(show="cannot_attend")[0]["contributions"] == []
 
 
-def test_limitations_lists_a_confirmed_cannot_contribute_under_every_stage(
+def test_limitations_lists_a_held_cannot_contribute_to_review(
     response_service,
 ):
-    """Cannot contribute against no ParishSoft pledge is Confirmed at submit
-    (#1753): Limitations still lists it, with its Pledges stage and link,
-    but only under Every stage, and the menu count leaves it out."""
+    """Cannot contribute against no ParishSoft pledge stays To review
+    (#1890; #1753 had Confirmed it at the submit): Limitations lists it with
+    its Pledges stage and link under To review, and the menu counts it."""
     from types import SimpleNamespace
 
     from parishkit.stewardship.accounts import admin_context
@@ -646,9 +646,9 @@ def test_limitations_lists_a_confirmed_cannot_contribute_under_every_stage(
             SimpleNamespace(), staff, items, harness.campaign
         ).get("limitations_report")
     (row,) = result["contributions"]
-    assert row["placement"].stage.value == "confirmed"
-    assert row["pledges_url"] == reverse(ROUTE) + "?stage=confirmed"
+    assert row["placement"].stage.value == "to_review"
+    assert row["pledges_url"] == reverse(ROUTE) + "?stage=to_review"
     rows = answer_rows(result)
-    assert not [r for r in at_stage(rows, "to_review")[0] if r["kind"] == "cannot_give"]
+    assert [r for r in at_stage(rows, "to_review")[0] if r["kind"] == "cannot_give"]
     assert [r["kind"] for r in at_stage(rows, "all")[0]].count("cannot_give") == 1
-    assert not count
+    assert count

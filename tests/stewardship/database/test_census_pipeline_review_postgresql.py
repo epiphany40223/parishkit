@@ -99,6 +99,33 @@ def decide(harness, actor, rows, action, *, note="", value=None, bulk=None, key=
         )
 
 
+def mark(harness, actor, rows, *, note="", key=None, **options):
+    """Entered by hand on ``rows``, accepting each still To review first.
+
+    Entered by hand follows an Accept (strict phase order, #1890): the old
+    one-step mark of a To review By hand change is refused, so a test that
+    only needs a change marked accepts it first, as Staff now do. A change
+    already accepted, or Entered by hand (marked again over Entered
+    incorrectly), is marked as it is. Returns the mark's result.
+    """
+    waiting = [
+        fresh(row)
+        for row in rows
+        if fresh(row).decision == "unreviewed" and fresh(row).execution == "pending"
+    ]
+    if waiting:
+        decide(harness, actor, waiting, "accept")
+    return decide(
+        harness,
+        actor,
+        [fresh(row) for row in rows],
+        "entered_by_hand",
+        note=note,
+        key=key,
+        **options,
+    )
+
+
 def state(row):
     """The stored (decision, execution, admin_value_set, admin_value)."""
     row = fresh(row)
@@ -116,13 +143,16 @@ def test_staff_accept_a_by_hand_change_then_enter_it(response_service):
     assert ProposalResolution.objects.get().actor_id == staff
 
 
-def test_entered_by_hand_on_a_to_review_row_accepts_and_marks(response_service):
-    """On a To review By hand change, Entered by hand is one step: the change
-    is final with no review row first."""
+def test_entered_by_hand_on_a_to_review_row_is_refused(response_service):
+    """Strict phase order (#1890, decision 2 reversed): Entered by hand on a
+    To review By hand change is refused and nothing is recorded; it follows
+    an Accept."""
     harness, _, staff, rows = prepared(response_service)
-    decide(harness, staff, [rows["email_opt_out"]], "entered_by_hand")
-    assert state(rows["email_opt_out"])[:2] == ("unreviewed", "resolved_external")
+    with pytest.raises(ValueError, match="cannot be resolved that way"):
+        decide(harness, staff, [rows["email_opt_out"]], "entered_by_hand")
+    assert state(rows["email_opt_out"])[:2] == ("unreviewed", "pending")
     assert ProposalReview.objects.count() == 0
+    assert not ProposalResolution.objects.exists()
 
 
 def test_edit_is_accept_with_a_value(response_service):

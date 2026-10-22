@@ -217,7 +217,23 @@ def new_member(answers):
 
 
 def mark(harness, staff, row, member_id, **extra):
-    """Mark ``row`` Entered by hand on the web login, naming ``member_id``."""
+    """Mark ``row`` Entered by hand on the web login, naming ``member_id``.
+
+    Entered by hand follows an Accept (strict phase order, #1890), so a row
+    still To review is accepted first, as Staff now do.
+    """
+    current = fresh(row)
+    if (current.decision, current.execution) == ("unreviewed", "pending"):
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            decide_census_changes(
+                harness.service.store,
+                staff,
+                "accept",
+                {current.pk: current.version},
+                note="",
+                request_key=uuid4(),
+            )
+        row = fresh(row)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         decide_census_changes(
             harness.service.store,

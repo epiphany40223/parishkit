@@ -94,17 +94,26 @@ def test_back_to_review_undoes_entered_by_hand_keeping_the_accept(response_servi
 def test_back_to_review_undoes_confirmed_and_the_next_refresh_confirms_again(
     response_service,
 ):
-    """A Confirmed request goes back to To enter by hand, its version past
-    the check, which stays in its history; the next refresh finds it open
-    and Confirms it again at the new version."""
+    """A Confirmed request (ticked first: only a ticked one is Confirmed,
+    #1890) goes back to To enter by hand, its version past the check, which
+    stays in its history, and its tick cleared; the next refresh finds it
+    open and leaves it there, saying ParishSoft already holds it; ticked
+    again, the refresh after Confirms it again at the new version."""
     harness, staff, join = accepted(response_service)
+    decide(harness, staff, "entered_by_hand", join)
     refresh(harness, joins=(9,))
     assert stage(harness, staff, join).stage is Stage.CONFIRMED
     join.refresh_from_db()
     decide(harness, staff, "back_to_review", join, note="Wrong person")
     assert stage(harness, staff, join).stage is Stage.TO_ENTER_BY_HAND
     assert checks(request=join) == ["confirmed"]
-    assert not MinistryRosterEntry.objects.filter(request=join).exists()
+    latest = MinistryRosterEntry.objects.filter(request=join).order_by("-sequence")
+    assert not latest.first().entered
+    refresh(harness, joins=(9,))
+    assert checks(request=join) == ["confirmed"]
+    row = view(harness, staff)[str(join.pk)]
+    assert row["placement"].stage is Stage.TO_ENTER_BY_HAND and row["already_held"]
+    decide(harness, staff, "entered_by_hand", join)
     refresh(harness, joins=(9,))
     assert checks(request=join) == ["confirmed", "confirmed"]
     assert stage(harness, staff, join).stage is Stage.CONFIRMED
@@ -124,13 +133,24 @@ def test_a_confirmed_ticked_request_is_unticked_too(response_service):
 
 
 def test_a_refresh_resolved_request_goes_back_to_review(response_service):
-    """A request the refresh resolved, with no decision behind it, goes back
-    to To review: In progress, its resolution cleared, with the note. The
-    next refresh may resolve it again, as expected."""
+    """A request the refresh resolved before #1890, with no decision behind
+    it (forged here as that resolution left it), goes back to To review: In
+    progress, its resolution cleared, with the note. The next refresh no
+    longer resolves it (#1890): it stays To review, saying ParishSoft
+    already holds it."""
     harness = setup(response_service)
     staff = actor(harness, {"staff"}, ())
     join, _ = requests()
     refresh(harness, joins=(9,))
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL session_replication_role = replica")
+        cursor.execute(
+            "UPDATE stewardship_ministry_request SET state='resolved',"
+            " outcome='joined', resolved_at=now(), resolution_source_id=("
+            "SELECT snapshot_id FROM stewardship_source_current WHERE singleton),"
+            " version=version+1 WHERE id=%s",
+            [join.pk],
+        )
     join.refresh_from_db()
     assert join.resolution_source_id is not None
     placement = stage(harness, staff, join)
@@ -146,7 +166,8 @@ def test_a_refresh_resolved_request_goes_back_to_review(response_service):
     assert stage(harness, staff, join).stage is Stage.TO_REVIEW
     refresh(harness, joins=(9,))
     join.refresh_from_db()
-    assert join.state == "resolved" and join.resolution_source_id is not None
+    assert (join.state, join.resolution_source_id) == ("in_progress", None)
+    assert view(harness, staff)[str(join.pk)]["already_held"]
 
 
 def test_not_seen_counts_again_from_the_next_mark(response_service, started):
@@ -183,6 +204,8 @@ def test_a_confirmed_request_is_not_reopened_to_in_progress(response_service, go
     """
     harness, staff, join = accepted(response_service)
     _, head, _, _ = leader(harness, google)
+    # Ticked: only a ticked request is Confirmed (#1890).
+    decide(harness, staff, "entered_by_hand", join)
     refresh(harness, joins=(9,))
     assert stage(harness, staff, join).stage is Stage.CONFIRMED
     with pytest.raises(DatabaseError, match="not valid for this request"):

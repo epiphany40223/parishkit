@@ -102,6 +102,8 @@ def test_census_reviews_and_resolutions_reach_both_roles(response_service, googl
         "Edit cleared",
         "Ignored",
         "Back to review",
+        # The address is accepted before its mark (#1890).
+        "Accepted",
         "Entered by hand",
     ]
     member = lines[0][1]

@@ -39,7 +39,9 @@ def check(outcome, observed="1200.00", unseen=0):
 @pytest.mark.parametrize(
     "decision,entered,outcome,stage",
     [
-        ("accepted", False, "confirmed", Stage.CONFIRMED),
+        # Only a marked pledge is Confirmed (#1890): an accepted one not yet
+        # marked whose check found it in ParishSoft stays To enter by hand.
+        ("accepted", False, "confirmed", Stage.TO_ENTER_BY_HAND),
         ("accepted_edited", True, "confirmed", Stage.CONFIRMED),
         ("accepted", True, "entered_incorrectly", Stage.ENTERED_INCORRECTLY),
         ("accepted", True, "unchanged", Stage.ENTERED_BY_HAND),
@@ -72,13 +74,14 @@ def test_a_conflict_holds_an_accepted_unmarked_pledge_decision(decision):
     [
         (None, Stage.TO_REVIEW),
         ("unchanged", Stage.TO_REVIEW),
-        ("confirmed", Stage.CONFIRMED),
+        ("confirmed", Stage.TO_REVIEW),
         ("conflict", Stage.CONFLICT),
     ],
 )
 def test_a_to_review_pledge_check_places_it_with_no_decision(outcome, stage):
-    """Confirmed with no reviewer ("Already in ParishSoft") or a Conflict
-    with nothing held (#1747)."""
+    """A Conflict with nothing held (#1747); a check that found the pledge
+    in ParishSoft leaves it To review (#1890: never Confirmed before its
+    review and mark)."""
     assert financial_placement(check=outcome) == Placement(stage)
 
 
@@ -211,25 +214,41 @@ def test_an_accepted_conflict_shows_its_earlier_decision_not_in_force():
     assert offered_icons(drawn_row) == ["accept", "edit", "ignore"]
 
 
-def test_a_confirmed_to_review_pledge_was_already_in_parishsoft():
-    """Confirmed with no reviewer says so under its stage; Back to review
-    (with a note) sends it to To review (#1840)."""
-    found = item("confirmed", check="confirmed", observed="1200.00", base="to_review")
+def test_a_pledge_parishsoft_already_holds_keeps_its_stage_and_says_so():
+    """Strict phase order (#1890): a To review pledge whose check found it in
+    ParishSoft stays To review, offering the decisions (never Entered by
+    hand), and says so under its stage; an accepted one stays To enter by
+    hand with Entered by hand; at $0.00 the words do not claim ParishSoft
+    holds a pledge. A marked pledge's confirmed check Confirms it, with no
+    such words."""
+    found = item("to_review", check="confirmed", observed="1200.00", base="to_review")
     row = shown(found)
-    (drawn_row,) = drawn([row], Stage.CONFIRMED.value).rows
-    assert drawn_row["stage_label"] == "Confirmed"
-    assert offered_icons(drawn_row) == ["back_to_review"]
+    (drawn_row,) = drawn([row], Stage.TO_REVIEW.value).rows
+    assert drawn_row["stage_label"] == "To review"
+    assert offered_icons(drawn_row) == ["accept", "edit", "ignore"]
     # The page's line under the stage (``page_context``).
-    assert str(views._stage_line(row, "")) == views.ALREADY
-    decided = shown(
-        item("confirmed", review(), check="confirmed", base="to_enter_by_hand")
+    assert str(views._stage_line(row, "")) == views.HELD
+    assert views.HELD == "ParishSoft already holds this value."
+    accepted = shown(
+        item("to_enter_by_hand", review(), check="confirmed", base="to_enter_by_hand")
     )
-    assert views.ALREADY not in str(views._stage_line(decided, ""))
-    # At $0.00 the words do not claim ParishSoft holds a pledge.
+    (drawn_row,) = drawn([accepted], Stage.TO_ENTER_BY_HAND.value).rows
+    assert offered_icons(drawn_row) == ["back_to_review", "entered_by_hand"]
+    assert views.HELD in str(views._stage_line(accepted, ""))
     zero = shown(
-        item("confirmed", check="confirmed", observed="0.00", base="to_review")
+        item("to_review", check="confirmed", observed="0.00", base="to_review")
     )
     assert str(views._stage_line(zero, "")) == views.NOTHING
+    marked = shown(
+        item(
+            "confirmed",
+            review(entered=True),
+            check="confirmed",
+            base="entered_by_hand",
+        )
+    )
+    assert views.HELD not in str(views._stage_line(marked, ""))
+    assert views.NOTHING not in str(views._stage_line(marked, ""))
 
 
 def test_the_stage_choices_list_conflict_after_to_review():
