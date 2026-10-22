@@ -151,6 +151,9 @@ def _page(context, admin, saved, data=None):
         for entry in (saved or {}).get("recipients", [])
     ]
     values = saved or editor.blank_values(CAMPAIGN, UUID(int=5))
+    # The view's own choice of what Next sends draws: nothing on New's
+    # blank form (#1972).
+    drawn = editor.drawn_values(form, saved, CAMPAIGN, UUID(int=5))
     moment = editor.moment(saved, CAMPAIGN, NOW) if saved else None
     return render_to_string(
         "stewardship/report-email-entry.html",
@@ -179,8 +182,9 @@ def _page(context, admin, saved, data=None):
             "drawn_at": moment.isoformat() if moment else None,
             # Edit's Next sends table takes boxes for Skip and Send selected
             # sends; no send has Production work here.
-            "sends_table": editor.sends_table(
-                values,
+            "sends_table": drawn
+            and editor.sends_table(
+                drawn,
                 CAMPAIGN,
                 NOW,
                 bulk=saved is not None,
@@ -197,11 +201,12 @@ def _page(context, admin, saved, data=None):
     )
 
 
-def review_answer():
+def review_answer(before=None):
     """Review's answer for a new report that sends after the campaign ends.
 
     The real review template, from the real description of the Weekly
-    report, with the after-campaign question and its tick.
+    report, with the after-campaign question and its tick; with ``before``
+    (saved report values) it is a change's review, Now beside After.
     """
     choices = editor.recipient_choices(USERS)
     return render_to_string(
@@ -209,7 +214,7 @@ def review_answer():
         {
             "kind": "write",
             "change": {"dropped_skips": []},
-            "before": None,
+            "before": before and editor.describe(before, CAMPAIGN, NOW, choices),
             "after": editor.describe(WEEKLY, CAMPAIGN, NOW, choices),
             "preview": "synthetic-preview",
             "after_campaign": datetime(2054, 11, 2, 12, 0, tzinfo=UTC),

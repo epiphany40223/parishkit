@@ -198,12 +198,16 @@ def _bulk(report_id, saved):
     return report_id is not None and saved["schedule"]["type"] == "repeat"
 
 
-def _sends_table(values, campaign, now, *, report_id, saved, as_saved):
-    """The Next sends table of ``values``; on Edit of a repeating report
+def _sends_table(form, campaign_id, campaign, now, *, report_id, saved):
+    """The Next sends table of the schedule ``form`` holds (None while it
+    holds none, ``editor.drawn_values``); on Edit of a repeating report
     with its selection column, whose rows take boxes only while the
-    schedule is as saved (``as_saved``), since a skip acts on the saved
-    schedule."""
+    schedule is as saved, since a skip acts on the saved schedule."""
+    values = editor.drawn_values(form, saved, campaign, campaign_id)
+    if values is None:
+        return None
     bulk = saved is not None and _bulk(report_id, saved)
+    as_saved = saved is not None and values["schedule"] == saved["schedule"]
     return editor.sends_table(
         values,
         campaign,
@@ -250,12 +254,7 @@ def _page(request, *, state, campaign, report_id, saved, form, status=200):
         "change_url": reverse("admin:report_email_changes"),
         "drawn_at": None,
         "sends_table": _sends_table(
-            saved or _blank(values, campaign.pk),
-            values,
-            now,
-            report_id=report_id,
-            saved=saved,
-            as_saved=True,
+            form, campaign.pk, values, now, report_id=report_id, saved=saved
         ),
         "sent": bool(report_id) and report_sent(str(report_id)),
         "busy": bool(report_id) and open_send(str(report_id), mode),
@@ -346,11 +345,6 @@ def _cancel_url(request):
     if month is None:
         return reverse("admin:report_emails")
     return f"{reverse('admin:schedule_calendar')}?month={month}"
-
-
-def _blank(values, campaign_id):
-    """New's starting values, which its schedule preview draws."""
-    return editor.blank_values(values, campaign_id)
 
 
 def _form(request, state, campaign, saved, others, report_id):
@@ -581,24 +575,8 @@ def schedule_preview(request, campaign_id):
                 now=now,
             )
             form.is_valid()
-            schedule = form.schedule_only()
-            base = saved or editor.blank_values(values, campaign.pk)
-            table = (
-                _sends_table(
-                    base
-                    | {
-                        "schedule": schedule,
-                        "as_of": form.cleaned_data.get("as_of") or base["as_of"],
-                        "name": form.cleaned_data.get("name") or base["name"],
-                    },
-                    values,
-                    now,
-                    report_id=report,
-                    saved=saved,
-                    as_saved=bool(saved) and schedule == saved["schedule"],
-                )
-                if schedule
-                else None
+            table = _sends_table(
+                form, campaign.pk, values, now, report_id=report, saved=saved
             )
         return render(
             request,

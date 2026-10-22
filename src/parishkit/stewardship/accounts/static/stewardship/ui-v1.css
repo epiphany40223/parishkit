@@ -2381,3 +2381,12 @@ input[data-field-rule][aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px va
 .choice-pair-options > label:has(> input:disabled) > input { cursor: not-allowed; }
 fieldset.choice-pair:has(input[aria-invalid=true]) > .choice-pair-options { border-color: var(--error-border); box-shadow: 0 0 0 1px var(--error-border); }
 .choice-pair + .help { margin-top: -.5rem; }
+/* Words wrap only between words in a pair's segments and in the report
+   review table's labels (#1974). main's overflow-wrap: anywhere let a
+   segment or a label cell shrink below its longest word, so a 320 px phone
+   read "Repeatin" / "g" and "Settin" / "g". With normal wrapping each word's
+   width counts toward its box's minimum: a long label wraps between words,
+   and a review table too wide for the phone scrolls inside its own region.
+   The review's value cells keep the page's wrapping, so a long address
+   still breaks rather than widening the table. */
+.choice-pair-options > label, .report-review-table th { overflow-wrap: normal; word-break: normal; }

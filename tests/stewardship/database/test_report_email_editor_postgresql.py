@@ -125,6 +125,9 @@ def test_new_reviews_and_adds_a_report_to_staff_and_an_address(
         assert b"data-review-answer" in answer.content
         assert b"All Staff (group" in answer.content
         assert b"council@example.org" in answer.content
+        # A new report has no sends to recall or remake (#1976).
+        assert b"Nothing is sent until its first send time." in answer.content
+        assert b"not recalled" not in answer.content
         done = confirm(admin, path, answer)
         assert done.status_code == 302, done.content
         apply_requests(harness.service.store)
@@ -243,6 +246,9 @@ def test_edit_skip_and_delete(live_response_service, google):
             ),
         )
         assert answer.status_code == 200, answer.content
+        # A change says what becomes of the sends made and planned (#1976).
+        assert b"Sends already made are not recalled;" in answer.content
+        assert b"Nothing is sent until its first send time." not in answer.content
         assert confirm(admin, path, answer).status_code == 302
         apply_requests(harness.service.store)
         values = report_values(identifier)
@@ -306,6 +312,31 @@ def test_the_live_preview_answers_the_next_sends(live_response_service, google):
             admin, reverse("admin:report_email_schedule_preview"), fields(time="")
         )
         assert b"Fill in the schedule and time" in unreadable.content
+
+
+def test_new_draws_no_sends_before_a_schedule_is_chosen(live_response_service, google):
+    """New's first draw agrees with its blank form (#1972): no schedule or
+    time is chosen, so Next sends says to fill them in and lists no send.
+    A refused Review draws the schedule the post holds."""
+    harness = live_response_service
+    with campaign_clock(INSTANT):
+        admin = started(harness)
+        path = reverse("admin:report_email_new")
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            page = admin.get(path)
+        assert page.status_code == 200
+        assert b"Fill in the schedule and time to see its next sends." in page.content
+        assert b'class="data-table report-sends"' not in page.content
+        assert b"Will send" not in page.content
+        refused = post(
+            admin,
+            path,
+            fields(sends="repeat", preset="weekly", preset_weekday="0", recipient=[]),
+        )
+        assert refused.status_code == 400
+        assert b"Choose at least one recipient." in refused.content
+        assert b'class="data-table report-sends"' in refused.content
+        assert b"Will send" in refused.content
 
 
 def test_staff_may_not_open_the_editor(live_response_service, google):

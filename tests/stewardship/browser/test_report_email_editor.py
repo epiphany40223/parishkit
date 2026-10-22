@@ -16,6 +16,8 @@ Send selected sends, each available only for its kind of send; a send the
 Campaign calendar names (?send=) has its box ticked and focused.
 """
 
+import re
+
 import pytest
 
 from .report_email_editor_components import (
@@ -24,6 +26,7 @@ from .report_email_editor_components import (
     NEW,
     NEW_REFUSED,
     USERS,
+    WEEKLY,
     changed_table,
     review_answer,
     skip_answer,
@@ -178,18 +181,57 @@ def test_the_campaign_days_line_follows_the_zone(
     page, browser_engine, component_origin
 ):
     """The line saying a repeating report's days are the campaign's shows
-    only where this browser's zone is not the campaign's."""
+    only where this browser's zone keeps another clock than the campaign's:
+    another name for the campaign's zone is the same zone (#1973)."""
     days = "These are the days where the parish is"
     page.goto(component_origin + NEW)
     page.get_by_role("radio", name="Weekly").check()
     # The fixture's browser is in Los Angeles; the campaign in New York.
     visible(page.get_by_text(days).first)
-    context = browser_engine.new_context(timezone_id="America/New_York")
+    # America/Detroit keeps New York's clock under another name. (The
+    # America/Louisville alias would do too, but Firefox refuses it as a
+    # context's zone.)
+    for zone in ("America/New_York", "America/Detroit"):
+        context = browser_engine.new_context(timezone_id=zone)
+        try:
+            same = context.new_page()
+            same.goto(component_origin + NEW)
+            same.get_by_role("radio", name="Weekly").check()
+            # Each line keeps its hidden attribute (the Advanced panel's
+            # line is hidden with its panel either way).
+            lines = same.locator("[data-campaign-days]")
+            assert lines.evaluate_all("ls => ls.map(l => l.hidden)") == [True, True]
+        finally:
+            context.close()
+
+
+def test_a_one_hour_clock_difference_shows_the_campaign_days_line(
+    browser_engine, component_origin
+):
+    """Havana's clock leaves New York's for one hour only, 05:00 to 06:00
+    UTC on 2026-11-01, when Havana has left daylight time and New York not
+    yet: a campaign of October 2026 (its last send two days after) still
+    gets the line (#1973 review: hourly samples, not six-hourly)."""
+
+    def october_2026(route):
+        """New report email, with the campaign's dates moved to 2026."""
+        body = route.fetch().text()
+        for field, day in (("start", "2026-10-01"), ("end", "2026-10-31")):
+            body, count = re.subn(
+                rf'data-campaign-{field}="[^"]*"',
+                f'data-campaign-{field}="{day}"',
+                body,
+            )
+            assert count == 1
+        route.fulfill(status=200, body=body, content_type="text/html")
+
+    context = browser_engine.new_context(timezone_id="America/Havana")
     try:
-        same = context.new_page()
-        same.goto(component_origin + NEW)
-        same.get_by_role("radio", name="Weekly").check()
-        assert same.locator("[data-campaign-days]").first.is_hidden()
+        page = context.new_page()
+        page.route(component_origin + NEW, october_2026)
+        page.goto(component_origin + NEW)
+        page.get_by_role("radio", name="Weekly").check()
+        visible(page.get_by_text("These are the days where the parish is").first)
     finally:
         context.close()
 
@@ -208,15 +250,7 @@ def test_the_after_campaign_tick_holds_apply(page, component_origin):
 
     page.route(component_origin + "/admin/mail/report-emails/new/", review)
     page.goto(component_origin + NEW)
-    page.get_by_label("Report name", exact=True).fill("Staff daily")
-    page.get_by_label("Add a recipient").fill("All Staff (group, 1 person now)")
-    page.get_by_role("button", name="Add", exact=True).first.click()
-    page.get_by_role("radio", name="Daily").check()
-    page.get_by_label("Time", exact=True).fill("7:00 AM")
-    page.get_by_role("button", name="Add", exact=True).last.click()
-    page.get_by_role("button", name="Add the report email").click()
-    dialog = page.locator("#report-review")
-    visible(dialog)
+    dialog = open_review(page)
     apply = dialog.locator("[data-confirm-accept]")
     status = dialog.locator("[data-confirm-status]")
     hint = "Tick Send after the campaign ends to apply it."
@@ -230,6 +264,68 @@ def test_the_after_campaign_tick_holds_apply(page, component_origin):
     dialog.get_by_label("Send after the campaign ends").uncheck()
     expect(apply).to_be_disabled()
     expect(status).to_have_text(hint)
+
+
+def open_review(page):
+    """Fill in New report email and open its review dialog (the test routes
+    the review's answer); returns the dialog."""
+    page.get_by_label("Report name", exact=True).fill("Staff daily")
+    page.get_by_label("Add a recipient").fill("All Staff (group, 1 person now)")
+    page.get_by_role("button", name="Add", exact=True).first.click()
+    page.get_by_role("radio", name="Daily").check()
+    page.get_by_label("Time", exact=True).fill("7:00 AM")
+    page.get_by_role("button", name="Add", exact=True).last.click()
+    page.get_by_role("button", name="Add the report email").click()
+    dialog = page.locator("#report-review")
+    visible(dialog)
+    return dialog
+
+
+# The words of the matched, rendered elements that break across lines: a
+# word laid out on one line has one client rect, a word broken mid-way two.
+BROKEN_WORDS = """els => els.filter(el => el.getClientRects().length).flatMap(el => {
+  const broken = [];
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    for (const match of node.data.matchAll(/\\S+/g)) {
+      const range = document.createRange();
+      range.setStart(node, match.index);
+      range.setEnd(node, match.index + match[0].length);
+      if (range.getClientRects().length > 1) broken.push(match[0]);
+    }
+  }
+  return broken;
+})"""
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+@pytest.mark.parametrize("change", [False, True])
+def test_words_wrap_only_between_words(page, component_origin, width, change):
+    """At phone and desktop width no segment of a pair and no label of the
+    review table breaks a word mid-way ("Repeatin" / "g", #1974), and the
+    page still never scrolls sideways."""
+    answer = review_answer(WEEKLY if change else None)
+    page.route(
+        component_origin + "/admin/mail/report-emails/new/",
+        lambda route: route.fulfill(status=200, body=answer, content_type="text/html"),
+    )
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + NEW)
+    segments = page.locator(".choice-pair-options > label")
+    assert segments.evaluate_all(BROKEN_WORDS) == []
+    page.get_by_role("radio", name="Once").check()
+    assert segments.evaluate_all(BROKEN_WORDS) == []
+    page.get_by_role("radio", name="Repeating").check()
+    # Whole words never overflow a pair's frame, which clips what overflows.
+    assert page.locator(".choice-pair-options").evaluate_all(
+        "els => els.filter(el => el.getClientRects().length)"
+        ".every(el => el.scrollWidth <= el.clientWidth)"
+    )
+    dialog = open_review(page)
+    labels = dialog.locator(".report-review-table th")
+    assert labels.count() >= 9
+    assert labels.evaluate_all(BROKEN_WORDS) == []
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
 
 TICK_POSTED = (
@@ -375,9 +471,11 @@ def test_next_sends_is_a_table_with_status(page, component_origin):
     assert statuses[:2] == ["Will send", "Skipped"]
     skipped = table.locator(f'tr[data-send="{page_slots(page)[1]}"]')
     assert skipped.locator("s").count() == 2
-    # New has the table without boxes: there is nothing saved to skip.
+    # New draws no sends until its schedule and time are chosen (#1972),
+    # and has no boxes: there is nothing saved to skip.
     page.goto(component_origin + NEW)
-    visible(page.locator("table.report-sends"))
+    visible(page.get_by_text("Fill in the schedule and time to see its next sends."))
+    assert page.locator("table.report-sends").count() == 0
     assert page.locator("[data-select-row]").count() == 0
     assert page.get_by_role("button", name="Skip selected sends").count() == 0
 

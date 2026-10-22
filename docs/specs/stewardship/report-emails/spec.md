@@ -1163,11 +1163,15 @@ under Repeating, or names a time of day. One time field, shared by both
 modes, follows them. The Once preset of Basic is the Sends choice's
 Once, so the two cannot disagree. A repeating report's days are the
 campaign's days ([decisions](#decisions-made-in-this-specification)); when
-the browser's zone is not the campaign's, a help line under the weekly day
-and On these days says so: "These are the days where the parish is, in the
-campaign's time zone; only the time is read in your computer's time zone."
-The
-zone note names the browser's zone. Under the fields, the
+the browser's zone keeps a different clock from the campaign's during the
+campaign, a help line under the weekly day and On these days says so
+(zones are compared by their clocks, not their names: another name for the
+same rules, such as America/Louisville for America/New_York, is no
+difference,
+[#1973](https://github.com/epiphany40223/parishkit/issues/1973)): "These
+are the days where the parish is, in the campaign's time zone; only the
+time is read in your computer's time zone." The zone note names the
+browser's zone. Under the fields, the
 [Next sends table](#next-sends-table) lists the next five sends, redrawn in
 place as the fields change, in a region that keeps its place
 ([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
@@ -1191,7 +1195,12 @@ October 19"; a send after the campaign's last day is marked "after the
 campaign ends") and **Status** in words: Will send, Skipped, Paused, or
 Being prepared (a send with Production work). Skipped and paused rows are
 struck through, the Status word not, so the strike is never the only
-signal.
+signal. Until the schedule and time fields can be read, the table is one
+line, "Fill in the schedule and time to see its next sends.", from the
+first draw on: New opens with no schedule or time chosen, so it lists no
+send until the reader chooses them
+([#1972](https://github.com/epiphany40223/parishkit/issues/1972)). A
+refused Review draws the schedule its fields hold.
 
 On Edit of a repeating report the table has the shared selection column and
 bulk bar ([row actions](../ui-conventions/spec.md#row-actions-and-confirmation)):
@@ -1241,9 +1250,12 @@ exactly as the command line's [report-email preview](#command-line) builds
 it: the report's values before and after in plain words (recipients by
 name and kind, blocks in order with their options, the schedule and as-of),
 the sends each side makes with the shared schedule preview, the dropped
-skips, the affected work (sends already made are not recalled; planned sends
-not started are cancelled; sends in progress or uncertain block the change,
-and then no Apply is offered and Sent mail is named), and the
+skips, the affected work of a change to an existing report (sends already
+made are not recalled; planned sends not started are cancelled; sends in
+progress or uncertain block the change, and then no Apply is offered and
+Sent mail is named; a new report has no sends yet, so its review says
+instead "Nothing is sent until its first send time.",
+[#1976](https://github.com/epiphany40223/parishkit/issues/1976)), and the
 [after-the-campaign confirmation](#sends-after-the-campaign-ends) when it
 applies. **Apply** records the change with the signed preview, the
 blocking-work recheck under the work lock, the stale and two-tab checks,
