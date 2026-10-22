@@ -367,35 +367,63 @@ the setup wizard's and Campaign setup's).
 
 ### Stepper button row
 
-**Rule.** A multi-step Family form's buttons sit in one row at the bottom of
-every step, in three fixed slots: **Back** at the left edge, the step's one
-action (such as Cancel and sign out, or Submit on the final review)
-centered, and **Next** at the right edge. A slot whose button a step does
-not show keeps its space, so on the first step (no Back) Next is still at
-the right and the action still centered, and no button moves from one step
-to the next ([no layout shift](#no-layout-shift)). Back and Next never wrap;
-only the centered action may, when its label is long (Submit with a long
-parish name), and the side slots stay equally wide so it stays centered.
-Where the full labels do not fit on one line (a phone), the row still stays
-one line: each long label shows only its first word (Back, Cancel and Next;
-Back and Submit on the final review) with tighter spacing, and keeps its
-full label (Back to edit, Cancel and sign out, Submit to the parish) as its
-accessible name. The choice depends only on the screen width, so every step
-of the flow looks the same, and the one-line bar keeps 44 px tap targets
-while covering little of a phone's screen. The document order is the visual
-order (Back, action, Next), so Tab and screen readers meet them as they are
-drawn. **Why.** The Family form's Next sat at the left on its first step and
-at the right from the second on, and its Cancel and sign out sat below the
-flow (Administrator, 2026-10-21, on
+**Rule.** Every stepper's buttons (the multi-step Family forms and the Admin
+[wizards](#wizards)) sit in one row at the bottom of every step, in three
+fixed slots: **Back** at the left edge, the step's one action centered, and
+**Next** at the right edge. A slot whose button a step does not show keeps
+its space, so on the first step (no Back) Next is still at the right and the
+action still centered, and no button moves from one step to the next
+([no layout shift](#no-layout-shift)). A one-word Back never wraps. The side slots
+share the free space equally, so the action is centered. The document order
+is the visual order (Back, action, Next), so Tab and screen readers meet
+them as they are drawn. Which line a slot uses depends only on the screen width,
+never on the step's labels, so every step of the flow looks the same.
+
+- **Family forms.** The action is Cancel and sign out, or Submit on the
+  final review. Next never wraps either; only the centered action may, when
+  its label is long (Submit with a long parish name). Where the full labels
+  do not fit on one line (a phone), the row still stays one line: each long
+  label shows only its first word (Back, Cancel and Next; Back and Submit on
+  the final review) with tighter spacing, and keeps its full label (Back to
+  edit, Cancel and sign out, Submit to the parish) as its accessible name.
+  The one-line bar keeps 44 px tap targets while covering little of a
+  phone's screen.
+- **Admin wizards.** Back is Back (Return to *step* on a step's sub-page).
+  Next holds the step's one primary control
+  ([wizards](#wizards) rule 2): Continue to *next step*, Save and continue,
+  Save and go back, or the step's own submit (such as Load parish data or
+  Check readiness), and is empty while the step has none. The middle holds
+  the step's secondary alternative where it has one (Continue without
+  schedules for now beside the suggested schedules, Stop go-live on Go
+  live's Prepare and Confirm Production) and is empty otherwise; no Leave or
+  Save and exit button is added, since the stepper's Leave campaign setup
+  and the Admin menu already lead away and Back and Continue never save or
+  discard. Their labels are longer than the Family form's (Add these
+  schedules and continue), so a side slot is never narrower than its own
+  label: on the one step whose labels need it, the middle sits a little off
+  center rather than the primary wrapping. They also differ from step to
+  step, so a first word alone would not say what they do: up to 48rem wide
+  (a phone, a narrow window) Back and Next share the first line, a longer
+  label (Next, or a sub-page's Return to *step*) wraps inside its own
+  button, and the middle action, on the steps that have one, takes its own
+  centered line below them.
+
+**Why.** The Family form's Next sat at the left on its first step and at the
+right from the second on, and its Cancel and sign out sat below the flow
+(Administrator, 2026-10-21, on
 [#1933](https://github.com/epiphany40223/parishkit/issues/1933)): a button
-that changes place between steps is missed, or the wrong one is pressed.
-**Shared code.** The Family form's sticky bar (`.family-nav` in `ui-v1.css`,
-drawn by `family-v1.js`), whose buttons name their slot with
-`data-nav-slot`. **Status.** The Family form meets this rule. The rule
-covers the Family forms only for now: the Admin [wizards](#wizards) keep
-their own action rows (rule 2), Back first at the left and the one primary
-at the right, with no middle action slot. Whether they adopt this row is
-[#1936](https://github.com/epiphany40223/parishkit/issues/1936).
+that changes place between steps is missed, or the wrong one is pressed. The
+Administrator asked for the Admin wizards to match
+([#1936](https://github.com/epiphany40223/parishkit/issues/1936)): their
+Campaign setup row wrapped by label length on a narrow screen, and the setup
+wizard's primary dropped to a full-width line of its own. **Shared code.**
+The Family form's sticky bar (`.family-nav` in `ui-v1.css`, drawn by
+`family-v1.js`) and the Admin action rows (`.setup-actions` and
+`.campaign-step-actions` in `stepper-v1.css`, drawn by
+`setup-navigation.html`, `setup-test-actions.html`,
+`campaign-step-actions.html`, Create the campaign and the Go live pages),
+whose controls name their slot with `data-nav-slot`. **Status.** The Family
+form and the Admin wizards meet this rule.
 
 ### Charts
 
@@ -2650,7 +2678,8 @@ not have those faults, so one set of rules makes every wizard behave like
 them. **Shared code.** The step model (`setup_wizard.Step` and `Wizard`, which
 `campaign_wizard.py` reuses), the stepper (`stepper-steps.html`, see
 [step bars](#step-bars)) and the action rows (`setup-navigation.html`,
-`campaign-step-actions.html`, which #1404 makes one shared row).
+`campaign-step-actions.html`, which #1404 makes one shared row, laid out as
+the [stepper button row](#stepper-button-row)).
 **Precedent.** #1404 (Administrator, 2026-10-15), #142 (the setup and
 campaign split), #1322 (the campaign stepper), #1402 (the shared stepper).
 The Family portal keeps its own [step rules](#family-portal), which already
@@ -2663,7 +2692,9 @@ match.
    [step bars](#step-bars) describes it.
 2. **One primary action per step**, at the bottom of the page in one action
    row: **Back** (secondary, first) and one primary control (last), an
-   instance of [button emphasis](#button-emphasis). A step
+   instance of [button emphasis](#button-emphasis), in the
+   [stepper button row](#stepper-button-row)'s fixed slots (Back at the
+   left, the primary at the right, a secondary alternative centered). A step
    never offers only an unavailable Save. Going on is never only in the
    stepper's summary or its list.
 3. **Accept as is.** While the step's form holds no change, the primary
