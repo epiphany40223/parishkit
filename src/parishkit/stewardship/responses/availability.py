@@ -17,10 +17,15 @@ from .page_content import public_substitutions, render_pages
 
 @dataclass(frozen=True)
 class UnavailablePage:
-    """Fallback text and optional sanitized, campaign-wide parish instructions."""
+    """Fallback text and optional sanitized, campaign-wide parish instructions.
+
+    ``ended`` marks the after-close page, which rejected links and codes also
+    show (#1793); it is decided from campaign state alone, never a credential.
+    """
 
     message: str
     content: str = ""
+    ended: bool = False
 
 
 def unavailable_page(service):
@@ -45,6 +50,7 @@ def unavailable_page(service):
             definition,
             "post_end",
             "This parish's census / stewardship campaign has ended.",
+            ended=True,
         )
     if now < definition.starts_at:
         return _page(
@@ -73,7 +79,7 @@ def unavailable_page(service):
     return None
 
 
-def _page(configuration, definition, slot, fallback):
+def _page(configuration, definition, slot, fallback, *, ended=False):
     """Keep date admission text even when an optional parish block is empty."""
     blocks = render_pages(
         definition.configuration_id,
@@ -81,7 +87,7 @@ def _page(configuration, definition, slot, fallback):
         {slot},
         public_substitutions(configuration.active_configuration.parish, definition),
     )
-    return UnavailablePage(fallback, blocks.get(slot, ""))
+    return UnavailablePage(fallback, blocks.get(slot, ""), ended=ended)
 
 
 def public_help(service, slot):

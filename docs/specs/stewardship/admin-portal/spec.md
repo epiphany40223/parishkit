@@ -3953,7 +3953,14 @@ the change's status: it opens the next Campaign setup step that is not done
 yet ([#1404](https://github.com/epiphany40223/parishkit/issues/1404)), which
 for a new campaign is always step 2, Load ParishSoft data, whose status
 line says the campaign was created and when; step 1 is never opened again
-after creation. A reload of the address
+after creation. Creating the campaign starts its load by itself: the new
+campaign changes the refresh scope (its giving window), so the refresh
+scheduler's next loop, seconds after the change is applied, requests the
+current full refresh for the new scope, and that refresh is the campaign's
+load, with no person named as its requester. Load ParishSoft data therefore
+opens already *Loading* (below), never offering a Load button for a load
+the system is about to start
+([#1951](https://github.com/epiphany40223/parishkit/issues/1951)). A reload of the address
 naming the request, and Change status, still offer
 **Load the campaign's ParishSoft data**, which requests a full ParishSoft
 refresh and opens that refresh's progress page. Every other Campaign setup
@@ -4048,9 +4055,19 @@ live.
   loading nor hides an earlier full load's failure or success
   ([#1587](https://github.com/epiphany40223/parishkit/issues/1587)).
   - *Not loaded* (no full refresh under way or finished since the campaign
-    was created): "This campaign's ParishSoft data hasn't been loaded
-    yet.", every stage not started, and the primary **Load the campaign's
-    ParishSoft data**.
+    was created, and the campaign was created more than two minutes ago):
+    "This campaign's ParishSoft data hasn't been loaded yet.", every stage
+    not started, and the primary **Load the campaign's ParishSoft data**.
+    A campaign created less than two minutes ago with no full refresh yet
+    is *Loading* instead, with no run: the load the system starts for it
+    ([Create the campaign](#create-the-campaign)) has not been requested
+    yet. Start the load is In progress with the queued sentence, there is
+    no button, and the region polls the step's own passive status read
+    (`campaign_load_status`, which never renews idle time), which hands the
+    region over to the run once it is requested, in place. A scheduler that
+    has not requested it within those two minutes is not going to, so the
+    step then settles to *Not loaded* in place, with its button
+    ([#1951](https://github.com/epiphany40223/parishkit/issues/1951)).
   - *Loading* (the newest full refresh since the campaign was created is
     queued, running or waiting to retry): "Loading the campaign's
     ParishSoft data…", the stages following the run, with the records
@@ -7055,6 +7072,12 @@ leader conditions are those of the
 counts leaders with no valid address; a PostgreSQL test pins the two to the
 same answer.
 
+Staff cannot open Users. On Ministry requests, Staff and Administrators see
+instead, for each Ministry, whether it has a leader who is a user and has
+signed in (the [Leaders column](../reports/spec.md#ministry-change-summary),
+[#1594](https://github.com/epiphany40223/parishkit/issues/1594)), as counts
+only, never a name or an address.
+
 Rejected: letting every ParishSoft leader sign in without a user (the
 Administrator decided that sign-in needs an explicit user), and importing
 automatically at each refresh (that would create accounts silently; the
@@ -7273,7 +7296,11 @@ ParishSoft data
 [#1916](https://github.com/epiphany40223/parishkit/issues/1916)): Start the
 load In progress while the run waits for a worker, waits to try again or is
 being recovered (each attempt starts again from the download and waits for a
-worker again), the rest Not started; Start the load Done, the stages before
+worker again), the rest Not started, with the stage boxes' queued sentence
+on the line under them
+([#1947](https://github.com/epiphany40223/parishkit/issues/1947); a routine
+refresh keeps the shared box's name, Start the load, since it loads
+ParishSoft data too); Start the load Done, the stages before
 the current one Done and the current one In progress while it runs; every
 box Done once it succeeded; the stage it stopped in Failed when it failed
 (Start the load when it stopped before a worker took it); and, when it was

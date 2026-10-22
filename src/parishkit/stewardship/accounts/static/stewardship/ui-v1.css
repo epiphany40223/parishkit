@@ -1881,6 +1881,10 @@ th:not([aria-sort]) .sort-indicator { opacity: .45; }
    below stays near; a scope of a few Ministries never reaches the limit. */
 .by-ministry-scroll { max-height: 18rem; overflow-y: auto; }
 .by-ministry-scroll thead th { position: sticky; top: 0; background: var(--paper-soft); }
+/* By Ministry's Leaders cell (#1594): a small status indicator, its word
+   and icon on its state's background, so the token pairs the contrast test
+   checks are the ones drawn. One line, so the row keeps its height. */
+.leader-status { display: inline-flex; align-items: center; gap: .3rem; padding: 0 .4rem; border-radius: .25rem; color: var(--status-ink); background: var(--status-bg); white-space: nowrap; }
 .cell-with-badge { position: relative; display: flex; align-items: center; gap: .4rem; }
 .cell-with-badge > .cell-ellipsis { min-width: 0; }
 .cell-with-badge > .cell-clamp { flex: 0 1 auto; }

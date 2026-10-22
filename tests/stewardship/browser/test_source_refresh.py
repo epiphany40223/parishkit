@@ -118,7 +118,12 @@ def test_refresh_now_stays_on_the_page_and_follows_the_run(page, component_origi
     assert page.get_by_text("Refresh requested.").count() == 0
     region = page.locator("#refresh-run")
     visible(region.get_by_role("heading", name="Current status"))
-    visible(region.get_by_text("of 4,000 records checked"))
+    # The in-place answer itself shows the run waiting for a worker: Start
+    # the load In progress with its spinner, and the queued sentence (#1947).
+    start = region.locator('[data-refresh-stage="start"]')
+    assert start.get_attribute("data-stage-state") == "active"
+    assert start.locator(".spinner").count() == 1
+    visible(region.get_by_text("Waiting for the background service to pick up"))
     visible(region.get_by_role("link", name="View this refresh's Background task"))
     assert page.evaluate(MARKED) == "kept"
     assert page.url == component_origin + REFRESH_REQUESTED + "#refresh-run"

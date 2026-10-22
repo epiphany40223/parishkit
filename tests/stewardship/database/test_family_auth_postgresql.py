@@ -480,7 +480,7 @@ def denial_kind(response):
 
 
 def test_every_rejected_code_reason_renders_one_identical_code_page(family_service):
-    """Unknown, malformed, wrong-mode, ineligible and closed codes are indistinct.
+    """Unknown, malformed, wrong-mode and ineligible codes are indistinct.
 
     Each attempt uses its own source address so no limiter budget is reached;
     the page must name the code-denial kind and nothing about the reason.
@@ -507,10 +507,7 @@ def test_every_rejected_code_reason_renders_one_identical_code_page(family_servi
         generation=2,
     )
     responses.append(attempt(family_service.code))  # inactive/ineligible Family
-    populate(family_service.campaign, family_service.rings, generation=3)
-    ends_at = family_service.campaign.active_configuration.ends_at
-    with campaign_clock(ends_at + timedelta(hours=1)):
-        responses.append(attempt(family_service.code))  # closed campaign
+    # A code after close gets the ended page instead; see the #1793 tests below.
     assert {response.status_code for response in responses} == {403}
     assert {denial_kind(response) for response in responses} == {CODE_DENIAL}
     assert b"Try another Family code" in responses[0].content
@@ -530,6 +527,150 @@ def test_every_rejected_link_reason_renders_one_identical_link_page(family_servi
         assert denial_kind(response) == LINK_DENIAL
         assert b"Enter your Family code instead" in response.content
     assert unknown.content == revoked.content
+
+
+ENDED = b"This parish&#x27;s census / stewardship campaign has ended."
+ENDED_HEADING = b"<h1>Sorry, the campaign is over</h1>"
+
+
+def _after_close(service):
+    """A clock one hour past the campaign's end instant."""
+    return campaign_clock(
+        service.campaign.active_configuration.ends_at + timedelta(hours=1)
+    )
+
+
+def test_after_close_every_link_and_code_gets_one_identical_ended_page(
+    family_service, monkeypatch
+):
+    """#1793: after close, valid and invalid credentials get the same ended page.
+
+    The decision is campaign-wide, so a valid link, an unknown link, a
+    malformed link, a valid code, an unknown code and a malformed code all
+    receive byte-identical bodies, the unchanged 403 status and ``no-store``.
+    Failure accounting runs once per attempt, exactly as for any rejection.
+    """
+    from parishkit.stewardship.accounts import family_authentication
+
+    limiter = family_service.service.limiter
+    failed, rejections = [], []
+    real_failed = limiter.failed
+    monkeypatch.setattr(
+        limiter, "failed", lambda *a, **k: failed.append(1) or real_failed(*a, **k)
+    )
+    monkeypatch.setattr(
+        family_authentication, "record_link_rejection", lambda: rejections.append(1)
+    )
+    addresses = iter(f"192.0.2.{index}" for index in range(100, 150))
+
+    def link(token):
+        """Follow one emailed link from a fresh source address."""
+        return Client().get("/access/" + token, REMOTE_ADDR=next(addresses))
+
+    def code(value):
+        """Submit one manual code from a fresh source address."""
+        return Client().post("/", {"code": value}, REMOTE_ADDR=next(addresses))
+
+    with _after_close(family_service):
+        root = Client().get("/")
+        responses = [
+            link(family_service.token),  # valid link
+            link("test.unknown-token"),  # unknown link
+            link("x"),  # malformed link
+            code(family_service.code),  # valid code
+            code("ZZZZZZZZ"),  # unknown code
+            code("bad"),  # malformed code, never looked up
+        ]
+    assert root.status_code == 200 and ENDED in root.content
+    assert {response.status_code for response in responses} == {403}
+    assert {response["Cache-Control"] for response in responses} == {"no-store"}
+    assert len({response.content for response in responses}) == 1
+    # No credential path may set a cookie or header the others do not.
+    assert {tuple(sorted(response.cookies)) for response in responses} == {()}
+    assert len({response["Content-Type"] for response in responses}) == 1
+    assert not [
+        response for response in responses if response.has_header("Retry-After")
+    ]
+    page = responses[0].content
+    assert ENDED_HEADING in page and ENDED in page
+    assert b'href="/">Check again' in page
+    assert not [text for text in DENIAL_TEXTS if text in page]
+    # The same page / shows, rendered with the same template and text.
+    assert page == root.content
+    assert len(failed) == 6 and len(rejections) == 3
+    assert not FamilySession.objects.exists()
+
+
+def test_after_close_throttled_and_maintenance_keep_their_own_pages(
+    family_service, monkeypatch
+):
+    """Throttling (429) and the maintenance gate (503) still take precedence.
+
+    The code case reaches the failure-time limit check after the lookup, so
+    the ended page can never replace a 429 that the failure itself caused.
+    """
+    limiter = family_service.service.limiter
+    with _after_close(family_service):
+        _throttled(monkeypatch, family_service)
+        throttled = Client().get("/access/" + family_service.token)
+        monkeypatch.undo()
+        monkeypatch.setattr(
+            limiter, "counters", lambda counters, *, failure=False: 30 * failure
+        )
+        code_throttled = Client().post("/", {"code": family_service.code})
+        monkeypatch.undo()
+        _closed(monkeypatch)
+        maintenance = Client().get("/access/" + family_service.token)
+    assert throttled.status_code == code_throttled.status_code == 429
+    assert denial_kind(throttled) == denial_kind(code_throttled) == UNAVAILABLE
+    assert maintenance.status_code == 503
+    for response in (throttled, code_throttled, maintenance):
+        assert ENDED not in response.content
+
+
+def test_before_start_links_and_codes_keep_the_generic_denial(family_service):
+    """Only the ended page replaces the denial; before start stays generic."""
+    starts_at = family_service.campaign.active_configuration.starts_at
+    with campaign_clock(starts_at - timedelta(hours=1)):
+        link = Client().get("/access/" + family_service.token)
+        code = Client().post("/", {"code": family_service.code})
+    assert link.status_code == code.status_code == 403
+    assert denial_kind(link) == LINK_DENIAL
+    assert denial_kind(code) == CODE_DENIAL
+
+
+def test_a_campaign_being_prepared_keeps_the_generic_denial(family_service):
+    """A go-live gate inside the interval is not the end: links stay generic."""
+    from parishkit.stewardship.campaigns.credential_models import (
+        CampaignCredentialState,
+    )
+
+    with unguarded():
+        CampaignCredentialState.objects.filter(campaign=family_service.campaign).update(
+            go_live_gate=True
+        )
+    response = Client().get("/access/" + family_service.token)
+    assert response.status_code == 403
+    assert denial_kind(response) == LINK_DENIAL
+
+
+def test_failed_ended_check_falls_back_to_the_generic_denial(
+    family_service, monkeypatch
+):
+    """An optional campaign read that fails never turns a denial into an error."""
+    from django.db import DatabaseError
+
+    from parishkit.stewardship.responses import availability
+
+    def broken(service):
+        """Simulate the campaign-state read failing."""
+        raise DatabaseError("synthetic")
+
+    monkeypatch.setattr(availability, "unavailable_page", broken)
+    with _after_close(family_service):
+        response = Client().get("/access/" + family_service.token)
+    assert response.status_code == 403
+    assert denial_kind(response) == LINK_DENIAL
 
 
 def test_rate_limit_and_limiter_outage_render_temporary_unavailability(
