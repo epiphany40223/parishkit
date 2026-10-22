@@ -3235,6 +3235,14 @@ look per state:
   (**Not seen in ParishSoft**) uses the Warning look
   ([review pipeline](../review-pipeline/spec.md#entered-incorrectly-stage),
   [#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
+- **Held on purpose.** A status badge saying something was stopped on
+  purpose and silently holds work until someone resumes it (a report
+  email's **Paused**) uses the Warning look: the shared `status-badge`
+  with `.status-warning` and the `warning` icon before its word
+  ([Report emails page](../report-emails/spec.md#report-emails-page),
+  [#1966](https://github.com/epiphany40223/parishkit/issues/1966)). The
+  row's background stays as it is, so a table with several paused reports
+  is not loud.
 - **Contrast.** Text meets 4.5:1, and icons and borders 3:1, against their
   background, checked by a contrast test over the token pairs above. Not
   current uses `--control-border` (3.3:1 on `--paper-soft`), because the

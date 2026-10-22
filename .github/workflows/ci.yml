@@ -332,6 +332,14 @@ jobs:
           node-version: "24"
           cache: npm
           cache-dependency-path: tests/stewardship/browser/package-lock.json
+      # The runner image ships a packages.microsoft.com apt source that
+      # sometimes answers 403 and fails Playwright's apt-get update before
+      # any test runs (#1990). These jobs need only Ubuntu's packages, so
+      # drop that source; a no-op when the image no longer has it.
+      - name: Remove the Microsoft apt source
+        run: |
+          grep -ls packages.microsoft.com /etc/apt/sources.list /etc/apt/sources.list.d/* \
+            | xargs -r sudo rm -f
       - name: Install component test dependencies
         run: |
           tools/ci-pip-install.sh -r requirements/stewardship-build.txt

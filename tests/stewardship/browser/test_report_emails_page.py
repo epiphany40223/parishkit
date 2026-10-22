@@ -1,6 +1,7 @@
 """Mail › Report emails in the browser (#1786, delivery plan item 5).
 
-The table fits a 320 px phone without a page scroll, in light and dark; its
+The table fits a 320 px phone without a page scroll, in light and dark; a
+Paused status stands out in the Warning look (#1966); its
 row actions are named icons, the unavailable ones staying in place with
 their reason; each dialog names the report it acts on (Resume names its next
 send's day in this browser's zone); a past sends list opens in place; Staff
@@ -28,6 +29,42 @@ def test_the_list_fits_and_passes_axe(
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + PAGE)
     visible(page.get_by_role("heading", name="Report emails", level=1))
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+@pytest.mark.parametrize("width", [320, 1280])
+def test_a_paused_status_stands_out(page, component_origin, axe_source, width, scheme):
+    """A Paused report's status badge takes the Warning look (#1966): the
+    warning icon before the word, which stays, and the scheme's warning
+    colours; other statuses keep the plain badge, and axe finds no contrast
+    violation in either scheme."""
+    from parishkit.stewardship.web.design_tokens import COLORS, DARK_COLORS
+
+    from .test_dark_scheme import rgb
+
+    page.emulate_media(color_scheme=scheme)
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + PAGE)
+    paused = page.locator('tbody[data-report-status="paused"] .status-badge')
+    visible(paused)
+    assert paused.inner_text().strip() == "Paused"
+    icon = paused.locator("svg.level-icon-warning")
+    assert icon.count() == 1 and icon.get_attribute("aria-hidden") == "true"
+    colors = DARK_COLORS if scheme == "dark" else COLORS
+    look = paused.evaluate(
+        "node => { const style = getComputedStyle(node);"
+        " return [style.color, style.backgroundColor, style.borderTopColor]; }"
+    )
+    assert look == [
+        rgb(colors["warning-ink"]),
+        rgb(colors["warning-bg"]),
+        rgb(colors["warning-border"]),
+    ]
+    upcoming = page.locator('tbody[data-report-status="upcoming"] .status-badge')
+    assert upcoming.locator("svg").count() == 0
+    assert "status-warning" not in upcoming.get_attribute("class")
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
 

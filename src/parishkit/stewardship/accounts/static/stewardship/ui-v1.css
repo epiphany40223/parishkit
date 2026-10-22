@@ -1959,7 +1959,10 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
    (Entered incorrectly) and the Not seen in ParishSoft flag the Error and
    Warning looks with their icon (UX conventions, "Status indicators"). */
 .stage-chip { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .55rem; border: 1px solid var(--border); border-radius: 999px; background: var(--paper-soft); color: var(--ink); font-size: .8125rem; font-weight: 600; white-space: nowrap; }
-.stage-chip:is(.status-error, .status-warning) { border-color: var(--status-line); background: var(--status-bg); color: var(--status-ink); }
+/* A status badge in the Warning look (a Paused report email, #1966) takes
+   the same border, background and ink as a stage chip in that look; its
+   icon and word carry the state, not the colour. */
+.stage-chip:is(.status-error, .status-warning), .status-badge.status-warning { border-color: var(--status-line); background: var(--status-bg); color: var(--status-ink); }
 /* A worklist's filters are always open (no Filters disclosure), on one
    compact row that wraps only when the window is too narrow for it
    (#1653), so a laptop window (1366 px, Admin menu beside) holds a
