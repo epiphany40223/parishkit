@@ -1,7 +1,7 @@
 {% load i18n stewardship %}{% comment %}
 One Finishing setup step's explanation, drawn inside its stage box
-(components/stage-boxes.html, setup-finishing-status.html).
+(components/stage-boxes.html, setup-finishing-status.html). It shows no
+background task reference (#1969).
 {% endcomment %}
 <p>{{ step.text }}{% if step.count %} {% blocktranslate trimmed with done=step.count.done total=step.count.total %}{{ done }} of {{ total }} services acknowledged.{% endblocktranslate %}{% endif %}</p>
 {% if step.progress %}<p>{{ step.progress|out_of }}</p>{% endif %}
-{% if step.task %}<p>{% translate "Task reference" %}: <code>{{ step.task }}</code></p>{% endif %}
