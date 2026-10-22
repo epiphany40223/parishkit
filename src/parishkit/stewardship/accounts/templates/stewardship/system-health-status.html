@@ -51,5 +51,6 @@
 {% if clear_halt.halt %}<template data-live-mirror="clear-halt-check-{{ clear_halt.halt.halt_id }}">{% include 'stewardship/system-health-clear-halt-check.html' %}</template>
 {% endif %}<template data-live-mirror="accept-button">{% include 'stewardship/system-health-accept-button.html' with mirrored=True %}</template>
 <template data-live-mirror="backup-now-button">{% include 'stewardship/system-health-backup-button.html' with mirrored=True %}</template>
+{# The Version and services tile's Technical details list (#2016). #}<template data-live-mirror="version-details">{% include "stewardship/system-health-version-details.html" %}</template>
 <template data-live-mirror="debug-off-button">{% include 'stewardship/system-health-debug-button.html' with mirrored=True %}</template>
 </div>
