@@ -1313,7 +1313,9 @@ def read_user_timeline(
         )
         with read_transaction():
             try:
-                timeline = read_timeline(user_id, actor.identity)
+                timeline = read_timeline(
+                    user_id, actor.identity, views=query.kind == "views"
+                )
             except LookupError:
                 raise NotAvailable("No such user.") from None
         lines = narrow(timeline.events, query.kind, query.bounds)

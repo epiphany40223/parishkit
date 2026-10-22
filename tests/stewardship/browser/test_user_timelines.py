@@ -2,14 +2,14 @@
 
 The fixtures (``user_timeline_components``) serve the first page of a
 Staff user's two-page timeline and the exact pages its navigator, When
-heading and Kind filter lead to.
+heading and Kind filter (Role changes and Pages viewed) lead to.
 """
 
 import pytest
 
 from .automation_components import canonical
 from .test_charts import assert_clean, watch
-from .user_timeline_components import NEXT, OLDEST, PAGE, ROLES
+from .user_timeline_components import NEXT, OLDEST, PAGE, ROLES, VIEWS
 from .waits import (
     focused,
     has_attribute,
@@ -128,4 +128,34 @@ def test_the_kind_filter_narrows_the_lines_in_place(page, component_origin):
         "Daily Administrator report"
         in page.locator("#summary-heading + dl").inner_text()
     )
+    assert_clean(page, errors)
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_pages_viewed_lists_only_page_views_in_place(page, component_origin, width):
+    """All leaves the page view out; Pages viewed shows only it, in place (#2006)."""
+    errors = watch(page)
+    page.set_viewport_size({"width": width, "height": 2400})
+    page.goto(component_origin + PAGE)
+    opened = "Opened the active parishioner family directory."
+    assert opened not in lines(page)
+    page.evaluate(MARK)
+    kind = page.locator("#timeline-kind")
+    assert "Pages viewed" in kind.locator("option").all_inner_texts()
+    kind.select_option("views")
+    button = page.get_by_role("button", name="Apply filters", exact=True)
+    with page.expect_response(
+        lambda response: (
+            "kind=views" in response.url and response.request.method == "GET"
+        )
+    ) as fetched:
+        button.click()
+    assert fetched.value.status == 200, fetched.value.url
+    has_count(page.locator("#table tbody tr"), 1)
+    assert lines(page) == [opened]
+    assert page.evaluate(MARKED) == "kept"
+    focused(button)
+    address = page.url.removeprefix(component_origin).split("#")[0]
+    assert canonical(address) == VIEWS
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert_clean(page, errors)
