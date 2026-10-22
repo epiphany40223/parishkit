@@ -13,6 +13,7 @@ from .accounts.cryptography import independent_keyrings
 from .accounts.key_files import _unique_object, parse_keyring, read_private
 from .accounts.metrics_credentials import MetricsCredential, credential_receipt
 from .deployment import DeploymentProfile, ServiceRole
+from .mail_catcher import fake_clock
 from .runtime_database import database_settings, profile_settings
 from .runtime_health import RuntimeHealth
 from .runtime_paths import RuntimeLayout, private_directory
@@ -77,17 +78,6 @@ def parse_google_client(raw, *, profile):
             "The sentinel OAuth client is admitted only in the local profile."
         )
     return value
-
-
-def fake_clock(environ=os.environ):
-    """Whether this process runs under the LOCAL fake clock (#476).
-
-    libfaketime fakes the clock only when its ``FAKETIME_*`` variables are
-    set (deploy/stewardship/Dockerfile.faketime), and only the LOCAL
-    fake-clock override sets them (``local.clock.FAKETIME_ENVIRONMENT``), on
-    the faked services and the seeder's one-shot containers.
-    """
-    return any(name.startswith("FAKETIME") for name in environ)
 
 
 class GoogleClockRefused(ConfigError):

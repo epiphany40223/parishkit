@@ -373,8 +373,9 @@ def _queue_query(request, principal, parameters):
     A query string carries either the token of a remembered view ("Return
     to Ministry requests", #534) or closed link filters: one Ministry, from
     a leader's My review work (#1690) or with a request type and stage from
-    a count on By Ministry (#1133), or a Stage alone, from Home's Ministry
-    requests to enter by hand card (R39 finding 2). Search and every other
+    a count on By Ministry (#1133), or a Stage alone, from a Staff card of
+    My review work (#1818) or Home's Ministry requests to enter by hand
+    card (R39 finding 2). Search and every other
     filter stay private POST state (``parameters``, the POST body less any
     decision's fields). A Ministry leader's view of Staff's update phase
     reads as their Accepted (``for_reader``).

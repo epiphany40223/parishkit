@@ -79,6 +79,7 @@ from parishkit.stewardship.accounts.leader_import import (
     SKIP_REASONS,
     ministries_label,
 )
+from parishkit.stewardship.accounts.leader_import_views import LEADERS as UNREAD
 from parishkit.stewardship.accounts.leader_import_views import PREFIX as LEADER_PREFIX
 from parishkit.stewardship.accounts.user_changes import plan_changes, saved_users
 from parishkit.stewardship.accounts.user_reads import USER_SORTING, user_list
@@ -87,10 +88,12 @@ from parishkit.stewardship.accounts.user_views import (
     PREFIX,
     UserForm,
     _entry_context,
+    never_signed_in,
     review_lines,
     table_rows,
 )
 from parishkit.stewardship.jobs.leader_email_content import LeaderMinistry
+from parishkit.stewardship.web.part_status import part_status
 from parishkit.stewardship.web.tables import paginate
 
 from ..policy_factory import user
@@ -126,6 +129,12 @@ EDIT_OWN = "/user-edit-own"
 # The signed-in Administrator the pages are drawn for.
 READER = "admin@example.org"
 IMPORT = "/users/leaders/import"
+# The Users page whose leaders could not be read (#1863), and its
+# notice's status answers: ready after the reader's own view, and still
+# waiting for newer ParishSoft data.
+LEADERS_UNREAD = "/users-leaders-unread"
+LEADERS_READY = "/users-leaders-ready"
+LEADERS_WAITING = "/users-leaders-waiting"
 # Users whose import answers a confirmation (#1356): every ticked leader is
 # imported, nobody skipped.
 LIST_CONFIRM = "/users-import-confirm"
@@ -242,9 +251,11 @@ def _list(
     import_url=IMPORT,
     emails=EMAIL_ROWS,
     emails_unavailable=None,
+    leaders_status=None,
 ):
     """The Users page for ``records``, sorted by ``sort``, with ``leaders`` and
-    the Email Ministry leaders rows ``emails``."""
+    the Email Ministry leaders rows ``emails``; ``leaders_status`` instead
+    says the leaders could not be read (#1863)."""
     rows = user_list(records, IDENTITIES)
     email_table = paginate(
         emails,
@@ -276,6 +287,7 @@ def _list(
                 "new_url": NEW,
                 "delete_url": delete,
                 "delete_reason": OWN_DELETE,
+                "never_signed_in": never_signed_in(rows),
                 "leaders": leader_table,
                 "leaders_unreachable": 2 if leaders else 0,
                 "import_url": import_url,
@@ -283,7 +295,16 @@ def _list(
                 "emails": email_table,
                 "emails_unavailable": emails_unavailable,
                 "emails_url": EMAILS,
-            },
+            }
+            | (
+                {
+                    "leaders": None,
+                    "leaders_unavailable": True,
+                    "leaders_status": leaders_status,
+                }
+                if leaders_status
+                else {}
+            ),
         ),
     )
 
@@ -466,6 +487,26 @@ def components(context, admin):
         PENDING: ("text/html", pending),
         LIST_PENDING: _list(values, records, delete=DELETE_PENDING),
         LIST_CONFIRM: _list(values, records, import_url=IMPORT_CONFIRM),
+        LEADERS_UNREAD: _list(
+            values,
+            records,
+            refresh=LEADERS_UNREAD,
+            leaders_status=part_status(UNREAD, shown=3, retry=True),
+        ),
+        LEADERS_READY: (
+            "text/html",
+            render_to_string(
+                "stewardship/components/part-status.html",
+                {"part_status": part_status(UNREAD, shown=3, ready=True)},
+            ),
+        ),
+        LEADERS_WAITING: (
+            "text/html",
+            render_to_string(
+                "stewardship/components/part-status.html",
+                {"part_status": part_status(UNREAD, shown=3, retry=True)},
+            ),
+        ),
     }
     POSTS.update(
         {

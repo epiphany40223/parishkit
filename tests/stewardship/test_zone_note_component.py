@@ -26,12 +26,6 @@ TEXT = "Enter send dates and times in this computer's time zone:"
 # Pages that still write the note by hand, each with why. A page leaves this
 # list when it moves to the include; the test below fails on a stale entry.
 HAND_WRITTEN = {
-    # Open PR #1462 is changing New and Edit scheduled email; it moves to the
-    # include after that merges.
-    "schedule-entry.html",
-    # Open PRs #1468 (Additional information) and #1435 and #1441 (Automatic
-    # census changes) are changing these pages; each moves afterwards.
-    "information-worklist-filters.html",
     # The recorded exception (decision 18): the refresh schedule's times are
     # in its schedule zone, and its note adds the browser's zone in a span
     # that refresh-schedule-v1.js fills, not this note.
@@ -60,8 +54,14 @@ def test_note_without_an_id_escapes_its_text():
     assert "&lt;b&gt;Days&lt;/b&gt; in:" in html
 
 
+# The sentence New and Edit scheduled email (schedule-entry.html) used to write
+# by hand (#1943); it has an apostrophe, so it also proves the escaping matches.
+SCHEDULE_ENTRY_TEXT = "Enter the date and time in this computer's time zone:"
+
+
+@pytest.mark.parametrize("text", [TEXT, SCHEDULE_ENTRY_TEXT])
 @pytest.mark.parametrize("note_id", ["", "contact-zone-help"])
-def test_include_draws_the_hand_written_line_byte_for_byte(note_id):
+def test_include_draws_the_hand_written_line_byte_for_byte(note_id, text):
     """A page's translate-as and include render what its old line did, with
     no added newline, so moving a page to the include changes no output."""
     attribute = f' id="{note_id}"' if note_id else ""
@@ -69,12 +69,12 @@ def test_include_draws_the_hand_written_line_byte_for_byte(note_id):
     engine = engines["django"]
     old = engine.from_string(
         '{% load i18n %}[<p class="help"' + attribute + " data-browser-zone-note"
-        ' hidden>{% translate "' + TEXT + '" %} <span data-browser-zone-name>'
+        ' hidden>{% translate "' + text + '" %} <span data-browser-zone-name>'
         "</span>.</p>]"
     ).render({})
     new = engine.from_string(
         '{% load i18n %}[{% translate "'
-        + TEXT
+        + text
         + '" as zone_note %}'
         + INCLUDE
         + "zone_note"

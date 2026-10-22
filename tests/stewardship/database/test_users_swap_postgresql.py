@@ -483,6 +483,11 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # one of 0126's guards in place (the information revision guard and the
 # limitation review guard), which 0126's rerun brings back older, so
 # ``CLOSURE_REPLACED`` runs each file again after it.
+# 0152 (#1866) creates only the audit actor index, only when missing, and
+# replaces nothing; the swap drops none of it, so nothing is registered.
+# 0157 (#1867) creates the two person identity reads (in
+# runtime_grants.CLOSURE_FUNCTIONS), which go, and replaces nothing, so its
+# file installs whole again.
 # 0158 (#1889) creates nothing: it replaces six guards in place on 0130's,
 # 0146's, 0148's, 0149's, 0150's and 0151's bodies, which the reruns of
 # those files (``CLOSURE_REPLACED``) bring back older, so
@@ -736,6 +741,13 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_jobs", "0034_sent_mail_recipients"),
     ),
+    **dict.fromkeys(
+        (
+            "public.stewardship_address_people_v1(text,uuid)",
+            "public.stewardship_family_users_v1(bigint,uuid)",
+        ),
+        ("stewardship_accounts", "0031_person_identity_reads"),
+    ),
     # 0120 (#1592) creates the Ministry leader email tables (in
     # CLOSURE_TABLES) and these functions, and replaces the four outbox
     # guards and the two task-type maps in place with bodies that keep every
@@ -863,7 +875,62 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_reports", "0036_participation_summary"),
     ),
+    # 0145 (#1562) creates only Sent mail's Member-name read.
+    "public.stewardship_delivery_page_member_names_v1(uuid[],uuid)": (
+        "stewardship_jobs",
+        "0036_page_member_names",
+    ),
+    # 0156 (#1786) creates the report email tables (in
+    # CLOSURE_TABLES) and these functions, and replaces the two task-type
+    # maps with 0120's bodies plus report_email_prepare, so its file installs
+    # whole again after 0120's.
+    **dict.fromkeys(
+        (
+            "public.stewardship_report_next_send_v1(jsonb,date,date,date)",
+            "public.stewardship_report_slot_due_v1(jsonb,date,date,text,text)",
+            "public.stewardship_report_due_v1(uuid,text)",
+            "public.stewardship_report_email_scope_v1(uuid,uuid,uuid,text,uuid)",
+            "public.stewardship_report_email_live_v1(uuid,uuid,bigint,uuid)",
+            "public.stewardship_report_email_page_v1(jsonb,jsonb)",
+            "public.stewardship_report_email_predecessors_v1(uuid,text,uuid)",
+            "public.stewardship_report_email_replacement_v1(jsonb)",
+            "public.stewardship_report_email_slots_v1(uuid,text)",
+            "public.stewardship_report_email_inputs_v1("
+            "jsonb,jsonb,timestamp with time zone,date,date,text)",
+            "public.stewardship_report_email_cohort_v1(jsonb,uuid)",
+            "public.stewardship_report_email_current_v1(uuid,text,text,text)",
+            "public.stewardship_report_email_label_v1(text,text,text)",
+            "public.stewardship_report_email_skipped_v1(uuid)",
+            "public.stewardship_report_email_requests_v1("
+            "uuid,uuid,timestamp with time zone)",
+            "public.stewardship_report_email_preparation_guard_v1()",
+            "public.stewardship_report_email_source_commit_v1()",
+            "public.stewardship_report_email_snapshot_guard_v1()",
+            "public.stewardship_report_email_snapshot_commit_v1()",
+            "public.stewardship_report_email_recipient_guard_v1()",
+            "public.stewardship_report_email_render_v1(jsonb,uuid,text,text,text)",
+            "public.stewardship_report_email_write_admitted_v1(text,jsonb,jsonb)",
+            "public.stewardship_report_email_mail_write_v1(uuid,text,jsonb,jsonb)",
+            "public.stewardship_report_email_mail_commit_v1()",
+            "public.stewardship_report_email_reason_v1(text)",
+            "public.stewardship_report_email_completion_v1(jsonb)",
+            "public.stewardship_report_email_settle_v1()",
+            "public.stewardship_report_email_dispatch_live_v1(uuid,boolean)",
+            "public.stewardship_report_email_seed_v1(uuid,uuid)",
+            "public.stewardship_report_email_dispatch_write_v1(text,jsonb,jsonb)",
+            "public.stewardship_report_email_manual_guard_v1()",
+            "public.stewardship_report_email_manual_allocate_v1()",
+            "public.stewardship_report_email_immutable_v1()",
+            "public.stewardship_report_email_pin_retained_v1()",
+        ),
+        ("stewardship_reports", "0040_report_pipeline"),
+    ),
 }
+
+
+# The CLOSURE_TABLES entries that are views: the report email completion
+# proof (0156, #1786).
+CLOSURE_VIEWS = {"stewardship_report_email_completion_ready"}
 
 
 # A closure migration whose frozen file only replaces functions another
@@ -1727,7 +1794,11 @@ def swap_pending():
         for definition in old_definitions().values():
             cursor.execute(definition)
         for table in CLOSURE_TABLES:
-            cursor.execute(f"DROP TABLE public.{table} CASCADE")
+            # A view a dropped table's CASCADE took with it is gone already.
+            if table in CLOSURE_VIEWS:
+                cursor.execute(f"DROP VIEW IF EXISTS public.{table} CASCADE")
+            else:
+                cursor.execute(f"DROP TABLE public.{table} CASCADE")
         for function in CLOSURE_CREATED:
             cursor.execute(f"DROP FUNCTION {function} CASCADE")
         for statement in (
@@ -2020,6 +2091,24 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
             # Added Member links (0141, #1670): the worker records them in
             # promotion; web only reads them.
             "stewardship_added_member_link": ("pk_stewardship_worker", "INSERT"),
+            # The report email pipeline (0156, #1786): the scheduler
+            # allocates preparations, the worker writes snapshots and
+            # recipients, and web reads the completion proof.
+            "stewardship_report_email_preparation": (
+                "pk_stewardship_scheduler",
+                "INSERT",
+            ),
+            **dict.fromkeys(
+                (
+                    "stewardship_report_email_snapshot",
+                    "stewardship_report_email_recipient",
+                ),
+                ("pk_stewardship_worker", "INSERT"),
+            ),
+            "stewardship_report_email_completion_ready": (
+                "pk_stewardship_web",
+                "SELECT",
+            ),
         }
         for table in CLOSURE_TABLES:
             login, privilege = writers.get(table, ("pk_stewardship_web", "INSERT"))

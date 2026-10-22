@@ -174,8 +174,11 @@ def test_an_administrator_enters_ignores_and_reopens(response_service, google, c
     assert document["result"]["proposal"]["execution"] == "pending"
     assert document["result"]["resolution"]["action"] == "reopened"
     assert "Typed it wrong" not in str(document)
-    # --yes is still accepted, and does nothing.
+    # --yes is gone (#1893): a usage error that records nothing.
     code, document = resolve(run, home, "entered", "--yes")
+    assert code == 2 and document["error"]["code"] == "usage", document
+    assert (count(EVENT), count(UPDATED)) == (4, 4)
+    code, document = resolve(run, home, "entered")
     assert code == 0, document
     assert document["result"]["proposal"]["execution"] == "resolved_external"
     assert (count(EVENT), count(UPDATED)) == (5, 5)
@@ -188,7 +191,7 @@ def test_stale_unknown_and_read_only_refusals(response_service, google, cli):  #
     signed_in()
     run = cli()
     home, _ = rows()
-    code, document = resolve(run, home, "entered", "--yes", version=home.version + 1)
+    code, document = resolve(run, home, "entered", version=home.version + 1)
     assert code == 1 and document["error"]["code"] == "stale_version", document
     code, document = run(
         *("census", "resolve", str(uuid4()), "--action", "ignored"),
@@ -196,7 +199,7 @@ def test_stale_unknown_and_read_only_refusals(response_service, google, cli):  #
     )
     assert code == 1 and document["error"]["code"] == "not_available", document
     reader = read_only_session(run.service)
-    code, document = resolve(run, home, "entered", "--yes", secret=reader)
+    code, document = resolve(run, home, "entered", secret=reader)
     assert code == 1 and document["error"]["code"] == "denied", document
     assert (count(EVENT), count(UPDATED)) == (0, 0)
     assert not ProposalResolution.objects.exists()
@@ -289,7 +292,7 @@ def test_an_ended_session_changes_nothing(response_service, google, cli):  # noq
     run = cli()
     home, _ = rows()
     revoke(run.service, run.secret)
-    code, document = resolve(run, home, "entered", "--yes")
+    code, document = resolve(run, home, "entered")
     assert code == 5 and document["error"]["code"] == "session_ended", document
     assert (count(EVENT), count(UPDATED)) == (0, 0)
 

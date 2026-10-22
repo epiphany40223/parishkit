@@ -28,6 +28,17 @@ def campaign_year(values):
     return values["start_date"][:4]
 
 
+def period_years(start, end):
+    """Name a financial period by its years: "2027", or "2027–2028".
+
+    The one rule for the year a Family's pledge is labeled with (#1923), on
+    every Family surface that names it. It comes from the period itself, never
+    from the campaign's free-text Stewardship year label, so "Your 2027
+    pledge" and "This pledge starts on January 1, 2027" cannot disagree.
+    """
+    return str(start.year) if start.year == end.year else f"{start.year}–{end.year}"
+
+
 def number(value):
     """Group integers/finite decimal values without introducing binary floats."""
     if type(value) is not int and not isinstance(value, Decimal):

@@ -6,6 +6,15 @@ on `pr/stewardship-go-live-readiness`, based on verified main `17f5f2fc`.
 Follow the [controlling Phase 4 sequence](../plans/stewardship/overall.md#phase-4-production-scheduling-delivery-and-notifications)
 and [Production-transition contract](../specs/stewardship/admin-portal/spec.md#production-transition).
 
+> **Historical.** This guide records how the server side was built and
+> reviewed. The Go-live readiness and Testing cleanup pages it describes,
+> with their tick box and five-minute preview, were replaced by the Check
+> and Prepare steps of the four-step
+> [Go live page](../specs/stewardship/admin-portal/spec.md#go-live-page)
+> ([#1585](https://github.com/epiphany40223/parishkit/issues/1585)), which
+> reuses their server-side owners. The operator's procedure is the launch
+> runbooks' [Production activation](stewardship-launch-runbooks.md#production-activation).
+
 ## Coherent outcome
 
 Give an authenticated Admin a current, exact readiness/impact preview and a
@@ -60,7 +69,11 @@ verifies tenant and selected campaign/fund window, and uses the configured
 source-staleness threshold (default 30 minutes) from the full load's start.
 A newer delta does not extend that deadline. Missing or stale evidence requires
 a new full refresh before cleanup can begin. This is distinct from routine
-nightly full-refresh scheduling.
+nightly full-refresh scheduling. Since
+[#1812](https://github.com/epiphany40223/parishkit/issues/1812), stale
+evidence no longer blocks the Go live page's Check or Start go-live, which
+queues the go-live's own full refresh; only cleanup started without one (the
+local seeding tool) still needs a fresh full refresh.
 
 Focused validation so far: 20 pure impact cases (including a 5,000-Family stream),
 three PostgreSQL Family-reader cases (including page boundaries and actual web

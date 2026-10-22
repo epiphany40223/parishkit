@@ -12,7 +12,8 @@ from parishkit.config import ConfigError
 from .accounts.credential_errors import CredentialValidationUnavailable
 from .accounts.key_files import MAX_FILE_BYTES
 from .accounts.provider_context import validated_context
-from .deployment import recorded_profile
+from .deployment import recorded_mail_redirect, recorded_profile
+from .mail_catcher import redirect_field
 from .provider_checks import (
     ProviderCheckDrainFailure,
     _check_owner,
@@ -52,6 +53,7 @@ def submit_sample(value, settings, mail, *, seconds, check):
         raise ValueError("Invalid readiness submission invocation.")
     try:
         profile = recorded_profile()
+        redirect = recorded_mail_redirect()
     except ConfigError:
         return DeliveryOutcome.NOT_SENT
     payload = json.dumps(
@@ -64,7 +66,9 @@ def submit_sample(value, settings, mail, *, seconds, check):
             # alone can admit the LOCAL mail-catcher transport (#476).
             "banner_origin": mail.banner_origin,
             "profile": profile.value,
-        },
+        }
+        # A LOCAL deployment's mail redirect (#1399), only when it is set.
+        | redirect_field(redirect),
         ensure_ascii=False,
     ).encode("utf-8")
     if len(payload) > MAX_INPUT:

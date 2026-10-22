@@ -117,7 +117,8 @@ action checks how long ago the Admin signed in; there is no step-up.
      guard test lists `schedule-summary.html` and `clone-preview.html` as
      still hand-drawn. Browser tests of the editor in three engines with
      `--require-no-skips`. No pk-local check: nothing is added or moved.
-   - **7c, the mail schedule review.** A from-now helper beside
+   - **7c, the mail schedule review.** A from-now helper,
+     `upcoming_slots`, replacing
      `preview_slots` (from `SchedulePlan.next_slot`, so no history is
      scanned) lists the next five sends after the database's now.
      `schedule_changes.describe` takes an optional zone: with the posted

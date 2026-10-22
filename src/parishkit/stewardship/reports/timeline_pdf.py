@@ -3,8 +3,9 @@
 The CSV and XLSX of a timeline export are the shared information files
 (``information_rendering``); only the PDF is drawn here, because one
 Family's story reads better as a picture than as a stack of record cards.
-Every page carries the shared frame (``pdf_design.PdfFrame``) with one line
-under the title naming the Family, so a loose page still says whose it is.
+Every page carries the shared frame (``pdf_design.PdfFrame``) with the
+Family's name as a heading under the title and one line of its DUID and
+envelope number (#1841), so a loose page still says whose it is.
 The first page then shows:
 
 - summary cards: one per Summary line of the page, in its order and words,
@@ -121,11 +122,11 @@ def kind_of(what):
 
 
 # Report details drawn somewhere other than a summary card: the frame (title,
-# parish, privacy line, request time and its zone), the line under the title
-# (the Family or its ParishSoft status, its DUID and envelope number, the
-# mode) and the timeline heading. The Family code is a card of its own look
-# (``code_card``).
-FRAME_FIELDS = frozenset({"Report", "Parish", "Privacy", "Requested at"})
+# parish and campaign, privacy line, request time and its zone), the heading
+# and line under the title (the Family or its ParishSoft status; its DUID,
+# envelope number and a Testing capture's mode) and the timeline heading. The
+# Family code is a card of its own look (``code_card``).
+FRAME_FIELDS = frozenset({"Report", "Parish", "Campaign", "Privacy", "Requested at"})
 IDENTITY_FIELDS = (
     "Family",
     STATUS_HEADING,
@@ -189,16 +190,24 @@ class Block(NamedTuple):
     day: str = ""
 
 
-def identity_line(metadata):
-    """The line under every page's title: Family, DUID, envelope and mode.
+def family_heading(metadata):
+    """The heading under every page's title: the Family's name and status.
 
     A Family the data no longer has shows the shared "Not in ParishSoft" in
     place of its blank name, as the page's heading shows its badge (#1216).
     """
+    parts = (str(design.detail(metadata, label)) for label in IDENTITY_FIELDS[:2])
+    return " · ".join(part for part in parts if part)
+
+
+def identity_line(metadata):
+    """The line under the Family heading: DUID, envelope and any mode.
+
+    Only a Testing capture has a Mode detail, so a Production file's line
+    names no mode (#1841).
+    """
     values = {label: value for label, value in metadata if label in IDENTITY_FIELDS}
     parts = [
-        str(values.get("Family", "")),
-        str(values.get(STATUS_HEADING, "")),
         f"Family DUID {values['Family DUID']}" if values.get("Family DUID") else "",
         (
             f"Envelope number {values['Envelope number']}"
@@ -495,9 +504,13 @@ DRAW = {
 
 
 def timeline_frame(document):
-    """The shared frame, with the Family's identity line under the title."""
+    """The shared frame: the Family's heading and identity line under the title."""
     line = identity_line(document.metadata)
-    return design.PdfFrame.for_document(document, details=(line,) if line else ())
+    return design.PdfFrame.for_document(
+        document,
+        details=(line,) if line else (),
+        subject=family_heading(document.metadata),
+    )
 
 
 def timeline_pdf(document, output):

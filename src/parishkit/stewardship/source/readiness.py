@@ -4,6 +4,11 @@ A fresh delta cannot turn an old full load into readiness evidence. Permanent
 manifest metadata suffices; no source census or contribution payload is read.
 The freshness limit is the configured source-staleness threshold, measured from
 the pre-read database timestamp, consistently with operational health.
+
+Go live's Check and Start go-live waive that age (``full_refresh_stale``,
+#1812), because Start queues the go-live's own full refresh; checks after
+Start apply ``confirmation_readiness.go_live_source`` instead. Only cleanup
+started without an attempt (the local seeding tool) still needs it.
 """
 
 from dataclasses import dataclass

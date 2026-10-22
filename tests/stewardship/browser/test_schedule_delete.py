@@ -105,6 +105,8 @@ def test_delete_reviews_in_place_and_returns_to_the_list(
         "action",
         "base_digest",
         "schedule_id",
+        # The browser's zone, which every schedule review posts (#1949).
+        "zone",
     }
     assert shown.locator("[data-review-title]").inner_text() == TITLE
     assert page.evaluate(FOCUSED) == "schedule-delete-review-title"

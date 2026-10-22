@@ -241,8 +241,11 @@ def test_decisions_go_through_the_page_s_service_and_guard(
     )
     assert state(harness, submission).stage == "to_enter_by_hand"
     assert (count(EVENT), count(UPDATED)) == (5, 5)
-    # --yes is still accepted, and asks nothing either way.
+    # --yes is gone (#1893): a usage error that records nothing.
     code, document = decide(run, submission, "entered_by_hand", "--yes")
+    assert code == 2 and document["error"]["code"] == "usage", document
+    assert (count(EVENT), count(UPDATED)) == (5, 5)
+    code, document = decide(run, submission, "entered_by_hand")
     assert code == 0, document
     assert (count(EVENT), count(UPDATED)) == (6, 6)
 

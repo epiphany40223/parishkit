@@ -80,7 +80,7 @@ def _progress(request, service, *, polled=None):
                 request,
                 "stewardship/setup-cancel.html",
                 context
-                | {"status_url": reverse("admin:setup_cancel") + "?format=status"},
+                | {"status_url": reverse("admin:setup_finishing") + "?format=status"},
             )
         if cancellation_status(request, service) != progress["attempt"]:
             raise StaleRecordError("Setup changed while rendering.")
@@ -110,7 +110,7 @@ def setup_cancellation(request):
             cancel_finalizing_setup(
                 request, service, UUID(request.POST.get("attempt", ""))
             )
-            response = HttpResponseRedirect("/admin/setup/cancel")
+            response = HttpResponseRedirect("/admin/setup/finishing")
         else:
             response = _progress(request, service, polled=polled)
         response["Cache-Control"] = "no-store"

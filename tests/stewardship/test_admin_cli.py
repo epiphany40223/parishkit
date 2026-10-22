@@ -58,7 +58,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "status",
         "task list",
         "task show",
-        "send progress",
+        "mail queue",
         "send history",
         "schedule show",
         "go-live readiness",
@@ -110,6 +110,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "artwork show",
         "artwork remove-preview",
         "artwork remove",
+        "branding preview",
+        "branding confirm",
         "integration list",
         "integration show",
         "integration status",
@@ -131,6 +133,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "campaign show",
         "campaign preview",
         "campaign confirm",
+        "campaign create-preview",
+        "campaign create",
         "campaign shares-preview",
         "campaign shares-confirm",
     }
@@ -224,6 +228,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
     # slice 2, the changes of slice 5 and the leaders import of slice 6.
     users = {
         "users list",
+        "users timeline",
         "users preview-upgrade",
         "users preview",
         "users confirm",
@@ -251,6 +256,20 @@ def test_the_catalog_lists_every_command_with_its_flags():
     }
     # Past campaigns' archive import (#1018), listed with the reports.
     reports |= {"history list", "history preview", "history confirm", "history remove"}
+    # The Go live page's actions (PR 12, #1809).
+    go_live = {
+        "go-live preview",
+        "go-live start",
+        "go-live status",
+        "go-live retry",
+        "go-live refresh-again",
+        "go-live stop",
+        "go-live confirm-preview",
+        "go-live confirm",
+        "go-live cancel-preview",
+        "go-live cancel",
+        "go-live families",
+    }
     assert set(entries) == (
         session
         | reads
@@ -263,6 +282,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         | operations
         | reports
         | users
+        | go_live
     )
     for entry in entries.values():
         names = {option["name"] for option in entry["options"]}
@@ -285,6 +305,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
             if name in reports
             else 11
             if name in users
+            else 12
+            if name in go_live
             else 3
         )
         # Only the chosen-Family send, the code and financial exports and an
@@ -309,21 +331,18 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "integration key replace",
                 "integration backup-key confirm",
                 "send confirm",
+                "go-live start",
+                "go-live confirm",
+                "go-live cancel",
                 # Update ParishSoft's Update (#1755).
                 "census update-confirm",
             }
         ), name
         # A prompting command, and only one, takes --yes. Other branches add
-        # their own prompting commands, so this is not a closed list. A
-        # command that stopped asking when its mark could be undone (#1840)
-        # still takes --yes, ignored, so older scripts keep working.
-        kept_yes = name in {
-            "pledges decide",
-            "census resolve",
-            "information decide",
-            "limitations decide",
-        }
-        assert ("--yes" in names) == (entry["prompts"] or kept_yes), name
+        # their own prompting commands, so this is not a closed list. The
+        # commands that stopped asking when their marks could be undone
+        # (#1840) take no --yes at all (#1893).
+        assert ("--yes" in names) == entry["prompts"], name
         # Only the downloads stream a file to standard output.
         assert entry["streams"] == (
             name
@@ -335,6 +354,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "export roster",
                 "followup export",
                 "export pledges",
+                "go-live families",
             }
         ), name
         if name in acknowledged:
@@ -467,7 +487,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         assert entries[name]["scope"] == "read_only", name
         assert not entries[name]["changes_state"], name
         assert entries[name]["watch"] == (
-            name in {"task show", "send progress", "go-live progress", "system health"}
+            name in {"task show", "mail queue", "go-live progress", "system health"}
         )
     assert entries["status"]["audit_event"] == "dashboard_viewed"
     for name in ("users list", "users preview-upgrade"):
@@ -574,7 +594,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "required"
     ]
     assert clear["result_fields"] == ["clear_id", "halt_id", "created", "created_at"]
-    for name in ("send progress", "go-live progress", "system health"):
+    for name in ("mail queue", "go-live progress", "system health"):
         watch = {option["name"] for option in entries[name]["options"]}
         assert {"--watch", "--timeout"} <= watch, name
     states = {option["name"]: option for option in entries["task list"]["options"]}
@@ -853,9 +873,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert options["--address"]["required"] and options["--note"]["required"]
     # census resolve: a Census changes row's Record outcome, keyed and
     # versioned, full scope, not fresh-gated, as its page asks for no recent
-    # sign-in. Every outcome can be undone now (#1840), so nothing asks;
-    # --yes is still accepted (and does nothing), so scripts that pass it
-    # keep working.
+    # sign-in. Every outcome can be undone now (#1840), so nothing asks,
+    # and it takes no --yes (#1893).
     census = entries["census resolve"]
     assert census["scope"] == "full" and census["changes_state"]
     assert census["request_key"] and census["expected_version"]
@@ -914,8 +933,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
     options = {option["name"]: option for option in edit["options"]}
     assert {"--value", "--clear"} <= set(options)
     # information decide and limitations decide (#1735): keyed, full scope,
-    # not fresh-gated; nothing asks since Handled can be undone (#1840), but
-    # they keep --yes, ignored, for older scripts.
+    # not fresh-gated; nothing asks since Handled can be undone (#1840), and
+    # they take no --yes (#1893).
     # Each chosen item carries its own version, so there is no
     # --expected-version.
     for name in ("information decide", "limitations decide"):
@@ -949,8 +968,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
     ]
     assert "--search" not in options
     # pledges decide (#1733): keyed, full scope, not fresh-gated; it asks
-    # nothing, since Entered by hand can be undone (#1840), but still takes
-    # --yes for older scripts. Each chosen pledge carries its own version,
+    # nothing, since Entered by hand can be undone (#1840), and takes no
+    # --yes (#1893). Each chosen pledge carries its own version,
     # so there is no --expected-version.
     pledges = entries["pledges decide"]
     assert pledges["scope"] == "full" and pledges["changes_state"]
@@ -1005,6 +1024,8 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_parish_confirm",
         "admin_cmd_workgroup_confirm",
         "admin_cmd_campaign_confirm",
+        # campaign create: Create the campaign's Apply (#1899).
+        "admin_cmd_campaign_create",
         # campaign shares-confirm: Share options' Apply (PR 10).
         "admin_cmd_campaign_shares_confirm",
         "admin_cmd_task_retry",
@@ -1048,6 +1069,9 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_history_confirm",
         "admin_cmd_history_remove",
         "admin_cmd_artwork_remove",
+        # Parish logos' upload review and Apply (#1865).
+        "admin_cmd_branding_preview",
+        "admin_cmd_branding_confirm",
         "admin_cmd_integration_confirm",
         "admin_cmd_integration_backup_probe",
         "admin_cmd_integration_dismiss",
@@ -1063,6 +1087,13 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_limitations_decide",
         # Pledges' decisions (#1733).
         "admin_cmd_pledges_decide",
+        # The Go live page's actions (PR 12, #1809).
+        "admin_cmd_go_live_start",
+        "admin_cmd_go_live_retry",
+        "admin_cmd_go_live_refresh_again",
+        "admin_cmd_go_live_stop",
+        "admin_cmd_go_live_confirm",
+        "admin_cmd_go_live_cancel",
         # Update ParishSoft's Check ParishSoft, Update and Run again (#1755).
         "admin_cmd_census_update_check",
         "admin_cmd_census_update_confirm",
@@ -2249,7 +2280,8 @@ def test_family_keys_refuse_an_unreadable_ring(tmp_path):
 @pytest.mark.parametrize(
     "template,text",
     [
-        ("delivery.html", admin_cli.RESEND_ACKNOWLEDGEMENT),
+        # The resend's answer form on the Mail message page (#1563).
+        ("delivery-answer.html", admin_cli.RESEND_ACKNOWLEDGEMENT),
         ("delivery-refusal.html", admin_cli.CLEAR_ACKNOWLEDGEMENT),
     ],
 )
