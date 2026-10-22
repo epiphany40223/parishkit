@@ -109,6 +109,11 @@ def failures_path(receipt):
     return receipt.with_name(f"{receipt.name}.failed")
 
 
+def running_path(receipt):
+    """The sidecar beside a browser receipt naming the test that last started."""
+    return receipt.with_name(f"{receipt.name}.running")
+
+
 class BrowserSelection:
     """A CI-only complete-suite partition; normal developer selection is unchanged."""
 
@@ -207,6 +212,19 @@ class BrowserSelection:
         )
         # Timed from here, so the actual figure is execution, like the estimate.
         self.started = time.monotonic()
+
+    def pytest_runtest_logstart(self, nodeid, location):
+        """Name the test now starting in the receipt's running sidecar.
+
+        Overwritten for each test, so a parent that kills this run for its
+        time budget can say which test was running (#2001).
+        """
+        if self.evidence:
+            # Temp file plus os.replace, so a kill never leaves it empty.
+            path = running_path(self.evidence)
+            temp = path.with_name(path.name + ".tmp")
+            temp.write_text(f"{nodeid}\n", encoding="utf-8")
+            os.replace(temp, path)
 
     def pytest_runtest_logreport(self, report):
         """Count actual assertion-body execution, not collection or fixture setup.

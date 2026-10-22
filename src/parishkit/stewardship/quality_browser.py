@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 from .quality_ci import environment
-from .quality_pytest import failures_path
+from .quality_pytest import failures_path, running_path
 from .quality_sharding import BROWSER_ENGINES, browser_label, parse_browser_runs
 
 # 50 minutes for all of one job's partitions together; a job's tests should
@@ -29,7 +29,25 @@ JOB_SECONDS = 3000
 
 
 class BudgetExhausted(ValueError):
-    """A partition was killed because its time budget ran out."""
+    """A partition was killed because its time budget ran out.
+
+    FAILURES lists the test phases that had failed before the kill, RUNNING
+    names the test that was running (None if none had started), and ELAPSED
+    and LIMIT are the seconds it ran and its budget (#2001).
+    """
+
+    def __init__(self, message, failures=(), running=None, elapsed=0, limit=0):
+        """Keep the kill's details for the job's log marker and summary."""
+        super().__init__(message)
+        self.failures = list(failures)
+        self.running = running
+        self.elapsed = elapsed
+        self.limit = limit
+
+
+def sidecar_lines(path):
+    """The lines of a receipt sidecar the child pytest wrote, if it wrote one."""
+    return path.read_text(encoding="utf-8").splitlines() if path.exists() else []
 
 
 def partition_limit(remaining, later, count):
@@ -138,14 +156,15 @@ def run_engine(root, engine, index=1, count=1, timeout=JOB_SECONDS):
             returncode = process.wait(timeout=timeout)
         except subprocess.TimeoutExpired as error:
             kill_group(process)
-            failed = failures_path(receipt)
-            failures = (
-                failed.read_text(encoding="utf-8").splitlines()
-                if failed.exists()
-                else []
-            )
+            elapsed = time.monotonic() - started
+            failures = sidecar_lines(failures_path(receipt))
+            running = next(iter(sidecar_lines(running_path(receipt))), None)
             raise BudgetExhausted(
-                timeout_message(timeout, time.monotonic() - started, failures)
+                timeout_message(timeout, elapsed, failures),
+                failures,
+                running,
+                elapsed,
+                timeout,
             ) from error
         except BaseException:
             # The new session no longer gets the job's interrupt signals, so
@@ -153,7 +172,10 @@ def run_engine(root, engine, index=1, count=1, timeout=JOB_SECONDS):
             kill_group(process)
             raise
         if returncode:
-            raise subprocess.CalledProcessError(returncode, process.args)
+            error = subprocess.CalledProcessError(returncode, process.args)
+            # The failed node ids, for the job summary (#2001).
+            error.failures = sidecar_lines(failures_path(receipt))
+            raise error
         cases = validate_receipt(receipt, engine, index, count)
         print(
             f"CI_BROWSER_COMPLETE {browser_label(engine, index, count)}: "
@@ -162,30 +184,78 @@ def run_engine(root, engine, index=1, count=1, timeout=JOB_SECONDS):
         )
 
 
+def budget_kill(label, error):
+    """Describe a budget kill with no failed test, naming the running test."""
+    running = error.running or "no test yet"
+    return (
+        f"{label}: running {running} after {error.elapsed:,.0f} s "
+        f"(budget {error.limit:,.0f} s)"
+    )
+
+
+def job_summary(tests, kills, others):
+    """Markdown for the GitHub job summary, most actionable section first.
+
+    TESTS holds (label, node id) pairs for failed test phases, KILLS the
+    budget_kill lines of partitions killed with no failed test, and OTHERS
+    the remaining failed partitions' "label: error" lines. A reader sees
+    real test failures first and can tell a slow runner apart (#2001).
+    """
+    sections = [
+        ("Failed browser tests", [f"`{node}` ({label})" for label, node in tests]),
+        (
+            "Browser partitions killed by their time budget with no failed "
+            "test (likely a slow runner)",
+            kills,
+        ),
+        ("Other failed browser partitions", others),
+    ]
+    return "".join(
+        f"### {title}\n\n" + "".join(f"- {line}\n" for line in lines) + "\n"
+        for title, lines in sections
+        if lines
+    )
+
+
 def run_job(root, runs):
     """Run each partition in turn, each within its budget; fail if any failed.
 
     A failed partition does not stop the later ones, so one job's log shows
-    every engine's result; failures also go to the GitHub job summary when
-    one is available. Return the labels of the partitions that failed.
+    every engine's result. A budget kill with no failed test logs
+    CI_BROWSER_BUDGET_KILLED and anything else CI_BROWSER_FAILED; both fail
+    the job. Failures also go to the GitHub job summary when one is
+    available. Return the labels of the partitions that failed.
     """
     deadline = time.monotonic() + JOB_SECONDS
     failed = []
-    for position, (engine, index, count) in enumerate(runs):
-        limit = partition_limit(
-            deadline - time.monotonic(), len(runs) - position - 1, len(runs)
-        )
-        try:
-            run_engine(root, engine, index, count, limit)
-        # OSError: a missing interpreter or checkout still gets a clear line
-        # and lets the job's later partitions run.
-        except (ValueError, subprocess.SubprocessError, OSError) as error:
-            label = browser_label(engine, index, count)
-            print(f"CI_BROWSER_FAILED {label}: {error}", flush=True)
-            failed.append(label)
-            if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
-                with open(summary, "a", encoding="utf-8") as stream:
-                    stream.write(f"- Browser partition {label} failed: {error}\n")
+    tests, kills, others = [], [], []
+    # try/finally: a job timeout or cancel (SIGINT -> KeyboardInterrupt) during
+    # a later partition must not drop the earlier failures from the summary.
+    try:
+        for position, (engine, index, count) in enumerate(runs):
+            limit = partition_limit(
+                deadline - time.monotonic(), len(runs) - position - 1, len(runs)
+            )
+            try:
+                run_engine(root, engine, index, count, limit)
+            # OSError: a missing interpreter or checkout still gets a clear line
+            # and lets the job's later partitions run.
+            except (ValueError, subprocess.SubprocessError, OSError) as error:
+                label = browser_label(engine, index, count)
+                failed.append(label)
+                failures = getattr(error, "failures", [])
+                # A phase can fail twice (call and teardown); list each test once.
+                tests += [(label, node) for node in dict.fromkeys(failures)]
+                if isinstance(error, BudgetExhausted) and not failures:
+                    kills.append(budget_kill(label, error))
+                    print(f"CI_BROWSER_BUDGET_KILLED {kills[-1]}", flush=True)
+                else:
+                    others.append(f"{label}: {error}")
+                    print(f"CI_BROWSER_FAILED {others[-1]}", flush=True)
+    finally:
+        if failed and (summary := os.environ.get("GITHUB_STEP_SUMMARY")):
+            with open(summary, "a", encoding="utf-8") as stream:
+                stream.write(job_summary(tests, kills, others))
     return failed
 
 
