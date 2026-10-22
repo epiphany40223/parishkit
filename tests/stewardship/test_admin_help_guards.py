@@ -14,6 +14,7 @@ reaches. Their allowlists name the known, reviewed exceptions; a new entry
 should be rare and explained.
 """
 
+import functools
 import re
 from pathlib import Path
 
@@ -256,10 +257,73 @@ def test_intro_allowances_are_still_needed(name):
     )
 
 
+# {% include %} of another template in this directory, by its file name.
+INCLUDE = re.compile(r"""{% include ["']stewardship/([^"']+)["']""")
+# A live-status mirror source: an inert <template> that live-status-v1.js
+# copies into the element whose data-live-mirror-target has the same name.
+# It is never shown where it sits; its copy is shown where the target is.
+MIRROR = re.compile(
+    r'<template\b[^>]*\bdata-live-mirror="([^"]+)"[^>]*>.*?</template>', re.S
+)
+MIRROR_TARGET = re.compile(r'\bdata-live-mirror-target="([^"]+)"')
+
+
+@functools.cache
+def technical_scan(root):
+    """Every template's source, and what of it shows outside Technical details.
+
+    Returns two dicts by file name: the comment-free source, and that source
+    with its Technical details disclosures removed, along with each mirror
+    source (MIRROR) whose every target, in any template, sits inside a
+    Technical details disclosure, since its copy is only ever shown there. A
+    target whose name is built from a value (``{{ ... }}``) outside a
+    disclosure is taken to match any mirror name its fixed text allows.
+    Cached by template directory, so a test can point it elsewhere.
+    """
+    sources = {
+        path.name: COMMENT.sub("", path.read_text()) for path in root.glob("*.html")
+    }
+    outside = {name: TECHNICAL.sub("", source) for name, source in sources.items()}
+    shown_targets = [
+        re.compile(".+".join(map(re.escape, VALUE.split(target))))
+        for source in outside.values()
+        for target in MIRROR_TARGET.findall(source)
+    ]
+    hidden = {
+        target
+        for source in sources.values()
+        for target in MIRROR_TARGET.findall(source)
+        if not any(pattern.fullmatch(target) for pattern in shown_targets)
+    }
+    shown = {
+        name: MIRROR.sub(lambda m: "" if m[1] in hidden else m[0], source)
+        for name, source in outside.items()
+    }
+    return sources, shown
+
+
+def outside_technical_details(name):
+    """The part of a template that can show outside Technical details.
+
+    A template that other templates include, and that every including
+    template includes only inside a Technical details disclosure (or inside
+    a mirror source copied only into one), shows nothing outside it: a
+    fragment of a disclosure's rows (#2016) is checked where it is used.
+    One include anywhere else makes its whole source count as shown. Only
+    direct includes are followed, so a fragment of a fragment counts as
+    shown; split it differently or extend the scan if that is ever needed.
+    """
+    sources, shown = technical_scan(TEMPLATES)
+    included = any(name in INCLUDE.findall(source) for source in sources.values())
+    if included and not any(name in INCLUDE.findall(s) for s in shown.values()):
+        return ""
+    return shown[name]
+
+
 @pytest.mark.parametrize("name", ADMIN_TEMPLATES)
 def test_internal_field_names_are_under_technical_details(name):
     """Internal identifier and worker fields are hidden until asked for."""
-    outside = TECHNICAL.sub("", read(name))
+    outside = outside_technical_details(name)
     found = sorted(
         {
             term
@@ -279,7 +343,7 @@ def test_internal_field_names_are_under_technical_details(name):
 )
 def test_internal_term_exceptions_are_still_needed(name, term):
     """A stale exception is removed rather than left to hide a new use."""
-    outside = TECHNICAL.sub("", read(name))
+    outside = outside_technical_details(name)
     assert any(term in message.lower() for message in messages(outside)), (
         f"{name}: remove ({name!r}, {term!r}) from INTERNAL_ALLOWED"
     )
@@ -342,3 +406,43 @@ def test_the_intro_guard_catches_what_it_describes(tmp_path, monkeypatch):
     assert visible_intro_words("not-a-notice.html") > INTRO_WORDS
     # A value is not words of help; the words around it still count.
     assert visible_intro_words("data-line.html") == 2
+
+
+def test_the_technical_guard_follows_includes(tmp_path, monkeypatch):
+    """A fragment used only inside Technical details passes; one other use fails.
+
+    The fragment is used as production-progress.html uses its rows: inside
+    the disclosure, and in a mirror source whose target is that disclosure.
+    """
+    row = '<dt>{% translate "Worker task state" %}</dt>'
+    include = '{% include "stewardship/rows.html" %}'
+    hidden = (
+        '<details class="technical-details"><dl data-live-mirror-target="m">'
+        + include
+        + "</dl></details>"
+    )
+    mirror = '<template data-live-mirror="m">' + include + "</template>"
+    cases = {
+        "inside": {"page.html": hidden + mirror},
+        "also-outside": {"page.html": hidden + mirror, "other.html": include},
+        "mirror-shown": {
+            "page.html": hidden + mirror,
+            "other.html": '<dl data-live-mirror-target="{{ x }}"></dl>',
+        },
+        "not-included": {},
+    }
+    found = {}
+    for case, pages in cases.items():
+        root = tmp_path / case
+        root.mkdir()
+        (root / "rows.html").write_text(row)
+        for page, source in pages.items():
+            (root / page).write_text(source)
+        monkeypatch.setitem(globals(), "TEMPLATES", root)
+        found[case] = bool(messages(outside_technical_details("rows.html")))
+    assert found == {
+        "inside": False,
+        "also-outside": True,
+        "mirror-shown": True,
+        "not-included": True,
+    }

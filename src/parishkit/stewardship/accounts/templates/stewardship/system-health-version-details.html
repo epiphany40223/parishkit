@@ -1,0 +1,13 @@
+{% load i18n %}{% comment %}
+  The Version and services tile's Technical details: each service process's
+  state and version, the open incidents, a requested backup's state and the
+  mode, by their internal names. The page draws it twice: in the
+  disclosure's list in the tile's band, and in a template[data-live-mirror]
+  copy inside the polled region (system-health-status.html), so
+  live-status-v1.js replaces only the list's contents on each poll that
+  changes them and an open disclosure stays open and current (#2016; UX
+  conventions, "Open disclosures stay open").
+{% endcomment %}{% for line in health.processes %}<dt><code>{{ line.service }}/{{ line.process }}{% if line.target %}/{{ line.target }}{% endif %}</code></dt><dd><code>{% if line.running %}running{% else %}not_running{% endif %}{% if line.sender_state %} {{ line.sender_state }}{% endif %} {{ line.version }}{% if line.debug_logging %} debug{% endif %}</code></dd>{% endfor %}
+{% for kind in health.incidents %}<dt>{% translate "Open incident" %}</dt><dd><code>{{ kind }}</code></dd>{% endfor %}
+{% if health.backup_request %}<dt>{% translate "Requested backup" %}</dt><dd><code>{{ health.backup_request.state }}{% if health.backup_request.failure_kind %} {{ health.backup_request.failure_kind }}{% endif %}</code></dd>{% endif %}
+<dt>{% translate "Mode" %}</dt><dd><code>{{ health.mode }}</code></dd>

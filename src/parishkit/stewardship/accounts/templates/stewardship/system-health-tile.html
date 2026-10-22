@@ -13,7 +13,8 @@
   anchor names, and the Administrator decides after that, by the toggle or
   a click on the open band's blank space: a poll never opens or closes a
   tile. The summary row's words, the problems and the panel
-  content are data-live-mirror-targets that follow the poll. The open state
+  content, and the Version and services tile's Technical details list, are
+  data-live-mirror-targets that follow the poll. The open state
   and the action regions are not, so an open tile, an open preview and a
   ticked box survive every poll. The problems and panel targets wait while
   the pointer is over the grid (data-live-mirror-hold), because their
@@ -32,11 +33,7 @@
 {% elif tile.key == "backups" %}{% include "stewardship/system-health-backup-now.html" %}
 {% elif tile.key == "debug" %}{% include "stewardship/system-health-debug-off.html" %}{% endif %}
 <div data-live-mirror-target="{{ tile.anchor }}-panel" data-live-mirror-hold>{% include tile.panel %}</div>{% endif %}
-{% if tile.key == "version" %}<details class="technical-details"><summary>{% translate "Technical details" %}</summary>
-<dl>{% for line in health.processes %}<dt><code>{{ line.service }}/{{ line.process }}{% if line.target %}/{{ line.target }}{% endif %}</code></dt><dd><code>{% if line.running %}running{% else %}not_running{% endif %}{% if line.sender_state %} {{ line.sender_state }}{% endif %} {{ line.version }}{% if line.debug_logging %} debug{% endif %}</code></dd>{% endfor %}
-{% for kind in health.incidents %}<dt>{% translate "Open incident" %}</dt><dd><code>{{ kind }}</code></dd>{% endfor %}
-{% if health.backup_request %}<dt>{% translate "Requested backup" %}</dt><dd><code>{{ health.backup_request.state }}{% if health.backup_request.failure_kind %} {{ health.backup_request.failure_kind }}{% endif %}</code></dd>{% endif %}
-<dt>{% translate "Mode" %}</dt><dd><code>{{ health.mode }}</code></dd></dl>
-<p>{% translate "These values are as of when this page was opened." %}</p></details>
+{% if tile.key == "version" %}{# Its list follows the poll as the panel does, waiting while the pointer is over the grid, since its height can change (#2016). #}<details class="technical-details"><summary>{% translate "Technical details" %}</summary>
+<dl data-live-mirror-target="version-details" data-live-mirror-hold>{% include "stewardship/system-health-version-details.html" %}</dl></details>
 <p><a href="{% url 'admin:logs' %}">{% translate "System logs" %}</a> · <a href="{% url 'admin:background' %}">{% translate "Background work" %}</a></p>{% endif %}
 </div>
