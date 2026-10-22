@@ -1180,9 +1180,14 @@ settings](../ui-conventions/spec.md#binary-choices). Basic's **Frequency** is th
 **Weekly** of the two repeating [presets](#repeating-sends) (Weekly with
 its Day), with one help line describing both; Advanced shows the full rule:
 **Frequency** (Daily | Weekly, the same pair), the days, From and Until
-with their campaign choices and dates. No word of it says "Repeat" again
-under Repeating, or names a time of day. One time field, shared by both
-modes, follows them. The Once preset of Basic is the Sends choice's
+with their campaign choices and dates. Weekly's days, **On these days**,
+need one ticked: unticking the last says "Choose at least one day." at the
+group at once and holds Review until a day is ticked
+([live checks](../ui-conventions/spec.md#field-errors-and-live-checks),
+[#2009](https://github.com/epiphany40223/parishkit/issues/2009)), and Review
+refuses at the group the same way when none is posted. No word of it says
+"Repeat" again under Repeating, or names a time of day. One time field,
+shared by both modes, follows them. The Once preset of Basic is the Sends choice's
 Once, so the two cannot disagree. A repeating report's days are the
 campaign's days ([decisions](#decisions-made-in-this-specification)); when
 the browser's zone keeps a different clock from the campaign's during the
@@ -1258,9 +1263,11 @@ Participation charts' which charts is a **Charts** group of checkboxes
 under its help, one per line: First submissions of the day, Cumulative
 participating Families and, only when the campaign has financial
 stewardship, Effective annual pledges, every one ticked when the block is
-added. With none ticked, Review refuses at the group: "Choose at least one
-chart." Ticking every chart offered saves the default, all; boxes left as
-Edit ticked them keep the saved choice, even one naming pledges after
+added. Unticking the last box says "Choose at least one chart." at the
+group at once and holds Review until a box is ticked, as On these days
+does; Review refuses at the group the same way when none is posted.
+Ticking every chart offered saves the default, all; boxes left as Edit
+ticked them keep the saved choice, even one naming pledges after
 financial stewardship was turned off, while changed boxes save what is
 ticked, and the review names a kept chart the campaign cannot draw, so it
 shows when a change drops one
