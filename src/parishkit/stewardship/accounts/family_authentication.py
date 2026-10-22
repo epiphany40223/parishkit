@@ -148,6 +148,57 @@ def denied(kind="", *, status=403, retry=None):
     return response
 
 
+def _availability(request, page, *, status=200):
+    """Render the campaign-wide availability page that ``/`` shows.
+
+    The page carries only campaign-wide text, so the same bytes go to every
+    visitor in the same campaign state.
+    """
+    return render(
+        request,
+        "stewardship/family-unavailable.html",
+        {
+            "availability_message": page.message,
+            "availability_content": page.content,
+            "availability_ended": page.ended,
+        },
+        status=status,
+    )
+
+
+def _ended_page(service):
+    """The after-close page when the current campaign has ended, else None.
+
+    A rejected link or code shows this instead of the generic denial (#1793),
+    because invitation and reminder emails keep reaching Families after close.
+    It is decided from campaign state alone, never the submitted credential,
+    so it cannot reveal whether a link or code was valid. An optional read
+    that fails falls back to the generic denial rather than an error page.
+    """
+    from parishkit.stewardship.responses.availability import unavailable_page
+
+    page = None
+    with suppress(ConfigError, DatabaseError, ValueError), transaction.atomic():
+        page = unavailable_page(service)
+    return page if page is not None and page.ended else None
+
+
+def _rejected(request, service, kind):
+    """The 403 for a rejected credential: the ended page or the generic denial.
+
+    Only the body differs from ``denied(kind)``; the status, ``no-store`` and
+    the caller's failure accounting stay the same, so rate limiting and audit
+    behave exactly as for any other rejected credential.
+    """
+    page = _ended_page(service)
+    if page is None:
+        return denied(kind)
+    response = _availability(request, page, status=403)
+    response.stewardship_safe_error = True
+    response["Cache-Control"] = "no-store"
+    return response
+
+
 def _scope(service):
     """Fresh coherent runtime and date gates precede every Family object lookup."""
     configuration = coherent_configuration(service.store)
@@ -468,14 +519,7 @@ def entry(request):
         if request.method != "POST":
             page = unavailable_page(service)
             if page:
-                return render(
-                    request,
-                    "stewardship/family-unavailable.html",
-                    {
-                        "availability_message": page.message,
-                        "availability_content": page.content,
-                    },
-                )
+                return _availability(request, page)
             return render(
                 request,
                 "stewardship/family-login.html",
@@ -513,7 +557,9 @@ def entry(request):
         delay = service.limiter.counters([ip, pair] if pair else [ip], failure=True)
         service.limiter.failed("family", request.client_address, candidate=fingerprint)
         record_login_rejection("family_login_failed")
-        return denied("code", status=429 if delay else 403, retry=delay)
+        if delay:
+            return denied(status=429, retry=delay)
+        return _rejected(request, service, "code")
     except (LimiterUnavailable, CryptographicError, ConfigError):
         return denied(status=503, retry=5)
 
@@ -537,7 +583,7 @@ def access(request, token):
                 candidate=service.limiter.fingerprint("invalid_link", token),
             )
         record_link_rejection()
-        return denied("link")
+        return _rejected(request, service, "link")
     except (LimiterUnavailable, CryptographicError, ConfigError):
         return denied(status=503, retry=5)
 

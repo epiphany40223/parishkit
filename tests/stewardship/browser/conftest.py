@@ -1717,6 +1717,18 @@ def component_origin():
         ),
         ("/availability", "availability", {"setup": True, "admin": True}),
         ("/family-maintenance", "family-maintenance", {"message": "Back by 3 PM."}),
+        # What / and every rejected emailed link or code show after close (#1793).
+        (
+            "/family-ended",
+            "family-unavailable",
+            {
+                "availability_message": (
+                    "This parish's census / stewardship campaign has ended."
+                ),
+                "availability_content": "<p>Thank you for taking part.</p>",
+                "availability_ended": True,
+            },
+        ),
         ("/denied", "denied", {"retry_path": "/admin/login"}),
         # The generic Admin refusal, with the Google Account guidance (#1593).
         (

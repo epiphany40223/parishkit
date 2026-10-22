@@ -19,7 +19,8 @@ showing a code form:
   [Family portal maintenance](../admin-portal/spec.md#family-portal-maintenance));
 - unconfigured: "The system is not configured yet" with parish contact help;
 - before start: the configured parish name and local start date;
-- after close: the configured parish name and ended message;
+- after close: a "Sorry, the campaign is over" heading, the configured parish
+  name and ended message;
 - active: Family code entry; and
 - no campaign: a neutral no-current-campaign message.
 
@@ -51,17 +52,19 @@ ordinary mode-scoped lookup/denial path; a reserved-leading-`I` rehearsal code
 can succeed only in its current Testing epoch. Production and Testing
 credentials are not interchangeable. Every Family request checks the session's
 mode and rehearsal epoch where applicable, including keepalive and Submit.
-Unknown, inactive, non-Parishioner, closed-campaign,
+Unknown, inactive, non-Parishioner, earlier-campaign,
 and revoked codes use the same "This Family code cannot be found or used"
-result and retry link.
+result and retry link, except after the campaign ends (see
+[after the campaign ends](#after-the-campaign-ends)).
 
 Family email uses `/access/<opaque-token>`, not a code query parameter. A valid
 token creates the same Family session and redirects immediately to a clean
 wizard URL. The generic email URL points to `/`.
 
-An unknown, revoked, rotated, closed-campaign, or ineligible-Family token creates
+An unknown, revoked, rotated, earlier-campaign, or ineligible-Family token creates
 no session and shows the same generic "This secure Family link cannot be found
-or used" page with a link to manual code entry. Failed attempts follow the
+or used" page with a link to manual code entry, except after the campaign ends
+(below). Failed attempts follow the
 [bounded authentication audit policy](../architecture/spec.md#identity-and-session-security);
 successful logins remain individually audited. Because the token has 256 bits of
 entropy, failures do not consume guessable-code counters; ordinary request-
@@ -73,6 +76,37 @@ the button row of every editing page, and below the flow on Review, where
 Submit takes the row's middle. When the form
 has unsaved answers it first asks the Family to confirm discarding them; it then
 clears client state, revokes the server session, and returns to `/`.
+
+### After the campaign ends
+
+Invitation and reminder emails keep reaching Families after the campaign
+closes, so a followed link must not read as broken (the Family portal
+[keeps its emailed links working](../ui-conventions/spec.md#family-portal)).
+Whenever `/` shows the after-close page above, a rejected `/access/<token>`
+link or posted Family code shows that same page instead of the generic
+denial: the "Sorry, the campaign is over" heading, the parish's ended
+message, the Administrator's "After the campaign" content, and a "Check
+again" link to `/`. That content replaces the access-denied contact help on
+this page, so it is where after-close contact details belong (the default
+text includes them). The decision uses only
+campaign-wide state, never the submitted token or code, so it cannot reveal
+whether a link or code was ever valid: every link and every code, valid,
+revoked, unknown or malformed, gets byte-identical content. The page shows no
+Family information, creates no session, writes nothing beyond the ordinary
+failed-attempt accounting, and changes no emailed code or link.
+
+Only the page body changes. The status stays 403 with `Cache-Control:
+no-store`, and rate limiting, lockout, anti-flood and failed-attempt audit
+behave exactly as for any rejected credential; a throttled (429) or
+unavailable (503) attempt still shows the temporary-unavailability page. The
+outer gates keep precedence: restore review, Administrator
+[Family portal maintenance](../admin-portal/spec.md#family-portal-maintenance),
+and an unconfigured site. Before start, while a campaign or its Testing
+rehearsal is being prepared, and with no current campaign, rejected links and codes keep the generic
+result. A link from an earlier campaign while a newer campaign is current
+follows whatever the newer campaign shows at `/`: the generic result while
+it is not yet ended, since the old link belongs to no campaign the portal is
+showing, and the ended page once the newer campaign has ended too.
 
 ## Form state and navigation
 
@@ -216,7 +250,8 @@ written to ParishSoft.
 
 The sign-in page shows only its title, the code field and the parish's short
 sign-in instructions; parish contact details appear on the access-denied page
-instead. The title is "*campaign name* login", using the name the
+instead (after close, in the "After the campaign" content; see
+[after the campaign ends](#after-the-campaign-ends)). The title is "*campaign name* login", using the name the
 Administrator set in Campaign settings. A campaign without a name falls back
 to its modules: "Family stewardship login" (Ministry or financial
 stewardship), "Family census login", or "Family stewardship and census login".

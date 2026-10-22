@@ -26,6 +26,7 @@ from parishkit.stewardship.campaigns.credential_models import (
 from parishkit.stewardship.campaigns.link_tokens import rotate_token, token_context
 
 from .auth_builders import unguarded
+from .campaign_builders import campaign_clock, close_campaign
 from .test_family_auth_postgresql import login
 from .test_family_code_lookup_postgresql import production_codes  # noqa: F401
 from .test_family_login_sql_postgresql import fresh_key, mint
@@ -143,3 +144,34 @@ def test_a_full_ring_of_code_macs_is_accepted(production):
         assert _mint_session(
             fresh_key(), family.pk, digests=wide.lookups(campaign.pk, code)
         )
+
+
+def test_production_link_and_code_after_close_show_one_ended_page(production):
+    """#1793: a persisted Production close gives every credential the ended page.
+
+    The live link and code, and an unknown link and code, all get one
+    byte-identical 403 body, the page / shows, and no session.
+    """
+    from datetime import timedelta
+
+    campaign, _, _, code, _, token = production
+    close_campaign(campaign, uuid4())
+    assert campaign.state == "closed"
+    addresses = iter(f"198.51.100.{index}" for index in range(1, 20))
+    with (
+        campaign_clock(campaign.active_configuration.ends_at + timedelta(minutes=5)),
+        web_login(),
+    ):
+        root = Client().get("/")
+        responses = [
+            Client().get("/access/" + value, REMOTE_ADDR=next(addresses))
+            for value in (token, "unknown-production-token")
+        ] + [
+            Client().post("/", {"code": value}, REMOTE_ADDR=next(addresses))
+            for value in (code, "ZZZZZZZZ")
+        ]
+    assert root.status_code == 200
+    assert b"<h1>Sorry, the campaign is over</h1>" in root.content
+    assert {response.status_code for response in responses} == {403}
+    assert {response.content for response in responses} == {root.content}
+    assert not FamilySession.objects.exists()
