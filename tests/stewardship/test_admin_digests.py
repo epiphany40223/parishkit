@@ -1,11 +1,13 @@
-"""The digest commands' documents and plumbing (ADM-11 PR 8d).
+"""The saved digests' documents and the report-email commands' plumbing.
 
-Pure tests: the golden documents of ``digest list``, ``digest daily``,
-``digest weekly`` and ``digest weekly-request``, built through the
-projections the commands use from stand-ins for the pages' reads, with the
-personal-data pattern applied at every depth; the catalog entries; and the
-manual request's acknowledgement. The commands against a real database are in
-database/test_admin_digest_cli_postgresql.py.
+Pure tests: the golden documents ``report-email copy`` prints for a daily or
+weekly digest saved before the conversion (#1786; once ``digest daily`` and
+``digest weekly``, ADM-11 PR 8d), built through the projections the command
+uses from stand-ins for the pages' reads, with the personal-data pattern
+applied at every depth; the catalog entries; and Send now's confirmation.
+The commands against a real database are in
+database/test_admin_digest_cli_postgresql.py and
+database/test_report_emails_page_postgresql.py.
 """
 
 import io
@@ -27,8 +29,6 @@ SNAPSHOT = UUID("00000000-0000-4000-8000-000000000051")
 CAMPAIGN = UUID("00000000-0000-4000-8000-000000000052")
 FACTS = UUID("00000000-0000-4000-8000-000000000053")
 ITEM = UUID("00000000-0000-4000-8000-000000000054")
-TASK = UUID("00000000-0000-4000-8000-000000000055")
-KEY = UUID("00000000-0000-4000-8000-000000000056")
 NOW = datetime(2054, 10, 5, 14, 0, tzinfo=UTC)
 ISO = "2054-10-05T14:00:00+00:00"
 
@@ -138,83 +138,8 @@ def weekly():
     return admin_digests.weekly_model(SNAPSHOT, CAMPAIGN, context)
 
 
-def request():
-    """A created manual weekly report."""
-    return admin_digests.WeeklyRequest(
-        created=True,
-        request_key=KEY,
-        task={
-            "id": str(TASK),
-            "root_id": str(TASK),
-            "parent_id": None,
-            "retry_sequence": 0,
-            "type": "report_email_prepare",
-            "state": "queued",
-        },
-    )
-
-
-def listed(*, administrator=True):
-    """The Emailed reports lists, as the page's ``listing`` gives them."""
-    lists = {
-        # The report email sends (#1786), listed before the digests' history.
-        "reports": [
-            {
-                "pk": KEY,
-                "name": "Weekly report",
-                "how": "manual",
-                "made_at": NOW,
-            }
-        ],
-        "daily": [
-            {
-                "pk": SNAPSHOT,
-                "through_date": date(2054, 10, 4),
-                "covered_dates": ["2054-10-04"],
-                "observed_at": NOW,
-            }
-        ],
-        "weekly": [
-            {"pk": SNAPSHOT, "preparation_id": KEY, "manual": True, "observed_at": NOW}
-        ]
-        if administrator
-        else [],
-        "requested": {"task_id": TASK, "report_id": None} if administrator else None,
-        "weekly_schedule": administrator,
-    }
-    return admin_digests.list_model(CAMPAIGN, lists, administrator=administrator)
-
-
 GOLDEN = {
-    "digest list": (
-        listed,
-        {
-            "campaign_id": str(CAMPAIGN),
-            "reports": [
-                {
-                    "send_id": str(KEY),
-                    "name": "Weekly report",
-                    "how": "manual",
-                    "made_at": ISO,
-                }
-            ],
-            "daily": [
-                {
-                    "snapshot_id": str(SNAPSHOT),
-                    "through_date": "2054-10-04",
-                    "covered_dates": ["2054-10-04"],
-                    "observed_at": ISO,
-                }
-            ],
-            "weekly": [
-                {"snapshot_id": str(SNAPSHOT), "manual": True, "observed_at": ISO}
-            ],
-            "weekly_request_available": True,
-            "requested": {"task_id": str(TASK), "report_id": None},
-            "shown": 60,
-        },
-    ),
-    "digest daily": (
+    "report-email copy, daily": (
         daily,
         {
             "kind": "daily",
@@ -250,7 +175,7 @@ GOLDEN = {
             "comparison": SECTION_FIGURES,
         },
     ),
-    "digest weekly": (
+    "report-email copy, weekly": (
         weekly,
         {
             "kind": "weekly",
@@ -274,21 +199,6 @@ GOLDEN = {
             ],
         },
     ),
-    "digest weekly-request": (
-        request,
-        {
-            "created": True,
-            "request_key": str(KEY),
-            "task": {
-                "id": str(TASK),
-                "root_id": str(TASK),
-                "parent_id": None,
-                "retry_sequence": 0,
-                "type": "report_email_prepare",
-                "state": "queued",
-            },
-        },
-    ),
 }
 
 
@@ -309,31 +219,33 @@ def test_no_member_or_value_is_personal_data(command):
     assert "@" not in text and "Private" not in text, command
 
 
-def test_a_reader_who_is_not_an_administrator_has_no_weekly_list():
-    """As the page shows Staff the daily list only: ``weekly`` is None."""
-    document = listed(administrator=False).to_document()
-    assert document["weekly"] is None and document["requested"] is None
-    assert len(document["daily"]) == 1 and not document["weekly_request_available"]
+def test_every_report_email_command_has_its_models_fields():
+    """Each report-email command's catalog fields are its model's (#1786)."""
+    from parishkit.stewardship import admin_report_emails as models
 
-
-def test_every_digest_command_has_its_models_fields():
-    """Each 8d command's catalog fields are its model's, in PR 8."""
     entries = {entry["name"]: entry for entry in admin_cli.catalog()}
-    models = {
-        "digest list": admin_digests.DigestList,
-        "digest daily": admin_digests.DailyDigest,
-        "digest weekly": admin_digests.WeeklyDigest,
-        "digest weekly-request": admin_digests.WeeklyRequest,
+    expected = {
+        "report-email list": models.ReportEmailList,
+        "report-email show": models.ReportEmailShow,
+        "report-email sends": models.ReportEmailSends,
+        "report-email copy": models.ReportEmailCopy,
+        "report-email send-now": models.ReportEmailSendNow,
+        "report-email preview": models.ReportEmailPreview,
+        "report-email confirm": models.ReportEmailConfirm,
     }
-    digests = {spec.name for spec in admin_cli.COMMANDS if spec.name[:7] == "digest "}
-    assert digests == set(models)
-    for name, model in models.items():
+    names = {
+        spec.name for spec in admin_cli.COMMANDS if spec.name[:13] == "report-email "
+    }
+    assert names == set(expected)
+    # The digest commands are gone, with no aliases.
+    assert not any(spec.name.startswith("digest ") for spec in admin_cli.COMMANDS)
+    for name, model in expected.items():
         assert entries[name]["result_fields"] == list(model.field_names()), name
         assert entries[name]["pr"] == 8
 
 
-def test_the_manual_request_needs_the_acknowledgement(monkeypatch):
-    """Without --yes or a typed yes nothing is requested: exit 4."""
+def test_send_now_needs_the_confirmation(monkeypatch):
+    """Without --yes or a typed yes nothing is sent: exit 4 (#1786)."""
     monkeypatch.setattr(
         "parishkit.stewardship.observability.configure_logging", lambda: None
     )
@@ -341,9 +253,15 @@ def test_the_manual_request_needs_the_acknowledgement(monkeypatch):
     monkeypatch.setattr(
         "parishkit.stewardship.deployment.load_deployment", lambda path: object()
     )
+    from parishkit.stewardship import admin_report_emails
+
     called = []
     monkeypatch.setattr(
-        admin_digests, "request_weekly", lambda *args, **kwargs: called.append(1)
+        admin_report_emails, "send_now", lambda *args, **kwargs: called.append(1)
+    )
+    lines = ("Send Weekly report now.", "It is sent now to its 2 recipients.")
+    monkeypatch.setattr(
+        admin_report_emails, "send_now_lines", lambda *a, **k: (lines, None)
     )
 
     class Runtime:
@@ -373,14 +291,21 @@ def test_the_manual_request_needs_the_acknowledgement(monkeypatch):
     )
     out, err = io.StringIO(), io.StringIO()
     code = admin_cli.main(
-        ["digest", "weekly-request", "--config", "web.yaml", "--session-stdin"],
+        [
+            "report-email",
+            "send-now",
+            str(SNAPSHOT),
+            "--config",
+            "web.yaml",
+            "--session-stdin",
+        ],
         stdin=io.BytesIO(f"pk-admin-session/1 {'A' * 43} {'f' * 64}\n".encode()),
         stdout=out,
         stderr=err,
     )
     assert code == 4 and not called
     assert json.loads(out.getvalue())["error"]["code"] == "confirmation_required"
-    assert admin_digests.acknowledgement() in err.getvalue()
+    assert lines[1] in err.getvalue()
     assert "Type yes to continue" in err.getvalue()
     # No request key was made: nothing was about to be done.
     assert "request key" not in err.getvalue()
@@ -389,15 +314,16 @@ def test_the_manual_request_needs_the_acknowledgement(monkeypatch):
 @pytest.mark.parametrize(
     "argv",
     [
-        ["digest", "daily", "not-a-uuid"],
-        ["digest", "daily", str(SNAPSHOT), "--page", "2"],
-        ["digest", "weekly"],
-        ["digest", "list", "--requested", "not-a-uuid"],
-        ["digest", "list", str(SNAPSHOT)],
+        ["report-email", "copy", "not-a-uuid"],
+        ["report-email", "copy"],
+        ["report-email", "show"],
+        ["report-email", "list", str(SNAPSHOT)],
+        ["report-email", "send-now", "not-a-uuid"],
+        ["digest", "list"],
     ],
 )
-def test_malformed_digest_commands_are_usage_errors(argv):
-    """A snapshot is a canonical UUID; only the weekly report has pages."""
+def test_malformed_report_email_commands_are_usage_errors(argv):
+    """Ids are canonical UUIDs; the retired digest commands are unknown."""
     out = io.StringIO()
     code = admin_cli.main(
         [*argv, "--config", "web.yaml", "--session-stdin"],

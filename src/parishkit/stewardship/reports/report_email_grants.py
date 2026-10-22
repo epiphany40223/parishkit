@@ -20,7 +20,7 @@ MANUAL = "stewardship_report_email_manual_request"
 COMPLETION = "stewardship_report_email_completion_ready"
 TABLES = (MANUAL, PREPARATION, SNAPSHOT, RECIPIENT, COMPLETION)
 # The columns that bind a snapshot or recipient without its content.
-# When its email was made is a binding too: Emailed reports lists the sends.
+# When its email was made is a binding too: Report emails lists the sends.
 SNAPSHOT_BINDING = {"id", "preparation_id", "campaign_id", "has_content", "created_at"}
 RECIPIENT_BINDING = {"id", "snapshot_id", "outbox_id", "disposition"}
 

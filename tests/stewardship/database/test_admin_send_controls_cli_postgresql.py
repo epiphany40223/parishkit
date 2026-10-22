@@ -40,8 +40,8 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from .automation_builders import as_staff, paired
 from .campaign_builders import add_draft, campaign_clock, close_campaign
 from .report_builders import weekly_allocated
-from .test_admin_digest_list_cli_postgresql import revoke
 from .test_admin_go_live_cli_postgresql import approved
+from .test_admin_report_email_cli_postgresql import revoke
 from .test_admin_test_sample_cli_postgresql import runner
 from .test_delivery_closed_postgresql import submit_while_paused
 from .test_delivery_control_postgresql import (  # noqa: F401

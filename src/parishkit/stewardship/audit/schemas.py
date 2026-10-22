@@ -272,6 +272,9 @@ class Action(StrEnum):
     # change, admin_cmd_<area>_<verb>, whose subject is the automation
     # session (see the specification's "Audit attribution").
     ADMIN_CMD_SCHEDULE_CONFIRM = "admin_cmd_schedule_confirm"
+    # Report emails' Pause, Resume, Delete and Skip from the command line
+    # (#1786, ``report-email confirm``).
+    ADMIN_CMD_REPORT_EMAIL_CONFIRM = "admin_cmd_report_email_confirm"
     ADMIN_CMD_USERS_CONFIRM = "admin_cmd_users_confirm"
     # parish confirm: the Parish settings page's Apply (ADM-11 PR 10).
     ADMIN_CMD_PARISH_CONFIRM = "admin_cmd_parish_confirm"
@@ -324,7 +327,11 @@ class Action(StrEnum):
     # No longer recorded: ``export regenerate`` was removed when exports
     # became point-in-time (#1398); earlier events still name it.
     ADMIN_CMD_EXPORT_REGENERATE = "admin_cmd_export_regenerate"
+    # Kept for the history of a command retired by #1786.
     ADMIN_CMD_DIGEST_WEEKLY_REQUEST = "admin_cmd_digest_weekly_request"
+    # A report email's Send now from the command line (#1786,
+    # ``report-email send-now``).
+    ADMIN_CMD_REPORT_EMAIL_SEND_NOW = "admin_cmd_report_email_send_now"
     ADMIN_CMD_EXPORT_FINANCIAL = "admin_cmd_export_financial"
     ADMIN_CMD_EXPORT_INFORMATION = "admin_cmd_export_information"
     ADMIN_CMD_EXPORT_MINISTRY = "admin_cmd_export_ministry"

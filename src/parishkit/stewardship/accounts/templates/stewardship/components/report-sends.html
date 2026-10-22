@@ -1,0 +1,23 @@
+{% load i18n stewardship %}{% comment %}
+  One report email's past sends, newest first (report-emails spec, "Past
+  sends"): when each was made, how, the moment it reported, how many emails
+  it made, its result and its saved copy. A list block's count follows the
+  result ("12 open requests").
+{% endcomment %}<div class="table-scroll" tabindex="0" role="region" aria-label="{% blocktranslate with name=name %}Past sends of {{ name }}{% endblocktranslate %}">
+<table class="data-table">
+  <thead><tr>
+    <th scope="col">{% translate "Made" %}</th>
+    <th scope="col">{% translate "Sent as" %}</th>
+    <th scope="col">{% translate "Data as of" %}</th>
+    <th scope="col">{% translate "Emails" %}</th>
+    <th scope="col">{% translate "Result" %}</th>
+  </tr></thead>
+  <tbody>{% for send in sends %}<tr>
+    <td><time datetime="{{ send.made_at|instant }}" data-local-instant data-compact>{{ send.made_at|instant }}</time></td>
+    <td>{% if send.how == "manual" %}{% translate "Send now" %}{% elif send.how == "recovery" %}{% translate "Recovery" %}{% else %}{% translate "Scheduled" %}{% endif %}</td>
+    <td>{% if send.as_of %}<time datetime="{{ send.as_of|instant }}" data-local-instant data-compact>{{ send.as_of|instant }}</time>{% elif send.through_date %}{% blocktranslate trimmed with day=send.through_date|parish_date_compact %}End of {{ day }}{% endblocktranslate %}{% else %}—{% endif %}</td>
+    <td>{% if send.recipients is None %}—{% else %}{{ send.recipients|number }}{% endif %}</td>
+    <td>{% include "stewardship/components/report-result.html" %}{% if send.count is not None %}<br>{% blocktranslate trimmed count requests=send.count with shown=send.count|number %}{{ shown }} open request{% plural %}{{ shown }} open requests{% endblocktranslate %}{% endif %}</td>
+  </tr>{% endfor %}</tbody>
+</table>
+</div>

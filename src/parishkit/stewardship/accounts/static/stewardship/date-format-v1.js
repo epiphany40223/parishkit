@@ -164,6 +164,8 @@
     // instant into those attributes and into data-local-day, and it is
     // replaced here with the compact day in this browser's time zone (#558).
     // Once replaced the instant is gone, so running again changes nothing.
+    // Report emails' Resume (#1786) names its next send's day in the
+    // dialog text it opens with (data-confirm-body).
     // Only the attributes listed below are rewritten: a new user of
     // data-local-day that puts the instant in another attribute must add
     // that attribute to the list.
@@ -172,7 +174,7 @@
       const date = new Date(stamp);
       if (!stamp || !Number.isFinite(date.getTime())) return;
       const day = fields(date.getFullYear(), date.getMonth() + 1, date.getDate(), true);
-      ["aria-label", "title", "data-confirm-name"].forEach((name) => {
+      ["aria-label", "title", "data-confirm-name", "data-confirm-body"].forEach((name) => {
         const text = node.getAttribute(name);
         if (text && text.includes(stamp)) node.setAttribute(name, text.split(stamp).join(day));
       });

@@ -30,7 +30,7 @@ from ..test_share_forms import data_for
 from .auth_builders import unguarded
 from .automation_builders import as_staff, paired
 from .campaign_builders import add_draft, change, command
-from .test_admin_digest_list_cli_postgresql import revoke
+from .test_admin_report_email_cli_postgresql import revoke
 from .test_admin_settings_cli_postgresql import shares_draft
 from .test_admin_test_sample_cli_postgresql import runner
 from .test_background_grants_postgresql import task_login
