@@ -331,7 +331,10 @@ def test_action_row_saves_a_direct_step_in_the_same_place():
     assert stepper.direct_form == "settings-form" and stepper.save_key is not None
     html = actions(stepper)
     assert f'data-next-url="{reverse("admin:content_catalog")}"' in html
-    assert '<div class="campaign-step-primary" data-campaign-primary>' in html
+    assert (
+        '<div class="campaign-step-primary" data-campaign-primary data-nav-slot="next">'
+        in html
+    )
     assert f'action="{reverse("admin:campaign_step_continue")}"' in html
     assert "Continue to Pages and emails" in html
     assert re.search(
@@ -385,7 +388,8 @@ def test_action_row_saves_a_sub_page_and_goes_back(step, form, back):
     assert back in html and "Continue to" not in html
     assert f'data-next-url="{stepper.current.url}" data-next-fixed' in html
     assert re.search(
-        rf'<div class="campaign-step-primary" data-campaign-primary><button '
+        rf'<div class="campaign-step-primary" data-campaign-primary '
+        rf'data-nav-slot="next"><button '
         rf'type="submit" form="{form}" [^>]*data-campaign-save[^>]*>Save and go '
         rf"back</button></div>",
         html,
@@ -490,10 +494,12 @@ def test_dates_with_suggested_schedules_add_them_and_continue():
     assert stepper.direct_form == wizard.SUGGESTED_FORM
     html = actions(stepper)
     assert re.search(
-        r'<form method="post" action="[^"]+" data-campaign-continue>.*'
+        r'<form method="post" action="[^"]+" data-campaign-continue '
+        r'data-nav-slot="action">.*'
         r'<button type="submit" class="[^"]*secondary[^"]*"[^>]*>Continue without '
         r'schedules for now</button></form><div class="campaign-step-primary" '
-        r'data-campaign-primary><button type="submit" form="suggested-schedules-'
+        r'data-campaign-primary data-nav-slot="next"><button type="submit" '
+        r'form="suggested-schedules-'
         r'form" [^>]*data-campaign-add[^>]*>Add these schedules and continue'
         r"</button></div>",
         html,

@@ -360,11 +360,13 @@ def test_continue_sits_in_the_bottom_action_row_from_the_start(key):
     row = html[html.index('<div id="setup-load-actions" data-in-place-region>') :]
     assert html.count("Continue to the next step") == 1
     assert "Continue to the next step" in row
-    assert '<a class="setup-back"' in row
+    assert '<a class="setup-back" data-nav-slot="back"' in row
     reason = 'id="setup-load-continue-reason"'
     if key == "done":
         assert re.search(
-            r'<a class="setup-continue" href="[^"]+">Continue to the next step', row
+            r'<a class="setup-continue" data-nav-slot="next" href="[^"]+">'
+            r"Continue to the next step",
+            row,
         )
         assert reason not in row
         assert '<p class="help reserve-ghost" aria-hidden="true">' in row

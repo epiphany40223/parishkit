@@ -198,9 +198,9 @@ def test_load_continue_waits_in_the_bottom_action_row(
     visible(result)
     assert result.locator("a, button").count() == 0
     assert page.get_by_text("Continue to the next step").count() == 1
-    # Back at the left, Continue at the right edge (wrapped under Back, full
-    # width, on a phone); it keeps its width and left edge, and its reason's
-    # line keeps its height, invisible.
+    # Back at the left, Continue at the right edge on the same line, also on
+    # a phone (the stepper button row, #1936); it keeps its width and left
+    # edge, and its reason's line keeps its height, invisible.
     box, back_box, row_box = (
         continuing.bounding_box(),
         back.bounding_box(),
@@ -209,10 +209,8 @@ def test_load_continue_waits_in_the_bottom_action_row(
     assert same_place([box["x"], box["width"]], [started["x"], started["width"]])
     assert abs(box["x"] + box["width"] - (row_box["x"] + row_box["width"])) < 1
     assert back_box["x"] <= row_box["x"] + 0.5
-    if width >= 1280:
-        assert box["x"] > back_box["x"] + back_box["width"]
-    else:
-        assert box["y"] >= back_box["y"] + back_box["height"]
+    assert box["x"] > back_box["x"] + back_box["width"]
+    assert abs(box["y"] - back_box["y"]) < 1
     assert page.locator("#setup-load-continue-reason").count() == 0
     ghost = page.locator("#setup-load-actions .reserve-ghost")
     assert ghost.get_attribute("aria-hidden") == "true"

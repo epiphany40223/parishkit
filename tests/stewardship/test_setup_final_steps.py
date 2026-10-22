@@ -106,10 +106,11 @@ def test_review_shows_the_tests_and_continues_to_finish_setup():
     assert "the tests of these exact settings were accepted" in content
     row = actions(html)
     finish = reverse("admin:setup_confirmation")
-    assert f'class="setup-continue" href="{finish}"' in row
+    assert f'class="setup-continue" data-nav-slot="next" href="{finish}"' in row
     assert "Finish setup" in row and "Back" in row
     # Back from Review is Load parish data (#1578).
-    assert f'class="setup-back" href="{reverse("admin:setup_source")}"' in row
+    source = reverse("admin:setup_source")
+    assert f'class="setup-back" data-nav-slot="back" href="{source}"' in row
     # The row comes last, after the exact configuration.
     assert content.rindex("setup-actions") > content.index("<details>")
 
@@ -158,7 +159,9 @@ def test_email_test_sends_until_accepted_then_continues(slack):
         **common,
     )
     row = actions(waiting)
-    assert '<button data-mail-send type="submit" form="setup-test">' in row
+    send = '<button data-mail-send data-nav-slot="next" type="submit" '
+    send += 'form="setup-test">'
+    assert send in row
     assert "Send test email" in row
     # No hidden Continue: once a test settles, the live status region
     # re-reads this panel in place, which brings the row back with Continue.
@@ -174,7 +177,7 @@ def test_email_test_sends_until_accepted_then_continues(slack):
         **common,
     )
     row = actions(done)
-    assert f'class="setup-continue" href="{after}"' in row
+    assert f'class="setup-continue" data-nav-slot="next" href="{after}"' in row
     assert "hidden" not in row and "data-mail-send" not in row
     assert "Send another test" in done
 
@@ -244,7 +247,10 @@ def test_finish_checks_readiness_as_its_primary_action():
         candidate_digest="a" * 64,
     )
     row = actions(html)
-    assert '<button type="submit">Check readiness and finish setup</button>' in row
+    assert (
+        '<button type="submit" data-nav-slot="next">'
+        "Check readiness and finish setup</button>" in row
+    )
     assert "setup-continue" not in row
 
 

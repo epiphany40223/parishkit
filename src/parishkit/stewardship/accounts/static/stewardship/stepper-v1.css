@@ -87,22 +87,56 @@
   display: inline-block; min-height: 0; padding: .6rem 0; border: 0; background: none;
   color: var(--link); font-weight: 500; text-decoration: underline;
 }
-/* The Campaign setup action row at the bottom of each step page (#1404):
-   Back, secondary and first, and the one primary Continue, last and
-   right-aligned, as the setup wizard's row; they stack on a phone. The Go
-   live page's Check step (#1585) shares the row: its one primary is a link
-   or a form (go-live-check.html). */
-.campaign-step-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-block: 1.5rem .25rem; }
-.campaign-step-actions > * { margin: 0; }
-.campaign-step-actions > [data-campaign-continue], .campaign-step-actions > [data-campaign-create], .campaign-step-actions > [data-campaign-primary],
-.campaign-step-actions > [data-go-live-primary] { margin-inline-start: auto; }
-/* Dates and mail schedules' suggested schedules (#1404 PR 6): Continue
-   without schedules for now, secondary, sits just before the primary, so
-   only it takes the free space on its left. */
-.campaign-step-actions > [data-campaign-continue] + [data-campaign-primary] { margin-inline-start: 0; }
-/* Its button drops the global button margin, as the primary's does, so the
-   two are equally tall and line up. */
-.campaign-step-actions > [data-campaign-continue]:has(+ [data-campaign-primary]) button { margin: 0; }
+/* The Admin wizards' action rows (ui-conventions "Stepper button row",
+   #1936): the setup wizard's (.setup-actions, setup-navigation.html and
+   setup-test-actions.html) and Campaign setup's (.campaign-step-actions:
+   campaign-step-actions.html, Create the campaign and the Go live pages).
+   Three fixed slots, as the Family form's bar: Back at the left edge, the
+   step's secondary alternative centered (Continue without schedules for
+   now, Stop go-live), the one primary at the right edge. Each control
+   names its slot (data-nav-slot), so a step without Back or without a
+   middle action leaves that slot empty and the others stay where they are.
+   Controls align to the line's top, so a label that wraps moves no other
+   control.
+   On a wide screen the row is one line. The side columns share the free
+   space equally, which keeps the middle centered, but never get narrower
+   than their own label: the primary's label (Add these schedules and
+   continue) is longer than the Family form's Next, and a wrapped primary
+   reads worse than a middle set a little off center on the one step whose
+   labels need it. */
+.setup-actions, .campaign-step-actions {
+  display: grid; grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
+  grid-template-areas: "back action next"; align-items: start; column-gap: .75rem; row-gap: 0;
+}
+.campaign-step-actions { margin-block: 1.5rem .25rem; }
+.setup-actions > *, .campaign-step-actions > * { margin: 0; }
+:is(.setup-actions, .campaign-step-actions) > [data-nav-slot="back"] { grid-area: back; justify-self: start; }
+:is(.setup-actions, .campaign-step-actions) > [data-nav-slot="action"] { grid-area: action; justify-self: center; }
+:is(.setup-actions, .campaign-step-actions) > [data-nav-slot="next"] { grid-area: next; justify-self: end; }
+/* A label wraps only between words. main's overflow-wrap: anywhere would
+   let a narrow phone (or a wider font) squeeze Back to "Ba" / "ck" beside a
+   long primary; with normal wrapping each word's width is its column's
+   minimum, so Back keeps one line and the primary wraps between words. */
+:is(.setup-actions, .campaign-step-actions) > [data-nav-slot] { overflow-wrap: normal; }
+/* A form in a slot (Continue, Stop go-live, a go-live primary) drops the
+   global button margin, as the primary's own button does, so the slots'
+   buttons are equally tall and line up. */
+:is(.setup-actions, .campaign-step-actions) > form button { margin: 0; }
+/* Narrower, three long labels no longer fit one line, and the labels differ
+   from step to step, so the row does not shorten them (as the Family bar
+   does on a phone): Back and the primary share the first line, each column
+   as wide as its label needs while both fit, and a longer label wraps
+   inside its own button (Back alone, one word, never does); the middle
+   action, on the steps that have one, takes its own centered line below.
+   The second row has no height while it is empty (no row gap; the action's
+   own margin spaces it), so the steps without a middle action keep one
+   line. */
+@media (max-width: 48rem) {
+  .setup-actions, .campaign-step-actions {
+    grid-template-columns: auto auto; grid-template-areas: "back next" "action action";
+  }
+  :is(.setup-actions, .campaign-step-actions) > [data-nav-slot="action"] { margin-block-start: .75rem; }
+}
 /* A direct-save step's primary (#1404 PR 4): Continue and Save and continue
    share one grid cell, so the cell is as wide as the longer label and the
    switch between them moves nothing; the one not offered keeps its space
@@ -131,8 +165,6 @@
 @media (max-width: 26rem) {
   .production-heading { min-block-size: 3lh; }
   .production-line { min-block-size: 5lh; }
-  .campaign-step-actions > [data-campaign-continue], .campaign-step-actions > [data-campaign-create], .campaign-step-actions > [data-campaign-primary],
-  .campaign-step-actions > [data-go-live-primary], .campaign-step-actions > form button { flex: 1 1 100%; width: 100%; }
 }
 @media (forced-colors: active) {
   .setup-steps [aria-current="step"] { outline: 3px solid CanvasText; }
