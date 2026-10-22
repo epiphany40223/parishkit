@@ -968,10 +968,12 @@ Mail queue, #1562), #869, #1353.
   [#1586](https://github.com/epiphany40223/parishkit/issues/1586)), and on
   Production activation, the Mail queue and the System health Version and
   services tile
-  ([#2016](https://github.com/epiphany40223/parishkit/issues/2016)).
-  The one exception is the Background work task page: its Technical
-  details update through their own region only when the task finishes, and
-  say so ([#2019](https://github.com/epiphany40223/parishkit/issues/2019)).
+  ([#2016](https://github.com/epiphany40223/parishkit/issues/2016)), and on
+  the Background work task page, whose state, phase, attempt, retry
+  sequence, last heartbeat and lease follow the task while it runs; its
+  values that never change for a task (its ID, correlation, type,
+  initiator and creation time) stay as drawn
+  ([#2019](https://github.com/epiphany40223/parishkit/issues/2019)).
 - **Pace.** While background work is pending a status region reads fast
   (2 s backing off to 10 s, or the fixed pace the page asks for). A page
   whose state changes without the reader's own action re-reads every 30
