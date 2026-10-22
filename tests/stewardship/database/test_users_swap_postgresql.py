@@ -507,7 +507,7 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0166 (#1569) creates nothing: it replaces 0103's campaign pointer function
 # in place, as 0103 did 0091's. No closure file installs that function
 # again, so its body survives the swap and nothing is registered.
-# 0168 (#1594) creates one definer, granted to web
+# 0169 (#1594) creates one definer, granted to web
 # (runtime_grants.CLOSURE_FUNCTIONS), and replaces nothing.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
@@ -968,7 +968,7 @@ CLOSURE_CREATED = {
         "stewardship_accounts",
         "0033_address_leader_scope",
     ),
-    # 0168 (#1594): the Ministry requests Leaders column's definer.
+    # 0169 (#1594): the Ministry requests Leaders column's definer.
     "public.stewardship_ministry_leader_coverage_v1(text,uuid)": (
         "stewardship_reports",
         "0033_ministry_leader_coverage",

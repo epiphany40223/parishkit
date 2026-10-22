@@ -1,7 +1,7 @@
 """Forward migration: the Ministry requests page's Leaders column (#1594).
 
 Its SQL is the frozen file
-``schema/migrations/0168_ministry_leader_coverage.sql``, read whole and never
+``schema/migrations/0169_ministry_leader_coverage.sql``, read whole and never
 parsed. It adds one SECURITY DEFINER function,
 ``stewardship_ministry_leader_coverage_v1(text, uuid)``: for each Ministry
 with a ParishSoft leader, how many leader addresses it has, how many of them
@@ -21,7 +21,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0168_ministry_leader_coverage.sql"
+    / "0169_ministry_leader_coverage.sql"
 )
 
 

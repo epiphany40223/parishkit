@@ -1054,7 +1054,7 @@ read on a fresh connection takes a few tens of milliseconds, and a test
 bounds it.
 
 `stewardship_ministry_leader_coverage_v1(session, correlation)` (migration
-0168, [#1594](https://github.com/epiphany40223/parishkit/issues/1594)) is a
+0169, [#1594](https://github.com/epiphany40223/parishkit/issues/1594)) is a
 definer the web login may execute that reads this definition for Staff and
 Administrators: for each Ministry with a leader, only the number of leader
 addresses, how many of them are users and how many of those users have

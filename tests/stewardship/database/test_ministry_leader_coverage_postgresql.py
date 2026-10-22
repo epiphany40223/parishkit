@@ -1,6 +1,6 @@
 """Ministry requests' Leaders column (#1594), under the real web login.
 
-The coverage definer (migration 0168) answers only a live Staff or
+The coverage definer (migration 0169) answers only a live Staff or
 Administrator session with per-Ministry counts (leader addresses, users,
 users who signed in), never an address, and audits each read by count; the
 Ministry requests page shows it as By Ministry's Leaders column to Staff and
@@ -39,7 +39,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 PAGE = "/admin/reports/ministries/"
 MIGRATION = (
     Path(__file__).resolve().parents[3]
-    / "src/parishkit/stewardship/schema/migrations/0168_ministry_leader_coverage.sql"
+    / "src/parishkit/stewardship/schema/migrations/0169_ministry_leader_coverage.sql"
 )
 DEFINER = "stewardship_ministry_leader_coverage_v1"
 EVENT = "ministry_leader_coverage_viewed"
@@ -185,7 +185,7 @@ def test_the_definer_answers_only_live_staff_or_administrator_sessions(
 
 
 def test_the_definer_is_installed_as_declared():
-    """Migration 0168: a definer with a fixed path, web's alone to run, and a
+    """Migration 0169: a definer with a fixed path, web's alone to run, and a
     check block that refuses a wrongly installed one."""
     with connection.cursor() as cursor:
         cursor.execute(
@@ -208,7 +208,7 @@ def test_the_definer_is_installed_as_declared():
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(check)
     with (
-        pytest.raises(DatabaseError, match="Migration 0168"),
+        pytest.raises(DatabaseError, match="Migration 0169"),
         transaction.atomic(),
         connection.cursor() as cursor,
     ):

@@ -611,7 +611,7 @@ CLOSURE_FUNCTIONS = {
         "stewardship_accounts",
         "0033_address_leader_scope",
     ),
-    # Ministry requests' Leaders column (0168, #1594).
+    # Ministry requests' Leaders column (0169, #1594).
     LEADER_COVERAGE_FUNCTION: (
         "stewardship_reports",
         "0033_ministry_leader_coverage",

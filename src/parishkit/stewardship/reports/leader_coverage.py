@@ -5,7 +5,7 @@ has a ParishSoft leader who can sign in (reports specification, "Ministry
 change summary"). The web login reads no Member, contact or roster record:
 
 - ``read_coverage`` reads per-Ministry counts through the
-  ``stewardship_ministry_leader_coverage_v1`` definer (migration 0168),
+  ``stewardship_ministry_leader_coverage_v1`` definer (migration 0169),
   which answers only a live Staff or Administrator Admin session, takes no
   address or Ministry and records its own count-only audit event;
 - ``leader_status`` turns one Ministry's counts into the column's status,

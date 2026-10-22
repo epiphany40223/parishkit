@@ -2148,7 +2148,7 @@ act. The page help explains each word in plain language.
 The Ministry requests page reads the column once per rendering, which
 includes every in-place refresh, before its guarded read-only response
 starts, through the SECURITY DEFINER function
-`stewardship_ministry_leader_coverage_v1` (migration 0168). Like the
+`stewardship_ministry_leader_coverage_v1` (migration 0169). Like the
 Users page's leaders read, it answers only the caller's live Admin session (one begun after the
 latest Admin-access recovery) whose user is Staff or an Administrator now,
 and it records its own `ministry_leader_coverage_viewed` audit event for
@@ -2201,7 +2201,7 @@ hold. By Ministry counts a request edited into another Ministry under both
 its Ministries, as the worklist's Ministry filter finds it under either, so
 each count link lists exactly what it counts
 ([#1718](https://github.com/epiphany40223/parishkit/issues/1718)).
-The Leaders column added migration 0168 (above). The page's view audit is
+The Leaders column added migration 0169 (above). The page's view audit is
 the queue's `ministry_followup_viewed`; it no longer records
 `ministry_report_viewed`, which the host `report ministry` command still
 records.

@@ -537,8 +537,8 @@ FROZEN = {
     "0168_setup_test_binding.sql": (
         "592ca793da55098a9a7b7b7ca864795480f8c57943a1bceda465be6643f7dd9e"
     ),
-    "0168_ministry_leader_coverage.sql": (
-        "8cc7ea1d8d2d28dbc265f0d9fb9b1f052f7092168ba4646a2fd91bb52338aa58"
+    "0169_ministry_leader_coverage.sql": (
+        "a155a572cc3c9190a6a31ba8a8879cc4fe3e4019e009c620c91fb7b71b8d7264"
     ),
 }
 

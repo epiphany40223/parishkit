@@ -1,4 +1,4 @@
--- Frozen forward migration file 0168 (the repository-wide file sequence):
+-- Frozen forward migration file 0169 (the repository-wide file sequence):
 -- the Ministry requests page's Leaders column (#1594). It is installed by
 -- the Django migration that names it in FROZEN_SQL and must never change
 -- once released; tests/stewardship/test_schema_migration_files.py pins its
@@ -156,7 +156,7 @@ BEGIN
            WHERE n.nspname='public' AND p.proname='stewardship_ministry_leader_coverage_v1')<>1
        OR to_regprocedure('public.stewardship_ministry_leaders_v1()') IS NULL
        OR to_regprocedure('public.stewardship_admin_session_key_v1(text)') IS NULL THEN
-        RAISE EXCEPTION 'Migration 0168: the leader coverage definer is not installed as declared';
+        RAISE EXCEPTION 'Migration 0169: the leader coverage definer is not installed as declared';
     END IF;
 END
 $check$;
