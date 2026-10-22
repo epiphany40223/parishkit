@@ -693,3 +693,80 @@ def test_the_calendar_month_is_accepted_and_cancel_returns_to_it(
         calendar = reverse("admin:schedule_calendar")
         assert f'<a href="{calendar}?month=2054-10">Cancel</a>' in page.content.decode()
         assert bad.status_code == 400 and head.status_code == 400
+
+
+def calendar_sends(admin, name, show="all"):
+    """The Campaign calendar's sends of report ``name``: (status, instant).
+
+    With ``show="all"``, read from the page's own list of every send, which
+    the grid draws, and from Every email by date with past emails included;
+    the two must agree. With ``show="upcoming"`` (the default view), only
+    Every email by date's table is read.
+    """
+    import re
+    from html import unescape
+
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response = admin.get(reverse("admin:schedule_calendar") + f"?show={show}")
+    assert response.status_code == 200
+    page = unescape(response.content.decode())
+    source = page.split("data-calendar-source", 1)[1].split("</ul>", 1)[0]
+    grid = re.findall(
+        rf'data-label="{name}" data-status="([^"]+)"[^>]*><time datetime="([^"]+)"',
+        source,
+    )
+    body = page.split('<table class="data-table whole-words calendar-sends">')[1]
+    table = re.findall(
+        rf'<time datetime="([^"]+)"[^>]*>[^<]*</time></td>\s*<th scope="row">{name}'
+        r'</th>\s*<td>[^<]*</td>\s*<td><span class="status-badge[^"]*">([^<]+)<',
+        body,
+    )
+    rows = sorted((status, when) for when, status in table)
+    if show == "all":
+        assert sorted(grid) == rows
+    return [(status, datetime.fromisoformat(when)) for status, when in rows]
+
+
+def test_the_calendar_shows_only_sends_made_and_sends_to_come(
+    live_response_service, google, monkeypatch
+):
+    """Past times show only real sends; the rule's sends only from now (R43).
+
+    A Daily report added on October 20 whose rule starts on the campaign's
+    first day (October 1) never sent on October 1 to 20, so none of those
+    days shows a send. The scheduler owes it one catch-up send, shown once
+    at the current time as "Not sent yet"; after the scheduler makes and
+    delivers it, that real send is listed at its time as "Sent" and nothing
+    is owed. The rule's sends from October 21 on are "Upcoming".
+    """
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts import schedule_calendar_views
+
+    from .report_builders import prepare_due, run_finalizers, settle_messages
+
+    harness = live_response_service
+    store = harness.service.store
+    now = datetime(2054, 10, 20, 16, tzinfo=UTC)
+    monkeypatch.setattr(
+        schedule_calendar_views, "timezone", SimpleNamespace(now=lambda: now)
+    )
+    upcoming = [
+        ("Upcoming", datetime(2054, 10, day, 11, tzinfo=UTC)) for day in range(21, 32)
+    ]
+    with campaign_clock(now):
+        admin = started(harness)
+        add_report(store, harness.campaign, name="Daily totals")
+        owed = calendar_sends(admin, "Daily totals")
+        assert owed == [("Not sent yet", now)] + upcoming
+        # The default Upcoming view keeps the owed send: it is still to come.
+        assert calendar_sends(admin, "Daily totals", show="upcoming") == owed
+        prepare_due()
+        settle_messages()
+        run_finalizers()
+        sends = calendar_sends(admin, "Daily totals")
+    # One send, at the moment it was made (the database's own clock, which
+    # campaign_clock does not move), never one per past day of the rule.
+    (made,) = [send for send in sends if send[0] != "Upcoming"]
+    assert made[0] == "Sent"
+    assert [send for send in sends if send[0] == "Upcoming"] == upcoming

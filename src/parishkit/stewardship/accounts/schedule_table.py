@@ -54,6 +54,13 @@ STATUS_LABELS = {
     "suggested": _("Not saved yet"),
     # One send of a report email while it is paused (#1786, the calendar).
     "paused": _("Paused"),
+    # A send a report email made, on the Campaign calendar (R43), in its
+    # Past sends result words (``report_email_list.RESULT_LABELS``); "sent"
+    # and "sending" are the shared words above.
+    "report_failed": _("Failed"),
+    "uncertain": _("Uncertain: check Sent mail"),
+    "nothing": _("Not sent: nothing to report"),
+    "nobody": _("Not sent: no current recipients"),
 }
 # A schedule in one of these states has run, is running, or has work
 # prepared ahead of its time: it sent its email, failed to, or settled every
@@ -63,7 +70,20 @@ STATUS_LABELS = {
 # one past send of a digest on the Campaign calendar, and "skipped" one it
 # skips (#1658), shown read-only too.
 PAST = frozenset(
-    {"preparing", "sending", "sent", "failed", "done", "passed", "skipped", "paused"}
+    {
+        "preparing",
+        "sending",
+        "sent",
+        "failed",
+        "done",
+        "passed",
+        "skipped",
+        "paused",
+        "report_failed",
+        "uncertain",
+        "nothing",
+        "nobody",
+    }
 )
 
 
