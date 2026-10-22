@@ -1313,11 +1313,58 @@ draws the report from current data in the review dialog, marked "Preview —
 not sent", without saving or sending anything. It uses the report's as-of
 choice against now (the end of yesterday, or now), compiles every block as
 a send would, and shows the email as recipients would see it (HTML, with a
-tab for the plain text), the subject, and the recipients it would go to now.
+choice to show its plain text instead), the subject, and the recipients it
+would go to now.
 It needs no fact pin: it reads the latest ready fact generation, and says
 "Updating" if that generation is not current, as the Response dashboard
 does. The dialog body scrolls. Preview records an audit event (it reads
 Family data) and creates no occurrence, outbox row or saved copy.
+
+Its details ([#2035](https://github.com/epiphany40223/parishkit/issues/2035)):
+
+- **What it draws.** The report is compiled by the one compiler a send
+  uses, as a Send now would draw it now: the as-of moment, report day and
+  opening line follow from the report's as-of choice and the database
+  clock, exactly as a send records them ([as of](#as-of)), and the subject
+  follows the [subject rule](#subject) (never labeled manual or test).
+  Every block draws from what a send would read now: the open requests,
+  the funnel at the as-of moment and, for the fact blocks, one ready fact
+  generation.
+- **Which facts.** The generation a send would build now when it is ready
+  (the current ParishSoft data, responses and campaign dates, through the
+  report day); otherwise the newest ready generation of the campaign, cut
+  at the report day, with the Updating notice ("Updating — the newest
+  figures are still being prepared, so this preview shows the latest
+  complete ones. A send uses the newest."). With no ready generation, the
+  fact blocks show their empty statement and the notice says so. Preview
+  never builds or pins a generation.
+- **The dialog.** The review dialog titled "Preview — not sent", with no
+  Apply and a **Close** button. Its body names the subject, the
+  recipients it would go to now (users by name, groups with how many
+  people, outside addresses), a notice in Testing that every message
+  goes to the Testing recipient, and then the email under a
+  [binary choice](../ui-conventions/spec.md#binary-choices) **Email** |
+  **Plain text** (two views of one email; switching changes only which
+  one is shown, in place, with no request). The email is the compiled
+  markup as the saved copy shows it; its chart images are drawn again for
+  the dialog from the same generation and options, through short-lived
+  addresses bound to the Administrator, since the page's content policy
+  admits no inline image data. A preview has no saved copy, so its links
+  go where the [shared email layout](#shared-email-layout) says: "Open
+  protected report" to the Report emails page and each request to the
+  live request. The email's panel stays light in either colour scheme,
+  as a recipient sees it.
+- **From the editor.** Preview posts the unsaved form, checked by the
+  editor's own field checks: a refused field is shown at its field, as
+  Review changes shows it, and the dialog stays shut. It is available
+  whether or not the form has changed, once every required field is
+  complete.
+- **Refusals.** No ParishSoft data yet, figures being updated while
+  they are read (try again in a moment), or a chart that cannot be drawn,
+  is said in the dialog in plain words with its error code; nothing is
+  recorded but the refusal.
+- **Audit.** `report_email_previewed`, naming the report (the campaign
+  for an unsaved form), never the email's content.
 
 ### Send a test to me
 
@@ -1599,7 +1646,7 @@ entries of the schedule commands (a daily digest's `comparison`, a digest's
 | `report-email show REPORT` | One report's values (recipients by kind; outside addresses to Administrators only), blocks with options, skip dates, pause intervals, the configuration `version`, and its next five sends. |
 | `report-email preview --expected-version V --changes FILE` | The review of a change document: `create`, `edit` (by `id`, keeping what it leaves out), `delete`, `pause`, `resume`, `skip` and `unskip` entries, validated, previewed and signed as the page does; prints the review and its token, and whether the after-campaign confirmation is required. The document is `{"changes": [ENTRY, ...]}`, each entry `{"operation": OPERATION, "id": REPORT}` (a `skip` or `unskip` adds `"sends": [SLOT, ...]`, one to fifty slot keys, each once: for a skip those `show` lists in its next sends, for an unskip those of its skip dates still ahead; the review lists each with its `due_at`; `create` has no `id` and holds `"values"`, and `edit` holds the `"values"` it changes, each in the [stored form](#stored-form) with times in the campaign's zone, of `name`, `subject`, `intro_html`, `intro_text`, `recipients`, `schedule`, `as_of`, `blocks` and `content_required`), at most one entry per report; `V` is the version `show` or `list` printed. A `create` or `edit` is checked by the page's own checks ([recipients](#recipients-field) included), and a refusal names each field and its problem as the page would show it at that field ("Recipients: …"). |
 | `report-email confirm --token TOKEN\|-` | Applies a previewed change; the after-campaign confirmation is asked at the [prompt](../admin-automation/spec.md#command-line-confirmation) or given by `--yes`, else exit 4 (`confirmation_required`). |
-| `report-email render REPORT` | Preview: the report drawn from current data, its subject and text part (never the HTML), and who it would go to now. Records the page's audit event. |
+| `report-email render REPORT` | Preview: the report drawn from current data, its subject and text part (never the HTML), its as-of moment, whether its figures are Updating, and who it would go to now (users and groups; outside addresses as the page shows them to Administrators). Administrators only; any session scope. Records the page's audit event, `report_email_previewed`. |
 | `report-email send-test REPORT` | Send a test to me. |
 | `report-email send-now REPORT [--request-key KEY]` | Send now, keyed by its request key (the page's command id), with the confirmation at the prompt or `--yes`. |
 | `report-email sends REPORT` | Past sends, as the page lists them: each send's id, kind, when it was made, how, its as-of moment, its email count, result and a list block's count. |
