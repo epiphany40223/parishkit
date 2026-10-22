@@ -167,7 +167,9 @@ def test_setup_logo_kept_again_after_back_and_a_stale_form_says_reload(request):
         # Back from the next step is a link to this step, which keeps the
         # saved logo optional.
         access = browser.get("/admin/setup/access").content.decode()
-        (back,) = re.findall(r'<a class="setup-back" href="([^"]+)"', access)
+        (back,) = re.findall(
+            r'<a class="setup-back" data-nav-slot="back" href="([^"]+)"', access
+        )
         assert back == url
         again = browser_post(browser, {"version": version()}, empty, url=url)
         assert again.status_code == 302, again.content

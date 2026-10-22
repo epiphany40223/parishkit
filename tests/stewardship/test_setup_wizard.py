@@ -412,7 +412,8 @@ def test_stepper_marks_current_step_with_text_not_color_alone():
         {"wizard": wizard, "submit": "Save and continue"},
     )
     assert 'href="/admin/setup/mail"' in buttons and "Back" in buttons
-    assert '<button type="submit">Save and continue</button>' in buttons
+    save = '<button type="submit" data-nav-slot="next">Save and continue</button>'
+    assert save in buttons
 
 
 def track_segments(html):

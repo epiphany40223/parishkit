@@ -447,7 +447,7 @@ sections:
     "Date format": [DOM-04]
     "Accessibility and client behavior": [ARC-08, DOM-04]
     "Step bars": [ADM-02, ADM-03, FAM-08]
-    "Stepper button row": [FAM-08]
+    "Stepper button row": [ADM-02, ADM-03, FAM-08]
     "Charts": [RPT-01]
     "Admin portal interaction": [ADM-03]
     "JavaScript requirement": [ADM-12]

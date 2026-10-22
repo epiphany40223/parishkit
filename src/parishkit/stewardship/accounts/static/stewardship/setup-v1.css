@@ -4,29 +4,19 @@
    and stepper-v1.css, so it reads the shared design tokens (#732) directly:
    no hex colours and no var() fallbacks. The Back/Continue buttons take the
    shared button shape (--button-*). */
-/* Back/Continue: identical on every wizard page. Back is secondary and first;
-   the primary action (button or link) is last and right-aligned. They share
-   one row, and a long label wraps inside its own button; only on very narrow
-   screens do they stack, primary last and full width, so neither overflows. */
-.setup-actions {
-  display: flex; flex-wrap: nowrap; align-items: stretch; gap: .75rem; margin-block: 1.5rem 1rem;
-}
-.setup-actions > * { margin: 0; }
+/* Back/Continue: identical on every wizard page. Back is secondary and at
+   the left; the primary action (button or link) is at the right, and a long
+   label wraps inside its own button. The row's slots and narrow-screen
+   layout are stepper-v1.css's (.setup-actions, "Stepper button row"). */
+.setup-actions { margin-block: 1.5rem 1rem; }
 .setup-back, .setup-continue, .setup-actions > button {
   display: inline-flex; align-items: center; justify-content: center; min-height: var(--button-min-height);
   box-sizing: border-box; padding: var(--button-padding); border: var(--button-border-width) solid var(--accent);
   border-radius: var(--radius-small); font-weight: var(--button-weight); line-height: 1.3; text-align: center;
   text-decoration: none; box-shadow: none;
 }
-.setup-back { flex: 0 1 auto; min-width: 0; background: var(--paper); color: var(--accent); }
-.setup-continue, .setup-actions > button {
-  flex: 0 1 auto; margin-inline-start: auto; background: var(--accent); color: var(--paper);
-}
-.setup-continue, .setup-actions > button { min-width: 0; }
-@media (max-width: 26rem) {
-  .setup-actions { flex-wrap: wrap; }
-  .setup-continue, .setup-actions > button { flex: 1 1 100%; margin-inline-start: 0; }
-}
+.setup-back { background: var(--paper); color: var(--accent); }
+.setup-continue, .setup-actions > button { background: var(--accent); color: var(--paper); }
 .setup-back:hover { background: var(--accent-soft); color: var(--accent-strong); }
 .setup-continue:hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--paper); }
 /* Source-load progress: each downloaded collection (the parts of the load

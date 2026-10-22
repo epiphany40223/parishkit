@@ -4222,8 +4222,10 @@ Home; Home then leads its Next steps with **Continue campaign setup:** and the
 first step not done yet. On a screen 64rem wide or wider the full step list
 is shown open; narrower, it is the collapsed disclosure
 ([step bars](../ui-conventions/spec.md#step-bars)). Each step page ends with
-one action row: **Back** (secondary, the previous step) and one primary
-control. On Campaign settings, Share options, Pages and emails, Dates and
+one action row, laid out as the
+[stepper button row](../ui-conventions/spec.md#stepper-button-row): **Back**
+(secondary, the previous step) and one primary control. On Campaign settings,
+Share options, Pages and emails, Dates and
 mail schedules and Campaign images it is **Continue to** the next step not
 done yet (on Dates and mail schedules with no schedule saved, **Continue
 without schedules for now**, the secondary while suggested schedules are
@@ -4580,8 +4582,9 @@ per step.
 notices; a caution sits beside the control it is about), the
 [step bar](../ui-conventions/spec.md#step-bars) with "Step N of 4: *name*",
 "K of 4 steps completed" and "Next: *name*", the step's content, and one
-action row: **Back** (secondary, first) where a previous step can be
-opened, a secondary back-out where the state allows one, and exactly one
+action row ([stepper button row](../ui-conventions/spec.md#stepper-button-row)):
+**Back** (secondary, first) where a previous step can be opened, a
+secondary back-out where the state allows one (centered), and exactly one
 primary control (last), or none while there is nothing to do. A reserved
 status line sits under the row. The page follows the
 [wizard rules](../ui-conventions/spec.md#wizards) for where the reader is

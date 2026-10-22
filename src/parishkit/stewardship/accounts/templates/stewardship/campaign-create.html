@@ -39,7 +39,7 @@ says a campaign exists) and links Campaign settings (#563).
 {% else %}<form id="settings-form" method="post" action="{{ page_url }}" class="panel" data-review-open="campaign-create-review" data-campaign-form data-new-campaign data-require-complete data-missing-hint="{% translate 'Fill in the required fields to create the campaign.' %}">
 {% csrf_token %}<input type="hidden" name="action" value="preview">
 {% include 'stewardship/campaign-fields.html' %}
-<div class="campaign-step-actions">{% button type="submit" autocomplete="off" aria-describedby="settings-complete-hint" data-campaign-create %}{% translate "Create the campaign and continue" %}{% endbutton %}</div><p class="help" id="settings-complete-hint" data-complete-hint="reserve"></p>
+<div class="campaign-step-actions">{% button type="submit" autocomplete="off" aria-describedby="settings-complete-hint" data-campaign-create data-nav-slot="next" %}{% translate "Create the campaign and continue" %}{% endbutton %}</div><p class="help" id="settings-complete-hint" data-complete-hint="reserve"></p>
 </form>{% endif %}</div>
 {% include 'stewardship/components/review-outcome.html' with outcome_id="campaign-create-outcome" %}
 {% translate "Create the campaign?" as review_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="campaign-create-review" title=review_title apply_url=page_url outcome_id="campaign-create-outcome" fallback="campaign-create-outcome" describedby="campaign-create-summary" redraw_answer=True %}
