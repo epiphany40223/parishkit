@@ -842,3 +842,22 @@ def test_the_page_is_a_hub_with_the_timeline_tab():
     assert 'id="table-filters"' not in page
     page = render(Timeline(TIMELINE.summary), full=False, sections=("financial",))
     assert "Last portal action: None recorded</p>" in page
+
+
+def test_the_familys_users_link_their_timelines_when_given():
+    """Administrators get People in this Family who are users (#1867);
+    without any (or for Staff, who are given none) the field is left out."""
+    users = [
+        {"id": UUID(int=21), "display": "Adams, Ann", "role": "Staff"},
+        {"id": UUID(int=22), "display": "bob@example.org", "role": "Administrator"},
+    ]
+    page = render(TIMELINE, family_users=users)
+    assert "People in this Family who are users" in page
+    assert (
+        f'<a href="/admin/users/{UUID(int=21)}/timeline/">Adams, Ann</a> (Staff)'
+        in (page)
+    )
+    assert f'href="/admin/users/{UUID(int=22)}/timeline/"' in page
+    for absent in (render(TIMELINE), render(Timeline(TIMELINE.summary), full=False)):
+        assert "People in this Family who are users" not in absent
+        assert "/admin/users/" not in absent.split("<main")[1]

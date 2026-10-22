@@ -192,12 +192,21 @@ def test_the_file_follows_its_page():
     """
     text = "".join(
         (TEMPLATES / name).read_text(encoding="utf-8")
-        for name in ("timeline.html", "timeline-panel.html")
+        for name in (
+            "timeline.html",
+            "timeline-panel.html",
+            # The Summary's fields, shared with the user Timeline's Family
+            # sections (#1867).
+            "timeline-family-fields.html",
+        )
     )
     head = text[text.index('id="events-heading"') :]
     head = head[head.index("<thead>") : head.index("</thead>")]
     assert tuple(re.findall(r'translate "([^"]+)"', head)) == HEADINGS
     page_lines = re.findall(r'<dt>{% translate "([^"]+)" %}</dt>', text)
+    # Administrators' page-only field (#1867): the people of the Family who
+    # are users are not part of the report file.
+    page_lines.remove("People in this Family who are users")
     built = timeline_document(
         PAYLOAD
         | {"family": PAYLOAD["family"] | {"reminder_workgroup": "No reminders"}},

@@ -181,6 +181,7 @@
 !src/parishkit/stewardship/schema/migrations/0154_reviewed_ministry_resubmission.sql
 !src/parishkit/stewardship/schema/migrations/0155_reviewed_pledge_resubmission.sql
 !src/parishkit/stewardship/schema/migrations/0156_report_pipeline.sql
+!src/parishkit/stewardship/schema/migrations/0157_person_identity_reads.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

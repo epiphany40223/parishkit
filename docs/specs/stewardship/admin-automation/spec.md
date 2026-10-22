@@ -3962,15 +3962,25 @@ checks, audit and alerts:
 - `users timeline --user ID` prints one user's
   [Timeline](../admin-portal/spec.md#user-timeline): the summary (Name,
   role or when the user was removed, address, Ministries led, last sign-in
-  and last email) and every line, newest first, each with its instant,
-  kind, what happened, detail and, for an email, its delivery ID. `--kind`
+  and last email), the ParishSoft Families the address belongs to by DUID,
+  campaign record ID and panel state (`shown`, `unavailable` or
+  `not_in_campaign`, so a reader can tell why a Family has no lines) only
+  (the page's Family names and codes are
+  Family-level personal data, see
+  [personal data](#personal-data-on-the-command-line); #1867), and every
+  line, newest first, each with its instant, kind, what happened, detail,
+  the DUID of the Family a Family line is about and, for an email, its
+  delivery ID. `--kind`
   takes the page's Kind keys (`all`, `sessions`, `actions`, `roles`,
-  `emails`) and `--from` and `--to` whole days in `--zone` (an IANA time
+  `emails`, `form`) and `--from` and `--to` whole days in `--zone` (an IANA time
   zone, required with a day), as the page's From and Through do; the
   command prints every matching line, unpaged. An unknown user is
   `not_available` and a refused filter `invalid`. It is read-only, runs
   the page's own reads, and records the page's `user_timeline_viewed`
-  with the user's record ID.
+  with the user's record ID, plus the page's `family_timeline_viewed` for
+  each Family whose lines it prints: it prints no Family summary, so a
+  Family whose lines the filters all leave out was not looked at and is not
+  recorded.
 
 These need a full-scope session, except `users list`,
 `users preview-upgrade` and `users timeline`; none is fresh-gated, as the page asks for no fresh

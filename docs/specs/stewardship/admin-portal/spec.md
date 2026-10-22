@@ -6569,9 +6569,10 @@ role did they have when, and what did we email them?" for one user, so an
 Administrator helping a Staff member or Ministry leader does not have to
 search Sent mail and System logs by hand. It is the person counterpart of a
 Family's [Timeline](../reports/spec.md#timeline) and shares its table and
-filter rules; the Family part of a person's timeline (the ParishSoft Family
-they belong to, and that Family's lines) follows in
-[#1867](https://github.com/epiphany40223/parishkit/issues/1867).
+filter rules. A user who is also a ParishSoft Family member sees that
+Family's records on the same page
+([#1867](https://github.com/epiphany40223/parishkit/issues/1867); see
+[Family part](#user-timeline-family-part)).
 
 **Access and address.** Administrators only (`MANAGE_USERS`, rechecked after
 the answer is built, as every Users route does); Staff and Ministry leaders
@@ -6631,7 +6632,9 @@ default, with the shared row navigator. Its lines are:
 
 **Filters.** The Family Timeline's filter bar, acting in place on the
 table: **Kind** (All, Sign-ins and sign-outs, Admin actions, Role changes,
-Emails) and **From** and **Through** days in the browser's time zone, with
+Emails, and Family form activity for a user with a
+[Family](#user-timeline-family-part)) and **From** and **Through** days in
+the browser's time zone, with
 the same validation (a refused choice is 400). Paging and the When sort
 keep the filters. The summary is not filtered.
 
@@ -6654,6 +6657,78 @@ that end ("Earlier session ended", replaced by a new sign-in) is listed as
 happening just before the sign-in in both sort directions.
 `pk-admin users timeline` prints the same lines
 ([Admin automation](../admin-automation/spec.md#users-and-follow-up)).
+
+#### User timeline Family part
+
+Administrators, Staff and Ministry leaders may also be ParishSoft Family
+members, so a user's Timeline also shows their Family's records
+([#1867](https://github.com/epiphany40223/parishkit/issues/1867), the second
+half of #1570's person timelines), and the Family's Timeline names the
+Family's users. Both directions are read through the
+[person identity reads](../data/spec.md#person-identity-reads) (frozen
+migration 0157), which answer only an Administrator and return record IDs,
+never contact data.
+
+- **Who belongs to a Family.** The user's address is a Family member's when
+  it is a valid address on that Family's or one of its Members' contact
+  records in the current ParishSoft data, compared in lower case. Usually
+  that is one Family; an address shared by two Families lists each.
+- **Family groups.** Below the Summary, each Family has its own panel headed
+  "Family member of" with the Family's name (the shared
+  [Family name link](../ui-conventions/spec.md#family-and-member-names) to
+  its [Timeline](../reports/spec.md#timeline)) and its DUID. The panel holds
+  that Family's Timeline summary fields, with the same meaning: Submitted,
+  Last email, Family code and Open form, Reminders when skipped, Campaign
+  email can reach this Family, Furthest step reached and Last seen (in
+  Testing mode, Open form's reason carries the same "Try the Family form as
+  a chosen Family" link for an Administrator). The fields are the current campaign's Production records, as on the Family's
+  Timeline. A Family with no record in the current campaign (no current
+  campaign, or a Family the campaign does not hold) says "Not in the current
+  campaign, so there are no Family form records." instead. While other
+  campaign work (a restore review, a cleanup, purge or go-live step) holds
+  the campaign's reports, the panel says the records are unavailable until
+  it finishes, and the Family's lines are left out.
+- **No Family.** A user whose address is on no Family or Member contact
+  record shows no Family panel and no Family field
+  ([conditional fields](../ui-conventions/spec.md#conditional-fields)); the
+  Summary says "Not found in ParishSoft as a Family member, so there are no
+  Family form records."
+- **Merged lines.** The Family's Timeline lines (its emails, sign-ins,
+  sign-outs, form opens, steps and submissions) join the user's own lines in
+  the one table, each marked with a small tag naming the Family. A Family
+  email that also went to the user's address is listed once, as the
+  Family's line (it carries the Family's email name, such as "Reminder 2").
+  Kind gains **Family form activity** (a Family's form opens, steps and
+  submissions), offered only when at least one such Family line is listed;
+  Family sign-ins and emails are under Sign-ins and sign-outs and Emails.
+  An address naming Family form activity when it is not offered (an older
+  link) reads as All, as an address naming an unavailable tab shows the
+  first tab, so Kind never shows a choice its menu does not hold.
+- **The Family's Timeline.** For Administrators only (`MANAGE_USERS`, the
+  roles that may open a user's Timeline), the Family's Timeline summary
+  lists **People in this Family who are users**: each current user (a row
+  of the [Users table](#users-table)) whose address is a contact of that
+  Family or its Members, by Name (the address when blank) and role, linking
+  that user's Timeline. The field is left out when there are none, and for
+  Staff, who see no Admin activity of other users: the Family page never
+  shows a member's sign-ins or actions in the Admin portal.
+- **Reads.** The Family part adds one identity read, the campaign's report
+  admission and, per Family (usually one), the Family's Timeline reads and
+  its code under the credential key-set lock, as the Family's Timeline does.
+  The Family page adds one identity read and one users read for an
+  Administrator, only while its Timeline tab (the one that shows the field)
+  is chosen, as the other tabs' streams are read; none for Staff. Since a Family panel shows what the
+  Family's own Timeline shows (its code included), each view of a user's
+  Timeline also records one `family_timeline_viewed` per Family whose
+  records it shows (subject the Family's campaign record ID, with its
+  campaign and the outcome only), as that page does, so a later review sees
+  who looked at which Family whichever page showed it. No address enters a
+  URL, a log line or an audit record.
+- **Sent mail and Mail message links.** Linking a user's address on Sent
+  mail's Recipient and on the Mail message page to the user's Timeline
+  follows once Sent mail's Recipient links land
+  ([#1885](https://github.com/epiphany40223/parishkit/issues/1885), after
+  [#1821](https://github.com/epiphany40223/parishkit/issues/1821)).
 
 ### User change checks and alerts
 

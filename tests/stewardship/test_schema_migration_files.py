@@ -501,6 +501,9 @@ FROZEN = {
     "0156_report_pipeline.sql": (
         "dc04b332bc79d4ebeb52f4349e426744b79a83aac233fe9eea833ede7ee43a69"
     ),
+    "0157_person_identity_reads.sql": (
+        "85466fd212f85c2efe5d184d2485fad66a5022df25df531b235020ecdd85cb37"
+    ),
 }
 
 

@@ -485,6 +485,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # ``CLOSURE_REPLACED`` runs each file again after it.
 # 0152 (#1866) creates only the audit actor index, only when missing, and
 # replaces nothing; the swap drops none of it, so nothing is registered.
+# 0157 (#1867) creates the two person identity reads (in
+# runtime_grants.CLOSURE_FUNCTIONS), which go, and replaces nothing, so its
+# file installs whole again.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -723,6 +726,13 @@ CLOSURE_CREATED = {
             "public.stewardship_delivery_page_recipients_v1(uuid[],uuid)",
         ),
         ("stewardship_jobs", "0034_sent_mail_recipients"),
+    ),
+    **dict.fromkeys(
+        (
+            "public.stewardship_address_people_v1(text,uuid)",
+            "public.stewardship_family_users_v1(bigint,uuid)",
+        ),
+        ("stewardship_accounts", "0031_person_identity_reads"),
     ),
     # 0120 (#1592) creates the Ministry leader email tables (in
     # CLOSURE_TABLES) and these functions, and replaces the four outbox
