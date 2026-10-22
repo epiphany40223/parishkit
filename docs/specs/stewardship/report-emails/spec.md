@@ -1246,9 +1246,12 @@ exactly as the command line's [report-email preview](#command-line) builds
 it: the report's values before and after in plain words (recipients by
 name and kind, blocks in order with their options, the schedule and as-of),
 the sends each side makes with the shared schedule preview, the dropped
-skips, the affected work (sends already made are not recalled; planned sends
-not started are cancelled; sends in progress or uncertain block the change,
-and then no Apply is offered and Sent mail is named), and the
+skips, the affected work of a change to an existing report (sends already
+made are not recalled; planned sends not started are cancelled; sends in
+progress or uncertain block the change, and then no Apply is offered and
+Sent mail is named; a new report has no sends yet, so its review says
+instead "Nothing is sent until its first send time.",
+[#1976](https://github.com/epiphany40223/parishkit/issues/1976)), and the
 [after-the-campaign confirmation](#sends-after-the-campaign-ends) when it
 applies. **Apply** records the change with the signed preview, the
 blocking-work recheck under the work lock, the stale and two-tab checks,

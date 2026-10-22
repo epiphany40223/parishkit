@@ -125,6 +125,9 @@ def test_new_reviews_and_adds_a_report_to_staff_and_an_address(
         assert b"data-review-answer" in answer.content
         assert b"All Staff (group" in answer.content
         assert b"council@example.org" in answer.content
+        # A new report has no sends to recall or remake (#1976).
+        assert b"Nothing is sent until its first send time." in answer.content
+        assert b"not recalled" not in answer.content
         done = confirm(admin, path, answer)
         assert done.status_code == 302, done.content
         apply_requests(harness.service.store)
@@ -243,6 +246,9 @@ def test_edit_skip_and_delete(live_response_service, google):
             ),
         )
         assert answer.status_code == 200, answer.content
+        # A change says what becomes of the sends made and planned (#1976).
+        assert b"Sends already made are not recalled;" in answer.content
+        assert b"Nothing is sent until its first send time." not in answer.content
         assert confirm(admin, path, answer).status_code == 302
         apply_requests(harness.service.store)
         values = report_values(identifier)
