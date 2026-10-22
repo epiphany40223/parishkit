@@ -293,6 +293,38 @@ def test_schedule_identity_and_option_uniqueness():
             )
 
 
+def test_share_option_short_labels_are_bounded_plain_and_distinct():
+    """A share option may carry a short label (#1569): stored only when set,
+    plain visible text of at most 12 characters, distinct ignoring case.
+    A talent option never carries one."""
+
+    def options(*shorts):
+        """One share option per short label; None leaves the key out."""
+        return [
+            {"id": str(uuid4()), "label": f"Give {index}", "free_text": False}
+            | ({} if short is None else {"short_label": short})
+            for index, short in enumerate(shorts)
+        ]
+
+    def values(**changes):
+        """A financial campaign's values with these changes."""
+        return campaign(modules=["financial"], **changes)["values"]
+
+    campaign_values(values(share_options=options("Check", None, "Online gift")))
+    for refused in (
+        options(""),
+        options(" Check"),
+        options("A" * 13),
+        options("{{ year }}"),
+        options("Check", "CHECK"),
+        options("Tab\there"),
+    ):
+        with pytest.raises(ConfigError):
+            campaign_values(values(share_options=refused))
+    with pytest.raises(ConfigError):
+        campaign_values(values(talent_options=options("Check")))
+
+
 @pytest.mark.parametrize("slot", ["ministry", "financial", "additional"])
 def test_disabled_content_slot_is_rejected(slot):
     """Disabled feature content is a stray module-dependent value, not hidden state."""
@@ -462,3 +494,16 @@ def test_offered_role_labels_can_all_be_saved():
     assert not saveable("L" * (ROLE_NAME_LIMIT + 1)) and not saveable("")
     # Every offered label can be saved as the campaign's list.
     campaign_values(campaign(ministry_leader_roles=offered)["values"])
+
+
+def test_a_live_lock_compares_share_options_without_short_labels():
+    """The installer's structure lock leaves short labels open (#1569) and
+    keeps everything else about the share options fixed."""
+    from parishkit.stewardship.campaigns.admission import _locked_part
+
+    option = {"id": str(uuid4()), "label": "Give", "free_text": False}
+    before = {"name": "A", "share_options": [option]}
+    shortened = {"name": "B", "share_options": [option | {"short_label": "Gift"}]}
+    assert _locked_part(before, {"name"}) == _locked_part(shortened, {"name"})
+    relabelled = {"name": "A", "share_options": [option | {"label": "Other"}]}
+    assert _locked_part(before, {"name"}) != _locked_part(relabelled, {"name"})

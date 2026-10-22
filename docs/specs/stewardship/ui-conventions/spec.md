@@ -1412,7 +1412,14 @@ it with the server's own limits and words, and its examples sit in the same
 table where they can: a list of Family DUIDs (no number twice), a financial
 period's end (exactly the day the start gives, drawn as its `min` and
 `max`) and a chosen file of 0 bytes (`data-empty-file-message`, beside
-`data-max-bytes`). A rule only the server can decide stays the server's,
+`data-max-bytes`). Values that must differ from one another across a form's
+rows, such as Share options' short labels, are one `data-distinct` group
+compared as the server compares them (#1569): every box whose value another
+enabled box has is marked at its own reserved line with the server's words,
+a new mark after a pause in typing or at once when the box is left, and the
+form's button waits with those words while any repeat stands; a mark goes
+from every box at once when the repeat is resolved. A rule only the server
+can decide stays the server's,
 shown at the field after Save: a mail schedule's send date, typed in the
 browser's time zone and judged on the campaign's days
 ([#1787](https://github.com/epiphany40223/parishkit/issues/1787)).
@@ -4604,10 +4611,11 @@ makes rows several lines tall belongs on the item's own page or in a
 disclosure. Dates and times in cells use the compact
 [date format](#date-format). Long free text never sits in a cell: a list of
 choices shows as short chips (the shared `status-badge`), and any longer
-text that goes with one sits in a [toggletip](#page-help) beside it. Where a
-list of chips would widen a table, the cell shows the first chip and a "+N"
-chip, a toggletip button named by its text ("+2 more share methods") whose
-bubble lists every item, one per line, with any text that goes with it.
+text that goes with one sits in a [toggletip](#page-help) beside it. A chip
+names its item by a short label where the item has one, so a cell can show
+every chip; the chips may wrap onto a second line within their cell, making
+that row taller, which is acceptable where most rows have one chip. So a
+chip cell is not `nowrap`; money and date cells still never wrap.
 Where two related values would each need a column, one cell may stack them,
 one line each, when the heading names them in the same order and each value
 carries its name for screen readers (`stack-line`); a row is then as tall
@@ -4634,14 +4642,14 @@ its own controls; tall rows make a table unscannable; a sum or a date broken
 across two lines is easy to misread. **Shared code.** The `table-scroll`
 class in `ui-v1.css`, and the `data-table whole-words` classes with their
 `numeric` and `nowrap` cell classes (a table gets the rule from the shared
-classes, not from a copy of them); the `stack-line` class; the toggletip
-component's `tip_button_text` and `tip_lines` for a "+N" chip; the
+classes, not from a copy of them); the `stack-line` class; the
 `whole_dollars` template tag; `cell-pairs-wrap` and `sticky-actions`;
 the button-label browser test at 320 px and 1280 px.
 **Precedent.** #614, #952 (Portal users' rows wrapping to several lines), and
-the Financial stewardship report's chips, "+N" chip, stacked ParishSoft
-totals and whole dollars (#1544), and Census changes' labelled Values and
-Last recorded cells and in-view Actions column
+the Financial stewardship report's stacked ParishSoft totals and whole
+dollars (#1544), its short-label chips that may wrap (#1569, which
+replaced #1544's first chip and "+N" chip), and Census changes' labelled
+Values and Last recorded cells and in-view Actions column
 ([#1472](https://github.com/epiphany40223/parishkit/issues/1472)).
 
 Recorded exception: the Users page keeps every row to one line (the

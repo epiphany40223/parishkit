@@ -190,7 +190,8 @@ def test_testing_mode_leads_to_go_live_readiness(auth_service, google):
 
 
 def test_structure_fixed_once_live(auth_service, google):
-    """Share options after go-live: the page and an old form's Review say why."""
+    """Share options after go-live still opens, for its short labels
+    (#1569); a Review from a form drawn before go-live says why it fails."""
     store = auth_service.store
     row, previous, path = financial_draft(store)
     browser, _ = signed_in()
@@ -201,14 +202,13 @@ def test_structure_fixed_once_live(auth_service, google):
     page = browser.get(path, **PAGE)
     assert page.status_code == 200
     command(row, uuid4(), Action.ACTIVATE)
-    _opened(browser, "share_settings", navigation.STRUCTURE_FIXED)
-    # A Review sent from the page opened before go-live says the same.
+    assert browser.get(path, **PAGE).status_code == 200
+    # A Review sent from the page opened before go-live says why.
     csrf = browser.cookies["pk_admin_csrf"].value
     refused = browser.post(path, {**data, "csrfmiddlewaretoken": csrf}, **PAGE)
     assert refused.status_code == 409
     refused = refused.content.decode()
-    assert f"{navigation.STRUCTURE_FIXED}." in refused
-    assert STALE.decode() not in refused
+    assert "This campaign is locked, so only the short labels can change." in refused
     # The campaign went live, so Go live leads to its activation.
     _opened(browser, "go_live", navigation.ALREADY_LIVE, "production_progress")
 

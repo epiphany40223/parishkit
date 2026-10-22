@@ -591,9 +591,38 @@ def test_the_compact_review_draws_one_line_per_changed_field():
     assert text.count("<li>") == 2 and "<table" not in text
 
 
-def share_option(identity, label, free_text=False):
+def share_option(identity, label, free_text=False, short=None):
     """One saved share option, as the campaign's values hold it."""
-    return {"id": identity, "label": label, "free_text": free_text}
+    option = {"id": identity, "label": label, "free_text": free_text}
+    return option | ({"short_label": short} if short else {})
+
+
+def test_share_options_review_names_short_label_changes():
+    """A set, changed or cleared short label (#1569) is its own line, and an
+    added option's short label follows its Added line."""
+    from parishkit.stewardship.accounts.option_editing import option_changes
+
+    before = [
+        share_option("a", "Check"),
+        share_option("b", "Online", short="Web"),
+        share_option("c", "Stock", short="Shares"),
+    ]
+    after = [
+        share_option("a", "Check", short="Bank"),
+        share_option("b", "Online"),
+        share_option("c", "Stock", short="Stock gift"),
+        share_option("n", "Envelopes", short="Envelopes"),
+    ]
+    assert [
+        (str(line["label"]), line["before"], str(line["after"]))
+        for line in option_changes(before, after)
+    ] == [
+        ("Short label for “Check”", "Not set", "Bank"),
+        ("Short label for “Online”", "Web", "Not set"),
+        ("Short label for “Stock”", "Shares", "Stock gift"),
+        ("Added", None, "Envelopes"),
+        ("Short label for “Envelopes”", "Not set", "Envelopes"),
+    ]
 
 
 def test_share_options_mark_only_what_changed():

@@ -31,16 +31,17 @@ The change document (default, pending Administrator confirmation) names
 the whole new list and every saved option it deletes::
 
     {"options": [{"id": "<saved id>", "name": "Online giving",
-                  "free_text": false},
+                  "short_name": "Online", "free_text": false},
                  {"name": "A new option", "free_text": true}],
      "delete": ["<saved id>"]}
 
 ``options`` is the kept and new options in their new order (a new option
-has no ``id``; ``name`` is the page's label; ``free_text`` defaults to
-false) and ``delete`` the saved options removed, as the page's Delete
-boxes. Every saved option must be in exactly one of the two, the page's own
-rule ("Every saved option must be retained or explicitly deleted."), so
-leaving one out never deletes it.
+has no ``id``; ``name`` is the page's label; ``short_name`` its optional
+short label, blank by default; ``free_text`` defaults to false) and
+``delete`` the saved options removed, as the page's Delete boxes. Every
+saved option must be in exactly one of the two, the page's own rule
+("Every saved option must be retained or explicitly deleted."), so leaving
+one out never deletes it.
 """
 
 import json
@@ -63,7 +64,7 @@ CHANGES_LIMIT = 512_000
 # The page's own bound on posted rows (``share_forms.share_action`` and the
 # formset's ``absolute_max``).
 MAX_ROWS = 101
-OPTION_KEYS = frozenset({"id", "name", "free_text"})
+OPTION_KEYS = frozenset({"id", "name", "short_name", "free_text"})
 
 
 @dataclass(frozen=True)
@@ -73,9 +74,10 @@ class SharesPreview(ReadModel):
     ``changes`` is the page's compact review, one line per change
     (``label``, ``before``, ``after``; ``before`` is null for an added or
     removed option). ``options`` is the list the change saves, in order,
-    each option's ``id``, ``name`` and ``free_text``; a new option's id is
-    the one the change gives it. ``preview.token`` is the signed binding
-    ``campaign shares-confirm`` takes, valid for fifteen minutes.
+    each option's ``id``, ``name``, ``short_name`` (empty when unset) and
+    ``free_text``; a new option's id is the one the change gives it.
+    ``preview.token`` is the signed binding ``campaign shares-confirm``
+    takes, valid for fifteen minutes.
     """
 
     version: str
@@ -158,6 +160,10 @@ def parse_changes(text):
             problems.append(
                 _shape("Give the option's label as a string.", f"{at}.name")
             )
+        if not isinstance(option.get("short_name", ""), str):
+            problems.append(
+                _shape("Give the option's short label as a string.", f"{at}.short_name")
+            )
         if not isinstance(option.get("free_text", False), bool):
             problems.append(_shape("Give true or false.", f"{at}.free_text"))
         if "id" in option:
@@ -174,7 +180,33 @@ def parse_changes(text):
     return options, delete
 
 
-def formset_data(previous, options, delete, expected_version):
+# A live campaign's change (#1569): every saved option, in its order, with
+# its label and free-text choice as saved; only short_name may differ.
+LIVE_ONLY = "This campaign is locked, so only short_name can change."
+
+
+def live_problems(previous, options, delete):
+    """Why a live campaign's change document changes more than short labels.
+
+    The page's form for a live campaign leaves every other field fixed, so
+    the document must keep each saved option, in order, with its ``name``
+    and ``free_text``, and delete nothing. Returns the problems, each at its
+    own place, empty when only short names change.
+    """
+    if delete:
+        return [_shape(LIVE_ONLY, "delete")]
+    if [option.get("id") for option in options] != [row["id"] for row in previous]:
+        return [_shape(LIVE_ONLY)]
+    problems = []
+    for index, (option, row) in enumerate(zip(options, previous, strict=True)):
+        if option["name"] != row["label"]:
+            problems.append(_shape(LIVE_ONLY, f"options.{index}.name"))
+        if option.get("free_text", False) != row["free_text"]:
+            problems.append(_shape(LIVE_ONLY, f"options.{index}.free_text"))
+    return problems
+
+
+def formset_data(previous, options, delete, expected_version, *, short_only=False):
     """The page's Review post for the document, as the page's form sends it.
 
     One row per document option, in its order (``ORDER`` its position), then
@@ -184,12 +216,15 @@ def formset_data(previous, options, delete, expected_version):
     saved, or given twice, is its "identities have changed" refusal, and a
     saved option in neither list is its "retained or explicitly deleted"
     one. A check box is sent only when ticked, as the browser sends it.
+    ``short_only`` is a live campaign's form (#1569), whose other fields are
+    disabled, so, as a browser, it sends only each row's id and short label.
     """
     saved = {row["id"]: row for row in previous}
     rows = [
         {
             "id": option.get("id", ""),
             "label": option["name"],
+            "short_label": option.get("short_name", ""),
             "free_text": option.get("free_text", False),
             "ORDER": str(position),
         }
@@ -201,6 +236,7 @@ def formset_data(previous, options, delete, expected_version):
             {
                 "id": identifier,
                 "label": row.get("label", ""),
+                "short_label": row.get("short_label", ""),
                 "free_text": row.get("free_text", False),
                 "DELETE": True,
             }
@@ -212,6 +248,8 @@ def formset_data(previous, options, delete, expected_version):
         "options-MIN_NUM_FORMS": "0",
         "options-MAX_NUM_FORMS": "100",
     }
+    if short_only:
+        rows = [{"id": row["id"], "short_label": row["short_label"]} for row in rows]
     for index, row in enumerate(rows):
         for name, value in row.items():
             if value is True:
@@ -235,7 +273,9 @@ def field_errors(formset, count):
     ]
     for index, form in enumerate(formset.forms[:count]):
         for name, messages in form.errors.get_json_data().items():
-            shown = {"label": "name", "__all__": None}.get(name, name)
+            shown = {"label": "name", "short_label": "short_name", "__all__": None}.get(
+                name, name
+            )
             field = f"options.{index}" + (f".{shown}" if shown else "")
             problems += [
                 _problem(field, item, f"options-{shown or 'row'}") for item in messages
@@ -258,7 +298,9 @@ def preview_shares(caller, service, campaign_id, *, expected_version, changes):
     the page's work transaction: the page's target and editability checks
     (an unknown campaign is ``not_available``; a campaign the page does not
     edit now is the page's own refusal, ``stale_version``), the version
-    (another is ``stale_version``), the page's formset (its problems are
+    (another is ``stale_version``), on a live campaign the page's
+    short-labels-only rule (``live_problems``, ``invalid``; #1569), the
+    page's formset (its problems are
     ``invalid``) and the page's review (no change, or a candidate the
     configuration refuses, is ``invalid``). Rechecks access afterwards.
     Changes nothing.
@@ -266,7 +308,11 @@ def preview_shares(caller, service, campaign_id, *, expected_version, changes):
     from parishkit.config import ConfigError
 
     from .accounts.campaign_views import _state, _target
-    from .accounts.option_editing import _unavailable, review_options
+    from .accounts.option_editing import (
+        _unavailable,
+        review_options,
+        short_labels_only,
+    )
     from .accounts.policy import Capability
     from .accounts.share_forms import ShareOptions
     from .accounts.share_views import EDITOR
@@ -290,18 +336,24 @@ def preview_shares(caller, service, campaign_id, *, expected_version, changes):
                 raise
             except LookupError:
                 raise NotAvailable("No such campaign.") from None
+            short_only = short_labels_only(configuration, campaign, held, editable)
             if (
-                not editable
+                not (editable or short_only)
                 or EDITOR.module not in campaign.active_configuration.values["modules"]
             ):
                 raise _unavailable(EDITOR, configuration, campaign)
             if configuration.active_configuration.digest != expected_version:
                 raise StaleRecordError("The configuration changed since then.")
             previous = EDITOR.current(campaign)
+            if short_only and (problems := live_problems(previous, options, delete)):
+                raise InvalidChange(problems)
             formset = ShareOptions(
-                formset_data(previous, options, delete, expected_version),
+                formset_data(
+                    previous, options, delete, expected_version, short_only=short_only
+                ),
                 prefix="options",
                 previous=previous,
+                short_only=short_only,
             )
             if not formset.is_valid():
                 raise InvalidChange(field_errors(formset, len(options)))
@@ -336,6 +388,7 @@ def preview_shares(caller, service, campaign_id, *, expected_version, changes):
                 {
                     "id": option["id"],
                     "name": option["label"],
+                    "short_name": option.get("short_label", ""),
                     "free_text": option["free_text"],
                 }
                 for option in review["options"]

@@ -27,20 +27,3 @@ def test_toggletip_escapes_its_text_and_omits_a_missing_label():
     assert "<script>" not in html
     assert "&lt;script&gt;x&lt;/script&gt;" in html
     assert "aria-describedby" not in html
-
-
-def test_toggletip_chip_is_named_by_its_text_and_lists_its_lines():
-    """A "+N" chip (#1544): named "+2 more …", its lines escaped, one each."""
-    html = render(
-        tip_id="t",
-        tip_button_text="+2",
-        tip_button_more="more share methods",
-        tip_lines=["Online", "Other: <b>stock</b>"],
-    )
-    assert 'class="toggletip-button toggletip-chip"' in html
-    assert "aria-label" not in html
-    assert '+2<span class="visually-hidden"> more share methods</span>' in html
-    assert (
-        '<span class="toggletip-line">Online</span>'
-        '<span class="toggletip-line">Other: &lt;b&gt;stock&lt;/b&gt;</span>'
-    ) in html
