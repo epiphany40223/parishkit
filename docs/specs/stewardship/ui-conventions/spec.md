@@ -4171,14 +4171,33 @@ while empty, so a notice appearing never
 moves the table (no layout shift); a notice longer than its lines (a long
 item name, or a computer's wider fonts) is cut short with an ellipsis, as
 the review dialog's status line is, and screen readers still hear it
-whole. Nothing else reserves room above the filters (R38). On a worklist, a Family's or Member's name opens the
-Family hub (the Family's Timeline page) for the viewers who may open it,
-through the shared Family-name link, and is plain text for the others,
-such as Ministry leaders; the cell naming the item (Ministry requests'
+whole. Nothing else reserves room above the filters (R38).
+
+The filter form's reserved hint (why Apply filters is unavailable)
+shares the notice's line rather than taking one of its own
+([#1950](https://github.com/epiphany40223/parishkit/issues/1950)). While
+the filters cannot be applied and the line holds no notice, the hint
+shows there. A decision's notice always wins the line: a row's icons
+and the bulk buttons keep working while the filters are held, so a
+decision made then still shows its notice there in full, and the hint
+is not drawn until the notice goes. Apply filters stays unavailable
+throughout and names the hint in `aria-describedby`, so its reason
+still reaches assistive technology. Both lines stay reserved, so
+neither moves the table. The table region below is laid out as
+tightly: at laptop width the selection bar keeps its buttons, Select
+all and the selected count on one line, with slim gaps around the top
+navigator, the bar and the caption, so the first row ends inside a
+1366×768 window.
+
+On a worklist, a Family's or Member's name opens the Family hub (the
+Family's Timeline page) for the viewers who may open it, through the
+shared Family-name link, and is plain text for the others, such as
+Ministry leaders; the cell naming the item (Ministry requests'
 Ministry) opens the item's own page, where it has one, for every viewer
-(an Administrator decision, R38). A table's create action (the review worklist's
-**Add**) sits in its selection bar, shown only to readers allowed to add
-there ([#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
+(an Administrator decision, R38). A table's create action (the review
+worklist's **Add**) sits in its selection bar, shown only to readers
+allowed to add there
+([#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
 
 ### Row actions and confirmation
 
