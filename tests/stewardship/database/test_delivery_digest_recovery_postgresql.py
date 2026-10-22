@@ -157,15 +157,17 @@ def test_prepared_report_resume_keeps_accepted_recipient_delivery(
         assert covered_dates(selected.pk) == expected_dates
         prepare_due()
         recipients = latest_recipients()
-        # A report's recovery send is a new report to its whole cohort: unlike
-        # the digests, whose recipients reused accepted coverage, the
-        # Administrator who accepted the earlier send gets one too (#1786; the
-        # documented difference in the report-emails spec, "Pause and resume").
+        # The recovery send skips the Administrator whose message for those
+        # slots the provider already accepted (#1835, report-emails spec
+        # "Already-accepted recipients"): a covered row naming that message
+        # and no message of its own. The other Administrator is owed one.
         # The accepted message itself is never resent or changed.
-        assert set(recipients) == set(latest) and all(
-            row.disposition == "queued" and row.outbox.state == "pending"
-            for row in recipients.values()
-        )
+        assert set(recipients) == set(latest)
+        covered = next(row for address, row in recipients.items() if address != SECOND)
+        assert covered.disposition == "covered" and covered.outbox_id is None
+        assert covered.covered_messages == [str(first.pk)]
+        assert recipients[SECOND].disposition == "queued"
+        assert recipients[SECOND].outbox.state == "pending"
         assert first.pk not in {row.outbox_id for row in recipients.values()}
         assert recipients[SECOND].snapshot.preparation.occurrence_id == selected.pk
         replacement = recipients[SECOND].outbox

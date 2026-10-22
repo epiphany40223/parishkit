@@ -49,7 +49,7 @@ from .report_email_capture import (
     record_inputs,
     retain_snapshot,
 )
-from .report_email_fanout import fanout_report
+from .report_email_fanout import CoverageUncertain, fanout_report
 from .report_email_ownership import (
     bound_preparation,
     checkpoint_preparation,
@@ -104,7 +104,14 @@ def disposition(row):
 
 
 def recover_report(status):
-    """Only durable phase completion proves success; no provider is involved."""
+    """Only durable phase completion proves success; no provider is involved.
+
+    An abandoned attempt is retried until the last attempt, then failed,
+    except in ``fanout``: there the snapshot is committed and the cohort is
+    owed its messages, and a fanout may be waiting, at any attempt count,
+    for an earlier message to settle (#1835), so failing it would leave
+    recipients unsent. It is always retried instead.
+    """
     row = bound_preparation(status)
     if status.state != "abandoned":
         return None
@@ -116,7 +123,7 @@ def recover_report(status):
         return RecoveryPlan(
             "recovery_complete" if outcome == "complete" else "recovery_cancel"
         )
-    if status.attempt >= FINAL_ATTEMPT:
+    if status.attempt >= FINAL_ATTEMPT and row.phase != "fanout":
         return RecoveryPlan("recovery_fail")
     return RecoveryPlan(
         "recovery_retry", min(60 * 2 ** max(status.attempt - 1, 0), 600)
@@ -144,6 +151,25 @@ def admit_report(action, status):
         "permanent_failure",
         "retryable_failure",
     }
+
+
+def _wait_for_settlement(execution):
+    """Retry later while an earlier message to a recipient is unsettled (#1835).
+
+    The fanout page was rolled back. This is never a permanent failure
+    (nor is a fanout's lost lease, ``recover_report``): the earlier message
+    settles when mail dispatch finishes it or an Administrator resolves its
+    unknown outcome, and only then can the send tell whether that recipient
+    already has it. Until then this report's later sends wait behind it.
+    The task's retry_wait state and transition history record the wait;
+    the earlier message's own unknown outcome is logged by mail dispatch.
+    """
+    with execution.effect():
+        status = _status(lock_task_claim(execution.claim))
+        execution.transition(
+            "retryable_failure",
+            retry_seconds=min(60 * 2 ** max(status.attempt - 1, 0), 600),
+        )
 
 
 def _capture(execution, public_origin):
@@ -192,25 +218,29 @@ def _execute(execution, *, public_origin):
             "Report preparation requires maintained worker lifetime."
         )
     while True:
-        with execution.effect():
-            status = _status(lock_task_claim(execution.claim))
-            row = bound_preparation(status)
-            outcome = disposition(row)
-            if outcome is not None:
-                if outcome == "safe_cancel" and row.phase != "cancelled":
-                    checkpoint_preparation(execution.claim, phase="cancelled")
-                execution.transition(outcome)
-                return
-            if status.phase != PHASES[row.phase]:
-                execution.progress(0, 0, phase=PHASES[row.phase])
-            if row.phase == "dates":
-                discover_dates(execution.claim)
-            elif row.phase == "cover":
-                cover_dates(execution.claim)
-            elif row.phase == "inputs":
-                record_inputs(execution.claim)
-            elif row.phase == "fanout":
-                fanout_report(execution.claim)
+        try:
+            with execution.effect():
+                status = _status(lock_task_claim(execution.claim))
+                row = bound_preparation(status)
+                outcome = disposition(row)
+                if outcome is not None:
+                    if outcome == "safe_cancel" and row.phase != "cancelled":
+                        checkpoint_preparation(execution.claim, phase="cancelled")
+                    execution.transition(outcome)
+                    return
+                if status.phase != PHASES[row.phase]:
+                    execution.progress(0, 0, phase=PHASES[row.phase])
+                if row.phase == "dates":
+                    discover_dates(execution.claim)
+                elif row.phase == "cover":
+                    cover_dates(execution.claim)
+                elif row.phase == "inputs":
+                    record_inputs(execution.claim)
+                elif row.phase == "fanout":
+                    fanout_report(execution.claim)
+        except CoverageUncertain:
+            _wait_for_settlement(execution)
+            return
         if row.phase == "capture":
             try:
                 _capture(execution, public_origin)
