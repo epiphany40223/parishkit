@@ -7,14 +7,19 @@ renderers and templates. No database is needed.
 """
 
 import re
+from base64 import b64decode
+from copy import deepcopy
 from dataclasses import replace
 from datetime import UTC, datetime
+from functools import cache
 from types import SimpleNamespace
+from unittest import mock
 from uuid import UUID
 
 from django.template.loader import render_to_string
 from django.utils.safestring import mark_safe
 
+from parishkit.stewardship.reports import chart_rendering
 from parishkit.stewardship.reports.daily_digest import render_daily_digest
 from parishkit.stewardship.reports.digest_comparison import section
 from parishkit.stewardship.reports.report_blocks.compiler import capture_report
@@ -62,10 +67,28 @@ COHORT = [
     {"address": "c@example.org", "kind": "user", "ref": "u1"},
     {"address": "finance.council.chair@example.net", "kind": "outside", "ref": None},
 ]
+# A 1x1 PNG. The page swaps every cid: chart for /digest-chart.png, so the
+# real comparison charts would be drawn only to be thrown away.
+TINY_PNG = b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAX+XDSwAAAABJRU5ErkJggg=="
+)
 
 
 def snapshot():
-    """The kept blocks of a send of every block, and its email as sent."""
+    """The kept blocks of a send of every block, and its email as sent.
+
+    Built once per process: ``component_origin`` is module-scoped, so every
+    browser test module would otherwise render the digest again (#1946).
+    The blocks are a deep copy, so a renderer that changed its kept data
+    could not leak into the next module's pages.
+    """
+    blocks, participation, html = _snapshot()
+    return SimpleNamespace(blocks=deepcopy(blocks)), participation, html
+
+
+@cache
+def _snapshot():
+    """Capture and render the digest once; see ``snapshot``."""
     value = replace(
         document(),
         funnel=funnel_metrics(),
@@ -84,10 +107,14 @@ def snapshot():
     blocks.insert(
         0, {"block": "additional_information", "version": 1, "data": {"items": ITEMS}}
     )
-    content = render_daily_digest(value, public_origin="https://parish.example")
+    # No chart helper subprocess: the comparison charts become TINY_PNG.
+    with mock.patch.object(
+        chart_rendering, "render_digest_chart", return_value=TINY_PNG
+    ):
+        content = render_daily_digest(value, public_origin="https://parish.example")
     # Every inline chart points at the component server's one chart image.
     html = re.sub(r'src="cid:[^"]+"', 'src="/digest-chart.png"', content.html)
-    return SimpleNamespace(blocks=blocks), value.participation, html
+    return blocks, value.participation, html
 
 
 def _page(context, admin, *, administrator):
