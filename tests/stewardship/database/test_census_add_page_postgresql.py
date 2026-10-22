@@ -346,7 +346,9 @@ def test_a_refused_reopen_says_what_to_do_over_http(response_service, google):
     assert response.status_code == 400
     refusal = json.loads(body)
     assert [error["field_id"] for error in refusal["errors"]] == ["note"]
-    assert refusal["refusal"]["fix"].startswith("Withdraw the added change first")
+    assert refusal["refusal"]["fix"].startswith(
+        "Choose Back to review on the added change"
+    )
     assert state(ignored)[0] == "ignored"
 
 

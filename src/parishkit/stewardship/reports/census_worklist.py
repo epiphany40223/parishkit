@@ -799,7 +799,10 @@ class CensusDecisions:
                 "entered by hand after this change, so this change cannot go back "
                 "to review.",
                 field_ids=("bulk_note" if decision.bulk else "note",),
-                fix="Withdraw the added change first, then send this one back.",
+                fix=(
+                    "Choose Back to review on the added change first (twice if it "
+                    "was entered by hand), then send this one back."
+                ),
             ) from None
         except ReopenOverOpen:
             # An entered addition reopened while another open change of its
