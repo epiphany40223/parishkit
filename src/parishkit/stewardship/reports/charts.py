@@ -194,15 +194,26 @@ class Panel(NamedTuple):
     values: list
     bars: bool = False
     money: bool = False
+    key: str = ""
 
 
-def participation_panels(document):
+# The panels' keys, top to bottom: the values of the report emails'
+# Participation charts "which charts" option (report-emails spec,
+# "Participation charts block", #1956).
+FIRST_SUBMISSIONS = "first_submissions"
+CUMULATIVE_FAMILIES = "cumulative_families"
+PLEDGES = "pledges"
+CHARTS = (FIRST_SUBMISSIONS, CUMULATIVE_FAMILIES, PLEDGES)
+
+
+def participation_panels(document, charts=CHARTS):
     """The chart's panels, top to bottom, sharing one date axis.
 
     Daily first submissions and the cumulative Families are separate panels
     so the daily bars are not dwarfed by the running total, and pledges get
     their own panel (when financial is enabled) instead of a second y-axis
-    whose independent scale made the two lines look alike (#720).
+    whose independent scale made the two lines look alike (#720). Only the
+    panels whose keys are in ``charts`` are kept, in this order.
     """
     nan = float("nan")
     panels = [
@@ -214,6 +225,7 @@ def participation_panels(document):
                 for day in document.days
             ],
             bars=True,
+            key=FIRST_SUBMISSIONS,
         ),
         Panel(
             "Cumulative participating Families",
@@ -222,6 +234,7 @@ def participation_panels(document):
                 day.cumulative_responses if day.population_available else nan
                 for day in document.days
             ],
+            key=CUMULATIVE_FAMILIES,
         ),
     ]
     if document.financial_enabled:
@@ -234,9 +247,10 @@ def participation_panels(document):
                     for day in document.days
                 ],
                 money=True,
+                key=PLEDGES,
             )
         )
-    return panels
+    return [panel for panel in panels if panel.key in charts]
 
 
 def participation_limits(day_count):
@@ -266,7 +280,9 @@ def rendering_style():
 
 
 @contextmanager
-def participation_figure(document, *, email=False, pdf=False, page=(1, 1)):
+def participation_figure(
+    document, *, email=False, pdf=False, page=(1, 1), charts=CHARTS
+):
     """Own plotting state until consumption ends; callers cannot leak a figure.
 
     ``email`` drops the page furniture (parish and campaign names, the scope
@@ -274,7 +290,8 @@ def participation_figure(document, *, email=False, pdf=False, page=(1, 1)):
     text (#720), and lets the plot fill the image (``EMAIL_PLOT_LAYOUT``).
     ``pdf`` draws the PDF's chart page: the shared report frame, naming the
     Daily participation section, around the plot; ``page`` is its
-    ``(number, count)`` in the file.
+    ``(number, count)`` in the file. ``charts`` are the panels drawn
+    (``participation_panels``).
     """
     if not isinstance(document, ParticipationDocument):
         raise TypeError("Rendering requires an immutable participation document.")
@@ -298,7 +315,7 @@ def participation_figure(document, *, email=False, pdf=False, page=(1, 1)):
                 layout = pdf_layout(frame)
             else:
                 layout = EMAIL_LAYOUT if email else PAGE_LAYOUT
-            _draw(figure, document, layout)
+            _draw(figure, document, layout, charts)
             if pdf:
                 _fit_to_margins(figure)
             yield figure
@@ -306,15 +323,18 @@ def participation_figure(document, *, email=False, pdf=False, page=(1, 1)):
             figure.clear()
 
 
-def _draw(figure, document, layout):
+def _draw(figure, document, layout, charts=CHARTS):
     """Draw one panel per series on a shared date axis; floats are coordinates.
 
     The panels fill the layout's plot box together. Each is named by its own
     title, so there is no legend; dates are labelled once, under the last.
+    Only the ``charts`` panels are drawn; at least one must remain.
     """
     from matplotlib.ticker import FuncFormatter, MaxNLocator
 
-    panels = participation_panels(document)
+    panels = participation_panels(document, charts)
+    if not panels:
+        raise ValueError("A participation chart draws at least one panel.")
     grid = figure.subplots(
         len(panels), 1, sharex=True, squeeze=False, gridspec_kw={"hspace": PANEL_GAP}
     )
@@ -405,9 +425,13 @@ def _draw(figure, document, layout):
             transform=first.transAxes,
             ha="center",
         )
+    # The gaps note speaks only for the panels drawn: a pledge gap is no
+    # gap in a chart without the pledges panel.
+    families = any(panel.key != PLEDGES for panel in panels)
+    pledges = any(panel.key == PLEDGES for panel in panels)
     unavailable = any(
-        not day.population_available
-        or (document.financial_enabled and not day.pledge_available)
+        (families and not day.population_available)
+        or (pledges and not day.pledge_available)
         for day in document.days
     )
     note = "Missing observations are gaps, not zero." if unavailable else ""
@@ -549,18 +573,19 @@ def participation_pdf(document, output):
                 figure.clear()
 
 
-def render_participation(document, output, *, format, email=False):
+def render_participation(document, output, *, format, email=False, charts=CHARTS):
     """Write a fixed-layout artifact without host clock or random PDF metadata.
 
     ``email`` selects the daily email's PNG drawing (see
     ``participation_figure``); a PDF is the export's sections in the report
-    frame (``participation_pdf``).
+    frame (``participation_pdf``). ``charts`` chooses the PNG's panels
+    (``participation_panels``); every one, by default, draws today's image.
     """
     if format not in {"png", "pdf"}:
         raise ValueError("Participation charts support PNG or PDF.")
     if format == "pdf":
         return participation_pdf(document, output)
-    with participation_figure(document, email=email) as figure:
+    with participation_figure(document, email=email, charts=charts) as figure:
         # The image no longer draws the source snapshot and request time; the
         # file keeps them as metadata instead (Administrator decision, #575).
         metadata = {

@@ -511,3 +511,68 @@ def test_invalid_render_contract_is_rejected_and_style_restored():
             assert not mpl.rcParams["text.usetex"]
             assert mpl.rcParams["font.family"] == ["DejaVu Sans"]
         assert mpl.rcParams["text.usetex"]
+
+
+@pytest.mark.parametrize(
+    "chosen",
+    [
+        (charts.FIRST_SUBMISSIONS,),
+        (charts.PLEDGES,),
+        (charts.FIRST_SUBMISSIONS, charts.PLEDGES),
+        (charts.CUMULATIVE_FAMILIES, charts.PLEDGES),
+    ],
+)
+def test_a_chosen_subset_of_panels_shares_one_date_axis(chosen):
+    """Only the chosen panels are drawn, in their order, dates under the last.
+
+    The report emails' "which charts" option (#1956) draws a subset; the
+    panels keep the graph's top-to-bottom order whatever the choice.
+    """
+    titles = {
+        charts.FIRST_SUBMISSIONS: "First submissions that day",
+        charts.CUMULATIVE_FAMILIES: "Cumulative participating Families",
+        charts.PLEDGES: "Effective annual pledges",
+    }
+    with participation_figure(document(), email=True, charts=chosen) as figure:
+        assert [axes.get_title(loc="left") for axes in figure.axes] == [
+            titles[key] for key in chosen
+        ]
+        assert figure.axes[-1].get_xlabel() == "Campaign date"
+        assert all(not axes.get_xlabel() for axes in figure.axes[:-1])
+
+
+def test_every_chart_chosen_draws_todays_bytes():
+    """Choosing all three panels draws the default image byte for byte."""
+    default, chosen = io.BytesIO(), io.BytesIO()
+    render_participation(document(), default, format="png", email=True)
+    render_participation(
+        document(), chosen, format="png", email=True, charts=list(charts.CHARTS)
+    )
+    assert chosen.getvalue() == default.getvalue()
+    subset = io.BytesIO()
+    render_participation(
+        document(), subset, format="png", email=True, charts=[charts.PLEDGES]
+    )
+    assert subset.getvalue() != default.getvalue()
+
+
+def test_no_panel_left_is_refused():
+    """Pledges alone without financial stewardship leave nothing to draw."""
+    value = replace(document(), financial_enabled=False)
+    with pytest.raises(ValueError, match="at least one panel"):
+        render_participation(
+            value, io.BytesIO(), format="png", email=True, charts=[charts.PLEDGES]
+        )
+
+
+def test_the_gaps_note_speaks_only_for_the_panels_drawn():
+    """A pledge gap notes gaps only in a chart that draws the pledges panel."""
+    value = document()
+    days = (replace(value.days[0], pledge_available=False, pledge_total=None),)
+    value = replace(value, days=days + value.days[1:])
+    note = "Missing observations are gaps, not zero."
+    with participation_figure(value, email=True) as figure:
+        assert note in [text.get_text() for text in figure.texts]
+    families = (charts.FIRST_SUBMISSIONS, charts.CUMULATIVE_FAMILIES)
+    with participation_figure(value, email=True, charts=families) as figure:
+        assert note not in [text.get_text() for text in figure.texts]
