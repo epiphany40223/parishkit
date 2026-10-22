@@ -13,7 +13,7 @@ construction:
 - right before each PUT it reads the Member's contact record uncached,
   compares its SHA-256 with the confirmed ``read_sha256``, rebuilds the plan
   from the current proposals and requires ``matches_confirmed`` (which
-  leaves out the changes the check marked *Already in ParishSoft*), then checks
+  leaves out the changes the check marked as already in ParishSoft), then checks
   that the system is still in Production mode; any difference records
   ``invalidated`` without a write (a switch to Testing stops the whole run);
 - it queues the entity's written proposals (``pending|failed -> queued``)
@@ -208,7 +208,7 @@ class _Entity:
 
         Every planned proposal must still be at its recorded version, be a
         write this plan already queued (a retry), or be one the plan's own
-        check marked *Already in ParishSoft* (``marked_upstream``), so a
+        check marked as already in ParishSoft (``marked_upstream``), so a
         decision, an Administrator edit or a later Family response since the
         plan stops the write. So does a Member the current promoted data no
         longer lists, active and living, in a written change's Family: a

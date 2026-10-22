@@ -30,6 +30,7 @@ from django.db import DatabaseError, connection, transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.export_tasks import load_document
 from parishkit.stewardship.reports.ministry_packets import render_packet
+from parishkit.stewardship.workflows.models import MinistryRequest
 
 from ..census_factory import member
 from .response_builders import activate_response_service
@@ -464,8 +465,9 @@ def test_cannot_participate_hides_a_declined_join(response_service):
 
 
 def test_cannot_participate_hides_a_confirmed_leave(response_service):
-    """S3: a roster refresh confirms Member 3's ordinary leave of Choir (4),
-    and the Family then checks the box with no current Ministries, so there
+    """S3: a roster refresh shows Member 3's ordinary leave of Choir (4),
+    Staff mark it Left (a refresh no longer resolves it, #1890), and the
+    Family then checks the box with no current Ministries, so there
     is no new leave. Choir's leader's history packet shows the resolved
     leave's email Not published; Staff still see it."""
     harness = setup(response_service)
@@ -474,6 +476,13 @@ def test_cannot_participate_hides_a_confirmed_leave(response_service):
     data.ministry_type_memberships[4]["membership"] = []
     snapshot, claim = prepare(data)
     promote(snapshot, claim, harness.campaign, harness.rings)
+    edit(
+        harness,
+        user("admin@example.org").pk,
+        leave,
+        state="resolved",
+        outcome="leave_confirmed",
+    )
     leave.refresh_from_db()
     assert (leave.state, leave.outcome) == ("resolved", "leave_confirmed")
     leader, _ = history_rows(harness, (4,), 4)
@@ -530,8 +539,9 @@ def test_cannot_participate_outlasts_a_submission_that_leaves_the_member_out(
     response_service, kind
 ):
     """Review 2 of 2: Staff decline Member 3's join to Food pantry (9), the
-    Family checks the box and leaves Choir (4), and a roster refresh
-    confirms the leave. The Family then reports Member 3 moved out (or
+    Family checks the box and leaves Choir (4), a roster refresh shows
+    the leave and Staff mark it Left (#1890). The Family then reports Member 3
+    moved out (or
     deceased), so its latest submission no longer lists them under service;
     ParishSoft still lists them as current. That submission never answers
     the question for Member 3, so it does not clear the box: Choir's
@@ -552,6 +562,16 @@ def test_cannot_participate_outlasts_a_submission_that_leaves_the_member_out(
     data.ministry_type_memberships[4]["membership"] = []
     snapshot, claim = prepare(data)
     promote(snapshot, claim, harness.campaign, harness.rings)
+    leave = MinistryRequest.objects.exclude(state__in=["superseded", "cancelled"]).get(
+        ministry_duid=4, action="leave"
+    )
+    edit(
+        harness,
+        user("admin@example.org").pk,
+        leave,
+        state="resolved",
+        outcome="leave_confirmed",
+    )
     leader, _ = history_rows(harness, (4,), 4)
     assert ("leave", "resolved", "leave_confirmed") in [
         (row["action"], row["state"], row["outcome"]) for row in leader

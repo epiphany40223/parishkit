@@ -10,16 +10,21 @@ the caller admits first and runs ``build_preview`` inside its own work
 transaction.
 """
 
+from datetime import time, timedelta
 from uuid import uuid4
 
 from django.core.exceptions import ValidationError
+from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.configuration import schedule_window_changed
-from parishkit.stewardship.campaigns.schedule_evaluation import preview_slots
+from parishkit.stewardship.campaigns.schedule_evaluation import upcoming_slots
+from parishkit.stewardship.occurrence_preview import Occurrence, build, wall_shift
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.wall_clock import WEEKDAYS
+from parishkit.stewardship.web.dates import UnknownZone, browser_zone, format_time
+from parishkit.stewardship.web.presentation import parish_date
 from parishkit.stewardship.web.refusals import stale_page
 
 from . import admin_editing, digest_skips, schedule_local
@@ -119,17 +124,121 @@ def reviewed_sends(changes, prior, before_zone, after_zone):
     return sorted(due)
 
 
-def describe(values, campaign):
-    """Pair civil intent with bounded UTC previews resolved in its own campaign zone.
+# The schedule preview's words for one side of a schedule change (#1129;
+# ui-conventions "Schedule previews"; admin-portal "Dates and mail
+# schedules").
+NO_MORE_SENDS = _("No more sends: this email's time has passed.")
+NO_BROWSER_ZONE = _(
+    "Your browser didn't report a time zone, so the send times can't be "
+    "shown. Check your computer's time zone setting, then review again."
+)
+PAUSED_SENDS = _(
+    "Live campaign email is paused, so these sends are held. Pause and resume "
+    "mail shows what sends when mail resumes."
+)
+# How many sends a side lists, from now.
+SHOWN_SENDS = 5
 
-    A digest's ``skipped_sends`` (#1658) are the sends its skip dates still
+
+def _day_words(day):
+    """A campaign day in words: its weekday and its date in the parish format."""
+    return f"{WEEKDAYS[day.weekday()]}, {parish_date(day)}"
+
+
+def _what(values, slot, *, shift, same_zone):
+    """What one send is, in words, for its line in the schedule preview.
+
+    A daily digest names the campaign day it reports on (its slot's day, the
+    day before it sends); a weekly digest reports what is new since its last
+    send, so it names only its send day. A dated email is its mail type; when
+    the shown zone is the campaign's and a clock change moves its wall time
+    forward, the line also names the time it was set for, since the
+    daylight-saving words then name the time it really sends.
+    """
+    kind = values["kind"]
+    if kind == "daily_digest":
+        return _("Daily Admin digest for %(day)s") % {
+            "day": _day_words(slot.local_date)
+        }
+    if kind == "weekly_digest":
+        return _("Weekly Admin digest, %(day)s") % {"day": _day_words(slot.local_date)}
+    label = str(EMAIL_LABELS[kind])
+    if same_zone and shift == "forward":
+        return _("%(label)s, set for %(time)s") % {
+            "label": label,
+            "time": format_time(time.fromisoformat(values["time"])),
+        }
+    return label
+
+
+def sends_preview(values, campaign, page, *, now, zone=None, paused=False):
+    """One side's send times as the schedule preview's context (#1129).
+
+    ``page`` is ``upcoming_slots``'s next sends from ``now``. ``zone`` is the
+    browser's posted IANA zone: the sends are grouped by its days and drawn
+    in the compact layout; an unusable one gives the unavailable state, and
+    None (the command line, Campaign settings' end-date review) a zone-less
+    list of full browser-local instants. ``paused`` adds the paused notice.
+    """
+    schedule_zone = campaign["timezone"]
+    unavailable, shown = None, None
+    if zone is not None:
+        try:
+            shown = browser_zone(zone)
+        except UnknownZone:
+            unavailable = NO_BROWSER_ZONE
+    same_zone = shown is not None and zone == schedule_zone
+    occurrences = []
+    for slot in page.slots:
+        # A daily digest sends the day after the day it reports on.
+        sends_on = slot.local_date + timedelta(days=values["kind"] == "daily_digest")
+        shift = wall_shift(sends_on, values["time"], slot.due_at, schedule_zone)
+        occurrences.append(
+            Occurrence(
+                slot.due_at.astimezone(shown).date() if shown is not None else None,
+                slot.due_at,
+                _what(values, slot, shift=shift, same_zone=same_zone),
+                kind=values["kind"],
+                shift=shift,
+            )
+        )
+    return build(
+        occurrences,
+        shown_zone=zone if shown is not None else None,
+        schedule_zone=schedule_zone,
+        now=now,
+        limit=SHOWN_SENDS,
+        more=not page.exhausted,
+        paused={
+            "text": PAUSED_SENDS,
+            "url": reverse("admin:delivery_control"),
+            "label": _("Pause and resume mail"),
+        }
+        if paused
+        else None,
+        layout="compact",
+        empty=NO_MORE_SENDS,
+        unavailable=unavailable,
+    )
+
+
+def describe(values, campaign, *, now, zone=None, paused=False):
+    """Pair civil intent with its next sends from now, resolved in its campaign zone.
+
+    ``resolved_slots`` (at most five UTC instants, with ``more_slots`` when
+    others follow) are the next sends after ``now`` (the database's clock),
+    as ``schedule show`` and ``schedule preview`` list them;
+    ``occurrences`` is the same sends as the shared schedule preview's
+    context (``sends_preview``), shown in the browser's ``zone`` when one is
+    given, and with the paused notice while live delivery is ``paused``. A
+    digest's ``skipped_sends`` (#1658) are the sends its skip dates still
     skip, with their UTC times, so the review shows each as a browser-local
     send time rather than its slot key.
     """
     if values is None:
         return None
     # A converted report's digest view previews the report's own sends.
-    page = preview_slots(planned(values), campaign)
+    page = upcoming_slots(planned(values), campaign, now=now, limit=SHOWN_SENDS)
     return values | {
         "skipped_sends": digest_skips.skipped_sends(values, campaign),
         "weekday_label": WEEKDAYS[values["weekday"]]
@@ -140,6 +249,9 @@ def describe(values, campaign):
             {"key": slot.key, "due_at": slot.due_at.isoformat()} for slot in page.slots
         ],
         "more_slots": not page.exhausted,
+        "occurrences": sends_preview(
+            values, campaign, page, now=now, zone=zone, paused=paused
+        ),
     }
 
 
@@ -159,6 +271,7 @@ def build_preview(
     series_changes=(),
     request_key=None,
     skips=None,
+    zone=None,
 ):
     """Validate the complete candidate, including each stranded or reordered mailing.
 
@@ -193,6 +306,9 @@ def build_preview(
     takes a fresh one. ``skips`` maps a saved digest's id to the one send
     (slot date) it skips (#1658, ``digest_skips.apply``), which adds the date
     to its ``skip_dates`` and signs the send's time with the others.
+    ``zone`` is the browser's posted time zone, which each side's send
+    times are grouped and shown in (``describe``); a caller with no browser
+    (the command line, Campaign settings' end-date review) passes none.
     """
     configuration = state[0]
     digest = configuration.active_configuration.digest
@@ -337,14 +453,21 @@ def build_preview(
         )
         return None
     summary = work_summary(campaign.pk)
+    # Each side lists its next sends after the database's one now, held
+    # while live delivery is paused (#1129).
+    shown = {
+        "now": admin_editing.database_now(),
+        "zone": zone,
+        "paused": configuration.mode == "production" and campaign.delivery_paused,
+    }
     changes = [
         {
             "id": row["id"],
             "operation": row["operation"],
             "before": describe(
-                prior.get(row["id"]), campaign.active_configuration.values
+                prior.get(row["id"]), campaign.active_configuration.values, **shown
             ),
-            "after": describe(row.get("values"), window.values()),
+            "after": describe(row.get("values"), window.values(), **shown),
             "impact": summary.get(row["id"], {}),
             "label": EMAIL_LABELS[(row.get("values") or prior[row["id"]])["kind"]],
             # Skips this change drops (#1658, ``digest_skips.drop_stale``).

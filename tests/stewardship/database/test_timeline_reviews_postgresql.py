@@ -90,7 +90,7 @@ def test_census_reviews_and_resolutions_reach_both_roles(response_service, googl
     edit(harness, admin, fresh(name), "Corrected")
     edit(harness, admin, fresh(name), None)
     review(harness, admin, fresh(name), "ignored")
-    # Sending an ignored change back needs a note (#1683's census review).
+    # Sending an ignored change back, with an optional note (#1889).
     review(harness, admin, fresh(name), "unreviewed", note="Asked again")
     resolve(harness, staff, home, "entered")
     lines, statements = reviews(harness.campaign.pk, family_id)
@@ -102,6 +102,8 @@ def test_census_reviews_and_resolutions_reach_both_roles(response_service, googl
         "Edit cleared",
         "Ignored",
         "Back to review",
+        # The address is accepted before its mark (#1890).
+        "Accepted",
         "Entered by hand",
     ]
     member = lines[0][1]

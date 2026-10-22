@@ -34,7 +34,7 @@ def test_original_browser_can_cancel_selected_yaml_with_actual_web_grants(
     request, attempt, _, candidate = selected(setup_http)
     browser = client_for(request)
     with web_login():
-        response = browser.get("/admin/setup/cancel")
+        response = browser.get("/admin/setup/finishing")
         assert response.status_code == 200, response.content
         assert b"Cancel initial setup" in response.content
         # The page binds the original session but no longer lists its time
@@ -49,16 +49,18 @@ def test_original_browser_can_cancel_selected_yaml_with_actual_web_grants(
         assert browser.get("/admin/setup/parish").status_code == 503
         assert (
             browser.post(
-                "/admin/setup/cancel", {"attempt": str(attempt.pk)}
+                "/admin/setup/finishing", {"attempt": str(attempt.pk)}
             ).status_code
             == 403
         )
         assert SetupAttempt.objects.get(pk=attempt.pk).state == "frozen"
-        response = post(browser, "/admin/setup/cancel", {"attempt": str(attempt.pk)})
+        response = post(browser, "/admin/setup/finishing", {"attempt": str(attempt.pk)})
         assert response.status_code == 302, response.content
-        assert response["Location"] == "/admin/setup/cancel"
+        assert response["Location"] == "/admin/setup/finishing"
         assert SetupAttempt.objects.get(pk=attempt.pk).state == "expired"
-        assert b"Cancellation is recorded" in browser.get("/admin/setup/cancel").content
+        assert (
+            b"Cancellation is recorded" in browser.get("/admin/setup/finishing").content
+        )
         assert not SetupConfigurationAbort.objects.exists()
     assert setup_http.store.active() == candidate
 
@@ -70,7 +72,10 @@ def test_anonymous_and_another_admin_session_cannot_use_cancellation_exception(
     another = login(setup_http)
     _, attempt, _, _ = selected(setup_http)
     with web_login():
-        for address in ("/admin/setup/cancel", "/admin/setup/cancel?format=status"):
+        for address in (
+            "/admin/setup/finishing",
+            "/admin/setup/finishing?format=status",
+        ):
             assert Client().get(address).status_code == 403
             response = client_for(another).get(address)
             assert response.status_code == 404

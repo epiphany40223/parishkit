@@ -423,7 +423,7 @@ def _respond(request, campaign_id, *, item_id=None):
         return _error(campaign_id, item_id=item_id, status=503)
     except ValueError:
         # A malformed form or filter, or a decision the request does not
-        # take (a reopening with no note): a 400, nothing recorded.
+        # take (undoing Handled with no note): a 400, nothing recorded.
         return _error(campaign_id, item_id=item_id)
     finally:
         if finish is not None and not handed_off:

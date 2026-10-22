@@ -13,7 +13,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
     dependencies = [
         ("stewardship_reports", "0041_report_conversion"),
-        ("stewardship_accounts", "0031_report_conversion"),
+        ("stewardship_accounts", "0032_report_conversion"),
         ("stewardship_campaigns", "0014_digest_skip_dates"),
     ]
 

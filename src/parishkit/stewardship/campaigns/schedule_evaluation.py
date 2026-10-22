@@ -7,7 +7,7 @@ dates are cursor/coverage identities; only resolved UTC instants decide timing.
 """
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from .configuration import campaign_values, schedule_values
@@ -403,8 +403,22 @@ class ReportPlan:
         return None
 
 
-def preview_slots(values, campaign, *, limit=5):
-    """Show a bounded beginning-of-campaign preview, not a dispatch eligibility list."""
-    return SchedulePlan.from_values(values, campaign).page(
-        through=datetime.max.replace(tzinfo=UTC), limit=limit
-    )
+def upcoming_slots(values, campaign, *, now, limit=5):
+    """The next ``limit`` sends after ``now``, for a review, not a dispatch list.
+
+    Each slot comes from ``SchedulePlan.next_slot``, which starts near
+    ``now`` rather than scanning the campaign's earlier days, so a passed
+    send is never listed (ui-conventions "Schedule previews", a count from
+    now; #1129). The page is ``exhausted`` when no send follows the last
+    one listed; one extra lookup tells. ``now`` is a UTC instant, the
+    database's clock for a review.
+    """
+    plan = SchedulePlan.from_values(values, campaign)
+    slots, after = [], now
+    while len(slots) <= limit:
+        slot = plan.next_slot(after=after)
+        if slot is None:
+            break
+        slots.append(slot)
+        after = slot.due_at
+    return SchedulePage(tuple(slots[:limit]), None, len(slots) <= limit)

@@ -88,7 +88,8 @@ class CensusExport(ReadModel):
 def actions(row, actor, *, mutable=True):
     """The outcomes ``actor`` may record on ``row`` now, as the page offers them.
 
-    Entered in ParishSoft and Ignore on a By-hand row still open (the census
+    Entered in ParishSoft on an accepted By-hand row still open (#1890) and
+    Ignore on any By-hand row still open (the census
     capability Staff hold too); Reopen on an ignored row, for an
     Administrator only, and on a terminal row, which undoes its step
     (#1840), for Staff too (``census_resolution.capability``). None while
@@ -103,8 +104,16 @@ def actions(row, actor, *, mutable=True):
     found = []
     if not mutable:
         return found
-    if row["can_resolve"] and allows(actor, Capability.MANUAL_CENSUS):
-        found += ["entered", "ignored"]
+    # Entered follows an Accept (#1890); Ignore stays on a To review change.
+    if allows(actor, Capability.MANUAL_CENSUS):
+        found += [
+            action
+            for action, offered in (
+                ("entered", row["can_resolve"]),
+                ("ignored", row["can_ignore"]),
+            )
+            if offered
+        ]
     state = SimpleNamespace(execution=row["execution"])
     if row["can_reopen"] and allows(actor, capability("reopened", state)):
         found.append("reopened")

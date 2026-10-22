@@ -1,10 +1,11 @@
 """Refresh checks: the refresh re-evaluation of final and decided items (#1689).
 
 Every promoted refresh re-evaluates every open pipeline item against the new
-baseline (review pipeline spec, "Baseline refresh re-evaluation"). Items
-still open keep today's reconciliation (``reconciliation``,
-``ministry_reconciliation``), which stores ParishSoft's value on the census
-change or resolves the Ministry request. A census change Entered by hand or
+baseline (review pipeline spec, "Baseline refresh re-evaluation"). Census
+changes still open keep today's reconciliation (``reconciliation``), which
+stores ParishSoft's value on the change; since #1890 (strict phase order)
+nothing resolves an open item ParishSoft already holds: it keeps its stage,
+and its page says so. A census change Entered by hand or
 Updated in ParishSoft is final in its guard, and a Ministry request a person
 decided changes only by review, so for those this module records a
 ``RefreshCheck`` instead, in the same promotion transaction ("Refresh
@@ -686,11 +687,16 @@ def _census_checks(snapshot, corpus, campaign_id, full, start):
 def _ministry_checks(snapshot, corpus, campaign_id, full, start):
     """Yield the Ministry checks this promotion owes, unsaved.
 
-    For every live request a person resolved or closed (a refresh-resolved
-    one is Confirmed already). An accepted request is judged by the
-    Ministry carried forward (the Edit's, else the Family's) and is
-    Confirmed when the roster shows it; an ignored one by the Family's, and
-    is noted when ParishSoft now matches the Family's answer. A Member no
+    For every live request a person resolved or closed (one a refresh
+    resolved before #1890 is Confirmed already). An accepted request is
+    judged by the Ministry carried forward (the Edit's, else the Family's)
+    and is Confirmed when the roster shows it once it is ticked Entered by
+    hand; before the tick the roster showing it changes nothing and no
+    check is written (strict phase order, #1890: the page reads the roster
+    itself to say ParishSoft already holds it, and the refresh check guard
+    refuses such a check). An ignored one is judged by the Family's
+    Ministry, and is noted when ParishSoft now matches the Family's
+    answer. A Member no
     longer an active, living Member of the Family, or a Ministry the data no
     longer lists, gives no evidence and no check.
     """
@@ -763,8 +769,10 @@ def _ministry_checks(snapshot, corpus, campaign_id, full, start):
             full_refreshes_unchanged=state.unseen + full,
             not_seen_after=threshold if threshold is not None else float("inf"),
         )
-        stored = STORED[result]
-        if not owed(stored, state, full=full, marked=ticked):
+        # ``ALREADY_HELD`` (an unticked request the roster shows) stores
+        # nothing.
+        stored = STORED.get(result)
+        if stored is None or not owed(stored, state, full=full, marked=ticked):
             continue
         yield RefreshCheck(
             snapshot_id=snapshot.pk,

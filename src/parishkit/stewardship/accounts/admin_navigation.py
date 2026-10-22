@@ -775,6 +775,9 @@ NON_PAGES = frozenset(
         # Campaign settings' live end-date check (#944), a fragment the
         # page reads.
         "campaign_end_date_check",
+        # The campaign work status Campaign settings and Home poll while
+        # campaign work holds their controls (#1619), a fragment.
+        "campaign_work_status",
         # New and Edit scheduled email's test of an unsaved edit (#446), a
         # POST the page script makes.
         "schedule_email_test",
@@ -797,9 +800,9 @@ NON_PAGES = frozenset(
         "setup",
         "setup_branding",
         "setup_branding_asset",
-        "setup_cancel",
         "setup_confirmation",
         "setup_credential",
+        "setup_finishing",
         "setup_mail",
         "setup_mail_status",
         "setup_notification",

@@ -159,15 +159,18 @@ def test_hidden_request_survives_omission_and_returns_when_selected_again(
 
 @pytest.mark.parametrize("restricted", [False, True])
 @pytest.mark.parametrize("action", ["join", "leave"])
-def test_source_roster_catchup_resolves_without_provider_write(
+def test_source_roster_catchup_keeps_the_request_open(
     response_service, restricted, action
 ):
-    """Current promoted membership provides owned resolution proof and a pin."""
+    """A promoted roster that already shows the request resolves nothing
+    (strict phase order, #1890): it stays To review for a decision and a
+    tick, with no resolution source or pin, on the worker's login too."""
     harness = response_service
     form = start(harness)
     answers = answers_for(form)
     answers["ministries"]["members"]["3"][action] = [9 if action == "join" else 4]
     respond(harness, form, answers)
+    before = MinistryRequest.objects.get()
     data = ministry_source()
     data.ministry_type_memberships[9]["membership"] = [
         {
@@ -189,23 +192,16 @@ def test_source_roster_catchup_resolves_without_provider_write(
     with task_login(ServiceRole.WORKER, exact=True) if restricted else nullcontext():
         snapshot = promote(snapshot, claim, harness.campaign, harness.rings)
     row = MinistryRequest.objects.get()
-    assert row.state == "resolved"
-    assert row.outcome == ("joined" if action == "join" else "leave_confirmed")
-    assert row.resolution_source_id == snapshot.pk and row.resolved_at is not None
+    assert (row.state, row.outcome, row.version) == (before.state, None, before.version)
+    assert row.resolution_source_id is None and row.resolved_at is None
     from parishkit.stewardship.source.models import SourceSnapshotPin
 
-    assert SourceSnapshotPin.objects.filter(
+    assert not SourceSnapshotPin.objects.filter(
         snapshot=snapshot,
         parent_kind="submission",
         parent_id=row.submission_id,
         expires_at__isnull=True,
     ).exists()
-    form = revisit(harness)
-    assert form["ministries"]["members"]["3"] == {
-        "current": [4, 9] if action == "join" else [],
-        "join": [],
-        "leave": [],
-    }
 
 
 def test_proposed_member_ministry_choices_keep_local_identity(response_service):

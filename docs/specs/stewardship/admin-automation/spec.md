@@ -1999,15 +1999,15 @@ that background work holds while mail is sent, is `stale_version`. Its
 reminder series, each with its rule and the reminders it holds.
 
 Each schedule's `resolved` (at most five UTC send times, with `more` when
-there are others) lists its first sends from the campaign's start, as does
-each side of `schedule preview`. Once the mail review adopts the shared
-[schedule preview](../ui-conventions/spec.md#schedule-previews)
+there are others) lists its next sends after the database's now, as does
+each side of `schedule preview`, through the one from-now helper
+(`schedule_evaluation.upcoming_slots`) that the mail review's shared
+[schedule preview](../ui-conventions/spec.md#schedule-previews) uses
 ([#1129](https://github.com/epiphany40223/parishkit/issues/1129), ADM-04
-slice 7c), both commands list the next sends after the database's now
-instead, through the one from-now helper beside `preview_slots` that the
-page uses, so the page, `schedule show` and `schedule preview` agree. The
-keys and their shape stay; a passed send is no longer listed. The command
-line has no browser zone, so its sends are not grouped by day.
+slice 7c), so the page, `schedule show` and `schedule preview` agree. A
+passed send is not listed. Before slice 7c they listed the first sends
+from the campaign's start; the keys and their shape are unchanged. The
+command line has no browser zone, so its sends are not grouped by day.
 
 ### Source refresh
 
@@ -2048,6 +2048,7 @@ none.
 | `schedule_settings`, `schedule_new`, `schedule_edit`, `schedule_delete`, `schedule_suggested` | `schedule show` (PR 3a); `schedule preview`, `schedule confirm` (PR 4): a change document adds, changes or deletes the same schedules (the campaign wizard's suggested schedules, #1404 PR 6a, are three ordinary schedules a change document adds). Its `series` entries (#469) edit or delete a remembered reminder series; Edit scheduled email offers the same "this and following" and "the whole series" for a time or email change, while a new rule or deleting a series is the command line's alone for now |
 | `schedule_calendar` | `schedule show` (PR 3a): the read-only Campaign calendar (#469) draws the saved schedules and campaign dates that `schedule show` lists |
 | `campaign_end_date_check` | `schedule preview` (PR 4): Campaign settings' no-save live check of a live campaign's end date answers what a preview of that end date would refuse |
+| `campaign_work_status` | `campaign show` ([#1619](https://github.com/epiphany40223/parishkit/issues/1619)): the passive campaign work status that Campaign settings and Home poll while campaign work holds changes; `campaign show` reports the same locks, each with its reason |
 | `configuration_request` | `config request show --watch` (PR 4); `config request cancel` ([#944](https://github.com/epiphany40223/parishkit/pull/944)), an operator recovery with no page button |
 | `campaign_settings`, `campaign_create`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), Campaign settings' read, Review and Apply, a live campaign's Ministries included (#1119); `campaign create-preview`, `campaign create` ([#1899](https://github.com/epiphany40223/parishkit/issues/1899)), [Create the campaign](../admin-portal/spec.md#create-the-campaign)'s Review and Apply for the first campaign (#142); `campaign_clone` is deferred on #145: until then creating or copying a campaign is refused, except the first campaign ([navigation rule 10](../ui-conventions/spec.md#navigation-rules)), and Copy campaign refuses every request before reading anything, so a command could only repeat that refusal. Commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
 | `share_settings` | `campaign shares`, `campaign shares-preview`, `campaign shares-confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), Share options' read, Review and Apply |
@@ -3162,10 +3163,14 @@ lists the fields.
 ([#463](https://github.com/epiphany40223/parishkit/issues/463)) is a Census
 changes row's Mark entered in ParishSoft, Ignore and Reopen
 ([#528](https://github.com/epiphany40223/parishkit/issues/528)): full scope,
-keyed, and not fresh-gated, as the page's action is not privileged. Reopen
+keyed, and not fresh-gated, as the page's action is not privileged.
+`entered` takes only an accepted change (#1890: Entered by hand follows an
+Accept, so a To review one is invalid; accept it with `census review`
+first), and `export census` lists it among a row's actions only then. Reopen
 also undoes a terminal outcome (Entered by hand, Entered incorrectly,
-Confirmed, Updated in ParishSoft, Already in ParishSoft) as the page's Back
-to review does
+Confirmed, Updated in ParishSoft, and Already in ParishSoft from before
+[#1890](https://github.com/epiphany40223/parishkit/issues/1890)) as the
+page's Back to review does
 ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
 [#1840](https://github.com/epiphany40223/parishkit/issues/1840)), so no action asks first any more, and it takes no `--yes`
 ([#1893](https://github.com/epiphany40223/parishkit/issues/1893): the
@@ -3176,8 +3181,10 @@ recording activity), then in the page's command scope
 checks the current campaign as the page does (`admit_report_read`), finds
 the Live change in it (any other is `not_available`) and calls the page's
 `census_resolution.resolve_census_change`, which checks the action's
-capability (reopening an Ignore is the Administrator's; undoing a terminal
-outcome, with its required note, is Staff's too), the version and the row's
+capability (reopening an Ignore is the Administrator's, with an optional
+note since [#1889](https://github.com/epiphany40223/parishkit/issues/1889);
+undoing a terminal outcome, with its required note, is Staff's too), the
+version and the row's
 state, and records `census_change_updated`. In the same transaction the
 command records `admin_cmd_census_resolve`, only for a new key: the key is
 the page's `request_key`, so a repeat with the same intent returns the
@@ -3186,7 +3193,8 @@ campaign is checked first, so a repeat after the current campaign changed
 is `not_available`. A
 changed version, or the page's racing second write (a unique violation),
 is `stale_version`; an action the row's state does not allow, or a Reopen
-without a note, is `invalid`, as the page's 400. It prints the resolution's
+that undoes a terminal outcome without a note, is `invalid`, as the page's
+400. It prints the resolution's
 ids, versions and times and the change's state (`version`, `decision`,
 `execution`), never the note, Family, Member or value. A change's id and
 version come from `export census --format jsonl` (`proposal_id`,
@@ -3302,8 +3310,8 @@ post (one item with the key itself, several as the bulk bar with each item's
 key derived from it) for the page's `pledge_review.PledgeDecisions`, so every
 rule is the page's, in Python and in the SQL guard of the
 [financial stream](../review-pipeline/spec.md): the role, the item's version,
-the actions its stage offers, a note to reopen an ignored pledge or to undo
-a terminal stage, and an Edit's amount and frequency checked as the Family form checks them. All or
+the actions its stage offers, a note to undo a terminal stage (reopening
+an ignored pledge takes an optional one, #1889), and an Edit's amount and frequency checked as the Family form checks them. All or
 none: an item someone decided first, or that the Family answered again since,
 is `stale_version`; anything else refused is `invalid`, an Edit value at its
 option (`amount`, `frequency`) with the service's static reason, never the
@@ -3485,9 +3493,10 @@ the two cannot drift.
   several as the bulk bar, each item's key derived from it) for the
   page's `InformationDecisions` or `LimitationDecisions`, so every rule is
   the page's, in Python and in the SQL guard of migration 0126: the role,
-  the version, the actions the stage offers, and a new note to reopen an
-  Ignored item (`invalid` at `note` otherwise), as the page's Back to
-  review asks for one. All or none: an item someone decided first, or
+  the version, the actions the stage offers, and a new note to undo a
+  Handled item (`invalid` at `note` otherwise), as the page's Back to
+  review asks for one; reopening an Ignored item takes an optional note
+  ([#1889](https://github.com/epiphany40223/parishkit/issues/1889)). All or none: an item someone decided first, or
   that the Family answered again since, is `stale_version`. The service
   records `information_updated` or `limitation_reviewed` for each item,
   with the session's user as the actor, and the command
@@ -3963,15 +3972,25 @@ checks, audit and alerts:
 - `users timeline --user ID` prints one user's
   [Timeline](../admin-portal/spec.md#user-timeline): the summary (Name,
   role or when the user was removed, address, Ministries led, last sign-in
-  and last email) and every line, newest first, each with its instant,
-  kind, what happened, detail and, for an email, its delivery ID. `--kind`
+  and last email), the ParishSoft Families the address belongs to by DUID,
+  campaign record ID and panel state (`shown`, `unavailable` or
+  `not_in_campaign`, so a reader can tell why a Family has no lines) only
+  (the page's Family names and codes are
+  Family-level personal data, see
+  [personal data](#personal-data-on-the-command-line); #1867), and every
+  line, newest first, each with its instant, kind, what happened, detail,
+  the DUID of the Family a Family line is about and, for an email, its
+  delivery ID. `--kind`
   takes the page's Kind keys (`all`, `sessions`, `actions`, `roles`,
-  `emails`) and `--from` and `--to` whole days in `--zone` (an IANA time
+  `emails`, `form`) and `--from` and `--to` whole days in `--zone` (an IANA time
   zone, required with a day), as the page's From and Through do; the
   command prints every matching line, unpaged. An unknown user is
   `not_available` and a refused filter `invalid`. It is read-only, runs
   the page's own reads, and records the page's `user_timeline_viewed`
-  with the user's record ID.
+  with the user's record ID, plus the page's `family_timeline_viewed` for
+  each Family whose lines it prints: it prints no Family summary, so a
+  Family whose lines the filters all leave out was not looked at and is not
+  recorded.
 
 These need a full-scope session, except `users list`,
 `users preview-upgrade` and `users timeline`; none is fresh-gated, as the page asks for no fresh
@@ -4171,9 +4190,11 @@ pages' own pieces.
   flags: needed or completed is Accepted; neither keeps a To review or
   Ignored item as it was; and clearing a To handle or Handled item sends it
   back to review, so the command never ignores an item on its own. Taking
-  an Ignored item out of Ignored needs new `--notes` saying why, as the
-  page's Back to review does (`invalid` at `notes` otherwise); so does
-  clearing a completed follow-up, which undoes Handled
+  an Ignored item out of Ignored takes optional `--notes`, as the page's
+  Back to review does
+  ([#1889](https://github.com/epiphany40223/parishkit/issues/1889));
+  clearing a completed follow-up, which undoes Handled, needs new `--notes`
+  saying why (`invalid` at `notes` otherwise)
   ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)).
 - **Keys, scope and audit.** The three changes need a full-scope session,
   run in the page's command scope, and are not fresh-gated, as the pages'
@@ -4524,7 +4545,7 @@ backup`, and backup status is part of `status`.
 
 ### Setup wizard
 
-`setup`, `setup_cancel`, `setup_source`, `setup_source_progress`,
+`setup`, `setup_finishing`, `setup_source`, `setup_source_progress`,
 `setup_branding`, `setup_branding_asset`, `setup_credential`,
 `setup_preview`, `setup_confirmation`, `setup_mail`, `setup_mail_status`,
 `setup_notification`, `setup_notification_status` and `setup_step` are

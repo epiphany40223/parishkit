@@ -13,7 +13,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
     dependencies = [
         ("stewardship_reports", "0041_report_conversion"),
-        ("stewardship_accounts", "0030_secret_request_session"),
+        ("stewardship_accounts", "0031_person_identity_reads"),
     ]
 
     operations = [

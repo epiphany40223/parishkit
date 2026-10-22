@@ -76,24 +76,14 @@ class ClearUnconfirmed(ValueError):
     """
 
 
-class ReopenNeedsNote(NoteRequired):
-    """An Ignored request left Ignored with no note; nothing was saved.
-
-    Reopening an ignored item needs a reason (review pipeline spec,
-    "Reviewed stage"), whether it goes back to review or straight to
-    follow-up through ``pk-admin followup information-update``; the
-    revision guard refuses it too.
-    """
-
-
-class UndoNeedsNote(ReopenNeedsNote):
+class UndoNeedsNote(NoteRequired):
     """A Handled request (or answer) left Handled with no note; nothing was saved.
 
-    Undoing a terminal step needs a reason, as reopening an ignored item
-    does (review pipeline spec, "Undoing a terminal stage", #1840), on the
-    worklist and through ``pk-admin followup information-update`` alike; the
-    revision guard refuses it too. It is a ``ReopenNeedsNote``, so every
-    caller that refuses a reopening without a note refuses this the same way.
+    Undoing a terminal step needs a reason (review pipeline spec, "Undoing
+    a terminal stage", #1840), on the worklist and through ``pk-admin
+    followup information-update`` alike; the revision guard refuses it too.
+    Reopening an Ignored item takes an optional note (#1889), so this is
+    the only missing note refused.
     """
 
 
@@ -150,8 +140,8 @@ def flag_decision(item, latest, *, follow_up_needed, followed_up):
 def new_note(notes, latest):
     """Whether ``notes`` say something new: not blank, nor the earlier notes.
 
-    A revision carries the request's Staff notes forward, so reopening an
-    Ignored request needs notes that differ from ``latest``'s (its newest
+    A revision carries the request's Staff notes forward, so undoing a
+    Handled request needs notes that differ from ``latest``'s (its newest
     revision, or None), as the revision guard checks.
     """
     return bool(notes.strip()) and (latest is None or notes != latest.notes)
@@ -277,15 +267,10 @@ def update_information(
             # Clearing a completed follow-up undoes Handled, which needs a
             # reason however it is recorded (#1840).
             raise UndoNeedsNote("Undoing a handled request needs a note.")
+        # An Ignored request leaves Ignored with an optional note (#1889).
         decision = flag_decision(
             item, latest, follow_up_needed=follow_up_needed, followed_up=followed_up
         )
-        if (
-            decision != "ignored"
-            and not new_note(notes, latest)
-            and information_stage(item, latest).stage is Stage.IGNORED
-        ):
-            raise ReopenNeedsNote("Reopening an ignored request needs a note.")
         return _write(item, actor_id, request_key, intent, decision)
 
 
@@ -359,12 +344,10 @@ def _decide_one(item, actor_id, action, version, key, note):
         and undo_needs_note(stage)
         and not new_note(note, latest)
     ):
-        # Reopening an ignored request, or undoing Handled, needs a reason
-        # (review pipeline spec, "Reviewed stage", "Undoing a terminal
-        # stage"); the dialog asks for it first.
-        if stage is Stage.HANDLED:
-            raise UndoNeedsNote("Undoing a handled request needs a note.")
-        raise ReopenNeedsNote("Reopening an ignored request needs a note.")
+        # Undoing Handled needs a reason (review pipeline spec, "Undoing a
+        # terminal stage"); the dialog asks for it first. Reopening an
+        # Ignored request takes an optional note (#1889).
+        raise UndoNeedsNote("Undoing a handled request needs a note.")
     needed, completed, decision = recorded(action, placement)
     # A revision's notes are the request's Staff notes, which the export
     # and the search read from the latest revision: a decision's note

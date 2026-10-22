@@ -1083,6 +1083,39 @@ retries; a normal count takes tens of milliseconds. System logs list the event
 in the [ParishSoft refreshes](../admin-portal/spec.md#activity-groups)
 Activity group.
 
+#### Person identity reads
+
+A user's [Timeline](../admin-portal/spec.md#user-timeline-family-part)
+shows the ParishSoft Family the user belongs to, and a Family's Timeline
+names its users ([#1867](https://github.com/epiphany40223/parishkit/issues/1867)).
+Both need to match an address against Family and Member contact records,
+which the web login cannot read, so frozen migration 0157 adds two
+`SECURITY DEFINER` reads with a fixed search path:
+
+- `stewardship_address_people_v1(address, actor)` returns `(family_duid,
+  member_duid)` for each Family contact (`member_duid` null) and each Member
+  contact (with the Member's Family) in the current ParishSoft snapshot
+  holding `address` as a valid email, compared in lower case; only Families
+  present in that snapshot are returned.
+- `stewardship_family_users_v1(family_duid, actor)` returns the user record
+  IDs (`stewardship_address_rule.record_id`) of the active configuration's
+  users (rows with a role) whose address, in lower case, is a valid email of
+  that Family's contact or one of its Members' contacts in the current
+  snapshot.
+
+Both return identifiers only, never an address, name or other contact
+field, and nothing before the first promoted snapshot. Like the
+[Sent mail reads](#outbox-recipient-reads) they refuse (SQLSTATE `42501`)
+any session login but the web login and the schema owner, and any actor
+`stewardship_export_authorized_v1(actor, true)` does not admit as an enabled
+Administrator; malformed input is refused with `22023`. PUBLIC has no
+EXECUTE and `database-grants` grants it only to the web login. The pages'
+own view audit (`user_timeline_viewed`, `family_timeline_viewed`) names the
+actor and subject, so the reads add no audit of their own. Each reads the
+current snapshot's contacts through the snapshot's `(snapshot, source_key)`
+key; the address read parses every contact of that snapshot (a few
+thousand at parish scale), so it needs no new index.
+
 ### Submission
 
 Every final click creates an immutable `Submission` version containing:
@@ -1150,7 +1183,14 @@ submission's completeness check admits that absence, and the effective-value
 index keeps that change for the next response while each census response
 answers it the same way. A terminal request (moved, deceased, a death date)
 asked for again after it was entered is a new request, since an entered one
-is no longer presented.
+is no longer presented. The same answer again for an open change that
+ParishSoft already holds (the answer equals ParishSoft's value) also
+creates none: the change keeps its stage and decision on its earlier
+response, and the completeness check, the effective-value index and the
+census guard's predecessor lookup find it there the same way, so a later
+different answer replaces it
+([#1895](https://github.com/epiphany40223/parishkit/issues/1895)). A Family response never
+resolves a census change upstream.
 
 A Member the Family added on the form has only the form's local UUID, and
 the form drops that entry once its New Member change is Entered by hand;
@@ -1295,7 +1335,8 @@ it, attached to the Family's latest live response; and
 in place of. Each revision also keeps its decision's note
 (`decision_note`). The SQL guards admit, besides today's edits: a revision
 that sends a resolved or closed request back to In progress (reopening an
-ignored one needs a note), one that undoes a terminal step (the Entered in
+ignored one takes an optional note since forward migration 0158,
+[#1889](https://github.com/epiphany40223/parishkit/issues/1889)), one that undoes a terminal step (the Entered in
 ParishSoft tick, a Confirmed refresh check or a refresh resolution; with a
 required note,
 [undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)),
@@ -1992,8 +2033,10 @@ before that release, keep these rules:
 
 1. Start with the current ParishSoft value.
 2. If there is no prior effective response change, use current.
-3. If current now equals the prior Family-submitted value, the proposal is
-   resolved upstream and current is used without a change marker.
+3. If current now equals the prior Family-submitted value, ParishSoft
+   already holds the change (which keeps its stage until its step,
+   [#1890](https://github.com/epiphany40223/parishkit/issues/1890)) and
+   current is used without a change marker.
 4. If a published/resolved ProposedChange has an Admin-edited value and current
    equals that edit, use current without attributing the edit to the Family.
 5. If current still equals the prior baseline, overlay the prior Family-
@@ -2126,13 +2169,19 @@ Snapshot promotion performs these effects transactionally:
 - restore the existing code if a Family reactivates;
 - recompute eligible head email addresses and current deliverability after
   applying provider-suppression records;
-- resolve proposals that now match upstream;
+- store ParishSoft's new value on each open proposal; one that now matches
+  upstream keeps its stage, To review, Ready or To enter by hand
+  ([#1890](https://github.com/epiphany40223/parishkit/issues/1890): the review pipeline's
+  [rule 1](../review-pipeline/spec.md#baseline-refresh-re-evaluation); until
+  then it was resolved upstream), except one queued for an update run,
+  which is still resolved upstream;
 - mark three-way conflicts;
 - keep, unchanged, an open census change whose Member is no longer an
   active, living Member of its Family (the review pipeline's
   [rule 4](../review-pipeline/spec.md#refresh-checks)), since publication
   refuses such a Member ([review and publication](#review-and-publication));
-- resolve Ministry requests whose requested roster state is now current;
+- nothing for an open Ministry request whose requested roster state is
+  now current: it keeps its stage (#1890; until then it was resolved);
 - re-evaluate final census changes and decided Ministry requests against
   the new data, recording a refresh check for each whose outcome changed
   ([refresh checks](../review-pipeline/spec.md#refresh-checks)).
@@ -2194,14 +2243,17 @@ current authorization/filter snapshot.
    the change stays open (a queued change keeps it, and its plan meets a
    conflict), and a same-intent Family resubmission carries neither the base
    nor such an approval.
-4. Mark already-matching fields resolved upstream: in the transaction that
-   records a Production-mode plan, each approved change whose field row
-   says `already_in_parishsoft` moves from `pending` or `failed` to
-   `resolved_upstream` at the next version, its decision and values
-   unchanged. A Testing-mode plan marks nothing. Unlike reconciliation's
-   `resolved_upstream`, this rests on the plan's uncached read rather than a
-   promoted snapshot; the plan's field row is its record, and the final
-   refresh brings the snapshot level. It is also the only path that
+4. Mark already-matching fields Updated in ParishSoft: in the transaction
+   that records a Production-mode plan, each approved change whose field
+   row says `already_in_parishsoft` moves from `pending` or `failed` to
+   `published` at the next version, its decision and values unchanged, and
+   nothing is written for it. Until [#1890](https://github.com/epiphany40223/parishkit/issues/1890) (forward migration 0159,
+   provisional number) it moved to `resolved_upstream`, Confirmed at once;
+   now the refresh confirms it after the step, as it does every update
+   ([rule 1](../review-pipeline/spec.md#baseline-refresh-re-evaluation)). A
+   Testing-mode plan marks nothing. This rests on the plan's uncached read
+   rather than a promoted snapshot; the plan's field row is its record, and
+   the final refresh brings the snapshot level. It is also the only path that
    recognizes an Administrator's edited value already in ParishSoft, which
    reconciliation, comparing with the Family's answer, would call a
    conflict. Back to review on Census changes undoes the mark with a
@@ -2222,11 +2274,12 @@ current authorization/filter snapshot.
    concretely (the plan row's `xmin` is the current transaction's id, or
    its creation time equals `transaction_timestamp()`), and that a plan
    committed earlier is refused. The confirmation then checks such a row as
-   `resolved_upstream` at the next version instead of refusing the plan.
+   `published` (`resolved_upstream` for a plan marked before #1890) at the
+   next version instead of refusing the plan.
    The worker's pre-PUT comparison (`matches_confirmed`) leaves out exactly
    the plan's `already_in_parishsoft` field rows whose proposals this check
-   moved to `resolved_upstream` at the version after the one the row
-   recorded; any other planned row that left the open states still
+   moved to `published` (or, before #1890, `resolved_upstream`) at the
+   version after the one the row recorded; any other planned row that left the open states still
    invalidates the entity, without relying on a later step to catch it.
    This ships with a new forward migration, which replaces
    `stewardship_response_derived_guard_v1` and

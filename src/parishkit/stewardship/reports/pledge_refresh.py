@@ -63,7 +63,16 @@ from .pledge_models import PledgeOpenCheck, PledgeRefreshCheck
 CHECKED_STAGES = frozenset({"to_enter_by_hand", "entered_by_hand", "ignored"})
 OPEN = "to_review"
 # What a refresh outcome stores: the shared names, and a Conflict (#1747).
-PLEDGE_STORED = {**STORED, RefreshOutcome.CONFLICT: "conflict"}
+# ParishSoft holding C before the mark (``ALREADY_HELD``, #1890) is stored
+# as ``confirmed`` too: the check ends a Conflict and the page says
+# ParishSoft already holds the pledge, but the stage selection
+# (``stewardship_pledge_stages_v1``, migration 0159) places only a marked
+# pledge's confirmed check as Confirmed.
+PLEDGE_STORED = {
+    **STORED,
+    RefreshOutcome.CONFLICT: "conflict",
+    RefreshOutcome.ALREADY_HELD: "confirmed",
+}
 CONFLICT = "conflict"
 # The largest amount a mark can record (``PledgeReview.marked_pledge``).
 MARK_LIMIT = Decimal("1e12")
@@ -254,7 +263,8 @@ def _check(snapshot, full, item, outcome, refreshed):
 def pledge_checks(snapshot, corpus, campaign_id, full, start, *, evidence=None):
     """Yield the pledge checks this promotion owes, unsaved.
 
-    For every pledge not yet Confirmed (To review, and decided in force) of
+    For every pledge not yet Confirmed (To review, and decided in force,
+    including one before its mark ParishSoft already holds, #1890) of
     a Family the snapshot still lists (rule 4: one it no longer lists gives
     no evidence), when the campaign has a financial period and the
     snapshot's giving read is proven for it. The rules are
@@ -294,8 +304,15 @@ def pledge_checks(snapshot, corpus, campaign_id, full, start, *, evidence=None):
         refreshed = amounts.get(item.family_duid)
         # No evidence (no R) or no C: nothing to compare. Every financial
         # answer stores its annual pledge today; a missing one is skipped,
-        # never allowed to abort the promotion.
-        if state.outcome == "confirmed" or refreshed is None or item.carried is None:
+        # never allowed to abort the promotion. Only a marked pledge is
+        # Confirmed and never checked again (#1890): one before its mark
+        # whose check found ParishSoft holding it is checked again, so a
+        # later amount takes the words away or makes it a Conflict.
+        if (
+            (state.outcome == "confirmed" and item.entered)
+            or refreshed is None
+            or item.carried is None
+        ):
             continue
         refreshed = Decimal(refreshed)
         result = refresh_outcome(

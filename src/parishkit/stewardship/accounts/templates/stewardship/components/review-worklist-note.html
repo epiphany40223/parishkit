@@ -3,9 +3,9 @@
   components/confirm-dialog.html (fields_template) inside the dialog's
   form, or by a stream's value editor after its own fields. `note_name` is
   the field's name: "note" for one item's decision, "bulk_note" for the
-  bulk bar's. Every decision takes the optional note; reopening an Ignored
-  item, or undoing a terminal step, requires it (review pipeline spec,
-  "Reviewed stage", "Undoing a terminal stage", #1840): ui-v1.js sets
+  bulk bar's. Every decision takes the optional note, reopening an Ignored
+  item included (#1889); undoing a terminal step requires it (review
+  pipeline spec, "Undoing a terminal stage", #1840): ui-v1.js sets
   the nameless choice field from the opening control's
   data-confirm-choice, and the note is required while it says "reopen"
   (data-required-when). Its label follows in place: "Note (optional)",

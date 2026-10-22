@@ -80,6 +80,11 @@ def test_preview_changes_reviews_in_the_dialog_and_returns_to_the_list(
     assert lists.nth(1).inner_text().startswith("Reminder 1 — ")
     shown = dialog.locator("time[data-local-instant]").first.inner_text()
     assert "2054" in shown and "+00:00" not in shown and "T13" not in shown
+    # Each send in the shared schedule preview's words: its weekday, date
+    # and browser-local time, with no "at" and no zone name (#1949).
+    assert re.fullmatch(
+        r"[A-Z][a-z]+day, [A-Z][a-z]+ \d{1,2}, 2054, \d{1,2}:\d{2} [AP]M", shown
+    ), shown
     carried = dialog.locator("form[data-review-apply] input[data-review-carried]")
     assert carried.evaluate_all("nodes => nodes.map((node) => node.name)") == [
         "preview"

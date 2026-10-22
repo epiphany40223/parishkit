@@ -160,7 +160,7 @@ def test_reload_and_cancel_never_restore_a_private_draft(page, component_origin)
     page.route("**/family/logout", lambda route: route.fulfill(body="Signed out"))
     show(
         page,
-        page.get_by_role("button", name="Cancel and sign out", include_hidden=True),
+        page.get_by_role("button", name="Cancel and sign out"),
     ).click()
     expect(page.locator("body")).to_have_text("Signed out")
     assert dialogs == ["beforeunload", "confirm"]

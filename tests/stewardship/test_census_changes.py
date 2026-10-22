@@ -502,10 +502,26 @@ def test_csv_xlsx_and_pdf_carry_the_same_columns_and_rows():
 @pytest.mark.parametrize(
     ("values", "resolve", "reopen"),
     [
-        # A By-hand change still to do, or in conflict, takes the tick and Ignore.
-        ({"handling": "manual", "field": "suffix"}, True, False),
-        ({"handling": "manual", "execution": "conflict"}, True, False),
-        ({"entity_kind": "family", "field": "home_address"}, True, False),
+        # A By-hand change takes the tick only once accepted (#1890): never
+        # To review or in conflict, Accepted or not.
+        ({"handling": "manual", "field": "suffix"}, False, False),
+        ({"handling": "manual", "execution": "conflict"}, False, False),
+        ({"entity_kind": "family", "field": "home_address"}, False, False),
+        (
+            {"handling": "manual", "field": "suffix", "decision": "approved"},
+            True,
+            False,
+        ),
+        (
+            {"handling": "manual", "execution": "conflict", "decision": "approved"},
+            False,
+            False,
+        ),
+        (
+            {"entity_kind": "family", "field": "home_address", "decision": "approved"},
+            True,
+            False,
+        ),
         # An automatic change is the Administrator's to publish.
         ({}, False, False),
         # Ignored: only reopen (offered to Administrators by the page).

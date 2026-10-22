@@ -100,6 +100,7 @@ from .campaign_settings_components import POSTS as CAMPAIGN_SETTINGS_POSTS
 from .campaign_settings_components import components as campaign_settings_components
 from .campaign_test_components import components as campaign_test_components
 from .campaign_test_components import posts as campaign_test_posts
+from .campaign_work_components import components as campaign_work_components
 from .census_components import components as census_components
 from .chart_components import components as chart_components
 from .comparison_components import components as comparison_components
@@ -258,7 +259,7 @@ def _history(events):
 # answers them with a route.
 SETUP_MAIL_STATUS = "/admin/setup/mail-test/status?format=status"
 SETUP_SLACK_STATUS = "/admin/setup/slack-test/status?format=status"
-SETUP_FINISHING_STATUS = "/admin/setup/cancel?format=status"
+SETUP_FINISHING_STATUS = "/admin/setup/finishing?format=status"
 SETUP_LOAD_STATUS = "/admin/setup/source/progress-status?format=status"
 
 
@@ -856,7 +857,9 @@ def component_origin():
                         "after": "2055-10-01 through 2055-10-31",
                     }
                 ],
-                "schedules": [_describe(mail["values"], mail_campaign["values"])],
+                "schedules": [
+                    _describe(mail["values"], mail_campaign["values"], now=NOW)
+                ],
                 "preview": "synthetic-preview",
                 "content_previews": [
                     {
@@ -1714,6 +1717,18 @@ def component_origin():
         ("/availability", "availability", {"setup": True, "admin": True}),
         ("/family-maintenance", "family-maintenance", {"message": "Back by 3 PM."}),
         ("/denied", "denied", {"retry_path": "/admin/login"}),
+        # The generic Admin refusal, with the Google Account guidance (#1593).
+        (
+            "/denied-admin",
+            "denied",
+            {"retry_path": "/admin/login", "admin": True, "sign_in": True},
+        ),
+        # A signed-in person's refusal (a report view) gets no guidance.
+        (
+            "/denied-admin-signed-in",
+            "denied",
+            {"retry_path": "/admin/login", "admin": True},
+        ),
         ("/denied-code", "denied", {"retry_path": "/", "kind": "code"}),
         ("/denied-link", "denied", {"retry_path": "/", "kind": "link"}),
         (
@@ -1820,6 +1835,10 @@ def component_origin():
                 "is_refresh": True,
                 "refresh_label": "Full refresh",
                 "phase_text": "Downloading from ParishSoft",
+                # The run's stage boxes (#1579), as _task_read builds them.
+                "stages": campaign_wizard.task_stages(
+                    {"state": "running", "progress": {"phase": "fetching"}}
+                ),
                 "retry_text": "An earlier attempt stopped unexpectedly (for "
                 "example, the server restarted), so this work started again "
                 "automatically.",
@@ -2229,6 +2248,7 @@ def component_origin():
     responses.update(upload_defaults_components(context, admin))
     responses.update(settings_components(context, admin))
     responses.update(campaign_settings_components(context, admin))
+    responses.update(campaign_work_components(context, admin))
     responses.update(campaign_create_components(context, admin))
     responses.update(menu_components(context, admin))
     responses.update(review_work_components(context, admin))
@@ -2290,6 +2310,7 @@ def component_origin():
         ("admin-gate-v1.js", "application/javascript"),
         ("admin-menu-v1.js", "application/javascript"),
         ("admin-menu-state-v1.js", "application/javascript"),
+        ("remember-open-v1.js", "application/javascript"),
         ("find-family-v1.js", "application/javascript"),
         ("date-format-v1.js", "application/javascript"),
         ("family-v1.js", "application/javascript"),

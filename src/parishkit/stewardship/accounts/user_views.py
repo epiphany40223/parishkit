@@ -328,6 +328,18 @@ def table_rows(rows, users, own_email=None):
     ]
 
 
+def never_signed_in(rows):
+    """How many Ministry leader users have never signed in (#1593).
+
+    Counted over every user, not only the shown page, from the rows the page
+    already read, so the line under the table adds no query. A leader whose
+    address has no Google Account is the usual reason for it.
+    """
+    return sum(
+        1 for row in rows if row["role"] == "ministry_leader" and not row["last_login"]
+    )
+
+
 @require_http_methods(["GET", "HEAD", "POST"])
 def users(request):
     """List the users, or apply a reviewed change (``action=confirm``).
@@ -415,6 +427,7 @@ def users(request):
                 # only Administrator, when there is one, is the reader too,
                 # and the own-Administrator rule is the one that governs.
                 "delete_reason": OWN_DELETE,
+                "never_signed_in": never_signed_in(rows),
             },
         )
         with transaction.atomic():

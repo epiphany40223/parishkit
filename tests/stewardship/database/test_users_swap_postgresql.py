@@ -485,6 +485,23 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # ``CLOSURE_REPLACED`` runs each file again after it.
 # 0152 (#1866) creates only the audit actor index, only when missing, and
 # replaces nothing; the swap drops none of it, so nothing is registered.
+# 0157 (#1867) creates the two person identity reads (in
+# runtime_grants.CLOSURE_FUNCTIONS), which go, and replaces nothing, so its
+# file installs whole again.
+# 0158 (#1889) creates nothing: it replaces six guards in place on 0130's,
+# 0146's, 0148's, 0149's, 0150's and 0151's bodies, which the reruns of
+# those files (``CLOSURE_REPLACED``) bring back older, so
+# ``CLOSURE_REPLACED_LAST`` runs its file again after them.
+# 0159 (#1890, provisional number) creates nothing: it replaces seven
+# functions in place (0158's resolution guard, 0153's derived guard, 0124's
+# publication confirmation guard, 0154's Ministry request guard, 0138's
+# refresh check guard, 0136's pledge stage selection and 0135's pledge
+# refresh check guard), each copied whole from that latest body, which the
+# reruns above bring back; so ``CLOSURE_REPLACED_ONLY`` puts each 0159 body
+# back last, by its replacement statement alone.
+# 0160 (#1895, provisional number) creates nothing: it replaces 0159's
+# derived guard and 0153's submission effects check in place, so
+# ``CLOSURE_REPLACED_ONLY`` puts each 0160 body back last, after 0159's.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -723,6 +740,13 @@ CLOSURE_CREATED = {
             "public.stewardship_delivery_page_recipients_v1(uuid[],uuid)",
         ),
         ("stewardship_jobs", "0034_sent_mail_recipients"),
+    ),
+    **dict.fromkeys(
+        (
+            "public.stewardship_address_people_v1(text,uuid)",
+            "public.stewardship_family_users_v1(bigint,uuid)",
+        ),
+        ("stewardship_accounts", "0031_person_identity_reads"),
     ),
     # 0120 (#1592) creates the Ministry leader email tables (in
     # CLOSURE_TABLES) and these functions, and replaces the four outbox
@@ -1188,6 +1212,21 @@ CLOSURE_REPLACED_LAST = {
         ("stewardship_accounts", "0026_setup_slack_off"),
         "IF attempt.state='collecting' THEN",
     ),
+    # 0158 (#1889) drops the Ignored-reopen note from six guards whose files
+    # (0130, 0146, 0148 to 0151) ``CLOSURE_REPLACED`` reruns above; it
+    # creates nothing, so its file runs again whole. Each new body names
+    # the issue.
+    **dict.fromkeys(
+        (
+            "public.stewardship_proposal_review_guard_v1()",
+            "public.stewardship_proposal_resolution_guard_v1()",
+            "public.stewardship_ministry_revision_guard_v1()",
+            "public.stewardship_pledge_review_guard_v1()",
+            "public.stewardship_information_revision_guard_v1()",
+            "public.stewardship_limitation_review_guard_v1()",
+        ),
+        (("stewardship_responses", "0028_ignored_note_optional"), "(#1889)"),
+    ),
 }
 
 
@@ -1386,6 +1425,58 @@ CLOSURE_REPLACED_ONLY = {
             ("stewardship_timeline_export_capture_v1", "(#1799)"),
             ("stewardship_export_request_guard_v1", "since #1799"),
             ("stewardship_export_request_authorized_v1", "and Staff (#1799)"),
+        )
+    },
+    # 0159 (#1890) replaces seven functions last, each on its latest body
+    # (these keys' later values win over the 0153, 0154, 0138 and 0124
+    # entries above), for strict phase order.
+    **{
+        name: (("stewardship_responses", "0029_strict_phase_order"), phrase)
+        for name, phrase in (
+            (
+                "stewardship_proposal_resolution_guard_v1",
+                "OR proposal.execution<>'pending'))",
+            ),
+            (
+                "stewardship_response_derived_guard_v1",
+                "OR (NEW.execution='resolved_upstream' AND OLD.execution<>'queued')",
+            ),
+            (
+                "stewardship_publication_confirmation_guard_v1",
+                "OR p.execution NOT IN ('published','resolved_upstream')",
+            ),
+            (
+                "stewardship_ministry_request_guard_v1",
+                "A refresh does not resolve a Ministry request",
+            ),
+            (
+                "stewardship_refresh_check_guard_v1",
+                "AND NOT coalesce((SELECT e.entered",
+            ),
+            (
+                "stewardship_pledge_stages_v1",
+                "CASE WHEN k.outcome='confirmed' AND i.stage='entered_by_hand'",
+            ),
+            (
+                "stewardship_pledge_refresh_check_guard_v1",
+                "IF item.review_id IS NULL AND EXISTS (SELECT 1",
+            ),
+        )
+    },
+    # 0160 (#1895) replaces two functions last, each on its latest body
+    # (the derived guard's later value wins over the 0159 entry above),
+    # so an unchanged resubmission keeps a change ParishSoft already holds.
+    **{
+        name: (("stewardship_responses", "0030_resubmission_phase_order"), phrase)
+        for name, phrase in (
+            (
+                "stewardship_response_derived_guard_v1",
+                "OR OLD.id=(SELECT newest.id FROM (",
+            ),
+            (
+                "stewardship_submission_effects_v1",
+                "IF NOT NEW.reviewed_view AND prior.entity_kind IN",
+            ),
         )
     },
 }

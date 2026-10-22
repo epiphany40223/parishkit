@@ -980,9 +980,11 @@ address, so nothing is redirected or aliased
 "Family timeline" is retired from the page, its navigation and its help.
 People's own timelines (Administrators, Staff and Ministry leaders) are
 each user's [Timeline](../admin-portal/spec.md#user-timeline) under Users,
-which shares this page's table and filter rules; the Family part of a
-person's timeline (for users who are also ParishSoft Family members)
-follows in [#1867](https://github.com/epiphany40223/parishkit/issues/1867).
+which shares this page's table and filter rules; a user who is also a
+ParishSoft Family member sees that Family's summary and lines there too,
+and this page names the Family's users for Administrators
+([Family part](../admin-portal/spec.md#user-timeline-family-part),
+[#1867](https://github.com/epiphany40223/parishkit/issues/1867)).
 
 `<family>` is the Family's campaign record id, an opaque random identifier
 like a Mail message's; the Family's name, DUID, envelope number and code never
@@ -1063,7 +1065,10 @@ ParishSoft and the earlier set is kept, it is the configured name.
 Both roles also see whether campaign email can reach the Family (or why
 not), the furthest form step reached and when the Family was last seen on the
 form (live values of the
-[Family engagement record](../data/spec.md#family-engagement)), and the
+[Family engagement record](../data/spec.md#family-engagement)), **People in
+this Family who are users** when there are any (each linking the user's
+[Timeline](../admin-portal/spec.md#user-timeline-family-part); never their
+Admin activity, which stays on that Administrator-only page), and the
 timeline table described next.
 
 **Records shown.** The page shows Production records only: there is no
@@ -1407,9 +1412,10 @@ Staff and Administrators decide each request as the pipeline's
 allow: on a To review request, **Accept** (the parish will follow it up: To
 handle) or **Ignore** (nothing to follow up); on a To handle request,
 **Handled** once the follow-up is done, or **Back to review**; on an
-Ignored request, Back to review, which needs a note saying why; on a
-Handled request, Back to review, which needs a note too and returns it to
-To handle, clearing its completion (who and when) and keeping the history
+Ignored request, Back to review, with an optional note
+([#1889](https://github.com/epiphany40223/parishkit/issues/1889)); on a
+Handled request, Back to review, which needs a note saying why and returns
+it to To handle, clearing its completion (who and when) and keeping the history
 ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)).
 Each decision takes an optional note, which becomes the request's
 Staff notes (the export's and the search's); a decision with no note keeps
@@ -2013,15 +2019,27 @@ replaces the queue table, its Status and Outcome filters and its bulk
 outcomes; the request pages, the remembered view,
 Export these requests and the packet stay. From the top, the page shows:
 
-1. The heading, the page help, the ParishSoft data date and the notice
-   shown while other campaign work locks edits. (Roster changes to enter,
-   once linked here, is this page's To enter by hand Stage since R39;
+1. The heading, with the page help (About this page, holding the
+   ParishSoft data date) and By Ministry's control beside it. (Roster
+   changes to enter, once linked here, is this page's To enter by hand
+   Stage since R39;
    [roster entry](../admin-portal/spec.md#roster-entry-on-ministry-requests).)
 2. **By Ministry**, a compact table described below. It stays above the
    worklist's filters, not between them and the table: its counts apply
    filters in place and the table's height changes with them, so anything
    below the table would move under the pointer
-   ([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
+   ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). It is a
+   closed disclosure whose control sits on the heading's line after About
+   this page, drawn like it, so the worklist's first rows start on a
+   laptop's first screen
+   ([#1653](https://github.com/epiphany40223/parishkit/issues/1653)).
+   Opened, the counts take their own full-width row below the heading's
+   row (below About's help when that is open too) and move only what
+   follows them; opening either one never moves the other's control
+   ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). Each
+   browser remembers it open
+   ([disclosures](../ui-conventions/spec.md#disclosures)). The notice shown
+   while other campaign work locks edits follows By Ministry.
 3. The worklist: its reserved notice line, then its filters, always open:
    **Stage** first, then Search Member or Ministry name, Ministry and
    Request, and for Staff and Administrators **Members**, whose second
@@ -2505,14 +2523,21 @@ A By hand change is reviewed like any other
 ([decision 2](../review-pipeline/spec.md#decisions)): **Accept** moves it
 from *To review* to *To enter by hand*, and **Entered by hand** (a check in
 a box) records that someone typed it into ParishSoft (execution
-*resolved_external*). On a *To review* By hand row, Entered by hand accepts
-and marks it in one step, so Staff working through a list are not slowed
-down. Before #1683 these rows were *To do* and went straight to Entered in
-ParishSoft or Ignore; the page's help says that they are now To review. A
-Conflict By hand row is accepted first, then entered. A mistaken mark is
-undone by Back to review, with a required note, which returns the change to
-the stage before the mark, To enter by hand with its decision kept (one
-accepted and marked in one step stays Accepted), as every terminal outcome is
+*resolved_external*). Entered by hand is offered only once the change is
+accepted: on a *To review* or *Conflict* By hand row it is neither shown nor
+admitted, so Staff working through a list Accept (in bulk if they like) and
+then mark Entered by hand (in bulk too). Until [#1890](https://github.com/epiphany40223/parishkit/issues/1890) Entered by hand
+on a To review row accepted and marked it in one step; such changes keep
+their history and are shown Accepted. Before #1683 these rows were *To do*
+and went straight to Entered in ParishSoft or Ignore; the page's help says
+that they are now To review. A To review, Ready or To enter by hand row whose
+value ParishSoft already holds says "ParishSoft already holds this value."
+under its stage and keeps its stage
+([rule 1](../review-pipeline/spec.md#baseline-refresh-re-evaluation)). A
+mistaken mark is undone by Back to review, with a required note, which
+returns the change to the stage before the mark, To enter by hand with its
+decision kept (one accepted and marked in one step stays Accepted), as every
+terminal outcome is
 ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
 [#1840](https://github.com/epiphany40223/parishkit/issues/1840)); a later different Family answer creates a new row (the same answer
 again keeps the entered change,
@@ -2529,7 +2554,8 @@ database pairs with the proposal's result and a `census_change_updated`
 audit event naming only the versions. The web role may set
 *resolved_external* only with such a row, and the row's own guard checks the
 actor, the campaign, the proposal's version and its starting state again (a
-By hand change, pending or in conflict, not ignored). The page records
+By hand change, pending and accepted since #1890; before it, pending or in
+conflict, not ignored). The page records
 Ignore and Back to review as reviews (below); the resolution row's
 *ignored* and *reopened* actions remain for `pk-admin census resolve`.
 
@@ -2619,8 +2645,9 @@ or the bulk bar, each decision with an optional note, acting
 - **Ignore** (an eye struck through): decision *ignored*, leaving ParishSoft
   as it is.
 - **Back to review** (an arrow turning back): decision *unreviewed*, on an
-  accepted change not yet in its update or entered, or on an ignored one.
-  Reopening an ignored change says why: the note is required. Back to review
+  accepted change not yet in its update or entered, or on an ignored one,
+  with an optional note either way
+  ([#1889](https://github.com/epiphany40223/parishkit/issues/1889)). Back to review
   on a change accepted over a Conflict puts it back to *Conflict*, and the
   accepted base no longer counts, so no later Accept can publish over
   ParishSoft's value without deciding the Conflict again. A reviewer's
@@ -2655,7 +2682,11 @@ review in view. If a refresh brings a new ParishSoft value first, the
 accepted base no longer counts either: an open change's approval goes back
 to *To review* and the change is compared with the Family's baseline again
 (a change already queued for publication keeps its approval, and its
-publication then meets a conflict). A Family's later same answer does not
+publication then meets a conflict). A new value that is the change itself
+keeps the approval and the change's stage (Ready to update or To enter by
+hand): nothing is left to write, and the row says ParishSoft already holds
+it ([rule 1](../review-pipeline/spec.md#baseline-refresh-re-evaluation),
+[#1890](https://github.com/epiphany40223/parishkit/issues/1890)). A Family's later same answer does not
 carry the accepted base either
 ([resubmission](../review-pipeline/spec.md#resubmission-before-the-reviewed-form)):
 the change comes back as a *Conflict* that shows the earlier Accepted as
@@ -2668,7 +2699,8 @@ bar ([bulk actions](../review-pipeline/spec.md#bulk-actions)). Every row
 with a bulk-eligible action has a box, By hand rows included, and a button
 is available only while every ticked row offers it. The dialog names the
 exact count ("Accept 3 changes?") and takes one optional note, recorded on
-each change (required when a ticked ignored change is sent back to review).
+each change (required only while a ticked change is at a terminal stage,
+[undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)).
 The selection covers the rows on the page shown, at most 100. A page
 showing more rows offers no boxes and says to show fewer. Each change is
 recorded exactly as its own icon would record it (its own review or
@@ -2702,8 +2734,9 @@ Forward migration 0128 (provisional number,
 guard for the pipeline: a current Staff member or Administrator; any census
 change the worklist lists, By hand ones included; a decision and an edit
 together when the decision is Accept (Edit is Accept with a value), also
-with an accepted base on a Conflict; and a required note to send an ignored
-change back to review. An edit's value must have its field's shape (a phone
+with an accepted base on a Conflict; and, until forward migration 0158
+(provisional number, [#1889](https://github.com/epiphany40223/parishkit/issues/1889))
+dropped it, a required note to send an ignored change back to review. An edit's value must have its field's shape (a phone
 record for a phone, an address of its six parts with a street line for an
 address, text otherwise, at most 1,024 bytes), must not be blank and must
 differ from the Family's answer, as the census compares values; moved,
@@ -2935,8 +2968,10 @@ changed, **ParishSoft at the check**, **Will write**, and **Outcome**:
 - **Already in ParishSoft**: ParishSoft already holds the value to write,
   so ParishSoft at the check and Will write both show that value (the
   reviewer's value, else the Family's answer). Nothing is written, and the
-  change is marked *Already in ParishSoft* (`resolved_upstream`) at the
-  check, so it is *Confirmed* (Production mode only). Back to review on
+  change is marked *Updated in ParishSoft* (`published`) at the check
+  (Production mode only); the run's final refresh, or the next one,
+  confirms it ([#1890](https://github.com/epiphany40223/parishkit/issues/1890); before, it was marked `resolved_upstream`,
+  *Confirmed* at once). Back to review on
   Census changes undoes the mark, with a required note, and returns the
   change to Ready to update
   ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)).
@@ -3124,8 +3159,9 @@ rows name the fields written), `census_publication_rerun_requested`,
 `census_publication_refresh_requested` (the final refresh, above), and the
 refusals `census_publication_switched_off`,
 `census_publication_read_unconfirmed` and `census_publication_refused`. A
-change marked *Already in ParishSoft* at the check is recorded by the plan's
-field rows and its version, not by an event of its own. Their System logs
+change the publication check finds ParishSoft already holding, and so marks
+Updated in ParishSoft with nothing written, is recorded by the plan's field
+rows and its version, not by an event of its own. Their System logs
 descriptions use the pipeline's words (updating ParishSoft, never
 publishing). The [activity groups](../admin-portal/spec.md#activity-groups)
 of System logs put these types in **ParishSoft refreshes and updates**; the
@@ -3339,16 +3375,27 @@ section is the page.
   decision posted from a page drawn before any later refresh check of that
   pledge, such as a Conflict found or ParishSoft's amount moving under one,
   is refused as someone else's change and the page is redrawn); an Ignored
-  row Back to review, with a required
-  note; a To enter by hand row Entered by hand and Back to review; an Entered
+  row Back to review, with an optional note
+  ([#1889](https://github.com/epiphany40223/parishkit/issues/1889)); a To
+  enter by hand row Entered by hand and Back to review; an Entered
   by hand, Entered incorrectly or Confirmed row Back to review, with a
-  required note, which returns it to the stage before its mark (To enter by
-  hand, or To review for a pledge ParishSoft already held;
-  [undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage));
+  required note, which returns it to the stage before its mark, To enter by
+  hand
+  ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage));
   Entered by hand again on Entered incorrectly waits for
-  [#1737](https://github.com/epiphany40223/parishkit/issues/1737); a Confirmed row with no decision says "Already in
-  ParishSoft." under its stage, or "Nothing to enter: ParishSoft holds no
-  pledge." when both the Family's answer and ParishSoft are $0.00. An
+  [#1737](https://github.com/epiphany40223/parishkit/issues/1737). Entered
+  by hand is never offered on a To review or Conflict row. A To review or To
+  enter by hand row whose amount ParishSoft already holds keeps its stage
+  and says "ParishSoft already holds this value." under it, or "Nothing to
+  enter: ParishSoft holds no pledge." when both the amount to enter and
+  ParishSoft are $0.00 (such as a Family that cannot contribute); the words
+  stay through Accept or an Edit to the same amount, from the pledge's
+  latest check, until the next refresh checks the decided pledge; it is
+  Accepted, then Entered by hand, then Confirmed by the next refresh
+  ([#1890](https://github.com/epiphany40223/parishkit/issues/1890); before,
+  a To review one was Confirmed with no decision, saying "Already in
+  ParishSoft."; a pledge's stage is derived from its checks, so such a
+  pledge from before reads To review now, with these words). An
   Ignored row ParishSoft now matches says "ParishSoft now matches the
   Family's answer" under its stage. The bulk bar offers Accept, Ignore, Back
   to review and Entered by hand, so the Administrator's flow ("a handful of
@@ -3452,8 +3499,8 @@ choice with its count), then a name or Family DUID search and a Show choice
 (`show`) of everything, cannot participate or cannot attend; any other value
 is refused. No summary sits above the table: the counts are the Stage
 choices'. Staff and Administrators Accept (To handle: the office will act on
-it), Ignore, mark Handled, and send a decision Back to review (a note is
-needed to reopen an Ignored answer), one row at a time or in bulk, all or
+it), Ignore, mark Handled, and send a decision Back to review (with an
+optional note, #1889), one row at a time or in bulk, all or
 none, as the pipeline's
 [role-specific actions](../review-pipeline/spec.md#role-specific-actions)
 allow. Back to review of a Handled answer needs a note too and returns it

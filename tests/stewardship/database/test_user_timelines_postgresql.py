@@ -137,7 +137,7 @@ def test_an_administrator_sees_the_whole_timeline(people):
 
 
 def test_filters_narrow_in_place_and_refuse_anything_else(people):
-    """Kind and days narrow the lines; a Family kind, a mode or a bad sort is 400."""
+    """Kind and days narrow the lines; an unknown kind, a mode or a bad sort is 400."""
     store, browser, record, portal, message = people
     status, page = get(browser, timeline_path(record) + "?kind=roles")
     assert status == 200
@@ -148,7 +148,7 @@ def test_filters_narrow_in_place_and_refuse_anything_else(people):
     )
     assert status == 200 and "No lines match these filters" in page
     for query in (
-        "kind=form",
+        "kind=views",
         "mode=testing",
         "sort=what",
         "size=7",
@@ -309,8 +309,8 @@ def test_users_timeline_prints_the_page(admin, google):  # noqa: F811
         secret=secret,
     )
     assert code == 0 and document["result"]["lines"] == [], document
-    # A Family kind, or a day without a zone, is refused before reading.
-    for options in (("--kind", "form"), ("--from", "2026-10-01")):
+    # An unknown kind, or a day without a zone, is refused before reading.
+    for options in (("--kind", "views"), ("--from", "2026-10-01")):
         code, document = one(
             admin, "users", "timeline", "--user", record, *options, secret=secret
         )

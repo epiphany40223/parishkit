@@ -268,7 +268,7 @@ value Sent mail's send filter takes), `number`, `mode`, `cycle`,
 | `campaign_id`, `editable` | The campaign, and whether its dates may still change |
 | `version` | What a schedule change is previewed against |
 | `window` | `start_date`, `end_date`, `timezone` |
-| `schedules` | Each schedule's `id`, `kind`, `date`, `time`, `weekday`, `subject`, `template_version`, `comparison` (whether a daily digest includes Compared with past campaigns), its first resolved send times (`resolved`: `key`, `due_at`) and `more` |
+| `schedules` | Each schedule's `id`, `kind`, `date`, `time`, `weekday`, `subject`, `template_version`, `comparison` (whether a daily digest includes Compared with past campaigns), its next five send times from now (`resolved`: `key`, `due_at`; a send that has passed is never listed) and `more` |
 | `series` | Each remembered reminder series (a repeat saved with `"remember": true`): its `id`, its repeat `rule` and the `schedules` (reminder ids) it holds |
 
 `schedule show` reads the current campaign unless `--campaign UUID` names
@@ -718,7 +718,7 @@ the page and email templates (a command for those arrives later).
 | --- | --- |
 | `campaign_id`, `version` | The campaign, and the configuration version the change was made against |
 | `window` | `before` and `after` (`start_date`, `end_date`, `timezone`), and the names of the campaign values that `changed` |
-| `changes` | Each change's `id`, `operation` (`add`, `update` or `remove`), `kind`, its values and first send times `before` and `after` (as in `schedule show`; `null` when added or removed), and its `impact`: `delivered`, `cancellable`, `failed`, `blocking`, `occurrences` and `outboxes`, the page's counts |
+| `changes` | Each change's `id`, `operation` (`add`, `update` or `remove`), `kind`, its values and next five send times from now `before` and `after` (as in `schedule show`; `null` when added or removed), and its `impact`: `delivered`, `cancellable`, `failed`, `blocking`, `occurrences` and `outboxes`, the page's counts |
 | `blocking` | Sends in progress or with an uncertain result. While it is above zero, `preview` is `null`, as the page offers no **Confirm** |
 | `preview` | `token`, which `schedule confirm` takes |
 | `series` | Each reminder series the change remembers (a repeat with `"remember": true`): its new `id`, its `rule` and its reminders' ids (`schedules`); empty otherwise. A series edit lists here the new series it starts |
@@ -2615,9 +2615,10 @@ pk-admin census resolve PROPOSAL_ID --action reopened --expected-version 4 \
 `PROPOSAL_ID` and the `--expected-version` are the change's id and version,
 which `export census --format jsonl` prints (`proposal_id` and `version`,
 with the `actions` the change takes now; the page's own downloads leave
-them out). `--note` is optional, except to reopen (an ignored change, or a
-terminal step); `-` reads it from standard input, which keeps a note that
-names people out of shell history and the process list. `--request-key` is made for you and
+them out). `--note` is optional, except to undo a terminal step (reopening
+an ignored change takes an optional one); `-` reads it from standard input,
+which keeps a note that names people out of shell history and the process
+list. `--request-key` is made for you and
 written to standard error when left out. Repeating the command with the
 same key returns the same resolution (`created` false) and records nothing
 new; the key used for another outcome or note is exit 1 (`invalid`). A
@@ -2625,7 +2626,8 @@ change someone updated since that version is exit 1 (`stale_version`):
 read it again on the page. An outcome the change's status does not allow
 (an automatic change, an entered one marked again before a refresh found
 it wrong, one queued for an update run, or one a later response of the
-Family replaced), or reopening without a note, is exit 1 (`invalid`); a change that is not the current campaign's
+Family replaced), or undoing a terminal step without a note, is exit 1
+(`invalid`); a change that is not the current campaign's
 is exit 1 (`not_available`), and so is a repeat after the current campaign
 changed.
 
@@ -2661,7 +2663,7 @@ returns the same review (`created` false) and records nothing new; the key
 used for another decision or note is exit 1 (`invalid`). A change someone
 updated since that version is exit 1 (`stale_version`). A decision the change does not
 take now is exit 1 (`invalid`): the decision it already has, accepting a
-Conflict, sending an ignored change back (`unreviewed`) without a note, or
+Conflict, or
 any review of a change that is queued for publication or already has a
 final outcome. Since the Census changes page moved to the review pipeline
 ([#1683](https://github.com/epiphany40223/parishkit/issues/1683)), a By-hand
@@ -3355,8 +3357,7 @@ plus `proposal_id`
 and `version`, which recording a row's outcome needs and the page's files
 leave out, and `actions`: the outcomes you may record on that row now
 (`entered` and `ignored` on a By-hand change still open, `reopened` on an
-ignored one, for Administrators only, and only with a `--note` saying
-why), `reviews`: the decisions `census review` takes on that row now
+ignored one, for Administrators only, with an optional `--note`), `reviews`: the decisions `census review` takes on that row now
 (an Automatic change still open, for Administrators only), and `editable`
 and `resolvable`: whether `census edit` and `census resolve-conflict` act
 on it now (true or false, for Administrators only). They are empty or false
@@ -3449,15 +3450,18 @@ pk-admin users timeline --user USER_ID --kind emails
 pk-admin users timeline --user USER_ID --from 2026-10-01 --to 2026-10-07 --zone America/New_York
 ```
 
-`--kind` is `all` (the default), `sessions`, `actions`, `roles` or
-`emails`; `--from` and `--to` are whole days in `--zone`, which a day needs.
+`--kind` is `all` (the default), `sessions`, `actions`, `roles`, `emails`
+or `form` (Family form activity, for a user who is a ParishSoft Family
+member, [#1867](https://github.com/epiphany40223/parishkit/issues/1867));
+`--from` and `--to` are whole days in `--zone`, which a day needs.
 
 | `users timeline` field | What it holds |
 | --- | --- |
 | `user` | The user's `id`, `email`, `name`, `role` (`null` once no longer a user) and `removed_at` |
 | `summary` | `last_sign_in`, `last_email` (a line, or `null`) and the `ministries` the user leads now |
+| `families` | Each ParishSoft Family the user's address belongs to: its `duid`, `family_id` (the Family's record in the current campaign, or `null`) and `state` (`shown`, `unavailable` while other campaign work holds the reports, or `not_in_campaign`); no names or codes |
 | `kind` | The Kind used |
-| `lines` | Each line, newest first: `at`, `kind`, `what`, `detail` and, for an email Sent mail lists, its `message_id` |
+| `lines` | Each line, newest first: `at`, `kind`, `what`, `detail`, `family_duid` (the Family a Family line is about, else `null`) and, for an email Sent mail lists, its `message_id` |
 
 Until the users upgrade, the users are the exact-address rules that grant a
 role, each with its highest role and a `null` name. Deny rules and
@@ -3768,9 +3772,9 @@ current is exit 1 (`stale_version`). The flags give the request its
 worklist stage: needed is To handle, completed is Handled, and setting both
 to no keeps a To review or Ignored request as it was, or sends a To handle
 or Handled one back to review; the command never ignores a request. An
-Ignored request leaves Ignored only with new `--notes` saying why, and
+Ignored request leaves Ignored with or without new `--notes`, and
 clearing a completed follow-up undoes Handled, which needs new `--notes`
-saying why too (exit 1, `invalid`, naming `notes`, otherwise).
+saying why (exit 1, `invalid`, naming `notes`, otherwise).
 
 Each change takes `--request-key`; without one it makes a key and prints it
 to standard error. A repeat with the key records nothing twice; the key

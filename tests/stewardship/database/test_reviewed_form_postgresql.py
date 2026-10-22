@@ -22,7 +22,7 @@ from parishkit.stewardship.responses.models import (
 from parishkit.stewardship.workflows.models import MinistryRequest
 
 from .test_background_grants_postgresql import task_login
-from .test_census_pipeline_review_postgresql import decide, prepared
+from .test_census_pipeline_review_postgresql import decide, mark, prepared
 from .test_census_review_postgresql import fresh
 from .test_ministry_responses_postgresql import respond, revisit
 from .test_response_http_postgresql import answers_for, post
@@ -204,9 +204,11 @@ def test_an_answer_set_back_to_parishsoft_withdraws_the_change(response_service)
 
 
 def test_an_entered_change_is_shown_and_left_as_it_is(response_service):
-    """An Entered by hand change is shown carried forward; leaving it is rule 1."""
+    """An Entered by hand change is shown carried forward; leaving it is rule 1.
+
+    It is accepted first: Entered by hand follows an Accept (#1890)."""
     harness, _, staff, rows = prepared(response_service)
-    decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+    mark(harness, staff, [rows["prefix"]])
     form, _ = again(harness)
     assert member_field(form, "prefix")["value"] == "Dr."
     again(harness)

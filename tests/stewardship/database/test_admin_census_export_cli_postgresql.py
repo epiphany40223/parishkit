@@ -171,9 +171,10 @@ def test_the_page_s_files_and_json_lines(response_service, google, cli):  # noqa
     }
     for record in records.values():
         assert proposals[record["proposal_id"]] == record["version"]
-    # The By-hand address may be entered or ignored; the automatic rename
-    # is publication's, so it offers nothing.
-    assert records["Home address"]["actions"] == ["entered", "ignored"]
+    # The By-hand address To review may be ignored, and entered only once
+    # accepted (#1890); the automatic rename is publication's, so it offers
+    # nothing.
+    assert records["Home address"]["actions"] == ["ignored"]
     assert records["First name"]["actions"] == []
     # The automatic rename is the Administrator's to review (census
     # review); the By-hand address has no Review.
@@ -290,7 +291,7 @@ def test_staff_export_and_a_leader_is_denied(
         code, body, document = export(run, "--status", "all", "--format", "jsonl")
         assert code == 0, document
         actions = {record["what"]: record["actions"] for record in lines(body)}
-        assert actions == {"Home address": ["entered", "ignored"], "First name": []}
+        assert actions == {"Home address": ["ignored"], "First name": []}
         # Staff review, edit and resolve nothing.
         assert [record["reviews"] for record in lines(body)] == [[], []]
         assert [record["editable"] for record in lines(body)] == [False, False]
