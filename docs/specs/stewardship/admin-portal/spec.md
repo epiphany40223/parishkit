@@ -292,6 +292,20 @@ leaves the page as it was. A status read the server refuses (signed
 out, no longer allowed, or a bad request such as Slack being off) stops the
 watching instead of being retried.
 
+Loading parish data draws its step action row at the bottom of the page from
+the start, as every setup step does
+([wizard rule 2](../ui-conventions/spec.md#wizards)): Back at the left and
+Continue to the next step at the right. Until the load is done, Continue is
+unavailable and a line under the row says why (it becomes available once the
+parish data is loaded, or the notice above says what to do because the load
+cannot be used); once the load is done, Continue is a link and the reason
+keeps its line, invisible, so nothing moves
+([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates),
+[no layout shift](../ui-conventions/spec.md#no-layout-shift)). The row is
+re-read in place with the step bar when the status settles. The result notice
+("Parish data is loaded") offers no second Continue
+([#1968](https://github.com/epiphany40223/parishkit/issues/1968)).
+
 Acknowledgment checkboxes and incomplete forms hold their submit buttons as the
 [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates) describe.
 
