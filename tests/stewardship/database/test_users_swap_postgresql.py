@@ -499,6 +499,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # refresh check guard), each copied whole from that latest body, which the
 # reruns above bring back; so ``CLOSURE_REPLACED_ONLY`` puts each 0159 body
 # back last, by its replacement statement alone.
+# 0160 (#1895, provisional number) creates nothing: it replaces 0159's
+# derived guard and 0153's submission effects check in place, so
+# ``CLOSURE_REPLACED_ONLY`` puts each 0160 body back last, after 0159's.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -1436,6 +1439,22 @@ CLOSURE_REPLACED_ONLY = {
             (
                 "stewardship_pledge_refresh_check_guard_v1",
                 "IF item.review_id IS NULL AND EXISTS (SELECT 1",
+            ),
+        )
+    },
+    # 0160 (#1895) replaces two functions last, each on its latest body
+    # (the derived guard's later value wins over the 0159 entry above),
+    # so an unchanged resubmission keeps a change ParishSoft already holds.
+    **{
+        name: (("stewardship_responses", "0030_resubmission_phase_order"), phrase)
+        for name, phrase in (
+            (
+                "stewardship_response_derived_guard_v1",
+                "OR OLD.id=(SELECT newest.id FROM (",
+            ),
+            (
+                "stewardship_submission_effects_v1",
+                "IF NOT NEW.reviewed_view AND prior.entity_kind IN",
             ),
         )
     },
