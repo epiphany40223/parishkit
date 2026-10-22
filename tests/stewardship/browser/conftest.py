@@ -115,7 +115,6 @@ from .delivery_components import components as delivery_components
 from .digest_components import components as digest_components
 from .directory_components import components as directory_components
 from .directory_components import open_form_posts
-from .emailed_components import components as emailed_components
 from .family_test_components import components as family_test_components
 from .family_test_components import posts as family_test_posts
 from .financial_components import components as financial_components
@@ -165,6 +164,7 @@ from .reminder_workgroup_components import POSTS as WORKGROUP_POSTS
 from .reminder_workgroup_components import components as workgroup_components
 from .report_components import SLOW_GETS as REPORT_SLOW_GETS
 from .report_components import components as report_components
+from .report_emails_components import components as report_email_components
 from .response_dashboard_components import components as dashboard_components
 from .restore_review_components import components as restore_review_components
 from .review_work_components import components as review_work_components
@@ -2178,8 +2178,8 @@ def component_origin():
             ),
         )
     responses.update(digest_components(context, admin))
-    responses.update(emailed_components(context, admin))
     responses.update(report_components(context, admin))
+    responses.update(report_email_components(context, admin))
     responses.update(information_components(context, admin))
     responses.update(log_components(context, admin))
     # Family portal availability while open (#563).

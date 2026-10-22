@@ -92,19 +92,6 @@ def test_delivery_confirms_never_wait_for_a_sign_in():
     assert text.count('<input type="hidden" name="action" value="confirm">') == 3
 
 
-def test_the_weekly_report_in_progress_is_shown_unavailable():
-    """A digest still in progress, found on GET, shows Queue unavailable."""
-    html = render_to_string(
-        "stewardship/weekly-manual.html", {"form": None, "blocker": "in_progress"}
-    )
-    assert 'id="manual-unavailable"' in html
-    assert re.search(
-        r'<button[^>]*disabled aria-describedby="manual-unavailable">'
-        r"Queue new manual report</button>",
-        html,
-    )
-
-
 @pytest.mark.parametrize(
     ("name", "reason", "count", "notices"),
     [
@@ -229,14 +216,6 @@ def test_start_go_live_needs_no_recent_sign_in():
     """Start go-live's dialog has no sign-in step to refuse with (#1547)."""
     text = (TEMPLATES / "go-live-start-review.html").read_text()
     assert "step-up" not in text and "reauthenticate" not in text
-
-
-def test_queue_without_a_weekly_schedule_is_unavailable():
-    """No Weekly Admin digest schedule: Queue is named by the notice (#1331)."""
-    html = render_to_string(
-        "stewardship/weekly-manual.html", {"form": None, "blocker": "no_schedule"}
-    )
-    unavailable(html, "Queue new manual report", "manual-no-schedule")
 
 
 def test_held_decisions_on_the_mail_message_page_are_unavailable():

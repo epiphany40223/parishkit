@@ -522,6 +522,18 @@ FROZEN = {
     "0162_report_recovery_coverage.sql": (
         "4d10bc449e224f7434df25cb695981a534bb2c469c1f319e5b5f67137f8e0d5f"
     ),
+    "0164_report_coverage_decisions.sql": (
+        "17a536b18846e11bfe8ad6c7e5c5549b998d7d4bb38a2cfcb2eb3ed3fd6ae620"
+    ),
+    "0165_report_waiting_read.sql": (
+        "0ae340a4e116bf517217d3ac8ce9ae58e8d707d689c213a0199b8db9966bcc31"
+    ),
+    "0166_share_short_labels.sql": (
+        "e43201c7e55cdf8ce46508cf48c6e56490cf7d2b807dcb9cab9537fdfa1f7409"
+    ),
+    "0167_address_leader_scope.sql": (
+        "46866190315b2caf7787d75760e1931e703a16aed03666d2b38b1f21961d1297"
+    ),
     "0168_setup_test_binding.sql": (
         "592ca793da55098a9a7b7b7ca864795480f8c57943a1bceda465be6643f7dd9e"
     ),

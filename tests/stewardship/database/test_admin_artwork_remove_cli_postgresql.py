@@ -31,7 +31,7 @@ from parishkit.stewardship.deployment import ServiceRole
 
 from .auth_builders import signed_in
 from .automation_builders import as_staff, paired
-from .test_admin_digest_list_cli_postgresql import revoke
+from .test_admin_report_email_cli_postgresql import revoke
 from .test_admin_test_sample_cli_postgresql import runner
 from .test_artwork_views_postgresql import (
     artwork,

@@ -128,3 +128,23 @@ def test_clone_leaves_a_retired_critical_alert_behind():
     # The alert and the Weekly digest's email (#1786) are left behind.
     assert len(cloned) == len(document["sections"]["content"]) - 2
     assert "critical_alert" not in {row["values"]["slot"] for row in cloned}
+
+
+def test_clone_carries_share_option_short_labels():
+    """A cloned option keeps its short label (#1569) under a fresh id."""
+    document, source = example()
+    source["values"]["share_options"] = [
+        {"id": str(uuid4()), "label": "By check", "free_text": False},
+        {
+            "id": str(uuid4()),
+            "label": "Online",
+            "free_text": False,
+            "short_label": "Web",
+        },
+    ]
+    previous, _content, _schedules = clone_structures(document, source, uuid4())
+    cloned = previous["share_options"]
+    assert [row.get("short_label") for row in cloned] == [None, "Web"]
+    assert not {row["id"] for row in cloned} & {
+        row["id"] for row in source["values"]["share_options"]
+    }

@@ -73,7 +73,8 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     # latest outcome and any follow-up retry (#806) and records a reported
     # bounce (#806 slice 4), the campaign comparison report's aggregates
     # (#1018), and Sent mail's emails for one address and its page's
-    # Administrator addresses (#1562).
+    # Administrator addresses (#1562), and the Ministries one user's address
+    # leads, for an Administrator reading that user's Timeline (#1925).
     assert runtime_functions(ServiceRole.WEB) == {
         FAMILY_LOGIN_FUNCTION,
         "stewardship_family_daily_sends_v1()",
@@ -96,6 +97,8 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         "stewardship_delivery_page_member_names_v1(uuid[], uuid)",
         "stewardship_address_people_v1(text, uuid)",
         "stewardship_family_users_v1(bigint, uuid)",
+        "stewardship_report_email_waiting_v1(uuid)",
+        "stewardship_address_leader_scope_v1(text, uuid)",
         DEBUG_OFF_FUNCTION,
     }
     # The worker's definer routines purge ended Admin sessions (ADM-11),

@@ -528,19 +528,6 @@ def whole_dollars(amount):
     )
 
 
-@register.filter
-def share_lines(shares):
-    """A Financial row's share methods as the lines of its "+N" chip's tip.
-
-    Each chosen method by its label, with the Family's Other text after it
-    ("Other: Stock gift"), in the row's order (#1544).
-    """
-    return [
-        _("%(label)s: %(text)s") % share if share["text"] else share["label"]
-        for share in shares
-    ]
-
-
 @register.simple_tag
 def filter_mark(error, field, described=""):
     """A report filter field's ``aria-describedby``, and its mark if refused.

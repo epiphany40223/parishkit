@@ -25,10 +25,10 @@ from .auth_builders import signed_in
 from .automation_builders import as_staff
 from .response_builders import activate_response_service
 from .test_admin_census_export_cli_postgresql import workbook
-from .test_admin_digest_list_cli_postgresql import revoke
 from .test_admin_export_cli_postgresql import read_only_session
 from .test_admin_logs_cli_postgresql import counted, stream
 from .test_admin_report_cli_postgresql import cli, parity  # noqa: F401
+from .test_admin_report_email_cli_postgresql import revoke
 from .test_admin_status_cli_postgresql import admin, session  # noqa: F401
 from .test_information_followup_postgresql import search
 from .test_limitations_report_postgresql import submit_live

@@ -119,7 +119,37 @@ def test_answers_are_allowed_exactly_when_offered(
     expected = [action for _, action in QUESTIONS.get(state, ())]
     if state in {"pending", "retry_wait"} and task != "failed":
         expected = []
+    if state == "cancelled":
+        # A cancelled email asks nothing unless it is a report email still
+        # to be counted (#1872), which the test below covers.
+        expected = []
     assert [row["action"] for row in rows] == expected
+
+
+@pytest.mark.parametrize("task", (None, "running", "failed"))
+@pytest.mark.parametrize("can_resolve", (True, False))
+def test_a_countable_cancelled_report_email_asks_whether_it_reached(task, can_resolve):
+    """A report email once unknown, then cancelled, is offered both coverage
+    decisions whatever its task did, since neither sends (#1872)."""
+    actions = offered_actions(
+        "cancelled",
+        task,
+        campaign_state="active",
+        can_resolve=can_resolve,
+        can_retry=True,
+        countable=True,
+    )
+    rows = question_choices(
+        "cancelled",
+        task,
+        actions,
+        blocked=None if can_resolve else "held",
+        refusal=None,
+        countable=True,
+    )
+    assert [row["action"] for row in rows] == ["count_delivered", "count_unsent"]
+    # Held changes are still asked about, but refused with the held reason.
+    assert {row["unavailable"] for row in rows} == ({None} if can_resolve else {"held"})
 
 
 def test_a_refused_send_without_a_known_cause_has_the_generic_reason():

@@ -264,16 +264,20 @@ def test_retained_content_trail_avoids_the_current_campaign_editor():
     [
         ("draft", False, False, "testing", ["financial"], True),
         ("draft", False, False, "testing", ["census"], False),
-        ("draft", False, True, "testing", ["financial"], False),
-        ("draft", True, False, "testing", ["financial"], False),
-        ("active", True, True, "production", ["financial"], False),
-        ("draft", False, False, "production", ["financial"], False),
+        # A fixed structure still edits its short labels (#1569).
+        ("draft", False, True, "testing", ["financial"], True),
+        ("draft", True, False, "testing", ["financial"], True),
+        ("active", True, True, "production", ["financial"], True),
+        ("draft", False, False, "production", ["financial"], True),
+        ("archived", True, False, "production", ["financial"], False),
     ],
 )
 def test_share_options_is_offered_only_where_it_can_be_edited(
     monkeypatch, state, ever_active, locked, mode, modules, offered
 ):
-    """The sidebar never links to share options the page would refuse."""
+    """The sidebar never links to share options the page would refuse: it
+    edits a draft's whole list, a live campaign's short labels, and never
+    an archived campaign's."""
     from parishkit.stewardship.accounts import admin_context
 
     monkeypatch.setattr(admin_context, "allows", lambda *args, **kwargs: True)
@@ -586,7 +590,6 @@ REPORTS = [
     "campaign_comparison",
     "financial_report",
     "family_directory",
-    "emailed_reports",
 ]
 # The Administrator's menu in the spec's order (admin-portal spec, "Menu
 # groups"), written out so that reordering MENU fails here. Entries for pages
@@ -606,6 +609,7 @@ SPEC_ORDER = [
     "mail_queue",
     "family_email_sends",
     "deliveries",
+    "report_emails",
     "family_portal",
     "presence",
     # Review work
@@ -619,7 +623,6 @@ SPEC_ORDER = [
     "campaign_comparison",
     "financial_report",
     "family_directory",
-    "emailed_reports",
     # Parish data
     "parish_settings",
     "branding_settings",
@@ -641,7 +644,8 @@ SPEC_ORDER = [
 SHAPES = {
     "administrator": SPEC_ORDER,
     # Staff see Parish data with its one entry for them (#1011).
-    "staff": [*REPORTS, "parishsoft_fixes"],
+    # and Mail with Report emails alone, read-only (#1786).
+    "staff": ["report_emails", *REPORTS, "parishsoft_fixes"],
     "ministry_leader": ["ministry_report"],
 }
 
@@ -693,6 +697,7 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
         "production_progress",
         "delivery_control",
         "family_email_sends",
+        "report_emails",
         "response_dashboard",
         "campaign_comparison",
         "financial_report",
@@ -733,12 +738,9 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
             "go_live",
             "Only a draft campaign can go live; this one already has",
         ),
-        (
-            "active",
-            "production",
-            "share_settings",
-            "Can be changed only in Testing mode, before the campaign goes live",
-        ),
+        # A live campaign's Share options edit only short labels (#1569);
+        # only archiving closes the page.
+        ("archived", "production", "share_settings", "The campaign is archived"),
         ("archived", "production", "content_catalog", "The campaign is archived"),
         ("archived", "production", "artwork_settings", "The campaign is archived"),
         # Its schedules never send, so they are not edited either (#1258).
@@ -790,7 +792,6 @@ REASONS = (
     navigation.FINANCIAL_MISSING,
     navigation.MINISTRY_MISSING,
     navigation.CENSUS_MISSING,
-    navigation.STRUCTURE_FIXED,
     navigation.ALREADY_LIVE,
     navigation.NOT_CONFIRMED,
     navigation.PRODUCTION_ONLY,
@@ -865,10 +866,12 @@ def test_way_forward_links_only_entries_the_viewer_is_offered():
         "Production activation",
         reverse("admin:production_progress"),
     )
-    # The structure fixed once live, and an archived campaign: nothing undoes them.
-    assert navigation.greyed_entry("share_settings", live).forward is None
+    # A live campaign's Share options edit its short labels (#1569), so the
+    # entry is not greyed; an archived campaign: nothing undoes it.
+    assert navigation.greyed_entry("share_settings", live) is None
     archived = _menu("administrator", CAMPAIGNS["archived"], "production")
     assert navigation.greyed_entry("content_catalog", archived).forward is None
+    assert navigation.greyed_entry("share_settings", archived).forward is None
     # Staff are never offered Campaign settings, so their page has no link.
     staff = _menu("staff", CAMPAIGNS["census only"], "testing")
     assert navigation.greyed_entry("financial_report", staff).forward is None

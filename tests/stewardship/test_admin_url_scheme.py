@@ -59,12 +59,10 @@ VERBS = {
     "update",
     "withdraw",
 }
-# Segments the spec's placement table names on purpose: Send a weekly report
-# now is the form for a new weekly report (``emailed/weekly/new/``).
-# The Users pages (#952) are New user (``users/new/``), its Name lookup under
-# it, and Edit user (``users/<user>/edit/``), as the placement table names.
+# Segments the spec's placement table names on purpose: the Users pages
+# (#952) are New user (``users/new/``), its Name lookup under it, and Edit
+# user (``users/<user>/edit/``), as the placement table names.
 SPEC_NAMED = {
-    "weekly_digest_manual": {"new"},
     "user_new": {"new"},
     "user_name_suggestions": {"new"},
     "user_edit": {"edit"},
@@ -106,15 +104,27 @@ def test_moved_routes_follow_the_scheme(pattern):
 )
 def test_every_moved_page_reverses_under_its_group(name):
     """Each page's URL is /admin/<segment>/…/ for its menu group: Review work
-    shares Reports and queries' ``reports`` segment (R39 finding 4)."""
+    shares Reports and queries' ``reports`` segment (R39 finding 4). The
+    daily and weekly reports saved before report emails moved to Mail keep
+    their Reports addresses, which emails already sent link (#1786)."""
     arguments = {
         parameter: "parishsoft" if parameter == "target" else TASK
         for parameter in navigation.route_parameters()[name]
     }
     url = reverse(f"admin:{name}", kwargs=arguments)
     segment = navigation.SECTION_PATHS[navigation.PAGES[name].section]
+    if name in SAVED_DIGESTS:
+        segment = "reports"
     assert url.startswith(f"/admin/{segment}/")
     assert url.endswith("/")
+
+
+# The digest pages kept at their address under Reports (#1786).
+SAVED_DIGESTS = {
+    "daily_digest_snapshot",
+    "weekly_digest_snapshot",
+    "weekly_digest_item",
+}
 
 
 # Admin form actions that still name a campaign in their address (#865).
@@ -137,16 +147,6 @@ def test_no_admin_page_names_a_campaign():
     }
     assert naming == CAMPAIGN_ROUTES
     assert not CAMPAIGN_ROUTES & set(navigation.PAGES)
-
-
-def test_weekly_report_request_names_no_campaign():
-    """Send a weekly report now is a reports page; its old address is gone."""
-    url = reverse("admin:weekly_digest_manual")
-    assert url == "/admin/reports/emailed/weekly/new/"
-    assert resolve(url).url_name == "weekly_digest_manual"
-    # No redirect from the old campaign address (#864).
-    with pytest.raises(Resolver404):
-        resolve(f"/admin/reports/weekly-digests/request/{TASK}/")
 
 
 def test_polled_reads_keep_their_addresses():
@@ -286,8 +286,7 @@ SLASHLESS_EXPECTED = {
     f"/admin/reports/families/{T}": f"/admin/reports/families/{T}/",
     # Exports and emailed reports (NAV-12).
     f"/admin/reports/exports/{T}": f"/admin/reports/exports/{T}/",
-    "/admin/reports/emailed": "/admin/reports/emailed/",
-    "/admin/reports/emailed/weekly/new": "/admin/reports/emailed/weekly/new/",
+    "/admin/mail/report-emails": "/admin/mail/report-emails/",
     f"/admin/reports/emailed/weekly/{T}": f"/admin/reports/emailed/weekly/{T}/",
     f"/admin/reports/emailed/weekly/{T}/items/{T}": (
         f"/admin/reports/emailed/weekly/{T}/items/{T}/"
@@ -580,7 +579,6 @@ def test_report_actions_and_records_resolve_to_their_own_routes():
         (f"/admin/reports/ministries/follow-up/{T}/", "ministry_followup_item"),
         (f"/admin/reports/exports/{T}/", "report_export"),
         (f"/admin/reports/exports/{T}/download/", "report_export_download"),
-        ("/admin/reports/emailed/weekly/new/", "weekly_digest_manual"),
         (f"/admin/reports/emailed/weekly/{T}/", "weekly_digest_snapshot"),
         (f"/admin/reports/emailed/daily/{T}/", "daily_digest_snapshot"),
         (f"/admin/reports/emailed/daily/{T}/chart.png", "daily_digest_chart"),
@@ -589,14 +587,13 @@ def test_report_actions_and_records_resolve_to_their_own_routes():
     names = [pattern.name for pattern in reports.patterns]
     assert names.index("family_directory_export") < names.index("timeline")
     assert names.index("find_family") < names.index("timeline")
-    assert names.index("weekly_digest_manual") < names.index("weekly_digest_snapshot")
 
 
 def test_old_digest_addresses_are_gone():
     """The daily and weekly reports' old addresses are 404, not redirected (#864).
 
     The Administrator dropped old Admin aliases: a link in a report email sent
-    before NAV-12 no longer opens; the report is listed on Emailed reports.
+    before NAV-12 no longer opens; the report is listed on Report emails.
     """
     for old in (
         f"/admin/reports/daily-digests/{T}/",
@@ -627,10 +624,10 @@ def test_old_response_list_addresses_are_gone():
 
 
 def test_new_digest_emails_link_their_report_pages():
-    """The weekly email links its Emailed reports address; the daily the dashboard.
+    """The weekly email links its saved report address; the daily the dashboard.
 
     The daily email links the Response dashboard instead of its own saved
-    copy (#1532), which stays reachable from Emailed reports.
+    copy (#1532), which stays reachable from Report emails.
     """
     from types import SimpleNamespace
 

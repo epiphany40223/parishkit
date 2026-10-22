@@ -165,7 +165,8 @@ def test_acknowledged_credentials_start_configuration_then_source():
     assert rows["start"]["state"] == "done"
     assert rows["source"]["state"] == "active"
     assert rows["source"]["progress"] == Percentage(3, 10)
-    assert rows["source"]["task"] == source["id"]
+    # No step carries its background task's reference (#1969).
+    assert "task" not in rows["source"]
 
 
 def test_completion_marks_every_step_done():
@@ -210,7 +211,8 @@ def test_failed_final_load_gives_a_task_reference():
     rows = by_key(finishing(status(prepared=True, source=source)))
     assert rows["start"]["state"] == "done"
     assert rows["source"]["state"] == "failed"
-    assert rows["source"]["task"] == source["id"]
+    assert "task" not in rows["source"]
+    assert "failed final parish data load" in str(rows["source"]["text"])
 
 
 def queued_source(state="queued", phase="unspecified"):
@@ -244,12 +246,13 @@ def test_a_queued_final_load_is_in_start_the_load():
 
 
 def test_a_final_load_that_ended_before_pickup_fails_start_the_load():
-    """A final load no worker ever took fails on Start the load, with its task."""
+    """A final load no worker ever took fails on Start the load, which shows
+    no task reference (#1969)."""
     source = queued_source("cancelled")
     result = finishing(status(prepared=True, source=source))
     rows = by_key(result)
     assert rows["start"]["state"] == "failed"
-    assert rows["start"]["task"] == source["id"]
+    assert "task" not in rows["start"]
     assert rows["source"]["state"] == "waiting"
     assert result["overall"] == "failed"
 
@@ -318,8 +321,9 @@ def test_each_box_reserves_every_running_form():
     }
     source = {form["state"]: form for form in rows["source"]["reserve"]}
     assert set(source) == {"waiting", "active", "done"}
-    # The final load's counts and task reference are reserved before it starts.
-    assert "progress" in source["active"] and len(source["active"]["task"]) == 36
+    # The final load's counts are reserved before it starts; no task
+    # reference is shown or reserved (#1969).
+    assert "progress" in source["active"] and "task" not in source["active"]
     assert rows["completed"]["reserve"] == []
     # A running final load reserves the stand-in counts, not its own.
     running = {"id": uuid4(), "state": "running", "progress": Percentage(1, 2)}

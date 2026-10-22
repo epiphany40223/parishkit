@@ -730,6 +730,12 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             )
             for name in ("snapshot", "recipient")
         },
+        # An Administrator's coverage decision on a report email (#1872):
+        # immutable as the resolution journal it extends is.
+        "stewardship_report_email_coverage_decision": (
+            "report_email_coverage_decision_immutable",
+            "stewardship_recipient_immutable_v1",
+        ),
         # One Administrator's Email Ministry leaders Apply (#1592): its
         # guard admits the web's reviewed insert and refuses every change.
         "stewardship_leader_email_request": (

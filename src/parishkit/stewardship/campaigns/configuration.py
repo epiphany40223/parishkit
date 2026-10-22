@@ -46,14 +46,86 @@ def _duids(values):
         invalid()
 
 
-def _options(options):
-    """Validate an ordered option list (share methods or talents) by identity."""
+# A share option's optional short label (#1569): what Admin tables and
+# charts show instead of the full label. Plain text, so no placeholder
+# braces; stored only when set.
+SHORT_LABEL = "short_label"
+SHORT_LABEL_LIMIT = 12
+
+
+def validate_short_label(value):
+    """Refuse a short label that is not bounded plain visible text.
+
+    Raises ``ValueError``. Braces are refused outright: the short label is
+    never rendered as a template, so a placeholder would show literally.
+    """
+    try:
+        text(value, SHORT_LABEL_LIMIT)
+    except ValueError:
+        raise ValueError("A bounded short label is required.") from None
+    if "{" in value or "}" in value:
+        raise ValueError("A short label is plain text.")
+    return value
+
+
+def short_label_key(value):
+    """The form two short labels are compared in: trimmed, case ignored.
+
+    Upper then lower case is Unicode's full case mapping, which JavaScript's
+    toUpperCase and toLowerCase also apply, so the Share options page's live
+    check (ui-v1.js data-distinct) finds exactly the duplicates the server
+    refuses; "Straße" and "STRASSE" are one label. (``casefold`` differs from
+    it only for rare letters, such as the dotless i, and has no JavaScript
+    equivalent.)
+    """
+    return value.strip().upper().lower()
+
+
+def without_short_labels(options):
+    """Share options with every short label left out (#1569).
+
+    The short label is Admin-only wording: the Family form's digest, and the
+    lock on a live campaign's structure, compare options in this form, so
+    a short label alone never makes a Family form stale and stays editable
+    on a live campaign. Anything that is not a list of objects is returned
+    as it is, for the caller's own validation to refuse.
+    """
+    if type(options) is not list:
+        return options
+    return [
+        {key: value for key, value in option.items() if key != SHORT_LABEL}
+        if type(option) is dict
+        else option
+        for option in options
+    ]
+
+
+def _options(options, *, short_labels=False):
+    """Validate an ordered option list (share methods or talents) by identity.
+
+    Only share methods (``short_labels``) may carry a short label, each
+    distinct from the others ignoring case.
+    """
     if type(options) is not list or len(options) > 100:
         invalid()
     seen = set()
+    shorts = set()
+    base = {"id", "label", "free_text"}
     for option in options:
-        if type(option) is not dict or set(option) != {"id", "label", "free_text"}:
+        if type(option) is not dict or not (
+            set(option) == base
+            or (short_labels and set(option) == base | {SHORT_LABEL})
+        ):
             invalid()
+        if SHORT_LABEL in option:
+            try:
+                validate_short_label(option[SHORT_LABEL])
+            except ValueError:
+                invalid()
+            key = short_label_key(option[SHORT_LABEL])
+            if key in shorts:
+                invalid()
+            shorts.add(key)
         typed(option["id"], "uuid")
         text(option["label"], 1024)
         try:
@@ -245,7 +317,7 @@ def campaign_values(values):
         ):
             invalid()
     options = values["share_options"]
-    _options(options)
+    _options(options, short_labels=True)
     if "financial" not in modules and options:
         invalid()
     # An edited talent list from before #970 stays as history; it still has

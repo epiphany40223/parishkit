@@ -1193,7 +1193,24 @@ BEGIN
         ) THEN RAISE EXCEPTION 'Restore review holds campaign configuration changes' USING ERRCODE='23514'; END IF;
         IF EXISTS (SELECT 1 FROM stewardship_campaign c JOIN stewardship_campaign_configuration old_c ON old_c.id=c.active_configuration_id
             WHERE c.id=target AND c.structural_locked
-              AND (old_c.values - ARRAY['name','year_label','content_versions','end_date','artwork','reminder_workgroup','ministry_duids','ministry_leader_roles']) IS DISTINCT FROM (candidate.values - ARRAY['name','year_label','content_versions','end_date','artwork','reminder_workgroup','ministry_duids','ministry_leader_roles'])) THEN
+              AND (old_c.values - ARRAY['name','year_label','content_versions','end_date','artwork','reminder_workgroup','ministry_duids','ministry_leader_roles','share_options']) IS DISTINCT FROM (candidate.values - ARRAY['name','year_label','content_versions','end_date','artwork','reminder_workgroup','ministry_duids','ministry_leader_roles','share_options'])) THEN
+            RAISE EXCEPTION 'Live structural settings are locked' USING ERRCODE='23514';
+        END IF;
+        -- A share option's short label (#1569) is Admin-only wording, outside
+        -- the Family form and its digest, so it stays editable while the
+        -- structure is locked: the share options are compared without it, in
+        -- their order. Everything else about them stays fixed.
+        IF EXISTS (SELECT 1 FROM stewardship_campaign c JOIN stewardship_campaign_configuration old_c ON old_c.id=c.active_configuration_id
+            WHERE c.id=target AND c.structural_locked
+              AND (CASE WHEN jsonb_typeof(old_c.values->'share_options')='array' THEN
+                    (SELECT coalesce(jsonb_agg(CASE WHEN jsonb_typeof(e.option)='object' THEN e.option - 'short_label' ELSE e.option END ORDER BY e.position),'[]'::jsonb)
+                     FROM jsonb_array_elements(old_c.values->'share_options') WITH ORDINALITY e(option,position))
+                    ELSE old_c.values->'share_options' END)
+                IS DISTINCT FROM
+                  (CASE WHEN jsonb_typeof(candidate.values->'share_options')='array' THEN
+                    (SELECT coalesce(jsonb_agg(CASE WHEN jsonb_typeof(e.option)='object' THEN e.option - 'short_label' ELSE e.option END ORDER BY e.position),'[]'::jsonb)
+                     FROM jsonb_array_elements(candidate.values->'share_options') WITH ORDINALITY e(option,position))
+                    ELSE candidate.values->'share_options' END)) THEN
             RAISE EXCEPTION 'Live structural settings are locked' USING ERRCODE='23514';
         END IF;
         -- The one reviewed live structural exemption (#342): an Administrator

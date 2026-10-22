@@ -449,19 +449,27 @@ def read_emails(address, actor_id):
     )
 
 
-def read_ministries(accounts):
-    """The names of the Ministries the accounts lead now through ParishSoft.
+def read_ministries(accounts, address, actor_id):
+    """The names of the Ministries the user leads now through ParishSoft.
 
     Each enabled account's scope is the shared leader scope
-    (``policy.leader_scope``), named from the current ParishSoft catalog.
+    (``policy.leader_scope``), named from the current ParishSoft catalog. A
+    user with no Google account yet (one who never signed in) has no scope
+    to read, so the address is read instead, through the Administrator-only
+    ``policy.address_leader_scope`` (#1925), which gives the answer the
+    shared scope would give that address's first account. A user whose
+    accounts are all disabled leads nothing here, as on sign-in.
     """
     from .leader_import import ministry_names
-    from .policy import leader_scope
+    from .policy import address_leader_scope, leader_scope
 
-    led = set()
-    for account in accounts:
-        if not account["disabled"]:
-            led |= leader_scope(account["id"])
+    if accounts:
+        led = set()
+        for account in accounts:
+            if not account["disabled"]:
+                led |= leader_scope(account["id"])
+    else:
+        led = address_leader_scope(address, actor_id)
     return tuple(ministry_names(led).values()) if led else ()
 
 
@@ -622,11 +630,12 @@ def read_timeline(user_id, actor_id, *, codes=False, test_link=False):
     """One user's page: the person, summary, lines, accounts and Families.
 
     Runs inside the caller's read-only snapshot. ``actor_id`` is the
-    reading Administrator, for the email and identity reads; ``codes`` says
-    the reader may see Family codes and ``test_link`` the chosen-Family
-    test page (``read_families``). An unknown user
-    raises ``LookupError``. Ministries are read only for a current user: a
-    former user leads nothing here. A Family email that also went to the
+    reading Administrator, for the email and identity reads and, for a user
+    who never signed in, the Ministries read; ``codes`` says the reader may
+    see Family codes and ``test_link`` the chosen-Family test page
+    (``read_families``). An unknown user raises ``LookupError``. Ministries
+    are read only for a current user: a former user leads nothing here. A
+    Family email that also went to the
     user's address is listed once, as the Family's line, which names it as
     the Family Timeline does ("Reminder 2"); the summary's Last email still
     counts it.
@@ -640,7 +649,9 @@ def read_timeline(user_id, actor_id, *, codes=False, test_link=False):
     )
     rows = read_audit([account["id"] for account in accounts])
     emails = read_emails(person.email, actor_id)
-    ministries = read_ministries(accounts) if person.role else ()
+    ministries = (
+        read_ministries(accounts, person.email, actor_id) if person.role else ()
+    )
     families = read_families(person.email, actor_id, codes=codes, test_link=test_link)
     tagged = family_lines(families)
     listed = {line.message_id for line in tagged if line.message_id}

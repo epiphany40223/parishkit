@@ -27,17 +27,23 @@ from .weekly_presentation import page_number, snapshot_context
 
 
 def _principal(request, store, *, read_only=False):
-    """Private Admin mail reports are not the later Staff follow-up work queue."""
+    """Administrators and Staff may open a weekly report (#1786, decision 3).
+
+    Its only block was the additional information requests, which Staff may
+    receive and read (report-emails spec, "Saved copies"), so the weekly
+    report pages saved before the conversion open for Staff too, as the
+    report email pages that replaced them do.
+    """
     principal = authenticated_admin(
         request, store=store, activity=not read_only, read_only=read_only
     )
-    return require_role(principal, "administrator")
+    return require_role(principal, "staff")
 
 
 def record_view(principal, snapshot_id, campaign_id, outcome):
     """Journal opaque access, never Family text or recipient addresses.
 
-    The page and the command line's ``digest weekly`` record the same event.
+    The page and the command line's ``report-email copy`` record the same event.
     """
     # An audit append takes no row locks, so it need not join the writers'
     # work order; waiting there stalled report pages behind every source

@@ -1,5 +1,7 @@
 {% load i18n stewardship %}
-<p>{% translate "Edit labels, set their order, or explicitly delete options. The blank last row adds an option. After saving, another blank row is available. Up to 100 options are supported." %}</p>
+{% if short_only %}{# A locked campaign (#1569): only the short labels stay open; the other fields are shown disabled, each with the reason in its tip, and no label can change, so the placeholders are not described. #}<p>{% translate "This campaign is locked, so only the short labels can change. Admin tables and charts show them, and Families always see the full label." %}</p>
+{% else %}<p>{% translate "Edit labels, set their order, or explicitly delete options. The blank last row adds an option. After saving, another blank row is available. Up to 100 options are supported." %}</p>
 <p>{% translate "Labels support parish_name, pronoun, campaign_year, financial_period, financial_start and financial_end placeholders inside double braces. The Family portal chooses This household, I or We from the effective active Member count. Proposed Members count; Members marked deceased or no longer in the household do not." %}</p>
+{% endif %}
 {{ formset.management_form }}{{ formset.non_form_errors }}
 {% for form in formset %}<fieldset class="panel"><legend>{% translate "Option" %} {{ forloop.counter|number }}</legend>{{ form.as_div }}</fieldset>{% endfor %}

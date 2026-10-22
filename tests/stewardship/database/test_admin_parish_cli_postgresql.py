@@ -24,7 +24,7 @@ from parishkit.stewardship.accounts.request_models import ConfigurationChangeReq
 from parishkit.stewardship.audit.models import AuditEvent
 
 from .automation_builders import as_staff, paired
-from .test_admin_digest_list_cli_postgresql import revoke
+from .test_admin_report_email_cli_postgresql import revoke
 from .test_admin_test_sample_cli_postgresql import runner
 
 pytestmark = pytest.mark.django_db(transaction=True)

@@ -132,6 +132,34 @@ def leader_scope(user_id):
     return frozenset(json.loads(value) if isinstance(value, str) else value)
 
 
+def address_leader_scope(address, actor_id):
+    """The Ministries ``address`` leads now, read for an Administrator (#1925).
+
+    The same answer ``leader_scope`` gives a Google account with this
+    address, for a user who has never signed in and so has no portal user
+    row. SQL holds it (stewardship_address_leader_scope_v1, frozen
+    migration 0167), built on the one leader definition. The definer admits
+    only the web login and an Administrator ``actor_id``; a refusal raises
+    ``PermissionError``, so the page answers with its denial. The call runs
+    in its own savepoint, so a refusal does not abort the caller's
+    transaction.
+    """
+    from django.db import DatabaseError, connection, transaction
+
+    try:
+        with transaction.atomic(), connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT public.stewardship_address_leader_scope_v1(%s, %s)",
+                [address, actor_id],
+            )
+            value = cursor.fetchone()[0]
+    except DatabaseError as error:
+        if getattr(error.__cause__, "sqlstate", None) != "42501":
+            raise
+        raise PermissionError("A user's Ministries require an Administrator.") from None
+    return frozenset(json.loads(value) if isinstance(value, str) else value)
+
+
 # The roles are levels (#952): each holds every capability of the role
 # below it, plus its own. A Ministry leader's capabilities apply only within
 # the Ministries it leads; Staff and Administrators see every Ministry.

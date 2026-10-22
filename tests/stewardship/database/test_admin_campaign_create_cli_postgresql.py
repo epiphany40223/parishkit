@@ -36,7 +36,7 @@ from ..campaign_factory import campaign
 from ..test_source_corpus import source
 from .automation_builders import as_staff, paired
 from .campaign_builders import add_draft, change
-from .test_admin_digest_list_cli_postgresql import revoke
+from .test_admin_report_email_cli_postgresql import revoke
 from .test_admin_test_sample_cli_postgresql import runner
 from .test_background_grants_postgresql import task_login
 from .test_campaign_create_postgresql import CREATE, new_fields

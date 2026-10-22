@@ -104,6 +104,8 @@ def test_delivery_resolutions_post_in_place():
         "Recorded as not sent.",
         "Note saved.",
         "Trying again.",
+        "Counted as delivered.",
+        "Counted as not delivered.",
     ):
         assert f'{{% translate "{message}" as message %}}' in page, message
 
@@ -119,4 +121,6 @@ def test_delivery_resolutions_survive_paging():
     assert '<details id="delivery-note-disclosure" data-keep-open>' in text
     # Every resolution form posts from one of the two regions.
     assert text.count("admin:delivery_resolve") == 1
-    assert text.count('include "stewardship/delivery-answer.html"') == 7
+    # Seven answers of the unknown, failed and still-sending questions, and
+    # the two of a stuck report email's (#1872).
+    assert text.count('include "stewardship/delivery-answer.html"') == 9
