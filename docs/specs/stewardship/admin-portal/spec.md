@@ -486,7 +486,10 @@ completes, the page shows a Continue link to the Admin home and drops Cancel
 setup. A failed step stops the updates. A failed step explains what to do: a credential the provider
 rejected repeats the integration page's per-provider advice on what to check,
 one that did not finish in time asks the operator to check the credential
-installers, and each says to cancel and start a new setup (#456). Before the marker,
+installers, and each says to cancel and start a new setup (#456). No step
+shows a background task's reference: a failed final parish data load asks the
+operator to check the service logs for that load, which is the attempt's only
+one ([#1969](https://github.com/epiphany40223/parishkit/issues/1969)). Before the marker,
 normal routes remain unconfigured/fail-closed and cancel cleanup removes sealed
 staging and any wizard-only files without exposing a partial product setup.
 Cancellation after YAML selection uses the
