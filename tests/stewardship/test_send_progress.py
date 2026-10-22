@@ -1,9 +1,10 @@
-"""Family email progress arithmetic and its live region (#413), without a database.
+"""Family send progress arithmetic and the Mail queue's live region, without a database.
 
-The counts come from ``read_send`` (tested against PostgreSQL); here the
-rate, finish estimate and percentage are checked for empty, starting,
-running, stalled, paused and finished sends, and the status template for what it
-shows, when it keeps polling and what screen readers hear.
+The counts come from ``read_send`` and ``read_queue`` (tested against
+PostgreSQL); here the rate, finish estimate and percentage are checked for
+empty, starting, running, stalled, paused and finished sends, and the Mail
+queue's status template (#1562, with the Family send panel of #413) for
+what it shows, when it keeps polling and what screen readers hear.
 """
 
 import math
@@ -14,15 +15,23 @@ from decimal import Decimal
 import pytest
 from django.template.loader import render_to_string
 
+from parishkit.stewardship.jobs.delivery_metadata import LISTED_PURPOSES, other_mode
+from parishkit.stewardship.jobs.mail_queue import (
+    QUEUE_PURPOSES,
+    KindCounts,
+    QueueCounts,
+    _column,
+)
+from parishkit.stewardship.jobs.mail_queue_views import (
+    GIVE_UP_MILLISECONDS,
+    POLL_MILLISECONDS,
+    _announcement,
+    _tiles,
+)
 from parishkit.stewardship.jobs.send_progress import (
     RATE_WINDOW,
     SendCounts,
     progress,
-)
-from parishkit.stewardship.jobs.send_progress_views import (
-    GIVE_UP_MILLISECONDS,
-    POLL_MILLISECONDS,
-    _announcement,
 )
 
 NOW = datetime(2026, 10, 3, 14, tzinfo=UTC)
@@ -174,20 +183,37 @@ def test_announcements_change_only_by_quarter_and_at_the_end():
     assert _announcement(None) == ""
 
 
-def render(send, *, upcoming=False, **extra):
-    """Render the status region as the page or the polled fragment would.
+def queue(mode="production", other=0, **kinds):
+    """A Mail queue: ``kinds`` maps a purpose to its four counts."""
+    return QueueCounts(
+        mode=mode,
+        kinds=tuple(
+            KindCounts(purpose, *kinds.get(purpose, ())) for purpose in QUEUE_PURPOSES
+        ),
+        other_mode_queued=other,
+    )
 
-    As the view does, the region keeps polling whenever there is a campaign.
+
+def render(send, *, upcoming=False, queued=None, **extra):
+    """Render the Mail queue's status region as the page or the fragment would.
+
+    As the view does, the region keeps polling whenever the system is
+    available, campaign or not.
     """
+    queued = queued or queue()
+    paused = bool(send and send.paused)
     return render_to_string(
-        "stewardship/family-email-progress-status.html",
+        "stewardship/mail-queue-status.html",
         {
             "campaign": object(),
             "testing": False,
-            "paused": bool(send and send.paused),
+            "paused": paused,
+            "queue": queued,
+            "tiles": _tiles(queued, paused),
+            "other_mode": other_mode(queued.mode),
             "send": send,
             "upcoming": upcoming,
-            "follow": extra.get("campaign", True) is not None,
+            "follow": True,
             "announcement": _announcement(send),
             "poll_interval": POLL_MILLISECONDS,
             "give_up": GIVE_UP_MILLISECONDS,
@@ -197,8 +223,8 @@ def render(send, *, upcoming=False, **extra):
 
 
 def region(html):
-    """The opening tag of the progress region."""
-    return re.search(r'<section[^>]*data-live-status="send-progress"[^>]*>', html)[0]
+    """The opening tag of the Mail queue's updated region."""
+    return re.search(r'<section[^>]*data-live-status="mail-queue"[^>]*>', html)[0]
 
 
 def test_a_running_send_polls_with_a_labelled_progress_bar():
@@ -319,16 +345,24 @@ def test_reminder_buckets_and_preparation_failures_are_named():
 @pytest.mark.parametrize(
     ("campaign", "upcoming", "text"),
     [
-        (None, False, "There is no current campaign."),
+        (
+            None,
+            False,
+            "There is no current campaign, so no Family email is being sent.",
+        ),
         (object(), False, "No Family email send is in progress right now"),
         (object(), True, "Waiting for the next emails to be scheduled"),
     ],
 )
 def test_before_the_first_send_the_page_keeps_checking(campaign, upcoming, text):
-    """A page opened before the first email switches to it by itself."""
+    """A page opened before the first email switches to it by itself.
+
+    With no campaign it still checks: notices and Ministry leader emails
+    are queued without one (#1562).
+    """
     html = render(None, campaign=campaign, upcoming=upcoming)
     assert text in html
-    assert ("data-live-pending" in region(html)) is (campaign is not None)
+    assert "data-live-pending" in region(html)
     assert "<progress" not in html and "Last send" not in html
 
 
@@ -398,3 +432,78 @@ def test_reminder_workgroup_skips_are_not_sent_and_not_remaining():
     observed = counts(kind="reminder", sent=3, workgroup=2, not_needed=1)
     assert observed.not_sent == 3 and not observed.in_progress
     assert progress(observed).total == 3
+
+
+def test_queue_columns_split_held_and_sending_messages():
+    """A held message is Paused; one being handed over is Sending now."""
+    assert _column("pending", False) == "queued"
+    assert _column("retry_wait", False) == "retry_wait"
+    assert _column("pending", True) == _column("retry_wait", True) == "paused"
+    assert _column("submitting", False) == _column("submitting", True) == "sending"
+    assert other_mode("production") == "testing"
+    assert other_mode("testing") == "production"
+
+
+def test_queue_tiles_sum_every_kind_and_say_whether_delivery_is_paused():
+    """Four tiles, each a column summed over every kind (#1562)."""
+    queued = queue(
+        initial=(5, 2, 1, 0), operational=(1, 0, 0, 0), reminder=(0, 0, 0, 3)
+    )
+    assert queued.total == 12
+    tiles = {item.key: item for item in _tiles(queued, True)}
+    assert [
+        tiles[key].text for key in ("queued", "sending", "retry-wait", "paused")
+    ] == [
+        "6",
+        "2",
+        "1",
+        "3",
+    ]
+    assert tiles["paused"].details == ("Live delivery is paused",)
+    running = {item.key: item for item in _tiles(queued, False)}
+    assert running["paused"].details == ("Live delivery is not paused",)
+    # Only Production mail can be paused.
+    testing = {item.key: item for item in _tiles(queue("testing"), False)}
+    assert testing["paused"].details == ("Testing email is never paused",)
+
+
+def test_queue_table_draws_every_kind_and_links_only_kinds_with_mail():
+    """Every kind always has a row; a Kind links Sent mail only while queued."""
+    html = render(None, queued=queue(initial=(4, 1, 0, 0)))
+    rows = re.findall(r'<tr data-kind="([a-z_]+)">', html)
+    # Every kind Sent mail lists, in its order, the Ministry leader emails
+    # last (#1562).
+    assert tuple(rows) == QUEUE_PURPOSES == LISTED_PURPOSES
+    assert rows[-1] == "leader_email"
+    assert (
+        '<a href="/admin/mail/sent/?purpose=initial&amp;state=still_sending'
+        '&amp;mode=production">Initial invitation</a>' in html
+    )
+    assert '<th scope="row">Reminder</th>' in html
+    assert '<td class="numeric mail-queue-zero">0</td>' in html
+    assert '<td class="numeric">4</td>' in html
+    # Nothing in the other mode: its line keeps its place, empty.
+    assert '<p class="mail-queue-other"></p>' in html
+
+
+def test_queue_other_mode_line_counts_and_links_that_mode():
+    """The other mode's queued emails are named, never added to the tiles."""
+    html = render(None, queued=queue(other=3))
+    assert (
+        '<a href="/admin/mail/sent/?state=still_sending&amp;mode=testing">'
+        "3 emails queued in Testing</a>" in html
+    )
+    single = render(None, queued=queue("testing", other=1))
+    assert "1 email queued in Production</a>" in single
+
+
+def test_queued_ministry_leader_emails_link_sent_mail():
+    """Sent mail lists Ministry leader emails (#1562), so their Kind links
+    it while one is queued, as every other kind's does."""
+    html = render(None, queued=queue(leader_email=(1, 0, 0, 0)))
+    row = html.split('<tr data-kind="leader_email">')[1].split("</tr>")[0]
+    assert (
+        '<a href="/admin/mail/sent/?purpose=leader_email&amp;state=still_sending'
+        '&amp;mode=production">Ministry leader email</a>' in row
+    )
+    assert '<td class="numeric">1</td>' in row

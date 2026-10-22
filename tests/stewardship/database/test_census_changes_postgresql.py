@@ -173,6 +173,13 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert len(rows) == body.count(cell) == 2
         assert len(link_reads(queries)) == 1
         assert get(browser, route + "?search=x")[0].status_code == 400
+        # The retired Submitted from and Through (#1888), from an old link
+        # or a page drawn before then, are dropped unread, never refused.
+        stale = "?start=2054-10-05&end=bad&zone=Nowhere/Zone"
+        response, body = get(browser, route + stale)
+        assert response.status_code == 200 and b'name="start"' not in body
+        stale = {"start": "bad", "end": "", "zone": ""}
+        assert search(browser, route, stale)[0].status_code == 200
         response, body = search(browser, route, {"stage": "conflict"})
         assert response.status_code == 200 and b"Nothing is at this stage." in body
         for invalid in (
@@ -189,8 +196,17 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert response.status_code == 200 and b'aria-sort="ascending"' in body
         assert b'<td class="numeric">3</td>' in body
         export = route + "exports/"
+        # A download pane drawn before #1888 still posts its empty dates.
         response, body = search(
-            browser, export, {"format": "csv", "timezone": "UTC", "stage": "all"}
+            browser,
+            export,
+            {
+                "format": "csv",
+                "timezone": "UTC",
+                "stage": "all",
+                "start": "",
+                "zone": "",
+            },
         )
         assert response.status_code == 200 and response["Content-Type"] == "text/csv"
         assert "stewardship-census-changes-" in response["Content-Disposition"]

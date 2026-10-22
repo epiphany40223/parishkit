@@ -15,14 +15,11 @@ from uuid import UUID
 from django.template.loader import render_to_string
 from django.urls import reverse
 
+from parishkit.stewardship.accounts.campaign_wizard import task_stages
 from parishkit.stewardship.accounts.integration_credentials import CredentialSummary
 from parishkit.stewardship.accounts.integration_forms import IntegrationForm
 from parishkit.stewardship.campaigns.domain import Percentage
-from parishkit.stewardship.jobs.send_progress_views import (
-    GIVE_UP_MILLISECONDS,
-    POLL_MILLISECONDS,
-    _announcement,
-)
+from parishkit.stewardship.jobs.queue_wait import QueueWait
 from parishkit.stewardship.jobs.task_wording import phase_words
 from parishkit.stewardship.jobs.views import EVENT_SORTING
 from parishkit.stewardship.source.data_age import Connection
@@ -32,15 +29,15 @@ from parishkit.stewardship.web.tables import window_table
 
 from .automation_components import canonical
 from .family_test_components import family_tests_page
-from .send_progress_components import _send
+from .send_progress_components import _send, queue_values
 
 REQUEST, RUNNING = UUID(int=700), UUID(int=703)
 # A configuration change still being applied when its page opens, so the
 # page watches it from the start (#1568 moved these from the retired Key
 # replacement status page).
 CHANGE_RUNNING = reverse("admin:configuration_request", args=[RUNNING])
-PROGRESS = reverse("admin:family_email_progress")
-# The passive status the progress page polls while a send runs.
+PROGRESS = reverse("admin:mail_queue")
+# The passive status the Mail queue polls while a send runs.
 PROGRESS_STATUS = "/live-progress-status"
 FAMILY_TESTS = reverse("admin:campaign_mail_families", args=[UUID(int=702)])
 # The same page while a Family test is on its way, so it watches itself
@@ -54,6 +51,8 @@ TASK_PAGE = reverse("admin:background_task_page", args=[TASK_RUN])
 TASK_STATUS = reverse("admin:background_task_status", args=[TASK_RUN])
 # The finished run's page with its history sorted by Action.
 TASK_FINISHED_BY_ACTION = "/live-task-finished-by-action"
+# Its status polled part-way through saving the records (#1579).
+TASK_STAGING_STATUS = "/live-task-staging-status"
 # A report export and a latest-data export, and a configuration change's
 # status, which update themselves (#519 PR 7b, #1586). The two exports share
 # one address form (the view draws whichever the job is).
@@ -84,11 +83,18 @@ KEEP = "/live-keep"
 KEEP_STATUS = "/live-keep/status"
 KEEP_EMPTY = "/live-keep-empty"
 KEEP_EMPTY_STATUS = "/live-keep-empty/status"
-# The fixture server's answers to Dismiss and Refresh now (status, Location,
-# body).
+# A queued export's answer, as the create views give it (#1778): a redirect
+# to its status address, pending (test_export_in_place.py).
+EXPORT_QUEUED = "/live-export-queued"
+# A queued export waiting behind a ParishSoft refresh, with its queue-wait
+# sentence (#340).
+EXPORT_WAITING = "/live-export-waiting"
+# The fixture server's answers to Dismiss and Refresh now and the queued
+# export (status, Location, body).
 POSTS = {
     DISMISS: (303, INTEGRATION + "?dismissed=1", ""),
     REFRESH: (303, REFRESH_REQUESTED + "#refresh-run", ""),
+    EXPORT_QUEUED: (302, EXPORT_PENDING, ""),
 }
 
 
@@ -127,25 +133,12 @@ def components(context, admin):
     now = context["server_now"]
     page = context | {"admin_chrome": admin}
 
-    def progress(template="family-email-progress", **counts):
-        """Family email progress for a running send with these counts, which
+    def progress(template="mail-queue", **counts):
+        """The Mail queue for a running Family send with these counts, which
         the page watches through PROGRESS_STATUS."""
-        send = _send(now, **counts)
         return render_to_string(
             f"stewardship/{template}.html",
-            page
-            | {
-                "status_url": PROGRESS_STATUS,
-                "campaign": SimpleNamespace(pk=UUID(int=413)),
-                "testing": False,
-                "paused": False,
-                "send": send,
-                "upcoming": False,
-                "follow": True,
-                "announcement": _announcement(send),
-                "poll_interval": POLL_MILLISECONDS,
-                "give_up": GIVE_UP_MILLISECONDS,
-            },
+            page | queue_values(_send(now, **counts)) | {"status_url": PROGRESS_STATUS},
         )
 
     def family_tests(items, pending=False):
@@ -188,10 +181,10 @@ def components(context, admin):
             f"stewardship/{template}.html", refresh_values(state, steps, sort=sort)
         )
 
-    def export(state, mutable=True, expires_at=None):
+    def export(state, mutable=True, expires_at=None, wait=None):
         """A participation export's page in ``state``; while ``mutable`` is
         false, other campaign work holds its commands. ``expires_at`` is a
-        ready file's window end."""
+        ready file's window end, and ``wait`` a queued one's QueueWait."""
         job = SimpleNamespace(
             pk=UUID(int=720),
             format="xlsx",
@@ -211,6 +204,7 @@ def components(context, admin):
                     "expires_at": expires_at.isoformat() if expires_at else None,
                 },
                 "mutable": mutable,
+                "wait": wait,
                 "retry_key": UUID(int=723),
                 "report_url": "/participation",
                 "report_name": "Participation",
@@ -306,8 +300,11 @@ def components(context, admin):
             for version, (action, step_state, phase, current) in enumerate(steps, 1)
         ]
         phase, current = steps[-1][2:]
+        # The run's stage boxes (#1579), as _task_read builds them.
+        stages = task_stages({"state": state, "progress": {"phase": phase}})
         values = page | {
             "is_refresh": True,
+            "stages": stages,
             "refresh_label": "Full refresh",
             "phase_text": phase_words("source_refresh", phase),
             "refresh_result": "4,000 records checked, 12 changed."
@@ -360,9 +357,7 @@ def components(context, admin):
         "/live-running-applied": change("applied", RUNNING),
         PROGRESS: progress(),
         "/live-progress-later": progress(sent=900, remaining=180),
-        PROGRESS_STATUS: progress(
-            "family-email-progress-status", sent=900, remaining=180
-        ),
+        PROGRESS_STATUS: progress("mail-queue-status", sent=900, remaining=180),
         FAMILY_TESTS: family_tests([]),
         FAMILY_TESTS_PENDING: family_tests([], pending=True),
         "/live-family-tests-later": family_tests(tested),
@@ -371,6 +366,12 @@ def components(context, admin):
         TASK_PAGE: refresh_task("running", running),
         TASK_STATUS: refresh_task("running", running, fragment=True),
         "/live-task-finished": refresh_task("succeeded", finished),
+        # Part-way through saving, for the stage boxes' change of state (#1579).
+        TASK_STAGING_STATUS: refresh_task(
+            "running",
+            [*running, ("progress", "running", "staging", 2000)],
+            fragment=True,
+        ),
         "/live-task-finished-status": refresh_task(
             "succeeded", finished, fragment=True
         ),
@@ -386,6 +387,15 @@ def components(context, admin):
         EXPORT_EXPIRING: export("ready", expires_at=now + EXPORT_WINDOW_LEFT),
         EXPORT_ENDED: export("ready", expires_at=now - timedelta(seconds=1)),
         EXPORT_PENDING: export("queued"),
+        EXPORT_WAITING: export(
+            "queued",
+            wait=QueueWait(
+                since=now - timedelta(minutes=3),
+                waited="3 minutes",
+                blocker="a ParishSoft refresh",
+                blocker_started=now - timedelta(minutes=4),
+            ),
+        ),
         EXACT: exact("failed"),
         "/live-exact-ready": exact("succeeded", export_id=UUID(int=725)),
         CHANGE: change("staged"),

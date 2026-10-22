@@ -31,9 +31,10 @@ class Migration(migrations.Migration):
         # last file whose guard bodies this one replaces, and so on those
         # installing 0130, 0146, 0148, 0149 and 0150.
         ("stewardship_responses", "0027_reviewed_census_resubmission"),
-        # The migration that installs #1705's last frozen file (0155), so
-        # this file applies after every file merged before it.
-        ("stewardship_reports", "0039_reviewed_pledge_resubmission"),
+        # The migration that installs the previous frozen file (0157, the
+        # person identity reads, #1887), so this file applies after every
+        # file merged before it.
+        ("stewardship_accounts", "0031_person_identity_reads"),
     ]
 
     operations = [

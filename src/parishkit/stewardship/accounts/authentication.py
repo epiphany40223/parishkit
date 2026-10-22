@@ -101,7 +101,7 @@ def runtime():
     return value
 
 
-def denial(*, status=403, retry=None, admin=True):
+def denial(*, status=403, retry=None, admin=True, sign_in=False):
     """Uniform retryable response, with no provider details or denied identity.
 
     The kind follows the status alone, as Family ``denied()`` does: a rate
@@ -120,6 +120,11 @@ def denial(*, status=403, retry=None, admin=True):
     now, #939) likewise keeps its 403 but shows its own plain explanation.
     Reading the exception being handled keeps that in one place instead of
     an extra ``except`` clause in every report view.
+
+    ``sign_in`` is true only where sign-in itself is refused (OAuth start,
+    callback, login page): the generic page then adds the Google Account
+    guidance (#1593). Signed-in refusals, such as the report views', leave
+    it false, since that advice is wrong for someone already signed in.
     """
     error = sys.exception()
     if isinstance(error, UserFacingGone):
@@ -141,6 +146,7 @@ def denial(*, status=403, retry=None, admin=True):
         admin=admin,
         status=status,
         kind="unavailable" if status in (429, 503) else "",
+        sign_in=sign_in,
     )
     response.stewardship_safe_error = True
     if retry:
@@ -239,15 +245,15 @@ class GoogleBoundary(DefaultSocialAccountAdapter):
         return False
 
     def pre_social_login(self, request, sociallogin):
-        raise ImmediateHttpResponse(denial())
+        raise ImmediateHttpResponse(denial(sign_in=True))
 
     def on_authentication_error(self, request, provider, **kwargs):
         """Discard provider exceptions, raw callback parameters and identity hints."""
         if kwargs.get("error") == AuthError.CANCELLED:
-            raise ImmediateHttpResponse(denial())
+            raise ImmediateHttpResponse(denial(sign_in=True))
         try:
             delay = record_failure(request)
-            response = denial(status=429 if delay else 403, retry=delay)
+            response = denial(status=429 if delay else 403, retry=delay, sign_in=True)
         except LimiterUnavailable:
             response = denial(status=503, retry=5)
         raise ImmediateHttpResponse(response)
@@ -329,7 +335,7 @@ class GoogleCallback(OAuth2CallbackView):
         data = state.get("data", {})
         if data.get("recovery_epoch") != revocation_epoch() or not data.get("nonce"):
             delay = record_failure(request)
-            return None, denial(status=429 if delay else 403, retry=delay)
+            return None, denial(status=429 if delay else 403, retry=delay, sign_in=True)
         request.stewardship_oauth_state = state
         fingerprint = runtime().limiter.fingerprint(
             "oauth_state", request.session.session_key + "\x00" + data["nonce"]
@@ -340,7 +346,7 @@ class GoogleCallback(OAuth2CallbackView):
         )
         if not created:
             delay = record_failure(request)
-            return None, denial(status=429 if delay else 403, retry=delay)
+            return None, denial(status=429 if delay else 403, retry=delay, sign_in=True)
         # Persist the one-use receipt before provider I/O, independently of later
         # session saves by simultaneous browser tabs or callback requests.
         request.session.save()
@@ -428,7 +434,7 @@ def establish_identity(
         return denial(status=429, retry=delay)
     with transaction.atomic():
         if recovery_epoch != revocation_epoch():
-            return denial()
+            return denial(sign_in=True)
         user, created = PortalUser.objects.select_for_update().get_or_create(
             google_subject=subject,
             defaults=dict(
@@ -483,7 +489,7 @@ def establish_identity(
             request, identity=fingerprint, counter=counter, sampled=False
         )
         record_account_refusal(user.pk)
-        return denial(status=429 if delay else 403, retry=delay)
+        return denial(status=429 if delay else 403, retry=delay, sign_in=True)
     service.limiter.clear(counter)
     return HttpResponseRedirect(ADMIN_HOME)
 

@@ -20,7 +20,7 @@
 {% if draft.source_task_id %}<p><a href="{% url 'admin:setup_source_progress' draft.source_task_id %}">{% translate "Source-load progress" %}</a></p>{% endif %}
 {% endif %}
 {% if draft.status.state == 'frozen' %}
-<p><a href="{% url 'admin:setup_cancel' %}">{% translate "Check progress or cancel initial setup" %}</a></p>
+<p><a href="{% url 'admin:setup_finishing' %}">{% translate "Check progress or cancel initial setup" %}</a></p>
 {% else %}
 <form method="post" class="panel">{% csrf_token %}
 <input type="hidden" name="action" value="cancel"><input type="hidden" name="attempt" value="{{ draft.status.attempt_id }}">

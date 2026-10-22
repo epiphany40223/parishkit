@@ -188,7 +188,10 @@ def test_mailbox_sends_one_fixed_message_only_after_a_valid_check(
             assert "secret-token" not in argument
             return auth_code[0], b""
 
-        def send_message(self, message):
+        def send_message(self, message, *, from_addr, to_addrs):
+            # The envelope is named explicitly and matches the headers.
+            assert from_addr == message["From"]
+            assert to_addrs == [message["To"]]
             sent.append(message)
 
     monkeypatch.setattr(smoke.smtplib, "SMTP_SSL", Smtp)
@@ -508,7 +511,9 @@ def test_backup_drive_probes_and_copies_the_newest_set(tmp_path, monkeypatch, ca
     monkeypatch.setattr(
         backup_drive,
         "workspace_session",
-        lambda value, subject, profile: sessions.append((value, subject, profile)),
+        lambda value, subject, profile, redirect: sessions.append(
+            (value, subject, profile, redirect)
+        ),
     )
     tags = []
 
@@ -530,7 +535,9 @@ def test_backup_drive_probes_and_copies_the_newest_set(tmp_path, monkeypatch, ca
         "copied_set": None,
         "target": "backup_drive",
     }
-    assert sessions == [(b"service-account", "mail@example.org", configuration.profile)]
+    assert sessions == [
+        (b"service-account", "mail@example.org", configuration.profile, None)
+    ]
     backups = private_directory(configuration.paths["backups"], create=True)
     directory = backups / "20260927T020000Z"
     directory.mkdir(mode=0o700)
@@ -609,8 +616,11 @@ def test_local_send_to_through_the_mail_catcher_sends_nothing(
 ):
     """LOCAL's mail catcher passes the check, but ``--send-to`` sends nothing.
 
-    The send path takes only a Google service account, which LOCAL still
-    refuses (#1399), so the smoke send stops before any SMTP connection.
+    The send path goes over Gmail, so without a mail redirect the envelope
+    rule refuses it first (#1399); with one it needs a Google service
+    account, so the installed mail catcher is refused before the key is
+    parsed (#1878). Either way the smoke send stops before any SMTP
+    connection, with exit status 2.
     """
     from contextlib import nullcontext
     from dataclasses import replace
@@ -627,6 +637,7 @@ def test_local_send_to_through_the_mail_catcher_sends_nothing(
         "load_deployment",
         lambda path: replace(configuration, profile=DeploymentProfile.LOCAL),
     )
+    loaded = smoke.load_deployment
     catcher = SimpleNamespace(ehlo=lambda: (250, b"mailpit"))
     monkeypatch.setattr(
         provider_check_worker, "open_mail_catcher", lambda: nullcontext(catcher)
@@ -671,8 +682,19 @@ def test_local_send_to_through_the_mail_catcher_sends_nothing(
         "sent": False,
     }
     args.send_to = "someone@parish.example"
+    # No redirect: the envelope rule refuses before the key is parsed.
     assert smoke.execute_smoke(args) == 2
     captured = capsys.readouterr()
     assert not captured.out and "smoke check refused" in captured.err
-    assert opened == []
-    assert len(refusals) == 1
+    assert opened == [] and refusals == []
+    # With a redirect the route is admitted, and the send refuses the
+    # mail-catcher document before parsing it: still nothing is sent.
+    monkeypatch.setattr(
+        smoke,
+        "load_deployment",
+        lambda path: replace(loaded(path), mail_redirect="dev@example.test"),
+    )
+    assert smoke.execute_smoke(args) == 2
+    captured = capsys.readouterr()
+    assert not captured.out and "smoke check refused" in captured.err
+    assert opened == [] and refusals == []

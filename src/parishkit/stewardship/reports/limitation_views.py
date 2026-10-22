@@ -24,6 +24,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.accounts.role_refusal import require
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin, database_now
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
@@ -127,9 +128,8 @@ def _principal(request, store, *, read_only=False, export=False):
     principal = authenticated_admin(
         request, store=store, activity=not read_only, read_only=read_only
     )
-    if not allows(principal, Capability.CAMPAIGN_REPORT) or (
-        export and not allows(principal, Capability.REPORT_EXPORT)
-    ):
+    require(principal, Capability.CAMPAIGN_REPORT)
+    if export and not allows(principal, Capability.REPORT_EXPORT):
         raise PermissionError("The Limitations report is unavailable.")
     return principal
 

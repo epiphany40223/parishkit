@@ -21,6 +21,7 @@ from .census import (
     HOUSEHOLD_FIELDS,
     blank_address,
     country_choices,
+    us_region_choices,
     us_regions,
 )
 from .comparison import ValueKind, canonical_value
@@ -385,6 +386,7 @@ def _household_presentation(values, prior):
         "address_limits": dict(ADDRESS_LIMITS),
         "countries": country_choices(),
         "us_regions": sorted(us_regions()),
+        "us_region_choices": us_region_choices(),
     }
 
 

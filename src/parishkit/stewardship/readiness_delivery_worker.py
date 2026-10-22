@@ -16,6 +16,7 @@ from .accounts.integration_candidates import _object
 from .accounts.key_files import MAX_FILE_BYTES
 from .accounts.provider_context import validated_context
 from .deployment import DeploymentProfile
+from .mail_catcher import request_redirect
 from .readiness_delivery import DeliveryOutcome, deliver_sample
 from .readiness_mail import ReadinessMail
 from .web.content import MAX_TEXT_BYTES
@@ -47,8 +48,9 @@ def decode_request(raw):
     if (
         type(request) is not dict
         # ``banner_origin`` is optional: only campaign samples carry one, and
-        # without it no campaign banner is admitted.
-        or set(request) - {"banner_origin"}
+        # without it no campaign banner is admitted. ``mail_redirect`` is
+        # present only for a LOCAL parent with a mail redirect (#1399).
+        or set(request) - {"banner_origin", "mail_redirect"}
         != {"settings", "candidate", "mail", "profile"}
         or type(request["candidate"]) is not str
         or type(request.get("banner_origin", "")) is not str
@@ -66,17 +68,20 @@ def decode_request(raw):
         for key in ("sender", "reply_to", "recipient")
     ):
         raise ValueError("Readiness mail context differs.")
-    return candidate, settings, mail, request_profile(request["profile"])
+    profile = request_profile(request["profile"])
+    return candidate, settings, mail, profile, request_redirect(request, profile)
 
 
 def submit_request(raw):
     """Decoder failure proves non-submission; unexpected adapter failure does not."""
     try:
-        candidate, settings, mail, profile = decode_request(raw)
+        candidate, settings, mail, profile, redirect = decode_request(raw)
     except (ValueError, TypeError, ConfigError, RecursionError):
         return DeliveryOutcome.NOT_SENT
     try:
-        result = deliver_sample(candidate, settings, mail, profile=profile)
+        result = deliver_sample(
+            candidate, settings, mail, profile=profile, redirect=redirect
+        )
         return (
             result if isinstance(result, DeliveryOutcome) else DeliveryOutcome.UNKNOWN
         )

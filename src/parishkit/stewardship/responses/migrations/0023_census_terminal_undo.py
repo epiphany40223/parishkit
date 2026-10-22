@@ -29,9 +29,9 @@ class Migration(migrations.Migration):
     dependencies = [
         # The responses app's previous migration.
         ("stewardship_responses", "0022_reviewed_form_shown_items"),
-        # The migration that installs the previous frozen file (0144), so
+        # The migration that installs the previous frozen file (0145), so
         # the files apply in prefix order.
-        ("stewardship_reports", "0037_staff_timeline_export"),
+        ("stewardship_jobs", "0036_page_member_names"),
         # The refresh check table's latest state, which the guards read.
         ("stewardship_workflows", "0006_refresh_check_conflict"),
     ]

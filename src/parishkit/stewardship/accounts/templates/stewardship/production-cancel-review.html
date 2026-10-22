@@ -1,0 +1,35 @@
+{% load i18n stewardship %}{% comment %}
+  The Cancel go-live dialog's answers (admin-portal spec, "Go live page",
+  Activation; #1585 slice 5), drawn by confirmation_views._answer into the
+  shared review dialog of production-progress.html, never a page of its own.
+
+  - ``review``: a full review. The cancellation counts, the caution, then
+    the reason field. The field posts with Apply (its form attribute names
+    the dialog's Apply form), and Apply is unavailable until it holds more
+    than spaces (data-review-require, ui-v1.js), saying why in the line
+    under the buttons. Apply posts the signed binding of the counts shown
+    (data-review-preview), not the cancellation's own intent: that is
+    minted at Apply, from the cancellation built again then. Apply is the
+    acknowledgement that deleted Testing data cannot be restored.
+  - ``refused``: why Review or Apply was refused, marked
+    data-review-refusal so the dialog shows it as drawn: the reason
+    missing; mail that blocks the cancellation (with the pages that resolve
+    it); the counts changed since the review; the campaign started; live
+    delivery paused; or another Administrator already cancelled.
+{% endcomment %}{% url 'admin:delivery_control' as controls_url %}{% url 'admin:deliveries' as outgoing_url %}{% if review %}<div data-review-answer data-review-done="{% translate 'Go-live cancelled.' %}">
+<p>{% translate "Cancelling go-live cancels mail that has not been sent and makes this campaign a Testing draft again, so its settings can be changed." %}</p>
+<dl><dt>{% translate "Scheduled mail runs recorded" %}</dt><dd>{{ inventory.occurrences|number }}</dd>
+<dt>{% translate "Scheduled mail runs to cancel" %}</dt><dd>{{ inventory.cancellable|number }}</dd>
+<dt>{% translate "Unsent messages to cancel" %}</dt><dd>{{ inventory.messages|number }}</dd>
+<dt>{% translate "Failed mail runs kept in history" %}</dt><dd>{{ inventory.failed|number }}</dd>
+<dt>{% translate "Delivered messages kept in history" %}</dt><dd>{{ inventory.delivered|number }}</dd></dl>
+<p class="notice">{% translate "Testing data deleted earlier is not restored; going live again starts from Check." %}</p>
+<p><label for="production-cancel-reason">{% translate "Reason for cancelling go-live" %}</label><br><input id="production-cancel-reason" name="reason" form="production-cancel-review-apply" required maxlength="{{ reason_max }}" pattern=".*\S.*" autocomplete="off" data-review-require data-missing-hint="{% translate 'Enter the reason for cancelling go-live.' %}"></p>
+<input type="hidden" name="review" value="{{ review }}" data-review-preview>
+</div>
+{% else %}<div data-review-refusal>{% if refused == "no_reason" %}<p data-production-cancel-refused="no_reason">{% translate "Enter the reason for cancelling go-live, in at most 2,000 characters. Nothing was cancelled." %}</p>
+{% elif refused == "blocking" %}<p data-production-cancel-refused="blocking">{% blocktranslate trimmed with count_text=inventory.blocking|number count counter=inventory.blocking %}{{ count_text }} item of mail is being sent right now, has an uncertain delivery, or needs recovery, so go-live can't be cancelled yet.{% plural %}{{ count_text }} items of mail are being sent right now, have an uncertain delivery, or need recovery, so go-live can't be cancelled yet.{% endblocktranslate %} {% blocktranslate %}Resolve it on <a href="{{ controls_url }}">Pause and resume mail</a> and <a href="{{ outgoing_url }}">Sent mail</a>, then select Cancel go-live again. Nothing was cancelled.{% endblocktranslate %}</p>
+{% elif refused == "started" %}<p data-production-cancel-refused="started">{% translate "The campaign has started, so go-live can no longer be cancelled. Nothing was cancelled." %}</p>
+{% elif refused == "paused" %}<p data-production-cancel-refused="paused">{% blocktranslate %}Live mail delivery is paused, so go-live can't be cancelled. Resume mail on <a href="{{ controls_url }}">Pause and resume mail</a> first. Nothing was cancelled.{% endblocktranslate %}</p>
+{% elif refused == "cancelled" %}<p data-production-cancel-refused="cancelled">{% translate "Another Administrator already cancelled go-live." %}</p><p><a href="{{ check_url }}">{% translate "Open Check" %}</a></p>
+{% else %}<p data-production-cancel-refused="changed">{% translate "Mail work changed since this preview, so nothing was cancelled. Review the updated counts: close this, then select Cancel go-live again." %}</p>{% endif %}</div>{% endif %}

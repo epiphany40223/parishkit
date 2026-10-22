@@ -102,7 +102,11 @@ def test_rows_offer_edit_value_with_the_value_to_publish():
     assert edited["edited"] == "(317) 555-0100"
     assert edited["family_answer"] == "(317) 555-0199"
     assert edited["edit"]["value"] == "(317) 555-0100" and edited["edit"]["edited"]
-    born = shape(row(field="birth_date", submitted_value="2000-01-02"))
+    born = shape(
+        row(
+            field="birth_date", submitted_value="2000-01-02", current_value="2000-01-01"
+        )
+    )
     assert born["edit"]["type"] == "date" and born["edit"]["maxlength"] is None
     assert shape(row(field="gender"))["edit"]["choices"] == (
         "Male",

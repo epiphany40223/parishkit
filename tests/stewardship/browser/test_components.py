@@ -39,7 +39,10 @@ def test_schedule_preview_shows_send_times_only_in_browser_time(
         parish_clock = parish_time("09:00:00")
     assert parish_clock == "9:00 AM"
     assert parish_clock not in text
-    assert "not a list of who will receive it" in text
+    # The shared schedule preview (#1129) draws the zone-less review's
+    # sends; the always-on sentences are gone.
+    assert "When it sends (shown in your computer's time zone):" in text
+    assert "not a list of who will receive it" not in text
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
 
@@ -179,6 +182,7 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/home-key-change",
         "/availability",
         "/denied",
+        "/denied-admin",
         "/denied-code",
         "/denied-link",
         "/denied-unavailable",
@@ -204,7 +208,6 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/export-cleanup-conflict",
         "/export-cleanup-invalid",
         "/content-settings",
-        "/content-preview",
         "/content-history",
         "/campaign-mail",
         "/campaign-mail-unknown",
@@ -218,7 +221,6 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/clone-preview",
         "/integrations",
         "/integration-settings",
-        "/integration-preview",
         "/backup-key",
         "/backup-key-proof",
         "/branding-settings",
@@ -1219,17 +1221,23 @@ def test_flow_steps_and_return_link_orient_a_configuration_change(
 
 @pytest.mark.parametrize("width", [390, 1280])
 def test_go_live_steps_wrap_without_overflow(page, component_origin, axe_source, width):
-    """All five go-live steps fit a phone by wrapping, never scrolling (#196)."""
+    """All four Go live steps fit a phone, never scrolling (#196): Production
+    activation's step bar while initial mail is prepared (#1585 slice 5)."""
+    from playwright.sync_api import expect
+
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/go-live-steps")
-    steps = page.get_by_role("list", name="Steps")
+    steps = page.get_by_role("list", name="Go live steps")
     visible(steps)
-    assert steps.locator("li").count() == 5
-    assert steps.get_by_role("link").count() == 0
+    assert steps.locator("li").count() == 4
     current = steps.locator('[aria-current="step"]')
-    assert current.count() == 1 and "Activation" in current.inner_text()
-    for item in steps.locator("li").all():
-        visible(item)
+    assert current.count() == 1
+    expect(page.locator(".setup-stepper-current")).to_have_text(
+        "Step 4 of 4: Activation"
+    )
+    expect(page.locator(".setup-stepper-count")).to_have_text("3 of 4 steps completed")
+    # No numbered flow list beside it: one step indicator per page.
+    assert page.locator(".flow-steps").count() == 0
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
 
@@ -1279,5 +1287,11 @@ def test_refresh_task_page_says_what_it_is_doing(page, component_origin):
     visible(page.get_by_text("Full refresh", exact=True))
     visible(page.get_by_text("Downloading from ParishSoft…"))
     visible(page.get_by_text("1,000 of 4,000 records checked"))
+    # Its step is the shared stage boxes (#1579), not a "Step:" line.
+    stages = page.get_by_role("list", name="Parts of the refresh")
+    visible(
+        stages.locator('[data-refresh-stage="fetching"][data-stage-state="active"]')
+    )
+    assert page.get_by_text("Step:", exact=False).count() == 0
     visible(page.get_by_text("server restarted", exact=False))
     assert page.get_by_text("Waiting for progress details").count() == 0

@@ -7,11 +7,19 @@
   const message = document.getElementById("family-flow-message");
   const cancel = document.getElementById("family-cancel");
   const csrf = cancel.querySelector('[name="csrfmiddlewaretoken"]').value;
+  // The page's own Cancel and sign out button, below the flow. While an
+  // editing page shows, the button row carries Cancel in its middle slot
+  // instead (cancelSlot), so this one is hidden then (#1933).
+  const cancelButton = cancel.querySelector("button");
   const testing = root.dataset.testing === "true";
   let form = null, answers = null, initial = null, busy = false, finished = false;
   let accepted = false, submissionAttempted = false;
   let uncertainSubmission = false;
   let separateMailing = null;
+  // Per address: the country shown and both region controls' values, kept
+  // outside the answer so a rebuilt form (Review, then Edit) shows the same
+  // choice for a blank address and restores the hidden region (#1777).
+  let addressDrafts = {};
   let requests = {}, initialRequests = {};
   // Ministry and pledge choices set aside while "cannot participate" or
   // "cannot contribute" is checked, restored when it is unchecked again.
@@ -120,6 +128,7 @@
   function clear() {
     form = answers = initial = null;
     separateMailing = null;
+    addressDrafts = {};
     requests = initialRequests = {};
     conflicts.clear();
     // The expired screen empties the form without heading(); drop any height
@@ -391,7 +400,10 @@
         const label = document.querySelector('label[for="' + (id || input.id) + '"]');
         const link = node("a", (label?.textContent || "Field") + ": " + text, item, {href: "#" + (id || input.id)});
         link.addEventListener("click", (event) => {
-          event.preventDefault(); showPage(pageOf(input), {focus: false}); input.focus();
+          // Look the field up again: an address region's id moves to the
+          // control for the country now chosen (#1777).
+          const target = document.getElementById(id || input.id) || input;
+          event.preventDefault(); showPage(pageOf(target), {focus: false}); target.focus();
         });
         const error = node("p", text, null, {id: errorId});
         input.after(error);
@@ -1260,11 +1272,6 @@
         refreshed: initial.financial.annual_pledge});
     }
   }
-  function periodYears(period) {
-    // "2026", or "2026–2027" for a period that spans two calendar years.
-    const [first, last] = [period.start.slice(0, 4), period.end.slice(0, 4)];
-    return first === last ? first : first + "–" + last;
-  }
   function installment(cents, frequency) {
     // Each payment's amount, and whether it is exact: $6,000 monthly is
     // exactly $500, but $1,000.01 monthly is only about $83.33.
@@ -1291,12 +1298,12 @@
     const dates = window.ParishDates;
     if (value.contributions.available && value.through_date) {
       // "towards your <year> pledge of $y" only when there was one to give
-      // towards; otherwise "in <year>".
+      // towards; otherwise "in <year>". The server names the years (#1923).
       const pledged = value.pledge.available && Number(value.pledge.amount) > 0;
       node("p", "As of " + (dates ? dates.date(value.through_date) : value.through_date) +
         ", you have contributed " + value.contributions.display + (pledged ?
-          " towards your " + periodYears(value.comparison) + " pledge of " + value.pledge.display + "." :
-          " in " + periodYears(value.comparison) + "."), parent);
+          " towards your " + value.comparison.years + " pledge of " + value.pledge.display + "." :
+          " in " + value.comparison.years + "."), parent);
     }
     if (!value.pledge.available || !value.contributions.available) node("p",
       "Financial records are unavailable or incomplete; this is not a zero balance. You can still enter your pledge.", parent);
@@ -1597,6 +1604,8 @@
       return;
     }
     const cents = moneyCents(financial.annual_pledge), each = installment(cents, financial.frequency);
+    // year_label is the upcoming period's years, so it agrees with the start
+    // date below (#1923).
     node("p", "Your " + form.financial.year_label + " pledge: " + moneyDisplay(cents) + (!each ? "" : each.exact ?
       " (" + each.amount + " per " + each.unit + ")" :
       " (approximately " + each.amount + " per " + each.unit + "; the final payment may differ slightly)"),
@@ -1623,9 +1632,27 @@
     const section = node("section", null, editor, {id: "household-section", tabindex: "-1", "aria-label": "Family census"});
     const controls = new Map(), validators = [];
     let reviewRequested = false;
-    const labels = {line1: "Address line 1", line2: "Address line 2",
-      city: "City or locality", region: "State, province or region",
-      postal_code: "ZIP or postal code", country: "Country"};
+    // Country comes first (#1777): it decides how State and the postal code
+    // are asked for. A US address picks its State from the codes the server
+    // accepts; any other country types a region. showCountry() swaps them.
+    const labels = {country: "Country", line1: "Address line 1", line2: "Address line 2",
+      city: "City or locality", region: "State, province or region", postal_code: "Postal code"};
+    const usLabels = {region: "State", postal_code: "ZIP code"};
+    const usCodes = new Set(form.household.us_regions);
+    const plainRegion = (text) => text.trim().toUpperCase().replace(/\./g, "").replace(/\s+/g, " ");
+    const usNames = new Map(form.household.us_region_choices.map(([code, title]) =>
+      [plainRegion(title.slice(0, -(code.length + 3))), code]));
+    // The US code for region text: the code itself, ignoring case and outer
+    // spaces as the server does. Leniently (when a typed region carries over
+    // to the drop-down) also a listed name or a code with periods ("Ky.").
+    function usCode(text, lenient = false) {
+      const typed = text.trim().toUpperCase();
+      if (usCodes.has(typed)) return typed;
+      if (!lenient) return "";
+      const plain = plainRegion(typed);
+      return usCodes.has(plain) ? plain : usNames.get(plain) || "";
+    }
+    const textParts = ["line1", "line2", "city", "region", "postal_code"];
     function status(definition, output) {
       const changed = definition.changed || canonical(answers.family[definition.name], definition.name) !==
         canonical(initial.family[definition.name], definition.name);
@@ -1650,10 +1677,80 @@
       const output = node("p", "", group, {id: "family-" + name + "-status", class: "muted"});
       const inputs = {};
       const touched = new Set();
+      // An address's region has two controls for one place: the US State
+      // drop-down and the free-text region. Both carry the region's id, and
+      // only the one for the selected country is in the page, so the label,
+      // error lines, server error links and page checks all find it; the
+      // other keeps its value while out of the page, so switching back
+      // restores it. (Moving an id between two attached controls instead
+      // leaves WebKit naming the wrong one by the label.)
+      let regionList = null, regionText = null, regionLabel = null, postalLabel = null;
+      // Put the region control for the selected country in the page, and
+      // set the region and postal labels to match. ``carry`` (only when the
+      // Family changes Country) lets typed region text the drop-down offers
+      // carry over to it; a repaint never changes what the answer holds.
+      function showCountry(carry = false) {
+        const us = inputs.country.value === "US";
+        const [active, idle] = us ? [regionList, regionText] : [regionText, regionList];
+        if (!active.isConnected) {
+          // A server error line belongs to the control taken out: it goes
+          // with it, and that control stops pointing at it.
+          const serverError = document.getElementById(idle.id + "-error");
+          if (serverError) {
+            serverError.remove();
+            idle.setAttribute("aria-describedby", idle.getAttribute("aria-describedby").split(" ")
+              .filter((reference) => reference !== serverError.id).join(" "));
+          }
+          idle.replaceWith(active);
+        }
+        idle.setCustomValidity("");
+        idle.setAttribute("aria-invalid", "false");
+        // A typed region the drop-down offers carries over to it.
+        const typed = carry && usCode(regionText.value, true);
+        if (us && !regionList.value && typed) regionList.value = typed;
+        regionLabel.textContent = us ? usLabels.region : labels.region;
+        postalLabel.textContent = us ? usLabels.postal_code : labels.postal_code;
+        inputs.region = active;
+      }
+      // Copy the shown controls into the answer. A country on its own never
+      // makes an address nonblank: the default United States is recorded
+      // only once another part is entered.
+      function readAddress() {
+        const address = answers.family[name];
+        textParts.forEach((key) => { address[key] = inputs[key].value; });
+        address.country = textParts.some((key) => address[key].trim()) ? inputs.country.value : "";
+      }
+      // Draw the answer into the controls and clear their checks.
       function repaint() {
+        if (name !== "email_opt_out") {
+          // Draw an assigned address (a copy, a restore or a chosen record)
+          // without changing it. Only a blank address shows a default
+          // country (the last one chosen, else United States); one with
+          // parts but no country shows none, so its "complete this field"
+          // error matches what the Family sees. A mailing copy shows home's.
+          const value = answers.family[name], country = value.country.toUpperCase();
+          const copy = name === "mailing_address" && answers.family.mailing_same_as_home;
+          const draft = addressDrafts[copy ? "home_address" : name] || {};
+          inputs.country.value = country || (textParts.some((key) => value[key].trim()) ? "" : draft.country || "US");
+          const us = inputs.country.value === "US", listed = us ? value.region : draft.list || "";
+          const code = usCode(listed);
+          regionList.querySelector("[data-unlisted]")?.remove();
+          if (!code && listed.trim()) {
+            // A US region the list does not offer (parish records take any
+            // text) stays selectable, never silently dropped, also while
+            // another country shows; its check asks the Family to choose
+            // from the list.
+            regionList.insertBefore(node("option", listed, null, {value: listed, "data-unlisted": ""}),
+              regionList.options[1]);
+          }
+          regionList.value = code || listed;
+          regionText.value = us ? draft.text || "" : value.region;
+          showCountry();
+        }
         Object.entries(inputs).forEach(([component, input]) => {
           const value = answers.family[name];
-          input.value = name === "email_opt_out" ? value === null ? "" : String(value) : value[component];
+          if (name === "email_opt_out") input.value = value === null ? "" : String(value);
+          else if (!["country", "region"].includes(component)) input.value = value[component];
           input.setCustomValidity("");
           const explanation = document.getElementById(input.id + "-constraint");
           if (explanation) { explanation.textContent = ""; explanation.hidden = true; }
@@ -1675,50 +1772,69 @@
           status(definition, output);
         });
       } else {
-        Object.entries(labels).forEach(([component, label]) => {
+        Object.entries(labels).forEach(([component, text]) => {
           const id = "family-" + name + "-" + component;
-          node("label", label, group, {for: id});
-          const input = node(component === "country" ? "select" : "input", null, group,
-            {id, autocomplete: "off", "aria-describedby": output.id + " " + id + "-constraint"});
-          const error = node("p", "", group, {id: id + "-constraint"});
-          error.hidden = true;
+          const label = node("label", text, group, {for: id});
+          const attributes = {id, autocomplete: "off", "aria-describedby": output.id + " " + id + "-constraint"};
+          const pair = [];
           if (component === "country") {
-            node("option", "Select a country", input, {value: ""});
-            form.household.countries.forEach(([code, title]) => node("option", title, input, {value: code}));
+            pair.push(node("select", null, group, attributes));
+            // Shown only for an address with parts but no country; never offered.
+            node("option", "Select a country", pair[0], {value: "", disabled: "", hidden: ""});
+            form.household.countries.forEach(([code, title]) => node("option", title, pair[0], {value: code}));
           } else {
+            if (component === "region") {
+              // Both region controls share the id and the one error line; the
+              // text one starts out of the page (showCountry swaps them).
+              regionLabel = label;
+              regionList = node("select", null, group, attributes);
+              node("option", "Select a state", regionList, {value: ""});
+              form.household.us_region_choices.forEach(([code, title]) => node("option", title, regionList, {value: code}));
+              pair.push(regionList);
+            }
+            if (component === "postal_code") postalLabel = label;
+            const input = node("input", null, component === "region" ? null : group, attributes);
             input.type = "text";
             input.maxLength = form.household.address_limits[component];
+            if (component === "region") regionText = input;
+            pair.push(input);
           }
-          inputs[component] = input;
-          input.addEventListener("input", () => {
-            answers.family[name][component] = input.value;
-            if (name === "mailing_address") separateMailing = structuredClone(answers.family[name]);
-            input.setCustomValidity("");
-            validate();
-            document.getElementById("family-mailing_same_as_home")?.setCustomValidity("");
-            status(definition, output);
-            if (name === "home_address" && answers.family.mailing_same_as_home) {
-              answers.family.mailing_address = structuredClone(answers.family.home_address);
-              controls.get("mailing_address").repaint();
-            }
+          const error = node("p", "", group, {id: id + "-constraint"});
+          error.hidden = true;
+          inputs[component] = pair[0];
+          pair.forEach((input) => {
+            input.addEventListener("input", () => {
+              if (component === "country") showCountry(true);
+              readAddress();
+              addressDrafts[name] = {country: inputs.country.value, list: regionList.value, text: regionText.value};
+              if (name === "mailing_address") separateMailing = structuredClone(answers.family[name]);
+              input.setCustomValidity("");
+              validate();
+              document.getElementById("family-mailing_same_as_home")?.setCustomValidity("");
+              status(definition, output);
+              if (name === "home_address" && answers.family.mailing_same_as_home) {
+                answers.family.mailing_address = structuredClone(answers.family.home_address);
+                controls.get("mailing_address").repaint();
+              }
+            });
+            input.addEventListener("blur", () => { touched.add(component); validate(); });
+            if (input.tagName === "SELECT") input.addEventListener("change", () => { touched.add(component); validate(); });
           });
-          input.addEventListener("blur", () => { touched.add(component); validate(); });
-          if (component === "country") input.addEventListener("change", () => { touched.add(component); validate(); });
         });
       }
       function validate() {
         if (name === "email_opt_out") return;
         const value = Object.fromEntries(Object.entries(answers.family[name]).map(
           ([key, text]) => [key, text.normalize("NFC").trim()]));
-        const nonblank = Object.values(value).some(Boolean), usa = value.country === "US";
+        const nonblank = Object.values(value).some(Boolean), usa = value.country.toUpperCase() === "US";
         Object.entries(inputs).forEach(([key, input]) => {
           let error = /[\u0000-\u001f\u007f\u0085\u2028\u2029]/.test(value[key]) ? "Use a single line of text." : "";
           if (nonblank && ["line1", "city", "country"].includes(key) && !value[key]) error = "Complete this address field.";
           if (nonblank && usa && key === "region" && !form.household.us_regions.includes(value.region.toUpperCase())) {
-            error = "Enter a US state, territory or military abbreviation.";
+            error = "Choose a state from the list.";
           }
           if (nonblank && usa && key === "postal_code" && !/^\d{5}(-\d{4})?$/.test(value.postal_code)) {
-            error = "Enter a five-digit ZIP or ZIP+4 code.";
+            error = "Enter a five-digit ZIP code or ZIP+4.";
           }
           input.setCustomValidity(error);
           const show = touched.has(key) || reviewRequested;
@@ -1890,6 +2006,26 @@
     root.querySelector("[data-page-review]").hidden = index !== pages.length - 1;
     if (push) pushPage({familyPage: page.key}, "");
     if (focus) focusTop(page.element.querySelector("h3"));
+  }
+  function navButton(short, rest, parent, attributes) {
+    // A bar button whose label shortens on a phone (#1933): the visible text
+    // is short, then rest in a span that ui-v1.css hides below 40rem, so the
+    // row stays on one line. The full label is always its accessible name,
+    // and it starts with the visible word (WCAG label in name).
+    const button = node("button", short, parent, {...attributes, "aria-label": short + rest});
+    node("span", rest, button, {class: "family-nav-long"});
+    return button;
+  }
+  function cancelSlot(nav) {
+    // Cancel and sign out in the editing pages' middle slot (#1933). The row
+    // sits inside the editor's form, and forms cannot nest, so this button
+    // submits the page's own #family-cancel form by its form attribute: the
+    // same form, confirmation and sign-out as before. The page's own button
+    // is hidden meanwhile, so only one Cancel shows. Returns the button.
+    const button = navButton("Cancel", " and sign out", nav, {type: "submit", form: cancel.id,
+      class: "button-secondary", "data-nav-slot": "action"});
+    cancelButton.hidden = true;
+    return button;
   }
   function retitle(key, title) {
     // Keep a Member page's heading, step link and counter in step with the
@@ -2096,13 +2232,22 @@
     const nav = node("div", null, editor, {class: "actions family-nav"});
     node("p", null, nav, {class: "notice notice-error family-nav-error", role: "alert",
       id: "family-nav-error", "data-nav-error": "", hidden: ""});
-    const back = node("button", "Back", nav, {type: "button", class: "button-secondary", "data-page-back": ""});
+    // One three-slot row on every page (#1933): Back left, the action
+    // (Cancel and sign out here, Submit on Review) centered, Next right.
+    // Each button names its slot and ui-v1.css places it there, so a hidden
+    // Back or Next leaves its slot empty and nothing else moves.
+    const back = node("button", "Back", nav, {type: "button", class: "button-secondary",
+      "data-page-back": "", "data-nav-slot": "back"});
     back.addEventListener("click", () => {
       reviewPointerDown = false;
       const index = pages.findIndex((page) => page.key === currentPage);
       if (index > 0) showPage(pages[index - 1].key, {push: true});
     });
-    const next = node("button", "Next", nav, {type: "button", class: "button-secondary", "data-page-next": ""});
+    // Its press is over once it clicks: if the Family then declines the
+    // discard prompt, blur validation must work again, as after Next or Back.
+    cancelSlot(nav).addEventListener("click", () => { reviewPointerDown = false; });
+    const next = node("button", "Next", nav, {type: "button", class: "button-secondary",
+      "data-page-next": "", "data-nav-slot": "next"});
     next.addEventListener("click", () => {
       // The press that deferred blur validation is over; a later outside click
       // must validate as usual.
@@ -2114,7 +2259,8 @@
     // below checks every page before Review (#330). It looks and reads exactly
     // like the earlier pages' Next (#1422): both carry the same class, so they
     // share one style and position whatever their type.
-    node("button", "Next", nav, {type: "submit", class: "button-secondary", "data-page-review": ""});
+    node("button", "Next", nav, {type: "submit", class: "button-secondary", "data-page-review": "",
+      "data-nav-slot": "next"});
     // Enter in a field (or a phone keyboard's Go) means Next on every page but
     // the last, instead of implicitly submitting straight to Review.
     editor.addEventListener("keydown", (event) => {
@@ -2220,7 +2366,8 @@
     paintTrack("review");
     if (history.state?.familyPage !== "review") pushPage({familyPage: "review"}, "");
     block("review", root);
-    const submitLabel = testing ? "Submit test response" : "Submit to " + form.parish_name;
+    // "Submit" shows alone on a phone; the rest joins it on wider screens.
+    const submitRest = testing ? " test response" : " to " + form.parish_name;
     familySummary();
     if (answers.cannot_attend) {
       const welcome = node("section", null, root, {class: "panel"});
@@ -2287,9 +2434,15 @@
     // sticky element only sticks within its parent, so the bar belongs to the
     // whole Review page and its Submit button joins the form by id.
     const actions = node("div", null, root, {class: "actions family-nav"});
-    const back = node("button", "Back to edit", actions, {type: "button", class: "button-secondary"});
+    // The same three slots as the editing pages (#1933): Back to edit left,
+    // Submit centered, the Next slot empty. Cancel and sign out shows below
+    // the flow again, as the page's own button.
+    cancelButton.hidden = false;
+    const back = navButton("Back", " to edit", actions, {type: "button", class: "button-secondary",
+      "data-nav-slot": "back"});
     back.addEventListener("click", () => { edit(); pushPage({familyPage: currentPage}, ""); });
-    const submit = node("button", submitLabel, actions, {type: "submit", form: confirmation.id});
+    const submit = navButton("Submit", submitRest, actions, {type: "submit", form: confirmation.id,
+      "data-nav-slot": "action"});
     confirmation.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (busy || !confirmation.reportValidity()) return;
