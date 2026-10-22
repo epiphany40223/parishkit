@@ -1016,7 +1016,9 @@ schedule in plain words ("Every day at 7:00 AM, from the day after the
 campaign starts until the day after it ends"; "Once, Tuesday, October 20,
 2026 at 9:00 AM"), its recipients in short ("All Administrators and 2
 others"), the next send (browser-local), the last send with its result, a
-status, and the row's actions. Status is one of Upcoming, Sending, Paused,
+status, and the row's actions. Status is one of Upcoming, Sending, Paused
+(in the [Warning look](../ui-conventions/spec.md#status-indicators), so it
+stands out, #1966),
 Done (a one-time report that sent, or a repeating report with no send
 ahead) and "Needs attention" (a failed or uncertain send, linking Sent
 mail). Row actions: **Edit**, **Preview**, **Send now**, **Pause** or
