@@ -27,7 +27,9 @@
 // refreshes the page where the reader is rather than loading it again: an
 // off-site backup's settled check (#519) names its settings page's address,
 // and a link naming only a fragment (a task page once its task ends, #869)
-// re-reads this same address. A follow-up link marked data-reread (a
+// re-reads this same address. Either read is automatic, so ui-v1.js sends it
+// passively (X-ParishKit-Read: passive) and it never extends the sign-in
+// (#1985). A follow-up link marked data-reread (a
 // report's figures status, #1586) is handed to ui-v1.js instead, with a
 // parishkit:reread event: it re-reads the page's own address once,
 // passively, so a view that is audited and would renew the sign-in (such as

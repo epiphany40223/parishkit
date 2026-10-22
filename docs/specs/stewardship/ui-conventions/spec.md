@@ -870,6 +870,22 @@ Mail queue, #1562), #869, #1353.
   never records an audited view, except a report's re-read that brings
   newer figures in, once per newer set of figures, and a page's re-read
   that brings in a part it could not read (both below).
+- **Settled regions re-read passively.** When a status region settles and
+  its hidden follow-up link (`a[data-live-follow][data-in-place]`) brings
+  the rest of the page up to date in place (the step bar, the action row,
+  a task's history), and when a page re-reads itself as it is shown again
+  (`a[data-reread-on-show]`), that read is automatic: `ui-v1.js` sends it
+  with `X-ParishKit-Read: passive`, and the page's own view admits such a
+  GET without extending the sign-in
+  ([#1985](https://github.com/epiphany40223/parishkit/issues/1985)): Load
+  ParishSoft data, Integration settings and Update ParishSoft (the pages
+  whose ordinary open renews it), and every page that already admits its
+  GET passively. A page whose view is audited (Update ParishSoft, a
+  background task's page) still records that view, marked `automatic` as a
+  report's re-read is. The header changes nothing else: the session, its
+  role and every capability are checked as for any read, and on a POST it
+  is ignored, so a submission always counts as activity. A link the reader
+  clicks never carries it.
 - **Reports whose figures are being prepared.** The Response dashboard and
   Campaign comparison audit every view, so they are never re-read on a timer.
   Their **Updating** notice sits in a figures status region that reads a

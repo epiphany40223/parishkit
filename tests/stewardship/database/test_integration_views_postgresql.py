@@ -1207,3 +1207,42 @@ def test_a_malformed_new_key_is_refused_at_its_field(auth_service, google, hando
     assert str(KEY_RULES["parishsoft"].message) in text
     assert "SYNTHETIC KEY" not in text
     assert nothing_staged()
+
+
+@pytest.mark.parametrize("role", [None, "staff"])
+def test_a_settled_status_re_reads_the_settings_page_passively(
+    auth_service, google, role
+):
+    """Once a key change or a backup check settles, the settings page
+    re-reads itself in place with X-ParishKit-Read: passive, which never
+    extends the sign-in (#1985); the reader's own open still does. The
+    header admits nobody the page would refuse: a Staff reader sending it
+    is still denied the page and its status."""
+    if role:
+        change(
+            auth_service.store,
+            auth_service.store.active(),
+            uuid4(),
+            [
+                {
+                    "operation": "add",
+                    "section": "login_rules",
+                    **address("reader@example.org", roles=(role,)),
+                }
+            ],
+        )
+        google[0]["email"] = "reader@example.org"
+    browser, _ = signed_in()
+    if role:
+        for url in (INDEX, URL, STATUS):
+            assert browser.get(url, HTTP_X_PARISHKIT_READ="passive").status_code == 403
+        return
+    session = PortalSession.objects.get(revoked_at__isnull=True)
+    before = session.last_activity_at
+    for url in (URL, INDEX + "backup/"):
+        assert browser.get(url, HTTP_X_PARISHKIT_READ="passive").status_code == 200
+    session.refresh_from_db()
+    assert session.last_activity_at == before
+    assert browser.get(URL).status_code == 200
+    session.refresh_from_db()
+    assert session.last_activity_at > before

@@ -59,7 +59,7 @@ from .refresh_schedule_forms import (
 from .request_admission import historical_record_id
 from .request_patch import OPTIONAL_INTEGRATIONS, build_candidate
 from .secret_requests import SecretRequestConflict
-from .sessions import authenticated_admin
+from .sessions import authenticated_admin, automatic_read
 
 SALT = "stewardship-integration-settings-v1"
 CREDENTIAL_SALT = "stewardship-integration-credential-v1"
@@ -993,7 +993,9 @@ def integration_settings(request, target=None):
     """List configured integrations or submit an exact non-secret YAML preview."""
     try:
         service = runtime()
-        actor = principal(request, service)
+        # The page's own quiet re-read once a key change or a backup check
+        # settles (#1985) is passive, so it never extends the sign-in.
+        actor = principal(request, service, passive=automatic_read(request))
         configuration = editable_configuration(service)
         if target is None:
             filters(request.GET, allowed=set())

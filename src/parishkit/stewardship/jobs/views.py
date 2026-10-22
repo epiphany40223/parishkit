@@ -20,7 +20,10 @@ from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.role_refusal import response as role_response
 from parishkit.stewardship.accounts.role_refusal import role_denied
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.accounts.sessions import authenticated_admin
+from parishkit.stewardship.accounts.sessions import (
+    authenticated_admin,
+    automatic_read,
+)
 from parishkit.stewardship.activation_hold import WEB_HOLD_SECONDS, wait_out_activation
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
@@ -169,7 +172,9 @@ def _finish_html(request, result, response, identifier=None, *, audit=True):
     A real page view is audited once. The passive status fragment that an
     open task page polls (audit=False) is rechecked the same way but never
     audited: a watched task would otherwise add a background_viewed row
-    every few seconds for up to an hour.
+    every few seconds for up to an hour. The task page's own quiet re-read
+    once its task ends (#869) is still audited, marked automatic (#1985),
+    as a report's automatic view is (#1620).
     """
     return _held(lambda: _finish_once(request, result, response, identifier, audit))
 
@@ -194,7 +199,8 @@ def _finish_once(request, result, response, identifier, audit):
                     context={
                         "outcome": Outcome.SUCCEEDED,
                         "count": result.stewardship_read_count,
-                    },
+                    }
+                    | ({"automatic": True} if automatic_read(request) else {}),
                 )
         response["Cache-Control"] = "no-store"
         return response

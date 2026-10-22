@@ -317,3 +317,30 @@ def test_script_lets_a_region_renew_its_own_watching_limit():
     assert delay.group(1) == "Math.max(SLOW_MS, fixed)"
     assert delay.group(2) == "fixed || DELAYS[Math.min(attempt, DELAYS.length - 1)]"
     assert "refreshLabel" not in source and "Use ${" not in source
+
+
+@pytest.mark.parametrize(
+    "method,header,expected",
+    [
+        ("get", "passive", True),
+        ("head", "passive", True),
+        ("get", None, False),
+        ("get", "Passive", False),
+        ("get", "passive, passive", False),
+        ("post", "passive", False),
+        ("put", "passive", False),
+    ],
+)
+def test_only_a_get_or_head_with_the_exact_header_reads_automatically(
+    method, header, expected
+):
+    """A settled region's in-place follow-up is admitted passively only as a
+    GET or HEAD carrying exactly X-ParishKit-Read: passive (#1985): a POST
+    is always the reader's own action, so the header on it is ignored."""
+    from django.test import RequestFactory
+
+    from parishkit.stewardship.accounts.sessions import automatic_read
+
+    headers = {"HTTP_X_PARISHKIT_READ": header} if header else {}
+    request = getattr(RequestFactory(), method)("/admin/", **headers)
+    assert automatic_read(request) is expected
