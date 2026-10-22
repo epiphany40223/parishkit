@@ -1,12 +1,14 @@
 """Atomic READ COMMITTED Family reconciliation and set-based cross-key issuance."""
 
 import hashlib
+import logging
 import re
+import time
 from dataclasses import dataclass
 from functools import partial
 from uuid import UUID, uuid4
 
-from django.db import IntegrityError, connection, transaction
+from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.db.models import Exists, OuterRef, Q
 
 from parishkit.stewardship.accounts.cryptography import (
@@ -14,7 +16,7 @@ from parishkit.stewardship.accounts.cryptography import (
     TokenPublicKeyring,
     new_code,
 )
-from parishkit.stewardship.observability import current_correlation
+from parishkit.stewardship.observability import Event, current_correlation, emit_failure
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .credential_keys import key_set_lock
@@ -26,6 +28,14 @@ from .credential_models import (
 )
 from .models import Campaign
 from .runtime import _now
+
+# Bounds for refreshing the Family campaign tables' statistics after a new
+# campaign's first load (``analyze_family_campaign``, #1932), as for a
+# staged snapshot's (source.snapshots). ANALYZE waits only for another
+# VACUUM or ANALYZE of the same table and takes tens of milliseconds at a
+# real parish's size, so either limit means something else is wrong.
+ANALYZE_LOCK_SECONDS = 5
+ANALYZE_STATEMENT_SECONDS = 30
 
 
 @dataclass(frozen=True)
@@ -259,6 +269,64 @@ def population_current(campaign, *, source_snapshot_id, source_generation, statu
     return True
 
 
+def analyze_family_campaign(campaign_id):
+    """Refresh the Family campaign tables' planner statistics for a campaign.
+
+    A new campaign's first load bulk-inserts its Family rows and their
+    eligibility history in one promotion. Until autovacuum re-analyzes the
+    tables, their statistics know only earlier campaigns, so the scheduler's
+    Family planning read (``schedule_production.FAMILY_INPUTS``) estimates
+    one row for the new campaign and re-aggregates the history once per
+    Family: quadratic, 0.89 s instead of 0.01 s at 2,700 Families (#1932).
+
+    ``reconcile_families`` runs this once, after that promotion commits
+    (never inside it, which would hold ANALYZE's lock with the promotion's).
+    The worker may not ANALYZE the tables itself; the definer
+    ``stewardship_family_campaign_analyze_v1`` (frozen migration 0172) does,
+    as the schema owner, for a campaign that still takes Family effects.
+
+    It is only an optimization, and the promotion is already committed, so
+    it never raises a database error: a lock wait past
+    ``ANALYZE_LOCK_SECONDS`` or a statement past
+    ``ANALYZE_STATEMENT_SECONDS`` is recorded in the timeout log (what,
+    limit and elapsed time), any other database error is logged as a
+    warning, and it returns False; autovacuum then analyzes the tables as
+    before. Returns True once the statistics are refreshed.
+    """
+    from parishkit.stewardship.audit.timeouts import record_timeout
+    from parishkit.stewardship.jobs.broker import sql_timeout_kind
+
+    started = time.monotonic()
+    try:
+        with transaction.atomic(), connection.cursor() as cursor:
+            cursor.execute(f"SET LOCAL lock_timeout = '{ANALYZE_LOCK_SECONDS}s'")
+            cursor.execute(
+                f"SET LOCAL statement_timeout = '{ANALYZE_STATEMENT_SECONDS}s'"
+            )
+            cursor.execute(
+                "SELECT public.stewardship_family_campaign_analyze_v1(%s)",
+                [campaign_id],
+            )
+            return cursor.fetchone()[0] is True
+    except DatabaseError as error:
+        kind = sql_timeout_kind(error)
+        if kind in {"lock_timeout", "statement_timeout"}:
+            record_timeout(
+                Event.TASK_TIMED_OUT,
+                what=kind,
+                level="WARNING",
+                limit_seconds=(
+                    ANALYZE_LOCK_SECONDS
+                    if kind == "lock_timeout"
+                    else ANALYZE_STATEMENT_SECONDS
+                ),
+                elapsed_seconds=time.monotonic() - started,
+            )
+        else:
+            emit_failure(error, level=logging.WARNING)
+        return False
+
+
 def reconcile_families(
     *,
     campaign_id,
@@ -345,6 +413,8 @@ def reconcile_families(
             .select_for_update(no_key=True)
             .order_by("pk")
         }
+        # A campaign with no Family rows yet is taking its first load.
+        first_load = not existing
         now = _now()
         new = []
         for status in statuses:
@@ -367,6 +437,10 @@ def reconcile_families(
                 existing[status.duid] = row
                 new.append(row)
         FamilyCampaign.objects.bulk_create(new)
+        if first_load and new:
+            # Once the whole promotion commits, so ANALYZE sees its rows and
+            # never holds its lock inside the promotion (#1932).
+            transaction.on_commit(partial(analyze_family_campaign, campaign_id))
         targets = {item.duid: item for item in statuses}
         missing = [
             row

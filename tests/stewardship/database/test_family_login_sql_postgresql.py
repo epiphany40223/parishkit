@@ -187,6 +187,8 @@ def test_web_admission_requires_exactly_the_login_function(family_service):  # n
         "stewardship_campaign_archive_answers_v1(uuid, timestamp with time zone)",
         # Analyze a staged snapshot before the ready transition (0086, #895).
         "stewardship_source_snapshot_analyze_v1(uuid)",
+        # Analyze the Family campaign tables after a first load (0172, #1932).
+        "stewardship_family_campaign_analyze_v1(uuid)",
         # The publication plans' audit answer (0087, #528).
         "stewardship_publication_audited_v1(text, uuid, uuid, jsonb)",
         "stewardship_debug_logging_off_v1()",

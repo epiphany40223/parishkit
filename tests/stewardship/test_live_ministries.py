@@ -123,6 +123,8 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         # Analyze a staged snapshot's tables before the ready transition
         # (0086, #895).
         "stewardship_source_snapshot_analyze_v1(uuid)",
+        # Analyze the Family campaign tables after a first load (0172, #1932).
+        "stewardship_family_campaign_analyze_v1(uuid)",
         # The publication plans' audit answer (0087, #528).
         "stewardship_publication_audited_v1(text, uuid, uuid, jsonb)",
         # The pledges a refresh re-evaluates (0135, #1747), v1's successor.

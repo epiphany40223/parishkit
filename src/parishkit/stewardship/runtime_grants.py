@@ -435,6 +435,10 @@ BOUNCE_REPORT_FUNCTION = (
 # before the ready transition, outside the work-order lock (#895 change 8):
 # the worker gains no ANALYZE or MAINTAIN authority of its own.
 SNAPSHOT_ANALYZE_FUNCTION = "stewardship_source_snapshot_analyze_v1(uuid)"
+# A new campaign's first load refreshes the Family campaign tables' planner
+# statistics once it commits (#1932), so the scheduler's first reads plan
+# for the new campaign; again no ANALYZE or MAINTAIN authority of its own.
+FAMILY_ANALYZE_FUNCTION = "stewardship_family_campaign_analyze_v1(uuid)"
 # Mail dispatch opens that follow-up (and its task, which it may not insert
 # itself) under its live delivery claim, and reads the Family's link token
 # for it under the follow-up's own claim, both in frozen migration 0077.
@@ -616,6 +620,8 @@ CLOSURE_FUNCTIONS = {
         "stewardship_reports",
         "0045_ministry_leader_coverage",
     ),
+    # The Family campaign tables' statistics after a first load (0172, #1932).
+    FAMILY_ANALYZE_FUNCTION: ("stewardship_campaigns", "0018_family_statistics"),
 }
 
 
@@ -878,7 +884,8 @@ def runtime_functions(role, *, target=None):
     campaign is in the promoted catalog, without source grants; the general
     worker purges the Django sessions of ended Admin sessions, counts an
     export's read-guard stops, prunes old task events and refreshes a staged
-    source snapshot's planner statistics (#895).
+    source snapshot's planner statistics (#895) and, after a new campaign's
+    first load, the Family campaign tables' statistics (#1932).
     Web and the parishsoft, google_workspace and slack credential installers
     check that the automation session a secret request names is live
     (``stewardship_automation_request_live_v1``, #1763). Web,
@@ -976,6 +983,7 @@ def runtime_functions(role, *, target=None):
                 COMPARISON_FUNCTION,
                 ARCHIVE_RENEWAL_FUNCTION,
                 SNAPSHOT_ANALYZE_FUNCTION,
+                FAMILY_ANALYZE_FUNCTION,
                 DEBUG_OFF_FUNCTION,
                 ARCHIVE_ANSWERS_FUNCTION,
                 PUBLICATION_AUDITED_FUNCTION,
