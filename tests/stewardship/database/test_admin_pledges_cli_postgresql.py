@@ -392,20 +392,25 @@ def test_a_confirmed_pledge_is_undone_at_the_exported_version(
     google,
     cli,  # noqa: F811
 ):
-    """After a refresh Confirmed a pledge ParishSoft already held, JSON
-    Lines gives the page's version (with the check) and Back to review as
-    its action; ``pledges decide`` at that version needs the note, then
-    sends the pledge back to To review (#1840)."""
+    """After a refresh Confirmed a pledge Staff accepted and marked Entered
+    by hand (only such a pledge is Confirmed, #1890), JSON Lines gives the
+    page's version (with the check) and Back to review as its action;
+    ``pledges decide`` at that version needs the note, then sends the
+    pledge back to To enter by hand with its Accept kept (#1840)."""
     from .test_pledge_refresh_postgresql import ANSWER, refresh
+    from .test_pledge_review_postgresql import admin as reviewer
+    from .test_pledge_review_postgresql import decide as review
 
     harness, submission = pledged(response_service)
+    review(harness, reviewer(), "accept", [submission])
+    review(harness, reviewer(), "entered_by_hand", [submission])
     refresh(harness, ANSWER)
     signed_in()
     run = cli()
     code, body, document = export(run, "--stage", "confirmed", "--format", "jsonl")
     assert code == 0, document
     [record] = [json.loads(line) for line in body.decode().splitlines()]
-    assert (record["version"], record["actions"]) == (1, ["back_to_review"])
+    assert (record["version"], record["actions"]) == (3, ["back_to_review"])
     version = record["version"]
     code, document = decide(run, submission, "back_to_review", version=version)
     assert code == 1 and document["error"]["code"] == "invalid", document
@@ -413,5 +418,5 @@ def test_a_confirmed_pledge_is_undone_at_the_exported_version(
         run, submission, "back_to_review", "--note", "Recheck", version=version
     )
     assert code == 0, document
-    assert document["result"]["decisions"][0]["decision"] is None
-    assert state(harness, submission).stage == "to_review"
+    assert document["result"]["decisions"][0]["decision"] == "accepted"
+    assert state(harness, submission).stage == "to_enter_by_hand"

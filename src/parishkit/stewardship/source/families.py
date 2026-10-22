@@ -378,18 +378,18 @@ def reconcile_source_families(
         from parishkit.stewardship.responses.added_members import (
             link_added_members,
         )
-        from parishkit.stewardship.responses.ministry_reconciliation import (
-            reconcile_ministry_requests,
-        )
         from parishkit.stewardship.responses.reconciliation import reconcile_proposals
         from parishkit.stewardship.responses.refresh_checks import (
             record_refresh_checks,
         )
 
+        # A refresh no longer resolves an open Ministry request whose roster
+        # already shows it (strict phase order, #1890): it keeps its stage,
+        # and its row says so from the current roster.
         reconcile_proposals(snapshot, corpus, campaign_id=campaign_id)
-        reconcile_ministry_requests(snapshot, corpus, campaign_id=campaign_id)
-        # After reconciliation, so a request it just resolved is Confirmed
-        # already: the refresh re-evaluation of final and decided items.
+        # After reconciliation, which stores each open census change's
+        # ParishSoft value: the refresh re-evaluation of final and decided
+        # items.
         record_refresh_checks(
             snapshot, corpus, campaign_id=campaign_id, full=claim.phase == "full"
         )

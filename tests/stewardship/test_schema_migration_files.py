@@ -471,6 +471,9 @@ FROZEN = {
     "0158_ignored_note_optional.sql": (
         "2ad8ec09cab596393c02b32175b1510a163068a4953ba72ff1b5388744fe063a"
     ),
+    "0159_strict_phase_order.sql": (
+        "6e22e18665523982160c73cbba0802e1458b39d55c6b1e7d184c50a56fb19579"
+    ),
     "0146_census_terminal_undo.sql": (
         "4bdbbda58daa0aecda124bb36bab4157c2898d27a5d86392e5833d0c7684c456"
     ),

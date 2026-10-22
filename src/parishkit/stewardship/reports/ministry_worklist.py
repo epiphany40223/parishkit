@@ -41,6 +41,7 @@ from parishkit.stewardship.source.source_status import source_status_label
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.review_worklist import (
+    ALREADY_HELD,
     NOT_SEEN,
     NOW_MATCHES,
     Column,
@@ -281,6 +282,48 @@ def listed(row, members):
     return (current and not gone) or eligible(row)
 
 
+# Whether the current ParishSoft data lists each request's Member in the
+# Ministry carried forward (the Edit's, else the Family's), by the same SQL
+# roster read the guards use (NULL when the Member or Ministry gives no
+# evidence), for the rows ParishSoft may already hold (#1890).
+HELD = """
+SELECT r.id, stewardship_response_ministry_current_v1(sc.snapshot_id, s.family_id,
+    r.entity_key, coalesce(r.reviewed_ministry_duid, r.ministry_duid))
+FROM stewardship_ministry_request r
+JOIN stewardship_submission s ON s.id=r.submission_id
+JOIN stewardship_source_current sc ON sc.singleton AND sc.snapshot_id IS NOT NULL
+WHERE r.id = ANY(%s::uuid[]) AND r.entity_kind='member'
+"""
+# The stages before a request's step: a roster that already shows it leaves
+# the request there (strict phase order, #1890), and its row says so.
+BEFORE_STEP = frozenset({Stage.TO_REVIEW, Stage.TO_ENTER_BY_HAND})
+
+
+def held(rows):
+    """The ids of ``rows`` (placed) whose roster already shows their request.
+
+    Refresh rule 1 (#1890): a refresh no longer resolves a request before
+    its decision and tick, so a To review or To enter by hand request whose
+    Member the current roster already lists (a join) or no longer lists (a
+    leave) keeps its stage and says ParishSoft already holds it. One query,
+    none when no row is at such a stage.
+    """
+    wanted = {
+        str(row["id"]): row["action"] == "join"
+        for row in rows
+        if row["placement"].stage in BEFORE_STEP
+    }
+    if not wanted:
+        return set()
+    with connection.cursor() as cursor:
+        cursor.execute(HELD, [list(wanted)])
+        return {
+            str(key)
+            for key, current in cursor.fetchall()
+            if current is not None and current == wanted[str(key)]
+        }
+
+
 def place(result, principal, *, marks=None, checks=None):
     """Give each row of a follow-up selection result its stage, in place.
 
@@ -288,12 +331,15 @@ def place(result, principal, *, marks=None, checks=None):
     (#1689), unless ``marks`` gives the ticks (a detached page, which then
     gives its ``checks`` too, or has none). Each row gains
     ``placement`` (the pipeline's), ``stage`` (the reader's Stage choice),
-    the Not seen in ParishSoft flag (Staff only) and whether ParishSoft now
-    matches an ignored request (``not_seen``, ``now_matches``), and the
-    words a file shows for them (``stage_label``, ``decision_label``).
-    Returns ``result``.
+    the Not seen in ParishSoft flag (Staff only), whether ParishSoft now
+    matches an ignored request and whether it already holds a request
+    before its step (``not_seen``, ``now_matches``, ``already_held``; the
+    last only when this reads the ticks, with one more query, ``held``),
+    and the words a file shows for them (``stage_label``,
+    ``decision_label``). Returns ``result``.
     """
-    if marks is None:
+    reading = marks is None
+    if reading:
         marks = roster_marks(row["id"] for row in result["rows"])
         checks = check_states(
             requests=[row["id"] for row in result["rows"]],
@@ -331,6 +377,12 @@ def place(result, principal, *, marks=None, checks=None):
             row["decision_label"] = (
                 placement.decision.label if placement.decision else ""
             )
+    found = held(result["rows"]) if reading else set()
+    for row in result["rows"]:
+        # A leader sees To enter by hand as Accepted, with no update phase.
+        row["already_held"] = str(row["id"]) in found and not (
+            leader and row["placement"].stage is Stage.TO_ENTER_BY_HAND
+        )
     return result
 
 
@@ -597,8 +649,10 @@ def _decision_line(row, leader, asked, replaced_by, reader_leads):
     parish added a request in place of names it; an edited request read by
     a leader of the Family's Ministry only says where it went. Accepted
     stays under To enter by hand and Entered by hand, as the component
-    words it. For Staff, an accepted request a later response replaced says
-    so, and an entered one says who marked it and when.
+    words it. A request whose roster already shows it before its step says
+    ParishSoft already holds it (#1890). For Staff, an accepted request a
+    later response replaced says so, and an entered one says who marked it
+    and when.
     """
     placement = row["placement"]
     parts = []
@@ -618,6 +672,8 @@ def _decision_line(row, leader, asked, replaced_by, reader_leads):
         parts.append(format_html("{}", "Read only: edited into another Ministry"))
     if row.get("now_matches"):
         parts.append(format_html("{}", NOW_MATCHES))
+    if row.get("already_held"):
+        parts.append(format_html("{}", ALREADY_HELD))
     if replaced_by:
         parts.append(format_html("Added in its place: {}", replaced_by))
     again, undone = asked or (None, None)

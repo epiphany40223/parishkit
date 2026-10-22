@@ -5047,9 +5047,10 @@ BEGIN
                 -- publication lease's task is running; it then publishes it
                 -- when the entity's latest outcome is published, or returns
                 -- it to pending or failed when that outcome is invalidated.
-                -- The publication check also marks it resolved upstream when
-                -- its plan, recorded in this transaction, found the value
-                -- already in ParishSoft. It queues a change only while the
+                -- The publication check also marks it Updated in ParishSoft
+                -- (published, nothing written; #1890) when its plan, recorded
+                -- in this transaction, found the value already in
+                -- ParishSoft. It queues a change only while the
                 -- current data lists its Member as an active, living Member
                 -- of the change's Family (#1738, #1749), as preflight and the
                 -- worker check before they read or write.
@@ -5104,13 +5105,16 @@ BEGIN
                            THEN 'published' ELSE 'invalidated' END)
                    -- The publication check (#528, ADM-09): a Production-mode
                    -- plan recorded in this same transaction found the value
-                   -- already in ParishSoft, so the change is resolved
-                   -- upstream at the next version and nothing is written. The
-                   -- plan guard stamps created_at with transaction_timestamp(),
-                   -- so a plan committed earlier never matches; resolved_upstream
-                   -- is terminal: only the web login's Back to review (#1840,
+                   -- already in ParishSoft, so the change is Updated in
+                   -- ParishSoft (published) at the next version and nothing
+                   -- is written; the refresh then confirms it after that step,
+                   -- as every update (#1890, strict phase order; it was
+                   -- resolved upstream, Confirmed at once, before). The plan
+                   -- guard stamps created_at with transaction_timestamp(), so a
+                   -- plan committed earlier never matches; published is
+                   -- terminal: only the web login's Back to review (#1840,
                    -- with its resolution row) undoes the mark.
-                   OR (OLD.execution IN ('pending','failed') AND NEW.execution='resolved_upstream'
+                   OR (OLD.execution IN ('pending','failed') AND NEW.execution='published'
                        AND OLD.decision='approved' AND OLD.handling='api' AND OLD.entity_kind='member'
                        AND EXISTS (SELECT 1 FROM public.stewardship_publication_field f
                            JOIN public.stewardship_publication_entity e ON e.id=f.entity_id
@@ -5122,7 +5126,13 @@ BEGIN
                     RAISE EXCEPTION 'Proposal publication requires its confirmed plan and outcome' USING ERRCODE='23514';
                 END IF;
             ELSIF current_user='pk_stewardship_worker' THEN
+                -- Strict phase order (#1890): a refresh confirms a change only
+                -- after its step, so reconciliation resolves upstream only a
+                -- change an update run has queued; an open change ParishSoft
+                -- already holds keeps its stage (To review, Ready, To enter by
+                -- hand) with ParishSoft's value stored on it.
                 IF NEW.execution NOT IN ('pending','conflict','resolved_upstream','cancelled')
+                   OR (NEW.execution='resolved_upstream' AND OLD.execution<>'queued')
                    OR NEW.current_source_id=OLD.current_source_id
                    OR NOT public.stewardship_response_source_owner_v1(NEW.current_source_id)
                    OR NOT EXISTS (SELECT 1 FROM public.stewardship_source_pin
@@ -5146,6 +5156,17 @@ BEGIN
                 -- by a later refresh or the Family's same answer back
                 -- into force over the undo in ParishSoft. Nothing else
                 -- here changes the decision.
+                -- Strict phase order (#1890) leaves a change ParishSoft
+                -- caught up with open (pending) instead of resolving it
+                -- upstream, and then nothing is left to write, so the stale
+                -- base protects nothing: an approval kept over a Conflict
+                -- keeps its stage (Ready, To enter by hand). The worker's
+                -- merge says when ParishSoft holds the carried value, as it
+                -- chose resolved_upstream before; this guard, which cannot
+                -- compare field values canonically, admits the kept
+                -- approval only on a pending outcome whose ParishSoft value
+                -- moved off the baseline, which every caught-up value does
+                -- unless the reviewer's Edit is the baseline value itself.
                 IF NEW.decision IS DISTINCT FROM (CASE WHEN OLD.execution='published'
                        THEN 'unreviewed' WHEN OLD.decision='approved'
                        AND OLD.execution IN ('pending','failed')
@@ -5159,6 +5180,10 @@ BEGIN
                             AND later.expected_version<OLD.version
                             AND later.decision<>'approved'))
                        THEN 'unreviewed' ELSE OLD.decision END)
+                   AND NOT (OLD.execution<>'published' AND NEW.decision=OLD.decision
+                       AND NEW.execution='pending' AND NEW.current_available
+                       AND (OLD.admin_value_set
+                           OR NEW.current_value IS DISTINCT FROM OLD.baseline_value))
                 THEN
                     RAISE EXCEPTION 'Proposal reconciliation must return a stale accepted approval to review' USING ERRCODE='23514';
                 END IF;
@@ -5836,22 +5861,12 @@ BEGIN
         RAISE EXCEPTION 'Ministry provenance and closed outcomes are immutable' USING ERRCODE='23514';
     END IF;
     IF current_user='pk_stewardship_worker' THEN
-        IF NEW.state<>'resolved' OR NEW.outcome IS DISTINCT FROM
-            (CASE WHEN NEW.action='join' THEN 'joined' ELSE 'leave_confirmed' END)
-           OR NEW.assignee_id IS DISTINCT FROM OLD.assignee_id
-           OR NEW.reviewed_ministry_duid IS NOT NULL
-           OR NEW.resolution_source_id IS NULL
-           OR NOT public.stewardship_response_source_owner_v1(NEW.resolution_source_id)
-           OR NEW.entity_kind<>'member'
-           OR public.stewardship_response_ministry_current_v1(
-                NEW.resolution_source_id,response.family_id,NEW.entity_key,NEW.ministry_duid)
-              IS DISTINCT FROM (NEW.action='join')
-           OR NOT EXISTS (SELECT 1 FROM public.stewardship_source_pin
-               WHERE snapshot_id=NEW.resolution_source_id AND parent_kind='submission'
-                 AND parent_id=NEW.submission_id AND expires_at IS NULL) THEN
-            RAISE EXCEPTION 'Ministry resolution requires fenced scoped roster evidence' USING ERRCODE='23514';
-        END IF;
-        NEW.resolved_at := clock_timestamp();
+        -- Strict phase order (#1890): a refresh no longer resolves an open
+        -- request whose roster already shows it (the worker's only change
+        -- here was that resolution). The request keeps its stage and is
+        -- decided, ticked and then confirmed by a refresh check. Requests a
+        -- refresh resolved before keep their resolution source as history.
+        RAISE EXCEPTION 'A refresh does not resolve a Ministry request' USING ERRCODE='23514';
     ELSIF current_user='pk_stewardship_web' AND (NEW.state NOT IN ('superseded','cancelled')
         OR (NEW.state='cancelled' AND OLD.parish_added AND OLD.state='resolved')) THEN
         -- Staff follow-up. Its revision guard already proved current authority,
