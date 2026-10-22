@@ -29,7 +29,7 @@ from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
 
 from .automation_builders import as_staff, paired
-from .test_admin_digest_list_cli_postgresql import revoke
+from .test_admin_report_email_cli_postgresql import revoke
 from .test_admin_test_sample_cli_postgresql import runner
 from .test_artwork_views_postgresql import change_parish
 from .test_background_grants_postgresql import task_login

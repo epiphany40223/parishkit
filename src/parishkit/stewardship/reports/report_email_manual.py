@@ -1,13 +1,11 @@
 """Send now: one Administrator's explicit send of a report email (#1786).
 
-The report-emails spec's Send now (delivery plan item 5 adds the page
-action and ``pk-admin report-email send-now``) records one request, keyed
-by its command id; its database guard checks the report's current revision
-and that no other send of it is open, and allocates the manual occurrence
-and its preparation together, so replaying the command returns the same
-send. Until that item ships, Send a weekly report now and ``pk-admin digest
-weekly-request`` call it for the converted Weekly report (``weekly_manual``,
-#1786 delivery plan item 4).
+The report-emails spec's Send now: the Report emails page's row action
+(``report_email_views.report_email_send_now``) and ``pk-admin report-email
+send-now`` record one request, keyed by its command id; its database guard
+checks the report's current revision and that no other send of it is open,
+and allocates the manual occurrence and its preparation together, so
+replaying the command returns the same send.
 """
 
 from uuid import UUID

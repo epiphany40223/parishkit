@@ -3088,49 +3088,88 @@ def report_data_to_fix(args, preamble, runtime, context):
     return read_data_to_fix(context["caller"], runtime)
 
 
-def digest_list(args, preamble, runtime, context):
-    """The Emailed reports page's lists of retained reports (ADM-11)."""
-    from .admin_digests import read_list
+def report_email_list(args, preamble, runtime, context):
+    """The Report emails table (#1786, delivery plan item 5)."""
+    from .admin_report_emails import read_list
 
-    return read_list(context["caller"], runtime, requested=args.requested)
+    return read_list(context["caller"], runtime, campaign_id=args.campaign)
 
 
-def digest_daily(args, preamble, runtime, context):
-    """A retained daily report, as its page reads it (PR 8d)."""
-    from .admin_digests import read_digest
+def report_email_show(args, preamble, runtime, context):
+    """One report email's values and next sends (#1786)."""
+    from .admin_report_emails import read_show
 
-    return read_digest(
-        context["caller"], runtime, args.snapshot_id, kind="daily", page=None
+    return read_show(
+        context["caller"], runtime, args.report_id, campaign_id=args.campaign
     )
 
 
-def digest_weekly(args, preamble, runtime, context):
-    """A retained weekly report's items, as its page reads them (PR 8d)."""
-    from .admin_digests import read_digest
+def report_email_sends(args, preamble, runtime, context):
+    """One report email's past sends, ids and dates only (#1786)."""
+    from .admin_report_emails import read_sends
 
-    return read_digest(
-        context["caller"], runtime, args.snapshot_id, kind="weekly", page=args.page
+    return read_sends(
+        context["caller"], runtime, args.report_id, campaign_id=args.campaign
     )
 
 
-def digest_weekly_request(args, preamble, runtime, context):
-    """Request a manual weekly report, as its page's form does (PR 8d).
+def report_email_copy(args, preamble, runtime, context):
+    """A saved copy's figures, never a Family's text (#1786)."""
+    from .admin_report_emails import read_copy
 
-    The page asks the reader to tick that the report may repeat items
-    already reported; the command asks the same at the prompt (or takes
-    ``--yes``), before a request key is made or any transaction opens.
+    return read_copy(context["caller"], runtime, args.send_id, page=args.page)
+
+
+def report_email_send_now(args, preamble, runtime, context):
+    """Send one report email now, as its row's Send now does (#1786).
+
+    The prompt repeats the row's dialog (its recipient count and, with the
+    open requests block, that it repeats requests earlier sends listed),
+    or ``--yes`` takes it, before a request key is made.
     """
     from .accounts.policy import Capability
-    from .admin_digests import acknowledgement, request_weekly
+    from .admin_report_emails import send_now, send_now_lines
 
     # The role first (#1341): denied before any input, lookup or prompt.
     _role_first(context, runtime, Capability.BACKGROUND_WORK)
-
-    confirm(context, ("Queue a new manual weekly report.", acknowledgement()))
-    return request_weekly(
+    lines, revision = send_now_lines(
+        context["caller"], runtime, args.report_id, campaign_id=args.campaign
+    )
+    confirm(context, lines)
+    return send_now(
         context["caller"],
         runtime,
+        args.report_id,
+        campaign_id=args.campaign,
         request_key=_request_key(args, context),
+        context=context,
+        revision=revision,
+    )
+
+
+def report_email_preview(args, preamble, runtime, context):
+    """Review a Pause, Resume, Delete or Skip of report emails (#1786)."""
+    from .admin_report_emails import CHANGES_LIMIT, preview
+
+    return preview(
+        context["caller"],
+        runtime,
+        args.campaign,
+        expected_version=args.expected_version,
+        changes=_input(args.changes, context, CHANGES_LIMIT),
+    )
+
+
+def report_email_confirm(args, preamble, runtime, context):
+    """Confirm a reviewed report email change (#1786)."""
+    from .admin_report_emails import TOKEN_LIMIT
+    from .admin_report_emails import confirm as confirm_change
+
+    return confirm_change(
+        context["caller"],
+        runtime,
+        args.campaign,
+        token=_input(args.token, context, TOKEN_LIMIT),
         context=context,
     )
 
@@ -4850,30 +4889,61 @@ def _census_edit_options(parser):
     )
 
 
-def _snapshot_option(parser):
-    """The retained report, by the id in its page's address."""
-    parser.add_argument("snapshot_id", type=_uuid, metavar="SNAPSHOT_ID")
-
-
-def _digest_list_options(parser):
-    """Options of ``digest list``: the page's ``?requested=`` request key."""
+def _report_email_options(parser):
+    """Options of ``report-email show`` and ``sends``: the campaign and report."""
+    _schedule_options(parser)
     parser.add_argument(
-        "--requested",
+        "report_id",
         type=_uuid,
-        metavar="REQUEST_KEY",
-        help="a digest weekly-request key: its task and, once ready, its report",
+        metavar="REPORT",
+        help="the report email's id, as report-email list prints it",
     )
 
 
-def _digest_weekly_options(parser):
-    """Options of ``digest weekly``: the retained report and a page of items."""
-    _snapshot_option(parser)
-    parser.add_argument("--page", help="the page of items (default 1)")
+def _report_email_preview_options(parser):
+    """Options of ``report-email preview``: the campaign, version and change."""
+    _schedule_options(parser)
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_digest,
+        help="the version report-email list or report-email show printed",
+    )
+    parser.add_argument(
+        "--changes",
+        required=True,
+        help=(
+            'the change document as JSON, {"changes": [{"operation": '
+            '"pause|resume|delete|skip", "id": REPORT}]} (a skip adds "send": '
+            "SLOT), or - to read it from standard input"
+        ),
+    )
 
 
-def _digest_weekly_request_options(parser):
-    """Options of ``digest weekly-request``: the request key (``--yes`` is
-    added for every prompting command)."""
+def _report_email_confirm_options(parser):
+    """Options of ``report-email confirm``: the campaign and the preview's token."""
+    _schedule_options(parser)
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from report-email preview, or - for standard input",
+    )
+
+
+def _report_email_copy_options(parser):
+    """Options of ``report-email copy``: the send, and a weekly report's page."""
+    parser.add_argument(
+        "send_id",
+        type=_uuid,
+        metavar="SEND",
+        help="a past send's id, as report-email sends prints it",
+    )
+    parser.add_argument("--page", help="a weekly report's page of items (default 1)")
+
+
+def _report_email_send_now_options(parser):
+    """Options of ``report-email send-now``: the report and the request key."""
+    _report_email_options(parser)
     _request_key_option(parser)
 
 
@@ -6730,10 +6800,18 @@ def _report_specs():
     from .admin_census import CensusEdit, CensusReport, CensusResolve, CensusReview
     from .admin_census_export import CensusExport
     from .admin_data_to_fix import DataToFixReport
-    from .admin_digests import DailyDigest, DigestList, WeeklyDigest, WeeklyRequest
     from .admin_exact_exports import ExactChange, ExactStatus
     from .admin_exports import ExportChange, ExportDownload, ExportStatus
     from .admin_limitations_export import LimitationsExport
+    from .admin_report_emails import (
+        ReportEmailConfirm,
+        ReportEmailCopy,
+        ReportEmailList,
+        ReportEmailPreview,
+        ReportEmailSendNow,
+        ReportEmailSends,
+        ReportEmailShow,
+    )
     from .admin_report_reads import (
         ComparisonReport,
         FinancialReport,
@@ -6991,52 +7069,88 @@ def _report_specs():
             fresh_gated=True,
             prompts=True,
         ),
-        # The digests (PR 8d, ``admin_digests``), and the Emailed reports
-        # page that lists them.
+        # Report emails (#1786, delivery plan item 5, ``admin_report_emails``):
+        # the Report emails page's table, a report's values and past sends,
+        # a saved copy (and the digests saved before the conversion), Send
+        # now and the row actions' review and Apply. They replaced the
+        # digest commands of PR 8d.
         CommandSpec(
-            "digest list",
-            "List the retained daily and weekly reports, as Emailed reports.",
-            digest_list,
+            "report-email list",
+            "List the report emails, as Report emails does.",
+            report_email_list,
             "read_only",
             False,
-            DigestList.field_names(),
+            ReportEmailList.field_names(),
             8,
-            options=(_digest_list_options,),
+            options=(_schedule_options,),
             audit_event=None,
         ),
         CommandSpec(
-            "digest daily",
-            "Show a retained daily report's figures.",
-            digest_daily,
+            "report-email show",
+            "Show one report email's values and next sends.",
+            report_email_show,
             "read_only",
             False,
-            DailyDigest.field_names(),
+            ReportEmailShow.field_names(),
             8,
-            options=(_snapshot_option,),
-            audit_event="daily_digest_viewed",
+            options=(_report_email_options,),
+            audit_event=None,
         ),
         CommandSpec(
-            "digest weekly",
-            "Show a retained weekly report's items, without Family text.",
-            digest_weekly,
+            "report-email sends",
+            "List one report email's past sends.",
+            report_email_sends,
             "read_only",
             False,
-            WeeklyDigest.field_names(),
+            ReportEmailSends.field_names(),
             8,
-            options=(_digest_weekly_options,),
-            audit_event="weekly_digest_viewed",
+            options=(_report_email_options,),
+            audit_event=None,
         ),
         CommandSpec(
-            "digest weekly-request",
-            "Request a manual weekly report, as its page's form does.",
-            digest_weekly_request,
+            "report-email copy",
+            "Show a saved copy's figures, without Family text.",
+            report_email_copy,
+            "read_only",
+            False,
+            ReportEmailCopy.field_names(),
+            8,
+            options=(_report_email_copy_options,),
+            audit_event="report_email_viewed",
+        ),
+        CommandSpec(
+            "report-email send-now",
+            "Send one report email now, as its Send now does.",
+            report_email_send_now,
             "full",
             True,
-            WeeklyRequest.field_names(),
+            ReportEmailSendNow.field_names(),
             8,
-            options=(_digest_weekly_request_options,),
+            options=(_report_email_send_now_options,),
             request_key=True,
             prompts=True,
+        ),
+        CommandSpec(
+            "report-email preview",
+            "Review a pause, resume, deletion or skipped send of report emails.",
+            report_email_preview,
+            "full",
+            False,
+            ReportEmailPreview.field_names(),
+            8,
+            options=(_report_email_preview_options,),
+            expected_version=True,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "report-email confirm",
+            "Confirm a reviewed report email change.",
+            report_email_confirm,
+            "full",
+            True,
+            ReportEmailConfirm.field_names(),
+            8,
+            options=(_report_email_confirm_options,),
         ),
         # The aggregate report reads (PR 8c, ``admin_report_reads``).
         CommandSpec(

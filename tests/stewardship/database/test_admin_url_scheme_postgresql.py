@@ -161,9 +161,10 @@ def test_group_roots_open_the_first_entry_the_viewer_may_open(auth_service, goog
 
 
 def test_group_roots_without_an_open_entry_go_home(auth_service, google):
-    """Staff open no Campaign setup or Mail page, so those roots take them
-    Home; Parish data's root opens Data to fix in ParishSoft, the first
-    Parish data page Staff may open (#1011)."""
+    """Staff open no Campaign setup page, so that root takes them Home;
+    Mail's opens Report emails, the one Mail page Staff may open (#1786),
+    and Parish data's opens Data to fix in ParishSoft, the first Parish data
+    page Staff may open (#1011)."""
     store = auth_service.store
     _current(store)
     change(
@@ -182,7 +183,7 @@ def test_group_roots_without_an_open_entry_go_home(auth_service, google):
     browser, _ = signed_in()
     for root, first in (
         ("/admin/campaign/", "/admin/"),
-        ("/admin/mail/", "/admin/"),
+        ("/admin/mail/", "/admin/mail/report-emails/"),
         ("/admin/parish/", "/admin/parish/data-to-fix/"),
     ):
         response = browser.get(root)
@@ -261,7 +262,7 @@ def test_new_report_pages_refuse_or_explain_without_a_current_campaign(
         ("ministry_followup_item", [item]),
         ("family_directory", []),
         ("timeline", [item]),
-        ("weekly_digest_manual", []),
+        ("report_emails", []),
     )
     for name, args in pages:
         response = browser.get(reverse(f"admin:{name}", args=args))

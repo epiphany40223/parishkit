@@ -23,12 +23,13 @@
   other wording (summary_reserve), so it is as tall as the longest, each
   collection's status shares a cell with its other wordings so a row never
   wraps part-way through, and the saved-record bar keeps its space,
-  invisible, until saving starts.
+  invisible, until saving starts. Continue is not drawn here: it is in the
+  page's step action row at the bottom (#1968), which the follow-up re-read
+  brings up to date.
 {% endcomment %}<div class="setup-load-region" data-live-status="setup-load"{% if status_url %} data-live-url="{{ status_url }}"{% endif %} data-live-announce="{{ summary_text }}" data-progress-state="{{ status_key }}" data-live-recheck-shown{% if progress.active %} data-live-pending{% endif %}>
 {% if status_key == 'done' %}<div class="setup-load-result" data-progress-done>
 <h2>{% translate "Parish data is loaded" %}</h2>
 <p>{% translate "The load finished successfully." %}</p>
-<div class="setup-actions"><a class="setup-continue" href="{% if wizard.next %}{{ wizard.next.href }}{% else %}{% url 'admin:setup' %}{% endif %}">{% translate "Continue to the next step" %}{% if wizard.next %}<span class="setup-sr-only">: {{ wizard.next.label }}</span>{% endif %}</a></div>
 </div>{% elif status_key == 'failed' %}<div class="notice notice-error" data-progress-failed>
 <p>{% translate "The load did not finish. A wrong ParishSoft API key or organization ID is the most common cause." %}</p>
 <p>{% translate "What to do: check the ParishSoft connection and correct it if it is wrong, then load the parish data again. If the load keeps failing, ask the operator to check the service logs for the task reference under Technical details." %}</p>

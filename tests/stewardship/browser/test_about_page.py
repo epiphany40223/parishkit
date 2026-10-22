@@ -85,7 +85,6 @@ CONVERTED_PAGES = {
     "/clone-settings": "It never copies Family codes",
     "/clone-preview": "Copied content",
     "/presence": "Families with the Family form open",
-    "/weekly-manual": "not a retry of a previous email",
     "/source-refresh": "Refresh now",
     "/backup-key": "Never give this server the private key.",
     "/delivery-refusal": "Clearing removes only this refusal",

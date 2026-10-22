@@ -440,9 +440,18 @@ guard and page proof honour skip dates as they do today
 ### Pause and resume
 
 **Pause** stops one report's sends without deleting it. It is a reviewed
-change (a new revision) that opens a pause interval at Apply: every send due
-from then on is not a send, as a skipped date is not. **Resume** closes the
-interval at its Apply. The report does not catch up (decision 8): sends
+change (a new revision) that opens a pause interval: every send due from
+then on is not a send, as a skipped date is not. **Resume** closes the
+interval. Each interval's moment is the database's clock when the change is
+reviewed, which the signed change carries, since a signed change cannot
+name the later moment of its own Apply. Nothing can send unnoticed between
+the two: Apply is refused once any work of the report has changed since the
+review (the review's work fingerprint), a send due in between, with no
+work yet, is inside the pause, so a Pause stops it, and a Resume signs the
+first send it makes, so its Apply is refused once that send's time has
+passed (#1464), which would otherwise send it late. Pause, Resume, Delete
+and Skip are also refused while a send of the report is being prepared or
+its email delivered, a queued Send now included, as the row's actions are. The report does not catch up (decision 8): sends
 whose due time fell inside a pause interval are never sent, never become
 missed work and are never coalesced into a recovery send. Every later
 revision keeps the closed intervals, so a later change cannot re-arm a
@@ -1243,9 +1252,10 @@ Each report's past sends are listed on its Edit page (for Staff, under the
 report's row, in a disclosure) newest first, 20 at a time with the table
 navigator: when it was made (browser-local), what it was (scheduled,
 manual, recovery), the as-of moment it reported, its recipient count, its
-result (Sent, Not sent: nothing to report, Failed, Sending, or Waiting
-while it [waits on an earlier message](#catch-up-recovery-and-holds)) and a
-link to its saved copy. A list block's count is shown beside it ("12 open
+result (Sent, Not sent: nothing to report, Not sent: no current recipients,
+Failed, Uncertain: check Sent mail, Sending, or Waiting while it [waits on
+an earlier message](#catch-up-recovery-and-holds)) and a link to its saved
+copy. A list block's count is shown beside it ("12 open
 requests"). The sends of the converted Daily and Weekly made before the
 migration are listed with their report, linking their existing saved
 copies.
@@ -1343,14 +1353,14 @@ entries of the schedule commands (a daily digest's `comparison`, a digest's
 
 | Command | Does |
 | --- | --- |
-| `report-email list [--campaign C]` | The Report emails table: each report's id, name, schedule in plain words, recipient count, next send, last send and status. Any session; Staff get the read-only fields. |
+| `report-email list [--campaign C]` | The Report emails table: each report's id, name, schedule in plain words, recipient count, next send, last send and status, the deleted reports that have past sends, and the configuration `version`. Any session; Staff get the read-only fields (no recipients, no version). |
 | `report-email show REPORT` | One report's values (recipients by kind; outside addresses to Administrators only), blocks with options, skip dates, pause intervals, the configuration `version`, and its next five sends. |
-| `report-email preview --expected-version V --changes FILE` | The review of a change document: `create`, `edit` (by `id`, keeping what it leaves out), `delete`, `pause`, `resume` and `skip` (one slot key) entries, validated, previewed and signed as the page does; prints the review and its token, and whether the after-campaign confirmation is required. |
-| `report-email confirm TOKEN` | Applies a previewed change; the after-campaign confirmation is asked at the [prompt](../admin-automation/spec.md#command-line-confirmation) or given by `--yes`, else exit 4 (`confirmation_required`). |
+| `report-email preview --expected-version V --changes FILE` | The review of a change document: `create`, `edit` (by `id`, keeping what it leaves out), `delete`, `pause`, `resume` and `skip` (one slot key) entries, validated, previewed and signed as the page does; prints the review and its token, and whether the after-campaign confirmation is required. The document is `{"changes": [ENTRY, ...]}`, each entry `{"operation": OPERATION, "id": REPORT}` (a `skip` adds `"send": SLOT`, the slot key `show` lists), at most one entry per report; `V` is the version `show` or `list` printed. |
+| `report-email confirm --token TOKEN\|-` | Applies a previewed change; the after-campaign confirmation is asked at the [prompt](../admin-automation/spec.md#command-line-confirmation) or given by `--yes`, else exit 4 (`confirmation_required`). |
 | `report-email render REPORT` | Preview: the report drawn from current data, its subject and text part (never the HTML), and who it would go to now. Records the page's audit event. |
 | `report-email send-test REPORT` | Send a test to me. |
-| `report-email send-now REPORT --command-id ID` | Send now, keyed by its command id, with the confirmation at the prompt or `--yes`. |
-| `report-email sends REPORT` | Past sends, as the page lists them, ids and dates only. |
+| `report-email send-now REPORT [--request-key KEY]` | Send now, keyed by its request key (the page's command id), with the confirmation at the prompt or `--yes`. |
+| `report-email sends REPORT` | Past sends, as the page lists them: each send's id, kind, when it was made, how, its as-of moment, its email count, result and a list block's count. |
 | `report-email copy SEND` | A saved copy, read from its snapshot through its page's functions: each block's figures, and for the additional information block each request's identifier and states, never a Family's text. Reads pre-migration daily and weekly copies too. Records `report_email_viewed`. |
 
 Other commands change with it: `delivery list --purpose` accepts
@@ -1670,7 +1680,21 @@ require.
    a send open the existing digest editor on Dates and mail schedules for
    the converted reports (its Delete with This email only is the page's
    skip), and until PR 7 the row has no Preview; the calendar, Sent mail and Pause and
-   resume mail names; the delivery commands' purposes and types. Removes
+   resume mail names; the delivery commands' purposes and types. Until PR
+   6 brings Edit and New report email, the page has no New report email,
+   and each report's [past sends](#past-sends) are listed under its row, in
+   a disclosure, for every reader. Pause, Resume and Delete
+   confirm in the row actions'
+   [confirmation dialog](../ui-conventions/spec.md#row-actions-and-confirmation),
+   which states what the action does (Resume names the next send), since
+   a full review would only repeat the row. The saved copy stays PR 4's
+   page, the email exactly as it was sent with its chart images, now under
+   Report emails and with the [access rule](#saved-copies) of decision 11,
+   until [#1946](https://github.com/epiphany40223/parishkit/issues/1946)
+   draws it as web components. The page re-reads itself every 30 seconds,
+   as a page whose view records no audited read
+   ([pages that update themselves](../ui-conventions/spec.md#pages-that-update-themselves)),
+   so statuses, next and last sends follow the sends. Removes
    Reports › Emailed reports, Send a weekly report now and `digest list`,
    `digest daily`, `digest weekly` and `digest weekly-request`. Needs the
    Administrator's pk-local check.

@@ -1471,8 +1471,8 @@ linked to #1018 (slice 7 completed part (b)).
    compiled), the figures, and a link to the report on the same day
    (`?day=N`). The saved digest page draws the stored specifications with
    the chart engine in the browser and lists the files compared under
-   Past campaigns compared; `pk-admin digest daily` prints the section
-   without the specifications. The renderer's timeout name is
+   Past campaigns compared; `pk-admin report-email copy` prints the
+   section without the specifications (`digest daily` until #1786). The renderer's timeout name is
    `digest_chart` with the helper `chart_render_worker`. A comparison
    that disagrees with its facts fails that compile (it is retried like a
    fact failure), rather than sending a digest without the section it was

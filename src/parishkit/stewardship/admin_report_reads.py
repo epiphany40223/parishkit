@@ -545,7 +545,7 @@ def population(statistics, *, financial_enabled):
 def day_rows(document):
     """A participation document's daily table: counts and pledge totals.
 
-    Values the page shows as unavailable are None. ``digest daily`` prints a
+    Values the page shows as unavailable are None. ``report-email copy`` prints a
     retained daily report's table the same way.
     """
     return [

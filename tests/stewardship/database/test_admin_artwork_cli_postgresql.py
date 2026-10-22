@@ -16,7 +16,7 @@ from parishkit.stewardship.audit.models import AuditEvent
 from .auth_builders import signed_in, unguarded
 from .automation_builders import paired
 from .test_admin_content_cli_postgresql import as_staff
-from .test_admin_digest_list_cli_postgresql import revoke
+from .test_admin_report_email_cli_postgresql import revoke
 from .test_admin_test_sample_cli_postgresql import runner
 from .test_artwork_views_postgresql import (
     artwork,

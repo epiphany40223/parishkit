@@ -155,6 +155,11 @@ DESCRIPTIONS = {
         "An automation session confirmed a reviewed change to mail schedules "
         "or campaign dates, which became a configuration request."
     ),
+    "admin_cmd_report_email_confirm": _(
+        "An automation session confirmed a reviewed pause, resume, deletion "
+        "or skipped send of report emails, which became a configuration "
+        "request."
+    ),
     "admin_cmd_users_confirm": _(
         "An automation session confirmed a reviewed change to Admin portal "
         "users, which became a configuration request."
@@ -495,7 +500,11 @@ DESCRIPTIONS = {
     ),
     "admin_cmd_digest_weekly_request": _(
         "An automation session requested a manual weekly report, as the "
-        "Send a weekly report now page does."
+        "Send a weekly report now page did."
+    ),
+    "admin_cmd_report_email_send_now": _(
+        "An automation session sent a report email now, as its Send now on "
+        "Report emails does."
     ),
     "admin_privileges_changed": _(
         "A portal user's roles changed, so their session was replaced with one "

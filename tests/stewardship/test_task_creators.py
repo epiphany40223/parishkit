@@ -245,11 +245,12 @@ SITES = {
             "reports/timeline_views.py",
         },
     ),
-    # A report email's Send now (#1786): Send weekly report now and
-    # ``digest weekly-request`` call it for the Weekly report until the
-    # Report emails page and its command ship (delivery plan item 5).
+    # A report email's Send now (#1786): Report emails' row action and
+    # ``report-email send-now``.
     "reports/report_email_manual.py::request_send_now": site(
-        "report_email_prepare", WEB, {"reports/weekly_manual.py"}
+        "report_email_prepare",
+        WEB,
+        {"reports/report_email_views.py", "admin_report_emails.py"},
     ),
     "responses/receipts.py::create_submission_receipt": site(
         # A Family's submission receipt.

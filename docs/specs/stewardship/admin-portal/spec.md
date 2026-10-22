@@ -292,6 +292,20 @@ leaves the page as it was. A status read the server refuses (signed
 out, no longer allowed, or a bad request such as Slack being off) stops the
 watching instead of being retried.
 
+Loading parish data draws its step action row at the bottom of the page from
+the start, as every setup step does
+([wizard rule 2](../ui-conventions/spec.md#wizards)): Back at the left and
+Continue to the next step at the right. Until the load is done, Continue is
+unavailable and a line under the row says why (it becomes available once the
+parish data is loaded, or the notice above says what to do because the load
+cannot be used); once the load is done, Continue is a link and the reason
+keeps its line, invisible, so nothing moves
+([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates),
+[no layout shift](../ui-conventions/spec.md#no-layout-shift)). The row is
+re-read in place with the step bar when the status settles. The result notice
+("Parish data is loaded") offers no second Continue
+([#1968](https://github.com/epiphany40223/parishkit/issues/1968)).
+
 Acknowledgment checkboxes and incomplete forms hold their submit buttons as the
 [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates) describe.
 
@@ -472,7 +486,10 @@ completes, the page shows a Continue link to the Admin home and drops Cancel
 setup. A failed step stops the updates. A failed step explains what to do: a credential the provider
 rejected repeats the integration page's per-provider advice on what to check,
 one that did not finish in time asks the operator to check the credential
-installers, and each says to cancel and start a new setup (#456). Before the marker,
+installers, and each says to cancel and start a new setup (#456). No step
+shows a background task's reference: a failed final parish data load asks the
+operator to check the service logs for that load, which is the attempt's only
+one ([#1969](https://github.com/epiphany40223/parishkit/issues/1969)). Before the marker,
 normal routes remain unconfigured/fail-closed and cancel cleanup removes sealed
 staging and any wizard-only files without exposing a partial product setup.
 Cancellation after YAML selection uses the
@@ -1185,9 +1202,9 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `delivery_refusals` | Refused addresses | Sent mail | Administrator | (same) | `/admin/mail/refusals/` | (same) | Also linked from Data to fix in ParishSoft (#1011). |
 | `delivery_refusal` | Refused address | Refused addresses | Administrator | Verify refused address | `/admin/mail/refusals/<refusal>/` | (same) |  |
 | `family_portal` | Family portal availability | Menu: Family portal availability | Administrator | (same) | `/admin/mail/family-portal/` | (same) |  |
-| `report_emails` | Report emails | Menu: Report emails | Administrator, Staff | (new, #1786) | `/admin/mail/report-emails/` | (same) | [Report emails page](../report-emails/spec.md#report-emails-page); Staff read-only. Replaces `emailed_reports` and `weekly_digest_manual`, which delivery PR 5 retires. |
+| `report_emails` | Report emails | Menu: Report emails | Administrator, Staff | (new, #1786) | `/admin/mail/report-emails/` | (same) | [Report emails page](../report-emails/spec.md#report-emails-page); Staff read-only. Replaced `emailed_reports` and `weekly_digest_manual` (delivery PR 5), which are gone with no redirect (#864). |
 | `report_email_edit` | _report name_ | Report emails | Administrator | (new, #1786) | `/admin/mail/report-emails/<report>/`; New at `/admin/mail/report-emails/new/` | (same) | Object-named (exception). [New and Edit report email](../report-emails/spec.md#new-and-edit-report-email). |
-| `report_email_send` | _report name and date_ | Report emails | Administrator, Staff (when every block allows) | (new, #1786) | `/admin/mail/report-emails/sends/<send>/`, with `items/<item>/` for one request | (same) | Object-named (exception). A [saved copy](../report-emails/spec.md#saved-copies). Until the Report emails page ships (report-emails delivery plan item 5) it is an interim page named by the email's subject, under Sent mail, with a Return to Emailed reports link for Staff. |
+| `report_email_send` | _report name and date_ | Report emails | Administrator, Staff (when every block allows) | (new, #1786) | `/admin/mail/report-emails/sends/<send>/`, with `items/<item>/` for one request | (same) | Object-named (exception). A [saved copy](../report-emails/spec.md#saved-copies). Until [#1946](https://github.com/epiphany40223/parishkit/issues/1946) draws it as web components it shows the email as it was sent, named by its subject. |
 | `presence` | Families on the form now | Menu: Families on the form now | Administrator | (same) | `/admin/mail/presence/` | (same) | The header's count is still polled at `/admin/presence?format=count` (decision 8); any other read of that address is 404. |
 | `held_emails` | Held emails | Reached from: Home | Administrator | (new, #757) | `/admin/mail/held-emails/` | (same) | Not a menu entry: Home links to it while a held email is undecided. Its trail is Home › Mail and Family portal. See [restore release](#restore-release). |
 | `response_dashboard` | Response dashboard | Menu: Response dashboard | Administrator, Staff | (same); Participation and campaign statistics | `/admin/reports/responses/` | (same) | Absorbed Participation ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)): `/admin/reports/participation/` and its `exact-exports/` form action are gone, with no redirect (#864); the export form posts to `responses/exports/`. |
@@ -1211,8 +1228,8 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `ministry_roster` | (retired) | (retired) | Administrator, Staff | Roster changes to enter (#528, #1660) | `/admin/reports/ministries/follow-up/roster/` | (retired; 404) | Folded into Ministry requests with no redirect (R39 finding 2): its rows are Ministry requests' Stages To enter by hand and Entered by hand ([roster entry](#roster-entry-on-ministry-requests)). |
 | `family_directory` | Active parishioner family directory | Menu: Active parishioner family directory | Administrator, Staff | (same) | `/admin/reports/families/` | (same) |  |
 | `timeline` | Timeline | Active parishioner family directory | Administrator, Staff | (new, #477; renamed from Family timeline, #1570) | `/admin/reports/families/<family>/` | (same) | One Family's [Timeline](../reports/spec.md#timeline); opened from every Family name the shared `family_link` helper draws (directory rows, Find a Family, NAV-19, and every other Admin table that names a Family; see the [Timeline](../reports/spec.md#timeline) for the list); `<family>` is the opaque campaign record id. Staff see the full timeline too (#1774) and export it (#1799). It is the Family's [information hub](#family-information-hub): a header strip above tabs (`?tab=`), on this one address. |
-| `emailed_reports` | Emailed reports | Menu: Emailed reports | Administrator, Staff | (new) | `/admin/reports/emailed/` | (same) | New page (decision 7, ADM-12.17): the current campaign's daily reports (and weekly reports for Administrators), newest first, each linking its page; Send a weekly report now is on it and returns to it, linking the report it produced. Retired with no redirect by [Report emails](../report-emails/spec.md#delivery-plan) delivery PR 5 (#1786); until it lands this page is current, and the Report emails page replaces it. |
-| `weekly_digest_manual` | Send a weekly report now | Emailed reports | Administrator | Request a manual information report; Manual information report | `/admin/reports/emailed/weekly/new/` | (same) | Was the Manual information report menu entry; now a button on Emailed reports, where it ends, linking the report it produced (or its background task until it is ready). Its address named the campaign until #865; that old address is gone, with no redirect (#864). Retired with no redirect by [Report emails](../report-emails/spec.md#delivery-plan) delivery PR 5 (#1786); until it lands this page is current, and the Report emails page replaces it. |
+| `emailed_reports` | (retired) | (retired) | Administrator, Staff | Emailed reports | `/admin/reports/emailed/` | (retired; 404) | Was the list of daily and weekly reports (decision 7, ADM-12.17). Retired with no redirect by [Report emails](../report-emails/spec.md#delivery-plan) delivery PR 5 (#1786, #864): Report emails lists every report's past sends. |
+| `weekly_digest_manual` | (retired) | (retired) | Administrator | Send a weekly report now; Request a manual information report; Manual information report | `/admin/reports/emailed/weekly/new/` | (retired; 404) | Retired with no redirect by [Report emails](../report-emails/spec.md#delivery-plan) delivery PR 5 (#1786, #864): its successor is each report's [Send now](../report-emails/spec.md#send-now). |
 | `weekly_digest_snapshot` | Weekly report | Report emails | Administrator, Staff | Weekly information report; Weekly summary | `/admin/reports/emailed/weekly/<snapshot>/` | (same) | Its old address, which weekly report emails sent before NAV-12 link, is gone, with no redirect (#864). |
 | `weekly_digest_item` | Weekly report item | Weekly report | Administrator, Staff | Weekly information report (one item); Weekly summary item | `/admin/reports/emailed/weekly/<snapshot>/items/<item>/` | (same) | Links the live Additional information request. |
 | `daily_digest_snapshot` | Daily report | Report emails | Administrator, Staff | (report document title) daily report | `/admin/reports/emailed/daily/<snapshot>/` | (same) | Its old address, which daily report emails sent before NAV-12 link, is gone, with no redirect (#864). |

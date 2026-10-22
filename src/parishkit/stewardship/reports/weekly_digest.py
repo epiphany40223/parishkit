@@ -146,7 +146,8 @@ class WeeklyDigestDocument:
     @property
     def report_path(self):
         """This opaque selection still requires current portal authorization."""
-        # Its Emailed reports address (NAV-12); the old digest address
+        # Its saved report address under Reports (NAV-12), which Report
+        # emails lists (#1786); the old digest address
         # is gone, with no redirect (#864). Imported here so the document
         # module itself stays free of Django.
         from django.urls import reverse

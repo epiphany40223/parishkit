@@ -54,7 +54,7 @@ def daily_rows(context, parameters):
 def record_view(principal, snapshot_id, campaign_id, outcome):
     """Retain the opaque snapshot reference, not figures or recipient names.
 
-    The page and the command line's ``digest daily`` record the same event.
+    The page and the command line's ``report-email copy`` record the same event.
     """
     # An audit append takes no row locks, so it need not join the writers'
     # work order; waiting there stalled report pages behind every source
@@ -91,7 +91,7 @@ def retained_rows(snapshot_id, *, chart=False):
     """The pinned snapshot and its ready row, read under the read barrier.
 
     The page plots the ready row's chart bytes, so it asks for them with
-    ``chart``; the command line's ``digest daily`` does not load them. Both
+    ``chart``; the command line's ``report-email copy`` does not load them. Both
     read the retained Compared with past campaigns section (#1018 slice 7).
     """
     selected = DailyDigestSnapshot.objects.select_related(

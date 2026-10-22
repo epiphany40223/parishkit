@@ -64,7 +64,7 @@ STEPS = {
     "active": _ACTIVE,
     # Resuming paused mail is the first job.
     "paused": ("delivery_control", *_ACTIVE),
-    "closed": (*_WORK, "emailed_reports"),
+    "closed": (*_WORK, "report_emails"),
 }
 
 

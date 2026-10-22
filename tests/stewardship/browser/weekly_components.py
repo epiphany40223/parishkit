@@ -7,7 +7,6 @@ from uuid import UUID
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.reports.digest_funnel import funnel_context
-from parishkit.stewardship.reports.weekly_manual_views import ManualReportForm
 
 from ..test_daily_digest_content import funnel_metrics
 
@@ -97,32 +96,6 @@ def components(context, admin):
         render_to_string(
             "stewardship/weekly-digest.html",
             context | {"admin_chrome": admin} | testing | {"detail": False},
-        ),
-    )
-    pages["/weekly-manual"] = (
-        "text/html",
-        render_to_string(
-            "stewardship/weekly-manual.html",
-            context
-            | {
-                "admin_chrome": admin,
-                "campaign": SimpleNamespace(
-                    active_configuration=SimpleNamespace(name="2026 Census")
-                ),
-                "mode": "testing",
-                "form": ManualReportForm(
-                    initial={"command_id": UUID(int=2), "configuration_id": UUID(int=3)}
-                ),
-            },
-        ),
-    )
-    # No Weekly Admin digest schedule: Queue is unavailable, named by the
-    # notice that says why (#1331).
-    pages["/weekly-manual-no-schedule"] = (
-        "text/html",
-        render_to_string(
-            "stewardship/weekly-manual.html",
-            context | {"admin_chrome": admin, "form": None, "blocker": "no_schedule"},
         ),
     )
     return pages
