@@ -251,6 +251,15 @@ def _derive_reviewed(submission, validated):
        withdrawn, also when ParishSoft already holds its answer (#1895);
     4. new: a change To review.
 
+    A field whose form showed a change the parish added (#2008) is left as
+    shown when the answer is the added value: no row, and the addition and
+    any earlier change of the field (an Ignored one it was added in place
+    of) stay as they are. Any other answer is always a new change To
+    review (rule 2), even ParishSoft's value or the Ignored change's own:
+    it replaces an open earlier change, and the addition is never touched.
+    The submission check and the derived guard (frozen file 0170) admit and
+    require the same.
+
     No decision is ever carried to a new row. A field the form did not
     present is left as before the reviewed form: an earlier open change of
     an answered Member is withdrawn by the response's own completeness, and
@@ -258,12 +267,16 @@ def _derive_reviewed(submission, validated):
     absence). The SQL completeness check (frozen file 0153) admits each
     absence only where ``reviewed.left_as_shown`` holds.
     """
+    from parishkit.stewardship.pipeline import Shown
+
     from .reviewed import (
         CENSUS,
+        census_additions,
         census_key,
         census_rows,
         entries_of,
         left_as_shown,
+        parish_left_as_shown,
     )
 
     previous = proposal_index(validated.prior_submission)
@@ -274,10 +287,17 @@ def _derive_reviewed(submission, validated):
         and name == "deceased_status"
         and row.execution in RESOLVED_EXECUTIONS
     }
+    census = entries_of(submission.shown_items, CENSUS)
+    # A field may have two entries (#2008): a change the parish added and
+    # the change beside it (the Ignored one it was added in place of).
     entries = {
-        census_key(entry): entry for entry in entries_of(submission.shown_items, CENSUS)
+        census_key(entry): entry for entry in census if entry["shown"] != Shown.PARISH
+    }
+    parish = {
+        census_key(entry): entry for entry in census if entry["shown"] == Shown.PARISH
     }
     rows, reviews = census_rows(list(entries.values()))
+    additions = census_additions(list(parish.values()))
     # The baseline the form showed an Ignored value from: its own snapshot.
     shown_sources = {
         (field.entity, str(field.identity), field.field): field.source
@@ -287,12 +307,21 @@ def _derive_reviewed(submission, validated):
     for field, submitted in _answered_fields(submission, validated):
         identity = (field.entity, str(field.identity), field.field)
         old = previous.pop(identity, None)
+        added = parish.get(identity)
+        addition = additions.get(added["item"]) if added else None
+        if addition is not None and parish_left_as_shown(added, addition, submitted):
+            continue
         entry = entries.get(identity)
         shown = rows.get(entry["item"]) if entry else None
         if shown is not None and shown.execution not in {"cancelled", "superseded"}:
             review = reviews.get(entry["decision"] or "")
             source = shown_sources.get(identity, KnownValue(False))
-            if left_as_shown(entry, shown, review, source, submitted):
+            # Not under a drawn addition: the form showed the added value,
+            # not the change beside it, so the Ignored change's own value
+            # is an edit of the added one too.
+            if addition is None and left_as_shown(
+                entry, shown, review, source, submitted
+            ):
                 continue
             old = shown
         key = canonical_value(field.kind, submitted)
@@ -305,7 +334,12 @@ def _derive_reviewed(submission, validated):
             not field.source.available and submitted is None
         )
         new = None
-        if not unchanged:
+        # An edited addition is always a change To review, even back to
+        # ParishSoft's value (#2008, the Administrator's decision 2): Staff
+        # see the Family turned the added value down. The derived guard
+        # (frozen file 0170) admits that row, and the submission check
+        # requires it.
+        if not unchanged or addition is not None:
             merge = merge_value(
                 field.kind, field.source, PriorChange(field.source, submitted)
             )

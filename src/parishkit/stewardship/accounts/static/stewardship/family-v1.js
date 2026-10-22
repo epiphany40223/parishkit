@@ -683,7 +683,8 @@
           "number. You can add an extension.", group);
       } else node("label", labelText, group, {for: id});
       const input = node(choices.length ? "select" : "input", null, group, {id,
-        autocomplete: "off", "aria-describedby": id + "-status " + id + "-inline-error"});
+        autocomplete: "off", "aria-describedby": id + "-status " + id + "-inline-error" +
+          (definition.added ? " " + id + "-added" : "")});
       if (choices.length) {
         if (!choices.includes("")) node("option", "Choose an option", input, {value: ""});
         choices.forEach((value) => node("option", value || "Unknown", input, {value}));
@@ -752,6 +753,7 @@
       }
       setValue(memberValues(member)[definition.name]);
       const status = node("p", "", group, {id: id + "-status", class: "muted"});
+      addedBadge(definition, id, group);
       node("p", "", group, {id: id + "-inline-error", hidden: ""});
       function update() {
         // A reformatted but unchanged phone keeps the parish record's exact
@@ -1622,6 +1624,17 @@
     });
     if (!list.children.length && cents > 0) node("p", "No share methods selected.", panel);
   }
+  // A census value the parish added (#2008) is drawn in its field, editable;
+  // this badge, directly under the field, says so for as long as the form is
+  // drawn. It is drawn with the field and never changes while the Family
+  // types, so nothing moves; the field's description names it. Returns the
+  // badge's line, or null when the value is not one the parish added.
+  function addedBadge(definition, id, parent) {
+    if (!definition.added) return null;
+    const line = node("p", null, parent, {id: id + "-added", class: "parish-added"});
+    node("span", "Added by the parish", line, {class: "status-badge status-badge-on"});
+    return line;
+  }
   function householdDisplay(value) {
     if (value === null) return "Not provided";
     if (typeof value === "boolean") return value ? "Yes" : "No";
@@ -1775,7 +1788,8 @@
         Object.entries(labels).forEach(([component, text]) => {
           const id = "family-" + name + "-" + component;
           const label = node("label", text, group, {for: id});
-          const attributes = {id, autocomplete: "off", "aria-describedby": output.id + " " + id + "-constraint"};
+          const attributes = {id, autocomplete: "off", "aria-describedby": output.id + " " + id + "-constraint" +
+            (definition.added ? " family-" + name + "-added" : "")};
           const pair = [];
           if (component === "country") {
             pair.push(node("select", null, group, attributes));
@@ -1821,6 +1835,8 @@
             if (input.tagName === "SELECT") input.addEventListener("change", () => { touched.add(component); validate(); });
           });
         });
+        // Under the address fields, naming the whole address (#2008).
+        if (addedBadge(definition, "family-" + name, group)) group.setAttribute("aria-describedby", "family-" + name + "-added");
       }
       function validate() {
         if (name === "email_opt_out") return;

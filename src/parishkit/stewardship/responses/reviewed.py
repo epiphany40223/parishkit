@@ -33,10 +33,11 @@ from parishkit.stewardship.pipeline import (
 
 from .census import FAMILY_FIELDS
 from .comparison import ValueKind, canonical_value
+from .effective import CLOSED_EXECUTIONS
 from .member_census import MEMBER_FIELDS
 from .member_requests import REQUEST_FIELDS
 from .merge import EffectiveValue, KnownValue, MergeState
-from .models import ProposalReview, ProposedChange
+from .models import CensusAddition, ProposalReview, ProposedChange
 
 CENSUS = Stream.CENSUS.value
 MINISTRY = Stream.MINISTRY.value
@@ -53,6 +54,14 @@ KINDS = {
     },
     ("proposed_member", "new_member"): ValueKind.MEMBER,
 }
+# The fields a census change the parish added (#1710) is drawn in on the
+# reviewed form (#2008): a Member's ordinary fields and the Family's
+# addresses, every field census Add offers but a death date, which the form
+# presents only inside a deceased request.
+PARISH_FIELDS = frozenset(
+    {("member", field.name) for field in MEMBER_FIELDS}
+    | {("family", "home_address"), ("family", "mailing_address")}
+)
 # A census answer the response does not give (a field it does not present,
 # a proposed Member it no longer lists), told apart from a known null.
 ABSENT = object()
@@ -114,7 +123,7 @@ def edit_review(row):
     return None
 
 
-def census_entries(inputs, prior):
+def census_entries(inputs, prior, family=None):
     """One shown item per census item in force for the Family's form.
 
     ``prior`` is the Family's latest live response. An item is a change of
@@ -123,6 +132,8 @@ def census_entries(inputs, prior):
     A refresh check places a final change, as the Census changes page does.
     An Ignored item shows the baseline where the form shows it as an answer
     (a Member's field, request or New Member), else the Family's own answer.
+    With ``family`` (the ``FamilyCampaign``), a field with a standing change
+    the parish added has one more entry (``parish_entries``).
     """
     if prior is None or "census" not in inputs.modules:
         return []
@@ -152,6 +163,14 @@ def census_entries(inputs, prior):
         versions={str(row.pk): row.version for row in final},
     )
     entries = []
+    # Each field's change that is not Ignored, whatever its stage (a
+    # Confirmed one records no shown item): a change the parish added is
+    # not shown over one newer than it or still open (``parish_entries``).
+    answered = {
+        (row.entity_kind, row.entity_key, row.field): row
+        for row in rows
+        if row.decision != "ignored"
+    }
     for row in rows:
         check = checks.get(str(row.pk))
         placement = census_placement(
@@ -194,11 +213,93 @@ def census_entries(inputs, prior):
                 "shown": shown.value,
             }
         )
+    if family is not None:
+        entries.extend(parish_entries(inputs, family, answered))
     return entries
 
 
+def parish_entries(inputs, family, answered):
+    """The shown items of a Family's standing census changes the parish added.
+
+    One per field (#2008, review pipeline spec, "What the reviewed form
+    shows"), naming the addition, for a field of ``PARISH_FIELDS`` the form
+    presents: its open addition, else its newest Entered by hand one
+    (``models.standing_additions``), which stands only while ParishSoft
+    still has the value it had when the change was added (once that value
+    changes, the form shows ParishSoft's; a Family address, which the form
+    cannot read, keeps it). A field whose change in ``answered`` (each
+    field's change that is not Ignored, whatever its stage) is newer than
+    the addition, or still open, shows the Family's answer instead: the
+    later one, or one reopened under an addition before census Back to
+    review refused that (``census_resolution.covered_by_addition``), whose
+    shown item an unchanged submit would otherwise lose. ``version`` and
+    ``decision`` are null: an addition has no version a Family response
+    keeps or replaces.
+    """
+    from .models import standing_additions
+
+    sources = {
+        (field.entity, str(field.identity), field.field): field
+        for field in inputs.fields
+        if (field.entity, field.field) in PARISH_FIELDS
+    }
+    standing = {}
+    for addition in standing_additions(family):
+        standing[(addition.entity_kind, addition.entity_key, addition.field)] = addition
+    result = []
+    for key, addition in standing.items():
+        field = sources.get(key)
+        change = answered.get(key)
+        if field is None or (
+            change is not None
+            and (
+                change.created_at > addition.created_at
+                or change.execution not in CLOSED_EXECUTIONS
+            )
+        ):
+            continue
+        if not addition.is_open and not _unchanged_since(field, addition.baseline):
+            continue
+        result.append(
+            {
+                "stream": CENSUS,
+                "entity": addition.entity_kind,
+                "key": addition.entity_key,
+                "field": addition.field,
+                "item": str(addition.pk),
+                "version": None,
+                "decision": None,
+                "shown": Shown.PARISH.value,
+            }
+        )
+    return result
+
+
+def _unchanged_since(field, recorded):
+    """Whether ``field``'s ParishSoft value is still ``recorded``.
+
+    ``recorded`` is ParishSoft's value of the field when a change was added
+    to it (an addition's ``baseline``, ``{"available", "value"}``, or None
+    where the source had no such field), compared by the field's canonical
+    comparison; an unavailable value equals only an unavailable one.
+    """
+    before = KnownValue(
+        bool(recorded and recorded["available"]),
+        recorded["value"] if recorded else None,
+    )
+    now = field.source
+    if not (before.available and now.available):
+        return before.available == now.available
+    return same(field.kind, before.value, now.value)
+
+
 def census_rows(entries):
-    """The changes and edit reviews the census ``entries`` name, by id text."""
+    """The changes and edit reviews the census ``entries`` name, by id text.
+
+    An entry naming a change the parish added (``parish``) is left out:
+    ``census_additions`` reads those.
+    """
+    entries = [entry for entry in entries if entry["shown"] != Shown.PARISH]
     rows = ProposedChange.objects.in_bulk([entry["item"] for entry in entries])
     reviews = ProposalReview.objects.in_bulk(
         [entry["decision"] for entry in entries if entry["decision"]]
@@ -206,6 +307,50 @@ def census_rows(entries):
     return {str(key): row for key, row in rows.items()}, {
         str(key): review for key, review in reviews.items()
     }
+
+
+def census_additions(entries):
+    """The additions the ``parish`` census ``entries`` name, by id text.
+
+    A withdrawn addition is left out: the form never draws one, and its
+    entry is never left as shown (a form that shows one is stale,
+    ``withdrawn_shown``). One query, none when no entry names one.
+    """
+    ids = [entry["item"] for entry in entries if entry["shown"] == Shown.PARISH]
+    if not ids:
+        return {}
+    rows = CensusAddition.objects.filter(pk__in=ids).exclude(
+        resolutions__action="withdrawn"
+    )
+    return {str(row.pk): row for row in rows}
+
+
+def withdrawn_shown(shown_items):
+    """Whether a form's ``shown_items`` name a change the parish added since withdrawn.
+
+    Its submit is then a stale-form review (review pipeline spec, "Reviewed
+    form concurrency"): the Family never sends, as if it were still the
+    parish's, a value Staff took back while the form was open.
+    """
+    entries = entries_of(shown_items, CENSUS)
+    named = {entry["item"] for entry in entries if entry["shown"] == Shown.PARISH}
+    return bool(named) and named != set(census_additions(entries))
+
+
+def parish_left_as_shown(entry, addition, answer):
+    """Whether ``answer`` leaves a ``parish`` entry's added value as shown (rule 1).
+
+    ``addition`` is the change the entry names (None when it is withdrawn).
+    The answer then makes no Family change, and the addition and any earlier
+    change of the field stay as they are; the submission check (frozen file
+    0170) admits the same.
+    """
+    kind = KINDS[entry["entity"], entry["field"]]
+    return (
+        addition is not None
+        and answer is not ABSENT
+        and same(kind, answer, addition.value)
+    )
 
 
 def census_shown(entry, row, review, source):
@@ -255,7 +400,8 @@ def census_draw(field, entry, row, review):
     With no entry the form shows the plain baseline. The Family's own
     answer is drawn by the Effective-value merge, as before the reviewed
     form, so its change and conflict markers are today's (none when
-    Ignored); a reviewer's value is marked changed when it differs from
+    Ignored); a reviewer's value, and a change the parish added (``row`` is
+    then the ``CensusAddition``), is marked changed when it differs from
     the baseline; a baseline is never marked.
     """
     from .merge import PriorChange, merge_value
@@ -279,8 +425,8 @@ def census_draw(field, entry, row, review):
             # address, the email opt-out) is never marked.
             return EffectiveValue(drawn.value, MergeState.CURRENT, False, False)
         return drawn
-    if entry["shown"] == Shown.REVIEWER:
-        value = review.admin_value
+    if entry["shown"] in (Shown.REVIEWER, Shown.PARISH):
+        value = review.admin_value if entry["shown"] == Shown.REVIEWER else row.value
         changed = not (
             field.source.available and same(field.kind, value, field.source.value)
         )
@@ -293,16 +439,45 @@ def census_draw(field, entry, row, review):
     return merge_value(field.kind, field.source)
 
 
-def census_fields(inputs, entries):
-    """The effective census fields a reviewed form draws, in ``inputs`` order."""
+def drawn_entries(entries, additions):
+    """Each census field's entry the reviewed form draws, by item identity.
+
+    A field's ``parish`` entry wins over the change entry beside it (the
+    Ignored change the addition was added in place of, or an older one),
+    unless its addition was withdrawn (not in ``additions``, from
+    ``census_additions``).
+    """
+    keyed = {}
+    for entry in entries:
+        key = census_key(entry)
+        if entry["shown"] == Shown.PARISH:
+            if entry["item"] in additions:
+                keyed[key] = entry
+        elif keyed.get(key, {}).get("shown") != Shown.PARISH:
+            keyed[key] = entry
+    return keyed
+
+
+def census_fields(inputs, entries, additions=None):
+    """The effective census fields a reviewed form draws, in ``inputs`` order.
+
+    ``additions`` are ``census_additions(entries)`` when the caller already
+    read them.
+    """
     from .effective import EffectiveField
 
-    keyed = {census_key(entry): entry for entry in entries}
+    if additions is None:
+        additions = census_additions(entries)
+    keyed = drawn_entries(entries, additions)
     rows, reviews = census_rows(entries)
     result = []
     for field in inputs.fields:
         entry = keyed.get((field.entity, str(field.identity), field.field))
-        row = rows.get(entry["item"]) if entry else None
+        row = (
+            (additions if entry["shown"] == Shown.PARISH else rows).get(entry["item"])
+            if entry
+            else None
+        )
         review = reviews.get(entry["decision"] or "") if entry else None
         result.append(
             EffectiveField(
@@ -587,7 +762,7 @@ def financial_draw(entries, prior):
 def shown_items(inputs, prior, family):
     """Every shown item a live reviewed form records, in a stable order."""
     entries = [
-        *census_entries(inputs, prior),
+        *census_entries(inputs, prior, family),
         *ministry_entries(inputs, prior),
         *financial_entries(family, prior),
     ]

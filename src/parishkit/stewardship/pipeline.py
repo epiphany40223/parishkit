@@ -690,6 +690,10 @@ class Shown(StrEnum):
     FAMILY = "family"
     REVIEWER = "reviewer"
     BASELINE = "baseline"
+    # A census change the parish added (#1710), drawn in its field (#2008).
+    # ``shown_value`` never returns it: ``reviewed.census_entries`` records
+    # it from the addition itself, not from a change's stage.
+    PARISH = "parish"
 
 
 @dataclass(frozen=True, slots=True)

@@ -16,6 +16,7 @@ from parishkit.stewardship.storage import StorageInvariantError
 from .baselines import effective_submission
 from .inputs import FORM_SCHEMA, PROJECTION_VERSION, CensusInputs, FormInputsUnavailable
 from .models import FamilyFormBaseline, Submission
+from .reviewed import withdrawn_shown
 from .source_inputs import load_census_inputs
 
 
@@ -131,5 +132,8 @@ def validate_baseline(identifier, *, family, session, campaign):
         current_snapshot.pk,
         prior,
         current.projection_digest != reviewed.projection_digest
-        or baseline.prior_submission_id != (prior.pk if prior else None),
+        or baseline.prior_submission_id != (prior.pk if prior else None)
+        # A census change the parish added that the reviewed form drew was
+        # withdrawn while it was open (#2008): review it like a refresh.
+        or (baseline.reviewed_view and withdrawn_shown(baseline.shown_items)),
     )

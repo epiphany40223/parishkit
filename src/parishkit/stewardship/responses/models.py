@@ -736,20 +736,55 @@ class CensusAdditionResolution(ImmutableRecord):
         ]
 
 
+# An addition with no later step yet, or whose latest step reopened it.
+_OPEN = models.Q(last_step__isnull=True) | models.Q(last_step="reopened")
+
+
 def open_additions():
     """The parish-added census changes still To enter by hand (#1710, #1840).
 
     Open means no later step yet, or a latest step that reopened it; an
     entered or withdrawn one is not open.
     """
+    return _with_last_step().filter(_OPEN)
+
+
+def standing_additions(family):
+    """A Family's parish-added census changes that are not withdrawn (#2008).
+
+    Open or Entered by hand (``is_open`` says which), in the order the
+    reviewed form reads them, keeping the last of each field
+    (``reviewed.census_entries``): Entered by hand ones first, oldest
+    first, then open ones. So a field's open addition (it has at most one)
+    wins over any Entered by hand one, even an Entered one added later (A
+    Entered, B added and Entered, A reopened: the form shows A), and
+    otherwise the newest Entered one wins.
+    """
+    return (
+        _with_last_step()
+        .filter(family=family)
+        # Spelled out: NOT (last_step = 'withdrawn') is NULL, so it would
+        # drop an addition with no step yet.
+        .filter(models.Q(last_step__isnull=True) | ~models.Q(last_step="withdrawn"))
+        .annotate(
+            is_open=models.Case(
+                models.When(_OPEN, then=models.Value(True)),
+                default=models.Value(False),
+                output_field=models.BooleanField(),
+            )
+        )
+        .order_by("is_open", "created_at", "id")
+    )
+
+
+def _with_last_step():
+    """Census additions annotated with their latest step's action (or None)."""
     latest = (
         CensusAdditionResolution.objects.filter(addition=models.OuterRef("pk"))
         .order_by("-sequence")
         .values("action")[:1]
     )
-    return CensusAddition.objects.annotate(last_step=models.Subquery(latest)).filter(
-        models.Q(last_step__isnull=True) | models.Q(last_step="reopened")
-    )
+    return CensusAddition.objects.annotate(last_step=models.Subquery(latest))
 
 
 class SubmissionReceiptOccurrence(ImmutableRecord):

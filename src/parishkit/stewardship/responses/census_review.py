@@ -439,8 +439,8 @@ def _record(
         and proposal.decision == "ignored"
         and covered_by_addition(proposal)
     ):
-        # An open parish addition stands in for it (#1710).
-        raise ReopenCovered("An open addition covers this census change.")
+        # A standing parish addition stands in for it (#1710, #2008).
+        raise ReopenCovered("A change the parish added covers this census change.")
     # The row records the whole resulting review state: a decision keeps
     # the edit fields as the proposal has them, an edit keeps the decision.
     # A resolution accepts exactly the value and source the proposal holds
