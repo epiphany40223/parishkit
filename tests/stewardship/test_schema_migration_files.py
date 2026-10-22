@@ -516,6 +516,9 @@ FROZEN = {
     "0161_report_conversion.sql": (
         "3e723f78dcd1ac826e1d7b31309f34f513d6d9e31c23e713e279b41fc9f8a016"
     ),
+    "0162_report_recovery_coverage.sql": (
+        "4d10bc449e224f7434df25cb695981a534bb2c469c1f319e5b5f67137f8e0d5f"
+    ),
 }
 
 
