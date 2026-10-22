@@ -27,14 +27,14 @@ FROZEN_SQL = (
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("stewardship_reports", "0032_pledge_review"),
-        # The migration that installs the previous frozen file on main (0132,
-        # the refresh checks), so the files apply in prefix order. 0133-0166
-        # are assigned to other open changes; whichever merges last
-        # re-points this. It follows the users swap, so
-        # `migrate --users-upgrade-base` never applies this file and its
-        # granted function is registered in runtime_grants.CLOSURE_FUNCTIONS.
-        ("stewardship_workflows", "0004_refresh_checks"),
+        # The reports app's previous migration (the report waiting read).
+        ("stewardship_reports", "0044_report_waiting_read"),
+        # The migration that installs the previous frozen file (0168, the
+        # setup test binding), so the files apply in prefix order. It
+        # follows the users swap, so `migrate --users-upgrade-base` never
+        # applies this file and its granted function is registered in
+        # runtime_grants.CLOSURE_FUNCTIONS.
+        ("stewardship_accounts", "0034_setup_test_binding"),
     ]
 
     operations = [migrations.RunSQL(FROZEN_SQL.read_text(encoding="utf-8"))]

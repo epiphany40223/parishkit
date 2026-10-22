@@ -614,7 +614,7 @@ CLOSURE_FUNCTIONS = {
     # Ministry requests' Leaders column (0169, #1594).
     LEADER_COVERAGE_FUNCTION: (
         "stewardship_reports",
-        "0033_ministry_leader_coverage",
+        "0045_ministry_leader_coverage",
     ),
 }
 

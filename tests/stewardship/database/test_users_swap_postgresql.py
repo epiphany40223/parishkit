@@ -971,7 +971,7 @@ CLOSURE_CREATED = {
     # 0169 (#1594): the Ministry requests Leaders column's definer.
     "public.stewardship_ministry_leader_coverage_v1(text,uuid)": (
         "stewardship_reports",
-        "0033_ministry_leader_coverage",
+        "0045_ministry_leader_coverage",
     ),
 }
 
