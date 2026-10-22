@@ -1007,6 +1007,24 @@ trigger still analyzes at completion, for setup loading and as a safety
 net. The ready transition now holds the lock for 110–120 ms, and the guard's
 check takes 26–30 ms of that.
 
+A new campaign's first load has the same problem one step later (#1932).
+Promotion bulk-inserts the campaign's `stewardship_family_campaign` rows and
+their `stewardship_family_eligibility` history, and the scheduler reads its
+Family planning inputs within about 15 s. Until autovacuum re-analyzes those
+tables, their statistics know only earlier campaigns. The planner then
+estimates one row for the new campaign and re-aggregates the history once
+per Family: 0.89 s instead of 0.01 s at 2,700 Families, and quadratic in the
+population. Migration 0172 adds the worker-only definer
+`stewardship_family_campaign_analyze_v1`, built like 0086's: it runs as the
+schema owner and refuses unless the campaign can still receive Family
+effects. When a promotion inserts a campaign's first Family rows, the worker
+calls it once, after that promotion commits and never inside it, with the
+same 5 s lock and 30 s statement limits. A timeout is logged as one, any
+other database error is logged as a warning, and neither fails the
+already-committed load: autovacuum still analyzes the tables later. Later
+refreshes of the same campaign do not call it, because its `campaign_id`
+is already in the statistics.
+
 **Change 4** is only an optimization. A hint is advisory, and the consumer
 rechecks admission under its own locks, so a skipped re-check costs nothing.
 However, the due-work health sample counts each admitted row. A row skipped
