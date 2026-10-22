@@ -201,11 +201,12 @@ def _page(context, admin, saved, data=None):
     )
 
 
-def review_answer():
+def review_answer(before=None):
     """Review's answer for a new report that sends after the campaign ends.
 
     The real review template, from the real description of the Weekly
-    report, with the after-campaign question and its tick.
+    report, with the after-campaign question and its tick; with ``before``
+    (saved report values) it is a change's review, Now beside After.
     """
     choices = editor.recipient_choices(USERS)
     return render_to_string(
@@ -213,7 +214,7 @@ def review_answer():
         {
             "kind": "write",
             "change": {"dropped_skips": []},
-            "before": None,
+            "before": before and editor.describe(before, CAMPAIGN, NOW, choices),
             "after": editor.describe(WEEKLY, CAMPAIGN, NOW, choices),
             "preview": "synthetic-preview",
             "after_campaign": datetime(2054, 11, 2, 12, 0, tzinfo=UTC),

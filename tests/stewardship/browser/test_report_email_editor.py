@@ -26,6 +26,7 @@ from .report_email_editor_components import (
     NEW,
     NEW_REFUSED,
     USERS,
+    WEEKLY,
     changed_table,
     review_answer,
     skip_answer,
@@ -249,15 +250,7 @@ def test_the_after_campaign_tick_holds_apply(page, component_origin):
 
     page.route(component_origin + "/admin/mail/report-emails/new/", review)
     page.goto(component_origin + NEW)
-    page.get_by_label("Report name", exact=True).fill("Staff daily")
-    page.get_by_label("Add a recipient").fill("All Staff (group, 1 person now)")
-    page.get_by_role("button", name="Add", exact=True).first.click()
-    page.get_by_role("radio", name="Daily").check()
-    page.get_by_label("Time", exact=True).fill("7:00 AM")
-    page.get_by_role("button", name="Add", exact=True).last.click()
-    page.get_by_role("button", name="Add the report email").click()
-    dialog = page.locator("#report-review")
-    visible(dialog)
+    dialog = open_review(page)
     apply = dialog.locator("[data-confirm-accept]")
     status = dialog.locator("[data-confirm-status]")
     hint = "Tick Send after the campaign ends to apply it."
@@ -271,6 +264,68 @@ def test_the_after_campaign_tick_holds_apply(page, component_origin):
     dialog.get_by_label("Send after the campaign ends").uncheck()
     expect(apply).to_be_disabled()
     expect(status).to_have_text(hint)
+
+
+def open_review(page):
+    """Fill in New report email and open its review dialog (the test routes
+    the review's answer); returns the dialog."""
+    page.get_by_label("Report name", exact=True).fill("Staff daily")
+    page.get_by_label("Add a recipient").fill("All Staff (group, 1 person now)")
+    page.get_by_role("button", name="Add", exact=True).first.click()
+    page.get_by_role("radio", name="Daily").check()
+    page.get_by_label("Time", exact=True).fill("7:00 AM")
+    page.get_by_role("button", name="Add", exact=True).last.click()
+    page.get_by_role("button", name="Add the report email").click()
+    dialog = page.locator("#report-review")
+    visible(dialog)
+    return dialog
+
+
+# The words of the matched, rendered elements that break across lines: a
+# word laid out on one line has one client rect, a word broken mid-way two.
+BROKEN_WORDS = """els => els.filter(el => el.getClientRects().length).flatMap(el => {
+  const broken = [];
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    for (const match of node.data.matchAll(/\\S+/g)) {
+      const range = document.createRange();
+      range.setStart(node, match.index);
+      range.setEnd(node, match.index + match[0].length);
+      if (range.getClientRects().length > 1) broken.push(match[0]);
+    }
+  }
+  return broken;
+})"""
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+@pytest.mark.parametrize("change", [False, True])
+def test_words_wrap_only_between_words(page, component_origin, width, change):
+    """At phone and desktop width no segment of a pair and no label of the
+    review table breaks a word mid-way ("Repeatin" / "g", #1974), and the
+    page still never scrolls sideways."""
+    answer = review_answer(WEEKLY if change else None)
+    page.route(
+        component_origin + "/admin/mail/report-emails/new/",
+        lambda route: route.fulfill(status=200, body=answer, content_type="text/html"),
+    )
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + NEW)
+    segments = page.locator(".choice-pair-options > label")
+    assert segments.evaluate_all(BROKEN_WORDS) == []
+    page.get_by_role("radio", name="Once").check()
+    assert segments.evaluate_all(BROKEN_WORDS) == []
+    page.get_by_role("radio", name="Repeating").check()
+    # Whole words never overflow a pair's frame, which clips what overflows.
+    assert page.locator(".choice-pair-options").evaluate_all(
+        "els => els.filter(el => el.getClientRects().length)"
+        ".every(el => el.scrollWidth <= el.clientWidth)"
+    )
+    dialog = open_review(page)
+    labels = dialog.locator(".report-review-table th")
+    assert labels.count() >= 9
+    assert labels.evaluate_all(BROKEN_WORDS) == []
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
 
 TICK_POSTED = (
