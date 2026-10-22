@@ -21,6 +21,7 @@ from parishkit.stewardship.quality_pytest import (
     BROWSER_DISCOVERY,
     BrowserSelection,
     failures_path,
+    running_path,
 )
 from parishkit.stewardship.quality_sharding import (
     BROWSER_ENGINE_SECONDS,
@@ -627,6 +628,10 @@ def test_actual_external_runner_requires_completion(probe, monkeypatch, capfd, m
         with pytest.raises(subprocess.CalledProcessError) as caught:
             quality_browser.run_engine(probe, "chromium")
         assert caught.value.returncode == 1
+        # Both chromium cases fail in "fail" mode, and --require-no-skips
+        # fails both skips; "exit" fails no test phase. The summary lists
+        # these node ids (#2001).
+        assert len(caught.value.failures) == (0 if mode == "exit" else 2)
 
 
 @pytest.mark.parametrize("option", ["--version", "--help", "--markers"])
@@ -695,8 +700,12 @@ def test_runner_environment_and_timeout(probe, monkeypatch):
     killpg = Mock()
     monkeypatch.setattr(quality_browser.subprocess, "Popen", run)
     monkeypatch.setattr(quality_browser.os, "killpg", killpg)
-    with pytest.raises(quality_browser.BudgetExhausted, match="no test had failed"):
+    with pytest.raises(
+        quality_browser.BudgetExhausted, match="no test had failed"
+    ) as caught:
         quality_browser.run_engine(probe, "firefox")
+    assert caught.value.failures == [] and caught.value.running is None
+    assert caught.value.limit == limit
     killpg.assert_called_once_with(4242, signal.SIGKILL)
     assert child[0].waits == [limit, None]
     assert run.call_args.kwargs["start_new_session"] is True
@@ -809,7 +818,9 @@ def test_job_runs_every_partition_within_its_budget(
         ("webkit", 1, 2, limit - 600),
     ]
     assert "CI_BROWSER_FAILED chromium 1/2" in capfd.readouterr().out
-    assert summary.read_text().startswith("- Browser partition chromium 1/2 failed: ")
+    assert summary.read_text() == (
+        f"### Other failed browser partitions\n\n- chromium 1/2: {error}\n\n"
+    )
 
 
 @pytest.mark.parametrize(
@@ -851,7 +862,9 @@ def run_job_timed(monkeypatch, seconds):
         needed = seconds[len(calls) - 1]
         now[0] += min(needed, timeout)
         if needed > timeout:
-            raise quality_browser.BudgetExhausted("killed")
+            raise quality_browser.BudgetExhausted(
+                "killed", (), "t.py::slow", timeout, timeout
+            )
 
     monkeypatch.setattr(quality_browser, "run_engine", run_engine)
     runs = [("chromium", 1, 2), ("webkit", 1, 2)]
@@ -874,7 +887,81 @@ def test_slow_first_partition_cannot_starve_the_second(monkeypatch, capfd):
     calls, failed = run_job_timed(monkeypatch, [99999, 900])
     assert failed == ["chromium 1/2"]
     assert calls == [1500, 1500]
-    assert "CI_BROWSER_FAILED chromium 1/2: killed" in capfd.readouterr().out
+    out = capfd.readouterr().out
+    assert (
+        "CI_BROWSER_BUDGET_KILLED chromium 1/2: running t.py::slow after 1,500 s "
+        "(budget 1,500 s)\n"
+    ) in out
+    assert "CI_BROWSER_FAILED" not in out
+
+
+def test_job_summary_puts_failed_tests_first_and_kills_apart(
+    monkeypatch, capfd, tmp_path
+):
+    """A budget kill with no failed test is told apart from test failures.
+
+    Failed node ids lead the summary; a clean budget kill names its running
+    test; a kill after a failure stays a failure; every partition fails the
+    job (#2001).
+    """
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    failed = subprocess.CalledProcessError(1, "pytest")
+    failed.failures = ["t.py::a", "t.py::a"]
+    errors = iter(
+        [
+            quality_browser.BudgetExhausted("slow", (), "t.py::b", 1727.2, 1727),
+            quality_browser.BudgetExhausted("hung", ["t.py::c"], "t.py::d", 900, 900),
+            failed,
+            quality_browser.BudgetExhausted("early", (), None, 5, 900),
+        ]
+    )
+
+    def run_engine(root, engine, index, count, timeout):
+        """Every partition fails, each in its own way."""
+        raise next(errors)
+
+    monkeypatch.setattr(quality_browser, "run_engine", run_engine)
+    runs = [("webkit", n, 4) for n in range(1, 5)]
+    assert quality_browser.run_job(ROOT, runs) == [
+        f"webkit {n}/4" for n in (1, 2, 3, 4)
+    ]
+    out = capfd.readouterr().out
+    assert (
+        "CI_BROWSER_BUDGET_KILLED webkit 1/4: running t.py::b after 1,727 s "
+        "(budget 1,727 s)\n"
+    ) in out
+    assert "CI_BROWSER_FAILED webkit 2/4: hung\n" in out
+    assert "CI_BROWSER_FAILED webkit 3/4: " in out
+    assert "CI_BROWSER_BUDGET_KILLED webkit 4/4: running no test yet after 5 s" in out
+    assert summary.read_text() == (
+        "### Failed browser tests\n\n"
+        "- `t.py::c` (webkit 2/4)\n"
+        "- `t.py::a` (webkit 3/4)\n\n"
+        "### Browser partitions killed by their time budget with no failed test "
+        "(likely a slow runner)\n\n"
+        "- webkit 1/4: running t.py::b after 1,727 s (budget 1,727 s)\n"
+        "- webkit 4/4: running no test yet after 5 s (budget 900 s)\n\n"
+        "### Other failed browser partitions\n\n"
+        "- webkit 2/4: hung\n"
+        f"- webkit 3/4: {failed}\n\n"
+    )
+
+
+def test_job_summary_survives_an_interrupt_in_a_later_partition(monkeypatch, tmp_path):
+    """A cancel or job timeout mid-run keeps the earlier failures in the summary."""
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    outcomes = iter([quality_browser.BudgetExhausted("hung", ["t.py::c"], None, 9, 9)])
+
+    def run_engine(root, engine, index, count, timeout):
+        """The first partition fails; the second is interrupted (SIGINT)."""
+        raise next(outcomes, KeyboardInterrupt())
+
+    monkeypatch.setattr(quality_browser, "run_engine", run_engine)
+    with pytest.raises(KeyboardInterrupt):
+        quality_browser.run_job(ROOT, [("webkit", 1, 2), ("webkit", 2, 2)])
+    assert "- `t.py::c` (webkit 1/2)\n" in summary.read_text()
 
 
 @pytest.mark.parametrize(
@@ -903,6 +990,7 @@ def test_budget_kill_reports_failures_recorded_before_it(probe, monkeypatch):
             )[1]
         )
         failures_path(receipt).write_text("tests/x.py::a\n")
+        running_path(receipt).write_text("tests/x.py::b\n")
 
     monkeypatch.setattr(
         quality_browser.subprocess,
@@ -915,6 +1003,9 @@ def test_budget_kill_reports_failures_recorded_before_it(probe, monkeypatch):
     message = str(caught.value)
     assert "its 900 s partition budget" in message
     assert message.endswith("1 test phase(s) had already failed: tests/x.py::a")
+    assert caught.value.failures == ["tests/x.py::a"]
+    assert caught.value.running == "tests/x.py::b"
+    assert caught.value.limit == 900
 
 
 def test_plugin_records_failed_phases_beside_the_receipt(
@@ -940,6 +1031,18 @@ def test_plugin_records_failed_phases_beside_the_receipt(
         )
     assert failures_path(receipt).read_text() == "b\nc\n"
     assert plugin.executed == ["a"] and not receipt.exists()
+
+
+def test_plugin_names_the_running_test_beside_the_receipt(
+    selection_config, tmp_path_factory
+):
+    """Each test start overwrites the running sidecar with its node id."""
+    receipt = tmp_path_factory.mktemp("receipt") / "receipt.json"
+    selection_config.options["--ci-browser-evidence"] = str(receipt)
+    plugin = BrowserSelection(selection_config)
+    for nodeid in ("a", "b"):
+        plugin.pytest_runtest_logstart(nodeid, None)
+    assert running_path(receipt).read_text() == "b\n" and not receipt.exists()
 
 
 @pytest.mark.parametrize("runs,code", [("webkit", 2), ("firefox:1/1", 1)])
