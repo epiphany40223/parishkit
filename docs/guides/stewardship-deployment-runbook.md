@@ -759,11 +759,10 @@ started, the replaced release the run reported, and the
 image ID, then clears Docker's build cache (`STEWARDSHIP_KEEP_BUILD_CACHE=1`
 keeps it). It prints each image removed or kept and the space freed, and
 keeps that log on the host as `/var/log/stewardship-prune-TIMESTAMP.log`.
-For now `STEWARDSHIP_PRUNE` defaults to `dry-run`, which lists what it would
-remove and removes nothing: the first real prune happens only after the
-Administrator has reviewed one Production dry-run log, and then a one-line
-follow-up (#1671) makes `on` the default. Until then
-`STEWARDSHIP_PRUNE=on` removes; `STEWARDSHIP_PRUNE=off` skips pruning.
+`STEWARDSHIP_PRUNE` defaults to `on`, which removes; the Administrator
+approved that default (#1671) after reviewing a Production dry-run log.
+`STEWARDSHIP_PRUNE=dry-run` lists what it would remove and removes nothing;
+`STEWARDSHIP_PRUNE=off` skips pruning.
 It prunes only when the host half's last line reports the replaced release
 as a digest of `STEWARDSHIP_IMAGE_REPO`; when that line is missing,
 reworded or empty, it warns and removes nothing. A re-run with the digest
@@ -771,7 +770,12 @@ already running replaced the release with itself, so the release before it
 is not known by name; that run says so and skips pruning, and the next
 upgrade prunes. A failed lookup of what to keep (other than an image that
 is simply not on the host) stops the pruning before anything is removed. A
-pruning failure prints a warning and the upgrade still exits 0. To preview
+rollback keeps the release it rolls back from, because that release is the
+one it just started. A pruning failure prints a warning and the upgrade still
+exits 0. The pruning ssh is limited to `STEWARDSHIP_PRUNE_TIMEOUT` seconds
+(default 1200, enough for about 70 images and the build cache); on expiry it
+is killed, a `TIMEOUT:` line logs what was killed, the limit and the elapsed
+time, and the upgrade still exits 0, so check the host's prune log. To preview
 or prune without an upgrade, run it on the
 host directly (`--keep N`, `--protect IMAGE`, `--dry-run`,
 `--keep-build-cache`; its header lists them):
