@@ -711,8 +711,10 @@ input[data-time-entry=list] { max-width: 24rem; }
    are the gap the table would have under the filters anyway. */
 /* A longer notice (a long item name; Linux's wider fonts wrapped the
    overtaken-decision notice at 700 and 1024 px) is cut short with an
-   ellipsis rather than taking another line, as .review-outcome is; the
-   live region still holds the whole text for screen readers. */
+   ellipsis rather than taking another line, as .review-outcome is. The
+   line is not a live region: the element still holds the whole text, so
+   a screen reader reading it hears it whole, and the decision itself is
+   announced by ui-v1.js's shared announce(). */
 .action-status.worklist-notice { min-height: 1.6em; min-height: 1lh; margin-block: 0 .5rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* On a phone a notice naming its item can wrap (Linux's wider fonts wrap
    it at 390 px), so the line keeps two lines there, still with no margin
@@ -1995,6 +1997,39 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .worklist-filters > div.wide { flex-basis: 16.5rem; max-width: 24rem; }
 /* The search's own widths name the form, so their phone rule does too. */
 @media (max-width: 40rem) { .worklist-filters > div:not(.filter-actions), .worklist-filters > div:has(> input[name=search]), .worklist-filters:not(:has(> div:nth-of-type(4))) > div:has(> input[name=search]) { flex-basis: 100%; max-width: none; } }
+/* The review worklist's first row on a laptop's first screen (#1950).
+   The filter form's reserved complete-gate hint is drawn on the notice's
+   reserved line just below the form, not on a line of its own: it stays
+   in the form (the gate finds it there, and Apply filters names it) but is
+   taken out of the row's flow. A decision's notice wins the line: while
+   the notice has words the hint is not drawn, even if the filters are
+   held, since a row's icons and the bulk buttons sit outside the form and
+   keep working then, and their answer (an overtaken decision among them)
+   must be read. Apply filters is still unavailable and still names the
+   hint in aria-describedby, which reads a hidden element's words, so the
+   reason reaches assistive technology. With no notice the hint shows
+   there while the filters are held. Both lines stay reserved, so neither
+   appearing ever moves the table (ui-conventions, No layout shift). */
+.worklist-filters { position: relative; }
+.worklist-filters > [data-complete-hint] { position: absolute; inset-inline: 0; top: calc(100% + .5rem); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.worklist-filters:has(+ .worklist-notice > p) > [data-complete-hint] { visibility: hidden; }
+/* On a phone the notice keeps two lines, so the hint may wrap onto both. */
+@media (max-width: 40rem) { .worklist-filters > [data-complete-hint] { white-space: normal; } }
+/* The table region's spacing is tighter than other tables': the bulk
+   buttons' gap is the filters' 0.5rem and their side padding 0.875rem,
+   so at 1366 px the selected count stays on the buttons' line instead of
+   wrapping onto one of its own, even with Linux's wider fonts (Census
+   changes and Ministry requests have six buttons). Select all still
+   reserves its longer text, Clear selection, at that padding (#563); the
+   count keeps its reserved width. The top navigator, the bulk bar and the
+   table sit closer, and the caption keeps its words and style with
+   slimmer padding. */
+.worklist-table .bulk-bar { gap: .5rem; margin-block: .5rem; }
+.worklist-table .bulk-bar button { padding-inline: .875rem; }
+.worklist-table .bulk-bar [data-select-all-button] { min-width: calc(15ch + 1.75rem + 2 * var(--button-border-width)); }
+.worklist-table > nav.table-nav:first-child { margin-block: 0 .5rem; }
+.worklist-table .table-scroll { margin-block: .5rem .75rem; }
+.worklist-table caption { padding-block: .3rem; }
 /* Ministry requests' By Ministry counts (#1133, #1653): a closed
    disclosure whose control sits on the heading's line after About this
    page, drawn like it (a quiet summary with a fixed chevron), so the
@@ -2028,6 +2063,10 @@ details.by-ministry > section { display: block; margin-block: 0 .5rem; }
 .heading-row > details:not(.about-page) > summary { grid-area: other; justify-self: start; }
 .heading-row > details:not(.about-page)::details-content { grid-area: other-body; }
 .heading-row > details::details-content { align-self: start; }
+/* A link on the heading's row (Pledges' Financial stewardship, #1950) takes
+   the row's last cell, as By Ministry's control does, with no block margin
+   so the row keeps the heading's height, and a gap after About. */
+.heading-row > p.heading-link { grid-area: other; justify-self: start; margin: 0 0 0 1rem; }
 @media (max-width: 40rem) { .heading-row { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "heading heading" "about other" "about-body about-body" "other-body other-body"; } }
 .button-danger { background: var(--error-border); border-color: var(--error-border); color: var(--paper); }
 .button-danger:not(:disabled):hover { background: var(--error-ink); border-color: var(--error-ink); }
