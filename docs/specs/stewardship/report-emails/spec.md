@@ -1163,11 +1163,15 @@ under Repeating, or names a time of day. One time field, shared by both
 modes, follows them. The Once preset of Basic is the Sends choice's
 Once, so the two cannot disagree. A repeating report's days are the
 campaign's days ([decisions](#decisions-made-in-this-specification)); when
-the browser's zone is not the campaign's, a help line under the weekly day
-and On these days says so: "These are the days where the parish is, in the
-campaign's time zone; only the time is read in your computer's time zone."
-The
-zone note names the browser's zone. Under the fields, the
+the browser's zone keeps a different clock from the campaign's during the
+campaign, a help line under the weekly day and On these days says so
+(zones are compared by their clocks, not their names: another name for the
+same rules, such as America/Louisville for America/New_York, is no
+difference,
+[#1973](https://github.com/epiphany40223/parishkit/issues/1973)): "These
+are the days where the parish is, in the campaign's time zone; only the
+time is read in your computer's time zone." The zone note names the
+browser's zone. Under the fields, the
 [Next sends table](#next-sends-table) lists the next five sends, redrawn in
 place as the fields change, in a region that keeps its place
 ([no layout shift](../ui-conventions/spec.md#no-layout-shift)).

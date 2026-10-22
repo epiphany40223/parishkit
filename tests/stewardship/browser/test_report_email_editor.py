@@ -16,6 +16,8 @@ Send selected sends, each available only for its kind of send; a send the
 Campaign calendar names (?send=) has its box ticked and focused.
 """
 
+import re
+
 import pytest
 
 from .report_email_editor_components import (
@@ -178,18 +180,57 @@ def test_the_campaign_days_line_follows_the_zone(
     page, browser_engine, component_origin
 ):
     """The line saying a repeating report's days are the campaign's shows
-    only where this browser's zone is not the campaign's."""
+    only where this browser's zone keeps another clock than the campaign's:
+    another name for the campaign's zone is the same zone (#1973)."""
     days = "These are the days where the parish is"
     page.goto(component_origin + NEW)
     page.get_by_role("radio", name="Weekly").check()
     # The fixture's browser is in Los Angeles; the campaign in New York.
     visible(page.get_by_text(days).first)
-    context = browser_engine.new_context(timezone_id="America/New_York")
+    # America/Detroit keeps New York's clock under another name. (The
+    # America/Louisville alias would do too, but Firefox refuses it as a
+    # context's zone.)
+    for zone in ("America/New_York", "America/Detroit"):
+        context = browser_engine.new_context(timezone_id=zone)
+        try:
+            same = context.new_page()
+            same.goto(component_origin + NEW)
+            same.get_by_role("radio", name="Weekly").check()
+            # Each line keeps its hidden attribute (the Advanced panel's
+            # line is hidden with its panel either way).
+            lines = same.locator("[data-campaign-days]")
+            assert lines.evaluate_all("ls => ls.map(l => l.hidden)") == [True, True]
+        finally:
+            context.close()
+
+
+def test_a_one_hour_clock_difference_shows_the_campaign_days_line(
+    browser_engine, component_origin
+):
+    """Havana's clock leaves New York's for one hour only, 05:00 to 06:00
+    UTC on 2026-11-01, when Havana has left daylight time and New York not
+    yet: a campaign of October 2026 (its last send two days after) still
+    gets the line (#1973 review: hourly samples, not six-hourly)."""
+
+    def october_2026(route):
+        """New report email, with the campaign's dates moved to 2026."""
+        body = route.fetch().text()
+        for field, day in (("start", "2026-10-01"), ("end", "2026-10-31")):
+            body, count = re.subn(
+                rf'data-campaign-{field}="[^"]*"',
+                f'data-campaign-{field}="{day}"',
+                body,
+            )
+            assert count == 1
+        route.fulfill(status=200, body=body, content_type="text/html")
+
+    context = browser_engine.new_context(timezone_id="America/Havana")
     try:
-        same = context.new_page()
-        same.goto(component_origin + NEW)
-        same.get_by_role("radio", name="Weekly").check()
-        assert same.locator("[data-campaign-days]").first.is_hidden()
+        page = context.new_page()
+        page.route(component_origin + NEW, october_2026)
+        page.goto(component_origin + NEW)
+        page.get_by_role("radio", name="Weekly").check()
+        visible(page.get_by_text("These are the days where the parish is").first)
     finally:
         context.close()
 

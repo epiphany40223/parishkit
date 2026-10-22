@@ -326,11 +326,50 @@
 
   // ------------------------------------------ the campaign's weekdays
   // A repeating report's days are the campaign's days; only its time is
-  // read in this browser's zone. Where the two zones differ the page says
-  // so under the day choices; it is decided once, as the page loads.
+  // read in this browser's zone. Where the two zones keep different clocks
+  // the page says so under the day choices; it is decided once, as the page
+  // loads. The zones are compared by their clocks, not their names: two
+  // names for the same rules (America/Louisville and America/New_York) read
+  // every instant alike, so they get no note (#1973), without a table of
+  // aliases to keep up. The clocks are compared now and every hour from
+  // midnight of the campaign's first day, in the campaign's zone, to two
+  // days after its last (a repeating report's last send), so a
+  // daylight-saving change on one side only is seen, even one that keeps
+  // the clocks apart for a single hour (America/Havana and New York, 05:00
+  // to 06:00 UTC on 2026-11-01).
+  const HOUR = 3600000;
+  const clocksDiffer = (zone, other) => {
+    if (zone === other) return false;
+    const options = {year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23"};
+    let mine, theirs;
+    try {
+      mine = new Intl.DateTimeFormat("en-US", {...options, timeZone: zone});
+      theirs = new Intl.DateTimeFormat("en-US", {...options, timeZone: other});
+    } catch { return true; } // A zone this browser can't read: say so.
+    const now = Date.now();
+    if (mine.format(now) !== theirs.format(now)) return true;
+    // Midnight starting a campaign day in the campaign's zone: 00:00 UTC of
+    // that date, moved by the zone's offset from UTC there (read from its
+    // clock), so a zone east of UTC has its first hours sampled too.
+    const day = (text) => {
+      const at = Date.parse(`${text}T00:00:00Z`);
+      if (Number.isNaN(at)) return now;
+      const [m, d, y, h, min] = theirs.format(at).match(/\d+/g).map(Number);
+      return at - (Date.UTC(y, m - 1, d, h, min) - at);
+    };
+    const first = day(form.dataset.campaignStart);
+    const last = day(form.dataset.campaignEnd) + 48 * HOUR;
+    // A campaign is months long; the bound (over a year of hours) only
+    // guards against odd dates.
+    for (let at = first, step = 0; at <= last && step < 10000; at += HOUR, step += 1) {
+      if (mine.format(at) !== theirs.format(at)) return true;
+    }
+    return false;
+  };
   let zone = "";
   try { zone = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch { /* none */ }
-  if (zone && form.dataset.campaignZone && zone !== form.dataset.campaignZone) {
+  if (zone && form.dataset.campaignZone && clocksDiffer(zone, form.dataset.campaignZone)) {
     form.querySelectorAll("[data-campaign-days]").forEach((line) => { line.hidden = false; });
   }
 })();
