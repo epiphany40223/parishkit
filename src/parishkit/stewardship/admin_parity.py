@@ -539,7 +539,7 @@ LEDGER = {
         name: permanent(SETUP)
         for name in (
             "setup",
-            "setup_cancel",
+            "setup_finishing",
             "setup_source",
             "setup_source_progress",
             "setup_branding",
