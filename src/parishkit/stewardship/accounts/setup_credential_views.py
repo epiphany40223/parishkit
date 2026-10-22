@@ -15,17 +15,19 @@ from . import setup_help
 from .authentication import runtime
 from .integration_forms import KEY_RULES, LABELS, CredentialForm, rule_key
 from .secret_input import SecretInput
-from .setup_credentials import TARGETS, credential_status, stage_credential
+from .setup_credentials import credential_status, stage_credential
 from .setup_drafts import view_draft
 from .setup_policy import SetupState
 from .setup_views import ERRORS, _checked, _closed, _context, page_error
 from .setup_wizard import BY_KEY, continue_after
 
-# The wizard page key of each credential target's page.
+# The wizard page key of each credential target's page. The Slack bot token
+# has no page of its own: the Slack notifications step takes it with the
+# channel (#1578), through the shared pieces below, so this page refuses the
+# Slack target (404) and its old address is not kept (no legacy URLs).
 STEP = {
     "parishsoft": "parishsoft",
     "google_workspace": "google_workspace",
-    "slack": "slack_credential",
 }
 
 
@@ -50,11 +52,6 @@ def prerequisite(wizard, key):
     the reason next to the form instead of failing the whole request.
     """
     step = wizard.step(key) if wizard else None
-    if key == "slack_credential" and step is None:
-        return (
-            _("Turn on Slack notifications and save the Slack channel first."),
-            BY_KEY["slack"].url,
-        )
     if step is not None and step.state == "blocked":
         return step.status, step.fix_url
     return None
@@ -76,6 +73,9 @@ KEEP_ERRORS = {
     ),
     "organization": _(
         "To change the organization ID, enter the ParishSoft API key again as well."
+    ),
+    "channel": _(
+        "To change the Slack channel ID, enter the Slack bot token again as well."
     ),
 }
 
@@ -175,7 +175,7 @@ def _keep_refusal(form, current, organization):
 def setup_credential(request, target):
     """Do not write files, contact providers or enqueue a live replacement here."""
     try:
-        if target not in TARGETS:
+        if target not in STEP:
             raise LookupError("Unknown setup credential target.")
         service = runtime()
         draft = view_draft(request, service)

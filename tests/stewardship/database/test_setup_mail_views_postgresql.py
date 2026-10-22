@@ -44,7 +44,7 @@ def browser_for(service, monkeypatch, tmp_path):
 def values(response):
     """Read actual signed form values instead of fabricating preview authority."""
     form = response.context["form"]
-    return {name: form[name].value() for name in ("preview_token", "request_key")}
+    return {name: form[name].value() for name in ("test_token", "request_key")}
 
 
 def test_explicit_send_redirects_and_passive_polling_does_not_renew_login(
@@ -124,19 +124,36 @@ def test_modified_preview_and_unexpected_recipient_fields_are_rejected(
             {"candidate": "synthetic-private"},
             # The campaign email choice is gone (#142): a fixed message.
             {"slot": "initial"},
-            {"preview_token": "invalid"},
+            {"test_token": "invalid"},
         ):
             response = post(browser, PATH, payload | extra)
             assert response.status_code == 400, response.content
             assert b"synthetic-private" not in response.content
         assert not SetupMailDelivery.objects.exists()
-        save_section(
+        # The page is signed for the exact staged key (#1578): a key entered
+        # again since makes it stale, while an edit of another step alone
+        # would not.
+        from parishkit.stewardship.accounts.setup_credentials import (
+            stage_credential,
+        )
+
+        from ..test_integration_candidates import account
+
+        status = save_section(
             request,
             setup_http,
             attempt.attempt_id,
             step="parish",
             values=VALUES["parish"] | {"name": "Updated Parish"},
             expected_version=attempt.version,
+        )
+        stage_credential(
+            request,
+            setup_http,
+            attempt.attempt_id,
+            target="google_workspace",
+            candidate=account(),
+            expected_version=status.version,
         )
         assert post(browser, PATH, payload).status_code == 409
         assert browser.get(PATH + "/status?recipient=other").status_code == 400

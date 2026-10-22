@@ -327,7 +327,8 @@ def test_review_after_an_accepted_test_shows_it_and_continues_to_finish(
         for path in ("/admin/setup/mail-test", "/admin/setup/confirm"):
             assert f'href="{path}"' not in body, path
         assert '<a class="setup-continue" href="/admin/setup/confirm">' in content
-        assert '<a class="setup-back" href="/admin/setup/mail-test">' in content
+        # Back from Review is Load parish data (#1578).
+        assert '<a class="setup-back" href="/admin/setup/source">' in content
         attempt = SetupAttempt.objects.get()
         assert reviewed(browser) == {
             "attempt": str(attempt.pk),

@@ -3,9 +3,8 @@
 A save that leaves the Slack step off continues as if Slack had never been
 on: migration 0111 lets the web scrub the attempt's staged Slack token, for
 its owner, only while the saved Slack step is off, and the queued Slack test
-is cancelled. The Turn off Slack notifications button on the Slack
-connection step, Test Slack and the failed-test notice posts that step's
-own form.
+is cancelled. The Turn off Slack notifications button on the Slack step
+(#1578), Test Slack and the failed-test notice posts that step's own form.
 """
 
 # ruff: noqa: F811 -- imported fixtures are injected by pytest name.
@@ -40,7 +39,7 @@ from .test_setup_views_postgresql import post, setup_http  # noqa: F401
 pytestmark = pytest.mark.django_db(transaction=True)
 web_login = partial(task_login, ServiceRole.WEB, exact=True, reconnect=True)
 OFF = {"enabled": False, "channel_id": ""}
-SLACK_STEPS = {"slack_credential", "slack_test"}
+SLACK_STEPS = {"slack_test"}
 
 
 def turn_off(request, service, status):
@@ -111,7 +110,8 @@ def test_turning_slack_on_again_needs_a_new_token_and_test(
             expected_version=status.version,
         )
         wizard = wizard_for(view_draft(request, setup_service))
-        assert wizard.step("slack_credential").state != "done"
+        # On again without a token: the one Slack step needs it (#1578).
+        assert wizard.step("slack").state != "done"
         assert wizard.step("slack_test").state != "done"
         status, receipt = stage_credential(
             request,
@@ -126,7 +126,7 @@ def test_turning_slack_on_again_needs_a_new_token_and_test(
     rows = SetupSealedCredential.objects.filter(target="slack")
     assert rows.count() == 2
     assert rows.filter(scrubbed_at=None).get().pk == receipt.identifier
-    assert wizard.step("slack_credential").state == "done"
+    assert wizard.step("slack").state == "done"
     assert wizard.step("slack_test").state != "done"
 
 
@@ -225,14 +225,12 @@ def browser_for(service, monkeypatch, tmp_path, *, enqueue=False):
     return browser, request, SimpleNamespace(status=status, identifier=identifier)
 
 
-@pytest.mark.parametrize(
-    "path", ["/admin/setup/credentials/slack", "/admin/setup/slack-test"]
-)
+@pytest.mark.parametrize("path", ["/admin/setup/slack", "/admin/setup/slack-test"])
 def test_each_slack_page_offers_turning_slack_off_through_the_slack_step(
     setup_http, monkeypatch, tmp_path, path
 ):
-    """The Slack connection and Test Slack pages post the Slack step's own
-    form with Slack off, above their own form."""
+    """The Slack step, while Slack is saved on, and Test Slack post the Slack
+    step's own form with Slack off, above their own form (#1578)."""
     browser, _, _ = browser_for(setup_http, monkeypatch, tmp_path)
     with web_login():
         response = browser.get(path)
@@ -249,9 +247,10 @@ def test_each_slack_page_offers_turning_slack_off_through_the_slack_step(
 def test_the_button_saves_slack_off_and_opens_the_next_step_not_done(
     setup_http, monkeypatch, tmp_path
 ):
-    """CSRF and the exact draft version are required; the save opens Test
-    email (the version bump re-requires it), and Test Slack is gone: its
-    address opens Test email too, and a Slack test post is refused."""
+    """CSRF and the exact draft version are required; the save opens the next
+    step not done, Test email (no email test was sent here), and Test Slack
+    is gone: its address opens Test email too, and a Slack test post is
+    refused."""
     browser, request, ready_state = browser_for(
         setup_http, monkeypatch, tmp_path, enqueue=True
     )

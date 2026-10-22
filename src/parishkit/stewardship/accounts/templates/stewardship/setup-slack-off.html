@@ -1,6 +1,6 @@
 {% load i18n stewardship %}{% comment %}
-Turn off Slack notifications (#1499), shared by the Slack connection step,
-Test Slack and a Slack test that was not sent (setup-test-failed.html). It
+Turn off Slack notifications (#1499), shared by the Slack notifications
+step, Test Slack and a Slack test that was not sent (setup-test-failed.html). It
 is no separate action: it posts the Slack notifications step's own form with
 Slack off (no channel, and an unticked box is not sent), so it keeps that
 step's draft-version check, CSRF and audit, the save discards the staged
@@ -10,6 +10,6 @@ explanation; the failed-test notice gives its own. Drawn above the page's
 form and never shown or hidden in place, so nothing moves.
 {% endcomment %}<form method="post" action="{% url 'admin:setup_step' 'slack' %}" class="setup-slack-off" data-setup-slack-off>{% csrf_token %}
 <input type="hidden" name="version" value="{{ draft.status.version }}"><input type="hidden" name="channel_id" value="">
-{% if intro %}<p>{% translate "Slack is optional. Without a Slack bot token, turn Slack notifications off: setup goes on without the Slack steps and discards the Slack token entered for this setup. This changes the setup, so an email test already sent must be sent again. You can turn Slack on again later." %}</p>{% endif %}
+{% if intro %}<p>{% translate "Slack is optional. Without a Slack bot token, turn Slack notifications off: setup goes on without the Slack steps and discards the Slack token entered for this setup. You can turn Slack on again later." %}</p>{% endif %}
 <p>{% button variant="secondary" type="submit" %}{% translate "Turn off Slack notifications" %}{% endbutton %}</p>
 </form>

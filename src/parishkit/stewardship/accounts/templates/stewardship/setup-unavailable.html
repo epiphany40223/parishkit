@@ -5,7 +5,7 @@
 {% include 'stewardship/setup-wizard.html' %}
 <h1>{% if blocked %}{% blocktranslate trimmed with step=blocked.label %}“{{ step }}” is not available yet{% endblocktranslate %}{% else %}{% translate "This setup page is not available" %}{% endif %}</h1>
 <div class="notice" role="status">
-{% if blocked.state == 'blocked' %}<p>{{ blocked.status }}</p>
+{% comment %}A refusal that explains itself (a step saved by an earlier release, say) comes first; otherwise a blocked step names what it waits for.{% endcomment %}{% if blocked.state == 'blocked' and not refusal %}<p>{{ blocked.status }}</p>
 <p><a href="{{ blocked.fix_url }}">{% blocktranslate trimmed with step=blocked.fix_label %}Go to “{{ step }}”{% endblocktranslate %}</a></p>
 {% else %}<p>{{ message }}</p>
 {% if refusal.fix %}<p>{{ refusal.fix }}</p>{% endif %}

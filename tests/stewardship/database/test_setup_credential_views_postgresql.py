@@ -188,35 +188,24 @@ def test_a_stale_saved_key_must_be_entered_again(setup_http, google):
         assert b"Enter it again so it matches the current settings" in kept.content
 
 
-def test_turning_slack_off_discards_the_saved_token(setup_http, google):
-    """After Slack is turned off its token is discarded (#1499).
-
-    The page names the prerequisite and no saved credential, and it never
-    tells the Administrator the token was entered for changed settings.
-    """
+def test_the_slack_credential_page_is_gone(setup_http, google):
+    """The Slack bot token is entered on the Slack notifications step
+    (#1578): the old Slack connection address answers 404 to a read and to a
+    post, with no redirect, and stages nothing."""
     publish("slack")
     slack = "/admin/setup/credentials/slack"
-
-    def version():
-        """The attempt's current optimistic-lock version as a form value."""
-        return str(SetupAttempt.objects.get().version)
-
     with web_login():
         browser = started()
-        on = {"enabled": "on", "channel_id": "CEXAMPLE", "version": version()}
-        assert post(browser, "/admin/setup/slack", on).status_code == 302
-        token = {"candidate": "xoxb-synthetic-slack-token", "version": version()}
-        staged = post(browser, slack, token)
-        assert staged.status_code == 302, staged.content
-        off = {"channel_id": "", "version": version()}
-        assert post(browser, "/admin/setup/slack", off).status_code == 302
-        page = browser.get(slack)
-        assert page.status_code == 200
-        assert b"credential is saved" not in page.content
-        assert b"Turn on Slack notifications and save the Slack channel first." in (
-            page.content
-        )
-        assert b"settings you have changed since" not in page.content
+        version = str(SetupAttempt.objects.get().version)
+        on = {"enabled": "on", "channel_id": "CEXAMPLE", "version": version}
+        assert post(browser, "/admin/setup/slack", on).status_code == 400
+        assert browser.get(slack).status_code == 404
+        token = {
+            "candidate": "xoxb-synthetic-slack-token",
+            "version": str(SetupAttempt.objects.get().version),
+        }
+        assert post(browser, slack, token).status_code == 404
+    assert not SetupSealedCredential.objects.filter(target="slack").exists()
 
 
 def test_credential_post_rejects_undeclared_duplicate_and_stale_fields(

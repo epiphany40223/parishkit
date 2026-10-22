@@ -10,7 +10,6 @@ from parishkit.stewardship.campaigns.work_locks import (
     require_work_order,
     work_transaction,
 )
-from parishkit.stewardship.jobs.campaign_mail_values import document_parish
 from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.observability import current_correlation
@@ -23,8 +22,7 @@ from .credential_database import _identity
 from .delivery_results import settle_result
 from .sessions import authenticated_admin, database_now
 from .setup_delivery_models import SetupMailDelivery
-from .setup_preview import verify_preview
-from .setup_secret_models import SetupSealedCredential
+from .setup_tests import verify_test
 
 TASK_TYPE = "setup_mail_test"
 
@@ -85,23 +83,27 @@ def request_sample(
     request,
     service,
     *,
-    preview_token,
+    test_token,
     request_key,
     acknowledge_unknown=False,
 ):
     """Atomically store one explicitly requested sample and its durable Task root.
 
     The message is the fixed setup test (``setup_test_message``, #142) and the
-    recipient comes from the current signed preview, not HTTP body fields.
-    Repeating the same command cannot allocate another send.
-    Any prior unknown send must be explicitly acknowledged by a later UI before
-    it calls this service with a different command key; there is no retry here.
+    recipient comes from the staged Google Workspace credential the signed
+    test page proved (``setup_tests``, #1578), not HTTP body fields: the test
+    needs only the mail, Testing and Google Workspace steps, never the load
+    or the later steps. Repeating the same command cannot allocate another
+    send. Any prior unknown send must be explicitly acknowledged by a later
+    UI before it calls this service with a different command key; there is
+    no retry here.
     """
     if not isinstance(request_key, UUID) or type(acknowledge_unknown) is not bool:
         raise ValueError("Invalid setup mail request.")
     with work_transaction():
-        preview = verify_preview(request, service, preview_token)
-        attempt_id = preview.draft.status.attempt_id
+        inputs = verify_test(request, service, "mail_test", test_token)
+        draft = inputs.draft
+        attempt_id = draft.status.attempt_id
         previous = SetupMailDelivery.objects.filter(
             attempt_id=attempt_id, request_key=request_key
         ).first()
@@ -120,12 +122,10 @@ def request_sample(
             attempt_id=attempt_id, state__in=["queued", "submitting"]
         ).exists():
             raise StaleRecordError("A setup mail test is already pending.")
-        credential = SetupSealedCredential.objects.only(
-            "id", "version", "fingerprint", "settings"
-        ).get(attempt_id=attempt_id, target="google_workspace", scrubbed_at=None)
-        sections = preview.compiled.candidate.document()["sections"]
+        credential = inputs.credential
+        parish = draft.sections["parish"]["name"]
         # Setup collects no campaign (#142): a fixed message that needs none.
-        rendered = setup_test_message(document_parish({"sections": sections}))
+        rendered = setup_test_message({"name": parish})
         identifier = uuid5(attempt_id, "setup-mail:" + str(request_key))
         mail = ReadinessMail(
             delivery_id=identifier,
@@ -134,24 +134,18 @@ def request_sample(
                 for key in ("sender", "reply_to", "recipient")
             },
             sender_name=resolved_sender_name(
-                next(
-                    (
-                        row["values"]["settings"].get("sender_name")
-                        for row in sections.get("integrations", [])
-                        if row["values"]["kind"] == "email"
-                    ),
-                    None,
-                ),
-                document_parish({"sections": sections})["name"],
+                draft.sections["mail"].get("sender_name"), parish
             ),
             **rendered,
         )
         row = SetupMailDelivery(
             id=identifier,
             attempt_id=attempt_id,
-            attempt_version=preview.draft.status.version,
+            # The draft version it was sent at, kept for the record; the
+            # test is bound to its credential and settings (#1578).
+            attempt_version=draft.status.version,
             request_key=request_key,
-            candidate_digest=preview.compiled.candidate.digest,
+            candidate_digest=inputs.digest,
             credential_id=credential.pk,
             credential_version=credential.version,
             fingerprint=credential.fingerprint,

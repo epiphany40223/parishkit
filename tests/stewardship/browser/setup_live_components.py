@@ -93,7 +93,7 @@ def components(context, admin, now, status_url, setup_draft):
                 "unknown": False,
                 "form": SetupMailForm(
                     initial={
-                        "preview_token": "synthetic-preview",
+                        "test_token": "synthetic-preview",
                         "request_key": UUID(int=1354),
                     }
                 ),
@@ -113,7 +113,7 @@ def components(context, admin, now, status_url, setup_draft):
             "pending": False,
             "unknown": state == "delivery_unknown",
         }
-        initial = {"preview_token": "synthetic-preview", "request_key": UUID(int=1)}
+        initial = {"test_token": "synthetic-preview", "request_key": UUID(int=1)}
         if channel == "mail":
             name, extra = "setup-mail", {"testing_recipient": "testing@example.org"}
             steps = final_wizard("mail_test", tests=_tests(state, "mail_test"))

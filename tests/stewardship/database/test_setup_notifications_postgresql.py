@@ -7,7 +7,6 @@ from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
-from django.core import signing
 from django.db import DatabaseError, connection, transaction
 from django.db.models import F
 
@@ -15,7 +14,6 @@ from parishkit.stewardship.accounts import setup_notifications as notifications
 from parishkit.stewardship.accounts.setup_credentials import stage_credential
 from parishkit.stewardship.accounts.setup_drafts import save_section
 from parishkit.stewardship.accounts.setup_notification_models import SetupSlackDelivery
-from parishkit.stewardship.accounts.setup_preview import PREVIEW_SALT, prepare_preview
 from parishkit.stewardship.accounts.setup_staging import cancel_setup
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
@@ -29,6 +27,7 @@ from .test_handoff_discovery_postgresql import key
 from .test_runtime_auth_grants_postgresql import web_login
 from .test_setup_credentials_postgresql import publish
 from .test_setup_exchange_postgresql import target_login
+from .test_setup_mail_postgresql import signed_test
 from .test_setup_preview_postgresql import complete_draft
 from .test_setup_staging_postgresql import setup_service  # noqa: F401
 
@@ -56,13 +55,11 @@ def ready(service, monkeypatch, tmp_path, *, enqueue=True):
             candidate=b"synthetic-private-slack",
             expected_version=status.version,
         )
-        token = signing.dumps(
-            prepare_preview(request, service).binding(), salt=PREVIEW_SALT
-        )
+        token = signed_test(request, service, "slack_test")
         request_key = uuid4()
         identifier = (
             notifications.request_notification(
-                request, service, preview_token=token, request_key=request_key
+                request, service, test_token=token, request_key=request_key
             )
             if enqueue
             else None
@@ -80,13 +77,13 @@ def test_original_request_replay_is_inert_and_other_pending_intents_are_rejected
     with web_login():
         assert (
             notifications.request_notification(
-                request, setup_service, preview_token=token, request_key=request_key
+                request, setup_service, test_token=token, request_key=request_key
             )
             == identifier
         )
         with pytest.raises(StaleRecordError):
             notifications.request_notification(
-                request, setup_service, preview_token=token, request_key=uuid4()
+                request, setup_service, test_token=token, request_key=uuid4()
             )
         with pytest.raises(DatabaseError), work_transaction():
             SetupSlackDelivery.objects.update(
@@ -110,7 +107,7 @@ def test_collecting_slack_keeps_original_login_lifetime_after_loading(
     aged_original_load(SetupAttempt.objects.get().source_task_id, minutes=121)
     with web_login():
         identifier = notifications.request_notification(
-            request, setup_service, preview_token=token, request_key=key
+            request, setup_service, test_token=token, request_key=key
         )
     assert SetupSlackDelivery.objects.get(pk=identifier).state == "queued"
 
@@ -165,12 +162,12 @@ def test_unknown_requires_explicit_new_acknowledged_request(
     with web_login():
         with pytest.raises(ValueError, match="acknowledge"):
             notifications.request_notification(
-                request, setup_service, preview_token=token, request_key=uuid4()
+                request, setup_service, test_token=token, request_key=uuid4()
             )
         notifications.request_notification(
             request,
             setup_service,
-            preview_token=token,
+            test_token=token,
             request_key=uuid4(),
             acknowledge_unknown=True,
         )

@@ -19,8 +19,8 @@ from parishkit.stewardship.accounts.setup_mail import (
     recover_pending,
     request_sample,
 )
-from parishkit.stewardship.accounts.setup_preview import PREVIEW_SALT, prepare_preview
 from parishkit.stewardship.accounts.setup_staging import cancel_setup
+from parishkit.stewardship.accounts.setup_tests import TEST_SALT, prepare_test
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
@@ -44,14 +44,15 @@ def prepared(service, monkeypatch, tmp_path):
     """Use the actual source/branding/credential/preview APIs before journal intake."""
     request, attempt, _ = complete_draft(service, monkeypatch, tmp_path)
     with web_login():
-        token = signing.dumps(
-            prepare_preview(request, service).binding(), salt=PREVIEW_SALT
-        )
+        token = signed_test(request, service)
         key = uuid4()
-        delivery = request_sample(
-            request, service, preview_token=token, request_key=key
-        )
+        delivery = request_sample(request, service, test_token=token, request_key=key)
     return request, attempt, token, key, delivery
+
+
+def signed_test(request, service, key="mail_test"):
+    """The signed binding the test page ``key`` carries (#1578)."""
+    return signing.dumps(prepare_test(request, service, key).binding(), salt=TEST_SALT)
 
 
 def claim(delivery):
@@ -76,12 +77,12 @@ def test_exact_intake_is_idempotent_and_never_contacts_provider(
     request, _, token, key, delivery = prepared(setup_service, monkeypatch, tmp_path)
     with web_login():
         assert (
-            request_sample(request, setup_service, preview_token=token, request_key=key)
+            request_sample(request, setup_service, test_token=token, request_key=key)
             == delivery
         )
         with pytest.raises(StaleRecordError):
             request_sample(
-                request, setup_service, preview_token=token, request_key=uuid4()
+                request, setup_service, test_token=token, request_key=uuid4()
             )
     row = SetupMailDelivery.objects.get()
     assert row.mail["recipient"] == VALUES["testing"]["testing_recipient"]
@@ -104,11 +105,9 @@ def test_collecting_mail_is_not_subject_to_finished_loading_watchdog(
     request, _, _ = complete_draft(setup_service, monkeypatch, tmp_path)
     aged_original_load(SetupAttempt.objects.get().source_task_id, minutes=121)
     with web_login():
-        token = signing.dumps(
-            prepare_preview(request, setup_service).binding(), salt=PREVIEW_SALT
-        )
+        token = signed_test(request, setup_service)
         result = request_sample(
-            request, setup_service, preview_token=token, request_key=uuid4()
+            request, setup_service, test_token=token, request_key=uuid4()
         )
     assert SetupMailDelivery.objects.get(pk=result.identifier).state == "queued"
 
@@ -292,19 +291,19 @@ def test_recovery_waits_for_both_fences_and_never_retries(
     with web_login():
         assert (
             request_sample(
-                request, setup_service, preview_token=token, request_key=key
+                request, setup_service, test_token=token, request_key=key
             ).state
             == "delivery_unknown"
         )
         with pytest.raises(ValueError, match="acknowledge"):
             request_sample(
-                request, setup_service, preview_token=token, request_key=uuid4()
+                request, setup_service, test_token=token, request_key=uuid4()
             )
         assert (
             request_sample(
                 request,
                 setup_service,
-                preview_token=token,
+                test_token=token,
                 request_key=uuid4(),
                 acknowledge_unknown=True,
             ).state

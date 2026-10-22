@@ -297,3 +297,66 @@ def test_held_send_names_the_pending_test_and_a_failed_check(
     assert send.is_disabled()
     assert page.locator("#setup-test-problem").count() == 1
     assert page.evaluate(MARKED) == "kept"
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_the_stage_boxes_move_from_queued_to_result_in_place(
+    page, component_origin, delivery_channel, width
+):
+    """Test email and Test Slack draw the newest test as stage boxes that move
+    Queued, Sending, Result by polling alone (#1578): no reload (the page
+    mark survives) and the boxes keep their size at every state, and their
+    place too where the line above them does not wrap differently (on a
+    320 px phone a long state word may take a second line, as it always did)."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.clock.install(time=NOW)
+    pending = f"/setup-{delivery_channel}-test"
+    sending = status_row(QUEUED_ID, "submitting", NOW)
+    settled = status_row(QUEUED_ID, "accepted", NOW)
+    polls = status_route(
+        page,
+        delivery_channel,
+        [mail_status([sending], pending=True), mail_status([settled], pending=False)],
+    )
+    answer_reads(
+        page, component_origin, pending, SETTLED[(delivery_channel, "accepted")]
+    )
+    page.goto(component_origin + pending)
+    page.evaluate(MARK)
+
+    def states():
+        """Each box's state, left to right."""
+        return page.locator("[data-test-stage]").evaluate_all(
+            "nodes => nodes.map(node => node.dataset.stageState)"
+        )
+
+    assert states() == ["active", "waiting", "waiting"]
+    boxes = ".setup-test-latest .stage-boxes"
+    before = place(page, boxes)
+
+    def steady():
+        """Whether the boxes kept their size, and place where it is fixed."""
+        now = place(page, boxes)
+        return same_place(now[2:], before[2:]) and (
+            width < 1280 or same_place(now, before)
+        )
+
+    # The first poll finds the test being sent: Queued is done, Sending runs.
+    page.clock.fast_forward(2000)
+    recorded(page, polls, 1)
+    has_text(page.locator('[data-test-stage="sending"] .stage-status'), "In progress")
+    assert states() == ["done", "active", "waiting"]
+    assert steady()
+    # The next one finds it settled: every box done, Result says Delivered.
+    page.clock.fast_forward(3000)
+    recorded(page, polls, 2)
+    has_text(page.locator('[data-test-stage="result"] .stage-status'), "Delivered")
+    # Settling also re-reads the panel (Continue appears); wait for that so
+    # the boxes are measured once the fresh region is in.
+    visible(page.locator(".setup-actions").get_by_role("link", name="Continue"))
+    assert states() == ["done", "done", "done"]
+    # Settling also re-reads the panel, which brings Continue and Send
+    # another test in above the boxes, so only their size is compared.
+    assert same_place(place(page, boxes)[2:], before[2:])
+    assert page.evaluate(MARKED) == "kept"
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
