@@ -45,9 +45,14 @@ While loading, the step polls ``LOAD_RUN``'s passive status
 (``LOAD_STATUS`` with ?view=load), answered by ``LOAD_STATUS_RUNNING`` and
 then ``LOAD_STATUS_DONE``; ``LOAD_STATUS_QUEUED`` is that status while the
 run still waits for a worker, and ``LOAD_STATUS_STARTED`` once a worker
-has begun the download (#1916). Its form posts to the real refresh address,
-which another component already answers, so the test answers that POST
-(and the in-place re-read once the run ends) itself.
+has begun the download (#1916). ``LOAD_AWAITED`` is the step just after
+Create the campaign, before the load the system starts for it is requested
+(#1951): loading with no run, polling the step's own passive status
+(``AWAITED_STATUS``), answered by ``LOAD_AWAITED_STATUS`` while still
+waiting and ``LOAD_OFFER_STATUS`` once the wait ended with no load. Its
+form posts to the real refresh address, which another component already
+answers, so the test answers that POST (and the in-place re-read once the
+run ends) itself.
 
 ``EDITOR_KEEP`` is that editor opened on a listed item (#1404 PR 6b): its
 action row also holds Keep as is and go back, posting to the step
@@ -134,6 +139,10 @@ LOAD_STATUS_STARTED = "/campaign-stepper-load-status-started"
 LOAD_STATUS_RUNNING = "/campaign-stepper-load-status-running"
 LOAD_STATUS_DONE = "/campaign-stepper-load-status-done"
 LOAD_STATUS_EMPTY = "/campaign-stepper-load-status-empty"
+LOAD_AWAITED = "/campaign-stepper-load-awaited"
+AWAITED_STATUS = reverse("admin:campaign_load_status")
+LOAD_AWAITED_STATUS = "/campaign-stepper-load-awaited-status"
+LOAD_OFFER_STATUS = "/campaign-stepper-load-offer-status"
 POSTS = {
     PATH: (303, APPLIED, ""),
     DIRECT: (303, APPLIED, ""),
@@ -354,13 +363,16 @@ def components(context, admin):
 
     def load(state):
         """Load ParishSoft data with the campaign's data ``state`` (PR 5):
-        offer, loading (the run just queued), failed (in Save the downloaded
-        records), empty (loaded, no Families matched) or None, loaded with
-        1,234 Families."""
+        offer, loading (the run just queued), awaited (loading, before the
+        system's own load is requested, #1951), failed (in Save the
+        downloaded records), empty (loaded, no Families matched) or None,
+        loaded with 1,234 Families."""
         task = {"failed": UUID(int=1404), "loading": LOAD_RUN, "empty": LOAD_RUN}.get(
             state
         )
         progress = {"failed": ("staging", 10, 40), "loading": ("unspecified", 0, 0)}
+        if state == "awaited":
+            state = "loading"
         chrome = admin | {
             "campaign_wizard": campaign_wizard.build(
                 True,
@@ -410,6 +422,20 @@ def components(context, admin):
             ),
         )
 
+    def awaited_status(state):
+        """The step's own passive status with no run yet, in ``state`` (#1951)."""
+        return (
+            "text/html",
+            render_to_string(
+                "stewardship/campaign-load-status.html",
+                {
+                    "load": state,
+                    "stages": campaign_wizard.load_stages(state, None),
+                    "polled": True,
+                },
+            ),
+        )
+
     applied = SimpleNamespace(state="applied", request_id=REQUEST, failure_code="")
     return {
         LOAD: load("offer"),
@@ -417,6 +443,9 @@ def components(context, admin):
         LOADING: load("loading"),
         LOADED: load(None),
         LOAD_EMPTY: load("empty"),
+        LOAD_AWAITED: load("awaited"),
+        LOAD_AWAITED_STATUS: awaited_status("loading"),
+        LOAD_OFFER_STATUS: awaited_status("offer"),
         LOAD_STATUS_QUEUED: load_status("queued", "unspecified"),
         LOAD_STATUS_STARTED: load_status("running", "fetching"),
         LOAD_STATUS_RUNNING: load_status("running", "staging"),

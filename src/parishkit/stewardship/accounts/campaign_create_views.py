@@ -32,9 +32,13 @@ The campaign's Families and Family codes are not created here: a refresh reads
 the current campaign when it is requested, so it can only follow the
 request's activation. The change's live status then offers "Load the
 campaign's ParishSoft data" (``created_campaign_refresh``),
-in this page's region and on Change status alike. Otherwise the new giving
-window makes the next scheduled quick update run as a full refresh (see
-``source.cursors.delta_dates``).
+in this page's region and on Change status alike. The load starts by itself
+anyway (#1951): the new campaign changes the refresh scope, so the refresh
+scheduler's next loop requests the current full refresh for it, and the
+Load ParishSoft data step the dialog opens shows that load
+(``campaign_wizard.LOAD_START_WAIT``); pressing the offer as well joins
+that load while it still waits for a worker (``source.requests``
+coalescing).
 """
 
 from uuid import uuid4

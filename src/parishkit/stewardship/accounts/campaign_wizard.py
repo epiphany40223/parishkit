@@ -47,9 +47,11 @@ schedules for now becomes the secondary.
 """
 
 from dataclasses import dataclass
+from datetime import timedelta
 from uuid import uuid4
 
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from . import stages
@@ -126,7 +128,9 @@ class CampaignWizard(Wizard):
     marks Dates and mail schedules with no schedule saved, whose Continue
     says it goes on without one. ``load`` is the campaign's ParishSoft
     data while it has no Families: "offer" (with ``refresh_key``, the
-    button's request key), "loading" once a full refresh is under way,
+    button's request key), "loading" once a full refresh is under way, or
+    while a just-created campaign waits for the load the system starts for
+    it (``LOAD_START_WAIT``, #1951; no ``load_task`` yet),
     "failed" when the newest full refresh did not finish, whose button then
     reads Try again, or "empty" when it succeeded yet left no Families
     (#1587). ``load_task`` is that newest refresh's Background task
@@ -545,6 +549,17 @@ _SAME_PAGE = {"artwork_upload": "images"}
 # A refresh run that ended without loading anything: the load "failed".
 _UNFINISHED = frozenset({"failed", "cancelled"})
 
+# How long Load ParishSoft data waits for the load the system starts for a
+# new campaign before it offers its own button (#1951). Creating the
+# campaign changes the refresh scope (the giving window), so the refresh
+# scheduler's next loop, seconds later, requests the current full slot for
+# the new scope (source.production.produce_refreshes): that refresh is the
+# campaign's load. Until it is requested the step already shows the load as
+# started (Start the load In progress, no button) and follows it; a
+# scheduler that has not requested it after this long is not going to, so
+# the step then offers the button as before.
+LOAD_START_WAIT = timedelta(minutes=2)
+
 # The major stages of a full ParishSoft refresh, in the order its worker
 # reports them (source/refreshing.py, then source/execution.py's promotion),
 # as Load ParishSoft data's stage boxes name them (#1404 PR 5), after the
@@ -644,6 +659,37 @@ def load_status(task, *, families):
     }
 
 
+def awaited_load_status():
+    """Load ParishSoft data's live region for the current campaign, or None.
+
+    The passive status (``refresh_views.campaign_load_status``) that the
+    step polls while the system's own load for a new campaign has not been
+    requested yet (#1951) draws the region from this: the step's state as
+    the page reads it (``_load_state``), so once the load is requested the
+    region follows its run, and once the campaign has its Families (or the
+    wait is over) it settles, and its follow-up link re-reads the page in
+    place. None when there is no current campaign. Three small queries.
+    """
+    from parishkit.stewardship.campaigns.models import Campaign
+
+    from .runtime_models import SystemConfiguration
+
+    current = SystemConfiguration.objects.values("current_campaign_id")
+    campaign = Campaign.objects.filter(pk__in=current).first()
+    if campaign is None:
+        return None
+    done = {"load"} if current_campaign_has_families() else set()
+    load, task, progress = _load_state(campaign, done)
+    load = load or "loaded"
+    return {
+        "load": load,
+        "load_task": task,
+        "stages": load_stages(load, progress[0] if progress else None),
+        "progress": progress,
+        "polled": True,
+    }
+
+
 def current_campaign_has_families():
     """Whether the current campaign has a Family, in one query.
 
@@ -671,7 +717,10 @@ def _load_state(campaign, done):
     page's query count is unchanged): "loading" while it is
     under way (requested and not finished), "failed" when it failed or was
     cancelled, so the step says so and offers Try again rather than looking
-    as if no load was started (#1404 PR 5), else "offer". While loading or
+    as if no load was started (#1404 PR 5). With no full refresh yet, a
+    campaign created less than ``LOAD_START_WAIT`` ago is "loading" with no
+    task (the system is about to start its load, #1951), else "offer".
+    While loading or
     failed, ``task`` is that run's Background task id and ``progress`` its
     (phase, current, total), which Load ParishSoft data's stage boxes and
     status poll use. The step pages show the state at the top, and Load
@@ -698,6 +747,12 @@ def _load_state(campaign, done):
         .first()
     )
     if newest is None:
+        from .admin_editing import database_now
+
+        # The database's clock, the one that stamped created_at, so an app
+        # clock skew never stretches or cuts the wait.
+        if database_now() - campaign.created_at < LOAD_START_WAIT:
+            return "loading", None, None
         return "offer", None, None
     task, state, *progress = newest
     if state in NONTERMINAL_STATES:
@@ -731,8 +786,6 @@ def for_request(match, campaign, configuration):
     sub = name in SUBPAGES
     no_schedules = suggest = False
     if current == "schedules" and not sub:
-        from django.utils import timezone
-
         from parishkit.stewardship.campaigns.domain import CampaignState
         from parishkit.stewardship.campaigns.lifecycle import structural_edit_admitted
 

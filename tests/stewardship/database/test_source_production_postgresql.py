@@ -162,6 +162,15 @@ def test_changed_campaign_creates_new_scope_without_rebinding_old_ticks(tmp_path
     assert first[0].request_id != second[0].request_id
     assert SourceRefreshTick.objects.count() == 4
     assert SourceRefreshRequest.objects.count() == 2
+    # That new full refresh is the new campaign's load, which its Load
+    # ParishSoft data step follows with no Administrator request (#1951).
+    from parishkit.stewardship.accounts.campaign_wizard import _load_state
+    from parishkit.stewardship.campaigns.models import Campaign
+
+    request = SourceRefreshRequest.objects.get(pk=second[0].request_id)
+    assert request.kind == "full" and request.actor_id is None
+    load, task, _ = _load_state(Campaign.objects.get(), set())
+    assert (load, task) == ("loading", request.task_root_id)
 
 
 def test_actual_scheduler_lifetime_is_required(tmp_path):

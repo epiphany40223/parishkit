@@ -16,11 +16,12 @@ from uuid import uuid4
 
 from django import forms
 from django.db import DatabaseError
-from django.http import HttpResponseRedirect
+from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_safe
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
@@ -216,6 +217,50 @@ def request_manual_refresh(caller, service, actor, key):
             "Source refresh requires its configured organization."
         ) from None
     return receipt
+
+
+@require_safe
+def campaign_load_status(request):
+    """Load ParishSoft data's passive status while it awaits the system's load.
+
+    Creating a campaign starts its load by itself (#1951): the refresh
+    scheduler requests a full refresh for the new campaign's scope within
+    seconds (``campaign_wizard.LOAD_START_WAIT``). Until that refresh
+    exists the step has no run to poll, so its region polls this instead,
+    which draws the same region from the step's state
+    (``campaign_wizard.awaited_load_status``): still waiting, then the
+    run's stages, then settled with its follow-up link, which re-reads the
+    page in place. Administrators only, as the page; never audited and
+    never extends the sign-in, so a page left open does not keep it alive.
+
+    It refuses exactly when the page does: before setup or during a restore
+    review (``editable_configuration``), and with no current campaign, an
+    unusable configuration rather than a permission refusal. As the page
+    and the other passive statuses do, the sign-in is checked again after
+    the read, so HTML read for a reader signed out or replaced meanwhile is
+    never released.
+    """
+    from . import campaign_wizard
+
+    try:
+        service = runtime()
+        actor = principal(
+            request, service, read_only=True, capability=Capability.CONFIGURE
+        )
+        filters(request.GET, allowed=set())
+        editable_configuration(service)
+        values = campaign_wizard.awaited_load_status()
+        if values is None:
+            raise ConfigError("No current campaign to load.")
+        html = render_to_string("stewardship/campaign-load-status.html", values)
+        fresh = principal(
+            request, service, read_only=True, capability=Capability.CONFIGURE
+        )
+        if fresh.identity != actor.identity:
+            raise PermissionError("Load status reader changed.")
+    except (ConfigError, DatabaseError, PermissionError, ValueError) as error:
+        return error_response(error)
+    return HttpResponse(html, headers={"Cache-Control": "no-store"})
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
