@@ -229,8 +229,18 @@ def retry_task(caller, service, task_id, *, request_key, context):
 
 # The resolutions ``delivery resolve`` takes: every one the page offers but
 # the duplicate-risk resend, which is ``delivery resend`` because it asks for
-# the page's acknowledgement at the prompt (PR 9c).
-RESOLVE_ACTIONS = ("note", "accept", "confirm_unsent", "retry_failed", "retry_unsent")
+# the page's acknowledgement at the prompt (PR 9c). The two coverage
+# decisions settle an earlier report email that was once unknown and then
+# cancelled (#1872).
+RESOLVE_ACTIONS = (
+    "note",
+    "accept",
+    "confirm_unsent",
+    "retry_failed",
+    "retry_unsent",
+    "count_delivered",
+    "count_unsent",
+)
 # The resolutions that prepare the email again before it is sent.
 PREPARING_ACTIONS = frozenset({"resend", "retry_failed", "retry_unsent"})
 # Mail a retry prepares with the web's Family keys (a Family invitation or
@@ -253,6 +263,9 @@ class DeliveryList(ReadModel):
     refused addresses (#1004); ``delivery show`` has no such count. The
     filters are echoed except the recipient, which is input only (#1562):
     ``mode`` is None for both modes, ``start`` and ``end`` the days given.
+    ``report_waiting`` lists the report sends waiting on an earlier email,
+    whatever the filters (Sent mail's waiting note, #1872): each send's id,
+    due time and the email it waits on.
     """
 
     state: str
@@ -268,6 +281,7 @@ class DeliveryList(ReadModel):
     matching: int
     matching_capped: bool
     deliveries: list
+    report_waiting: list
 
 
 @dataclass(frozen=True)
@@ -279,6 +293,8 @@ class DeliveryShow(ReadModel):
     evidence text stays on the page. ``outcome`` and ``choices`` are the
     page's outcome panel and its question's answers (#1563): each choice
     names its action and, while it is unavailable, the reason code.
+    ``report_waiting`` lists the report sends waiting on this email
+    (#1872), each send's id and due time.
     """
 
     delivery: dict
@@ -292,6 +308,7 @@ class DeliveryShow(ReadModel):
     has_next: bool
     events: list
     notes: list
+    report_waiting: list
 
 
 @dataclass(frozen=True)
@@ -376,6 +393,7 @@ def delivery_list_model(data):
         deliveries=[
             delivery_row(row) | {"refused": row["refused"]} for row in data["rows"]
         ],
+        report_waiting=list(data["report_waiting"]),
     )
 
 
@@ -407,6 +425,10 @@ def delivery_show_model(data):
         notes=[
             {"created_at": note["created_at"], "action": note["action"]}
             for note in data["notes"]
+        ],
+        report_waiting=[
+            {"send": row["send"], "due_at": row["due_at"]}
+            for row in data["report_waiting"]
         ],
     )
 
@@ -492,7 +514,7 @@ def _delivery_read(caller, service, read, project, *, subject=None, audit=True):
 
 def read_deliveries(caller, service, parameters):
     """``delivery list``: one filtered page of Sent mail."""
-    from .jobs.delivery_reads import read_listing, with_refusal_counts
+    from .jobs.delivery_reads import read_listing, report_waiting, with_refusal_counts
 
     def project(data):
         """The document, and the page's audited row count.
@@ -506,7 +528,10 @@ def read_deliveries(caller, service, parameters):
     return _delivery_read(
         caller,
         service,
-        lambda actor: read_listing(parameters, actor=actor.identity),
+        lambda actor: (
+            read_listing(parameters, actor=actor.identity)
+            | {"report_waiting": report_waiting(actor.identity)}
+        ),
         project,
     )
 
@@ -522,7 +547,7 @@ def read_delivery(caller, service, message_id, parameters):
     return _delivery_read(
         caller,
         service,
-        lambda actor: read_detail(message_id, parameters),
+        lambda actor: read_detail(message_id, parameters, actor=actor.identity),
         project,
         subject=message_id,
     )

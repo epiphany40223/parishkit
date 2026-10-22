@@ -172,7 +172,11 @@ def covered(*messages):
 
 
 NONE = {"state": "none"}
-UNCERTAIN = {"state": "uncertain"}
+
+
+def uncertain(*messages):
+    """The comparison's uncertain answer, naming the messages it waits on (#1872)."""
+    return {"state": "uncertain", "waiting": sorted(str(m) for m in messages)}
 
 
 def test_an_accepted_message_for_every_slot_covers_the_address(sends):
@@ -236,9 +240,9 @@ def test_a_message_that_may_still_be_accepted_blocks_the_decision(
     can never be submitted again, so it is not uncertain.
     """
     earlier = sends.send(["2026-10-05"], occurrence=occurrence)
-    sends.message(earlier, state)
+    waiting = sends.message(earlier, state)
     recovery = sends.send(["2026-10-05"], occurrence="pending")
-    assert sends.prior(recovery) == UNCERTAIN
+    assert sends.prior(recovery) == uncertain(waiting)
     # Once its send has ended for good, an unsent or refused message never
     # will be sent; one being submitted or unknown stays uncertain.
     if occurrence is not None and state not in {"submitting", "delivery_unknown"}:
@@ -270,9 +274,9 @@ def test_a_crash_between_acceptance_and_its_record_waits_for_the_outcome(
     earlier = sends.send(["2026-10-05"])
     message = sends.message(earlier, "submitting")
     recovery = sends.send(["2026-10-05"], occurrence="pending")
-    assert sends.prior(recovery) == UNCERTAIN
+    assert sends.prior(recovery) == uncertain(message)
     sends.settle(message, "delivery_unknown")
-    assert sends.prior(recovery) == UNCERTAIN
+    assert sends.prior(recovery) == uncertain(message)
     sends.settle(message, outcome)
     assert sends.prior(recovery) == (
         covered(message) if outcome == "delivered" else NONE

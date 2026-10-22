@@ -49,6 +49,11 @@ POSTS = {CLEAR: (303, CLEARED, ""), BOUNCE: (303, REPORTED, "")}
 # Where Sent mail's POST controls post (#1562): the list fixture the
 # filter tests open, whose in-place requests they route.
 LIST_ACTION = "/deliveries-names"
+# A report email a later send of its report waits on (#1872), and Sent
+# mail with its waiting note.
+REPORT_EMAIL_ID = UUID(int=1872)
+REPORT_EMAIL = reverse("admin:delivery", args=[REPORT_EMAIL_ID])
+REPORT_WAITING_LIST = "/deliveries-report-waiting"
 
 
 # A Sent mail page that posts to, and draws, its own address (#1571).
@@ -98,12 +103,22 @@ LIST_FILTERS = dict(
 UNKNOWN_ACTIONS = ("note", "accept", "confirm_unsent", "resend")
 
 
-def panel(state, actions, *, task="failed", blocked=None, refusal=None, **extra):
+def panel(
+    state,
+    actions,
+    *,
+    task="failed",
+    blocked=None,
+    refusal=None,
+    countable=False,
+    **extra,
+):
     """The outcome panel's context as the view draws it (#1563): the email
     in ``state`` offering ``actions``, its latest task ``task``, with
     ``blocked`` or a send's ``refusal`` naming why an answer is unavailable;
     ``extra`` overrides read_detail's other fields (refused, paused,
-    last_attempt_at)."""
+    last_attempt_at, report_waiting); ``countable`` is a report email's
+    pending coverage decision (#1872)."""
     data = dict(refused=[], paused=False, last_attempt_at=None) | extra
     return outcome_context(
         data
@@ -111,7 +126,12 @@ def panel(state, actions, *, task="failed", blocked=None, refusal=None, **extra)
             outcome=email_outcome(state, bool(data["refused"])),
             actions=list(actions),
             choices=question_choices(
-                state, task, actions, blocked=blocked, refusal=refusal
+                state,
+                task,
+                actions,
+                blocked=blocked,
+                refusal=refusal,
+                countable=countable,
             ),
         )
     )
@@ -741,4 +761,54 @@ def components(now):
         "/delivery-error",
         "delivery-error",
         dict(message="This information changed. Reload before trying again."),
+    )
+    # A report send waiting on an earlier report email (#1872): Sent mail's
+    # note links each such email, and the email's own page, once unknown
+    # and then cancelled, says a later send waits on it and offers the two
+    # coverage decisions.
+    yield (
+        REPORT_WAITING_LIST,
+        "deliveries",
+        dict(
+            table=sent_table(
+                PageWindow(1, 25),
+                [message],
+                False,
+                total=(1, False),
+                sorting=DELIVERY_SORTING,
+                sort=DELIVERY_SORTING.default,
+            ),
+            states=STATES,
+            selected_state="all",
+            report_waiting=[
+                dict(id=REPORT_EMAIL_ID, created_at=now - timedelta(days=1), sends=2)
+            ],
+            **LIST_FILTERS,
+        ),
+    )
+    yield (
+        REPORT_EMAIL,
+        "delivery",
+        delivery
+        | dict(
+            delivery=page_message
+            | dict(
+                id=REPORT_EMAIL_ID,
+                state="cancelled",
+                purpose="admin_report",
+                family_id=None,
+                family__family_duid=None,
+                family_name=None,
+            ),
+            refused=[],
+            **panel(
+                "cancelled",
+                ("note", "count_delivered", "count_unsent"),
+                task="cancelled",
+                countable=True,
+                report_waiting=[
+                    dict(send=uuid4(), due_at=now, message_id=REPORT_EMAIL_ID)
+                ],
+            ),
+        ),
     )

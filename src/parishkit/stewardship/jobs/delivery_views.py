@@ -82,6 +82,7 @@ from .delivery_reads import (
     read_refusals,
     read_sending_holds,
     unresolved_refusals,
+    waiting_emails,
     with_family_names,
     with_recipients,
     with_refusal_counts,
@@ -520,6 +521,9 @@ def delivery_list(request):
             mode_fields=_mode_fields(parameters, table),
             send=data["send"],
             holds=read_sending_holds(database_now()),
+            # The emails a report send waits on (#1872), drawn once per page
+            # load beside the sending limit note.
+            report_waiting=waiting_emails(actor.identity),
             # The link line's count (#935), drawn once per page load.
             refusal_count=unresolved_refusals().count(),
             bulk_overview=delivery_bulk.overview(),
@@ -676,7 +680,8 @@ def outcome_context(data):
     ``choice_rows`` lists the same answers in the page's order, whose reasons
     the question says once each. ``note_command`` is the closed "Add a note"
     form's command id while the note is offered but no answer offers it,
-    else None.
+    else None. ``report_waiting`` says a later send of this report email's
+    report waits on it (#1872).
     """
     choices = {
         row["choice"]: row
@@ -691,6 +696,9 @@ def outcome_context(data):
         paused=data["paused"],
         last_attempt_at=data["last_attempt_at"],
         note_command=uuid4() if "note" in data["actions"] and not asks_note else None,
+        report_waiting=bool(data.get("report_waiting")),
+        # Whether any answer can be given now, for the waiting notice.
+        answerable=any(row["unavailable"] is None for row in data["choices"]),
     )
 
 
@@ -711,7 +719,7 @@ def delivery_detail(request, message_id):
         offers it. ``bounce`` is the "Report a bounced address" panel (#806
         slice 4), or None where it does not apply.
         """
-        data = read_detail(message_id, request.GET)
+        data = read_detail(message_id, request.GET, actor=actor.identity)
         window = data["window"]
         (delivery,) = with_family_names([data["delivery"]], current_snapshot())
         recipients = email_recipients(message_id, actor.identity, delivery["state"])
