@@ -104,8 +104,9 @@ fi
 case "$prune" in on | dry-run | off) ;; *)
     echo "STEWARDSHIP_PRUNE must be on, dry-run or off; refusing." >&2; exit 1 ;;
 esac
-[[ $prune_timeout =~ ^[1-9][0-9]{0,4}$ ]] && [ "$prune_timeout" -le 86400 ] ||
-    { echo "STEWARDSHIP_PRUNE_TIMEOUT must be 1-86400 seconds; refusing." >&2; exit 1; }
+if ! [[ $prune_timeout =~ ^[1-9][0-9]{0,4}$ ]] || [ "$prune_timeout" -gt 86400 ]; then
+    echo "STEWARDSHIP_PRUNE_TIMEOUT must be 1-86400 seconds; refusing." >&2; exit 1
+fi
 [[ $keep =~ ^[1-9][0-9]?$ ]] || { echo "STEWARDSHIP_KEEP_RELEASES must be 1-99; refusing." >&2; exit 1; }
 if [ "$mode" = rollback ] && [ "$schema_change" != 0 ]; then
     echo "A rollback never migrates; unset STEWARDSHIP_SCHEMA_CHANGE. Refusing." >&2
