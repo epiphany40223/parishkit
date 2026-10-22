@@ -812,12 +812,18 @@ def _affected_rows(affected, campaign, document):
     reminder keeps the number it has everywhere else. Each dated row's
     ``due`` is its UTC moment, shown in the browser's time zone (#558); a
     digest has none and is listed as recurring.
+
+    Report emails (#1786) are schedule records too, but they send no email
+    template, so no content change switches one, and the schedule table
+    cannot describe one (#2029): they are left out. Only reminders are
+    numbered, so leaving them out keeps every reminder's number.
     """
     saved = sorted(
         (
             row
             for row in document["sections"].get("schedules", [])
             if row["values"]["campaign_id"] == str(campaign.pk)
+            and row["values"].get("kind") != "report"
         ),
         key=schedule_order,
     )

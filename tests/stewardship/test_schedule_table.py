@@ -216,3 +216,38 @@ def test_when_lists_a_digest_with_no_more_sends_last_both_ways():
             "Daily report",
             "Weekly report",
         ]
+
+
+def test_content_review_rows_leave_out_report_emails(monkeypatch):
+    """The Pages and emails review lists Family mail only (#2029).
+
+    A report email (#1786) is a schedule record too, but it sends no email
+    template, so no content change switches it; the schedule table cannot
+    describe one, so the review leaves it out. Reminders keep their numbers.
+    """
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts import content_views
+
+    from .test_report_schedule import report
+
+    report_email = {"id": "report-1", "values": report(campaign_id=OWNER["id"])}
+    records = saved() + [report_email]
+    monkeypatch.setattr(content_views, "work_summary", lambda _campaign: {})
+    monkeypatch.setattr(content_views.timezone, "now", lambda: BEFORE)
+    owner = SimpleNamespace(
+        pk=OWNER["id"], active_configuration=SimpleNamespace(values=VALUES)
+    )
+    upcoming, sent = content_views._affected_rows(
+        [{"id": row["id"]} for row in records],
+        owner,
+        {"sections": {"schedules": records}},
+    )
+    assert [row.label for row in upcoming] == [
+        "Initial invitation",
+        "Reminder 1",
+        "Reminder 2",
+        "Daily report",
+        "Weekly report",
+    ]
+    assert sent == []

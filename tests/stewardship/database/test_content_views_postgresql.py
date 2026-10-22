@@ -176,6 +176,63 @@ def test_email_edit_reconciles_subject_and_preserves_unrelated_templates(
     assert browser.get(path).status_code == 404
 
 
+def test_email_review_works_in_a_campaign_with_a_report_email(auth_service, google):
+    """A campaign that holds a report email still reviews email changes (#2029).
+
+    Report emails (#1786) are schedule records too; the review lists the
+    schedules the change switches and leaves the report email out, since it
+    sends no email template.
+    """
+    from .report_builders import add_report
+
+    store = auth_service.store
+    campaign, catalog, schedule = setup(store)
+    add_report(store, campaign, name="Daily report email")
+    row = content(str(campaign.pk), kind="email", slot="initial")
+    assert (
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [
+                {"operation": "add", "section": "content", **row},
+                {
+                    "operation": "update",
+                    "section": "schedules",
+                    "id": schedule["id"],
+                    "values": {
+                        "template_version": row["id"],
+                        "subject": row["values"]["subject"],
+                    },
+                },
+            ],
+        ).state
+        == "applied"
+    )
+    browser, _ = signed_in()
+    path = catalog + "email/initial/" + row["id"] + "/"
+    preview = post(
+        browser,
+        path,
+        values(
+            store,
+            subject="Revised invitation",
+            html="<p>{{ family_code }} {{ family_url }}</p>",
+        ),
+    )
+    assert preview.status_code == 200
+    section = preview.content.decode().split("Schedules using this template")[1]
+    section = section.split("</section>")[0]
+    assert re.findall(r"<li>([^<]+?) — ", section) == ["Initial invitation"]
+    assert "Daily report email" not in section
+    apply(store, post(browser, path, {"action": "confirm", "preview": token(preview)}))
+    snapshot = SystemConfiguration.objects.get().active_configuration
+    assert (
+        snapshot.schedule_revisions.get(record_id=schedule["id"]).values["subject"]
+        == "Revised invitation"
+    )
+
+
 def test_email_review_lists_schedules_in_order_by_name_and_sent_apart(
     auth_service, google, monkeypatch
 ):
