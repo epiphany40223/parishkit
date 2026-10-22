@@ -668,7 +668,9 @@ def awaited_load_status():
     the page reads it (``_load_state``), so once the load is requested the
     region follows its run, and once the campaign has its Families (or the
     wait is over) it settles, and its follow-up link re-reads the page in
-    place. None when there is no current campaign. Three small queries.
+    place. None when there is no current campaign. Small queries: the
+    current campaign, whether it has a Family, then (while it has none)
+    ``_load_state``'s one or two.
     """
     from parishkit.stewardship.campaigns.models import Campaign
 
@@ -713,14 +715,16 @@ def _load_state(campaign, done):
     it is (None, None, None) and nothing more is read. Otherwise one small
     query reads the newest *full* ParishSoft refresh requested since the
     campaign was created (an earlier one could not load it; a quick
-    refresh never counts, #1587; the full requests are a subquery, so the
-    page's query count is unchanged): "loading" while it is
+    refresh never counts, #1587; the full requests are a subquery, so it
+    is one statement): "loading" while it is
     under way (requested and not finished), "failed" when it failed or was
     cancelled, so the step says so and offers Try again rather than looking
     as if no load was started (#1404 PR 5). With no full refresh yet, a
     campaign created less than ``LOAD_START_WAIT`` ago is "loading" with no
-    task (the system is about to start its load, #1951), else "offer".
-    While loading or
+    task (the system is about to start its load, #1951), else "offer"; that
+    check reads the database's clock, one more statement, so a step page
+    runs one more statement before the campaign's first full refresh than
+    after it (#1984). While loading or
     failed, ``task`` is that run's Background task id and ``progress`` its
     (phase, current, total), which Load ParishSoft data's stage boxes and
     status poll use. The step pages show the state at the top, and Load
