@@ -17,6 +17,7 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
+from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
@@ -36,6 +37,7 @@ from parishkit.stewardship.source.requests import TASK_TYPE
 from .auth_builders import signed_in, unguarded
 from .campaign_builders import command
 from .credential_builders import keys, populate
+from .leader_builders import grant_role
 from .test_background_grants_postgresql import task_login
 from .test_campaign_stepper_postgresql import status_of, stepper
 from .test_share_views_postgresql import setup
@@ -408,3 +410,26 @@ def test_the_wait_for_the_system_load_ends_with_the_offer(auth_service, google):
     # A query the status does not take is refused.
     with web():
         assert browser.get(AWAITED + "?x=1").status_code == 400
+
+
+@pytest.mark.parametrize("role", [None, "staff", "ministry_leader"])
+def test_the_awaited_load_status_is_administrator_only(auth_service, google, role):
+    """Signed out, Staff and Ministry leaders are refused, as on the page (#1984).
+
+    The passive status keeps Load ParishSoft data's Administrator-only
+    access: a browser with no sign-in, and a signed-in user without the
+    Administrator role, get exactly 403 and none of the load region.
+    """
+    setup(auth_service.store)
+    if role is None:
+        browser = Client()
+    else:
+        grant_role(auth_service.store, "reader@example.org", role)
+        google[0]["email"] = "reader@example.org"
+        browser, signed = signed_in()
+        assert signed.status_code == 302
+    with web():
+        response = browser.get(AWAITED)
+    assert response.status_code == 403
+    assert b"data-live-status" not in response.content
+    assert b"data-load-stage" not in response.content
