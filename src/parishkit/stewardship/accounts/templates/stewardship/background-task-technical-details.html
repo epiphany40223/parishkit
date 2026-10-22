@@ -1,0 +1,16 @@
+{% load i18n stewardship %}{% comment %}
+  The Background task page's Technical details that change while the task
+  runs: its state, phase, attempt, retry sequence, last heartbeat and
+  lease. The page draws it twice: in the disclosure's live list, and in a
+  template[data-live-mirror] copy inside the polled status region
+  (background-task-status.html), so live-status-v1.js replaces only the
+  list's contents on each poll that changes them and an open disclosure
+  stays open and current (#2019; UX conventions, "Open disclosures stay
+  open"). The values that never change for a task sit in the list above it
+  on the page, since the polled status does not read the correlation.
+{% endcomment %}<dt>{% translate "State" %}</dt><dd><code>{{ task.state }}</code></dd>
+<dt>{% translate "Phase" %}</dt><dd><code>{{ task.progress.phase }}</code></dd>
+<dt>{% translate "Attempt" %}</dt><dd>{{ task.attempt|number }}</dd>
+<dt>{% translate "Retry sequence" %}</dt><dd>{{ task.retry_sequence|number }}</dd>
+{% if task.heartbeat_at %}<dt>{% translate "Last heartbeat" %}</dt><dd><time datetime="{{ task.heartbeat_at }}" data-local-instant>{{ task.heartbeat_at }}</time></dd>{% endif %}
+{% if task.lease_expires_at %}<dt>{% translate "Lease expires" %}</dt><dd><time datetime="{{ task.lease_expires_at }}" data-local-instant>{{ task.lease_expires_at }}</time></dd>{% endif %}

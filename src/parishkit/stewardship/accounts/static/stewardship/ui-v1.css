@@ -1544,6 +1544,16 @@ details.log-more-filters > .filter-bar { margin-top: .5rem; }
 details.technical-details { margin: .35rem 0 0; padding: 0; border: 0; background: none; font-size: .875rem; }
 details.technical-details[open] { padding-bottom: 0; }
 details.technical-details dd { overflow-wrap: anywhere; }
+/* The Background task page's Technical details are two lists: the values
+   that never change for a task, then the ones its poll replaces (#2019).
+   They read as one: no space between them, and at two-column widths they
+   share one grid (subgrid), so labels and values line up across both. */
+.technical-details-lists { margin-block: 0 1rem; }
+.technical-details-lists > dl { margin: 0; }
+@media (min-width: 40rem) {
+  .technical-details-lists { display: grid; grid-template-columns: minmax(6rem, max-content) minmax(0, 1fr); gap: .5rem 1.5rem; }
+  .technical-details-lists > dl { grid-column: 1 / -1; grid-template-columns: subgrid; }
+}
 
 [hidden] { display: none !important; }
 .content-editor { min-height: 12rem; overflow-wrap: anywhere; }
