@@ -129,6 +129,9 @@ def copy(data, frame):
     The snapshot keeps the chart's dates and figures only as alt text; its
     pinned fact generation (``CopyFrame.participation``) holds every day,
     and is kept as long as the snapshot is, so a copy without it is broken.
+    Only the charts the email drew are drawn: a snapshot records them under
+    ``charts`` once the block can choose them (#1956); one without the key,
+    every snapshot before that, drew every chart.
     """
     from parishkit.stewardship.storage import StorageInvariantError
 
@@ -136,7 +139,7 @@ def copy(data, frame):
 
     if frame.participation is None:
         raise StorageInvariantError("The saved copy's pinned facts are missing.")
-    return {"chart": participation_chart(frame.participation)}
+    return {"chart": participation_chart(frame.participation, data.get("charts"))}
 
 
 BLOCK = Block(

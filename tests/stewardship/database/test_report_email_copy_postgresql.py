@@ -11,6 +11,7 @@ with the send only. Outside addresses are shown to Administrators only.
 
 import json
 import re
+from dataclasses import replace
 from html import unescape
 from unittest.mock import patch
 from uuid import uuid4
@@ -130,7 +131,23 @@ def test_an_administrator_opens_the_blocks_and_the_email_as_sent(family_mail, go
                 body,
                 re.S,
             )
-            assert spec and json.loads(spec[1])["vconcat"]
+            # The snapshot records the charts the email drew (#1956): with
+            # no choice, every chart this campaign offers (it has no
+            # financial stewardship, so no pledges), and every one is drawn.
+            assert next(
+                entry["data"]["charts"]
+                for entry in snapshot.blocks
+                if entry["block"] == "participation_charts"
+            ) == ["first_submissions", "cumulative_families"]
+            titles = [
+                panel["title"]["text"] for panel in json.loads(spec[1])["vconcat"]
+            ]
+            assert titles[:2] == [
+                "First submissions that day",
+                "Cumulative participating Families",
+            ]
+            # Its sentence names every panel's figures, as it always has.
+            assert " of them for the first time that day." in chart_sentence(body)
             assert "chart-v1.js" in body
             # The email as it was sent, with its own chart images.
             sent = body[body.index("data-copy-email") :]
@@ -146,6 +163,55 @@ def test_an_administrator_opens_the_blocks_and_the_email_as_sent(family_mail, go
             unknown = reverse("admin:report_email_send", args=[uuid4()])
             assert browser.get(unknown).status_code == 403
         assert viewed(preparation) == 1
+
+
+def chart_sentence(body):
+    """The sentence the saved copy shows under its participation chart."""
+    caption = r'<figcaption id="daily-participation-summary"[^>]*>(.*?)<'
+    return re.search(caption, body)[1]
+
+
+def chart_titles(page):
+    """The saved copy page's participation panels, top to bottom, by title,
+    and the sentence under them."""
+    assert page.status_code == 200
+    body = unescape(page.content.decode())
+    spec = re.search(
+        r'<script id="daily-participation-spec" type="application/json">'
+        r"(.*?)</script>",
+        body,
+        re.S,
+    )
+    titles = [panel["title"]["text"] for panel in json.loads(spec[1])["vconcat"]]
+    return titles, chart_sentence(body)
+
+
+def test_the_copy_draws_only_the_charts_the_snapshot_recorded(family_mail, google):  # noqa: F811
+    """Charts the snapshot recorded (#1956) are the copy's only panels."""
+    from parishkit.stewardship.reports.report_blocks import REGISTRY
+
+    block = REGISTRY["participation_charts"]
+
+    def one_chart(document, options):
+        """Capture as #1956's block records a one-chart choice."""
+        return block.capture(document, options) | {"charts": ["cumulative_families"]}
+
+    with campaign_clock(DAILY_INSTANT):
+        recorded = replace(block, capture=one_chart)
+        with patch.dict(REGISTRY, {"participation_charts": recorded}):
+            preparation = daily_allocated(family_mail)
+        snapshot = ReportEmailSnapshot.objects.get(preparation=preparation)
+        (kept,) = [
+            entry["data"]
+            for entry in snapshot.blocks
+            if entry["block"] == "participation_charts"
+        ]
+        assert kept["charts"] == ["cumulative_families"]
+        one, sentence = chart_titles(open_copy(copy_path(preparation)))
+        assert one == ["Cumulative participating Families"]
+        # The sentence names only that chart's figure (#1946).
+        assert sentence.endswith(" Families had responded.")
+        assert "first time" not in sentence and "pledges" not in sentence
 
 
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])

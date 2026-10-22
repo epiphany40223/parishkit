@@ -6,11 +6,16 @@ cover the renderers and the page's statements about the send without a
 database; the PostgreSQL suite covers the page itself.
 """
 
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
 
+from parishkit.stewardship.reports.chart_specs import (
+    PARTICIPATION_CHART_KEYS,
+    participation_chart,
+)
 from parishkit.stewardship.reports.digest_presentation import saved_total_tiles
 from parishkit.stewardship.reports.report_blocks import REGISTRY
 from parishkit.stewardship.reports.report_blocks.registry import CopyFrame
@@ -21,6 +26,8 @@ from parishkit.stewardship.reports.report_email_copy import (
 )
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.stat_tiles import UNKNOWN
+
+from .test_participation_rendering import document as participation
 
 TEMPLATES = Path(__file__).parents[2] / "src/parishkit/stewardship/accounts/templates"
 SEND = "/admin/mail/report-emails/sends/5d1e0c63-55a5-4b8f-9d36-1d8f0fdf2a11/"
@@ -199,3 +206,66 @@ def test_the_charts_need_the_pinned_facts():
     """A kept chart without its pinned generation is a broken copy, not a guess."""
     with pytest.raises(StorageInvariantError):
         REGISTRY["participation_charts"].copy({"alt": "x"}, CopyFrame(SEND))
+
+
+def test_the_charts_draw_only_those_the_email_drew():
+    """A snapshot that recorded its charts (#1956) draws only those panels."""
+    facts = participation()
+    frame = CopyFrame(SEND, participation=facts)
+    block = REGISTRY["participation_charts"]
+    chart = block.copy({"alt": "x", "charts": ["pledges"]}, frame)["chart"]
+    assert [panel["title"]["text"] for panel in chart.spec["vconcat"]] == [
+        "Effective annual pledges"
+    ]
+    assert chart.table.headings == ("Campaign date", "Effective annual pledges")
+    two = block.copy(
+        {"alt": "x", "charts": ["first_submissions", "cumulative_families"]}, frame
+    )["chart"]
+    assert len(two.spec["vconcat"]) == 2
+    assert two.table.headings == (
+        "Campaign date",
+        "First submissions",
+        "Cumulative participation",
+    )
+
+
+def test_the_charts_without_a_record_draw_every_panel():
+    """Every snapshot before #1956 kept no ``charts``: it drew every panel."""
+    facts = participation()
+    every = participation_chart(facts)
+    kept = REGISTRY["participation_charts"].copy(
+        {"alt": "x"}, CopyFrame(SEND, participation=facts)
+    )["chart"]
+    assert len(every.spec["vconcat"]) == 3
+    assert kept == every
+    # Naming every panel, or none the campaign has, is the same chart.
+    assert participation_chart(facts, list(PARTICIPATION_CHART_KEYS.values())) == every
+    plain = replace(facts, financial_enabled=False)
+    assert participation_chart(plain, ["pledges"]) == participation_chart(plain)
+
+
+def test_the_charts_sentence_names_only_the_drawn_charts():
+    """The sentence under a copy's chart states the drawn panels' figures only."""
+    frame = CopyFrame(SEND, participation=participation())
+    block = REGISTRY["participation_charts"]
+    span = (
+        "Daily participation, Historical as of day, from October 31, 2026 to "
+        "November 2, 2026; "
+    )
+    sentences = {
+        "first_submissions": "on the last date first submissions numbered 1.",
+        "cumulative_families": "by the last date 3 out of 1,234 (0.2%) "
+        "Families had responded.",
+        "pledges": "by the last date effective annual pledges totaled $3,235.",
+    }
+    for key, sentence in sentences.items():
+        chart = block.copy({"alt": "x", "charts": [key]}, frame)["chart"]
+        assert chart.summary == span + sentence
+        assert chart.spec["description"] == chart.summary
+    # A snapshot without the key keeps the sentence it always had.
+    every = block.copy({"alt": "x"}, frame)["chart"].summary
+    assert every == span + (
+        "by the last date 3 out of 1,234 (0.2%) Families had responded, 1 of "
+        "them for the first time that day, with $3,235 in effective annual "
+        "pledges."
+    )
