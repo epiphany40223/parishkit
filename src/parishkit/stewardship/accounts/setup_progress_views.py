@@ -22,7 +22,9 @@ from .setup_wizard import wizard_for
 # Plain-language status for each observable load situation; ``summary``
 # picks the key for one observation.
 SUMMARIES = {
-    "queued": _("Waiting for the background loading service to pick up the job."),
+    # The shared Start the load box's sentence (#1916), so this page and
+    # every other page with that box say it the same way.
+    "queued": stages.QUEUED,
     "retry_wait": _(
         "ParishSoft did not answer in time. The load waits briefly and then "
         "retries automatically; nothing needs to be done."
@@ -65,8 +67,10 @@ RUNNING_SUMMARIES = (
     "working",
 )
 
-# The three parts of a load, in order, as the page names them.
+# The three parts of a load, in order, as the page names them, after the
+# shared Start the load box for the time the load waits for a worker (#1916).
 PHASES = (
+    stages.START,
     ("fetching", _("Download from ParishSoft")),
     ("staging", _("Save the records for this setup")),
     ("validating", _("Check the saved records")),
@@ -110,13 +114,23 @@ def collection_reserve(key):
 
 
 def phases(progress, status_key):
-    """Name each load phase's state for the live status region (stage boxes)."""
+    """Name each load phase's state for the live status region (stage boxes).
+
+    Start the load is In progress until a worker picks the load up, then
+    Download from ParishSoft, and so on (``stages.queued_index``). A load
+    that stopped for good marks the box it stopped in Failed, Start the load
+    when no worker ever took it; one no longer watched (voided) leaves it
+    Not started.
+    """
     order = [key for key, _label in PHASES]
-    # Before the download starts (queued, starting) no phase has begun.
-    index = order.index(progress["phase"]) if progress["phase"] in order else -1
+    index = stages.queued_index(order, progress["phase"])
     if status_key == "done":
         index = len(order)
-    return stages.rows(PHASES, index, "active" if progress["active"] else "waiting")
+    if status_key in {"failed", "ended"}:
+        current = "failed"
+    else:
+        current = "active" if progress["active"] else "waiting"
+    return stages.rows(PHASES, index, current)
 
 
 def collections(progress):
