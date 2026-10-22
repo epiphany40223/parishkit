@@ -1191,7 +1191,12 @@ October 19"; a send after the campaign's last day is marked "after the
 campaign ends") and **Status** in words: Will send, Skipped, Paused, or
 Being prepared (a send with Production work). Skipped and paused rows are
 struck through, the Status word not, so the strike is never the only
-signal.
+signal. Until the schedule and time fields can be read, the table is one
+line, "Fill in the schedule and time to see its next sends.", from the
+first draw on: New opens with no schedule or time chosen, so it lists no
+send until the reader chooses them
+([#1972](https://github.com/epiphany40223/parishkit/issues/1972)). A
+refused Review draws the schedule its fields hold.
 
 On Edit of a repeating report the table has the shared selection column and
 bulk bar ([row actions](../ui-conventions/spec.md#row-actions-and-confirmation)):

@@ -308,6 +308,31 @@ def test_the_live_preview_answers_the_next_sends(live_response_service, google):
         assert b"Fill in the schedule and time" in unreadable.content
 
 
+def test_new_draws_no_sends_before_a_schedule_is_chosen(live_response_service, google):
+    """New's first draw agrees with its blank form (#1972): no schedule or
+    time is chosen, so Next sends says to fill them in and lists no send.
+    A refused Review draws the schedule the post holds."""
+    harness = live_response_service
+    with campaign_clock(INSTANT):
+        admin = started(harness)
+        path = reverse("admin:report_email_new")
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            page = admin.get(path)
+        assert page.status_code == 200
+        assert b"Fill in the schedule and time to see its next sends." in page.content
+        assert b'class="data-table report-sends"' not in page.content
+        assert b"Will send" not in page.content
+        refused = post(
+            admin,
+            path,
+            fields(sends="repeat", preset="weekly", preset_weekday="0", recipient=[]),
+        )
+        assert refused.status_code == 400
+        assert b"Choose at least one recipient." in refused.content
+        assert b'class="data-table report-sends"' in refused.content
+        assert b"Will send" in refused.content
+
+
 def test_staff_may_not_open_the_editor(live_response_service, google):
     """The editor is an Administrator's page (403 for Staff)."""
     from .report_builders import users_form

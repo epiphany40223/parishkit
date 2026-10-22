@@ -151,6 +151,9 @@ def _page(context, admin, saved, data=None):
         for entry in (saved or {}).get("recipients", [])
     ]
     values = saved or editor.blank_values(CAMPAIGN, UUID(int=5))
+    # The view's own choice of what Next sends draws: nothing on New's
+    # blank form (#1972).
+    drawn = editor.drawn_values(form, saved, CAMPAIGN, UUID(int=5))
     moment = editor.moment(saved, CAMPAIGN, NOW) if saved else None
     return render_to_string(
         "stewardship/report-email-entry.html",
@@ -179,8 +182,9 @@ def _page(context, admin, saved, data=None):
             "drawn_at": moment.isoformat() if moment else None,
             # Edit's Next sends table takes boxes for Skip and Send selected
             # sends; no send has Production work here.
-            "sends_table": editor.sends_table(
-                values,
+            "sends_table": drawn
+            and editor.sends_table(
+                drawn,
                 CAMPAIGN,
                 NOW,
                 bulk=saved is not None,

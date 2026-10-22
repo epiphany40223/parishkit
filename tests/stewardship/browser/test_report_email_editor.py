@@ -375,9 +375,11 @@ def test_next_sends_is_a_table_with_status(page, component_origin):
     assert statuses[:2] == ["Will send", "Skipped"]
     skipped = table.locator(f'tr[data-send="{page_slots(page)[1]}"]')
     assert skipped.locator("s").count() == 2
-    # New has the table without boxes: there is nothing saved to skip.
+    # New draws no sends until its schedule and time are chosen (#1972),
+    # and has no boxes: there is nothing saved to skip.
     page.goto(component_origin + NEW)
-    visible(page.locator("table.report-sends"))
+    visible(page.get_by_text("Fill in the schedule and time to see its next sends."))
+    assert page.locator("table.report-sends").count() == 0
     assert page.locator("[data-select-row]").count() == 0
     assert page.get_by_role("button", name="Skip selected sends").count() == 0
 

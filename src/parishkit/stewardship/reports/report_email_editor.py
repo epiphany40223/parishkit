@@ -27,6 +27,7 @@ turns into the same fields) into one report's complete stored values
 Nothing here reads a request or checks authority.
 """
 
+import copy
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -662,7 +663,9 @@ class EditorForm(AdminForm):
         data = getattr(self, "cleaned_data", None) or {}
         if data.get("sends") not in ("once", "repeat"):
             return None
-        saved_errors = dict(self._errors or {})
+        # The form's own error dict (an ErrorDict, which the page draws)
+        # is restored as it was: a refused page draws its table too.
+        saved_errors = copy.deepcopy(self._errors)
         schedule = self._schedule(data)
         self._errors = saved_errors
         return schedule
@@ -1127,9 +1130,11 @@ def describe(values, campaign, now, choices):
 
 
 def blank_values(campaign, campaign_id):
-    """New's starting values: a daily report at 7:00 AM.
+    """New's starting values, under the schedule its fields hold.
 
-    Only its schedule preview reads them before the form is filled in.
+    Next sends draws New's sends from these with the form's own schedule
+    (``drawn_values``); the daily 7:00 AM schedule here is never drawn,
+    since New's blank form has no schedule yet (#1972).
     """
     return {
         "campaign_id": str(campaign_id),
@@ -1146,4 +1151,27 @@ def blank_values(campaign, campaign_id):
         "skip_dates": [],
         "paused_ranges": [],
         "slot_basis": "send_date",
+    }
+
+
+def drawn_values(form, saved, campaign, campaign_id):
+    """The report values whose sends Next sends draws for ``form``, or None.
+
+    An unbound form draws Edit's saved report as it is, and New's blank
+    form nothing: its schedule and time are not chosen yet, so the table
+    says to fill them in rather than drawing a schedule the reader has not
+    chosen (#1972). A bound form (a refused Review, or the live redraw,
+    after ``is_valid``) draws the schedule its fields hold, over the saved
+    report or New's blank values, and nothing while they cannot be read.
+    """
+    if not form.is_bound:
+        return saved
+    schedule = form.schedule_only()
+    if not schedule:
+        return None
+    base = saved or blank_values(campaign, campaign_id)
+    return base | {
+        "schedule": schedule,
+        "as_of": form.cleaned_data.get("as_of") or base["as_of"],
+        "name": form.cleaned_data.get("name") or base["name"],
     }
