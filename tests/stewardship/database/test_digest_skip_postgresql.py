@@ -1,38 +1,29 @@
-"""A digest's skipped sends are never planned, by any writer (#1658).
+"""A report's skipped sends are never planned, by any writer (#1658, #1786).
 
-Through real configuration installation: a Daily or Weekly Admin digest
-whose revision carries ``skip_dates`` gets no occurrence for those slots from
-the scheduler's digest planner, the database's occurrence guard refuses one
-even from a planner that ignored them, the canonical slot check answers no
-slot for them, and the weekly page proof accepts a skipped week without an
-occurrence. Frozen migration 0121's closing DO block passes on the installed
-functions and refuses each older body, a weakened body (a guard that
-enforces Weekly skips alone, a slot check whose skip line can never run)
-and a guard that lost its definer rights.
+Through real configuration installation: a report shaped as the converted
+Daily or Weekly whose revision carries ``skip_dates`` gets no occurrence for
+those slots from the report producer and worker, the database's occurrence
+guard refuses one even from a planner that ignored them, and the canonical
+slot check answers no slot for them. Frozen migration 0121's closing DO
+block passes on the bodies 0121 installed (migration 0161 has since
+replaced them for report emails) and refuses each older body, a weakened
+body (a guard that enforces Weekly skips alone, a slot check whose skip
+line can never run) and a guard that lost its definer rights.
 """
 
-import json
 import re
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from uuid import UUID, uuid4
 
 import pytest
 from django.db import DatabaseError, connection, transaction
 
+from parishkit.stewardship.accounts.reports_conversion import converted_values
 from parishkit.stewardship.campaigns import schedule_evaluation
-from parishkit.stewardship.campaigns.digest_schedule_planning import (
-    DigestScheduleProducer,
-)
-from parishkit.stewardship.campaigns.models import (
-    Campaign,
-    ScheduleDefinition,
-    ScheduleOccurrence,
-)
-from parishkit.stewardship.jobs.scheduler import scheduler_session
+from parishkit.stewardship.campaigns.models import ScheduleOccurrence
 
-from ..campaign_factory import schedule
-from .campaign_builders import campaign_clock, change
+from .campaign_builders import campaign_clock
+from .report_builders import add_report, prepare_due
 from .test_family_auth_postgresql import family_service  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -61,25 +52,23 @@ PAGE_OLD = """            WHERE expected.due IS NULL OR expected.due>(proposed->
 
 
 def add_digest(store, campaign, *, skip, weekly=False):
-    """Install one digest that skips ``skip``; return its definition id."""
-    row = schedule(
-        str(campaign.pk),
-        kind="weekly_digest" if weekly else "daily_digest",
-        date=None,
-        weekday=2 if weekly else None,
-        time="00:15:00",
-        skip_dates=skip,
+    """Install a converted Daily (or Weekly, Wednesdays) skipping ``skip``; its id.
+
+    Both send at 00:15; the Daily's slot is the day it reports on, the
+    Weekly's its send date, as the digests' were.
+    """
+    values = converted_values(
+        {
+            "campaign_id": str(campaign.pk),
+            "kind": "weekly_digest" if weekly else "daily_digest",
+            "time": "00:15:00",
+            "weekday": 2 if weekly else None,
+            "subject": "",
+            "skip_dates": skip,
+        },
+        None,
     )
-    assert (
-        change(
-            store,
-            store.active(),
-            uuid4(),
-            [{"operation": "add", "section": "schedules", **row}],
-        ).state
-        == "applied"
-    )
-    return UUID(row["id"])
+    return add_report(store, campaign, **values)
 
 
 def wednesdays(count):
@@ -96,20 +85,20 @@ def scalar(sql, params=()):
         return cursor.fetchone()[0]
 
 
-def test_the_planner_never_creates_a_skipped_daily_send(family_service, auth_service):  # noqa: F811
-    """The scheduler plans the days around a skipped one, never the day itself."""
+def test_the_planner_never_creates_a_skipped_daily_send(response_service):
+    """The report's send plans the days around a skipped one, never the day itself.
+
+    By midnight UTC on October 5 the sends of October 2, 3 and 4 are due;
+    October 3's (reporting on October 2) is skipped, so the send made
+    covers October 1 and 3 only. (A report's send reads the promoted
+    source, so the campaign has one.)
+    """
+    harness = response_service
     identifier = add_digest(
-        auth_service.store, family_service.campaign, skip=["2054-10-02"]
+        harness.service.store, harness.campaign, skip=["2054-10-02"]
     )
-    producer = DigestScheduleProducer(uuid4())
-    with (
-        campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)),
-        scheduler_session() as guard,
-    ):
-        (page,) = producer(guard)
-        assert page.created == 2
-        # The cursor moved past the skipped day, so it is not examined again.
-        assert list(producer.cursors.values()) == [date(2054, 10, 3)]
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
+        assert len(prepare_due()) == 1
     assert sorted(
         ScheduleOccurrence.objects.filter(definition_id=identifier).values_list(
             "slot", flat=True
@@ -118,22 +107,28 @@ def test_the_planner_never_creates_a_skipped_daily_send(family_service, auth_ser
 
 
 def test_the_database_refuses_an_occurrence_for_a_skipped_send(
-    family_service,  # noqa: F811
-    auth_service,
-    monkeypatch,
+    response_service, monkeypatch
 ):
-    """A planner that ignored skip dates is stopped by the occurrence guard."""
+    """A planner that ignored skip dates is stopped by the database.
+
+    The worker's write admission for report sends
+    (``stewardship_report_email_write_admitted_v1``, which the setup
+    completion trigger asks first) admits no occurrence for a skipped
+    slot, and the occurrence guard behind it refuses one too.
+    """
+    harness = response_service
     identifier = add_digest(
-        auth_service.store, family_service.campaign, skip=["2054-10-01"]
+        harness.service.store, harness.campaign, skip=["2054-10-01"]
     )
     # Every candidate in range counts as a send: the skip is ignored.
-    monkeypatch.setattr(schedule_evaluation.SchedulePlan, "_sends", lambda *_: True)
+    monkeypatch.setattr(schedule_evaluation.ReportPlan, "_sends", lambda *_: True)
     with (
         campaign_clock(datetime(2054, 10, 3, tzinfo=UTC)),
-        scheduler_session() as guard,
-        pytest.raises(DatabaseError, match="Occurrence creation is not admitted"),
+        pytest.raises(
+            DatabaseError, match="Worker configuration effects require atomic setup"
+        ),
     ):
-        DigestScheduleProducer(uuid4())(guard)
+        prepare_due()
     assert not ScheduleOccurrence.objects.filter(definition_id=identifier).exists()
 
 
@@ -153,37 +148,6 @@ def test_the_slot_check_answers_no_slot_for_a_skipped_send(
     )
     assert scalar(due, [weekly, weeks[0]]) is None
     assert scalar(due, [weekly, weeks[1]]) is not None
-
-
-def page_proof(definition, campaign, week):
-    """The weekly page proof for a first page ending at ``week``, no occurrences."""
-    revision = ScheduleDefinition.objects.get(pk=definition).current_revision_id
-    configuration = Campaign.objects.get(pk=campaign.pk).active_configuration_id
-    proposed = {
-        "phase": "dates",
-        "cursor": week,
-        "campaign_configuration_id": str(configuration),
-        "revision_id": str(revision),
-        "cutoff": "2054-12-31T00:00:00+00:00",
-        "mode": "testing",
-    }
-    return scalar(
-        "SELECT stewardship_weekly_digest_page_v1(%s::jsonb,%s::jsonb)",
-        [json.dumps({"phase": "dates", "cursor": None}), json.dumps(proposed)],
-    )
-
-
-def test_the_weekly_page_proof_accepts_a_skipped_week_alone(
-    family_service,  # noqa: F811
-    auth_service,
-):
-    """A page over a skipped week needs no occurrence; an unskipped week does."""
-    store, campaign = auth_service.store, family_service.campaign
-    weeks = wednesdays(2)
-    skipping_first = add_digest(store, campaign, skip=[weeks[0]], weekly=True)
-    assert page_proof(skipping_first, campaign, weeks[0]) is True
-    # The second week has no occurrence, so a page through it is refused.
-    assert page_proof(skipping_first, campaign, weeks[1]) is False
 
 
 def body(name, terminator):
@@ -212,6 +176,23 @@ def check():
     return re.search(r"^DO \$check\$.*?\$check\$;", FROZEN, re.M | re.S)[0]
 
 
+def as_0121(cursor):
+    """Install the three bodies 0121 made, as it left them, in this transaction.
+
+    Migration 0161 replaced them for report emails (#1786), so 0121's check
+    is run on its own bodies; each test's transaction rolls them back.
+    """
+    for name, terminator in (
+        ("stewardship_occurrence_guard_v1", "END $_$;"),
+        ("stewardship_catchup_due_v1", "END $$;"),
+        ("stewardship_weekly_digest_page_v1", "END $$;"),
+    ):
+        cursor.execute(body(name, terminator))
+    cursor.execute(
+        "ALTER FUNCTION public.stewardship_occurrence_guard_v1() SECURITY DEFINER"
+    )
+
+
 def recorded_acl(cursor):
     """Record the grants, settings and owner as the frozen file does first."""
     statement = re.search(
@@ -231,15 +212,16 @@ def recorded_acl(cursor):
     ],
 )
 def test_migration_self_check_refuses_each_old_body(name, message):
-    """The DO block passes as installed and refuses each function's old body.
+    """The DO block passes on 0121's bodies and refuses each function's old body.
 
-    Each old body runs inside a rolled-back transaction, so the installed
-    functions are left as the full migration made them.
+    Each body runs inside a rolled-back transaction, so the installed
+    functions are left as the full migration chain made them.
     """
     with connection.cursor() as cursor:
         recorded_acl(cursor)
-        cursor.execute(check())
         with transaction.atomic():
+            as_0121(cursor)
+            cursor.execute(check())
             cursor.execute(old_body(name))
             if name == "stewardship_occurrence_guard_v1":
                 # Even with its definer rights back, the old guard is refused.
@@ -250,7 +232,6 @@ def test_migration_self_check_refuses_each_old_body(name, message):
             with pytest.raises(DatabaseError, match=message), transaction.atomic():
                 cursor.execute(check())
             transaction.set_rollback(True)
-        cursor.execute(check())
 
 
 def test_migration_self_check_refuses_a_guard_without_definer_rights():
@@ -258,6 +239,7 @@ def test_migration_self_check_refuses_a_guard_without_definer_rights():
     with connection.cursor() as cursor:
         recorded_acl(cursor)
         with transaction.atomic():
+            as_0121(cursor)
             cursor.execute(body("stewardship_occurrence_guard_v1", "END $_$;"))
             with (
                 pytest.raises(DatabaseError, match="occurrence guard as a definer"),
@@ -265,7 +247,6 @@ def test_migration_self_check_refuses_a_guard_without_definer_rights():
             ):
                 cursor.execute(check())
             transaction.set_rollback(True)
-        cursor.execute(check())
 
 
 def weakened(name):
@@ -299,6 +280,7 @@ def test_migration_self_check_refuses_a_weakened_body(name, message):
     with connection.cursor() as cursor:
         recorded_acl(cursor)
         with transaction.atomic():
+            as_0121(cursor)
             cursor.execute(weakened(name))
             if name == "stewardship_occurrence_guard_v1":
                 cursor.execute(
@@ -308,4 +290,3 @@ def test_migration_self_check_refuses_a_weakened_body(name, message):
             with pytest.raises(DatabaseError, match=message), transaction.atomic():
                 cursor.execute(check())
             transaction.set_rollback(True)
-        cursor.execute(check())

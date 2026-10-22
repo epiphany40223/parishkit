@@ -325,6 +325,11 @@ AUTOMATION_REQUEST_FUNCTION = (
 # The credential installers whose secret requests an automation session may
 # make (key replacement); the other targets have no such request.
 AUTOMATION_SECRET_TARGETS = frozenset({"parishsoft", "google_workspace", "slack"})
+# What still holds the report email conversion back (0161, #1786): the
+# schedule activation trigger asks it only while converting the digests,
+# which the offline admin-recovery login's ``upgrade-reports`` does; counts
+# only.
+DIGEST_WORK_FUNCTION = "stewardship_digest_work_open_v1()"
 # The general worker's export recovery counts a task's read-guard stops
 # (#386, L3) without reading the operational log's context.
 READ_GUARD_KILLS_FUNCTION = "stewardship_read_guard_kills_v1(uuid)"
@@ -580,6 +585,9 @@ CLOSURE_FUNCTIONS = {
         (ADDRESS_PEOPLE_FUNCTION, FAMILY_USERS_FUNCTION),
         ("stewardship_accounts", "0031_person_identity_reads"),
     ),
+    # The report conversion's open digest work check (0161,
+    # #1786), which the admin-recovery login's offline conversion asks.
+    DIGEST_WORK_FUNCTION: ("stewardship_reports", "0041_report_conversion"),
 }
 
 
@@ -869,7 +877,9 @@ def runtime_functions(role, *, target=None):
     owner-run batch that rechecks each export has ended.
     Every login a running service or an operator command uses reads whether
     the debug-off switch is set (#530); the offline admin-recovery login
-    also clears it (``pk-stewardship debug-off-clear``). The backup login
+    also clears it (``pk-stewardship debug-off-clear``), and its
+    ``upgrade-reports`` asks whether digest work still holds the report
+    email conversion back (#1786). The backup login
     reads the table through pg_read_all_data instead: its admission refuses
     any definer grant.
     """
@@ -934,6 +944,7 @@ def runtime_functions(role, *, target=None):
             },
             "download": {LEADER_SCOPE_FUNCTION},
             ServiceRole.ADMIN_RECOVERY: {
+                DIGEST_WORK_FUNCTION,
                 PORTAL_IDENTITIES_FUNCTION,
                 MEMBER_NAMES_FUNCTION,
                 DEBUG_OFF_FUNCTION,

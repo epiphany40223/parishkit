@@ -249,6 +249,10 @@ PAGES = {
         "reports", _("Weekly report item"), "weekly_digest_snapshot"
     ),
     "daily_digest_snapshot": Page("reports", _("Daily report"), "emailed_reports"),
+    # A report send's saved copy (#1786), named by its subject: a sent
+    # email, under Sent mail until the Report emails page, its parent in
+    # the spec, ships. Emailed reports lists it too.
+    "report_email_send": Page("mail", _("Report email"), "deliveries"),
     # Ministry requests is the follow-up queue (#1133); Ministry follow-up,
     # once a page of its own, was merged into it.
     "ministry_report": Page("review", _("Ministry requests")),
@@ -781,10 +785,13 @@ NON_PAGES = frozenset(
         "report_export_create",
         "report_export_download",
         "report_export_retry",
-        "retry_daily_digest",
         "retry_export_cleanup",
         "retry_family_preparation",
-        "retry_weekly_digest",
+        "retry_report_email",
+        # A report send's chart images, and its listed requests, which
+        # redirect to their Additional information pages (#1786).
+        "report_email_send_image",
+        "report_email_send_item",
         "security_event_acknowledge",
         # New user's in-place Email check and Name suggestions (#952), JSON.
         "user_name_suggestions",

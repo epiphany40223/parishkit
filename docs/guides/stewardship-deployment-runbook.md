@@ -917,6 +917,56 @@ activated, the previous release cannot run on the configuration: fail
 forward, or restore the pre-upgrade backup together with the previous
 release.
 
+### Report email conversion (#1786)
+
+The release that brings report emails converts the Daily and Weekly
+digests in step 4, after the migrations and `database-grants`:
+`run --rm admin-recovery upgrade-reports --config RECOVERY_CONFIG --confirm-deployment UUID`.
+The scripted upgrade runs it on every upgrade, needs no inputs, and does
+nothing once nothing is left to convert. The operations specification's
+[report email conversion](../specs/stewardship/operations/spec.md#report-email-conversion)
+lists what to do if the migration or the conversion refuses. In short: if
+the migration refuses because a digest send is unfinished, restore the
+pre-upgrade backup with the previous release ([Rollback](#rollback)), let
+the send finish and upgrade again; if `upgrade-reports` fails after the migration, fix the
+cause and repeat the run (fail forward). Run the precheck before the
+window, with the previous release still running, through the operator
+login as the backup runbook does for its queries. Every count must be 0:
+
+```sql
+SELECT
+  (SELECT count(*) FROM stewardship_schedule_occurrence o
+     JOIN stewardship_schedule_definition d ON d.id = o.definition_id
+     WHERE d.kind IN ('daily_digest', 'weekly_digest')
+       AND o.state IN ('pending', 'running', 'delivery_unknown')) AS sends,
+  (SELECT count(*) FROM stewardship_outbox_message
+     WHERE purpose IN ('daily_digest', 'weekly_digest')
+       AND state NOT IN ('delivered', 'permanent_failure', 'cancelled'))
+     AS messages,
+  (SELECT count(*) FROM stewardship_task_run
+     WHERE task_type IN ('daily_digest_prepare', 'daily_digest_finalize',
+       'weekly_digest_prepare', 'weekly_digest_finalize')
+       AND state IN ('queued', 'running', 'retry_wait', 'abandoned'))
+     AS tasks;
+```
+
+Resolve any old stuck one first (Sent mail, Background work). This query
+lists the failed digest sends the conversion may owe again (it does not
+leave out sends a restore hold or post-close resolution covers, skipped
+dates, Testing or removed digests, so it can list more than are owed);
+each digest owed one gets one coalesced catch-up report to its
+Administrators after the upgrade:
+
+```sql
+SELECT d.kind, o.slot FROM stewardship_schedule_occurrence o
+  JOIN stewardship_schedule_definition d ON d.id = o.definition_id
+  WHERE d.kind IN ('daily_digest', 'weekly_digest') AND o.state = 'failed'
+    AND NOT EXISTS (SELECT 1 FROM stewardship_schedule_fulfillment f
+      WHERE f.definition_id = o.definition_id AND f.mode = o.mode
+        AND f.target = o.target AND f.slot = o.slot)
+  ORDER BY d.kind, o.slot;
+```
+
 ### Family engagement backfill (#477)
 
 The release that adds the durable Family engagement table is a schema and

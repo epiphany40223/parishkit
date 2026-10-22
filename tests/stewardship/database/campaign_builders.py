@@ -355,24 +355,19 @@ def close_campaign(campaign, actor):
 
 
 def closed_digest(tmp_path):
-    """Build a real post-close digest skip with no TaskRun/outbox yet allocated."""
+    """Build a real post-close report skip with no TaskRun/outbox yet allocated.
+
+    The report is shaped as the converted Daily digest (#1786).
+    """
+    from .report_builders import add_digest
 
     store, campaign, actor = draft_campaign(tmp_path)
-    digest = schedule(str(campaign.pk), kind="daily_digest", date=None)
-    assert (
-        change(
-            store,
-            store.active(),
-            actor,
-            [{"operation": "add", "section": "schedules", **digest}],
-        ).state
-        == "applied"
-    )
+    identifier = add_digest(store, campaign)
     campaign.refresh_from_db()
     with campaign_clock(campaign.active_configuration.starts_at):
         command(campaign, actor, Action.ACTIVATE)
     close_campaign(campaign, actor)
-    definition = ScheduleDefinition.objects.get(pk=digest["id"])
+    definition = ScheduleDefinition.objects.get(pk=identifier)
     with campaign_clock(campaign.active_configuration.ends_at):
         row = create_occurrence(
             definition_id=definition.pk,

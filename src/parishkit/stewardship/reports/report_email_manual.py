@@ -5,7 +5,9 @@ action and ``pk-admin report-email send-now``) records one request, keyed
 by its command id; its database guard checks the report's current revision
 and that no other send of it is open, and allocates the manual occurrence
 and its preparation together, so replaying the command returns the same
-send. Nothing calls this until that item ships.
+send. Until that item ships, Send a weekly report now and ``pk-admin digest
+weekly-request`` call it for the converted Weekly report (``weekly_manual``,
+#1786 delivery plan item 4).
 """
 
 from uuid import UUID

@@ -37,7 +37,7 @@ LIST = "/admin/campaign/schedules/"
 SUGGESTED = "/admin/campaign/schedules/suggestion/"
 
 
-def setup(store, kinds=("initial", "reminder", "weekly_digest"), **dates):
+def setup(store, kinds=("initial", "reminder"), **dates):
     """A draft with one saved email of each mail type in ``kinds`` and no schedule.
 
     Returns the emails by mail type.
@@ -90,9 +90,10 @@ def test_the_suggested_schedules_are_listed_and_added(auth_service, google):
     kinds = re.findall(
         r'data-schedule-state="suggested" data-suggested-kind="(\w+)"', body
     )
-    assert kinds == ["initial", "reminder", "weekly_digest"]
-    assert body.count('<span class="status-badge">Not saved yet</span>') == 3
-    assert "Every Monday" in body
+    assert kinds == ["initial", "reminder"]
+    assert body.count('<span class="status-badge">Not saved yet</span>') == 2
+    # Report emails replaced the digests: none is suggested (#1786).
+    assert "Every Monday" not in body
     assert 'data-direct-saved="Suggested schedules added."' in body
     assert re.search(
         r'<button type="submit" form="suggested-schedules-form" [^>]*'
@@ -123,7 +124,6 @@ def test_the_suggested_schedules_are_listed_and_added(auth_service, google):
     } == {
         "initial": ("2054-10-01", "09:00:00", None),
         "reminder": ("2054-10-24", "09:00:00", None),
-        "weekly_digest": (None, "06:00:00", 0),
     }
     assert {kind: values["template_version"] for kind, values in saved.items()} == {
         kind: row["id"] for kind, row in emails.items()

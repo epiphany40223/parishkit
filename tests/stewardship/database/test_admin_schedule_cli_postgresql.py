@@ -398,13 +398,13 @@ def test_bad_tokens_change_nothing(admin, google, monkeypatch):
     assert code == 1 and document["error"]["code"] == "stale_version"
     # Another change applied since the review: the base moved on.
     owner = str(campaign.pk)
-    digest = schedule(owner, kind="daily_digest", date=None, time="07:00:00")
+    later_reminder = schedule(owner, kind="reminder", date="2054-10-28")
     assert (
         change(
             store,
             store.active(),
             uuid4(),
-            [{"operation": "add", "section": "schedules", **digest}],
+            [{"operation": "add", "section": "schedules", **later_reminder}],
         ).state
         == "applied"
     )

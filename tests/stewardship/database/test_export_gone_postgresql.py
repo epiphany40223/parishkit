@@ -89,9 +89,8 @@ def test_an_ended_report_export_is_gone_everywhere(
     from parishkit.stewardship.jobs.queues import WorkQueue
     from parishkit.stewardship.reports.export_tasks import export_handler
 
-    from ..policy_factory import address
     from .auth_builders import signed_in
-    from .campaign_builders import change
+    from .report_builders import set_user
     from .test_export_cleanup_postgresql import expire_publication
 
     setup, admin = http_scenario
@@ -120,13 +119,8 @@ def test_an_ended_report_export_is_gone_everywhere(
 
     # Another reader (Staff, who sees only their own exports) gets the
     # denial, never the 410 page or its report.
-    rule = address("staff@example.org", roles=("staff",))
-    change(
-        store,
-        store.active(),
-        uuid4(),
-        [{"operation": "add", "section": "login_rules", **rule}],
-    )
+    # (The fixture is in the users form once a report email exists, #1786.)
+    set_user(store, "staff@example.org", "staff")
     google[0].update(email="staff@example.org", sub="synthetic-staff-subject")
     staff, _ = signed_in()
     for page in (expired_page, cancelled_page):

@@ -696,7 +696,7 @@ The document is JSON with two optional members:
 | --- | --- |
 | Change a saved schedule | `id` (from `schedule show`) and any of `date`, `time` and `weekday` (in the campaign's time zone, as for adding one), `template_version` and, for a daily digest, `comparison` (`true` or `false`: whether it includes Compared with past campaigns). For a daily or weekly digest, `skip` (one `YYYY-MM-DD` slot date, as `schedule show` lists its `resolved` keys) skips just that send, as Edit's Delete with This email only does; the send must still be ahead and have no Production work yet, and `schedule show` then lists it in `skip_dates`. A `skip` cannot be combined with `date`, `time` or `weekday` in the same entry (exit 1, `invalid`): skip the send and change the digest in separate changes. A change to a digest's `weekday`, or to the campaign's dates, drops each of its skips of a send still ahead that is no longer a send; past skips stay. Members you leave out keep their values. Its `kind` cannot change, so it may not be given. |
 | Remove a saved schedule | `id` and `"delete": true`, nothing else. |
-| Add a schedule | `kind` (`initial`, `reminder`, `daily_digest` or `weekly_digest`) and the members its kind needs: `date` for `initial` and `reminder`, `weekday` (0 is Monday) for `weekly_digest`, and `time` (in the campaign's time zone, or in the new one when `window` changes `timezone` in the same document; the Admin portal takes times in your computer's zone instead) and `template_version` for all. A `daily_digest` may add `"comparison": true`; it is off without it. A `time` may be written in any form the page accepts, such as `09:00:00`, `9:00`, `9am` or `21:00`, and is stored as `HH:MM:SS`. |
+| Add a schedule | `kind` (`initial` or `reminder`; report emails replaced the digests, so no `daily_digest` or `weekly_digest` can be added, [#1786](https://github.com/epiphany40223/parishkit/issues/1786)) and the members its kind needs: `date`, and `time` (in the campaign's time zone, or in the new one when `window` changes `timezone` in the same document; the Admin portal takes times in your computer's zone instead) and `template_version`. A `time` may be written in any form the page accepts, such as `09:00:00`, `9:00`, `9am` or `21:00`, and is stored as `HH:MM:SS`. |
 | Add repeating reminders | `repeat` (the rule below), `time` and `template_version`, as for one reminder, and nothing else. It adds one ordinary reminder per date the rule gives, as if you listed each one. Every date must fit: unlike the page, which leaves out a date that does not fit, the command refuses the whole change. A problem with one date alone, such as a date after the campaign closes, names that date; a conflict between schedules, such as a date at the same moment as a saved reminder or not after the initial invitation, comes back as a plain `schedules` error, as for reminders listed one by one. A rule that gives no dates or more than 30, or skips a month, is exit 1 (`invalid`). The rule itself is not saved unless you add `"remember": true`, which also saves it as a reminder series holding exactly the reminders this repeat adds, so later changes can treat them as one. The reminders are the same either way, and they send as ordinary reminders. |
 | Change a remembered series | `series` (a series `id` from `schedule show`) and `scope`: `"following"` with `from` (one of its reminder ids) changes that reminder and the later ones ("this and following"); `"series"` changes the whole series from its first reminder that has not sent. Optionally a new `repeat` rule (checked as above), `time` and `template_version`. The rules for what stays, what is replaced and what is refused are in the [admin-automation spec](../specs/stewardship/admin-automation/spec.md#schedules-and-configuration) (a reminder whose time has passed without any work yet can start a whole-series edit and, if its time or email changes, may send right after confirm). |
 | Delete a remembered series | `series` and `"delete": true`, nothing else. Its reminders that have not sent are removed with it; ones that sent stay as ordinary reminders. |
@@ -977,7 +977,8 @@ pk-admin send resolve-preview --decision cancel --type receipt \
 
 `send resolve-preview` is the Resolve held messages form of a paused,
 closed campaign: `--decision release` or `cancel` takes one or more
-`--type` (`receipt`, `daily_digest`, `weekly_digest`), and `clear` takes
+`--type` (`receipt` or `admin_report`, a report email; `daily_digest` and
+`weekly_digest` for digests held from before report emails), and `clear` takes
 none. A preview prints `action`, `campaign_id`, the `reason`, `expires_at`, the
 `inventory` it bound (as `send controls` prints it), for a resume its
 `plan` (`before_start`: nothing is overdue yet; `family`: the overdue
@@ -2179,7 +2180,7 @@ open it on the page.
 ```sh
 pk-admin delivery list --state delivery_unknown
 pk-admin delivery list --recipient 1234
-pk-admin delivery list --state needs_attention --purpose daily_digest --from 2026-10-01
+pk-admin delivery list --state needs_attention --purpose admin_report --from 2026-10-01
 pk-admin delivery show MESSAGE_ID
 pk-admin delivery resolve MESSAGE_ID --action accept --expected-version 3 --note - < note.txt
 pk-admin delivery refusals
@@ -2194,7 +2195,8 @@ pk-admin delivery bounce-report MESSAGE_ID --address ADDRESS \
 `delivery list` takes Sent mail's filters: `--recipient` (a Family DUID, an
 email address, a delivery id, or any other text as part of a Family's or a
 person's name, ignoring case, as input only), `--purpose` (`initial`,
-`reminder`, `receipt`, `family_test`, `daily_digest`, `weekly_digest`,
+`reminder`, `receipt`, `family_test`, `admin_report` (a report email),
+`daily_digest`, `weekly_digest` (digests sent before report emails),
 `operational`, `security_event` or `leader_email`, or the group `family`:
 invitations and reminders), `--state` (a state, or the groups `needs_attention`,
 `needs_review`, `not_delivered` and `still_sending`, as the page defines
@@ -2826,15 +2828,19 @@ pk-admin digest list --requested REQUEST_KEY
 ```
 
 - `digest list` is the **Emailed reports** page: where to find each
-  `SNAPSHOT_ID`. It prints the current `campaign_id`; `daily`, the newest
+  `SNAPSHOT_ID`. It prints the current `campaign_id`; `reports`, the newest
+  report email sends (#1786: `send_id`, the report's `name`, `how` it was
+  sent, `scheduled`, `manual` or `recovery`, and `made_at`; a send that made
+  no email is not listed); `daily`, the newest
   ready daily reports (`snapshot_id`, `through_date`, `covered_dates`,
   `observed_at`); `weekly`, the newest weekly reports (`snapshot_id`,
   `manual`, `observed_at`; null for a reader who is not an Administrator);
-  `weekly_request_available`, whether the campaign has the weekly report
-  schedule `digest weekly-request` needs; and `shown`, how many of each
+  `weekly_request_available`, whether the campaign has the Weekly report
+  `digest weekly-request` sends; and `shown`, how many of each
   list it shows at most (60), newest first. With `--requested` and a
   `digest weekly-request` key, `requested` holds that request's `task_id`
-  and, once the report is ready, its `report_id` (null until then); a key
+  and, once its email is made, its `report_id` (the send's id, for its
+  saved copy; null until then); a key
   that is not a request of the current campaign gives null. With no
   current campaign the lists are empty. Like the page, it records no
   event.
@@ -2854,18 +2860,19 @@ pk-admin digest list --requested REQUEST_KEY
   `information` or a correction, its `captured` and `current` state
   (`current_actionable`, `superseded` or `withdrawn`) and whether it
   `changed`. It never prints what a Family wrote; open the page for that.
-- `digest weekly-request` asks for a manual weekly report now, as the
-  Send a weekly report now page does, for the current campaign. A manual
-  report may repeat items already reported, which the page asks you to
-  tick; the command asks the same at the
+- `digest weekly-request` sends the Weekly report now (Send now of the
+  report the conversion made from the Weekly digest, #1786), as the Send a
+  weekly report now page does, for the current campaign. It may repeat
+  what earlier sends included, which the page asks you to tick; the command asks the same at the
   [confirmation prompt](#confirmations), or takes `--yes` (otherwise
   nothing happens, exit 4). It
   takes `--request-key`, as [task retries](#task-retries) do, and prints
   `created`, `request_key` and `task`; follow the task with
-  `task show --watch`. Without a weekly report schedule it is exit 1
-  (`not_available`); while an earlier report is still being sent or
-  awaits review, exit 1 (`stale_version`): try again once it is resolved.
-  System logs show the page's `weekly_manual_requested` and
+  `task show --watch`. Without a Weekly report it is exit 1
+  (`not_available`); while an earlier send of it is still being prepared
+  or its email is still being delivered or awaits review, or the report
+  changed, exit 1 (`stale_version`): try again once it is resolved.
+  System logs show `report_email_manual_requested` and
   `admin_cmd_digest_weekly_request`.
 
 An unknown `SNAPSHOT_ID`, or a daily report's id given to `digest weekly`,
@@ -4365,3 +4372,8 @@ Each change is recorded in System logs as on the page
   Administrators only; the fields as one JSON object on standard input;
   `content confirm` records `admin_cmd_content_confirm`). `content preview`
   prints `edit` (null for the Delete and the plain-text preview).
+- `pk-admin/1` (#1786, delivery plan item 4): additive. `digest list`
+  gains `reports`; `delivery list --purpose` and `send resolve-preview
+  --type` take `admin_report`; `digest weekly-request` sends the Weekly
+  report now. `schedule` changes can no longer add a `daily_digest` or
+  `weekly_digest` (exit 1, `invalid`).

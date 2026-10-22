@@ -1,4 +1,8 @@
-"""Explicit Admin retries retain the same preparation or metadata-finalizer root."""
+"""Explicit Admin retries retain the same preparation or metadata-finalizer root.
+
+A report send's (#1786) preparation or its metadata finalizer; the Daily and
+Weekly digests', which report emails replaced, are all settled.
+"""
 
 from uuid import UUID
 
@@ -8,27 +12,19 @@ from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.storage import _status, retry_failed
 from parishkit.stewardship.storage import StaleRecordError
 
-from .digest_finalization import TASK_TYPE as FINALIZE
-from .digest_finalization import WEEKLY_TASK_TYPE as WEEKLY_FINALIZE
-from .digest_finalization import admit_finalization
-from .digest_ownership import TASK_TYPE as PREPARE
-from .digest_tasks import admit_daily
-from .weekly_ownership import TASK_TYPE as WEEKLY_PREPARE
-from .weekly_tasks import admit_weekly
+from .report_email_finalization import TASK_TYPE as FINALIZE
+from .report_email_finalization import admit_finalization
+from .report_email_ownership import TASK_TYPE as PREPARE
+from .report_email_tasks import admit_report
 
-TASK_TYPES = (PREPARE, FINALIZE, WEEKLY_PREPARE, WEEKLY_FINALIZE)
-_ADMISSION = {
-    PREPARE: admit_daily,
-    WEEKLY_PREPARE: admit_weekly,
-    FINALIZE: admit_finalization,
-    WEEKLY_FINALIZE: admit_finalization,
-}
+TASK_TYPES = (PREPARE, FINALIZE)
+_ADMISSION = {PREPARE: admit_report, FINALIZE: admit_finalization}
 
 
-def retry_digest(store, user_id, task_id, *, command_id):
+def retry_report(store, user_id, task_id, *, command_id):
     """Retry the selected latest failed run, rechecking authority even on replay."""
     if any(not isinstance(value, UUID) for value in (user_id, task_id, command_id)):
-        raise ValueError("Digest retries require canonical identities.")
+        raise ValueError("Report retries require canonical identities.")
     with work_transaction():
         authorize(store, user_id)
         task = TaskRun.objects.get(pk=task_id, task_type__in=TASK_TYPES)
@@ -36,12 +32,12 @@ def retry_digest(store, user_id, task_id, *, command_id):
         previous = runs.filter(retry_command_id=command_id).first()
         if previous is not None:
             if previous.parent_id != task_id:
-                raise StaleRecordError("Digest retry command selects a different run.")
+                raise StaleRecordError("Report retry command selects a different run.")
             if previous.initiated_by_id != user_id:
-                raise ValueError("Digest retry command is already bound.")
+                raise ValueError("Report retry command is already bound.")
             return _status(previous)
         if runs.order_by("-retry_sequence").first().pk != task_id:
-            raise StaleRecordError("This digest task has a newer execution.")
+            raise StaleRecordError("This report task has a newer execution.")
         return retry_failed(
             run_id=task_id,
             command_id=command_id,

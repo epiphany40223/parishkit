@@ -684,11 +684,8 @@ def test_configuration_service_restores_on_an_idle_pass(tmp_path, monkeypatch):
         "family_tests",
         "boundary",
         "schedules",
-        "digests",
-        "daily",
-        "daily_finalization",
-        "weekly",
-        "weekly_finalization",
+        "reports",
+        "report_finalization",
         "source",
         "cleanup",
         "setup_cleanup",
@@ -741,11 +738,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                 "finalization": "finalization-receipt",
                 "boundary": "boundary-receipt",
                 "schedules": "schedule-receipt",
-                "digests": "digest-receipt",
-                "daily": "daily-receipt",
-                "daily_finalization": "daily-finalization-receipt",
-                "weekly": "weekly-receipt",
-                "weekly_finalization": "weekly-finalization-receipt",
+                "reports": "report-receipt",
+                "report_finalization": "report-finalization-receipt",
                 "source": "source-receipt",
                 "cleanup": "cleanup-receipt",
                 "export_cleanup": "export-cleanup-receipt",
@@ -796,11 +790,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
     producer, matching = Mock(return_value=("source-receipt",)), Mock()
     go_live = Mock(return_value=())
     schedules = Mock(return_value=("schedule-receipt",))
-    digests = Mock(return_value=("digest-receipt",))
-    daily = Mock(return_value=("daily-receipt",))
-    daily_finalization = Mock(return_value=("daily-finalization-receipt",))
-    weekly = Mock(return_value=("weekly-receipt",))
-    weekly_finalization = Mock(return_value=("weekly-finalization-receipt",))
+    reports = Mock(return_value=("report-receipt",))
+    report_finalization = Mock(return_value=("report-finalization-receipt",))
     guard, cleanup = Mock(), Mock(return_value=("cleanup-receipt",))
     export_cleanup = Mock(return_value=("export-cleanup-receipt",))
     # The discard of ended exports' saved data (#1398) enqueues nothing.
@@ -869,24 +860,13 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         lambda _: schedules,
     )
     monkeypatch.setattr(
-        "parishkit.stewardship.campaigns.digest_schedule_planning.DigestScheduleProducer",
-        lambda _: digests,
+        "parishkit.stewardship.reports.report_email_ownership.ReportEmailProducer",
+        lambda _: reports,
     )
     monkeypatch.setattr(
-        "parishkit.stewardship.reports.digest_ownership.DailyDigestProducer",
-        lambda _: daily,
-    )
-    monkeypatch.setattr(
-        "parishkit.stewardship.reports.digest_finalization.DailyDigestFinalizeProducer",
-        lambda _: daily_finalization,
-    )
-    monkeypatch.setattr(
-        "parishkit.stewardship.reports.weekly_ownership.WeeklyDigestProducer",
-        lambda _: weekly,
-    )
-    monkeypatch.setattr(
-        "parishkit.stewardship.reports.digest_finalization.WeeklyDigestFinalizeProducer",
-        lambda _: weekly_finalization,
+        "parishkit.stewardship.reports.report_email_finalization."
+        "ReportEmailFinalizeProducer",
+        lambda _: report_finalization,
     )
     monkeypatch.setattr(
         "parishkit.stewardship.accounts.branding_cleanup.produce_cleanup", cleanup
@@ -951,11 +931,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
             "family_tests": family_recovery,
             "boundary": boundary,
             "schedules": schedules,
-            "digests": digests,
-            "daily": daily,
-            "daily_finalization": daily_finalization,
-            "weekly": weekly,
-            "weekly_finalization": weekly_finalization,
+            "reports": reports,
+            "report_finalization": report_finalization,
             "source": producer,
             "cleanup": cleanup,
             "setup_cleanup": setup_cleanup,
@@ -1018,11 +995,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
             for operation in (
                 boundary,
                 schedules,
-                digests,
-                daily,
-                daily_finalization,
-                weekly,
-                weekly_finalization,
+                reports,
+                report_finalization,
                 producer,
                 go_live,
                 cleanup,
@@ -1055,11 +1029,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         assert isinstance(settings, LoopSettings)
         boundary.assert_called_once_with(guard, settings=settings)
         schedules.assert_called_once_with(guard)
-        digests.assert_called_once_with(guard, settings=settings)
-        daily.assert_called_once_with(guard, settings=settings)
-        daily_finalization.assert_called_once_with(guard)
-        weekly.assert_called_once_with(guard, settings=settings)
-        weekly_finalization.assert_called_once_with(guard)
+        reports.assert_called_once_with(guard, settings=settings)
+        report_finalization.assert_called_once_with(guard)
         producer.assert_called_once_with(guard, settings=settings)
         go_live.assert_called_once_with(guard)
         cleanup.assert_called_once_with(guard)
@@ -1073,16 +1044,14 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         family_recovery.assert_called_once_with()
         slack_recovery.assert_called_once_with()
         maintenance.assert_called_once_with(guard)
-        # Twenty-eight independent producers, each bracketed by two checks.
-        assert guard.check.call_count == 56
+        # Twenty-five independent producers, each bracketed by two checks.
+        assert guard.check.call_count == 50
     else:
         operational.assert_not_called()
         operational_fanout.assert_not_called()
         operational_slack.assert_not_called()
-        daily.assert_not_called()
-        daily_finalization.assert_not_called()
-        weekly.assert_not_called()
-        weekly_finalization.assert_not_called()
+        reports.assert_not_called()
+        report_finalization.assert_not_called()
         boundary.assert_not_called()
         mail_recovery.assert_not_called()
         cleanup.assert_not_called()

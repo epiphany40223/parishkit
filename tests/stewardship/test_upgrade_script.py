@@ -1984,7 +1984,10 @@ def test_each_step_4_one_off_container_has_its_own_name(tmp_path):
     """Named after the project, mode, run and step; no two alike."""
     calls, _, _ = run_host(tmp_path, "upgrade", noop="f", schema_change="1", env=USERS)
     names = [one_off_name(call) for call in calls if " run --name " in call]
-    assert len(names) == 6 == len(set(names))
+    # The sixth and seventh: the grants, then the report email conversion
+    # (#1786).
+    assert len(names) == 7 == len(set(names))
+    assert names[-1].endswith("-reports-upgrade")
     assert all(
         re.fullmatch(r"stewardship-upgrade-\d{8}T\d{6}Z-\d+-[a-z-]+", n) for n in names
     )

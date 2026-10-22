@@ -306,6 +306,8 @@ def test_postclose_exact_versions_do_not_suppress_later_corrections(tmp_path):
 
     from .campaign_builders import advance, change
 
+    # A new send time is a new revision of the report's schedule (#1786).
+    saved = ScheduleDefinition.objects.get(pk=skipped.definition_id).current_revision
     assert (
         change(
             store,
@@ -316,7 +318,9 @@ def test_postclose_exact_versions_do_not_suppress_later_corrections(tmp_path):
                     "operation": "update",
                     "section": "schedules",
                     "id": str(skipped.definition_id),
-                    "values": {"time": "10:00:00"},
+                    "values": {
+                        "schedule": saved.values["schedule"] | {"time": "10:00:00"}
+                    },
                 }
             ],
         ).state

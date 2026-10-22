@@ -35,6 +35,11 @@ class CleanupCategory(StrEnum):
     # Testing Family engagement rows (#477): behavioural evidence about real
     # Families collected during rehearsal, deleted with the other Testing detail.
     ENGAGEMENT = "engagement"
+    # A report email's rehearsal sends (#1786): their snapshots, recipients
+    # and fact pins. The source pins are in PIN; preparations are history.
+    REPORT_RECIPIENT = "report_email_recipients"
+    REPORT_SNAPSHOT = "report_email_snapshots"
+    REPORT_FACT_PIN = "report_email_fact_pins"
 
 
 @dataclass(frozen=True, repr=False)

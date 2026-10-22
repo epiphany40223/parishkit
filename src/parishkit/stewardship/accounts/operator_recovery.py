@@ -38,6 +38,7 @@ from .runtime_models import SystemConfiguration
 RECOVERY_SCHEMAS = {
     users.SCHEMA: users.RECOVERY_SCHEMA,
     users.SERIES_SCHEMA: users.RECOVERY_SCHEMA,
+    users.REPORTS_SCHEMA: users.RECOVERY_SCHEMA,
     USERS_BOOTSTRAP_SCHEMA: users.RECOVERY_SCHEMA,
     "source-cadence-v8": "operator-recovery-cadence-v8",
     "bootstrap-policy-v1": "operator-recovery-bootstrap-v1",

@@ -232,10 +232,8 @@ def retry_failed(*, run_id, command_id, actor_id, correlation_id, admit):
         "report_fact_verification",
         "family_mail_prepare",
         "family_mail_test",
-        "daily_digest_prepare",
-        "daily_digest_finalize",
-        "weekly_digest_finalize",
-        "weekly_digest_prepare",
+        "report_email_prepare",
+        "report_email_finalize",
     ):
         require_work_order()
     with _locked(correlation_id, root_id=original.root_id):

@@ -45,6 +45,7 @@ from parishkit.stewardship.web.refusals import (
     unexpected_fields,
 )
 
+from .report_rows import planned
 from .schedule_table import DIGESTS
 
 # ``SchedulePlan.page`` examines at most this many dates a call; a digest's
@@ -68,9 +69,14 @@ def digest_sends(values, campaign):
     skipped send is still listed (the Campaign calendar shows it as
     Skipped). It ends: a weekly digest stops at the campaign's close and a
     daily one the day after it.
+
+    A converted Daily or Weekly report (#1786) reaches here as the digest
+    view the editors show; its sends are those of the report the view
+    stands for (``report_rows.planned``), so the converted Weekly's first
+    send after the campaign's close is listed too.
     """
     unskipped = {name: value for name, value in values.items() if name != "skip_dates"}
-    plan = SchedulePlan.from_values(unskipped, campaign)
+    plan = SchedulePlan.from_values(planned(unskipped), campaign)
     slots, cursor = [], None
     while True:
         page = plan.page(

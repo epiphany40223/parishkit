@@ -135,7 +135,7 @@ def test_when_sorts_chronologically_or_the_reverse():
     ]
     assert labels == [
         "Initial invitation",
-        "Weekly Admin digest",
+        "Weekly report",
         "Reminder 1",
         "Reminder 2",
     ]
@@ -741,7 +741,7 @@ def test_delete_this_removes_one_schedule_and_names_a_digest():
     entries, changes, notes = _delete_entries(rows[3], None, rows, set(), "this")
     assert entries == [{"id": rows[3]["id"], "delete": True}]
     assert notes == [
-        "This digest repeats, so deleting it stops every send of it still to come."
+        "This report repeats, so deleting it stops every send of it still to come."
     ]
 
 

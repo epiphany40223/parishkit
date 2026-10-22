@@ -143,7 +143,10 @@ def test_overlap_confirmation_follows_restored_dates(page, component_origin):
 
 
 def test_schedule_rows_follow_a_restored_mail_type(page, component_origin):
-    """A restored mail type shows that type's fields and only its emails."""
+    """A restored mail type shows that type's fields and only its emails.
+
+    A new row offers Family mail only (#1786).
+    """
     page.goto(component_origin + "/schedule-editor-mail")
     row = '[name="schedules-1-kind"]'
     weekday = page.locator(
@@ -151,16 +154,16 @@ def test_schedule_rows_follow_a_restored_mail_type(page, component_origin):
     )
     date = page.locator('[data-schedule-field="date"]:has([name="schedules-1-date"])')
     assert not weekday.is_visible() and not date.is_visible()
-    restore(page, row, "select => { select.value = 'weekly_digest'; }")
-    visible(weekday)
-    assert not date.is_visible()
+    restore(page, row, "select => { select.value = 'reminder'; }")
+    visible(date)
+    assert not weekday.is_visible()
     offered = page.locator('[name="schedules-1-template_version"] option').evaluate_all(
         "options => options.map(option => option.dataset.kind || '')"
     )
-    assert offered == ["", "weekly_digest"]
+    assert offered == ["", "reminder"]
     # Back to the type the server drew: the row is blank again.
     restore(page, row, "select => { select.value = ''; }")
-    assert not weekday.is_visible()
+    assert not date.is_visible()
 
 
 def test_restored_campaign_modules_update_a_save_gate(page, component_origin):

@@ -539,10 +539,10 @@ def test_every_operations_command_has_a_golden_document():
     "task_type,kind",
     [
         ("family_mail_prepare", task_retries.FAMILY_PREPARATION),
-        ("daily_digest_prepare", task_retries.DAILY_DIGEST),
-        ("daily_digest_finalize", task_retries.DAILY_DIGEST),
-        ("weekly_digest_prepare", task_retries.WEEKLY_DIGEST),
-        ("weekly_digest_finalize", task_retries.WEEKLY_DIGEST),
+        ("report_email_prepare", task_retries.REPORT_EMAIL),
+        ("report_email_finalize", task_retries.REPORT_EMAIL),
+        # The digests' own tasks are gone (#1786).
+        ("daily_digest_prepare", None),
         ("report_export_cleanup", task_retries.EXPORT_CLEANUP),
         # The page offers no retry for any other work.
         ("outbox_delivery", None),
@@ -550,7 +550,7 @@ def test_every_operations_command_has_a_golden_document():
     ],
 )
 def test_a_task_type_selects_the_pages_retry(task_type, kind):
-    """The four retries a Background work task page offers, by task type."""
+    """The three retries a Background work task page offers, by task type."""
     assert task_retries.retry_kind(task_type) == kind
 
 

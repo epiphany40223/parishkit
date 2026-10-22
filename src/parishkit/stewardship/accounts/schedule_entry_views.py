@@ -309,7 +309,7 @@ SERIES_DELETED = _(
     "stay as ordinary reminders."
 )
 DIGEST_DELETED = _(
-    "This digest repeats, so deleting it stops every send of it still to come."
+    "This report repeats, so deleting it stops every send of it still to come."
 )
 # Edit's refusal of a save that changes nothing. The page's change gate
 # keeps Review unavailable until something changed, so only a request that
@@ -1569,6 +1569,9 @@ def _entry(request, campaign_id, schedule_id=None):
             "email_test": schedule_email.test_context(test_mail, campaign.pk),
             "new": new,
             "schedule": schedule,
+            # A converted Daily or Weekly report (#1786) sends no email
+            # template, so Edit offers no email of its own.
+            "report": schedule is not None and "report" in schedule,
             # Edit of a series' reminder (#469): its rule and the scope.
             "series": part_of,
             "base_digest": state[0].active_configuration.digest,
@@ -1592,13 +1595,14 @@ def _entry(request, campaign_id, schedule_id=None):
             "editor_mode": editor_mode(posted),
         } | entry_times(values, saved, schedule, now, bound=posted is not None)
         admin_navigation.place(request, flow="change", step="edit")
+        report = context["report"]
         if posted is None:
             return _entry_page(request, context)
         valid = (
             entry.is_valid()
             & (repeat is None or repeat.is_valid())
             & (scope is None or scope.is_valid())
-            & (not email.is_bound or email.is_valid())
+            & (not email.is_bound or report or email.is_valid())
         )
         if valid:
             _check_repeat(entry, repeat)
@@ -1659,7 +1663,7 @@ def _entry(request, campaign_id, schedule_id=None):
                 # Every entry has the one mail type (a repeat's are reminders).
                 kind=schedule["values"]["kind"] if schedule else entries[0]["kind"],
             )
-            if email.is_bound
+            if email.is_bound and not report
             else None
         )
         series, series_changes, notes = [], [], None

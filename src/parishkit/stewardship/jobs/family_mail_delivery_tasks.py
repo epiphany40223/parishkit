@@ -20,6 +20,7 @@ from parishkit.stewardship.accounts.configuration_models import AppliedIntegrati
 from parishkit.stewardship.accounts.integration_selection import switching
 from parishkit.stewardship.accounts.key_files import file_fingerprint, read_private
 from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.digest_delivery import DigestDeliveryMail
 from parishkit.stewardship.family_delivery import (
     FamilyDeliveryResult,
     FamilyDeliveryStatus,
@@ -37,6 +38,7 @@ from parishkit.stewardship.provider_checks import ProviderCheckDrainFailure
 from parishkit.stewardship.runtime_background import mail_authority
 from parishkit.stewardship.sender_name import configured_sender_name
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.weekly_delivery import WeeklyDeliveryMail
 
 from .connection_reuse import drop_unusable, hint_kept, release
 from .dispatch import Handler, RecoveryPlan
@@ -881,10 +883,7 @@ def _execute(
                 raise FamilyDeliveryHeld("Workspace key change is switching.")
             raise PermissionError("Installed Workspace credential differs.")
         execution.check()
-        if session is not None and message.purpose not in {
-            "daily_digest",
-            "weekly_digest",
-        }:
+        if session is not None and message.purpose != "admin_report":
             # Settle retired helpers before this message commits
             # "submitting": failing to reap one is fatal, and must not leave
             # an unsent message looking possibly sent.
@@ -915,10 +914,7 @@ def _execute(
             len(mail.recipients),
             health=ProviderHealth.UNOBSERVED,
         )
-        batched = session is not None and message.purpose not in {
-            "daily_digest",
-            "weekly_digest",
-        }
+        batched = session is not None and message.purpose != "admin_report"
         stats.update(
             {"transport": "batched"}
             if batched
@@ -937,9 +933,11 @@ def _execute(
             }
             calling = time.monotonic()
             try:
-                if message.purpose == "weekly_digest":
+                # A report email (#1786) travels as the digest it replaced
+                # did: with charts as the Daily's, without as the Weekly's.
+                if isinstance(mail, WeeklyDeliveryMail):
                     result = submit_weekly(candidate, settings, mail, **options)
-                elif message.purpose == "daily_digest":
+                elif isinstance(mail, DigestDeliveryMail):
                     result = submit_digest(candidate, settings, mail, **options)
                 else:
                     result = submit_family(

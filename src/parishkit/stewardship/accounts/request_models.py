@@ -56,6 +56,7 @@ class ConfigurationChangeRequest(ImmutableRecord):
                         "integration-credential-users-v10",
                         "operator-recovery-users-v10",
                         "initial-setup-users-v10",
+                        "operator-upgrade-reports-v12",
                     ]
                 ),
                 name="config_request_schema",
@@ -83,6 +84,7 @@ class ConfigurationChangeRequest(ImmutableRecord):
                             "operator-recovery-cadence-v8",
                             "operator-recovery-users-v10",
                             "operator-upgrade-users-v10",
+                            "operator-upgrade-reports-v12",
                         ]
                     )
                     | models.Q(
@@ -112,7 +114,11 @@ class ConfigurationChangeRequest(ImmutableRecord):
                         operator_reason__isnull=False,
                         confirmed_deployment_id__isnull=False,
                         recovery_target__isnull=True,
-                        request_schema="operator-upgrade-users-v10",
+                        request_schema__in=[
+                            "operator-upgrade-users-v10",
+                            # The offline report email conversion (#1786).
+                            "operator-upgrade-reports-v12",
+                        ],
                     )
                 ),
                 name="config_request_actor",

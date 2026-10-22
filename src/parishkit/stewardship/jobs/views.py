@@ -241,6 +241,8 @@ TASK_NAMES = {
     "daily_digest_finalize": _("Finishing the daily Admin report"),
     "weekly_digest_prepare": _("Preparing the weekly Admin report"),
     "weekly_digest_finalize": _("Finishing the weekly Admin report"),
+    "report_email_prepare": _("Preparing a report email"),
+    "report_email_finalize": _("Finishing a report email"),
     "family_mail_prepare": _("Preparing Family emails"),
     "family_mail_test": _("Test email for chosen Families"),
     "family_address_retry": _("Sending an email again to an address refused for now"),
@@ -258,7 +260,6 @@ TASK_NAMES = {
     "report_fact_verification": _("Checking report figures"),
     "security_prepare": _("Preparing a security alert email"),
     "leader_email_prepare": _("Preparing Ministry leader emails"),
-    "report_email_prepare": _("Preparing a report email"),
 }
 
 
@@ -455,20 +456,13 @@ def task_page(request, task_id):
             and work["task"]["state"] == "failed"
             and work["latest_run_id"] == work["task"]["id"]
             else None,
+            # A failed report email send (#1786) or its finalizer.
             "digest_retry_key": str(uuid4())
-            if work["task"]["type"]
-            in {
-                "daily_digest_prepare",
-                "daily_digest_finalize",
-                "weekly_digest_prepare",
-                "weekly_digest_finalize",
-            }
+            if work["task"]["type"] in {"report_email_prepare", "report_email_finalize"}
             and work["task"]["state"] == "failed"
             and work["latest_run_id"] == work["task"]["id"]
             else None,
-            "digest_retry_route": "admin:retry_weekly_digest"
-            if work["task"]["type"].startswith("weekly_digest_")
-            else "admin:retry_daily_digest",
+            "digest_retry_route": "admin:retry_report_email",
             "history": history,
             # System logs' rows no longer show identifiers (#1065); the
             # task's own page does, including the correlation its log

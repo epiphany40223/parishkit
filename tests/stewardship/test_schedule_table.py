@@ -73,8 +73,8 @@ def test_rows_follow_sending_order_and_number_reminders():
         "Initial invitation",
         "Reminder 1",
         "Reminder 2",
-        "Daily Admin digest",
-        "Weekly Admin digest",
+        "Daily report",
+        "Weekly report",
     ]
     assert [row.status for row in rows] == ["upcoming"] * 3 + ["repeats"] * 2
     assert rows[0].due < rows[1].due < rows[2].due
@@ -196,8 +196,8 @@ def test_when_sorts_digests_at_their_next_send_both_ways():
     rows = schedule_rows(formset(saved()).previous, VALUES, {}, now)
     order = [
         "Initial invitation",
-        "Weekly Admin digest",
-        "Daily Admin digest",
+        "Weekly report",
+        "Daily report",
         "Reminder 1",
         "Reminder 2",
     ]
@@ -213,6 +213,6 @@ def test_when_lists_a_digest_with_no_more_sends_last_both_ways():
     for sort in ("when", "-when"):
         table = whole_table(rows, sorting=SORTING, sort=sort)
         assert [row.label for row in table.rows][-2:] == [
-            "Daily Admin digest",
-            "Weekly Admin digest",
+            "Daily report",
+            "Weekly report",
         ]

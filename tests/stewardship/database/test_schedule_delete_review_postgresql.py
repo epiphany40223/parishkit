@@ -23,6 +23,7 @@ from parishkit.stewardship.campaigns.models import ScheduleDefinition
 
 from .auth_builders import signed_in
 from .campaign_builders import advance, campaign_clock, claimed_task
+from .report_builders import add_digest
 from .test_campaign_series_postgresql import (
     FIRST,
     LAST,
@@ -31,7 +32,6 @@ from .test_campaign_series_postgresql import (
     series_deployment,
 )
 from .test_campaign_views_postgresql import apply, post
-from .test_digest_schedule_planning_postgresql import add_digest
 from .test_parish_views_postgresql import token
 from .test_schedule_entry_postgresql import DELETE, LIST, definition, setup
 from .test_schedule_views_postgresql import pending
@@ -188,7 +188,7 @@ def test_a_digest_delete_stops_the_whole_digest(auth_service, google):
     digest = add_digest(store, campaign)
     browser, _ = signed_in()
     page = unescape(browser.get(edit_path(digest)).content.decode())
-    assert "This digest repeats, so deleting it stops every send" in page
+    assert "This report repeats, so deleting it stops every send" in page
     review = post(browser, DELETE, deletion(store, digest))
     text = unescape(review.content.decode())
     assert "deleting it stops every send of it still to come" in text

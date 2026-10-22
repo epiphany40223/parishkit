@@ -8,6 +8,8 @@ Deterministic child IDs keep a form retry stable without reusing history IDs.
 from copy import deepcopy
 from uuid import UUID, uuid5
 
+from parishkit.stewardship.campaigns.configuration import DIGEST_KINDS
+
 from .campaign_forms import initial_fields
 from .content_schema import RETIRED_ALERT
 from .receipt_note import fold, legacy_note
@@ -30,8 +32,10 @@ def clone_structures(document, source, target):
         for row in sections.get("content", [])
         if row["values"]["campaign_id"] == str(source["id"])
         # A clone's records are newly authored, and a retired, never-sent
-        # alert template (#913) cannot be, so it is left behind.
+        # alert template (#913) cannot be, so it is left behind, as are the
+        # Daily and Weekly digest templates report emails replaced (#1786).
         and (row["values"]["kind"], row["values"]["slot"]) != RETIRED_ALERT
+        and row["values"]["slot"] not in DIGEST_KINDS
     ]
     content = _fold_note(content, target)
     previous = {
@@ -65,6 +69,10 @@ def clone_structures(document, source, target):
         }
         for row in sections.get("schedules", [])
         if row["values"]["campaign_id"] == str(source["id"])
+        # Family mail only: no change adds a digest any more, and report
+        # emails (#1786) are added to a new campaign from their own page's
+        # starting points (report-emails spec, delivery plan items 6 and 8).
+        and row["values"]["kind"] in {"initial", "reminder"}
     ]
     return previous, content, schedules
 

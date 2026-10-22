@@ -259,7 +259,7 @@ def test_the_prompt_says_what_each_confirmation_does(monkeypatch):
         "Resume live Family email for the current campaign.",
         "Reason: Wrong reminder text",
         "Overdue Family emails to send: 4. Duplicate overdue sends to skip: 1. "
-        "Overdue sends that no longer apply: 2. Admin digest reports to send: 1.",
+        "Overdue sends that no longer apply: 2. Report emails to send: 1.",
         RESUME_CAUTION,
     )
     early = binding("resume", {"plan": "before_start", "health": HEALTH})
@@ -383,7 +383,9 @@ def test_the_preview_catalog_entries(name):
     )
     if name == "send resolve-preview":
         assert options["--decision"]["choices"] == ["release", "cancel", "clear"]
+        # Report emails (#1786); the digests' held messages stay resolvable.
         assert options["--type"]["choices"] == [
+            "admin_report",
             "daily_digest",
             "receipt",
             "weekly_digest",

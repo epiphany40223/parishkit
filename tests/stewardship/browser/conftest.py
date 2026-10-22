@@ -170,6 +170,7 @@ from .review_work_components import components as review_work_components
 from .review_worklist_components import components as review_worklist_components
 from .schedule_list_components import POSTS as SCHEDULE_LIST_POSTS
 from .schedule_list_components import components as schedule_list_components
+from .schedule_list_components import converted as converted_report
 from .security_components import POSTS as SECURITY_POSTS
 from .security_components import components as security_components
 from .send_history_components import components as send_history_components
@@ -456,8 +457,10 @@ def schedule_page(
 def table_schedules(owner, emails):
     """A sent invitation, two upcoming reminders and a weekly digest.
 
-    They are listed out of sending order, and each sends a real saved email
-    of its type, so every editor's email list holds its saved choice.
+    They are listed out of sending order, and each Family mail sends a real
+    saved email of its type, so every editor's email list holds its saved
+    choice. The weekly digest is the converted Weekly report (Mondays,
+    9:00 AM), drawn as its digest row (#1786).
     """
     by_kind = {row["values"]["slot"]: row for row in emails}
 
@@ -473,7 +476,7 @@ def table_schedules(owner, emails):
         )
 
     return [
-        saved("weekly_digest", date=None, weekday=0),
+        converted_report(owner, "weekly_digest", time="09:00:00", weekday=0),
         saved("reminder", date="2054-10-20"),
         saved("initial"),
         saved("reminder", date="2054-10-10"),

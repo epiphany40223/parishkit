@@ -1,4 +1,7 @@
-"""An explicit configuration-bound confirmation for a new manual weekly report."""
+"""An explicit configuration-bound confirmation for a new manual weekly report.
+
+It sends the converted Weekly report now (#1786, ``weekly_manual``).
+"""
 
 from urllib.parse import urlencode
 from uuid import uuid4
@@ -15,7 +18,6 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.limiting import LimiterUnavailable
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
 from parishkit.stewardship.jobs.delivery_views import (
     _command_scope,
     _database_error,
@@ -46,37 +48,50 @@ class ManualReportForm(AdminForm):
 
 
 def _has_weekly_schedule(campaign_id):
-    """The manual report is a weekly digest; SQL refuses one without a schedule.
+    """Whether the campaign has the Weekly report Send now would send (#1786).
 
     Checking first lets the page explain the missing prerequisite instead of
     showing the generic delivery refusal the database guard would produce.
     """
-    return ScheduleDefinition.objects.filter(
-        campaign_id=campaign_id,
-        kind="weekly_digest",
-        current_revision_id__isnull=False,
-    ).exists()
+    from .weekly_manual import weekly_report
+
+    return weekly_report(campaign_id) is not None
 
 
-# The guard's "resolved prior work" term (weekly_manual.sql), read on GET so
-# a digest still being prepared or delivered shows the button unavailable
-# with why, instead of a refusal after submit (#563). The epoch is read
-# exactly as the guard reads it: the campaign's one credentials row (unique
-# per campaign), in Testing mode only. The guard still decides every
+# A send of the report still being prepared, read on GET so the button shows
+# unavailable with why, instead of a refusal after submit (#563): the Send
+# now guard's own "no other send of the report is open" term
+# (stewardship_report_email_manual_guard_v1), which still decides every
 # submission.
+# An earlier send still being prepared, or whose email is still being
+# delivered or uncertain: the Send now guard's refusals (0161), found on GET.
 _UNRESOLVED = (
-    "SELECT stewardship_weekly_digest_unresolved_v1(d.id, %(mode)s, "
-    "(SELECT CASE WHEN %(mode)s='testing' THEN k.rehearsal_epoch_id END "
-    "FROM stewardship_campaign_credentials k WHERE k.campaign_id=d.campaign_id)) "
-    "FROM stewardship_schedule_definition d WHERE d.campaign_id=%(campaign)s "
-    "AND d.kind='weekly_digest' AND d.current_revision_id IS NOT NULL"
+    "SELECT EXISTS(SELECT 1 FROM stewardship_report_email_preparation p "
+    "JOIN stewardship_task_run t ON t.root_id=p.task_id "
+    "WHERE p.definition_id=%(definition)s AND p.mode=%(mode)s "
+    "AND p.phase NOT IN ('complete','cancelled') "
+    "AND t.state IN ('queued','running','retry_wait','abandoned')) "
+    "OR EXISTS(SELECT 1 FROM stewardship_report_email_preparation p "
+    "JOIN stewardship_report_email_snapshot s ON s.preparation_id=p.id "
+    "JOIN stewardship_report_email_recipient r ON r.snapshot_id=s.id "
+    "JOIN stewardship_outbox_message m ON m.id=r.outbox_id "
+    "WHERE p.definition_id=%(definition)s AND p.mode=%(mode)s "
+    "AND m.state NOT IN ('delivered','permanent_failure','cancelled'))"
 )
 
 
 def _digest_unresolved(campaign_id, mode):
-    """Whether an earlier weekly digest is still being prepared or delivered."""
+    """Whether an earlier send of the Weekly report is still in progress.
+
+    In progress: still being prepared, or its email still being delivered.
+    """
+    from .weekly_manual import weekly_report
+
+    definition = weekly_report(campaign_id)
+    if definition is None:
+        return False
     with connection.cursor() as cursor:
-        cursor.execute(_UNRESOLVED, {"mode": mode, "campaign": campaign_id})
+        cursor.execute(_UNRESOLVED, {"mode": mode, "definition": definition.pk})
         row = cursor.fetchone()
     return bool(row and row[0])
 

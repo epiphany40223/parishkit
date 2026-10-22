@@ -14,6 +14,7 @@ from uuid import UUID
 
 from parishkit.config import ConfigError
 
+from . import reports_schema as reports
 from . import series_schema as series
 from . import source_cadence_schema as cadence
 from . import users_schema as users
@@ -540,13 +541,30 @@ def credential_request_schema(document):
 def _users_schema(base, patch=()):
     """The users-form schema of a candidate built from ``base`` and ``patch``.
 
-    ``campaign-series-v11`` (#469) when the base has the remembered reminder
-    series section or the patch edits it, otherwise ``users-v10``. Only the
+    ``campaign-series-v12`` (#1786) when the base holds a report email or the
+    patch adds or changes one; else ``campaign-series-v11`` (#469) when the
+    base has the remembered reminder series section or the patch edits it,
+    otherwise ``users-v10``. Only the
     base and patch decide, so a retry rebuilds the same candidate, and every
     request stored before series existed rebuilds exactly as it did.
     """
     if not isinstance(base, ConfigurationVersion):
         raise TypeError("An explicit configuration version is required.")
+    # A base holding a report email, or a patch adding or changing one, is
+    # ``campaign-series-v12`` (#1786), the schema that admits report records
+    # (and no digest record). Removing the last report keeps the stricter
+    # validator; the stored schema then follows the content (schema_for).
+    if reports.uses_reports(base.document()) or (
+        type(patch) is list
+        and any(
+            type(item) is dict
+            and item.get("section") == "schedules"
+            and type(item.get("values")) is dict
+            and item["values"].get("kind") == "report"
+            for item in patch
+        )
+    ):
+        return reports.SCHEMA
     if series.SECTION in base.document()["sections"] or (
         type(patch) is list
         and any(
@@ -717,6 +735,57 @@ def _build_users_upgrade_candidate(base, patch, *, candidate_id):
     return result
 
 
+def _build_reports_upgrade_candidate(base, patch, *, candidate_id):
+    """Admit exactly the one offline conversion of the digests (#1786).
+
+    The patch must be the base's own conversion (``reports_conversion``):
+    every Daily and Weekly digest record, and nothing else, gets its report
+    values, which replace the digest values whole (an ordinary update
+    merges). Every other record is carried unchanged, so the candidate is
+    the base in ``campaign-series-v12``. The base must already be in the
+    users form; ``upgrade-users`` converts sign-in rules first.
+    """
+    from .reports_conversion import upgrade_patch
+
+    if not isinstance(base, ConfigurationVersion) or not isinstance(candidate_id, UUID):
+        raise TypeError("Explicit configuration and candidate identities are required.")
+    document = base.document()
+    if (
+        candidate_id == base.version_id
+        or not users.uses_users(document)
+        or type(patch) is not list
+        or not 1 <= len(patch) <= UPGRADE_LIMIT
+        or patch != upgrade_patch(document)
+    ):
+        _invalid()
+    with trusted_content():
+        if (
+            parse_version(
+                document, validate_sections=validator_for(schema_for(document))
+            )
+            != base
+        ):
+            _invalid()
+    carried = records_of(document)
+    replaced = {item["id"]: item["values"] for item in patch}
+    for row in document["sections"]["schedules"]:
+        if row["id"] in replaced:
+            row["values"] = replaced[row["id"]]
+    document["version_id"] = str(candidate_id)
+    document["predecessor_digest"] = base.digest
+    with trusted_content(carried):
+        candidate = parse_version(
+            document, validate_sections=validator_for(reports.SCHEMA)
+        )
+    canonical_patch = json.dumps(
+        patch, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
+    fingerprint = hashlib.sha256(
+        base.digest.encode("ascii") + canonical_patch
+    ).hexdigest()
+    return PatchedConfiguration(candidate, canonical_patch, fingerprint)
+
+
 def candidate_operation(patch):
     """The one operation identity a confirmation patch names, or refuse.
 
@@ -757,6 +826,7 @@ BUILDERS = MappingProxyType(
         "operator-recovery-bootstrap-v1": _build_recovery_bootstrap_candidate,
         CHAIR_REQUEST_SCHEMA: _build_chair_seed_candidate,
         users.UPGRADE_REQUEST_SCHEMA: _build_users_upgrade_candidate,
+        reports.UPGRADE_REQUEST_SCHEMA: _build_reports_upgrade_candidate,
         users.REQUEST_SCHEMA: _build_users_candidate,
         users.CREDENTIAL_SCHEMA: _build_users_credential_candidate,
         users.RECOVERY_SCHEMA: _build_users_recovery_candidate,

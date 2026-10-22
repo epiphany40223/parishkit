@@ -8,6 +8,7 @@ only way to make one; its retry, cancel, handoff and file are the shared
 export page's.
 """
 
+import json
 from uuid import UUID, uuid4
 
 import pytest
@@ -289,20 +290,35 @@ def test_the_commands_need_a_live_administrator_session(
     )
     email = PortalUser.objects.get(pk=administrator.principal_id).email
 
-    def set_roles(roles):
-        """Change the signed-in user's roles as a policy change would."""
+    def set_roles(role):
+        """Change the signed-in user's role as a policy change would.
+
+        Report emails put the fixture's configuration in the users form
+        (#1786), whose rules carry one role and its cumulative set; the
+        earlier versions' address rules carry the set alone.
+        """
+        cumulative = {
+            "staff": ["ministry_leader", "staff"],
+            "administrator": ["administrator", "ministry_leader", "staff"],
+        }[role]
         with unguarded(), connection.cursor() as cursor:
             cursor.execute(
-                "UPDATE stewardship_address_rule SET roles=%s::jsonb WHERE email=%s",
-                [roles, email],
+                "UPDATE stewardship_address_rule SET roles=%s::jsonb "
+                "WHERE email=%s AND role IS NULL",
+                [f'["{role}"]', email],
+            )
+            cursor.execute(
+                "UPDATE stewardship_address_rule SET role=%s, roles=%s::jsonb "
+                "WHERE email=%s AND role IS NOT NULL",
+                [role, json.dumps(cumulative), email],
             )
 
-    set_roles('["staff"]')
+    set_roles("staff")
     code, document = run(*commands[0])
     assert code == 5 and document["error"]["code"] == "session_ended", document
     administrator.refresh_from_db()
     assert administrator.end_reason == "role_lost"
-    set_roles('["administrator"]')
+    set_roles("administrator")
     second = cli()
     session = AutomationSession.objects.get(
         secret_digest=automation.secret_digest(second.secret)

@@ -92,9 +92,8 @@ from .outbox_models import OutboxMessage
 from .recipient_models import RecipientRefusal
 from .storage import TaskRetryConflict
 from .task_retries import (
-    DAILY_DIGEST,
     FAMILY_PREPARATION,
-    WEEKLY_DIGEST,
+    REPORT_EMAIL,
     background_principal,
     command_scope,
     retry_preparation_task,
@@ -177,7 +176,7 @@ def _retry_inputs(purpose):
     origin = getattr(settings, "STEWARDSHIP_PUBLIC_ORIGIN", None)
     if origin is None:
         raise ConfigError("Mail preparation origin is unavailable.")
-    if purpose in {"receipt", "daily_digest", "weekly_digest"}:
+    if purpose in {"receipt", "daily_digest", "weekly_digest", "admin_report"}:
         return dict(general=None, public=None, public_origin=origin)
     keys = family_runtime()
     return dict(general=keys.general, public=keys.public, public_origin=origin)
@@ -969,9 +968,9 @@ def resolution_command(request, message_id):
 
 
 @require_POST
-def preparation_retry(request, task_id, *, daily=False, weekly=False):
+def preparation_retry(request, task_id, *, report=False):
     """Retry one explicitly selected local preparation after its cause is fixed."""
-    kind = WEEKLY_DIGEST if weekly else DAILY_DIGEST if daily else FAMILY_PREPARATION
+    kind = REPORT_EMAIL if report else FAMILY_PREPARATION
     try:
         service = runtime()
         caller = AdminCaller.from_request(request)
