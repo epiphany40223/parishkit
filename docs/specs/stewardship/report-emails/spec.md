@@ -1400,10 +1400,29 @@ removed with no redirect.
 
 - **Campaign calendar.** The
   [Campaign calendar](../admin-portal/spec.md#campaign-calendar) still shows
-  every report send, expanded by the same evaluator, named by the report's
-  name, with skipped and paused sends marked in words. A report send still
-  to come links to its report's Edit page with the send named; report sends
-  are not movable. Add on a day adds only Family mail.
+  every report send, named by the report's name, with the shared
+  [past and future sends](../ui-conventions/spec.md#schedules) rule
+  (Administrator, R43): a time that has passed shows only the sends the
+  report actually made, and the rule's sends are shown only from now on.
+  The sends made are the ones [Past sends](#past-sends) lists (scheduled,
+  recovery and Send now sends, and a converted report's digest sends), each
+  at the time it was made with Past sends' result words ("Sent", "Failed",
+  "Uncertain: check Sent mail", "Not sent: nothing to report", "Not sent:
+  no current recipients", "Sending"); they are listed muted and not linked.
+  The sends to come are expanded by the same evaluator, with skipped and
+  paused sends marked in words. A report created after its From date makes
+  no sends on the days before it was created, but the scheduler owes it
+  one [catch-up](#catch-up-recovery-and-holds): its past slots that are not
+  skipped or paused and that no send, fulfillment, restore hold or
+  post-close resolution covers are coalesced into one send as soon as the
+  scheduler runs. Until that send starts the calendar shows it as one send
+  at the current time, "Not sent yet", linked to the report's Edit page;
+  the check is the scheduler's own (`report_email_ownership.covered_slots`)
+  over every past slot. A send the scheduler finds otherwise (one already
+  planned but not yet prepared, or sends left by an edit) shows once the
+  scheduler takes it, at its next pass. A report send still to come links to its
+  report's Edit page with the send named; report sends are not movable. Add
+  on a day adds only Family mail.
 - **Dates and mail schedules** lists Family mail only and links to Report
   emails in its About panel and under its table ("Report emails to
   Administrators, Staff and others are on Report emails.").

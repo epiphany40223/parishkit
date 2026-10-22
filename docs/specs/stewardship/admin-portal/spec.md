@@ -3581,8 +3581,12 @@ each send links to its Edit scheduled email page, which has
 [Delete](#delete-a-scheduled-email). It reads
 the current schedules: the
 Initial invitation, each reminder, and every send of each
-[report email](../report-emails/spec.md#campaign-calendar-and-other-pages),
-expanded the way the scheduler evaluates them.
+[report email](../report-emails/spec.md#campaign-calendar-and-other-pages):
+the sends a report made, at the times it made them, and its sends still to
+come, expanded the way the scheduler evaluates them, following the
+[past and future sends](../ui-conventions/spec.md#schedules) rule. A time
+that has passed never shows a send computed from a schedule's rule
+(Administrator, R43).
 
 - **By month** shows one month at a time, Sunday first (#1656), with
   **Previous month** and **Next month** buttons above it and the month's name
@@ -3611,11 +3615,15 @@ expanded the way the scheduler evaluates them.
 - **Every email by date** is the same sends as a table, the grids' text
   equivalent: when, the schedule ("Reminder 2"), the email it sends, its
   status and Edit. The status is the scheduled emails table's, from the same
-  counts-only work summary; each send of a report email shows "Repeats" (or
-  "Once") until its time has passed, then "Past", and a skipped or paused one
+  counts-only work summary; each send of a report email still to come shows
+  "Upcoming", and a skipped or paused one
   ([#1658](https://github.com/epiphany40223/parishkit/issues/1658)) shows
-  "Skipped" or "Paused". Every send of a report email is listed, however long
-  the campaign, skipped ones included. Above it, **Show** is a [binary
+  "Skipped" or "Paused"; a send a report made shows its result in the
+  report's [Past sends](../report-emails/spec.md#past-sends) words, and a
+  catch-up the scheduler still owes shows "Not sent yet". Every send of a
+  report email still to come is listed, however long the campaign, skipped
+  ones included.
+  Above it, **Show** is a [binary
   choice](../ui-conventions/spec.md#binary-choices) (`?show=`): **Upcoming
   emails** (the default) or **Include past emails**. A past email is one
   whose time has passed and is not still sending; the default leaves them
@@ -3641,9 +3649,10 @@ send of a schedule that has not run links to its Edit scheduled email page,
 in the grid and through Edit in the table, with `?calendar=` and the month
 shown (`?calendar=2054-11`), so that page's Cancel, Apply and Delete return
 to that month of the calendar; a schedule that has run, or has work
-prepared, is listed muted and not linked, as on the list, and so is a report
-email's send whose time has passed (editing the report changes only its later
-sends) or that is skipped or paused. A report email send still to come links
+prepared, is listed muted and not linked, as on the list, and so is a send a
+report email made (editing the report changes only its later sends) and a
+report email's send that is skipped or paused. A report email send still to
+come links
 to its [Edit report email](../report-emails/spec.md#new-and-edit-report-email)
 page with that send's slot key (`?send=2054-11-03`), so it can offer
 [Skip selected sends](../report-emails/spec.md#skip-and-unskip-sends), with that send's box ticked; a `send` that is

@@ -3836,6 +3836,17 @@ learned once. **Shared code.**
   the same evaluation, not a second preview. Every list of a schedule's
   occurrences, live or in a review, is drawn by the one
   [schedule preview](#schedule-previews) component.
+- **Past and future sends** (Administrator, R43). A view of a schedule's
+  sends, such as the Campaign calendar and its Every email by date table,
+  shows a time that has passed only with what was actually sent there, read
+  from the records of the sends made (with their outcome: sent, failed,
+  uncertain, skipped as empty), never with sends computed from the
+  schedule's rule. The rule's sends are shown only from now on. A schedule
+  created after its first date therefore shows nothing on the days before
+  it was created; when the scheduler still owes a catch-up send, the view
+  shows that one send at the current time, as not sent yet, so it never
+  hides a send that is about to go. Feature specs say which records a view
+  reads ([report emails](../report-emails/spec.md#campaign-calendar-and-other-pages)).
 - **Limits** are refused at the field in plain words, with the limit named,
   such as the 30-date limit on a reminder repeat.
 - **Host schedules.** Off-site backups are not edited in the Admin portal.
