@@ -9,7 +9,13 @@ every poll), and no box moves or changes size as its state changes.
 
 import pytest
 
-from .live_status_components import TASK_PAGE, TASK_STAGING_STATUS, TASK_STATUS
+from .live_status_components import (
+    TASK_PAGE,
+    TASK_QUEUED_PAGE,
+    TASK_QUEUED_STATUS,
+    TASK_STAGING_STATUS,
+    TASK_STATUS,
+)
 from .test_components import axe_violations
 from .test_in_place import MARK, MARKED
 from .test_live_status_in_place import answer_reads
@@ -114,3 +120,44 @@ def test_the_boxes_draw_on_the_refresh_page_too(page, component_origin):
     announcer = page.locator('[data-live-announcer="task"]')
     assert announcer.count() == 1
     assert announcer.evaluate("node => !node.closest('#refresh-run')")
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_a_queued_refresh_starts_in_progress_and_hands_over_in_place(
+    page, component_origin, width
+):
+    """While the run waits for a worker, Start the load is In progress with
+    the spinner and the queued sentence, never Not started (#1947); once a
+    worker takes it, Start the load is Done and the download In progress, in
+    place, and no box moves or resizes."""
+    page.set_viewport_size({"width": width, "height": 900})
+    polls = answer_reads(
+        page,
+        component_origin,
+        TASK_STATUS,
+        TASK_QUEUED_STATUS,
+        TASK_STATUS,
+        "/live-task-finished-status",
+    )
+    answer_reads(page, component_origin, TASK_QUEUED_PAGE, "/live-task-finished")
+    page.goto(component_origin + TASK_QUEUED_PAGE)
+    page.evaluate(MARK)
+    region = page.locator("#task-status [data-live-status=task]")
+    boxes = region.get_by_role("list", name="Parts of the refresh").locator("li")
+    before = places(boxes)
+    assert states(boxes) == ["active", *["waiting"] * 4]
+    assert boxes.nth(0).locator(".spinner").count() == 1
+    assert "In progress" in boxes.nth(0).inner_text()
+    queued = region.get_by_text("Waiting for the background service to pick up")
+    visible(queued)
+    settled(boxes.nth(1), "active")
+    assert states(boxes) == ["done", "active", *["waiting"] * 3]
+    assert boxes.nth(0).locator(".spinner").count() == 0
+    assert boxes.nth(1).locator(".spinner").count() == 1
+    assert queued.count() == 0
+    assert places(boxes) == before
+    settled(boxes.nth(4), "done")
+    assert places(boxes) == before
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert page.evaluate(MARKED) == "kept"
+    assert len(polls) >= 2, polls

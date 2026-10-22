@@ -7,11 +7,15 @@ from django.urls import reverse
 
 from .review_helpers import answer_reviews
 from .stepper_components import (
+    AWAITED_STATUS,
     CONTENT,
     EDITOR,
     LOAD,
+    LOAD_AWAITED,
+    LOAD_AWAITED_STATUS,
     LOAD_EMPTY,
     LOAD_FAILED,
+    LOAD_OFFER_STATUS,
     LOAD_RUN,
     LOAD_STATUS,
     LOAD_STATUS_DONE,
@@ -613,4 +617,131 @@ def test_a_queued_load_shows_start_the_load_at_once_and_nothing_moves(
     ):
         assert_same_box(before, now)
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert failures == []
+
+
+def answer_awaited(page, origin, *fixtures):
+    """Answer the step's own passive status (#1951) with each of ``fixtures``
+    in turn, the last from then on; return the reads answered."""
+    reads = []
+
+    def answer(route):
+        """Serve the next fixture to the step's poll."""
+        reads.append(route.request.url)
+        shown = fixtures[min(len(reads), len(fixtures)) - 1]
+        route.fulfill(response=route.fetch(url=origin + shown, method="GET"))
+
+    page.route(lambda url: url.split("?")[0] == origin + AWAITED_STATUS, answer)
+    return reads
+
+
+def awaited_places(page):
+    """The load region's lines, each stage box and the action row's Back."""
+    region = page.locator("#refresh-run")
+    parts = [
+        region.locator("[data-campaign-load-summary]"),
+        region.locator("[data-campaign-load-count]"),
+        page.locator("[data-campaign-step-actions] [data-campaign-step-back]"),
+    ]
+    boxes = region.locator("[data-load-stage]")
+    parts += [boxes.nth(i) for i in range(5)]
+    return [part.bounding_box() for part in parts]
+
+
+@pytest.mark.parametrize("width", [320, 660, 1280])
+def test_a_new_campaign_opens_on_the_load_the_system_starts(
+    page, component_origin, width
+):
+    """Just created, the step already shows its load, in place (#1951).
+
+    Before the system's own load is requested the step is loading, with
+    Start the load In progress and its spinner, the queued sentence and no
+    button; its own passive status then finds the run, hands the region
+    over to the run's status, and the run ends with the page re-read in
+    place. Nothing moves and the page never reloads.
+    """
+    from parishkit.stewardship.accounts.stages import QUEUED
+
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.set_viewport_size({"width": width, "height": 900})
+    awaited = answer_awaited(
+        page,
+        component_origin,
+        LOAD_AWAITED_STATUS,
+        LOAD_STATUS_QUEUED,
+        LOAD_STATUS_STARTED,
+    )
+    polls = answer_polls(page, component_origin)
+    page.goto(answer_load(page, component_origin, LOAD_AWAITED, LOADED))
+    page.evaluate(MARK)
+    region = page.locator("#refresh-run")
+    summary = region.locator("[data-campaign-load-summary]")
+    start_box = region.locator('[data-load-stage="start"]')
+    download = region.locator('[data-load-stage="fetching"]')
+    row = page.locator("[data-campaign-step-actions]")
+    assert summary.inner_text() == "Loading the campaign's ParishSoft data…"
+    assert start_box.get_attribute("data-stage-state") == "active"
+    visible(start_box.locator(".spinner"))
+    assert region.locator("[data-campaign-load-count]").inner_text() == str(QUEUED)
+    assert region.get_by_role("button").count() == 0
+    assert row.get_by_role("link", name="Continue to Share options").count() == 0
+    places = awaited_places(page)
+    # The run is requested and a worker starts it: Start the load Done, the
+    # download In progress, from the step's own status. That is its third
+    # answer, after the poller's 2 s, 2 s and 3 s delays, so the wait is
+    # longer than Playwright's 5 s default.
+    from playwright.sync_api import expect
+
+    expect(download).to_have_attribute("data-stage-state", "active", timeout=30_000)
+    assert start_box.get_attribute("data-stage-state") == "done"
+    assert len(awaited) >= 3
+    for before, now in zip(places, awaited_places(page), strict=True):
+        assert_same_box(before, now)
+    # From then on the region polls the run's own status.
+    for _ in range(150):
+        if polls:
+            break
+        page.wait_for_timeout(100)
+    assert polls, awaited
+    polls.finish()
+    # The poller has backed off to several seconds between reads by now.
+    proceed = row.get_by_role("link", name="Continue to Share options")
+    expect(proceed).to_be_visible(timeout=30_000)
+    has_text(summary, "The campaign's ParishSoft data is loaded.")
+    assert [state for _key, state in stage_states(page)] == ["done"] * 5
+    for before, now in zip(places, awaited_places(page), strict=True):
+        assert_same_box(before, now)
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert page.evaluate(MARKED) == "kept"
+    assert failures == []
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_no_system_load_in_time_brings_the_load_button_in_place(
+    page, component_origin, width
+):
+    """When the wait for the system's load ends with none, the step's own
+    status settles and the page re-reads itself in place to the offer, with
+    its Load button, and the summary line and boxes stay put (#1951)."""
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.set_viewport_size({"width": width, "height": 900})
+    answer_awaited(page, component_origin, LOAD_AWAITED_STATUS, LOAD_OFFER_STATUS)
+    page.goto(answer_load(page, component_origin, LOAD_AWAITED, LOAD))
+    page.evaluate(MARK)
+    region = page.locator("#refresh-run")
+    places = awaited_places(page)
+    start = region.get_by_role("button", name="Load the campaign's ParishSoft data")
+    visible(start)
+    assert (
+        region.locator("[data-campaign-load-summary]").inner_text()
+        == "This campaign's ParishSoft data hasn't been loaded yet."
+    )
+    assert [state for _key, state in stage_states(page)] == ["waiting"] * 5
+    # The button's slot is reserved in every state, so its coming moves
+    # nothing: the lines, the boxes and the action row's Back stay put.
+    for before, now in zip(places, awaited_places(page), strict=True):
+        assert_same_box(before, now)
+    assert page.evaluate(MARKED) == "kept"
     assert failures == []

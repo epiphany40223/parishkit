@@ -123,6 +123,9 @@ LEDGER = {
     "signed_in_sessions": permanent(SESSION_CHROME),
     # Source refresh.
     "source_refresh": command("refresh start", "refresh status"),
+    # Load ParishSoft data's passive status before the system's load for a
+    # new campaign is requested (#1951): no data of its own.
+    "campaign_load_status": command("refresh status"),
     "background_task_page": command("task show"),
     "background_task_status": command("task show"),
     # Schedules and configuration.
