@@ -56,6 +56,12 @@ TASK_STAGING_STATUS = "/live-task-staging-status"
 # The same run's page and status while it still waits for a worker (#1947).
 TASK_QUEUED_PAGE = "/live-task-queued"
 TASK_QUEUED_STATUS = "/live-task-queued-status"
+# The running run's page and the status it polls with its worker's last
+# heartbeat, and the status once only a later heartbeat has come in: the
+# region shows nothing new, but the open Technical details do (#2019).
+TASK_BEAT_PAGE = "/live-task-beat"
+TASK_BEAT_STATUS = "/live-task-beat-status"
+TASK_BEAT_LATER = "/live-task-beat-later"
 # A report export and a latest-data export, and a configuration change's
 # status, which update themselves (#519 PR 7b, #1586). The two exports share
 # one address form (the view draws whichever the job is).
@@ -174,15 +180,18 @@ def components(context, admin):
             },
         )
 
-    def refresh_task(state, steps, *, fragment=False, sort=None):
+    def refresh_task(state, steps, *, fragment=False, sort=None, beat=None):
         """A ParishSoft refresh's task page (or its polled status fragment) in
         ``state``, with one history row per (action, state, phase, current)
         of ``steps``, out of 4,000 records, its history sorted by ``sort``
-        (else the default)."""
+        (else the default). ``beat`` is its worker's last heartbeat, which
+        the page polls TASK_BEAT_STATUS for (else it has none)."""
         template = "background-task-status" if fragment else "background-task"
-        return render_to_string(
-            f"stewardship/{template}.html", refresh_values(state, steps, sort=sort)
-        )
+        values = refresh_values(state, steps, sort=sort)
+        if beat:
+            values["task"] |= {"heartbeat_at": beat.isoformat()}
+            values["status_url"] = TASK_BEAT_STATUS
+        return render_to_string(f"stewardship/{template}.html", values)
 
     def export(state, mutable=True, expires_at=None, wait=None):
         """A participation export's page in ``state``; while ``mutable`` is
@@ -387,6 +396,11 @@ def components(context, admin):
         # Waiting for a worker: Start the load In progress (#1947).
         TASK_QUEUED_PAGE: refresh_task("queued", running[:1]),
         TASK_QUEUED_STATUS: refresh_task("queued", running[:1], fragment=True),
+        TASK_BEAT_PAGE: refresh_task("running", running, beat=now),
+        TASK_BEAT_STATUS: refresh_task("running", running, fragment=True, beat=now),
+        TASK_BEAT_LATER: refresh_task(
+            "running", running, fragment=True, beat=now + timedelta(seconds=30)
+        ),
         REFRESH: refresh_page(),
         REFRESH_REQUESTED: refresh_page("queued", running[:1]),
         "/live-refresh-finished": refresh_page("succeeded", finished, minutes=1),

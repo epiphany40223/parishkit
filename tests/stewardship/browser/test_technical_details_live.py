@@ -11,7 +11,9 @@ on a page that is still polling, lets a poll bring a new value, and checks
 that the disclosure is the same open element, shows the new value, has not
 moved, and that the page was not reloaded and never says its values are as
 of when it was opened or to reload it. Both narrow (320 px) and wide
-(1280 px) pages.
+(1280 px) pages. The Background work task page's disclosure (#2019) has
+its own test at the end, since what its poll changes there is a heartbeat
+(a time, not a code) and its status region must not change with it.
 """
 
 import re
@@ -23,6 +25,7 @@ from .campaign_test_components import NEWER
 from .campaign_test_components import SENT as MAIL_PENDING
 from .family_test_components import PENDING, PENDING_NEWER
 from .go_live_components import PRODUCTION_LATER, PRODUCTION_PREPARING
+from .live_status_components import TASK_BEAT_LATER, TASK_BEAT_PAGE, TASK_BEAT_STATUS
 from .send_progress_components import STEADY as QUEUE_STEADY
 from .send_progress_components import STEADY_REMINDER as QUEUE_REMINDER
 from .send_progress_components import STEADY_STATUS as QUEUE_STATUS
@@ -158,3 +161,46 @@ def test_health_details_wait_while_the_pointer_is_over_the_grid(
     expect(details.locator("code", has_text=fresh)).to_be_visible(timeout=25000)
     expect(details.locator("code", has_text=replaced)).to_have_count(0)
     assert details.evaluate("node => node.open")
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_task_heartbeat_alone_updates_details_not_the_region(
+    page, component_origin, width
+):
+    """A poll that brings only a later heartbeat updates the task page's
+    open Technical details in place: the same open element, in the same
+    place, with no reload and no "as of when" wording. Its status region
+    stays as it was: the copy is lasting (data-live-mirror-lasting), so a
+    heartbeat is not a change to the region and never redraws or
+    re-announces it (#2019)."""
+    from playwright.sync_api import expect  # imported late: collection needs no browser
+
+    from .test_live_status_in_place import answer_reads
+
+    page.set_viewport_size({"width": width, "height": 640})
+    page.goto(component_origin + TASK_BEAT_PAGE)
+    page.evaluate(MARK)
+    details = page.locator("details.technical-details")
+    expect(details).to_have_count(1)
+    expect(details).not_to_contain_text(OPENED)
+    summary = details.locator("summary")
+    summary.click()
+    beat = details.locator("time").last
+    expect(beat).to_be_visible()
+    before = beat.get_attribute("datetime")
+    # Mark the region's contents and the disclosure: a redraw of either
+    # would replace the marked element with a new one.
+    heading = page.locator('[data-live-status="task"] h2')
+    heading.evaluate("node => { node.dataset.kept = 'yes'; }")
+    details.evaluate("node => { node.dataset.kept = 'yes'; }")
+    painted(page)
+    place = summary.evaluate(PLACE)
+    reads = answer_reads(page, component_origin, TASK_BEAT_STATUS, TASK_BEAT_LATER)
+    expect(beat).not_to_have_attribute("datetime", before, timeout=25000)
+    expect(details).not_to_contain_text(OPENED)
+    painted(page)
+    assert reads
+    assert same_place(summary.evaluate(PLACE), place)
+    assert details.evaluate("node => node.open && node.dataset.kept === 'yes'")
+    assert heading.evaluate("node => node.dataset.kept === 'yes'")
+    assert page.evaluate(MARKED) == "kept"
