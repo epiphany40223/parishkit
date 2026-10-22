@@ -44,6 +44,7 @@ from parishkit.stewardship.accounts.role_refusal import require
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import (
     authenticated_admin,
+    automatic_read,
     sign_in_instant,
 )
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
@@ -92,16 +93,27 @@ RUN_KEY = "stewardship_publication_check"
 COUNTS = ("write_entities", "write_fields", "blocked_entities")
 
 
-def _principal(request, store, *, read_only=False):
-    """The signed-in Administrator who may update; anyone else is denied."""
+def _principal(request, store, *, read_only=False, passive=False):
+    """The signed-in Administrator who may update; anyone else is denied.
+
+    ``passive`` (the page's own automatic re-read, #1985) admits the same
+    Administrator by the same checks without renewing the sign-in.
+    """
     principal = authenticated_admin(
-        request, store=store, activity=not read_only, read_only=read_only
+        request,
+        store=store,
+        activity=not read_only and not passive,
+        read_only=read_only,
     )
     return require(principal, Capability.PUBLISH_CENSUS)
 
 
-def _audit(principal, campaign_id, outcome, count):
-    """Record the page view as a count of plan rows, never a name or value."""
+def _audit(principal, campaign_id, outcome, count, *, automatic=False):
+    """Record the page view as a count of plan rows, never a name or value.
+
+    ``automatic`` marks the page's own re-read (#1985), as a report's
+    automatic view is marked (#1620): the view is audited either way.
+    """
     with transaction.atomic():
         system = SystemConfiguration.objects.select_related(
             "active_configuration__parish"
@@ -113,7 +125,8 @@ def _audit(principal, campaign_id, outcome, count):
             subject_id=campaign_id,
             parish_id=system.active_configuration.parish.pk,
             campaign_id=campaign_id,
-            context={"outcome": outcome, "count": count},
+            context={"outcome": outcome, "count": count}
+            | ({"automatic": True} if automatic else {}),
         )
 
 
@@ -259,7 +272,11 @@ def page(request, campaign_id):
     finish, handed_off = None, False
     try:
         service = runtime()
-        principal = _principal(request, service.store)
+        # The page re-reads itself once its update run settles, and when it
+        # is shown again (#1985): such a read is passive, so it never extends
+        # the sign-in, and its audited view is marked automatic.
+        automatic = automatic_read(request)
+        principal = _principal(request, service.store, passive=automatic)
         admit_report_read(campaign_id)
         if request.method == "POST":
             try:
@@ -291,6 +308,7 @@ def page(request, campaign_id):
                     campaign_id,
                     Outcome.SUCCEEDED if completed else Outcome.FAILED,
                     count,
+                    automatic=automatic,
                 )
             except (DatabaseError, StorageInvariantError) as error:
                 emit_failure(error, event=Event.REPORT_AUDIT_FAILED)

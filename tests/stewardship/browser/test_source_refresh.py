@@ -99,7 +99,10 @@ def test_refresh_now_stays_on_the_page_and_follows_the_run(page, component_origi
     page: no reload, nothing above the button moves, focus stays on the
     button, and the requested run's live status appears below it. When the
     run's passive status poll finds it finished, the page is re-read once in
-    place, so the data age above and the request key are fresh too.
+    place, so the data age above and the request key are fresh too. That
+    re-read is automatic, so it is sent passively (X-ParishKit-Read:
+    passive, #1985) and never extends the sign-in; the reader's own Refresh
+    now never carries the header.
     """
     page.set_viewport_size(VIEWPORT)
     page.goto(component_origin + REFRESH)
@@ -109,6 +112,17 @@ def test_refresh_now_stays_on_the_page_and_follows_the_run(page, component_origi
     data_age = page.locator("section.panel time[data-local-instant]").first
     first_age = data_age.get_attribute("datetime")
     assert page.get_by_role("heading", name="Current status").count() == 0
+    # Every fetch the page makes, with its method and passive header.
+    sent = []
+    page.on(
+        "request",
+        lambda request: (
+            request.resource_type != "document"
+            and sent.append(
+                (request.method, request.url, request.headers.get("x-parishkit-read"))
+            )
+        ),
+    )
     button.click()
     # Only the run's own announcer speaks (Refresh now is data-in-place-spoken),
     # so there is no "Refresh requested." ahead of the state sentence.
@@ -146,3 +160,14 @@ def test_refresh_now_stays_on_the_page_and_follows_the_run(page, component_origi
     assert page.evaluate(MARKED) == "kept"
     page.wait_for_timeout(3000)
     assert len(polls) >= 1 and len(reads) == 1, (polls, reads)
+    # The settle re-read was passive; the reader's own POST, and the GET
+    # its redirect answers with, were not; and the re-read moved nothing
+    # above the run.
+    page_reads = [
+        (method, header)
+        for method, url, header in sent
+        if url.split("#")[0] == component_origin + REFRESH_REQUESTED
+    ]
+    assert page_reads == [("GET", None), ("GET", "passive")], sent
+    assert [header for method, _, header in sent if method == "POST"] == [None]
+    assert button.bounding_box()["y"] == before["y"]

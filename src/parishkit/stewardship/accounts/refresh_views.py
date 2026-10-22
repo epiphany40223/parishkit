@@ -46,7 +46,7 @@ from .admin_editing import editable_configuration, error_response, principal
 from .authentication import runtime
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
-from .sessions import authenticated_admin
+from .sessions import authenticated_admin, automatic_read
 
 # The session key that remembers the run this sign-in last requested, so the
 # page can show it after the Post/Redirect/Get (navigation rule 5).
@@ -268,7 +268,15 @@ def source_refresh(request):
     """Confirm and request a manual full refresh; repeats lead to the same run."""
     try:
         service = runtime()
-        actor = principal(request, service, capability=Capability.CONFIGURE)
+        # The page's own quiet re-read once a load's status settles (#1985)
+        # is passive: the reader did not act, so it never extends the
+        # sign-in. Every other check is the same as for an ordinary read.
+        actor = principal(
+            request,
+            service,
+            passive=automatic_read(request),
+            capability=Capability.CONFIGURE,
+        )
         filters(request.GET, allowed=set())
         if request.method == "POST":
             filters(

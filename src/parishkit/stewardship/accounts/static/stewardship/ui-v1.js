@@ -2163,7 +2163,14 @@
     event.preventDefault();
     const quiet = Boolean(owner?.hasAttribute("data-in-place-quiet"));
     const target = quiet ? keepHash(link.href) : link.href;
-    refreshTable(region, link, link.href, {method: "GET"}, () => window.location.assign(target),
+    // A settled status region's follow-up link (live-status-v1.js) and a
+    // shown-again re-read link (data-reread-on-show, below) are only ever
+    // followed by script, so their read is automatic and sends
+    // PASSIVE_READ: it never extends the sign-in (UX conventions, "Passive
+    // reads only", #1985). A link the reader clicks never carries it.
+    const automatic = Boolean(owner?.matches("[data-live-follow], [data-reread-on-show]"));
+    const init = automatic ? {method: "GET", headers: PASSIVE_READ} : {method: "GET"};
+    refreshTable(region, link, link.href, init, () => window.location.assign(target),
       {owner, quiet});
   });
   // Forms: a POST table's headings, Previous and Next, every table's

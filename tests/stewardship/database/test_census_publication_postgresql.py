@@ -19,6 +19,7 @@ import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
+from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.jobs.models import TaskRun
@@ -515,3 +516,54 @@ def test_an_outage_at_apply_is_a_logged_503(
     assert response.status_code == 503
     assert logged[0]["level"] == logging.ERROR
     assert not PublicationConfirmation.objects.exists()
+
+
+def test_the_pages_own_re_read_is_passive_and_marked_automatic(
+    world,  # noqa: F811
+    google,
+):
+    """The page re-reads itself once its update run settles and when it is
+    shown again (#1985): that read, sent with X-ParishKit-Read: passive,
+    never extends the sign-in, and its audited view is marked automatic, as
+    a report's automatic view is (#1620). The reader's own open renews the
+    sign-in and carries no mark, and a Check ParishSoft POST carrying the
+    header is still refused without its CSRF token."""
+    earlier = set(PortalSession.objects.values_list("pk", flat=True))
+    browser, login = signed_in()
+    assert login.status_code == 302
+    # The world's own sign-ins stay live too; this reader's is the new one.
+    mine = PortalSession.objects.exclude(pk__in=earlier).get().pk
+
+    def activity():
+        """This sign-in's last activity: a renewal moves it."""
+        return PortalSession.objects.get(pk=mine).last_activity_at
+
+    before = activity()
+    response, _ = get(browser, ROUTE, HTTP_X_PARISHKIT_READ="passive")
+    assert response.status_code == 200
+    assert activity() == before
+    assert viewed() == [{"outcome": "succeeded", "count": 0, "automatic": True}]
+    response, _ = get(browser, ROUTE)
+    assert response.status_code == 200
+    assert activity() > before
+    assert viewed()[-1] == {"outcome": "succeeded", "count": 0}
+    refused = browser.post(
+        ROUTE, {"request_key": str(uuid4())}, HTTP_X_PARISHKIT_READ="passive"
+    )
+    assert refused.status_code == 403
+    assert not checks().exists()
+
+
+def test_staff_sending_the_passive_header_are_still_denied(
+    world,  # noqa: F811
+    google,
+    settings,
+):
+    """The passive header admits nobody the page refuses (#1985)."""
+    settings.STEWARDSHIP_PARISHSOFT_PUBLICATION = True
+    google[0]["email"] = "staff@example.org"
+    browser, login = signed_in()
+    assert login.status_code == 302
+    response, body = get(browser, ROUTE, HTTP_X_PARISHKIT_READ="passive")
+    assert response.status_code == 403 and b"Check ParishSoft" not in body
+    assert viewed() == []

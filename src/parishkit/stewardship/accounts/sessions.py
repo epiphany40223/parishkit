@@ -369,6 +369,18 @@ def passive_read(request):
     return request.headers.get(PASSIVE_READ_HEADER) == "passive"
 
 
+def automatic_read(request):
+    """Whether ``request`` is an automatic re-read that must stay passive.
+
+    Only a GET or HEAD qualifies (#1985): a POST is always the reader's own
+    action, so a header on it is ignored and it renews the sign-in as usual.
+    Passive changes nothing but that renewal (and, on an audited view, adds
+    the ``automatic`` mark): the session, role and capability checks run as
+    for any other request.
+    """
+    return request.method in {"GET", "HEAD"} and passive_read(request)
+
+
 def authenticated_admin(
     caller, *, store, activity=False, read_only=False, stale_authority=False
 ):
