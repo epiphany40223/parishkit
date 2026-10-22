@@ -30,6 +30,19 @@ def capture(document, options):
     return document.comparison
 
 
+def copy(data, frame):
+    """The retained section as the saved daily report page draws it (#1018)."""
+    from ..digest_comparison import data_line
+    from ..digest_presentation import comparison_path, saved_tiles
+
+    return {
+        "comparison": data,
+        "comparison_line": data_line(data),
+        "comparison_tiles": saved_tiles(data),
+        "comparison_url": comparison_path(data),
+    }
+
+
 BLOCK = Block(
     key="compared_with_past_campaigns",
     label=HEADING,
@@ -41,5 +54,6 @@ BLOCK = Block(
     fact=True,
     draw=draw,
     capture=capture,
+    copy=copy,
     placement=AFTER_BUTTON,
 )

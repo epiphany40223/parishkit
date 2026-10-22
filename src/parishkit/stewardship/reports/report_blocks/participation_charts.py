@@ -123,6 +123,22 @@ def check(options):
         raise ValueError("Choose at least one known chart, each once, in order.")
 
 
+def copy(data, frame):
+    """The participation graph, drawn by the chart engine from the pinned facts.
+
+    The snapshot keeps the chart's dates and figures only as alt text; its
+    pinned fact generation (``CopyFrame.participation``) holds every day,
+    and is kept as long as the snapshot is, so a copy without it is broken.
+    """
+    from parishkit.stewardship.storage import StorageInvariantError
+
+    from ..chart_specs import participation_chart
+
+    if frame.participation is None:
+        raise StorageInvariantError("The saved copy's pinned facts are missing.")
+    return {"chart": participation_chart(frame.participation)}
+
+
 BLOCK = Block(
     key="participation_charts",
     label="Participation charts",
@@ -134,6 +150,7 @@ BLOCK = Block(
     fact=True,
     draw=draw,
     capture=capture,
+    copy=copy,
     empty="No campaign day has ended yet.",
     options={"charts": list(CHARTS)},
     check=check,

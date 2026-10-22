@@ -1556,6 +1556,15 @@ details.technical-details dd { overflow-wrap: anywhere; }
 .content-sample, pre { overflow-wrap: anywhere; white-space: pre-wrap; }
 .light-card { background: var(--paper); color: var(--ink); }
 .content-sample { padding: 1rem; border: 1px dashed var(--control-border); border-radius: var(--radius-small); background: var(--paper); }
+/* A report email's saved copy keeps the email as it was sent (#1946). The
+   page's style policy drops the email's inline styles, so its closing button
+   (a bgcolor cell holding a link) takes the portal button's colours, which
+   keep their contrast in both themes; the cell's bgcolor alone would leave the
+   link in the page's link colour on dark teal. Only the button's cell: the
+   email's share bars are bgcolor cells too, and each segment keeps its own
+   colour, so a bar never looks full. */
+.report-email-copy td[bgcolor]:has(> a) { background: var(--accent); }
+.report-email-copy td[bgcolor] > a { display: inline-block; padding: var(--button-padding); color: var(--paper); font-weight: var(--button-weight); text-decoration: none; }
 
 
 /* Toggletips (ui-v1.js): a small round "i" button beside a label that opens

@@ -75,22 +75,13 @@ def total_tiles(document):
     a share bar against the Families it is out of, like the email's bar.
     """
     day = document.report_day
-    # Why a figure is unknown: the report day had no ParishSoft data, or a
-    # responding Family's pledge amount is not known, so the pledges are not
-    # added up (``calculations.calculate_participation``).
-    no_data = _(
-        "The ParishSoft data for this day was not available, so this figure "
-        "is not known."
-    )
+    no_data, no_pledges = unknown_reasons()
     tiles = []
     for label, value in report_day_cards(document):
         known, reason = day.population_available, no_data
         if label == PLEDGE_HEADING and day.population_available:
             known = day.pledge_available
-            reason = _(
-                "The total is added up only when every responding Family's "
-                "pledge amount is known."
-            )
+            reason = no_pledges
         text, details, share = value, (), None
         if label == RESPONDED_LABEL and known:
             # The split relies on out_of()'s English wording; a translated
@@ -102,6 +93,74 @@ def total_tiles(document):
         tiles.append(
             shown(
                 TOTAL_KEYS[label],
+                label,
+                text if known else UNKNOWN,
+                unknown_reason="" if known else reason,
+                details=details,
+                share=share,
+            )
+        )
+    return tiles
+
+
+def unknown_reasons():
+    """Why a Campaign totals figure is unknown: (no data that day, pledges).
+
+    The report day had no ParishSoft data, or a responding Family's pledge
+    amount is not known, so the pledges are not added up
+    (``calculations.calculate_participation``).
+    """
+    return (
+        _(
+            "The ParishSoft data for this day was not available, so this figure "
+            "is not known."
+        ),
+        _(
+            "The total is added up only when every responding Family's "
+            "pledge amount is known."
+        ),
+    )
+
+
+# The word the email and its tables use for a figure that is not known.
+UNAVAILABLE = "Unavailable"
+
+
+def saved_total_tiles(figures):
+    """A report email's kept Campaign totals as stat tiles (#1639, #1946).
+
+    ``figures`` are the snapshot's ``[label, value, part, whole, note]``
+    (``report_blocks.campaign_totals.report_day_figures``). As in
+    ``total_tiles``, each value is the email's own text, "Unavailable" reads
+    "—" with its reason, and "10 out of 93 (10.8%)" is split into its count
+    and its explanation line, with a share bar. Families that have responded
+    are unknown only when the day had no ParishSoft data, so an unknown
+    pledge total beside a known count means a pledge amount is not known.
+    The email's "(busiest day: 12)" note becomes an explanation line.
+    """
+    no_data, no_pledges = unknown_reasons()
+    counted = any(
+        label == RESPONDED_LABEL and value != UNAVAILABLE
+        for label, value, *_rest in figures
+    )
+    tiles = []
+    for label, value, part, whole, note in figures:
+        known = value != UNAVAILABLE
+        reason = no_pledges if label == PLEDGE_HEADING and counted else no_data
+        text, details, share = value, (), None
+        if label == RESPONDED_LABEL and known:
+            # The same English split as ``total_tiles``.
+            count, between, rest = value.partition(" out of ")
+            if between:
+                text, details = count, (between.lstrip() + rest,)
+            if part is not None:
+                share = (part, whole)
+        if note and known:
+            line = note.strip().removeprefix("(").removesuffix(")")
+            details += (line[:1].upper() + line[1:],)
+        tiles.append(
+            shown(
+                TOTAL_KEYS.get(label, label),
                 label,
                 text if known else UNKNOWN,
                 unknown_reason="" if known else reason,

@@ -10,8 +10,11 @@ converted (report-emails spec, "Delivery plan", item 4); until then the
 weekly watermark still decides which rows the document holds.
 """
 
+from datetime import datetime
 from html import escape
 from zoneinfo import ZoneInfo
+
+from django.utils.translation import ngettext
 
 from parishkit.stewardship.web.dates import format_local
 
@@ -117,6 +120,38 @@ def capture(document, options):
     }
 
 
+def copy(data, frame):
+    """Each kept request as a numbered row linking its own page (#1946).
+
+    The rows keep the email's order and numbers (oldest first) and its
+    shortened text; the Family's name links its Timeline when the page
+    found its campaign record (``CopyFrame.requests``).
+    """
+    rows = []
+    for number, (item_id, duid, name, submitted, text) in enumerate(
+        data["items"], start=1
+    ):
+        shown, shortened = shorten(text)
+        rows.append(
+            {
+                "number": number,
+                "item_id": item_id,
+                "family_id": frame.requests.get(item_id),
+                "family_name": " ".join(name.split()),
+                "family_duid": duid,
+                "submitted_at": datetime.fromisoformat(submitted),
+                "text": shown,
+                "shortened": shortened,
+                "url": f"{frame.send_path}items/{item_id}/",
+            }
+        )
+    count = len(rows)
+    heading = ngettext("%(count)s open request", "%(count)s open requests", count) % {
+        "count": f"{count:,}"
+    }
+    return {"heading": heading, "rows": rows}
+
+
 BLOCK = Block(
     key="additional_information",
     label="Open additional information requests",
@@ -128,5 +163,6 @@ BLOCK = Block(
     fact=False,
     draw=draw,
     capture=capture,
+    copy=copy,
     empty="No open requests.",
 )

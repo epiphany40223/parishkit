@@ -9,10 +9,11 @@ change.
 
 It holds what the compiler needs to draw today's Daily and Weekly digests
 and the report pipeline's snapshots: the declarations, the email renderer,
-the option check and the snapshot capture. The saved copy renderer, editor
-form, Testing behaviour declaration and preview flag arrive with the
-Report emails page and Preview (report-emails spec, "Delivery plan"); today
-each block's Testing behaviour lives in its renderer.
+the option check, the snapshot capture and the saved copy renderer (#1946),
+which draws the block on its send's saved copy page from the data the
+snapshot kept. The editor form, Testing behaviour declaration and preview
+flag arrive with the editor and Preview (report-emails spec, "Delivery
+plan"); today each block's Testing behaviour lives in its renderer.
 """
 
 from collections.abc import Callable
@@ -60,6 +61,24 @@ class Frame:
     copy_url: str | None = None
 
 
+@dataclass(frozen=True)
+class CopyFrame:
+    """What the saved copy page hands every block's saved copy renderer.
+
+    ``send_path`` is the send's saved copy address, which a listed
+    request's own page sits under. ``participation`` is the participation
+    document of the fact generation the snapshot pinned (None without
+    one), the one source besides the block's kept data a block may draw
+    from. ``requests`` maps each listed request's id (text) to its Family's
+    campaign record id for the shared Family-name link (None draws the
+    name unlinked).
+    """
+
+    send_path: str
+    participation: Any = None
+    requests: dict = field(default_factory=dict)
+
+
 def no_options(options):
     """The option check of a block that declares no options: nothing to check.
 
@@ -85,6 +104,12 @@ class Block:
     snapshot keeps it (JSON values only), read from the same source the
     email is drawn from, inside the same pinned date format.
 
+    ``copy(data, frame)`` is the saved copy renderer: from the block's kept
+    ``data`` (never None: the page draws ``empty`` for that) and a
+    ``CopyFrame`` it returns the context of the block's template,
+    ``components/report-copy/<key>.html`` (``copy_template``), or None when
+    the kept data drew nothing in the email, so the page draws nothing too.
+
     ``check(options)`` raises ``ValueError`` for an option value the block
     cannot draw; a report's stored options are checked with it on save.
     ``version`` is the version of the block's captured data that a report
@@ -105,6 +130,12 @@ class Block:
     check: Callable[[dict], None] = no_options
     version: int = 1
     capture: Callable[[Any, dict], Any] = None
+    copy: Callable[[Any, CopyFrame], dict | None] = None
+
+    @property
+    def copy_template(self):
+        """The template that draws the block on its send's saved copy page."""
+        return f"stewardship/components/report-copy/{self.key}.html"
 
     def has_content(self, data):
         """Whether captured ``data`` counts as content (spec, decision 16).

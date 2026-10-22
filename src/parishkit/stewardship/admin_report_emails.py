@@ -101,7 +101,11 @@ class ReportEmailCopy(ReadModel):
     ``blocks`` holds each block in the send's order: its ``block`` key,
     ``version`` and ``data``, the figures the email showed; the open
     requests block lists each request's ``item_id``, ``submitted_at`` and
-    current ``disposition``, never its Family or text.
+    current ``disposition``, never its Family or text. ``as_of_line``,
+    ``how``, ``covers`` (a recovery send's days, else "") and
+    ``recipients`` (``users``, ``groups``, ``outside`` and
+    ``outside_count``; ``outside`` is None for Staff) are what the page
+    states about the send (``report_email_copy.copy_facts``, #1946).
     """
 
     send_id: UUID
@@ -111,6 +115,9 @@ class ReportEmailCopy(ReadModel):
     how: str
     made_at: str
     as_of: str | None
+    as_of_line: str
+    covers: str
+    recipients: dict
     blocks: list
 
 
@@ -411,22 +418,28 @@ def _block_copy(entry):
 def _report_copy(caller, service, actor, send_id):
     """The saved copy of a report email send, or None when it is not one."""
     from .campaigns.models import ScheduleRevision
-    from .campaigns.schedule_models import ScheduleOccurrence
     from .reports.export_services import admit_campaign
+    from .reports.report_email_copy import copy_facts
+    from .reports.report_email_copy_views import _pinned, readable
     from .reports.report_email_copy_views import _record as record_view
-    from .reports.report_email_copy_views import readable
-    from .reports.report_email_list import _how
     from .reports.report_email_models import (
-        ReportEmailPreparation,
         ReportEmailSnapshot,
     )
     from .responses.models import AdditionalInformationItem
+    from .web import dates
 
     # Only the columns the web login may read: the copy page's and the
     # bindings (``report_email_grants``).
     snapshot = (
         ReportEmailSnapshot.objects.only(
-            "id", "preparation_id", "campaign_id", "created_at", "blocks"
+            "id",
+            "preparation_id",
+            "campaign_id",
+            "configuration_id",
+            "created_at",
+            "blocks",
+            "values",
+            "recipients",
         )
         .filter(preparation_id=send_id)
         .first()
@@ -452,13 +465,11 @@ def _report_copy(caller, service, actor, send_id):
         if block["block"] == "additional_information" and block["data"]:
             for item in block["data"]["items"]:
                 item["disposition"] = states.get(UUID(item["item_id"]))
-    preparation = ReportEmailPreparation.objects.get(pk=send_id)
-
-    slot = (
-        ScheduleOccurrence.objects.filter(pk=preparation.occurrence_id)
-        .values_list("slot", flat=True)
-        .first()
-    )
+    preparation = _pinned(snapshot)
+    # The page's own statements about the send, in the email's date format.
+    with dates.using(snapshot.configuration.parish.date_format):
+        facts = copy_facts(snapshot, preparation, administrator=_administrator(actor))
+        as_of_line = facts.as_of_line
     _recheck(caller, service.store, actor)
     record_view(actor, send_id, snapshot.campaign_id)
     return ReportEmailCopy(
@@ -469,9 +480,12 @@ def _report_copy(caller, service, actor, send_id):
         .values_list("values__name", flat=True)
         .first()
         or "",
-        how=_how(slot),
+        how=facts.how,
         made_at=snapshot.created_at,
         as_of=preparation.as_of,
+        as_of_line=as_of_line,
+        covers=facts.covers,
+        recipients=facts.recipients,
         blocks=blocks,
     )
 

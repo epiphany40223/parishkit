@@ -1,10 +1,32 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
-{% comment %}A report send's saved copy (#1786, report_email_copy_views): the email as it was sent, drawn from the send's snapshot, its charts served beside it, until #1946 draws it as web components (report-emails spec, "Saved copies").{% endcomment %}
-{% block title %}{% translate "Report email" %}{% endblock %}
+{% comment %}A report send's saved copy (#1946, report-emails spec "Saved copies"), drawn from the send's snapshot only (reports/report_email_copy.py): what the send states about itself, its recipients by kind, each block through its saved copy renderer in the send's order, and the email as it was sent in a closed disclosure, with its retained chart images.{% endcomment %}
+{% block title %}{{ facts.title }}{% endblock %}
+{% block head %}{% if charts %}{% include 'stewardship/components/chart-scripts.html' %}{% endif %}{% endblock %}
 {% block content %}
-<h1>{{ subject }}</h1>
-{% aboutpage "report-email-copy" %}<p>{% translate "This is the report email as it was sent, with its charts. Its links work as they do in the email; a request it lists opens on Additional information." %}</p>{% endaboutpage %}
+<h1>{{ facts.title }}</h1>
+{% aboutpage "report-email-copy" %}<p>{% translate "This is the saved copy of one report email: the figures and requests exactly as the email reported them, drawn from what was saved when it was made. Later responses and ParishSoft changes never change it. Times are in your computer's time zone." %}</p>
+<p>{% translate "Each listed request opens its own page, which shows the full request as it was then and links the request on Additional information as it is now. Show the email as it was sent, at the end of the page, shows the email itself." %}</p>{% endaboutpage %}
+{% if facts.mode == 'testing' %}<p class="notice">{% translate "This report email was sent in Testing mode, to the Testing recipient." %}</p>{% endif %}
+<p data-copy-as-of>{% if as_of_day %}{% blocktranslate with day=as_of_day %}All data is as of the end of {{ day }}.{% endblocktranslate %}{% else %}{% translate "All data is as of" %} <time datetime="{{ facts.as_of|date:'c' }}" data-local-instant>{{ facts.as_of|date:'c' }}</time>.{% endif %}</p>
+<dl data-copy-facts>
+<dt>{% translate "Made at" %}</dt><dd><time datetime="{{ facts.made_at|date:'c' }}" data-local-instant>{{ facts.made_at|date:'c' }}</time></dd>
+{% include 'stewardship/components/data-age.html' with age=age source_as_of=facts.made_at %}
+<dt>{% translate "How it was sent" %}</dt><dd>{{ facts.how_label }}{% if facts.covers %}, {% blocktranslate with days=facts.covers %}covering {{ days }}{% endblocktranslate %}{% endif %}</dd>
+</dl>
+{% with recipients=facts.recipients %}<section class="panel" aria-labelledby="copy-recipients-heading" data-copy-recipients><h2 id="copy-recipients-heading">{% translate "Recipients" %}</h2>
+{% if recipients.users or recipients.groups or recipients.outside_count %}<dl>
+{% if recipients.groups %}<dt>{% translate "Groups" %}</dt><dd>{% for group in recipients.groups %}{% blocktranslate with name=group.name count people=group.people %}{{ name }} ({{ people }} person){% plural %}{{ name }} ({{ people }} people){% endblocktranslate %}{% if not forloop.last %}, {% endif %}{% endfor %}</dd>{% endif %}
+{% if recipients.users %}<dt>{% translate "Users" %}</dt><dd>{{ recipients.users|join:", " }}</dd>{% endif %}
+{% if recipients.outside_count %}<dt>{% translate "Outside addresses" %}</dt><dd data-copy-outside>{% if recipients.outside is not None %}{{ recipients.outside|join:", " }}{% else %}{% blocktranslate count count=recipients.outside_count %}{{ count }} address; only Administrators see outside addresses.{% plural %}{{ count }} addresses; only Administrators see outside addresses.{% endblocktranslate %}{% endif %}</dd>{% endif %}
+</dl>{% else %}<p>{% translate "Nobody: the report had no current recipients when this email was made, so it was not sent to anyone." %}</p>{% endif %}
+</section>{% endwith %}
+{% for block in blocks %}{% if block.template %}{% include block.template with block=block data=block.context %}{% else %}<section class="panel" aria-labelledby="copy-{{ block.key }}-heading" data-copy-block="{{ block.key }}"><h2 id="copy-{{ block.key }}-heading">{{ block.label }}</h2>
+<p>{{ block.empty }}</p>
+</section>{% endif %}
+{% endfor %}
+<details class="panel" data-copy-email><summary>{% translate "Show the email as it was sent" %}</summary>
 <div class="report-email-copy">{{ email }}</div>
+</details>
 {% comment %}Report emails lists it under its report's past sends; the trail leads there too.{% endcomment %}
 <p><a href="{% url 'admin:report_emails' %}">{% translate "Return to Report emails" %}</a></p>
 {% endblock %}

@@ -1,0 +1,17 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% comment %}One request a report send listed (#1946, report-emails spec "Saved copies"): the request as the send captured it, its current state, and a link to the live request on Additional information.{% endcomment %}
+{% block title %}{% translate "Saved request" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Saved request" %}</h1>
+{% aboutpage "report-email-copy-item" %}<p>{% translate "This is one request as the report email listed it: the Family, when they submitted it and everything they wrote, as it was when the email was made. Its current state is checked when you open this page. To follow it up, open it on Additional information." %}</p>{% endaboutpage %}
+<dl data-copy-item>
+<dt>{% translate "Family" %}</dt><dd>{% family_link row.family_id row.family_name %}</dd>
+<dt>{% translate "Family DUID" %}</dt><dd>{{ row.family_duid|duid }}</dd>
+<dt>{% translate "Submitted" %}</dt><dd><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></dd>
+<dt>{% translate "Current state" %}</dt><dd>{{ current }}</dd>
+</dl>
+<section class="panel" aria-labelledby="copy-item-text-heading"><h2 id="copy-item-text-heading">{% translate "What the Family wrote" %}</h2>
+<div class="content-sample">{{ row.text }}</div>
+</section>
+{% comment %}The trail leads back to the saved copy (ui-conventions rule 3); the live request is linked only while it still exists.{% endcomment %}{% if live_url %}<p><a href="{{ live_url }}">{% translate "Open this request on Additional information" %}</a></p>{% endif %}
+{% endblock %}
