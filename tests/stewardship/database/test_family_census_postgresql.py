@@ -21,6 +21,9 @@ from .test_source_families_postgresql import prepare, promote
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
+# The rule before the reviewed Family form (#1705): forms drawn before
+# its release, as one open across the deploy is.
+@pytest.mark.usefixtures("earlier_rule")
 @pytest.mark.parametrize("opt_out", [False, True])
 def test_household_http_complete_response_and_revisit(live_response_service, opt_out):
     """A Family request remains pending, complete and visible only as effective data."""

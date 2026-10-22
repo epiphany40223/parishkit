@@ -404,6 +404,15 @@ LANGUAGE sql STABLE AS $$
         JOIN public.stewardship_weekly_digest_preparation p ON p.id=s.preparation_id
         WHERE s.campaign_id=campaign_uuid AND p.mode='testing'
           AND p.rehearsal_epoch_id IN (SELECT id FROM epochs)
+    ), report_preparations AS NOT MATERIALIZED (
+        -- Report emails (#1786): the rehearsal's sends. Their preparations
+        -- are retained history, as the digests' are.
+        SELECT id FROM public.stewardship_report_email_preparation
+        WHERE campaign_id=campaign_uuid AND mode='testing'
+          AND rehearsal_epoch_id IN (SELECT id FROM epochs)
+    ), report_snapshots AS NOT MATERIALIZED (
+        SELECT id FROM public.stewardship_report_email_snapshot
+        WHERE preparation_id IN (SELECT id FROM report_preparations)
     )
     SELECT 'baselines',id FROM baselines
     UNION ALL SELECT 'family_sessions',id FROM sessions
@@ -419,6 +428,7 @@ LANGUAGE sql STABLE AS $$
         WHERE (parent_kind='submission' AND parent_id IN (SELECT id FROM responses))
            OR (parent_kind='form_baseline' AND parent_id IN (SELECT id FROM baselines))
            OR (parent_kind='digest' AND parent_id IN (SELECT id FROM digest_snapshots))
+           OR (parent_kind='digest' AND parent_id IN (SELECT id FROM report_preparations))
     UNION ALL SELECT 'daily_digest_snapshots',id FROM digest_snapshots
     UNION ALL SELECT 'daily_digest_ready',id FROM digest_ready
     UNION ALL SELECT 'daily_digest_recipients',id FROM public.stewardship_daily_digest_recipient
@@ -428,6 +438,11 @@ LANGUAGE sql STABLE AS $$
     UNION ALL SELECT 'weekly_digest_snapshots',id FROM weekly_snapshots
     UNION ALL SELECT 'weekly_digest_recipients',id FROM public.stewardship_weekly_digest_recipient
         WHERE snapshot_id IN (SELECT id FROM weekly_snapshots)
+    UNION ALL SELECT 'report_email_snapshots',id FROM report_snapshots
+    UNION ALL SELECT 'report_email_recipients',id FROM public.stewardship_report_email_recipient
+        WHERE snapshot_id IN (SELECT id FROM report_snapshots)
+    UNION ALL SELECT 'report_email_fact_pins',id FROM public.stewardship_fact_pin
+        WHERE parent_kind='digest' AND parent_id IN (SELECT id FROM report_preparations)
     UNION ALL SELECT 'occurrences',id FROM occurrences
     UNION ALL SELECT 'recovery_replacements',id FROM public.stewardship_recovery_replacement
         WHERE previous_id IN (SELECT id FROM occurrences)

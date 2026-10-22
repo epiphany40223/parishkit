@@ -24,6 +24,7 @@ from django.db import connection, transaction
 from parishkit.stewardship.accounts import admin_editing, campaign_wizard
 from parishkit.stewardship.accounts.configuration_installation import install_request
 from parishkit.stewardship.accounts.digest_skips import send_of
+from parishkit.stewardship.accounts.report_rows import digest_view
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.campaigns.models import ScheduleDefinition
 
@@ -31,6 +32,7 @@ from ..configuration_factory import PARISH_TIMEZONE
 from .auth_builders import signed_in
 from .automation_builders import paired
 from .campaign_builders import campaign_clock, occurrence
+from .report_builders import add_digest
 from .test_admin_schedule_cli_postgresql import (  # noqa: F401
     admin,
     confirm,
@@ -38,7 +40,6 @@ from .test_admin_schedule_cli_postgresql import (  # noqa: F401
     preview,
 )
 from .test_campaign_views_postgresql import apply, post
-from .test_digest_schedule_planning_postgresql import add_digest
 from .test_parish_views_postgresql import token
 from .test_schedule_entry_postgresql import DELETE, LIST, definition, entry, setup
 
@@ -89,10 +90,16 @@ def slot_due(identifier, slot):
 
 
 def due_of(store, campaign, identifier, slot=DAY):
-    """When the digest's send at ``slot`` is due (UTC)."""
+    """When the digest's send at ``slot`` is due (UTC).
+
+    The converted report is read as the digest view the editors skip its
+    sends through (``report_rows.digest_view``).
+    """
     campaign.refresh_from_db()
     return send_of(
-        saved_values(store, identifier), campaign.active_configuration.values, slot
+        digest_view(saved_values(store, identifier)),
+        campaign.active_configuration.values,
+        slot,
     ).due_at
 
 
@@ -140,7 +147,7 @@ def test_this_email_only_skips_one_send_and_keeps_the_digest(auth_service, googl
     assert 'name="scope" value="send" id="schedule-delete-send" checked' in page
     assert 'name="scope" value="this" id="schedule-delete-digest"' in page
     assert f'name="send" value="{DAY}"' in page
-    assert "This email only skips just the digest's send at" in page
+    assert "This email only skips just the report's send at" in page
     # Opened from the list, a digest's Delete is the whole digest alone.
     plain = unescape(browser.get(edit_path(digest)).content.decode())
     assert 'name="scope"' not in plain and 'name="send"' not in plain
@@ -153,7 +160,7 @@ def test_this_email_only_skips_one_send_and_keeps_the_digest(auth_service, googl
     # digest's slot key (the reported day) is not shown.
     due = due_of(store, campaign, digest)
     assert (
-        "This email only: the digest skips its send at "
+        "This email only: the report skips its send at "
         f'<time datetime="{due.isoformat()}" data-local-instant>'
     ) in text
     assert f"for {DAY}" not in text
@@ -246,7 +253,7 @@ def test_apply_refuses_once_the_send_passed_or_has_work(
     stale = post(browser, LIST, {"action": "confirm", "preview": token(review)})
     assert stale.status_code == 409
     assert ConfigurationChangeRequest.objects.count() == before
-    assert "skip_dates" not in saved_values(store, digest)
+    assert saved_values(store, digest)["skip_dates"] == []
 
 
 def test_the_command_line_skips_a_send_and_later_changes_keep_it(admin, google):  # noqa: F811
@@ -349,7 +356,6 @@ def test_a_weekday_change_drops_a_future_skip_it_moves_off_the_digest(
     # The page's review of moving the digest to Thursday lists the skip it
     # drops, and each side lists the sends it skips, by their send times.
     browser, _ = signed_in()
-    saved = saved_values(store, digest)
     review = post(
         browser,
         edit_path(digest),
@@ -358,7 +364,8 @@ def test_a_weekday_change_drops_a_future_skip_it_moves_off_the_digest(
             zone=PARISH_TIMEZONE,
             time="00:15",
             weekday="3",
-            template_version=saved["template_version"],
+            # A converted report sends no email template of its own.
+            template_version="",
         ),
     )
     assert review.status_code == 200, review.content

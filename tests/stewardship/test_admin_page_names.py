@@ -11,10 +11,7 @@ and Reports and queries).
 
 import ast
 import re
-from datetime import UTC, datetime
 from pathlib import Path
-from types import SimpleNamespace
-from uuid import uuid4
 
 import pytest
 from django.template import Context, Template
@@ -55,15 +52,13 @@ TEMPLATES = {
     "artwork_settings": "artwork-settings.html",
     "artwork_upload": "artwork-settings.html",
     "reminder_workgroup": "reminder-workgroup.html",
-    "go_live": "go-live-readiness.html",
+    "go_live": "go-live-check.html",
     "go_live_families": "go-live-families.html",
-    "go_live_cleanup": "go-live-cleanup.html",
-    "go_live_links": "go-live-links.html",
-    "production_confirmation": "production-confirmation.html",
+    "go_live_prepare": "go-live-prepare.html",
+    "go_live_confirm": "go-live-confirm.html",
     "production_progress": "production-progress.html",
-    "production_withdrawal": "production-withdrawal.html",
     "delivery_control": "delivery-control.html",
-    "family_email_progress": "family-email-progress.html",
+    "mail_queue": "mail-queue.html",
     "family_email_sends": "family-email-sends.html",
     "deliveries": "deliveries.html",
     "delivery_refusals": "delivery-refusals.html",
@@ -81,6 +76,7 @@ TEMPLATES = {
     "users": "users.html",
     "user_new": "user-entry.html",
     "user_edit": "user-entry.html",
+    "user_timeline": "user-timeline.html",
     "signed_in_sessions": "signed-in-sessions.html",
     "automation_access": "automation-access.html",
     "automation_approval": "automation-approval.html",
@@ -121,6 +117,8 @@ OBJECT_NAMED = {
     "content_revision",
     "integration_settings",
     "report_export",
+    # A report send's saved copy is named by its subject (#1786).
+    "report_email_send",
 }
 # Pages whose heading the view supplies. The reports root renders the "no
 # campaign" page named after the report opened (checked below), and a daily
@@ -260,13 +258,12 @@ UNNAMED_RETURNS = {
 # "Return to {{ … }}" links, by template, and the variable each names its
 # target with. Each variable holds a registry label: the trail's parent
 # crumb (admin_chrome.back), the page a test email was opened from
-# (refusals.return_link), the integration's name (integration_views.LABELS)
-# and the export's report page (export_ui's report_name). A new one must
-# be added here once its variable is known to hold a page's name.
+# (refusals.return_link) and the export's report page (export_ui's
+# report_name). A new one must be added here once its variable is known to
+# hold a page's name.
 VARIABLE_RETURNS = {
     ("campaign-mail.html", "return_link.label"),
     ("configuration-request.html", "admin_chrome.back.label"),
-    ("integration-preview.html", "label"),
     ("report-export.html", "report_name"),
 }
 VARIABLE_RETURN = re.compile(
@@ -438,6 +435,8 @@ RETIRED = (
     "Families with Testing submissions",
     "How Families will share",
     "Production activation progress",
+    # Renamed Go live by #1585 slice 2.
+    "Go-live readiness",
     # Retired after NAV-5b review: the setup content editor's old wording.
     "content list",
     # Retired by NAV-5b.
@@ -525,13 +524,20 @@ ALLOWED = {
     # "Distinct Families with Testing submissions": a readiness count and
     # the Testing submissions table's caption, not the page's name.
     (
-        "accounts/templates/stewardship/go-live-readiness.html",
+        "accounts/templates/stewardship/go-live-check.html",
+        "Families with Testing submissions",
+    ),
+    (
+        "accounts/templates/stewardship/go-live-start-review.html",
         "Families with Testing submissions",
     ),
     (
         "accounts/templates/stewardship/go-live-families.html",
         "Families with Testing submissions",
     ),
+    # ``pk-admin go-live readiness`` is a command's name, kept when the page
+    # was renamed Go live (#1585), as ``content list`` below.
+    ("admin_cli.py", "Go-live readiness"),
     # ``pk-admin content list`` (#463) is a command's name, as ``files
     # list``, not the retired wording for the Pages and emails page.
     ("admin_cli.py", "content list"),
@@ -631,62 +637,26 @@ def test_retired_page_names_are_not_shown():
     assert found >= ALLOWED, sorted(ALLOWED - found)
 
 
-def test_cancel_go_live_sits_under_production_activation():
-    """The trail runs Home › Campaign setup › Production activation › Cancel go-live."""
-    progress = reverse("admin:production_progress")
-    items = [
-        navigation.MenuItem(
-            "campaign", "production_progress", "Production activation", progress
-        )
-    ]
-    match = SimpleNamespace(
-        url_name="production_withdrawal",
-        namespace=navigation.NAMESPACE,
-        kwargs={},
-    )
-    _, trail = navigation.build(match, items)
-    assert [(crumb["label"], crumb["url"]) for crumb in trail][1:] == [
-        ("Campaign setup", progress),
-        ("Production activation", progress),
-        ("Cancel go-live", None),
-    ]
-
-
 def test_cancel_go_live_blocking_message_links_the_pages_it_names():
-    """Work in flight names Pause and resume mail and Sent mail as links."""
-    campaign = SimpleNamespace(
-        pk=uuid4(),
-        active_configuration=SimpleNamespace(
-            name="Annual campaign", starts_at=datetime(2054, 10, 1, tzinfo=UTC)
-        ),
-    )
+    """Work in flight names Pause and resume mail and Sent mail as links.
+
+    Cancel go-live is a review dialog on Production activation (#1585
+    slice 5): mail that blocks it is a refusal inside the dialog, which
+    offers no Apply (no signed review).
+    """
     inventory = dict.fromkeys(
         ("occurrences", "cancellable", "messages", "failed", "delivered"), 0
     )
     html = render_to_string(
-        "stewardship/production-withdrawal.html",
-        {
-            "admin_chrome": None,
-            "campaign": campaign,
-            "available": True,
-            "preview": {
-                "reason": "Fix a date",
-                "inventory": inventory | {"blocking": 1},
-            },
-        },
+        "stewardship/production-cancel-review.html",
+        {"refused": "blocking", "inventory": inventory | {"blocking": 1}},
     )
     controls = reverse("admin:delivery_control")
     outgoing = reverse("admin:deliveries")
     assert f'<a href="{controls}">Pause and resume mail</a>' in html
     assert f'<a href="{outgoing}">Sent mail</a>' in html
-    assert "<h1>Cancel go-live</h1>" in html
-    # Confirm is shown unavailable, named by the blocking message (#563),
-    # with no form that could post it.
-    assert 'value="confirm"' not in html
-    assert (
-        'disabled aria-describedby="withdrawal-blocked">Confirm cancelling go-live'
-        in html
-    )
+    assert "data-review-refusal" in html and "data-review-preview" not in html
+    assert "1 item of mail is being sent right now" in html
 
 
 @pytest.mark.parametrize("key", sorted(SETUP))

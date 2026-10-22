@@ -444,11 +444,10 @@ def _decide(stream, service, actor, decision, note):
     """
     from .admin_followup import InvalidFollowup, problem
     from .responses.census_review import KeyRebound
-    from .responses.information import ReopenNeedsNote, UndoNeedsNote
+    from .responses.information import UndoNeedsNote
     from .storage import StaleRecordError
     from .web.review_worklist import StaleDecision
 
-    reopen = "This item is Ignored; give a new --note saying why it is reopened."
     undo = "This item is Handled; give a new --note saying why it goes back."
     try:
         service.decide(actor, decision)
@@ -460,8 +459,6 @@ def _decide(stream, service, actor, decision, note):
         ) from None
     except UndoNeedsNote:
         raise InvalidFollowup([problem("note", undo)]) from None
-    except ReopenNeedsNote:
-        raise InvalidFollowup([problem("note", reopen)]) from None
 
 
 def decide(stream, caller, service, versions, *, action, note, request_key, context):

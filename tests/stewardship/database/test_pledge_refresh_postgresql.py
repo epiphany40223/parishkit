@@ -197,20 +197,66 @@ def test_a_third_amount_is_entered_incorrectly_until_corrected(
     assert row(harness, submission)["placement"].stage is Stage.CONFIRMED
 
 
-def test_an_accepted_pledge_parishsoft_holds_is_confirmed_and_closed(
+def test_an_accepted_pledge_parishsoft_holds_waits_for_its_mark(
     response_service,
 ):
-    """Rule 1 before the mark: To enter by hand is Confirmed, and no mark is
-    offered on it then (only Back to review, #1840); a third amount before
-    it is a Conflict (#1747)."""
+    """Rule 1 before the mark, in strict phase order (#1890): a third amount
+    is a Conflict (#1747), and ParishSoft then reaching the amount to enter
+    returns it to To enter by hand, not Confirmed; it is checked again, so
+    another amount moves it on, and once marked Entered by hand the next
+    refresh Confirms it."""
     harness, submission = accepted(response_service, marked=False)
     refresh(harness, "99.00")
     assert checks() == [("conflict", Decimal("99.00"))]
     assert row(harness, submission)["placement"].stage is Stage.CONFLICT
     refresh(harness, ANSWER)
-    assert row(harness, submission)["placement"].stage is Stage.CONFIRMED
-    with pytest.raises(ValueError):
-        decide(harness, admin(), "entered_by_hand", [submission])
+    assert checks()[-1] == ("confirmed", Decimal(ANSWER))
+    found = row(harness, submission)
+    assert found["placement"].stage is Stage.TO_ENTER_BY_HAND
+    assert found["placement"].decision is Decision.ACCEPTED
+    refresh(harness, ANSWER)
+    assert len(checks()) == 2
+    refresh(harness, "98.00")
+    assert checks()[-1] == ("conflict", Decimal("98.00"))
+    refresh(harness, ANSWER)
+    decide(harness, admin(), "entered_by_hand", [submission])
+    refresh(harness, ANSWER)
+    found = row(harness, submission)
+    assert found["placement"].stage is Stage.CONFIRMED
+    assert found["placement"].decision is Decision.ACCEPTED
+
+
+def test_the_held_words_survive_an_accept(response_service):
+    """#1890: a To review pledge a refresh found ParishSoft already holding
+    says so, and still says so once accepted (To enter by hand), before any
+    refresh checks the accepted row, so the line under its stage stays;
+    sent back and Edited to another amount, it carries nothing."""
+    from parishkit.stewardship.reports.pledge_review_views import _stage_line
+    from parishkit.stewardship.web.review_worklist import ALREADY_HELD
+
+    harness, submission = pledged(response_service)
+    refresh(harness, ANSWER)
+    found = row(harness, submission)
+    assert found["placement"].stage is Stage.TO_REVIEW
+    assert ALREADY_HELD in _stage_line(found, "")
+    decide(harness, admin(), "accept", [submission])
+    found = row(harness, submission)
+    assert found["placement"].stage is Stage.TO_ENTER_BY_HAND
+    assert found["item"].check == "confirmed" and checks() == []
+    assert ALREADY_HELD in _stage_line(found, "")
+    decide(harness, admin(), "back_to_review", [submission])
+    decide(
+        harness,
+        admin(),
+        "edit",
+        [submission],
+        value_amount="1300",
+        value_frequency="monthly",
+    )
+    found = row(harness, submission)
+    assert found["placement"].stage is Stage.TO_ENTER_BY_HAND
+    assert found["item"].check is None
+    assert ALREADY_HELD not in _stage_line(found, "")
 
 
 def test_an_edited_pledge_is_judged_by_the_reviewers_amount(response_service):
@@ -279,7 +325,8 @@ def test_a_changed_pledge_leaves_its_checks_behind(response_service):
     refresh(harness, "99.00")
     assert len(checks()) == 1
     assert PledgeOpenCheck.objects.get().outcome == "confirmed"
-    assert row(harness, changed)["placement"].stage is Stage.CONFIRMED
+    # ParishSoft holds the new answer: still To review (#1890).
+    assert row(harness, changed)["placement"].stage is Stage.TO_REVIEW
 
 
 def test_no_giving_proof_and_no_family_check_nothing(response_service):

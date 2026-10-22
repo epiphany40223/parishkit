@@ -12,8 +12,9 @@ pairing with the proposal and the audit event
 request is refused even if this code were bypassed.
 
 Since the review pipeline (#1683) the Census changes worklist records
-**Entered by hand** here (on a To review By hand change it accepts and marks
-in one step), and Back to review of a terminal step (``reopened``, #1840,
+**Entered by hand** here, only on an accepted By hand change (strict phase
+order, #1890: until then, on a To review one it accepted and marked in one
+step), and Back to review of a terminal step (``reopened``, #1840,
 below); its Ignore and other Back to review are reviews (``census_review``).
 The ``ignored`` action, and ``reopened`` of an Ignore, remain for
 ``pk-admin census resolve``.
@@ -34,7 +35,8 @@ before the step, and nothing is written to or read from ParishSoft. A
 change a later response of the Family replaced is history and takes no
 undo. SQL checks the same
 (``schema/migrations/0146_census_terminal_undo.sql``).
-Reopening an Ignore stays the Administrator's (``capability``).
+Reopening an Ignore stays the Administrator's (``capability``), with an
+optional note (#1889, ``schema/migrations/0158_ignored_note_optional.sql``).
 
 Marking a New Member entered may name the **ParishSoft Member ID** of the
 Member Staff added (#1749, ``member_ids``), which the refresh confirms the
@@ -251,6 +253,9 @@ def allowed(proposal, action, *, incorrect=False, replaced=False):
     Family replaced it (``refresh_checks.replaced``): such a change is
     history and takes no undo. A terminal change takes Back to review
     (``reopened``, #1840), which undoes its step (``undo_decision``).
+    Entered by hand follows an Accept (#1890): only an approved, pending
+    change is marked; a To review or Conflict one is accepted first, as the
+    resolution guard (migration 0159) also requires.
     """
     if proposal.handling == "report-only":
         return False
@@ -262,6 +267,12 @@ def allowed(proposal, action, *, incorrect=False, replaced=False):
         return False
     if action == "reopened":
         return proposal.decision == "ignored"
+    if action == "entered":
+        return (
+            by_hand(proposal)
+            and proposal.decision == "approved"
+            and proposal.execution == "pending"
+        )
     return by_hand(proposal) and proposal.decision != "ignored"
 
 
@@ -304,7 +315,8 @@ def undo_decision(proposal):
     when no decision was behind it (a change ParishSoft already held that
     nobody approved), so ``unreviewed``; otherwise To enter by hand or Ready
     to update, so ``approved``, also for a change Entered by hand accepted
-    and marked in one step (decision 2), which was shown Accepted.
+    and marked in one step (decision 2, reversed by #1890: history only),
+    which was shown Accepted.
     """
     stage = undo_stage(
         Stream.CENSUS,
@@ -315,14 +327,14 @@ def undo_decision(proposal):
 
 
 def _valid(action, note):
-    """Whether ``action`` and ``note`` make a resolution; a reopen says why."""
+    """Whether ``action`` and ``note`` make a resolution.
+
+    The note is optional here: only undoing a terminal step needs one, which
+    ``record_resolution`` checks on the locked change; undoing an Ignore
+    takes an optional note (#1889), as SQL does.
+    """
     return (
-        action in RESOLUTION_ACTIONS
-        and isinstance(note, str)
-        and len(note) <= MAX_NOTE
-        # Undoing an Ignore or a terminal step says why; SQL requires the
-        # same.
-        and not (action == "reopened" and not note.strip())
+        action in RESOLUTION_ACTIONS and isinstance(note, str) and len(note) <= MAX_NOTE
     )
 
 

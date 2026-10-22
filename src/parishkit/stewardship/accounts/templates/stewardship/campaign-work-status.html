@@ -1,0 +1,14 @@
+{% load i18n %}{% comment %}
+  Campaign settings' campaign work status (#1619; UX conventions, "Pages that
+  update themselves"). The page draws it inside its form's in-place region
+  while background work or going live holds any of its settings, and the
+  passive status read (campaign_work_status, view=settings) answers with it
+  alone. live-status-v1.js polls that read while the region is pending. Once
+  the hold has ended the region settles (no data-live-pending) and its hidden
+  follow-up link (data-reread) has ui-v1.js re-read the page's own address
+  once, quietly, in place and passively: the freed settings are drawn again
+  from the server, and with them a fresh copy of this region should campaign
+  work hold them again. The region takes no space and shows nothing; its
+  data-live-announce sentence is read out by the page's announcer, outside
+  the form's region, once the hold ends.
+{% endcomment %}<div hidden data-live-status="campaign-work" data-live-url="{% url 'admin:campaign_work_status' %}?view=settings" data-live-announce="{% if not work.held %}{% translate 'The background work has finished, so the settings it held can change now.' %}{% endif %}"{% if work.held %} data-live-pending{% endif %}>{% if not work.held %}<a hidden data-live-follow data-reread href="#{{ work.region }}">{% translate "Show the settings that can change now" %}</a>{% endif %}</div>

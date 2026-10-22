@@ -4558,6 +4558,13 @@ BEGIN
        ) THEN
         RAISE EXCEPTION 'Submission requires atomic baseline, receipt and source protection' USING ERRCODE='23514';
     END IF;
+    -- What the form showed (#1705) is its baseline's, copied unchanged: the
+    -- reviewed rules below and the derived and Ministry guards trust it.
+    IF ROW(NEW.reviewed_view,NEW.shown_items) IS DISTINCT FROM (
+        SELECT ROW(baseline.reviewed_view,baseline.shown_items)
+        FROM public.stewardship_family_form_baseline baseline WHERE baseline.id=NEW.baseline_id) THEN
+        RAISE EXCEPTION 'Submission must keep what its form showed' USING ERRCODE='23514';
+    END IF;
     IF NEW.mode='live' AND (
         NOT EXISTS (SELECT 1 FROM public.stewardship_family_campaign family
             WHERE family.id=NEW.family_id
@@ -4643,6 +4650,39 @@ BEGIN
                      AND given.value IS NOT NULL
                      AND public.stewardship_response_comparison_v1(answer.field,given.value)
                          IS NOT DISTINCT FROM submitted_key))
+               -- A response drawn as the reviewed form (#1705) left this
+               -- answer as the form showed it (the Family's answer or the
+               -- reviewer's value of a change in force on an earlier
+               -- response of this Family): that change stays as it is and
+               -- no row is made (reviewed rule 1; responses/proposals.py
+               -- derives the same).
+               AND NOT (NEW.reviewed_view AND EXISTS (
+                   SELECT 1 FROM jsonb_array_elements(NEW.shown_items) shown
+                   JOIN public.stewardship_proposed_change item ON item.id::text=shown->>'item'
+                   JOIN public.stewardship_submission history ON history.id=item.submission_id
+                   WHERE shown->>'stream'='census'
+                     AND ROW(shown->>'entity',shown->>'key',shown->>'field')
+                         =ROW(answer.entity,answer.identity,answer.field)
+                     AND ROW(item.entity_kind,item.entity_key,item.field)
+                         =ROW(answer.entity,answer.identity,answer.field)
+                     AND history.family_id=NEW.family_id AND history.campaign_id=NEW.campaign_id
+                     AND history.mode=NEW.mode
+                     AND history.family_version<NEW.family_version
+                     AND item.execution NOT IN ('cancelled','superseded')
+                     AND ((shown->>'shown'='family'
+                           AND public.stewardship_response_comparison_v1(answer.field,item.submitted_value)
+                               IS NOT DISTINCT FROM submitted_key)
+                          OR (shown->>'shown'='reviewer' AND EXISTS (
+                              SELECT 1 FROM public.stewardship_proposal_review edit
+                              JOIN public.stewardship_proposed_change edited ON edited.id=edit.proposal_id
+                              JOIN public.stewardship_submission edited_response
+                                  ON edited_response.id=edited.submission_id
+                              WHERE edit.id::text=shown->>'decision' AND edit.admin_value_set
+                                AND ROW(edited.entity_kind,edited.entity_key,edited.field)
+                                    =ROW(item.entity_kind,item.entity_key,item.field)
+                                AND edited_response.family_id=NEW.family_id
+                                AND public.stewardship_response_comparison_v1(answer.field,edit.admin_value)
+                                    IS NOT DISTINCT FROM submitted_key)))))
             THEN
                 RAISE EXCEPTION 'Submitted census change requires atomic derived work' USING ERRCODE='23514';
             END IF;
@@ -4658,10 +4698,97 @@ BEGIN
               AND history.family_version<=previous.family_version
               AND (history.id=public.stewardship_response_census_anchor_v1(previous.id)
                    OR (proposal.entity_kind='member'
-                       AND proposal.field IN ('moved_household','deceased_status','death_date')))
+                       AND proposal.field IN ('moved_household','deceased_status','death_date'))
+                   -- An open change kept on an earlier response (#1895).
+                   OR proposal.id=(SELECT newest.id FROM (
+                           SELECT kept.id, kept.execution, kept.submitted_value
+                           FROM public.stewardship_proposed_change kept
+                           JOIN public.stewardship_submission kept_response ON kept_response.id=kept.submission_id
+                           JOIN public.stewardship_submission kept_prior ON kept_prior.id=previous.id
+                           WHERE kept_response.family_id=kept_prior.family_id
+                             AND kept_response.campaign_id=kept_prior.campaign_id
+                             AND kept_response.mode=kept_prior.mode
+                             AND kept_response.rehearsal_epoch_id IS NOT DISTINCT FROM kept_prior.rehearsal_epoch_id
+                             AND kept_response.family_version<=kept_prior.family_version
+                             AND ROW(kept.entity_kind,kept.entity_key,kept.field)=ROW(proposal.entity_kind,proposal.entity_key,proposal.field)
+                           ORDER BY kept_response.family_version DESC LIMIT 1) newest
+                       JOIN public.stewardship_submission kept_census
+                           ON kept_census.id=public.stewardship_response_census_anchor_v1(previous.id)
+                       CROSS JOIN LATERAL (SELECT kept_census.answers #> CASE proposal.entity_kind
+                             WHEN 'family' THEN ARRAY['family',proposal.field]
+                             ELSE ARRAY['members',proposal.entity_key,proposal.field] END AS value) given
+                       WHERE proposal.entity_kind IN ('family','member')
+                         AND newest.execution NOT IN ('published','resolved_upstream','resolved_external','cancelled','superseded')
+                         AND given.value IS NOT NULL
+                         AND public.stewardship_response_comparison_v1(proposal.field,given.value)
+                             IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(proposal.field,newest.submitted_value)))
             ORDER BY proposal.entity_kind,proposal.entity_key,proposal.field,history.family_version DESC
         LOOP
             IF prior.execution IN ('published','resolved_upstream','resolved_external','cancelled','superseded') THEN
+                CONTINUE;
+            END IF;
+            -- Strict phase order (#1895): the same answer again for an open
+            -- change ParishSoft already holds keeps it as it is, its stage
+            -- and decision, until its review and step (the resubmission
+            -- rule 1; rule 3 withdraws only an item whose previous answer
+            -- ParishSoft does not hold). responses/proposals.py derives the
+            -- same; a reviewed form's own rules are above and below.
+            IF NOT NEW.reviewed_view AND prior.entity_kind IN ('family','member') AND EXISTS (
+                SELECT 1 FROM (SELECT NEW.answers #> CASE prior.entity_kind
+                      WHEN 'family' THEN ARRAY['family',prior.field]
+                      ELSE ARRAY['members',prior.entity_key,prior.field] END AS value,
+                    CASE prior.entity_kind
+                      WHEN 'family' THEN public.stewardship_response_household_source_v1(
+                          NEW.validation_source_id,NEW.family_id,prior.entity_key,prior.field)
+                      ELSE public.stewardship_response_field_source_v1(
+                          NEW.validation_source_id,NEW.family_id,prior.entity_key,prior.field) END AS source) held
+                WHERE held.value IS NOT NULL AND held.source->'available'='true'::jsonb
+                  AND public.stewardship_response_comparison_v1(prior.field,held.value)
+                      IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(prior.field,prior.submitted_value)
+                  AND public.stewardship_response_comparison_v1(prior.field,held.value)
+                      IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(prior.field,held.source->'value')) THEN
+                CONTINUE;
+            END IF;
+            -- A change a reviewed form (#1705) showed, which this response
+            -- left as shown, stays as it is (reviewed rule 1): its answer
+            -- equals the Family's answer or the reviewer's value the form
+            -- showed, or, for an Ignored change the form showed as the
+            -- baseline, the response gives no answer for it (a hidden New
+            -- Member, a request shown as ParishSoft has the Member) or the
+            -- baseline's own value in the form's snapshot.
+            IF NEW.reviewed_view AND EXISTS (
+                SELECT 1 FROM jsonb_array_elements(NEW.shown_items) shown
+                CROSS JOIN LATERAL (SELECT NEW.answers #> CASE prior.entity_kind
+                      WHEN 'family' THEN ARRAY['family',prior.field]
+                      WHEN 'member' THEN ARRAY['members',prior.entity_key,prior.field]
+                      ELSE ARRAY['proposed_members',prior.entity_key] END AS value) given
+                WHERE shown->>'stream'='census' AND shown->>'item'=prior.id::text
+                  AND CASE shown->>'shown'
+                      WHEN 'family' THEN given.value IS NOT NULL
+                          AND public.stewardship_response_comparison_v1(prior.field,given.value)
+                              IS NOT DISTINCT FROM
+                              public.stewardship_response_comparison_v1(prior.field,prior.submitted_value)
+                      WHEN 'reviewer' THEN given.value IS NOT NULL AND EXISTS (
+                          SELECT 1 FROM public.stewardship_proposal_review edit
+                          JOIN public.stewardship_proposed_change edited ON edited.id=edit.proposal_id
+                          JOIN public.stewardship_submission edited_response
+                              ON edited_response.id=edited.submission_id
+                          WHERE edit.id::text=shown->>'decision' AND edit.admin_value_set
+                            AND ROW(edited.entity_kind,edited.entity_key,edited.field)
+                                =ROW(prior.entity_kind,prior.entity_key,prior.field)
+                            AND edited_response.family_id=NEW.family_id
+                            AND public.stewardship_response_comparison_v1(prior.field,edit.admin_value)
+                                IS NOT DISTINCT FROM
+                                public.stewardship_response_comparison_v1(prior.field,given.value))
+                      WHEN 'baseline' THEN given.value IS NULL
+                          OR (prior.entity_kind='member' AND EXISTS (
+                              SELECT 1 FROM (SELECT public.stewardship_response_field_source_v1(
+                                  NEW.reviewed_source_id,NEW.family_id,prior.entity_key,prior.field) AS source) b
+                              WHERE b.source->'available'='true'::jsonb
+                                AND public.stewardship_response_comparison_v1(prior.field,given.value)
+                                    IS NOT DISTINCT FROM
+                                    public.stewardship_response_comparison_v1(prior.field,b.source->'value')))
+                      ELSE false END) THEN
                 CONTINUE;
             END IF;
             -- Source removal is not withdrawal of independent terminal work.
@@ -4854,6 +4981,10 @@ BEGIN
             -- Terminal/date work may survive an intervening response that has
             -- no active source Member to display. Mirror the Family namespace
             -- and latest-record selection used by effective.proposal_index.
+            -- So may an open change ParishSoft already holds that the Family
+            -- answered again unchanged (strict phase order, #1895): it stays
+            -- on its earlier response while each later census response gives
+            -- its answer, the newest change for the field and still open.
             SELECT candidate.* INTO predecessor FROM public.stewardship_proposed_change candidate
             JOIN public.stewardship_submission earlier ON earlier.id=candidate.submission_id
             JOIN public.stewardship_submission prior ON prior.id=response.prior_submission_id
@@ -4862,10 +4993,68 @@ BEGIN
               AND earlier.rehearsal_epoch_id IS NOT DISTINCT FROM response.rehearsal_epoch_id
               AND earlier.family_version<=prior.family_version
               AND (earlier.id=public.stewardship_response_census_anchor_v1(prior.id) OR (NEW.entity_kind='member'
-                   AND NEW.field IN ('moved_household','deceased_status','death_date')))
+                   AND NEW.field IN ('moved_household','deceased_status','death_date'))
+                   -- A change the prior census response, drawn as the reviewed
+                   -- form (#1705), showed and left as shown, the Family's answer or
+                   -- a reviewer's Edit (#1909): it stays on its earlier response,
+                   -- and effective.proposal_index finds it for the next response
+                   -- (_shown_still_answered), so a response not drawn as the
+                   -- reviewed form carries it or replaces it.
+                   OR EXISTS (SELECT 1 FROM public.stewardship_submission shown_census
+                       CROSS JOIN LATERAL jsonb_array_elements(shown_census.shown_items) shown
+                       CROSS JOIN LATERAL (SELECT shown_census.answers #> CASE NEW.entity_kind
+                             WHEN 'family' THEN ARRAY['family',NEW.field]
+                             WHEN 'member' THEN ARRAY['members',NEW.entity_key,NEW.field]
+                             ELSE ARRAY['proposed_members',NEW.entity_key] END AS value) given
+                       WHERE shown_census.id=public.stewardship_response_census_anchor_v1(prior.id)
+                         AND shown_census.reviewed_view
+                         AND shown->>'stream'='census' AND shown->>'item'=candidate.id::text
+                         AND candidate.execution NOT IN ('cancelled','superseded')
+                         AND CASE shown->>'shown'
+                             WHEN 'baseline' THEN true
+                             WHEN 'family' THEN given.value IS NOT NULL
+                                 AND public.stewardship_response_comparison_v1(NEW.field,given.value)
+                                     IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(NEW.field,candidate.submitted_value)
+                             WHEN 'reviewer' THEN given.value IS NOT NULL AND EXISTS (
+                                 SELECT 1 FROM public.stewardship_proposal_review edit
+                                 JOIN public.stewardship_proposed_change edited ON edited.id=edit.proposal_id
+                                 JOIN public.stewardship_submission edited_response
+                                     ON edited_response.id=edited.submission_id
+                                 WHERE edit.id::text=shown->>'decision' AND edit.admin_value_set
+                                   AND ROW(edited.entity_kind,edited.entity_key,edited.field)
+                                       =ROW(candidate.entity_kind,candidate.entity_key,candidate.field)
+                                   AND edited_response.family_id=shown_census.family_id
+                                   AND public.stewardship_response_comparison_v1(NEW.field,edit.admin_value)
+                                       IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(NEW.field,given.value))
+                             ELSE false END)
+                   OR candidate.id=(SELECT newest.id FROM (
+                           SELECT kept.id, kept.execution, kept.submitted_value
+                           FROM public.stewardship_proposed_change kept
+                           JOIN public.stewardship_submission kept_response ON kept_response.id=kept.submission_id
+                           JOIN public.stewardship_submission kept_prior ON kept_prior.id=prior.id
+                           WHERE kept_response.family_id=kept_prior.family_id
+                             AND kept_response.campaign_id=kept_prior.campaign_id
+                             AND kept_response.mode=kept_prior.mode
+                             AND kept_response.rehearsal_epoch_id IS NOT DISTINCT FROM kept_prior.rehearsal_epoch_id
+                             AND kept_response.family_version<=kept_prior.family_version
+                             AND ROW(kept.entity_kind,kept.entity_key,kept.field)=ROW(NEW.entity_kind,NEW.entity_key,NEW.field)
+                           ORDER BY kept_response.family_version DESC LIMIT 1) newest
+                       JOIN public.stewardship_submission kept_census
+                           ON kept_census.id=public.stewardship_response_census_anchor_v1(prior.id)
+                       CROSS JOIN LATERAL (SELECT kept_census.answers #> CASE NEW.entity_kind
+                             WHEN 'family' THEN ARRAY['family',NEW.field]
+                             ELSE ARRAY['members',NEW.entity_key,NEW.field] END AS value) given
+                       WHERE NEW.entity_kind IN ('family','member')
+                         AND newest.execution NOT IN ('published','resolved_upstream','resolved_external','cancelled','superseded')
+                         AND given.value IS NOT NULL
+                         AND public.stewardship_response_comparison_v1(NEW.field,given.value)
+                             IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(NEW.field,newest.submitted_value)))
               AND ROW(candidate.entity_kind,candidate.entity_key,candidate.field)=ROW(NEW.entity_kind,NEW.entity_key,NEW.field)
             ORDER BY earlier.family_version DESC LIMIT 1;
-            carries_intent := FOUND
+            -- A response drawn as the reviewed form (#1705) never carries a
+            -- decision: a new row there is an item the Family changed again
+            -- or a new one, To review against the baseline at this submit.
+            carries_intent := FOUND AND NOT response.reviewed_view
                 AND predecessor.execution NOT IN ('published','resolved_upstream','resolved_external','cancelled','superseded') AND (
                 public.stewardship_response_comparison_v1(NEW.field,NEW.submitted_value)
                 IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(NEW.field,predecessor.submitted_value));
@@ -4962,9 +5151,10 @@ BEGIN
                 -- publication lease's task is running; it then publishes it
                 -- when the entity's latest outcome is published, or returns
                 -- it to pending or failed when that outcome is invalidated.
-                -- The publication check also marks it resolved upstream when
-                -- its plan, recorded in this transaction, found the value
-                -- already in ParishSoft. It queues a change only while the
+                -- The publication check also marks it Updated in ParishSoft
+                -- (published, nothing written; #1890) when its plan, recorded
+                -- in this transaction, found the value already in
+                -- ParishSoft. It queues a change only while the
                 -- current data lists its Member as an active, living Member
                 -- of the change's Family (#1738, #1749), as preflight and the
                 -- worker check before they read or write.
@@ -5019,13 +5209,16 @@ BEGIN
                            THEN 'published' ELSE 'invalidated' END)
                    -- The publication check (#528, ADM-09): a Production-mode
                    -- plan recorded in this same transaction found the value
-                   -- already in ParishSoft, so the change is resolved
-                   -- upstream at the next version and nothing is written. The
-                   -- plan guard stamps created_at with transaction_timestamp(),
-                   -- so a plan committed earlier never matches; resolved_upstream
-                   -- is terminal: only the web login's Back to review (#1840,
+                   -- already in ParishSoft, so the change is Updated in
+                   -- ParishSoft (published) at the next version and nothing
+                   -- is written; the refresh then confirms it after that step,
+                   -- as every update (#1890, strict phase order; it was
+                   -- resolved upstream, Confirmed at once, before). The plan
+                   -- guard stamps created_at with transaction_timestamp(), so a
+                   -- plan committed earlier never matches; published is
+                   -- terminal: only the web login's Back to review (#1840,
                    -- with its resolution row) undoes the mark.
-                   OR (OLD.execution IN ('pending','failed') AND NEW.execution='resolved_upstream'
+                   OR (OLD.execution IN ('pending','failed') AND NEW.execution='published'
                        AND OLD.decision='approved' AND OLD.handling='api' AND OLD.entity_kind='member'
                        AND EXISTS (SELECT 1 FROM public.stewardship_publication_field f
                            JOIN public.stewardship_publication_entity e ON e.id=f.entity_id
@@ -5037,7 +5230,13 @@ BEGIN
                     RAISE EXCEPTION 'Proposal publication requires its confirmed plan and outcome' USING ERRCODE='23514';
                 END IF;
             ELSIF current_user='pk_stewardship_worker' THEN
+                -- Strict phase order (#1890): a refresh confirms a change only
+                -- after its step, so reconciliation resolves upstream only a
+                -- change an update run has queued; an open change ParishSoft
+                -- already holds keeps its stage (To review, Ready, To enter by
+                -- hand) with ParishSoft's value stored on it.
                 IF NEW.execution NOT IN ('pending','conflict','resolved_upstream','cancelled')
+                   OR (NEW.execution='resolved_upstream' AND OLD.execution<>'queued')
                    OR NEW.current_source_id=OLD.current_source_id
                    OR NOT public.stewardship_response_source_owner_v1(NEW.current_source_id)
                    OR NOT EXISTS (SELECT 1 FROM public.stewardship_source_pin
@@ -5061,6 +5260,17 @@ BEGIN
                 -- by a later refresh or the Family's same answer back
                 -- into force over the undo in ParishSoft. Nothing else
                 -- here changes the decision.
+                -- Strict phase order (#1890) leaves a change ParishSoft
+                -- caught up with open (pending) instead of resolving it
+                -- upstream, and then nothing is left to write, so the stale
+                -- base protects nothing: an approval kept over a Conflict
+                -- keeps its stage (Ready, To enter by hand). The worker's
+                -- merge says when ParishSoft holds the carried value, as it
+                -- chose resolved_upstream before; this guard, which cannot
+                -- compare field values canonically, admits the kept
+                -- approval only on a pending outcome whose ParishSoft value
+                -- moved off the baseline, which every caught-up value does
+                -- unless the reviewer's Edit is the baseline value itself.
                 IF NEW.decision IS DISTINCT FROM (CASE WHEN OLD.execution='published'
                        THEN 'unreviewed' WHEN OLD.decision='approved'
                        AND OLD.execution IN ('pending','failed')
@@ -5074,6 +5284,10 @@ BEGIN
                             AND later.expected_version<OLD.version
                             AND later.decision<>'approved'))
                        THEN 'unreviewed' ELSE OLD.decision END)
+                   AND NOT (OLD.execution<>'published' AND NEW.decision=OLD.decision
+                       AND NEW.execution='pending' AND NEW.current_available
+                       AND (OLD.admin_value_set
+                           OR NEW.current_value IS DISTINCT FROM OLD.baseline_value))
                 THEN
                     RAISE EXCEPTION 'Proposal reconciliation must return a stale accepted approval to review' USING ERRCODE='23514';
                 END IF;
@@ -5084,7 +5298,10 @@ BEGIN
                 -- execution (entered) or the decision (ignored, reopened),
                 -- nothing else, and advances the version by one. Any other
                 -- web change must be a replacement by a later Family response,
-                -- which never changes the decision. A change Entered by hand
+                -- which never changes the decision and never resolves a change
+                -- upstream (strict phase order, #1895: an unchanged answer
+                -- keeps a change ParishSoft already holds, and an answer set
+                -- back withdraws one). A change Entered by hand
                 -- takes only a resolution (#1737): Entered by hand again keeps
                 -- it entered. Back to review (reopened) of a terminal step
                 -- (#1840: Entered by hand, Updated in ParishSoft, Already in
@@ -5157,7 +5374,7 @@ BEGIN
                           THEN NEW.execution='conflict'
                           ELSE NEW.execution=OLD.execution END)
                    AND (NEW.decision<>OLD.decision
-                   OR NEW.execution NOT IN ('superseded','cancelled','resolved_upstream')
+                   OR NEW.execution NOT IN ('superseded','cancelled')
                    OR NOT EXISTS (
                        SELECT 1 FROM public.stewardship_submission later
                        JOIN public.stewardship_family_form_baseline baseline ON baseline.id=later.baseline_id
@@ -5167,7 +5384,7 @@ BEGIN
                          AND later.mode=earlier.mode
                          AND later.rehearsal_epoch_id IS NOT DISTINCT FROM earlier.rehearsal_epoch_id
                          AND later.family_version>earlier.family_version
-                         AND (public.stewardship_response_census_anchor_v1(later.prior_submission_id)=earlier.id OR (OLD.entity_kind='member'
+                         AND (((public.stewardship_response_census_anchor_v1(later.prior_submission_id)=earlier.id OR (OLD.entity_kind='member'
                               AND OLD.field IN ('moved_household','deceased_status','death_date')))
                          AND OLD.id=(
                              SELECT candidate.id FROM public.stewardship_proposed_change candidate
@@ -5181,7 +5398,74 @@ BEGIN
                                     AND OLD.field IN ('moved_household','deceased_status','death_date')))
                                AND ROW(candidate.entity_kind,candidate.entity_key,candidate.field)=
                                    ROW(OLD.entity_kind,OLD.entity_key,OLD.field)
-                             ORDER BY history.family_version DESC LIMIT 1)
+                             ORDER BY history.family_version DESC LIMIT 1))
+                           -- An open change ParishSoft already holds, which
+                           -- the Family answered again unchanged, stays on its
+                           -- earlier response (#1895): the predecessor lookup
+                           -- above finds it the same way.
+                           OR OLD.id=(SELECT newest.id FROM (
+                                   SELECT kept.id, kept.execution, kept.submitted_value
+                                   FROM public.stewardship_proposed_change kept
+                                   JOIN public.stewardship_submission kept_response ON kept_response.id=kept.submission_id
+                                   JOIN public.stewardship_submission kept_prior ON kept_prior.id=later.prior_submission_id
+                                   WHERE kept_response.family_id=kept_prior.family_id
+                                     AND kept_response.campaign_id=kept_prior.campaign_id
+                                     AND kept_response.mode=kept_prior.mode
+                                     AND kept_response.rehearsal_epoch_id IS NOT DISTINCT FROM kept_prior.rehearsal_epoch_id
+                                     AND kept_response.family_version<=kept_prior.family_version
+                                     AND ROW(kept.entity_kind,kept.entity_key,kept.field)=ROW(OLD.entity_kind,OLD.entity_key,OLD.field)
+                                   ORDER BY kept_response.family_version DESC LIMIT 1) newest
+                               JOIN public.stewardship_submission kept_census
+                                   ON kept_census.id=public.stewardship_response_census_anchor_v1(later.prior_submission_id)
+                               CROSS JOIN LATERAL (SELECT kept_census.answers #> CASE OLD.entity_kind
+                                     WHEN 'family' THEN ARRAY['family',OLD.field]
+                                     ELSE ARRAY['members',OLD.entity_key,OLD.field] END AS value) given
+                               WHERE OLD.entity_kind IN ('family','member')
+                                 AND newest.execution NOT IN ('published','resolved_upstream','resolved_external','cancelled','superseded')
+                                 AND given.value IS NOT NULL
+                                 AND public.stewardship_response_comparison_v1(OLD.field,given.value)
+                                     IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(OLD.field,newest.submitted_value))
+                           -- A change the prior census response, drawn as the reviewed
+                           -- form (#1705), showed and left as shown, the Family's answer or
+                           -- a reviewer's Edit (#1909): it stays on its earlier response,
+                           -- and effective.proposal_index finds it for the next response
+                           -- (_shown_still_answered), so a response not drawn as the
+                           -- reviewed form carries it or replaces it.
+                           OR EXISTS (SELECT 1 FROM public.stewardship_submission shown_census
+                               CROSS JOIN LATERAL jsonb_array_elements(shown_census.shown_items) shown
+                               CROSS JOIN LATERAL (SELECT shown_census.answers #> CASE OLD.entity_kind
+                                     WHEN 'family' THEN ARRAY['family',OLD.field]
+                                     WHEN 'member' THEN ARRAY['members',OLD.entity_key,OLD.field]
+                                     ELSE ARRAY['proposed_members',OLD.entity_key] END AS value) given
+                               WHERE shown_census.id=public.stewardship_response_census_anchor_v1(later.prior_submission_id)
+                                 AND shown_census.reviewed_view
+                                 AND shown->>'stream'='census' AND shown->>'item'=OLD.id::text
+                                 AND OLD.execution NOT IN ('cancelled','superseded')
+                                 AND CASE shown->>'shown'
+                                     WHEN 'baseline' THEN true
+                                     WHEN 'family' THEN given.value IS NOT NULL
+                                         AND public.stewardship_response_comparison_v1(OLD.field,given.value)
+                                             IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(OLD.field,OLD.submitted_value)
+                                     WHEN 'reviewer' THEN given.value IS NOT NULL AND EXISTS (
+                                         SELECT 1 FROM public.stewardship_proposal_review edit
+                                         JOIN public.stewardship_proposed_change edited ON edited.id=edit.proposal_id
+                                         JOIN public.stewardship_submission edited_response
+                                             ON edited_response.id=edited.submission_id
+                                         WHERE edit.id::text=shown->>'decision' AND edit.admin_value_set
+                                           AND ROW(edited.entity_kind,edited.entity_key,edited.field)
+                                               =ROW(OLD.entity_kind,OLD.entity_key,OLD.field)
+                                           AND edited_response.family_id=shown_census.family_id
+                                           AND public.stewardship_response_comparison_v1(OLD.field,edit.admin_value)
+                                               IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(OLD.field,given.value))
+                                     ELSE false END)
+                           -- A reviewed form (#1705) names each change it
+                           -- showed, which a Family that left it as shown kept
+                           -- on its earlier response: such a change, on any
+                           -- earlier response, is the one the new answer
+                           -- replaces or withdraws.
+                           OR (later.reviewed_view AND EXISTS (
+                               SELECT 1 FROM jsonb_array_elements(later.shown_items) shown
+                               WHERE shown->>'stream'='census' AND shown->>'item'=OLD.id::text)))
                          AND (NEW.execution <> 'superseded' OR EXISTS (
                              SELECT 1 FROM public.stewardship_proposed_change successor
                              WHERE successor.id=NEW.superseded_by_id AND successor.submission_id=later.id))
@@ -5720,13 +6004,22 @@ BEGIN
     -- Back to review of a terminal step (Entered in ParishSoft or a
     -- Confirmed refresh check, #1840) keeps the decision: the request stays
     -- resolved with its outcome and Edit, and only its version moves.
+    -- A Family response drawn as the reviewed form (#1705) may also replace
+    -- or withdraw a decided request it showed (reviewed rules 2 and 3); the
+    -- Family branch below checks that response.
     IF (OLD.state NOT IN ('new','assigned','in_progress')
         AND NOT (current_user='pk_stewardship_web'
             AND OLD.state IN ('resolved','closed_no_response')
             AND (NEW.state='in_progress' OR (NEW.state='cancelled' AND OLD.parish_added)
                 OR (OLD.state='resolved' AND NEW.state='resolved'
                     AND NEW.outcome IS NOT DISTINCT FROM OLD.outcome
-                    AND NEW.reviewed_ministry_duid IS NOT DISTINCT FROM OLD.reviewed_ministry_duid))))
+                    AND NEW.reviewed_ministry_duid IS NOT DISTINCT FROM OLD.reviewed_ministry_duid)))
+        -- Only the web login (the Family branch below checks its response)
+        -- or a login that is no runtime login at all (the schema owner).
+        AND NOT ((current_user='pk_stewardship_web'
+                  OR current_user NOT LIKE 'pk\_stewardship\_%')
+            AND OLD.state IN ('resolved','closed_no_response')
+            AND NEW.state IN ('superseded','cancelled') AND NOT OLD.parish_added))
        OR NEW.version<>OLD.version+1
        OR (to_jsonb(NEW)-ARRAY['state','outcome','resolved_at','resolution_source_id','superseded_by_id','assignee_id','reviewed_ministry_duid','version','updated_at'])
           IS DISTINCT FROM
@@ -5734,22 +6027,12 @@ BEGIN
         RAISE EXCEPTION 'Ministry provenance and closed outcomes are immutable' USING ERRCODE='23514';
     END IF;
     IF current_user='pk_stewardship_worker' THEN
-        IF NEW.state<>'resolved' OR NEW.outcome IS DISTINCT FROM
-            (CASE WHEN NEW.action='join' THEN 'joined' ELSE 'leave_confirmed' END)
-           OR NEW.assignee_id IS DISTINCT FROM OLD.assignee_id
-           OR NEW.reviewed_ministry_duid IS NOT NULL
-           OR NEW.resolution_source_id IS NULL
-           OR NOT public.stewardship_response_source_owner_v1(NEW.resolution_source_id)
-           OR NEW.entity_kind<>'member'
-           OR public.stewardship_response_ministry_current_v1(
-                NEW.resolution_source_id,response.family_id,NEW.entity_key,NEW.ministry_duid)
-              IS DISTINCT FROM (NEW.action='join')
-           OR NOT EXISTS (SELECT 1 FROM public.stewardship_source_pin
-               WHERE snapshot_id=NEW.resolution_source_id AND parent_kind='submission'
-                 AND parent_id=NEW.submission_id AND expires_at IS NULL) THEN
-            RAISE EXCEPTION 'Ministry resolution requires fenced scoped roster evidence' USING ERRCODE='23514';
-        END IF;
-        NEW.resolved_at := clock_timestamp();
+        -- Strict phase order (#1890): a refresh no longer resolves an open
+        -- request whose roster already shows it (the worker's only change
+        -- here was that resolution). The request keeps its stage and is
+        -- decided, ticked and then confirmed by a refresh check. Requests a
+        -- refresh resolved before keep their resolution source as history.
+        RAISE EXCEPTION 'A refresh does not resolve a Ministry request' USING ERRCODE='23514';
     ELSIF current_user='pk_stewardship_web' AND (NEW.state NOT IN ('superseded','cancelled')
         OR (NEW.state='cancelled' AND OLD.parish_added AND OLD.state='resolved')) THEN
         -- Staff follow-up. Its revision guard already proved current authority,
@@ -5780,8 +6063,19 @@ BEGIN
           AND candidate.family_version>response.family_version
           AND OLD.id=public.stewardship_ministry_predecessor_v1(
               candidate,OLD.entity_kind,OLD.entity_key,OLD.ministry_duid);
+        -- A decided request is replaced or withdrawn only by a response
+        -- drawn as the reviewed form that showed it (#1705): never one the
+        -- parish added, a refresh resolved or Staff ticked Entered in
+        -- ParishSoft, and its outcome is cleared as the table requires.
         IF NOT FOUND OR NEW.assignee_id IS DISTINCT FROM OLD.assignee_id
-           OR OLD.state NOT IN ('new','assigned','in_progress')
+           OR (OLD.state NOT IN ('new','assigned','in_progress')
+               AND NOT (OLD.state IN ('resolved','closed_no_response')
+                   AND later.reviewed_view AND NOT OLD.parish_added
+                   AND OLD.resolution_source_id IS NULL
+                   AND EXISTS (SELECT 1 FROM jsonb_array_elements(later.shown_items) shown
+                       WHERE shown->>'stream'='ministry' AND shown->>'item'=OLD.id::text)
+                   AND coalesce((SELECT tick.entered FROM public.stewardship_ministry_roster_entry tick
+                       WHERE tick.request_id=OLD.id ORDER BY tick.sequence DESC LIMIT 1),false)=false))
            OR NEW.reviewed_ministry_duid IS NOT NULL
            OR NOT public.stewardship_response_ministry_visible_v1(
                later.validation_source_id,later.configuration_id,later.campaign_id,NEW.ministry_duid)
@@ -5801,6 +6095,14 @@ BEGIN
            OR coalesce(later.answers#>ARRAY['ministries',group_name,NEW.entity_key,'leave'] @> to_jsonb(NEW.ministry_duid),false) THEN
             RAISE EXCEPTION 'Selected Ministry intent cannot be cancelled' USING ERRCODE='23514';
         END IF;
+        -- A decided request the Family replaced or withdrew keeps no outcome
+        -- (#1705); its revisions keep the decision's history.
+        IF NEW.outcome IS NOT NULL THEN
+            RAISE EXCEPTION 'A replaced Ministry request keeps no outcome' USING ERRCODE='23514';
+        END IF;
+    END IF;
+    IF NEW.state IN ('superseded','cancelled') THEN
+        NEW.resolved_at := NULL;
     END IF;
     NEW.updated_at := clock_timestamp();
     RETURN NEW;
@@ -5837,7 +6139,30 @@ BEGIN
                         WHERE decided.id=public.stewardship_ministry_predecessor_v1(
                               NEW,entity,member_key,identifier::text::integer)
                           AND decided.state IN ('resolved','closed_no_response')
-                          AND decided.action=action_name) THEN
+                          AND decided.action=action_name)
+                       -- A response drawn as the reviewed form (#1705) left
+                       -- a request it showed chosen as shown: the request,
+                       -- on an earlier response of this Family and still in
+                       -- force, keeps its stage and decision with no new row
+                       -- (reviewed rule 1). The Ministry it showed is its own,
+                       -- or the one its Edit carried forward.
+                       AND NOT (NEW.reviewed_view AND EXISTS (
+                        SELECT 1 FROM jsonb_array_elements(NEW.shown_items) shown
+                        JOIN public.stewardship_ministry_request item ON item.id::text=shown->>'item'
+                        JOIN public.stewardship_submission history ON history.id=item.submission_id
+                        WHERE shown->>'stream'='ministry' AND shown->>'shown' IN ('family','reviewer')
+                          AND shown->>'entity'=entity AND shown->>'key'=member_key
+                          AND shown->>'action'=action_name
+                          AND item.entity_kind=entity AND item.entity_key=member_key
+                          AND item.action=action_name
+                          AND item.state NOT IN ('cancelled','superseded')
+                          AND history.family_id=NEW.family_id AND history.campaign_id=NEW.campaign_id
+                          AND history.mode=NEW.mode AND history.family_version<NEW.family_version
+                          AND identifier::text::integer=CASE
+                              WHEN shown->>'shown'='reviewer' AND shown->>'decision' IS NOT NULL
+                              THEN (SELECT edit.reviewed_ministry_duid FROM public.stewardship_ministry_revision edit
+                                  WHERE edit.id::text=shown->>'decision' AND edit.request_id=item.id)
+                              ELSE item.ministry_duid END)) THEN
                         RAISE EXCEPTION 'Submitted Ministry choice requires atomic derived work' USING ERRCODE='23514';
                     END IF;
                 END LOOP;
@@ -5854,6 +6179,15 @@ BEGIN
         ORDER BY request.entity_kind,request.entity_key,request.ministry_duid,history.family_version DESC
     LOOP
         IF prior.state IN ('new','assigned','in_progress')
+           -- An open request a reviewed form (#1705) showed chosen, left
+           -- chosen: it stays as it is (reviewed rule 1).
+           AND NOT (NEW.reviewed_view AND EXISTS (
+               SELECT 1 FROM jsonb_array_elements(NEW.shown_items) shown
+               WHERE shown->>'stream'='ministry' AND shown->>'item'=prior.id::text
+                 AND shown->>'shown'='family'
+                 AND coalesce(NEW.answers#>ARRAY['ministries',
+                     CASE WHEN prior.entity_kind='member' THEN 'members' ELSE 'proposed_members' END,
+                     prior.entity_key,prior.action] @> to_jsonb(prior.ministry_duid),false)))
            AND public.stewardship_response_ministry_visible_v1(
                NEW.validation_source_id,NEW.configuration_id,NEW.campaign_id,prior.ministry_duid)
            AND ((prior.entity_kind='member' AND (NEW.answers->'members') ? prior.entity_key)
@@ -5903,10 +6237,10 @@ ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "stewardship_jobs_outbox
 ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_semantic_key" UNIQUE ("scope_id", "mode", "semantic_key");
 ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_known_state" CHECK (((state)::text = ANY ((ARRAY['pending'::character varying, 'submitting'::character varying, 'retry_wait'::character varying, 'delivery_unknown'::character varying, 'delivered'::character varying, 'permanent_failure'::character varying, 'cancelled'::character varying])::text[])));
 ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_action" CHECK (((action)::text = ANY ((ARRAY['created'::character varying, 'prepared'::character varying, 'hold'::character varying, 'release_hold'::character varying, 'submit'::character varying, 'accept'::character varying, 'retry_unaccepted'::character varying, 'fail_unaccepted'::character varying, 'mark_unknown'::character varying, 'cancel_unsent'::character varying, 'retry_failed'::character varying, 'authorize_resend'::character varying, 'retry_idempotent'::character varying])::text[])));
-ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_purpose" CHECK (((purpose)::text = ANY ((ARRAY['initial'::character varying, 'reminder'::character varying, 'receipt'::character varying, 'family_test'::character varying, 'daily_digest'::character varying, 'weekly_digest'::character varying, 'operational'::character varying, 'security_event'::character varying, 'leader_email'::character varying])::text[])));
+ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_purpose" CHECK (((purpose)::text = ANY ((ARRAY['initial'::character varying, 'reminder'::character varying, 'receipt'::character varying, 'family_test'::character varying, 'daily_digest'::character varying, 'weekly_digest'::character varying, 'operational'::character varying, 'security_event'::character varying, 'leader_email'::character varying, 'admin_report'::character varying, 'admin_report_test'::character varying])::text[])));
 ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_mode" CHECK (((mode)::text = ANY ((ARRAY['testing'::character varying, 'production'::character varying])::text[])));
 ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_routing" CHECK ((((family_id IS NULL) AND ((purpose)::text = ANY ((ARRAY['operational'::character varying, 'security_event'::character varying])::text[])) AND ((routing)::text = 'operational'::text)) OR ((campaign_id IS NULL) AND (family_id IS NULL) AND ((purpose)::text = 'leader_email'::text) AND ((((mode)::text = 'testing'::text) AND ((routing)::text = 'testing_override'::text)) OR (((mode)::text = 'production'::text) AND ((routing)::text = 'production'::text)))) OR ((NOT ((purpose)::text = ANY ((ARRAY['operational'::character varying, 'security_event'::character varying, 'leader_email'::character varying])::text[]))) AND (campaign_id IS NOT NULL) AND ((((mode)::text = 'testing'::text) AND ((routing)::text = 'testing_override'::text)) OR (((mode)::text = 'production'::text) AND ((routing)::text = 'production'::text))))));
-ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_family_purpose" CHECK ((((family_id IS NOT NULL) AND ((purpose)::text = ANY ((ARRAY['initial'::character varying, 'reminder'::character varying, 'receipt'::character varying, 'family_test'::character varying])::text[]))) OR ((family_id IS NULL) AND ((purpose)::text = ANY ((ARRAY['daily_digest'::character varying, 'weekly_digest'::character varying, 'operational'::character varying, 'security_event'::character varying, 'leader_email'::character varying])::text[])))));
+ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_family_purpose" CHECK ((((family_id IS NOT NULL) AND ((purpose)::text = ANY ((ARRAY['initial'::character varying, 'reminder'::character varying, 'receipt'::character varying, 'family_test'::character varying])::text[]))) OR ((family_id IS NULL) AND ((purpose)::text = ANY ((ARRAY['daily_digest'::character varying, 'weekly_digest'::character varying, 'operational'::character varying, 'security_event'::character varying, 'leader_email'::character varying, 'admin_report'::character varying, 'admin_report_test'::character varying])::text[])))));
 ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_family_test_testing" CHECK (((NOT ((purpose)::text = 'family_test'::text)) OR (((credential_namespace)::text = 'rehearsal'::text) AND ((mode)::text = 'testing'::text))));
 ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_credential_namespace" CHECK ((((credential_epoch_id IS NULL) AND ((credential_namespace)::text = 'none'::text) AND (rehearsal_epoch_id IS NULL) AND (sealed_key_id IS NULL) AND (sealed_substitutions IS NULL) AND (token_generation_id IS NULL)) OR ((family_id IS NOT NULL) AND (((credential_epoch_id IS NOT NULL) AND ((credential_namespace)::text = 'production'::text) AND ((mode)::text = 'production'::text) AND (rehearsal_epoch_id IS NULL) AND (token_generation_id IS NOT NULL)) OR ((credential_epoch_id IS NULL) AND ((credential_namespace)::text = 'rehearsal'::text) AND ((mode)::text = 'testing'::text) AND (rehearsal_epoch_id IS NOT NULL) AND (token_generation_id IS NULL))))));
 ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_terminal_scrub" CHECK ((((finished_at IS NOT NULL) AND (sealed_key_id IS NULL) AND (sealed_substitutions IS NULL) AND ((state)::text = ANY ((ARRAY['delivered'::character varying, 'permanent_failure'::character varying, 'cancelled'::character varying])::text[]))) OR ((NOT ((state)::text = ANY ((ARRAY['delivered'::character varying, 'permanent_failure'::character varying, 'cancelled'::character varying])::text[]))) AND (finished_at IS NULL) AND (((credential_namespace)::text = 'none'::text) OR ((sealed_key_id IS NOT NULL) AND (sealed_substitutions IS NOT NULL))))));

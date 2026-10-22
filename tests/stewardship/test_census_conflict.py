@@ -107,3 +107,16 @@ def test_reconciliation_withdraws_only_an_accepted_approval(
         execution=before, decision=decision, conflict_accepted=accepted
     )
     assert resets_approval(reconciled, after) is expected
+
+
+@pytest.mark.parametrize(
+    ("after", "expected"), [("pending", False), ("conflict", True)]
+)
+def test_a_caught_up_change_keeps_its_accepted_approval(after, expected):
+    """Strict phase order (#1890): ParishSoft holding the carried value
+    leaves the change open with nothing to write, so its approval stays; an
+    unusable read (a Conflict) still sends it back."""
+    reconciled = SimpleNamespace(
+        execution="pending", decision="approved", conflict_accepted=True
+    )
+    assert resets_approval(reconciled, after, caught_up=True) is expected

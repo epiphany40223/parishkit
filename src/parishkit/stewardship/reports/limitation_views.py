@@ -24,6 +24,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.accounts.role_refusal import require
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin, database_now
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
@@ -127,9 +128,8 @@ def _principal(request, store, *, read_only=False, export=False):
     principal = authenticated_admin(
         request, store=store, activity=not read_only, read_only=read_only
     )
-    if not allows(principal, Capability.CAMPAIGN_REPORT) or (
-        export and not allows(principal, Capability.REPORT_EXPORT)
-    ):
+    require(principal, Capability.CAMPAIGN_REPORT)
+    if export and not allows(principal, Capability.REPORT_EXPORT):
         raise PermissionError("The Limitations report is unavailable.")
     return principal
 
@@ -254,7 +254,7 @@ def _respond(request, campaign_id, *, export, render):
             )
         except ValueError:
             # A malformed form, or a decision the answer does not take (a
-            # reopening with no note): a 400, nothing recorded.
+            # Handled undo with no note): a 400, nothing recorded.
             return _error(campaign_id, status=400)
         # What the audit records: the parsed choices, and the snapshot once
         # the read has named it.

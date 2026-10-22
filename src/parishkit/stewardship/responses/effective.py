@@ -15,6 +15,9 @@ RESOLVED_EXECUTIONS = frozenset({"published", "resolved_upstream", "resolved_ext
 # Changes a person entered by hand or publication wrote, which ParishSoft's
 # download may not show yet; a Family's unchanged answer keeps them (#1683).
 ENTERED_EXECUTIONS = frozenset({"published", "resolved_external"})
+# Executions of a change that is no longer in force (closed), as against an
+# open one (pending, conflict, queued, failed).
+CLOSED_EXECUTIONS = RESOLVED_EXECUTIONS | {"cancelled", "superseded"}
 # The ordinary census fields whose latest change lives on the last census
 # response, by (entity, field), with the kind their answers compare by.
 ORDINARY_KINDS = {
@@ -105,7 +108,8 @@ def proposal_index(submission):
     )
     indexed = {(row.entity_kind, row.entity_key, row.field): row for row in preserved}
     census = census_submission(submission)
-    indexed.update(_entered_still_answered(census))
+    indexed.update(_kept_still_answered(census))
+    indexed.update(_shown_still_answered(census))
     indexed.update(
         {
             (row.entity_kind, row.entity_key, row.field): row
@@ -115,20 +119,23 @@ def proposal_index(submission):
     return indexed
 
 
-def _entered_still_answered(census):
-    """Ordinary changes entered or published before ``census`` that it still answers.
+def _kept_still_answered(census):
+    """Ordinary changes kept from before ``census`` that it still answers.
 
-    A Family that answers again unchanged after a change was Entered by
-    hand or written to ParishSoft (but before the download shows it) keeps
-    that change: no new row is made (the review pipeline's resubmission
-    rule, #1683). The row stays on its earlier response, so the next
-    response must still find it, as long as each later census response
-    answered it the same way: the newest row for the key, from an earlier
-    response, when it is entered or published and ``census``'s answer is its
-    own. A different answer since then made a row of its own (newer), and
-    an answer set back to ParishSoft's value made none, which this check
-    tells apart. Terminal requests are found by ``proposal_index``'s own
-    preserved query; a New Member once entered is no longer presented.
+    A Family that answers again unchanged keeps, with no new row, a change
+    already Entered by hand or written to ParishSoft (but before the
+    download shows it; #1683), and an open change ParishSoft already holds
+    (strict phase order, #1895: it waits for its review and step). Either
+    row stays on its earlier response, so the next response must still find
+    it, as long as each later census response answered it the same way: the
+    newest row for the key, from an earlier response, when it is entered,
+    published or open and ``census``'s answer is its own. A different answer
+    since then made a row of its own (newer), and an answer set back to
+    ParishSoft's value made none (an open change it withdrew is closed),
+    which this check tells apart. The census guard's predecessor lookup and
+    the completeness check (frozen file 0160) find the same open change.
+    Terminal requests are found by ``proposal_index``'s own preserved query;
+    a New Member once entered is no longer presented.
     """
     if census is None:
         return {}
@@ -147,11 +154,61 @@ def _entered_still_answered(census):
     found = {}
     for row in newest:
         kind = ORDINARY_KINDS.get((row.entity_kind, row.field))
-        if kind is None or row.execution not in ENTERED_EXECUTIONS:
+        # Skip a closed change unless it was entered (still in force).
+        closed_for_good = (
+            row.execution in CLOSED_EXECUTIONS
+            and row.execution not in ENTERED_EXECUTIONS
+        )
+        if kind is None or closed_for_good:
             continue
         answer = _answer(census, row.entity_kind, row.entity_key, row.field)
         if answer is not _ABSENT and same_answer(kind, answer, row):
             found[(row.entity_kind, row.entity_key, row.field)] = row
+    return found
+
+
+def _shown_still_answered(census):
+    """Changes a reviewed form showed that ``census`` left as shown (#1705).
+
+    A Family that leaves a reviewed form's shown value as it was makes no
+    new row: the change it showed stays in force on its earlier response
+    (the review pipeline's reviewed rule 1). Such a response's
+    ``shown_items`` name that change, so the next form finds it here. A
+    change ``census`` answered differently (rule 2) has a row of its own on
+    ``census``, which ``proposal_index`` lets win; one ``census`` set back
+    to ParishSoft's value (rule 3) is left out, so an entered one that the
+    Family withdrew is not shown again. An Ignored change the form showed
+    as the baseline stays Ignored whatever the answer that made no row.
+    The census guard (frozen file 0163, #1909) finds the same change for a
+    next response not drawn as the reviewed form.
+    """
+    if census is None or not census.reviewed_view:
+        return {}
+    from .reviewed import (
+        CENSUS,
+        census_answer,
+        census_key,
+        census_rows,
+        entries_of,
+        left_as_shown,
+    )
+
+    entries = entries_of(census.shown_items, CENSUS)
+    if not entries:
+        return {}
+    rows, reviews = census_rows(entries)
+    found = {}
+    for entry in entries:
+        row = rows.get(entry["item"])
+        if row is None or row.execution in {"cancelled", "superseded"}:
+            continue
+        if entry["shown"] != "baseline":
+            answer = census_answer(census.answers, *census_key(entry))
+            review = reviews.get(entry["decision"] or "")
+            # The baseline is not needed for a value the form showed.
+            if not left_as_shown(entry, row, review, KnownValue(False), answer):
+                continue
+        found[census_key(entry)] = row
     return found
 
 

@@ -219,7 +219,8 @@ A `Campaign` includes:
 - financial period, comparison period, and mapped fund DUIDs;
 - configurable share-option versions;
 - additional-information enabled flag;
-- daily/weekly Admin digest schedules; and
+- [report email](../report-emails/spec.md) schedules (which replaced the
+  daily/weekly Admin digest schedules); and
 - theme `artwork` and `reminder_workgroup` (described under
   [Parish and integrations](#parish-and-integrations)).
 
@@ -406,7 +407,9 @@ the activation transaction. The
 [background workflow](../background-processing/spec.md#activation-catch-up)
 owns batching, claim/dispatch guards, completion, and recovery semantics.
 
-`ScheduleDefinition` gives each initial, reminder, or digest schedule a stable
+`ScheduleDefinition` gives each initial, reminder, or report email schedule
+(kind `report`; see
+[report email definition](../report-emails/spec.md#report-email-definition)) a stable
 logical UUID and campaign/type, and points at its current revision or records
 its removal time; exactly one revision is current unless the definition was
 removed. Each applied configuration version materializes immutable
@@ -439,12 +442,14 @@ withdrawal never makes an already covered semantic slot deliverable again.
 
 `ScheduleFulfillment` records that a semantic slot is covered independently of
 revision. Its disposition is `delivered`, `coalesced`, or `empty`. An `empty`
-daily-digest row requires an audited successful occurrence whose entire original
-recipient cohort was safely cancelled after losing Administrator authority; it
-does not represent provider acceptance. Its unique key combines
+report email row requires an audited successful occurrence whose entire
+original recipient cohort was safely cancelled after failing its recheck, or
+that sent nothing because the report had nothing to report
+([sending only when there is content](../report-emails/spec.md#sending-only-when-there-is-content));
+it does not represent provider acceptance. Its unique key combines
 schedule UUID, mode, semantic recipient or audience, and occurrence slot (for
-example Family DUID for a one-time Family mail or campaign-local date for a
-daily digest). A delivered row references the successful occurrence; a
+example Family DUID for a one-time Family mail or a campaign-local date, its
+[slot key](../report-emails/spec.md#slot-keys), for a report email). A delivered row references the successful occurrence; a
 coalesced row references the selected replacement occurrence that covers it
 without masquerading as provider success. Thus changing a time or template
 never makes a recipient whose slot is already covered in that mode eligible for
@@ -458,7 +463,7 @@ replacement occurrence under the same demand. It is coverage lineage, not a
 new delivery identity or a success record. Each predecessor has at most one
 successor; links must move to the current revision and cannot cycle. Original
 occurrences and fulfillment rows remain unchanged. After activation preparation
-has completed, an ordinary daily-digest preparation may own these same forward
+has completed, an ordinary report email preparation may own these same forward
 edges under its exact task claim instead of reopening the completed demand.
 Each edge has exactly one preparation owner; Testing edges are removed only by
 the journaled Testing cleanup with their occurrence inventory.
@@ -466,15 +471,15 @@ Family preparation must also
 forward coalesced reminder coverage when a replacement initial invitation is
 selected. Removing all Family schedules preserves history without reviving mail;
 configuration continues to forbid reminders without an initial invitation.
-Digest generation and post-close obligation resolution must follow this lineage
+Report email generation and post-close obligation resolution must follow this lineage
 to include every original covered date, including dates covered before the
 configuration edit. Removal without a replacement preserves unresolved history
 for the ordinary explicit post-close resolution workflow; it does not claim
 delivery.
 
 `PostCloseMailResolution` stores Campaign, immutable mode, semantic obligation
-key (receipt submission identity or digest schedule UUID/slot), exact covered
-submission/item/correction versions or daily range, resolving Admin, UTC time,
+key (receipt submission identity or report email schedule UUID/slot), exact
+covered submission versions or report-day range, resolving Admin, UTC time,
 required reason, and linked skipped occurrence/cancelled work. Its unique key
 combines campaign, mode, obligation key, and coverage digest, making repeated
 confirmation idempotent without covering later inputs. It is a durable explicit
@@ -888,7 +893,7 @@ a refusal is its ordinary temporary denial. Rows hold no answers, names or
 credentials; they are behavioural evidence about a Family, read only by the
 Admin and Staff [response funnel](../reports/spec.md#response-funnel), the
 Administrator's [Timeline](../reports/spec.md#timeline) and
-the background worker that compiles a Production daily digest's funnel (its
+the background worker that compiles a Production report email's funnel (its
 first instants only).
 
 Retention follows the mode. `test` rows are Testing detail: the
@@ -1078,6 +1083,39 @@ retries; a normal count takes tens of milliseconds. System logs list the event
 in the [ParishSoft refreshes](../admin-portal/spec.md#activity-groups)
 Activity group.
 
+#### Person identity reads
+
+A user's [Timeline](../admin-portal/spec.md#user-timeline-family-part)
+shows the ParishSoft Family the user belongs to, and a Family's Timeline
+names its users ([#1867](https://github.com/epiphany40223/parishkit/issues/1867)).
+Both need to match an address against Family and Member contact records,
+which the web login cannot read, so frozen migration 0157 adds two
+`SECURITY DEFINER` reads with a fixed search path:
+
+- `stewardship_address_people_v1(address, actor)` returns `(family_duid,
+  member_duid)` for each Family contact (`member_duid` null) and each Member
+  contact (with the Member's Family) in the current ParishSoft snapshot
+  holding `address` as a valid email, compared in lower case; only Families
+  present in that snapshot are returned.
+- `stewardship_family_users_v1(family_duid, actor)` returns the user record
+  IDs (`stewardship_address_rule.record_id`) of the active configuration's
+  users (rows with a role) whose address, in lower case, is a valid email of
+  that Family's contact or one of its Members' contacts in the current
+  snapshot.
+
+Both return identifiers only, never an address, name or other contact
+field, and nothing before the first promoted snapshot. Like the
+[Sent mail reads](#outbox-recipient-reads) they refuse (SQLSTATE `42501`)
+any session login but the web login and the schema owner, and any actor
+`stewardship_export_authorized_v1(actor, true)` does not admit as an enabled
+Administrator; malformed input is refused with `22023`. PUBLIC has no
+EXECUTE and `database-grants` grants it only to the web login. The pages'
+own view audit (`user_timeline_viewed`, `family_timeline_viewed`) names the
+actor and subject, so the reads add no audit of their own. Each reads the
+current snapshot's contacts through the snapshot's `(snapshot, source_key)`
+key; the address read parses every contact of that snapshot (a few
+thousand at parish scale), so it needs no new index.
+
 ### Submission
 
 Every final click creates an immutable `Submission` version containing:
@@ -1145,7 +1183,14 @@ submission's completeness check admits that absence, and the effective-value
 index keeps that change for the next response while each census response
 answers it the same way. A terminal request (moved, deceased, a death date)
 asked for again after it was entered is a new request, since an entered one
-is no longer presented.
+is no longer presented. The same answer again for an open change that
+ParishSoft already holds (the answer equals ParishSoft's value) also
+creates none: the change keeps its stage and decision on its earlier
+response, and the completeness check, the effective-value index and the
+census guard's predecessor lookup find it there the same way, so a later
+different answer replaces it
+([#1895](https://github.com/epiphany40223/parishkit/issues/1895)). A Family response never
+resolves a census change upstream.
 
 A Member the Family added on the form has only the form's local UUID, and
 the form drops that entry once its New Member change is Entered by hand;
@@ -1246,11 +1291,13 @@ submitted text, submission reference, disposition (`current_actionable`,
 `superseded`, or `withdrawn`), `follow_up_needed`, `followed_up_at`, and
 versioned Staff notes. In the submission transaction, replacement text marks
 the prior current item `superseded` and links the replacement; clearing text
-marks it `withdrawn` without deleting history. Default Staff queues and weekly
-digest content include only items still `current_actionable` at generation.
-The next digest includes a compact correction section for items sent in a prior
-digest and since superseded/withdrawn, preventing stale emailed work from
-remaining silently actionable. History views expose every disposition.
+marks it `withdrawn` without deleting history. Default Staff queues include only items still `current_actionable`; a report
+email's
+[open additional information requests block](../report-emails/spec.md#open-additional-information-requests-block)
+lists every such item submitted by its as-of moment and not yet Handled or
+Ignored (To review or To handle), on every send, and keeps no state between
+sends. History views expose every
+disposition.
 Each Staff revision also records its review decision (`accepted`, `ignored`
 or `none`; empty on revisions saved before schema migration 0126), from which
 the [review pipeline](../review-pipeline/spec.md#additional-information-stream)
@@ -1288,7 +1335,8 @@ it, attached to the Family's latest live response; and
 in place of. Each revision also keeps its decision's note
 (`decision_note`). The SQL guards admit, besides today's edits: a revision
 that sends a resolved or closed request back to In progress (reopening an
-ignored one needs a note), one that undoes a terminal step (the Entered in
+ignored one takes an optional note since forward migration 0158,
+[#1889](https://github.com/epiphany40223/parishkit/issues/1889)), one that undoes a terminal step (the Entered in
 ParishSoft tick, a Confirmed refresh check or a refresh resolution; with a
 required note,
 [undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)),
@@ -1357,8 +1405,9 @@ edited. For example, the confirmation email's online-giving sentence no
 longer mentions a pledge (a campaign without the Financial module has none),
 and a slot that still holds the earlier sentence still reads as default (#385).
 
-Initial, reminder, confirmation, daily digest, and weekly digest templates
-have separate subject, sanitized HTML, and generated/edited plain-text
+Initial, reminder and confirmation templates, and report email subjects and
+introductions (report values, not templates; the retired daily and weekly
+digest templates are kept for the saved copies that name them), have separate subject, sanitized HTML, and generated/edited plain-text
 versions. Sanitizing keeps the author's structure: the line `<div>` wrappers
 that browser editors write become paragraphs, `<b>`/`<i>` become
 `<strong>`/`<em>`, and markup-free text keeps blank-line paragraphs and line
@@ -1386,9 +1435,8 @@ live format and links on the reserved `.invalid` domain). Every outgoing
 email's HTML alternative is wrapped, when the message is built, in one shared
 email-client-safe layout (a readable sans-serif font and a centered 600px
 column); test messages show one small notice line instead of a large TEST
-heading. The daily and weekly Admin report emails use a wider desktop column
-instead (see [daily campaign digest](../background-processing/spec.md#daily-campaign-digest)
-and [weekly additional-information digest](../background-processing/spec.md#weekly-additional-information-digest)).
+heading. Administrator report emails use a wider desktop column instead (see
+[shared email layout](../report-emails/spec.md#shared-email-layout)).
 The layout's colours and shapes follow the
 [shared visual style](../ui-conventions/spec.md#shared-visual-style).
 Retained content and the plain-text alternative are unchanged.
@@ -1408,7 +1456,7 @@ whose Family code or link is only inside removed markup is marked "Can't be
 sent until fixed" instead, because sending refuses it. Previewing and applying
 the form stores the cleaned version through the normal configuration change
 (after putting back any lost placeholder); nothing rewrites applied history
-automatically. [Go-live readiness](../admin-portal/spec.md#production-transition)
+automatically. [Go live](../admin-portal/spec.md#go-live-page)
 and the [System health page](../admin-portal/spec.md#system-health-page) list
 the same flagged content.
 A configuration request that can never verify against
@@ -1787,6 +1835,18 @@ most 500 ids per call, so the list can name each such email's
 Administrator; a Family email's addresses never leave it. Neither returns any
 other column of the rendering.
 
+It names those people with a third read of the same kind (frozen migration
+0145, [#1562](https://github.com/epiphany40223/parishkit/issues/1562)):
+`stewardship_delivery_page_member_names_v1(messages, actor)` returns, for
+each given email with no Family (at most 500 ids) whose current rendering's
+first intended address a ParishSoft Member's contact record in the current
+snapshot lists (matched trimmed and case-insensitively), the single best
+name, ranked as `stewardship_member_names_v1` ranks the Users page's default
+Name. It returns only `(message, name)`, never an address, another contact
+field, a DUID or a Family, and only to the web login for an enabled
+Administrator. It takes email ids rather than addresses, so it cannot name
+an arbitrary address.
+
 The same page says what the latest attempt recorded for each address
 ([#806](https://github.com/epiphany40223/parishkit/issues/806)). An attempt's
 evidence (`stewardship_outbox_event.evidence_note`, outside the web login's
@@ -1968,13 +2028,15 @@ with [#1705](https://github.com/epiphany40223/parishkit/issues/1705)'s last
 slice deploys. From then on a live form shows the
 [reviewed Family form](../review-pipeline/spec.md#reviewed-family-form)
 instead ([Families see reviewed changes](../review-pipeline/spec.md#families-see-reviewed-changes)),
-and the census slice of #1705 rewrites these rules for it; a Testing form
-keeps these rules:
+drawn by the rules after this list; a Testing form, and a form drawn
+before that release, keep these rules:
 
 1. Start with the current ParishSoft value.
 2. If there is no prior effective response change, use current.
-3. If current now equals the prior Family-submitted value, the proposal is
-   resolved upstream and current is used without a change marker.
+3. If current now equals the prior Family-submitted value, ParishSoft
+   already holds the change (which keeps its stage until its step,
+   [#1890](https://github.com/epiphany40223/parishkit/issues/1890)) and
+   current is used without a change marker.
 4. If a published/resolved ProposedChange has an Admin-edited value and current
    equals that edit, use current without attributing the edit to the Family.
 5. If current still equals the prior baseline, overlay the prior Family-
@@ -1983,6 +2045,15 @@ keeps these rules:
    Admin edit, preserve the Family-submitted value, mark a source conflict, and
    say only that the Family's previously supplied value remains new; never show
    or attribute the Admin edit and never mention ParishSoft.
+
+A live form drawn as the reviewed form draws each census field from the
+item its baseline's [shown items](../review-pipeline/spec.md#shown-items)
+name instead: the Family's own answer by the rules above (so its change
+and conflict markers are these), a reviewer's value marked changed when it
+differs from the current ParishSoft value, and an Ignored item's current
+ParishSoft value unmarked; a field with no shown item (none in force, or
+Confirmed) shows the current ParishSoft value
+([What the reviewed form shows](../review-pipeline/spec.md#what-the-reviewed-form-shows)).
 
 Every equality test uses the field type's canonical comparison value, not its
 display or raw upstream representation. Email is Unicode/case normalized;
@@ -2098,13 +2169,19 @@ Snapshot promotion performs these effects transactionally:
 - restore the existing code if a Family reactivates;
 - recompute eligible head email addresses and current deliverability after
   applying provider-suppression records;
-- resolve proposals that now match upstream;
+- store ParishSoft's new value on each open proposal; one that now matches
+  upstream keeps its stage, To review, Ready or To enter by hand
+  ([#1890](https://github.com/epiphany40223/parishkit/issues/1890): the review pipeline's
+  [rule 1](../review-pipeline/spec.md#baseline-refresh-re-evaluation); until
+  then it was resolved upstream), except one queued for an update run,
+  which is still resolved upstream;
 - mark three-way conflicts;
 - keep, unchanged, an open census change whose Member is no longer an
   active, living Member of its Family (the review pipeline's
   [rule 4](../review-pipeline/spec.md#refresh-checks)), since publication
   refuses such a Member ([review and publication](#review-and-publication));
-- resolve Ministry requests whose requested roster state is now current;
+- nothing for an open Ministry request whose requested roster state is
+  now current: it keeps its stage (#1890; until then it was resolved);
 - re-evaluate final census changes and decided Ministry requests against
   the new data, recording a refresh check for each whose outcome changed
   ([refresh checks](../review-pipeline/spec.md#refresh-checks)).
@@ -2166,14 +2243,17 @@ current authorization/filter snapshot.
    the change stays open (a queued change keeps it, and its plan meets a
    conflict), and a same-intent Family resubmission carries neither the base
    nor such an approval.
-4. Mark already-matching fields resolved upstream: in the transaction that
-   records a Production-mode plan, each approved change whose field row
-   says `already_in_parishsoft` moves from `pending` or `failed` to
-   `resolved_upstream` at the next version, its decision and values
-   unchanged. A Testing-mode plan marks nothing. Unlike reconciliation's
-   `resolved_upstream`, this rests on the plan's uncached read rather than a
-   promoted snapshot; the plan's field row is its record, and the final
-   refresh brings the snapshot level. It is also the only path that
+4. Mark already-matching fields Updated in ParishSoft: in the transaction
+   that records a Production-mode plan, each approved change whose field
+   row says `already_in_parishsoft` moves from `pending` or `failed` to
+   `published` at the next version, its decision and values unchanged, and
+   nothing is written for it. Until [#1890](https://github.com/epiphany40223/parishkit/issues/1890) (forward migration 0159,
+   provisional number) it moved to `resolved_upstream`, Confirmed at once;
+   now the refresh confirms it after the step, as it does every update
+   ([rule 1](../review-pipeline/spec.md#baseline-refresh-re-evaluation)). A
+   Testing-mode plan marks nothing. This rests on the plan's uncached read
+   rather than a promoted snapshot; the plan's field row is its record, and
+   the final refresh brings the snapshot level. It is also the only path that
    recognizes an Administrator's edited value already in ParishSoft, which
    reconciliation, comparing with the Family's answer, would call a
    conflict. Back to review on Census changes undoes the mark with a
@@ -2194,11 +2274,12 @@ current authorization/filter snapshot.
    concretely (the plan row's `xmin` is the current transaction's id, or
    its creation time equals `transaction_timestamp()`), and that a plan
    committed earlier is refused. The confirmation then checks such a row as
-   `resolved_upstream` at the next version instead of refusing the plan.
+   `published` (`resolved_upstream` for a plan marked before #1890) at the
+   next version instead of refusing the plan.
    The worker's pre-PUT comparison (`matches_confirmed`) leaves out exactly
    the plan's `already_in_parishsoft` field rows whose proposals this check
-   moved to `resolved_upstream` at the version after the one the row
-   recorded; any other planned row that left the open states still
+   moved to `published` (or, before #1890, `resolved_upstream`) at the
+   version after the one the row recorded; any other planned row that left the open states still
    invalidates the entity, without relying on a later step to catch it.
    This ships with a new forward migration, which replaces
    `stewardship_response_derived_guard_v1` and

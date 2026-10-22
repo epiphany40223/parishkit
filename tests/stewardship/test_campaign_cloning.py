@@ -16,17 +16,25 @@ from .test_schedule_forms import data_for
 
 
 def example():
-    """One page, invitation and digest with distinct per-campaign identities."""
+    """One page, invitation, reminder and Weekly digest, each per campaign.
+
+    The digest is as a deployment upgraded from before report emails held
+    it (#1786); a clone leaves it and its email behind.
+    """
     document = content_document()
     source = document["sections"]["campaigns"][0]
-    for kind in ("initial", "weekly_digest"):
+    for kind, day in (
+        ("initial", "2054-10-01"),
+        ("reminder", "2054-10-08"),
+        ("weekly_digest", None),
+    ):
         template = content(source["id"], kind="email", slot=kind)
         document["sections"]["content"].append(template)
         document["sections"].setdefault("schedules", []).append(
             schedule(
                 source["id"],
                 kind=kind,
-                date=None if kind == "weekly_digest" else "2054-10-01",
+                date=day,
                 weekday=0 if kind == "weekly_digest" else None,
                 template_version=template["id"],
                 subject=template["values"]["subject"],
@@ -52,10 +60,9 @@ def test_clone_records_are_detached_stable_and_fresh():
     old_ids = {row["id"] for rows in document["sections"].values() for row in rows}
     assert not old_ids.intersection(row["id"] for row in content + schedules)
     assert all(row["values"]["date"] is None for row in schedules)
-    assert (
-        schedules[1]["values"]["weekday"]
-        == document["sections"]["schedules"][1]["values"]["weekday"]
-    )
+    # Only Family mail is cloned: the digest and its email stay behind.
+    assert [row["values"]["kind"] for row in schedules] == ["initial", "reminder"]
+    assert "weekly_digest" not in {row["values"]["slot"] for row in content}
     assert document == before
     previous["modules"].append("financial")
     assert document == before
@@ -87,8 +94,8 @@ def test_clone_resets_dates_funds_names_and_financial_acknowledgment():
     assert initial["ministry_duids"] == ["99"]
 
 
-def test_clone_requires_explicit_mail_dates_but_preserves_digest_structure():
-    """An undated invitation fails; deletion is explicit and unchanged digests copy."""
+def test_clone_requires_explicit_mail_dates():
+    """An undated invitation fails; deletion is explicit."""
     document, source = example()
     target = uuid4()
     previous, content, rows = clone_structures(document, source, target)
@@ -102,12 +109,13 @@ def test_clone_requires_explicit_mail_dates_but_preserves_digest_structure():
     )
     formset = Schedules(data, **arguments)
     assert not formset.is_valid()
-    data["schedules-0-DELETE"] = "on"
+    data["schedules-0-date"] = "2054-10-01"
+    data["schedules-1-DELETE"] = "on"
     formset = Schedules(data, **arguments)
     assert formset.is_valid(), formset.errors
     patch = clone_patch(target, source["values"] | previous, content, formset)
     schedules = [row for row in patch if row["section"] == "schedules"]
-    assert len(schedules) == 1 and schedules[0]["values"]["kind"] == "weekly_digest"
+    assert len(schedules) == 1 and schedules[0]["values"]["kind"] == "initial"
     assert all(row["operation"] == "add" for row in patch)
 
 
@@ -117,5 +125,6 @@ def test_clone_leaves_a_retired_critical_alert_behind():
     alert = content(source["id"], kind="email", slot="critical_alert")
     document["sections"]["content"].append(alert)
     _, cloned, _ = clone_structures(document, source, uuid4())
-    assert len(cloned) == len(document["sections"]["content"]) - 1
+    # The alert and the Weekly digest's email (#1786) are left behind.
+    assert len(cloned) == len(document["sections"]["content"]) - 2
     assert "critical_alert" not in {row["values"]["slot"] for row in cloned}

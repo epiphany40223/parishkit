@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from uuid import UUID
 
-KINDS = frozenset({"initial", "reminder", "daily_digest", "weekly_digest"})
+KINDS = frozenset({"initial", "reminder", "daily_digest", "weekly_digest", "report"})
 STATES = frozenset(
     {
         "pending",
@@ -30,11 +30,13 @@ def digest_recovery_kind(kind, candidate_count):
 
     Durable owners retain the exact original rows and can apply this decision
     in bounded coverage batches. A count is selection metadata, not proof that
-    enumeration, coverage or provider delivery has completed.
+    enumeration, coverage or provider delivery has completed. A report email
+    (#1786) coalesces into its latest send, which reports the whole covered
+    range (report-emails spec, "Catch-up, recovery and holds").
     """
     if (
         type(kind) is not str
-        or kind not in {"daily_digest", "weekly_digest"}
+        or kind not in {"daily_digest", "weekly_digest", "report"}
         or type(candidate_count) is not int
         or candidate_count < 0
     ):
@@ -211,6 +213,8 @@ def plan_recovery(
         reason=(
             "missed_family_recovery"
             if kind in {"initial", "reminder"}
+            else "missed_report_recovery"
+            if kind == "report"
             else "missed_weekly_recovery"
         )
         if len(candidates) > 1

@@ -59,7 +59,7 @@ TASK_TYPE = "outbox_delivery"
 # Purposes with no schedule occurrence: they never write occurrence state or a
 # fulfillment, whatever their provider outcome.
 UNSCHEDULED_PURPOSES = frozenset(
-    {"receipt", "family_test", "daily_digest", "weekly_digest"}
+    {"receipt", "family_test", "daily_digest", "weekly_digest", "admin_report"}
 )
 MAX_ATTEMPTS = 5
 PROVIDER_SECONDS = 30
@@ -438,19 +438,14 @@ def bound_dispatch(status):
             "reminder",
             "receipt",
             "family_test",
-            "daily_digest",
-            "weekly_digest",
+            "admin_report",
         ),
     )
-    if row.purpose == "weekly_digest":
-        from .weekly_dispatch import bound_weekly
+    # A report email (#1786); the digests' messages are all settled.
+    if row.purpose == "admin_report":
+        from .report_dispatch import bound_report
 
-        bound_weekly(row)
-        return row
-    if row.purpose == "daily_digest":
-        from .digest_dispatch import bound_digest
-
-        bound_digest(row)
+        bound_report(row)
         return row
     if row.purpose == "receipt":
         from .receipt_dispatch import bound_receipt
@@ -477,14 +472,10 @@ def bound_dispatch(status):
 def disposition(message, *, check_recipient=False):
     """Terminal invalidation cancels unsent work; temporary gates leave it queued."""
     require_work_order()
-    if message.purpose == "weekly_digest":
-        from .weekly_dispatch import weekly_disposition
+    if message.purpose == "admin_report":
+        from .report_dispatch import report_disposition
 
-        return weekly_disposition(message, check_recipient=check_recipient)
-    if message.purpose == "daily_digest":
-        from .digest_dispatch import digest_disposition
-
-        return digest_disposition(message, check_recipient=check_recipient)
+        return report_disposition(message, check_recipient=check_recipient)
     if message.purpose == "receipt":
         from .receipt_dispatch import receipt_disposition
 
@@ -611,8 +602,8 @@ def cancel_unsent(identifier, claim, *, reason):
     require_work_order()
     owner = bound_dispatch(_status(lock_task_claim(claim)))
     row = OutboxMessage.objects.get(pk=identifier)
-    if owner.purpose in {"daily_digest", "weekly_digest"} and row.pk != owner.pk:
-        raise PermissionError("Digest cancellation cannot affect another Admin.")
+    if owner.purpose == "admin_report" and row.pk != owner.pk:
+        raise PermissionError("Report cancellation cannot affect another recipient.")
     # A chosen-Family test is not part of the Family's scheduled mail group.
     if "family_test" in {owner.purpose, row.purpose} and row.pk != owner.pk:
         raise PermissionError(
@@ -802,14 +793,10 @@ def begin_submission(
                 ),
             )
             message.refresh_from_db()
-        if message.purpose == "weekly_digest":
-            from .weekly_dispatch import current_weekly_content
+        if message.purpose == "admin_report":
+            from .report_dispatch import current_report_content
 
-            render, sealed, mail = current_weekly_content(message, scope)
-        elif message.purpose == "daily_digest":
-            from .digest_dispatch import current_digest_content
-
-            render, sealed, mail = current_digest_content(message, scope)
+            render, sealed, mail = current_report_content(message, scope)
         elif message.purpose == "receipt":
             from .receipt_dispatch import current_receipt_content
 
@@ -1042,14 +1029,10 @@ def finish_submission(identifier, claim, result, *, hold=False):
 
 def _report_epoch(message):
     """Read only the immutable response namespace while settling an attempt."""
-    if message.purpose == "weekly_digest":
-        from .weekly_dispatch import bound_weekly
+    if message.purpose == "admin_report":
+        from .report_dispatch import bound_report
 
-        return bound_weekly(message).rehearsal_epoch_id
-    if message.purpose == "daily_digest":
-        from .digest_dispatch import bound_digest
-
-        return bound_digest(message).rehearsal_epoch_id
+        return bound_report(message).rehearsal_epoch_id
     if message.purpose == "family_test":
         from .family_test_dispatch import bound_family_test
 

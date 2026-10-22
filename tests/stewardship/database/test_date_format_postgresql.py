@@ -189,78 +189,42 @@ def test_background_roles_can_read_the_active_date_format(live_response_service,
 # new active style, as the broker does, so only a pinned render stays put.
 
 
-def test_daily_digest_keeps_its_snapshot_date_format(response_service):
-    """A daily digest compiled after a format change keeps the snapshot's style."""
-    from functools import partial
+def test_a_report_emails_saved_copy_keeps_its_date_format(response_service, google):
+    """A report email's saved copy keeps the style it was compiled in.
 
-    from parishkit.stewardship.campaigns.work_locks import work_transaction
-    from parishkit.stewardship.reports.daily_digest import render_daily_digest
-    from parishkit.stewardship.reports.digest_building import (
-        admit_daily_facts,
-        begin_daily_facts,
-        load_daily_document,
+    Report emails replaced the digests (#1786). A Daily report's send
+    compiles its email once, with the Parish format of its capture; a later
+    format change leaves the email and its saved copy page as they were.
+    """
+    from django.urls import reverse
+
+    from parishkit.stewardship.reports.report_email_models import (
+        ReportEmailSnapshot,
     )
-    from parishkit.stewardship.reports.digest_capture import capture_daily_snapshot
-    from parishkit.stewardship.reports.materialization import materialize_fact_set
 
     from .campaign_builders import campaign_clock
-    from .test_daily_digest_capture_postgresql import prepare
-    from .test_daily_digest_planning_postgresql import INSTANT
+    from .report_builders import DAILY_INSTANT, add_digest, prepare_due
 
     harness = response_service
-    with campaign_clock(INSTANT):
-        claim = prepare(harness)
-        with task_login(ServiceRole.WORKER, exact=True), work_transaction():
-            capture_daily_snapshot(claim)
+    last = date(2054, 10, 8)
+    with campaign_clock(DAILY_INSTANT):
+        add_digest(harness.service.store, harness.campaign)
+        prepare_due()
+        snapshot = ReportEmailSnapshot.objects.get()
+        sent = (snapshot.subject, snapshot.text)
+        assert dates.format_date(last, "us_long") in snapshot.subject
         choose(harness.service.store, "eu_dot")
-        with task_login(ServiceRole.WORKER, exact=True):
-            with work_transaction():
-                facts = begin_daily_facts(claim)
-            materialize_fact_set(
-                facts.pk, claim, admit=partial(admit_daily_facts, claim)
+        browser, _ = signed_in()
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            page = browser.get(
+                reverse("admin:report_email_send", args=[snapshot.preparation_id])
             )
-            with work_transaction():
-                document = load_daily_document(claim, facts.pk)
-            with dates.using(active_date_format()):
-                assert dates.current() == "eu_dot"
-                content = render_daily_digest(
-                    document, public_origin="https://parish.example"
-                )
-    last = document.covered_dates[-1]
-    assert document.date_format in (None, "us_long")
-    assert content.subject.endswith(" — " + dates.format_date(last, "us_long")) or (
-        content.subject.endswith(" through " + dates.format_date(last, "us_long"))
-    )
-    assert dates.format_date(last, "eu_dot") not in content.subject
-    row = dates.format_date(last, "us_long", compact=True)
-    assert row in content.text
-    assert dates.format_date(last, "eu_dot", compact=True) not in content.text
-
-
-def test_weekly_digest_keeps_its_snapshot_date_format(live_response_service):
-    """A weekly digest compiled after a format change keeps the snapshot's style."""
-    from .campaign_builders import campaign_clock
-    from .test_weekly_capture_postgresql import INSTANT
-    from .test_weekly_fanout_postgresql import captured, detached
-
-    harness = live_response_service
-    respond(harness, "Dated weekly request")
-    with campaign_clock(INSTANT):
-        claim, _ = captured(harness)
-        choose(harness.service.store, "eu_dot")
-        with dates.using("eu_dot"):
-            page, [content] = detached(claim)
-    [plan] = page.recipients
-    document = plan.document
-    zone = ZoneInfo(document.campaign_timezone)
-    observed = document.observed_at.astimezone(zone)
-    assert document.date_format in (None, "us_long")
-    assert content.subject.endswith(dates.format_date(observed.date(), "us_long"))
-    # The body names no capture time (#720); its rows' submitted times use
-    # the pinned style, compact.
-    submitted = document.information[0].submitted_at.astimezone(zone)
-    assert dates.format_local(submitted, "us_long", compact=True) in content.text
-    assert dates.format_local(submitted, "eu_dot", compact=True) not in content.text
+    assert page.status_code == 200
+    snapshot.refresh_from_db()
+    assert (snapshot.subject, snapshot.text) == sent
+    body = unescape(page.content.decode())
+    assert f"all data is as of the end of {dates.format_date(last, 'us_long')}" in body
+    assert dates.format_date(last, "eu_dot") not in body
 
 
 def test_receipt_uses_its_pinned_configuration_date_format(live_response_service):

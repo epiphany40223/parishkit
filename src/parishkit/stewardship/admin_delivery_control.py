@@ -211,7 +211,7 @@ def read_controls(caller, service):
 # The page's Resolve held messages types (``RESOLVABLE_TYPES``), spelled out
 # for the parser, which is built before Django is set up; a test keeps them
 # equal.
-RESOLVE_TYPES = ("daily_digest", "receipt", "weekly_digest")
+RESOLVE_TYPES = ("admin_report", "daily_digest", "receipt", "weekly_digest")
 # The Resolve held messages decisions ``_closed_selection`` accepts; a test
 # keeps them equal.
 RESOLVE_DECISIONS = ("release", "cancel", "clear")
@@ -419,7 +419,7 @@ def confirm_prompt_lines(token):
                 f"Overdue Family emails to send: {family['selected']}. "
                 f"Duplicate overdue sends to skip: {family['coalesced']}. "
                 f"Overdue sends that no longer apply: {family['skipped']}. "
-                f"Admin digest reports to send: {reports['selected']}."
+                f"Report emails to send: {reports['selected']}."
             )
         return (
             "Resume live Family email for the current campaign.",

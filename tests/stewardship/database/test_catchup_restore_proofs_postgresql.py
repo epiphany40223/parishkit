@@ -25,9 +25,9 @@ from parishkit.stewardship.jobs.lifetime import maintain_execution
 
 from .campaign_builders import campaign_clock, command, draft_campaign, restored_runtime
 from .credential_builders import family_campaign
+from .report_builders import add_digest
 from .test_background_grants_postgresql import task_login
 from .test_catchup_preparation_postgresql import execution_arguments
-from .test_digest_schedule_planning_postgresql import add_digest
 from .test_family_schedule_planning_postgresql import add_reminders
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -124,8 +124,12 @@ def test_family_restore_slots_do_not_block_other_group_preparation(
     )
 
 
-def test_digest_aggregate_date_excludes_newest_restore_held_slot(tmp_path, monkeypatch):
-    """SQL and Python date selection use identical original-slot exclusion sets."""
+def test_report_latest_send_excludes_newest_restore_held_slot(tmp_path, monkeypatch):
+    """SQL and Python date selection use identical original-slot exclusion sets.
+
+    A report's missed sends coalesce into its latest one; a restore-held
+    newest send is not a candidate, so the one before it is chosen.
+    """
     store, campaign, actor = draft_campaign(tmp_path)
     definition = add_digest(store, campaign)
     resolved = []
@@ -152,9 +156,9 @@ def test_digest_aggregate_date_excludes_newest_restore_held_slot(tmp_path, monke
             execution.handler.execute(execution)
     demand.refresh_from_db()
     assert demand.completed_at is not None
-    selected = ScheduleOccurrence.objects.get(slot__startswith="recovery:")
-    assert selected.due_at < newest.due_at
-    assert ScheduleFulfillment.objects.count() == 3
+    selected = ScheduleOccurrence.objects.exclude(pk=newest.pk).get(state="pending")
+    assert selected.slot == "2054-10-03" and selected.due_at < newest.due_at
+    assert ScheduleFulfillment.objects.count() == 2
     newest.refresh_from_db()
     hold.refresh_from_db()
     assert newest.state == "pending" and hold.state == "unreviewed"

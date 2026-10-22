@@ -189,6 +189,11 @@ NOT_SEEN = "not_seen"
 # Family's answer (refresh rule 1, #1689): the reviewer's note, never a
 # change of stage.
 NOW_MATCHES = "ParishSoft now matches the Family's answer."
+# The line an item before its step gains when ParishSoft already holds its
+# value (refresh rule 1, strict phase order, #1890): the item keeps its
+# stage, so the reviewer can Accept quickly and Staff know there is nothing
+# to type. Every ParishSoft-backed stream uses it.
+ALREADY_HELD = "ParishSoft already holds this value."
 EVERY_STAGE = "all"
 
 
@@ -217,7 +222,8 @@ INCORRECT_BODIES = {
         "the next refresh checks it again."
     ),
 }
-REOPEN_BODY = "The ignored item goes back to To review. Say why it is reopened."
+# What Back to review on an Ignored item says: its note is optional (#1889).
+REOPEN_BODY = "The ignored item goes back to To review, to be decided again."
 # What Back to review on a terminal stage says (#1840): which step it undoes
 # and where the item goes. An undo back to Ready to update (Updated in
 # ParishSoft, or a census change Confirmed or Already in ParishSoft that the
@@ -228,6 +234,17 @@ UNDO_PORTAL_ONLY = (
     " Nothing is written to ParishSoft: only this portal's record changes, and "
     "a later update reads ParishSoft again first."
 )
+# What the reviewed Family form (#1705) shows a Family that signs in again,
+# said in the dialogs whose decision it shows: Ignore on an item whose
+# ParishSoft value the form shows (``shown_baseline`` rows), and Add.
+IGNORE_SEEN = "The Family will see ParishSoft's value the next time it signs in."
+ADD_BODY = (
+    "Add a change the Family did not ask for. It starts Accepted, shown as "
+    "Added by the parish."
+)
+# The choice of an action whose note is required (a terminal step's undo,
+# #1840): the dialog's note is required while it holds (ui-v1.js
+# data-required-when).
 REOPEN = "reopen"
 # The choice of an action whose decision records no note (a Ministry roster
 # tick has none): its dialog hides the note (ui-v1.js data-note-field), and
@@ -371,10 +388,10 @@ def bulk_buttons(stream, roles, *, items="items", silent=frozenset()):
                 "done_one": "{name} " + words.done,
                 "done_many": f"{{count}} {items} {words.done}",
                 "body": BODIES.get(action, BULK_BODY),
-                # Reopening an ignored item, or undoing a terminal step,
-                # needs a reason (spec, "Reviewed stage", "Undoing a
-                # terminal stage"): the note is required while a ticked
-                # row needs one (its box's data-confirm-choice).
+                # Undoing a terminal step needs a reason (spec, "Undoing a
+                # terminal stage"); reopening an Ignored item does not
+                # (#1889): the note is required while a ticked row needs
+                # one (its box's data-confirm-choice).
                 "choice": NO_NOTE
                 if action in silent
                 else REOPEN
@@ -504,8 +521,9 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
 
     Each offered icon opens the page's one decision dialog (Edit: the
     row's own value editor) with its own title, words and fields, so one
-    dialog serves every row. Back to review on an Ignored item carries the
-    ``reopen`` choice, which makes the dialog's note required, and a
+    dialog serves every row. Back to review on a terminal stage carries the
+    ``reopen`` choice, which makes the dialog's note required (on an Ignored
+    item it stays optional, #1889), and a
     ``silent`` action the ``no_note`` choice, which hides it (ui-v1.js
     data-confirm-choice). A row whose Entered by hand asks for fields of its
     own (``entered_template``: a census New Member's ParishSoft Member ID,
@@ -533,7 +551,8 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
         )
     )
     key = uuid4()
-    # Reopening an Ignored item, and undoing a terminal step, need a note.
+    # Undoing a terminal step needs a note; reopening an Ignored item does
+    # not (#1889).
     reopen = undo_needs_note(placement.stage)
     own_entered = bool(row.get("entered_template"))
     for icon in icons:
@@ -566,8 +585,14 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
             icon["body"] = undo_body(
                 stream, placement, by_hand=row.get("by_hand", False)
             )
+        elif action is Action.EDIT:
+            # Edit opens the row's own editor, which draws its own body (the
+            # Family will see the reviewer's value); an empty body keeps it.
+            icon["body"] = ""
         else:
             icon["body"] = bodies.get(action, DECIDE_BODY)
+        if action is Action.IGNORE and row.get("shown_baseline"):
+            icon["body"] = f"{icon['body']} {IGNORE_SEEN}"
     remark = row.get("remark")
     if remark is not None and any(
         icon["action"] == Action.ENTERED_BY_HAND and icon["selected"] for icon in icons
@@ -581,8 +606,8 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
         if not icon["selected"] and not icon.get("remark")
     ]
     row["kinds"] = " ".join(kind for kind in kinds if Action(kind) in BULK)
-    # A bulk Back to review asks for a note while a ticked row is Ignored
-    # or at a terminal stage.
+    # A bulk Back to review asks for a note while a ticked row is at a
+    # terminal stage.
     row["choice"] = REOPEN if reopen else ""
     # Each identity cell: its value, its column and the item page it opens
     # (its column's ``link``), if any.
@@ -665,6 +690,8 @@ class Worklist:
     # address bar after each in-place answer, so a reload shows the same
     # view; empty for a stream that keeps none.
     address: str = ""
+    # What Add's dialog says (a stream whose Add a Family sees says so).
+    add_body: str = ADD_BODY
 
     max_bulk = MAX_BULK
 
@@ -755,6 +782,7 @@ def build(
     fields=None,
     address="",
     silent=frozenset(),
+    add_body=ADD_BODY,
     **templates,
 ):
     """The ``worklist`` for one reader of one page of ``stream``'s rows.
@@ -771,8 +799,10 @@ def build(
     (the stream's own line under the stage), ``entered_template`` (the
     fields its Entered by hand asks for, in a dialog of its own), ``remark``
     (a ``Remark``: the row may make its Entered by hand mark again, in that
-    dialog) and ``withheld`` (actions this item cannot take). ``roles`` is
-    the reader's role set.
+    dialog), ``withheld`` (actions this item cannot take) and
+    ``shown_baseline`` (a Family that signs in again sees ParishSoft's value
+    for it once it is Ignored, #1705, which its Ignore dialog says). ``roles``
+    is the reader's role set. ``add_body`` is what Add's dialog says.
     ``stage`` is the Stage filter's value and ``fields`` the stream's other
     filters, posted by every form; ``baseline`` and ``reviewer`` say whether
     the stream has those columns. ``address`` is the view's own address
@@ -805,6 +835,7 @@ def build(
         shows_now=any(row["shows_now"] for row in decorated),
         bulk_too_many=len(decorated) > MAX_BULK,
         address=address,
+        add_body=add_body,
         **templates,
     )
 
@@ -822,6 +853,30 @@ def page_address(action, pairs):
     """
     kept = [(name, value) for name, value in pairs if value not in ("", None)]
     return f"{action}?{urlencode(kept)}" if kept else action
+
+
+# The Submitted From / Through filter Census changes and Additional
+# information offered until #1888, with its browser zone. A page drawn
+# before then, a bookmark or a typed address may still send them: the
+# pages drop them unread (no error page, no redirect), while the
+# ``pk-admin`` commands keep their own date options.
+RETIRED_DATES = frozenset({"start", "end", "zone"})
+
+
+def drop_retired_dates(parameters):
+    """Remove the retired date filter's fields from a mutable QueryDict copy."""
+    for name in RETIRED_DATES:
+        parameters.pop(name, None)
+    return parameters
+
+
+def page_fields(values):
+    """A query's ``form_values`` without the retired date fields.
+
+    The pages' forms carry no date field (#1888); the shared query classes
+    keep theirs for ``pk-admin``, whose output is unchanged.
+    """
+    return {name: value for name, value in values.items() if name not in RETIRED_DATES}
 
 
 # --- The decision POST ------------------------------------------------------

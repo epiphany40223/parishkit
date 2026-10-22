@@ -21,14 +21,19 @@ from parishkit.stewardship.responses.models import ProposedChange
 
 from .test_background_grants_postgresql import task_login
 from .test_census_conflict_postgresql import conflicted
-from .test_census_pipeline_review_postgresql import decide, prepared
+from .test_census_pipeline_review_postgresql import mark, prepared
 from .test_census_review_postgresql import fresh
 from .test_ministry_responses_postgresql import respond, revisit
 from .test_publication_plans_postgresql import owner
 from .test_response_http_postgresql import answers_for
 from .test_runtime_auth_grants_postgresql import web_login
 
-pytestmark = pytest.mark.django_db(transaction=True)
+# These test the rule before the reviewed Family form (#1705): forms drawn
+# before its release, as one open across the deploy is.
+pytestmark = [
+    pytest.mark.django_db(transaction=True),
+    pytest.mark.usefixtures("earlier_rule"),
+]
 
 
 def again(harness, **members):
@@ -62,7 +67,7 @@ def test_an_unchanged_answer_after_entry_keeps_the_entered_change(
     unreviewed row."""
     harness, admin, staff, rows = prepared(response_service)
     if field == "prefix":
-        decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+        mark(harness, staff, [rows["prefix"]])
         final = "resolved_external"
     else:
         # As the publication worker leaves a written change.
@@ -91,7 +96,7 @@ def test_an_answer_set_back_is_not_kept_as_the_entered_change(response_service):
     entry, then answers the entered value again, asks for it anew: the
     entered change is not carried past the different answer."""
     harness, _, staff, rows = prepared(response_service)
-    decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+    mark(harness, staff, [rows["prefix"]])
     baseline = rows["prefix"].baseline_value or ""
     again(harness, prefix=baseline)
     assert len(rows_for("prefix")) == 1
@@ -111,7 +116,7 @@ def test_the_database_refuses_an_answer_set_back_kept_as_entered(
     value came in between, so a derivation that treats the entered value
     again as kept (makes no row) is refused, not committed (#1716)."""
     harness, _, staff, rows = prepared(response_service)
-    decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+    mark(harness, staff, [rows["prefix"]])
     again(harness, prefix=rows["prefix"].baseline_value or "")
     # A derivation that keeps the entered change whatever the prior
     # census response answered: the newest earlier row alone decides.

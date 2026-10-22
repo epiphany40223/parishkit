@@ -84,8 +84,9 @@ def test_native_exact_retry_handoff_and_expiry(
         response, body = read(browser, status_path)
         assert response.status_code == 200
         # Still queued, so the page says why it waits instead (#340); the
-        # scenario's own running digest work holds the general process.
-        assert b"Waiting for the daily report email to finish" in body
+        # scenario's running source probe (a task with no name of its own)
+        # holds the general process; the report email's send has finished.
+        assert b"Waiting for other background work to finish" in body
         assert b"Calculating the figures" not in body
         assert b"America/New_York" in body
         assert b"Cancel export" in body
@@ -213,19 +214,13 @@ def test_native_exact_cancel_and_other_requester_denial(
     google,  # noqa: F811
 ):
     """Independent requests retain ownership before and after worker handoff."""
-    from ..policy_factory import address
     from .auth_builders import signed_in
-    from .campaign_builders import change
+    from .report_builders import set_user
 
     setup, admin = http_scenario
     store, _, facts, _ = setup
-    rule = address("staff@example.org", roles=("staff", "ministry_leader"))
-    change(
-        store,
-        store.active(),
-        uuid4(),
-        [{"operation": "add", "section": "login_rules", **rule}],
-    )
+    # (The fixture is in the users form once a report email exists, #1786.)
+    set_user(store, "staff@example.org", "staff")
     google[0]["email"] = "staff@example.org"
     google[0]["sub"] = "synthetic-staff-subject"
     browser, _ = signed_in()
@@ -267,24 +262,7 @@ def test_native_exact_cancel_and_other_requester_denial(
         assert post(admin, export_action(other, "cancel")).status_code == 302
         assert read(browser, other)[0].status_code == 403
         assert post(browser, export_action(other, "cancel")).status_code == 403
-    change(
-        store,
-        store.active(),
-        uuid4(),
-        [
-            {
-                "operation": "update",
-                "section": "login_rules",
-                "id": rule["id"],
-                "values": {
-                    "roles": ["ministry_leader"],
-                    "grants": {
-                        "ministry_leader": rule["values"]["grants"]["ministry_leader"]
-                    },
-                },
-            }
-        ],
-    )
+    set_user(store, "staff@example.org", "ministry_leader")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert read(browser, owned)[0].status_code == 403
         with pytest.raises(PermissionError):

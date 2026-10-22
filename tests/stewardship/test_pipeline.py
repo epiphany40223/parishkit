@@ -458,8 +458,11 @@ MARK = {"back_to_review", "entered_by_hand"}
 HANDLE = {"back_to_review", "handled"}
 # (stream, stage, roles, by_hand) -> the row's actions.
 ALLOWED_TABLE = [
-    ("census", Stage.TO_REVIEW, STAFF, True, DECIDE | {"entered_by_hand"}),
+    # Entered by hand follows an Accept (#1890, decision 2 reversed): never
+    # on a To review or Conflict row, By hand or not.
+    ("census", Stage.TO_REVIEW, STAFF, True, DECIDE),
     ("census", Stage.TO_REVIEW, STAFF, False, DECIDE),
+    ("census", Stage.CONFLICT, STAFF, True, DECIDE),
     ("census", Stage.CONFLICT, STAFF, False, DECIDE),
     ("census", Stage.IGNORED, STAFF, True, {"back_to_review"}),
     ("census", Stage.READY_TO_UPDATE, STAFF, False, {"back_to_review"}),
@@ -478,12 +481,14 @@ ALLOWED_TABLE = [
     ("census", Stage.HISTORY, ADMIN, True, set()),
     ("census", Stage.TO_REVIEW, {"ministry_leader"}, True, set()),
     ("ministry", Stage.TO_REVIEW, STAFF, False, DECIDE),
+    ("ministry", Stage.TO_REVIEW, STAFF, True, DECIDE),
     ("ministry", Stage.TO_ENTER_BY_HAND, STAFF, False, MARK),
     ("ministry", Stage.ENTERED_BY_HAND, STAFF, False, {"back_to_review"}),
     ("ministry", Stage.CONFIRMED, ADMIN, False, {"back_to_review"}),
     ("ministry", Stage.ENTERED_BY_HAND, {"ministry_leader"}, False, set()),
     ("ministry", Stage.CONFIRMED, {"ministry_leader"}, False, set()),
     ("financial", Stage.TO_REVIEW, STAFF, False, DECIDE),
+    ("financial", Stage.CONFLICT, ADMIN, True, DECIDE),
     ("financial", Stage.TO_ENTER_BY_HAND, STAFF, False, MARK),
     # Back to review undoes a pledge's terminal step (#1840), Staff and
     # Administrators only.
@@ -543,8 +548,8 @@ def test_every_stream_offers_the_terminal_undo(stage):
     """Back to review on a terminal stage: Staff and Administrators, a note.
 
     Every stream offers it (uniform handling, #1840), never to a Ministry
-    leader; reopening Ignored needs a note too, an accepted stage's undo
-    does not.
+    leader. Only a terminal step's undo needs a note: reopening Ignored
+    (#1889) and an accepted stage's undo do not.
     """
     for stream in Stream:
         offered = pipeline.allowed_actions(stream, stage, STAFF, by_hand=True)
@@ -554,7 +559,7 @@ def test_every_stream_offers_the_terminal_undo(stage):
         )
         assert leader == set()
     assert pipeline.undo_needs_note(stage)
-    assert pipeline.undo_needs_note(Stage.IGNORED)
+    assert not pipeline.undo_needs_note(Stage.IGNORED)
     assert not pipeline.undo_needs_note(Stage.TO_ENTER_BY_HAND)
 
 
@@ -595,10 +600,21 @@ OPEN_STAGES = [
     Stage.UPDATED,
     Stage.TO_ENTER_BY_HAND,
 ]
+# The stages before an item's processing step (strict phase order, #1890).
+BEFORE_STEP = [
+    Stage.TO_REVIEW,
+    Stage.CONFLICT,
+    Stage.READY_TO_UPDATE,
+    Stage.TO_ENTER_BY_HAND,
+]
 # (stage, R, A, C, options) -> outcome, following the spec's rules in order.
 REFRESH_TABLE = [
-    # Rule 1: R = C confirms from any re-evaluated stage.
-    *[((stage, "new", "old", "new", {}), OUT.CONFIRMED) for stage in OPEN_STAGES],
+    # Rule 1: R = C confirms only after the processing step (an update run
+    # in flight counts as one)...
+    ((Stage.UPDATING, "new", "old", "new", {}), OUT.CONFIRMED),
+    ((Stage.UPDATED, "new", "old", "new", {}), OUT.CONFIRMED),
+    # ...before it the item keeps its stage, saying ParishSoft holds it.
+    *[((stage, "new", "old", "new", {}), OUT.ALREADY_HELD) for stage in BEFORE_STEP],
     ((Stage.ENTERED_BY_HAND, "new", "old", "new", {}), OUT.CONFIRMED),
     ((Stage.ENTERED_INCORRECTLY, "new", "old", "new", {}), OUT.CONFIRMED),
     # ...but an Ignored item is only noted.
@@ -655,10 +671,12 @@ REFRESH_TABLE = [
     # Rule 4: the Member or Family left the baseline.
     ((Stage.TO_REVIEW, None, "old", "new", {"present": False}), OUT.ENTITY_GONE),
     ((Stage.ENTERED_BY_HAND, None, "old", "new", {"present": False}), OUT.ENTITY_GONE),
-    # Ministry roster state: rule 3 cannot apply to booleans.
-    ((Stage.TO_ENTER_BY_HAND, True, False, True, {}), OUT.CONFIRMED),
+    # Ministry roster state: rule 3 cannot apply to booleans. A request is
+    # confirmed only once ticked (#1890).
+    ((Stage.TO_ENTER_BY_HAND, True, False, True, {}), OUT.ALREADY_HELD),
+    ((Stage.ENTERED_BY_HAND, True, False, True, {}), OUT.CONFIRMED),
     ((Stage.ENTERED_BY_HAND, False, False, True, {}), OUT.UNCHANGED),
-    ((Stage.TO_REVIEW, False, True, False, {}), OUT.CONFIRMED),
+    ((Stage.TO_REVIEW, False, True, False, {}), OUT.ALREADY_HELD),
 ]
 
 
@@ -786,3 +804,74 @@ def test_ministry_refresh_confirmation_keeps_the_acceptance():
             roster_entered=False,
             confirmed="yes",
         )
+
+
+# --- The reviewed Family form (#1705) ---------------------------------------
+
+F, R, B = pipeline.Shown.FAMILY, pipeline.Shown.REVIEWER, pipeline.Shown.BASELINE
+AD = Decision.ADDED
+C, M, FI = Stream.CENSUS, Stream.MINISTRY, Stream.FINANCIAL
+CP, AI = Stream.CANNOT_PARTICIPATE, Stream.ADDITIONAL_INFORMATION
+
+# The spec's shown-value tables ("One working change set" and "What the
+# reviewed form shows") as rows: stream, placement, whether the form can
+# show the baseline as an answer, and the shown value (None: no shown item)
+# with whether the form may mark it changed.
+SHOWN_VALUES = [
+    (C, Placement(Stage.TO_REVIEW), True, (F, True)),
+    (C, Placement(Stage.CONFLICT, held_decision=A), True, (F, True)),
+    (C, Placement(Stage.READY_TO_UPDATE, A), True, (F, True)),
+    (C, Placement(Stage.READY_TO_UPDATE, AE), True, (R, True)),
+    (C, Placement(Stage.UPDATING, AE), True, (R, True)),
+    (C, Placement(Stage.UPDATED, A), True, (F, True)),
+    (C, Placement(Stage.TO_ENTER_BY_HAND, AE), True, (R, True)),
+    (C, Placement(Stage.ENTERED_BY_HAND, A), True, (F, True)),
+    (C, Placement(Stage.ENTERED_INCORRECTLY, AE), True, (R, True)),
+    (C, Placement(Stage.IGNORED, IG), True, (B, False)),
+    # A Family address or the email opt-out: no baseline the form can show.
+    (C, Placement(Stage.IGNORED, IG), False, (F, False)),
+    (C, Placement(Stage.CONFIRMED, A), True, None),
+    (C, Placement(Stage.CONFIRMED), True, None),
+    (C, Placement(Stage.HISTORY), True, None),
+    (M, Placement(Stage.TO_REVIEW), True, (F, True)),
+    (M, Placement(Stage.TO_ENTER_BY_HAND, A), True, (F, True)),
+    (M, Placement(Stage.TO_ENTER_BY_HAND, AE), True, (R, True)),
+    (M, Placement(Stage.TO_ENTER_BY_HAND, AD), True, (R, True)),
+    (M, Placement(Stage.ENTERED_BY_HAND, AD), True, (R, True)),
+    (M, Placement(Stage.IGNORED, IG), True, (B, False)),
+    (M, Placement(Stage.CONFIRMED, A), True, None),
+    (FI, Placement(Stage.TO_REVIEW), True, (F, False)),
+    (FI, Placement(Stage.CONFLICT, held_decision=AE), True, (F, False)),
+    (FI, Placement(Stage.TO_ENTER_BY_HAND, A), True, (F, False)),
+    (FI, Placement(Stage.TO_ENTER_BY_HAND, AE), True, (R, False)),
+    (FI, Placement(Stage.ENTERED_BY_HAND, AE), True, (R, False)),
+    # Ignored: a pledge has no baseline the form can prefill.
+    (FI, Placement(Stage.IGNORED, IG), True, (F, False)),
+    # The pledge stays the Family's answer after Confirmed.
+    (FI, Placement(Stage.CONFIRMED, AE), True, (R, False)),
+    (FI, Placement(Stage.CONFIRMED, A), True, (F, False)),
+    (FI, Placement(Stage.CONFIRMED), True, (F, False)),
+    (CP, Placement(Stage.TO_HANDLE, A), True, (F, False)),
+    (CP, Placement(Stage.IGNORED, IG), True, (F, False)),
+    (AI, Placement(Stage.HANDLED, A), True, (F, False)),
+    (AI, Placement(Stage.IGNORED, IG), True, (F, False)),
+    (AI, Placement(Stage.HISTORY), True, None),
+]
+
+
+@pytest.mark.parametrize(("stream", "placement", "showable", "expected"), SHOWN_VALUES)
+def test_shown_value_follows_the_specs_tables(stream, placement, showable, expected):
+    """Which value a reviewed form shows for an item, by stream and stage."""
+    found = pipeline.shown_value(stream, placement, baseline_shown=showable)
+    assert (found if found is None else (found.shown, found.markable)) == expected
+
+
+def test_shown_value_covers_every_stage_of_every_stream():
+    """Every stage of every stream has a shown value or deliberately none."""
+    for stream in Stream:
+        for stage in Stage:
+            found = pipeline.shown_value(stream, Placement(stage, A))
+            none = stage is Stage.HISTORY or (
+                stage is Stage.CONFIRMED and stream is not Stream.FINANCIAL
+            )
+            assert (found is None) is none, (stream, stage)

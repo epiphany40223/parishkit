@@ -368,6 +368,12 @@ from .pledge_models import (  # noqa: E402,F401
     PledgeRefreshCheck,
     PledgeReview,
 )
+from .report_email_models import (  # noqa: E402,F401
+    ReportEmailManualRequest,
+    ReportEmailPreparation,
+    ReportEmailRecipient,
+    ReportEmailSnapshot,
+)
 from .verification_models import (  # noqa: E402,F401
     FactVerificationRequest,
     FactVerificationResult,

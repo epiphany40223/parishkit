@@ -465,6 +465,21 @@ FROZEN = {
     "0144_staff_timeline_export.sql": (
         "adfde07b256d584b99de8ae7cdc2910cd982bf4bc1d505404e7b4fc957b522b6"
     ),
+    "0145_page_member_names.sql": (
+        "9391e8c99018c8b7c5f7c996d4530e89d4d533864876cb2d5dc859321f1cc3b9"
+    ),
+    "0158_ignored_note_optional.sql": (
+        "2ad8ec09cab596393c02b32175b1510a163068a4953ba72ff1b5388744fe063a"
+    ),
+    "0159_strict_phase_order.sql": (
+        "6e22e18665523982160c73cbba0802e1458b39d55c6b1e7d184c50a56fb19579"
+    ),
+    "0160_resubmission_phase_order.sql": (
+        "59c093bb0fef3623bcb4e927fe4643ac77dc594afba2e16ea553963833b7cee7"
+    ),
+    "0163_edit_replacement.sql": (
+        "afd603b45720460dde761376f034f255cc49633d3d83bdbf348d03e7a6849ed6"
+    ),
     "0146_census_terminal_undo.sql": (
         "4bdbbda58daa0aecda124bb36bab4157c2898d27a5d86392e5833d0c7684c456"
     ),
@@ -482,6 +497,30 @@ FROZEN = {
     ),
     "0151_limitation_handled_undo.sql": (
         "576d22f2d53cb5093794e599ef8f8a0384a187dcd9ee2c8d8505b9291d5d020e"
+    ),
+    "0152_audit_actor_time.sql": (
+        "1f7ac38ef615a918afcc7a6ff87d743484b013b5af31b5174b743c87868b96fb"
+    ),
+    "0153_reviewed_census_resubmission.sql": (
+        "a6f73dc9bd0bffa4d2e8527ba33e45cf3da1c4029e7d6aa1def2f4106f4d92b9"
+    ),
+    "0154_reviewed_ministry_resubmission.sql": (
+        "ebfd4ab090cde6e8676a42dd4ec73ada1b4c116b7bc533c994efdf52da81435d"
+    ),
+    "0155_reviewed_pledge_resubmission.sql": (
+        "c58fed6f43b79cd5bf5c6b8979df949d68cd461d7be04c816afc3a38055427f3"
+    ),
+    "0156_report_pipeline.sql": (
+        "dc04b332bc79d4ebeb52f4349e426744b79a83aac233fe9eea833ede7ee43a69"
+    ),
+    "0157_person_identity_reads.sql": (
+        "85466fd212f85c2efe5d184d2485fad66a5022df25df531b235020ecdd85cb37"
+    ),
+    "0161_report_conversion.sql": (
+        "3e723f78dcd1ac826e1d7b31309f34f513d6d9e31c23e713e279b41fc9f8a016"
+    ),
+    "0162_report_recovery_coverage.sql": (
+        "4d10bc449e224f7434df25cb695981a534bb2c469c1f319e5b5f67137f8e0d5f"
     ),
 }
 
@@ -650,17 +689,54 @@ def view_bodies(text, *, replace):
     return bodies
 
 
+# The views whose final definition reads a table or view that only a frozen
+# file creates (#1786's 0161 reads the report email records of 0156): the
+# baseline cannot create them in that form, since a view is checked when it
+# is created, so it keeps the last definition it can install and the frozen
+# file replaces it on every install path. The upgrade-parity test compares
+# the results.
+MIGRATION_FINAL_VIEWS = {
+    "0161_report_conversion.sql": frozenset(
+        {
+            "stewardship_admin_digest_work_row",
+            "stewardship_schedule_work_row",
+            "stewardship_delivery_digest_message",
+            "stewardship_delivery_digest_recovery",
+            "stewardship_delivery_closed_coverage",
+            "stewardship_delivery_closed_coverage_summary",
+            "stewardship_withdrawal_inventory",
+        }
+    ),
+}
+
+
 def test_latest_migration_copy_of_each_replaced_view_equals_the_baseline():
-    """A replaced view's latest frozen text is the fresh-install baseline's."""
-    baseline = {}
+    """A replaced view's latest frozen text is the fresh-install baseline's.
+
+    Except a view in ``MIGRATION_FINAL_VIEWS``, whose latest text must name
+    an object a frozen file creates (else it belongs in the baseline).
+    """
+    baseline, created = {}, set()
     for path in SCHEMA.glob("*.sql"):
         baseline.update(view_bodies(path.read_text(encoding="utf-8"), replace=False))
-    latest = {}
+    latest, final = {}, {}
     for path in sorted(MIGRATIONS.glob("*.sql")):
-        latest.update(view_bodies(path.read_text(encoding="utf-8"), replace=True))
+        text = path.read_text(encoding="utf-8")
+        replaced = view_bodies(text, replace=True)
+        latest.update(replaced)
+        for name in replaced:
+            final[name] = name in MIGRATION_FINAL_VIEWS.get(path.name, ())
+        created |= set(view_bodies(text, replace=False))
     assert "stewardship_delivery_family_recovery" in latest
     for name, body in latest.items():
+        # A view a frozen file created is replaced freely, as a migration-
+        # owned function is: every install path runs the migrations.
+        if name in created and name not in baseline:
+            continue
         assert name in baseline, f"{name} is replaced but has no baseline view"
+        if final[name]:
+            assert "stewardship_report_email" in body, f"{name} belongs in the baseline"
+            continue
         assert body == baseline[name], f"{name}: latest migration differs from baseline"
 
 

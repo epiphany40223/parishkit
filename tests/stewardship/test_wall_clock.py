@@ -81,9 +81,12 @@ def test_no_feature_keeps_its_own_weekday_table():
 
 
 def test_the_page_script_keeps_one_weekday_table():
-    """The page scripts name the days in one list, ui-v1.js's WEEKDAY_NAMES.
+    """The page scripts name the days in two lists, one per day order.
 
-    It is in wall_clock.WEEKDAYS's order, so a day number means the same day
+    ui-v1.js's WEEKDAY_NAMES is the schedule editor's; date-format-v1.js has
+    a Sunday-first list for data-day-time (Date.getDay() order).
+
+    The first is in wall_clock.WEEKDAYS's order, so a day number means the same day
     on the page and on the server; ``mondayFirst`` is defined once with it.
     """
     static = SOURCE / "accounts" / "static" / "stewardship"
@@ -93,7 +96,12 @@ def test_the_page_script_keeps_one_weekday_table():
         # Vendored, minified libraries (Vega) are not ParishKit page scripts.
         if not path.name.endswith(".min.js")
     }
-    assert {name: count for name, count in owners.items() if count} == {"ui-v1.js": 1}
+    # date-format-v1.js keeps its own Sunday-first list for data-day-time's
+    # weekday (Date.getDay() order, #1949), a different order from ui-v1.js's.
+    assert {name: count for name, count in owners.items() if count} == {
+        "date-format-v1.js": 1,
+        "ui-v1.js": 1,
+    }
     script = (static / "ui-v1.js").read_text(encoding="utf-8")
     names = [str(day) for day in WEEKDAYS]
     listed = "".join(f'"{name}",' for name in names).rstrip(",")

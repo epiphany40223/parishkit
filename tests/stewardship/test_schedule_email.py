@@ -156,23 +156,21 @@ def test_new_and_edit_both_post_the_email_fields():
 
 
 def test_new_starts_empty_and_offers_every_mail_type():
-    """New has no saved email: empty fields, every type's emails and default."""
+    """New has no saved email: empty fields, every type's emails and default.
+
+    No digest can be added (report emails replaced them, #1786).
+    """
     records, _row = setup()
     toggle, form, sources = schedule_email.editor(None, records, None, CAMPAIGN)
     assert not toggle.is_bound and not form.is_bound
     assert form["subject"].value() is None and form["html"].value() is None
     assert set(sources["emails"]) == {record["id"] for record in records}
-    assert set(sources["defaults"]) == {
-        "initial",
-        "reminder",
-        "daily_digest",
-        "weekly_digest",
-    }
+    assert set(sources["defaults"]) == {"initial", "reminder"}
     assert sources["emails"][records[2]["id"]]["subject"] == "Invitation"
 
 
 def test_new_checks_the_email_against_the_posted_mail_type():
-    """A reminder needs its Family code; a digest takes the digest rules."""
+    """A reminder needs its Family code; the posted type picks the rules."""
     records, _row = setup()
     data = posted(
         edit_email="on",
@@ -192,17 +190,12 @@ def test_new_checks_the_email_against_the_posted_mail_type():
         form, records, records[0]["id"], campaign_id=CAMPAIGN, kind="reminder"
     )
     assert added["values"]["slot"] == "reminder"
-    # The same reminder text posted as a digest takes the digest rules,
-    # which refuse a Family's code and link.
-    data["schedule-kind"] = "daily_digest"
-    _toggle, form, _sources = schedule_email.editor(data, records, None, CAMPAIGN)
-    assert form.slot == "daily_digest"
-    assert not form.is_valid()
-    assert "documented placeholders" in " ".join(form.non_field_errors())
-    # An unknown mail type is never a content slot.
-    data["schedule-kind"] = "page"
-    _toggle, form, _sources = schedule_email.editor(data, records, None, CAMPAIGN)
-    assert form.slot is None
+    # A digest, which no New schedule can be any more (#1786), and an
+    # unknown mail type are never a content slot.
+    for kind in ("daily_digest", "page"):
+        data["schedule-kind"] = kind
+        _toggle, form, _sources = schedule_email.editor(data, records, None, CAMPAIGN)
+        assert form.slot is None
 
 
 def test_new_states_the_family_access_rule_and_gates_on_the_mail_type():

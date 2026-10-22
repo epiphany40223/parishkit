@@ -224,7 +224,11 @@ def _execute(execution, *, store):
                 # Recheck under the work lock; wait without replacing its fence.
                 execution.transition("retryable_failure", retry_seconds=5)
                 return
-            if owner.task_type not in {TASK_TYPE, "daily_digest_prepare"}:
+            if owner.task_type not in {
+                TASK_TYPE,
+                "daily_digest_prepare",
+                "report_email_prepare",
+            }:
                 # Ordinary recovery must also release its frozen demand. Exact
                 # work cannot steal that checkpoint or silently clear the window.
                 execution.transition("permanent_failure")

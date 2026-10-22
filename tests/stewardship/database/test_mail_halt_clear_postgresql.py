@@ -482,8 +482,9 @@ def test_the_consumers_share_record_and_lift_one_halt(admin, tmp_path, monkeypat
     # Mail dispatch's main process runs it through the helper.
     calls = []
 
-    def helper(target, settings, value, *, seconds, check, profile):
+    def helper(target, settings, value, *, seconds, check, profile, redirect):
         """The private helper's answer: Google accepted the sign-in."""
+        assert redirect is None  # Only a LOCAL deployment sets one (#1399).
         calls.append((target, settings["delegated_email"], seconds, profile))
         return True
 

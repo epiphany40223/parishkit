@@ -188,6 +188,9 @@ def test_current_intent_history_and_contact_projection(response_service):
     assert "1960-01-01" not in str(scoped) and "birthdate" not in scoped
 
 
+# The rule before the reviewed Family form (#1705): forms drawn before
+# its release, as one open across the deploy is.
+@pytest.mark.usefixtures("earlier_rule")
 def test_parishsoft_gender_code_reads_as_census_word(response_service):
     """An existing Member's ParishSoft code reads as the census word (#1621)."""
     harness = setup(response_service, sex="F")
@@ -557,6 +560,19 @@ def test_testing_hidden_proposed_and_resolved_intent(response_service):
     ]
     snapshot, claim = prepare(data)
     promote(snapshot, claim, harness.campaign, harness.rings)
+    # A refresh no longer resolves it (#1890), so the resolution a refresh
+    # made before is forged as history, with the guards off.
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL session_replication_role = replica")
+        cursor.execute(
+            "UPDATE stewardship_ministry_request SET state='resolved',"
+            " outcome='joined', resolved_at=now(), resolution_source_id=("
+            "SELECT snapshot_id FROM stewardship_source_current WHERE singleton),"
+            " version=version+1 WHERE entity_kind='member' AND entity_key='3'"
+            " AND ministry_duid=9 AND action='join'"
+            " AND state NOT IN ('superseded','cancelled')",
+            [],
+        )
     [summary] = [row for row in page(harness)["summaries"] if row["duid"] == 9]
     assert summary["completed"] == summary["unresolved"] == 1
     assert summary["joining"] == 2

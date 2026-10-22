@@ -91,7 +91,7 @@ def test_census_reviews_and_resolutions_reach_both_roles(response_service, googl
     edit(harness, admin, fresh(name), "Corrected")
     edit(harness, admin, fresh(name), None)
     review(harness, admin, fresh(name), "ignored")
-    # Sending an ignored change back needs a note (#1683's census review).
+    # Sending an ignored change back, with an optional note (#1889).
     review(harness, admin, fresh(name), "unreviewed", note="Asked again")
     resolve(harness, staff, home, "entered")
     lines, statements = reviews(harness.campaign.pk, family_id)
@@ -103,6 +103,8 @@ def test_census_reviews_and_resolutions_reach_both_roles(response_service, googl
         "Edit cleared",
         "Ignored",
         "Back to review",
+        # The address is accepted before its mark (#1890).
+        "Accepted",
         "Entered by hand",
     ]
     member = lines[0][1]
@@ -150,6 +152,9 @@ def test_census_reviews_and_resolutions_reach_both_roles(response_service, googl
     assert viewed.count() == before + 4
 
 
+# The rule before the reviewed Family form (#1705): forms drawn before
+# its release, as one open across the deploy is.
+@pytest.mark.usefixtures("earlier_rule")
 def test_a_resubmitted_change_keeps_its_carried_decision(response_service):
     """A resubmission that keeps an accepted answer carries the decision to
     its new change row with no history row; Back to review on that row
@@ -260,11 +265,14 @@ def test_back_to_review_notes_reach_their_readers_page_and_file(
         assert [what for what, _detail in lines] == [
             "Accepted",
             "Back to review",
+            # Entered by hand on a change back in review accepts it first
+            # (#1890), so the Accept shows as its own line.
+            "Accepted",
             "Entered by hand",
             "Back to review",
         ]
         assert lines[1][1].endswith("; by admin@example.org; note: Asked the Family")
-        assert lines[3][1] == (
+        assert lines[4][1] == (
             "Home address for the Family; by staff@example.org; "
             "note: Typed the wrong street"
         )

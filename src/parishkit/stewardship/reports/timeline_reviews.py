@@ -271,7 +271,8 @@ def state_after(row, before):
             # Reopening an Ignore: no decision is in force.
             return replace(before, decision=None)
         # Back to review of a terminal step (#1840) keeps the decision behind
-        # it: a mark that accepted in one step leaves the change Accepted.
+        # it: a mark that accepted in one step (decision 2, history since
+        # #1890) leaves the change Accepted.
         # Updated in ParishSoft and Already in ParishSoft have no step of
         # their own here, so the states alone cannot tell this line apart
         # and its word is forced.

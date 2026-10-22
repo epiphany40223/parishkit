@@ -147,7 +147,7 @@ def test_sends_at_one_moment_keep_the_tables_sending_order():
     sends = calendar_sends(rows, VALUES, {}, BEFORE)
     assert [send.label for send in sends[:2]] == [
         "Initial invitation",
-        "Weekly Admin digest",
+        "Weekly report",
     ]
     assert sends[0].due == sends[1].due
 
@@ -184,3 +184,25 @@ def test_a_skipped_digest_send_is_listed_muted_as_skipped():
     )
     assert skipped.edit_url is None
     assert {send.status for send in sends if send is not skipped} == {"repeats"}
+
+
+def test_only_upcoming_dated_family_sends_are_movable():
+    """Move… (#1521): the Initial invitation and reminders until they run.
+
+    A digest's sends are one repeating schedule and never move; a send that
+    has run, or whose time passed without sending (missed), does not either.
+    """
+    sends = calendar_sends(saved(), VALUES, {}, BEFORE)
+    assert {send.kind for send in sends if send.movable} == {"initial", "reminder"}
+    assert not any(send.movable for send in sends if send.digest)
+    rows = saved()
+    initial = next(row for row in rows if row["values"]["kind"] == "initial")
+    later = datetime(2054, 10, 5, tzinfo=UTC)
+    after = calendar_sends(rows, VALUES, {initial["id"]: {"delivered": 3}}, later)
+    assert (after[0].status, after[0].movable) == ("sent", False)
+    missed = calendar_sends(rows, VALUES, {}, later)[0]
+    assert (missed.status, missed.edit_url is not None, missed.movable) == (
+        "missed",
+        True,
+        False,
+    )

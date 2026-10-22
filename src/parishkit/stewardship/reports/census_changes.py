@@ -36,10 +36,8 @@ from parishkit.stewardship.pipeline import (
     census_placement,
 )
 from parishkit.stewardship.responses.census import (
-    ADDRESS_LIMITS,
     FAMILY_FIELDS,
-    blank_address,
-    country_choices,
+    address_editor,
 )
 from parishkit.stewardship.responses.census_additions import ADDED_PREFIX
 from parishkit.stewardship.responses.census_resolution import allowed
@@ -210,8 +208,9 @@ class CensusQuery:
     ``history`` are not used. ``pk-admin report census`` and ``export
     census`` still filter by ``status``, whose "open" default is To do and
     Conflict, plus To review for an Administrator, until #1688 renames
-    them. ``start`` and ``end`` are whole days in the browser's ``zone``, as
-    on System logs.
+    them. ``start`` and ``end`` are whole days in ``zone``, as on System
+    logs; only those commands set them, since the page has no date filter
+    (#1888) and drops a stale one unread.
     """
 
     search: str = ""
@@ -250,7 +249,7 @@ class CensusQuery:
         if query.start and query.end and query.start > query.end:
             raise ValueError("Invalid census change date interval.")
         if query.zone not in timezone_names():
-            # Days cannot be placed without the browser's zone; without days
+            # Days cannot be placed without the CLI's --zone; without days
             # the zone is unused, so an unknown one is simply dropped.
             if query.start or query.end:
                 raise UnknownZone("Census change dates need the browser's zone.")
@@ -854,23 +853,19 @@ def editor(row):
 
     The editor starts with the value carried forward (the reviewer's value,
     else the Family's answer), in the form the Family form shows it. A
-    Family address is its parts (``parts``, with the country choices); a
-    Member field is a date, a choice or text no longer than the field takes
-    (for an Automatic change, ParishSoft's request schema;
-    ``census_review.edit_limit``). None for a field no value can be typed
-    for.
+    Family address is ``census.address_editor``'s (its parts, the country
+    shown and both State controls' values); a Member field is a date, a
+    choice or text no longer than the field takes (for an Automatic change,
+    ParishSoft's request schema; ``census_review.edit_limit``). None for a
+    field no value can be typed for.
     """
     value = row["admin_value"] if row["admin_value_set"] else row["submitted_value"]
     if row["entity_kind"] == "family":
         if row["field"] not in ADDRESS_FIELDS:
             return None
-        known = value if isinstance(value, dict) else {}
-        return {
-            "kind": "address",
-            "parts": {part: known.get(part) or "" for part in blank_address()},
-            "limits": dict(ADDRESS_LIMITS),
-            "countries": country_choices(),
-        }
+        # Country first, with the US State drop-down (#1785).
+        known = value if isinstance(value, dict) else None
+        return {"kind": "address", **address_editor(known)}
     definition = FIELDS.get(row["field"]) if row["entity_kind"] == "member" else None
     if definition is None or definition.kind is ValueKind.BOOLEAN:
         return None
@@ -929,6 +924,37 @@ def now_matches(row):
     return canonical_value(kind, row["current_value"]) == canonical_value(
         kind, row["submitted_value"]
     )
+
+
+# The stages before a change's step: ParishSoft already holding the value
+# leaves the change there (strict phase order, #1890), and its row says so.
+BEFORE_STEP = frozenset(
+    {Stage.TO_REVIEW, Stage.READY_TO_UPDATE, Stage.TO_ENTER_BY_HAND}
+)
+
+
+def already_held(row, stage):
+    """Whether ParishSoft already holds an open change's carried-forward value.
+
+    Refresh rule 1 (#1890): a refresh no longer confirms a change before its
+    review and step, so a To review, Ready or To enter by hand change keeps
+    its stage and its row says ParishSoft already holds the value. C is the
+    reviewer's value when it was Edited, else the Family's answer; the
+    stored ParishSoft value is the latest refresh's (reconciliation keeps
+    it current while the change is open), compared by the census compare
+    rules, as ``now_matches`` compares an Ignored one. Only a Member field
+    has a verified read.
+    """
+    kind = MEMBER_KINDS.get(row["field"])
+    if (
+        stage not in BEFORE_STEP
+        or row["entity_kind"] != "member"
+        or kind is None
+        or not row["current_available"]
+    ):
+        return False
+    carried = row["admin_value"] if row["admin_value_set"] else row["submitted_value"]
+    return canonical_value(kind, row["current_value"]) == canonical_value(kind, carried)
 
 
 def family_answer(row):
@@ -992,6 +1018,7 @@ def shape(row):
     shown["now_matches"] = shown["placement"].stage is Stage.IGNORED and now_matches(
         row
     )
+    shown["already_held"] = already_held(row, shown["placement"].stage)
     # What a person may record on this row now (#528): the page offers only
     # these, and the service and SQL check them again. Reopening an Ignore
     # is the Administrator's; the page shows it only to them. Reopen of a
@@ -1006,6 +1033,7 @@ def shape(row):
         current_available=row["current_available"],
     )
     shown["can_resolve"] = allowed(state, "entered")
+    shown["can_ignore"] = allowed(state, "ignored")
     shown["can_reopen"] = allowed(state, "reopened", replaced=bool(row.get("replaced")))
     # An Administrator's Review of an Automatic row (ADM-09): the form values
     # (census_change_views.REVIEWS) it may record now, in the page's order.

@@ -82,11 +82,12 @@ def _unchanged(snapshot, corpus, execution, claim, *, suppressions):
       suppressions, so a new bounce counts as a change and promotes;
       codes, links and clean population evidence. A stale active link
       generation raises here exactly as promotion would;
-    - proposals and Ministry requests: reconciliation would change none
-      (``proposals_current``, ``ministry_requests_current``), so a new
-      submission or a staff edit does not force a promotion, and no final
-      or decided item's refresh check would change
-      (``refresh_checks_current``, #1689);
+    - proposals: reconciliation would change none (``proposals_current``),
+      so a new submission or a staff edit does not force a promotion, and no
+      final or decided item's refresh check would change
+      (``refresh_checks_current``, #1689). A refresh no longer resolves an
+      open Ministry request (strict phase order, #1890), so open requests
+      need no check here;
     - added Member links (#1670): none is waiting to be recorded
       (``added_members_current``, against the current snapshot, whose
       corpus equals this one).
@@ -99,9 +100,6 @@ def _unchanged(snapshot, corpus, execution, claim, *, suppressions):
         require_current_generation,
     )
     from parishkit.stewardship.responses.added_members import added_members_current
-    from parishkit.stewardship.responses.ministry_reconciliation import (
-        ministry_requests_current,
-    )
     from parishkit.stewardship.responses.reconciliation import proposals_current
     from parishkit.stewardship.responses.refresh_checks import refresh_checks_current
 
@@ -123,7 +121,6 @@ def _unchanged(snapshot, corpus, execution, claim, *, suppressions):
         require_current_generation(campaign)
     return (
         proposals_current(corpus, campaign_id=campaign.pk)
-        and ministry_requests_current(corpus, campaign_id=campaign.pk)
         and refresh_checks_current(snapshot, corpus, campaign_id=campaign.pk)
         and added_members_current(current.snapshot_id, campaign_id=campaign.pk)
         and population_current(

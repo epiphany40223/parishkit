@@ -49,10 +49,25 @@ Delete, plus the editors' live plain-text preview
   event in the request's own durable transaction. A repeat returns the
   original request and records nothing.
 
+The content editor's **Preview changes** and its review dialog's **Apply**
+(#750, #1873) are the ``--edit KIND SLOT [--revision ID]`` mode of the same
+two verbs:
+
+- ``content preview --edit … --expected-version V -`` reads the editor's
+  fields as one JSON object on standard input (``editor_data``), binds them
+  to the page's own ``ContentForm`` and builds the change through the
+  page's own ``content_views.review_change`` with the editor's salt
+  (``preview_salt``), in the page's work transaction, printing the
+  fictional sample's before and after, the schedules the new text switches
+  and ``preview.token``. It changes nothing and records no event, as the
+  editor's Preview changes records none.
+- ``content confirm --edit … --token T`` is the dialog's Apply: the same
+  ``confirm_intent`` with the editor's salt for that page or email, and the
+  same event.
+
 Neither is privileged or prompts: the reviewed token stands in for the page's
 confirmation dialog, as for ``schedule confirm``. Each checks the role first
-(#1341), before any input is read. The editor's own Review and Apply are still
-owed.
+(#1341), before any input is read.
 """
 
 from dataclasses import dataclass
@@ -398,18 +413,26 @@ def read_content_show(caller, service, kind, slot, revision_id=None, default=Fal
 
 @dataclass(frozen=True)
 class ContentPreview(ReadModel):
-    """``content preview``: a Delete to confirm, or the plain-text preview.
+    """``content preview``: an editor change or a Delete to confirm, or the
+    plain-text preview.
 
-    ``action`` says which: ``delete`` (the email tables' Delete) or
-    ``plain_text`` (the editors' live preview of typed HTML). For
-    ``delete``, ``version`` is the applied configuration's version the
-    removal was built against, ``campaign_id`` the current campaign,
-    ``deleting`` each chosen email (``id``, ``slot``, ``subject``) and
-    ``preview.token`` the signed binding ``content confirm`` takes, valid
-    for fifteen minutes; ``plain_text`` is None. For ``plain_text``, only
-    ``plain_text`` is set: ``html`` (the sanitized HTML), ``text`` (the
+    ``action`` says which: ``edit`` (the editor's Preview changes),
+    ``delete`` (the email tables' Delete) or ``plain_text`` (the editors'
+    live preview of typed HTML). For ``edit`` and ``delete``, ``version`` is
+    the applied configuration's version the change was built against,
+    ``campaign_id`` the current campaign and ``preview.token`` the signed
+    binding ``content confirm`` takes, valid for fifteen minutes. ``edit``
+    holds the editor change (``kind``, ``slot``, ``revision_id``, ``name``,
+    the fictional sample's ``before`` and ``after``, each ``subject``,
+    ``html`` and ``text`` or None, and ``schedules``, the saved schedules
+    the new text switches, in sending order: ``id``, ``kind``, ``name`` (as
+    Dates and mail schedules names it), ``subject``, ``due_at`` (None for a
+    recurring digest) and ``sent``, true for one that already sent, which
+    switches too but is not sent again); ``deleting`` each chosen
+    email of a Delete (``id``, ``slot``, ``subject``). For ``plain_text``,
+    only ``plain_text`` is set: ``html`` (the sanitized HTML), ``text`` (the
     plain text generated from it) and ``removed`` (the markup the sanitizer
-    drops, in plain words).
+    drops, in plain words). Members of another action are None.
     """
 
     action: str
@@ -418,6 +441,7 @@ class ContentPreview(ReadModel):
     deleting: list | None
     plain_text: dict | None
     preview: dict | None
+    edit: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -432,18 +456,19 @@ class ContentConfirm(ReadModel):
     request: dict
 
 
-def admit_preview(caller, service, *, delete):
+def admit_preview(caller, service, *, change):
     """The role first (#1341): ``content preview``'s admission, before any input.
 
-    The Delete mode admits as the page's Delete post does (``CONFIGURE``,
-    recording activity); the plain-text mode passively, as the editors'
-    preview post checks a read-only authorization that renews nothing.
-    Either way Staff are ``denied`` before an input is read.
+    The edit and Delete modes (``change``) admit as the editor's and the
+    Delete's posts do (``CONFIGURE``, recording activity); the plain-text
+    mode passively, as the editors' preview post checks a read-only
+    authorization that renews nothing. Either way Staff are ``denied``
+    before an input is read.
     """
     from .accounts.policy import Capability
     from .admin_changes import _admit_change
 
-    if delete:
+    if change:
         return _admit_change(caller, service)
     return _admit(caller, service.store, Capability.CONFIGURE)
 
@@ -551,15 +576,18 @@ def preview_deletion(caller, service, actor, identifiers, *, expected_version):
     return model
 
 
-def confirm_content(caller, service, actor, *, token, context):
-    """``content confirm``: the Delete dialog's confirmation of a built removal.
+def confirm_content(caller, service, actor, *, token, context, edit=None):
+    """``content confirm``: the Delete dialog's or the editor review's Apply.
 
     ``actor`` is the role-first admission (``admin_changes._admit_change``,
-    as the page's post). ``confirm_intent`` checks the token with the page's
-    delete salt for the current campaign and the page's scope
-    (``campaign_views._scope``): expired or out of date is
-    ``stale_version``; altered or another campaign's ``invalid``; another
-    Administrator's ``denied``. It records the request with
+    as the page's post). ``edit`` is the editor's ``(kind, slot,
+    revision_id)`` for its review dialog's Apply (#1873), or None for the
+    Delete. ``confirm_intent`` checks the token with that page's salt for
+    the current campaign (the editor's ``preview_salt`` or the Delete's
+    ``delete_salt``) and the page's scope (``campaign_views._scope``):
+    expired or out of date is ``stale_version``; altered, another
+    campaign's, another page or email's, or the other action's ``invalid``;
+    another Administrator's ``denied``. It records the request with
     ``admin_cmd_content_confirm`` in its own durable transaction; a repeat
     returns the original request and records nothing.
     ``context["committed"]`` and ``context["request_id"]`` follow ``schedule
@@ -573,6 +601,7 @@ def confirm_content(caller, service, actor, *, token, context):
     from .accounts.campaign_views import _scope
     from .accounts.configuration_requests import policy_operation_id
     from .accounts.content_delete_views import delete_salt
+    from .accounts.content_views import preview_salt
     from .admin_changes import _ended_or_raise
     from .admin_reads import config_request
     from .audit.schemas import Action, ActorKind, Outcome
@@ -580,9 +609,12 @@ def confirm_content(caller, service, actor, *, token, context):
     from .observability import _guard_refusal
 
     try:
-        salt = delete_salt(_held(lambda: _current(service)))
+        campaign_id = _held(lambda: _current(service))
     except NotAvailable as error:
         _ended_or_raise(caller, service, actor, error)
+    salt = (
+        delete_salt(campaign_id) if edit is None else preview_salt(campaign_id, *edit)
+    )
     try:
         # The request's id is derived from the signed key, before intake;
         # confirm_intent verifies the token properly (expiry included).
@@ -628,3 +660,256 @@ def confirm_content(caller, service, actor, *, token, context):
     return ContentConfirm(
         created=bool(created), request=config_request(receipt).to_document()
     )
+
+
+# The edit mode's fields on standard input, by name: their JSON type, and
+# whether the editor of a page (rather than an email) shows them. The
+# banner choice is shown only where it applies (``_shows_banner``).
+EDIT_FIELDS = {
+    "subject": (str, False),
+    "html": (str, True),
+    "text": (str, False),
+    "generate_text": (bool, False),
+    "show_banner": (bool, False),
+    "clear": (bool, True),
+}
+# Greyed in place, and not sent, while "Remove this selected content" is
+# ticked (``ContentForm._removal_fields``).
+CONTENT_FIELDS = ("subject", "html", "generate_text", "text")
+
+
+def _field_problem(name, message):
+    """One ``invalid`` problem at ``content.<name>`` (or ``content``)."""
+    return {
+        "field": "content" if name is None else f"content.{name}",
+        "code": "invalid",
+        "message": message,
+    }
+
+
+def editor_data(source, kind, shown, banner, expected_version):
+    """The editor's post, built from ``source``, the JSON object on standard input.
+
+    ``shown`` is the text the editor opens with (``editor_content``) and
+    ``banner`` its banner choice (None where it does not apply). An absent
+    field keeps the editor's own value as it opens, except that while
+    "Generate plain text from HTML" is on an absent ``text`` is the
+    generated one (posted empty), as the editor fills it from the HTML.
+    While ``clear`` is set the content fields are greyed and not sent, as
+    on the page, so giving one is refused; the banner box stays and is
+    sent. Not an object, an unknown name, a field this editor does not show
+    or a wrong type is ``invalid`` at ``content.<name>``. Returns the
+    form's data, which the page's own ``ContentForm`` then checks.
+    """
+    import json
+
+    from .accounts.content_forms import text_is_generated
+    from .admin_changes import InvalidChange
+
+    try:
+        document = json.loads(source)
+    except (ValueError, RecursionError):
+        # RecursionError: nesting too deep for the parser.
+        document = None
+    if not isinstance(document, dict):
+        raise InvalidChange(
+            [_field_problem(None, "Give the fields as one JSON object.")]
+        )
+    problems = []
+    for name, value in document.items():
+        expected, on_page = EDIT_FIELDS.get(name, (None, False))
+        shown_here = (
+            expected is not None
+            and (kind == "email" or on_page)
+            and (name != "show_banner" or banner is not None)
+        )
+        if not shown_here:
+            problems.append(_field_problem(name, "This editor has no such field."))
+        elif type(value) is not expected:
+            # ``type`` rather than ``isinstance``: JSON's true is no string,
+            # and a number is no boolean.
+            problems.append(
+                _field_problem(
+                    name,
+                    "Give true or false." if expected is bool else "Give a string.",
+                )
+            )
+        elif document.get("clear") is True and name in CONTENT_FIELDS:
+            problems.append(
+                _field_problem(
+                    name, "Leave this out: removing the content sends no text."
+                )
+            )
+    if problems:
+        raise InvalidChange(problems)
+    data = {"base_digest": expected_version}
+    if banner is not None:
+        data["show_banner"] = document.get("show_banner", banner)
+    if document.get("clear"):
+        return data | {"clear": True}
+    saved = shown or {}
+    data["html"] = document.get("html", saved.get("html", ""))
+    if kind == "email":
+        generate = document.get("generate_text", text_is_generated(shown))
+        data |= {
+            "subject": document.get("subject", saved.get("subject", "")),
+            "generate_text": generate,
+            "text": document.get("text", "" if generate else saved.get("text", "")),
+        }
+    return data
+
+
+def edit_model(campaign, version, kind, slot, revision_id, label, result):
+    """``review_change``'s review as ``content preview --edit`` prints it."""
+
+    def sample(rendered):
+        """One side's subject, HTML and plain text, or None when empty."""
+        if rendered is None:
+            return None
+        return {key: rendered.get(key) for key in ("subject", "html", "text")}
+
+    return ContentPreview(
+        action="edit",
+        version=version,
+        campaign_id=campaign.pk,
+        deleting=None,
+        plain_text=None,
+        preview={"token": result["preview"]},
+        edit={
+            "kind": kind,
+            "slot": slot,
+            "revision_id": None if revision_id is None else str(revision_id),
+            "name": str(label),
+            "before": sample(result["before"]),
+            "after": sample(result["after"]),
+            # Both lists in one, in sending order, as the dialog names them;
+            # ``sent`` marks the ones the dialog lists under Already sent.
+            "schedules": [
+                {
+                    "id": row.id,
+                    "kind": row.kind,
+                    "name": str(row.label),
+                    "subject": row.subject,
+                    "due_at": row.due,
+                    "sent": row in result["already_sent"],
+                }
+                for row in sorted(
+                    result["affected"] + result["already_sent"],
+                    key=lambda row: row.position,
+                )
+            ],
+        },
+    )
+
+
+def _edit_refusal(error, form):
+    """A page refusal of the change (``UserFacingError``) as ``invalid``.
+
+    Removing an email a schedule still sends is at ``content.clear``; no
+    change at all is at ``content``. Both carry the page's words and fix.
+    """
+    from .admin_changes import InvalidChange
+
+    refusal = error.refusal
+    text = " ".join(str(item) for item in (refusal.message, refusal.fix) if item)
+    # Both refusals come after the form validated, so cleaned_data exists.
+    removing = form.cleaned_data.get("clear")
+    return InvalidChange([_field_problem("clear" if removing else None, text)])
+
+
+def preview_edit(
+    caller, service, actor, kind, slot, revision_id, source, *, expected_version
+):
+    """``content preview --edit``: the content editor's Preview changes.
+
+    ``actor`` is ``admit_preview``'s. In the page's work transaction it
+    reads the page's pinned state and campaign check
+    (``content_views._content_campaign``) and the editor's lookup
+    (``editor_content``), checks the version (another is
+    ``stale_version``), binds ``source`` (``editor_data``) to the page's own
+    ``ContentForm`` and builds the change through the page's own
+    ``review_change`` with the editor's salt. The form's refusals are
+    ``invalid`` at ``content.<field>`` with the page's words; held or not
+    current is ``stale_version``; archived, no current campaign, or an
+    unknown slot or revision ``not_available``. Rechecks access afterwards.
+    Changes nothing and records no event, as the editor's Preview changes
+    records none.
+    """
+    from .accounts.campaign_views import _state
+    from .accounts.content_forms import ContentForm
+    from .accounts.content_views import (
+        Refused,
+        _content_campaign,
+        _shows_banner,
+        editor_content,
+        preview_salt,
+        removal_reason,
+        review_change,
+    )
+    from .accounts.policy import Capability
+    from .admin_changes import InvalidChange, _ended_or_raise, form_problems
+    from .campaigns.work_locks import work_transaction
+    from .storage import StaleRecordError
+    from .web.refusals import UserFacingError, UserFacingUnavailable
+
+    def step():
+        """Check, bind, build and sign in one work transaction, as the post does."""
+        with work_transaction():
+            target = _current(service)
+            state = _state(service)
+            try:
+                campaign = _content_campaign(state, target)
+            except LookupError:
+                raise NotAvailable("There is no current campaign.") from None
+            except UserFacingUnavailable as error:
+                # Archived: the menu's own reason, permanent (not stale).
+                raise NotAvailable(str(error)) from None
+            configuration = state[0]
+            try:
+                label, previous, note, shown = editor_content(
+                    configuration, campaign, kind, slot, revision_id
+                )
+            except LookupError:
+                raise NotAvailable("That page or email is not available.") from None
+            if configuration.active_configuration.digest != expected_version:
+                raise StaleRecordError("The configuration changed since then.")
+            banner = _shows_banner(campaign, kind, slot)
+            form = ContentForm(
+                editor_data(source, kind, shown, banner, expected_version),
+                kind=kind,
+                slot=slot,
+                banner=banner,
+                clear_unavailable=removal_reason(
+                    configuration, campaign, previous, note
+                ),
+            )
+            try:
+                result = review_change(
+                    service,
+                    actor,
+                    state,
+                    campaign,
+                    form,
+                    previous,
+                    slot,
+                    preview_salt(campaign.pk, kind, slot, revision_id),
+                    note,
+                )
+            except Refused:
+                raise InvalidChange(
+                    form_problems("content", form.errors, "content")
+                ) from None
+            except UserFacingError as error:
+                raise _edit_refusal(error, form) from None
+            return edit_model(
+                campaign, expected_version, kind, slot, revision_id, label, result
+            )
+
+    try:
+        model = _held(step)
+    except (PermissionError, NotAvailable, StaleRecordError, ValueError) as error:
+        # Each refusal after the session recheck, so an ended session is
+        # exit 5 rather than the refusal.
+        _ended_or_raise(caller, service, actor, error)
+    _recheck(caller, service.store, actor, Capability.CONFIGURE)
+    return model

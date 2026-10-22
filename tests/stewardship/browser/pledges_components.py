@@ -30,6 +30,11 @@ CHECKED = "/pledges-checked"
 EVERY = "/pledges-every"
 ACCEPTED = "/pledges-accepted"
 EDITED = "/pledges-edited"
+# The page's own addresses (#1820): the plain one (To review) and Every
+# stage's, which a reload fetches. The browser only puts an address in its
+# bar when the path is the page's own.
+ADDRESS = "/admin/reports/financial/pledges/"
+EVERY_ADDRESS = ADDRESS + "?stage=all"
 # The page after Back to review undid Family 05's mark (#1840).
 UNDONE = "/pledges-undone"
 UNDONE_NOTICE = "Family 05 sent back to review."
@@ -94,8 +99,9 @@ def checked_rows():
         ),
         _row(6, "ignored", review("ignored"), check("ignored_now_matches", "1200.00")),
         # #1747: a To review pledge ParishSoft holds at a third amount, an
-        # accepted one not yet marked at one, and a To review one ParishSoft
-        # already holds.
+        # accepted one not yet marked at one; and (#1890) a To review one
+        # and an accepted one not yet marked that ParishSoft already holds,
+        # which keep their stage.
         _row(10, "conflict", None, check("conflict", "900.00"), base="to_review"),
         _row(
             11,
@@ -104,7 +110,14 @@ def checked_rows():
             check("conflict", "950.00"),
             base="to_enter_by_hand",
         ),
-        _row(12, "confirmed", None, check("confirmed", "1200.00"), base="to_review"),
+        _row(12, "to_review", None, check("confirmed", "1200.00"), base="to_review"),
+        _row(
+            13,
+            "to_enter_by_hand",
+            review("accepted"),
+            check("confirmed", "1200.00"),
+            base="to_enter_by_hand",
+        ),
     ]
 
 
@@ -157,6 +170,8 @@ def components(context, admin):
     return {
         PATH: _page(context, admin, rows(), "to_review"),
         EVERY: _page(context, admin, rows(), "all"),
+        ADDRESS: _page(context, admin, rows(), "to_review"),
+        EVERY_ADDRESS: _page(context, admin, rows(), "all"),
         ACCEPTED: _page(
             context, admin, rows(accepted=True), "to_review", ACCEPTED_NOTICE
         ),

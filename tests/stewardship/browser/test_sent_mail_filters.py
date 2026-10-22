@@ -14,7 +14,7 @@ from urllib.parse import parse_qs
 import pytest
 
 from .keyboard import tab_to_next
-from .waits import eventually, has_text, recorded, visible
+from .waits import eventually, has_text, hidden, recorded, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -105,7 +105,7 @@ def test_the_bar_fits_one_row_and_wraps_on_a_phone(page, component_origin):
     # taller than a text box).
     boxes = page.evaluate(
         """() => [...document.querySelectorAll(
-            '#table-filters > div:not(.filter-actions)')]
+            '#table-filters > div:not(.filter-actions, .hint-row-messages)')]
             .map(node => { const box = node.getBoundingClientRect();
                 return [Math.round(box.top), Math.round(box.bottom)]; })"""
     )
@@ -309,6 +309,111 @@ def test_a_through_day_before_from_holds_apply(page, component_origin):
     assert hint.evaluate("node => node.getBoundingClientRect().height") == height
 
 
+RECIPIENT_WORDS = (
+    "Enter a name, a whole Family DUID, one email address or a delivery ID, "
+    "or clear it."
+)
+
+
+def test_a_name_in_recipient_applies_in_place(page, component_origin):
+    """A name typed in Recipient (R40b, #1849) is a filter like any other:
+    Apply posts it, the list is redrawn in place without a reload, and the
+    name never reaches the address bar."""
+    sent = answer_with(page, component_origin, "/deliveries-applied")
+    open_list(page, component_origin)
+    page.locator("#delivery-recipient").fill("Thompson")
+    page.get_by_role("button", name="Apply filters").click()
+    eventually(
+        page,
+        "document.querySelector('tbody tr td:last-child').textContent.trim()",
+        "Failed",
+    )
+    assert page.evaluate(MARKED) == "kept"
+    recorded(page, sent, 1)
+    assert sent[0]["recipient"] == ["Thompson"]
+    assert "Thompson" not in page.url and "recipient" not in page.url
+
+
+def test_a_malformed_recipient_holds_apply_on_the_page(page, component_origin):
+    """Digits and commas that are no Family DUID (R40b, #1562) hold Apply
+    filters, saying why in the gate's reserved line, which keeps its
+    height; nothing is sent and the page stays, unreloaded, at its own
+    address."""
+    sent = answer_with(page, component_origin, "/deliveries-applied")
+    open_list(page, component_origin)
+    address = page.url
+    hint = page.locator("#delivery-filter-hint")
+    height = hint.evaluate("node => node.getBoundingClientRect().height")
+    field = page.locator("#delivery-recipient")
+    field.fill("1,2")
+    field.blur()
+    eventually(
+        page, "document.querySelector('#table-filters button[type=submit]').disabled"
+    )
+    has_text(hint, RECIPIENT_WORDS)
+    assert hint.evaluate("node => node.getBoundingClientRect().height") == height
+    # Nor does Enter, or any other submission, send it.
+    page.locator("#table-filters").evaluate("form => form.requestSubmit()")
+    page.wait_for_timeout(300)
+    assert sent == []
+    assert page.url == address and page.evaluate(MARKED) == "kept"
+    # A name, a Family DUID, an address and a delivery ID are let through.
+    for value in (
+        "Smith, John",
+        "12,345",
+        "Pat@Example.org",
+        "0f8fad5b-d9cb-469f-a165-70867728950e",
+    ):
+        field.fill(value)
+        eventually(
+            page,
+            "!document.querySelector('#table-filters button[type=submit]').disabled",
+        )
+
+
+def test_a_refused_recipient_is_marked_in_place(page, component_origin):
+    """A Recipient the server refuses at its field (a DUID out of range,
+    which the pattern lets through) is answered 400 with the page drawn again; the
+    Apply swaps it in without a reload, keeps what was typed, marks the
+    field with the message in the hint row, and the address never shows
+    the Recipient. The first edit clears the mark."""
+    body = page.request.get(component_origin + "/deliveries-refused").text()
+    listed = page.request.get(component_origin + PAGE).text()
+    sent = []
+
+    def handle(route):
+        """Answer the filter POST as the view refuses it; the page itself."""
+        if route.request.method != "POST":
+            route.fulfill(status=200, body=listed, content_type="text/html")
+            return
+        sent.append(parse_qs(route.request.post_data or "", keep_blank_values=True))
+        route.fulfill(status=400, body=body, content_type="text/html")
+
+    page.route(component_origin + PAGE + "*", handle)
+    open_list(page, component_origin)
+    field = page.locator("#delivery-recipient")
+    field.fill("0")
+    page.get_by_role("button", name="Apply filters").click()
+    eventually(
+        page, "document.querySelector('#delivery-recipient').ariaInvalid", "true"
+    )
+    assert page.evaluate(MARKED) == "kept"
+    recorded(page, sent, 1)
+    assert sent[0]["recipient"] == ["0"]
+    assert field.input_value() == "0"
+    assert "recipient" not in page.url
+    message = page.locator("#delivery-filters_error")
+    visible(message)
+    has_text(message, RECIPIENT_WORDS)
+    # A value the pattern admits, so only the server's mark could remain.
+    field.press("End")
+    field.type("1")
+    hidden(message)
+    eventually(
+        page, "document.querySelector('#delivery-recipient').ariaInvalid", "false"
+    )
+
+
 # Where the first row's Recipient and its table sit, the page's size, and
 # how far the page is scrolled.
 RECIPIENT_PLACE = """() => {
@@ -451,7 +556,7 @@ def test_back_never_sends_a_bulk_confirm_again(page, component_origin):
     page.locator("#bulk-panel summary").click()
     retry = page.locator("#bulk-retry_failed")
     retry.locator("textarea[name=note]").fill("Gmail was down from 2 to 3 PM.")
-    retry.get_by_role("button", name="Preview retry").click()
+    retry.get_by_role("button", name="Preview sending again").click()
     page.get_by_role("button", name="Retry 3 emails").click()
     page.get_by_role("heading", name="Partly done").wait_for()
     recorded(page, sent, 2)

@@ -22,7 +22,9 @@ from .setup_wizard import wizard_for
 # Plain-language status for each observable load situation; ``summary``
 # picks the key for one observation.
 SUMMARIES = {
-    "queued": _("Waiting for the background loading service to pick up the job."),
+    # The shared Start the load box's sentence (#1916), so this page and
+    # every other page with that box say it the same way.
+    "queued": stages.QUEUED,
     "retry_wait": _(
         "ParishSoft did not answer in time. The load waits briefly and then "
         "retries automatically; nothing needs to be done."
@@ -55,8 +57,20 @@ SUMMARIES = {
     ),
 }
 
-# The three parts of a load, in order, as the page names them.
+# The status keys the page can show while it still updates itself.
+RUNNING_SUMMARIES = (
+    "queued",
+    "retry_wait",
+    "fetching",
+    "staging",
+    "validating",
+    "working",
+)
+
+# The three parts of a load, in order, as the page names them, after the
+# shared Start the load box for the time the load waits for a worker (#1916).
 PHASES = (
+    stages.START,
     ("fetching", _("Download from ParishSoft")),
     ("staging", _("Save the records for this setup")),
     ("validating", _("Check the saved records")),
@@ -81,14 +95,42 @@ COLLECTION_TEXT = {
 }
 
 
+def collection_reserve(key):
+    """Every wording a collection's row can take while the load runs (#1903).
+
+    The row draws them invisibly in its status cell, so a row never wraps
+    to another line part-way through the load (a narrow screen can fit
+    "Waiting" beside a label but not "1,234 loaded"). The counts are the
+    size of a large parish's; a larger one grows the row once.
+    """
+    texts = [
+        COLLECTION_TEXT["waiting"],
+        COLLECTION_TEXT["active"],
+        COLLECTION_TEXT["done"].format(count="99,999"),
+    ]
+    if key == "ministry_roster":
+        texts.append(COLLECTION_TEXT["rosters"].format(finished="999", expected="999"))
+    return texts
+
+
 def phases(progress, status_key):
-    """Name each load phase's state for the live status region (stage boxes)."""
+    """Name each load phase's state for the live status region (stage boxes).
+
+    Start the load is In progress until a worker picks the load up, then
+    Download from ParishSoft, and so on (``stages.queued_index``). A load
+    that stopped for good marks the box it stopped in Failed, Start the load
+    when no worker ever took it; one no longer watched (voided) leaves it
+    Not started.
+    """
     order = [key for key, _label in PHASES]
-    # Before the download starts (queued, starting) no phase has begun.
-    index = order.index(progress["phase"]) if progress["phase"] in order else -1
+    index = stages.queued_index(order, progress["phase"])
     if status_key == "done":
         index = len(order)
-    return stages.rows(PHASES, index, "active" if progress["active"] else "waiting")
+    if status_key in {"failed", "ended"}:
+        current = "failed"
+    else:
+        current = "active" if progress["active"] else "waiting"
+    return stages.rows(PHASES, index, current)
 
 
 def collections(progress):
@@ -115,7 +157,13 @@ def collections(progress):
         else:
             text = COLLECTION_TEXT[state]
         rows.append(
-            item | {"label": COLLECTIONS[item["key"]], "state": state, "text": text}
+            item
+            | {
+                "label": COLLECTIONS[item["key"]],
+                "state": state,
+                "text": text,
+                "reserve": collection_reserve(item["key"]),
+            }
         )
     return rows
 
@@ -165,6 +213,17 @@ def _status_context(progress):
         "progress": progress,
         "status_key": status_key,
         "summary_text": SUMMARIES[status_key],
+        # Every other wording the page can show while it still updates,
+        # drawn invisibly in the summary's grid cell so the stage boxes below
+        # never move when the wording changes (#1903). The settled wordings
+        # (done, failed, ended, voided) are not reserved: the page stops
+        # updating on them and a failure comes with its own notice.
+        "summary_reserve": [
+            SUMMARIES[key] for key in RUNNING_SUMMARIES if key != status_key
+        ],
+        # The saved-record bar shows only while records are saved and
+        # checked; before then it keeps its space, invisible (#1903).
+        "records_shown": progress["phase"] in {"staging", "validating"},
         "phases": phases(progress, status_key),
         "collections": collections(progress),
         "started_ago": _ago(progress["server_now"], progress["started_at"]),

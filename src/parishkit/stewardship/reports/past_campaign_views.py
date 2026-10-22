@@ -28,7 +28,8 @@ campaigns page"):
 - ``archive`` (POST, ``archive/``) is This campaign's archive's Download
   campaign archive (#1018 part (a)): it queues the current campaign's
   archive workbook (``archive_exports.create_archive_export``) and answers
-  with the export's status page.
+  with a redirect to the export's status address, which the page follows
+  in place to download the file (#1778).
 
 Every route needs an Administrator (``CONFIGURE`` and ``FINANCIAL_DETAIL``);
 the service checks again. Every answer is ``no-store``. Note texts appear
@@ -52,7 +53,8 @@ from django.views.decorators.http import require_http_methods
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.admin_editing import error_response, principal
 from parishkit.stewardship.accounts.authentication import runtime
-from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.accounts.policy import Capability
+from parishkit.stewardship.accounts.role_refusal import require
 from parishkit.stewardship.accounts.sessions import csrf_header_only
 from parishkit.stewardship.archive import imports
 from parishkit.stewardship.archive.workbook import note_flagged
@@ -142,9 +144,7 @@ def _no_store(response):
 def _administrator(request):
     """The signed-in Administrator: ``CONFIGURE`` and ``FINANCIAL_DETAIL``."""
     actor = principal(request, runtime())
-    if not allows(actor, Capability.FINANCIAL_DETAIL):
-        raise PermissionError("Past campaigns are the Administrator's.")
-    return actor
+    return require(actor, Capability.FINANCIAL_DETAIL)
 
 
 def _emails(ids):
@@ -549,7 +549,7 @@ def remove(request):
 
 @require_http_methods(["POST"])
 def archive(request):
-    """Queue the current campaign's archive workbook and show its status page.
+    """Queue the current campaign's archive workbook; redirect to its status.
 
     The form posts only its one-time ``request_key``. The file holds each
     Family's giving. A download unavailable now (or a reused form) redraws

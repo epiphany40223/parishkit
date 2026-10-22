@@ -31,7 +31,7 @@ OPEN_EXECUTIONS = ("pending", "conflict", "queued", "failed")
 RESET_EXECUTIONS = frozenset({"pending", "failed"})
 
 
-def resets_approval(row, execution):
+def resets_approval(row, execution, *, caught_up=False):
     """Whether reconciliation sends ``row``'s approval back to To review.
 
     ``row`` is annotated by ``accepted_base.with_accepted_base``, and is
@@ -40,8 +40,14 @@ def resets_approval(row, execution):
     review while the change stays open (``execution`` pending or conflict);
     the database requires the same (0108's derived guard). A queued change
     keeps its approval, since the publish worker owns it: its plan, merged
-    against the Family's baseline again, can only meet a conflict.
+    against the Family's baseline again, can only meet a conflict. So does
+    an open change ParishSoft ``caught_up`` with (strict phase order,
+    #1890): it stays pending with nothing left to write, so the stale base
+    protects nothing and the change keeps its stage (Ready to update, To
+    enter by hand); 0159's derived guard admits it.
     """
+    if caught_up and execution == "pending":
+        return False
     if row.execution not in RESET_EXECUTIONS or execution not in {
         "pending",
         "conflict",
@@ -225,19 +231,24 @@ def _proposal_updates(corpus, campaign_id, *, record=True):
         third = result.conflict or (
             row.admin_value_set and result.state is MergeState.SOURCE_CHANGED
         )
+        # Strict phase order (#1890, refresh rule 1): ParishSoft reaching C
+        # confirms a change only after its step, so only a change an update
+        # run has queued is resolved upstream. An open one keeps its stage
+        # (To review, Ready, To enter by hand; a Conflict returns to the
+        # stage its decision gives, as at R = A) with ParishSoft's value
+        # stored, from which its row says ParishSoft already holds it. An
+        # Ignored change stays Ignored too, its row saying ParishSoft now
+        # matches (#1689). The census guard (migration 0159) refuses any
+        # other resolved_upstream from reconciliation.
         execution = (
             "resolved_upstream"
-            if caught_up
+            if caught_up and row.execution == "queued"
             else "conflict"
-            if unusable or third
+            if unusable or (third and not caught_up)
             else "pending"
         )
-        if execution == "resolved_upstream" and row.decision == "ignored":
-            # An Ignored change stays Ignored when ParishSoft reaches the
-            # Family's answer: no change was wanted, so it is not Confirmed;
-            # its row says ParishSoft now matches (#1689).
-            execution = "pending"
-        decision = "unreviewed" if resets_approval(row, execution) else row.decision
+        reset = resets_approval(row, execution, caught_up=caught_up)
+        decision = "unreviewed" if reset else row.decision
         yield row, current, execution, decision
 
 

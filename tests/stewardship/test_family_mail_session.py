@@ -288,9 +288,9 @@ def test_serve_writes_started_before_each_submission(monkeypatch):
     seen = []
 
     class Recorder:
-        def __init__(self, value, settings, *, profile):
+        def __init__(self, value, settings, *, profile, redirect):
             assert value == KEY and settings == SETTINGS
-            assert profile is DeploymentProfile.PRODUCTION
+            assert profile is DeploymentProfile.PRODUCTION and redirect is None
 
         def deliver(self, value):
             # The parent can already read this message's started line.

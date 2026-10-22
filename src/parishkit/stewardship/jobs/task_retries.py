@@ -1,7 +1,7 @@
 """Explicit retries of failed background tasks, moved out of the Admin views.
 
 A Background work task page offers **Retry** for a failed Family mail
-preparation, daily or weekly digest work, or export file cleanup, once its
+preparation, report email work (#1786), or export file cleanup, once its
 cause is fixed. The pages (``delivery_views.preparation_retry`` and
 ``export_views.retry_cleanup_command``) and the Admin automation command line
 (``task retry``, ADM-11 PR 9a) run these same functions, so they admit, scope
@@ -13,13 +13,13 @@ principal.
 
 from contextlib import contextmanager
 
-from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.accounts.policy import Capability
+from parishkit.stewardship.accounts.role_refusal import require
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 
-# The four retries a task page can offer, by the kind of work that failed.
+# The three retries a task page can offer, by the kind of work that failed.
 FAMILY_PREPARATION = "family_preparation"
-DAILY_DIGEST = "daily_digest"
-WEEKLY_DIGEST = "weekly_digest"
+REPORT_EMAIL = "report_email"
 EXPORT_CLEANUP = "export_cleanup"
 
 
@@ -31,9 +31,7 @@ def background_principal(caller, store, *, final=False, activity=False):
     makes around its effect.
     """
     actor = authenticated_admin(caller, store=store, activity=activity, read_only=final)
-    if not allows(actor, Capability.BACKGROUND_WORK):
-        raise PermissionError("Delivery administration is unavailable.")
-    return actor
+    return require(actor, Capability.BACKGROUND_WORK)
 
 
 @contextmanager
@@ -76,10 +74,10 @@ def command_scope(caller, service, actor, *, admit=background_principal):
 
 def retry_kind(task_type):
     """Which retry a task page offers for a task of ``task_type``, or None."""
-    from parishkit.stewardship.reports.digest_retry import TASK_TYPES
     from parishkit.stewardship.reports.export_cleanup import (
         TASK_TYPE as CLEANUP_TASK_TYPE,
     )
+    from parishkit.stewardship.reports.report_email_retry import TASK_TYPES
 
     from .family_mail_tasks import TASK_TYPE
 
@@ -88,34 +86,32 @@ def retry_kind(task_type):
     if task_type == CLEANUP_TASK_TYPE:
         return EXPORT_CLEANUP
     if task_type in TASK_TYPES:
-        return WEEKLY_DIGEST if task_type.startswith("weekly_") else DAILY_DIGEST
+        return REPORT_EMAIL
     return None
 
 
 def retry_preparation_task(store, actor, task_id, *, command_id, kind):
-    """Retry one selected failed Family preparation or digest run.
+    """Retry one selected failed Family preparation or report email run.
 
     Runs inside ``command_scope``. ``kind`` is the route's
-    (``FAMILY_PREPARATION``, ``DAILY_DIGEST`` or ``WEEKLY_DIGEST``); a task
-    of another type is missing (``TaskRun.DoesNotExist``). A Family
-    preparation that is no longer the chain's latest run, other than a replay
-    of this command, is stale; the digest service checks that itself.
-    Returns the retry's ``TaskStatus``.
+    (``FAMILY_PREPARATION`` or ``REPORT_EMAIL``); a task of another type is
+    missing (``TaskRun.DoesNotExist``). A Family preparation that is no
+    longer the chain's latest run, other than a replay of this command, is
+    stale; the report service checks that itself. Returns the retry's
+    ``TaskStatus``.
     """
-    from parishkit.stewardship.reports.digest_retry import TASK_TYPES, retry_digest
+    from parishkit.stewardship.reports.report_email_retry import (
+        TASK_TYPES,
+        retry_report,
+    )
     from parishkit.stewardship.storage import StaleRecordError
 
     from .family_mail_tasks import TASK_TYPE, retry_preparation
     from .models import TaskRun
 
-    digest = kind in {DAILY_DIGEST, WEEKLY_DIGEST}
-    digest_types = tuple(
-        task_type
-        for task_type in TASK_TYPES
-        if task_type.startswith("weekly_" if kind == WEEKLY_DIGEST else "daily_")
-    )
+    digest = kind == REPORT_EMAIL
     task = TaskRun.objects.get(
-        pk=task_id, task_type__in=digest_types if digest else (TASK_TYPE,)
+        pk=task_id, task_type__in=TASK_TYPES if digest else (TASK_TYPE,)
     )
     if not digest:
         # The digest service binds the selected run, replay and Admin.
@@ -126,7 +122,7 @@ def retry_preparation_task(store, actor, task_id, *, command_id, kind):
             previous is None and runs.order_by("-retry_sequence").first().pk != task_id
         ):
             raise StaleRecordError("The selected preparation is no longer current.")
-    return (retry_digest if digest else retry_preparation)(
+    return (retry_report if digest else retry_preparation)(
         store,
         actor.identity,
         task.pk if digest else task.domain_request_id,

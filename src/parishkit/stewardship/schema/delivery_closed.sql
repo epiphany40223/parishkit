@@ -40,7 +40,7 @@ BEGIN
             AND m.mode='production' AND m.routing='production'
             AND m.state IN ('pending','retry_wait') AND m.pause_hold_id IS NOT NULL
             AND m.version=NEW.previous_version AND m.pause_version=c.pause_version
-            AND m.purpose IN ('receipt','daily_digest','weekly_digest')) THEN
+            AND m.purpose IN ('receipt','daily_digest','weekly_digest','admin_report')) THEN
         RAISE EXCEPTION 'Held-message decision requires its exact command and version' USING ERRCODE='23514';
     END IF;
     RETURN NEW;
@@ -131,7 +131,7 @@ CREATE VIEW public.stewardship_postclose_current AS
     SELECT resolved.id FROM public.stewardship_postclose_resolution resolved
     JOIN public.stewardship_schedule_occurrence o ON o.id=resolved.occurrence_id
     JOIN public.stewardship_schedule_definition d ON d.id=o.definition_id
-    WHERE (d.kind='daily_digest' AND NOT EXISTS(
+    WHERE (d.kind IN ('daily_digest','report') AND NOT EXISTS(
         SELECT 1 FROM jsonb_array_elements(resolved.coverage->'items') item
         LEFT JOIN public.stewardship_additional_information i ON i.id=(item->>'id')::uuid
         WHERE item->>'kind' IN ('item','correction')
@@ -195,6 +195,8 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
     SELECT (EXISTS(SELECT 1 FROM public.stewardship_daily_digest_preparation
                 WHERE occurrence_id=$1 AND mode='production' AND phase='complete')
         OR EXISTS(SELECT 1 FROM public.stewardship_weekly_digest_preparation
+                WHERE occurrence_id=$1 AND mode='production' AND phase='complete')
+        OR EXISTS(SELECT 1 FROM public.stewardship_report_email_preparation
                 WHERE occurrence_id=$1 AND mode='production' AND phase='complete'))
       AND EXISTS(SELECT 1 FROM public.stewardship_delivery_digest_message link
         JOIN public.stewardship_delivery_message_resolution resolution ON resolution.message_id=link.outbox_id
@@ -208,7 +210,15 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
             -- A failed report to a recipient who is not currently an
             -- Administrator: settled like the recipient_revoked cancellation,
             -- as the digest completion proofs count it.
-            OR m.state='permanent_failure' AND NOT EXISTS(
+            -- A report email's (#1786) is settled when its recipient is no
+            -- longer one of the report's recipients.
+            OR m.state='permanent_failure' AND m.purpose='admin_report' AND EXISTS(
+                SELECT 1 FROM public.stewardship_report_email_recipient r
+                JOIN public.stewardship_report_email_snapshot s ON s.id=r.snapshot_id
+                JOIN public.stewardship_report_email_preparation p ON p.id=s.preparation_id
+                WHERE r.outbox_id=m.id AND NOT public.stewardship_report_email_current_v1(
+                    p.definition_id,r.kind,r.ref,r.address))
+            OR m.state='permanent_failure' AND m.purpose<>'admin_report' AND NOT EXISTS(
                 SELECT 1 FROM public.stewardship_system_configuration runtime
                 JOIN public.stewardship_address_rule admin
                     ON admin.configuration_id=runtime.active_configuration_id
@@ -287,7 +297,7 @@ BEGIN
             intent.id,m.id,campaign.id,m.version,campaign.pause_version,intent.selection->>'decision'
         FROM public.stewardship_outbox_message m
         WHERE m.campaign_id=campaign.id AND m.mode='production' AND m.routing='production'
-            AND m.purpose IN ('receipt','daily_digest','weekly_digest')
+            AND m.purpose IN ('receipt','daily_digest','weekly_digest','admin_report')
             AND intent.selection->'types' ? m.purpose
             AND m.state IN ('pending','retry_wait') AND m.pause_hold_id IS NOT NULL;
     IF intent.selection->>'decision'='release' THEN

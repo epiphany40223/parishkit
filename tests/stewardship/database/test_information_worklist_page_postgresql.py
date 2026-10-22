@@ -93,6 +93,34 @@ def test_the_worklist_lists_and_decides_requests_in_place(
         assert response.status_code == 200
         assert f"The request from Family DUID {duid} accepted.".encode() in body
         assert "To handle (1)" in stage_options(body)
+        # A Stage alone may come by GET, a My review work card's link (#1818):
+        # the page opens at that Stage. Anything more, a repeated Stage or one
+        # the filter does not offer is the page's 400.
+        response, body = read(browser, ROUTE + "?stage=to_handle")
+        assert response.status_code == 200
+        assert b'<option value="to_handle" selected>' in body
+        # Its address carries the Stage, so a reload draws the same view;
+        # To review's is the plain address.
+        assert f'<a href="{ROUTE}?stage=to_handle" data-page-address'.encode() in body
+        assert f'href="{ROUTE}{item.pk}/">'.encode() in body
+        _, body = read(browser, ROUTE + "?stage=to_review")
+        assert f'href="{ROUTE}{item.pk}/">'.encode() not in body
+        assert f'<a href="{ROUTE}" data-page-address'.encode() in body
+        for query in (
+            "?stage=nope",
+            "?stage=to_handle&search=choir",
+            "?stage=a&stage=b",
+        ):
+            assert read(browser, ROUTE + query)[0].status_code == 400, query
+        # The retired submitted-date filter (#1888), from an old link or a
+        # page drawn before then, is dropped unread, never refused.
+        stale = "?stage=to_handle&start=2026-11-01&end=bad&zone=Nowhere/Zone"
+        response, body = read(browser, ROUTE + stale)
+        assert response.status_code == 200
+        assert b'<option value="to_handle" selected>' in body
+        assert b'name="start"' not in body
+        stale = {"stage": "to_handle", "search": "", "start": "bad", "zone": ""}
+        assert search(browser, ROUTE, stale)[0].status_code == 200
         # The same post again replays it; the key with another choice is a
         # 409 asking for a reload.
         accept["version"] = str(int(accept["version"]))
@@ -138,8 +166,8 @@ def test_the_worklist_lists_and_decides_requests_in_place(
         assert "Save follow-up" not in page and "<textarea" not in page
 
 
-def test_ignore_reopening_needs_a_note(live_response_service, google):
-    """Back to review on an Ignored request needs its note; a 400 without."""
+def test_ignore_reopening_takes_an_optional_note(live_response_service, google):
+    """Back to review on an Ignored request records with no note (#1889)."""
     harness = live_response_service
     item = AdditionalInformationItem.objects.get(
         submission=respond(harness, "Just so you know")
@@ -149,11 +177,7 @@ def test_ignore_reopening_needs_a_note(live_response_service, google):
         response, body = search(browser, ROUTE, decision(item, "ignore"))
         assert response.status_code == 200 and b"ignored." in body
         assert "Ignored (1)" in stage_options(body)
-        assert (
-            search(browser, ROUTE, decision(item, "back_to_review"))[0].status_code
-            == 400
-        )
-        reopened = decision(item, "back_to_review", note="Misread it")
+        reopened = decision(item, "back_to_review")
         response, body = search(browser, ROUTE, reopened)
         assert response.status_code == 200 and b"sent back to review." in body
         assert "To review (1)" in stage_options(body)

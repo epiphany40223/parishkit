@@ -321,6 +321,38 @@ def saved_row(owner, templates, kind="initial", **overrides):
     )
 
 
+def saved_digest(owner, kind="daily_digest", **overrides):
+    """A converted Daily or Weekly report as the editors see it (#1786).
+
+    ``report_rows.digest_view`` shows it as its digest, with no email
+    template: its subject and introduction are its own.
+    """
+    values = {
+        "kind": kind,
+        "date": None,
+        "weekday": 0 if kind == "weekly_digest" else None,
+        "template_version": None,
+        "subject": "Report",
+    }
+    return schedule(owner["id"], **(values | overrides))
+
+
+def edited_digest(owner, digest, **fields):
+    """The form set with ``digest`` saved and posted with ``fields`` changed."""
+    data = data_for([digest]) | {
+        f"schedules-0-{name}": value for name, value in fields.items()
+    }
+    formset = Schedules(
+        data,
+        prefix="schedules",
+        previous=[digest],
+        templates=[],
+        campaign_id=owner["id"],
+        campaign=owner["values"],
+    )
+    return formset, formset.forms[0]
+
+
 def with_new_row(owner, saved, templates, **fields):
     """The saved rows plus one new row with exactly the given fields posted."""
     data = data_for(saved)
@@ -368,21 +400,11 @@ WINDOW = "October 1, 2054 – October 31, 2054"
             "date",
             f"Choose a date within the campaign ({WINDOW}).",
         ),
+        # Report emails replaced the digests: none can be added (#1786).
         (
-            {"kind": "daily_digest", "date": "2054-10-05"},
-            "date",
-            "A date applies only to initial invitations and reminders — leave it "
-            "empty. Digests are sent throughout the campaign.",
-        ),
-        (
-            {"kind": "weekly_digest", "date": "", "weekday": ""},
-            "weekday",
-            "Choose the day of the week the digest is sent.",
-        ),
-        (
-            {"kind": "daily_digest", "date": "", "weekday": "3"},
-            "weekday",
-            "A weekday applies only to weekly digests — leave it at Not weekly.",
+            {"kind": "daily_digest", "date": ""},
+            "kind",
+            "Select a valid choice. daily_digest is not one of the available choices.",
         ),
         (
             {"kind": "reminder", "time": ""},
@@ -421,24 +443,69 @@ def test_each_inapplicable_or_missing_value_is_reported_on_its_field(
 
 
 @pytest.mark.parametrize(
-    "fields",
+    ("kind", "fields", "field", "message"),
     [
-        {"kind": "reminder", "date": "2054-10-31", "time": "23:59"},
-        {"kind": "daily_digest", "time": "00:15:00"},
-        {"kind": "weekly_digest", "weekday": "6", "time": "08:00:00"},
+        (
+            "daily_digest",
+            {"date": "2054-10-05"},
+            "date",
+            "A date applies only to initial invitations and reminders — leave it "
+            "empty. Digests are sent throughout the campaign.",
+        ),
+        (
+            "weekly_digest",
+            {"weekday": ""},
+            "weekday",
+            "Choose the day of the week the digest is sent.",
+        ),
+        (
+            "daily_digest",
+            {"weekday": "3"},
+            "weekday",
+            "A weekday applies only to weekly digests — leave it at Not weekly.",
+        ),
     ],
 )
-def test_each_mail_type_accepts_exactly_its_own_fields(fields):
-    """The campaign's last day is inclusive; digests take no date."""
+def test_a_converted_report_edit_reports_each_mistake_on_its_field(
+    kind, fields, field, message
+):
+    """The Daily and Weekly reports are still edited as digests (#1786)."""
+    owner = campaign()
+    formset, form = edited_digest(owner, saved_digest(owner, kind), **fields)
+    assert not formset.is_valid()
+    assert form.errors == {field: [message]}
+
+
+def test_each_mail_type_accepts_exactly_its_own_fields():
+    """The campaign's last day is inclusive."""
     owner = campaign()
     templates = emails(owner)
     saved = [saved_row(owner, templates)]
+    fields = {"kind": "reminder", "date": "2054-10-31", "time": "23:59"}
     formset, _ = with_new_row(
         owner, saved, templates, template_version=fields["kind"], **fields
     )
     assert formset.is_valid(), (formset.errors, formset.non_form_errors())
     (added,) = formset.patch()
     assert added["values"]["kind"] == fields["kind"]
+
+
+@pytest.mark.parametrize(
+    ("kind", "fields"),
+    [
+        ("daily_digest", {"time": "00:15:00"}),
+        ("weekly_digest", {"weekday": "6", "time": "08:00:00"}),
+    ],
+)
+def test_a_converted_report_takes_its_digest_fields_and_no_email(kind, fields):
+    """Digests take no date and no email template: the report has its own."""
+    owner = campaign()
+    formset, _ = edited_digest(owner, saved_digest(owner, kind), **fields)
+    assert formset.is_valid(), (formset.errors, formset.non_form_errors())
+    (changed,) = formset.patch()
+    assert changed["values"]["kind"] == kind
+    assert changed["values"]["template_version"] is None
+    assert changed["values"]["subject"] == "Report"
 
 
 @pytest.mark.parametrize(
@@ -458,11 +525,6 @@ def test_each_mail_type_accepts_exactly_its_own_fields(fields):
             "Every reminder must be sent after the initial invitation. Choose a "
             "later date or time.",
         ),
-        (
-            {"kind": "daily_digest", "date": "", "time": "07:00:00"},
-            "Only one Daily Admin digest and one Weekly Admin digest are allowed. "
-            "Delete the extra one.",
-        ),
     ],
 )
 def test_problems_between_schedules_are_collection_errors(fields, message):
@@ -471,7 +533,7 @@ def test_problems_between_schedules_are_collection_errors(fields, message):
     templates = emails(owner)
     saved = [
         saved_row(owner, templates),
-        saved_row(owner, templates, "daily_digest", date=None),
+        saved_digest(owner),
     ]
     formset, form = with_new_row(
         owner,
@@ -549,11 +611,7 @@ def test_saved_mail_type_is_fixed_and_offers_only_its_own_emails():
     assert "DELETE" in saved.fields and "DELETE" not in blank.fields
     assert formset.window_text == WINDOW
     assert formset.timezone == "America/New_York"
-    assert json.loads(blank.field_rules)["weekly_digest"] == [
-        "weekday",
-        "time",
-        "template_version",
-    ]
+    assert json.loads(blank.field_rules)["weekly_digest"] == ["weekday", "time"]
 
 
 def new_rows(owner, saved, templates, rows):
@@ -583,8 +641,8 @@ def test_several_new_rows_save_together_and_are_validated_together():
     rows = [
         {"kind": "reminder", "date": "2054-10-10", "time": "09:00:00"},
         {"kind": "reminder", "date": "2054-10-20", "time": "09:00:00"},
-        {"kind": "weekly_digest", "weekday": "0", "time": "08:00:00"},
-        {"kind": "daily_digest", "time": "07:00:00"},
+        {"kind": "reminder", "date": "2054-10-21", "time": "09:00:00"},
+        {"kind": "reminder", "date": "2054-10-22", "time": "09:00:00"},
     ]
     formset = new_rows(owner, saved, templates, rows)
     assert formset.is_valid(), formset.errors
@@ -603,10 +661,10 @@ def test_several_new_rows_save_together_and_are_validated_together():
         "one of them."
     ]
     # Each new row's own mistakes are reported on that row's fields.
-    rows[1] = {"kind": "weekly_digest", "time": "08:00:00"}
+    rows[1] = {"kind": "reminder", "time": "08:00:00"}
     formset = new_rows(owner, saved, templates, rows)
     assert not formset.is_valid()
-    assert "weekday" in formset.forms[2].errors
+    assert "date" in formset.forms[2].errors
 
 
 def test_saved_schedules_are_shown_in_sending_order():
@@ -645,34 +703,28 @@ def test_saved_schedules_are_shown_in_sending_order():
 def test_a_daily_digest_saves_the_comparison_only_when_ticked(posted, saved):
     """Ticked saves ``comparison: true``; unticked leaves it out (#1018)."""
     owner = campaign()
-    templates = emails(owner)
-    formset, _ = with_new_row(
-        owner,
-        [saved_row(owner, templates)],
-        templates,
-        kind="daily_digest",
-        time="07:00:00",
-        template_version="daily_digest",
-        comparison=posted,
+    digest = saved_digest(owner, time="07:00:00")
+    data = data_for([digest]) | {"schedules-0-time": "07:30:00"}
+    if posted:
+        data["schedules-0-comparison"] = posted
+    formset = Schedules(
+        data,
+        prefix="schedules",
+        previous=[digest],
+        templates=[],
+        campaign_id=owner["id"],
+        campaign=owner["values"],
     )
     assert formset.is_valid(), (formset.errors, formset.non_form_errors())
-    (added,) = formset.patch()
-    assert added["values"].get("comparison") is saved
+    (changed,) = formset.patch()
+    assert changed["values"].get("comparison") is saved
 
 
 def test_only_a_daily_digest_may_include_the_comparison():
     """A weekly digest (or any other mail) with it ticked is told on the field."""
     owner = campaign()
-    templates = emails(owner)
-    formset, form = with_new_row(
-        owner,
-        [saved_row(owner, templates)],
-        templates,
-        kind="weekly_digest",
-        weekday="2",
-        time="07:00:00",
-        template_version="weekly_digest",
-        comparison="on",
+    formset, form = edited_digest(
+        owner, saved_digest(owner, "weekly_digest"), weekday="2", comparison="on"
     )
     assert not formset.is_valid()
     assert form.errors == {
@@ -688,9 +740,7 @@ def test_a_saved_daily_digest_posted_unchanged_keeps_its_comparison():
     owner = campaign()
     templates = emails(owner)
     initial = saved_row(owner, templates)
-    digest = saved_row(
-        owner, templates, kind="daily_digest", date=None, comparison=True
-    )
+    digest = saved_digest(owner, comparison=True)
     data = data_for([initial, digest])
     formset = Schedules(
         data,
@@ -714,9 +764,7 @@ def test_a_digest_keeps_its_skipped_sends_on_every_later_change():
     owner = campaign()
     templates = emails(owner)
     initial = saved_row(owner, templates)
-    digest = saved_row(
-        owner, templates, kind="daily_digest", date=None, skip_dates=["2054-10-02"]
-    )
+    digest = saved_digest(owner, skip_dates=["2054-10-02"])
 
     def bound(rows):
         """The form set with these rows posted."""
@@ -812,17 +860,18 @@ def test_a_weekly_digest_weekday_follows_the_browser_zone():
     Auckland is still on standard time (UTC+12): Sunday 9:00 AM in New York.
     """
     owner = campaign()
-    template = content(owner["id"], kind="email", slot="weekly_digest", subject="Wk")
-    data = data_for([]) | {
-        "schedules-0-kind": "weekly_digest",
+    digest = saved_digest(owner, "weekly_digest", weekday=2, time="10:00:00")
+    data = data_for([digest]) | {
         "schedules-0-time": "01:00",
         "schedules-0-weekday": "0",
-        "schedules-0-template_version": template["id"],
     }
-    formset = browser_schedules(data, owner, [], [template], zone="Pacific/Auckland")
+    formset = browser_schedules(data, owner, [digest], zone="Pacific/Auckland")
     assert formset.is_valid(), (formset.errors, formset.non_form_errors())
-    [added] = formset.patch()
-    assert (added["values"]["weekday"], added["values"]["time"]) == (6, "09:00:00")
+    [changed] = formset.patch()
+    assert (changed["values"]["weekday"], changed["values"]["time"]) == (
+        6,
+        "09:00:00",
+    )
 
 
 def test_an_unbound_saved_row_carries_its_moment_and_browser_help():
@@ -1162,15 +1211,8 @@ def test_a_digest_in_another_browser_zone_posted_across_a_dst_change():
     it is a change to 9:00 AM New York (London 14:00 that day is 09:00 EST).
     """
     owner = late_campaign()
-    template = content(owner["id"], kind="email", slot="daily_digest", subject="D")
-    digest = schedule(
-        owner["id"],
-        kind="daily_digest",
-        date=None,
-        time="08:00:00",
-        template_version=template["id"],
-        subject="D",
-    )
+    digest = saved_digest(owner, time="08:00:00")
+    template = content(owner["id"], kind="email", slot="reminder", subject="D")
     drawn_on = datetime(2054, 10, 31, 20, tzinfo=UTC)
     page = Schedules(
         prefix="schedules",

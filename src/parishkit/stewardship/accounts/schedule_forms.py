@@ -27,14 +27,19 @@ from .content_forms import EMAIL_LABELS
 from .timezone_field import TimezoneField
 
 KINDS = ("initial", "reminder", "daily_digest", "weekly_digest")
+# The converted Daily and Weekly reports (#1786), which these forms edit as
+# the digests they were (``report_rows``) until the Report emails page's
+# editor ships. No new one can be added: report emails replaced them.
+DIGEST_KINDS = frozenset({"daily_digest", "weekly_digest"})
 # The fields each mail type uses besides the type itself, as
 # configuration.schedule_values requires them. The page script reads this (as
-# ScheduleForm.field_rules) to show only these fields.
+# ScheduleForm.field_rules) to show only these fields. A converted report
+# sends no email template: its subject and introduction are its own.
 FIELDS = {
     "initial": ("date", "time", "template_version"),
     "reminder": ("date", "time", "template_version"),
-    "daily_digest": ("time", "template_version", "comparison"),
-    "weekly_digest": ("weekday", "time", "template_version"),
+    "daily_digest": ("time", "comparison"),
+    "weekly_digest": ("weekday", "time"),
 }
 
 
@@ -562,6 +567,15 @@ class ScheduleForm(AdminForm):
         fixed = self.initial.get("kind") if self.initial.get("id") else None
         if fixed:
             self.fields["kind"].disabled = True
+        else:
+            # A new schedule is Family mail: no new digest exists to add.
+            self.fields["kind"].choices = [
+                choice
+                for choice in self.fields["kind"].choices
+                if choice[0] not in DIGEST_KINDS
+            ]
+        if fixed in DIGEST_KINDS:
+            self.fields["template_version"].required = False
         emails = [
             row
             for row in templates
@@ -850,6 +864,11 @@ class ScheduleSet(AdminFormSet):
                 field_errors = True
                 continue
             values = self._values(form, old.get(identifier))
+            if values["kind"] in DIGEST_KINDS:
+                # A converted report (#1786): its own values are checked
+                # when the change is saved (report_rows.translate).
+                rows.append((values["kind"], None))
+                continue
             try:
                 due = schedule_values(values, self.campaign)
             except ConfigError:
@@ -964,7 +983,7 @@ class ScheduleSet(AdminFormSet):
                     "comparison_not_allowed",
                 )
             )
-        if self._subject(data, previous) is None:
+        if kind not in DIGEST_KINDS and self._subject(data, previous) is None:
             problems.append(
                 (
                     "template_version",
@@ -1045,8 +1064,10 @@ class ScheduleSet(AdminFormSet):
 
         Subjects come from immutable templates, never from browser fields. An
         unresolved legacy template stays acceptable only on the saved row that
-        already uses it.
+        already uses it. A converted report keeps its own subject.
         """
+        if data["kind"] in DIGEST_KINDS:
+            return previous["subject"] if previous else None
         template = next(
             (
                 row["values"]
@@ -1081,7 +1102,9 @@ class ScheduleSet(AdminFormSet):
             "date": data["date"].isoformat() if data["date"] else None,
             "time": data["time"].isoformat(timespec="seconds"),
             "weekday": data["weekday"],
-            "template_version": data["template_version"],
+            "template_version": None
+            if data["kind"] in DIGEST_KINDS
+            else data["template_version"],
             "subject": subject,
         }
         # Present only when on, so a schedule saved before the setting

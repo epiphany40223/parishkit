@@ -21,6 +21,7 @@ from .census import (
     HOUSEHOLD_FIELDS,
     blank_address,
     country_choices,
+    us_region_choices,
     us_regions,
 )
 from .comparison import ValueKind, canonical_value
@@ -41,6 +42,16 @@ from .merge import KnownValue
 from .ministry_requests import ministry_presentation
 from .models import Submission
 from .page_content import family_page_slots, public_substitutions, render_pages
+from .reviewed import (
+    CENSUS,
+    FINANCIAL,
+    MINISTRY,
+    census_fields,
+    census_key,
+    entries_of,
+    financial_draw,
+    proposed_draw,
+)
 
 
 def form_presentation(form):
@@ -59,12 +70,23 @@ def form_presentation(form):
     )
     census = "census" in form.inputs.modules
     census_prior = census_submission(prior) if census else None
-    values = (
-        effective_fields(form.inputs, prior)
-        if census
-        else tuple(effective_field(field) for field in form.inputs.fields)
-    )
+    # A live form drawn as the reviewed form (#1705) draws each item from
+    # the shown items its baseline recorded; every other form keeps the
+    # Effective-value merge of the Family's own answers.
+    reviewed = baseline.shown_items if baseline.reviewed_view else None
+    census_shown = entries_of(reviewed, CENSUS) if census else []
+    if census and reviewed is not None:
+        values = census_fields(form.inputs, census_shown)
+    elif census:
+        values = effective_fields(form.inputs, prior)
+    else:
+        values = tuple(effective_field(field) for field in form.inputs.fields)
     proposals = proposal_index(prior) if census else {}
+    # The census items the reviewed form shows as carried forward, so an
+    # entered move or death request is still presented in its state.
+    carried = frozenset(
+        census_key(entry) for entry in census_shown if entry["shown"] != "baseline"
+    )
     family = {
         field.field: field.effective.value.value
         for field in values
@@ -139,7 +161,9 @@ def form_presentation(form):
                 "fields": fields,
                 "relationship": relationships.get(identifier),
                 "display_name": f"{first} {last}".strip(),
-                "request": _terminal_presentation(identifier, indexed, proposals)
+                "request": _terminal_presentation(
+                    identifier, indexed, proposals, carried
+                )
                 if census
                 else None,
             }
@@ -148,7 +172,10 @@ def form_presentation(form):
         configuration_id=baseline.configuration_id,
         record_id=baseline.family.campaign_id,
     )
-    proposed = _proposed_presentation(prior) if census else []
+    if census and reviewed is not None:
+        proposed = _proposed_rows(proposed_draw(census_shown))
+    else:
+        proposed = _proposed_presentation(prior) if census else []
     composition = (
         effective_household(form.inputs.member_duids, prior) if not census else None
     )
@@ -160,6 +187,7 @@ def form_presentation(form):
         unavailable_members=composition.terminal_members
         if composition
         else frozenset(),
+        shown=entries_of(reviewed, MINISTRY) if reviewed is not None else None,
     )
     member_count = (
         sum(not member["request"] for member in members) + len(proposed)
@@ -181,7 +209,12 @@ def form_presentation(form):
         "service": _service_presentation(ministries, prior),
         "cannot_attend": bool(prior and prior.answers.get("cannot_attend")),
         "financial": financial_presentation(
-            form.inputs.financial, prior, parish_name=form.inputs.parish_name
+            form.inputs.financial,
+            prior,
+            parish_name=form.inputs.parish_name,
+            shown=financial_draw(entries_of(reviewed, FINANCIAL), prior)
+            if reviewed is not None
+            else None,
         ),
         "max_proposed_members": MAX_PROPOSED_MEMBERS if census else 0,
         "new_member_fields": [
@@ -245,11 +278,21 @@ def _service_presentation(ministries, prior):
     return result
 
 
-def _terminal_presentation(identifier, indexed, proposals):
-    """Expose only effective terminal choices, not hidden source or Admin edits."""
+def _terminal_presentation(identifier, indexed, proposals, carried=frozenset()):
+    """Expose only effective terminal choices, not hidden source or Admin edits.
+
+    An entered terminal request is no longer presented, except on a
+    reviewed form, which shows it in its state until it is Confirmed
+    (``carried``: the census items that form shows carried forward).
+    """
     for name in ("moved_household", "deceased_status"):
-        proposal = proposals.get(("member", str(identifier), name))
-        if proposal is not None and proposal.execution in RESOLVED_EXECUTIONS:
+        key = ("member", str(identifier), name)
+        proposal = proposals.get(key)
+        if (
+            proposal is not None
+            and proposal.execution in RESOLVED_EXECUTIONS
+            and key not in carried
+        ):
             continue
         effective = indexed[identifier, name]
         if effective.value.value is True:
@@ -264,6 +307,17 @@ def _terminal_presentation(identifier, indexed, proposals):
 
 def _proposed_presentation(prior):
     """Keep local identity stable on revisit while excluding resolved manual work."""
+    return _proposed_rows(
+        (key, row)
+        for (entity, key, name), row in sorted(proposal_index(prior).items())
+        if entity == "proposed_member"
+        and name == "new_member"
+        and row.execution not in RESOLVED_EXECUTIONS | {"cancelled", "superseded"}
+    )
+
+
+def _proposed_rows(pairs):
+    """The browser shape of each (local key, New Member change) pair, in order."""
     return [
         {
             "id": key,
@@ -288,10 +342,7 @@ def _proposed_presentation(prior):
                 for field in MEMBER_FIELDS
             ],
         }
-        for (entity, key, name), row in sorted(proposal_index(prior).items())
-        if entity == "proposed_member"
-        and name == "new_member"
-        and row.execution not in RESOLVED_EXECUTIONS | {"cancelled", "superseded"}
+        for key, row in pairs
     ]
 
 
@@ -335,6 +386,7 @@ def _household_presentation(values, prior):
         "address_limits": dict(ADDRESS_LIMITS),
         "countries": country_choices(),
         "us_regions": sorted(us_regions()),
+        "us_region_choices": us_region_choices(),
     }
 
 

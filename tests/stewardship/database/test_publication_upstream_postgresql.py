@@ -2,9 +2,12 @@
 
 Migration 0112 (``schema/migrations/0112_upstream_at_check.sql``) lets a
 Production-mode preflight mark an approved change whose value ParishSoft
-already holds ``resolved_upstream`` in the transaction that records its plan
-(the data spec's preflight step 4), lets such a plan still be confirmed, and
-the worker's pre-PUT check leaves exactly those changes out. These tests run
+already holds in the transaction that records its plan (the data spec's
+preflight step 4), lets such a plan still be confirmed, and the worker's
+pre-PUT check leaves exactly those changes out. It marked
+``resolved_upstream`` (Confirmed); since migration 0159 (#1890, strict
+phase order) the mark is ``published``, Updated in ParishSoft with nothing
+written, which the refresh then confirms. These tests run
 the preflight and the run through the real dispatcher on the fake gateway,
 the derived guard's same-transaction check, the old guard definitions, and
 the file's own DO block against the bodies it replaces. Nothing here calls
@@ -124,16 +127,17 @@ def outcomes(record):
 
 
 def test_a_matching_change_is_marked_at_the_check_and_survives_the_run(world):  # noqa: F811
-    """The check marks the matching change Already in ParishSoft at the next
-    version, in the plan's own transaction; the plan is still confirmed, the
-    run writes only the other change, and the mark is left as it is."""
+    """The check marks the matching change Updated in ParishSoft (nothing
+    written, #1890) at the next version, in the plan's own transaction; the
+    plan is still confirmed, the run writes only the other change, and the
+    mark is left as it is."""
     last = matching(world.first)
     plan_row = world.planned(uuid4())
     assert outcomes(plan_row) == {
         (world.first.pk, world.first.version, "write"),
         (last.pk, last.version, "already_in_parishsoft"),
     }
-    assert now(last) == ("resolved_upstream", "approved", last.version + 1)
+    assert now(last) == ("published", "approved", last.version + 1)
     assert now(world.first) == ("pending", "approved", world.first.version)
     assert confirmation_counts(plan_row.pk) == {
         "write_entities": 1,
@@ -147,10 +151,10 @@ def test_a_matching_change_is_marked_at_the_check_and_survives_the_run(world):  
     # change, never the matching one or any field as read.
     assert written == {"firstName": "Requested"}
     assert now(world.first)[0] == "published"
-    assert now(last) == ("resolved_upstream", "approved", last.version + 1)
-    # The worker never moves the mark on: the derived guard keeps
-    # resolved_upstream immutable to it (only Staff's Back to review, #1840,
-    # undoes it).
+    assert now(last) == ("published", "approved", last.version + 1)
+    # The worker never moves the mark on: the derived guard keeps an updated
+    # change immutable to it (only Staff's Back to review, #1840, undoes it,
+    # and a refresh that finds ParishSoft no longer holding it, #1749).
     with pytest.raises(DatabaseError, match="immutable"):
         worker_update(ProposedChange.objects.get(pk=last.pk), execution="pending")
 
@@ -168,7 +172,7 @@ def test_a_non_matching_change_still_conflicts(world):  # noqa: F811
     }
     assert PublicationEntity.objects.get(plan=plan_row).blocked
     assert now(world.first) == ("pending", "approved", world.first.version)
-    assert now(last)[0] == "resolved_upstream"
+    assert now(last)[0] == "published"
     assert confirmation_counts(plan_row.pk)["write_entities"] == 0
 
 
@@ -195,7 +199,7 @@ def test_a_change_that_failed_earlier_is_marked(world):  # noqa: F811
     )
     plan_row = world.planned(uuid4())
     assert (last.pk, last.version, "already_in_parishsoft") in outcomes(plan_row)
-    assert now(last) == ("resolved_upstream", "approved", last.version + 1)
+    assert now(last) == ("published", "approved", last.version + 1)
     world.confirm(plan_row)
 
 
@@ -210,7 +214,7 @@ def test_an_administrator_edited_value_already_there_is_marked(world):  # noqa: 
     )
     plan_row = world.planned(uuid4())
     assert (last.pk, last.version, "already_in_parishsoft") in outcomes(plan_row)
-    assert now(last) == ("resolved_upstream", "approved", last.version + 1)
+    assert now(last) == ("published", "approved", last.version + 1)
 
 
 def unmarked(monkeypatch):
@@ -218,12 +222,13 @@ def unmarked(monkeypatch):
     monkeypatch.setattr(publication_plans, "_mark_upstream", lambda *args: None)
 
 
-def forced(monkeypatch, **extra):
+def forced(monkeypatch, execution=publication_plans.MARKED, **extra):
     """Record plans that try the mark whatever the system mode says.
 
-    ``extra`` adds more changed fields (such as a decision) to the same
-    update, to show the guard refuses a mark that changes more than the
-    execution.
+    ``execution`` is the mark (0159's ``published``; 0112's file admitted
+    ``resolved_upstream``). ``extra`` adds more changed fields (such as a
+    decision) to the same update, to show the guard refuses a mark that
+    changes more than the execution.
     """
 
     def mark(record, plans):
@@ -234,7 +239,7 @@ def forced(monkeypatch, **extra):
             if item.outcome is Outcome.ALREADY_IN_PARISHSOFT
         ]
         ProposedChange.objects.filter(pk__in=ids).update(
-            execution="resolved_upstream", version=F("version") + 1, **extra
+            execution=execution, version=F("version") + 1, **extra
         )
 
     monkeypatch.setattr(publication_plans, "_mark_upstream", mark)
@@ -250,6 +255,8 @@ def test_the_guard_admits_the_mark_only_in_the_plans_own_transaction(
     harness, admin, _, home, first, session = ready
     last = matching(first)
     with pytest.raises(DatabaseError, match="confirmed plan and outcome"):
+        worker_update(last, execution="published")
+    with pytest.raises(DatabaseError, match="confirmed plan and outcome"):
         worker_update(last, execution="resolved_upstream")
     unmarked(monkeypatch)
     entity = plan_entity("member", first.entity_key, [first, last], contact(first))
@@ -257,7 +264,7 @@ def test_the_guard_admits_the_mark_only_in_the_plans_own_transaction(
     assert now(last) == ("pending", "approved", last.version)
     # The plan row exists, but it was committed by an earlier transaction.
     with pytest.raises(DatabaseError, match="confirmed plan and outcome"):
-        worker_update(last, execution="resolved_upstream")
+        worker_update(last, execution="published")
     with pytest.raises(DatabaseError, match="changed since preflight"):
         confirm(harness, admin, committed, session)
     # The web login reaches the guard's replacement branch, which refuses.
@@ -280,16 +287,23 @@ def test_the_guard_admits_the_mark_only_in_the_plans_own_transaction(
     owner("UPDATE stewardship_system_configuration SET mode='testing'")
     with pytest.raises(DatabaseError, match="confirmed plan and outcome"):
         plan(admin, [first, last, home], [entity])
+    # The old mark, Confirmed at once, is refused since #1890.
+    forced(monkeypatch, execution="resolved_upstream")
     owner("UPDATE stewardship_system_configuration SET mode='production'")
+    with pytest.raises(DatabaseError, match="confirmed plan and outcome"):
+        plan(admin, [first, last, home], [entity])
+    forced(monkeypatch)
     marked = plan(admin, [first, last, home], [entity])
-    assert now(last)[0] == "resolved_upstream"
+    assert now(last)[0] == "published"
     confirm(harness, admin, marked, session)
 
 
-def test_the_old_guards_refuse_what_0112_admits(world):  # noqa: F811
+def test_the_old_guards_refuse_what_0112_admits(world, monkeypatch):  # noqa: F811
     """Before 0112 the mark fails the preflight (no plan is recorded) and a
     plan holding a marked change cannot be confirmed; 0112's file, run
-    again, admits both."""
+    again, admits both, with the mark it admitted (``resolved_upstream``,
+    which the code wrote until #1890), and the live guards still confirm
+    such a plan."""
     last = matching(world.first)
     installed = [live(DERIVED), live(CONFIRMATION)]
     try:
@@ -298,6 +312,7 @@ def test_the_old_guards_refuse_what_0112_admits(world):  # noqa: F811
         assert world.execute(task.run_id) and state(task) == "failed"
         assert not PublicationPlan.objects.exists()
         install(FROZEN.read_text("utf-8"))
+        forced(monkeypatch, execution="resolved_upstream")
         plan_row = world.planned(uuid4())
         assert now(last)[0] == "resolved_upstream"
         install(earlier(CONFIRMATION))
@@ -310,13 +325,21 @@ def test_the_old_guards_refuse_what_0112_admits(world):  # noqa: F811
 
 
 def test_do_block_refuses_the_earlier_bodies():
-    """The file's closing check passes as installed and raises once either
-    replaced function is put back to its earlier body; on the earlier state
-    the file installs both again, neither a SECURITY DEFINER."""
+    """The file's closing check passes on its own bodies (later migrations,
+    such as 0159 for #1890, replace them again, so it runs on the file
+    itself, rolled back) and raises once either replaced function is put
+    back to its earlier body; on the earlier state the file installs both
+    again, neither a SECURITY DEFINER."""
     text = FROZEN.read_text(encoding="utf-8")
     check = text[text.index("DO $check$") :]
-    with transaction.atomic(), connection.cursor() as cursor:
+
+    class Rollback(Exception):
+        """Ends a check that must leave the database as it found it."""
+
+    with pytest.raises(Rollback), transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(text)
         cursor.execute(check)
+        raise Rollback
     for name in (DERIVED, CONFIRMATION):
         with (
             pytest.raises(DatabaseError, match="lacks the mark at the check"),
@@ -325,9 +348,6 @@ def test_do_block_refuses_the_earlier_bodies():
         ):
             cursor.execute(earlier(name))
             cursor.execute(check)
-
-    class Rollback(Exception):
-        """Ends a check that must leave the database as it found it."""
 
     with pytest.raises(Rollback), transaction.atomic(), connection.cursor() as cursor:
         for name in (DERIVED, CONFIRMATION):

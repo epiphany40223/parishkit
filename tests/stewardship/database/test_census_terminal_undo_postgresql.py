@@ -30,7 +30,7 @@ from parishkit.stewardship.responses.models import ProposalResolution, ProposedC
 from parishkit.stewardship.responses.publication_models import PublicationField
 
 from .test_background_grants_postgresql import task_login
-from .test_census_pipeline_review_postgresql import decide
+from .test_census_pipeline_review_postgresql import decide, mark
 from .test_census_refresh_sources_postgresql import answered
 from .test_census_refresh_sources_postgresql import refresh as refresh_family
 from .test_census_resolution_postgresql import leader
@@ -143,11 +143,12 @@ def test_undoing_entered_by_hand_keeps_the_decision_and_restarts_not_seen(
 
 
 def test_undoing_a_one_step_mark_returns_it_accepted(response_service):
-    """A To review change Entered by hand in one step was shown Accepted, so
-    the undo leaves it To enter by hand, Accepted (approved); Back to review
+    """A To review change Entered by hand in one step (history since #1890,
+    forged here as the old one-step mark left it) was shown Accepted, so the
+    undo leaves it To enter by hand, Accepted (approved); Back to review
     again sends it to To review. Without a note nothing is recorded."""
     harness, staff, rows = prepared(response_service)
-    decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+    one_step(rows["prefix"])
     marked = fresh(rows["prefix"])
     assert marked.decision == "unreviewed"
     for note in ("", " \t"):
@@ -164,9 +165,10 @@ def test_undoing_a_one_step_mark_returns_it_accepted(response_service):
 def test_undoing_confirmed_reopens_it_for_the_next_refresh(response_service):
     """A Confirmed entered change goes back to To enter by hand; its
     confirmed check no longer places it, and the next refresh, finding the
-    value in ParishSoft, resolves it as an open change: Confirmed again."""
+    value in ParishSoft, leaves it To enter by hand, saying so (strict phase
+    order, #1890); marked again, the refresh Confirms it again."""
     harness, staff, rows = prepared(response_service)
-    decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+    mark(harness, staff, [rows["prefix"]])
     refresh(harness, member={"salutation": "Dr."})
     confirmed = fresh(rows["prefix"])
     assert census_row(harness, confirmed)["stage"] == Stage.CONFIRMED
@@ -174,9 +176,13 @@ def test_undoing_confirmed_reopens_it_for_the_next_refresh(response_service):
     assert census_row(harness, confirmed)["stage"] == Stage.TO_ENTER_BY_HAND
     assert checks(proposal=confirmed) == ["confirmed"]
     refresh(harness, member={"salutation": "Dr."})
-    resolved = fresh(confirmed)
-    assert resolved.execution == "resolved_upstream"
-    assert census_row(harness, resolved)["stage"] == Stage.CONFIRMED
+    held = fresh(confirmed)
+    assert held.execution == "pending"
+    row = census_row(harness, held)
+    assert row["stage"] == Stage.TO_ENTER_BY_HAND and row["already_held"]
+    mark(harness, staff, [held])
+    refresh(harness, member={"salutation": "Dr."})
+    assert census_row(harness, fresh(held))["stage"] == Stage.CONFIRMED
 
 
 def test_an_administrator_undoes_updated_in_parishsoft_and_it_plans_again(
@@ -226,12 +232,44 @@ def test_staff_undo_a_confirmed_update(response_service):
     assert census_row(harness, confirmed)["stage"] == Stage.READY_TO_UPDATE
 
 
+def already_held(change, decision):
+    """``change`` resolved upstream as a refresh resolved it before #1890,
+    forged as the owner with the guards off (history: no refresh stores it
+    any more)."""
+    owner(
+        "UPDATE stewardship_proposed_change SET execution='resolved_upstream',"
+        " decision=%s, version=version+1 WHERE id=%s",
+        [decision, change.pk],
+    )
+
+
+def one_step(change):
+    """``change`` Entered by hand in one step, as decision 2 left it before
+    #1890: its ``entered`` resolution at its version and the change
+    unreviewed and resolved_external, forged as the owner with the guards
+    off."""
+    owner(
+        "INSERT INTO stewardship_proposal_resolution (id,correlation_id,"
+        "actor_id,proposal_id,expected_version,request_key,action,note,created_at)"
+        " SELECT gen_random_uuid(),gen_random_uuid(),u.id,%s,%s,gen_random_uuid(),"
+        "'entered','',statement_timestamp() FROM stewardship_portal_user u"
+        " WHERE u.email='staff@example.org'",
+        [change.pk, change.version],
+    )
+    owner(
+        "UPDATE stewardship_proposed_change SET execution='resolved_external',"
+        " version=version+1 WHERE id=%s",
+        [change.pk],
+    )
+
+
 def test_already_in_parishsoft_goes_back_to_the_stage_before_it(response_service):
-    """A change ParishSoft already held that nobody decided is To review
-    after the undo; one that was accepted (an Edit ParishSoft reached) is
-    Ready to update, its value kept."""
+    """A change ParishSoft already held that nobody decided (history since
+    #1890) is To review after the undo; one that was accepted (an Edit
+    ParishSoft reached) is Ready to update, its value kept."""
     harness, staff, rows = prepared(response_service)
     refresh(harness, member={"firstName": "Requested"})
+    already_held(fresh(rows["first_name"]), "unreviewed")
     held = fresh(rows["first_name"])
     assert (held.decision, held.execution) == ("unreviewed", "resolved_upstream")
     assert census_row(harness, held)["placement"].decision is None
@@ -246,6 +284,7 @@ def test_an_accepted_already_in_parishsoft_keeps_its_edit(response_service):
     harness, staff, rows = prepared(response_service)
     decide(harness, staff, [rows["first_name"]], "edit", value="Corrected")
     refresh(harness, member={"firstName": "Corrected"})
+    already_held(fresh(rows["first_name"]), "approved")
     held = fresh(rows["first_name"])
     assert (held.decision, held.execution) == ("approved", "resolved_upstream")
     undo(harness, staff, held)
@@ -269,7 +308,7 @@ def test_a_leader_a_stale_version_and_a_run_in_flight_are_refused(response_servi
     harness, staff, rows = prepared(response_service)
     admin = user("admin@example.org").pk
     head = leader(harness, admin)
-    decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+    mark(harness, staff, [rows["prefix"]])
     marked = fresh(rows["prefix"])
     with (
         pytest.raises(PermissionError),
@@ -327,12 +366,13 @@ def test_sql_refuses_a_forged_undo(response_service, execution, assignments):
     paired resolution; an undo without a note is refused too."""
     harness, staff, rows = prepared(response_service)
     if execution == "resolved_external":
-        decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+        mark(harness, staff, [rows["prefix"]])
         change = fresh(rows["prefix"])
     elif execution == "published":
         change = published(harness, staff, rows["first_name"])
     else:
         refresh(harness, member={"firstName": "Requested"})
+        already_held(fresh(rows["first_name"]), "unreviewed")
         change = fresh(rows["first_name"])
         assert change.execution == "resolved_upstream"
     before = ProposalResolution.objects.count()
@@ -381,7 +421,7 @@ def test_a_replaced_terminal_change_takes_no_undo(response_service):
     from .test_entered_incorrectly_postgresql import answer_again
 
     harness, staff, rows = prepared(response_service)
-    decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+    mark(harness, staff, [rows["prefix"]])
     old = fresh(rows["prefix"])
     answer_again(harness, prefix="Sir")
     with pytest.raises(ValueError):
@@ -423,7 +463,14 @@ def test_the_migration_check_refuses_the_old_bodies_which_refuse_the_undo(
     ones again."""
     text = FROZEN.read_text(encoding="utf-8")
     check = re.search(r"^DO \$check\$.*?\$check\$;", text, re.M | re.S)[0]
-    with connection.cursor() as cursor:
+    # 0158 (#1889) has since replaced the resolution guard without the
+    # Ignore's reopening note this check looks for, so the check runs on
+    # 0146's own body, rolled back; the live bodies (0158's, or a later
+    # file's) come back in the restore below.
+    guard = "stewardship_proposal_resolution_guard_v1"
+    own = function_text(FROZEN, guard)
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(own)
         cursor.execute(check)
         for name, function in OLD_BODIES:
             with (
@@ -432,10 +479,21 @@ def test_the_migration_check_refuses_the_old_bodies_which_refuse_the_undo(
             ):
                 cursor.execute(function_text(MIGRATIONS / name, function))
                 cursor.execute(check)
+        transaction.set_rollback(True)
     harness, staff, rows = prepared(response_service)
     decide(harness, staff, [rows["prefix"]], "accept")
     decide(harness, staff, [fresh(rows["prefix"])], "entered_by_hand")
     marked = fresh(rows["prefix"])
+    # The bodies installed now, which a later migration (0159, #1890) may
+    # have replaced again, so the restore below is the live one, not 0146's.
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT pg_get_functiondef(p.oid) FROM pg_proc p"
+            " JOIN pg_namespace n ON n.oid=p.pronamespace"
+            " WHERE n.nspname='public' AND p.proname = ANY(%s)",
+            [[function for _, function in OLD_BODIES]],
+        )
+        live = [definition for (definition,) in cursor.fetchall()]
     try:
         with connection.cursor() as cursor:
             install_old_bodies(cursor)
@@ -443,7 +501,8 @@ def test_the_migration_check_refuses_the_old_bodies_which_refuse_the_undo(
             forge(marked, staff, assignments="execution='pending'")
     finally:
         with transaction.atomic(), connection.cursor() as cursor:
-            cursor.execute(text)
+            for definition in live:
+                cursor.execute(definition)
     assert fresh(marked).execution == "resolved_external"
     undo(harness, staff, marked)
     assert fresh(marked).execution == "pending"

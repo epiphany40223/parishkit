@@ -34,9 +34,7 @@ from parishkit.stewardship.pipeline import (
 )
 from parishkit.stewardship.responses.capabilities import capability
 from parishkit.stewardship.responses.census import (
-    ADDRESS_LIMITS,
-    blank_address,
-    country_choices,
+    address_editor,
 )
 from parishkit.stewardship.responses.census_additions import (
     ADD_FIELDS,
@@ -75,8 +73,10 @@ from parishkit.stewardship.responses.refresh_checks import (
 from parishkit.stewardship.source.source_status import source_status_label
 from parishkit.stewardship.web.presentation import duid
 from parishkit.stewardship.web.review_worklist import (
+    ALREADY_HELD,
     INCORRECT_WORDS,
     NOT_SEEN,
+    RETIRED_DATES,
     WORDS,
     Column,
     Remark,
@@ -206,9 +206,12 @@ def _last_decision(row):
 
 def _stage_note(row):
     """The census line under a row's stage (``REFRESH_CONFLICT``,
-    ``MEMBER_ID``), or empty."""
+    ``ALREADY_HELD`` for a change ParishSoft already holds before its step,
+    #1890, ``MEMBER_ID``), or empty."""
     if row.get("refresh_conflict"):
         return REFRESH_CONFLICT
+    if row.get("already_held"):
+        return ALREADY_HELD
     if row.get("resolution_member") and row.get("resolution_action") == "entered":
         return MEMBER_ID.format(duid(row["resolution_member"]))
     return ""
@@ -280,6 +283,12 @@ def worklist_rows(rows):
                 "stage_note": _stage_note(row),
                 "entered_template": _entered_template(row),
                 "remark": _remark(row),
+                # A Family's reviewed form (#1705) shows ParishSoft's value
+                # for an Ignored change of a Member's field or request; it
+                # cannot show a Family address or the email opt-out from
+                # ParishSoft, so it shows the Family's own answer for those,
+                # and it leaves an Ignored New Member out.
+                "shown_baseline": row["entity_kind"] == "member",
             }
         )
     return found
@@ -309,24 +318,19 @@ LINK_DEFAULTS = {
     "stage": Stage.TO_REVIEW.value,
     "route": "any",
     "kind": "any",
-    "start": "",
-    "end": "",
-    "zone": "",
 }
 
 
 def link_pairs(query, paging=None):
     """The view's choices a link may carry, as ``(name, value)`` pairs.
 
-    The Stage and the closed filters other than their defaults, the zone
-    only while a day needs it, then the table's ``paging`` (its page, size
-    and sort as the form sent them). ``page_address`` drops empty values.
+    The Stage and the closed filters other than their defaults, then the
+    table's ``paging`` (its page, size and sort as the form sent them).
+    ``page_address`` drops empty values.
     """
-    days = bool(query.start or query.end)
     pairs = [
-        (name, "" if value == LINK_DEFAULTS[name] else value)
-        for name, value in ((name, getattr(query, name)) for name in LINK_DEFAULTS)
-        if name != "zone" or days
+        (name, "" if getattr(query, name) == default else getattr(query, name))
+        for name, default in LINK_DEFAULTS.items()
     ]
     return pairs + sorted((paging or {}).items())
 
@@ -359,7 +363,7 @@ def worklist_page(result, query, table, action, *, mutable, paging=None):
         fields={
             name: value
             for name, value in query.form_values().items()
-            if name not in {"status", "history"}
+            if name not in {"status", "history", *RETIRED_DATES}
         },
         filters_template="stewardship/census-worklist-filters.html",
         editor_template="stewardship/census-worklist-value.html",
@@ -433,7 +437,7 @@ def add_fields():
     with its label and its value control: a date, its census choices,
     text no longer than the field takes (as Edit limits it, by the handling
     registry's handling), or a Family address's parts. ``address`` is the
-    shared address editor's parts, limits and countries, and
+    shared address editor's (``census.address_editor``, a blank address), and
     ``address_fields`` the choice value that shows it (data-show-when).
     """
     fields = []
@@ -455,11 +459,7 @@ def add_fields():
     return {
         "fields": fields,
         "address_fields": "|".join(FAMILY_ADD_FIELDS),
-        "address": {
-            "parts": blank_address(),
-            "limits": dict(ADDRESS_LIMITS),
-            "countries": country_choices(),
-        },
+        "address": address_editor(),
     }
 
 
@@ -807,8 +807,8 @@ class CensusDecisions:
             # (an older page, a script) is refused in plain words at it.
             raise AddRefusal(
                 "note_required",
-                "Back to review of an ignored change, or of a mark or update "
-                "already made, needs a note saying why.",
+                "Back to review of a mark or update already made needs a "
+                "note saying why.",
                 field_ids=("bulk_note" if decision.bulk else "note",),
                 fix="Write a note, then choose Back to review again.",
             ) from None

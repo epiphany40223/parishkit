@@ -82,11 +82,12 @@ def test_live_campaign_explains_instead_of_asking_for_a_reload(scheduled):
         assert item.browser.get(test_path).status_code == 200
 
 
-@pytest.mark.parametrize(
-    "slot", ["initial", "reminder", "daily_digest", "weekly_digest"]
-)
+@pytest.mark.parametrize("slot", ["initial", "reminder"])
 def test_every_schedulable_email_previews_in_a_testing_draft(campaign_test, slot):
-    """Each mail type a schedule sends, both digests included, opens its test page."""
+    """Each mail type New scheduled email adds opens its test page.
+
+    Report emails replaced the digests (#1786), so New adds Family mail only.
+    """
     service, browser, _path, _ = campaign_test
     campaign = Campaign.objects.get()
     template = content(str(campaign.pk), kind="email", slot=slot)
@@ -130,11 +131,13 @@ def test_live_campaign_offers_no_test_of_unsaved_text_until_paused(scheduled):
         "subject": "Edited",
         "html": "<p>{{ family_code }} {{ family_url }}</p>",
         "generate_text": "on",
-        "csrfmiddlewaretoken": item.browser.cookies["pk_admin_csrf"].value,
     }
     tests = CampaignMailTest.objects.count()
     with web_login():
         entry = item.browser.get(new_page)
+        # The New page sets the CSRF cookie: the fixture opens no Admin page
+        # since the Prepare Family links page retired (#1585).
+        values["csrfmiddlewaretoken"] = item.browser.cookies["pk_admin_csrf"].value
         assert f'data-closed="{NOT_OPEN}"'.encode() in entry.content
         refused = item.browser.post(send, values)
         assert refused.status_code == 404, refused.content

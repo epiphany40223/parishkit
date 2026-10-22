@@ -120,6 +120,12 @@ def delivery_show():
             "has_next": False,
             "actions": ["note", "retry_failed"],
             "retry_unavailable": False,
+            # The outcome panel and its question (#1563).
+            "outcome": "needs_resolution",
+            "choices": [
+                {"choice": "send_again", "action": "retry_failed", "unavailable": None},
+                {"choice": "keep_failed", "action": "note", "unavailable": None},
+            ],
         }
     )
 
@@ -278,6 +284,11 @@ GOLDEN |= {
             },
             "actions": ["note", "retry_failed"],
             "retry_unavailable": False,
+            "outcome": "needs_resolution",
+            "choices": [
+                {"choice": "send_again", "action": "retry_failed", "unavailable": None},
+                {"choice": "keep_failed", "action": "note", "unavailable": None},
+            ],
             "page": 1,
             "size": 25,
             "has_next": False,
@@ -429,6 +440,10 @@ ALLOWED = {
         "retry_sequence",
         "actions",
         "retry_unavailable",
+        "outcome",
+        "choices",
+        "choice",
+        "unavailable",
         "page",
         "size",
         "has_next",
@@ -524,10 +539,10 @@ def test_every_operations_command_has_a_golden_document():
     "task_type,kind",
     [
         ("family_mail_prepare", task_retries.FAMILY_PREPARATION),
-        ("daily_digest_prepare", task_retries.DAILY_DIGEST),
-        ("daily_digest_finalize", task_retries.DAILY_DIGEST),
-        ("weekly_digest_prepare", task_retries.WEEKLY_DIGEST),
-        ("weekly_digest_finalize", task_retries.WEEKLY_DIGEST),
+        ("report_email_prepare", task_retries.REPORT_EMAIL),
+        ("report_email_finalize", task_retries.REPORT_EMAIL),
+        # The digests' own tasks are gone (#1786).
+        ("daily_digest_prepare", None),
         ("report_export_cleanup", task_retries.EXPORT_CLEANUP),
         # The page offers no retry for any other work.
         ("outbox_delivery", None),
@@ -535,7 +550,7 @@ def test_every_operations_command_has_a_golden_document():
     ],
 )
 def test_a_task_type_selects_the_pages_retry(task_type, kind):
-    """The four retries a Background work task page offers, by task type."""
+    """The three retries a Background work task page offers, by task type."""
     assert task_retries.retry_kind(task_type) == kind
 
 
@@ -601,6 +616,9 @@ def test_delivery_show_lists_every_action_the_page_offers():
     """Each listed action has a command: resend is delivery resend (PR 9c)."""
     document = delivery_show().to_document()
     assert document["actions"] == ["note", "retry_failed"]
+    # Every allowed answer of the page's question is an offered action (#1563).
+    allowed = [row["action"] for row in document["choices"] if not row["unavailable"]]
+    assert set(allowed) <= set(document["actions"])
     offered = admin_cli.RESOLVE_ACTIONS + ("resend",)
     from parishkit.stewardship.jobs.delivery_resolution import ACTIONS
 

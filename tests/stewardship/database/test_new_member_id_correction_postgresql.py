@@ -203,11 +203,11 @@ def test_an_entered_member_field_takes_no_correction(response_service):
     """Only a New Member's mark is made again this way: an entered Member
     field not found Entered incorrectly takes no second mark, with or
     without an ID."""
-    from .test_census_pipeline_review_postgresql import decide as census_decide
+    from .test_census_pipeline_review_postgresql import mark as census_mark
     from .test_refresh_checks_postgresql import prepared
 
     harness, staff, rows = prepared(response_service)
-    census_decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+    census_mark(harness, staff, [rows["prefix"]])
     prefix = fresh(rows["prefix"])
     with pytest.raises((IntegrityError, DatabaseError), match="lacks current"):
         forge(prefix, staff, "entered")
@@ -251,7 +251,12 @@ def test_the_page_offers_and_records_the_correction(response_service, google):
     (one row at a time)."""
     harness, _, rows = answered(response_service, new_member)
     browser = staff_browser(google)
-    change = rows["new_member"]
+    # Accepted first: Entered by hand follows an Accept (#1890).
+    assert (
+        search(browser, ROUTE, decide(rows["new_member"], "accept"))[0].status_code
+        == 200
+    )
+    change = fresh(rows["new_member"])
     response, body = search(
         browser, ROUTE, decide(change, "entered_by_hand", value_member=str(WRONG))
     )

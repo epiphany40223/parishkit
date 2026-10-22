@@ -57,6 +57,7 @@ class AppliedConfigurationVersion(ImmutableRecord):
                         "users-v10",
                         "bootstrap-users-v10",
                         "campaign-series-v11",
+                        "campaign-series-v12",
                     ]
                 ),
                 name="configuration_validation_schema",

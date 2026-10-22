@@ -28,7 +28,7 @@ from parishkit.stewardship.workflows.models import RefreshCheck
 from ..policy_factory import address as rule
 from .campaign_builders import change
 from .response_builders import activate_response_service
-from .test_census_pipeline_review_postgresql import decide
+from .test_census_pipeline_review_postgresql import decide, mark
 from .test_census_review_postgresql import fresh
 from .test_ministry_responses_postgresql import ministry_source, respond, start
 from .test_policy_postgresql import user
@@ -119,8 +119,9 @@ def first_name(answers):
 
 
 def entered(harness, staff, row):
-    """Mark ``row`` Entered by hand (accepting it in the same step)."""
-    decide(harness, staff, [row], "entered_by_hand")
+    """Accept ``row``, then mark it Entered by hand (#1890: the mark follows
+    an Accept)."""
+    mark(harness, staff, [row])
     return fresh(row)
 
 
@@ -255,7 +256,9 @@ def test_an_open_change_whose_member_left_keeps_its_stage(
     assert cells["Member's ParishSoft status"] == source_status_label(status)
     # Back in the Family, the change is compared again as before.
     refresh(harness, member={"firstName": "Requested"})
-    assert fresh(kept).execution == "resolved_upstream"
+    # ParishSoft holds the answer: still Ready to update, saying so (#1890).
+    assert fresh(kept).execution == "pending"
+    assert census_row(harness, fresh(kept))["already_held"]
 
 
 @pytest.mark.parametrize(

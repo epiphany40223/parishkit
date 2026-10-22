@@ -8,7 +8,8 @@ before each PUT, that nothing changed since the Administrator confirmed:
 - ``record_plan`` (the worker, after preflight) stores the plans with each
   proposal's version and the hashes of the record read and the record
   expected after the PUT and, in Production mode, marks the changes already
-  in ParishSoft ``resolved_upstream`` in the same transaction;
+  in ParishSoft Updated in ParishSoft (``published``, nothing written;
+  ``resolved_upstream`` until #1890) in the same transaction;
 - ``confirm_plan`` (web) records an Administrator's signed-in
   confirmation of exactly the counts shown;
 - ``matches_confirmed`` is the pure pre-PUT check of a fresh plan against
@@ -21,7 +22,8 @@ before each PUT, that nothing changed since the Administrator confirmed:
 
 Nothing here calls ParishSoft, and only that mark changes a proposal. SQL
 independently checks every row, its authority and its audit
-(``schema/migrations/0087_publication_plans.sql``, and 0112 for the mark),
+(``schema/migrations/0087_publication_plans.sql``, and 0112 and 0159 for
+the mark),
 so a forged or stale write is refused even if this code were bypassed.
 Audit events hold an outcome word and a count only, never a value or a
 name.
@@ -50,6 +52,11 @@ from .publication_models import (
     PublicationOutcome,
     PublicationPlan,
 )
+
+# The execution the check's mark leaves an already-held change at: Updated
+# in ParishSoft with nothing written, which the refresh then confirms after
+# that step (strict phase order, #1890).
+MARKED = "published"
 
 # The audit word for each entity result.
 _RESULT_AUDIT = {
@@ -193,18 +200,23 @@ def record_plan(
 
 
 def _mark_upstream(record, plans):
-    """Mark the plan's already-matching changes *Already in ParishSoft*.
+    """Mark the plan's already-matching changes Updated in ParishSoft.
 
     In the plan's own transaction (the data spec's preflight step 4), each
     change whose field row says ``already_in_parishsoft`` moves from pending
-    or failed to ``resolved_upstream`` at the next version, its decision and
-    values unchanged, so it leaves the To do list. A Testing-mode plan marks
-    nothing. The derived guard (frozen migration 0112) admits exactly this,
-    for a field row at the change's current version in a non-Testing plan
-    recorded in this transaction; ``resolved_upstream`` is terminal there:
-    no writer but Staff's Back to review (#1840, frozen migration 0146,
-    which undoes the mark with a note) moves the change on. The rows are
-    locked in pk order first, as every other proposal writer locks them.
+    or failed to ``published`` at the next version, its decision and values
+    unchanged and nothing written, so it leaves Ready to update; the run's
+    final refresh, or the next one, then confirms it as it does every
+    update (strict phase order, #1890; until then it moved to
+    ``resolved_upstream``, Confirmed at once). A Testing-mode plan marks
+    nothing. The derived guard (frozen migration 0112, 0159 since #1890)
+    admits exactly this, for a field row at the change's current version in
+    a non-Testing plan recorded in this transaction; ``published`` is
+    terminal there: no writer but Staff's Back to review (#1840, frozen
+    migration 0146, which undoes the mark with a note) and a refresh that
+    finds ParishSoft no longer holding it (#1749) moves the change on. The
+    rows are locked in pk order first, as every other proposal writer locks
+    them.
     """
     ids = sorted(
         item.proposal_id
@@ -226,18 +238,20 @@ def _mark_upstream(record, plans):
         .order_by("pk")
     )
     ProposedChange.objects.filter(pk__in=ids).update(
-        execution="resolved_upstream", version=F("version") + 1
+        execution=MARKED, version=F("version") + 1
     )
 
 
 def marked_upstream(fields, rows):
-    """The proposal ids the plan's own check marked *Already in ParishSoft*.
+    """The proposal ids the plan's own check marked as already in ParishSoft.
 
     ``fields`` are one entity's ``PublicationField`` rows and ``rows`` its
     current proposals. A row counts only when its field row says
-    ``already_in_parishsoft`` and the proposal is ``resolved_upstream`` at
-    the version right after the one recorded, which only the check's mark
-    makes; any other planned row that moved still invalidates the entity.
+    ``already_in_parishsoft`` and the proposal is at the version right after
+    the one recorded with the check's mark (``MARKED``, or
+    ``resolved_upstream`` for a plan checked before #1890), which only the
+    check's mark makes; any other planned row that moved still invalidates
+    the entity.
     """
     current = {row.pk: (row.execution, row.version) for row in rows}
     return {
@@ -245,7 +259,10 @@ def marked_upstream(fields, rows):
         for item in fields
         if item.outcome == Outcome.ALREADY_IN_PARISHSOFT.value
         and current.get(item.proposal_id)
-        == ("resolved_upstream", item.proposal_version + 1)
+        in {
+            (execution, item.proposal_version + 1)
+            for execution in (MARKED, "resolved_upstream")
+        }
     }
 
 
@@ -343,7 +360,7 @@ def matches_confirmed(entity, fields, fresh, rows):
     still written and not blocked, every proposal has the same version (so
     no decision or Administrator edit changed) and the same outcome, and
     both payload hashes are unchanged (so ParishSoft holds what was read).
-    The rows the check itself marked *Already in ParishSoft*
+    The rows the check itself marked as already in ParishSoft
     (``marked_upstream``) are left out: they are no longer planned and
     wrote nothing. Anything else invalidates the entity without a write.
     """

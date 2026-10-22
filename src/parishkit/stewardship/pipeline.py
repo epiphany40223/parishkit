@@ -15,6 +15,7 @@ that move each stream to the shared worklist read it (#1680).
 - ``ROLE_ACTIONS`` is the spec's role-specific actions table as data;
   ``allowed_actions`` and ``may_add`` combine it with what a stage offers.
 - ``refresh_outcome`` is the R/A/C baseline refresh comparison.
+- ``shown_value`` says which value a reviewed Family form shows (#1705).
 - ``CENSUS_CONFIRMABLE`` says which census fields a ParishSoft read returns.
 
 The vocabulary is display only: stored values (``approved``, audit event
@@ -222,9 +223,10 @@ def census_placement(
     final or in-flight execution wins over the decision; then Ignored;
     then Conflict, keeping an approval visible but not in force; then the
     open decision. ``unreviewed`` + ``resolved_external`` is Entered by
-    hand that accepted in one step (decision 2); ``resolved_upstream``
-    with no approval is Confirmed with no reviewer ("Already in
-    ParishSoft"). A pair in ``CENSUS_IMPOSSIBLE`` raises, as an unknown
+    hand that accepted in one step (decision 2, reversed by #1890, so only
+    history holds it); ``resolved_upstream`` with no approval is Confirmed
+    with no reviewer ("Already in ParishSoft", which no refresh stores
+    since #1890 either). A pair in ``CENSUS_IMPOSSIBLE`` raises, as an unknown
     state does: its decision would be a guess.
 
     ``check`` is the latest refresh check's outcome (``responses.
@@ -421,11 +423,12 @@ def financial_placement(*, decision=None, entered=False, check=None):
 
     ``check`` is the latest pledge refresh check's outcome that counts
     (``reports.pledge_refresh``, #1704, #1747): a refresh that found the
-    pledge in ParishSoft Confirms it (an accepted one keeps its decision; a
-    To review one has none, "Already in ParishSoft"), one that found a
-    third amount makes an entered one Entered incorrectly and a To review
-    or accepted, unmarked one a Conflict, keeping that decision visible but
-    not in force.
+    pledge in ParishSoft Confirms an entered one, keeping its decision, and
+    leaves a To review or accepted, unmarked one at its stage (strict phase
+    order, #1890: the page says ParishSoft already holds it); one that
+    found a third amount makes an entered one Entered incorrectly and a To
+    review or accepted, unmarked one a Conflict, keeping that decision
+    visible but not in force.
     """
     if (
         (decision is not None and decision not in FINANCIAL_DECISIONS)
@@ -438,15 +441,13 @@ def financial_placement(*, decision=None, entered=False, check=None):
     if decision is None:
         if check not in FINANCIAL_OPEN_CHECKS:
             raise ValueError("A To review pledge has no such refresh check.")
-        if check == "confirmed":
-            return Placement(Stage.CONFIRMED)
         if check == "conflict":
             return Placement(Stage.CONFLICT)
         return Placement(Stage.TO_REVIEW)
     if decision == "ignored":
         return Placement(Stage.IGNORED, Decision.IGNORED)
     accepted = Decision(decision)
-    if check == "confirmed":
+    if check == "confirmed" and entered:
         return Placement(Stage.CONFIRMED, accepted)
     if check == "entered_incorrectly" and entered:
         return Placement(Stage.ENTERED_INCORRECTLY, accepted)
@@ -557,9 +558,10 @@ _TERMINAL_ROLES = frozenset({"staff", "administrator"})
 # What each stage offers before the reader's role is considered. Edit,
 # Accept and Ignore decide an undecided item (a Conflict is decided again
 # against ParishSoft's new value); Back to review undoes a decision before
-# its update starts, and a terminal step after it. Entered by hand on a To
-# review census row accepts and marks in one step (decision 2). Start
-# update is the run over Ready items.
+# its update starts, and a terminal step after it. Entered by hand and
+# Handled follow an Accept: never offered on To review or Conflict (#1890,
+# decision 2 reversed: a To review census row no longer accepts and marks
+# in one step). Start update is the run over Ready items.
 _STAGE_ACTIONS = MappingProxyType(
     {
         Stage.TO_REVIEW: frozenset({Action.ACCEPT, Action.EDIT, Action.IGNORE}),
@@ -591,7 +593,8 @@ def undo_stage(stream, placement, *, by_hand=False):
     by hand, or Ready to update for a census change the update run carries
     (``by_hand`` is ``census_by_hand``). An item no decision was behind (a
     change ParishSoft already held, a Ministry request the refresh
-    resolved) returns to To review.
+    resolved; history since #1890, which confirms nothing before its step)
+    returns to To review.
     """
     stage = placement.stage
     if stage not in TERMINAL_STAGES or placement.decision is None:
@@ -616,11 +619,11 @@ class NoteRequired(ValueError):
 def undo_needs_note(stage):
     """Whether Back to review from ``stage`` needs a note saying why.
 
-    Reopening an Ignored item always did; undoing a terminal step does too,
-    on every stream (spec, "Undoing a terminal stage").
+    Only undoing a terminal step does, on every stream (spec, "Undoing a
+    terminal stage"). Reopening an Ignored item takes an optional note like
+    any other decision (Administrator decision, 2026-10-21, #1889).
     """
-    stage = Stage(stage)
-    return stage is Stage.IGNORED or stage in TERMINAL_STAGES
+    return Stage(stage) in TERMINAL_STAGES
 
 
 def role_actions(stream, roles, *, leads=False):
@@ -644,15 +647,13 @@ def role_actions(stream, roles, *, leads=False):
 def stage_actions(stream, stage, *, by_hand=False):
     """The actions an item at ``stage`` of ``stream`` offers to someone allowed.
 
-    ``by_hand`` is ``census_by_hand`` for a census change: a To review By
-    hand change also offers Entered by hand, which accepts and marks it in
-    one step (decision 2).
+    The same for every stream (``stream`` and ``by_hand`` are kept for the
+    callers): until #1890 a To review census By hand change also offered
+    Entered by hand, accepting and marking it in one step (decision 2,
+    reversed on 2026-10-21).
     """
-    stage = Stage(stage)
-    actions = _STAGE_ACTIONS.get(stage, frozenset())
-    if Stream(stream) is Stream.CENSUS and stage is Stage.TO_REVIEW and by_hand:
-        actions |= {Action.ENTERED_BY_HAND}
-    return actions
+    Stream(stream)
+    return _STAGE_ACTIONS.get(Stage(stage), frozenset())
 
 
 def allowed_actions(stream, stage, roles, *, leads=False, by_hand=False):
@@ -674,6 +675,76 @@ def allowed_actions(stream, stage, roles, *, leads=False, by_hand=False):
 def may_add(stream, roles):
     """Whether the reader gets the Add button on ``stream``'s worklist."""
     return Action.ADD in role_actions(stream, roles)
+
+
+# --- The reviewed Family form ----------------------------------------------
+
+
+class Shown(StrEnum):
+    """Which value a reviewed Family form shows for one item (#1705).
+
+    The value itself is never stored: a form's shown item names the rows
+    it is read back from (``responses.reviewed``).
+    """
+
+    FAMILY = "family"
+    REVIEWER = "reviewer"
+    BASELINE = "baseline"
+
+
+@dataclass(frozen=True, slots=True)
+class ShownValue:
+    """One item's shown value and whether the form may mark it changed.
+
+    ``markable`` is whether the item's field carries the form's change
+    marker at all (census fields and Ministry choices) and the item is not
+    Ignored; the caller marks it only when the value also differs from the
+    current baseline by the stream's canonical comparison.
+    """
+
+    shown: Shown
+    markable: bool
+
+
+# The streams whose Family form fields carry change markers today.
+_MARKED_STREAMS = frozenset({Stream.CENSUS, Stream.MINISTRY})
+# Stages a decision in force carries forward ("decided": accepted, edited or
+# added, at any later stage short of Confirmed).
+_OPEN_STAGES = frozenset({Stage.TO_REVIEW, Stage.CONFLICT})
+
+
+def shown_value(stream, placement, *, baseline_shown=True):
+    """What a reviewed Family form shows for one item at ``placement``.
+
+    The review pipeline spec's shown-value tables ("One working change set"
+    and "What the reviewed form shows"): To review and Conflict show the
+    Family's own latest answer; a decided item its carried-forward value
+    (the reviewer's value when edited or added by the parish, else the
+    Family's); Ignored the current baseline, where the form can show it as
+    an answer (``baseline_shown``: a census field other than the addresses
+    and the email opt-out, a Ministry choice), else the Family's own
+    answer. A Confirmed item and History have no shown item (None): the
+    form shows the plain baseline. The pledge is the exception: it is one
+    item per Family that stays the Family's answer after Confirmed, so a
+    Confirmed pledge shows its carried-forward answer. Cannot participate
+    and Additional information always show the Family's own answer.
+    """
+    stream = Stream(stream)
+    stage = placement.stage
+    if stage is Stage.HISTORY or (
+        stage is Stage.CONFIRMED and stream is not Stream.FINANCIAL
+    ):
+        return None
+    markable = stream in _MARKED_STREAMS and stage is not Stage.IGNORED
+    if stream in (Stream.CANNOT_PARTICIPATE, Stream.ADDITIONAL_INFORMATION):
+        return ShownValue(Shown.FAMILY, markable)
+    if stage in _OPEN_STAGES:
+        return ShownValue(Shown.FAMILY, markable)
+    if stage is Stage.IGNORED:
+        showable = baseline_shown and stream in _MARKED_STREAMS
+        return ShownValue(Shown.BASELINE if showable else Shown.FAMILY, markable)
+    edited = placement.decision in (Decision.ACCEPTED_EDITED, Decision.ADDED)
+    return ShownValue(Shown.REVIEWER if edited else Shown.FAMILY, markable)
 
 
 # --- Confirmation by a refresh ---------------------------------------------
@@ -726,6 +797,10 @@ class RefreshOutcome(StrEnum):
     """What one promoted refresh does to one open item."""
 
     CONFIRMED = "confirmed"
+    # ParishSoft holds the item's value before its processing step (strict
+    # phase order, #1890): the item keeps its stage, To review, Ready or To
+    # enter by hand, and its row says so; a Conflict returns to its stage.
+    ALREADY_HELD = "already_held"
     UNCHANGED = "unchanged"
     # Unchanged, and an Entered by hand item has now been found at its old
     # value by enough full refreshes: flag Not seen in ParishSoft.
@@ -756,6 +831,9 @@ REEVALUATED_STAGES = frozenset(
     }
 )
 _ENTERED = frozenset({Stage.ENTERED_BY_HAND, Stage.ENTERED_INCORRECTLY})
+# The stages after an item's processing step (or with an update run in
+# flight): only these does R = C confirm (#1890).
+PROCESSED_STAGES = _ENTERED | {Stage.UPDATING, Stage.UPDATED}
 _UNSET = object()
 
 
@@ -783,8 +861,10 @@ def refresh_outcome(
     included, that found an Entered by hand item still at its old value.
 
     The rules, in order: an entity gone keeps its stage (rule 4, checked
-    first since R does not exist then); R = C confirms (an Ignored item is
-    only noted); R = A is unchanged, flagged Not seen after enough full
+    first since R does not exist then); R = C confirms an item after its
+    processing step (``PROCESSED_STAGES``), is only noted on an Ignored one
+    and is ``ALREADY_HELD`` on every other (strict phase order, #1890: the
+    item keeps its stage); R = A is unchanged, flagged Not seen after enough full
     refreshes; R differing from both is Entered incorrectly for a marked
     item whose R also differs from its mark, and Conflict for any other
     open item. For a marked item "unchanged" compares R with the mark, so
@@ -804,7 +884,9 @@ def refresh_outcome(
     if same(refreshed, carried_forward):
         if stage is Stage.IGNORED:
             return RefreshOutcome.IGNORED_NOW_MATCHES
-        return RefreshOutcome.CONFIRMED
+        if stage in PROCESSED_STAGES:
+            return RefreshOutcome.CONFIRMED
+        return RefreshOutcome.ALREADY_HELD
     if stage in _ENTERED:
         mark = answered_against if marked_against is _UNSET else marked_against
         if not same(refreshed, mark):

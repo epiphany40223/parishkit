@@ -76,7 +76,14 @@ SITES = {
     "accounts/activation_progress.py::control": site(
         {"production_tokens", "production_token_cleanup"},
         WEB,
-        {"accounts/activation_views.py", "local/seed_web.py"},
+        # The Go live page's Check step retries a stopped go-live's failed
+        # disposal through it (Retry stopping go-live, #1585); its Prepare
+        # step retries and discards the links through it (#1585 slice 3).
+        {
+            "accounts/go_live_prepare_views.py",
+            "accounts/go_live_views.py",
+            "local/seed_web.py",
+        },
     ),
     "accounts/campaign_family_test.py::_enqueue": site(
         # Called by request_tests (the Family test page and admin_tests).
@@ -86,8 +93,12 @@ SITES = {
     # Called by request_sample and by the scheduled email's test of an unsaved
     # edit (#446), which share the limits and the task.
     "accounts/campaign_mail.py::_queue": site("campaign_mail_test", WEB),
+    # Production activation's Retry, and pk-admin go-live retry (#1809),
+    # which runs as the web login.
     "accounts/confirmation_progress.py::retry": site(
-        "activation_catchup", WEB, {"accounts/confirmation_views.py"}
+        "activation_catchup",
+        WEB,
+        {"accounts/confirmation_views.py", "admin_go_live.py"},
     ),
     "accounts/setup_mail.py::request_sample": site(
         "setup_mail_test",
@@ -103,7 +114,7 @@ SITES = {
         "production_cleanup", WEB, {"accounts/go_live_progress.py"}
     ),
     "campaigns/production_storage.py::begin_transition": site(
-        # cleanup_requests.begin_cleanup, from the go-live cleanup page.
+        # cleanup_requests.begin_cleanup, from the Go live page's Start go-live.
         "production_cleanup",
         WEB,
         {"campaigns/cleanup_requests.py"},
@@ -135,13 +146,8 @@ SITES = {
     "jobs/family_mail_tasks.py::retry_preparation": site(
         "family_mail_prepare", WEB, {"jobs/task_retries.py"}
     ),
-    "reports/digest_retry.py::retry_digest": site(
-        {
-            "daily_digest_prepare",
-            "daily_digest_finalize",
-            "weekly_digest_prepare",
-            "weekly_digest_finalize",
-        },
+    "reports/report_email_retry.py::retry_report": site(
+        {"report_email_prepare", "report_email_finalize"},
         WEB,
         {"jobs/task_retries.py"},
     ),
@@ -239,10 +245,11 @@ SITES = {
             "reports/timeline_views.py",
         },
     ),
-    "reports/weekly_manual.py::request_manual_report": site(
-        "weekly_digest_prepare",
-        WEB,
-        {"admin_digests.py", "reports/weekly_manual_views.py"},
+    # A report email's Send now (#1786): Send weekly report now and
+    # ``digest weekly-request`` call it for the Weekly report until the
+    # Report emails page and its command ship (delivery plan item 5).
+    "reports/report_email_manual.py::request_send_now": site(
+        "report_email_prepare", WEB, {"reports/weekly_manual.py"}
     ),
     "responses/receipts.py::create_submission_receipt": site(
         # A Family's submission receipt.
@@ -312,13 +319,8 @@ SITES = {
     "jobs/operational_slack_tasks.py::produce_slack": site(
         "operational_slack", SCHEDULER, {"runtime_process.py"}
     ),
-    "reports/digest_finalization.py::DigestFinalizeProducer.__call__": site(
-        # Its Daily and Weekly subclasses are runtime_process's producers.
-        {"daily_digest_finalize", "weekly_digest_finalize"},
-        SCHEDULER,
-    ),
-    "reports/digest_ownership.py::DailyDigestProducer.__call__": site(
-        "daily_digest_prepare", SCHEDULER, {"runtime_process.py"}
+    "reports/report_email_finalization.py::ReportEmailFinalizeProducer.__call__": site(
+        "report_email_finalize", SCHEDULER, {"runtime_process.py"}
     ),
     "reports/export_cleanup.py::produce_cleanup": site(
         "report_export_cleanup", SCHEDULER, {"runtime_process.py"}
@@ -329,8 +331,10 @@ SITES = {
     "reports/verification_production.py::produce_verifications": site(
         "report_fact_verification", SCHEDULER, {"runtime_process.py"}
     ),
-    "reports/weekly_ownership.py::WeeklyDigestProducer.__call__": site(
-        "weekly_digest_prepare", SCHEDULER, {"runtime_process.py"}
+    # Compiled into the scheduler with the conversion (report-emails spec,
+    # delivery plan item 4).
+    "reports/report_email_ownership.py::ReportEmailProducer.__call__": site(
+        "report_email_prepare", SCHEDULER, {"runtime_process.py"}
     ),
     "source/setup_cleanup.py::produce_setup_cleanup": site(
         "setup_source_cleanup", SCHEDULER, {"runtime_process.py"}
@@ -352,6 +356,7 @@ SITES = {
             "jobs/family_mail_test_tasks.py",
             "jobs/operational_fanout.py",
             "reports/digest_fanout.py",
+            "reports/report_email_fanout.py",
             "reports/weekly_fanout.py",
         },
     ),

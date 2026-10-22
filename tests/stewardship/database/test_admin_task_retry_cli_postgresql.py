@@ -3,8 +3,8 @@
 Process admission is replaced by the test's own Django assembly, as in
 test_admin_status_cli_postgresql.py; everything after it is the real command
 line on the restricted web login, retrying real failed tasks through the
-Background work page's own functions: a Family mail preparation, daily
-digest work and an export file cleanup. The request key crosses between the
+Background work page's own functions: a Family mail preparation, a report
+email's preparation and an export file cleanup. The request key crosses between the
 page and the command line in both directions.
 """
 
@@ -27,10 +27,10 @@ from parishkit.stewardship.jobs.storage import _status
 
 from .automation_builders import paired, pairing, start
 from .campaign_builders import campaign_clock
+from .report_builders import DAILY_INSTANT as INSTANT
+from .report_builders import fail_preparation
 from .test_admin_status_cli_postgresql import without_web_runtimes
 from .test_background_grants_postgresql import task_login
-from .test_daily_digest_planning_postgresql import INSTANT
-from .test_daily_digest_retry_postgresql import fail_preparation
 from .test_export_jobs_postgresql import scenario  # noqa: F401
 from .test_export_retry_views_postgresql import failed_cleanup
 from .test_export_views_postgresql import http_scenario  # noqa: F401
@@ -213,8 +213,8 @@ def test_without_a_key_one_is_made_and_written_first(admin, family_mail, google)
         assert TaskRun.objects.get(parent_id=task_id).retry_command_id == UUID(key)
 
 
-def test_failed_daily_digest_work_is_retried(admin, family_mail, google):  # noqa: F811
-    """A digest task selects the page's daily digest retry."""
+def test_failed_report_email_work_is_retried(admin, family_mail, google):  # noqa: F811
+    """A report email's preparation task selects the page's report retry."""
     with campaign_clock(INSTANT):
         status = fail_preparation(family_mail)
         _, secret, _ = paired(admin.service)
@@ -223,7 +223,7 @@ def test_failed_daily_digest_work_is_retried(admin, family_mail, google):  # noq
         assert code == 0, document
         created = TaskRun.objects.get(parent_id=status.run_id)
         assert document["result"]["task"]["id"] == str(created.pk)
-        assert document["result"]["task"]["type"] == status.task_type
+        assert document["result"]["task"]["type"] == "report_email_prepare"
         assert created.retry_command_id == key
         assert len(events()) == 1
 

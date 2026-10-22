@@ -105,6 +105,8 @@ def test_delete_reviews_in_place_and_returns_to_the_list(
         "action",
         "base_digest",
         "schedule_id",
+        # The browser's zone, which every schedule review posts (#1949).
+        "zone",
     }
     assert shown.locator("[data-review-title]").inner_text() == TITLE
     assert page.evaluate(FOCUSED) == "schedule-delete-review-title"
@@ -194,7 +196,7 @@ def test_a_digest_says_its_delete_stops_every_later_send(page, component_origin)
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + EDIT_DIGEST)
     help_line = page.locator("#schedule-delete-help").inner_text()
-    assert help_line.startswith("This digest repeats, so deleting it stops every")
+    assert help_line.startswith("This report repeats, so deleting it stops every")
 
 
 @pytest.mark.parametrize("width", [320, 1280])
@@ -209,10 +211,10 @@ def test_a_digest_send_skips_this_email_only_or_the_whole_digest(
     failures = watch(page)
     form = page.locator("#schedule-delete-form")
     only = form.get_by_role("radio", name="This email only")
-    whole = form.get_by_role("radio", name="The whole digest")
+    whole = form.get_by_role("radio", name="The whole report")
     assert only.is_checked() and not whole.is_checked()
     help_line = page.locator("#schedule-delete-help").inner_text()
-    assert help_line.startswith("This email only skips just the digest's send at")
+    assert help_line.startswith("This email only skips just the report's send at")
     # The send time is shown in the browser's zone, never the raw instant.
     assert "+00:00" not in help_line
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
@@ -228,7 +230,7 @@ def test_a_digest_send_skips_this_email_only_or_the_whole_digest(
     text = shown.inner_text()
     # The skipped send is named by its send time alone (a <time> the page
     # shows browser-local), not by its slot key (#1658).
-    sentence = shown.get_by_text("This email only: the digest skips its send at")
+    sentence = shown.get_by_text("This email only: the report skips its send at")
     assert sentence.locator("time[data-local-instant]").count() == 1
     # Every <time> the review drew is rewritten browser-local once the
     # dialog shows it, never left as the server's ISO instant.
@@ -247,7 +249,7 @@ def test_the_whole_digest_is_posted_with_its_own_scope(page, component_origin):
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + EDIT_DIGEST_SEND)
     page.locator("#schedule-delete-form").get_by_role(
-        "radio", name="The whole digest"
+        "radio", name="The whole report"
     ).check()
     request, _shown = open_review(page, EDIT_DIGEST_SEND)
     assert fields(request)["scope"] == "this"

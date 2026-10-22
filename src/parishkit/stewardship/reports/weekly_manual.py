@@ -1,58 +1,57 @@
-"""Explicit Admin manual-report commands, never an automatic resend policy."""
+"""Send a weekly report now: Send now of the converted Weekly report (#1786).
+
+Until the Report emails page's Send now ships (report-emails spec, delivery
+plan item 5), Emailed reports' "Send a weekly report now" and ``pk-admin
+digest weekly-request`` send the report the conversion made from the Weekly
+digest, through Send now (``report_email_manual.request_send_now``): its
+database guard checks the report's current revision and that no other send
+of it is open, and a replay returns the same send.
+"""
 
 from uuid import UUID
 
-from parishkit.stewardship.campaigns.work_locks import work_transaction
-from parishkit.stewardship.jobs.delivery_admin import authorize
-from parishkit.stewardship.jobs.models import TaskRun
-from parishkit.stewardship.jobs.storage import _status, enqueue
+from parishkit.stewardship.accounts.report_rows import WEEKLY, digest_kind
+from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
 
-from .weekly_models import WeeklyManualRequest
-from .weekly_ownership import TASK_TYPE
+from .report_email_manual import request_send_now
+
+
+def weekly_report(campaign_id):
+    """The campaign's converted Weekly report definition, or None."""
+    for definition in ScheduleDefinition.objects.select_related(
+        "current_revision"
+    ).filter(campaign_id=campaign_id, kind="report", current_revision__isnull=False):
+        if digest_kind(definition.current_revision.values) == WEEKLY:
+            return definition
+    return None
 
 
 def request_manual_report(store, user_id, campaign_id, *, command_id, configuration_id):
-    """Record one actor-bound command and atomically allocate its private owner.
+    """Send the converted Weekly report now, once per command.
 
-    SQL derives the current schedule/mode/epoch, rejects unresolved prior work,
-    creates an independent manual occurrence and begins at capture. Replays
-    return the same root without recapturing data or opening another delivery.
+    A replay of a recorded command names the report and revision it
+    recorded, so it returns the same send even after the report changed.
+    Raises ``ScheduleDefinition.DoesNotExist`` when the campaign has none.
     """
-    if any(
-        not isinstance(value, UUID)
-        for value in (
-            user_id,
-            campaign_id,
-            command_id,
-            configuration_id,
-        )
-    ):
+    from .report_email_models import ReportEmailManualRequest
+
+    if not isinstance(campaign_id, UUID):
         raise ValueError("Manual reports require canonical identities.")
-    with work_transaction():
-        authorize(store, user_id)
-        previous = WeeklyManualRequest.objects.filter(pk=command_id).first()
-        if previous is not None:
-            if (
-                previous.actor_id != user_id
-                or previous.campaign_id != campaign_id
-                or previous.configuration_id != configuration_id
-            ):
-                raise ValueError("Manual report command is already bound.")
-            return _status(TaskRun.objects.get(pk=previous.task_id))
-        task = enqueue(
-            task_type=TASK_TYPE,
-            domain_request_id=command_id,
-            actor_id=user_id,
-            correlation_id=command_id,
-            idempotency_key=command_id,
-            admit=lambda *args: True,
-        )
-        WeeklyManualRequest.objects.create(
-            id=command_id,
-            campaign_id=campaign_id,
-            configuration_id=configuration_id,
-            task_id=task.run_id,
-            actor_id=user_id,
-            correlation_id=command_id,
-        )
-        return task
+    recorded = (
+        ReportEmailManualRequest.objects.filter(pk=command_id)
+        .values_list("definition_id", "revision_id")
+        .first()
+    )
+    if recorded is None:
+        definition = weekly_report(campaign_id)
+        if definition is None:
+            raise ScheduleDefinition.DoesNotExist("The campaign has no Weekly report.")
+        recorded = (definition.pk, definition.current_revision_id)
+    return request_send_now(
+        store,
+        user_id,
+        campaign_id,
+        *recorded,
+        command_id=command_id,
+        configuration_id=configuration_id,
+    )

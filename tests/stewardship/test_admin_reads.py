@@ -38,6 +38,9 @@ from .campaign_factory import campaign as campaign_record
 from .campaign_factory import schedule as schedule_record
 
 NOW = datetime(2054, 10, 5, 14, tzinfo=UTC)
+# A review's clock before the factory campaign, so each of its sends is
+# still ahead (schedules list their sends from now, #1129).
+REVIEWED_AT = datetime(2054, 9, 1, tzinfo=UTC)
 CAMPAIGN = UUID("00000000-0000-4000-8000-000000000001")
 # Accept this change once (ADM-13 PR 5b): an acceptance.
 ACCEPTANCE = UUID("00000000-0000-4000-8000-0000000000a5")
@@ -363,7 +366,7 @@ def schedule_show():
             "end_date": values["end_date"],
             "timezone": values["timezone"],
         },
-        schedules=[admin_reads.schedule_entry(row, values)],
+        schedules=[admin_reads.schedule_entry(row, values, now=REVIEWED_AT)],
         series=admin_reads.campaign_series(SERIES_CONFIGURATION, CAMPAIGN),
     )
 
@@ -773,11 +776,22 @@ GOLDEN = {
             },
         },
     ),
-    "send progress": (
-        lambda: admin_reads.SendProgressRead(
+    "mail queue": (
+        lambda: admin_reads.MailQueueRead(
             CAMPAIGN,
             "production",
             False,
+            dict.fromkeys(("queued", "sending", "retry_wait", "paused"), 0),
+            0,
+            [
+                {
+                    "purpose": "initial",
+                    "queued": 0,
+                    "sending": 0,
+                    "retry_wait": 0,
+                    "paused": 0,
+                }
+            ],
             False,
             admin_reads._send_counts(progress(counts())),
         ),
@@ -785,6 +799,17 @@ GOLDEN = {
             "campaign_id": str(CAMPAIGN),
             "mode": "production",
             "paused": False,
+            "counts": {"queued": 0, "sending": 0, "retry_wait": 0, "paused": 0},
+            "other_mode_queued": 0,
+            "kinds": [
+                {
+                    "purpose": "initial",
+                    "queued": 0,
+                    "sending": 0,
+                    "retry_wait": 0,
+                    "paused": 0,
+                }
+            ],
             "upcoming": False,
             "send": FINISHED_SEND,
         },
@@ -1174,7 +1199,20 @@ ALLOWED = {
         "at",
         *TASK_MEMBERS,
     },
-    "send progress": {"campaign_id", "mode", "paused", "upcoming", "send"}
+    "mail queue": {
+        "campaign_id",
+        "mode",
+        "paused",
+        "counts",
+        "queued",
+        "sending",
+        "retry_wait",
+        "other_mode_queued",
+        "kinds",
+        "purpose",
+        "upcoming",
+        "send",
+    }
     | SEND_MEMBERS,
     "send history": {
         "campaign_id",
@@ -1369,20 +1407,27 @@ def test_sections_the_reader_cannot_see_are_none():
         assert document[name] is None, name
 
 
-def test_when_a_send_watch_stops():
-    """A running send keeps a watch going; a finished one or none stops it."""
-    running = progress(counts(remaining=5, recent=5, last_settled_at=None))
-    model = admin_reads.SendProgressRead(
-        CAMPAIGN, "production", False, False, admin_reads._send_counts(running)
+def queue_read(send=None, *, upcoming=False, queued=0):
+    """A ``mail queue`` document with ``queued`` emails waiting, else empty."""
+    tally = {"queued": queued, "sending": 0, "retry_wait": 0, "paused": 0}
+    return admin_reads.MailQueueRead(
+        CAMPAIGN, "production", False, tally, 0, [], upcoming, send
     )
+
+
+def test_when_a_mail_queue_watch_stops():
+    """A running send or a queued email keeps a watch going; nothing stops it."""
+    running = progress(counts(remaining=5, recent=5, last_settled_at=None))
+    model = queue_read(admin_reads._send_counts(running))
     assert model.to_document()["send"]["rate_per_minute"] == float(Decimal("0.3"))
     assert not model.terminal
-    finished = GOLDEN["send progress"][0]()
+    finished = GOLDEN["mail queue"][0]()
     assert finished.terminal
-    assert admin_reads.SendProgressRead(None, "testing", False, False, None).terminal
-    # A Production send about to start keeps the watch going.
-    soon = admin_reads.SendProgressRead(None, "production", False, True, None)
-    assert not soon.terminal
+    assert queue_read().terminal
+    # A Production send about to start keeps the watch going, and so does a
+    # queued email of any kind (#1562).
+    assert not queue_read(upcoming=True).terminal
+    assert not queue_read(queued=1).terminal
 
 
 def test_task_show_stops_once_the_task_is_terminal():

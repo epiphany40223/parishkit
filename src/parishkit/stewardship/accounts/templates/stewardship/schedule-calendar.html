@@ -23,7 +23,22 @@ in), which opens New scheduled email with that send date; its Apply returns
 here, and the reserved status line below (schedules-outcome, the New page's
 review dialog's) then says what was applied. Each Edit link (in the grid and
 the table) gets ?calendar=<the month shown>, so Edit's Cancel, Apply and
-Delete return to that month. The page itself changes nothing.
+Delete return to that month.
+Move… (#1521): each movable send (data-move-url, its Edit page, with its
+email in data-email) gets a move icon button in the grid, named by
+data-move-name with {name} filled in, which opens the Move dialog below
+(calendar-move) on that send; dragging the send's link onto another day
+opens it with that day filled in. The dialog's form (id schedule-entry-form,
+Edit's own, so a refusal answered with Edit's page marks it) posts move=yes,
+the new date, the browser's zone and base_digest to the send's Edit page,
+whose review opens in the review dialog at the end (schedule-review) on top
+of it. Its change gate's version is calendar-move-version, which the script
+sets per send, so Review the move waits for another date. A refusal for a
+value is said in the dialog's reserved line (data-review-refused), after
+its buttons so a long refusal moves none of them. The list
+of sends and the Move dialog are one region (calendar-source, redrawn only
+by the dialog's own Apply), so Apply redraws the grid, closes the dialog and
+brings the next base_digest; the table's region is redrawn with it.
 The table's region (id "table", data-table-region) holds Show, a binary
 choice (components/segmented-choice.html; Upcoming emails by default) and
 the table, whose When and Schedule headings sort it on the server; both
@@ -31,7 +46,7 @@ refresh the region in place, keep each other's choice, and the script
 adds the month shown to their links (and to the swapped-in Edit links).
 {% endcomment %}
 <h1>{% translate "Campaign calendar" %}</h1>
-{% aboutpage "schedule-calendar" %}<p>{% translate "Every email the campaign's mail schedules send, by date, one month at a time: the Initial invitation, each reminder, and every day or week of the Admin digests. Previous month and Next month go through the campaign's months. Times are in your computer's time zone. An email links to its Edit page while it has not run yet, and Delete is on that page. The + on a day of the campaign opens New scheduled email with that send date, and returns here once it is added." %}</p>{% endaboutpage %}
+{% aboutpage "schedule-calendar" %}<p>{% translate "Every email the campaign's mail schedules send, by date, one month at a time: the Initial invitation, each reminder, and every send of the Daily and Weekly reports. Previous month and Next month go through the campaign's months. Times are in your computer's time zone. An email links to its Edit page while it has not run yet, and Delete is on that page. The + on a day of the campaign opens New scheduled email with that send date, and returns here once it is added. The move button beside an Initial invitation or reminder moves it to another day, at the same time of day; with a mouse you can also drag it onto the day. Either way you review the move before anything changes." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
 <p class="campaign-dates">{% blocktranslate trimmed with start=values.start_date|parish_date end=values.end_date|parish_date %}Campaign dates: {{ start }} – {{ end }}{% endblocktranslate %}</p>
 {% include "stewardship/components/review-outcome.html" with outcome_id="schedules-outcome" %}
@@ -41,10 +56,21 @@ adds the month shown to their links (and to the swapped-in Edit links).
 <div class="calendar-nav">{% button type="button" variant="secondary" data-calendar-step="-1" %}{% translate "Previous month" %}{% endbutton %}{% button type="button" variant="secondary" data-calendar-step="1" %}{% translate "Next month" %}{% endbutton %}<span class="calendar-nav-month" data-calendar-name></span></div>
 <p class="help calendar-nav-reason" id="calendar-nav-reason" data-calendar-reason data-first="{% translate "This is the campaign's first month." %}" data-last="{% translate "This is the campaign's last month." %}"></p>
 <p class="visually-hidden" role="status" data-calendar-said></p>
-<div class="calendar-months" id="calendar-months" data-calendar data-start="{{ values.start_date }}" data-end="{{ values.end_date }}" data-opens="{% translate 'Campaign opens' %}" data-closes="{% translate 'Campaign closes' %}" data-today="{% translate 'Today' %}" data-add-url="{{ add_url }}" data-add-name="{% translate 'Add a scheduled email on {date}' %}"></div>
+<div class="calendar-months" id="calendar-months" data-calendar data-start="{{ values.start_date }}" data-end="{{ values.end_date }}" data-opens="{% translate 'Campaign opens' %}" data-closes="{% translate 'Campaign closes' %}" data-today="{% translate 'Today' %}" data-add-url="{{ add_url }}" data-add-name="{% translate 'Add a scheduled email on {date}' %}" data-move-name="{% translate 'Move {name}…' %}"></div>
 <template id="calendar-month"><div class="table-scroll" tabindex="0" role="region"><table class="calendar-month"><caption></caption><thead><tr>{% for short, long in weekdays %}<th scope="col"><span aria-hidden="true">{{ short }}</span><span class="visually-hidden">{{ long }}</span></th>{% endfor %}</tr></thead><tbody></tbody></table></div></template>
-<p class="help">{% translate "The table below lists the same emails as text." %}</p>
-<ul hidden data-calendar-source>{% for send in sends %}<li data-calendar-send data-label="{{ send.label }}" data-status="{{ send.status_label }}"{% if send.read_only %} class="schedule-past"{% else %} data-edit-url="{{ send.edit_url }}"{% endif %}><time datetime="{{ send.due|instant }}"></time></li>{% endfor %}</ul>
+<div id="calendar-source" data-in-place-region data-in-place-own>
+<ul hidden data-calendar-source>{% for send in sends %}<li data-calendar-send data-label="{{ send.label }}" data-status="{{ send.status_label }}"{% if send.read_only %} class="schedule-past"{% else %} data-edit-url="{{ send.edit_url }}"{% endif %}{% if send.movable %} data-move-url="{{ send.edit_url }}" data-email="{{ send.email }}"{% endif %}><time datetime="{{ send.due|instant }}"></time></li>{% endfor %}</ul>
+<dialog id="calendar-move" class="confirm-dialog calendar-move-dialog" aria-labelledby="calendar-move-title" aria-describedby="calendar-move-what" data-move-what="{% translate '{name} sends at {time} with the email “{email}”. Only its date changes: it keeps the same time of day in this computer’s time zone.' %}">
+<h2 id="calendar-move-title" tabindex="-1" data-move-title></h2>
+<form method="post" id="schedule-entry-form" data-review-open="schedule-review" data-review-refused="calendar-move-refusal" data-require-change="calendar-move-version">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="move" value="yes"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="zone" value="" data-browser-zone><input type="hidden" id="calendar-move-version" value="">
+<p id="calendar-move-what" data-move-text></p>
+<div class="field"><label for="id_schedule-date">{% translate "New send date" %}</label><input type="date" name="schedule-date" id="id_schedule-date" required data-browser-zone-field></div>
+<div class="dialog-actions">{% button type="submit" autocomplete="off" %}{% translate "Review the move" %}{% endbutton %}{% button type="button" variant="secondary" data-move-cancel %}{% translate "Cancel" %}{% endbutton %}</div>
+<p><span class="help unchanged-hint" data-unchanged-hint data-idle>{% translate "Choose another date to review the move." %}</span></p>
+<p class="calendar-move-refusal" id="calendar-move-refusal" role="status" tabindex="-1"></p>
+</form>
+</dialog>
+</div>
 </section>
 {% translate "Every email by date" as caption %}
 <section id="{{ table.anchor }}" class="panel" data-table-region aria-labelledby="calendar-sends-title">
@@ -72,5 +98,6 @@ adds the month shown to their links (and to the swapped-in Edit links).
 </table>
 </div>
 </section>
+{% translate "Review moving this scheduled email" as review_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="schedule-review" title=review_title apply_url=apply_url outcome_id="schedules-outcome" fallback="calendar-months" %}
 {% else %}<p>{% translate "No emails are scheduled yet." %} <a href="{{ list_url }}">{% translate "Add one on Dates and mail schedules." %}</a></p>{% endif %}
 {% endblock %}

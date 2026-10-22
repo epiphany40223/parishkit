@@ -493,7 +493,7 @@ def test_a_new_parishsoft_value_withdraws_an_accepted_approval(
     assert annotated(row).conflict_accepted
     data.members[3]["firstName"] = "Changed again"
     third, claim = prepare(data)
-    monkeypatch.setattr(reconciliation, "resets_approval", lambda row, execution: False)
+    monkeypatch.setattr(reconciliation, "resets_approval", lambda *_, **__: False)
     with (
         task_login(ServiceRole.WORKER, exact=True),
         pytest.raises(IntegrityError, match="stale accepted approval"),
@@ -513,6 +513,90 @@ def test_a_new_parishsoft_value_withdraws_an_accepted_approval(
     assert not annotated(row).conflict_accepted
 
 
+def accepted_over_a_conflict(harness):
+    """A first-name change accepted over a Conflict, and a promoter.
+
+    Returns the accepted row and ``promoted(first_name, keep=False)``, which
+    promotes, on the source worker's own login, a ParishSoft read holding
+    ``first_name``; ``keep`` forces reconciliation to keep every approval.
+    A refused promotion rolls back and keeps its claim, so the next call
+    for the same name promotes that read again.
+    """
+    from parishkit.stewardship.responses import reconciliation
+
+    from .response_builders import response_source
+    from .test_response_submission_postgresql import form_and_answers, submit
+    from .test_source_families_postgresql import prepare, promote
+
+    def promoted(first_name, *, keep=False):
+        """Promote a read holding ``first_name`` (see above)."""
+        if first_name not in staged:
+            data = response_source()
+            data.members[3]["firstName"] = first_name
+            staged[first_name] = prepare(data)
+        snapshot, claim = staged[first_name]
+        with pytest.MonkeyPatch.context() as patched:
+            if keep:
+                patched.setattr(
+                    reconciliation, "resets_approval", lambda *_, **__: False
+                )
+            with task_login(ServiceRole.WORKER, exact=True):
+                promote(snapshot, claim, harness.campaign, harness.rings)
+
+    staged = {}
+    earlier, claim = prepare(response_source())
+    promote(earlier, claim, harness.campaign, harness.rings)
+    form, answers = form_and_answers(harness)
+    answers["members"]["3"]["first_name"] = "Requested name"
+    response = submit(harness, form, answers).submission
+    promoted("Updated source")
+    row = accept(ProposedChange.objects.get(submission=response))
+    assert annotated(row).conflict_accepted
+    return row, promoted
+
+
+def test_an_accepted_approval_survives_parishsoft_catching_up(live_response_service):
+    """Strict phase order (#1890): a change accepted over a Conflict whose
+    ParishSoft value then reaches the Family's answer stays open (pending)
+    with nothing to write and keeps its approval, so it keeps its stage
+    (Ready to update) instead of going back to To review; its accepted base
+    is no longer active, as after any new ParishSoft value."""
+    from parishkit.stewardship.pipeline import Stage
+
+    from .test_refresh_checks_postgresql import census_row
+
+    row, promoted = accepted_over_a_conflict(live_response_service)
+    promoted("Requested name")
+    row = fresh(row)
+    assert (row.execution, row.decision, row.current_value) == (
+        "pending",
+        "approved",
+        "Requested name",
+    )
+    assert not annotated(row).conflict_accepted
+    assert census_row(live_response_service, row)["stage"] == Stage.READY_TO_UPDATE
+
+
+def test_an_accepted_approval_back_at_the_baseline_is_withdrawn(
+    live_response_service,
+):
+    """ParishSoft back at the baseline still withdraws an approval accepted
+    over a Conflict (0108's rule, which 0159 relaxes only for a caught-up
+    value), and the database refuses a reconciliation that keeps it."""
+    from .response_builders import response_source
+
+    row, promoted = accepted_over_a_conflict(live_response_service)
+    baseline = response_source().members[3]["firstName"]
+    with pytest.raises(IntegrityError, match="stale accepted approval"):
+        promoted(baseline, keep=True)
+    assert fresh(row).decision == "approved"
+    promoted(baseline)
+    assert (fresh(row).execution, fresh(row).decision) == ("pending", "unreviewed")
+
+
+# The rule before the reviewed Family form (#1705): forms drawn before
+# its release, as one open across the deploy is.
+@pytest.mark.usefixtures("earlier_rule")
 def test_a_resubmission_does_not_carry_an_accepted_approval(
     live_response_service, monkeypatch
 ):

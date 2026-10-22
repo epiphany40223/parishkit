@@ -62,16 +62,10 @@ patterns = [
         name="retry_family_preparation",
     ),
     path(
-        "system/background/<uuid:task_id>/daily-digest-retry/",
+        "system/background/<uuid:task_id>/report-email-retry/",
         delivery_views.preparation_retry,
-        {"daily": True},
-        name="retry_daily_digest",
-    ),
-    path(
-        "system/background/<uuid:task_id>/weekly-digest-retry/",
-        delivery_views.preparation_retry,
-        {"weekly": True},
-        name="retry_weekly_digest",
+        {"report": True},
+        name="retry_report_email",
     ),
     path(
         "system/background/<uuid:task_id>/export-cleanup-retry/",

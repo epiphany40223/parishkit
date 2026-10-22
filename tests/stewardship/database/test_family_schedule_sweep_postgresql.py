@@ -42,7 +42,7 @@ from ..configuration_factory import PARISH_TIMEZONE
 from .auth_builders import unguarded
 from .campaign_builders import campaign_clock, complete_empty_catchup
 from .credential_builders import populate
-from .plan_work import analyze_all, assert_linear_plan
+from .plan_work import analyze_all, assert_linear_plan, statement_limit
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_family_auth_postgresql import family_service  # noqa: F401
@@ -53,6 +53,10 @@ from .test_response_submission_postgresql import form_and_answers, submit
 pytestmark = pytest.mark.django_db(transaction=True)
 # Roughly the Production parish's Family count (#629).
 REALISTIC = 2700
+# Any one statement of the realistic-population test, well under CI's 1800 s
+# shard limit: the slowest is a few seconds even on a packed runner, and a
+# stall then fails this test by name instead of the whole partition (#1930).
+STATEMENT_SECONDS = 120
 
 
 @pytest.fixture(autouse=True)
@@ -203,86 +207,103 @@ def test_a_realistic_population_goes_idle_cheaply(family_service):  # noqa: F811
     eligibility change then re-plans exactly one Family through the real
     sweep.
     """
-    campaign, rings = family_service.campaign, family_service.rings
-    populate(campaign, rings, statuses(REALISTIC), generation=2)
-    definition = ScheduleDefinition.objects.select_related("current_revision").get()
-    revision = definition.current_revision
-    families = list(FamilyCampaign.objects.values_list("pk", flat=True))
-    assert len(families) == REALISTIC
-    with unguarded():
-        ScheduleOccurrence.objects.bulk_create(
-            ScheduleOccurrence(
-                definition=definition,
-                revision=revision,
-                mode="testing",
-                routing="testing_override",
-                target=f"family:{family_id}",
-                slot="once",
-                due_at=revision.due_at,
-                occurrence_key=uuid4().hex,
+    with statement_limit(STATEMENT_SECONDS):
+        campaign, rings = family_service.campaign, family_service.rings
+        populate(campaign, rings, statuses(REALISTIC), generation=2)
+        definition = ScheduleDefinition.objects.select_related("current_revision").get()
+        revision = definition.current_revision
+        families = list(FamilyCampaign.objects.values_list("pk", flat=True))
+        assert len(families) == REALISTIC
+        with unguarded():
+            ScheduleOccurrence.objects.bulk_create(
+                ScheduleOccurrence(
+                    definition=definition,
+                    revision=revision,
+                    mode="testing",
+                    routing="testing_override",
+                    target=f"family:{family_id}",
+                    slot="once",
+                    due_at=revision.due_at,
+                    occurrence_key=uuid4().hex,
+                )
+                for family_id in families
             )
-            for family_id in families
-        )
-        occurrences = ScheduleOccurrence.objects.filter(definition=definition)
-        ScheduleFulfillment.objects.bulk_create(
-            ScheduleFulfillment(
-                definition=definition,
-                mode="testing",
-                target=row.target,
-                slot="once",
-                disposition="coalesced",
-                occurrence=row,
+            occurrences = ScheduleOccurrence.objects.filter(definition=definition)
+            ScheduleFulfillment.objects.bulk_create(
+                ScheduleFulfillment(
+                    definition=definition,
+                    mode="testing",
+                    target=row.target,
+                    slot="once",
+                    disposition="coalesced",
+                    occurrence=row,
+                )
+                for row in occurrences
             )
-            for row in occurrences
-        )
-    producer = FamilyScheduleProducer(uuid4())
-    with campaign_clock(campaign.active_configuration.starts_at):
-        with scheduling() as guard:
-            producer(guard)
-            # The first loop queued every Family and planned its first page;
-            # consider the rest planned too.
-            producer.pending.clear()
-            started = monotonic()
-            with CaptureQueriesContext(connection) as idle:
-                for _ in range(10):
-                    assert producer(guard) == ()
-            elapsed = monotonic() - started
-        # A handful of statements a loop, never one per Family: the runtime
-        # row, the two fingerprints and (in Testing) the rehearsal-epoch
-        # check. No planning and no work-order lock. (The ownership probe
-        # runs on the scheduler's own raw cursor and is not captured.)
-        assert len(idle) <= 10 * 5
-        assert not any("pg_advisory_xact_lock" in row["sql"] for row in idle)
-        assert not any("FOR UPDATE" in row["sql"] for row in idle)
-        # Only a catastrophic-regression guard: about 14 ms a check on a
-        # laptop, but CI packs three PostgreSQL partitions onto each runner
-        # (#651), so wall-clock time here is shared-CPU noise (#688). The
-        # statement count and lock assertions above, the plan's row count
-        # below and test_schedule_production's idle scaling ratio (the
-        # Python comparison) are the real checks (#690).
-        assert elapsed < 60
-        # The per-Family read stays linear in the population: one hash or
-        # merge pass per input table, never a nested loop that rescans an
-        # input for every Family.
+        # Fresh statistics before the first loop: its FAMILY_INPUTS read
+        # otherwise plans from whatever an earlier test's ANALYZE left (#1930).
         analyze_all()
-        visited = assert_linear_plan(
-            schedule_production.FAMILY_INPUTS,
-            {"campaign": campaign.pk},
-            REALISTIC,
-            per_row=60,
-        )
-        print(f"FAMILY_INPUTS rows visited at {REALISTIC} Families: {visited}")
-        middle = REALISTIC // 2
-        changed = FamilyStatus(middle, True, True, True, False)
-        populate(
-            campaign,
-            rings,
-            statuses(REALISTIC, **{f"duid{middle}": changed}),
-            generation=3,
-        )
-        expected = FamilyCampaign.objects.get(family_duid=middle).pk
-        with scheduling() as guard:
-            assert set(settle(producer, guard)) == {expected}
+        producer = FamilyScheduleProducer(uuid4())
+        with campaign_clock(campaign.active_configuration.starts_at):
+            with scheduling() as guard:
+                producer(guard)
+                # The first loop queued every Family and planned its first page;
+                # consider the rest planned too.
+                producer.pending.clear()
+                started = monotonic()
+                with CaptureQueriesContext(connection) as idle:
+                    for _ in range(10):
+                        assert producer(guard) == ()
+                elapsed = monotonic() - started
+            # A handful of statements a loop, never one per Family: the runtime
+            # row, the two fingerprints and (in Testing) the rehearsal-epoch
+            # check. No planning and no work-order lock. (The ownership probe
+            # runs on the scheduler's own raw cursor and is not captured.)
+            assert len(idle) <= 10 * 5
+            assert not any("pg_advisory_xact_lock" in row["sql"] for row in idle)
+            assert not any("FOR UPDATE" in row["sql"] for row in idle)
+            # Only a catastrophic-regression guard: about 14 ms a check on a
+            # laptop, but CI packs three PostgreSQL partitions onto each runner
+            # (#651), so wall-clock time here is shared-CPU noise (#688). The
+            # statement count and lock assertions above, the plan's row count
+            # below and test_schedule_production's idle scaling ratio (the
+            # Python comparison) are the real checks (#690).
+            assert elapsed < 60
+            # The per-Family read stays linear in the population: one hash or
+            # merge pass per input table, never a nested loop that rescans an
+            # input for every Family.
+            visited = assert_linear_plan(
+                schedule_production.FAMILY_INPUTS,
+                {"campaign": campaign.pk},
+                REALISTIC,
+                per_row=60,
+            )
+            print(f"FAMILY_INPUTS rows visited at {REALISTIC} Families: {visited}")
+            middle = REALISTIC // 2
+            changed = FamilyStatus(middle, True, True, True, False)
+            populate(
+                campaign,
+                rings,
+                statuses(REALISTIC, **{f"duid{middle}": changed}),
+                generation=3,
+            )
+            expected = FamilyCampaign.objects.get(family_duid=middle).pk
+            with scheduling() as guard:
+                assert set(settle(producer, guard)) == {expected}
+
+
+def test_the_statement_limit_names_a_stall_and_resets():
+    """A statement past the limit fails as an assertion naming the limit,
+    and the session's own statement timeout comes back afterwards."""
+    with connection.cursor() as cursor:
+        cursor.execute("SHOW statement_timeout")
+        before = cursor.fetchone()[0]
+    stalled = pytest.raises(AssertionError, match="past this test's 1 s limit")
+    with stalled, statement_limit(1), connection.cursor() as cursor:
+        cursor.execute("SELECT pg_sleep(5)")
+    with connection.cursor() as cursor:
+        cursor.execute("SHOW statement_timeout")
+        assert cursor.fetchone()[0] == before
 
 
 def seeded(statement, values=()):

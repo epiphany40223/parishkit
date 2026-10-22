@@ -17,6 +17,8 @@ from parishkit.stewardship.accounts.authentication import runtime
 from parishkit.stewardship.accounts.authority import AuthorityChanging
 from parishkit.stewardship.accounts.limiting import LimiterUnavailable
 from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.accounts.role_refusal import response as role_response
+from parishkit.stewardship.accounts.role_refusal import role_denied
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.activation_hold import WEB_HOLD_SECONDS, wait_out_activation
@@ -103,8 +105,11 @@ def _read_once(request, identifier, *, counts_only, audit):
     try:
         service = runtime()
         principal = authenticated_admin(request, store=service.store, activity=False)
-        if not allows(principal, Capability.BACKGROUND_WORK):
+        if principal is None:
             return _error(ErrorCode.DENIED, 403)
+        if not allows(principal, Capability.BACKGROUND_WORK):
+            # A current session whose role lacks the page (#1924).
+            return role_response(role_denied(Capability.BACKGROUND_WORK))
         try:
             if counts_only:
                 filters(request.GET, allowed=set())
@@ -236,6 +241,8 @@ TASK_NAMES = {
     "daily_digest_finalize": _("Finishing the daily Admin report"),
     "weekly_digest_prepare": _("Preparing the weekly Admin report"),
     "weekly_digest_finalize": _("Finishing the weekly Admin report"),
+    "report_email_prepare": _("Preparing a report email"),
+    "report_email_finalize": _("Finishing a report email"),
     "family_mail_prepare": _("Preparing Family emails"),
     "family_mail_test": _("Test email for chosen Families"),
     "family_address_retry": _("Sending an email again to an address refused for now"),
@@ -323,10 +330,18 @@ def _task_read(request, task_id):
         progress["display"] = Percentage(progress["current"], progress["total"])
         # The history names each step in words, as the status line does.
         item["phase_text"] = phase_words(task["type"], progress["phase"])
+    stages = None
+    if task["type"] == REFRESH:
+        # A refresh's Current status draws its phases as the shared stage
+        # boxes (#1579), the same ones Load ParishSoft data draws.
+        from parishkit.stewardship.accounts.campaign_wizard import task_stages
+
+        stages = task_stages(task)
     return result, {
         "work": work,
         "task": task,
         "is_refresh": task["type"] == REFRESH,
+        "stages": stages,
         "phase_text": phase_words(task["type"], task["progress"]["phase"]),
         "retry_text": retry_reason(task),
         # Records checked and changed (#242), once a refresh has finished.
@@ -441,20 +456,13 @@ def task_page(request, task_id):
             and work["task"]["state"] == "failed"
             and work["latest_run_id"] == work["task"]["id"]
             else None,
+            # A failed report email send (#1786) or its finalizer.
             "digest_retry_key": str(uuid4())
-            if work["task"]["type"]
-            in {
-                "daily_digest_prepare",
-                "daily_digest_finalize",
-                "weekly_digest_prepare",
-                "weekly_digest_finalize",
-            }
+            if work["task"]["type"] in {"report_email_prepare", "report_email_finalize"}
             and work["task"]["state"] == "failed"
             and work["latest_run_id"] == work["task"]["id"]
             else None,
-            "digest_retry_route": "admin:retry_weekly_digest"
-            if work["task"]["type"].startswith("weekly_digest_")
-            else "admin:retry_daily_digest",
+            "digest_retry_route": "admin:retry_report_email",
             "history": history,
             # System logs' rows no longer show identifiers (#1065); the
             # task's own page does, including the correlation its log

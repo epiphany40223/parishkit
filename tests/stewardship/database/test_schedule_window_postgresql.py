@@ -16,7 +16,7 @@ from .campaign_builders import (
     draft_campaign,
     occurrence,
 )
-from .test_digest_schedule_planning_postgresql import add_digest
+from .report_builders import add_digest
 
 pytestmark = pytest.mark.django_db(transaction=True)
 

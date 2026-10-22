@@ -805,12 +805,20 @@ EARLIER = {
     "stewardship_users_form_v1": "0055_setup_users.sql",
 }
 CHECK = MIGRATION[MIGRATION.index("DO $check$") :]
-# The Ministry activity functions as 0075 left them: #1267's 0091 replaced
-# the first and dropped the second, so each check below first puts them back
-# (rolled back with it) to see what 0075 installed.
+# The functions as 0075 left them: #1267's 0091 replaced the first Ministry
+# activity function and dropped the second, and report emails' 0161 (#1786)
+# replaced the rest, so each check below first puts them back (rolled back
+# with it) to see what 0075 installed.
 AS_0075_LEFT_THEM = (
     "stewardship_ministry_complete_v1",
     "stewardship_ministry_projection_v1",
+    "stewardship_campaign_complete_v1",
+    "stewardship_campaign_projection_v1",
+    "stewardship_content_complete_v1",
+    "stewardship_content_projection_v1",
+    "stewardship_policy_complete_v1",
+    "stewardship_policy_projection_v1",
+    "stewardship_users_form_v1",
 )
 
 

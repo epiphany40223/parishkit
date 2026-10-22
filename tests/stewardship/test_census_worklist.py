@@ -30,6 +30,7 @@ from parishkit.stewardship.reports.census_worklist import (
     add_fields,
     worklist_page,
 )
+from parishkit.stewardship.responses.census import address_editor
 from parishkit.stewardship.responses.census_additions import AddRefusal, parse_add
 from parishkit.stewardship.responses.comparison import ADDRESS_COMPONENTS
 from parishkit.stewardship.responses.refresh_checks import CheckState
@@ -142,33 +143,33 @@ def test_the_stage_filter_lists_one_stage_and_counts_them_all():
 
 
 def test_staff_review_by_hand_and_automatic_rows():
-    """Staff get Accept, Edit and Ignore on every To review row, and Entered
-    by hand on a By hand one; every actionable row has a box (#1680)."""
+    """Staff get Accept, Edit and Ignore on every To review row, By hand or
+    not, and Entered by hand only once a By hand one is accepted (strict
+    phase order, #1890: no one-step mark); every actionable row has a box
+    (#1680)."""
     rows = [
         shaped(id="1"),
         shaped(id="2", handling="manual", field="suffix"),
         shaped(id="3", entity_kind="family", field="email_opt_out", handling="manual"),
+        shaped(id="4", handling="manual", field="suffix", decision="approved"),
     ]
-    worklist, html = page(rows)
+    worklist, html = page(rows, stage="all")
     assert icons(worklist, 0) == [("accept", False), ("edit", False), ("ignore", False)]
-    assert icons(worklist, 1) == [
-        ("accept", False),
-        ("edit", False),
-        ("ignore", False),
-        ("entered_by_hand", False),
-    ]
+    assert icons(worklist, 1) == [("accept", False), ("edit", False), ("ignore", False)]
     # The email opt-out takes no Edit.
-    assert icons(worklist, 2) == [
-        ("accept", False),
-        ("ignore", False),
+    assert icons(worklist, 2) == [("accept", False), ("ignore", False)]
+    assert icons(worklist, 3) == [
+        ("accept", True),
+        ("back_to_review", False),
         ("entered_by_hand", False),
     ]
     assert [row["kinds"] for row in worklist.rows] == [
         "accept ignore",
-        "accept ignore entered_by_hand",
-        "accept ignore entered_by_hand",
+        "accept ignore",
+        "accept ignore",
+        "back_to_review entered_by_hand",
     ]
-    assert html.count("data-select-row") == 3
+    assert html.count("data-select-row") == 4
     assert [button["value"] for button in worklist.bulk] == [
         "accept",
         "ignore",
@@ -324,6 +325,88 @@ def test_an_address_editor_has_its_parts():
     )
     for part in answer:
         assert f'name="value_{part}"' in html
+    # Country first, then the street lines, City, both State controls (the
+    # US drop-down with KY chosen; the free text empty) and the postal code.
+    (dialog,) = set(re.findall(r'id="([^"]*-edit-dialog-[^"]*)-country"', html))
+    order = [
+        html.index(f'id="{dialog}-{part}"')
+        for part in (
+            "country",
+            "line1",
+            "line2",
+            "city",
+            "region",
+            "region-text",
+            "postal_code",
+        )
+    ]
+    assert order == sorted(order)
+    assert '<option value="KY" selected>Kentucky (KY)</option>' in html
+    assert f'id="{dialog}-region-text" name="value_region" value=""' in html
+    assert html.count('name="value_region"') == 4  # Edit's two, Add's two
+    assert '<span data-show-when="value_country=US">ZIP code</span>' in html
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, {"country": "US", "us_region": "", "text_region": ""}),
+        (
+            {"line1": "1 Main", "city": "Louisville", "region": "ky", "country": "us"},
+            {"country": "US", "us_region": "KY", "unlisted_region": ""},
+        ),
+        (
+            {"line1": "1 Main", "city": "Louisville", "region": " Kentucky "},
+            {"country": "", "us_region": "", "text_region": " Kentucky "},
+        ),
+        (
+            {"line1": "1 Main", "city": "Toronto", "region": "ON", "country": "CA"},
+            {
+                "country": "CA",
+                "us_region": "",
+                "unlisted_region": "",
+                "text_region": "ON",
+            },
+        ),
+        (
+            {
+                "line1": "1 Main",
+                "city": "Louisville",
+                "region": " Kentucky ",
+                "country": "US",
+            },
+            {"us_region": "", "unlisted_region": "Kentucky", "text_region": ""},
+        ),
+    ],
+)
+def test_the_address_editor_shows_its_country_and_one_state_control(value, expected):
+    """The editor's Country is the address's own, or United States for a
+    blank one; its State is the US drop-down's code (an unlisted US region
+    kept as its own choice) or, for another country, the free text (#1785)."""
+    found = address_editor(value)
+    assert {key: found[key] for key in expected} == expected
+    assert found["regions"][0] == ("AL", "Alabama (AL)")
+
+
+def test_an_unlisted_us_region_is_drawn_selected():
+    """A US region the drop-down does not offer is its own selected choice,
+    so Save sends it and the server refuses it at State (#1785)."""
+    html = render_to_string(
+        "stewardship/components/census-address-editor.html",
+        {
+            "dialog_id": "edit",
+            "address": address_editor(
+                {
+                    "line1": "1 Main",
+                    "city": "Louisville",
+                    "region": "Kentuky",
+                    "country": "US",
+                }
+            ),
+        },
+    )
+    assert '<option value="Kentuky" selected>Kentuky</option>' in html
+    assert html.count(" selected>") == 2  # the country and the region
 
 
 def test_the_edit_value_is_read_from_the_editors_fields():
@@ -693,8 +776,8 @@ def test_a_current_member_has_no_badge():
 
 def test_link_pairs_carry_only_the_link_safe_choices():
     """The view's own address keeps the Stage and closed filters other than
-    their defaults, the zone only with a day, and the table's choices; the
-    name search never (R38 finding 6)."""
+    their defaults and the table's choices; the name search never (R38
+    finding 6), nor the retired submitted dates (#1888)."""
     from parishkit.stewardship.reports.census_changes import CensusQuery
     from parishkit.stewardship.reports.census_worklist import link_pairs
     from parishkit.stewardship.web.review_worklist import page_address
@@ -705,7 +788,7 @@ def test_link_pairs_carry_only_the_link_safe_choices():
         stage="all", route="automatic", start="2054-10-01", zone="UTC", search="Smith"
     )
     assert page_address("/c", link_pairs(chosen, {"sort": "-who"})) == (
-        "/c?stage=all&route=automatic&start=2054-10-01&zone=UTC&sort=-who"
+        "/c?stage=all&route=automatic&sort=-who"
     )
 
 
@@ -734,6 +817,7 @@ def test_a_refresh_conflict_and_a_member_id_say_so_under_the_stage():
         resolution_action="entered",
         resolution_member=7,
     )
+    # Accepted: Entered by hand follows an Accept (#1890).
     fresh = shaped(
         id="4",
         entity_kind="proposed_member",
@@ -745,6 +829,7 @@ def test_a_refresh_conflict_and_a_member_id_say_so_under_the_stage():
         current_value=None,
         baseline_available=False,
         baseline_value=None,
+        decision="approved",
     )
     worklist, html = page([undone, changed, added, fresh])
     rows = {row["id"]: row for row in worklist.rows}

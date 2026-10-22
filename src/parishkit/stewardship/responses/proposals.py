@@ -8,7 +8,12 @@ from .accepted_base import has_active_base
 from .capabilities import proposal_handling
 from .census import HOUSEHOLD_FIELDS
 from .comparison import ValueKind, canonical_value
-from .effective import ENTERED_EXECUTIONS, RESOLVED_EXECUTIONS, proposal_index
+from .effective import (
+    CLOSED_EXECUTIONS,
+    ENTERED_EXECUTIONS,
+    RESOLVED_EXECUTIONS,
+    proposal_index,
+)
 from .inputs import FieldInput
 from .merge import KnownValue, MergeState, PriorChange, merge_value
 from .models import ProposedChange
@@ -25,13 +30,17 @@ def derive_proposals(submission, validated):
     an ignored request. A genuinely edited field starts a new unreviewed intent.
     Published/resolved outcomes remain immutable; later requests get new rows,
     except the same answer again for a change already entered or published,
-    which keeps that change and makes none (#1683). No immutable Family answer
-    is edited, including to an Admin-corrected value.
+    which keeps that change and makes none (#1683), and the same answer again
+    for an open change ParishSoft already holds, which also keeps it as it is
+    (#1895). No immutable Family answer is edited, including to an
+    Admin-corrected value, and no Family response resolves a change upstream.
     """
     require_work_order()
     if "census" not in validated.current.modules:
         # An unenabled census section cannot create or withdraw census work.
         return []
+    if submission.reviewed_view:
+        return _derive_reviewed(submission, validated)
     previous = proposal_index(validated.prior_submission)
     resolved_semantics = {
         key
@@ -140,22 +149,12 @@ def derive_proposals(submission, validated):
                 actor_id=submission.family_id,
             )
             created.append(new)
-        if old is not None and old.execution not in RESOLVED_EXECUTIONS | {
-            "cancelled",
-            "superseded",
-        }:
-            caught_up = (
-                field.source.available
-                and canonical_value(field.kind, old.submitted_value) == current_key
-            )
+        # ParishSoft has a value and it is the answer (not an unknown value).
+        held = unchanged and field.source.available
+        outcome = _replacement(old, new, held, field.kind, key)
+        if outcome is not None:
             ProposedChange.objects.filter(pk=old.pk).update(
-                execution="superseded"
-                if new
-                else "resolved_upstream"
-                if caught_up
-                else "cancelled",
-                superseded_by=new,
-                version=F("version") + 1,
+                execution=outcome, superseded_by=new, version=F("version") + 1
             )
     # Omitted ordinary edits are withdrawn, but source scope changes alone
     # must not discard independent household-status or death-date requests.
@@ -180,3 +179,193 @@ def derive_proposals(submission, validated):
                 execution="cancelled", version=F("version") + 1
             )
     return created
+
+
+def _replacement(old, new, held, kind, key):
+    """What a Family response does to ``old``, the open change before it.
+
+    ``new`` is the response's own row for the field (None when it made
+    none), ``held`` whether its answer, canonically ``key``, equals the
+    value ParishSoft has. ``None`` leaves ``old`` as it is: nothing is open,
+    or the answer is ``old``'s own and ParishSoft already holds it, so rule
+    1 (unchanged) keeps its stage and decision until its review and step
+    (strict phase order, #1895; it was resolved upstream, Confirmed at
+    once, before). Otherwise a new row supersedes it, and an answer set
+    back to ParishSoft's value withdraws it (cancelled); the census guard
+    (frozen file 0160) refuses any other outcome.
+    """
+    if old is None or old.execution in CLOSED_EXECUTIONS:
+        return None
+    if new is None and held and canonical_value(kind, old.submitted_value) == key:
+        return None
+    return "superseded" if new else "cancelled"
+
+
+def _answered_fields(submission, validated):
+    """Each census field ``submission`` answers, with its answer, in form order.
+
+    The same fields ``derive_proposals`` reads: the Family's household
+    fields, each Member field the Member's answer gives (a terminal answer
+    omits the ordinary ones; a deceased Member's unknown death date is no
+    answer), and each New Member.
+    """
+    fields = list(validated.current.fields)
+    fields.extend(
+        FieldInput(
+            "proposed_member", key, "new_member", ValueKind.MEMBER, KnownValue(False)
+        )
+        for key in submission.answers["proposed_members"]
+    )
+    for field in fields:
+        if field.entity not in {"family", "member", "proposed_member"}:
+            continue
+        if field.entity == "family" and field.field not in HOUSEHOLD_FIELDS:
+            continue
+        if field.entity == "family":
+            yield field, submission.answers["family"][field.field]
+        elif field.entity == "proposed_member":
+            yield field, submission.answers["proposed_members"][field.identity]
+        else:
+            answer = submission.answers["members"][str(field.identity)]
+            if field.field not in answer or (
+                field.field == "death_date" and answer[field.field] is None
+            ):
+                continue
+            yield field, answer[field.field]
+
+
+def _derive_reviewed(submission, validated):
+    """Census work for a response whose form was drawn as the reviewed form (#1705).
+
+    Each item is compared with what the form showed for it (its shown
+    item), not with the Family's earlier answer (review pipeline spec,
+    "Family resubmission"):
+
+    1. left as shown: the change in force keeps its stage and decision,
+       even one recorded after the form was drawn, and no row is made (an
+       Ignored change shown as the baseline stays Ignored);
+    2. changed again: a new change To review, compared with the baseline at
+       this submit; an open earlier change is replaced, an entered or
+       updated one stays in history for the refresh to judge;
+    3. set back to ParishSoft's value: no row, and an open earlier change is
+       withdrawn, also when ParishSoft already holds its answer (#1895);
+    4. new: a change To review.
+
+    No decision is ever carried to a new row. A field the form did not
+    present is left as before the reviewed form: an earlier open change of
+    an answered Member is withdrawn by the response's own completeness, and
+    a hidden Ignored New Member or Ignored request stays Ignored (rule 1 by
+    absence). The SQL completeness check (frozen file 0153) admits each
+    absence only where ``reviewed.left_as_shown`` holds.
+    """
+    from .reviewed import (
+        CENSUS,
+        census_key,
+        census_rows,
+        entries_of,
+        left_as_shown,
+    )
+
+    previous = proposal_index(validated.prior_submission)
+    resolved_semantics = {
+        key
+        for (entity, key, name), row in previous.items()
+        if entity == "member"
+        and name == "deceased_status"
+        and row.execution in RESOLVED_EXECUTIONS
+    }
+    entries = {
+        census_key(entry): entry for entry in entries_of(submission.shown_items, CENSUS)
+    }
+    rows, reviews = census_rows(list(entries.values()))
+    # The baseline the form showed an Ignored value from: its own snapshot.
+    shown_sources = {
+        (field.entity, str(field.identity), field.field): field.source
+        for field in validated.reviewed.fields
+    }
+    created = []
+    for field, submitted in _answered_fields(submission, validated):
+        identity = (field.entity, str(field.identity), field.field)
+        old = previous.pop(identity, None)
+        entry = entries.get(identity)
+        shown = rows.get(entry["item"]) if entry else None
+        if shown is not None and shown.execution not in {"cancelled", "superseded"}:
+            review = reviews.get(entry["decision"] or "")
+            source = shown_sources.get(identity, KnownValue(False))
+            if left_as_shown(entry, shown, review, source, submitted):
+                continue
+            old = shown
+        key = canonical_value(field.kind, submitted)
+        current_key = (
+            canonical_value(field.kind, field.source.value)
+            if field.source.available
+            else None
+        )
+        unchanged = (field.source.available and key == current_key) or (
+            not field.source.available and submitted is None
+        )
+        new = None
+        if not unchanged:
+            merge = merge_value(
+                field.kind, field.source, PriorChange(field.source, submitted)
+            )
+            new = ProposedChange.objects.create(
+                submission=submission,
+                entity_kind=field.entity,
+                entity_key=str(field.identity),
+                field=field.field,
+                baseline_available=field.source.available,
+                baseline_value=field.source.value,
+                submitted_value=submitted,
+                current_available=field.source.available,
+                current_value=field.source.value,
+                current_source_id=validated.validation_snapshot_id,
+                handling=proposal_handling(field.entity, field.field, submitted).value,
+                execution="conflict"
+                if merge.state is MergeState.CONFLICT
+                else "pending",
+                actor_id=submission.family_id,
+            )
+            created.append(new)
+        if old is not None and old.execution not in CLOSED_EXECUTIONS:
+            # Rule 3 withdraws the change, even when ParishSoft already
+            # holds its earlier answer: a Family response never confirms
+            # one (strict phase order, #1895).
+            ProposedChange.objects.filter(pk=old.pk).update(
+                execution="superseded" if new else "cancelled",
+                superseded_by=new,
+                version=F("version") + 1,
+            )
+    hidden = {
+        identity for identity, entry in entries.items() if entry["shown"] == "baseline"
+    }
+    _withdraw_unanswered(submission, previous, hidden, resolved_semantics)
+    return created
+
+
+def _withdraw_unanswered(submission, previous, hidden, resolved_semantics):
+    """The final pass of ``_derive_reviewed`` over earlier changes not answered.
+
+    As before the reviewed form, an unanswered ordinary change is withdrawn,
+    and a terminal request or death date is kept where the Member is no
+    longer presented. ``hidden`` are the items the form showed as the
+    baseline by leaving them out (an Ignored New Member, an Ignored move
+    or death shown as ParishSoft has the Member): their absence is rule 1,
+    so they stay Ignored. ``resolved_semantics`` are the Members whose
+    deceased request is already resolved, whose separate death date work
+    an answer without a date keeps.
+    """
+    for identity, old in previous.items():
+        if identity in hidden or old.execution in CLOSED_EXECUTIONS:
+            continue
+        if old.entity_kind == "member" and old.field in TERMINAL_FIELDS:
+            answer = submission.answers["members"].get(old.entity_key)
+            if answer is None or (
+                old.field == "death_date"
+                and old.entity_key in resolved_semantics
+                and answer.get("death_date") is None
+            ):
+                continue
+        ProposedChange.objects.filter(pk=old.pk).update(
+            execution="cancelled", version=F("version") + 1
+        )

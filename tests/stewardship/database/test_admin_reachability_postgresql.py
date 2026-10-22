@@ -46,8 +46,8 @@ from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import add_draft, campaign_clock, change, command
 from .leader_builders import make_leader
-from .test_daily_digest_dispatch_postgresql import allocated
-from .test_daily_digest_planning_postgresql import INSTANT
+from .report_builders import DAILY_INSTANT as INSTANT
+from .report_builders import allocated
 from .test_debug_production_banner_postgresql import force_mode
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
 from .test_hosted_files_postgresql import media  # noqa: F401
@@ -66,6 +66,13 @@ ELSEWHERE = {
     # Home links it only while a restore left a held email undecided:
     # test_held_emails_page_postgresql.py.
     "held_emails",
+    # The Go live page's Prepare and Confirm Production steps (#1585) are
+    # linked only once go-live has started (Check's Continue to Prepare and
+    # the step bar, then Prepare's Continue to Confirm Production), which no
+    # crawl here starts: test_go_live_check_postgresql.py,
+    # test_go_live_prepare_postgresql.py and test_go_live_confirm_postgresql.py.
+    "go_live_prepare",
+    "go_live_confirm",
 }
 # Pages these fixtures cannot open, so a crumb linking one is trusted to the
 # registry's linkable flag instead of a 200, each with where it is rendered.
@@ -380,8 +387,10 @@ def test_a_census_backed_campaign_is_navigable_without_naming_the_campaign(
 ):
     """A campaign with a complete ParishSoft capture, so the reports open too."""
     with campaign_clock(INSTANT):
-        allocated(family_mail)
+        # Signed in first: the report email needs the users form, which the
+        # sign-in's conversion makes (#1786).
         browser = _sign_in(family_mail.service.store, google, role)
+        allocated(family_mail)
         reached = _check(browser, f"census {role}")
     assert {"response_dashboard", "family_directory", "timeline"} <= reached
     assert ("update_parishsoft" in reached) == (role == "administrator")
@@ -419,9 +428,9 @@ def _go_live_in_production(auth_service, settings):
     go-live may switch the deployment to Production, so the mode is set
     directly, as the debug-banner test does; every request runs guarded.
     No Production confirmation is stored, so Production activation (which
-    the menu links in this state) and Cancel go-live answer "unavailable"
-    (``ALLOWED``); test_withdrawal_postgresql.py opens both after a real
-    confirmation. The Family web runtime is configured with the key rings
+    the menu links in this state) answers "unavailable" (``ALLOWED``);
+    test_withdrawal_postgresql.py opens it, and its Cancel go-live dialog,
+    after a real confirmation. The Family web runtime is configured with the key rings
     the capture was promoted with, as a deployment always has it, so the
     directory can show codes.
     """

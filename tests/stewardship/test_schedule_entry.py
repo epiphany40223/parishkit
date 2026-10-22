@@ -26,10 +26,12 @@ from parishkit.stewardship.accounts.schedule_entry_views import (
     _delete_entries,
     _entries,
     _fields,
+    _leaves_series,
     _remember,
     _rule,
     _series_edit,
     _targets,
+    editor_mode,
     entry_form,
     entry_times,
     mailings,
@@ -133,7 +135,7 @@ def test_when_sorts_chronologically_or_the_reverse():
     ]
     assert labels == [
         "Initial invitation",
-        "Weekly Admin digest",
+        "Weekly report",
         "Reminder 1",
         "Reminder 2",
     ]
@@ -467,7 +469,7 @@ def test_repeat_refuses_too_many_repeated_or_unreadable_dates(dates):
 
 
 def test_repeat_is_for_reminders_with_at_least_one_date():
-    """An invitation cannot repeat; a rule with no date that fits says so."""
+    """An invitation cannot repeat; a rule giving no date is refused at its fields."""
     templates = emails()
     rows = saved(templates)
     invitation = valid_entry(
@@ -495,7 +497,10 @@ def test_repeat_is_for_reminders_with_at_least_one_date():
     empty = RepeatRule(posted(**{"repeat-repeat": "on"}), prefix="repeat")
     assert empty.is_valid()
     _check_repeat(reminder, empty)
-    assert "no date that can be added" in empty.errors["repeat"][0]
+    # A rule with no dates is refused at its fields, in the rule's own words
+    # (#1915), not by the generic "no date that can be added" line.
+    assert empty.errors["until"] == ["Choose the first and last dates to repeat on."]
+    assert "repeat" not in empty.errors
 
 
 def test_review_errors_come_back_to_the_page_field_or_its_top():
@@ -736,7 +741,7 @@ def test_delete_this_removes_one_schedule_and_names_a_digest():
     entries, changes, notes = _delete_entries(rows[3], None, rows, set(), "this")
     assert entries == [{"id": rows[3]["id"], "delete": True}]
     assert notes == [
-        "This digest repeats, so deleting it stops every send of it still to come."
+        "This report repeats, so deleting it stops every send of it still to come."
     ]
 
 
@@ -771,3 +776,46 @@ def test_delete_the_whole_series_of_a_reminder_no_longer_in_one_is_refused():
     rows = saved(emails())
     with pytest.raises(UserFacingError, match="no longer part of a series"):
         _delete_entries(rows[1], None, rows, set(), "series")
+
+
+def test_a_reminder_moved_off_its_rule_says_it_leaves_its_series():
+    """Edit's "This reminder only" line (#1521), on upkeep's own test.
+
+    The series sends every day of October, so a reminder moved to another
+    October day stays in it and November 3 takes it out; a reminder in no
+    series, or a change with no date, says nothing.
+    """
+    rows = saved(emails())
+    record = series_of(rows)
+    moved = [{"id": rows[1]["id"], "date": "2054-11-03", "time": "09:00:00"}]
+    (line,) = _leaves_series(record, moved)
+    assert str(line).startswith("This reminder leaves its series (")
+    assert str(line).endswith("), since the series does not send on its new day.")
+    kept = [{"id": rows[1]["id"], "date": "2054-10-12", "time": "09:00:00"}]
+    assert _leaves_series(record, kept) == []
+    assert _leaves_series(None, moved) == []
+    assert _leaves_series(record, [{"id": rows[1]["id"], "date": None}]) == []
+
+
+def test_the_page_opens_in_basic_unless_advanced_was_sent_or_a_tool_is_on():
+    """New and Edit's mode is derived, never stored (#1129, additive editor).
+
+    A page drawn for a GET is Basic; a page drawn again for a post keeps
+    Advanced when it was sent from there, and opens Advanced whenever
+    Repeat or the schedule's own email was ticked, so a refused Review
+    never hides a tool in use. Any other mode value is refused.
+    """
+    assert editor_mode(None) == "basic"
+    assert editor_mode(posted()) == "basic"
+    assert editor_mode(posted(editor_mode="basic")) == "basic"
+    assert editor_mode(posted(editor_mode="advanced")) == "advanced"
+    assert editor_mode(posted(editor_mode="basic", edit_email="on")) == "advanced"
+    reminder = {"repeat-repeat": "on", "schedule-kind": "reminder"}
+    assert editor_mode(posted(**reminder)) == "advanced"
+    # A Repeat left ticked under another mail type is hidden, not in use.
+    assert editor_mode(posted(**reminder | {"schedule-kind": "initial"})) == "basic"
+    assert editor_mode(posted(**{"repeat-repeat": "on"})) == "basic"
+    with pytest.raises(UserFacingError):
+        editor_mode(posted(editor_mode="simple"))
+    # The toggle's field is one the page may post, on New and Edit.
+    assert "editor_mode" in _fields(True) and "editor_mode" in _fields(False)

@@ -51,6 +51,9 @@ def field(form, name):
     return next(item for item in form["members"][0]["fields"] if item["name"] == name)
 
 
+# The rule before the reviewed Family form (#1705): forms drawn before
+# its release, as one open across the deploy is.
+@pytest.mark.usefixtures("earlier_rule")
 def test_all_existing_fields_http_and_revisit_under_exact_web_role(
     live_response_service,
 ):
@@ -285,7 +288,9 @@ def test_typed_member_proposals_resolve_only_when_upstream_catches_up(
     snapshot, claim = prepare(data)
     promote(snapshot, claim, harness.campaign, harness.rings)
     proposal.refresh_from_db()
-    assert proposal.execution == "resolved_upstream"
+    # ParishSoft caught up: the change keeps its stage with ParishSoft's
+    # value stored (strict phase order, #1890), and the form shows no change.
+    assert proposal.execution == "pending"
     harness.client, result = login(harness.code, harness.client)
     assert result.status_code == 302
     assert not field(load_form(harness), name)["changed"]
@@ -442,9 +447,8 @@ def test_unusable_pending_source_field_does_not_block_other_refresh(
     with task_login(ServiceRole.WORKER, exact=True):
         promote(snapshot, claim, harness.campaign, harness.rings)
     proposal.refresh_from_db()
-    assert proposal.execution == (
-        "resolved_upstream" if recovery == "corrected" else "pending"
-    )
+    # A corrected value ParishSoft now holds keeps the stage too (#1890).
+    assert proposal.execution == "pending"
     assert proposal.current_available is (recovery == "corrected")
     assert proposal.current_source_id == snapshot.pk
     assert set(

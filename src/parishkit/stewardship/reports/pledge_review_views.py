@@ -40,6 +40,7 @@ from django.views.decorators.http import require_http_methods, require_POST
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.policy_models import PortalUser
+from parishkit.stewardship.accounts.role_refusal import require
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin, database_now
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
@@ -73,9 +74,11 @@ from parishkit.stewardship.web.exports import (
 from parishkit.stewardship.web.refusals import Refusal, with_status_code
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.review_worklist import (
+    ALREADY_HELD,
     NOT_SEEN,
     Column,
     build,
+    page_address,
     read_decision,
     record,
 )
@@ -193,13 +196,19 @@ ENTERING = frozenset(
         Stage.CONFIRMED.value,
     }
 )
+# The stages before a pledge's mark, where ParishSoft already holding the
+# amount leaves it (strict phase order, #1890).
+BEFORE_STEP = frozenset({Stage.TO_REVIEW, Stage.TO_ENTER_BY_HAND})
 NO_FREQUENCY = "No frequency"
 CHANGED = "The Family changed its pledge after the last decision."
-# A To review pledge a refresh found in ParishSoft (refresh rule 1, #1747):
-# Confirmed with no reviewer.
-ALREADY = "Already in ParishSoft."
-# The same at $0.00: no pledge in ParishSoft and none answered, so the
-# words do not claim ParishSoft holds something.
+# A To review or To enter by hand pledge ParishSoft already holds (refresh
+# rule 1, strict phase order, #1890): it keeps its stage, saying so. Until
+# #1890 such a To review pledge was Confirmed with no reviewer ("Already in
+# ParishSoft."); its stage is derived, so it now reads as this too.
+HELD = ALREADY_HELD
+# The same at $0.00: no pledge in ParishSoft and none to enter (such as a
+# Family that cannot contribute), so the words do not claim ParishSoft
+# holds something.
 NOTHING = "Nothing to enter: ParishSoft holds no pledge."
 EDIT_REFUSED = "Correct the value, then save it again."
 # The worklist's default filters, as the Financial stewardship selection
@@ -228,9 +237,7 @@ def _principal(request, store, *, read_only=False):
     principal = authenticated_admin(
         request, store=store, activity=not read_only, read_only=read_only
     )
-    if not allows(principal, Capability.FINANCIAL_DETAIL):
-        raise PermissionError("Pledges are unavailable.")
-    return principal
+    return require(principal, Capability.FINANCIAL_DETAIL)
 
 
 def _labels(identities):
@@ -715,17 +722,19 @@ def _stage_line(row, decision):
     """The line under a row's Stage, as safe HTML (or "").
 
     The decision the stage word does not already say (Accepted (edited)),
-    that a Confirmed pledge with no decision was already in ParishSoft, or
-    at $0.00 that there is nothing to enter (#1747), who marked an entered
+    that a To review or To enter by hand pledge ParishSoft already holds
+    keeps its stage (#1890; its latest counting check, or the submit's,
+    found the amount to enter), or at $0.00 that there is nothing to enter
+    (#1747), who marked an entered
     pledge and when, and, for a pledge the Family changed after its last
     decision, that the decision is no longer in force.
     """
     parts = [format_html("{}", decision)] if decision else []
     found = row["placement"]
     item = row["item"]
-    if found.stage is Stage.CONFIRMED and found.decision is None:
+    if found.stage in BEFORE_STEP and item.check == "confirmed":
         nothing = item.observed is not None and item.observed == 0
-        parts.append(format_html("{}", NOTHING if nothing else ALREADY))
+        parts.append(format_html("{}", NOTHING if nothing else HELD))
     if item.review and not item.in_force:
         parts.append(format_html("{}", CHANGED))
     by, at = mark(row)
@@ -842,6 +851,12 @@ def page_context(rows, stage, extra, roles, *, mutable, notice):
         filters_template="stewardship/pledges-filters.html",
         editor_template="stewardship/pledges-edit.html",
         export_template="stewardship/pledges-export.html",
+        # The view's address carries its Stage alone (To review is the plain
+        # address), the one choice the page's GET takes, so a reload after an
+        # in-place Stage change draws the Stage on screen (#1820).
+        address=page_address(
+            action, [("stage", "" if stage == DEFAULT_STAGE else stage)]
+        ),
     )
     for row in worklist.rows:
         row["decision_label"] = _stage_line(row.pop("_source"), row["decision_label"])

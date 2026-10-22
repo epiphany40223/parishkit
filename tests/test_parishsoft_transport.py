@@ -848,10 +848,11 @@ def test_only_a_write_started_helper_admits_the_member_contact_put():
             helper.validate_request(request(method="PUT", url=url), contact_writes=True)
 
 
-def test_a_local_request_never_writes_to_parishsoft():
+def test_a_local_request_never_writes_to_the_real_parishsoft():
     """pk-local may read the real ParishSoft (#1399) but never writes to it:
-    a ``local`` PUT is refused even by a write-started helper, and LOCAL
-    cannot build a publication session at all."""
+    a ``local`` PUT to the real API is refused even by a write-started
+    helper, and LOCAL cannot build a publication session for it. The local
+    fake is the one ParishSoft a LOCAL request may write to (#1884)."""
     put = request(method="PUT", url=CONTACT, parameters={"firstName": "Pat"})
     assert helper.validate_request(put, contact_writes=True)
     with pytest.raises(ValueError, match="operation"):
@@ -863,6 +864,64 @@ def test_a_local_request_never_writes_to_parishsoft():
             profile="local",
             base_url=DEFAULT_API_BASE_URL,
         )
+    fake = put | {
+        "profile": "local",
+        "base_url": LOCAL_SOURCE_BASE_URL,
+        "url": LOCAL_SOURCE_BASE_URL + "/members/5/contact",
+    }
+    assert helper.validate_request(fake, contact_writes=True)
+    # Still only from a write-started helper, and only the contact PUT.
+    with pytest.raises(ValueError, match="operation"):
+        helper.validate_request(fake, contact_writes=False)
+    with pytest.raises(ValueError, match="operation"):
+        helper.validate_request(
+            fake | {"url": LOCAL_SOURCE_BASE_URL + "/families/5/contact"},
+            contact_writes=True,
+        )
+    BoundedPublicationSession(
+        before_request=lambda seconds: None,
+        check=lambda: None,
+        profile="local",
+        base_url=LOCAL_SOURCE_BASE_URL,
+    )
+
+
+def test_a_publication_session_refuses_an_invalid_base_url_as_the_read_does():
+    """The write check skips a profile or base URL that is not admitted at
+    all (its ValueError is suppressed), so the read session's own refusal
+    answers, for LOCAL as for every profile; only an admitted LOCAL URL
+    that is not the fake gets the write refusal."""
+    hooks = {"before_request": lambda seconds: None, "check": lambda: None}
+    for profile, base_url in (
+        ("local", "https://other.example/api/v2"),
+        ("production", LOCAL_SOURCE_BASE_URL),
+        ("not-a-profile", DEFAULT_API_BASE_URL),
+    ):
+        with pytest.raises(TypeError, match="requires a profile and its base URL"):
+            BoundedPublicationSession(**hooks, profile=profile, base_url=base_url)
+    with pytest.raises(TypeError, match="writes only to the local fake"):
+        BoundedPublicationSession(
+            **hooks, profile="local", base_url=DEFAULT_API_BASE_URL
+        )
+
+
+def test_the_contact_put_rule_is_unchanged_outside_local():
+    """#1884 changes the write rule for ``local`` requests to the fake only:
+    every other profile may PUT to exactly the base URLs it could before
+    (the real API), and none may name the fake at all."""
+    for profile in sorted(helper.PROFILES):
+        assert helper.contact_put_admitted(profile, DEFAULT_API_BASE_URL) is (
+            profile != "local"
+        )
+        if profile == "local":
+            assert helper.contact_put_admitted(profile, LOCAL_SOURCE_BASE_URL)
+        else:
+            with pytest.raises(ValueError):
+                helper.contact_put_admitted(profile, LOCAL_SOURCE_BASE_URL)
+        with pytest.raises(ValueError):
+            helper.contact_put_admitted(profile, "https://other.example/api/v2")
+    with pytest.raises(ValueError):
+        helper.contact_put_admitted("validation", DEFAULT_API_BASE_URL)
 
 
 def test_helper_writes_only_when_its_key_frame_says_so(monkeypatch):

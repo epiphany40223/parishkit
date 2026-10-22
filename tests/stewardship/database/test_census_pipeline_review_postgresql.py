@@ -2,9 +2,10 @@
 
 Staff and Administrators review every census change, By hand ones too:
 Accept, Edit (Accept with a value, a Family address included), Ignore, Back
-to review (a note to reopen an ignored change) and Entered by hand, one by
-one or in bulk, all or none (``census_review.decide_census_changes``). The
-frozen file 0128 widens the review guard for them; its own rules are tested
+to review (an optional note to reopen an ignored change, #1889) and Entered
+by hand, one by one or in bulk, all or none
+(``census_review.decide_census_changes``). The frozen file 0128 widens the
+review guard for them; its own rules are tested
 here with the service bypassed.
 """
 
@@ -98,6 +99,33 @@ def decide(harness, actor, rows, action, *, note="", value=None, bulk=None, key=
         )
 
 
+def mark(harness, actor, rows, *, note="", key=None, **options):
+    """Entered by hand on ``rows``, accepting each still To review first.
+
+    Entered by hand follows an Accept (strict phase order, #1890): the old
+    one-step mark of a To review By hand change is refused, so a test that
+    only needs a change marked accepts it first, as Staff now do. A change
+    already accepted, or Entered by hand (marked again over Entered
+    incorrectly), is marked as it is. Returns the mark's result.
+    """
+    waiting = [
+        fresh(row)
+        for row in rows
+        if fresh(row).decision == "unreviewed" and fresh(row).execution == "pending"
+    ]
+    if waiting:
+        decide(harness, actor, waiting, "accept")
+    return decide(
+        harness,
+        actor,
+        [fresh(row) for row in rows],
+        "entered_by_hand",
+        note=note,
+        key=key,
+        **options,
+    )
+
+
 def state(row):
     """The stored (decision, execution, admin_value_set, admin_value)."""
     row = fresh(row)
@@ -115,13 +143,16 @@ def test_staff_accept_a_by_hand_change_then_enter_it(response_service):
     assert ProposalResolution.objects.get().actor_id == staff
 
 
-def test_entered_by_hand_on_a_to_review_row_accepts_and_marks(response_service):
-    """On a To review By hand change, Entered by hand is one step: the change
-    is final with no review row first."""
+def test_entered_by_hand_on_a_to_review_row_is_refused(response_service):
+    """Strict phase order (#1890, decision 2 reversed): Entered by hand on a
+    To review By hand change is refused and nothing is recorded; it follows
+    an Accept."""
     harness, _, staff, rows = prepared(response_service)
-    decide(harness, staff, [rows["email_opt_out"]], "entered_by_hand")
-    assert state(rows["email_opt_out"])[:2] == ("unreviewed", "resolved_external")
+    with pytest.raises(ValueError, match="cannot be resolved that way"):
+        decide(harness, staff, [rows["email_opt_out"]], "entered_by_hand")
+    assert state(rows["email_opt_out"])[:2] == ("unreviewed", "pending")
     assert ProposalReview.objects.count() == 0
+    assert not ProposalResolution.objects.exists()
 
 
 def test_edit_is_accept_with_a_value(response_service):
@@ -234,12 +265,16 @@ def test_a_repeated_edit_returns_the_first_after_the_change_moved_on(
     assert state(rows["first_name"]) == ("approved", "queued", True, "Two")
 
 
-def test_back_to_review_reopens_an_ignored_change_only_with_a_note(response_service):
-    """Sending an ignored change back to review says why."""
+def test_back_to_review_reopens_an_ignored_change_with_an_optional_note(
+    response_service,
+):
+    """Sending an ignored change back to review takes an optional note
+    (#1889): a blank one, or one saying why."""
     harness, _, staff, rows = prepared(response_service)
     decide(harness, staff, [rows["prefix"]], "ignore")
-    with pytest.raises(ValueError):
-        decide(harness, staff, [fresh(rows["prefix"])], "back_to_review", note=" ")
+    decide(harness, staff, [fresh(rows["prefix"])], "back_to_review", note=" ")
+    assert state(rows["prefix"])[0] == "unreviewed"
+    decide(harness, staff, [fresh(rows["prefix"])], "ignore")
     decide(harness, staff, [fresh(rows["prefix"])], "back_to_review", note="Asked")
     assert state(rows["prefix"])[0] == "unreviewed"
 
@@ -324,8 +359,8 @@ def test_sql_refuses_a_forged_pipeline_edit(
 
 def test_sql_admits_staff_on_a_by_hand_change_only_with_its_audit(response_service):
     """A well-formed Staff Accept with a value on a By hand change passes the
-    guard; only the missing audit event then refuses it, and a reopen without
-    a note is refused by the guard itself."""
+    guard; only the missing audit event then refuses it, as it does a reopen
+    without a note, which the guard admits too (#1889)."""
     harness, _, staff, rows = prepared(response_service)
     with pytest.raises((IntegrityError, DatabaseError), match="result and audit"):
         forge(
@@ -339,7 +374,7 @@ def test_sql_admits_staff_on_a_by_hand_change_only_with_its_audit(response_servi
         "UPDATE stewardship_proposed_change SET decision='ignored' WHERE id=%s",
         [rows["prefix"].pk],
     )
-    with pytest.raises((IntegrityError, DatabaseError), match="current authority"):
+    with pytest.raises((IntegrityError, DatabaseError), match="result and audit"):
         forge(fresh(rows["prefix"]), staff, decision="unreviewed", note="  ")
 
 
@@ -374,8 +409,14 @@ def test_do_block_refuses_the_earlier_bodies_and_installs_them():
     assert earlier_effects != effects and "latest.execution" not in earlier_effects
     looser_effects = PRIOR_ANSWER.sub("", effects)
     assert "given." not in looser_effects and "census_prior" not in looser_effects
+    # 0158 (#1889) has since replaced the guard without the Ignored-reopen
+    # note this check looks for, so each check runs on this file's own
+    # guard body, rolled back.
+    own_guard = _replaced(text, "stewardship_proposal_review_guard_v1")
     with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(own_guard)
         cursor.execute(check)
+        transaction.set_rollback(True)
     for earlier, message in (
         (earlier_guard, "lacks the review pipeline rules"),
         (earlier_effects, "lacks the resubmission rule"),
@@ -386,6 +427,7 @@ def test_do_block_refuses_the_earlier_bodies_and_installs_them():
             transaction.atomic(),
             connection.cursor() as cursor,
         ):
+            cursor.execute(own_guard)
             cursor.execute(earlier)
             cursor.execute(check)
 

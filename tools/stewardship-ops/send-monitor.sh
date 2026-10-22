@@ -14,7 +14,7 @@
 #
 # Usage: tools/stewardship-ops/send-monitor.sh [-h] [-p PURPOSE] [-m MODE] [-s SINCE] [-n MINUTES]
 #   -p PURPOSE  outbox purpose (default initial; also reminder, receipt,
-#               family_test, daily_digest, weekly_digest, ...)
+#               family_test, admin_report, daily_digest, weekly_digest, ...)
 #   -m MODE     production or testing (default production)
 #   -s SINCE    count only messages created from this timestamp on, such
 #               as '2026-10-03 12:00Z' (default five minutes before start)

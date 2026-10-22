@@ -18,7 +18,6 @@ from uuid import uuid4
 import pytest
 from django.db import DatabaseError, connection, transaction
 
-from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.pipeline import Decision, Stage
 from parishkit.stewardship.reports.pledge_models import (
@@ -36,7 +35,7 @@ from .test_pledge_refresh_postgresql import (
     refresh,
     row,
 )
-from .test_pledge_review_postgresql import admin, again, decide, forge, pledged
+from .test_pledge_review_postgresql import admin, again, decide, pledged
 from .test_source_families_postgresql import promote
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -58,12 +57,14 @@ def latest():
     return PledgeReview.objects.order_by("-sequence").first()
 
 
-def test_a_to_review_pledge_already_in_parishsoft_is_confirmed_closed(
+def test_a_to_review_pledge_already_in_parishsoft_stays_to_review(
     response_service,
 ):
-    """Rule 1 on To review: Confirmed with no reviewer ("Already in
-    ParishSoft") and never checked again; the service and the guard both
-    refuse a decision on it (only Back to review undoes it, #1840)."""
+    """Rule 1 on To review, in strict phase order (#1890): the check that
+    finds the pledge in ParishSoft leaves it To review with no reviewer,
+    offering the decisions; the same amount again records nothing, another
+    amount is checked again (at A: unchanged), and an Accept on it is
+    recorded."""
     harness, submission = pledged(response_service)
     refresh(harness, "1000.00", "234.50")
     assert opened() == [("confirmed", Decimal(ANSWER))]
@@ -71,18 +72,21 @@ def test_a_to_review_pledge_already_in_parishsoft_is_confirmed_closed(
     assert (check.submission_id, check.item_version) == (submission.pk, 0)
     assert check.full_refresh and check.family_id == submission.family_id
     found = row(harness, submission)
-    assert found["placement"].stage is Stage.CONFIRMED
+    assert found["placement"].stage is Stage.TO_REVIEW
     assert found["placement"].decision is None
     with pytest.raises(ValueError):
-        decide(harness, admin(), "accept", [submission])
-    with (
-        task_login(ServiceRole.WEB, exact=True, reconnect=True),
-        pytest.raises(DatabaseError, match="authority, version or state"),
-        work_transaction(),
-    ):
-        forge(submission, admin())
-    refresh(harness, "1.00")
-    assert opened() == [("confirmed", Decimal(ANSWER))] and checks() == []
+        decide(harness, admin(), "entered_by_hand", [submission])
+    refresh(harness, "1000.00", "234.50")
+    assert opened() == [("confirmed", Decimal(ANSWER))]
+    refresh(harness)
+    assert opened() == [
+        ("confirmed", Decimal(ANSWER)),
+        ("unchanged", Decimal("0.00")),
+    ]
+    assert row(harness, submission)["placement"].stage is Stage.TO_REVIEW
+    decide(harness, admin(), "accept", [submission])
+    assert row(harness, submission)["placement"].stage is Stage.TO_ENTER_BY_HAND
+    assert checks() == []
 
 
 def test_a_to_review_conflict_is_decided_against_parishsoft(response_service):
@@ -129,8 +133,10 @@ def test_a_conflict_follows_parishsoft_and_ends_back_at_a(response_service):
 
 def test_an_accepted_pledge_conflict_keeps_its_decision_visible(response_service):
     """An accepted pledge not yet marked at a third amount is a Conflict
-    holding its Accept; an Edit to ParishSoft's amount records it as A and
-    the next refresh Confirms the reviewer's value."""
+    holding its Accept; an Edit to ParishSoft's amount records it as A; the
+    next refresh leaves it To enter by hand (ParishSoft already holds it,
+    #1890), and once marked the refresh after Confirms the reviewer's
+    value."""
     harness, submission = accepted(response_service, marked=False)
     refresh(harness, "900.00")
     assert checks() == [("conflict", Decimal("900.00"))]
@@ -156,6 +162,13 @@ def test_an_accepted_pledge_conflict_keeps_its_decision_visible(response_service
         "accepted_edited",
         Decimal("900.00"),
     )
+    refresh(harness, "900.00")
+    found = row(harness, submission)["placement"]
+    assert (found.stage, found.decision) == (
+        Stage.TO_ENTER_BY_HAND,
+        Decision.ACCEPTED_EDITED,
+    )
+    decide(harness, admin(), "entered_by_hand", [submission])
     refresh(harness, "900.00")
     found = row(harness, submission)["placement"]
     assert (found.stage, found.decision) == (
@@ -211,9 +224,14 @@ def test_an_unchanged_answer_keeps_the_check_a_changed_one_leaves_it(
     harness, submission = pledged(response_service)
     refresh(harness, ANSWER)
     same = again(harness)
-    assert row(harness, same)["placement"].stage is Stage.CONFIRMED
+    # The check (ParishSoft holds it) still counts: To review, saying so.
+    found = row(harness, same)
+    assert found["placement"].stage is Stage.TO_REVIEW
+    assert found["item"].check == "confirmed"
     changed = again(harness, annual_pledge="99")
-    assert row(harness, changed)["placement"].stage is Stage.TO_REVIEW
+    found = row(harness, changed)
+    assert found["placement"].stage is Stage.TO_REVIEW
+    assert found["item"].check is None
 
 
 def test_a_decision_over_an_unseen_check_is_stale(response_service):

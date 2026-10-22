@@ -296,35 +296,28 @@ def test_postclose_cancellation_evidence_cannot_cover_unrelated_obligations(
 
 
 def test_closed_report_can_recover_but_family_invitation_cannot(tmp_path):
-    """Global release permits a held final digest, not new Family invitations."""
+    """Global release permits a held final report send, not new Family invitations.
+
+    The report is shaped as the converted Daily digest (#1786).
+    """
     from parishkit.stewardship.campaigns.lifecycle import Action
 
-    from ..campaign_factory import schedule
     from .campaign_builders import (
         advance,
-        change,
         claimed_task,
         close_campaign,
         command,
     )
+    from .report_builders import add_digest
 
     store, campaign, actor = draft_campaign(tmp_path)
-    digest = schedule(str(campaign.pk), kind="daily_digest", date=None)
-    assert (
-        change(
-            store,
-            store.active(),
-            actor,
-            [{"operation": "add", "section": "schedules", **digest}],
-        ).state
-        == "applied"
-    )
+    identifier = add_digest(store, campaign)
     campaign.refresh_from_db()
     with campaign_clock(campaign.active_configuration.starts_at):
         command(campaign, actor, Action.ACTIVATE)
     close_campaign(campaign, actor)
     end = campaign.active_configuration.ends_at
-    definition = ScheduleDefinition.objects.get(pk=digest["id"])
+    definition = ScheduleDefinition.objects.get(pk=identifier)
     initial = ScheduleDefinition.objects.get(kind="initial")
     with campaign_clock(end + timedelta(hours=1)):
         with restored_runtime(end) as restore_id:

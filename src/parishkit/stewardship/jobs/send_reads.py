@@ -1,9 +1,10 @@
-"""Family email send reads, moved out of their Admin pages' views.
+"""Mail queue and Family email send reads, moved out of their Admin pages' views.
 
-Family email progress (``send_progress_views``) and its history
-(``send_history_views``) read the current campaign's sends through these
-functions, and so does the Admin automation command line (ADM-11), so the
-page and the command count the same way. Each read
+The Mail queue (``mail_queue_views``, with its Family send panel) and
+Family email history (``send_history_views``) read the queue and the
+current campaign's sends through these functions, and so does the Admin
+automation command line (ADM-11), so the page and the command count the
+same way. Each read
 runs in one ``read_transaction`` snapshot and takes no lock, in particular
 not the global work-order lock the sending workers take, so watching a send
 never slows it down. Nothing here takes a request or checks authority.
@@ -15,6 +16,7 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.web.tables import WINDOW_SIZES, paginate
 
+from .mail_queue import read_queue
 from .ownership import database_now
 from .send_history import count_row, list_sends, mark_live
 from .send_progress import progress, read_send, upcoming
@@ -45,7 +47,8 @@ def read_progress():
 
     Returns ``campaign``, ``testing``, ``paused``, ``send`` (a
     ``send_progress.SendProgress`` or None) and ``upcoming`` (a Production
-    send about to start), or None when the system is unavailable.
+    send about to start), or None when the system is unavailable. System
+    health reads its Family send line through it too.
     """
     with read_transaction():
         configuration = _configuration()
@@ -73,11 +76,25 @@ def read_progress():
         }
 
 
-def audited_count(sent):
-    """The emails an audited progress view showed: the total, else those counted."""
-    if sent is None:
-        return 0
-    return sent.done + sent.counts.remaining if sent.total is None else sent.total
+def read_mail_queue():
+    """Read the Mail queue and its Family send panel in one lock-free snapshot.
+
+    Returns ``read_progress``'s values plus ``queue`` (a
+    ``mail_queue.QueueCounts`` for the operating mode), or None when the
+    system is unavailable. The nested snapshot is the outer one, so the
+    queue and the Family send are counted at the same instant.
+    """
+    with read_transaction():
+        data = read_progress()
+        if data is None:
+            return None
+        mode = "testing" if data["testing"] else "production"
+        return data | {"queue": read_queue(mode)}
+
+
+def audited_count(queue):
+    """The emails an audited Mail queue view showed: the operating mode's queued."""
+    return queue.total
 
 
 def read_history(parameters):
