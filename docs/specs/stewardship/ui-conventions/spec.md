@@ -587,11 +587,7 @@ never scrolls to show it (Administrator, pk-local review of
   have made, follows the server's Post/Redirect/Get redirect, and replaces
   every region the fetched page shares with this one, plus the counts,
   summaries, links and form state outside them that follow the view; views
-  keep rendering whole pages, so no partial-page endpoint exists. A form
-  marked `data-csrf-header` also sends its CSRF token in the `X-CSRFToken`
-  header, for a route that checks only the header so that it can refuse a
-  request before reading its body (Past campaigns' archive Review,
-  [campaign history](../campaign-history/spec.md#validation)). A link
+  keep rendering whole pages, so no partial-page endpoint exists. A link
   marked `data-in-place-only` replaces only the region it names: the history
   pages of an information item and a Ministry follow-up request sit inside
   the item's panel, and paging them must not replace the Save follow-up form
@@ -763,15 +759,14 @@ never scrolls to show it (Administrator, pk-local review of
   ([#1429](https://github.com/epiphany40223/parishkit/issues/1429)): every
   settings editor reviews in the [review dialog](#review-dialog) (#750), and
   Change status never follows back to a settings page. Two of its rules stay
-  for the in-place reviews that remain (Sent mail's bulk review and Past
-  campaigns' import). Editing the form after a review, or while its Review is
+  for the in-place reviews that remain (Sent mail's bulk review). Editing the form after a review, or while its Review is
   in flight, withdraws the review (`data-review-of`), so Apply never applies
   values other than those shown: Apply is removed, the rest stays in place
   greyed out at no less than its height (so nothing moves under the pointer),
   and its last line says to review again (in the review's own words when it
   has them, `data-stale-note`). Whenever a review or status region marked
   `data-keep-height` changes (its own swaps, a withdrawn review and live
-  status updates alike: Restore review, Past campaigns, Held emails and
+  status updates alike: Restore review, Held emails and
   Refresh from ParishSoft's latest run), it is held at just the height that
   keeps the page's foot at or below the bottom of the window where the
   reader is: a reader scrolled down to it at the foot of the page would
@@ -1603,7 +1598,12 @@ line), whose hidden fields Apply posts, the signed preview marked
 (the Confirm Production dialog's typed word and the Cancel go-live
 dialog's reason) names Apply's form in its
 `form` attribute, so Apply posts it, and holds Apply until it is valid
-([prerequisite gates](#prerequisite-gates)). A field-value refusal answers
+([prerequisite gates](#prerequisite-gates)). An answer with nothing Apply
+could do marks its reason `data-review-unavailable` (Past campaigns' file
+already imported, [campaign
+history](../campaign-history/spec.md#past-campaigns-page)): Apply is shown
+greyed (`aria-disabled`), and the reason moves to the reserved status line
+under the buttons, which describes Apply. A field-value refusal answers
 the form again (status 400); any other refusal is the closed JSON refusal, or a fragment marked
 `data-review-refusal` that the dialog shows as drawn. A page whose own
 address records a view when read (System health) marks its dialog
@@ -1638,7 +1638,11 @@ the campaign wizard in #1404 PR 4).
 - **Preparing the review.** Review changes posts the form without a page
   load, sent as a native submit would send it: multipart when the form's
   enctype is `multipart/form-data` (an upload editor's file), otherwise
-  URL-encoded. A form's other submit button marked `data-review-skip`
+  URL-encoded. A form marked `data-csrf-header` also sends its CSRF token
+  in the `X-CSRFToken` header, for a route that checks only the header so
+  that it can refuse a request before reading its body (Past campaigns'
+  archive Review, [campaign history](../campaign-history/spec.md#validation)).
+  A form's other submit button marked `data-review-skip`
   (Off-site backups' Test access) is no Review: it takes the form's other
   way. A form marked `data-review-key="<field>"` holds a secret: while that
   field holds a value (an integration's pasted new key), Review posts the
@@ -1794,7 +1798,11 @@ the campaign wizard in #1404 PR 4).
   server stages it and the dialog shows its preview (each generated size, the
   image as Families will see it). Cancel leaves the staged file to expire
   unused. A refused upload (wrong type, too large) is a field error, shown on
-  the form.
+  the form. The exception is Past campaigns' archive ([campaign
+  history](../campaign-history/spec.md#validation)): a file refused for
+  what is inside it lists its sheet-and-cell problems in the dialog as a
+  refusal, since up to 50 located problems belong to no one field and
+  would not fit the file field's error line.
 - **Long reviews scroll inside the dialog.** The dialog fits the window at
   every width the portal supports, phones included
   ([devices and browsers](#devices-and-browsers)); its body scrolls while
@@ -1846,12 +1854,14 @@ logging again confirm in the dialog
 their previews would only repeat the page; Accept this change once keeps its
 in-place preview of the counts.
 
-Current state, to be converted: Users' New user, Edit user and Import
+Current state: Users' New user, Edit user and Import
 Ministry leaders, New and Edit scheduled email,
 [Pages and emails' editor](../admin-portal/spec.md#default-content),
 [Campaign settings](../admin-portal/spec.md#campaign-settings-page) (#1119),
 Share options, Campaign images, Parish logos, Parish settings, Create the
-campaign and No-reminders WorkGroup use the dialog; Create the campaign, New
+campaign, No-reminders WorkGroup and Past campaigns' Add an archive file
+([campaign history](../campaign-history/spec.md#past-campaigns-page)) use
+the dialog; Create the campaign, New
 user and No-reminders WorkGroup are confirmations under #1356, and so are a
 one-time New scheduled email, Import selected with nobody skipped and
 Campaign images' Remove this image. Edit user, Share options, a small
@@ -1867,12 +1877,11 @@ change and Finish switching to the new key are confirmations (#1568); the
 change, once its code is proved, is a compact review (its proof steps act in
 place). The in-place review panel of #532 is retired
 ([#1429](https://github.com/epiphany40223/parishkit/issues/1429),
-[in-place controls](#in-place-controls)); Pages and emails' editor still uses
-its separate Review and Change status pages, as does Copy campaign, which
-refuses every request until
-[#145](https://github.com/epiphany40223/parishkit/issues/145).
-[#750](https://github.com/epiphany40223/parishkit/issues/750) tracks the
-conversion.
+[in-place controls](#in-place-controls)), and no editor uses a separate
+Review or Change status page; Copy campaign, which still has one, refuses
+every request until
+[#145](https://github.com/epiphany40223/parishkit/issues/145)
+([#750](https://github.com/epiphany40223/parishkit/issues/750)).
 
 ### Conditional fields
 
