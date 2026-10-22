@@ -85,6 +85,7 @@ from .delivery_reads import (
     with_family_names,
     with_recipients,
     with_refusal_counts,
+    with_user_links,
 )
 from .delivery_resolution import resolve_delivery
 from .models import TaskRun
@@ -385,7 +386,9 @@ def _recipient_fields(row, mode):
     keeps the mode shown and posts them, so neither reaches a URL. None
     when the address is unknown. A Production Family email the current
     campaign has a record of links its Family's Timeline instead
-    (``_with_timelines``); the template then leaves these fields unused.
+    (``_with_timelines``), and an email to a current user's address that
+    user's Timeline (``recipient_user_id``, #1885); the template then
+    leaves these fields unused.
     """
     duid = row["family__family_duid"]
     recipient = str(duid) if duid else row.get("recipient_address")
@@ -401,9 +404,10 @@ def _with_timelines(rows):
     campaign, the one the Timeline address serves (#1570), or None when
     that campaign has no record of the Family; every other email gets None
     and keeps the in-place recipient filter (#1562): a Testing email, since
-    the Timeline shows only Production records, and an email to a person,
-    who has no Timeline yet. One read of the page's record ids, none when
-    the page lists no Production Family email. The email's own
+    the Timeline shows only Production records, and an email to a person
+    (who may have a user's Timeline instead, ``recipient_user_id``). One
+    read of the page's record ids, none when the page lists no Production
+    Family email. The email's own
     ``family_id`` is its own campaign's record, so it is left as it is.
     """
     ids = family_record_ids(
@@ -714,7 +718,11 @@ def delivery_detail(request, message_id):
         data = read_detail(message_id, request.GET)
         window = data["window"]
         (delivery,) = with_family_names([data["delivery"]], current_snapshot())
-        recipients = email_recipients(message_id, actor.identity, delivery["state"])
+        # Each intended address that is a current user's links that
+        # user's Timeline (#1885): one query of the users, however many.
+        recipients = with_user_links(
+            email_recipients(message_id, actor.identity, delivery["state"])
+        )
         return dict(
             delivery=delivery,
             recipients=recipients,

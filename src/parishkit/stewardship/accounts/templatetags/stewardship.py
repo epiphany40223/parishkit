@@ -190,26 +190,50 @@ def source_status(status):
     )
 
 
-def _may_open_timeline(context):
-    """Whether the page's viewer may open a Family's Timeline (#1570).
+def _viewer_allows(context, capability):
+    """Whether the page's viewer holds ``capability`` (#1570, #1885).
 
     Reads the principal the owning view admitted (``request.principal``), as
-    the Admin chrome does: Administrators and Staff hold ``CAMPAIGN_REPORT``,
-    Ministry leaders and Family sessions do not. Presentation only; the
-    Timeline view rechecks access itself. A page rendered with its request
-    carries it on the context (``RequestContext.request``; no context
-    processor adds a ``request`` variable); a fragment rendered from a plain
-    dict may pass it as ``request``.
+    the Admin chrome does; Family sessions hold no Admin role. Presentation
+    only: the linked page rechecks access itself. A page rendered with its
+    request carries it on the context (``RequestContext.request``; no
+    context processor adds a ``request`` variable); a fragment rendered from
+    a plain dict may pass it as ``request``.
     """
-    from parishkit.stewardship.accounts.policy import Capability, Principal, allows
+    from parishkit.stewardship.accounts.policy import Principal, allows
 
     request = getattr(context, "request", None) or context.get("request")
     principal = getattr(request, "principal", None)
     return (
         isinstance(principal, Principal)
         and bool(principal.roles)
-        and allows(principal, Capability.CAMPAIGN_REPORT)
+        and allows(principal, capability)
     )
+
+
+def _may_open_timeline(context):
+    """Whether the viewer may open a Family's Timeline (#1570): Administrators
+    and Staff hold ``CAMPAIGN_REPORT``, Ministry leaders do not."""
+    from parishkit.stewardship.accounts.policy import Capability
+
+    return _viewer_allows(context, Capability.CAMPAIGN_REPORT)
+
+
+@register.simple_tag(takes_context=True)
+def user_timeline_url(context, user_id):
+    """A user's Timeline address, or "" when the page draws no link (#1885).
+
+    ``user_id`` is the user's stable record id (``AddressRule.record_id``),
+    never their address, so the address never reaches a URL. Without one
+    (an address that is not a current user) or for a viewer who may not
+    open the Timeline (it needs ``MANAGE_USERS``, Administrators only)
+    there is no link, and the page keeps what it showed before.
+    """
+    from parishkit.stewardship.accounts.policy import Capability
+
+    if not user_id or not _viewer_allows(context, Capability.MANAGE_USERS):
+        return ""
+    return reverse("admin:user_timeline", args=[user_id])
 
 
 @register.simple_tag(takes_context=True)
