@@ -65,7 +65,7 @@ from .campaign_builders import change
 from .test_background_grants_postgresql import task_login
 from .test_leader_import_postgresql import leaders_source
 from .test_ministry_reports_postgresql import setup
-from .user_builders import USERS, convert, post, web
+from .user_builders import USERS, convert, post, user_id, web
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -543,9 +543,10 @@ def sent_mail(browser, path="/admin/mail/sent/", **query):
 
 def test_sent_mail_lists_ministry_leader_emails(production):
     """Sent mail lists the Ministry leader emails (#1562): each is named by
-    its leader's Users-page Name, its Recipient lists that leader's emails
-    in place, the Purpose filter names the kind, and its own page says
-    whom it was for, never its content, and offers no resolution."""
+    its leader's Users-page Name, which links that user's Timeline (#1885)
+    rather than filtering in place, the Purpose filter names the kind, and
+    its own page says whom it was for, never its content, and offers no
+    resolution."""
     harness, browser = production
     rows = prepared(
         harness.service.store, ["leader-9@example.org", "leader-4-9@example.org"]
@@ -558,11 +559,9 @@ def test_sent_mail_lists_ministry_leader_emails(production):
         ("leader-4-9@example.org", "Both, Leader"),
     ):
         assert f'href="/admin/mail/sent/{ids[address]}/"' in html
-        assert (
-            f'<input type="hidden" name="recipient" value="{address}">'
-            '<input type="hidden" name="mode" value="production">'
-        ) in html
-        assert f'id="recipient-{ids[address]}">{name}</button>' in html
+        record = user_id(harness.service.store, address)
+        assert f'<td><a href="/admin/users/{record}/timeline/">{name}</a></td>' in html
+        assert f'name="recipient" value="{address}"' not in html
     assert (
         '<option value="leader_email" selected>Ministry leader email</option>' in html
     )
@@ -627,13 +626,14 @@ def test_a_leader_email_without_a_users_page_name_takes_the_best_member_name(
         ids["shared@example.org"]: "Example 1, Leader",
         ids["ann@example.org"]: expected["ann@example.org"][0],
     }
-    # With no Users-page Name, Sent mail names each by its Member.
-    monkeypatch.setattr(delivery_reads, "administrator_names", lambda _: {})
+    # With no Users-page Name, Sent mail names each by its Member. Each
+    # leader is a current user, so the name links that user's Timeline
+    # (#1885).
+    monkeypatch.setattr(delivery_reads, "administrator_names", lambda *_: {})
     status, html = sent_mail(browser, purpose="leader_email")
     assert status == 200
-    assert f'id="recipient-{ids["shared@example.org"]}">Example 1, Leader</button>' in (
-        html
-    )
+    shared = user_id(store, "shared@example.org")
+    assert f'<a href="/admin/users/{shared}/timeline/">Example 1, Leader</a>' in html
     # And a name finds it (#1849), in any case.
     status, html = sent_mail(browser, recipient="example 1")
     assert status == 200

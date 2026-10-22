@@ -1,5 +1,6 @@
 """Real-session Admin metadata, warning privacy, and verified-clearance forms."""
 
+import re
 from dataclasses import replace
 from types import SimpleNamespace
 from uuid import uuid4
@@ -294,11 +295,12 @@ def test_outgoing_mail_names_reports_and_families_no_longer_in_the_data(
         response = browser.get("/admin/mail/sent/", {"mode": "testing"})
     assert response.status_code == 200
     html = response.content.decode()
-    assert (
-        '<input type="hidden" name="recipient" value="admin@example.org">'
-        '<input type="hidden" name="mode" value="testing">'
-    ) in html
-    assert ">admin</button></form></td>" in html
+    # The Administrator is a current user, so the name links that user's
+    # Timeline by the record id (#1885) and posts no in-place filter.
+    assert re.search(
+        r'<a href="/admin/users/[0-9a-f-]{36}/timeline/">admin</a></td>', html
+    )
+    assert 'name="recipient" value="admin@example.org"' not in html
     assert escape(family_name(message)) in html
 
     # The listed rows, plus one whose Family DUID the snapshot lacks.
@@ -334,9 +336,7 @@ def test_outgoing_mail_names_reports_and_families_no_longer_in_the_data(
             )
             assert response.status_code == 200
             html = response.content.decode()
-            assert html.index(escape(family_name(message))) < html.index(
-                ">admin</button>"
-            )
+            assert html.index(escape(family_name(message))) < html.index(">admin</a>")
 
 
 def test_family_name_sort_keys_match_the_shown_names(response_service):

@@ -10,10 +10,12 @@ served at its real address too (``DELIVERED``), with a "reported" view
 
 from dataclasses import replace
 from datetime import timedelta
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 from django.urls import reverse
 
+from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.jobs.delivery_bulk import BulkResult
 from parishkit.stewardship.jobs.delivery_metadata import (
     DELIVERY_SORTING,
@@ -22,7 +24,11 @@ from parishkit.stewardship.jobs.delivery_metadata import (
     RECIPIENT_REFUSAL,
     STATES,
 )
-from parishkit.stewardship.jobs.delivery_reads import email_outcome, question_choices
+from parishkit.stewardship.jobs.delivery_reads import (
+    email_outcome,
+    question_choices,
+    with_user_links,
+)
 from parishkit.stewardship.jobs.delivery_views import (
     FIELD_IDS,
     FIELD_LINES,
@@ -58,6 +64,15 @@ REPORT_WAITING_LIST = "/deliveries-report-waiting"
 
 # A Sent mail page that posts to, and draws, its own address (#1571).
 OWN_ACTION = "/deliveries-own"
+# The pages' viewer, an Administrator, who may open a user's Timeline
+# (#1885), and the users whose addresses the fixtures link to it.
+ADMIN = SimpleNamespace(
+    principal=Principal(UUID(int=1885), frozenset({"administrator"}))
+)
+MORGAN_USER = UUID(int=18851)
+SPOUSE_USER = UUID(int=18852)
+MORGAN_TIMELINE = reverse("admin:user_timeline", args=[MORGAN_USER])
+SPOUSE_TIMELINE = reverse("admin:user_timeline", args=[SPOUSE_USER])
 
 
 def at_own_address(context):
@@ -232,6 +247,8 @@ def components(now):
                     state="delivered",
                     recipient_name="Morgan Administrator",
                     recipient_address="morgan@example.org",
+                    # A current user: the name links their Timeline (#1885).
+                    recipient_user_id=MORGAN_USER,
                     recipient_fields=[
                         ("recipient", "morgan@example.org"),
                         ("mode", "production"),
@@ -260,6 +277,7 @@ def components(now):
         ),
         states=STATES,
         selected_state="all",
+        request=ADMIN,
         **LIST_FILTERS,
     )
     yield ("/deliveries-names", "deliveries", names)
@@ -437,14 +455,23 @@ def components(now):
         # Whom it is for, read through the definer function (#1024): a
         # Testing-mode email, routed to the Testing recipient instead, whose
         # latest attempt's outcome follows it (#806).
-        recipients=dict(
-            intended=["head@example.org", "spouse@example.org"],
-            routed=["testing@example.org"],
-            intended_rows=[("head@example.org", None), ("spouse@example.org", None)],
-            routed_rows=[("testing@example.org", "not sure it arrived")],
-            reached=None,
-            refused_for_now=False,
+        # The second address is a current user's, so it links that user's
+        # Timeline (#1885); the page's viewer may open it.
+        recipients=with_user_links(
+            dict(
+                intended=["head@example.org", "spouse@example.org"],
+                routed=["testing@example.org"],
+                intended_rows=[
+                    ("head@example.org", None),
+                    ("spouse@example.org", None),
+                ],
+                routed_rows=[("testing@example.org", "not sure it arrived")],
+                reached=None,
+                refused_for_now=False,
+            ),
+            {"spouse@example.org": (SPOUSE_USER, "Spouse")},
         ),
+        request=ADMIN,
         # Not sure it arrived, with every answer allowed (#1563).
         **panel("delivery_unknown", UNKNOWN_ACTIONS, last_attempt_at=now),
         notes=[
@@ -498,19 +525,22 @@ def components(now):
             | dict(state="delivered", mode="production", finished_at=now),
             refused=[],
             **panel("delivered", ("note",)),
-            recipients=dict(
-                intended=production,
-                routed=production,
-                intended_rows=[
-                    ("head@example.org", "delivered"),
-                    ("spouse@example.org", "refused for now"),
-                ],
-                routed_rows=[
-                    ("head@example.org", "delivered"),
-                    ("spouse@example.org", "refused for now"),
-                ],
-                reached=(1, 2),
-                refused_for_now=True,
+            recipients=with_user_links(
+                dict(
+                    intended=production,
+                    routed=production,
+                    intended_rows=[
+                        ("head@example.org", "delivered"),
+                        ("spouse@example.org", "refused for now"),
+                    ],
+                    routed_rows=[
+                        ("head@example.org", "delivered"),
+                        ("spouse@example.org", "refused for now"),
+                    ],
+                    reached=(1, 2),
+                    refused_for_now=True,
+                ),
+                {},
             ),
         ),
     )
@@ -522,13 +552,16 @@ def components(now):
         | dict(id=DELIVERED_ID, state="delivered", finished_at=now),
         refused=[],
         **panel("delivered", ("note",)),
-        recipients=dict(
-            intended=production,
-            routed=production,
-            intended_rows=[(address, "delivered") for address in production],
-            routed_rows=[(address, "delivered") for address in production],
-            reached=None,
-            refused_for_now=False,
+        recipients=with_user_links(
+            dict(
+                intended=production,
+                routed=production,
+                intended_rows=[(address, "delivered") for address in production],
+                routed_rows=[(address, "delivered") for address in production],
+                reached=None,
+                refused_for_now=False,
+            ),
+            {},
         ),
         # Long enough history that the panel sits below the fold.
         events=[dict(attempt=1, action="accept", state="delivered", created_at=now)]
@@ -669,13 +702,16 @@ def components(now):
                     not_before=now + timedelta(minutes=10),
                 ),
                 refused=refused,
-                recipients=dict(
-                    intended=production,
-                    routed=production,
-                    intended_rows=[(address, None) for address in production],
-                    routed_rows=[(address, None) for address in production],
-                    reached=None,
-                    refused_for_now=False,
+                recipients=with_user_links(
+                    dict(
+                        intended=production,
+                        routed=production,
+                        intended_rows=[(address, None) for address in production],
+                        routed_rows=[(address, None) for address in production],
+                        reached=None,
+                        refused_for_now=False,
+                    ),
+                    {},
                 ),
             )
             | panel(

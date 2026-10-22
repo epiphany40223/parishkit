@@ -14,7 +14,7 @@ import re
 from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlencode
-from uuid import uuid4
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -45,7 +45,7 @@ from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_operational_fanout_postgresql import consume, schedule
 from .test_outbox_postgresql import permit
-from .user_builders import add_rules, convert, users
+from .user_builders import add_rules, convert, user_id, users
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -489,16 +489,24 @@ def test_reports_and_notices_name_their_administrator(response_service, google):
     assert status == 200
     named = recipients["morgan@example.org"].outbox_id
     assert listed(html, {named}) == {named}
-    # Recipient posts that Administrator's address, never a link (#1562).
+    # Each Administrator is a current user, so Recipient links that user's
+    # Timeline by the user's record id (#1885), never by the address, and
+    # posts no in-place filter for them.
+    store = harness.service.store
+    morgan = user_id(store, "morgan@example.org")
     assert (
-        '<input type="hidden" name="recipient" value="morgan@example.org">'
-        '<input type="hidden" name="mode" value="production">'
+        f'<td><a href="/admin/users/{morgan}/timeline/">Morgan Administrator</a></td>'
     ) in html
-    assert f'id="recipient-{named}">Morgan Administrator</button>' in html
+    assert 'name="recipient" value="morgan@example.org"' not in html
+    assert "recipient-link" not in html
     assert "?recipient=" not in html
     # The converted Administrator shows the Name the upgrade gave, or the
     # address when it gave none.
-    assert f">{admin_name or 'admin@example.org'}</button></form></td>" in html
+    admin = user_id(store, "admin@example.org")
+    assert (
+        f'<a href="/admin/users/{admin}/timeline/">'
+        f"{admin_name or 'admin@example.org'}</a></td>"
+    ) in html
     # Sorting by Recipient orders the Administrators' emails by what it
     # shows, the Name or else the address, in both directions (#1562).
     shown = {
@@ -569,6 +577,12 @@ def test_recipient_names_take_one_read_and_one_query(response_service, google):
     by_address = {row["recipient_address"]: row["recipient_name"] for row in named}
     assert by_address["morgan@example.org"] == "Morgan Administrator"
     assert by_address["admin@example.org"] == (admin_name or None)
+    # The same query gives each user's record id, for the Timeline link
+    # (#1885); a Family email has none.
+    store = harness.service.store
+    found = {row["recipient_address"]: row["recipient_user_id"] for row in named}
+    assert found["morgan@example.org"] == UUID(user_id(store, "morgan@example.org"))
+    assert found["admin@example.org"] == UUID(user_id(store, "admin@example.org"))
 
 
 def test_a_person_without_a_users_page_name_takes_a_parishsoft_name(
@@ -580,6 +594,8 @@ def test_a_person_without_a_users_page_name_takes_a_parishsoft_name(
     2026-10-20, #1562), in the Users page's default-Name order, with one
     Member-name read for the page; an address no Member lists keeps the
     address."""
+    from django.utils.html import escape
+
     from parishkit.stewardship.accounts.users_upgrade import member_names
 
     harness = activate_response_service(response_service)
@@ -589,7 +605,7 @@ def test_a_person_without_a_users_page_name_takes_a_parishsoft_name(
         address("nobody.listed@example.org"),
     )
     notices(harness)
-    signed_in()
+    browser, _ = signed_in()
     admin = PortalUser.objects.get(email="admin@example.org").pk
     with task_login(ServiceRole.WEB, exact=True):
         # The Users page's own read ranks the same names; its first is ours.
@@ -602,6 +618,14 @@ def test_a_person_without_a_users_page_name_takes_a_parishsoft_name(
     by_address = {row["recipient_address"]: row["recipient_name"] for row in named}
     assert by_address["valid@example.org"] == expected
     assert by_address["nobody.listed@example.org"] is None
+    # A sign-in rule is not a user: no Timeline link (#1885), so Sent mail
+    # keeps the in-place recipient filter for its emails.
+    people = [row for row in named if row["family_id"] is None]
+    assert people and not any(row["recipient_user_id"] for row in people)
+    status, html = sent_mail(browser, purpose="operational")
+    assert status == 200
+    assert '<input type="hidden" name="recipient" value="valid@example.org">' in html
+    assert f">{escape(expected)}</button></form></td>" in html
 
 
 def test_the_member_name_read_names_only_emails_to_people(response_service, google):
@@ -764,3 +788,43 @@ def test_a_production_family_without_a_timeline_keeps_the_filter(
     assert f'id="recipient-{email}"' in html
     if missing == "name":
         assert f">{source_status('missing')}</button></form></td>" in html
+
+
+def test_the_mail_message_page_links_each_user_address(response_service, google):
+    """The Mail message page links each intended address that is a current
+    user's to that user's Timeline (#1885), by record id and in any case,
+    the address staying the text; any other address stays plain. The users
+    are one query however many addresses the email has."""
+    from parishkit.stewardship.jobs.delivery_reads import (
+        email_recipients,
+        with_user_links,
+    )
+
+    harness = activate_response_service(response_service)
+    store = harness.service.store
+    # One Family head is also a Staff user, stored in lower case.
+    convert(store)
+    add_rules(store, user("first.head@example.org", role="staff", name="Head"))
+    browser, _ = signed_in()
+    email = family_message(harness)
+    head = user_id(store, "first.head@example.org")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        page = browser.get(f"/admin/mail/sent/{email}/")
+    assert page.status_code == 200
+    html = page.content.decode()
+    assert (
+        '<p id="email-recipients">To: '
+        f'<a href="/admin/users/{head}/timeline/">First.Head@Example.org</a>, '
+        "second@example.org</p>"
+    ) in html
+    admin = PortalUser.objects.get(email="admin@example.org").pk
+    with task_login(ServiceRole.WEB, exact=True):
+        recipients = email_recipients(email, admin, "queued")
+        with CaptureQueriesContext(connection) as queries:
+            linked = with_user_links(recipients)
+    assert len(queries) == 1
+    assert linked["intended_links"] == [
+        ("First.Head@Example.org", None, UUID(head)),
+        ("second@example.org", None, None),
+    ]
+    assert with_user_links(None) is None

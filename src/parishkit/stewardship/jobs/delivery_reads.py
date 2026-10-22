@@ -376,13 +376,16 @@ def address_deliveries(address, actor_id):
     return [row[0] for row in rows]
 
 
-def administrator_names(addresses):
-    """The Users-page Name of each address, lower-cased, that has one (#1562).
+def address_users(addresses):
+    """``{lower-cased address: (record id, Name)}`` for each current user (#1885).
 
-    Reads the current configuration's users (``AddressRule``) in one query.
-    An address with no entry there (a former Administrator, or a Ministry
-    leader with no user entry), or whose entry has no Name, is left out,
-    so the page shows the address itself.
+    Reads the current configuration's users (``AddressRule`` rows with a
+    role; older exact-address rules have none) whose address, compared in
+    lower case, is one of ``addresses``, in one query. The record id is the
+    user's stable id, the one their Timeline's address carries
+    (``admin:user_timeline``, #1866), so a page links a user's address
+    without ever putting the address in a URL. The Name is "" when the
+    entry has none. An address that is not a current user is left out.
     """
     from django.db.models import Subquery
     from django.db.models.functions import Lower
@@ -394,12 +397,29 @@ def administrator_names(addresses):
     if not wanted:
         return {}
     active = SystemConfiguration.objects.values("active_configuration_id")[:1]
-    return dict(
-        AddressRule.objects.filter(configuration_id=Subquery(active))
+    return {
+        lowered: (record_id, name or "")
+        for lowered, record_id, name in AddressRule.objects.filter(
+            configuration_id=Subquery(active), role__isnull=False
+        )
         .annotate(lowered=Lower("email"))
-        .filter(lowered__in=wanted, name__gt="")
-        .values_list("lowered", "name")
-    )
+        .filter(lowered__in=wanted)
+        .values_list("lowered", "record_id", "name")
+    }
+
+
+def administrator_names(addresses, users=None):
+    """The Users-page Name of each address, lower-cased, that has one (#1562).
+
+    Taken from the current configuration's users (``address_users``, one
+    query), or from ``users``, that read's answer when the caller already
+    has it. An address with no entry there (a former Administrator, or a
+    Ministry leader with no user entry), or whose entry has no Name, is
+    left out, so the page shows the address itself.
+    """
+    if users is None:
+        users = address_users(addresses)
+    return {address: name for address, (_, name) in users.items() if name}
 
 
 # The most ids one call of stewardship_delivery_page_recipients_v1 takes.
@@ -457,7 +477,7 @@ def member_names(ids, actor_id):
     return names
 
 
-def person_names(addresses, actor_id):
+def person_names(addresses, actor_id, users=None):
     """``{message id: name}`` Sent mail shows for each email to a person.
 
     ``addresses`` maps each email's id to its address
@@ -466,9 +486,10 @@ def person_names(addresses, actor_id):
     (2026-10-20, #1562), a ParishSoft Member's name for it
     (``member_names``), read only for the emails whose address has no
     Users-page Name; an email with neither is left out, so the page shows
-    the address itself.
+    the address itself. ``users`` is ``address_users``'s answer for these
+    addresses when the caller already read it.
     """
-    users = administrator_names(addresses.values())
+    users = administrator_names(addresses.values(), users)
     unnamed = [
         key for key, address in addresses.items() if address.lower() not in users
     ]
@@ -493,17 +514,24 @@ def with_recipients(rows, actor_id):
     Name, else a ParishSoft Member's) or None: one definer read and one
     query, however many rows (and the Member-name read when an address has
     no Users-page Name), and none when the page lists only Family emails.
+    ``recipient_user_id`` is the record id of the current user whose
+    address it is, for the link to that user's Timeline (#1885), or None;
+    it comes from the same query of the users as the names.
     Raises ``PermissionError`` when a read refuses ``actor_id``.
     """
     addresses = administrator_addresses(
         [row["id"] for row in rows if row["family_id"] is None], actor_id
     )
-    names = person_names(addresses, actor_id)
+    users = address_users(addresses.values())
+    names = person_names(addresses, actor_id, users)
     return [
         row
         | {
             "recipient_address": addresses.get(row["id"]),
             "recipient_name": names.get(row["id"]),
+            "recipient_user_id": users.get(
+                (addresses.get(row["id"]) or "").lower(), (None,)
+            )[0],
         }
         for row in rows
     ]
@@ -575,6 +603,28 @@ def email_recipients(message_id, actor_id, state):
     recipients["refused_for_now"] = "refused_for_now" in found
     recipients["retrying"] = "retrying" in found
     return recipients
+
+
+def with_user_links(recipients, users=None):
+    """One email's recipients with the user each intended address is (#1885).
+
+    Adds ``intended_links`` to ``email_recipients``'s answer: the
+    ``intended_rows`` pairs, each with the record id of the current user
+    whose address it is (``address_users``, one query, unless ``users``
+    gives its answer), or None, so the Mail message page links that
+    address to the user's Timeline. Returns None for None (a refused read)
+    and reads nothing for an email with no intended address.
+    """
+    if recipients is None:
+        return None
+    if users is None:
+        users = address_users(recipients["intended"])
+    return recipients | {
+        "intended_links": [
+            (address, outcome, users.get(address.lower(), (None,))[0])
+            for address, outcome in recipients["intended_rows"]
+        ]
+    }
 
 
 def followed_up(outcomes, follow_ups):

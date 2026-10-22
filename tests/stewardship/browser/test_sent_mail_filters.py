@@ -590,3 +590,46 @@ def test_back_never_sends_a_bulk_confirm_again(page, component_origin):
     recorded(page, drawn, 3)
     assert len(sent) == 3
     assert page.evaluate(MARKED) == "kept"
+
+
+# The box of the first link in the table body, in the document.
+LINK_BOX = """(node) => { const box = node.getBoundingClientRect();
+    return [box.left, box.top + scrollY, box.width, box.height]; }"""
+
+
+def test_a_users_recipient_opens_their_timeline(page, component_origin):
+    """An email to a current user's address links that user's Timeline
+    (#1885): an ordinary link carrying the user's record id, never the
+    address, which opens that page rather than filtering in place, and
+    which hovering does not move. An address that is no user's keeps the
+    in-place Recipient filter."""
+    from .delivery_components import MORGAN_TIMELINE
+
+    opened = []
+
+    def handle(route):
+        """Note the Timeline's request and answer it with a bare page."""
+        opened.append(route.request.url)
+        route.fulfill(
+            status=200,
+            body="<!doctype html><title>Timeline</title><h1>Timeline</h1>",
+            content_type="text/html",
+        )
+
+    page.route(component_origin + MORGAN_TIMELINE, handle)
+    open_list(page, component_origin)
+    body = page.locator("tbody")
+    link = body.get_by_role("link", name="Morgan Administrator", exact=True)
+    assert link.get_attribute("href") == MORGAN_TIMELINE
+    assert "@" not in MORGAN_TIMELINE
+    assert body.get_by_role("button", name="Morgan Administrator").count() == 0
+    assert body.get_by_role("button", name="pat@example.org").count() == 1
+    link.scroll_into_view_if_needed()
+    page.mouse.move(0, 0)
+    before = link.evaluate(LINK_BOX)
+    link.hover()
+    page.wait_for_timeout(300)
+    assert link.evaluate(LINK_BOX) == pytest.approx(before, abs=1)
+    link.click()
+    page.wait_for_url(component_origin + MORGAN_TIMELINE)
+    assert opened == [component_origin + MORGAN_TIMELINE]

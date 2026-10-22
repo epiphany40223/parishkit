@@ -1299,7 +1299,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `users` | Users | Menu: Users | Administrator | Portal users; Sign-in rules | `/admin/users` | `/admin/users/` | One table of users (#952), which replaces the planned split into Sign-in rules, Ministry assignments and Chairpersons (decision 13). |
 | `user_new` | New user | Users | Administrator | (new, #952) | (none) | `/admin/users/new/` | Its review applies through Users. |
 | `user_edit` | Edit user | Users | Administrator | (new, #952) | (none) | `/admin/users/<user>/edit/` | The New page filled in; `<user>` is the user's stable ID. |
-| `user_timeline` | Timeline | Users | Administrator | (new, [#1866](https://github.com/epiphany40223/parishkit/issues/1866)) | (none) | `/admin/users/<user>/timeline/` | One user's [Timeline](#user-timeline): sign-ins, Admin actions, role changes and emails; opened from each user's Email on Users and from Edit user; `<user>` is the user's stable ID. |
+| `user_timeline` | Timeline | Users | Administrator | (new, [#1866](https://github.com/epiphany40223/parishkit/issues/1866)) | (none) | `/admin/users/<user>/timeline/` | One user's [Timeline](#user-timeline): sign-ins, Admin actions, role changes and emails; opened from each user's Email on Users, from Edit user, and from a user's address on Sent mail and the Mail message page (#1885); `<user>` is the user's stable ID. |
 | `user_delete` | Delete user | Users | Administrator | (new, #952) | (none) | `/admin/users/deletion/` (POST only) | The table's confirmation dialog posts here. |
 | `user_name_suggestions` | (not a page) | New user | Administrator | (new, #952) | (none) | `/admin/users/new/names/` (POST only, JSON) | Read-only Name suggestions from ParishSoft. |
 | `user_leader_import` | Import Ministry leaders | Users | Administrator | (new, #952) | (none) | `/admin/users/leaders/import/` (POST only) | Review of the chosen ParishSoft Ministry leaders, shown in the review dialog on Users; applies through Users. |
@@ -5652,10 +5652,9 @@ line the first rows start on a laptop screen with the help closed
   Testing records the Production-only Timeline does not show; a Family the
   current campaign has no record of; a Family the latest ParishSoft data no
   longer has, for which the shared link draws only its badge, never a
-  link; and an email to a person, until
-  [#1570](https://github.com/epiphany40223/parishkit/issues/1570) gives
-  people their own Timeline) redraws this list in place filtered to that
-  recipient (the Family's DUID, or the person's address) in the same mode,
+  link; and an email to a person who is not a current user) redraws this
+  list in place filtered to that recipient (the Family's DUID, or the
+  person's address) in the same mode,
   so the reader sees everything that recipient was sent. That control is a
   link-styled button posting the recipient in a small CSRF
   form, since the Recipient filter is private (below). The Recipient filter
@@ -5664,6 +5663,18 @@ line the first rows start on a laptop screen with the help closed
   ([in-place controls](../ui-conventions/spec.md#in-place-controls)). The
   link looks the same at rest and under the pointer, so hovering it moves
   nothing.
+  An email to a person whose address is a current user's (a user row on the
+  [Users page](#portal-user-management) in the current configuration,
+  compared in lower case: an Administrator's report or notice, or a Ministry
+  leader email to a leader who is a user) instead links what Recipient
+  shows (the user's Name, or the address) to that user's
+  [Timeline](#user-timeline), in either mode, since that Timeline lists
+  Testing emails too
+  ([#1885](https://github.com/epiphany40223/parishkit/issues/1885)). The
+  link carries only the user's record ID, never the address, and is drawn
+  only for a viewer who may open the Timeline (`MANAGE_USERS`); the record
+  IDs come from the same query of the current configuration's users that
+  reads their Names.
   Recipient sorts on the server over the whole list (sort token `name`): by
   surname, then the whole shown name, then Family DUID for Families that show
   the same name, as the Active parishioner family directory orders them, each
@@ -6016,7 +6027,14 @@ from Sent mail's Recipient link; this page is about one email.
    or notice, and "Ministry leader email" for a Ministry leader's sign-in
    email. Then "To:"
    and the email's recipient addresses, in their stored order, from its
-   newest rendering (every address is a To: address; none is Cc or Bcc). When that rendering sent it elsewhere, which only Testing
+   newest rendering (every address is a To: address; none is Cc or Bcc).
+   Each of those addresses that is a current user's (as on
+   [Sent mail](#sent-mail)'s Recipient) links that user's
+   [Timeline](#user-timeline) by the user's record ID, the address staying
+   the visible text, for a viewer who may open it (`MANAGE_USERS`), through
+   one query of the current configuration's users however many addresses
+   there are ([#1885](https://github.com/epiphany40223/parishkit/issues/1885));
+   the Testing recipient line does not link. When that rendering sent it elsewhere, which only Testing
    mode does, "Testing mode sends it to:" names where. When the email's
    delivery recorded [refused addresses](#refused-addresses) that are still
    unresolved, they follow, each once and linking its newest refusal's
@@ -6721,8 +6739,11 @@ Family's records on the same page
 the answer is built, as every Users route does); Staff and Ministry leaders
 get the standard denial. `<user>` is the user's stable record ID, the one
 Edit user's address uses; the address is never in a URL. Each user's Email
-in the [Users table](#users-table) links the page, and Edit user links it
-beside the Sign-in activity controls. A user deleted since is still found
+in the [Users table](#users-table) links the page, Edit user links it
+beside the Sign-in activity controls, and [Sent mail](#sent-mail)'s
+Recipient and the [Mail message page](#mail-message-page)'s To: addresses
+link it for an email to the user's address
+([#1885](https://github.com/epiphany40223/parishkit/issues/1885)). A user deleted since is still found
 through the latest configuration that held the record, and reads as no
 longer a user; an ID no configuration ever held is refused as not found,
 with no audit row. The heading is the user's Name (the address when the
