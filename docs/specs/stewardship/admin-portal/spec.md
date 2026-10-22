@@ -7100,7 +7100,11 @@ ParishSoft data
 [#1916](https://github.com/epiphany40223/parishkit/issues/1916)): Start the
 load In progress while the run waits for a worker, waits to try again or is
 being recovered (each attempt starts again from the download and waits for a
-worker again), the rest Not started; Start the load Done, the stages before
+worker again), the rest Not started, with the stage boxes' queued sentence
+on the line under them
+([#1947](https://github.com/epiphany40223/parishkit/issues/1947); a routine
+refresh keeps the shared box's name, Start the load, since it loads
+ParishSoft data too); Start the load Done, the stages before
 the current one Done and the current one In progress while it runs; every
 box Done once it succeeded; the stage it stopped in Failed when it failed
 (Start the load when it stopped before a worker took it); and, when it was

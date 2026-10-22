@@ -53,6 +53,9 @@ TASK_STATUS = reverse("admin:background_task_status", args=[TASK_RUN])
 TASK_FINISHED_BY_ACTION = "/live-task-finished-by-action"
 # Its status polled part-way through saving the records (#1579).
 TASK_STAGING_STATUS = "/live-task-staging-status"
+# The same run's page and status while it still waits for a worker (#1947).
+TASK_QUEUED_PAGE = "/live-task-queued"
+TASK_QUEUED_STATUS = "/live-task-queued-status"
 # A report export and a latest-data export, and a configuration change's
 # status, which update themselves (#519 PR 7b, #1586). The two exports share
 # one address form (the view draws whichever the job is).
@@ -280,11 +283,15 @@ def components(context, admin):
         its history sorted by ``sort`` (else the default)."""
 
         def progress(phase, current):
-            """A progress record as task_page builds it, worded for a refresh."""
+            """A progress record as task_page builds it, worded for a refresh.
+
+            A run still waiting for a worker has reported nothing yet, so it
+            has no total (#1947); every later step counts out of 4,000.
+            """
             return {
                 "phase": phase,
                 "current": current,
-                "total": 4000,
+                "total": 0 if phase == "unspecified" else 4000,
                 "display": Percentage(current, 4000),
             }
 
@@ -338,7 +345,9 @@ def components(context, admin):
     # A refresh part-way through its download, then finished: the bar and
     # the history table must both end on the last step.
     running = [
-        ("created", "queued", "queued", 0),
+        # A new run's phase is "unspecified" until a worker claims it
+        # (stages.picked_up), as the jobs storage creates it.
+        ("created", "queued", "unspecified", 0),
         ("progress", "running", "fetching", 1000),
     ]
     finished = [
@@ -375,6 +384,9 @@ def components(context, admin):
         "/live-task-finished-status": refresh_task(
             "succeeded", finished, fragment=True
         ),
+        # Waiting for a worker: Start the load In progress (#1947).
+        TASK_QUEUED_PAGE: refresh_task("queued", running[:1]),
+        TASK_QUEUED_STATUS: refresh_task("queued", running[:1], fragment=True),
         REFRESH: refresh_page(),
         REFRESH_REQUESTED: refresh_page("queued", running[:1]),
         "/live-refresh-finished": refresh_page("succeeded", finished, minutes=1),

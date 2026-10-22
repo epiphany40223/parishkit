@@ -139,6 +139,9 @@ def states(task):
         # Start the load is In progress until a worker takes the run (#1916).
         ("queued", "unspecified", ["active", *["waiting"] * 4]),
         ("running", "unspecified", ["active", *["waiting"] * 4]),
+        # A worker's claim (phase "starting") ends the wait: Start the load is
+        # Done and the download In progress before its first report (#1947).
+        ("running", "starting", ["done", "active", *["waiting"] * 3]),
         ("running", "fetching", ["done", "active", *["waiting"] * 3]),
         ("running", "validating", ["done", "done", "done", "active", "waiting"]),
         # Each attempt starts again from the download, after a worker's claim.
@@ -207,6 +210,47 @@ def test_each_refresh_state_announces_its_own_sentence(state, phase, sentence):
     """The sentence names the state, and the stage that is running or failed."""
     tag = opening(status(refresh(state, phase)))
     assert f'data-live-announce="{sentence}"' in tag
+
+
+@pytest.mark.parametrize(
+    ("state", "phase", "current", "total"),
+    [
+        ("queued", "unspecified", 0, 0),
+        ("retry_wait", "unspecified", 0, 0),
+        # A failed attempt that reached staging keeps its count until the
+        # next claim resets it; the queued sentence still wins.
+        ("retry_wait", "staging", 10, 40),
+    ],
+)
+def test_a_refresh_waiting_for_a_worker_says_the_queued_sentence(
+    state, phase, current, total
+):
+    """While Start the load is In progress it carries the spinner, and the
+    line under the boxes says the one queued sentence every page with a
+    queued job says (ui-conventions "Stage boxes", #1916, #1947)."""
+    html = status(refresh(state, phase, current, total))
+    start = re.search(r'<li[^>]*data-refresh-stage="start"[^>]*>.*?</li>', html, re.S)
+    assert 'data-stage-state="active"' in start.group(0)
+    assert 'class="spinner' in start.group(0)
+    assert html.count('class="spinner') == 2  # the box and the running line
+    assert (
+        "<p data-refresh-queued>Waiting for the background service to pick up "
+        "the job. This can take a minute or two.</p>"
+    ) in html
+    assert "Waiting for progress details." not in html
+    assert "records checked" not in html
+    assert "<progress" not in html
+
+
+def test_a_claimed_refresh_no_longer_says_it_is_queued():
+    """Once a worker has the run, Start the load is Done with no spinner and
+    the queued sentence gives way to the step's own line."""
+    html = status(refresh("running", "fetching"))
+    start = re.search(r'<li[^>]*data-refresh-stage="start"[^>]*>.*?</li>', html, re.S)
+    assert 'data-stage-state="done"' in start.group(0)
+    assert "spinner" not in start.group(0)
+    assert "data-refresh-queued" not in html
+    assert "Downloading from ParishSoft. This step shows no count yet" in html
 
 
 def test_every_refresh_state_draws_the_same_five_boxes():
