@@ -527,10 +527,17 @@ def events(
     return tuple(replace(line, rank=rank) for rank, line in enumerate(ordered))
 
 
+# Kinds All leaves out: a user's Pages viewed lines (#2006) are listed only
+# while chosen, since a busy Administrator's page views would drown the
+# rest. A Family's Timeline has none.
+NOT_UNDER_ALL = frozenset({"views"})
+
+
 def narrow(lines, kind="all", bounds=(None, None)):
     """The lines the page's filters keep: of ``kind`` and within ``bounds``.
 
-    ``kind`` is a ``KINDS`` key ("all" keeps every kind); ``bounds`` is the
+    ``kind`` is a ``KINDS`` key ("all" keeps every kind but those of
+    ``NOT_UNDER_ALL``); ``bounds`` is the
     From and Through days as a half-open UTC interval ``(start, end)``,
     either None when unset (``TimelineQuery.bounds``). The order is kept.
     """
@@ -538,7 +545,7 @@ def narrow(lines, kind="all", bounds=(None, None)):
     return tuple(
         line
         for line in lines
-        if kind in ("all", line.kind)
+        if (kind == line.kind or (kind == "all" and line.kind not in NOT_UNDER_ALL))
         and (start is None or line.at >= start)
         and (end is None or line.at < end)
     )

@@ -416,6 +416,10 @@ def test_the_filters_narrow_the_lines_and_the_heading_keeps_them():
     page = render(TIMELINE, query=TimelineQuery("sessions"))
     assert "No lines match these filters." in page
     assert "Nothing recorded for this Family yet." not in page
+    # A chosen kind keeps the days too: no email on a later day.
+    page = render(TIMELINE, query=TimelineQuery("emails", "2099-01-01", "", "UTC"))
+    assert "No lines match these filters." in page
+    assert "Invitation" not in re.findall(r'<th scope="row">(.*?)</th>', page)
 
 
 def test_the_reduced_view_keeps_the_summary_only():
@@ -692,6 +696,13 @@ def test_narrow_keeps_one_kind_within_half_open_bounds():
     assert [line.message_id for line in narrow(lines, "all", (at, None))] == [
         RECEIPT.id
     ]
+    # The bounds hold for a chosen kind too, not only for All.
+    assert [line.message_id for line in narrow(lines, "emails", (at, None))] == [
+        RECEIPT.id
+    ]
+    assert RECEIPT.id not in {
+        line.message_id for line in narrow(lines, "emails", (None, at))
+    }
 
 
 def test_last_portal_action_ignores_what_an_email_reader_makes():

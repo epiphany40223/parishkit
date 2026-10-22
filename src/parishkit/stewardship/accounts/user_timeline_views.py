@@ -164,6 +164,8 @@ def user_timeline(request, user_id):
                     # The chosen-Family test page is Administrator only, as
                     # on the Family's Timeline.
                     test_link=allows(actor, Capability.CONFIGURE),
+                    # Page views are read only while they are shown (#2006).
+                    views=query.kind == "views",
                 )
             except LookupError:
                 # Refused before any audit: no row pairs a reader with an id

@@ -3996,8 +3996,9 @@ checks, audit and alerts:
   line, newest first, each with its instant, kind, what happened, detail,
   the DUID of the Family a Family line is about and, for an email, its
   delivery ID. `--kind`
-  takes the page's Kind keys (`all`, `sessions`, `actions`, `roles`,
-  `emails`, `form`) and `--from` and `--to` whole days in `--zone` (an IANA time
+  takes the page's Kind keys (`all`, `sessions`, `actions`, `views` for
+  Pages viewed, `roles`, `emails`, `form`; `all` leaves page views out, as
+  the page does) and `--from` and `--to` whole days in `--zone` (an IANA time
   zone, required with a day), as the page's From and Through do; the
   command prints every matching line, unpaged. An unknown user is
   `not_available` and a refused filter `invalid`. It is read-only, runs
