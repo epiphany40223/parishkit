@@ -181,6 +181,7 @@ sections:
     "Campaign purge": [ADM-10, BG-11]
   parishioner-portal/spec.md:
     "Availability and entry": [FAM-01]
+    "After the campaign ends": [FAM-01]
     "Form state and navigation": [FAM-02]
     "Common validation": [FAM-02, FAM-08]
     "Family census": [FAM-03]

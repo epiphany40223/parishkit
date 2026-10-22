@@ -186,6 +186,7 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/denied-code",
         "/denied-link",
         "/denied-unavailable",
+        "/family-ended",
         "/ministries",
         "/parish-settings",
         "/configuration-request",

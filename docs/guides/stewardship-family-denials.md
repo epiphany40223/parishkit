@@ -53,15 +53,28 @@ category, never a reason within it. The kinds and their callers:
   display the response body, so their 400 and ended-session 403 keep the
   default text.
 
-Unknown, malformed, wrong-mode, inactive, ineligible and closed-campaign
-codes still render byte-identical pages, as do all rejected links. Status
-codes, `Retry-After`, `Cache-Control: no-store`, limiter accounting and the
-optional access-denied help are unchanged.
+Unknown, malformed, wrong-mode, inactive and ineligible codes still render
+byte-identical pages, as do all rejected links. Since #1793, once the
+campaign has ended every rejected code or link instead renders the
+campaign-ended page that `/` shows, still byte-identical across credentials
+(see
+[after the campaign ends](../specs/stewardship/parishioner-portal/spec.md#after-the-campaign-ends)). Status
+codes, `Retry-After`, `Cache-Control: no-store` and limiter accounting are
+unchanged, and so is the optional access-denied help, except that after
+close the ended page's "After the campaign" content takes its place.
 
 ## Focused validation
 
-- PostgreSQL, Family authentication: unknown, malformed, Production-in-Testing,
-  inactive and closed-campaign codes each return 403 with one identical code
+- PostgreSQL, after close (#1793): in Testing and after a Production close,
+  valid, unknown and malformed links and codes return 403 with one
+  byte-identical ended page equal to `/`, no cookies and no session; a 429
+  and the maintenance 503 still win; before start and while being prepared
+  stay generic; a failed campaign-state read falls back to the generic
+  denial.
+- Browser, after close (#1793): the ended page is accessible at phone and
+  desktop widths and shows no denial text.
+- PostgreSQL, Family authentication: unknown, malformed, Production-in-Testing
+  and inactive codes each return 403 with one identical code
   page and no session; an unknown link and a link invalidated with its
   rehearsal return 403 with one identical link page; the pair-limit 429, a
   repeat 429 and a limiter outage 503 render one identical
