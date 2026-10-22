@@ -310,7 +310,9 @@ def test_unattended_wizard_saves_its_pages_in_the_wizards_order(monkeypatch):
     monkeypatch.setattr(setup_source, "start_source_load", started)
     monkeypatch.setattr(seed_web, "stage_logo", lambda *_: "bundle")
     assert seed_web.wizard_collect(None, None) == "attempt"
-    # Slack is off, so its connection page is skipped; Review onwards follow
-    # the load in wizard_confirm.
-    pages = [page.key for page in PAGES if page.key != "slack_credential"]
+    # Slack is off, so Test Slack is skipped. The tests need only their own
+    # inputs (#1578), so the email test, sent in wizard_confirm after the
+    # load, proves the same settings; Review onwards follow there too.
+    tests = {"mail_test", "slack_test"}
+    pages = [page.key for page in PAGES if page.key not in tests]
     assert calls == pages[: pages.index("source") + 1]

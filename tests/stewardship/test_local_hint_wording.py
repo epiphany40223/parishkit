@@ -25,6 +25,7 @@ from parishkit.stewardship.accounts.leader_import import LEADER_SORTING
 from parishkit.stewardship.accounts.leader_import_views import PREFIX as LEADER_PREFIX
 from parishkit.stewardship.accounts.setup_credential_views import SetupCredentialForm
 from parishkit.stewardship.accounts.setup_forms import SetupAccessForm
+from parishkit.stewardship.accounts.setup_slack_step import SetupSlackStepForm
 from parishkit.stewardship.accounts.user_reads import USER_SORTING
 from parishkit.stewardship.accounts.user_views import PREFIX
 from parishkit.stewardship.deployment import DeploymentProfile
@@ -208,6 +209,20 @@ FORMER_STEP_UP_PAGES = {
             "form": SetupCredentialForm("parishsoft"),
         },
     ),
+    # Slack's channel and bot token share one combined step (#1578); it is
+    # drawn with Slack on and a token saved, the fullest the page gets.
+    "setup-slack": (
+        "stewardship/setup-step.html",
+        {
+            "draft": DRAFT,
+            "step": "slack",
+            "step_label": "Slack notifications",
+            "form": SetupSlackStepForm(saved="C0123456789"),
+            "slack_on": True,
+            "slack_saved": True,
+            "slack_saved_channel": "C0123456789",
+        },
+    ),
     "integration-settings": (
         "stewardship/integration-settings.html",
         {
@@ -240,6 +255,11 @@ def test_no_page_asks_for_a_recent_sign_in(name, local):
     for phrase in STEP_UP_PHRASES:
         assert phrase not in html
     if name == "setup-credential":
-        assert "the slack token needs slack turned on first." in html
+        # Slack has its own combined step now, so this page no longer
+        # mentions it; the Google Workspace prerequisite stays.
+        assert "the slack token" not in html
+        assert "the google workspace key needs the outgoing email" in html
+    if name == "setup-slack":
+        assert "turn off slack notifications" in html
     if name == "family-portal-maintenance":
         assert "every change is recorded in the audit log." in html

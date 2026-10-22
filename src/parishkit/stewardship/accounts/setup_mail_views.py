@@ -14,12 +14,13 @@ from parishkit.stewardship.jobs.delivery_metadata import STATE_LABELS
 from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
 from parishkit.stewardship.web.admin_forms import AdminForm
 
+from . import stages
 from .authentication import runtime
 from .integration_credentials import FAILED
 from .setup_delivery_models import SetupMailDelivery
 from .setup_drafts import view_draft
 from .setup_mail import request_sample
-from .setup_preview import PREVIEW_SALT, prepare_preview
+from .setup_tests import TEST_SALT, prepare_test, staged_credential
 from .setup_views import ERRORS, _checked, _closed, _context, error_response, page_error
 from .setup_wizard import BY_KEY
 
@@ -34,18 +35,21 @@ LABELS = {
     "delivery_unknown": STATE_LABELS["delivery_unknown"],
     "cancelled": STATE_LABELS["cancelled"],
 }
+# The delivery columns a test is bound to (#1578), as accepted_tests reads
+# them.
+BINDING = ("credential_id", "credential_version", "fingerprint")
 # The Recent tests list before any test (setup-test-status.html).
 EMPTY = _("No test has been requested yet. Select Send test email below to send one.")
 # What a test that was not sent points to (#1476): the provider whose key
 # advice it repeats (integration_credentials.FAILED, as Finishing setup and
 # Integrations say it) and the wizard steps that fix it, in step order.
-FIX = ("google_workspace", ("mail", "google_workspace"))
+FIX = ("google_workspace", ("mail", "testing", "google_workspace"))
 
 
 class SetupMailForm(AdminForm):
     """Only the acknowledgement is editable; message and routing are server-owned."""
 
-    preview_token = forms.CharField(max_length=4096, widget=forms.HiddenInput)
+    test_token = forms.CharField(max_length=4096, widget=forms.HiddenInput)
     request_key = forms.UUIDField(widget=forms.HiddenInput)
     acknowledge_unknown = forms.BooleanField(
         widget=ACKNOWLEDGMENT,
@@ -54,12 +58,61 @@ class SetupMailForm(AdminForm):
     )
 
 
-def _items(draft, *, model=SetupMailDelivery, labels=LABELS):
-    """Read only this original attempt's bounded, safe journal metadata."""
+# The stages a setup test moves through, drawn as the shared stage boxes on
+# Test email and Test Slack (#1578): the worker reports exactly these.
+STAGES = (
+    ("queued", _("Queued")),
+    ("sending", _("Sending")),
+    ("result", _("Result")),
+)
+# Each test state's place in STAGES: the box it reached and that box's state.
+# An accepted test has passed every stage; one not sent failed at its
+# Result; one of unknown delivery is uncertain there (not drawn as failed);
+# a cancelled one never left the queue.
+PLACES = {
+    "queued": (0, "active"),
+    "submitting": (1, "active"),
+    "accepted": (len(STAGES), "done"),
+    "not_sent": (2, "failed"),
+    "delivery_unknown": (2, "uncertain"),
+    "cancelled": (0, "failed"),
+}
+
+
+def progress(items):
+    """The newest test's stage boxes (``stages.rows``), or None before any.
+
+    A settled test's last box says its outcome in the list's own words
+    (its ``label``, e.g. Delivered or Not sure it arrived) instead of only Done
+    or Failed, so the boxes and the line above them agree.
+
+    A newest test sent with earlier settings proves nothing about the
+    current ones, so its boxes are all Not started (the line above them says
+    Sent with earlier settings) rather than a result that reads as current.
+    """
+    if not items:
+        return None
+    newest = items[0]
+    if not newest["current"]:
+        return stages.rows(STAGES, -1)
+    index, current = PLACES[newest["state"]]
+    boxes = stages.rows(STAGES, index, current)
+    if newest["state"] not in {"queued", "submitting"}:
+        boxes[min(index, len(STAGES) - 1)]["status"] = newest["label"]
+    return boxes
+
+
+def _items(draft, binding, *, model=SetupMailDelivery, labels=LABELS):
+    """Read only this original attempt's bounded, safe journal metadata.
+
+    A test is ``current`` while it was sent with ``binding``, the current
+    staged credential's (id, version, fingerprint), or None when there is
+    none (#1578): only such a test can complete the step.
+    """
     rows = (
         model.objects.filter(attempt_id=draft.status.attempt_id)
         .order_by("-created_at", "-id")
-        .values("id", "state", "created_at", "attempt_version")[:25]
+        .values("id", "state", "created_at", *BINDING)[:25]
     )
     return [
         {
@@ -67,18 +120,20 @@ def _items(draft, *, model=SetupMailDelivery, labels=LABELS):
             "state": row["state"],
             "label": str(labels[row["state"]]),
             "created_at": row["created_at"].isoformat(),
-            "current": row["attempt_version"] == draft.status.version,
+            "current": tuple(row[name] for name in BINDING) == binding,
         }
         for row in rows
     ]
 
 
-def _status_data(draft, *, model=SetupMailDelivery, labels=LABELS):
+def _status_data(draft, key="mail_test", *, model=SetupMailDelivery, labels=LABELS):
     """The uncertainty acknowledgement applies even to older tests outside the list."""
     rows = model.objects.filter(attempt_id=draft.status.attempt_id)
+    credential = staged_credential(draft, key)
+    binding = credential and (credential.pk, credential.version, credential.fingerprint)
     return {
         "revision": draft.status.version,
-        "items": _items(draft, model=model, labels=labels),
+        "items": _items(draft, binding, model=model, labels=labels),
         "pending": rows.filter(state__in=["queued", "submitting"]).exists(),
         "unknown": rows.filter(state="delivery_unknown").exists(),
     }
@@ -104,10 +159,11 @@ def page_status(form, data, empty, status_url, fix=FIX):
 
 
 def failure(items, provider, steps):
-    """The fix notice when this revision's newest test was not sent (#1476).
+    """The fix notice when the newest test of these settings was not sent (#1476).
 
-    Only the newest test counts, and only for the current draft revision: a
-    later test, or a saved fix (which bumps the revision), drops the notice.
+    Only the newest test counts, and only while it was sent with the current
+    credential and settings: a later test, or a saved fix (which changes or
+    re-enters the credential, #1578), drops the notice.
     It carries the provider (a Slack notice offers turning Slack off,
     #1499), its rejected-key advice and the steps to correct.
     """
@@ -137,7 +193,7 @@ def status_response(request, data, empty):
 
 
 def tested(items):
-    """Whether a test of the current draft revision was accepted (step done).
+    """Whether a test of the current settings was accepted (step done).
 
     The test page then offers Continue as its primary action instead of
     sending; tests are listed newest first, so a current one is among them.
@@ -146,11 +202,11 @@ def tested(items):
 
 
 def retest(items):
-    """Whether an accepted test exists only for an earlier draft revision.
+    """Whether an accepted test exists only for settings changed since.
 
-    Test email then says why it must be sent again (#1499): any saved
-    change, such as turning Slack off, bumps the revision, and only a test
-    of the current revision counts.
+    Test email then says why it must be sent again (#1499): its outgoing
+    email settings, Testing recipient or Google Workspace key changed, and
+    only a test of the current ones counts (#1578).
     """
     return not tested(items) and any(
         not item["current"] and item["state"] == "accepted" for item in items
@@ -163,11 +219,11 @@ def setup_mail(request):
     try:
         _closed(request, set(SetupMailForm.base_fields))
         service = runtime()
-        preview = prepare_preview(request, service)
+        inputs = prepare_test(request, service, "mail_test")
         form = SetupMailForm(
             request.POST if request.method == "POST" else None,
             initial={
-                "preview_token": signing.dumps(preview.binding(), salt=PREVIEW_SALT),
+                "test_token": signing.dumps(inputs.binding(), salt=TEST_SALT),
                 "request_key": uuid4(),
             },
         )
@@ -179,11 +235,11 @@ def setup_mail(request):
                     request, service, HttpResponseRedirect(reverse("admin:setup_mail"))
                 )
             status = 400
-        data = _status_data(preview.draft)
+        data = _status_data(inputs.draft)
         response = render(
             request,
             "stewardship/setup-mail.html",
-            _context(preview.draft, "mail_test")
+            _context(inputs.draft, "mail_test")
             | page_status(
                 form,
                 data,
@@ -191,16 +247,16 @@ def setup_mail(request):
                 reverse("admin:setup_mail_status") + "?format=status",
             )
             | {
-                "testing_recipient": preview.draft.sections["testing"][
+                "testing_recipient": inputs.draft.sections["testing"][
                     "testing_recipient"
                 ],
                 "retest": retest(data["items"]),
             },
             status=status,
         )
-        return _checked(request, service, response, preview.draft)
+        return _checked(request, service, response, inputs.draft)
     except signing.BadSignature:
-        error = ValueError("The setup preview has expired or changed.")
+        error = ValueError("The setup test page has expired or changed.")
         return page_error(request, error, "mail_test")
     except ERRORS as error:
         return page_error(request, error, "mail_test")

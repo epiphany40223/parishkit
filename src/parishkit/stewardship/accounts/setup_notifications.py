@@ -22,8 +22,8 @@ from .delivery_results import settle_result
 from .key_files import file_fingerprint
 from .sessions import authenticated_admin, database_now
 from .setup_notification_models import SetupSlackDelivery
-from .setup_preview import verify_preview
 from .setup_secret_models import SetupSealedCredential
+from .setup_tests import verify_test
 
 
 def live(row):
@@ -44,16 +44,19 @@ def live(row):
 
 
 def request_notification(
-    request, service, *, preview_token, request_key, acknowledge_unknown=False
+    request, service, *, test_token, request_key, acknowledge_unknown=False
 ):
-    """Store one explicit current-preview request; never deliver in an HTTP view."""
+    """Store one explicit request for the signed test page's exact Slack token.
+
+    The test is bound to the staged token and its sealed channel only
+    (``setup_tests``, #1578), never to the load or the later steps; it is
+    never delivered in an HTTP view.
+    """
     if not isinstance(request_key, UUID) or type(acknowledge_unknown) is not bool:
         raise ValueError("Invalid notification request.")
     with work_transaction():
-        preview = verify_preview(request, service, preview_token)
-        attempt_id = preview.draft.status.attempt_id
-        if not preview.draft.sections["slack"]["enabled"]:
-            raise ValueError("Slack is disabled for this setup.")
+        inputs = verify_test(request, service, "slack_test", test_token)
+        attempt_id = inputs.draft.status.attempt_id
         rows = SetupSlackDelivery.objects.filter(attempt_id=attempt_id)
         previous = rows.filter(request_key=request_key).first()
         if previous is not None:
@@ -64,15 +67,14 @@ def request_notification(
             raise ValueError(
                 "A previous test may have arrived; acknowledge another send."
             )
-        credential = SetupSealedCredential.objects.only(
-            "id", "version", "fingerprint"
-        ).get(attempt_id=attempt_id, target="slack", scrubbed_at=None)
+        credential = inputs.credential
         row = SetupSlackDelivery.objects.create(
             id=uuid5(attempt_id, "setup-slack:" + str(request_key)),
             attempt_id=attempt_id,
-            attempt_version=preview.draft.status.version,
+            # Kept for the record; the binding is the credential (#1578).
+            attempt_version=inputs.draft.status.version,
             request_key=request_key,
-            candidate_digest=preview.compiled.candidate.digest,
+            candidate_digest=inputs.digest,
             credential_id=credential.pk,
             credential_version=credential.version,
             fingerprint=credential.fingerprint,

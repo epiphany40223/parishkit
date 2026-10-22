@@ -233,7 +233,8 @@ def test_campaign_settings_waits_for_an_end_date_after_its_start(
 
 
 def test_slack_channel_shows_and_is_required_only_while_enabled(page, component_origin):
-    """The channel ID shows only for an enabled Slack, and Save waits for it."""
+    """The channel ID and bot token show only for an enabled Slack, and Save
+    waits for both while no token is saved (#1578)."""
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
     page.goto(component_origin + "/setup-slack")
@@ -250,14 +251,19 @@ def test_slack_channel_shows_and_is_required_only_while_enabled(page, component_
     assert spot(enabled) == box
     waits_with(save, hint, SLACK_HINT)
     channel.fill("C0123456789")
+    token = page.locator('input[name="candidate"]')
+    visible(token)
+    waits_with(save, hint, "Paste the Slack bot token to continue.")
+    token.fill("xoxb-1-2-fixture")
     ready(save, hint)
     # Unticked: hidden, not sent (so a saved channel clears), Save available.
     enabled.uncheck()
     hidden(channel)
+    hidden(token)
     assert spot(enabled) == box
     ready(save, hint)
     sent = form.evaluate("form => Array.from(new FormData(form).keys())")
-    assert "channel_id" not in sent
+    assert "channel_id" not in sent and "candidate" not in sent
     # A tick restored from history shows the field again and counts it.
     channel.evaluate("field => { field.disabled = false; field.value = ''; }")
     restore(enabled, "box => { box.checked = true; }")

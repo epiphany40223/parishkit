@@ -3435,7 +3435,10 @@ state and In progress stage boxes
 stages shows them as one row of stage boxes: one box per stage, in order,
 left to right, wrapping onto more rows on a phone with no sideways scroll.
 Each box names its stage and its state in words, Not started, In progress,
-Done or Failed (Finishing setup also has Waiting for the server operator),
+Done or Failed (Finishing setup also has Waiting for the server operator;
+a finished piece of work whose outcome nobody can confirm, such as a test
+email the mail service did not acknowledge, shows its own words in a neutral
+uncertain box with a "?" mark and a dashed outline, never as Failed),
 so its text, and its name as a list item, carry the state; a mark (a
 bullet, the [working spinner](#working-spinner), a check, a cross or a
 pause) and a colour from the
@@ -3496,7 +3499,9 @@ the [Go live page](../admin-portal/spec.md#go-live-page)'s Prepare step
 and Production activation
 ([#1585](https://github.com/epiphany40223/parishkit/issues/1585)), and a
 ParishSoft refresh's Background task page and Refresh from ParishSoft
-([#1579](https://github.com/epiphany40223/parishkit/issues/1579)).
+([#1579](https://github.com/epiphany40223/parishkit/issues/1579)), and
+setup's Test email and Test Slack
+([#1578](https://github.com/epiphany40223/parishkit/issues/1578)).
 
 **Every stage-progress display.** Every page that shows a long piece of
 work moving through stages the server reports uses this one component, so

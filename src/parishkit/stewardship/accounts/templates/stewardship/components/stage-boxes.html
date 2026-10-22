@@ -3,7 +3,9 @@ Stage boxes (UX conventions, "Stage boxes"): one box per major stage of a
 long piece of work, in order, left to right, wrapping on a narrow screen
 (.stage-boxes in ui-v1.css). ``stages`` is a list of {key, label, state,
 status} (accounts/stages.py words ``status``); ``state`` is done, active,
-waiting or failed, or operator (Finishing setup). Each box names its stage
+waiting, failed or uncertain (a settled outcome nobody can confirm: a
+test email the mail service did not acknowledge), or operator (Finishing
+setup). Each box names its stage
 and its state in words, so its text, and its accessible name as a list
 item, carry the state; the mark and colour only reinforce it. An In
 progress box draws the shared working spinner (components/spinner.html)
@@ -16,8 +18,8 @@ lists the forms (stage dicts of the same shape) it can take while
 the work runs; each is drawn as an invisible ghost in the box's one grid
 cell (components/stage-box-body.html), so changing words never resize the
 box or its row (#1903). Loading parish data, Finishing
-setup, Load ParishSoft data (#1404 PR 5) and the Go live page's Prepare
-step (#1585) draw it.
+setup, Load ParishSoft data (#1404 PR 5), the Go live page's Prepare
+step (#1585) and Test email and Test Slack (#1578) draw it.
 {% endcomment %}<ol class="stage-boxes" aria-label="{{ label }}">{% for stage in stages %}
 <li class="stage-{{ stage.state }}" data-{{ key_attribute }}="{{ stage.key }}" data-stage-state="{{ stage.state }}">{% if stage.state == "active" %}{% include "stewardship/components/spinner.html" %}{% endif %}{% include "stewardship/components/stage-box-body.html" with ghost=False %}{% for form in stage.reserve %}{% include "stewardship/components/stage-box-body.html" with stage=form ghost=True %}{% endfor %}</li>{% endfor %}
 </ol>

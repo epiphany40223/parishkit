@@ -153,8 +153,9 @@ def main():
         assert time.monotonic() < deadline, data
         time.sleep(0.5)
     assert not runtime().configured() and not SetupCompletion.objects.exists()
-    # Setup collects no campaign (#142), and the load is the last data step
-    # (#1353), so the email test follows it, then Review (#1476).
+    # Setup collects no campaign (#142). The email test belongs right after
+    # Google Workspace connection (#1578) but needs only those settings, so
+    # sending it after the load proves the same; Review follows (#1476).
     mail = get("/admin/setup/mail-test")
     post("/admin/setup/mail-test", fields(mail.context["form"]))
     deadline = time.monotonic() + 120

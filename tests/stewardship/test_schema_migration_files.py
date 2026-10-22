@@ -534,6 +534,9 @@ FROZEN = {
     "0167_address_leader_scope.sql": (
         "46866190315b2caf7787d75760e1931e703a16aed03666d2b38b1f21961d1297"
     ),
+    "0168_setup_test_binding.sql": (
+        "592ca793da55098a9a7b7b7ca864795480f8c57943a1bceda465be6643f7dd9e"
+    ),
 }
 
 

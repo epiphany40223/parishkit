@@ -67,6 +67,9 @@ def test_background_work_stays_readable_during_setup(setup_http, google):
 def test_save_and_continue_follows_the_one_ordered_list(setup_http, google):
     """Each save goes to the next applicable page not done yet, including
     optional ones (wizard rule 8, #1476)."""
+    from .test_setup_credentials_postgresql import publish
+
+    publish("slack")
     with web_login():
         browser = started()
         assert save(browser, "mail", VALUES["mail"])["Location"] == (
@@ -75,10 +78,14 @@ def test_save_and_continue_follows_the_one_ordered_list(setup_http, google):
         assert save(browser, "testing", VALUES["testing"])["Location"] == (
             "/admin/setup/credentials/google_workspace"
         )
-        slack = {"enabled": "on", "channel_id": "CEXAMPLE"}
-        assert save(browser, "slack", slack)["Location"] == (
-            "/admin/setup/credentials/slack"
-        )
+        # The one Slack step takes the bot token too, and its save opens the
+        # test that proves it (#1578).
+        slack = {
+            "enabled": "on",
+            "channel_id": "CEXAMPLE",
+            "candidate": "xoxb-synthetic-slack-token",
+        }
+        assert save(browser, "slack", slack)["Location"] == "/admin/setup/slack-test"
         disabled = {"channel_id": ""}
         assert save(browser, "slack", disabled)["Location"] == "/admin/setup/branding"
         # Outgoing email settings and Testing recipient are saved already, so

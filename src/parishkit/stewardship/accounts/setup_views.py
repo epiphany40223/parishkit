@@ -6,6 +6,7 @@ from django.db import DatabaseError
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.utils.translation import gettext_lazy as _
+from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
@@ -208,21 +209,34 @@ def setup(request):
         return page_error(request, error)
 
 
+@sensitive_post_parameters("candidate")
 @require_http_methods(["GET", "HEAD", "POST"])
 def setup_step(request, step):
-    """Save one public step without activating policy, provider settings or YAML."""
+    """Save one public step without activating policy, provider settings or YAML.
+
+    The Slack step also takes the Slack bot token, which it stages rather
+    than saves (``setup_slack_step``, #1578); its page form adds that field.
+    """
     try:
         if step not in FORMS:
             raise LookupError("Unknown setup step.")
         service = runtime()
         form_type = FORMS[step]
+        options = {}
+        if step == "slack":
+            from . import setup_slack_step
+
+            form_type = setup_slack_step.SetupSlackStepForm
         _closed(request, {*form_type.base_fields, "version"})
         draft = view_draft(request, service)
         if draft is None or draft.status.state != SetupState.COLLECTING:
             return _checked(request, service, HttpResponseRedirect("/admin/setup"))
+        if step == "slack":
+            options["saved"] = setup_slack_step.saved_channel(draft)
         form = form_type(
             request.POST if request.method == "POST" else None,
             initial=initial_values(step, draft.sections.get(step, {})),
+            **options,
         )
         if step == "parish" and draft.source_task_id is not None:
             form.fields["timezone"].disabled = True
@@ -234,7 +248,12 @@ def setup_step(request, step):
             version = expected_version(request.POST.get("version"))
             if version != draft.status.version:
                 raise stale_page()
-            if form.is_valid():
+            if form.is_valid() and step == "slack":
+                if setup_slack_step.save(request, service, draft, form, version):
+                    return _checked(
+                        request, service, continue_after(request, service, step)
+                    )
+            elif form.is_valid():
                 save_section(
                     request,
                     service,
@@ -249,17 +268,37 @@ def setup_step(request, step):
             status = 400
         else:
             status = 200
+        context = _context(draft, step)
         response = render(
             request,
             "stewardship/setup-step.html",
-            _context(draft, step)
+            context
             # A wizard heading uses its stepper label (one name per page).
-            | {"form": form, "step": step, "step_label": BY_KEY[step].label},
+            | {"form": form, "step": step, "step_label": BY_KEY[step].label}
+            | _slack_context(draft, context["wizard"], options),
             status=status,
         )
         return _checked(request, service, response, draft)
     except ERRORS as error:
         return page_error(request, error, step)
+
+
+def _slack_context(draft, wizard, options):
+    """What the Slack step's page says about a saved token, if anything.
+
+    ``slack_saved`` is whether a token is staged, ``slack_saved_channel``
+    the channel it is sealed with (the page's note follows the channel field
+    against it, as the token's requirement does), and
+    ``slack_on`` whether Slack is saved on, which offers Turn off Slack
+    notifications (#1499). Other steps get nothing.
+    """
+    if "saved" not in options:
+        return {}
+    return {
+        "slack_saved": options["saved"] is not None,
+        "slack_saved_channel": options["saved"],
+        "slack_on": bool(draft.sections.get("slack", {}).get("enabled")),
+    }
 
 
 @require_http_methods(["GET", "HEAD"])

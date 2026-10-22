@@ -4,8 +4,9 @@ The shared component (``components/stage-boxes.html``, ``.stage-boxes`` in
 ui-v1.css) draws a row of boxes, left to right and wrapping on a phone,
 each named with its stage and its state in words (UX conventions, "Stage
 boxes"). Loading parish data and Finishing setup (the setup wizard),
-Load ParishSoft data (the Campaign setup stepper, #1404 PR 5) and the Go
-live page's Prepare step (#1585 slice 3, go_live_prepare) draw it.
+Load ParishSoft data (the Campaign setup stepper, #1404 PR 5), the Go
+live page's Prepare step (#1585 slice 3, go_live_prepare) and setup's
+Test email and Test Slack (#1578) draw it.
 This module words each box's state the same way for every one of them.
 """
 
@@ -18,6 +19,9 @@ STATUS = {
     "active": _("In progress"),
     "waiting": _("Not started"),
     "failed": _("Failed"),
+    # The work ended and its outcome is not known (a test email the mail
+    # service did not confirm): neither done nor failed.
+    "uncertain": _("Not sure"),
 }
 
 
@@ -25,7 +29,7 @@ def rows(stages, index, current="active"):
     """One box per ``(key, label)`` of ``stages``, worded for the template.
 
     The stages before ``index`` are done, the one at ``index`` is
-    ``current`` ("active", "waiting" or "failed") and later ones are
+    ``current`` ("active", "waiting", "failed" or "uncertain") and later ones are
     waiting. An ``index`` of ``len(stages)`` marks every stage done, and
     -1 (the work has not reached its first stage) marks every one waiting.
     """

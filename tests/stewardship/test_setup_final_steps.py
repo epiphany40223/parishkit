@@ -108,7 +108,8 @@ def test_review_shows_the_tests_and_continues_to_finish_setup():
     finish = reverse("admin:setup_confirmation")
     assert f'class="setup-continue" href="{finish}"' in row
     assert "Finish setup" in row and "Back" in row
-    assert f'class="setup-back" href="{reverse("admin:setup_notification")}"' in row
+    # Back from Review is Load parish data (#1578).
+    assert f'class="setup-back" href="{reverse("admin:setup_source")}"' in row
     # The row comes last, after the exact configuration.
     assert content.rindex("setup-actions") > content.index("<details>")
 
@@ -140,12 +141,13 @@ def test_review_links_only_a_test_that_was_not_accepted():
 
 @pytest.mark.parametrize("slack", [False, True])
 def test_email_test_sends_until_accepted_then_continues(slack):
-    """Before acceptance the primary action sends; afterwards it is Continue."""
+    """Before acceptance the primary action sends; afterwards it is Continue,
+    to the Slack step, which follows Test email whether Slack is on or not
+    (#1578)."""
     form = SetupMailForm(
-        initial={"preview_token": "token", "request_key": uuid4(), "slot": "initial"}
+        initial={"test_token": "token", "request_key": uuid4(), "slot": "initial"}
     )
-    # Test Slack, or Review when Slack is off (#1476).
-    after = reverse("admin:setup_notification" if slack else "admin:setup_preview")
+    after = reverse("admin:setup_step", args=["slack"])
     common = {"form": form, "items": [], "testing_recipient": "t@example.org"}
     waiting = page(
         "setup-mail.html",
@@ -178,9 +180,9 @@ def test_email_test_sends_until_accepted_then_continues(slack):
 
 
 def test_slack_test_follows_the_same_pattern():
-    """The Slack test is its own step: send, then Continue to Review."""
+    """The Slack test is its own step, right after the Slack step (#1578)."""
     form = SetupNotificationForm(
-        initial={"preview_token": "token", "request_key": uuid4()}
+        initial={"test_token": "token", "request_key": uuid4()}
     )
     html = page(
         "setup-notification.html",
@@ -196,7 +198,7 @@ def test_slack_test_follows_the_same_pattern():
     assert "Send Slack test" in row and " disabled" in row
     # Continue comes with the panel's in-place re-read once a test settles.
     assert "setup-continue" not in row
-    assert f'href="{reverse("admin:setup_mail")}"' in row  # Back
+    assert f'href="{reverse("admin:setup_step", args=["slack"])}"' in row  # Back
 
 
 PENDING_LINE = (
@@ -211,7 +213,7 @@ def test_send_held_by_a_pending_test_names_its_reason(tested):
     pending line after the action row, and the live status problem line it
     may also name has an id (#1332 item 28); a settled page has neither."""
     form = SetupNotificationForm(
-        initial={"preview_token": "token", "request_key": uuid4()}
+        initial={"test_token": "token", "request_key": uuid4()}
     )
     common = {
         "wizard": wizard("slack_test", slack=True, tests=frozenset({"mail_test"})),
@@ -246,8 +248,8 @@ def test_finish_checks_readiness_as_its_primary_action():
     assert "setup-continue" not in row
 
 
-def test_only_an_accepted_test_of_this_revision_counts():
-    """An older revision's success or a pending test does not offer Continue."""
+def test_only_an_accepted_test_of_the_current_settings_counts():
+    """A success with earlier settings or a pending test offers no Continue."""
     assert accepted([{"current": True, "state": "accepted"}])
     assert not accepted([{"current": False, "state": "accepted"}])
     assert not accepted([{"current": True, "state": "queued"}])
@@ -259,9 +261,10 @@ def test_only_an_accepted_test_of_this_revision_counts():
     [
         (
             "setup-mail.html",
-            ("google_workspace", ("mail", "google_workspace")),
+            ("google_workspace", ("mail", "testing", "google_workspace")),
             {
                 "Outgoing email settings": "/admin/setup/mail",
+                "Testing recipient": "/admin/setup/testing",
                 "Google Workspace connection": (
                     "/admin/setup/credentials/google_workspace"
                 ),
@@ -269,11 +272,8 @@ def test_only_an_accepted_test_of_this_revision_counts():
         ),
         (
             "setup-notification.html",
-            ("slack", ("slack", "slack_credential")),
-            {
-                "Slack notifications (optional)": "/admin/setup/slack",
-                "Slack connection": "/admin/setup/credentials/slack",
-            },
+            ("slack", ("slack",)),
+            {"Slack notifications (optional)": "/admin/setup/slack"},
         ),
     ],
 )
@@ -287,7 +287,7 @@ def test_a_test_that_was_not_sent_links_the_steps_that_fix_it(template, fix, lin
     items = [{"current": True, "state": "not_sent"}]
     slack = template == "setup-notification.html"
     form = (SetupNotificationForm if slack else SetupMailForm)(
-        initial={"preview_token": "token", "request_key": uuid4()}
+        initial={"test_token": "token", "request_key": uuid4()}
     )
     html = page(
         template,
@@ -313,8 +313,8 @@ def test_a_test_that_was_not_sent_links_the_steps_that_fix_it(template, fix, lin
     assert html.index(actions(html)) < html.index("data-setup-test-failed")
 
 
-def test_only_the_newest_test_of_this_revision_not_sent_needs_a_fix():
-    """An older revision's failure, or a newer test, drops the fix notice."""
+def test_only_the_newest_test_of_these_settings_not_sent_needs_a_fix():
+    """A failure with earlier settings, or a newer test, drops the notice."""
     from parishkit.stewardship.accounts.setup_mail_views import FIX, failure
 
     failed = {"current": True, "state": "not_sent"}
@@ -339,7 +339,7 @@ def test_test_slack_and_its_failed_notice_offer_turning_slack_off():
     from parishkit.stewardship.accounts.setup_notification_views import FIX
 
     form = SetupNotificationForm(
-        initial={"preview_token": "token", "request_key": uuid4()}
+        initial={"test_token": "token", "request_key": uuid4()}
     )
     common = {
         "wizard": wizard("slack_test", slack=True),
@@ -375,7 +375,7 @@ def test_the_email_test_has_no_slack_turn_off():
     """Only the Slack pages offer turning Slack off."""
     from parishkit.stewardship.accounts.setup_mail_views import FIX, failure
 
-    form = SetupMailForm(initial={"preview_token": "token", "request_key": uuid4()})
+    form = SetupMailForm(initial={"test_token": "token", "request_key": uuid4()})
     html = page(
         "setup-mail.html",
         "mail_test",
@@ -390,9 +390,9 @@ def test_the_email_test_has_no_slack_turn_off():
 
 
 def test_test_email_says_why_an_earlier_accepted_test_is_sent_again():
-    """After a save such as turning Slack off, Test email says why its test
-    is sent once more, drawn with the page outside the in-place panel, and
-    only while the only accepted test is of an earlier revision (#1499)."""
+    """After its own inputs change, Test email says why its test is sent
+    once more, drawn with the page outside the in-place panel, and only while
+    the only accepted test is of earlier settings (#1499, #1578)."""
     from parishkit.stewardship.accounts.setup_mail_views import retest
 
     earlier = {"current": False, "state": "accepted"}
@@ -401,7 +401,7 @@ def test_test_email_says_why_an_earlier_accepted_test_is_sent_again():
     assert not retest([{"current": True, "state": "accepted"}, earlier])
     assert not retest([{"current": False, "state": "not_sent"}])
     assert not retest([])
-    form = SetupMailForm(initial={"preview_token": "token", "request_key": uuid4()})
+    form = SetupMailForm(initial={"test_token": "token", "request_key": uuid4()})
     common = {
         "form": form,
         "items": [],
@@ -411,18 +411,20 @@ def test_test_email_says_why_an_earlier_accepted_test_is_sent_again():
     }
     html = page("setup-mail.html", "mail_test", **common | {"retest": True})
     line = html.split("data-setup-retest>", 1)[1].split("</p>", 1)[0]
-    assert "such as Slack turned off" in line
+    assert "The email settings or key changed" in line
+    assert "Slack" not in line
     assert html.index("data-setup-retest") < html.index('id="setup-test-panel"')
     assert "data-setup-retest" not in page("setup-mail.html", "mail_test", **common)
 
 
 def test_turning_slack_off_says_what_it_discards_and_retests():
     """The button's text and the Slack step's help both say that turning
-    Slack off discards the token entered for this setup (#1499)."""
+    Slack off discards the token entered for this setup (#1499); it no
+    longer asks for the email test again, which it does not change (#1578)."""
     from parishkit.stewardship.accounts.setup_forms import SetupSlackForm
 
     form = SetupNotificationForm(
-        initial={"preview_token": "token", "request_key": uuid4()}
+        initial={"test_token": "token", "request_key": uuid4()}
     )
     html = page(
         "setup-notification.html",
@@ -436,7 +438,7 @@ def test_turning_slack_off_says_what_it_discards_and_retests():
     )
     (top,) = turn_off_forms(html)
     assert "discards the Slack token entered for this setup" in top
-    assert "an email test already sent must be sent again" in top
+    assert "must be sent again" not in top
     assert "entered here" not in top
     help_text = str(SetupSlackForm().fields["enabled"].help_text)
     assert "Turning Slack off discards any Slack token entered" in help_text
@@ -450,8 +452,8 @@ def test_test_slack_while_slack_is_off_opens_the_next_step_needing_work(
     monkeypatch, method, tests, expected
 ):
     """Back or an old tab on Test Slack after Slack was turned off opens the
-    step Continue setup opens (#1505), without compiling the preview: Test
-    email while its test must be sent again, else the next one not done."""
+    step Continue setup opens (#1505), without reading the test's inputs:
+    Test email while it has no accepted test, else the next one not done."""
     from django.test import RequestFactory
 
     from parishkit.stewardship.accounts import setup_notification_views as views
@@ -471,7 +473,7 @@ def test_test_slack_while_slack_is_off_opens_the_next_step_needing_work(
         lambda found: build(found, credentials=credentials, tests=tests),
     )
     monkeypatch.setattr(views, "_checked", lambda request, service, response: response)
-    monkeypatch.setattr(views, "prepare_preview", pytest.fail)
+    monkeypatch.setattr(views, "prepare_test", pytest.fail)
     request = getattr(RequestFactory(), method)("/admin/setup/slack-test")
     response = views.setup_notification(request)
     assert response.status_code == 302
@@ -481,22 +483,107 @@ def test_test_slack_while_slack_is_off_opens_the_next_step_needing_work(
 def test_a_slack_test_post_while_slack_is_off_is_still_refused(monkeypatch):
     """Only a GET or HEAD is redirected; a POST still reaches the refusal, so
     no Slack test is queued while Slack is off (#1505)."""
-    from types import SimpleNamespace
+    from contextlib import nullcontext
 
     from django.test import RequestFactory
 
     from parishkit.stewardship.accounts import setup_notification_views as views
+    from parishkit.stewardship.accounts import setup_tests
 
     setup_draft = draft({"slack": {"enabled": False, "channel_id": ""}})
     monkeypatch.setattr(views, "runtime", object)
     monkeypatch.setattr(views, "view_draft", pytest.fail)
-    monkeypatch.setattr(
-        views,
-        "prepare_preview",
-        lambda request, service: SimpleNamespace(draft=setup_draft),
-    )
+    # The real admission refuses the test while Slack is off.
+    monkeypatch.setattr(setup_tests, "work_transaction", nullcontext)
+    monkeypatch.setattr(setup_tests, "view_draft", lambda request, service: setup_draft)
     monkeypatch.setattr(views, "request_notification", pytest.fail)
     response = views.setup_notification(
         RequestFactory().post("/admin/setup/slack-test", {})
     )
     assert response.status_code == 400
+
+
+@pytest.mark.parametrize(
+    ("state", "expected"),
+    [
+        ("queued", [("active", "In progress"), ("waiting", None), ("waiting", None)]),
+        ("submitting", [("done", None), ("active", "In progress"), ("waiting", None)]),
+        ("accepted", [("done", None), ("done", None), ("done", "Delivered")]),
+        ("not_sent", [("done", None), ("done", None), ("failed", "Failed")]),
+        (
+            "delivery_unknown",
+            [("done", None), ("done", None), ("uncertain", "Not sure it arrived")],
+        ),
+        (
+            "cancelled",
+            [("failed", "Not sent (cancelled)"), ("waiting", None), ("waiting", None)],
+        ),
+    ],
+)
+def test_the_newest_test_is_drawn_with_the_shared_stage_boxes(state, expected):
+    """Test email and Test Slack draw their newest test as the shared stage
+    boxes, Queued, Sending and Result, the box a settled test ended on in
+    the list's own words; earlier tests stay listed below (#1578)."""
+    from parishkit.stewardship.accounts.setup_mail_views import LABELS, progress
+
+    def row(identity, value):
+        """One Recent tests row, as ``setup_mail_views._items`` gives it."""
+        return {
+            "id": identity,
+            "state": value,
+            "label": str(LABELS[value]),
+            "created_at": NOW.isoformat(),
+            "current": True,
+        }
+
+    boxes = progress([row("new", state), row("old", "accepted")])
+    assert [box["key"] for box in boxes] == ["queued", "sending", "result"]
+    assert [box["label"] for box in boxes] == ["Queued", "Sending", "Result"]
+    for box, (box_state, words) in zip(boxes, expected, strict=True):
+        assert box["state"] == box_state
+        if words:
+            assert box["status"] == words
+    assert progress([]) is None
+    html = render_to_string(
+        "stewardship/setup-test-status.html",
+        {"items": [row("new", state), row("old", "accepted")], "empty": "None yet."},
+    )
+    (boxes_html,) = re.findall(r'<ol class="stage-boxes".*?</ol>', html, re.S)
+    assert 'aria-label="Latest test"' in boxes_html
+    assert boxes_html.count('data-test-stage="') == 3
+    # The newest test's line comes first, the earlier ones after the boxes.
+    assert html.index('data-mail-id="new"') < html.index("stage-boxes")
+    assert html.index("stage-boxes") < html.index("Earlier tests")
+    assert html.index("Earlier tests") < html.index('data-mail-id="old"')
+    empty = render_to_string(
+        "stewardship/setup-test-status.html", {"items": [], "empty": "None yet."}
+    )
+    assert "stage-boxes" not in empty and "None yet." in empty
+    single = render_to_string(
+        "stewardship/setup-test-status.html",
+        {"items": [row("new", state)], "empty": "None yet."},
+    )
+    assert "Earlier tests" not in single and "<ul>" not in single
+
+
+def test_a_test_sent_with_earlier_settings_draws_no_result():
+    """A stale newest test says nothing about the current settings, so its
+    boxes are all Not started rather than a green Delivered that reads as
+    current (#1578)."""
+    from parishkit.stewardship.accounts.setup_mail_views import LABELS, progress
+
+    stale = {
+        "id": "stale",
+        "state": "accepted",
+        "label": str(LABELS["accepted"]),
+        "created_at": NOW.isoformat(),
+        "current": False,
+    }
+    boxes = progress([stale])
+    assert [box["state"] for box in boxes] == ["waiting"] * 3
+    assert [box["status"] for box in boxes] == ["Not started"] * 3
+    html = render_to_string(
+        "stewardship/setup-test-status.html", {"items": [stale], "empty": "None yet."}
+    )
+    assert "Sent with earlier settings" in html and "Delivered" in html
+    assert "stage-done" not in html

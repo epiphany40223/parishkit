@@ -701,7 +701,7 @@ def test_idle_session_is_replaced_rather_than_revived(auth_service, google):
     [
         None,
         "/admin/integrations",
-        "/admin/setup/credentials/slack",
+        "/admin/setup/credentials/parishsoft",
         "https://attacker.example/admin/",
         "//attacker.example/admin/",
     ],

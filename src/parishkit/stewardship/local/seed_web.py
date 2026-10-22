@@ -783,9 +783,12 @@ def run_wizard(
 def wizard_collect(request, service, *, fake_key=LOCAL_PARISHSOFT_KEY):
     """The wizard's data-entry pages, in page order, ending with the source load.
 
-    The order follows ``setup_wizard.PAGES`` (#1353): ParishSoft connection
-    and Load parish data come last, after the logo and access pages, so the
-    load is the only step left to wait for before the review.
+    The order follows ``setup_wizard.PAGES`` (#1353, #1578): ParishSoft
+    connection and Load parish data come last, after the logo and access
+    pages, so the load is the only step left to wait for before the review.
+    The email test, which belongs right after Google Workspace connection,
+    is sent by ``wizard_confirm`` after the load: it needs only the mail
+    settings, so where it is sent does not change what it proves.
     """
     from parishkit.stewardship.accounts.setup_credentials import stage_credential
     from parishkit.stewardship.accounts.setup_drafts import save_section
@@ -953,15 +956,20 @@ def preview_token(request, service):
 def wizard_confirm(request, service, attempt_id, *, wait):
     """Send the sample mail, wait for the catcher to take it, then confirm the
     current preview (the wizard's Test email, Review and Finish setup, #1476)."""
+    from django.core import signing
+
     from parishkit.stewardship.accounts.setup_confirmation import freeze_setup
     from parishkit.stewardship.accounts.setup_delivery_models import SetupMailDelivery
     from parishkit.stewardship.accounts.setup_mail import request_sample
+    from parishkit.stewardship.accounts.setup_tests import TEST_SALT, prepare_test
 
     confirm_request = new_request("/admin/setup/confirm", session=request.session)
+    # The test page's own signed binding: the staged key and its settings.
+    inputs = prepare_test(confirm_request, service, "mail_test")
     sample = request_sample(
         confirm_request,
         service,
-        preview_token=preview_token(confirm_request, service),
+        test_token=signing.dumps(inputs.binding(), salt=TEST_SALT),
         request_key=uuid4(),
     )
 
