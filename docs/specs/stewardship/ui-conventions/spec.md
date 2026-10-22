@@ -2728,7 +2728,15 @@ match.
    holds unsaved changes, Back first asks in the shared
    [confirmation dialog](#row-actions-and-confirmation) "Discard your changes
    and go back?", with **Discard and go back** and **Stay**. Following a
-   step in the bar or the list asks the same.
+   step in the bar or the list asks the same, and so does a sub-page's
+   **Return to *step*** (rule 10). Discard and go back follows the link
+   without posting anything; Stay (or Escape) closes the dialog with the
+   typed values kept and focus back on the link. A page that holds no
+   change navigates at once, with no dialog. A link opened in a new tab or
+   window is never asked about, since it discards nothing. The wizard never
+   uses the browser's own leave-page prompt: its wording cannot be the
+   dialog's, and it would also fire on the wizard's own saves. Leave
+   *wizard* and the Admin menu leave as always.
 7. **Completed means saved or reviewed.** A step is completed once its own
    save has been applied or its Continue has been pressed (reviewed and kept
    as is), or, on a step whose purpose is a check, once that check passes (a
@@ -2802,8 +2810,13 @@ saves directly and returns to the step, whose status line says what was
 saved. Pages and emails' editor also meets rule 10's Keep as is and go back
 (#1404 PR 6b): it marks the item Kept as is and returns to the list, with
 focus on the item's row; New and Edit scheduled email store no item mark,
-so Return to *step* is their way back while unchanged. Back asking before it discards (rule 6) is not built in either
-wizard. Each part's precedent moves into the rule above when it lands.
+so Return to *step* is their way back while unchanged. Rule 6 is met in the
+campaign wizard (#1404 PR 7,
+[#1942](https://github.com/epiphany40223/parishkit/issues/1942)): a page holds a change while a change-gated form differs from
+its saved values, an image is chosen on Campaign images, or a directly
+saved form differs from what it was drawn with. The setup wizard's pages
+have no change gate, so its Back does not ask yet. Each part's precedent
+moves into the rule above when it lands.
 
 ## Admin page layout and help
 

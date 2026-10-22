@@ -3859,12 +3859,11 @@ Create the campaign drawn as step 1 (#1404 PR 3), Load ParishSoft data as
 step 2 (#1404 PR 5), and the direct save
 on Campaign settings and Share options (#1404 PR 4), on Pages and emails'
 editor and New and Edit scheduled email (#1404 PR 4b) and on Campaign images
-(#1404 PR 4c), the Pages and emails item states (#1404 PR 6b), and Dates and
-mail schedules' suggested schedules (#1404 PR 6a).
-The rest of #1404 is planned, and each part below marked "(planned, #1404
-PR n)" describes the design, not yet the pages: Back asking before it
-discards, with
-Go live's summary lines (PR 7). Setup ends without a campaign, so
+(#1404 PR 4c), the Pages and emails item states (#1404 PR 6b), Dates and
+mail schedules' suggested schedules (#1404 PR 6a), and Back asking before it
+discards, with Go live's summary lines (#1404 PR 7,
+[#1942](https://github.com/epiphany40223/parishkit/issues/1942)). Setup ends
+without a campaign, so
 a newly set-up deployment reaches the page; a deployment set up before #142
 already has its campaign and never does.
 
@@ -4201,10 +4200,27 @@ live.
 - **Go live.** The last step: its segment opens the
   [Go live page](#go-live-page)'s Check step, which draws only the Go live
   step bar, not this stepper, and whose Back returns to Preview and test
-  email (#1585). It gains one summary line per step (planned, #1404
-  PR 7), such as "Share options: kept the defaults" or "Pages and
-  emails: 3 changed, 14 default text", so no step needs a review dialog of
-  its own; the outward-facing review stays in Confirm Production.
+  email (#1585). While the stepper applies, the Check step lists one
+  summary line per earlier step under **Campaign setup** (#1404 PR 7), its
+  name linking the step, so no step needs a review dialog of its own; the
+  outward-facing review stays in Confirm Production. The lines come from
+  the stepper's own completion read, with no further query:
+  - Campaign settings: "changed since the campaign was created" once a
+    change to the campaign's own settings was applied (a change of only
+    its dates or time zone included, which Dates and mail schedules
+    counts too), otherwise "as created".
+  - Load ParishSoft data: "loaded" once the campaign has its Families,
+    otherwise "not loaded yet".
+  - Share options and Campaign images: "changed" once a change on that
+    page was applied, "kept the defaults" once its Continue kept it as is,
+    otherwise "not done yet".
+  - Pages and emails: its items counted in the list's own words, such as
+    "3 edited, 2 kept as is, 14 default text" (and "1 empty"), leaving out
+    a word with no item.
+  - Dates and mail schedules: the Family mail it schedules, such as "1
+    invitation, 3 reminders", or "no Family mail scheduled yet".
+  - Preview and test email: "test accepted" once a test of the
+    invitation's current revision was accepted, otherwise "not done yet".
 
 The stepper's summary names the next step that is not done yet ("Next:
 Pages and emails"), as text, and offers **Leave campaign setup**, which opens
