@@ -34,6 +34,7 @@ from parishkit.stewardship.accounts.user_timelines import (
     email_lines,
     family_lines,
     ordered,
+    read_ministries,
     role_changes,
     rule_role,
     summarize,
@@ -490,3 +491,52 @@ def test_the_family_panel_carries_the_testing_test_link():
     assert "Try the Family form" not in render(
         with_families(replace(held, test_url=None))
     )
+
+
+def test_ministries_come_from_the_accounts_or_else_the_address(monkeypatch):
+    """Signed-in users keep the per-account scope; one who never signed in
+    (no Google account) is read by address, as the reading Administrator
+    (#1925); all-disabled accounts lead nothing and never fall back."""
+    from parishkit.stewardship.accounts import leader_import, policy
+
+    calls = []
+
+    def by_account(account):
+        """The per-account scope, recorded."""
+        calls.append(("account", account))
+        return frozenset({4})
+
+    def by_address(address, actor):
+        """The address scope, recorded."""
+        calls.append(("address", address, actor))
+        return frozenset({9})
+
+    monkeypatch.setattr(policy, "leader_scope", by_account)
+    monkeypatch.setattr(policy, "address_leader_scope", by_address)
+    monkeypatch.setattr(
+        leader_import,
+        "ministry_names",
+        lambda duids: {duid: f"Ministry {duid}" for duid in sorted(duids)},
+    )
+    actor = UUID(int=5)
+    enabled = ({"id": UUID(int=7), "disabled": False},)
+    assert read_ministries(enabled, "ann@example.org", actor) == ("Ministry 4",)
+    assert calls == [("account", UUID(int=7))]
+    calls.clear()
+    assert read_ministries((), "ann@example.org", actor) == ("Ministry 9",)
+    assert calls == [("address", "ann@example.org", actor)]
+    calls.clear()
+    disabled = ({"id": UUID(int=7), "disabled": True},)
+    assert read_ministries(disabled, "ann@example.org", actor) == ()
+    assert calls == []
+
+
+def test_a_leader_who_never_signed_in_shows_ministries_but_no_logs_control():
+    """Ministry leader of shows; with no Google account there is no System
+    logs control, since System logs filters by account (#1925)."""
+    leader = Person(USER, "lee@example.org", "Leader, Lee", "ministry_leader")
+    records = UserTimeline(leader, summarize([], [], ("Choir",)), (), ())
+    page = render(records)
+    assert "Ministry leader of" in page and "<dd>Choir</dd>" in page
+    assert "entries in System logs" not in page
+    assert 'name="actor"' not in page
