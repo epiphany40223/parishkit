@@ -417,3 +417,27 @@ def test_task_status_fragment_is_administrator_only(auth_service, google, role):
     response = browser.get(f"/admin/system/background/{task.run_id}/status/")
     assert response.status_code == 403
     assert str(task.run_id).encode() not in response.content
+
+
+def test_a_finished_tasks_page_re_read_is_marked_automatic(auth_service, google):
+    """Once its task ends the task page re-reads itself in place with
+    X-ParishKit-Read: passive (#869, #1985). That read is still audited, as
+    the page's view always is, but marked automatic, as a report's
+    automatic view is (#1620); the reader's own open carries no mark.
+    Neither renews the sign-in, and the header admits no anonymous
+    caller."""
+    task = act(act(new(), "claim"), "complete")
+    browser, _ = signed_in()
+    before = PortalSession.objects.get().last_activity_at
+    path = f"/admin/system/background/{task.run_id}/"
+    assert browser.get(path).status_code == 200
+    assert browser.get(path, HTTP_X_PARISHKIT_READ="passive").status_code == 200
+    contexts = [
+        AuditContext.objects.get(event=event).context
+        for event in AuditEvent.objects.filter(event_type="background_viewed").order_by(
+            "created_at"
+        )
+    ]
+    assert [context.get("automatic") for context in contexts] == [None, True]
+    assert PortalSession.objects.get().last_activity_at == before
+    assert Client().get(path, HTTP_X_PARISHKIT_READ="passive").status_code == 403

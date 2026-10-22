@@ -363,3 +363,61 @@ def test_a_second_request_joins_the_remembered_run(auth_service, google):
         status = browser.get(f"/admin/system/background/{root}/status/?view=refresh")
     assert status.status_code == 200
     assert 'data-live-status="task"' in status.content.decode()
+
+
+def activity():
+    """The live sign-in's last activity: a renewal moves it."""
+    return PortalSession.objects.get(revoked_at__isnull=True).last_activity_at
+
+
+@pytest.mark.usefixtures("source_singletons")
+def test_a_settled_loads_re_read_is_passive(auth_service, google):
+    """The page's own quiet re-read once a load's status settles carries
+    X-ParishKit-Read: passive and never extends the sign-in (#1985); the
+    reader's own open of the page still does. The header changes nothing
+    else: a POST carrying it is still CSRF-checked and still renews the
+    sign-in, and an anonymous caller or a Staff reader sending it is refused
+    as before."""
+    publish(source())
+    add_rules(auth_service.store, address("reader@example.org", ("staff",)))
+    browser, login = signed_in()
+    assert login.status_code == 302
+    with web():
+        before = activity()
+        passive = browser.get(URL, HTTP_X_PARISHKIT_READ="passive")
+        assert passive.status_code == 200
+        assert passive["Cache-Control"] == "no-store"
+        assert b"Refresh now" in passive.content
+        assert browser.head(URL, HTTP_X_PARISHKIT_READ="passive").status_code == 200
+        assert activity() == before
+        # Only the exact word is passive; anything else is an ordinary read.
+        assert browser.get(URL, HTTP_X_PARISHKIT_READ="Passive").status_code == 200
+        assert activity() > before
+        before = activity()
+        assert browser.get(URL).status_code == 200
+        assert activity() > before
+        # A POST is never passive: without its CSRF token it is refused
+        # before the route, and with it the submission renews the sign-in.
+        refused = browser.post(
+            URL, {"request_key": str(uuid4())}, HTTP_X_PARISHKIT_READ="passive"
+        )
+        assert refused.status_code == 403
+        assert not SourceRefreshRequest.objects.exists()
+        before = activity()
+        submitted = browser.post(
+            URL,
+            {
+                "request_key": str(uuid4()),
+                "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
+            },
+            HTTP_X_PARISHKIT_READ="passive",
+        )
+        assert submitted.status_code == 302
+        assert activity() > before
+        anonymous = Client()
+        assert anonymous.get(URL, HTTP_X_PARISHKIT_READ="passive").status_code == 403
+    google[0].update(email="reader@example.org", sub="reader-google-subject")
+    reader, login = signed_in()
+    assert login.status_code == 302
+    with web():
+        assert reader.get(URL, HTTP_X_PARISHKIT_READ="passive").status_code == 403
