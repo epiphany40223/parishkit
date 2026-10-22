@@ -5806,6 +5806,10 @@ page load, outside the in-place regions, so it never appears or vanishes
 under the pointer, and it is absent when nothing is held. No schema change
 and no lasting record: the process log keeps each hold's WARNING line.
 
+A second note, drawn the same way, names the earlier report emails a report
+send is waiting on (#1872); its behavior is in
+[report emails](../report-emails/spec.md#catch-up-recovery-and-holds).
+
 #### Fix many emails at once
 
 After a mail outage many emails can need the same decision. A collapsed
@@ -6075,7 +6079,10 @@ the [delivery workflow](../background-processing/spec.md#family-invitations-and-
 posted to the page's existing resolution command, with the same server
 checks, notes, duplicate acknowledgement, command idempotency, stale-version
 refusal (409 with its plain-language message and code) and audit as before.
-No answer adds a server command or a rule.
+No answer adds a server command or a rule, except a cancelled report
+email's two coverage decisions (#1872), which the
+[report emails spec](../report-emails/spec.md#catch-up-recovery-and-holds)
+adds as two new actions of the same command, each with its own guard.
 
 - **Not sure it arrived** asks "What did you find?":
   - "It was sent": "Where did you see that it was sent?" → **Mark as
@@ -6091,6 +6098,17 @@ No answer adds a server command or a rule.
 - **Failed** asks "Send it again?":
   - Yes: "Why send it again?" → **Send it again** (`retry_failed`).
   - No: "Why leave it as failed?" → **Save note** (`note`); it stays Failed.
+- **Not sent (cancelled)**, only for a report email that was once unknown
+  and then cancelled and has no coverage decision yet (#1872), asks "Did it
+  reach its recipient?": "Yes, it was sent" → **Count as delivered**
+  (`count_delivered`), and "No, or I can't tell" → **Count as not
+  delivered** (`count_unsent`), each with its note. These answers send
+  nothing, so they never wait for a background task; each records the
+  note and the decision the
+  [report emails spec](../report-emails/spec.md#catch-up-recovery-and-holds)
+  defines. Any other cancelled email asks nothing. A report email that a
+  later send of its report waits on says so at the end of the panel, in
+  whatever state it is.
 
 Every answer needs its note, as the server requires; each prompt is
 specific to the answer. An answer the rules do not allow now stays in the

@@ -12,10 +12,12 @@ from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.family_schedule_planning import _planning_scope
 from parishkit.stewardship.campaigns.schedule_models import ScheduleOccurrence
 from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.reports.models import ReportEmailCoverageDecision
 from parishkit.stewardship.storage import StaleRecordError
 
 from .delivery_admin import authorize, evidence_note
 from .delivery_metadata import PURPOSES
+from .delivery_reads import COUNT_ACTIONS, coverage_undecided
 from .delivery_resolution_models import ACTIONS, DeliveryResolution
 from .family_dispatch_grants import METADATA_FIELDS
 from .family_mail_credentials import seal_current_credentials
@@ -173,6 +175,14 @@ def resolve_delivery(
     The Web service has no outbox UPDATE grant. A closed insert trigger validates
     this intent independently and owns its exact message/occurrence changes.
     Replays compare retained intent before any random re-sealing or retry work.
+
+    ``count_delivered`` and ``count_unsent`` (#1872) settle an earlier
+    report email that was once unknown and then cancelled, which a later
+    send of its report would otherwise wait on for good. Each is recorded
+    as an evidence note (the journal's ``note``, which changes nothing)
+    plus a ``ReportEmailCoverageDecision`` of the same id, in this one
+    commit; the decision's own guard (frozen file 0164) admits it. A
+    replay finds both and returns the note.
     """
     if any(not isinstance(value, UUID) for value in (user_id, message_id, command_id)):
         raise ValueError("Resolution requires canonical identities.")
@@ -180,7 +190,7 @@ def resolve_delivery(
         type(expected_version) is not int
         or not 1 <= expected_version <= 2**63 - 1
         or type(action) is not str
-        or action not in ACTIONS
+        or action not in ACTIONS + tuple(COUNT_ACTIONS)
     ):
         raise ValueError("Invalid resolution version or action.")
     if type(duplicate_acknowledged) is not bool or duplicate_acknowledged != (
@@ -194,11 +204,13 @@ def resolve_delivery(
         or any(value is not None for value in (general, public, public_origin))
     ):
         raise ValueError("Use one unambiguous preparation input source.")
+    decision = COUNT_ACTIONS.get(action)
     intent = dict(
         actor_id=user_id,
         message_id=message_id,
         expected_version=expected_version,
-        action=action,
+        # A coverage decision's journal entry is its evidence note.
+        action="note" if decision else action,
         evidence_note=evidence_note(note),
         duplicate_acknowledged=duplicate_acknowledged,
     )
@@ -206,8 +218,11 @@ def resolve_delivery(
         authorize(store, user_id)
         previous = DeliveryResolution.objects.filter(pk=command_id).first()
         if previous is not None:
-            if any(
-                getattr(previous, field) != value for field, value in intent.items()
+            if (
+                any(
+                    getattr(previous, field) != value for field, value in intent.items()
+                )
+                or _decided(command_id) != decision
             ):
                 raise ValueError("Resolution command is already bound.")
             return previous
@@ -223,7 +238,17 @@ def resolve_delivery(
         )
         preparation, next_task_id = None, None
         retry = action in {"resend", "retry_failed", "retry_unsent"}
-        if action != "note" and (latest is None or latest.state != "failed"):
+        if decision is not None:
+            # Neither decision sends, so no delivery execution is involved:
+            # a cancelled email's task may have ended any way. Only a report
+            # email that can take one is offered it (the page's offers).
+            if not coverage_undecided(
+                dict(id=message.pk, purpose=message.purpose, state=message.state)
+            ):
+                raise StaleRecordError(
+                    "This action does not match the current delivery state."
+                )
+        elif action != "note" and (latest is None or latest.state != "failed"):
             raise StaleRecordError(
                 "Wait for the delivery worker to finish recording its result."
             )
@@ -248,7 +273,7 @@ def resolve_delivery(
             # delivery_unknown always requires explicit duplicate-risk consent.
             "retry_unsent": {"pending", "retry_wait"},
         }
-        if message.state not in expected_states[action]:
+        if decision is None and message.state not in expected_states[action]:
             raise StaleRecordError(
                 "This action does not match the current delivery state."
             )
@@ -284,9 +309,26 @@ def resolve_delivery(
             id=command_id,
             correlation_id=correlation_id,
             **intent,
-            previous_task_id=latest.pk if action != "note" else None,
+            previous_task_id=latest.pk if intent["action"] != "note" else None,
             retry_task_id=next_task_id,
             preparation=preparation,
         )
         receipt.preparation = None
+        if decision is not None:
+            ReportEmailCoverageDecision.objects.create(
+                id=command_id,
+                correlation_id=command_id,
+                actor_id=user_id,
+                message_id=message_id,
+                decision=decision,
+            )
         return receipt
+
+
+def _decided(command_id):
+    """The coverage decision recorded with a resolution, or None (#1872)."""
+    return (
+        ReportEmailCoverageDecision.objects.filter(pk=command_id)
+        .values_list("decision", flat=True)
+        .first()
+    )

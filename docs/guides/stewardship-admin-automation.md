@@ -2222,13 +2222,15 @@ by their Name or address),
 | `task` | `delivery show`: the latest task's `id`, `state`, `version` and `retry_sequence` |
 | `actions`, `retry_unavailable` | `delivery show`: the resolutions the page offers now, and whether a retry is refused by the campaign's resend rule |
 | `events` | `delivery show`: the history's `version`, `at`, `state`, `action`, `attempt` and `result` (a stored code) |
-| `notes` | `delivery show`: each resolution's `created_at` and `action` |
+| `notes` | `delivery show`: each resolution's `created_at` and `action` (`count_delivered` or `count_unsent` for a report email's coverage decision) |
+| `report_waiting` | `delivery list`: each report send waiting on an earlier email, whatever the filters, as its `send` id, `due_at` and the `message_id` it waits on; `delivery show`: the sends (`send`, `due_at`) waiting on this email (#1872) |
 | `refusals` | `delivery refusals`: each unresolved refusal's `id`, `kind` and `created_at` |
 | `id`, `kind`, `created_at`, `resolved`, `source`, `can_clear` | `delivery refusal-show`: the refusal (its `kind` is `provider` when the provider refused the address, `reported_bounce` when an Administrator reported a bounce; a report's note stays on the page), how and when it was resolved (`kind`, `at`), the source version to verify (`snapshot_id`, `generation`), and whether a clearance can be recorded now |
 
 `delivery resolve` takes `--action` (`note`, `accept`, `confirm_unsent`,
-`retry_failed` or `retry_unsent`, as offered in `actions`; an offered
-`resend` is `delivery resend`), `--expected-version` (the delivery's
+`retry_failed`, `retry_unsent`, or, for an earlier report email that was
+once unknown and then cancelled, `count_delivered` or `count_unsent`, as
+offered in `actions`; an offered `resend` is `delivery resend`), `--expected-version` (the delivery's
 `version`), `--note` (or `-`) and
 `--request-key`, made for you and written to standard error when left out.
 Give evidence that names people as `--note -` from a file or standard

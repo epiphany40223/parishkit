@@ -540,6 +540,48 @@ Report sends use the shared machinery unchanged:
   the report's later sends wait behind it. The earlier message's unknown
   outcome is what the Administrator resolves; mail dispatch logs it.
 
+  **Seeing a wait** (#1872). The comparison names the earlier messages a
+  send waits on. While any send waits, Sent mail shows a note above the
+  list, drawn with the page as the
+  [sending limit note](../admin-portal/spec.md#sending-limit-note) is,
+  headed "A report email is waiting": an earlier copy to one of its
+  recipients may already have been delivered, so the report is not sent
+  again until that is settled. It links each earlier email's
+  [Mail message page](../admin-portal/spec.md#mail-message-page) by when
+  that email was created (browser-local), with how many sends wait on it
+  when more than one does. That page's outcome panel ends with the notice
+  "A later send of this report is waiting for this email's outcome",
+  pointing to the panel's question, or, when none is asked (the email is
+  still on its way), saying nothing needs doing yet. Sent mail's About
+  panel explains the note. `pk-admin delivery list` and `delivery show`
+  carry the same read (`report_waiting`). The Report
+  emails page's [past sends](#past-sends) list such a send as "Waiting"
+  from the same read. The read
+  (`stewardship_report_email_waiting_v1`, Administrators only, frozen file
+  0165) returns
+  each waiting send's preparation, due time and the ids of the messages
+  it waits on, never an address.
+
+  **Ending a wait that cannot end** (#1872). An earlier message that was
+  once `delivery_unknown` and then ended `cancelled` (for example its
+  recipient was revoked, or the campaign closed) can never be delivered
+  or refused again, so nothing would settle it. Its Mail message page's
+  outcome panel asks "Did it reach its recipient?" (see
+  [resolution questions](../admin-portal/spec.md#resolution-questions)),
+  each answer with the usual expected version and evidence note, and
+  audited: **Count as delivered**
+  (the earlier attempt reached the recipient, so it covers its slots and
+  is named among the covered row's messages) and **Count as not
+  delivered** (it never did, so the address gets its own message). Each
+  is recorded once per message, as an evidence note and a
+  `ReportEmailCoverageDecision`
+  (`stewardship_report_email_coverage_decision`, frozen file 0164)
+  with the note's id, which the comparison reads. Its insert
+  guard admits it only from an Administrator, for a cancelled report email
+  whose history includes `delivery_unknown`, at the email's current
+  version, with that note. `pk-admin delivery resolve` offers them as
+  `--action count_delivered` and `count_unsent`.
+
   A Send now covers no slot, so it always sends to every recipient and
   never covers a later send. A covered address counts as delivered when
   the send completes. The database's recipient guard checks each
@@ -1211,8 +1253,9 @@ report's row, in a disclosure) newest first, 20 at a time with the table
 navigator: when it was made (browser-local), what it was (scheduled,
 manual, recovery), the as-of moment it reported, its recipient count, its
 result (Sent, Not sent: nothing to report, Not sent: no current recipients,
-Failed, Uncertain: check Sent mail, Sending) and a link to
-its saved copy. A list block's count is shown beside it ("12 open
+Failed, Uncertain: check Sent mail, Sending, or Waiting while it [waits on
+an earlier message](#catch-up-recovery-and-holds)) and a link to its saved
+copy. A list block's count is shown beside it ("12 open
 requests"). The sends of the converted Daily and Weekly made before the
 migration are listed with their report, linking their existing saved
 copies.
@@ -1327,6 +1370,11 @@ history, and the Resolve held messages commands' `--type` takes
 `admin_report`, keeping `daily_digest` and `weekly_digest` for digests held
 from before the conversion
 ([family email sends and delivery controls](../admin-automation/spec.md#family-email-sends-and-delivery-controls)).
+`delivery resolve --action` also takes `count_delivered` and `count_unsent`
+for an earlier report email that was once unknown and then cancelled, and
+`delivery list` and `delivery show` name the report sends waiting on an
+email (`report_waiting`), as Sent mail does (see
+[catch-up, recovery and holds](#catch-up-recovery-and-holds)).
 
 A full-scope session is needed for `preview`, `confirm`, `send-test` and
 `send-now`; the reads take any scope. Exit codes and output follow the

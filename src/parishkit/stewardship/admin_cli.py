@@ -3579,6 +3579,8 @@ RESOLVE_ACTIONS = (
     "confirm_unsent",
     "retry_failed",
     "retry_unsent",
+    "count_delivered",
+    "count_unsent",
 )
 
 
