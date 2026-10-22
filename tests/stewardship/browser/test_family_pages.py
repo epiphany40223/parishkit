@@ -906,3 +906,116 @@ def test_parish_text_page_links_open_in_a_new_tab(page, component_origin):
         "return to your form",
     ):
         assert block.get_by_role("link", name=name).get_attribute("target") is None
+
+
+# Each visible button of the sticky bar, in DOM order, with its slot, its
+# shown text and accessible label, and its box relative to the bar (#1933).
+BUTTON_ROW = """() => {
+  const nav = [...document.querySelectorAll('.family-nav')]
+    .find(n => n.checkVisibility());
+  const bar = nav.getBoundingClientRect();
+  return {width: Math.round(bar.width), buttons: [...nav.querySelectorAll('button')]
+    .filter(b => b.checkVisibility()).map(b => {
+      const box = b.getBoundingClientRect();
+      return {slot: b.dataset.navSlot, shown: b.innerText.trim(),
+        name: b.getAttribute('aria-label') || b.textContent,
+        left: Math.round(box.left - bar.left), right: Math.round(bar.right - box.right),
+        center: Math.round((box.left + box.right) / 2 - (bar.left + bar.right) / 2),
+        top: Math.round(box.top - bar.top), width: Math.round(box.width),
+        height: Math.round(box.height)};
+    })};
+}"""
+
+LONG_PARISH = "Saint Elizabeth Ann Seton Parish"
+
+
+@pytest.mark.parametrize(
+    ("width", "scheme", "parish"),
+    [
+        (1280, "light", None),
+        (700, "light", LONG_PARISH),
+        (641, "light", LONG_PARISH),
+        (390, "light", None),
+        (360, "light", None),
+        (320, "light", None),
+        (320, "light", LONG_PARISH),
+        (390, "dark", None),
+    ],
+)
+def test_button_row_keeps_back_left_action_centered_next_right(
+    page, component_origin, width, scheme, parish
+):
+    """#1933: one three-slot row on every step, so no button ever moves.
+
+    Back is at the bar's left edge, the action (Cancel and sign out, or Submit
+    on Review) centered and Next at the right edge, on every step including the
+    first, where Back is absent, all on one line at every width. A phone shows
+    short labels ("Back · Cancel · Next", "Back · Submit") with 44 px tap
+    targets, while each button keeps its full label as its accessible name.
+    """
+    page.set_viewport_size({"width": width, "height": 900})
+    page.emulate_media(color_scheme=scheme)
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    form = paged_form()
+    if parish:
+        form["parish_name"] = parish
+    submit = "Submit to " + form["parish_name"]
+    begin(page, component_origin, form, None)
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    page.locator('[data-step-link="intro"]').click()
+    narrow = width <= 640
+    seen = {}
+    count = page.locator("[data-step-link]").count()
+    for index in range(count + 1):
+        if index == count:
+            next_page(page)
+            expect(page.get_by_role("button", name="Back to edit")).to_be_visible()
+        row = page.evaluate(BUTTON_ROW)
+        slots = [button["slot"] for button in row["buttons"]]
+        # DOM (and so Tab) order is the visual order: Back, action, Next.
+        expected = ["back", "action", "next"]
+        if index == 0:
+            expected = ["action", "next"]
+        elif index == count:
+            expected = ["back", "action"]
+        assert slots == expected, (index, row)
+        # Full accessible names everywhere; a phone shows only the first word.
+        names = {"back": "Back", "action": "Cancel and sign out", "next": "Next"}
+        if index == count:
+            names = {"back": "Back to edit", "action": submit}
+        for button in row["buttons"]:
+            slot = button["slot"]
+            assert button["name"] == names[slot], (index, button)
+            shown = names[slot].split()[0] if narrow else names[slot]
+            assert button["shown"] == shown, (index, button)
+            if narrow:
+                assert button["height"] >= 44 and button["width"] >= 44, button
+            if slot == "back":
+                assert button["left"] == 0, (index, button)
+            elif slot == "next":
+                assert button["right"] == 0, (index, button)
+            else:
+                assert abs(button["center"]) <= 1, (index, button)
+            # Nothing moves between steps: each slot keeps its place.
+            across = button["center"] if slot == "action" else button["left"]
+            place = (across, button["top"])
+            assert seen.setdefault(slot, place) == place, (index, slot, place)
+        # One line on every step at every width.
+        tops = {button["top"] for button in row["buttons"]}
+        assert len(tops) == 1, (index, row)
+        if index < count - 1:
+            next_page(page)
+        elif index == count - 1:
+            # The last page's Next is the form's submit, in the same slot.
+            expect(page.locator("[data-page-review]")).to_be_visible()
+    # The editing pages carry Cancel in the bar; Review shows the page's own
+    # Cancel below the flow again, so there is always exactly one.
+    expect(page.get_by_role("button", name="Cancel and sign out")).to_have_count(1)
+    expect(page.get_by_role("button", name=submit)).to_be_visible()
+    page.get_by_role("button", name="Back to edit").click()
+    cancel = page.get_by_role("button", name="Cancel and sign out")
+    expect(cancel).to_have_count(1)
+    expect(cancel).to_have_attribute("form", "family-cancel")
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert not errors

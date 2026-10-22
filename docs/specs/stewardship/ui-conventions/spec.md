@@ -43,7 +43,8 @@ when it lands.
   [numbers and money](#numbers-and-money),
   [dates and times](#dates-and-times), [date format](#date-format),
   [accessibility and client behavior](#accessibility-and-client-behavior),
-  [step bars](#step-bars), [charts](#charts).
+  [step bars](#step-bars), [stepper button row](#stepper-button-row),
+  [charts](#charts).
 - Admin interaction: [JavaScript requirement](#javascript-requirement),
   [in-place controls](#in-place-controls),
   [pages that update themselves](#pages-that-update-themselves),
@@ -363,6 +364,38 @@ draws both and CSS shows exactly one, so nothing moves after the page loads
 and the hidden copy is met by neither Tab nor assistive technology. Which steps can open is each flow's
 own rule, in its spec ([Family steps](../parishioner-portal/spec.md#form-state-and-navigation),
 the setup wizard's and Campaign setup's).
+
+### Stepper button row
+
+**Rule.** A multi-step Family form's buttons sit in one row at the bottom of
+every step, in three fixed slots: **Back** at the left edge, the step's one
+action (such as Cancel and sign out, or Submit on the final review)
+centered, and **Next** at the right edge. A slot whose button a step does
+not show keeps its space, so on the first step (no Back) Next is still at
+the right and the action still centered, and no button moves from one step
+to the next ([no layout shift](#no-layout-shift)). Back and Next never wrap;
+only the centered action may, when its label is long (Submit with a long
+parish name), and the side slots stay equally wide so it stays centered.
+Where the full labels do not fit on one line (a phone), the row still stays
+one line: each long label shows only its first word (Back, Cancel and Next;
+Back and Submit on the final review) with tighter spacing, and keeps its
+full label (Back to edit, Cancel and sign out, Submit to the parish) as its
+accessible name. The choice depends only on the screen width, so every step
+of the flow looks the same, and the one-line bar keeps 44 px tap targets
+while covering little of a phone's screen. The document order is the visual
+order (Back, action, Next), so Tab and screen readers meet them as they are
+drawn. **Why.** The Family form's Next sat at the left on its first step and
+at the right from the second on, and its Cancel and sign out sat below the
+flow (Administrator, 2026-10-21, on
+[#1933](https://github.com/epiphany40223/parishkit/issues/1933)): a button
+that changes place between steps is missed, or the wrong one is pressed.
+**Shared code.** The Family form's sticky bar (`.family-nav` in `ui-v1.css`,
+drawn by `family-v1.js`), whose buttons name their slot with
+`data-nav-slot`. **Status.** The Family form meets this rule. The rule
+covers the Family forms only for now: the Admin [wizards](#wizards) keep
+their own action rows (rule 2), Back first at the left and the one primary
+at the right, with no middle action slot. Whether they adopt this row is
+[#1936](https://github.com/epiphany40223/parishkit/issues/1936).
 
 ### Charts
 

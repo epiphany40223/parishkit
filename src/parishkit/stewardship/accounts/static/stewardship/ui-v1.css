@@ -1636,17 +1636,46 @@ fieldset.artwork-upload { border: 0; border-radius: 0; background: none; padding
 .family-summary .family-name { font-size: 1.2rem; font-weight: 650; }
 .family-nav { position: sticky; bottom: 0; z-index: 1; background: var(--paper-soft, var(--paper)); padding-block: .75rem max(.75rem, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); margin-top: 1.5rem; }
 .family-nav > button { margin-block: 0; }
+/* The bar's three fixed slots (ui-conventions "Stepper button row", #1933):
+   Back left, the action (Cancel and sign out, or Submit on Review) centered,
+   Next right. Each button names its slot (data-nav-slot); a slot whose button
+   is hidden keeps its space, so nothing moves from step to step. The two side
+   columns share the free space equally, which keeps the action centered.
+   Each has the same fixed minimum, wide enough for Back to edit (about
+   8.5rem): a minimum sized from each column's own button would make Review's
+   Back column wider than its empty Next column and push a long Submit (a
+   long parish name) off center, so that Submit wraps instead. The buttons
+   align to the line's top, so a wrapped Submit moves no other button.
+   Rows have no gap: the note's own margin spaces it, so its row takes no
+   height while the note is hidden. */
+.family-nav { display: grid; grid-template-columns: minmax(10rem, 1fr) auto minmax(10rem, 1fr); grid-template-areas: "note note note" "back action next"; align-items: start; column-gap: 1rem; row-gap: 0; }
+.family-nav > [data-nav-slot="back"] { grid-area: back; justify-self: start; }
+.family-nav > [data-nav-slot="action"] { grid-area: action; justify-self: center; }
+.family-nav > [data-nav-slot="next"] { grid-area: next; justify-self: end; }
+/* Only the centered action may wrap (a long parish name in Submit): Back to
+   edit breaking onto two lines would look broken. */
+.family-nav > [data-nav-slot="back"], .family-nav > [data-nav-slot="next"] { white-space: nowrap; }
+/* A phone keeps the same one line (#1933): tighter spacing, and each long
+   label shows only its first word ("Back · Cancel · Next", "Back · Submit").
+   family-v1.js keeps the full label as the button's accessible name. One
+   44px-tall line keeps the bar short, so it covers little of the screen and
+   a Member page's first control stays above it (#292). The short labels
+   leave plenty of room, so the side columns need no fixed minimum here. */
+@media (max-width: 40rem) {
+  .family-nav { grid-template-columns: 1fr auto 1fr; column-gap: .5rem; }
+  .family-nav > button { padding-inline: .75rem; white-space: nowrap; }
+  .family-nav-long { display: none; }
+}
 /* Why Next or Review didn't advance: a full-width line above the buttons. */
-.family-nav-error { flex: 1 1 100%; margin: 0; }
+.family-nav-error { grid-area: note; margin: 0 0 .75rem; }
 /* On a phone the note must not crowd out the form under the sticky bar. */
 @media (max-width: 40rem) { .family-nav-error { padding: .5rem .75rem; font-size: .9rem; } }
 /* A note for screen readers only (the field shows its own error line): the
-   note's flex, padding and border would otherwise undo .visually-hidden. */
-.family-nav-error.visually-hidden { flex: none; padding: 0; border: 0; }
+   note's padding, margin and border would otherwise undo .visually-hidden. */
+.family-nav-error.visually-hidden { padding: 0; border: 0; margin: -1px; }
 /* Keep a field that receives focus (Next to an error, Tab) clear of the
    sticky bar instead of scrolling it underneath. */
 html:has(.family-nav) { scroll-padding-bottom: 6rem; }
-.family-nav [data-page-back] { margin-inline-end: auto; }
 /* Step bars (ui-conventions "Step bars", #1402): the Family step bar and the
    Admin steppers' bar (stepper-steps.html, for the setup wizard and Campaign
    setup) share these segment rules. Each segment is a 44px-tall control (a
@@ -1721,7 +1750,6 @@ label.limitation { display: block; margin-block: 1rem; font-weight: 600; }
 @media (max-width: 36rem) {
   main { padding-top: 1.25rem; }
   .actions > button { flex: 1 1 auto; }
-  .family-nav [data-page-back] { margin-inline-end: 0; }
   th, td { padding: .6rem .7rem; }
   caption { padding: .85rem .7rem; }
 }
