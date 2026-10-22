@@ -8,6 +8,10 @@ so the hidden re-read link (every 30 seconds) and every row action redraw it in
 place. Row actions are icon buttons that open the row actions' confirmation
 dialog; an action the row cannot take now stays in place, unavailable, with its
 reason in its tooltip. Staff see no recipients, no actions and no Edit links.
+A Paused status takes the Warning look of the UX conventions' status
+indicators (#1966): the warning icon, hidden from assistive technology, and
+the warning colours, with the word kept, since a paused report silently
+stops sending.
 {% endcomment %}
 <h1>{% translate "Report emails" %}</h1>
 {% aboutpage "report-emails" %}<p>{% translate "A report email is an email about the campaign that is sent once or on a repeating schedule. Each is made of blocks, such as the campaign totals, the response funnel or the open additional information requests, and goes to the people chosen for it: Administrators, Staff and other addresses." %}</p>
@@ -43,7 +47,7 @@ reason in its tooltip. Staff see no recipients, no actions and no Edit links.
     {% if administrator %}<td>{{ row.recipients }}</td>{% endif %}
     <td>{% if row.next %}<time datetime="{{ row.next.due_at|instant }}" data-local-instant data-compact>{{ row.next.due_at|instant }}</time>{% elif row.status == "paused" %}{% translate "None while paused" %}{% else %}{% translate "None ahead" %}{% endif %}</td>
     <td>{% if row.last %}{% include "stewardship/components/report-send.html" with send=row.last %}{% else %}{% translate "None yet" %}{% endif %}</td>
-    <td><span class="status-badge{% if row.status == 'upcoming' %} status-badge-on{% endif %}">{{ row.status_label }}</span>{% if administrator and row.status == "attention" %}<br><a href="{% url 'admin:deliveries' %}">{% translate "Check it on Sent mail" %}</a>{% endif %}{% if row.paused_since %}<br><span class="help">{% translate "Paused since" %} <time datetime="{{ row.paused_since|instant }}" data-local-instant data-compact>{{ row.paused_since|instant }}</time></span>{% endif %}</td>
+    <td><span class="status-badge{% if row.status == 'upcoming' %} status-badge-on{% elif row.status == 'paused' %} status-warning{% endif %}">{% if row.status == 'paused' %}{% include "stewardship/components/level-icon.html" with level="warning" %} {% endif %}{{ row.status_label }}</span>{% if administrator and row.status == "attention" %}<br><a href="{% url 'admin:deliveries' %}">{% translate "Check it on Sent mail" %}</a>{% endif %}{% if row.paused_since %}<br><span class="help">{% translate "Paused since" %} <time datetime="{{ row.paused_since|instant }}" data-local-instant data-compact>{{ row.paused_since|instant }}</time></span>{% endif %}</td>
     {% if administrator %}<td class="table-actions">{% include "stewardship/components/report-actions.html" %}</td>{% endif %}
   </tr>
   <tr class="report-sends-row"><td colspan="{% if administrator %}7{% else %}5{% endif %}">{% if row.sends %}<details class="disclosure" id="report-sends-{{ row.id }}" data-keep-open><summary>{% blocktranslate trimmed count sends=row.sends|length with name=row.name %}Past sends of {{ name }} ({{ sends }}){% plural %}Past sends of {{ name }} ({{ sends }}){% endblocktranslate %}</summary>
