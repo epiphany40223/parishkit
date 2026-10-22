@@ -18,6 +18,7 @@ from django.db import DatabaseError, connection, transaction
 from django.test.utils import CaptureQueriesContext
 
 from parishkit.stewardship import admin_cli
+from parishkit.stewardship.accounts import family_maintenance
 from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.user_timelines import audit_records
 from parishkit.stewardship.audit.log_descriptions import describe
@@ -210,17 +211,22 @@ def test_users_and_edit_user_link_the_timeline(people):
     assert f'href="{timeline_path(record)}"' in page
 
 
-def test_the_page_reads_a_fixed_number_of_statements(people):
+def test_the_page_reads_a_fixed_number_of_statements(people, monkeypatch):
     """More audit records add rows, not statements: each source is one read."""
     store, browser, record, portal, message = people
+    # The Admin chrome reads the Family portal switch, which each process
+    # caches for a few seconds of wall-clock time; a counted view that
+    # landed just after it expired read it once more (#1965: 205 vs 204 on
+    # CI). Start it cold, so the warm-up view fills it from this test's
+    # database, and hold it for the measurement, as the Home count does.
+    monkeypatch.setitem(family_maintenance._cache, "at", None)
+    monkeypatch.setattr(family_maintenance, "CACHE_SECONDS", 3600)
 
     def statements():
         """How many statements one view runs.
 
-        A first, uncounted view comes before the counted one: the Admin
-        chrome runs one more audit query now and then (a time-based check
-        outside this page), which made back-to-back counts differ by one
-        in longer runs.
+        A first, uncounted view comes before the counted one and fills
+        the Family portal switch's cache, which the test holds (above).
         """
         get(browser, timeline_path(record))
         with CaptureQueriesContext(connection) as queries:
