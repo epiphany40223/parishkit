@@ -509,30 +509,41 @@ The slice that adds this page, and the one that adds the report, add their
 rows to the admin-portal [menu groups](../admin-portal/spec.md#menu-groups)
 table and its page-name placement table.
 
-Adding a file follows [Review, Apply and Change
-status](../ui-conventions/spec.md#review-apply-and-change-status):
+Adding a file follows the [review dialog](../ui-conventions/spec.md#review-dialog)
+([#750](https://github.com/epiphany40223/parishkit/issues/750)):
 
-1. **Review** uploads the file and validates it (below). It shows a card:
-   the year, campaign name, final or partial, day-1 date,
+1. **Review** uploads the file and validates it (below), without a page
+   load, and opens the dialog with a card: the year, campaign name, final
+   or partial, day-1 date,
    last day, Families responded, annual pledges, the active-Family count with
    its provenance, the metadata notes that the report's data notes will show,
-   and what Apply will do (Add, Replace year N, or Already imported). A
-   refused file shows its problems instead and offers no Apply. Review
+   and what Apply will do (Add, Replace year N, or Already imported); the
+   dialog's title asks it ("Add 2025?", "Replace 2025?"), or, when Apply is
+   unavailable (below), states why ("2025 is already imported"). A
+   refused file shows its problems in the dialog instead and offers no Apply,
+   and the form keeps the chosen file; a file too large to read is instead
+   a field error on the file field. Review
    is unavailable until a file is chosen ([prerequisite
    gates](../ui-conventions/spec.md#prerequisite-gates)).
-2. **Apply** stores the file in one transaction and updates the table
-   [in place](../ui-conventions/spec.md#in-place-controls). Replacing a
+2. **Apply** stores the file in one transaction; the dialog then closes and
+   the table is redrawn [in place](../ui-conventions/spec.md#in-place-controls).
+   Replacing a
    year needs an acknowledgement checkbox on the card ("This replaces the
    2025 figures already imported"), so Apply stays unavailable until it is
    ticked. For a file already imported Apply has nothing to do, so it is
    unavailable, named by the visible reason `imported by <who> on
    <when>` (the earlier import's Administrator and local time;
    [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates);
-   [Administrator decision 12](#administrator-decisions)).
-   Once Apply has answered (imported, replaced or already imported), the
-   file choice is cleared and Keep Family rows ticked again, so Review is
-   unavailable with its hint until the next file is chosen, as on a fresh
-   page. The hint's line is reserved, so clearing the file moves nothing ([no
+   [Administrator decision 12](#administrator-decisions)), which the
+   dialog's status line under its buttons shows; likewise for a partial
+   file against a final import, whose reason is that a partial file can't
+   replace the final import.
+   Once Apply has answered, the upload form is drawn again as on a fresh
+   page (the file choice cleared, Keep Family rows ticked), so Review is
+   unavailable with its hint until the next file is chosen, and the
+   reserved status line under the form says what was applied and when
+   ("Imported 2025. Applied at …"). The hint's and status's lines are
+   reserved, so neither moves anything ([no
    layout shift](../ui-conventions/spec.md#no-layout-shift)).
 
 **Remove** is a [row action with
@@ -700,8 +711,8 @@ version 1.0"). The list says when more problems were cut off.
 The SHA-256 of the uploaded bytes identifies the file:
 
 - A file whose checksum matches a stored, not removed import is **Already
-  imported**: the page shows Apply unavailable, saying by whom and when it
-  was imported (Administrator decision 12). An Apply of it that is posted
+  imported**: the review dialog shows Apply unavailable, saying by whom
+  and when it was imported (Administrator decision 12). An Apply of it that is posted
   anyway (a crafted request, or `history confirm`) still answers
   `already` and changes nothing, so repeating an Apply, from the page or
   the command line, is harmless.
@@ -1353,15 +1364,20 @@ linked to #1018 (slice 7 completed part (b)).
 4. **Past campaigns page.** The upload page with Review, Apply, replacement
    and Remove.
    As built: Review posts to `review/` and, once the preview is stored,
-   answers with a redirect to the page naming it (`?preview=<id>`, an
-   import's own id, never a Family's), so the card is the page's own
-   state and survives a reload; a refused file answers with the page and
-   its problems in place. The view is marked `csrf_header_only`, so the
+   answers with the review dialog's card (`past-campaigns-review.html`),
+   which carries the preview's id (an import's own id, never a Family's)
+   for Apply; a refused file answers with its problems as the dialog's
+   refusal, and a file over 20 MiB with the page again (status 400), its
+   file field marked in error. A card with nothing to apply marks its
+   reason `data-review-unavailable`, so the dialog shows Apply greyed with
+   that reason. The view is marked `csrf_header_only`, so the
    middleware takes the token from the `X-CSRFToken` header alone (the
-   form is marked `data-csrf-header`), and it closes the spooled upload
+   form is marked `data-csrf-header`, which the review dialog's Review
+   honors too), and it closes the spooled upload
    inside the Review lock, before the helper runs. Apply posts to
-   `imports/` and answers with the page naming the outcome
-   (`?applied=<id>&outcome=…`); Remove posts the confirmation dialog's
+   `imports/` and answers with a redirect to the page, which takes no
+   query but its table's sort (no `?preview=` or `?applied=`, [#750](https://github.com/epiphany40223/parishkit/issues/750));
+   Remove posts the confirmation dialog's
    `<year>:<version>` to `removal/`. For a file already imported Apply is
    unavailable, as decision 12 records. The table's Active Families
    cell carries the count's provenance in a toggletip, and every import's
@@ -1574,3 +1590,7 @@ The Administrator accepted every proposed default on October 11, 2026
     reason `imported by <who> on <when>`, rather than an Apply that does
     nothing; the server's Apply still answers `already` with nothing
     changed if one is posted ([idempotency](#idempotency-and-replacement)).
+    The card's move into the review dialog
+    ([#750](https://github.com/epiphany40223/parishkit/issues/750)) keeps
+    this: the dialog shows Apply unavailable, with the reason in its status
+    line.

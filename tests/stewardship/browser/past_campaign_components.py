@@ -2,11 +2,15 @@
 
 Every figure is invented. ``/past-campaigns`` lists a final 2026 and a
 partial 2025; its Review posts to the real ``review/`` address, which the
-fixture server answers as the view does, with a redirect to the page
-naming the preview (a Review card that replaces 2025); its Apply answers
-with the page naming what was done (2025 replaced), and its Remove dialog
-posts to ``removal/`` and redraws from a page without 2025. ``-refused``
-answers its Review with the located problems, ``-year`` has Review
+fixture server answers as the view does, with the review dialog's card (a
+Review card that replaces 2025, #750); the dialog's Apply posts to
+``imports/``, which redirects to ``-done`` (2025 replaced). Its Remove
+dialog posts to ``removal/`` and redraws from a page without 2025; on
+``-apply`` both regions redraw from ``-done`` instead. ``-already`` answers
+its Review with a file already imported (Apply unavailable, with the reason),
+``-refused`` with the located problems as the dialog's refusal,
+``-too-large`` with the page again, its file field marked too large (the
+server's own size check, 400), ``-year`` has Review
 unavailable for an unresolvable year, and ``-empty`` has nothing imported.
 Every page offers a partial campaign archive download (#1018 part (a))
 except ``-archive-closed``, which offers a campaign closed before its end
@@ -38,11 +42,12 @@ REVIEW = reverse("admin:past_campaign_review")
 APPLY = reverse("admin:past_campaign_import")
 REMOVE = reverse("admin:past_campaign_removal")
 REFUSED_REVIEW = REVIEW + "?refused"
+ALREADY_REVIEW = REVIEW + "?already"
+TOO_LARGE_REVIEW = REVIEW + "?too-large"
 PREVIEW = UUID(int=1)
 APPLIED = UUID(int=2)
 ADMIN = UUID(int=3)
-CARD = f"{PAGE}?preview={PREVIEW}"
-DONE = f"{PAGE}?applied={APPLIED}&outcome=replaced"
+DONE = f"{PAGE}-done"
 REMOVED = f"{PAGE}-removed"
 # The fixtures' file limit, so a small test file counts as too large.
 MAX_BYTES = 2048
@@ -107,10 +112,6 @@ def context_for(active, removed=(), **extra):
         "table": whole_table(rows, sorting=views.SORTING, sort="-year"),
         "tombstones": [views._tombstone(row, emails) for row in [*active, *removed]],
         "refresh_url": REMOVED,
-        "card": None,
-        "applied": None,
-        "problems": [],
-        "more_problems": 0,
         "year_problem": None,
         "max_bytes": MAX_BYTES,
         "archive": OFFER,
@@ -140,8 +141,15 @@ def components(context, admin):
             context | {"admin_chrome": admin} | values,
         )
         if action:
-            html = html.replace(f'action="{REVIEW}#', f'action="{action}#')
+            html = html.replace(f'action="{REVIEW}"', f'action="{action}"')
         return "text/html", html
+
+    def answer(**values):
+        """The Review's answer in the dialog, as ``views._answer`` draws it."""
+        return render_to_string(
+            "stewardship/past-campaigns-review.html",
+            {"card": None, "problems": [], "more_problems": 0} | values,
+        )
 
     card = {
         "archive": reviewed,
@@ -171,31 +179,43 @@ def components(context, admin):
             "rule": "expected the column campaign_day",
         },
     ]
+    already = card | {
+        "archive": archive(2026, pk=PREVIEW, state="pending"),
+        "action": "already",
+        "current": final,
+    }
+    too_large = {
+        "file_error": views.TOO_LARGE,
+        "errors": [{"field_id": "archive-file", "message": views.TOO_LARGE}],
+    }
     POSTS.update(
         {
-            REVIEW: (303, f"{CARD}#archive-review", ""),
-            APPLY: (303, f"{DONE}#archive-review", ""),
+            REVIEW: (200, None, answer(card=card)),
+            ALREADY_REVIEW: (200, None, answer(card=already)),
+            APPLY: (303, DONE, ""),
             REMOVE: (303, PAGE, ""),
             REFUSED_REVIEW: (
                 400,
                 None,
-                page(context_for([final, partial], problems=problems, more_problems=3))[
-                    1
-                ],
+                answer(problems=problems, more_problems=3),
+            ),
+            TOO_LARGE_REVIEW: (
+                400,
+                None,
+                page(context_for([final, partial]) | too_large)[1],
             ),
         }
     )
-    applied = {
-        "outcome": "replaced",
-        "archive": replaced,
-        "imported_by": "admin@example.org",
-    }
     return {
         PAGE: page(context_for([final, partial])),
-        CARD: page(context_for([final, partial], card=card)),
-        DONE: page(context_for([final, replaced], [old], applied=applied)),
+        f"{PAGE}-apply": page(context_for([final, partial], refresh_url=DONE)),
+        DONE: page(context_for([final, replaced], [old], refresh_url=DONE)),
         REMOVED: page(context_for([final], [partial])),
+        f"{PAGE}-already": page(context_for([final, partial]), action=ALREADY_REVIEW),
         f"{PAGE}-refused": page(context_for([final, partial]), action=REFUSED_REVIEW),
+        f"{PAGE}-too-large": page(
+            context_for([final, partial]), action=TOO_LARGE_REVIEW
+        ),
         f"{PAGE}-year": page(
             context_for(
                 [final],

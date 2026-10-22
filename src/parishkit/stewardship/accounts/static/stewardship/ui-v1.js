@@ -2285,13 +2285,6 @@
         ?? form.getAttribute("enctype") ?? "").toLowerCase();
       const body = enctype === "multipart/form-data" ? fields : new URLSearchParams(fields);
       init = {method: "POST", body};
-      // A form marked data-csrf-header also sends its token in the
-      // X-CSRFToken header: its server checks only the header, so that an
-      // unauthorized upload is refused before its body is read (Past
-      // campaigns' Review, #1018).
-      const token = form.hasAttribute("data-csrf-header")
-        && form.querySelector('input[name="csrfmiddlewaretoken"]')?.value;
-      if (token) init.headers = {"X-CSRFToken": token};
       // A read-only table POST that got no answer is submitted natively; a
       // saving POST never is (refreshTable shows a note instead).
       load = clearing ? () => loadCleared(form, written, method)
@@ -5017,24 +5010,6 @@
     liveChecks = liveChecks.filter(({form}) => form.isConnected);
     liveChecks.forEach(({check}) => check());
   });
-  // An in-place answer that finishes a form's job carries
-  // data-clears-form="<form id>" (Past campaigns' Apply outcome, #1018):
-  // that form is reset as on a fresh page (a file field empties, boxes take
-  // their drawn defaults), a too-large mark on its file field goes with the
-  // file, and its complete gate runs again, so its buttons are held with
-  // the hint. reset() fires no input or change event, so no review is
-  // withdrawn by it. The hint's line is reserved, so nothing moves (#736).
-  document.addEventListener("parishkit:swap", (event) => {
-    if (!(event.target instanceof Element)) return;
-    within(event.target, "[data-clears-form]").forEach((mark) => {
-      const form = document.getElementById(mark.dataset.clearsForm);
-      if (!(form instanceof HTMLFormElement)) return;
-      form.reset();
-      form.querySelectorAll("input[type=file][data-client-error]")
-        .forEach((input) => input.removeAttribute("data-client-error"));
-      gateComplete(form);
-    });
-  });
 
   // Optional modules are ordinary accessible fieldsets shown or hidden by
   // their toggle. Hidden fields are disabled, not silently copied into
@@ -5323,7 +5298,8 @@
       // form's complete gate holds it (confirm-dialog.html fields_template);
       // it is still posted only from here, never natively.
       event.preventDefault();
-      if (confirming?.dialog !== dialog || confirming.busy) return;
+      // An unavailable Apply (data-review-unavailable) does nothing.
+      if (confirming?.dialog !== dialog || confirming.busy || confirming.unavailable) return;
       if (confirming.review) acceptReview(confirming);
       else acceptConfirm(confirming);
     });
@@ -5578,7 +5554,7 @@
   };
   const readPage = async (url, init) => {
     const response = await fetch(url, {...init, credentials: "same-origin",
-      headers: {"X-Requested-With": "fetch"}});
+      headers: {...init?.headers, "X-Requested-With": "fetch"}});
     return {response, text: await response.text()};
   };
   // Post one confirmed change (url, body) from the open dialog and follow its
@@ -5770,7 +5746,9 @@
   //   them all: the signed preview (marked data-review-preview) and any
   //   other an editor needs (a version, an in-place page). The dialog opens
   //   as a modal, focus on its title (never on Apply). No preview (nobody
-  //   left to import) means no Apply.
+  //   left to import) means no Apply, unless the answer marks a reason
+  //   data-review-unavailable: then Apply is shown greyed with that reason
+  //   (Past campaigns' file already imported).
   // - a review refused for a field's value (status 400 drawing this same
   //   form) leaves the dialog shut: each field takes the answer's error line
   //   and aria-invalid mark, and the answer's error summary is shown above
@@ -6062,8 +6040,18 @@
         line.textContent = fillIn(line.dataset.reviewKeyTail, {tail});
       });
     }
-    dialog.querySelector("[data-confirm-accept]").hidden = !token && !key;
+    // An answer with nothing Apply could do (Past campaigns' file already
+    // imported, #750; Administrator decision 12, campaign history spec)
+    // marks its reason data-review-unavailable: Apply stays in view, greyed
+    // (aria-disabled, so it keeps its place and the reader reaches it), and
+    // the reason moves to the reserved status line, which describes Apply
+    // (UX conventions, "Review dialog"; prerequisite gates). Its times were
+    // localized with the body, above.
+    const unavailable = body.querySelector("[data-review-unavailable]");
+    const accept = dialog.querySelector("[data-confirm-accept]");
+    accept.hidden = !token && !key && !unavailable;
     confirming = {dialog, opener, form, busy: false, done: false,
+      unavailable: Boolean(unavailable),
       review: {apply, key, done: answer?.getAttribute("data-review-done") || "",
         // An answer may name where Apply's applied change leads and that
         // page's status line (Create the campaign opens the next Campaign
@@ -6071,6 +6059,13 @@
         back: answer?.getAttribute("data-review-return") || "",
         backOutcome: answer?.getAttribute("data-review-return-outcome") || ""}};
     gateReview(dialog);
+    if (unavailable) {
+      const status = dialog.querySelector("[data-confirm-status]");
+      status.replaceChildren(...unavailable.childNodes);
+      unavailable.remove();
+      accept.setAttribute("aria-disabled", "true");
+      if (status.id) accept.setAttribute("aria-describedby", status.id);
+    }
     dialog.showModal();
     if (refusal) refuseConfirm(confirming, refusal);
     // The title first, so the reader hears what is reviewed.
@@ -6092,6 +6087,13 @@
     // posts multipart, as it would natively; any other posts its fields
     // URL-encoded.
     const body = form.enctype === "multipart/form-data" ? data : new URLSearchParams(data);
+    // A form marked data-csrf-header also sends its token in the
+    // X-CSRFToken header: its server checks only the header, so that an
+    // unauthorized upload is refused before its body is read (Past
+    // campaigns' archive Review, #1018).
+    const token = form.hasAttribute("data-csrf-header")
+      && form.querySelector('input[name="csrfmiddlewaretoken"]')?.value;
+    const headers = token ? {"X-CSRFToken": token} : {};
     const opener = submitter || firstSubmit(form) || form;
     form.setAttribute("aria-busy", "true");
     opener.setAttribute("aria-disabled", "true");
@@ -6100,7 +6102,7 @@
     form.inert = true;
     let answer = null;
     try {
-      answer = await readPage(formUrl(form), {method: "POST", body});
+      answer = await readPage(formUrl(form), {method: "POST", body, headers});
     } catch { /* no answer: said in the dialog below */ }
     form.inert = false;
     form.removeAttribute("aria-busy");
