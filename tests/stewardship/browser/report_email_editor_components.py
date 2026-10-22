@@ -6,7 +6,9 @@ table is drawn from the report's values by the real table builder. The
 live table's endpoint is not served here (a test routes it), so the table
 keeps what the page drew. Edit is also served as the calendar opens it for
 one send, with its second send skipped, and New as a refused Review draws
-it, for a one-time send whose time has passed.
+it, for a one-time send whose time has passed. Edit of a report choosing
+two of the three Participation charts, in a campaign with financial
+stewardship, draws its Charts boxes (#1956).
 """
 
 import re
@@ -17,13 +19,12 @@ from uuid import UUID
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.reports import report_email_editor as editor
-from parishkit.stewardship.reports.report_blocks import REGISTRY
-from parishkit.stewardship.reports.report_blocks.registry import AFTER_BUTTON
 
 NEW = "/report-email-new"
 EDIT = "/report-email-edit"
 EDIT_SKIPPED = "/report-email-edit-skipped"
 NEW_REFUSED = "/report-email-new-refused"
+EDIT_CHARTS = "/report-email-edit-charts"
 # A refused Review of New: a one-time send whose time has passed, so the
 # refusal concerns the date and the time together.
 PASSED = {
@@ -47,6 +48,7 @@ CAMPAIGN = {
     "start_date": "2054-10-01",
     "end_date": "2054-10-31",
 }
+FINANCIAL = CAMPAIGN | {"modules": ["financial"]}
 REPORT = UUID(int=301)
 USERS = [
     {
@@ -90,36 +92,26 @@ WEEKLY = {
 }
 
 
-def _rows(saved):
-    """The Blocks rows and the blocks not in the report."""
-    keys = [entry["block"] for entry in (saved or {}).get("blocks", [])]
-    rows = [
+# Weekly with the Participation charts block choosing two of its charts.
+CHARTED = WEEKLY | {
+    "name": "Charted report",
+    "blocks": [
         {
-            "key": key,
-            "label": REGISTRY[key].label,
-            "help": REGISTRY[key].help,
-            "last": REGISTRY[key].placement == AFTER_BUTTON,
-        }
-        for key in keys
-    ]
-    available = [
-        {
-            "key": key,
-            "label": block.label,
-            "help": block.help,
-            "last": block.placement == AFTER_BUTTON,
-        }
-        for key, block in REGISTRY.items()
-        if key not in keys
-    ]
-    return rows, available
+            "block": "participation_charts",
+            "version": 1,
+            "options": {"charts": ["first_submissions", "pledges"]},
+        },
+        {"block": "response_funnel", "version": 1, "options": {}},
+    ],
+}
 
 
-def _page(context, admin, saved, data=None):
+def _page(context, admin, saved, data=None, campaign=CAMPAIGN):
     """The editor for ``saved`` (None: New), refused for ``data`` if given."""
     from django.http import QueryDict
 
     from parishkit.stewardship.reports.report_email_editor_views import (
+        _blocks,
         _date_time_error,
     )
 
@@ -130,7 +122,7 @@ def _page(context, admin, saved, data=None):
             posted.setlist(name, value if isinstance(value, list) else [value])
     form = editor.EditorForm(
         posted,
-        campaign=CAMPAIGN,
+        campaign=campaign,
         campaign_id=UUID(int=5),
         saved=saved,
         others=[],
@@ -142,7 +134,7 @@ def _page(context, admin, saved, data=None):
     else:
         assert not form.is_valid()
     choices = editor.recipient_choices(USERS)
-    rows, available = _rows(saved)
+    rows, available = _blocks(form, saved, campaign)
     chips = [
         {
             "value": editor.entry_value(entry),
@@ -290,5 +282,6 @@ def components(context, admin):
         NEW_REFUSED: ("text/html", _page(context, admin, None, PASSED)),
         EDIT: ("text/html", edit),
         EDIT_SKIPPED: ("text/html", _page(context, admin, skipped())),
+        EDIT_CHARTS: ("text/html", _page(context, admin, CHARTED, campaign=FINANCIAL)),
         f"{EDIT}?send={named_send(edit)}": ("text/html", edit),
     }

@@ -13,7 +13,9 @@ and a passed one-time send's refusal marks the date and the time and
 clears from both on an edit of either (#1963 review). The Introduction is
 the shared visual editor. Next sends is a table whose boxes feed Skip and
 Send selected sends, each available only for its kind of send; a send the
-Campaign calendar names (?send=) has its box ticked and focused.
+Campaign calendar names (?send=) has its box ticked and focused. The
+Participation charts block's Charts boxes sit under its help, one chart a
+line, start all ticked when the block is added, and tick in place (#1956).
 """
 
 import re
@@ -22,6 +24,7 @@ import pytest
 
 from .report_email_editor_components import (
     EDIT,
+    EDIT_CHARTS,
     EDIT_SKIPPED,
     NEW,
     NEW_REFUSED,
@@ -582,3 +585,66 @@ def test_a_removed_recipient_or_moved_block_is_a_change(page, component_origin):
     expect(review).to_be_disabled()
     page.get_by_role("button", name="Remove All Administrators", exact=False).click()
     expect(review).to_be_enabled()
+
+
+ALL_CHARTS = ["first_submissions", "cumulative_families", "pledges"]
+
+
+def page_place(locator):
+    """Where ``locator`` sits in the page (not the viewport, which a click
+    may scroll): its left and top edges."""
+    return locator.evaluate(
+        "node => { const box = node.getBoundingClientRect();"
+        " return [box.left + window.scrollX, box.top + window.scrollY]; }"
+    )
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_the_charts_boxes_tick_in_place(page, component_origin, axe_source, width):
+    """Edit draws the saved choice; each box shares a line with its label, the
+    page does not scroll sideways, and ticking moves nothing (no layout
+    shift) yet is a change to review."""
+    from playwright.sync_api import expect
+
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + EDIT_CHARTS)
+    group = page.get_by_role("group", name="Charts")
+    visible(group)
+    boxes = group.get_by_role("checkbox")
+    assert boxes.count() == 3
+    assert posted(page, "charts") == ["first_submissions", "pledges"]
+    for index in range(3):
+        box = boxes.nth(index).bounding_box()
+        label = group.locator("label").nth(index).bounding_box()
+        # The box and its words on one line, the box first.
+        assert box["x"] < label["x"]
+        assert abs(
+            (box["y"] + box["height"] / 2) - (label["y"] + label["height"] / 2)
+        ) < max(box["height"], label["height"])
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
+    review = page.get_by_role("button", name="Review changes")
+    expect(review).to_be_disabled()
+    remove = page.get_by_role("button", name="Remove Participation charts")
+    before = page_place(remove)
+    page.get_by_label("Cumulative participating Families").check()
+    assert posted(page, "charts") == ALL_CHARTS
+    # Within half a pixel: Firefox's sub-pixel layout can read the same place
+    # a few ten-thousandths of a pixel apart, which is no shift.
+    assert page_place(remove) == pytest.approx(before, abs=0.5)
+    expect(review).to_be_enabled()
+    page.get_by_label("Cumulative participating Families").uncheck()
+    expect(review).to_be_disabled()
+
+
+def test_an_added_charts_block_starts_with_every_chart(page, component_origin):
+    """Added from Add a block, the block ticks every chart the campaign offers
+    (no pledges without financial stewardship); Remove takes its boxes too."""
+    page.goto(component_origin + NEW)
+    assert posted(page, "charts") == []
+    page.get_by_label("Add a block").select_option("participation_charts")
+    page.get_by_role("button", name="Add", exact=True).last.click()
+    visible(page.get_by_role("group", name="Charts"))
+    assert posted(page, "charts") == ["first_submissions", "cumulative_families"]
+    page.get_by_role("button", name="Remove Participation charts").click()
+    assert posted(page, "charts") == []
