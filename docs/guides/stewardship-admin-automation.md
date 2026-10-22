@@ -2431,7 +2431,7 @@ pk-admin report roster --show all --ministry 9
 | `report limitations` | Limitations | `cannot_serve` (Members who cannot participate in ministries) and `cannot_attend` (Families who cannot attend Mass or prayer services) at `stage`, and `stages`: every answer by stage, zeros included |
 | `report census` | Census changes | `matching`: how many changes the filters keep, split by `routes` (`automatic`, `by_hand`) and `kinds` (`contact`, `moved`, `deceased`, `new_member`), and `statuses`, every change of the campaign by status (the counts the Status filter's choices show); see below |
 | `report information` | Additional information | `matching`: how many items match the filters; with `--stage`, how many requests are at that stage, and `stages`, each stage's count (null without `--stage`) |
-| `report ministry` | Ministry report | `summaries`: each Ministry's DUID (`ministry`), name, state and request counts; with `--ministry` and `--requests`, `matching` is that list's request count |
+| `report ministry` | Ministry report | `summaries`: each Ministry's DUID (`ministry`), name, state and request counts and, for Staff and Administrators, `leaders` (the Leaders column: `state` is `no_leader`, `no_user`, `not_signed_in` or `signed_in`, and `signed_in` the number of its leaders' users who have signed in; each read is recorded in System logs as `ministry_leader_coverage_viewed`); with `--ministry` and `--requests`, `matching` is that list's request count |
 
 The options are the pages' own, and a value the page would refuse is exit 1
 (`invalid`):

@@ -33,6 +33,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 
 from parishkit.stewardship.accounts.policy import Principal
+from parishkit.stewardship.reports.leader_coverage import leader_status
 from parishkit.stewardship.reports.ministries import outcome_label
 from parishkit.stewardship.reports.ministry_export_views import PACKET_MESSAGE
 from parishkit.stewardship.reports.ministry_followup import (
@@ -275,9 +276,38 @@ def components(context, admin):
             leaving=1,
             unresolved=0,
         ),
+        # Quiet Ministries (zero counts, so no links) whose Leaders words
+        # are the longest, to pin the 320 pixel fit (#1594).
+        dict(
+            duid=14,
+            name="Third Ministry",
+            active=True,
+            in_campaign=True,
+            joining=0,
+            leaving=0,
+            unresolved=0,
+        ),
+        dict(
+            duid=15,
+            name="Fourth Ministry",
+            active=True,
+            in_campaign=True,
+            joining=0,
+            leaving=0,
+            unresolved=0,
+        ),
     ]
+    # The Leaders column (#1594), Staff's only: two leaders' users have
+    # signed in for Example, Another Ministry has no leader, Third has
+    # leaders but no user, and Fourth has a user who has not signed in.
+    coverage = {
+        9: dict(leaders=3, users=2, signed_in=2),
+        14: dict(leaders=1, users=0, signed_in=0),
+        15: dict(leaders=2, users=1, signed_in=0),
+    }
     for summary in by_ministry:
         summary["count_links"] = count_links(STAFF, summary)
+        summary["leaders"] = leader_status(coverage.get(summary["duid"]))
     values = dict(
         # Staff or an Administrator: the help explains the Removed badge
         # (#1135).
@@ -304,6 +334,7 @@ def components(context, admin):
         # choices, every Ministry in scope.
         by_ministry=by_ministry,
         show_marks=True,
+        show_leaders=True,
         packet_choices=[
             dict(duid=12, name="Another Ministry"),
             dict(duid=9, name="Example <Ministry>"),
@@ -540,6 +571,7 @@ def components(context, admin):
             by_ministry=by_ministry[:1],
             packet_choices=[dict(duid=9, name="Example <Ministry>")],
             show_marks=False,
+            show_leaders=False,
             campaign_marks=False,
         ),
         LEADER_STAGES: requests_page
@@ -559,7 +591,7 @@ def components(context, admin):
         # What a Ministry leader is served: no campaign help (#1135).
         "/followup-leader": values
         | _worklist([row], query=query, principal=LEADS)
-        | dict(campaign_marks=False),
+        | dict(campaign_marks=False, show_leaders=False),
         GONE_QUEUE: values | _worklist(gone_rows, query=gone_query),
         "/followup-empty": values | _worklist([], query=query),
         "/followup-gated": values | _worklist([row], query=query, mutable=False),
