@@ -92,6 +92,7 @@ def test_leaders_column_shows_each_ministrys_status_to_staff_only(
     page help explains it. A Ministry leader gets neither (#1594)."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + REQUESTS)
+    open_by_ministry(page)
     section = page.locator("#by-ministry")
     headers = section.locator("thead th")
     assert headers.last.inner_text() == "Leaders"
