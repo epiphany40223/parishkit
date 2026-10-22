@@ -15,6 +15,7 @@ different replaced release, protects that release, removes by default
 
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -476,6 +477,55 @@ def test_a_failed_pruning_never_fails_the_upgrade(tmp_path):
         assert result.returncode == 0, (mode, env, rc, result.stderr)
         assert len(calls) == 2
         assert "WARNING: pruning old release images failed" in result.stderr
+
+
+def test_a_hung_pruning_is_killed_logged_and_never_fails_the_upgrade(tmp_path):
+    """A pruning ssh that outlives its limit is killed and only warned about.
+
+    The stand-in's second call sleeps far past a 1 s limit; the run must end
+    well before that sleep, exit 0, and log what was killed, the limit and
+    the elapsed time.
+    """
+    bin_dir = tmp_path / "bin"
+    executable_stub(
+        bin_dir,
+        "ssh",
+        f"""cat >/dev/null
+if [ ! -e "$0.seen" ]; then
+    touch "$0.seen"
+    echo "==> Upgraded"
+    printf '%s\\n' {shlex.quote(NOTES + REPLACED)}
+    exit 0
+fi
+exec sleep 60""",
+    )
+    env = {
+        **{k: v for k, v in os.environ.items() if not k.startswith("STEWARDSHIP_")},
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "STEWARDSHIP_HOST": "host.invalid",
+        "STEWARDSHIP_UUID": UUID,
+        "STEWARDSHIP_IMAGE": IMAGE,
+        "STEWARDSHIP_PRUNE_TIMEOUT": "1",
+    }
+    result = subprocess.run(
+        ["bash", str(SCRIPT)], env=env, text=True, capture_output=True, timeout=40
+    )
+    assert result.returncode == 0, result.stderr
+    assert re.search(
+        r"TIMEOUT: the pruning ssh to host.invalid killed after \d+s \(limit 1s\)",
+        result.stderr,
+    )
+    assert "pruning old release images timed out" in result.stderr
+
+
+def test_a_bad_prune_timeout_is_refused_before_ssh(tmp_path):
+    """A zero, non-numeric or absurd limit never reaches a host."""
+    for n, value in enumerate(("0", "soon", "86401")):
+        result, calls = run_upgrade(
+            tmp_path / str(n), env={"STEWARDSHIP_PRUNE_TIMEOUT": value}
+        )
+        assert result.returncode == 1, value
+        assert calls == [], value
 
 
 def test_a_failed_upgrade_does_not_prune(tmp_path):

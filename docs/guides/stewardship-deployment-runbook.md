@@ -770,7 +770,12 @@ already running replaced the release with itself, so the release before it
 is not known by name; that run says so and skips pruning, and the next
 upgrade prunes. A failed lookup of what to keep (other than an image that
 is simply not on the host) stops the pruning before anything is removed. A
-pruning failure prints a warning and the upgrade still exits 0. To preview
+rollback keeps the release it rolls back from, because that release is the
+one it just started. A pruning failure prints a warning and the upgrade still
+exits 0. The pruning ssh is limited to `STEWARDSHIP_PRUNE_TIMEOUT` seconds
+(default 1200, enough for about 70 images and the build cache); on expiry it
+is killed, a `TIMEOUT:` line logs what was killed, the limit and the elapsed
+time, and the upgrade still exits 0, so check the host's prune log. To preview
 or prune without an upgrade, run it on the
 host directly (`--keep N`, `--protect IMAGE`, `--dry-run`,
 `--keep-build-cache`; its header lists them):
