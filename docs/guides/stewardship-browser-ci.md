@@ -130,15 +130,22 @@ a 902-second estimate, and Chromium 1/2 was killed with the remaining 819
 seconds although no test had failed. With Chromium first, a Chromium half of
 about 830 seconds leaves WebKit 2,170 seconds.
 
-A partition that runs out of its budget is killed and logged as
-`CI_BROWSER_FAILED <label>: killed after N s when its M s partition budget
-(its share of the 3,000 s job budget) ran out`, followed by either `no test
-had failed, so rerun the job` or the test phases that had already failed. The
-child pytest records each failed phase beside its completion receipt as it
-happens, so this holds even after a kill. Every failed partition is also
-listed in the GitHub job summary. The child pytest runs in its own process
-group, and the kill ends the whole group, so no orphaned Playwright driver or
-browser slows the next partition.
+A partition that runs out of its budget is killed. The child pytest records
+each failed phase, and the test it last started, beside its completion receipt
+as it happens, so the parent can still tell what happened after a kill (#2001):
+
+- If no test phase had failed, the kill is most likely a slow runner, and the
+  log says `CI_BROWSER_BUDGET_KILLED <label>: running <node id> after N s
+  (budget M s)`, where the node id is the last test that started.
+- If a test phase had already failed, the log says `CI_BROWSER_FAILED <label>:
+  killed after N s when its M s partition budget (its share of the 3,000 s job
+  budget) ran out; K test phase(s) had already failed: ...`.
+
+Both fail the job. The GitHub job summary lists the failed test node ids
+first, then the budget kills with their last started test, then every other failed
+partition, so the cause is visible without reading the log. The child pytest
+runs in its own process group, and the kill ends the whole group, so no
+orphaned Playwright driver or browser slows the next partition.
 
 ## Local Linux Firefox and WebKit runs (#1156)
 
