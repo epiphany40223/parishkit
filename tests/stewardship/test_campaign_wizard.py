@@ -17,6 +17,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 
 from parishkit.stewardship.accounts import campaign_wizard as wizard
+from parishkit.stewardship.accounts import stages
 from parishkit.stewardship.accounts.admin_navigation import PAGES as NAMES
 
 CAMPAIGN = str(uuid4())
@@ -988,6 +989,85 @@ def test_load_status_region_draws_one_state_each():
     assert reverse("admin:background_task_page", args=[task]) in empty
     assert reverse("admin:source_refresh") in empty
     assert "<button" not in empty and "hasn't been loaded" not in summary(empty)
+
+
+def test_an_awaited_load_polls_the_steps_own_status():
+    """Loading with no run yet (#1951): the region follows the load the
+    system is about to start through the step's own passive status, with
+    Start the load in progress and the queued sentence."""
+    awaited = load_region(load="loading", stages=wizard.load_stages("loading", None))
+    assert "Loading the campaign's ParishSoft data…" in summary(awaited)
+    url = reverse("admin:campaign_load_status")
+    assert f'data-live-url="{url}"' in awaited and "data-live-pending" in awaited
+    assert 'data-load-stage="start" data-stage-state="active"' in awaited
+    assert f"data-campaign-load-count>{stages.QUEUED}</p>" in awaited
+    assert "Start the load: In progress." in awaited
+    assert "data-live-follow" not in awaited
+
+
+def awaited_status(monkeypatch, *, identities=("a", "a"), editable=None, values=True):
+    """Call the awaited-load status with its gates replaced by stand-ins.
+
+    ``identities`` are the sign-ins the first and the post-read principal
+    checks return; ``editable`` is an error the page's configuration gate
+    raises (None admits); ``values`` False makes the step read no current
+    campaign. Returns the response and whether the step's state was read.
+    """
+    from django.test import RequestFactory
+
+    from parishkit.config import ConfigError
+    from parishkit.stewardship.accounts import refresh_views
+
+    readers = iter(SimpleNamespace(identity=identity) for identity in identities)
+    read = []
+
+    def editable_configuration(service):
+        """The page's gate: refuses before setup or during a restore review."""
+        if editable:
+            raise ConfigError(editable)
+
+    def awaited_load_status():
+        """The step's state, recorded as read."""
+        read.append(True)
+        return {"load": "loading", "polled": True} if values else None
+
+    monkeypatch.setattr(refresh_views, "runtime", lambda: SimpleNamespace())
+    monkeypatch.setattr(refresh_views, "principal", lambda *a, **k: next(readers))
+    monkeypatch.setattr(refresh_views, "editable_configuration", editable_configuration)
+    monkeypatch.setattr(wizard, "awaited_load_status", awaited_load_status)
+    request = RequestFactory().get(reverse("admin:campaign_load_status"))
+    return refresh_views.campaign_load_status(request), bool(read)
+
+
+def test_the_awaited_status_refuses_when_its_page_does(monkeypatch):
+    """Before setup or during a restore review the page refuses, so its poll
+    does too, before reading anything (#1951 review, M1)."""
+    from parishkit.stewardship.web.contracts import ErrorCode
+
+    response, read = awaited_status(
+        monkeypatch, editable="Configuration is unavailable."
+    )
+    assert response.status_code == 503 and read is False
+    assert [error.code for error in response.stewardship_errors] == [
+        ErrorCode.UNAVAILABLE
+    ]
+
+
+def test_the_awaited_status_without_a_campaign_is_unavailable(monkeypatch):
+    """No current campaign is an unusable configuration, not a refusal."""
+    response, read = awaited_status(monkeypatch, values=False)
+    assert response.status_code == 503 and read is True
+
+
+def test_the_awaited_status_rechecks_its_reader_before_answering(monkeypatch):
+    """A reader replaced while the step was read gets no HTML (#1951 review,
+    M2); the same reader does."""
+    response, read = awaited_status(monkeypatch, identities=("a", "b"))
+    assert response.status_code == 403 and read is True
+    assert b"data-campaign-load-state" not in response.content
+    response, _ = awaited_status(monkeypatch)
+    assert response.status_code == 200
+    assert response["Cache-Control"] == "no-store"
 
 
 def task_values(state, task, phase="promoting"):

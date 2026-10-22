@@ -2014,6 +2014,7 @@ command line has no browser zone, so its sends are not grouped by day.
 | URL names | Command or exemption |
 | --- | --- |
 | `source_refresh` | `refresh start`, `refresh status` (PR 6a) |
+| `campaign_load_status` (Load ParishSoft data's passive status while a new campaign awaits its load, [#1951](https://github.com/epiphany40223/parishkit/issues/1951)) | `refresh status` |
 | `background_task_page`, `background_task_status` for the run | `task show --watch` (PR 3a) |
 
 See [manual ParishSoft refresh](../admin-portal/spec.md#manual-parishsoft-refresh).

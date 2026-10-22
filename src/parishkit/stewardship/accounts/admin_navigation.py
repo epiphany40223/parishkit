@@ -823,6 +823,9 @@ NON_PAGES = frozenset(
         "system_health_status",
         # Data to fix in ParishSoft polls its counts region (#1859).
         "parishsoft_fixes_status",
+        # Load ParishSoft data polls it while a new campaign awaits the
+        # load the system starts for it (#1951).
+        "campaign_load_status",
     }
 )
 

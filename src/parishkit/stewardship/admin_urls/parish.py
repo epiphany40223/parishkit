@@ -70,6 +70,14 @@ patterns = [
         refresh_views.source_refresh,
         name="source_refresh",
     ),
+    # Load ParishSoft data's passive status while a new campaign awaits the
+    # load the system starts for it (#1951): never audited, never extends
+    # the sign-in.
+    path(
+        "parish/parishsoft-refresh/status/",
+        refresh_views.campaign_load_status,
+        name="campaign_load_status",
+    ),
     path(
         "parish/data-to-fix/",
         data_to_fix_views.data_to_fix,

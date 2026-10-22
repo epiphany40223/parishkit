@@ -8,7 +8,8 @@ run, no button and no Continue), loaded (the Family count and Continue) or
 failed (See what went wrong and Try again), with no Refresh now and no
 queue wording; a failed load says so on every other step too; the
 campaign's Families complete the step; outside the stepper the page is
-unchanged.
+unchanged. A campaign just created already shows the load the system starts
+for it, before that refresh is requested (#1951).
 """
 
 import re
@@ -19,11 +20,13 @@ import pytest
 from django.urls import reverse
 from django.utils import timezone
 
+from parishkit.stewardship.accounts.campaign_wizard import LOAD_START_WAIT
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.stages import QUEUED
 from parishkit.stewardship.campaigns.family_identity import FamilyStatus
 from parishkit.stewardship.campaigns.lifecycle import Action
+from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.source.canonical import canonical_payload
@@ -39,6 +42,8 @@ from .test_share_views_postgresql import setup
 
 pytestmark = pytest.mark.django_db(transaction=True)
 URL = reverse("admin:source_refresh")
+# The step's own passive status while the system's load is awaited (#1951).
+AWAITED = reverse("admin:campaign_load_status")
 NO_FAMILIES = "The campaign's ParishSoft data loaded, but no Families matched."
 NOT_LOADED = "This campaign's ParishSoft data hasn't been loaded yet."
 LOADING = "Loading the campaign's ParishSoft data…"
@@ -98,6 +103,20 @@ def refresh_run(state, kind="full", **fields):
     return task
 
 
+def aged(row):
+    """Make the campaign older than the wait for the system's own load.
+
+    A campaign created less than ``LOAD_START_WAIT`` ago with no full
+    refresh shows the load the scheduler is about to start (#1951); one
+    older than that, whose load the scheduler did not start, offers the
+    button. Seeded as only a superuser could: the creation time is fixed.
+    """
+    with unguarded():
+        Campaign.objects.filter(pk=row.pk).update(
+            created_at=row.created_at - LOAD_START_WAIT - timedelta(seconds=1)
+        )
+
+
 def state(html):
     """The step's one state, as its status region names it."""
     return re.search(r'data-campaign-load-state="([a-z]+)"', html).group(1)
@@ -117,6 +136,7 @@ def summary(html):
 def test_load_step_shows_one_state_at_a_time(auth_service, google):
     """Not loaded, then loading with no button, then loaded (PR 5, D2.1)."""
     row, _, _ = setup(auth_service.store)
+    aged(row)
     browser, _ = signed_in()
     html = page(browser)
     region = stepper(html.encode())
@@ -265,6 +285,7 @@ def test_only_refreshes_since_creation_and_families_count(auth_service, google):
     the Families complete the step.
     """
     row, _, _ = setup(auth_service.store)
+    aged(row)
     browser, _ = signed_in()
     refresh_run("failed", created_at=row.created_at - timedelta(days=1))
     html = page(browser)
@@ -310,7 +331,8 @@ def test_quick_refreshes_never_count_as_the_load(auth_service, google):
     succeeded one does not hide the full load's failure, and with only quick
     refreshes the step is still the plain offer.
     """
-    setup(auth_service.store)
+    row, _, _ = setup(auth_service.store)
+    aged(row)
     browser, _ = signed_in()
     refresh_run("queued", kind="delta")
     refresh_run("failed", kind="delta")
@@ -322,3 +344,67 @@ def test_quick_refreshes_never_count_as_the_load(auth_service, google):
     html = page(browser)
     assert state(html) == "failed" and "data-campaign-load-start>Try again" in html
     assert f'href="{reverse("admin:background_task_page", args=[failed])}"' in html
+
+
+def test_a_new_campaign_shows_the_load_the_system_starts(auth_service, google):
+    """Just created, the step is already loading, before any run (#1951).
+
+    Creating the campaign starts its load by itself: the scheduler's next
+    loop requests the full refresh for the new campaign's scope. Until that
+    refresh exists the step shows Start the load in progress with the queued
+    sentence and no button, and polls its own passive status, which never
+    renews idle time; that status then follows the run, and settles once
+    the wait is over with no load, so the page re-reads itself to the offer.
+    """
+    row, _, _ = setup(auth_service.store)
+    browser, _ = signed_in()
+    html = page(browser)
+    assert state(html) == "loading" and LOADING in summary(html)
+    assert 'data-load-stage="start" data-stage-state="active"' in html
+    assert html.count('data-stage-state="waiting"') == 4
+    assert f"data-campaign-load-count>{QUEUED}</p>" in html
+    assert f'data-live-url="{AWAITED}"' in html and "data-live-pending" in html
+    assert OFFER not in html and "data-campaign-load-start" not in html
+    assert "Continue" not in actions(html)
+    # Every other step says the data is loading rather than offering it.
+    content = page(browser, reverse("admin:content_catalog"))
+    assert "ParishSoft data is loading; going live waits for it." in content
+    assert "data-campaign-load-start" not in content
+    # Its poll draws the same region, and is passive.
+    before = PortalSession.objects.get().last_activity_at
+    for _ in range(2):
+        polled = page(browser, AWAITED)
+        assert state(polled) == "loading" and "data-live-pending" in polled
+        assert f'data-live-url="{AWAITED}"' in polled
+        assert "data-live-follow" not in polled
+    assert PortalSession.objects.get().last_activity_at == before
+    # The scheduler requests the load: the poll now follows the run, and
+    # hands the region over to the run's own passive status.
+    task = refresh_run("queued")
+    run_status = reverse("admin:background_task_status", args=[task]) + "?view=load"
+    polled = page(browser, AWAITED)
+    assert state(polled) == "loading" and f'data-live-url="{run_status}"' in polled
+    assert 'data-load-stage="start" data-stage-state="active"' in polled
+    assert f'data-live-url="{run_status}"' in page(browser)
+
+
+def test_the_wait_for_the_system_load_ends_with_the_offer(auth_service, google):
+    """No load requested within the wait: the poll settles, the page offers it.
+
+    A scheduler that has not requested the new campaign's load within
+    ``LOAD_START_WAIT`` is not going to (#1951), so the poll answers the
+    plain offer with its follow-up link, which re-reads the page in place
+    to draw the Load button.
+    """
+    row, _, _ = setup(auth_service.store)
+    browser, _ = signed_in()
+    assert state(page(browser)) == "loading"
+    aged(row)
+    polled = page(browser, AWAITED)
+    assert state(polled) == "offer" and NOT_LOADED in summary(polled)
+    assert "data-live-pending" not in polled and "data-live-follow" in polled
+    html = page(browser)
+    assert state(html) == "offer" and OFFER in html
+    # A query the status does not take is refused.
+    with web():
+        assert browser.get(AWAITED + "?x=1").status_code == 400
