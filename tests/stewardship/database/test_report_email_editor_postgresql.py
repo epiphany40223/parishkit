@@ -418,6 +418,27 @@ def refused_at(answer, field, message):
     assert message in line, (field, message, line)
 
 
+def test_a_weekly_rule_without_a_day_is_refused_at_the_days(
+    live_response_service, google
+):
+    """A post with no day ticked for an Advanced weekly rule (which the page
+    holds, #2009) is refused at On these days (400), with nothing saved."""
+    harness = live_response_service
+    with campaign_clock(INSTANT):
+        admin = started(harness)
+        path = reverse("admin:report_email_new")
+        weekly = fields(
+            sends="repeat",
+            editor_mode="advanced",
+            frequency="weekly",
+            from_kind="campaign_start",
+            until_kind="campaign_end",
+        )
+        answer = post(admin, path, weekly)
+        refused_at(answer, "weekdays", "Choose at least one day.")
+        assert "Staff requests" not in reports()
+
+
 def test_recipient_refusals_are_at_the_field(live_response_service, google):
     """An invalid address, a recipient twice (in other letter case too), an
     unknown user and both limits are refused at Recipients (400); a portal

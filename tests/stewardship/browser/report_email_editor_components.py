@@ -8,7 +8,9 @@ keeps what the page drew. Edit is also served as the calendar opens it for
 one send, with its second send skipped, and New as a refused Review draws
 it, for a one-time send whose time has passed. Edit of a report choosing
 two of the three Participation charts, in a campaign with financial
-stewardship, draws its Charts boxes (#1956).
+stewardship, draws its Charts boxes (#1956), and New as a Review refused
+for a weekly rule with no day and a Charts block with no chart draws both
+refusals at their groups (#2009).
 """
 
 import re
@@ -25,6 +27,7 @@ EDIT = "/report-email-edit"
 EDIT_SKIPPED = "/report-email-edit-skipped"
 NEW_REFUSED = "/report-email-new-refused"
 EDIT_CHARTS = "/report-email-edit-charts"
+NEW_GROUPS_REFUSED = "/report-email-new-groups-refused"
 # A refused Review of New: a one-time send whose time has passed, so the
 # refusal concerns the date and the time together.
 PASSED = {
@@ -41,6 +44,17 @@ PASSED = {
     "html": "",
     "text": "",
     "zone": "America/New_York",
+}
+# A refused Review of New posting none of the boxes of either group that
+# needs one ticked: an Advanced weekly rule's days and the Charts.
+NO_DAY_NO_CHART = PASSED | {
+    "sends": "repeat",
+    "editor_mode": "advanced",
+    "frequency": "weekly",
+    "from_kind": "campaign_start",
+    "until_kind": "first_send_after_campaign_end",
+    "time": "08:00",
+    "block": ["participation_charts"],
 }
 NOW = datetime(2054, 10, 20, 12, 0, tzinfo=UTC)
 CAMPAIGN = {
@@ -111,6 +125,7 @@ def _page(context, admin, saved, data=None, campaign=CAMPAIGN):
     from django.http import QueryDict
 
     from parishkit.stewardship.reports.report_email_editor_views import (
+        ERROR_TARGETS,
         _blocks,
         _date_time_error,
     )
@@ -189,6 +204,18 @@ def _page(context, admin, saved, data=None, campaign=CAMPAIGN):
             "busy": False,
             "editor_mode": form["editor_mode"].value() or "basic",
             "sends": [],
+            # The view's error summary for a refused Review, linking each
+            # refusal to its field.
+            "errors": [
+                {
+                    "message": message,
+                    "field_id": ERROR_TARGETS.get(field, f"report-{field}"),
+                }
+                for field, messages in form.errors.items()
+                for message in messages
+            ]
+            if posted is not None
+            else None,
         },
     )
 
@@ -275,11 +302,16 @@ def skip_answer(kind, sends):
 def components(context, admin):
     """The editor's New and Edit pages, Edit opened from the calendar for
     its second send (``?send=``, served as its own exact address), Edit with
-    a skipped send, and New refused for a passed one-time send."""
+    a skipped send, and New refused for a passed one-time send or for no
+    day and no chart ticked."""
     edit = _page(context, admin, WEEKLY)
     return {
         NEW: ("text/html", _page(context, admin, None)),
         NEW_REFUSED: ("text/html", _page(context, admin, None, PASSED)),
+        NEW_GROUPS_REFUSED: (
+            "text/html",
+            _page(context, admin, None, NO_DAY_NO_CHART),
+        ),
         EDIT: ("text/html", edit),
         EDIT_SKIPPED: ("text/html", _page(context, admin, skipped())),
         EDIT_CHARTS: ("text/html", _page(context, admin, CHARTED, campaign=FINANCIAL)),

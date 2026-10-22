@@ -4110,6 +4110,65 @@
       });
     });
   };
+  // A data-require-one group of checkboxes with a reserved error line
+  // (<group id>_error, an .errorlist in a .field-error-line that keeps its
+  // height) also says its rule at the group, live (#2009; UX conventions,
+  // "Field errors and live checks"): once the reader has changed one of
+  // its boxes, no box ticked shows the group's data-missing-hint (the
+  // server's words) in the line, marks every box aria-invalid and has the
+  // group described by the line, as the server draws its refusal; a tick,
+  // or the group being hidden or disabled, takes the marks away. A fresh
+  // group with none ticked is not an error yet (the gate's hint says what
+  // is missing), as for a repeat rule's days (markRepeatRule). A refusal
+  // the server drew is cleared by the box's own first edit
+  // (wireValidity's clearFieldError, which runs before this listener on
+  // the document), so this check never takes away words it did not write
+  // (data-require-one-said). The error summary keeps only the server's
+  // items. requireOne holds the buttons by the same rule.
+  const requireOneReached = new WeakSet();
+  const sayRequireOne = (group) => {
+    const line = group.id && document.getElementById(`${group.id}_error`);
+    if (!line || !line.matches(".errorlist")) return;
+    const boxes = [...group.querySelectorAll("input[type=checkbox]")];
+    const live = boxes.filter((box) => !box.disabled);
+    const none = requireOneReached.has(group) && !group.closest("[hidden]")
+      && live.length > 0 && !live.some((box) => box.checked);
+    const message = none ? (group.dataset.missingHint || "") : "";
+    if (!message) {
+      if (!group.hasAttribute("data-require-one-said")) return;
+      group.removeAttribute("data-require-one-said");
+      boxes.forEach((box) => box.setAttribute("aria-invalid", "false"));
+      describeBy(group, line.id, false);
+      line.hidden = true;
+      line.querySelectorAll("li").forEach((item) => { item.textContent = ""; });
+      return;
+    }
+    group.setAttribute("data-require-one-said", "");
+    boxes.forEach((box) => box.setAttribute("aria-invalid", String(!box.disabled)));
+    describeBy(group, line.id, true);
+    // Unchanged words stay untouched, so a screen reader hears them once.
+    const item = line.querySelector("li") || line.appendChild(document.createElement("li"));
+    if (line.hidden || item.textContent !== message) {
+      line.hidden = false;
+      item.textContent = message;
+    }
+  };
+  // Every such group is checked again after any change (a box, or a
+  // control that hides the group) and on pageshow. Changing or leaving
+  // one of its boxes reaches the group, as leaving a field lets the
+  // browser's own check mark it (wireValidity).
+  const sayRequireOnes = () => document.querySelectorAll("[data-require-one][id]")
+    .forEach(sayRequireOne);
+  const reachRequireOne = (event) => {
+    const box = event.target;
+    const group = box instanceof HTMLInputElement && box.type === "checkbox"
+      && box.closest("[data-require-one][id]");
+    if (group) requireOneReached.add(group);
+    sayRequireOnes();
+  };
+  document.addEventListener("change", reachRequireOne);
+  document.addEventListener("focusout", reachRequireOne);
+  window.addEventListener("pageshow", sayRequireOnes);
   // data-max-ticked="N" on a group of checkboxes allows at most N ticked
   // (the Ministry requests packet's Ministries, #1332). Past that each
   // ticked box is invalid with the group's data-max-ticked-hint, its

@@ -44,6 +44,11 @@ its date and its time, so it marks both and is said once, after the time
 (date_time_error); an edit of either clears both (UX conventions, "Field
 errors and live checks").
 
+On these days and the Participation charts block's Charts need one box
+ticked (data-require-one): unticking the last says the server's words in
+the group's reserved error line at once (ui-v1.js sayRequireOne, #2009), and
+the complete gate holds Review until one is ticked.
+
 On Edit of a repeating report, the Next sends table's ticked sends go to
 Skip selected sends or Send selected sends (report-skip-form, one review
 dialog, which redraws the table in place), the report's past sends follow
@@ -101,10 +106,10 @@ list.
 </fieldset>
 <div data-editor-mode-panel="advanced"{% if editor_mode == "basic" %} hidden{% endif %}>
 {% include "stewardship/components/choice-pair.html" with pair_id="report-frequency" name="frequency" legend=_("Frequency") first_value="daily" first_label=_("Daily") second_value="weekly" second_label=_("Weekly") chosen=form.frequency.value errors=form.frequency.errors %}
-<fieldset class="field" data-show-when="frequency=weekly" id="report-weekdays"{% if form.weekdays.errors %} aria-describedby="report-weekdays_error"{% endif %}><legend>{{ form.weekdays.label }}</legend>
+{% translate "Choose at least one day." as weekdays_missing %}<fieldset class="field" data-show-when="frequency=weekly" id="report-weekdays" data-require-one data-missing-hint="{{ weekdays_missing }}"{% if form.weekdays.errors %} aria-describedby="report-weekdays_error"{% endif %}><legend>{{ form.weekdays.label }}</legend>
 <div class="repeat-days">{% for value, label in form.fields.weekdays.choices %}<label><input type="checkbox" name="weekdays" value="{{ value }}"{% if value in form.weekdays.value %} checked{% endif %}{% if form.weekdays.errors %} aria-invalid="true"{% endif %}> {{ label }}</label> {% endfor %}</div>
 <p class="help" data-campaign-days hidden>{% translate "These are the days where the parish is, in the campaign's time zone; only the time is read in your computer's time zone." %}</p>
-<div class="field-error-line" role="status"><ul class="errorlist" id="report-weekdays_error"{% if not form.weekdays.errors %} hidden{% endif %}>{% for error in form.weekdays.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></fieldset>
+<div class="field-error-line" role="status"><span class="field-error-size" aria-hidden="true">{{ weekdays_missing }}</span><ul class="errorlist" id="report-weekdays_error"{% if not form.weekdays.errors %} hidden{% endif %}>{% for error in form.weekdays.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></fieldset>
 <div class="field"><label for="report-from_kind">{{ form.from_kind.label }}</label>
 <select name="from_kind" id="report-from_kind"{% if form.from_kind.errors %} aria-invalid="true" aria-describedby="report-from_kind_error"{% endif %}>{% for value, label in form.fields.from_kind.choices %}<option value="{{ value }}"{% if form.from_kind.value == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
 <div class="field-error-line" role="status"><ul class="errorlist" id="report-from_kind_error"{% if not form.from_kind.errors %} hidden{% endif %}>{% for error in form.from_kind.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></div>
