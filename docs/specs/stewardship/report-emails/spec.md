@@ -1449,7 +1449,12 @@ says what the email said however much later it is opened. In order:
   - Participation charts: the
     [participation graph](../reports/spec.md#participation-graph) drawn
     by the [chart engine](../reports/spec.md#chart-engine) from the pinned
-    fact generation, with its Exact values table.
+    fact generation, with its Exact values table: only the panels (and
+    table columns) the email drew, which the snapshot records with the
+    block's [which charts](#participation-charts-block), and a sentence
+    under it that names only those panels' last-date figures; a snapshot
+    that recorded none draws every panel, with the sentence naming every
+    figure.
   - Day by day table: an [Admin table](../ui-conventions/spec.md#admin-tables)
     of the days the email showed, shown whole (no navigator, no sorting:
     it is at most a recovery send's covered days).
