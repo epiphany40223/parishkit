@@ -311,3 +311,71 @@ def test_collection_rows_reserve_their_longest_wordings():
     # the rosters' form).
     assert html.count(ghost) == 7 * 3 + 1
     assert f"{ghost}999 of 999 loaded</span>" in html
+
+
+@pytest.mark.parametrize("key", ["fetching", "done", "failed", "voided"])
+def test_continue_sits_in_the_bottom_action_row_from_the_start(key):
+    """Continue is in the page's step action row in every state, never in the
+    result notice: unavailable with its visible reason until the load is done,
+    then a link, with the reason's line kept invisible (#1968)."""
+    import re
+    from uuid import uuid4
+
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.accounts.setup_progress_views import _status_context
+    from parishkit.stewardship.accounts.setup_wizard import build
+
+    from .test_setup_forms import VALUES
+    from .test_setup_wizard import draft
+
+    progress = observation("fetching", active=key == "fetching") | {
+        "started_at": "2026-09-10T11:58:30+00:00",
+        "heartbeat_at": "2026-09-10T11:59:57+00:00",
+    }
+    if key != "fetching":
+        progress |= {
+            "task_state": "failed" if key == "failed" else "succeeded",
+            "setup_state": "collecting",
+            "bound": key != "voided",
+            "loaded": key == "done",
+        }
+    context = _status_context(progress)
+    assert context["status_key"] == key
+    sections = VALUES | {
+        "branding": {"bundle_id": str(uuid4())},
+        "slack": {"enabled": False, "channel_id": ""},
+    }
+    wizard = build(
+        draft(sections, source=uuid4(), task_state="succeeded"),
+        "source",
+        credentials={"parishsoft": True, "google_workspace": True},
+    )
+    html = render_to_string(
+        "stewardship/setup-source-progress.html",
+        context | {"status_url": "/status?format=status", "wizard": wizard},
+    )
+    # The row is the page's last content, an in-place region the settled
+    # region's follow-up re-read swaps; the result notice has no Continue.
+    row = html[html.index('<div id="setup-load-actions" data-in-place-region>') :]
+    assert html.count("Continue to the next step") == 1
+    assert "Continue to the next step" in row
+    assert '<a class="setup-back"' in row
+    reason = 'id="setup-load-continue-reason"'
+    if key == "done":
+        assert re.search(
+            r'<a class="setup-continue" href="[^"]+">Continue to the next step', row
+        )
+        assert reason not in row
+        assert '<p class="help reserve-ghost" aria-hidden="true">' in row
+    else:
+        assert 'class="setup-continue"' not in row
+        assert re.search(
+            r'<button type="button"[^>]* disabled[^>]*'
+            r'aria-describedby="setup-load-continue-reason"',
+            row,
+        )
+        assert reason in row
+        waiting = "Continue becomes available once the parish data is loaded."
+        assert (waiting in row) is (key == "fetching")
+        assert ("The notice above says what to do." in row) is (key != "fetching")
