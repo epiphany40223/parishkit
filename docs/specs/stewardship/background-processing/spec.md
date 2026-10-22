@@ -716,7 +716,7 @@ cancellation.
 
 A report email's revision may carry `skip_dates`
 ([#1658](https://github.com/epiphany40223/parishkit/issues/1658), the
-editor's [Skip this send](../report-emails/spec.md#skip-one-send)): slot
+editor's [Skip and Send selected sends](../report-emails/spec.md#skip-and-unskip-sends)): slot
 keys, as its [slot basis](../report-emails/spec.md#slot-keys) names them,
 that it never sends, and `paused_ranges`, the intervals in which it sent
 nothing ([pause and resume](../report-emails/spec.md#pause-and-resume)).

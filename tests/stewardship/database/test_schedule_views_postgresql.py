@@ -12,7 +12,6 @@ from django.db import connection
 
 from parishkit.stewardship.accounts import schedule_views
 from parishkit.stewardship.accounts.policy_models import PortalUser
-from parishkit.stewardship.accounts.report_rows import view_rows
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.accounts.schedule_forms import schedule_order
 from parishkit.stewardship.campaigns.models import Campaign, ScheduleDefinition
@@ -62,19 +61,17 @@ def fields(store, campaign, *, editable=True):
     The page lists saved schedules in sending order (#448), and a browser
     posts its rows in that order, so the test does the same. Send times are
     the browser's (#558); this browser is in the campaign's own zone, so the
-    saved campaign-local values are also what the page shows. A converted
-    report is posted as the digest row the page draws for it
-    (``report_rows.view_rows``, #1786).
+    saved campaign-local values are also what the page shows. Report emails
+    are not on this page (#1786), so they are not posted.
     """
     document = store.active().document()
     rows = sorted(
-        view_rows(
-            [
-                row
-                for row in document["sections"].get("schedules", [])
-                if row["values"]["campaign_id"] == str(campaign.pk)
-            ]
-        ),
+        [
+            row
+            for row in document["sections"].get("schedules", [])
+            if row["values"]["campaign_id"] == str(campaign.pk)
+            and row["values"]["kind"] != "report"
+        ],
         key=schedule_order,
     )
     values = data_for(rows) | {
@@ -156,8 +153,10 @@ def test_schedule_pending_work_is_counted_then_cancelled_with_replacement(
     assert row.state == "skipped" and row.reason == "schedule_replaced"
 
 
-def test_date_only_digest_change_includes_cancellation_inventory(auth_service, google):
-    """Unchanged digest fields still appear in the exact date-edit confirmation."""
+def test_date_only_change_replans_a_report_email(auth_service, google):
+    """A report email follows the campaign's dates (#1786): a date change
+    names it in the review and replaces its revision, cancelling its
+    planned sends not started, as it did the digests'."""
     from datetime import UTC, datetime
 
     store = auth_service.store
@@ -174,7 +173,7 @@ def test_date_only_digest_change_includes_cancellation_inventory(auth_service, g
     data["window-end_date"] = "2054-10-30"
     preview = post(browser, path, data)
     assert preview.status_code == 200
-    assert b"Planned sends not started yet" in preview.content
+    assert b"follow the campaign's dates, so their sends move" in preview.content
     apply(store, post(browser, path, {"action": "confirm", "preview": token(preview)}))
     row.refresh_from_db()
     assert row.state == "skipped" and row.reason == "schedule_replaced"
@@ -226,44 +225,6 @@ def test_new_occurrence_invalidates_a_previously_exact_schedule_preview(
         post(browser, path, {"action": "confirm", "preview": proposal}).status_code
         == 409
     )
-
-
-def test_daily_preview_is_bounded_and_labels_reported_days(auth_service, google):
-    """Recurring mail uses the same bounded evaluator as the future work planner."""
-    store = auth_service.store
-    campaign, path = setup(store)
-    add_digest(store, campaign)
-    browser, _ = signed_in()
-    data, indexes = fields(store, campaign)
-    data[f"schedules-{indexes['daily_digest']}-time"] = "00:30:00"
-    response = post(browser, path, data)
-    assert response.status_code == 200
-    assert b"Only the next 5 sends are shown" in response.content
-    # Each line names the campaign day it reports on, which replaces the
-    # general sentence about digest dates (#1129).
-    assert b"Daily Admin digest for Thursday, October 1, 2054" in response.content
-    assert b"campaign day the digest reports on" not in response.content
-    assert b"2054-10-02T04:15:00+00:00" in response.content
-    assert b"2054-10-02T04:30:00+00:00" in response.content
-    assert response.content.count(b"data-local-instant") == 10
-
-
-def test_send_times_are_typed_in_any_common_form(auth_service, google):
-    """The schedule page reads "12:30a" as 00:30 and refuses "12:30x" (#631)."""
-    store = auth_service.store
-    campaign, path = setup(store)
-    add_digest(store, campaign)
-    browser, _ = signed_in()
-    data, indexes = fields(store, campaign)
-    field = f"schedules-{indexes['daily_digest']}-time"
-    data[field] = "12:30x"
-    refused = post(browser, path, data)
-    assert "\u201c12:30x\u201d isn't a time" in unescape(refused.content.decode())
-    assert f'id="id_{field}_error"'.encode() in refused.content
-    data[field] = "12:30a"
-    response = post(browser, path, data)
-    assert response.status_code == 200
-    assert b"2054-10-02T04:30:00+00:00" in response.content
 
 
 def test_running_work_blocks_confirmation_without_claiming_it_can_be_cancelled(

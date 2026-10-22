@@ -4,7 +4,8 @@ Process admission is replaced by the test's own Django assembly; everything
 after it is the real command line on the restricted web login. Each command
 is the Report emails page's own read or action: the list, one report's
 values and sends, a saved copy, Send now, and the row actions' Pause,
-Resume and Delete with the editor's Skip this send through ``preview`` and
+Resume and Delete with the editor's Skip and Send selected sends (``skip``
+and ``unskip`` entries, several sends each) through ``preview`` and
 ``confirm``. They replaced the digest commands of PR 8d.
 """
 
@@ -323,10 +324,33 @@ def test_pause_resume_skip_and_delete_are_reviewed_and_confirmed(
         change("resume")
         assert report_values(definition)["paused_ranges"][-1]["end"] is not None
         code, document = run("report-email", "show", str(definition))
-        send = document["result"]["next_sends"][0]["send"]
-        change("skip", send=send)
-        assert send in report_values(definition)["skip_dates"]
-        assert count("admin_cmd_report_email_confirm") == 3
+        first, second = [item["send"] for item in document["result"]["next_sends"][:2]]
+        # One skip names several sends, as Skip selected sends does; the
+        # review lists each with its time, earliest first.
+        skipped = change("skip", sends=[second, first])
+        assert {first, second} <= set(report_values(definition)["skip_dates"])
+        assert skipped["result"]["created"]
+        # Unskip sends one of them again (Send selected sends).
+        change("unskip", sends=[first])
+        skips = report_values(definition)["skip_dates"]
+        assert second in skips and first not in skips
+        # Unskipping a send that is not skipped is a stale request.
+        code, document = run(
+            "report-email",
+            "preview",
+            "--expected-version",
+            SystemConfiguration.objects.get().active_configuration.digest,
+            "--changes",
+            json.dumps(
+                {
+                    "changes": [
+                        {"operation": "unskip", "id": str(definition), "sends": [first]}
+                    ]
+                }
+            ),
+        )
+        assert code == 1 and document["error"]["code"] == "stale_version", document
+        assert count("admin_cmd_report_email_confirm") == 4
         change("delete")
         code, document = run("report-email", "list")
         assert code == 0 and document["result"]["reports"] == []
@@ -401,7 +425,8 @@ def test_a_queued_send_now_refuses_every_change(
         for entry in (
             {"operation": "pause"},
             {"operation": "resume"},
-            {"operation": "skip", "send": send},
+            {"operation": "skip", "sends": [send]},
+            {"operation": "unskip", "sends": [send]},
             {"operation": "delete"},
         ):
             code, document = run(
@@ -450,3 +475,203 @@ def test_a_resume_whose_first_send_passes_is_refused(
         monkeypatch.setattr(admin_editing, "database_now", lambda: late)
         code, document = run("report-email", "confirm", "--token", token)
         assert code == 1 and document["error"]["code"] == "stale_version", document
+
+
+MORNING = {
+    "type": "repeat",
+    "frequency": "daily",
+    "from": "day_after_campaign_start",
+    "until": "day_after_campaign_end",
+    "time": "07:00:00",
+}
+
+
+def _values(**values):
+    """A ``create`` entry's values: a one-time report to All Staff."""
+    return {
+        "name": "Staff requests",
+        "recipients": [{"group": "staff"}],
+        "schedule": {"type": "once", "date": "2054-10-30", "time": "09:00:00"},
+        "as_of": "send_time",
+        "blocks": [{"block": "additional_information", "version": 1, "options": {}}],
+    } | values
+
+
+def _preview(run, *entries):
+    """``report-email preview`` of ``entries``: its exit code and document."""
+    version = SystemConfiguration.objects.get().active_configuration.digest
+    return run(
+        "report-email",
+        "preview",
+        "--expected-version",
+        version,
+        "--changes",
+        json.dumps({"changes": list(entries)}),
+    )
+
+
+def _reports():
+    """The applied report emails' values, by name."""
+    document = SystemConfiguration.objects.get().active_configuration.canonical_document
+    return {
+        row["values"]["name"]: row
+        for row in document["sections"]["schedules"]
+        if row["values"]["kind"] == "report"
+    }
+
+
+def test_create_and_edit_are_reviewed_and_confirmed(
+    live_response_service,
+    google,
+    cli,  # noqa: F811
+):
+    """``create`` adds a report and ``edit`` changes it, as New and Edit do;
+    a report that sends after the campaign ends is asked about at confirm:
+    exit 4 without ``--yes``, applied with it (decision 9)."""
+    from .report_builders import users_form
+
+    harness = live_response_service
+    with campaign_clock(WEEKLY_INSTANT):
+        users_form(harness.service.store)
+        complete_empty_catchup(harness.campaign, uuid4())
+        signed_in()
+        run = cli()
+        code, document = _preview(run, {"operation": "create", "values": _values()})
+        assert code == 0, document
+        result = document["result"]
+        assert result["after_campaign"] is False
+        assert result["changes"][0]["operation"] == "create"
+        token = result["preview"]["token"]
+        code, document = run("report-email", "confirm", "--token", token)
+        assert code == 0, document
+        apply_requests(run.service.store)
+        row = _reports()["Staff requests"]
+        assert row["values"]["recipients"] == [{"group": "staff"}]
+        assert row["values"]["slot_basis"] == "send_date"
+        # Edit keeps what it leaves out; this one now sends every morning
+        # until the day after the campaign ends.
+        entry = {
+            "operation": "edit",
+            "id": row["id"],
+            "values": {"schedule": MORNING, "as_of": "previous_day_end"},
+        }
+        code, document = _preview(run, entry)
+        assert code == 0, document
+        assert document["result"]["after_campaign"] is True
+        assert document["result"]["changes"][0]["after_campaign"]
+        token = document["result"]["preview"]["token"]
+        confirmed = count("admin_cmd_report_email_confirm")
+        code, document = run("report-email", "confirm", "--token", token)
+        assert code == 4, document
+        assert document["error"]["code"] == "confirmation_required", document
+        assert count("admin_cmd_report_email_confirm") == confirmed
+        code, document = run("report-email", "confirm", "--token", token, "--yes")
+        assert code == 0, document
+        apply_requests(run.service.store)
+        values = _reports()["Staff requests"]["values"]
+        assert values["schedule"] == MORNING
+        assert values["recipients"] == [{"group": "staff"}]
+        assert values["as_of"] == "previous_day_end"
+
+
+def _refusal(run, values):
+    """The field problems of a refused ``create`` of ``values`` (exit 1,
+    ``invalid``): each document field's code and message."""
+    code, document = _preview(run, {"operation": "create", "values": values})
+    assert code == 1 and document["error"]["code"] == "invalid", document
+    return {
+        problem["field"]: (problem["code"], problem["message"])
+        for problem in document["error"]["fields"]
+    }
+
+
+def test_create_runs_the_pages_checks_naming_each_field(
+    live_response_service,
+    google,
+    cli,  # noqa: F811
+):
+    """The page's checks, recipients included: a user must be a current
+    Administrator or Staff user, a user's own address is stored as that user
+    (in any letter case), and each refusal names its field and problem."""
+    from .report_builders import set_user, users_form
+    from .user_builders import user_id
+
+    harness = live_response_service
+    store = harness.service.store
+    with campaign_clock(WEEKLY_INSTANT):
+        users_form(store)
+        set_user(store, "staff@example.org", "staff", name="Pat Doe")
+        set_user(store, "leader@example.org", "ministry_leader")
+        complete_empty_catchup(harness.campaign, uuid4())
+        signed_in()
+        run = cli()
+        staff = user_id(store, "staff@example.org")
+        unknown = (
+            "invalid",
+            "Recipients: A chosen recipient is not a current Administrator or "
+            "Staff user. Remove it.",
+        )
+        for recipient in (
+            {"user": str(uuid4())},
+            {"user": user_id(store, "leader@example.org")},
+        ):
+            assert _refusal(run, _values(recipients=[recipient])) == {
+                "values.recipients": unknown
+            }
+        # A Ministry leader's address is that leader, never an outside
+        # address (decision 2), and the refusal says so.
+        leader = [{"address": "Leader@Example.org"}]
+        assert _refusal(run, _values(recipients=leader)) == {
+            "values.recipients": (
+                "invalid",
+                "Recipients: leader@example.org is a Ministry leader; Ministry "
+                "leaders don't receive report emails. Remove it.",
+            )
+        }
+        twice = [{"user": staff}, {"address": "STAFF@example.org"}]
+        assert _refusal(run, _values(recipients=twice)) == {
+            "values.recipients": (
+                "invalid",
+                "Recipients: A recipient is chosen twice. Remove one.",
+            )
+        }
+        problems = _refusal(run, _values(recipients=[{"address": "not an address"}]))
+        assert "is not a valid email address" in problems["values.recipients"][1]
+        problems = _refusal(run, _values(schedule={"type": "once", "date": "soon"}))
+        assert problems["values.schedule"][1].startswith(
+            "Sends: The schedule can't be read."
+        )
+        days = [{"block": "day_by_day", "version": 1, "options": {"days": 99}}]
+        problems = _refusal(run, _values(blocks=days))
+        assert problems["values.blocks"][1].startswith("Blocks: Check the blocks")
+        # Every refused value is named at once.
+        problems = _refusal(
+            run, _values(as_of="noon", content_required="yes", recipients="all")
+        )
+        assert set(problems) == {
+            "values.as_of",
+            "values.content_required",
+            "values.recipients",
+        }
+        assert problems["values.as_of"][1].startswith("As of: Choose As of")
+        assert problems["values.content_required"][1].startswith(
+            "Send only when there is something to report:"
+        )
+        assert _refusal(run, {"name": "Only a name"}) == {
+            "values.recipients": ("required", "Recipients: This value is required."),
+            "values.schedule": ("required", "Schedule: This value is required."),
+            "values.as_of": ("required", "As of: This value is required."),
+            "values.blocks": ("required", "Blocks: This value is required."),
+        }
+        # A user's own address, in other letter case, is that user's entry.
+        code, document = _preview(
+            run,
+            {
+                "operation": "create",
+                "values": _values(recipients=[{"address": "Staff@Example.org"}]),
+            },
+        )
+        assert code == 0, document
+        assert document["result"]["changes"][0]["after"]["recipients"] == [
+            {"user": staff}
+        ]

@@ -4,7 +4,9 @@ A page under Dates and mail schedules that changes nothing itself. It lists
 each send the current schedule revisions make, in sending order: the
 Initial invitation, each reminder, and every day or week of the Daily and
 Weekly Admin digests, expanded with the scheduler's own evaluation
-(``SchedulePlan.page``). The table of sends is the page's text equivalent;
+(``SchedulePlan.page``). A report email's passed times show only the sends
+it made, never the rule's (Administrator, R43; ``report_calendar_sends``).
+The table of sends is the page's text equivalent;
 the page script (``calendar-v1.js``) draws the same sends as a month grid,
 one month at a time with Previous and Next (#1656), bucketed by the
 browser's local day, since every Admin time is browser-local. The address's
@@ -33,6 +35,7 @@ the script to draw from.
 """
 
 from dataclasses import replace
+from datetime import date, datetime, time, timedelta
 from urllib.parse import urlencode
 
 from django.shortcuts import render
@@ -41,6 +44,7 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
+from parishkit.stewardship.campaigns.intervals import resolve_local
 from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.wall_clock import WEEKDAYS
 from parishkit.stewardship.web.contracts import filters
@@ -54,7 +58,7 @@ from .schedule_entry_views import ERRORS, _recheck, year_month
 from .schedule_forms import schedule_order
 from .schedule_preview import work_summary
 from .schedule_reads import campaign_schedules, schedule_state
-from .schedule_table import DIGESTS, schedule_rows
+from .schedule_table import DIGESTS, ScheduleRow, schedule_rows
 from .schedule_views import campaign_email_names
 
 # The address parameter naming the month shown (``2054-11``, #1656).
@@ -128,8 +132,160 @@ def calendar_sends(previous, campaign, summary, now, names=None):
     return sorted(sends, key=lambda send: (send.due, send.position))
 
 
+# Report email sends are listed up to this long after the campaign's last
+# day: a report may repeat until the campaign is archived, an open end.
+REPORT_HORIZON = timedelta(days=62)
+# Every send a report made is listed (``report_sends`` keeps a page's worth
+# by default); a report sends at most daily, so this bounds nothing real.
+REPORT_SENDS_LISTED = 10_000
+# A send a report made, by its Past sends result (``report_email_list``),
+# as the calendar's status.
+REPORT_RESULTS = {
+    "sent": "sent",
+    "failed": "report_failed",
+    "uncertain": "uncertain",
+    "nothing": "nothing",
+    "nobody": "nobody",
+    "sending": "sending",
+}
+
+
+def report_calendar_sends(configuration, campaign_id, campaign, now, position):
+    """Every report email send of the campaign, as calendar rows (#1786, R43).
+
+    ``configuration`` is the applied system configuration, ``campaign`` the
+    campaign row. A time that has passed shows only what a report actually
+    sent (Administrator, R43): the sends Past sends lists
+    (``report_email_list.report_sends``, in the configuration's mode), each
+    at the time it was made with its result, muted and not linked. The
+    rule's sends are listed only after ``now``, expanded by the reports' own
+    evaluator with skips and pauses set aside so a skipped or paused send is
+    still listed, muted ("skipped", "paused"); a send still to come links to
+    its report's Edit page naming the send (``?send=``), which ticks that
+    send's box for Skip (or Send) selected sends. An open-ended report is
+    listed until ``REPORT_HORIZON`` after the campaign's last day.
+    ``position`` is where the reports follow the Family mail in sending
+    order. A catch-up the scheduler still owes is one more row
+    (``owes_catch_up``).
+    """
+    from parishkit.stewardship.reports.report_email_list import (
+        plan,
+        report_records,
+        report_sends,
+    )
+
+    values = campaign.active_configuration.values
+    end = date.fromisoformat(values["end_date"]) + REPORT_HORIZON
+    through = resolve_local(datetime.combine(end, time()), values["timezone"])
+    records = report_records(configuration, campaign_id)
+    made = report_sends(
+        campaign_id,
+        configuration.mode,
+        [record["id"] for record in records],
+        limit=REPORT_SENDS_LISTED,
+    )
+    rows = []
+    for offset, record in enumerate(records):
+        report = record["values"]
+        link = reverse("admin:report_email_edit", args=[record["id"]])
+        row = ScheduleRow(
+            id=record["id"],
+            label=report["name"],
+            kind="report",
+            subject=report["subject"],
+            status="upcoming",
+            position=position + offset,
+            email=str(_("Report email")),
+            link=link,
+        )
+        sends = made.get(record["id"], [])
+        rows.extend(
+            replace(row, status=REPORT_RESULTS[send["result"]], due=send["made_at"])
+            for send in sends
+        )
+        if owes_catch_up(record, campaign, configuration.mode, now, sends):
+            rows.append(replace(row, status="missed", due=now))
+        free = plan(report | {"skip_dates": [], "paused_ranges": []}, values)
+        pauses = [
+            (
+                datetime.fromisoformat(entry["start"]),
+                entry["end"] and datetime.fromisoformat(entry["end"]),
+            )
+            for entry in report["paused_ranges"]
+        ]
+        for slot in free.page(through=through, limit=1000).slots:
+            # A passed time shows only the sends made, never the rule's.
+            if slot.due_at <= now:
+                continue
+            paused = any(
+                start <= slot.due_at and (stop is None or slot.due_at < stop)
+                for start, stop in pauses
+            )
+            rows.append(
+                replace(
+                    row,
+                    status="skipped"
+                    if slot.key in report["skip_dates"]
+                    else "paused"
+                    if paused
+                    else "upcoming",
+                    due=slot.due_at,
+                    slot=slot.key,
+                )
+            )
+    return rows
+
+
+def owes_catch_up(record, campaign, mode, now, sends):
+    """Whether the scheduler owes ``record`` a send for a time already passed.
+
+    A report created after its From date (or one whose send is late) has
+    past slots of its rule, not skipped or paused, that nothing covers; the
+    scheduler coalesces them into one send as soon as it runs (report-emails
+    spec, "Catch-up, recovery and holds"). The check is the scheduler's own
+    (``report_email_ownership.covered_slots``), paged through every past
+    slot as the scheduler pages them. While a send of the report is being
+    made (``sends``' "sending") that send is the catch-up, already listed.
+
+    It mirrors the scheduler's uncovered-slot half only, not its ``DUE``
+    query (a pending occurrence with no preparation, or a replaced
+    revision's sends to coalesce): that needs the Testing rehearsal epoch,
+    which only the scheduler's credential scope gives, and such a send is
+    taken by the scheduler's next pass.
+    """
+    from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
+    from parishkit.stewardship.reports.report_email_list import plan
+    from parishkit.stewardship.reports.report_email_ownership import covered_slots
+
+    if any(send["result"] == "sending" for send in sends):
+        return False
+    rule = plan(record["values"], campaign.active_configuration.values)
+    page = rule.page(through=now, limit=1000)
+    # A rule with no past slot owes nothing: no further query.
+    if not page.slots and page.exhausted:
+        return False
+    definition = ScheduleDefinition.objects.filter(pk=record["id"]).first()
+    if definition is None or definition.current_revision_id is None:
+        return False
+    cycle = campaign.production_cycle if mode == "production" else 0
+    while True:
+        keys = {slot.key for slot in page.slots}
+        if keys - covered_slots(definition, mode, cycle, keys):
+            return True
+        if page.exhausted:
+            return False
+        page = rule.page(through=now, after=page.cursor, limit=1000)
+
+
 def is_past(send, now):
-    """Whether ``send``'s time has passed and it is no longer sending."""
+    """Whether ``send``'s time has passed and it is no longer sending.
+
+    A report's owed catch-up ("missed", listed at ``now``) is still to come,
+    so the default Upcoming view keeps it (R43); a Family send that passed
+    without sending ("missed" too) is past.
+    """
+    if send.kind == "report" and send.status == "missed":
+        return False
     return send.due <= now and send.status not in ("preparing", "sending")
 
 
@@ -177,12 +333,21 @@ def schedule_calendar(request, campaign_id):
             state, campaign, _editable = schedule_state(service, campaign_id, page=True)
             configuration = state[0]
             values = campaign.active_configuration.values
+            family = campaign_schedules(configuration, campaign.pk)
             sends = calendar_sends(
-                campaign_schedules(configuration, campaign.pk),
+                family,
                 values,
                 work_summary(campaign.pk),
                 now,
                 campaign_email_names(_records(configuration, campaign.pk)),
+            )
+            # Report emails' sends, named by each report (#1786).
+            sends = sorted(
+                sends
+                + report_calendar_sends(
+                    configuration, campaign.pk, campaign, now, len(family)
+                ),
+                key=lambda send: (send.due, send.position),
             )
             response = render(
                 request,

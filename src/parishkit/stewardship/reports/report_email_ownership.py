@@ -209,6 +209,56 @@ def checkpoint_preparation(claim, *, phase, **changes):
     return ReportEmailPreparation.objects.get(pk=row.pk)
 
 
+def covered_slots(definition, mode, cycle, keys):
+    """The slot keys among ``keys`` that owe ``definition`` no new send.
+
+    A slot is covered by a fulfillment, an unreviewed or assumed-delivered
+    restore hold, a post-close resolution, or an occurrence of the current
+    revision in ``mode`` and Production ``cycle`` (0 in Testing). The
+    scheduler allocates a preparation for any due slot outside this set
+    (``ReportEmailProducer._uncovered``), and the Campaign calendar asks
+    the same question to show a catch-up still owed (R43). The calendar
+    does not ask the scheduler's ``DUE`` question, so a send that question
+    alone finds is not shown until the scheduler takes it.
+    """
+    from parishkit.stewardship.campaigns.postclose_coverage import resolved_slots
+    from parishkit.stewardship.campaigns.schedule_models import (
+        ScheduleFulfillment,
+        ScheduleOccurrence,
+    )
+
+    covered = set(
+        ScheduleFulfillment.objects.filter(
+            definition=definition, mode=mode, target="admins", slot__in=keys
+        ).values_list("slot", flat=True)
+    )
+    covered |= set(
+        RestoreDeliveryHold.objects.filter(
+            definition=definition,
+            mode=mode,
+            target="admins",
+            slot__in=keys,
+            state__in=("unreviewed", "assumed_delivered"),
+        ).values_list("slot", flat=True)
+    )
+    # Only this Production cycle's occurrences cover a slot, as in the dates
+    # phase (report_email_planning._excluded): a withdrawn cycle's retired
+    # sends are owed again after the next go-live.
+    covered |= set(
+        ScheduleOccurrence.objects.filter(
+            revision_id=definition.current_revision_id,
+            mode=mode,
+            target="admins",
+            slot__in=keys,
+            production_cycle=cycle,
+        ).values_list("slot", flat=True)
+    )
+    covered |= {
+        item["slot"] for item in resolved_slots(definition.pk, mode, slots=keys)
+    }
+    return covered
+
+
 # The scheduler's question for one report: an occurrence (which the
 # schedule planner materializes, as it does a digest's) that is due, that
 # no preparation owns and nothing covers, or a replaced revision's sends to
@@ -250,12 +300,7 @@ class ReportEmailProducer:
         sends; the cursor passes only fully covered pages, and is forgotten
         whenever the revision, namespace or restore holds change.
         """
-        from parishkit.stewardship.campaigns.postclose_coverage import resolved_slots
         from parishkit.stewardship.campaigns.schedule_evaluation import SchedulePlan
-        from parishkit.stewardship.campaigns.schedule_models import (
-            ScheduleFulfillment,
-            ScheduleOccurrence,
-        )
 
         mode = scope.runtime.mode
         cycle = scope.campaign.production_cycle if mode == "production" else 0
@@ -278,32 +323,7 @@ class ReportEmailProducer:
         while True:
             page = plan.page(through=scope.instant, after=after, limit=100)
             keys = {slot.key for slot in page.slots}
-            covered = set(
-                ScheduleFulfillment.objects.filter(
-                    definition=definition, mode=mode, target="admins", slot__in=keys
-                ).values_list("slot", flat=True)
-            )
-            covered |= set(
-                holds.filter(
-                    slot__in=keys, state__in=("unreviewed", "assumed_delivered")
-                ).values_list("slot", flat=True)
-            )
-            # Only this Production cycle's occurrences cover a slot, as in
-            # the dates phase (report_email_planning._excluded): a withdrawn
-            # cycle's retired sends are owed again after the next go-live.
-            covered |= set(
-                ScheduleOccurrence.objects.filter(
-                    revision_id=definition.current_revision_id,
-                    mode=mode,
-                    target="admins",
-                    slot__in=keys,
-                    production_cycle=cycle,
-                ).values_list("slot", flat=True)
-            )
-            covered |= {
-                item["slot"] for item in resolved_slots(definition.pk, mode, slots=keys)
-            }
-            if keys - covered:
+            if keys - covered_slots(definition, mode, cycle, keys):
                 return True
             if page.cursor is not None:
                 self.cursors[key] = after = page.cursor

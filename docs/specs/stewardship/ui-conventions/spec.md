@@ -1387,6 +1387,11 @@ Short fields that share a row (a date beside a time) keep their boxes level:
 a field's reserved error line sits under its box, never between the label and
 the box, so no field's box is pushed below its neighbour's (#1851).
 
+A time entry field's server refusal is the shown list with its error id
+(`<id>_error`): a list that is hidden or cleared is no refusal, so an empty
+reserved line never keeps a valid time marked, and the first edit of the
+time clears a refusal it shares with another field from both.
+
 Where a rule can be checked in the browser, the page checks it too, and
 shows its error at the field the same way. The browser's own checks (a
 required field, a format) mark a field when the reader leaves it, and clear
@@ -2045,16 +2050,33 @@ Testing rehearsal.
 - **Accessibility.** The pair is a group (`role="group"`) named by its
   visible label; Tab reaches each segment and Enter follows it, and a
   screen reader names the chosen one as the current page.
+- **Stored two-way settings.** A form's setting that is one of exactly two
+  named ways, saved through the form's own Review and Apply, is drawn with the same segmented look, never as two stacked radio
+  buttons or a two-option select: a `fieldset` whose visible `legend`
+  names it, around two native radios each covering its segment, so arrow
+  keys move between them and a screen reader names the group and the
+  chosen one, as the [Basic and Advanced](#basic-and-advanced-modes)
+  toggle is drawn. Choosing a segment changes only the form (the fields it
+  shows), never the address; the form's Review saves it. Its segments share
+  the row equally and their words may wrap, so a long choice fits a phone.
+  A segment that cannot be chosen in the page's present state stays where
+  it is, unavailable, with the reason in a tip beside the legend. Its
+  server refusal marks both radios and is shown in a reserved line after
+  the pair. **Shared code.** `components/choice-pair.html` and the shared
+  segmented style in `ui-v1.css` (Administrator, R42 review of
+  [#1962](https://github.com/epiphany40223/parishkit/pull/1962)).
 - **Not this pattern.** A binary filter among several applied together
   (the Census changes' Include history box stays in its form), tri-state
   filters (Any, Yes or No), export options sent with an action ("Include
-  mailing columns" for an export), stored settings saved through Review and
-  Apply (a checkbox there is a setting, not a view), and choices of three
-  or more (Appearance).
+  mailing columns" for an export), an on-or-off stored setting (a checkbox
+  there is a setting, not two named ways), and choices of three or more
+  (Appearance).
 - **Guard.** A template test refuses an Admin template's `<select>` with
   exactly two written options, unless it is listed as an exception with
-  its reason. A menu built from a loop cannot be counted that way, so the
-  test also checks each converted page by name: it draws the shared pair
+  its reason, and a stored two-way setting's form field whose choices are
+  exactly two drawn as anything but the shared pair, on each page listed by
+  name in the guard test. A menu built from a loop cannot be counted that
+  way, so the test also checks each converted page by name: it draws the shared pair
   and has no menu for that choice, and its view no longer hands the
   template the choice's options. Any other menu built from a loop is
   checked in review.
@@ -3831,6 +3853,17 @@ learned once. **Shared code.**
   the same evaluation, not a second preview. Every list of a schedule's
   occurrences, live or in a review, is drawn by the one
   [schedule preview](#schedule-previews) component.
+- **Past and future sends** (Administrator, R43). A view of a schedule's
+  sends, such as the Campaign calendar and its Every email by date table,
+  shows a time that has passed only with what was actually sent there, read
+  from the records of the sends made (with their outcome: sent, failed,
+  uncertain, skipped as empty), never with sends computed from the
+  schedule's rule. The rule's sends are shown only from now on. A schedule
+  created after its first date therefore shows nothing on the days before
+  it was created; when the scheduler still owes a catch-up send, the view
+  shows that one send at the current time, as not sent yet, so it never
+  hides a send that is about to go. Feature specs say which records a view
+  reads ([report emails](../report-emails/spec.md#campaign-calendar-and-other-pages)).
 - **Limits** are refused at the field in plain words, with the limit named,
   such as the 30-date limit on a reminder repeat.
 - **Host schedules.** Off-site backups are not edited in the Admin portal.
@@ -3991,6 +4024,16 @@ its feature spec: the
 - **Extra views** read the same day data. The refresh schedule's seven-day
   grid draws its cells from the component's days, so the two never
   disagree.
+- **A list whose sends carry a status or actions** is an
+  [Admin table](#admin-tables) built from the component's lines, never a
+  list with buttons in its lines: one row per occurrence with its time,
+  what runs and a Status column in words, struck rows keeping their
+  strike; where its sends take actions it has the shared selection column
+  and bulk bar, each bulk action available only for its kind of row
+  ([row actions](#row-actions-and-confirmation)). First use: a report
+  email's [Next sends table](../report-emails/spec.md#next-sends-table)
+  (Administrator, R42 review of
+  [#1962](https://github.com/epiphany40223/parishkit/pull/1962)).
 
 **API.** `occurrence_preview.build(occurrences, *, days=(), shown_zone=None,
 schedule_zone, now, limit=None, more=False, paused=None, layout="compact",

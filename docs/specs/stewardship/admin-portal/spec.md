@@ -1257,7 +1257,8 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `delivery_refusal` | Refused address | Refused addresses | Administrator | Verify refused address | `/admin/mail/refusals/<refusal>/` | (same) |  |
 | `family_portal` | Family portal availability | Menu: Family portal availability | Administrator | (same) | `/admin/mail/family-portal/` | (same) |  |
 | `report_emails` | Report emails | Menu: Report emails | Administrator, Staff | (new, #1786) | `/admin/mail/report-emails/` | (same) | [Report emails page](../report-emails/spec.md#report-emails-page); Staff read-only. Replaced `emailed_reports` and `weekly_digest_manual` (delivery PR 5), which are gone with no redirect (#864). |
-| `report_email_edit` | _report name_ | Report emails | Administrator | (new, #1786) | `/admin/mail/report-emails/<report>/`; New at `/admin/mail/report-emails/new/` | (same) | Object-named (exception). [New and Edit report email](../report-emails/spec.md#new-and-edit-report-email). |
+| `report_email_new` | New report email | Report emails | Administrator | (new, #1786) | `/admin/mail/report-emails/new/` | (same) | [New and Edit report email](../report-emails/spec.md#new-and-edit-report-email); its Review and Apply post to it. |
+| `report_email_edit` | _report name_ | Report emails | Administrator | (new, #1786) | `/admin/mail/report-emails/<report>/` | (same) | Object-named (exception). [New and Edit report email](../report-emails/spec.md#new-and-edit-report-email). |
 | `report_email_send` | _report name and date_ | Report emails | Administrator, Staff (when every block allows) | (new, #1786) | `/admin/mail/report-emails/sends/<send>/`, with `items/<item>/` for one request | (same) | Object-named (exception). A [saved copy](../report-emails/spec.md#saved-copies). Until [#1946](https://github.com/epiphany40223/parishkit/issues/1946) draws it as web components it shows the email as it was sent, named by its subject. |
 | `presence` | Families on the form now | Menu: Families on the form now | Administrator | (same) | `/admin/mail/presence/` | (same) | The header's count is still polled at `/admin/presence?format=count` (decision 8); any other read of that address is 404. |
 | `held_emails` | Held emails | Reached from: Home | Administrator | (new, #757) | `/admin/mail/held-emails/` | (same) | Not a menu entry: Home links to it while a held email is undecided. Its trail is Home › Mail and Family portal. See [restore release](#restore-release). |
@@ -3553,7 +3554,7 @@ directly; the wizard's list has its own Delete.
   (`series_edits.plan`, scope `delete`); its reminders that sent stay as
   ordinary reminders. The review names the series' rule and says so.
 - **Report emails** are not here: a report email's single send is skipped
-  with [Skip this send](../report-emails/spec.md#skip-one-send) and a report
+  with [Skip selected sends](../report-emails/spec.md#skip-and-unskip-sends) and a report
   is deleted with [Delete a report email](../report-emails/spec.md#delete-a-report-email),
   both on Report emails (#1786; the digests' This email only choice moved
   there).
@@ -3580,8 +3581,12 @@ each send links to its Edit scheduled email page, which has
 [Delete](#delete-a-scheduled-email). It reads
 the current schedules: the
 Initial invitation, each reminder, and every send of each
-[report email](../report-emails/spec.md#campaign-calendar-and-other-pages),
-expanded the way the scheduler evaluates them.
+[report email](../report-emails/spec.md#campaign-calendar-and-other-pages):
+the sends a report made, at the times it made them, and its sends still to
+come, expanded the way the scheduler evaluates them, following the
+[past and future sends](../ui-conventions/spec.md#schedules) rule. A time
+that has passed never shows a send computed from a schedule's rule
+(Administrator, R43).
 
 - **By month** shows one month at a time, Sunday first (#1656), with
   **Previous month** and **Next month** buttons above it and the month's name
@@ -3610,11 +3615,15 @@ expanded the way the scheduler evaluates them.
 - **Every email by date** is the same sends as a table, the grids' text
   equivalent: when, the schedule ("Reminder 2"), the email it sends, its
   status and Edit. The status is the scheduled emails table's, from the same
-  counts-only work summary; each send of a report email shows "Repeats" (or
-  "Once") until its time has passed, then "Past", and a skipped or paused one
+  counts-only work summary; each send of a report email still to come shows
+  "Upcoming", and a skipped or paused one
   ([#1658](https://github.com/epiphany40223/parishkit/issues/1658)) shows
-  "Skipped" or "Paused". Every send of a report email is listed, however long
-  the campaign, skipped ones included. Above it, **Show** is a [binary
+  "Skipped" or "Paused"; a send a report made shows its result in the
+  report's [Past sends](../report-emails/spec.md#past-sends) words, and a
+  catch-up the scheduler still owes shows "Not sent yet". Every send of a
+  report email still to come is listed, however long the campaign, skipped
+  ones included.
+  Above it, **Show** is a [binary
   choice](../ui-conventions/spec.md#binary-choices) (`?show=`): **Upcoming
   emails** (the default) or **Include past emails**. A past email is one
   whose time has passed and is not still sending; the default leaves them
@@ -3640,12 +3649,13 @@ send of a schedule that has not run links to its Edit scheduled email page,
 in the grid and through Edit in the table, with `?calendar=` and the month
 shown (`?calendar=2054-11`), so that page's Cancel, Apply and Delete return
 to that month of the calendar; a schedule that has run, or has work
-prepared, is listed muted and not linked, as on the list, and so is a report
-email's send whose time has passed (editing the report changes only its later
-sends) or that is skipped or paused. A report email send still to come links
+prepared, is listed muted and not linked, as on the list, and so is a send a
+report email made (editing the report changes only its later sends) and a
+report email's send that is skipped or paused. A report email send still to
+come links
 to its [Edit report email](../report-emails/spec.md#new-and-edit-report-email)
 page with that send's slot key (`?send=2054-11-03`), so it can offer
-[Skip this send](../report-emails/spec.md#skip-one-send); a `send` that is
+[Skip selected sends](../report-emails/spec.md#skip-and-unskip-sends), with that send's box ticked; a `send` that is
 not a date is refused as an unknown address.
 A muted send is told apart by its status, in words in the table and read to
 screen readers in the grid. A week view,
@@ -3741,7 +3751,7 @@ checks it exactly as that page does.
 - **Not movable:** a send that has run, is being prepared or was missed, and
   every send of a report email (a report keeps its own schedule; one of its
   sends can only be skipped, through
-  [Skip this send](../report-emails/spec.md#skip-one-send)). These keep their look on the
+  [Skip selected sends](../report-emails/spec.md#skip-and-unskip-sends)). These keep their look on the
   calendar and offer neither Move… nor a drag, and the server refuses a
   move of any of them, from an old page or a crafted request, in the
   review dialog, changing nothing.

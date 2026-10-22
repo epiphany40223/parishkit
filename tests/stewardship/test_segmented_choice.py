@@ -7,7 +7,9 @@ forms). These tests render the component, check the Participation page's
 Chart population links, and guard against a new two-option menu in an
 Admin template, including the loop-built menu the directory drew before
 #1535. Roster changes to enter's Show pair became its worklist's Stage
-filter (#1687), a row filter with more than two choices.
+filter (#1687), a row filter with more than two choices. A stored two-way
+setting of a form (components/choice-pair.html, #1962 review) is the same
+look as two radios; the pages that draw one are checked by name.
 """
 
 import re
@@ -222,3 +224,64 @@ def test_sent_mail_draws_the_shared_pair_as_post_segments():
     for part in ("action=table.action", "fields=mode_fields", 'name="mode"'):
         assert part in include, part
     assert "filters=True" in include and "_href" not in include
+
+
+PAIR = "stewardship/components/choice-pair.html"
+# Stored two-way settings drawn as the shared pair (ui-conventions, "Binary
+# choices", stored two-way settings; #1962 review): each page and the names
+# of the fields it draws so, which no longer appear as stacked radios or a
+# loop-built menu.
+STORED_PAIRS = {
+    "report-email-entry.html": ("sends", "as_of", "preset", "frequency"),
+}
+
+
+def render_pair(**extra):
+    """The stored setting's pair for Sends: Once | Repeating."""
+    return render_to_string(
+        PAIR,
+        {
+            "pair_id": "report-sends",
+            "name": "sends",
+            "legend": "Sends",
+            "first_value": "once",
+            "first_label": "Once",
+            "second_value": "repeat",
+            "second_label": "Repeating",
+        }
+        | extra,
+    )
+
+
+def test_a_stored_pair_is_a_labelled_group_of_two_radios():
+    """A fieldset named by its legend around two native radios; the chosen
+    one checked; a fixed setting disables the other segment in place and
+    gives its reason in a tip; a refusal marks both radios and is shown in
+    its line after the pair."""
+    html = render_pair(chosen="repeat")
+    assert '<fieldset class="choice-pair" id="report-sends"' in html
+    assert "<legend" in html and ">Sends</legend>" in html
+    assert html.count('type="radio"') == 2
+    assert 'value="repeat" checked' in html
+    assert "disabled" not in html and "toggletip" not in html
+    fixed = render_pair(chosen="repeat", fixed=True, tip="It has sent.")
+    assert re.search(r'value="once"[^>]*disabled', fixed)
+    assert not re.search(r'value="repeat"[^>]*disabled', fixed)
+    assert "It has sent." in fixed and "toggletip" in fixed
+    refused = render_pair(chosen="repeat", errors=["Choose one."])
+    assert refused.count('aria-invalid="true"') == 2
+    assert 'id="report-sends_error">' in refused and "Choose one." in refused
+
+
+def test_stored_two_way_settings_draw_the_shared_pair():
+    """Each named field is drawn by the shared pair, never as a stacked
+    radio (``class="choice"``) or a menu of its own."""
+    for name, fields in STORED_PAIRS.items():
+        text = (TEMPLATES / name).read_text()
+        for field in fields:
+            assert re.search(
+                r'choice-pair\.html" with pair_id="[^"]+" name="' + field + '"', text
+            ), (name, field)
+            assert f'<input type="radio" name="{field}"' not in text, (name, field)
+            for match in SELECT.finditer(text):
+                assert f'name="{field}"' not in match.group(1), (name, field)

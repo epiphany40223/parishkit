@@ -26,7 +26,6 @@ from django.utils.translation import gettext_lazy as _
 from django.utils.translation import ngettext
 
 from parishkit.stewardship.accounts.models import AddressRule
-from parishkit.stewardship.accounts.report_rows import digest_kind
 from parishkit.stewardship.campaigns.models import ScheduleRevision
 from parishkit.stewardship.campaigns.schedule_evaluation import ReportPlan
 from parishkit.stewardship.campaigns.schedule_models import (
@@ -533,11 +532,9 @@ def status(values, sends, upcoming):
 def actions(row_status, *, archived, editable):
     """Each row action's availability: ``{action: None or why not}``.
 
-    The spec's action matrix. ``editable`` says whether the row has an
-    editor yet: until the report editor ships (delivery plan item 6) only
-    a report shaped as the converted Daily or Weekly opens the digest
-    editor on Dates and mail schedules. An absent key is an action the row
-    does not offer at all.
+    The spec's action matrix. ``editable`` says whether the row offers
+    Edit (every report does since the report editor, delivery plan item
+    6). An absent key is an action the row does not offer at all.
     """
     if archived:
         return {}
@@ -668,11 +665,7 @@ def report_rows(configuration, campaign, now, sends, *, administrator):
                 "has_list_block": any(
                     REGISTRY[entry["block"]].kind == LIST for entry in values["blocks"]
                 ),
-                "actions": actions(
-                    row_status,
-                    archived=archived,
-                    editable=digest_kind(values) is not None,
-                )
+                "actions": actions(row_status, archived=archived, editable=True)
                 if administrator
                 else {},
             }

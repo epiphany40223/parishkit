@@ -1,0 +1,35 @@
+{% load i18n stewardship %}{% comment %}
+  The one HTML and plain-text editor of every authored email part (Pages and
+  emails, a report email's Introduction): the visual editor (a
+  contenteditable pane with its formatting tools), the HTML source folded
+  under it, and "Generate plain text from HTML" with the plain text. ui-v1.js
+  wires it wherever it is drawn ([data-visual-content] inside a form, and
+  [data-plain-text]): the pane writes the HTML source as the reader types;
+  an edit of the source redraws the pane from the server's sanitizer
+  (admin:content_plain_text, which also answers the generated plain text),
+  never from the raw source; and while the box is ticked the plain text is
+  the server's own generation for the current HTML, not sent with the form.
+
+    {% include "stewardship/components/html-content-editor.html" with html=form.html generate=form.generate_text text=form.text visual=visual %}
+
+  - html, generate, text: the form's bound fields (text and generate are
+    optional: a part with no plain text has neither).
+  - visual: the stored HTML as the server's sanitizer leaves it, which the
+    pane starts from.
+  - heading (optional): the pane's heading level, "h2" (default) or "h3"
+    inside a section that has its own h2.
+  - review_action (optional): the name of the page's button that reviews
+    the change, which the "could not be updated" message tells the reader to
+    select; "Preview changes" (Pages and emails) when not given.
+  The pane's ids are fixed, so a page draws one of these.
+{% endcomment %}<section data-visual-content data-preview-url="{% url 'admin:content_plain_text' %}" hidden>{% if heading == "h3" %}<h3 id="visual-content-label">{% translate "Visual editor" %}</h3>{% else %}<h2 id="visual-content-label">{% translate "Visual editor" %}</h2>{% endif %}
+<div role="group" aria-label="{% translate 'Text formatting' %}" data-content-toolbar>
+{% button type="button" variant="secondary" data-content-tag="strong" %}{% translate "Bold" %}{% endbutton %}{% button type="button" variant="secondary" data-content-tag="em" %}{% translate "Italic" %}{% endbutton %}{% button type="button" variant="secondary" data-content-tag="p" %}{% translate "Paragraph" %}{% endbutton %}{% button type="button" variant="secondary" data-content-tag="h2" %}{% translate "Heading" %}{% endbutton %}{% button type="button" variant="secondary" data-content-tag="ul" %}{% translate "Bulleted list" %}{% endbutton %}
+</div><div class="panel content-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-labelledby="visual-content-label"{% if html.errors %} aria-describedby="visual-content-error" aria-invalid="true"{% endif %} data-content-editor>{{ visual|safe }}</div>
+{% comment %}The page script folds the HTML source away while the visual editor is in use, so an HTML source error (a placeholder, a hosted file, a missing Family code or link) is also shown here, at the editor the reader types in (#563).{% endcomment %}{% if html.errors %}<ul class="errorlist" id="visual-content-error">{% for error in html.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+<p class="help" data-visual-updating role="status" hidden>{% translate "Updating the visual editor from the HTML source…" %}</p>
+<p class="help" data-visual-unavailable role="status" hidden>{% with action=review_action|default:_("Preview changes") %}{% blocktranslate %}The visual editor could not be updated from the HTML source just now. Keep editing the HTML source, or select {{ action }}.{% endblocktranslate %}{% endwith %}</p>
+<p class="notice" data-visual-removed role="status" hidden>{% translate "Some markup is not allowed and was removed:" %} <span data-visual-removed-list></span></p>
+</section>
+<details open data-html-source><summary>{% translate "HTML source" %}</summary>{{ html.as_field_group }}</details>
+{% if text %}<div data-plain-text data-plain-text-url="{% url 'admin:content_plain_text' %}">{{ generate.as_field_group }}<p class="help" data-generated-note hidden>{% translate "Generated from the HTML version. This is the plain text a save will store." %} {% button type="button" variant="secondary" data-edit-plain-text %}{% translate "Edit plain text" %}{% endbutton %}</p><p class="help" data-generated-unavailable hidden role="status">{% translate "The generated plain text could not be shown just now; saving still generates it from the HTML version." %}</p>{{ text.as_field_group }}</div>{% endif %}

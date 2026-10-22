@@ -113,8 +113,8 @@ def test_the_page_lists_reports_for_administrators_and_staff(
         assert "All Administrators" in html
         for dialog in ("send-now", "pause", "delete"):
             assert f'data-confirm-open="report-{dialog}-dialog"' in html, dialog
-        # The converted Weekly opens its digest editor until item 6.
-        edit = reverse("admin:schedule_edit", args=[preparation.definition_id])
+        # Its name and Edit open Edit report email (#1786, item 6).
+        edit = reverse("admin:report_email_edit", args=[preparation.definition_id])
         assert f'href="{edit}"' in html
         assert "data-reread-every" in html
         set_user(harness.service.store, "staff@example.org", "staff")

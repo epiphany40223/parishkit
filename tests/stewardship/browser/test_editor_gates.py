@@ -352,6 +352,7 @@ NOT_SETTINGS = {
     r"request_key": "a one-time request key a restored page renews",
     r"(.*-)?intent": "a signed one-time intent, drawn anew on every draw",
     r".*-drawn_at": "the send moment a row was drawn from, never saved",
+    r"drawn": "the moment a report email's Edit was drawn from, never saved",
     r"repeat-dates": "written by the script from the repeat rule's controls",
     r"move": "the Campaign calendar's Move… marker, the same every time (#1521)",
     r"base_digest": (

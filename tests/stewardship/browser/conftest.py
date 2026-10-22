@@ -164,6 +164,7 @@ from .reminder_workgroup_components import POSTS as WORKGROUP_POSTS
 from .reminder_workgroup_components import components as workgroup_components
 from .report_components import SLOW_GETS as REPORT_SLOW_GETS
 from .report_components import components as report_components
+from .report_email_editor_components import components as report_editor_components
 from .report_emails_components import components as report_email_components
 from .response_dashboard_components import components as dashboard_components
 from .restore_review_components import components as restore_review_components
@@ -2192,6 +2193,7 @@ def component_origin():
     responses.update(digest_components(context, admin))
     responses.update(report_components(context, admin))
     responses.update(report_email_components(context, admin))
+    responses.update(report_editor_components(context, admin))
     responses.update(information_components(context, admin))
     responses.update(log_components(context, admin))
     # Family portal availability while open (#563).
@@ -2334,6 +2336,7 @@ def component_origin():
         ("digest-v1.js", "application/javascript"),
         ("report-v1.js", "application/javascript"),
         ("users-v2.js", "application/javascript"),
+        ("report-email-editor-v1.js", "application/javascript"),
         ("phone-v1.js", "application/javascript"),
         ("live-status-v1.js", "application/javascript"),
         ("system-health-v1.js", "application/javascript"),

@@ -2831,7 +2831,8 @@ Administrator's, is exit 1 (`invalid`).
 The `report-email` commands (#1786) are the **Mail › Report emails** page
 ([report emails](../specs/stewardship/report-emails/spec.md#command-line)):
 the campaign's report emails, their past sends and saved copies,
-Send now, and Pause, Resume, Delete and Skip one send. They replaced the
+Send now, Pause, Resume and Delete, New and Edit report email, and Skip
+and Send selected sends. They replaced the
 `digest` commands, which are gone, with no aliases.
 
 ```sh
@@ -2854,7 +2855,7 @@ pk-admin report-email confirm --token TOKEN|-
 - `show REPORT` prints the report's saved values (recipients by kind,
   outside addresses to Administrators only), its blocks, skip dates, pause
   intervals and `next_sends` (each `send`, the slot key a skip names, and
-  `due_at`).
+  `due_at`; a skipped send is left out, and is in `skip_dates`).
 - `sends REPORT` lists its past sends, newest first: `send_id`, `kind`
   (`report`, or `daily`/`weekly` for a digest sent before the
   conversion), `made_at`, `how`, `as_of`, `recipients`, `result` and a
@@ -2873,11 +2874,17 @@ pk-admin report-email confirm --token TOKEN|-
   exit 1 (`stale_version`). It records `report_email_manual_requested`
   and `admin_cmd_report_email_send_now`.
 - `preview` reviews a change document, `{"changes": [{"operation":
-  "pause"|"resume"|"delete"|"skip", "id": REPORT}]}` (a skip adds `"send":
-  SLOT`), against `--expected-version`, and prints its token; `confirm`
-  applies it as a configuration request, recording
-  `admin_cmd_report_email_confirm`. A send in progress or uncertain
-  blocks a change (no token).
+  "pause"|"resume"|"delete"|"skip"|"unskip", "id": REPORT}]}`, against
+  `--expected-version`, and prints its token; `confirm` applies it as a
+  configuration request, recording `admin_cmd_report_email_confirm`. A
+  `skip` or `unskip` adds `"sends": [SLOT, ...]`, one to fifty slot keys,
+  each once: a skip names sends `show` lists in `next_sends`, an unskip
+  skipped sends still ahead from its `skip_dates`, which then send again.
+  Each send is checked on its own and one refused send refuses the whole
+  change; `confirm` is refused once any reviewed send's time has passed.
+  A `create` or `edit` entry holds the report's `values` in the
+  [stored form](../specs/stewardship/report-emails/spec.md#stored-form).
+  A send in progress or uncertain blocks a change (no token).
 
 An unknown `REPORT` or `SEND` is exit 1 (`not_available`).
 
@@ -4386,3 +4393,6 @@ Each change is recorded in System logs as on the page
   and `digest weekly-request` are removed with no aliases; their reads
   are `report-email list`, `sends` and `copy`, and the manual Weekly
   report is `report-email send-now`.
+- `pk-admin/1` (#1786, delivery plan item 6): `report-email preview` takes
+  `create`, `edit` and `unskip` entries. Breaking: a `skip` entry names its
+  sends as `"sends": [SLOT, ...]` instead of one `"send": SLOT`.

@@ -218,6 +218,9 @@ PAGES = {
     # Report emails (#1786), after Sent mail in the menu: the campaign's
     # report emails, their sends and each send's saved copy.
     "report_emails": Page("mail", _("Report emails")),
+    # Its editor (#1786, delivery plan item 6), returning to the list.
+    "report_email_new": Page("mail", _("New report email"), "report_emails"),
+    "report_email_edit": Page("mail", _("Edit report email"), "report_emails"),
     "presence": Page("mail", _("Families on the form now")),
     # Held emails a restore left undecided at release (#757). Not a menu
     # entry: it matters only after a restore, so Home links to it while any
@@ -776,6 +779,8 @@ NON_PAGES = frozenset(
         # as changes and Send now as a manual send; each answers the dialog.
         "report_email_changes",
         "report_email_send_now",
+        # The editor's live schedule preview (#1786), a fragment it reads.
+        "report_email_schedule_preview",
         # A report send's chart images, and its listed requests, which
         # redirect to their Additional information pages (#1786).
         "report_email_send_image",

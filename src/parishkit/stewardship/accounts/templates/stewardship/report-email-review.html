@@ -1,0 +1,36 @@
+{% load i18n stewardship %}{% comment %}
+The review dialog's answer for New and Edit report email, Skip selected
+sends, Send selected sends and Delete (report_email_editor_views._review; report-emails spec, "Review and
+Apply"). A New or Edit is a full review: the report's values in plain words
+before and after (recipients by name and kind, blocks in order, the schedule
+and as-of), the next sends each side makes through the shared schedule
+preview, the skips the change drops, and, when the report would send after
+the campaign's last day, that question with its tick (data-after-campaign):
+the tick is the Apply form's after_campaign field (form=), and the shared
+review gate (data-review-require, ui-v1.js) holds Apply until it is ticked,
+saying why in the dialog's status line. Skip and Send selected sends name
+each send in this browser's time, and Delete says in one sentence what
+Apply does. Its hidden signed preview is what Apply posts.
+{% endcomment %}{% if kind == "skip" %}{% blocktranslate count count=change.sends|length asvar done %}Send skipped.{% plural %}{{ count }} sends skipped.{% endblocktranslate %}{% elif kind == "unskip" %}{% blocktranslate count count=change.sends|length asvar done %}Skipped send will send.{% plural %}{{ count }} skipped sends will send.{% endblocktranslate %}{% elif kind == "delete" %}{% translate "Report email deleted." as done %}{% elif before %}{% translate "Report email changed." as done %}{% else %}{% translate "Report email added." as done %}{% endif %}<div data-review-answer data-review-done="{{ done }}">
+{% if kind == "skip" or kind == "unskip" %}<p id="report-review-summary">{% if kind == "skip" %}{% blocktranslate count count=change.sends|length with name=change.name %}{{ name }} skips this send:{% plural %}{{ name }} skips these {{ count }} sends:{% endblocktranslate %}{% else %}{% blocktranslate count count=change.sends|length with name=change.name %}{{ name }} makes this skipped send again:{% plural %}{{ name }} makes these {{ count }} skipped sends again:{% endblocktranslate %}{% endif %}</p>
+<ul class="report-review-sends">{% for send in change.sends %}<li><time datetime="{{ send.due_at|instant }}" data-local-instant>{{ send.due_at|instant }}</time></li>{% endfor %}</ul>
+<p>{% if kind == "skip" %}{% translate "Every other send stays as it is. A skipped send still ahead can be sent again with Send selected sends." %}{% else %}{% translate "Every other send stays as it is." %}{% endif %}</p>
+{% elif kind == "delete" %}<p id="report-review-summary">{% blocktranslate with name=change.name %}{{ name }} is deleted: its sends still to come stop, and sends not started are cancelled. Sends already made are not recalled, and its past sends and saved copies stay listed on Report emails.{% endblocktranslate %}</p>
+{% else %}<div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'The report email before and after' %}"><table class="data-table report-review-table"><thead><tr><th scope="col">{% translate "Setting" %}</th>{% if before %}<th scope="col">{% translate "Now" %}</th>{% endif %}<th scope="col">{% if before %}{% translate "After" %}{% else %}{% translate "New" %}{% endif %}</th></tr></thead><tbody>
+<tr><th scope="row">{% translate "Report name" %}</th>{% if before %}<td>{{ before.name }}</td>{% endif %}<td>{{ after.name }}</td></tr>
+<tr><th scope="row">{% translate "Email subject line" %}</th>{% if before %}<td>{{ before.subject|default:_("(the report's name and date)") }}</td>{% endif %}<td>{{ after.subject|default:_("(the report's name and date)") }}</td></tr>
+<tr><th scope="row">{% translate "Recipients" %}</th>{% if before %}<td>{{ before.recipients|join:", " }}</td>{% endif %}<td>{{ after.recipients|join:", " }}</td></tr>
+<tr><th scope="row">{% translate "Schedule" %}</th>{% if before %}<td>{% include "stewardship/components/report-schedule.html" with segments=before.schedule %}</td>{% endif %}<td>{% include "stewardship/components/report-schedule.html" with segments=after.schedule %}</td></tr>
+<tr><th scope="row">{% translate "As of" %}</th>{% if before %}<td>{{ before.as_of }}</td>{% endif %}<td>{{ after.as_of }}</td></tr>
+<tr><th scope="row">{% translate "Blocks" %}</th>{% if before %}<td><ol>{% for label in before.blocks %}<li>{{ label }}</li>{% endfor %}</ol></td>{% endif %}<td><ol>{% for label in after.blocks %}<li>{{ label }}</li>{% endfor %}</ol></td></tr>
+<tr><th scope="row">{% translate "Send only when there is something to report" %}</th>{% if before %}<td>{% if before.content_required %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}</td>{% endif %}<td>{% if after.content_required %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}</td></tr>
+<tr><th scope="row">{% translate "Introduction" %}</th>{% if before %}<td>{% if before.intro %}{% translate "Yes" %}{% else %}{% translate "None" %}{% endif %}</td>{% endif %}<td>{% if after.intro %}{% translate "Yes" %}{% else %}{% translate "None" %}{% endif %}</td></tr>
+</tbody></table></div>
+{% if before %}<h3>{% translate "Next sends now" %}</h3>{% include "stewardship/components/occurrences.html" with preview=before.sends %}{% endif %}
+<h3>{% if before %}{% translate "Next sends after this change" %}{% else %}{% translate "Next sends" %}{% endif %}</h3>{% include "stewardship/components/occurrences.html" with preview=after.sends %}
+{% if change.dropped_skips %}<p>{% translate "These skipped sends are no longer sends of the report, so their skips are dropped:" %} {{ change.dropped_skips|join:", " }}.</p>{% endif %}
+<p>{% translate "Sends already made are not recalled; planned sends not started are made again from the new values." %}</p>
+{% if after_campaign %}<div class="notice" data-after-campaign><p>{% blocktranslate trimmed with day=end_date|parish_date %}This report email sends after the campaign's last day, {{ day }}, starting at{% endblocktranslate %} <time datetime="{{ after_campaign|instant }}" data-local-instant>{{ after_campaign|instant }}</time>.</p>
+<div class="choice"><input type="checkbox" id="report-after-campaign" name="after_campaign" value="yes" form="report-review-apply" required data-review-require data-missing-hint="{% translate 'Tick Send after the campaign ends to apply it.' %}" data-after-campaign-tick> <label for="report-after-campaign">{% translate "Send after the campaign ends" %}</label></div></div>{% endif %}
+{% endif %}<input type="hidden" name="preview" value="{{ preview }}" data-review-preview>
+</div>

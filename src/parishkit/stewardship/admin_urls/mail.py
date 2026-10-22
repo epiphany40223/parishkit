@@ -20,7 +20,11 @@ from ..accounts import (
 )
 from ..accounts.group_root_views import group_root
 from ..jobs import delivery_views, mail_queue_views, send_history_views
-from ..reports import report_email_copy_views, report_email_views
+from ..reports import (
+    report_email_copy_views,
+    report_email_editor_views,
+    report_email_views,
+)
 from ..web.admin_routes import current_campaign
 
 patterns = [
@@ -64,6 +68,24 @@ patterns = [
         "mail/report-emails/manual-sends/",
         current_campaign(report_email_views.report_email_send_now),
         name="report_email_send_now",
+    ),
+    # New and Edit report email (#1786, delivery plan item 6), and the
+    # editor's live schedule preview, a POST its script reads. "new/" and
+    # "schedule-preview/" come before the report's own address, a UUID.
+    path(
+        "mail/report-emails/new/",
+        current_campaign(report_email_editor_views.report_email_new),
+        name="report_email_new",
+    ),
+    path(
+        "mail/report-emails/schedule-preview/",
+        current_campaign(report_email_editor_views.schedule_preview),
+        name="report_email_schedule_preview",
+    ),
+    path(
+        "mail/report-emails/<uuid:report_id>/",
+        current_campaign(report_email_editor_views.report_email_edit),
+        name="report_email_edit",
     ),
     path(
         "mail/report-emails/sends/<uuid:send_id>/",
