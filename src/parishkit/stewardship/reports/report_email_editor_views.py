@@ -99,7 +99,7 @@ FIELDS = frozenset(
         *editor.EditorForm.base_fields,
     }
 )
-MULTIPLE = frozenset({"recipient", "block", "weekdays"})
+MULTIPLE = frozenset({"recipient", "block", "weekdays", "charts"})
 SKIP_FIELDS = frozenset({"action", "csrfmiddlewaretoken", "base_digest", "send"})
 SKIP_ACTIONS = {"skip_preview": "skip", "unskip_preview": "unskip"}
 DELETE_FIELDS = frozenset({"action", "csrfmiddlewaretoken", "base_digest"})
@@ -113,6 +113,7 @@ ERROR_TARGETS = {
     "frequency": "report-frequency_0",
     "block": "report-add-block",
     "weekdays": "report-weekdays",
+    "charts": "report-charts_0",
 }
 
 
@@ -143,16 +144,33 @@ def _saved(state, campaign, report_id):
     return saved, others
 
 
-def _blocks(form, saved):
+def _charts(ticked, campaign):
+    """The Participation charts block's Charts boxes: key, label and ticked.
+
+    Only the charts the campaign offers (``editor.offered_charts``).
+    """
+    return [
+        {"key": key, "label": editor.CHART_LABELS[key], "checked": key in ticked}
+        for key in editor.offered_charts(campaign)
+    ]
+
+
+def _blocks(form, saved, campaign):
     """The Blocks field's rows in their order, and the blocks not in it.
 
-    A refused page keeps the posted order; otherwise the saved blocks, or
-    for New none (Add a block offers every block).
+    A refused page keeps the posted order and ticks; otherwise the saved
+    blocks, or for New none (Add a block offers every block). A block added
+    from Add a block starts with every chart ticked (spec, "Blocks field").
     """
     keys = (
         form.data.getlist("block")
         if form.is_bound
         else [entry["block"] for entry in (saved or {}).get("blocks", [])]
+    )
+    ticked = (
+        form.data.getlist("charts")
+        if form.is_bound
+        else editor.ticked_charts(saved, campaign)
     )
     rows = [
         {
@@ -160,6 +178,7 @@ def _blocks(form, saved):
             "label": REGISTRY[key].label,
             "help": REGISTRY[key].help,
             "last": REGISTRY[key].placement == AFTER_BUTTON,
+            "charts": _charts(ticked, campaign),
         }
         for key in keys
         if key in REGISTRY
@@ -171,6 +190,7 @@ def _blocks(form, saved):
             "label": block.label,
             "help": block.help,
             "last": block.placement == AFTER_BUTTON,
+            "charts": _charts(editor.offered_charts(campaign), campaign),
         }
         for key, block in REGISTRY.items()
         if key not in chosen
@@ -228,7 +248,7 @@ def _page(request, *, state, campaign, report_id, saved, form, status=200):
     portal = editor.portal_users(state[0])
     users = editor.eligible_users(state[0])
     choices = editor.recipient_choices(users)
-    rows, available = _blocks(form, saved)
+    rows, available = _blocks(form, saved, values)
     mode = state[0].mode
     context = {
         "campaign": campaign,

@@ -21,8 +21,8 @@ turns into the same fields) into one report's complete stored values
   repeating report's days are the campaign's days (spec, "Decisions made in
   this specification"); only its time is converted, at its next send.
 - **As of**, **Blocks** (repeated ``block`` keys in order, with the Day by
-  day table's ``days_shown``) and **Send only when there is something to
-  report**.
+  day table's ``days_shown`` and the Participation charts' ``charts``
+  boxes, #1956) and **Send only when there is something to report**.
 
 Nothing here reads a request or checks authority.
 """
@@ -53,8 +53,76 @@ from parishkit.stewardship.web.content import prepare_content
 from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.time_entry_fields import FlexibleTimeField
 
+from .charts import CHARTS, CUMULATIVE_FAMILIES, FIRST_SUBMISSIONS, PLEDGES
 from .report_blocks import REGISTRY
 from .report_blocks.registry import AFTER_BUTTON
+
+# The Participation charts block's Charts checkboxes, in the panels'
+# order (spec, "Blocks field", #1956).
+CHART_LABELS = {
+    FIRST_SUBMISSIONS: _("First submissions of the day"),
+    CUMULATIVE_FAMILIES: _("Cumulative participating Families"),
+    PLEDGES: _("Effective annual pledges"),
+}
+
+
+def offered_charts(campaign):
+    """The charts the editor offers: pledges only with financial stewardship.
+
+    ``campaign`` is the applied campaign values.
+    """
+    financial = "financial" in campaign.get("modules", ())
+    return [key for key in CHARTS if key != PLEDGES or financial]
+
+
+def chart_choice(values):
+    """A report's stored "which charts" list (None: the default, all)."""
+    for entry in (values or {}).get("blocks", ()):
+        if entry["block"] == "participation_charts":
+            return entry["options"].get("charts")
+    return None
+
+
+def ticked_charts(values, campaign):
+    """The charts a saved report's block draws, so the Charts boxes it ticks.
+
+    Its choice as the campaign offers them, or every offered chart when
+    none remains (``participation_charts.shown_charts``).
+    """
+    offered = offered_charts(campaign)
+    choice = chart_choice(values) or CHARTS
+    return [key for key in offered if key in choice] or offered
+
+
+def stored_charts(choice, saved, campaign):
+    """The stored form of a "which charts" choice, the same from every path.
+
+    An unchanged saved choice stays as saved (even one naming pledges after
+    financial stewardship was turned off). Otherwise every chart the
+    campaign offers is stored as no choice (None: the default, all, which
+    follows the campaign), and only a strict subset as its list (spec,
+    "Participation charts block").
+    """
+    if saved is not None and choice == chart_choice(saved):
+        return choice
+    return None if choice == offered_charts(campaign) else choice
+
+
+def with_charts(values, choice):
+    """``values`` with the Participation charts block's choice set to ``choice``.
+
+    None removes the option. A copy: the given values are not changed.
+    """
+    blocks = []
+    for entry in values["blocks"]:
+        if entry["block"] == "participation_charts":
+            options = {k: v for k, v in entry["options"].items() if k != "charts"}
+            if choice is not None:
+                options["charts"] = choice
+            entry = entry | {"options": options}
+        blocks.append(entry)
+    return values | {"blocks": blocks}
+
 
 # The repeating presets of Basic mode (spec, "Repeating sends").
 PRESETS = {
@@ -303,12 +371,13 @@ def _entry_parts(entry):
     return None, None
 
 
-def parse_blocks(posted, days_shown):
+def parse_blocks(posted, days_shown, charts=None):
     """The stored block list of the posted ``block`` keys, in their order.
 
     Each block at most once, at its registered version; the Day by day
-    table takes ``days_shown``; a block placed after the button is kept
-    last. Raises a coded ``ValidationError``.
+    table takes ``days_shown`` and Participation charts ``charts`` (None
+    stores no choice: the default, all); a block placed after the button is
+    kept last. Raises a coded ``ValidationError``.
     """
     if not posted:
         raise ValidationError(_("Add at least one block."), code="block_missing")
@@ -324,6 +393,8 @@ def parse_blocks(posted, days_shown):
         options = {}
         if key == "day_by_day":
             options = {"days": days_shown}
+        elif key == "participation_charts" and charts is not None:
+            options = {"charts": charts}
         entries.append({"block": key, "version": block.version, "options": options})
     # An after-the-button block always follows the others (spec, "Blocks
     # field"); the page keeps it last too.
@@ -383,6 +454,9 @@ class EditorForm(AdminForm):
     as_of = forms.ChoiceField(label=_("As of"), choices=tuple(AS_OF_LABELS.items()))
     days_shown = forms.IntegerField(
         label=_("Days shown"), min_value=1, max_value=MAX_DAYS_SHOWN, required=False
+    )
+    charts = forms.MultipleChoiceField(
+        label=_("Charts"), choices=tuple(CHART_LABELS.items()), required=False
     )
     content_required = forms.BooleanField(
         label=_("Send only when there is something to report"), required=False
@@ -594,9 +668,10 @@ class EditorForm(AdminForm):
         except ValidationError as error:
             self.add_error("recipient", error)
             recipients = None
+        charts = self._charts(data)
         try:
             blocks = parse_blocks(
-                self.data.getlist("block"), data.get("days_shown") or 5
+                self.data.getlist("block"), data.get("days_shown") or 5, charts
             )
         except ValidationError as error:
             self.add_error("block", error)
@@ -648,6 +723,29 @@ class EditorForm(AdminForm):
         if not problems:
             self._values = values
         return data
+
+    def _charts(self, data):
+        """The Participation charts block's stored choice from its boxes.
+
+        None when the block is not in the report. Boxes left as the page
+        ticked them for the saved report keep its saved choice, even one the
+        campaign no longer offers (pledges after financial stewardship was
+        turned off), as the command line does; changed boxes store what is
+        ticked, in ``stored_charts``' form. A box the campaign does not
+        offer is not read. No box ticked is refused at the Charts group.
+        """
+        if "participation_charts" not in self.data.getlist("block"):
+            return None
+        offered = offered_charts(self.campaign)
+        ticked = [key for key in offered if key in (data.get("charts") or ())]
+        if not ticked:
+            self.add_error(
+                "charts",
+                ValidationError(_("Choose at least one chart."), code="charts_missing"),
+            )
+        if ticked == ticked_charts(self.saved, self.campaign):
+            return chart_choice(self.saved)
+        return stored_charts(ticked, self.saved, self.campaign)
 
     def values(self):
         """The report's complete values, once the form is valid."""
@@ -744,7 +842,8 @@ PART_PROBLEMS = {
         _(
             "Check the blocks: 1 to 6, each at most once, at its current version, "
             "with only its own options (Days shown is a whole number from 1 to "
-            "14); a block that follows the dashboard button is last."
+            "14; Charts lists at least one chart, each once, in their order); a "
+            "block that follows the dashboard button is last."
         ),
         "block_invalid",
     ),
@@ -806,6 +905,26 @@ def value_problems(values, *, saved, others, users, campaign, now, sent):
     if refused:
         # The checks below read values the stored form guarantees.
         return problems
+    # Pledges need financial stewardship; a saved choice made before it was
+    # turned off stays, as the block then draws the charts the campaign has.
+    choice = chart_choice(values)
+    if (
+        PLEDGES in (choice or ())
+        and PLEDGES not in offered_charts(campaign)
+        and (saved is None or chart_choice(saved) != choice)
+    ):
+        problems.append(
+            (
+                "charts",
+                ValidationError(
+                    _(
+                        "Effective annual pledges needs financial stewardship, "
+                        "which this campaign does not have."
+                    ),
+                    code="charts_pledges",
+                ),
+            )
+        )
     schedule = values["schedule"]
     if saved is not None and sent and schedule["type"] != saved["schedule"]["type"]:
         problems.append(
@@ -1113,6 +1232,24 @@ def describe(values, campaign, now, choices):
                 _("%(label)s (%(days)s days)")
                 % {"label": label, "days": entry["options"].get("days", 5)}
             )
+        elif entry["block"] == "participation_charts":
+            # The charts the block draws: the choice, as the campaign has them.
+            names = ", ".join(
+                str(CHART_LABELS[key]) for key in ticked_charts(values, campaign)
+            )
+            # A kept choice the campaign cannot draw is named too, so the
+            # review shows when a change drops it.
+            kept = [
+                str(CHART_LABELS[key])
+                for key in chart_choice(values) or ()
+                if key not in offered_charts(campaign)
+            ]
+            if kept:
+                names = str(
+                    _("%(charts)s; kept, not drawn: %(kept)s")
+                    % {"charts": names, "kept": ", ".join(kept)}
+                )
+            label = str(_("%(label)s (%(charts)s)") % {"label": label, "charts": names})
         blocks.append(label)
     return {
         "name": values["name"],
