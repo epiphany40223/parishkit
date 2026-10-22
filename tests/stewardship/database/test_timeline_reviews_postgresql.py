@@ -316,3 +316,37 @@ def test_back_to_review_notes_reach_their_readers_page_and_file(
             "note: Typed the wrong street"
         ) in details
         assert not any("Private" in detail for detail in details)
+
+
+def test_a_replacing_change_on_the_reviewed_form_carries_nothing(
+    response_service, google
+):
+    """A change the Family answers again on the reviewed form, over the
+    Reviewer's value it was shown, is replaced by a new To review change with
+    the same answer (rule 2), which carries no decision (#2028): Accepting
+    the new change reads as Accepted, not as the old change's Edit cleared,
+    for Staff too."""
+    from .test_census_pipeline_review_postgresql import decide
+    from .test_census_pipeline_review_postgresql import prepared as pipeline
+    from .test_reviewed_form_postgresql import again, first_name, rows_for
+
+    harness, _admin, staff, changes = pipeline(response_service)
+    family_id = changes["first_name"].submission.family_id
+    decide(harness, staff, [changes["first_name"]], "edit", value="Corrected")
+    again(harness, first_name("Requested"))
+    old, new = rows_for("first_name")
+    assert (old.execution, old.superseded_by_id) == ("superseded", new.pk)
+    assert (old.submitted_value, old.decision) == ("Requested", "approved")
+    assert (new.submitted_value, new.decision) == ("Requested", "unreviewed")
+    decide(harness, staff, [new], "accept")
+    lines, _ = reviews(harness.campaign.pk, family_id)
+    named = [what for what, detail in lines if detail.startswith("First name for ")]
+    assert named == ["Accepted (edited)", "Accepted"]
+
+    google[0].update(email="staff@example.org", sub="synthetic-staff")
+    client, login = signed_in()
+    assert login.status_code == 302
+    path = reverse("admin:timeline", args=[family_id]) + "?kind=reviews"
+    body, _ = page(client, path)
+    shown = [w for w, detail in rows(body) if detail.startswith("First name for ")]
+    assert shown == ["Accepted", "Accepted (edited)"]

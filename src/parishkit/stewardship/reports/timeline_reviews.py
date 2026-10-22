@@ -73,11 +73,15 @@ from .ministries import outcome_label
 # compared as the review pages compare them
 # (``stewardship_response_comparison_v1``), and an approval over an active
 # accepted ParishSoft base (``accepted_base.active_bases``) is not carried.
+# Only a response by the rule before the reviewed form carries anything: a
+# reviewed-form response (``reviewed_view``) never carries a decision, so
+# its new change with the same answer (one answered again over the value
+# the form showed for it) starts from no decision (#2028).
 # Takes %(family)s, %(campaign)s, %(response_mode)s and %(epoch)s
 # (``timelines.scope_values``).
 _HISTORY = """
 WITH subs AS (
-    SELECT s.id, s.answers FROM stewardship_submission s
+    SELECT s.id, s.answers, s.reviewed_view FROM stewardship_submission s
     WHERE s.family_id=%(family)s AND s.campaign_id=%(campaign)s
       AND s.mode=%(response_mode)s
       AND s.rehearsal_epoch_id IS NOT DISTINCT FROM %(epoch)s
@@ -95,6 +99,7 @@ WITH subs AS (
         pp.admin_value_set::text AS seed_set, pp.admin_value::text AS seed_value
     FROM subs JOIN stewardship_proposed_change p ON p.submission_id=subs.id
     LEFT JOIN stewardship_proposed_change pp ON pp.superseded_by_id=p.id
+        AND NOT subs.reviewed_view
         AND stewardship_response_comparison_v1(pp.field, pp.submitted_value)
             IS NOT DISTINCT FROM
             stewardship_response_comparison_v1(p.field, p.submitted_value)

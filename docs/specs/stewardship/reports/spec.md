@@ -1203,8 +1203,10 @@ move to In progress), **Follow-up updated**. Each is worded from the
 item's state before and after the step, so the words never depend on what
 the row is called in storage. A census change that a resubmission carried
 over with its decision and Reviewer's value (the same answer, neither
-resolved nor cancelled) starts from what it carried, so its first step reads
-as what the reviewer did. **Details** names the item and who acted:
+resolved nor cancelled, under the rule before the reviewed form) starts from
+what it carried, so its first step reads as what the reviewer did. A
+reviewed-form response carries no decision, so its new change starts from
+none, even with the same answer as the change it replaced (#2028). **Details** names the item and who acted:
 
 - a census change: the field and whom it is about ("Email address for Smith, Anne",
   "Home address for the Family"), the Member named as the Family answered,
