@@ -30,6 +30,14 @@ AXE = """async () => (await axe.run(document, {
 JOINS = "51 join requests for Example <Ministry>"
 
 
+def open_by_ministry(page):
+    """Open the By Ministry disclosure, which starts closed (#1653) unless
+    this browser remembers it open from an earlier visit."""
+    if not page.locator("details.by-ministry").evaluate("panel => panel.open"):
+        page.locator("details.by-ministry > summary").click()
+    visible(page.locator("#by-ministry"))
+
+
 @pytest.mark.parametrize("width", [320, 1280])
 def test_ministry_requests_fit_the_window_and_pass_axe(
     page, component_origin, axe_source, width
@@ -49,6 +57,7 @@ def test_by_ministry_marks_and_one_line_for_one_ministry(page, component_origin)
     campaign marks; a leader of one Ministry sees one line with no marks
     (#1133, #1135). A zero count is plain text."""
     page.goto(component_origin + REQUESTS)
+    open_by_ministry(page)
     section = page.locator("#by-ministry")
     rows = section.locator("tbody tr")
     assert rows.count() == 2
@@ -60,6 +69,7 @@ def test_by_ministry_marks_and_one_line_for_one_ministry(page, component_origin)
     assert section.get_by_role("link", name="0 leave requests for").count() == 0
     assert section.get_by_role("link").count() == 4
     page.goto(component_origin + LEADER)
+    open_by_ministry(page)
     section = page.locator("#by-ministry")
     assert section.locator("table").count() == 0
     line = section.locator(".by-ministry-line")
@@ -83,12 +93,13 @@ def test_a_count_filters_the_table_in_place(page, component_origin):
     page.set_viewport_size({"width": 1280, "height": 700})
     errors = watch(page)
     page.goto(component_origin + REQUESTS)
+    open_by_ministry(page)
     page.evaluate("window.__requestsMarker = 1")
     link = page.locator("#by-ministry").get_by_role("link", name=JOINS)
-    # Scroll the count to the window's middle, as a reader would: the page
-    # must keep that place.
+    # Scroll the page as a reader would, the count still in view (it now
+    # starts near the top, #1653): the page must keep that place.
     page.mouse.move(640, 350)
-    page.mouse.wheel(0, link.bounding_box()["y"] - 350)
+    page.mouse.wheel(0, max(link.bounding_box()["y"] - 350, 120))
     eventually(page, "() => window.scrollY > 0")
     # Linux WebKit animates the wheel: measure where the scroll lands,
     # not its first frame.
@@ -126,6 +137,7 @@ def test_applied_filters_redraw_the_worklist_in_place(page, component_origin):
     errors = watch(page)
     answer = page.request.get(component_origin + SEARCHED).text()
     page.goto(component_origin + REQUESTS)
+    open_by_ministry(page)
     expect(page.locator("#table tbody tr")).to_have_count(2)
     page.evaluate("window.__requestsMarker = 1")
     where = (

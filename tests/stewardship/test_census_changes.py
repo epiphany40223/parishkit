@@ -245,20 +245,21 @@ def test_parse_refuses_values_outside_the_closed_choices(values):
 
 def test_csv_follows_the_page_column_order_in_the_chosen_zone():
     """The download has the page's columns in the page's order (#932):
-    Member DUID right after Who, then Submitted and the latest resolution's
-    three columns (#528), times in the chosen zone."""
+    the Member's ParishSoft status (#1752) and Member DUID right after Who,
+    then Submitted and the latest resolution's three columns (#528), times
+    in the chosen zone."""
     result = select(rows(), CensusQuery(), administrator=False)
     text = census_csv(result, ZoneInfo("America/Chicago")).decode()
     table = list(csv.reader(io.StringIO(text)))
     assert tuple(table[0]) == HEADINGS
     assert HEADINGS[:2] == ("Family", "ParishSoft status")
-    assert HEADINGS[3:5] == ("Who", "Member DUID")
-    assert HEADINGS[11:] == ("Submitted", "Recorded by", "Recorded at", "Note")
-    assert table[1][3] == "Pat Sample" and table[1][11] == "2054-10-05T09:30:00-05:00"
-    # A current Family has no status; no resolution yet: its three columns
-    # are blank.
-    assert table[1][1] == ""
-    assert table[1][12:] == ["", "", ""]
+    assert HEADINGS[3:6] == ("Who", "Member's ParishSoft status", "Member DUID")
+    assert HEADINGS[12:] == ("Submitted", "Recorded by", "Recorded at", "Note")
+    assert table[1][3] == "Pat Sample" and table[1][12] == "2054-10-05T09:30:00-05:00"
+    # A current Family and Member have no status; no resolution yet: its
+    # three columns are blank.
+    assert table[1][1] == table[1][4] == ""
+    assert table[1][13:] == ["", "", ""]
     assert len(table) == 4
 
 
@@ -280,6 +281,39 @@ def test_downloads_put_a_missing_family_s_status_in_its_own_column():
     ]
 
 
+@pytest.mark.parametrize(
+    ("status", "words"),
+    [
+        ("moved", "Not in ParishSoft"),
+        ("missing", "Not in ParishSoft"),
+        ("inactive", "Inactive in ParishSoft"),
+        ("deceased", "Deceased in ParishSoft"),
+    ],
+)
+def test_downloads_put_a_member_s_status_beside_who(status, words):
+    """The Who cell's badge (rule 4, #1738) is the shared words in Member's
+    ParishSoft status, right after Who, in every format (#1752); Who keeps
+    the name, and a current Member or a household change leaves it blank."""
+    left = shape(row(member_status=status))
+    family = shape(
+        row(id="2", entity_kind="family", entity_key="7001", field="home_address")
+    )
+    result = {"rows": [left, shape(row(id="3", member_status="current")), family]}
+    zone = ZoneInfo("UTC")
+    table = list(csv.reader(io.StringIO(census_csv(result, zone).decode())))
+    assert [line[3:6] for line in table] == [
+        ["Who", "Member's ParishSoft status", "Member DUID"],
+        ["Pat Sample", words, "41"],
+        ["Pat Sample", "", "41"],
+        ["Family", "", ""],
+    ]
+    sheet = workbook(result, zone)["Census changes"]
+    assert [sheet.cell(line, 5).value for line in (1, 2)] == [
+        "Member's ParishSoft status",
+        words,
+    ]
+
+
 def test_downloads_word_member_duid_as_the_page_does():
     """CSV and XLSX give Member DUID right after Who: the DUID, "New Member"
     for a Member added on the form, and blank for a household change (#932)."""
@@ -296,7 +330,7 @@ def test_downloads_word_member_duid_as_the_page_does():
     result = {"rows": [shape(item) for item in (row(), proposed, family)]}
     zone = ZoneInfo("UTC")
     table = list(csv.reader(io.StringIO(census_csv(result, zone).decode())))
-    assert [line[4] for line in table] == ["Member DUID", "41", "New Member", ""]
+    assert [line[5] for line in table] == ["Member DUID", "41", "New Member", ""]
     sheet = workbook(result, zone)["Census changes"]
     assert sheet.max_column == len(HEADINGS)
     column = HEADINGS.index("Member DUID") + 1
@@ -444,8 +478,10 @@ def test_csv_xlsx_and_pdf_carry_the_same_columns_and_rows():
     assert drawn["rows"][0][submitted] == "Oct 5, 2054 9:30 AM"
     assert drawn["frame"].eyebrow == "Example Parish · Stewardship 2055"
     assert drawn["frame"].details == ("3 changes in this file.",)
-    # Every heading has a PDF column width, and the columns fill the page.
+    # Every heading has a PDF column width, in percent, and the columns fill
+    # the page.
     assert set(PDF_WEIGHTS) == set(HEADINGS)
+    assert sum(PDF_WEIGHTS.values()) == 100
     assert sum(drawn["table"].widths) == pytest.approx(pdf_design.BODY_WIDTH)
     # A compact time keeps its date on one line and its time on the next,
     # the longest stage breaks only between words, and a whole DUID and
@@ -474,8 +510,18 @@ def test_csv_xlsx_and_pdf_carry_the_same_columns_and_rows():
         ({}, False, False),
         # Ignored: only reopen (offered to Administrators by the page).
         ({"handling": "manual", "decision": "ignored"}, False, True),
-        # Final outcomes take nothing.
-        ({"handling": "manual", "execution": "resolved_external"}, False, False),
+        # A terminal outcome takes only Reopen, which undoes its step
+        # (#1840), unless a later response replaced it; history and a run
+        # in flight take nothing.
+        ({"handling": "manual", "execution": "resolved_external"}, False, True),
+        ({"execution": "published", "decision": "approved"}, False, True),
+        ({"execution": "resolved_upstream"}, False, True),
+        (
+            {"handling": "manual", "execution": "resolved_external", "replaced": True},
+            False,
+            False,
+        ),
+        ({"execution": "queued", "decision": "approved"}, False, False),
         ({"handling": "manual", "execution": "superseded"}, False, False),
     ],
 )
@@ -528,7 +574,7 @@ def test_shape_reads_the_latest_resolution():
     assert shown["resolution_at"] == when
     text = census_csv({"rows": [shown]}, ZoneInfo("UTC")).decode()
     line = list(csv.reader(io.StringIO(text)))[1]
-    assert line[12:] == [
+    assert line[13:] == [
         "staff@example.org",
         "2054-10-06T15:00:00+00:00",
         "Typed it in",

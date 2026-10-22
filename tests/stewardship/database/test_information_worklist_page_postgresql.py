@@ -112,6 +112,15 @@ def test_the_worklist_lists_and_decides_requests_in_place(
             "?stage=a&stage=b",
         ):
             assert read(browser, ROUTE + query)[0].status_code == 400, query
+        # The retired submitted-date filter (#1888), from an old link or a
+        # page drawn before then, is dropped unread, never refused.
+        stale = "?stage=to_handle&start=2026-11-01&end=bad&zone=Nowhere/Zone"
+        response, body = read(browser, ROUTE + stale)
+        assert response.status_code == 200
+        assert b'<option value="to_handle" selected>' in body
+        assert b'name="start"' not in body
+        stale = {"stage": "to_handle", "search": "", "start": "bad", "zone": ""}
+        assert search(browser, ROUTE, stale)[0].status_code == 200
         # The same post again replays it; the key with another choice is a
         # 409 asking for a reload.
         accept["version"] = str(int(accept["version"]))

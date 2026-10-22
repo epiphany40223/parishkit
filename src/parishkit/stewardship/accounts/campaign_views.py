@@ -52,7 +52,13 @@ from parishkit.stewardship.web.refusals import (
     with_default_code,
 )
 
-from . import admin_navigation, campaign_wizard, field_tips, setup_help
+from . import (
+    admin_navigation,
+    campaign_wizard,
+    campaign_work_status,
+    field_tips,
+    setup_help,
+)
 from .admin_editing import (
     confirm,
     direct_key,
@@ -70,7 +76,7 @@ from .campaign_preview import describe_changes
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
 from .request_patch import build_candidate
-from .sessions import authenticated_admin
+from .sessions import authenticated_admin, passive_read
 
 SALT = "stewardship-campaign-structure-preview-v1"
 # The review's note when the change turns financial stewardship off.
@@ -89,7 +95,9 @@ MULTIPLE_FIELDS = frozenset(
 # can change.
 LIVE_FIELDS = ("end_date", "ministry_leader_roles", "ministry_duids")
 # Why a setting is locked. Each locked field carries its reason in its "i"
-# tip (UX conventions, Conditional fields), never in a line of its own.
+# tip (UX conventions, Conditional fields), never in a line of its own. The
+# reasons that background work holds a setting never say to reload: the page
+# follows the hold and draws the setting again once it ends (#1619).
 LOCKED_LIVE = _(
     "Locked: this campaign is scheduled or live in Production, so this setting "
     "can no longer change."
@@ -100,7 +108,7 @@ LOCKED_CLOSED = _(
 LOCKED_HELD = _(
     "Locked while background work or going live is under way. Background "
     "work usually finishes in minutes; going live holds it until it completes "
-    "or is cancelled. Reload this page then."
+    "or is cancelled."
 )
 LOCKED_OTHER = _(
     "Locked: these settings change only on the current Testing-mode draft, "
@@ -108,11 +116,11 @@ LOCKED_OTHER = _(
 )
 END_HELD = _(
     "The end date can change once the background work now running finishes, "
-    "usually within minutes. Reload this page then."
+    "usually within minutes."
 )
 MINISTRIES_HELD = _(
     "The Ministries can change once the background work now running "
-    "finishes, usually within minutes. Reload this page then."
+    "finishes, usually within minutes."
 )
 # A live Ministry change is reviewed on its own. SQL restores a refused live
 # Ministry addition (one that a ParishSoft refresh dropped after the review)
@@ -350,6 +358,17 @@ def _lock_reason(campaign, held):
     return LOCKED_HELD if held else LOCKED_OTHER
 
 
+def _waiting(editable, reason, reasons):
+    """Whether background work holds any of the page's settings now (#1619).
+
+    ``reason`` is the locked fields' ``_lock_reason`` and ``reasons`` the
+    fields' own (``_openness``), which name only held settings. The page then
+    follows the campaign work status and draws itself again once the hold
+    ends; a page whose locks no hold explains has nothing to wait for.
+    """
+    return not editable and (reason is LOCKED_HELD or bool(reasons))
+
+
 def _openness(state, campaign, editable):
     """Which settings can change now, and why some held ones are locked.
 
@@ -499,11 +518,12 @@ def locked_refusal(name, reason, reasons):
     why = (reasons or {}).get(name) or (END_LOCKED if name == "end_date" else reason)
     return UserFacingStale(
         _("Some settings you changed can no longer change now."),
-        # A reason that already says to reload is not told twice.
+        # A reason that already says to reload is not told twice. A held
+        # setting's reason no longer says so, since a page drawn during the
+        # hold follows it (#1619); a Review refused here was posted from a
+        # page drawn before the hold, which does not, so it is told to.
         fix=why
-        if any(
-            why is said for said in (END_HELD, END_LOCKED, LOCKED_HELD, MINISTRIES_HELD)
-        )
+        if why is END_LOCKED
         else format_lazy("{} {}", why, _("Reload this page to start again.")),
     )
 
@@ -550,6 +570,7 @@ def _page(
     editable,
     open_fields,
     live_at,
+    waiting=False,
     status=200,
 ):
     """Campaign settings: every setting once, open or locked where it stands.
@@ -557,7 +578,10 @@ def _page(
     ``editable`` says the whole draft can change; ``open_fields`` names the
     fields that can change now and ``live_at`` is set while a live
     campaign's end date may move, whose field is then checked as it is
-    typed (#944). A Review refused for the values posted (``status`` 400)
+    typed (#944). While background work holds some of its settings
+    (``waiting``, ``_waiting``) the page follows the campaign work status
+    and re-reads itself once the hold ends (#1619). A Review refused for the
+    values posted (``status`` 400)
     is this page with the form's errors and their summary, which the page
     script marks on the form it shows (UX conventions, Review dialog).
     """
@@ -593,6 +617,8 @@ def _page(
             # from this page's own address.
             "refresh_url": request.path,
             "errors": summary_errors(form) if status == 400 else [],
+            # The campaign work status region while work holds settings.
+            **(campaign_work_status.settings_context(True) if waiting else {}),
         },
         status=status,
     )
@@ -1030,7 +1056,13 @@ def campaign_settings(request, campaign_id):
     """
     try:
         service = runtime()
-        actor = principal(request, service)
+        # The page's own re-read once a hold on its settings ends (#1619) is
+        # passive: the reader did not act, so it never extends the sign-in.
+        actor = principal(
+            request,
+            service,
+            passive=request.method in {"GET", "HEAD"} and passive_read(request),
+        )
         # The page takes no query: its address is all there is (no legacy
         # addresses, navigation rule 10).
         filters(request.GET, allowed=set())
@@ -1083,6 +1115,7 @@ def campaign_settings(request, campaign_id):
                     editable=editable,
                     open_fields=open_fields,
                     live_at=live_at,
+                    waiting=_waiting(editable, reason, reasons),
                     status=status,
                 )
 

@@ -19,7 +19,6 @@ from django.db import DatabaseError, transaction
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
-from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
@@ -45,6 +44,8 @@ from .export_views import SAFE_FAILURES, _principal
 from .facts import FactUnavailable
 from .ministries import can_report, unscoped
 from .models import POPULATION_SCOPES
+from .money import MoneyAmount
+from .participation_summary import population_figures
 from .read_admission import admit_report_read
 from .response_dashboard import _admit_mode, funnel_panels, read_metrics
 from .response_dashboard import _audit as _audit_funnel
@@ -435,67 +436,27 @@ def daily_table(chart, presented, query):
     }
 
 
-def known_money(amount):
-    """A ``MoneyAmount`` as ``Money`` for a stat tile, or ``None`` if unknown."""
-    return Money(amount.cents) if amount.available else None
-
-
 def statistics_panel(statistics):
     """The Summary panel's Active population row of stat tiles (#720, #1540).
 
-    The active Families and Members, and with giving enabled two pledge
-    tiles (#728): the current annual pledges, and last year's pledges of
-    every Family in the ParishSoft data, whatever its status today (so not a
-    subtotal of these Families). Without an observation every tile reads
-    "—" with the reason, never zero. The responded and email-reach counts
-    are not shown (#1537): the Families by stage row gives the responses,
-    and ``report participation`` still reports all three.
+    The figures are ``participation_summary.population_figures``, which the
+    export's capture also reads (#1557): the active Families and Members,
+    and with giving enabled the two pledge totals (#728), so not a subtotal
+    of these Families. Without an observation every tile reads "—" with the
+    reason, never zero. The responded and email-reach counts are not shown
+    (#1537): the Families by stage row gives the responses, and ``report
+    participation`` still reports all three.
     """
-    active = statistics.active
-    no_data = _("No ParishSoft data has been loaded for this campaign yet.")
-    figures = [
-        ("active_families", _("Active Families"), active and active.families, no_data),
-        (
-            "active_members",
-            _("Active Members"),
-            active and active.active_members,
-            no_data,
-        ),
-    ]
-    if statistics.financial_enabled:
-        pledges = known_money(active.annual_pledge) if active else None
-        everyone = known_money(statistics.comparison_pledge_all)
-        # One reason per cause, so each says what is actually missing.
-        if active is None:
-            annual_reason = everyone_reason = no_data
-        elif statistics.financial is None:
-            annual_reason = everyone_reason = _(
-                "Giving is turned on, but this campaign has no giving "
-                "definition yet, so pledges cannot be totalled."
-            )
-        else:
-            annual_reason = _(
-                "The total is added up only when every responding Family's "
-                "pledge amount is known."
-            )
-            everyone_reason = _(
-                "The ParishSoft data kept for this campaign does not hold "
-                "every pledge for last year's period, so the total is not "
-                "added up."
-            )
-        figures += [
-            ("annual_pledges", _("Current annual pledges"), pledges, annual_reason),
-            (
-                "comparison_pledges_all",
-                _("Last year's pledges (all Families)"),
-                everyone,
-                everyone_reason,
-            ),
-        ]
     return {
         "tiles": tuple(
-            tile(key, label, value, unknown_reason="" if value is not None else reason)
-            for key, label, value, reason in figures
+            tile(
+                key,
+                label,
+                # A tile formats Money; the statistics hold exact cents.
+                Money(value.cents) if isinstance(value, MoneyAmount) else value,
+                unknown_reason="" if value is not None else reason,
+            )
+            for key, label, value, reason in population_figures(statistics)
         )
     }
 

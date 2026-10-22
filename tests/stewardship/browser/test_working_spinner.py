@@ -48,8 +48,19 @@ SLOT = """spinner => {
   const label = next.querySelector('.stage-label') || next;
   const pad = parseFloat(getComputedStyle(box).paddingLeft);
   const right = spinner.offsetLeft + spinner.offsetWidth;
-  // Level with the label's first line: their middles within 2px.
-  const line = label.getClientRects()[0];
+  // Level with the label's first line: their middles within 2px. A label
+  // drawn as a block has one client rect however many lines it wraps to,
+  // so the first line is measured from the first character's own box.
+  const walker = document.createTreeWalker(label, NodeFilter.SHOW_TEXT, {
+    acceptNode: node => node.textContent.trim()
+      ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP,
+  });
+  const text = walker.nextNode();
+  const range = document.createRange();
+  const first = text.textContent.length - text.textContent.trimStart().length;
+  range.setStart(text, first);
+  range.setEnd(text, first + 1);
+  const line = range.getClientRects()[0];
   const top = box.getBoundingClientRect().top + box.clientTop;
   const middle = top + spinner.offsetTop + spinner.offsetHeight / 2;
   return spinner.offsetParent === box && spinner.offsetWidth > 0

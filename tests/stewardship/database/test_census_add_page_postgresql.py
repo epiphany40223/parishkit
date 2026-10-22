@@ -2,8 +2,9 @@
 
 The worklist's side of an addition: its row (To enter by hand, Added by the
 parish, the reviewer's value and its creator), its own steps (Entered by
-hand, and Back to review, which withdraws it), a bulk decision with the
-Family's own changes, all or none, and Add over HTTP.
+hand, and Back to review, which withdraws an open one and undoes an entered
+one's mark, #1840), a bulk decision with the Family's own changes, all or
+none, and Add over HTTP.
 """
 
 import json
@@ -103,9 +104,10 @@ def test_staff_add_a_member_change_that_starts_accepted(response_service):
     assert row["status"] == "to_do" and row["version"] == 1
 
 
-def test_entered_by_hand_and_withdraw_are_final(response_service):
-    """Entered by hand makes an addition final; a second step is stale.
-    Withdrawing one moves it to History and frees the field for a new Add."""
+def test_entered_by_hand_moves_the_version_and_withdraw_is_final(response_service):
+    """Entered by hand moves an addition to its next version, so a step at
+    the old one is stale. Withdrawing one moves it to History and frees the
+    field for a new Add."""
     harness, _, staff, rows = prepared(response_service)
     campaign = campaign_of(rows)
     first, _ = add(harness, staff, campaign, member_form(rows, "nickname", "Bo"))
@@ -129,6 +131,39 @@ def test_entered_by_hand_and_withdraw_are_final(response_service):
     third, _ = add(harness, staff, campaign, member_form(rows, "suffix", "Sr."))
     assert third.pk != second.pk
     assert CensusAdditionResolution.objects.count() == 2
+
+
+def test_bulk_back_to_review_undoes_an_entered_addition_and_withdraws_an_open_one(
+    response_service,
+):
+    """Over an entered and an open addition, Back to review reopens the
+    first (its mark undone, To enter by hand) and withdraws the second, all
+    or none: without a note, nothing is recorded (#1840)."""
+    harness, _, staff, rows = prepared(response_service)
+    campaign = campaign_of(rows)
+    first, _ = add(harness, staff, campaign, member_form(rows, "nickname", "Bo"))
+    second, _ = add(harness, staff, campaign, member_form(rows, "suffix", "Jr."))
+    worklist(harness, staff, campaign, "entered_by_hand", {f"add-{first.pk}": 1})
+    items = {f"add-{first.pk}": 2, f"add-{second.pk}": 1}
+    with pytest.raises(ValueError, match="needs a note"):
+        worklist(harness, staff, campaign, "back_to_review", items)
+    assert CensusAdditionResolution.objects.count() == 1
+    notice = worklist(harness, staff, campaign, "back_to_review", items, note="Typo")
+    assert notice == "2 changes sent back to review."
+    _, shown = rows_of(harness, staff, campaign)
+    reopened = shown[f"add-{first.pk}"]
+    assert (reopened["stage"], reopened["version"]) == ("to_enter_by_hand", 3)
+    assert (reopened["resolution_action"], reopened["resolution_note"]) == (
+        "reopened",
+        "Typo",
+    )
+    _, history = rows_of(harness, staff, campaign, "history")
+    assert history[f"add-{second.pk}"]["stage"] == "history"
+    # Each step has its own audit event, versions only.
+    event = AuditEvent.objects.get(
+        subject_id=CensusAdditionResolution.objects.get(action="reopened").pk
+    )
+    assert event.event_type == "census_change_updated"
 
 
 def test_a_bulk_decision_covers_additions_and_changes_all_or_none(response_service):

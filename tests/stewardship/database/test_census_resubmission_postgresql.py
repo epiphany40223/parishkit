@@ -28,7 +28,12 @@ from .test_publication_plans_postgresql import owner
 from .test_response_http_postgresql import answers_for
 from .test_runtime_auth_grants_postgresql import web_login
 
-pytestmark = pytest.mark.django_db(transaction=True)
+# These test the rule before the reviewed Family form (#1705): forms drawn
+# before its release, as one open across the deploy is.
+pytestmark = [
+    pytest.mark.django_db(transaction=True),
+    pytest.mark.usefixtures("earlier_rule"),
+]
 
 
 def again(harness, **members):

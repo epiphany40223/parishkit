@@ -57,6 +57,11 @@ def permanent(reason):
     return Parity("permanent", (reason,))
 
 
+def deferred(decision):
+    """Routes waiting on a decision, which ``decision`` names."""
+    return Parity("deferred", (decision,))
+
+
 SESSION_CHROME = (
     "browser sign-in and session chrome; the session commands cover automation"
 )
@@ -129,6 +134,9 @@ LEDGER = {
     "schedule_new": command("schedule preview", "schedule confirm"),
     "schedule_edit": command("schedule show", "schedule preview", "schedule confirm"),
     "schedule_delete": command("schedule preview", "schedule confirm"),
+    # The campaign wizard's suggested schedules (#1404 PR 6) are three
+    # ordinary schedules, which a schedule change document adds.
+    "schedule_suggested": command("schedule preview", "schedule confirm"),
     # A test of New and Edit scheduled email's unsaved email text (#446):
     # the command line takes no unsaved text; ``test sample`` tests a saved
     # email, and the content commands save text to test.
@@ -150,13 +158,20 @@ LEDGER = {
     ),
     # The live end-date check validates what ``schedule preview`` reviews.
     "campaign_end_date_check": command("schedule preview"),
-    # The command line has no first-campaign path yet: ``campaign confirm``
-    # edits the current campaign and refuses any added one. When PR 10 adds
-    # one, it must admit the first campaign only through
-    # ``single_campaign.first_campaign_admitted`` (and
-    # ``refuse_campaign_creation(first=True)``), as this page does.
-    "campaign_create": pending("PR 10", "campaign create-preview", "campaign create"),
-    "campaign_clone": pending("PR 10", "campaign clone"),
+    # The campaign work status those pages poll while work holds them
+    # (#1619): ``campaign show`` reports the same locks.
+    "campaign_work_status": command("campaign show"),
+    # Create the campaign's Review and Apply (#1899): the first campaign
+    # only, admitted through the page's own ``_admitted`` and ``_scope``
+    # (``single_campaign.first_campaign_admitted``) and confirmed with
+    # ``first_campaign=True``, as the page does.
+    "campaign_create": command("campaign create-preview", "campaign create"),
+    # Copy campaign refuses every request before reading anything until
+    # #145 (navigation rule 10), so a command could only repeat that
+    # refusal; #145 decides whether copying comes back.
+    "campaign_clone": deferred(
+        "#145, the single-campaign change, which retires or restores Copy campaign"
+    ),
     # A Campaign setup step's Continue (#1404), and Pages and emails'
     # editor's Keep as is and go back (one item, #1404 PR 6b), only record
     # the browser stepper's "kept as is" and open the next step page (or
@@ -175,9 +190,11 @@ LEDGER = {
         "workgroup show", "workgroup preview", "workgroup confirm"
     ),
     "content_catalog": command("content list"),
-    # The editor as it opens; its Review and Apply are still owed.
-    "content_edit": command("content show", owed="PR 10"),
-    "content_revision": command("content show", owed="PR 10"),
+    # The editor as it opens, and its Preview changes and review dialog
+    # Apply (``content preview --edit`` and ``content confirm --edit``,
+    # #1873); the campaign wizard's direct save is the same change.
+    "content_edit": command("content show", "content preview", "content confirm"),
+    "content_revision": command("content show", "content preview", "content confirm"),
     # The email tables' Delete, as a preview and a confirm (#879).
     "content_delete": command("content preview", "content confirm"),
     "content_history": command("content history"),
@@ -241,8 +258,8 @@ LEDGER = {
         "go-live cancel",
     ),
     # Family email history and Pause and resume mail.
-    "family_email_progress": command("send progress"),
-    "family_email_progress_status": command("send progress"),
+    "mail_queue": command("mail queue"),
+    "mail_queue_status": command("mail queue"),
     "family_email_sends": command("send history"),
     # Its read, and its pause, resume and resolution previews and their
     # confirmation (PR 7b, #463).
@@ -310,11 +327,12 @@ LEDGER = {
         "census edit",
         "census resolve-conflict",
     ),
-    # Publish to ParishSoft (#528, ADM-09): its check and plan come to the
-    # command line in the page's own fourth slice.
-    "census_publication": pending(
-        "#528 slice 4", "census publish-check", "census publish-plan"
-    ),
+    # Update ParishSoft (#528, ADM-09; #1688): its check and plan, Update
+    # and Run again (#1755), renamed from #528's fourth slice (decision 7:
+    # update, not publish), through the page's own checks and services.
+    "update_parishsoft": command("census update-check", "census update-plan"),
+    "update_parishsoft_confirmation": command("census update-confirm"),
+    "update_parishsoft_retries": command("census update-rerun"),
     # Additional information's review worklist (#1685) posts its decisions
     # to the page itself: ``information decide`` (#1735), through the page's
     # own InformationDecisions service, with ``information list`` the rows'
@@ -472,6 +490,8 @@ LEDGER = {
     "user_edit": command("users list", "users preview", "users confirm"),
     "user_delete": command("users preview", "users confirm"),
     "user_name_suggestions": command("users preview"),
+    # One user's Timeline (#1866): the same summary and lines.
+    "user_timeline": command("users timeline"),
     # The leaders table and its import review (#952 slice 6).
     "user_leader_import": command("users import-leaders"),
     # The leaders section's passive status (#1863): no data of its own.

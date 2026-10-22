@@ -52,26 +52,38 @@ action row also holds Keep as is and go back, posting to the step
 Continue's real address (answered with ``CONTENT``), and its Save and go
 back saves to itself (``APPLIED``). ``CONTENT`` lists the welcome page as
 kept as is, with the row id both return to.
+
+``SUGGESTED`` is Dates and mail schedules as the wizard draws it for a
+campaign with no schedule saved (#1404 PR 6a): the suggested schedules,
+"Not saved yet", whose Add these schedules and continue posts the page's
+version and request key to ``SUGGESTED`` itself (answered with ``APPLIED``)
+and goes on to ``CONTENT``. ``SUGGESTED_PASSED`` is the same page once the
+Initial invitation's send time has passed: nothing is suggested, so the
+panel and Add are left out and only Continue without schedules for now
+remains.
 """
 
 from dataclasses import replace
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 from django.template.loader import render_to_string
 from django.urls import reverse
 
-from parishkit.stewardship.accounts import campaign_wizard
+from parishkit.stewardship.accounts import campaign_wizard, schedule_suggestions
 from parishkit.stewardship.accounts.admin_editing import summary_errors
 from parishkit.stewardship.accounts.content_forms import ContentForm
 from parishkit.stewardship.accounts.option_editing import option_changes
+from parishkit.stewardship.accounts.schedule_forms import email_names
+from parishkit.stewardship.accounts.schedule_table import SORTING
 from parishkit.stewardship.accounts.share_forms import (
     ShareOptions,
     default_share_options,
 )
 from parishkit.stewardship.source.data_age import Connection
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
+from parishkit.stewardship.web.tables import whole_table
 
 from . import schedule_list_components as schedule_pages
 from .campaign_settings_components import NOT_APPLIED, VALUES, _form
@@ -96,6 +108,8 @@ EDITOR_KEEP = "/campaign-stepper-editor-keep"
 SCHEDULES = "/campaign-stepper-schedules"
 NEW_DIRECT = "/campaign-stepper-new-direct"
 EDIT_DIRECT = "/campaign-stepper-edit-direct"
+SUGGESTED = "/campaign-stepper-suggested"
+SUGGESTED_PASSED = "/campaign-stepper-suggested-passed"
 # Campaign settings with Financial stewardship on, complete.
 FINANCIAL_VALUES = VALUES | {
     "financial_enabled": True,
@@ -125,6 +139,8 @@ POSTS = {
     EDITOR_KEEP: (303, APPLIED, ""),
     NEW_DIRECT: (303, APPLIED, ""),
     EDIT_DIRECT: (303, APPLIED, ""),
+    SUGGESTED: (303, APPLIED, ""),
+    SUGGESTED_PASSED: (303, APPLIED, ""),
     reverse("admin:campaign_step_continue"): (303, CONTENT, ""),
 }
 
@@ -283,6 +299,51 @@ def components(context, admin):
             post_url=path,
         )
 
+    def suggested(path=SUGGESTED, now=datetime(2054, 9, 1, tzinfo=UTC)):
+        """Dates and mail schedules proposing its suggested schedules.
+
+        No schedule is saved, so the wizard suggests (#1404 PR 6a); its Add
+        these schedules and continue posts to ``SUGGESTED`` and goes on to
+        ``CONTENT``. With ``now`` past the Initial invitation's send time
+        nothing is suggested, as the wizard decides from the same rule.
+        """
+        owner, emails, _rows = schedule_pages._data()
+        rows = schedule_suggestions.rows(
+            owner["values"], emails, owner["id"], now, email_names(emails)
+        )
+        wizard = campaign_wizard.build(
+            True,
+            "schedules",
+            done={"settings", "share_options", "content"},
+            mail_test_url=TEST_URL,
+            no_schedules=True,
+            suggest=bool(rows),
+        )
+        wizard = replace(wizard, upcoming=replace(wizard.upcoming, url=CONTENT))
+        return (
+            "text/html",
+            render_to_string(
+                "stewardship/schedule-settings.html",
+                context
+                | {
+                    "admin_chrome": admin | {"campaign_wizard": wizard},
+                    "campaign": {
+                        "pk": owner["id"],
+                        "active_configuration": owner["values"],
+                    },
+                    "values": owner["values"],
+                    "editable": True,
+                    "base_digest": "a" * 64,
+                    "table": whole_table([], sorting=SORTING, sort="when"),
+                    "refresh_url": path,
+                    "new_url": schedule_pages.NEW,
+                    "delete_url": schedule_pages.DELETE,
+                    "suggested": rows,
+                    "suggested_url": path,
+                },
+            ),
+        )
+
     refused = _form(FINANCIAL_VALUES, data=FINANCIAL_VALUES | {"name": ""})
     refused.is_valid()
     now = context["server_now"]
@@ -423,6 +484,8 @@ def components(context, admin):
         SCHEDULES: schedule(context, SCHEDULES, current=None),
         NEW_DIRECT: schedule(context, NEW_DIRECT),
         EDIT_DIRECT: schedule(context, EDIT_DIRECT, schedule_row=True),
+        SUGGESTED: suggested(),
+        SUGGESTED_PASSED: suggested(SUGGESTED_PASSED, schedule_pages.NOW),
         REVIEW: (
             "text/html",
             render_to_string(

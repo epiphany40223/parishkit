@@ -27,6 +27,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.accounts.role_refusal import require
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin, database_now
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
@@ -35,6 +36,7 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.pipeline import Stage
 from parishkit.stewardship.responses.census_additions import AddRefusal
+from parishkit.stewardship.responses.census_resolution import InvalidMemberId
 from parishkit.stewardship.responses.census_review import (
     InvalidEdit,
     KeyRebound,
@@ -55,7 +57,13 @@ from parishkit.stewardship.web.exports import (
 )
 from parishkit.stewardship.web.refusals import Refusal, with_codes, with_status_code
 from parishkit.stewardship.web.responses import campaign_response
-from parishkit.stewardship.web.review_worklist import read_decision, record
+from parishkit.stewardship.web.review_worklist import (
+    RETIRED_DATES,
+    drop_retired_dates,
+    page_fields,
+    read_decision,
+    record,
+)
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
 from . import census_publication
@@ -152,9 +160,8 @@ def _principal(request, store, *, read_only=False, export=False):
     principal = authenticated_admin(
         request, store=store, activity=not read_only, read_only=read_only
     )
-    if not allows(principal, Capability.VIEW_CENSUS) or (
-        export and not allows(principal, Capability.REPORT_EXPORT)
-    ):
+    require(principal, Capability.VIEW_CENSUS)
+    if export and not allows(principal, Capability.REPORT_EXPORT):
         raise PermissionError("Census changes are unavailable.")
     return principal
 
@@ -237,6 +244,12 @@ def _edit_refusal(error):
     return validation_response(fields, refusal=Refusal(str(error), EDIT_REFUSED))
 
 
+# A refused ParishSoft Member ID's fix (#1749), beside its static reason; a
+# correction's (#1773) cannot be left blank.
+MEMBER_ID_REFUSED = "Correct the Member ID, or leave it blank, then record it again."
+MEMBER_ID_CORRECTION_REFUSED = "Correct the Member ID, then record it again."
+
+
 def _add_refusal(error):
     """The page's answer to an Add, or a reopen, the reader can correct (#1710).
 
@@ -271,11 +284,13 @@ def _respond(request, campaign_id, *, export, render):
             # A GET carries only the choices a link may (R38 finding 6): the
             # view's own address, which the page puts in the address bar, so
             # a reload draws the same view; the name search never does.
-            if set(request.GET) - LINK_PARAMETERS:
+            # The retired Submitted from and Through (#1888) are dropped
+            # unread, from a link and a form alike, never refused.
+            if set(request.GET) - LINK_PARAMETERS - RETIRED_DATES:
                 raise ValueError("Census change links carry no private filter.")
-            parameters = (
-                request.GET if request.method == "GET" else request.POST
-            ).copy()
+            parameters = drop_retired_dates(
+                (request.GET if request.method == "GET" else request.POST).copy()
+            )
             parameters.pop("csrfmiddlewaretoken", None)
             decision = None if export else read_decision(parameters)
             extra = _choices(parameters, export=export)
@@ -301,6 +316,18 @@ def _respond(request, campaign_id, *, export, render):
             return _add_refusal(error)
         except InvalidEdit as error:
             return _edit_refusal(error)
+        except InvalidMemberId as error:
+            # A New Member's Member ID the mark cannot take, shown in place
+            # at the dialog's field (#1749).
+            return validation_response(
+                [FieldError(ErrorCode.INVALID, "value_member")],
+                refusal=Refusal(
+                    str(error),
+                    MEMBER_ID_CORRECTION_REFUSED
+                    if error.correcting
+                    else MEMBER_ID_REFUSED,
+                ),
+            )
         except ValueError:
             # A malformed form, or a decision the change's stage does not
             # offer: a 400, as a bad filter is.
@@ -382,7 +409,7 @@ def report(request, campaign_id):
         table = paginate(
             result["rows"],
             extra["paging"],
-            carry=list(query.form_values().items()),
+            carry=list(page_fields(query.form_values()).items()),
             sorting=SORTING,
         )
         # Each shown Family name opens its Timeline (#1570): one read of
@@ -406,7 +433,7 @@ def report(request, campaign_id):
                 "table": table,
                 "campaign_id": campaign_id,
                 "query": query,
-                "query_fields": query.form_values(),
+                "query_fields": page_fields(query.form_values()),
                 "route_choices": ROUTE_LABELS.items(),
                 "kind_choices": KIND_LABELS.items(),
                 "notice": extra.get("notice"),
@@ -423,10 +450,9 @@ def report(request, campaign_id):
                 "add_fields": add_fields(),
                 "add_replaceable": result["replaceable"],
                 "administrator": result["administrator"],
-                # Publish to ParishSoft's link (#528, ADM-09), the
+                # Update ParishSoft's link (#528, ADM-09; #1688), the
                 # Administrator's: unavailable, with its reason, while the
-                # deployment's parishsoft_publication setting is off. #1688
-                # renames it Update ParishSoft.
+                # deployment's parishsoft_publication setting is off.
                 "publication_on": census_publication.enabled(),
             },
             request=request,

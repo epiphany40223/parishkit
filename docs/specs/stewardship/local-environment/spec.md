@@ -45,9 +45,10 @@ code as possible, with as little LOCAL branching as possible
 ([#1399](https://github.com/epiphany40223/parishkit/issues/1399)). Differences
 come from configuration and installed credentials, with Testing mode and the
 configured mail redirect as the guard against reaching a real parishioner,
-not from code that refuses or disables an integration in LOCAL. A
-remaining LOCAL branch needs a reason stated in this specification; #1399 records the inventory of branches still being removed
-and the order in which they go.
+not from code that refuses or disables an integration in LOCAL. Every
+remaining LOCAL branch is listed, with its reason, in
+[remaining LOCAL branches](#remaining-local-branches), and a test fails when
+the code and that table disagree.
 
 ## Host virtual machine
 
@@ -108,7 +109,8 @@ database-authoritative.
 A helper `profile.behind_proxy` is true for PRODUCTION and LOCAL and false
 otherwise. Every new code branch that distinguishes LOCAL MUST test `is LOCAL`
 or `behind_proxy`; a new test such as `!= DEVELOPMENT` is prohibited, because it
-would silently change meaning when a profile is added.
+would silently change meaning when a profile is added (the
+[inventory test](#remaining-local-branches) pins the existing ones).
 
 ### Existing profile branches
 
@@ -130,13 +132,79 @@ Line numbers are as of `main` on 2026-10-03 and are for orientation only.
 | `web/security.py:57` `production` flag | secure cookies, CSRF cookie, HTTPS redirect and HSTS for PRODUCTION | secure cookies, CSRF cookie and HTTPS redirect on (`behind_proxy`); HSTS 0 (PRODUCTION only) |
 | `runtime_ingress.production_hostname` (`runtime_ingress.py:15`) | refuses non-PRODUCTION | unchanged; LOCAL uses a separate local Caddyfile renderer that never calls it |
 | `/app/src` mount exemption (`service_boundaries.py:250`) | DEVELOPMENT only | not admitted |
-| enumerated mounts (`service_boundaries.validate_mounts`) | each role's mounts only; anything else refused | unchanged for every existing role; LOCAL adds rules only for the two local services (`fake-parishsoft`: its one configuration file, read-only; `mailpit`: its store directory, read-write) |
+| enumerated mounts (`service_boundaries.validate_mounts`) | each role's mounts only; anything else refused | unchanged for every existing role; LOCAL adds rules only for the two local services (`fake-parishsoft`: its one configuration file, read-write for [publication writes](#fake-parishsoft-writes); `mailpit`: its store directory, read-write) |
 | development reload (`runtime_process.py:45`, `:174`) | DEVELOPMENT only | off |
 | existing `!= DEVELOPMENT` refusals (`services.py:25`, `cli.py:295`) | refuse outside DEVELOPMENT | unchanged (they refuse, the safe direction) |
 
 A fast test MUST assert, for each row, that LOCAL never receives the
 development or test result, and that every other profile's result is
 unchanged.
+
+### Remaining LOCAL branches
+
+[#1399](https://github.com/epiphany40223/parishkit/issues/1399) has removed
+the LOCAL branches that only refused or disabled an integration; pk-local now runs
+Production's Slack, smoke, egress, ParishSoft, Google sign-in, Workspace mail
+and Drive code. The branches that remain are listed here, each with the reason
+it stays. A branch is any comparison with, or use of, the LOCAL profile in the
+package code: `DeploymentProfile.LOCAL`, the helpers' `LOCAL_PROFILE`, or the
+string `"local"` compared with, tested for membership in a set, tuple or list,
+or matched by a `case`; `LOCAL` on an aliased import and
+`DeploymentProfile("local")` count too. Shared `behind_proxy` tests are not
+branches, because Production takes the same path. The operator scripts under
+`tools/` are laptop tooling and are not listed.
+
+The first column names each module (under `src/parishkit/`) and the top-level
+functions, classes or module-level names that hold its branches. A fast test
+(`tests/stewardship/test_local_branch_inventory.py`) MUST fail when the code
+holds a branch in a function this table does not name, or the table names one
+that holds none, so a new LOCAL branch needs a reason here before it merges.
+The same test fails on a new negative test against another profile (`!=`,
+`is not` or `not in` a `DeploymentProfile` member other than LOCAL), which
+would give LOCAL the other branch without naming it; the four that predate
+LOCAL are rows of [existing profile branches](#existing-profile-branches)
+and refuse in the safe direction.
+
+The final review for
+[#1399](https://github.com/epiphany40223/parishkit/issues/1399) (2026-10-21)
+checked every row below against the code: each is laptop topology, a safety
+rule or a laptop tool, and none refuses or disables an integration that
+Testing mode and the mail redirect guard instead.
+
+Every remaining branch falls in one of three kinds:
+
+- **laptop topology:** what a laptop needs that Production cannot have
+  (the localhost origin, Caddy's local CA, the fake clock, the extra
+  services);
+- **safety rule:** a refusal in the safe direction, which keeps a LOCAL-only
+  value out of Production or keeps LOCAL from writing to ParishSoft or
+  mailing anyone but the redirect address;
+- **laptop tool:** a command or page that exists for the developer only and
+  refuses any other profile, which protects a real deployment.
+
+Rendering Mailpit or the fake ParishSoft, the banner, or the test sign-in from
+a deployment setting instead of the profile was considered and rejected: each
+would make a laptop-only behaviour something a Production configuration could
+switch on, and for the test sign-in that would be an authentication bypass.
+The profile, which Production can never hold, stays the switch.
+
+| Location | Branch | Kind and reason |
+| --- | --- | --- |
+| `stewardship/deployment.py`: `PROXIED_PROFILES`, `_origin`, `load_deployment` | One proxy hop; exactly the [localhost origin](#origin-proxy-and-image), and it is the default | Laptop topology: the browser reaches Caddy on `localhost` |
+| `stewardship/web/security.py`: `browser_settings` | The invalid-origin message names the proxy, not Production | Laptop topology: wording only |
+| `stewardship/origin_check.py`: `check_public_origin`; `stewardship/origin_check_worker.py`: `resolve` | Accepts exactly the localhost origin without a DNS lookup | Laptop topology: `localhost` has no public name to resolve |
+| `stewardship/runtime_topology.py`: `_image`, `render_runtime`, `render_faketime_override`, `_project_name`, `_networks`, `_mailpit`, `_fake_parishsoft`, `_caddy` | The local image tags, the `mailpit` and `fake-parishsoft` services, the fake-clock override, the `parishkit-local` project, the no-masquerade `ingress` network, loopback-only Caddy | Laptop topology ([topology](#topology-and-web-differences)); Mailpit and the fake refuse any other profile |
+| `stewardship/runtime_ingress.py`: `render_local_caddy`, `render_ingress` | The local Caddyfile with `tls internal` on `localhost` | Laptop topology: no public name, so no ACME |
+| `stewardship/runtime_provisioning.py`: `provisioning_plan` | The fake-clock override document and the Mailpit store directory | Laptop topology |
+| `stewardship/service_boundaries.py`: `_check_extra`; `stewardship/backup_boundaries.py`: `validate_backup_mounts`; `stewardship/offline_boundaries.py`: `validate_offline_mounts` | Admit the read-only [fake-clock](#fake-clock) mount | Laptop topology: the fake clock exists only here |
+| `stewardship/deployment.py`: `load_deployment`, `recorded_mail_redirect` | `local_smtp_latency_ms` and `mail_redirect` are refused outside LOCAL; `parishsoft_publication` is refused in LOCAL unless it reads the fake | Safety rule: a rehearsal delay or a redirect would withhold real mail; LOCAL never writes to the real ParishSoft |
+| `stewardship/mail_catcher.py`: `admit_real_workspace`, `workspace_transport`, `request_redirect`, `envelope`; `stewardship/provider_checks.py`: `check_candidate`; `stewardship/accounts/integration_views.py`: `_drive_in_local` | The mail catcher only in LOCAL; a real Workspace key, and Drive, in LOCAL only beside the [mail redirect](#safety-guarantees) on the normal clock; the redirect only in LOCAL | Safety rule: the redirect is what keeps real-data mail to one address |
+| `stewardship/family_delivery_process.py`: `local_smtp_latency` | The modeled SMTP latency waits only before a mail-catcher submission | Safety rule: a real deployment never waits on purpose |
+| `parishsoft_http_worker.py`: `default_base_url`, `admitted_base_url`, `contact_put_admitted` | The fake is LOCAL's default and admitted only in a local request; a local request may write a Member contact only to the fake, through the one `contact_put_admitted` rule that the deployment loader, the publication session, the Member contact smoke check and every helper request apply | Safety rule: [ParishSoft](#safety-guarantees) is read only from LOCAL |
+| `stewardship/runtime_web.py`: `parse_google_client` | The sentinel OAuth client is refused outside LOCAL | Safety rule: the sentinel is not a real client |
+| `stewardship/runtime_web.py`: `url_configuration`; `stewardship/accounts/local_sign_in.py`: `sign_in`, `admit_local_configuration` | The [test sign-in](#local-test-sign-in) route and command exist only in LOCAL | Laptop tool: Production's URL module never imports it |
+| `stewardship/accounts/branding_context.py`: `local_environment`; `stewardship/web/error_pages.py`: `_is_local` | The LOCAL banner on every Admin and Family page; the Admin sign-in page's test sign-in instructions (with `google_sign_in` deciding whether Google is also offered); the sign-in wording on the Users and setup-step pages | Laptop tool: says which environment, and which ParishSoft, the developer is looking at, and how to sign in there |
+| `stewardship/local/fake_parishsoft.py`: `execute_fake_parishsoft`; `stewardship/local/seeder.py`: `admit_seeder_mounts`, `configure_web_process`, `execute_local_seed`; `stewardship/local/spike.py`: `execute_spike` | The fake ParishSoft, the seeder and the spike check refuse any other profile | Laptop tool: they ship in the one image but are inert in Production |
 
 ### Origin, proxy and image
 
@@ -371,7 +439,13 @@ Production in either direction.
   to the redirect address alone, whatever `--send-to` names. A
   `backup_drive` check runs on the same terms as [Drive](#safety-guarantees)
   below. A Slack `--channel-id ... --send` posts the one fixed smoke message
-  to the named channel, as in Production.
+  to the named channel, as in Production. The `parishsoft_contact` check
+  (its probe and its `--send` round trip) applies the same
+  `contact_put_admitted` rule as census publication (see ParishSoft below)
+  before it reads anything, in every profile: a LOCAL deployment reading
+  the fake runs it against the fake, whose Members can hold the check's
+  `pager` and `fax` marker fields ([writes](#fake-parishsoft-writes)), and
+  one reading the real API is refused before the tenant read.
 - **Google sign-in.** `up` installs a sentinel `google_oauth` client
   document (`runtime_web.LOCAL_OAUTH_SENTINEL`) that holds no real client ID
   or secret. Every other profile refuses it, so it can never reach
@@ -426,10 +500,27 @@ Production in either direction.
   profile's default and never into the provisioning record, so Production's
   documents are unchanged. A LOCAL deployment that chose the real API reads
   real parish data; that is allowed on the laptop (#1399) and is never
-  committed. LOCAL never writes to ParishSoft, whatever it reads: the loader
-  refuses `parishsoft_publication` in LOCAL, a publication session cannot be
-  built for the `local` profile, and the read helper refuses the Member
-  contact PUT in any `local` request. The seeded campaign, `up` and the
+  committed. LOCAL never writes to the real ParishSoft, whatever it reads
+  ([#1884](https://github.com/epiphany40223/parishkit/issues/1884)): one rule,
+  `parishsoft_http_worker.contact_put_admitted`, admits the Member contact
+  PUT for every other profile exactly as before and for a `local` request
+  only when its base URL is the fake. Three layers apply it independently:
+  the loader refuses `parishsoft_publication` in LOCAL unless the deployment
+  reads the fake, a publication session cannot be built for the `local`
+  profile with the real API, and the helper refuses the PUT in any `local`
+  request naming the real API. So a LOCAL deployment that reads the fake runs
+  census publication (Update ParishSoft) through the same preflight, worker,
+  gateway, session and helper as Production, and its writes reach only the
+  fake, which [records them](#fake-parishsoft-writes). The gateway's contact
+  read stays refused (`read_unconfirmed`) for the real API until that read is
+  confirmed (see the
+  [member requests guide](../../../guides/stewardship-member-requests.md#parishsoft-publication));
+  for the fake it reads `GET members/{id}` and maps the fake's Member object
+  onto the PUT's field names (`stewardship/local/fake_contact.py`). The
+  operator script renders `parishsoft_publication` on for LOCAL while the
+  deployment reads the fake (`up` and every `deploy`), never with the real
+  API and never into a rollback. Testing mode still stops publication after
+  its preflight, as in Production. The seeded campaign, `up` and the
   setup wizard's printed values use the fake; switching an existing
   deployment to the real API needs a real `parishsoft` key for the real
   organization.
@@ -479,7 +570,7 @@ Production in either direction.
   Workspace key (see Mail and Drive above). A fast test lists each of those
   use-time checks and asserts that LOCAL refuses its real provider without
   its configured guard, defaults to the fake ParishSoft and never writes to
-  ParishSoft.
+  the real ParishSoft.
   Under the [fake clock](#fake-clock), which never runs ahead of real time, a
   faked process checks a real provider's TLS certificate against that past
   time: it refuses a certificate issued since then and accepts one that has
@@ -550,8 +641,9 @@ giving and household reads all run through their real code.
   and `--port` (default 8080) is the listening port on every interface of its
   container.
 - **Mounts and credentials.** The service receives no credential and exactly
-  one mount: its own configuration file (below), read-only. It runs as the
-  application uid, which owns that file, and joins only `backend`.
+  one mount: its own configuration file (below), read-write so it can record
+  [publication writes](#fake-parishsoft-writes). It runs as the application
+  uid, which owns that file, and joins only `backend`.
 - **Base URL.** `LOCAL_SOURCE_BASE_URL = "http://fake-parishsoft:8080/api/v2"`.
   It is LOCAL's default ParishSoft base URL (see
   [ParishSoft](#safety-guarantees) for the setting that may choose the real
@@ -567,11 +659,12 @@ giving and household reads all run through their real code.
 - **Authentication.** Requests MUST carry `x-api-key` equal to the code
   constant `LOCAL_PARISHSOFT_KEY`, which `up` installs as the `parishsoft`
   credential; any other or missing key gets HTTP 401 with an empty body.
-- **Read-only.** The fake implements only the read endpoints below and has no
-  control endpoint. Any other method or path gets 404 or 405, and LOCAL
-  refuses ParishSoft publication before any request (see
-  [ParishSoft](#safety-guarantees)). Its data changes only through its
-  configuration file's [operator edits](#fake-parishsoft-edits).
+- **Reads and one write.** The fake implements the read endpoints below and
+  the one Member contact PUT census publication sends (see
+  [publication writes](#fake-parishsoft-writes)), and has no control
+  endpoint. Any other method or path gets 404 or 405. Its data changes only
+  through its configuration file's [operator edits](#fake-parishsoft-edits)
+  and the publication writes it records there.
 
 ### Fake configuration
 
@@ -634,6 +727,7 @@ envelope parser in `parishkit/parishsoft_pagination.py`, the allowlist in
 | `GET families/{id}` | none | one Family object | `familyDUID` |
 | `GET families/{id}/member/list` | none | bare array | `memberDUID` |
 | `GET members/{id}` | none | one Member object | `memberDUID` |
+| `PUT members/{id}/contact` | none | empty body (200); see [publication writes](#fake-parishsoft-writes) | `memberDUID` |
 
 Further rules:
 
@@ -697,7 +791,10 @@ Code: `stewardship/local/fake_edits.py`. The kinds:
   name (`email`, `mobile`, `work`, `first`, `middle`, `last`, `nick`,
   `maiden`, `suffix`, `salutation` or `prefix`, `gender`, `language`,
   `birth`, `death`, `status`, `type`, `marital`), plus `homePhone`,
-  `maritalStatusID` and the two publish flags; `family=ID` moves the Member
+  `maritalStatusID`, the two publish flags and `pager` and `fax` (which
+  the generated parish leaves unset; the
+  [Member contact smoke check](#fake-parishsoft-writes) needs one of them
+  filled in); `family=ID` moves the Member
   to another Family. An empty value clears a text or date field; dates are
   given as `YYYY-MM-DD` and served as ParishSoft's midnight timestamps;
   flags take `true` or `false`. A death is `death=DATE status=Deceased`, as
@@ -749,6 +846,64 @@ service (a container keeps a bind mount on the inode it started with).
 Delta refreshes do not see an edit, since the [change feed](#change-feed)
 stays empty as Production's is; a full refresh does. Snapshots carry the
 file, so a `reset` or `switch` restores that snapshot's edits.
+
+### Fake ParishSoft writes
+
+Census publication (Update ParishSoft) writes to the fake on pk-local
+([#1884](https://github.com/epiphany40223/parishkit/issues/1884); the guards
+that keep it off the real API are under [ParishSoft](#safety-guarantees)).
+The fake answers `PUT members/{id}/contact` the way the live v2 write test of
+2026-10-17 observed the real one (#528):
+
+- It is a partial update: a field left out of the body, or sent as `null`,
+  is left unchanged.
+- Only the Member contact fields census publication may write are taken
+  (`firstName`, `middleName`, `lastName`, `nickName`, `maidenName`,
+  `dateOfBirth` as `YYYY-MM-DD`, `language`, `emailAddress`, `homePhone`,
+  `cellPhone`, `workPhone`); each is stored on the Member under the fake's
+  own name (`dateOfBirth` as `birthdate`, `cellPhone` as `mobilePhone`).
+  It also takes `pager` and `fax`, stored under those names: census
+  publication never writes them, but they are the only fields the
+  [Member contact smoke check](../../../guides/stewardship-smoke-tools.md#member-contact-round-trip)'s
+  round trip writes, so pk-local can run that check against the fake.
+  An unknown, blank or invalid field, a body that is not a JSON object, a
+  body with no field to write, or a Member [edits](#fake-parishsoft-edits)
+  cannot name (the late-added Family's, once served) gets 400 and changes
+  nothing. A Member the fake does not serve gets 404. If the fake cannot
+  store the write, or the edits list has reached its bound of 500 edits
+  (operator edits and recorded writes together), it answers 503 and changes
+  nothing; the gateway reports that as `write_unavailable`, since the
+  payload itself is fine, and at the bound the fake logs a line naming
+  `fake-parishsoft undo` and `clear`, which free edits.
+- An accepted PUT answers 200 with an empty body and is recorded as one
+  ordinary `member` edit at the end of the configuration file's `edits`
+  list, written back to the file in place, so it survives restarts and
+  deploys, `fake-parishsoft show` lists it and `undo` drops it like any
+  edit. A full refresh then reads the written values back, so the
+  published changes become Confirmed.
+
+The gateway's read of the fake (`stewardship/local/fake_contact.py`) maps the
+Member object back onto the PUT's names: the same eleven fields plus
+`gender` and `dateOfDeath`, a date as `YYYY-MM-DD`; `fax` and `pager` are
+left out, since publication never writes them, so they are not read either.
+The smoke check reads the raw `GET members/{id}` Member object instead, which
+carries `pager` or `fax` once an [edit](#fake-parishsoft-edits) or a PUT has
+set it. A value read back is exactly the value written, as the publish
+worker's read-back check and the smoke check's confirmation require.
+
+The operator script's `fake-parishsoft` edits replace the file and recreate
+the service, so the script stops the fake before it reads the file: a PUT
+sent while the fake is stopped fails to connect (`write_unavailable`, as in
+any ParishSoft outage) instead of being answered and then lost with a file
+about to be replaced. A refused edit starts the fake again on the unchanged
+file. `seed` rewrites `release_at` only while every service, the fake
+included, is stopped.
+
+The write back is in place, not a rename, since the file is the service's
+one bind mount, so it is not atomic: a fake stopped or out of disk partway
+through a write can leave the file invalid, and the fake then refuses to
+start. `reset --seeded` (or `reset NAME`) restores the file with its
+snapshot.
 
 ## Synthetic parish
 
@@ -959,7 +1114,7 @@ throughout, so occurrences fall due naturally.
 
 | Order | Phase | Clock | Identities | Work |
 | --- | --- | --- | --- | --- |
-| 1 | prepare | Friday before the start Saturday, 09:00 | `web` (its requests are installed and run by the configuration installer, worker and `mail-dispatch`) | Configure the campaign, meet [go-live readiness](#go-live-under-the-fake-clock) and take it to Production (`scheduled`) |
+| 1 | prepare | Friday before the start Saturday, 09:00 | `web` (its requests are installed and run by the configuration installer, worker and `mail-dispatch`) | Configure the campaign, meet [Go live](#go-live-under-the-fake-clock) and take it to Production (`scheduled`) |
 | 2 | drive | stepped through the timeline | `web` for Family steps; scheduler, worker and `mail-dispatch` running normally | Carry out every event before `now` in [historical order](#historical-ordering) |
 | 3 | check | (services stopped; PostgreSQL and Valkey running) | offline `migration` | Run the [invariant check](#post-seed-invariant-check) |
 | 4 | finish | real time, normal mode | `web` (the Admin's "Refresh now" and the Users page's leader import; the worker runs the refresh and the configuration installer applies the import) | After the restart without the preload, request the real full refresh that releases the late-added Family, then import the [seeded Ministry leader user](#seeded-ministry-leader-user) |

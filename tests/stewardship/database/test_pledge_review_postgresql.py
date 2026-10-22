@@ -26,7 +26,11 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.pipeline import Action
 from parishkit.stewardship.reports.pledge_models import PledgeReview
-from parishkit.stewardship.reports.pledge_review import PledgeDecisions, read_items
+from parishkit.stewardship.reports.pledge_review import (
+    PledgeDecisions,
+    read_items,
+    version_of,
+)
 from parishkit.stewardship.web.review_worklist import StaleDecision, WorklistDecision
 
 from ..policy_factory import address
@@ -108,7 +112,7 @@ def decide(harness, actor, action, submissions, *, note="", key=None, **fields):
     """One decision through the service on the restricted web login."""
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         items = read_items(harness.campaign.pk)
-        versions = {str(s.pk): items[s.pk].sequence for s in submissions}
+        versions = {str(s.pk): version_of(items[s.pk]) for s in submissions}
         decision = WorklistDecision(
             Action(action),
             versions,
@@ -128,7 +132,7 @@ def test_decisions_move_the_pledge_through_its_stages_with_audit(
     """Accept, Entered by hand; each a row in sequence, with its audit event.
 
     The answer recorded is the response's own, set by the guard; the mark
-    keeps the decision and records no ParishSoft pledge.
+    keeps the decision and records ParishSoft's upcoming-year amount.
     """
     harness, submission = pledged(response_service)
     actor = admin()
@@ -149,7 +153,9 @@ def test_decisions_move_the_pledge_through_its_stages_with_audit(
         "cannot_give": False,
         "shares": {CHECK: ""},
     }
-    assert not rows[1].marked_pledge_known and rows[1].marked_pledge is None
+    # ParishSoft holds no pledge for the upcoming year yet: the mark records
+    # $0.00 from the current snapshot's proven giving read (#1704).
+    assert rows[1].marked_pledge_known and rows[1].marked_pledge == Decimal("0.00")
     contexts = [
         AuditContext.objects.get(event=event).context
         for event in AuditEvent.objects.filter(
@@ -160,8 +166,9 @@ def test_decisions_move_the_pledge_through_its_stages_with_audit(
         {"outcome": "changed", "before_version": 0, "after_version": 1},
         {"outcome": "changed", "before_version": 1, "after_version": 2},
     ]
-    # The mark is final: nothing more is offered.
-    with pytest.raises(ValueError):
+    # Undoing the mark needs a note (#1840,
+    # test_pledge_terminal_undo_postgresql.py).
+    with pytest.raises(ValueError, match="needs a note"):
         decide(harness, actor, "back_to_review", [submission])
 
 
@@ -459,9 +466,11 @@ def test_the_page_lists_decides_and_downloads_for_staff_only(response_service, g
         assert response.status_code == 200
         rows = list(csv.reader(io.StringIO(body.decode())))
         assert rows[0][:2] == ["Family", "Family DUID"] and len(rows) == 2
-        assert rows[1][8:12] == [
+        # ParishSoft annual pledge (#1704) is blank before any refresh check.
+        assert rows[1][8:13] == [
             "$1,234.50",
             "Monthly",
+            "",
             "To enter by hand",
             "Accepted",
         ]
@@ -511,9 +520,16 @@ def test_limitations_lists_cannot_contribute_at_its_pledges_stage(response_servi
         limitations_report,
     )
 
+    # Imported here: the refresh helpers' module imports this one.
+    from .test_pledge_refresh_postgresql import refresh
+
     harness = response_service
     financial_source(harness, options=map(asdict, OPTIONS))
     harness = activate_response_service(harness)
+    # ParishSoft holds a pledge, so Cannot contribute differs from it and
+    # stays To review (#1753 Confirms an answer ParishSoft already holds,
+    # as Cannot contribute against no pledge, $0.00, would be).
+    refresh(harness, "300.00")
     with web_login():
         submission = pledge(
             harness,
@@ -570,3 +586,60 @@ def test_limitations_lists_cannot_contribute_at_its_pledges_stage(response_servi
     assert (after or 0) == count - 1
     # Show narrowed to a Limitations answer lists none.
     assert read(show="cannot_attend")[0]["contributions"] == []
+
+
+def test_limitations_lists_a_confirmed_cannot_contribute_under_every_stage(
+    response_service,
+):
+    """Cannot contribute against no ParishSoft pledge is Confirmed at submit
+    (#1753): Limitations still lists it, with its Pledges stage and link,
+    but only under Every stage, and the menu count leaves it out."""
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts import admin_context
+    from parishkit.stewardship.accounts.policy import Principal
+    from parishkit.stewardship.reports.limitation_worklist import (
+        answer_rows,
+        at_stage,
+    )
+    from parishkit.stewardship.reports.limitations import (
+        LimitationsQuery,
+        limitations_report,
+    )
+
+    harness = response_service
+    financial_source(harness, options=map(asdict, OPTIONS))
+    harness = activate_response_service(harness)
+    with web_login():
+        pledge(
+            harness,
+            load_form(harness),
+            annual_pledge="",
+            frequency="",
+            shares={},
+            cannot_give=True,
+        )
+    staff = Principal(admin(), frozenset({"staff"}), frozenset())
+    items = [
+        SimpleNamespace(name="limitations_report", url="/admin/reports/limitations/"),
+        SimpleNamespace(
+            name="pledges_to_enter", url="/admin/reports/financial/pledges/"
+        ),
+    ]
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        transaction.atomic(),
+    ):
+        result = limitations_report(
+            harness.campaign.pk, LimitationsQuery.parse({}), staff
+        )
+        count = admin_context._open_counts(
+            SimpleNamespace(), staff, items, harness.campaign
+        ).get("limitations_report")
+    (row,) = result["contributions"]
+    assert row["placement"].stage.value == "confirmed"
+    assert row["pledges_url"] == reverse(ROUTE) + "?stage=confirmed"
+    rows = answer_rows(result)
+    assert not [r for r in at_stage(rows, "to_review")[0] if r["kind"] == "cannot_give"]
+    assert [r["kind"] for r in at_stage(rows, "all")[0]].count("cannot_give") == 1
+    assert not count

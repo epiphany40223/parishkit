@@ -246,7 +246,7 @@ SLASHLESS_EXPECTED = {
     "/admin/campaign/go-live/confirmation": "/admin/campaign/go-live/confirmation/",
     "/admin/campaign/production": "/admin/campaign/production/",
     "/admin/mail/controls": "/admin/mail/controls/",
-    "/admin/mail/family-progress": "/admin/mail/family-progress/",
+    "/admin/mail/queue": "/admin/mail/queue/",
     "/admin/mail/family-history": "/admin/mail/family-history/",
     "/admin/mail/sent": "/admin/mail/sent/",
     f"/admin/mail/sent/{T}": f"/admin/mail/sent/{T}/",
@@ -259,6 +259,7 @@ SLASHLESS_EXPECTED = {
     "/admin/users": "/admin/users/",
     "/admin/users/new": "/admin/users/new/",
     f"/admin/users/{T}/edit": f"/admin/users/{T}/edit/",
+    f"/admin/users/{T}/timeline": f"/admin/users/{T}/timeline/",
     "/admin/users/sessions": "/admin/users/sessions/",
     "/admin/users/automation": "/admin/users/automation/",
     "/admin/users/automation/approval": "/admin/users/automation/approval/",
@@ -271,7 +272,9 @@ SLASHLESS_EXPECTED = {
     "/admin/reports/financial/pledges": "/admin/reports/financial/pledges/",
     "/admin/reports/limitations": "/admin/reports/limitations/",
     "/admin/reports/census": "/admin/reports/census/",
-    "/admin/reports/census/publication": "/admin/reports/census/publication/",
+    "/admin/reports/census/update-parishsoft": (
+        "/admin/reports/census/update-parishsoft/"
+    ),
     "/admin/reports/information": "/admin/reports/information/",
     f"/admin/reports/information/{T}": f"/admin/reports/information/{T}/",
     "/admin/reports/ministries": "/admin/reports/ministries/",
@@ -315,6 +318,10 @@ OLD_ADDRESSES = (
     "/admin/mail/outgoing/",
     f"/admin/mail/outgoing/{T}/",
     f"/admin/mail/outgoing/{T}/resolution/",
+    # Family email progress, replaced by Mail queue (#1562), and its fragment.
+    "/admin/mail/family-progress/",
+    "/admin/mail/family-progress",
+    "/admin/mail/family-progress/status/",
     f"/admin/deliveries/{T}/resolve",
     "/admin/deliveries/family-sends",
     "/admin/family-portal",

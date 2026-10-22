@@ -73,6 +73,19 @@ def information_document(payload, parameters, *, parish_name, requested_at, time
     source = payload["metadata"]
     if payload["total"] != len(payload["rows"]):
         raise ValueError("Information export requires every matching row.")
+    # The page has no submitted-date filter (#1888): a capture without
+    # dates says nothing of a date range, neither its empty days and zone
+    # nor the zone undated filters never used. A ``pk-admin export
+    # information --start/--end`` capture, or an older one with dates,
+    # keeps both.
+    filters = parameters["filters"]
+    dated = bool(filters.get("start") or filters.get("end"))
+    if not dated:
+        filters = {
+            key: value
+            for key, value in filters.items()
+            if key not in {"start", "end", "zone"}
+        }
     metadata = (
         ("Report", "Additional information and follow-up"),
         ("Parish", parish_name),
@@ -82,13 +95,10 @@ def information_document(payload, parameters, *, parish_name, requested_at, time
         ("Captured at", instant(source["observed_at"])),
         ("Requested at", instant(requested_at)),
         ("Display timezone", timezone),
-        ("Campaign date-filter timezone", source["timezone"]),
+        *((("Campaign date-filter timezone", source["timezone"]),) if dated else ()),
         ("Matching items", f"{payload['total']:,}"),
         ("Workflow history", "Included" if parameters["history"] else "Not included"),
-        (
-            "Filters and sort",
-            json.dumps(parameters["filters"], ensure_ascii=False, sort_keys=True),
-        ),
+        ("Filters and sort", json.dumps(filters, ensure_ascii=False, sort_keys=True)),
         (
             "Privacy",
             "Sensitive parish information. Share only with authorized recipients.",

@@ -21,6 +21,7 @@ from ..accounts import (
     campaign_mail_views,
     campaign_views,
     campaign_wizard_views,
+    campaign_work_status,
     clone_views,
     confirmation_views,
     content_delete_views,
@@ -54,6 +55,13 @@ patterns = [
         "campaign/settings/end-date-check/",
         campaign_views.campaign_end_date_check,
         "campaign_end_date_check",
+    ),
+    # The passive campaign work status Campaign settings and Home poll
+    # while campaign work holds their controls (#1619), a fragment.
+    path(
+        "campaign/work-status/",
+        campaign_work_status.campaign_work_status,
+        name="campaign_work_status",
     ),
     # The deployment's first campaign (#142); it names no campaign to wrap.
     path(
@@ -135,6 +143,13 @@ patterns = [
         "campaign/schedules/test-email/",
         schedule_email_test.schedule_email_test,
         "schedule_email_test",
+    ),
+    # The campaign wizard's Add these schedules and continue (#1404 PR 6),
+    # POST only, also before the UUID address.
+    _page(
+        "campaign/schedules/suggestion/",
+        schedule_entry_views.schedule_suggested,
+        "schedule_suggested",
     ),
     # The read-only Campaign calendar (#469), also before the UUID address.
     _page(

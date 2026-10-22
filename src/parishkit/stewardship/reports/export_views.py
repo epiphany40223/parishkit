@@ -21,6 +21,7 @@ from parishkit.stewardship.accounts.admin_caller import AdminCaller
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.limiting import LimiterUnavailable
 from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.accounts.role_refusal import require
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, Outcome
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
@@ -89,11 +90,16 @@ def _principal(request, store, *, read_only=False, ministry_jobs=False):
     principal = authenticated_admin(
         request, store=store, activity=not read_only, read_only=read_only
     )
-    if not allows(principal, Capability.CAMPAIGN_REPORT) and not (
-        ministry_jobs and can_report(principal)
+    # A Ministry leader reaches only the export jobs; everyone else needs
+    # the Staff report capability, and a current role without it gets the
+    # role refusal (#1924).
+    if (
+        ministry_jobs
+        and not allows(principal, Capability.CAMPAIGN_REPORT)
+        and can_report(principal)
     ):
-        raise PermissionError("This export is unavailable.")
-    return principal
+        return principal
+    return require(principal, Capability.CAMPAIGN_REPORT)
 
 
 @require_POST
@@ -102,8 +108,7 @@ def retry_cleanup_command(request, task_id):
     try:
         service = runtime()
         principal = _principal(AdminCaller.from_request(request), service.store)
-        if not allows(principal, Capability.BACKGROUND_WORK):
-            raise PermissionError("Export cleanup requires an Administrator.")
+        require(principal, Capability.BACKGROUND_WORK)
         values = _body(request, {"request_key"})
         result = retry_export_cleanup_task(
             service.store,

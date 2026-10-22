@@ -1,0 +1,27 @@
+{% load i18n stewardship %}{% comment %}
+  Home's panel while there is no campaign yet (#142): what Create the
+  campaign needs, drawn by Home and answered alone by the passive campaign
+  work status (campaign_work_status, view=home; #1619). Create the campaign
+  is shown unavailable, with its reason, while the page would refuse it for a
+  reason Home already knows (#563). While campaign work holds it, the region
+  is pending and live-status-v1.js polls that status, swapping the fresh
+  panel in where it stands, so Create the campaign is offered by itself once
+  the work ends; Home's own view is audited, so Home is never re-read for it.
+  Its data-live-announce sentence is read out by Home's announcer, outside
+  the region. ``first_campaign`` is first_campaign_offer's answer: None only
+  in the status's answer, which then says a campaign has been created when
+  ``created`` (a campaign row exists by then) and otherwise what Home says
+  with no campaign (say, switched to Production mode while held).
+  ``swapped`` marks the status's answer, which replaces a held panel: only
+  there does the ready sentence keep the held one's room, so a Home that
+  was never held has no blank space under it.
+{% endcomment %}<div id="first-campaign" data-live-status="first-campaign" data-live-url="{% url 'admin:campaign_work_status' %}?view=home" data-live-announce="{% if first_campaign == 'ready' %}{% translate 'Create the campaign is available now.' %}{% endif %}"{% if first_campaign == 'held' %} data-live-pending{% endif %}>
+{% if not first_campaign %}{% if created %}<h2>{% translate "Campaign created" %}</h2>
+<p>{% translate "A campaign has been created since this page opened. Its settings are in the Campaign setup menu." %}</p>
+{% else %}<p>{% translate "There is no current campaign. Creating a campaign here is disabled until the single-campaign change (#145)." %}</p>
+{% endif %}{% else %}<h2>{% translate "No campaign yet" %}</h2>
+{% if first_campaign == 'source' %}<p id="create-campaign-reason">{% translate "Setup is complete. Load ParishSoft data before creating the campaign, so its Ministries and funds can be chosen: use Refresh now below." %}</p>
+<p>{% button type="button" disabled=True aria-describedby="create-campaign-reason" %}{% translate "Create the campaign" %}{% endbutton %}</p>
+{% else %}{% translate "Create the campaign becomes available here by itself once the background campaign work now running finishes, usually within minutes." as held_text %}{% translate "Setup is complete. Next, create the campaign: its name, dates and what Families are asked." as ready_text %}{# Held and ready replace each other in place, so each keeps the room of both: an invisible copy of the other sizes the line, and nothing below moves when the hold ends. A ready Home never held never swaps, so it draws no copy. #}<div class="sized-text">{% if first_campaign == 'held' %}<p id="create-campaign-reason">{{ held_text }}</p><p aria-hidden="true">{{ ready_text }}</p>{% else %}<p>{{ ready_text }}</p>{% if swapped %}<p aria-hidden="true">{{ held_text }}</p>{% endif %}{% endif %}</div>
+<p>{% if first_campaign == 'held' %}{% button type="button" disabled=True aria-describedby="create-campaign-reason" %}{% translate "Create the campaign" %}{% endbutton %}{% else %}{% url 'admin:campaign_create' as button_href %}{% button variant="primary" href=button_href %}{% translate "Create the campaign" %}{% endbutton %}{% endif %}</p>{% endif %}{% endif %}
+</div>
