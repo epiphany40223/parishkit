@@ -3361,6 +3361,13 @@ stages, decisions and resubmission rule are the
 [Financial stream](../review-pipeline/spec.md#financial-stream)'s; this
 section is the page.
 
+- **Heading row.** The heading, About this page and a link to
+  [Financial stewardship](#financial-stewardship-detail) share one row, as
+  [Ministry requests'](#ministry-change-summary) heading and its two
+  disclosures do, so the first pledge starts inside a laptop window
+  ([#1950](https://github.com/epiphany40223/parishkit/issues/1950)); About's
+  help opens below that row and never moves the link
+  ([No layout shift](../ui-conventions/spec.md#no-layout-shift)).
 - **Address.** The page's address carries its Stage alone (To review is
   the plain address; [#1820](https://github.com/epiphany40223/parishkit/issues/1820)),
   as [Additional information's](#additional-information) does, so a reload
