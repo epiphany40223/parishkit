@@ -426,7 +426,15 @@ def test_the_migration_check_refuses_the_old_bodies_which_refuse_the_undo(
     ones again."""
     text = FROZEN.read_text(encoding="utf-8")
     check = re.search(r"^DO \$check\$.*?\$check\$;", text, re.M | re.S)[0]
-    with connection.cursor() as cursor:
+    # 0158 (#1889) has since replaced the resolution guard without the
+    # Ignore's reopening note this check looks for, so the check runs on
+    # 0146's own body, rolled back, and 0158's comes back after this file's
+    # reinstall below.
+    guard = "stewardship_proposal_resolution_guard_v1"
+    own = function_text(FROZEN, guard)
+    later = function_text(MIGRATIONS / "0158_ignored_note_optional.sql", guard)
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(own)
         cursor.execute(check)
         for name, function in OLD_BODIES:
             with (
@@ -435,6 +443,7 @@ def test_the_migration_check_refuses_the_old_bodies_which_refuse_the_undo(
             ):
                 cursor.execute(function_text(MIGRATIONS / name, function))
                 cursor.execute(check)
+        transaction.set_rollback(True)
     harness, staff, rows = prepared(response_service)
     decide(harness, staff, [rows["prefix"]], "accept")
     decide(harness, staff, [fresh(rows["prefix"])], "entered_by_hand")
@@ -448,6 +457,7 @@ def test_the_migration_check_refuses_the_old_bodies_which_refuse_the_undo(
         with transaction.atomic(), connection.cursor() as cursor:
             cursor.execute(text)
             cursor.execute(LATER.read_text(encoding="utf-8"))
+            cursor.execute(later)
     assert fresh(marked).execution == "resolved_external"
     undo(harness, staff, marked)
     assert fresh(marked).execution == "pending"

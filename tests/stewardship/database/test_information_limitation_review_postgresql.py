@@ -26,7 +26,6 @@ from parishkit.stewardship.reports.limitations import (
 )
 from parishkit.stewardship.responses.census_review import KeyRebound
 from parishkit.stewardship.responses.information import (
-    ReopenNeedsNote,
     StaleItem,
     UndoNeedsNote,
     decide_information,
@@ -133,37 +132,24 @@ def test_information_decisions_follow_the_pipeline(live_response_service, google
     assert events.count() == 2
 
 
-def test_ignore_needs_a_note_to_reopen(live_response_service, google):
-    """Ignored goes back to review only with a note, in Python and in SQL."""
+def test_ignore_reopens_with_an_optional_note(live_response_service, google):
+    """Ignored goes back to review with no note (#1889), in Python and in SQL
+    (the service's revision passes the guard), keeping the notes it had; a
+    note given becomes the request's Staff notes."""
     harness = live_response_service
     actor = staff_actor()
     item = AdditionalInformationItem.objects.get(
         submission=respond_text(harness, "Just letting you know")
     )
-    (ignored,) = decide(harness, actor, Action.IGNORE, item)
+    (ignored,) = decide(harness, actor, Action.IGNORE, item, note="Only news")
     assert ignored.review_decision == "ignored"
     assert stage_of(item.pk) is Stage.IGNORED
-    with pytest.raises(ValueError):
-        decide(harness, actor, Action.BACK_TO_REVIEW, item)
-    # The guard refuses the same reopening written directly.
-    item.refresh_from_db()
-    with (
-        task_login(ServiceRole.WEB, exact=True, reconnect=True),
-        pytest.raises(DatabaseError, match="Reopening an ignored request"),
-        work_transaction(),
-    ):
-        AdditionalInformationRevision.objects.create(
-            actor_id=actor,
-            item_id=item.pk,
-            expected_version=item.version,
-            request_key=uuid4(),
-            follow_up_needed=False,
-            followed_up=False,
-            notes="",
-            review_decision="none",
-        )
+    (back,) = decide(harness, actor, Action.BACK_TO_REVIEW, item)
+    assert (back.review_decision, back.notes) == ("none", "Only news")
+    assert stage_of(item.pk) is Stage.TO_REVIEW
+    decide(harness, actor, Action.IGNORE, item)
     (back,) = decide(harness, actor, Action.BACK_TO_REVIEW, item, note="Misread it")
-    assert back.review_decision == "none"
+    assert (back.review_decision, back.notes) == ("none", "Misread it")
     assert stage_of(item.pk) is Stage.TO_REVIEW
 
 
@@ -370,8 +356,17 @@ def test_migration_0150_check_refuses_the_previous_guard(live_response_service, 
         "CREATE OR REPLACE FUNCTION public.stewardship_information_revision_guard_v1()"
     )
     previous = old[start : old.index("END $$;", start) + len("END $$;")]
+    own = text[
+        text.index("CREATE OR REPLACE FUNCTION public.stewardship_information_rev") : (
+            text.index("END $$;") + len("END $$;")
+        )
+    ]
     with transaction.atomic(), connection.cursor() as cursor:
-        cursor.execute(check)  # The installed definition passes.
+        # 0158 (#1889) has since replaced the guard without the Ignored
+        # reopening's note this check looks for, so it runs on 0150's own
+        # body, rolled back with the rest.
+        cursor.execute(own)
+        cursor.execute(check)  # 0150's definition passes.
         with pytest.raises(DatabaseError, match="Migration 0150"), transaction.atomic():
             cursor.execute(previous)
             cursor.execute(check)
@@ -380,7 +375,7 @@ def test_migration_0150_check_refuses_the_previous_guard(live_response_service, 
             with work_transaction():
                 undo_row(actor, item, "Will call")  # 0126's guard admits it.
             transaction.set_rollback(True)
-        cursor.execute(check)  # Rolled back to the installed definition.
+        cursor.execute(check)  # Rolled back to 0150's definition.
         transaction.set_rollback(True)
     assert stage_of(item.pk) is Stage.HANDLED
 
@@ -463,14 +458,11 @@ def test_new_revisions_state_a_decision_and_old_ones_read_by_flags(
             notes="Still nothing",
         )
     assert kept.review_decision == "ignored" and stage_of(item.pk) is Stage.IGNORED
-    # Out of Ignored only with new notes: the notes it already has are not a
-    # reason, in Python and in SQL.
+    # Out of Ignored with the notes it already has (#1889): no new note is
+    # needed, in Python and in SQL (the service's revision passes the guard).
     item.refresh_from_db()
-    with (
-        task_login(ServiceRole.WEB, exact=True, reconnect=True),
-        pytest.raises(ReopenNeedsNote),
-    ):
-        update_information(
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        reopened = update_information(
             harness.service.store,
             actor,
             item.pk,
@@ -481,21 +473,8 @@ def test_new_revisions_state_a_decision_and_old_ones_read_by_flags(
             confirm_clear=False,
             notes="Still nothing",
         )
-    with (
-        task_login(ServiceRole.WEB, exact=True, reconnect=True),
-        pytest.raises(DatabaseError, match="Reopening an ignored request"),
-        work_transaction(),
-    ):
-        AdditionalInformationRevision.objects.create(
-            actor_id=actor,
-            item_id=item.pk,
-            expected_version=item.version,
-            request_key=uuid4(),
-            follow_up_needed=True,
-            followed_up=False,
-            notes="Still nothing",
-            review_decision="accepted",
-        )
+    assert reopened.review_decision == "accepted"
+    assert stage_of(item.pk) is Stage.TO_HANDLE
     item.refresh_from_db()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         needed = update_information(
@@ -663,8 +642,10 @@ def test_limitation_decisions_follow_the_resubmission_rule(response_service, goo
     (ignored,) = decide_answer(harness, actor, Action.IGNORE, whole, 0)
     with pytest.raises(StaleItem):
         decide_answer(harness, actor, Action.IGNORE, member, 0)
-    with pytest.raises(ValueError):
-        decide_answer(harness, actor, Action.BACK_TO_REVIEW, whole, 1)
+    # Reopening it takes an optional note (#1889); it is ignored again.
+    (back,) = decide_answer(harness, actor, Action.BACK_TO_REVIEW, whole, 1)
+    assert limitation_stage(back).stage is Stage.TO_REVIEW
+    decide_answer(harness, actor, Action.IGNORE, whole, 2)
     # Answering again unchanged keeps both decisions in force.
     resubmit(harness, cannot_serve=True)
     rows = limitation_rows(harness)
@@ -879,8 +860,17 @@ def test_migration_0151_check_refuses_the_previous_guard(response_service, googl
         "CREATE OR REPLACE FUNCTION"
         + old[start_at + len("CREATE FUNCTION") : old.index("END $$;", start_at) + 7]
     )
+    own = text[
+        text.index(
+            "CREATE OR REPLACE FUNCTION public.stewardship_limitation_review_guard_v1()"
+        ) : text.index("END $$;") + len("END $$;")
+    ]
     with transaction.atomic(), connection.cursor() as cursor:
-        cursor.execute(check)  # The installed definition passes.
+        # 0158 (#1889) has since replaced the guard without the Ignored
+        # answer's note this check looks for, so it runs on 0151's own body,
+        # rolled back with the rest.
+        cursor.execute(own)
+        cursor.execute(check)  # 0151's definition passes.
         with pytest.raises(DatabaseError, match="Migration 0151"), transaction.atomic():
             cursor.execute(previous)
             cursor.execute(check)
@@ -927,8 +917,9 @@ def submit_everyone(harness):
 def test_limitation_bulk_proposed_members_and_the_sql_checks(response_service, google):
     """Bulk decisions cover every kind of answer, a proposed Member's too,
     all or none; replays and rebound keys behave as on the page; a Ministry
-    leader may not decide; and SQL alone refuses a reopening with no note, a
-    row without its audit event, and a change of history."""
+    leader may not decide; SQL admits a reopening with no note (#1889); and
+    SQL alone refuses a row without its audit event, and a change of
+    history."""
     from .test_ministry_reports_postgresql import actor as policy_actor
 
     harness = response_service
@@ -992,14 +983,15 @@ def test_limitation_bulk_proposed_members_and_the_sql_checks(response_service, g
             note="",
             request_key=uuid4(),
         )
-    # Back to review, then Ignore, on the Family's answer; reopening it with
-    # no note is refused by the guard alone.
+    # Back to review, then Ignore, on the Family's answer; the guard admits
+    # reopening it with no note (#1889), so only the missing audit event
+    # refuses the row written directly.
     family = FamilyCampaign.objects.get(pk=response.family_id)
     decide_answer(harness, actor, Action.BACK_TO_REVIEW, items[2], 1)
     decide_answer(harness, actor, Action.IGNORE, items[2], 2)
     with (
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
-        pytest.raises(DatabaseError, match="Limitation review lacks"),
+        pytest.raises(DatabaseError, match="requires its audit"),
         work_transaction(),
     ):
         LimitationReview.objects.create(

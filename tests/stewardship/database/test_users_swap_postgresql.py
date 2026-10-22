@@ -488,6 +488,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0157 (#1867) creates the two person identity reads (in
 # runtime_grants.CLOSURE_FUNCTIONS), which go, and replaces nothing, so its
 # file installs whole again.
+# 0158 (#1889) creates nothing: it replaces six guards in place on 0130's,
+# 0146's, 0148's, 0149's, 0150's and 0151's bodies, which the reruns of
+# those files (``CLOSURE_REPLACED``) bring back older, so
+# ``CLOSURE_REPLACED_LAST`` runs its file again after them.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -1176,6 +1180,21 @@ CLOSURE_REPLACED_LAST = {
     "public.stewardship_setup_secret_guard_v1()": (
         ("stewardship_accounts", "0026_setup_slack_off"),
         "IF attempt.state='collecting' THEN",
+    ),
+    # 0158 (#1889) drops the Ignored-reopen note from six guards whose files
+    # (0130, 0146, 0148 to 0151) ``CLOSURE_REPLACED`` reruns above; it
+    # creates nothing, so its file runs again whole. Each new body names
+    # the issue.
+    **dict.fromkeys(
+        (
+            "public.stewardship_proposal_review_guard_v1()",
+            "public.stewardship_proposal_resolution_guard_v1()",
+            "public.stewardship_ministry_revision_guard_v1()",
+            "public.stewardship_pledge_review_guard_v1()",
+            "public.stewardship_information_revision_guard_v1()",
+            "public.stewardship_limitation_review_guard_v1()",
+        ),
+        (("stewardship_responses", "0028_ignored_note_optional"), "(#1889)"),
     ),
 }
 

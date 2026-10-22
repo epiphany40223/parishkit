@@ -34,7 +34,8 @@ before the step, and nothing is written to or read from ParishSoft. A
 change a later response of the Family replaced is history and takes no
 undo. SQL checks the same
 (``schema/migrations/0146_census_terminal_undo.sql``).
-Reopening an Ignore stays the Administrator's (``capability``).
+Reopening an Ignore stays the Administrator's (``capability``), with an
+optional note (#1889, ``schema/migrations/0158_ignored_note_optional.sql``).
 
 Marking a New Member entered may name the **ParishSoft Member ID** of the
 Member Staff added (#1749, ``member_ids``), which the refresh confirms the
@@ -315,14 +316,14 @@ def undo_decision(proposal):
 
 
 def _valid(action, note):
-    """Whether ``action`` and ``note`` make a resolution; a reopen says why."""
+    """Whether ``action`` and ``note`` make a resolution.
+
+    The note is optional here: only undoing a terminal step needs one, which
+    ``record_resolution`` checks on the locked change; undoing an Ignore
+    takes an optional note (#1889), as SQL does.
+    """
     return (
-        action in RESOLUTION_ACTIONS
-        and isinstance(note, str)
-        and len(note) <= MAX_NOTE
-        # Undoing an Ignore or a terminal step says why; SQL requires the
-        # same.
-        and not (action == "reopened" and not note.strip())
+        action in RESOLUTION_ACTIONS and isinstance(note, str) and len(note) <= MAX_NOTE
     )
 
 

@@ -217,7 +217,8 @@ INCORRECT_BODIES = {
         "the next refresh checks it again."
     ),
 }
-REOPEN_BODY = "The ignored item goes back to To review. Say why it is reopened."
+# What Back to review on an Ignored item says: its note is optional (#1889).
+REOPEN_BODY = "The ignored item goes back to To review, to be decided again."
 # What Back to review on a terminal stage says (#1840): which step it undoes
 # and where the item goes. An undo back to Ready to update (Updated in
 # ParishSoft, or a census change Confirmed or Already in ParishSoft that the
@@ -236,6 +237,9 @@ ADD_BODY = (
     "Add a change the Family did not ask for. It starts Accepted, shown as "
     "Added by the parish."
 )
+# The choice of an action whose note is required (a terminal step's undo,
+# #1840): the dialog's note is required while it holds (ui-v1.js
+# data-required-when).
 REOPEN = "reopen"
 # The choice of an action whose decision records no note (a Ministry roster
 # tick has none): its dialog hides the note (ui-v1.js data-note-field), and
@@ -379,10 +383,10 @@ def bulk_buttons(stream, roles, *, items="items", silent=frozenset()):
                 "done_one": "{name} " + words.done,
                 "done_many": f"{{count}} {items} {words.done}",
                 "body": BODIES.get(action, BULK_BODY),
-                # Reopening an ignored item, or undoing a terminal step,
-                # needs a reason (spec, "Reviewed stage", "Undoing a
-                # terminal stage"): the note is required while a ticked
-                # row needs one (its box's data-confirm-choice).
+                # Undoing a terminal step needs a reason (spec, "Undoing a
+                # terminal stage"); reopening an Ignored item does not
+                # (#1889): the note is required while a ticked row needs
+                # one (its box's data-confirm-choice).
                 "choice": NO_NOTE
                 if action in silent
                 else REOPEN
@@ -512,8 +516,9 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
 
     Each offered icon opens the page's one decision dialog (Edit: the
     row's own value editor) with its own title, words and fields, so one
-    dialog serves every row. Back to review on an Ignored item carries the
-    ``reopen`` choice, which makes the dialog's note required, and a
+    dialog serves every row. Back to review on a terminal stage carries the
+    ``reopen`` choice, which makes the dialog's note required (on an Ignored
+    item it stays optional, #1889), and a
     ``silent`` action the ``no_note`` choice, which hides it (ui-v1.js
     data-confirm-choice). A row whose Entered by hand asks for fields of its
     own (``entered_template``: a census New Member's ParishSoft Member ID,
@@ -541,7 +546,8 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
         )
     )
     key = uuid4()
-    # Reopening an Ignored item, and undoing a terminal step, need a note.
+    # Undoing a terminal step needs a note; reopening an Ignored item does
+    # not (#1889).
     reopen = undo_needs_note(placement.stage)
     own_entered = bool(row.get("entered_template"))
     for icon in icons:
@@ -595,8 +601,8 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
         if not icon["selected"] and not icon.get("remark")
     ]
     row["kinds"] = " ".join(kind for kind in kinds if Action(kind) in BULK)
-    # A bulk Back to review asks for a note while a ticked row is Ignored
-    # or at a terminal stage.
+    # A bulk Back to review asks for a note while a ticked row is at a
+    # terminal stage.
     row["choice"] = REOPEN if reopen else ""
     # Each identity cell: its value, its column and the item page it opens
     # (its column's ``link``), if any.

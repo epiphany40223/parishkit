@@ -5219,10 +5219,11 @@
     // marked data-confirm-choice, which a data-required-when rule on the
     // dialog's note reads, so one dialog asks for a note only when the
     // action needs one. A row's icon gives its data-confirm-choice
-    // ("reopen" when it sends an Ignored item back to review); a bulk button's
-    // holds only while some ticked row's box carries the same choice, so
-    // sending items back to review in bulk asks for a reason only when it reopens an
-    // Ignored item (review pipeline spec, "Reviewed stage"). The "no_note"
+    // ("reopen" when it undoes a terminal step; an Ignored item's note is
+    // optional, #1889); a bulk button's holds only while some ticked row's
+    // box carries the same choice, so sending items back to review in bulk
+    // asks for a reason only when it undoes a terminal step (review pipeline
+    // spec, "Undoing a terminal stage"). The "no_note"
     // choice is an action that records no note (a Ministry roster tick, R39):
     // it holds for every ticked row, and it hides the note (data-note-field),
     // which data-confirm-reset has just emptied, so an empty one is posted.

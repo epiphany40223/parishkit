@@ -261,15 +261,19 @@ def test_bulk_is_all_or_none_and_a_replay_records_nothing_new(response_service):
     assert PledgeReview.objects.count() == 1
 
 
-def test_reopening_an_ignored_pledge_needs_a_note(response_service):
-    """Back to review on Ignored is refused without a reason."""
+def test_reopening_an_ignored_pledge_takes_an_optional_note(response_service):
+    """Back to review on Ignored records with no reason (#1889), or with one."""
     harness, submission = pledged(response_service)
     actor = admin()
     decide(harness, actor, "ignore", [submission])
-    with pytest.raises(ValueError):
-        decide(harness, actor, "back_to_review", [submission])
+    decide(harness, actor, "back_to_review", [submission])
+    assert state(harness, submission).stage == "to_review"
+    decide(harness, actor, "ignore", [submission])
     decide(harness, actor, "back_to_review", [submission], note="Not a duplicate")
     assert state(harness, submission).stage == "to_review"
+    assert PledgeReview.objects.order_by("-sequence").first().note == (
+        "Not a duplicate"
+    )
 
 
 def forge(submission, actor, **values):
@@ -304,7 +308,7 @@ def forge(submission, actor, **values):
 GUARD = "Pledge review lacks current authority, version or state"
 # Each forged row, and the refusal that names why: the guard's, a check
 # constraint's, or (for a row otherwise valid) the deferred audit check at
-# commit. Every other case is refused at the INSERT itself.
+# commit (``AT_COMMIT``). Every other case is refused at the INSERT itself.
 FORGED = {
     "no_order": ({}, "Pledge review requires ordered admission"),
     "sequence": ({"sequence": 2}, GUARD),
@@ -340,13 +344,17 @@ FORGED = {
         },
         GUARD,
     ),
+    # The guard admits an ignored pledge reopened with no note (#1889).
     "reopen_without_note": (
         {"sequence": 2, "action": "back_to_review", "decision": None},
-        GUARD,
+        "Pledge review requires its audit",
     ),
     "long_note": ({"note": "x" * 2001}, GUARD),
     "audit": ({}, "Pledge review requires its audit"),
 }
+
+
+AT_COMMIT = frozenset({"audit", "reopen_without_note"})
 
 
 PRIOR = {
@@ -364,9 +372,10 @@ def test_the_guard_refuses_rows_the_service_never_writes(
     """Outside the writers' order, at another version, from a Ministry leader,
     at a stage that does not offer it, with a ParishSoft pledge, an Edit
     above zero with no frequency, an action with no decision, Back to review
-    carrying values, a mark changing the decision, an ignored pledge reopened
-    without a note, a note too long, or without its audit event, the
-    database refuses the row, each for its own reason."""
+    carrying values, a mark changing the decision, a note too long, or
+    without its audit event (an ignored pledge reopened without a note
+    included, which the guard admits, #1889), the database refuses the row,
+    each for its own reason."""
     harness, submission = pledged(response_service)
     actor = admin()
     # The decision each case starts from, so the forged row's action is
@@ -377,7 +386,7 @@ def test_the_guard_refuses_rows_the_service_never_writes(
     if case == "leader":
         _browser, actor, _rule, _ = leader(harness, google)
     values, reason = FORGED[case]
-    at_insert = case != "audit"
+    at_insert = case not in AT_COMMIT
     with (
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
         pytest.raises(DatabaseError, match=reason),

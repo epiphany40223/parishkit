@@ -144,19 +144,18 @@ def test_a_malformed_or_unoffered_decision_is_a_400(response_service, google, br
     assert not ProposalReview.objects.exists()
 
 
-def test_reopening_an_ignored_change_needs_a_note_over_http(response_service, google):
-    """Back to review on an ignored change is a 400 without a note."""
+def test_reopening_an_ignored_change_takes_an_optional_note_over_http(
+    response_service, google
+):
+    """Back to review on an ignored change records with no note (#1889)."""
     harness, _, _, rows = prepared(response_service)
     browser = staff_browser(google)
     response, _ = search(browser, ROUTE, decide(rows["prefix"], "ignore"))
     assert response.status_code == 200
     prefix = fresh(rows["prefix"])
-    response, _ = search(browser, ROUTE, decide(prefix, "back_to_review"))
-    assert response.status_code == 400
-    response, body = search(
-        browser, ROUTE, decide(prefix, "back_to_review", note="Asked again")
-    )
+    response, body = search(browser, ROUTE, decide(prefix, "back_to_review"))
     assert response.status_code == 200 and b"sent back to review." in body
+    assert fresh(rows["prefix"]).decision == "unreviewed"
 
 
 def test_only_what_the_stage_offers_is_recorded(response_service, google):

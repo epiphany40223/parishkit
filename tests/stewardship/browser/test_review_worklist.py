@@ -193,10 +193,10 @@ def test_bulk_buttons_wait_for_rows_that_all_offer_them(page, component_origin):
     assert page.evaluate(MARKED) == "kept"
 
 
-def test_reopening_an_ignored_item_needs_a_note(page, component_origin):
-    """Back to review on an Ignored item waits for a reason; on an accepted
-    one it does not. A bulk Back to review asks only while an Ignored row
-    is ticked."""
+def test_reopening_an_ignored_item_takes_an_optional_note(page, component_origin):
+    """Back to review on an Ignored item, as on an accepted one, records with
+    no note (#1889). A bulk Back to review asks for one only while a ticked
+    row is at a terminal stage, not while only an Ignored row is."""
     page.goto(component_origin + PATH)
     page.evaluate(MARK)
     sent = posts_to(page, component_origin, REOPENED)
@@ -211,28 +211,30 @@ def test_reopening_an_ignored_item_needs_a_note(page, component_origin):
     row(page, 4).get_by_role("button", name=f"Send {name(4)} back to review").click()
     has_text(
         dialog.locator("[data-confirm-body]"),
-        "The ignored item goes back to To review. Say why it is reopened.",
+        "The ignored item goes back to To review, to be decided again.",
     )
-    assert record.is_disabled()
-    has_text(dialog.locator("[data-complete-hint]"), "Say why this item goes back.")
-    dialog.get_by_label("Note (required)").fill("Asked")
+    has_text(dialog.locator("label[for$=-note]"), "Note (optional)")
     available(record)
     record.click()
     has_text(page.locator("#worklist-notice"), REOPENED_NOTICE)
-    assert "decide=back_to_review" in sent[-1] and "note=Asked" in sent[-1]
+    assert "decide=back_to_review" in sent[-1] and "note=&" in sent[-1]
     assert page.evaluate(MARKED) == "kept"
-    # The bulk dialog: only an Ignored row ticked makes the note required.
+    # The bulk dialog: an accepted and an Ignored row ticked take an
+    # optional note; a terminal row ticked as well makes it required.
     page.goto(component_origin + PATH)
     back = page.locator(".bulk-bar").get_by_role("button", name="Back to review")
     bulk = page.locator("#worklist-bulk-dialog")
     page.get_by_label(f"Select {name(2)}").check()
-    back.click()
-    available(bulk.get_by_role("button", name="Record"))
-    bulk.get_by_role("button", name="Cancel").click()
-    hidden(bulk)
     page.get_by_label(f"Select {name(4)}").check()
     back.click()
+    available(bulk.get_by_role("button", name="Record"))
+    has_text(bulk.locator("label[for$=-note]"), "Note (optional)")
+    bulk.get_by_role("button", name="Cancel").click()
+    hidden(bulk)
+    page.get_by_label(f"Select {name(6)}").check()
+    back.click()
     assert bulk.get_by_role("button", name="Record").is_disabled()
+    has_text(bulk.locator("label[for$=-note]"), "Note (required)")
 
 
 def test_edit_and_add_open_the_value_editor(page, component_origin):

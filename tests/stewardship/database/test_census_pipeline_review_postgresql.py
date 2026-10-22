@@ -2,9 +2,10 @@
 
 Staff and Administrators review every census change, By hand ones too:
 Accept, Edit (Accept with a value, a Family address included), Ignore, Back
-to review (a note to reopen an ignored change) and Entered by hand, one by
-one or in bulk, all or none (``census_review.decide_census_changes``). The
-frozen file 0128 widens the review guard for them; its own rules are tested
+to review (an optional note to reopen an ignored change, #1889) and Entered
+by hand, one by one or in bulk, all or none
+(``census_review.decide_census_changes``). The frozen file 0128 widens the
+review guard for them; its own rules are tested
 here with the service bypassed.
 """
 
@@ -234,12 +235,16 @@ def test_a_repeated_edit_returns_the_first_after_the_change_moved_on(
     assert state(rows["first_name"]) == ("approved", "queued", True, "Two")
 
 
-def test_back_to_review_reopens_an_ignored_change_only_with_a_note(response_service):
-    """Sending an ignored change back to review says why."""
+def test_back_to_review_reopens_an_ignored_change_with_an_optional_note(
+    response_service,
+):
+    """Sending an ignored change back to review takes an optional note
+    (#1889): a blank one, or one saying why."""
     harness, _, staff, rows = prepared(response_service)
     decide(harness, staff, [rows["prefix"]], "ignore")
-    with pytest.raises(ValueError):
-        decide(harness, staff, [fresh(rows["prefix"])], "back_to_review", note=" ")
+    decide(harness, staff, [fresh(rows["prefix"])], "back_to_review", note=" ")
+    assert state(rows["prefix"])[0] == "unreviewed"
+    decide(harness, staff, [fresh(rows["prefix"])], "ignore")
     decide(harness, staff, [fresh(rows["prefix"])], "back_to_review", note="Asked")
     assert state(rows["prefix"])[0] == "unreviewed"
 
@@ -324,8 +329,8 @@ def test_sql_refuses_a_forged_pipeline_edit(
 
 def test_sql_admits_staff_on_a_by_hand_change_only_with_its_audit(response_service):
     """A well-formed Staff Accept with a value on a By hand change passes the
-    guard; only the missing audit event then refuses it, and a reopen without
-    a note is refused by the guard itself."""
+    guard; only the missing audit event then refuses it, as it does a reopen
+    without a note, which the guard admits too (#1889)."""
     harness, _, staff, rows = prepared(response_service)
     with pytest.raises((IntegrityError, DatabaseError), match="result and audit"):
         forge(
@@ -339,7 +344,7 @@ def test_sql_admits_staff_on_a_by_hand_change_only_with_its_audit(response_servi
         "UPDATE stewardship_proposed_change SET decision='ignored' WHERE id=%s",
         [rows["prefix"].pk],
     )
-    with pytest.raises((IntegrityError, DatabaseError), match="current authority"):
+    with pytest.raises((IntegrityError, DatabaseError), match="result and audit"):
         forge(fresh(rows["prefix"]), staff, decision="unreviewed", note="  ")
 
 
@@ -374,8 +379,14 @@ def test_do_block_refuses_the_earlier_bodies_and_installs_them():
     assert earlier_effects != effects and "latest.execution" not in earlier_effects
     looser_effects = PRIOR_ANSWER.sub("", effects)
     assert "given." not in looser_effects and "census_prior" not in looser_effects
+    # 0158 (#1889) has since replaced the guard without the Ignored-reopen
+    # note this check looks for, so each check runs on this file's own
+    # guard body, rolled back.
+    own_guard = _replaced(text, "stewardship_proposal_review_guard_v1")
     with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(own_guard)
         cursor.execute(check)
+        transaction.set_rollback(True)
     for earlier, message in (
         (earlier_guard, "lacks the review pipeline rules"),
         (earlier_effects, "lacks the resubmission rule"),
@@ -386,6 +397,7 @@ def test_do_block_refuses_the_earlier_bodies_and_installs_them():
             transaction.atomic(),
             connection.cursor() as cursor,
         ):
+            cursor.execute(own_guard)
             cursor.execute(earlier)
             cursor.execute(check)
 

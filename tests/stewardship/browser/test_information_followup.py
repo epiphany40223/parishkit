@@ -6,7 +6,8 @@ after it. A mark outside every region shows the page never reloaded. The
 shared worklist's general behaviour is tested on its own fixture page
 (``test_review_worklist``); these tests check what Additional information
 adds: its columns and filters, Accept to To handle and then Handled, the
-Ignored request's reopening note, Handled's undo with its note (#1840), the
+Ignored request's optional reopening note (#1889), Handled's undo with its
+note (#1840), the
 export pane below the table, and a request's own page.
 """
 
@@ -185,15 +186,16 @@ def test_back_to_review_undoes_handled_with_a_note(page, component_origin):
     assert page.evaluate(MARKED) == "kept"
 
 
-def test_reopening_an_ignored_request_needs_a_note(page, component_origin):
-    """Back to review on an Ignored request waits for its note, then posts it."""
+def test_reopening_an_ignored_request_takes_an_optional_note(page, component_origin):
+    """Back to review on an Ignored request may record at once (#1889); a
+    note written is posted."""
     page.goto(component_origin + IGNORED)
     sent = posts(page, component_origin, REOPENED)
     icon(page, 1, "Send", " back to review").click()
     dialog = page.locator("#information-decide-dialog")
     record = dialog.get_by_role("button", name="Record")
-    assert record.get_attribute("aria-disabled") == "true" or record.is_disabled()
-    dialog.get_by_label("Note (required)").fill("Misread")
+    available(record)
+    dialog.get_by_label("Note (optional)").fill("Misread")
     available(record)
     record.click()
     has_text(page.locator("#information-notice"), REOPENED_NOTICE)

@@ -1412,9 +1412,10 @@ Staff and Administrators decide each request as the pipeline's
 allow: on a To review request, **Accept** (the parish will follow it up: To
 handle) or **Ignore** (nothing to follow up); on a To handle request,
 **Handled** once the follow-up is done, or **Back to review**; on an
-Ignored request, Back to review, which needs a note saying why; on a
-Handled request, Back to review, which needs a note too and returns it to
-To handle, clearing its completion (who and when) and keeping the history
+Ignored request, Back to review, with an optional note
+([#1889](https://github.com/epiphany40223/parishkit/issues/1889)); on a
+Handled request, Back to review, which needs a note saying why and returns
+it to To handle, clearing its completion (who and when) and keeping the history
 ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)).
 Each decision takes an optional note, which becomes the request's
 Staff notes (the export's and the search's); a decision with no note keeps
@@ -2636,8 +2637,9 @@ or the bulk bar, each decision with an optional note, acting
 - **Ignore** (an eye struck through): decision *ignored*, leaving ParishSoft
   as it is.
 - **Back to review** (an arrow turning back): decision *unreviewed*, on an
-  accepted change not yet in its update or entered, or on an ignored one.
-  Reopening an ignored change says why: the note is required. Back to review
+  accepted change not yet in its update or entered, or on an ignored one,
+  with an optional note either way
+  ([#1889](https://github.com/epiphany40223/parishkit/issues/1889)). Back to review
   on a change accepted over a Conflict puts it back to *Conflict*, and the
   accepted base no longer counts, so no later Accept can publish over
   ParishSoft's value without deciding the Conflict again. A reviewer's
@@ -2685,7 +2687,8 @@ bar ([bulk actions](../review-pipeline/spec.md#bulk-actions)). Every row
 with a bulk-eligible action has a box, By hand rows included, and a button
 is available only while every ticked row offers it. The dialog names the
 exact count ("Accept 3 changes?") and takes one optional note, recorded on
-each change (required when a ticked ignored change is sent back to review).
+each change (required only while a ticked change is at a terminal stage,
+[undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)).
 The selection covers the rows on the page shown, at most 100. A page
 showing more rows offers no boxes and says to show fewer. Each change is
 recorded exactly as its own icon would record it (its own review or
@@ -2719,8 +2722,9 @@ Forward migration 0128 (provisional number,
 guard for the pipeline: a current Staff member or Administrator; any census
 change the worklist lists, By hand ones included; a decision and an edit
 together when the decision is Accept (Edit is Accept with a value), also
-with an accepted base on a Conflict; and a required note to send an ignored
-change back to review. An edit's value must have its field's shape (a phone
+with an accepted base on a Conflict; and, until forward migration 0158
+(provisional number, [#1889](https://github.com/epiphany40223/parishkit/issues/1889))
+dropped it, a required note to send an ignored change back to review. An edit's value must have its field's shape (a phone
 record for a phone, an address of its six parts with a street line for an
 address, text otherwise, at most 1,024 bytes), must not be blank and must
 differ from the Family's answer, as the census compares values; moved,
@@ -3356,8 +3360,9 @@ section is the page.
   decision posted from a page drawn before any later refresh check of that
   pledge, such as a Conflict found or ParishSoft's amount moving under one,
   is refused as someone else's change and the page is redrawn); an Ignored
-  row Back to review, with a required
-  note; a To enter by hand row Entered by hand and Back to review; an Entered
+  row Back to review, with an optional note
+  ([#1889](https://github.com/epiphany40223/parishkit/issues/1889)); a To
+  enter by hand row Entered by hand and Back to review; an Entered
   by hand, Entered incorrectly or Confirmed row Back to review, with a
   required note, which returns it to the stage before its mark (To enter by
   hand, or To review for a pledge ParishSoft already held;
@@ -3469,8 +3474,8 @@ choice with its count), then a name or Family DUID search and a Show choice
 (`show`) of everything, cannot participate or cannot attend; any other value
 is refused. No summary sits above the table: the counts are the Stage
 choices'. Staff and Administrators Accept (To handle: the office will act on
-it), Ignore, mark Handled, and send a decision Back to review (a note is
-needed to reopen an Ignored answer), one row at a time or in bulk, all or
+it), Ignore, mark Handled, and send a decision Back to review (with an
+optional note, #1889), one row at a time or in bulk, all or
 none, as the pipeline's
 [role-specific actions](../review-pipeline/spec.md#role-specific-actions)
 allow. Back to review of a Handled answer needs a note too and returns it

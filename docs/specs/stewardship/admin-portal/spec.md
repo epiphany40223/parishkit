@@ -7532,7 +7532,8 @@ shared confirmation dialog and its optional note):
   only, as "Accepted (edited) into Adult Choir".
 - **Back to review** returns an accepted or ignored request to To review
   (In progress), clearing an edited Ministry, until Staff tick it Entered in
-  ParishSoft; reopening an ignored request needs a note saying why. On a
+  ParishSoft; reopening an ignored request takes an optional note
+  ([#1889](https://github.com/epiphany40223/parishkit/issues/1889)). On a
   request the parish added it withdraws it instead: the request leaves every
   list and stays in its history.
 - **Entered by hand** (Staff and Administrators only, one row or in bulk,
@@ -7608,7 +7609,7 @@ Every decision is checked on the server and in the database, never only by
 hiding an icon: the actor's current authority for the request's current
 Ministry (the edited one once edited) and, for an Edit, for the Ministry
 chosen; the request's version; the stage's own rules (Back to review never
-on a ticked or refresh-resolved request; a note to reopen an ignored one);
+on a ticked or refresh-resolved request; a note to undo a terminal step);
 and the campaign's work gate.
 
 Ministry follow-up has no assignment (Administrator decision, 2026-10-04,
