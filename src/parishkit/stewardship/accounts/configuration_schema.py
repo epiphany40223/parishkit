@@ -23,7 +23,7 @@ from parishkit.stewardship.schema_primitives import (
 from parishkit.stewardship.sender_name import clean_sender_name
 from parishkit.stewardship.web import dates
 
-from . import series_schema, source_cadence_schema, users_schema
+from . import reports_schema, series_schema, source_cadence_schema, users_schema
 from .bootstrap_schema import (
     BOOTSTRAP_SCHEMA,
     USERS_BOOTSTRAP_SCHEMA,
@@ -253,6 +253,7 @@ VALIDATORS = MappingProxyType(
         source_cadence_schema.SCHEMA: source_cadence_schema.validate_sections,
         users_schema.SCHEMA: users_schema.validate_sections,
         series_schema.SCHEMA: series_schema.validate_sections,
+        reports_schema.SCHEMA: reports_schema.validate_sections,
     }
 )
 
@@ -276,6 +277,7 @@ def schema_for(document):
     A document of login rules alone is a bootstrap, in the users form (#993)
     when it holds users. A users-form document with remembered reminder
     series (#469) keeps its schema while the section is present, even empty.
+    One holding a report email (#1786) is ``campaign-series-v12``.
     """
     if set(document["sections"]) == {"login_rules"}:
         return (
@@ -284,6 +286,8 @@ def schema_for(document):
             else BOOTSTRAP_SCHEMA
         )
     if users_schema.uses_users(document):
+        if reports_schema.uses_reports(document):
+            return reports_schema.SCHEMA
         return (
             series_schema.SCHEMA
             if series_schema.SECTION in document["sections"]

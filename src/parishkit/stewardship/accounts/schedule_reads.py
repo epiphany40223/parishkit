@@ -78,11 +78,20 @@ def live_end_held(state, campaign):
 
 
 def campaign_schedules(configuration, campaign_id):
-    """The campaign's schedule records from the exact applied YAML document."""
-    return [
-        row
-        for row in configuration.active_configuration.canonical_document[
-            "sections"
-        ].get("schedules", [])
-        if row["values"]["campaign_id"] == str(campaign_id)
-    ]
+    """The campaign's schedule records from the exact applied YAML document.
+
+    A converted Daily or Weekly report (#1786) is read as the digest it was
+    (``report_rows.view_rows``), which these editors change until the Report
+    emails page's editor ships; its own values ride along under "report".
+    """
+    from .report_rows import view_rows
+
+    return view_rows(
+        [
+            row
+            for row in configuration.active_configuration.canonical_document[
+                "sections"
+            ].get("schedules", [])
+            if row["values"]["campaign_id"] == str(campaign_id)
+        ]
+    )

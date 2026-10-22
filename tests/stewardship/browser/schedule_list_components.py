@@ -110,6 +110,8 @@ from django.urls import reverse
 from parishkit.stewardship.accounts import schedule_email
 from parishkit.stewardship.accounts.campaign_mail import NOT_OPEN as CLOSED
 from parishkit.stewardship.accounts.digest_skips import send_of
+from parishkit.stewardship.accounts.report_rows import view_rows
+from parishkit.stewardship.accounts.reports_conversion import converted_values
 from parishkit.stewardship.accounts.schedule_calendar_views import (
     WEEK,
     calendar_sends,
@@ -254,8 +256,32 @@ POSTS_STALE = (
 )
 
 
+def converted(owner, kind, *, time, weekday=None):
+    """A report shaped as the converted Daily or Weekly, as the editors read it.
+
+    The conversion table's values (``reports_conversion.converted_values``)
+    drawn as their digest row (``report_rows.view_rows``), as Dates and mail
+    schedules shows a converted report (#1786): no email of its own, its
+    report values beside the view under ``"report"``.
+    """
+    values = converted_values(
+        {
+            "campaign_id": owner["id"],
+            "kind": kind,
+            "time": time,
+            "weekday": weekday,
+            "subject": "",
+        },
+        None,
+    )
+    return view_rows([{"id": str(uuid4()), "values": values}])[0]
+
+
 def _data():
-    """The campaign, its emails and its saved schedules, in sending order."""
+    """The campaign, its emails and its saved schedules, in sending order.
+
+    The weekly digest is the converted Weekly report (Mondays, 9:00 AM).
+    """
     owner = campaign()
     emails = [
         content(owner["id"], kind="email", slot=kind, subject=f"{kind} mail")
@@ -290,7 +316,7 @@ def _data():
 
     rows = sorted(
         [
-            saved("weekly_digest", date=None, weekday=0),
+            converted(owner, "weekly_digest", time="09:00:00", weekday=0),
             saved("reminder", date="2054-10-20"),
             saved("initial"),
             saved("reminder", date="2054-10-10"),
@@ -338,15 +364,7 @@ def _calendar(values, owner, emails, rows, address=CALENDAR):
     """
     names = email_names([row for row in emails if row["values"]["kind"] == "email"])
     summary = {rows[0]["id"]: {"delivered": 1031, "failed": 2}}
-    email = next(row for row in emails if row["values"]["slot"] == "daily_digest")
-    daily = schedule(
-        owner["id"],
-        kind="daily_digest",
-        date=None,
-        time="07:00:00",
-        template_version=email["id"],
-        subject=email["values"]["subject"],
-    )
+    daily = converted(owner, "daily_digest", time="07:00:00")
     rows = sorted([*rows, daily], key=schedule_order)
     sends = calendar_sends(rows, owner["values"], summary, NOW, names)
     parameters = QueryDict(address.partition("?")[2]).dict()
@@ -433,6 +451,8 @@ def _entry(
             "series": part_of,
             "new": schedule_row is None,
             "schedule": schedule_row,
+            # A converted report sends no email of its own (#1786).
+            "report": schedule_row is not None and "report" in schedule_row,
             "base_digest": "a" * 64,
             "post_url": post_url,
             "list_url": list_url,
@@ -987,7 +1007,7 @@ def components(context, admin):
         owner,
         [
             {
-                "label": "Weekly Admin digest",
+                "label": "Weekly report",
                 "operation": "update",
                 "before": _side(digest["values"], owner["values"]),
                 "after": _side(

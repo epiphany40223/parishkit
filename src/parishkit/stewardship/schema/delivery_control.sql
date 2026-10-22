@@ -40,7 +40,7 @@ CREATE VIEW public.stewardship_delivery_control_inventory AS
         FROM public.stewardship_outbox_message m
         WHERE campaign_id=(SELECT campaign_id FROM scope)
           AND mode='production' AND routing='production'
-          AND purpose IN ('initial','reminder','receipt','daily_digest','weekly_digest')
+          AND purpose IN ('initial','reminder','receipt','daily_digest','weekly_digest','admin_report')
           AND state IN ('pending','retry_wait','submitting','delivery_unknown')
     ), types AS (
         SELECT purpose,count(*) FILTER(WHERE state IN ('pending','retry_wait')) AS queued,
@@ -246,7 +246,7 @@ BEGIN
         END IF;
         SELECT coalesce(jsonb_agg(kind ORDER BY kind),'[]') INTO selected_types
             FROM (SELECT DISTINCT value AS kind FROM jsonb_array_elements_text(NEW.selection->'types')
-                WHERE value IN ('receipt','daily_digest','weekly_digest')) types;
+                WHERE value IN ('receipt','daily_digest','weekly_digest','admin_report')) types;
         SELECT coalesce(sum((current_inventory->'types'->kind->>'held')::bigint),0) INTO selected_count
             FROM jsonb_array_elements_text(selected_types) kind;
         SELECT coverage,s.preparing INTO current_coverage,preparing
@@ -359,7 +359,7 @@ BEGIN
             command_digest=encode(sha256(convert_to(jsonb_build_array(
                 'delivery_resume',NEW.id,m.id,m.version)::text,'UTF8')),'hex')
         WHERE m.campaign_id=NEW.campaign_id AND m.mode='production' AND m.routing='production'
-            AND m.purpose IN ('initial','reminder','receipt','daily_digest','weekly_digest')
+            AND m.purpose IN ('initial','reminder','receipt','daily_digest','weekly_digest','admin_report')
             AND m.state IN ('pending','retry_wait') AND m.pause_hold_id IS NOT NULL;
         RETURN NEW;
     END IF;
@@ -372,7 +372,7 @@ BEGIN
             'delivery_pause',NEW.id,m.id,m.version)::text,'UTF8')),'hex'),
         reason='pause_'||pause::text
     WHERE m.campaign_id=NEW.campaign_id AND m.mode='production' AND m.routing='production'
-        AND m.purpose IN ('initial','reminder','receipt','daily_digest','weekly_digest')
+        AND m.purpose IN ('initial','reminder','receipt','daily_digest','weekly_digest','admin_report')
         AND m.state IN ('pending','retry_wait');
     RETURN NEW;
 END $$;
@@ -389,7 +389,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp A
 DECLARE campaign public.stewardship_campaign%ROWTYPE; hold uuid;
 BEGIN
     IF NEW.mode<>'production' OR NEW.routing<>'production'
-       OR NEW.purpose NOT IN ('initial','reminder','receipt','daily_digest','weekly_digest') THEN RETURN NEW; END IF;
+       OR NEW.purpose NOT IN ('initial','reminder','receipt','daily_digest','weekly_digest','admin_report') THEN RETURN NEW; END IF;
     IF TG_OP='UPDATE' THEN
         IF NEW.state NOT IN ('pending','retry_wait') OR NEW.state=OLD.state
            OR public.stewardship_delivery_message_released_v1(NEW.id) THEN RETURN NEW; END IF;

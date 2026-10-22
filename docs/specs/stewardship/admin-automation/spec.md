@@ -2922,8 +2922,9 @@ being handed to the mail service or not sure it arrived. They add no send
 path: a resume or a release lets held mail go through the ordinary delivery
 workers, as the page's does. The previews need a full-scope session, as
 the page's preview posts record activity, and record no event; `--type` is
-the Resolve held messages form's message types (`receipt` and `report`, the
-report emails, which replaced `daily_digest` and `weekly_digest` in #1786), which Release and Cancel need and Clear refuses (a usage
+the Resolve held messages form's message types (`receipt` and
+`admin_report`, the report emails, which replaced the digests in #1786;
+`daily_digest` and `weekly_digest` stay for digests held from before), which Release and Cancel need and Clear refuses (a usage
 error, as the form cannot send either). Each prints `action`, `campaign_id`, the
 `reason`, `expires_at`, the bound `inventory` as `send controls` prints it,
 a resume's `plan` (`before_start` or `family`, with `family_recovery` and
@@ -3085,6 +3086,7 @@ deleted when the export ends, so nothing regenerates it.
 | `report_email_send`, `daily_digest_snapshot`, `weekly_digest_snapshot`, `weekly_digest_item` | `report-email sends`, `report-email copy SEND`: each block's figures, each request's identifier and states; a request's text stays on the page (#1786; replaced `digest daily` and `digest weekly`, PR 8d) |
 | `weekly_digest_manual` | `digest weekly-request`: current until Report emails delivery PR 5 retires it, no redirect (#1786) |
 | `emailed_reports` | `digest list [--requested KEY]`: current until Report emails delivery PR 5 retires it, no redirect (#1786) |
+| `report_email_send_item`, `report_email_send_image` (interim, [#1786](https://github.com/epiphany40223/parishkit/issues/1786)) | Until the Report emails page ships ([delivery plan](../report-emails/spec.md#delivery-plan) item 5), a saved copy's request link redirects to that request's Additional information page, and its chart images are the snapshot's own (no command: the copy's command is `report-email copy`) |
 | `logs`, `logs_export` | `logs list`, `logs export` (PR 8a) |
 | `past_campaigns`, `past_campaign_review`, `past_campaign_import`, `past_campaign_removal` | `history list`, `history preview -`, `history confirm`, `history remove` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018), [campaign history](../campaign-history/spec.md#command-line)): the Past campaigns page's list, Review (the workbook on standard input), Apply and Remove. The commands came first (slice 2), listed in `admin_parity.AHEAD_OF_PAGE` until the page (slice 4); that list is empty now |
 

@@ -2,26 +2,25 @@
 {% block title %}{% translate "Send a weekly report now" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Send a weekly report now" %}</h1>
-{% aboutpage "weekly-manual" %}<p>{% translate "The report lists every current live request that needs action, plus corrections to requests that earlier reports already included. Each current Administrator receives their own email. When there is nothing to report, the report is recorded but no email is sent." %}</p>
+{% aboutpage "weekly-manual" %}<p>{% translate "This sends the Weekly report now, with the same blocks as its scheduled sends: every open additional information request and the response funnel. Each of its recipients receives their own email. It does not change when the Weekly report is next sent." %}</p>
 <p>{% translate "Normal campaign, pause and restore protections still apply. If the campaign settings change after you open this page, open it again to get a fresh form." %}</p>{% endaboutpage %}
 {% if campaign %}<p>{{ campaign.active_configuration.name }}</p>{% endif %}
 {% if blocker == "no_schedule" %}
-<div class="notice" role="alert"><p id="manual-no-schedule">{% translate "This campaign has no Weekly Admin digest schedule. Send a weekly report now sends an extra Weekly Admin digest, so the weekly digest schedule must exist first." %}</p>
-<p>{# Greyed out with the menu's reason while Dates and mail schedules is (an archived campaign, #1261). #}{% menu_link "schedule_settings" _("Add a Weekly Admin digest schedule under Dates and mail schedules") %}, {% translate "then return here." %}</p></div>
+{% comment %}No page can add a Weekly report until the Report emails page ships (#1786), so the notice names no place to add one.{% endcomment %}
+<div class="notice" role="alert"><p id="manual-no-schedule">{% translate "This campaign has no Weekly report, so there is no report to send now." %}</p></div>
 {# Shown unavailable, named by why, rather than left out (#563, #1331). #}<p>{% button type="button" disabled=True aria-describedby="manual-no-schedule" %}{% translate "Queue new manual report" %}{% endbutton %}</p>
 {% elif blocker == "refused" %}
-<div class="notice" role="alert"><p>{% translate "A weekly report can't be sent now. Usually an earlier Weekly Admin digest is still being prepared or delivered, or it is waiting for review in Sent mail; otherwise the campaign settings changed after this form was opened." %}</p>
+<div class="notice" role="alert"><p>{% translate "The Weekly report can't be sent now. Usually an earlier send of it is still being prepared or delivered, or its email is waiting for review in Sent mail; otherwise the campaign settings changed after this form was opened." %}</p>
 <p>{% url 'admin:background' as background_url %}{% url 'admin:deliveries' as outgoing_url %}{% blocktranslate %}Check <a href="{{ background_url }}">Background work</a> and <a href="{{ outgoing_url }}">Sent mail</a>, then open this page again.{% endblocktranslate %}</p></div>
 {% elif blocker == "in_progress" %}
 {% comment %}Found on GET, so Queue is shown unavailable with why rather
 than refused after submit (#563).{% endcomment %}
-<p class="notice" role="status" id="manual-unavailable">{% translate "A weekly report can't be sent now: an earlier Weekly Admin digest is still being prepared or delivered, or is waiting for review in Sent mail. When it has finished, open this page again." %}</p>
+<p class="notice" role="status" id="manual-unavailable">{% translate "The Weekly report can't be sent now: an earlier send of it is still being prepared or delivered, or its email is waiting for review in Sent mail. When it has finished, open this page again." %}</p>
 <p>{% button type="button" disabled=True aria-describedby="manual-unavailable" %}{% translate "Queue new manual report" %}{% endbutton %}</p>
 {% endif %}
 {% if form %}
-<p class="notice">{% translate "This is a new, separately audited report—not a retry of a previous email. It may repeat previously reported information and does not replace the regularly scheduled weekly digest." %} {% translate "Each current Administrator receives their own email." %}</p>
-<p class="help">{% translate "Resolve any unfinished weekly delivery first." %}</p>
-{% if mode == 'testing' %}<p class="notice">{% translate "Testing mode: live-only request selection excludes rehearsal answers. Any resulting email is routed only to the configured Testing recipient." %}</p>{% endif %}
+<p class="notice">{% translate "This is a new, separately audited send—not a retry of a previous email. It may repeat what earlier reports included and does not replace the Weekly report's scheduled sends." %} {% translate "Each of its recipients receives their own email." %}</p>
+{% if mode == 'testing' %}<p class="notice">{% translate "Testing mode: the email goes only to the configured Testing recipient." %}</p>{% endif %}
 <form method="post" class="panel">{% csrf_token %}
 {{ form.command_id }}{{ form.configuration_id }}{{ form.command_id.errors }}{{ form.configuration_id.errors }}{{ form.non_field_errors }}
 <p>{{ form.acknowledge }} <label for="{{ form.acknowledge.id_for_label }}">{{ form.acknowledge.label }}</label>{{ form.acknowledge.errors }}</p>

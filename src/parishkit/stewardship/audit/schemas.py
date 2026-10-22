@@ -86,6 +86,7 @@ class Action(StrEnum):
     DELIVERY_BULK_RESOLVED = "delivery_bulk_resolved"
     DAILY_DIGEST_VIEWED = "daily_digest_viewed"
     WEEKLY_DIGEST_VIEWED = "weekly_digest_viewed"
+    REPORT_EMAIL_VIEWED = "report_email_viewed"
     PARTICIPATION_VIEWED = "participation_viewed"
     # The Campaign comparison report (#1018): its context is the outcome and
     # the comparison day as ``count`` (the campaign days compared), no figure.

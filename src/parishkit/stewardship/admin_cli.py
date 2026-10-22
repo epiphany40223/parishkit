@@ -3527,6 +3527,7 @@ DELIVERY_PURPOSES = (
     "family_test",
     "daily_digest",
     "weekly_digest",
+    "admin_report",
     "operational",
     "security_event",
     "leader_email",

@@ -351,6 +351,9 @@ def schedule_values(values, campaign, *, interval=None):
     return None
 
 
+# The retired Admin digest kinds (#1786): report emails replaced them.
+DIGEST_KINDS = frozenset({"daily_digest", "weekly_digest"})
+
 # The most sends one digest may skip: more than a year of daily digests.
 SKIP_LIMIT = 400
 
@@ -420,7 +423,13 @@ def validate_campaign_sections(document):
 
 
 def validate_campaign_change(before, after):
-    """Never delete campaign identity or move/retype an existing logical schedule."""
+    """Never delete campaign identity or move/retype an existing logical schedule.
+
+    No change adds a Daily or Weekly digest (#1786): report emails replaced
+    them, and the offline conversion (``accounts.reports_upgrade``, which
+    does not come through here) is the only change that retypes one. A
+    digest record carried unchanged from before the conversion stays valid.
+    """
     old, new = before["sections"], after["sections"]
     prior = {row["id"] for row in old.get("campaigns", [])}
     if not prior <= {row["id"] for row in new.get("campaigns", [])}:
@@ -428,6 +437,8 @@ def validate_campaign_change(before, after):
     definitions = {row["id"]: row["values"] for row in old.get("schedules", [])}
     for row in new.get("schedules", []):
         previous = definitions.get(row["id"])
+        if previous is None and row["values"].get("kind") in DIGEST_KINDS:
+            invalid()
         if previous is not None and any(
             row["values"][field] != previous[field] for field in ("campaign_id", "kind")
         ):
@@ -440,8 +451,10 @@ def schedule_window_changed(before, after, *, kind):
     Date-only interval changes do not reinterpret an in-range Family mailing.
     Out-of-range Family mail must instead be explicitly edited or removed by
     the combined configuration validator; unrelated work stays unchanged.
+    A report email (#1786) is replaced as a digest was, as the database's
+    schedule activation (``stewardship_schedules_activate_v1``) replaces it.
     """
     return before["timezone"] != after["timezone"] or (
-        kind in {"daily_digest", "weekly_digest"}
+        kind in {"daily_digest", "weekly_digest", "report"}
         and any(before[field] != after[field] for field in ("start_date", "end_date"))
     )

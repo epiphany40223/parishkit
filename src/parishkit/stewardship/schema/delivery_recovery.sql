@@ -388,7 +388,7 @@ BEGIN
         actor_id=intent.actor_id,correlation_id=intent.correlation_id,command_id=gen_random_uuid(),
         command_digest=encode(sha256(convert_to(jsonb_build_array(
             'delivery_digest_recovery',intent.id,m.id,m.version)::text,'UTF8')),'hex'),
-        reason=CASE p.kind WHEN 'daily_digest' THEN 'missed_daily_recovery' ELSE 'missed_weekly_recovery' END,
+        reason=CASE p.kind WHEN 'daily_digest' THEN 'missed_daily_recovery' WHEN 'weekly_digest' THEN 'missed_weekly_recovery' ELSE 'missed_report_recovery' END,
         finished_at=statement_timestamp(),sealed_substitutions=NULL,sealed_key_id=NULL,pause_hold_id=NULL
     FROM public.stewardship_delivery_digest_effect p
     JOIN public.stewardship_delivery_digest_message messages ON messages.occurrence_id=p.occurrence_id
@@ -398,14 +398,14 @@ BEGIN
     INSERT INTO public.stewardship_schedule_effect
         SELECT pg_current_xact_id(),pg_backend_pid(),o.id,o.version,
             intent.actor_id,intent.correlation_id,
-            CASE p.kind WHEN 'daily_digest' THEN 'missed_daily_recovery' ELSE 'missed_weekly_recovery' END
+            CASE p.kind WHEN 'daily_digest' THEN 'missed_daily_recovery' WHEN 'weekly_digest' THEN 'missed_weekly_recovery' ELSE 'missed_report_recovery' END
         FROM public.stewardship_delivery_digest_effect p
         JOIN public.stewardship_schedule_occurrence o ON o.id=p.occurrence_id
         WHERE p.transaction_id=pg_current_xact_id() AND p.backend=pg_backend_pid()
             AND p.occurrence_id<>p.selected_id;
     UPDATE public.stewardship_schedule_occurrence o SET
         state='coalesced',version=o.version+1,lease_expires_at=NULL,replacement_id=p.selected_id,
-        reason=CASE p.kind WHEN 'daily_digest' THEN 'missed_daily_recovery' ELSE 'missed_weekly_recovery' END,
+        reason=CASE p.kind WHEN 'daily_digest' THEN 'missed_daily_recovery' WHEN 'weekly_digest' THEN 'missed_weekly_recovery' ELSE 'missed_report_recovery' END,
         actor_id=intent.actor_id,correlation_id=intent.correlation_id
     FROM public.stewardship_delivery_digest_effect p
     WHERE p.transaction_id=pg_current_xact_id() AND p.backend=pg_backend_pid()
@@ -429,12 +429,16 @@ BEGIN
             JOIN public.stewardship_delivery_digest_effect p ON p.occurrence_id=link.occurrence_id
             WHERE p.transaction_id=pg_current_xact_id() AND p.backend=pg_backend_pid()
                 AND p.occurrence_id<>p.selected_id AND m.state='cancelled')
-        OR t.task_type IN ('daily_digest_finalize','weekly_digest_finalize') AND t.domain_request_id IN (
+        OR t.task_type IN ('daily_digest_finalize','weekly_digest_finalize','report_email_finalize') AND t.domain_request_id IN (
             SELECT d.id FROM public.stewardship_daily_digest_preparation d
             JOIN public.stewardship_delivery_digest_effect p ON p.occurrence_id=d.occurrence_id
             WHERE p.transaction_id=pg_current_xact_id() AND p.backend=pg_backend_pid() AND p.occurrence_id<>p.selected_id
             UNION ALL
             SELECT d.id FROM public.stewardship_weekly_digest_preparation d
+            JOIN public.stewardship_delivery_digest_effect p ON p.occurrence_id=d.occurrence_id
+            WHERE p.transaction_id=pg_current_xact_id() AND p.backend=pg_backend_pid() AND p.occurrence_id<>p.selected_id
+            UNION ALL
+            SELECT d.id FROM public.stewardship_report_email_preparation d
             JOIN public.stewardship_delivery_digest_effect p ON p.occurrence_id=d.occurrence_id
             WHERE p.transaction_id=pg_current_xact_id() AND p.backend=pg_backend_pid() AND p.occurrence_id<>p.selected_id
         ));

@@ -36,14 +36,13 @@ from parishkit.stewardship.campaigns.delivery_control_models import (
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.campaigns.runtime import _now
 from parishkit.stewardship.campaigns.work_locks import work_transaction
-from parishkit.stewardship.deployment import ServiceRole
 
 from .automation_builders import as_staff, paired
 from .campaign_builders import add_draft, campaign_clock, close_campaign
+from .report_builders import weekly_allocated
 from .test_admin_digest_list_cli_postgresql import revoke
 from .test_admin_go_live_cli_postgresql import approved
 from .test_admin_test_sample_cli_postgresql import runner
-from .test_background_grants_postgresql import task_login
 from .test_delivery_closed_postgresql import submit_while_paused
 from .test_delivery_control_postgresql import (  # noqa: F401
     accepted_sender_check,
@@ -51,8 +50,6 @@ from .test_delivery_control_postgresql import (  # noqa: F401
 )
 from .test_delivery_resolution_postgresql import unknown_inventory
 from .test_setup_mail_views_postgresql import web_login
-from .test_weekly_tasks_postgresql import execute as execute_weekly
-from .test_weekly_tasks_postgresql import queued as queue_weekly
 from .test_withdrawal_postgresql import (  # noqa: F401
     bootstrapped,
     config_role,
@@ -435,13 +432,12 @@ def test_a_closed_campaign_resolution(scheduled, settings, monkeypatch):
         submit_while_paused(item, settings)
     with campaign_clock(starts + timedelta(days=9)):
         harness = SimpleNamespace(campaign=item.campaign, service=service)
-        status = queue_weekly(harness)
-        with task_login(ServiceRole.WORKER, exact=True):
-            execute_weekly(status)
+        # A Weekly report's send, held by the pause (#1786).
+        weekly_allocated(harness)
         close_campaign(item.campaign, uuid4())
     command = runner(service, monkeypatch)
     secret = approved(service, login)
-    choice = ("--decision", "cancel", "--type", "weekly_digest", "--type", "receipt")
+    choice = ("--decision", "cancel", "--type", "admin_report", "--type", "receipt")
     with campaign_clock(
         item.campaign.active_configuration.ends_at + timedelta(hours=1)
     ):
@@ -463,23 +459,23 @@ def test_a_closed_campaign_resolution(scheduled, settings, monkeypatch):
         result = document["result"]
         assert result["action"] == "resolve"
         assert result["resolution"]["decision"] == "cancel"
-        assert result["resolution"]["types"] == ["receipt", "weekly_digest"]
+        assert result["resolution"]["types"] == ["admin_report", "receipt"]
         assert comparable(result) == page_preview(
             item,
             "resolve",
             "Closed",
             decision="cancel",
-            types=["receipt", "weekly_digest"],
+            types=["admin_report", "receipt"],
         )
         token = result["preview"]["token"]
         code, document, errors = command(
             "send", "confirm", "--token", token, secret=secret, answer=b"yes\n"
         )
         assert code == 0, document
-        assert "cancel receipt, weekly_digest." in errors
+        assert "cancel admin_report, receipt." in errors
         assert "Other held types and emails that may not have arrived" in errors
         assert "receipt: 1 held messages." in errors
-        assert "weekly_digest: 2 held messages." in errors
+        assert "admin_report: 2 held messages." in errors
     assert document["result"]["action"] == "resolve"
     cancelled = HeldMessageResolution.objects.filter(decision="cancel")
     assert cancelled.count() == 3

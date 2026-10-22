@@ -370,6 +370,38 @@ def upgrade_users_command(
     return {"users_upgrade_applied": True, "operation_id": operation_id}
 
 
+def upgrade_reports_command(configuration, *, deployment_id):
+    """Convert the Daily and Weekly digests into report emails once, offline (#1786).
+
+    No operator inputs: the conversion is fixed by the report-emails spec and
+    recorded as the system's, reason "#1786 conversion". It runs after the
+    release's migrations and grants; a repeat resumes an unfinished run and
+    a converted configuration is left alone.
+    """
+    if admit_offline_service(configuration) is not ServiceRole.ADMIN_RECOVERY:
+        raise ConfigError("The report conversion requires the admin-recovery profile.")
+    configure_operator_database(configuration)
+    from .accounts.authority import AuthorityStore
+    from .accounts.configuration_schema import validate_sections
+    from .accounts.reports_upgrade import upgrade_reports
+    from .runtime_database import admit_offline_database
+
+    admit_offline_database(configuration)
+    result = upgrade_reports(
+        AuthorityStore(configuration.paths["authority"], validate_sections),
+        deployment_id=_uuid(deployment_id),
+        correlation_id=uuid4(),
+        offline_interlock=lambda: StartupLease(
+            RuntimeLayout(configuration).interlock, offline=True
+        ),
+    )
+    if result is None:
+        return {"reports_upgrade_applied": False, "already_reports": True}
+    if result.state != "applied":
+        raise ConfigError("The report conversion did not reach an applied receipt.")
+    return {"reports_upgrade_applied": True}
+
+
 def revoke_automation_command(configuration, *, reason):
     """End every live Admin automation session, offline (restore or operator).
 
@@ -585,6 +617,10 @@ def execute_operator(args):
                 operator_name=args.operator_name,
                 reason=args.reason,
                 confirmed_administrators=args.confirm_administrators,
+            )
+        elif args.command == "upgrade-reports":
+            result = upgrade_reports_command(
+                configuration, deployment_id=args.confirm_deployment
             )
         elif args.command == "revoke-automation-sessions":
             result = revoke_automation_command(configuration, reason=args.reason)

@@ -654,7 +654,8 @@ def schedule_entry(row, campaign, *, now):
     from .campaigns.schedule_evaluation import upcoming_slots
 
     values = row["values"]
-    page = upcoming_slots(values, campaign, now=now)
+    # A converted report (#1786) is shown as its digest; its sends are its own.
+    page = upcoming_slots(row.get("report", values), campaign, now=now)
     return {
         "id": row["id"],
         "kind": values["kind"],

@@ -111,16 +111,21 @@ class WeeklyRequest(ReadModel):
 class DigestList(ReadModel):
     """The Emailed reports page's lists: report ids and dates only.
 
-    ``daily`` and ``weekly`` are the newest ``shown`` reports, newest first;
+    ``reports`` are the newest report email sends (#1786: each its
+    ``send_id``, its report's ``name``, how it was sent and when it was
+    made); ``daily`` and ``weekly`` are the newest ``shown`` digests sent
+    before report emails replaced them, newest first;
     ``weekly`` is None for a reader who is not an Administrator, who sees
     the daily list only, as on the page. ``weekly_request_available`` is
-    whether the campaign has the Weekly Admin digest schedule that
-    ``digest weekly-request`` needs. ``requested`` is the ``--requested``
-    manual request's ``task_id`` and, once captured, ``report_id``; None
+    whether the campaign has the converted Weekly report that ``digest
+    weekly-request`` sends now. ``requested`` is the ``--requested``
+    request's ``task_id`` and, once its email is made, ``report_id`` (its
+    report send's id); None
     when not asked for, or when the key is not a current-campaign request.
     """
 
     campaign_id: UUID | None
+    reports: list
     daily: list
     weekly: list | None
     weekly_request_available: bool
@@ -334,6 +339,15 @@ def list_model(campaign_id, lists, *, administrator):
 
     return DigestList(
         campaign_id=campaign_id,
+        reports=[
+            {
+                "send_id": row["pk"],
+                "name": row["name"],
+                "how": row["how"],
+                "made_at": row["made_at"],
+            }
+            for row in lists["reports"]
+        ],
         daily=[
             {
                 "snapshot_id": row["pk"],
@@ -418,9 +432,9 @@ def request_weekly(caller, service, *, request_key, context):
     from .audit.services import record_action
     from .jobs.task_retries import command_scope
     from .observability import _guard_refusal
+    from .reports.report_email_models import ReportEmailManualRequest
     from .reports.weekly_manual import request_manual_report
     from .reports.weekly_manual_views import _has_weekly_schedule
-    from .reports.weekly_models import WeeklyManualRequest
 
     actor = admit_form(caller, service)
     context["request_id"] = str(request_key)
@@ -434,9 +448,9 @@ def request_weekly(caller, service, *, request_key, context):
         if campaign_id is None:
             raise NotAvailable("There is no current campaign.")
         if not _has_weekly_schedule(campaign_id):
-            raise NotAvailable("The campaign has no weekly report schedule.")
+            raise NotAvailable("The campaign has no Weekly report.")
         with command_scope(caller, service, actor):
-            repeat = WeeklyManualRequest.objects.filter(pk=request_key).exists()
+            repeat = ReportEmailManualRequest.objects.filter(pk=request_key).exists()
             task = request_manual_report(
                 service.store,
                 actor.identity,

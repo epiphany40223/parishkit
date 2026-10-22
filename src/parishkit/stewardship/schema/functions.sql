@@ -751,7 +751,7 @@ CREATE FUNCTION public.stewardship_campaign_complete_v1() RETURNS trigger
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
 BEGIN
-    IF NEW.validation_schema NOT IN ('campaign-foundation-v3', 'ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8', 'users-v10', 'campaign-series-v11') THEN RETURN NULL; END IF;
+    IF NEW.validation_schema NOT IN ('campaign-foundation-v3', 'ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8', 'users-v10', 'campaign-series-v11', 'campaign-series-v12') THEN RETURN NULL; END IF;
     IF (SELECT count(*) FROM public.stewardship_campaign_configuration
         WHERE configuration_id = NEW.id) <> coalesce(jsonb_array_length(
             NEW.canonical_document->'sections'->'campaigns'), 0)
@@ -772,6 +772,11 @@ BEGIN
         SELECT campaign_id, kind FROM public.stewardship_schedule_revision
         WHERE configuration_id = NEW.id AND kind IN ('daily_digest', 'weekly_digest')
         GROUP BY campaign_id, kind HAVING count(*) > 1
+    ) OR EXISTS (
+        -- At most 20 report emails per campaign (#1786, decision 10).
+        SELECT campaign_id FROM public.stewardship_schedule_revision
+        WHERE configuration_id = NEW.id AND kind = 'report'
+        GROUP BY campaign_id HAVING count(*) > 20
     ) THEN
         RAISE EXCEPTION 'Invalid schedule relationships' USING ERRCODE = '23514';
     END IF;
@@ -1256,7 +1261,7 @@ BEGIN
     FROM public.stewardship_configuration_version v,
         jsonb_array_elements(v.canonical_document->'sections'->section) item
     WHERE v.id = NEW.configuration_id AND item->>'id' = NEW.record_id::text
-      AND v.validation_schema IN ('campaign-foundation-v3', 'ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8', 'users-v10', 'campaign-series-v11');
+      AND v.validation_schema IN ('campaign-foundation-v3', 'ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8', 'users-v10', 'campaign-series-v11', 'campaign-series-v12');
     IF expected IS NULL OR expected IS DISTINCT FROM NEW.values THEN
         RAISE EXCEPTION 'Campaign projection differs from YAML' USING ERRCODE = '23514';
     END IF;
@@ -1319,9 +1324,14 @@ BEGIN
         -- Match preparation's global lock even for direct competing inserts.
         -- PL/pgSQL's following READ COMMITTED query sees the previous winner.
         PERFORM pg_advisory_xact_lock(736210, 1);
+        -- A schedule never moves or changes kind, except that the offline
+        -- conversion (#1786) turns a Daily or Weekly digest into a report
+        -- email, keeping its identity.
         IF EXISTS (SELECT 1 FROM public.stewardship_schedule_revision
                    WHERE record_id = NEW.record_id
-                     AND (campaign_id <> NEW.campaign_id OR kind <> NEW.kind)) THEN
+                     AND (campaign_id <> NEW.campaign_id
+                          OR (kind <> NEW.kind AND NOT (NEW.kind = 'report'
+                              AND kind IN ('daily_digest', 'weekly_digest'))))) THEN
             RAISE EXCEPTION 'Logical schedule identity is immutable' USING ERRCODE = '23514';
         END IF;
     END IF;
@@ -2058,7 +2068,7 @@ BEGIN
                         WHERE k.demand_id=d.id AND k.group_key=prefix||'family:'||f.id::text))
                 OR EXISTS(SELECT 1 FROM stewardship_schedule_definition s
                     WHERE s.campaign_id=d.campaign_id AND s.current_revision_id IS NOT NULL
-                      AND s.kind IN ('daily_digest','weekly_digest')
+                      AND s.kind IN ('daily_digest','weekly_digest','report')
                       AND NOT EXISTS(SELECT 1 FROM stewardship_catchup_checkpoint k
                           WHERE k.demand_id=d.id AND k.group_key=prefix||'digest:'||s.id::text))
             THEN RAISE EXCEPTION 'Catch-up completion requires current cohort and digest coverage'
@@ -2132,7 +2142,7 @@ CREATE FUNCTION public.stewardship_content_complete_v1() RETURNS trigger
 DECLARE records jsonb; actual jsonb;
 BEGIN
     records := coalesce(NEW.canonical_document->'sections'->'content', '[]'::jsonb);
-    IF NEW.validation_schema NOT IN ('campaign-content-v5', 'source-cadence-v8', 'users-v10', 'campaign-series-v11') THEN
+    IF NEW.validation_schema NOT IN ('campaign-content-v5', 'source-cadence-v8', 'users-v10', 'campaign-series-v11', 'campaign-series-v12') THEN
         IF records <> '[]'::jsonb THEN
             RAISE EXCEPTION 'Content requires its versioned schema'
                 USING ERRCODE='23514';
@@ -2177,7 +2187,7 @@ BEGIN
     SELECT item INTO expected
     FROM public.stewardship_configuration_version v,
          jsonb_array_elements(v.canonical_document->'sections'->'content') item
-    WHERE v.id=NEW.configuration_id AND v.validation_schema IN ('campaign-content-v5', 'source-cadence-v8', 'users-v10', 'campaign-series-v11')
+    WHERE v.id=NEW.configuration_id AND v.validation_schema IN ('campaign-content-v5', 'source-cadence-v8', 'users-v10', 'campaign-series-v11', 'campaign-series-v12')
       AND item->>'id'=NEW.record_id::text;
     IF expected IS DISTINCT FROM jsonb_build_object('id', NEW.record_id,
         'values', jsonb_build_object('campaign_id', NEW.campaign_id,
@@ -2815,6 +2825,7 @@ CREATE FUNCTION public.stewardship_fact_disposable(identifier uuid) RETURNS bool
     -- discard clears the link (#1398), so only those go.
     AND NOT EXISTS(SELECT 1 FROM stewardship_export_request WHERE fact_set_id=identifier)
     AND NOT EXISTS(SELECT 1 FROM stewardship_exact_export_resolution WHERE fact_set_id=identifier)
+    AND NOT EXISTS(SELECT 1 FROM stewardship_report_email_snapshot r WHERE r.fact_set_id=identifier)
     AND NOT EXISTS(SELECT 1 FROM stewardship_daily_digest_snapshot r
         JOIN stewardship_daily_fact_set f ON f.id=identifier
         WHERE ROW(r.campaign_id,r.population_scope,r.source_id,r.submission_watermark,
@@ -3191,16 +3202,19 @@ CREATE FUNCTION public.stewardship_fulfillment_guard_v1() RETURNS trigger
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
 BEGIN
-    -- Keep weekly private metadata out of query plans for unrelated mail roles.
+    -- Keep report private metadata out of query plans for unrelated mail
+    -- roles: a report send's empty outcome (#1786) is proved by its own
+    -- completion view, nothing to report or no current recipient.
     IF NEW.disposition='empty' AND EXISTS(SELECT 1 FROM stewardship_schedule_definition
-        WHERE id=NEW.definition_id AND kind='weekly_digest') THEN
+        WHERE id=NEW.definition_id AND kind='report') THEN
         IF NEW.mode NOT IN ('testing','production') OR NEW.target='' OR NEW.slot=''
           OR NOT EXISTS(SELECT 1 FROM stewardship_schedule_occurrence o
-            JOIN stewardship_weekly_digest_preparation p ON p.occurrence_id=o.id
-            JOIN stewardship_weekly_digest_completion_ready proof ON proof.preparation_id=p.id
+            JOIN stewardship_report_email_preparation p ON p.occurrence_id=o.id
+            JOIN stewardship_report_email_completion_ready proof ON proof.preparation_id=p.id
             WHERE o.id=NEW.occurrence_id AND o.definition_id=NEW.definition_id
               AND o.mode=NEW.mode AND o.target=NEW.target AND o.slot=NEW.slot
-              AND o.state='succeeded' AND proof.disposition='empty' AND o.reason=proof.empty_reason) THEN
+              AND o.state='succeeded' AND proof.disposition IN ('empty','nothing_to_report')
+              AND o.reason=public.stewardship_report_email_reason_v1(proof.disposition)) THEN
             RAISE EXCEPTION 'Fulfillment requires exact semantic outcome evidence' USING ERRCODE='23514';
         END IF;
         RETURN NEW;
@@ -3210,16 +3224,9 @@ BEGIN
         JOIN stewardship_schedule_definition wanted ON wanted.id=NEW.definition_id
         WHERE o.id=NEW.occurrence_id AND o.mode=NEW.mode AND d.campaign_id=wanted.campaign_id
           AND ((NEW.disposition='delivered' AND o.state='succeeded'
-                AND o.reason IS DISTINCT FROM 'daily_digest_no_current_recipients'
-                AND o.reason IS DISTINCT FROM 'weekly_digest_empty'
-                AND o.reason IS DISTINCT FROM 'weekly_digest_no_current_recipients'
+                AND o.reason IS DISTINCT FROM 'report_email_no_current_recipients'
+                AND o.reason IS DISTINCT FROM 'report_email_nothing_to_report'
                 AND o.definition_id=NEW.definition_id AND o.target=NEW.target AND o.slot=NEW.slot)
-            OR (NEW.disposition='empty' AND d.kind='daily_digest' AND o.state='succeeded'
-                AND o.reason='daily_digest_no_current_recipients'
-                AND o.definition_id=NEW.definition_id AND o.target=NEW.target AND o.slot=NEW.slot
-                AND EXISTS(SELECT 1 FROM stewardship_daily_digest_preparation p
-                    JOIN stewardship_daily_digest_completion_ready proof ON proof.preparation_id=p.id
-                    WHERE p.occurrence_id=o.id AND proof.disposition='empty'))
             OR (NEW.disposition='coalesced' AND EXISTS (SELECT 1 FROM stewardship_schedule_occurrence original
                 WHERE original.definition_id=NEW.definition_id AND original.mode=NEW.mode AND original.target=NEW.target AND original.slot=NEW.slot
                   AND original.state='coalesced' AND original.replacement_id=o.id)))
@@ -3319,7 +3326,7 @@ DECLARE demand public.stewardship_activation_catchup%ROWTYPE;
         v public.stewardship_schedule_revision%ROWTYPE;
         prefix text; position text; stage text; after_day text; candidate date;
         last_day text; due timestamptz; exhausted boolean:=false; step integer;
-        pending_count integer; i integer;
+        pending_count integer; i integer; shift integer;
 BEGIN
     SELECT * INTO demand FROM public.stewardship_activation_catchup WHERE id=(proposed->>'demand_id')::uuid;
     SELECT configuration.* INTO p FROM public.stewardship_campaign c
@@ -3337,7 +3344,7 @@ BEGIN
     IF NOT starts_with(demand.cursor,prefix||'digests:') THEN RETURN false; END IF;
     SELECT * INTO d FROM public.stewardship_schedule_definition s
         WHERE s.campaign_id=demand.campaign_id AND s.current_revision_id IS NOT NULL
-            AND s.kind IN ('daily_digest','weekly_digest')
+            AND s.kind IN ('daily_digest','weekly_digest','report')
             AND NOT EXISTS(SELECT 1 FROM public.stewardship_catchup_checkpoint k
                 WHERE k.demand_id=demand.id AND k.group_key=prefix||'digest:'||s.id::text)
         ORDER BY s.id LIMIT 1;
@@ -3348,6 +3355,31 @@ BEGIN
     ELSE
         IF split_part(position,':',1)<>replace(d.id::text,'-','') THEN RETURN false; END IF;
         stage:=split_part(position,':',2); after_day:=split_part(position,':',3);
+    END IF;
+    IF stage='dates' AND d.kind='report' THEN
+        -- A report email (#1786): its rule's candidate sends after the
+        -- cursor's slot, as schedule_evaluation.ReportPlan.page examines them.
+        shift:=CASE WHEN v.values->>'slot_basis'='report_date' THEN 1 ELSE 0 END;
+        candidate:=public.stewardship_report_next_send_v1(v.values,p.start_date,p.end_date,
+            CASE WHEN after_day<>'' THEN after_day::date+shift END);
+        last_day:=after_day;
+        FOR i IN 1..100 LOOP
+            IF candidate IS NULL THEN exhausted:=true; EXIT; END IF;
+            due:=public.stewardship_resolve_local_v1(candidate+(v.values->'schedule'->>'time')::time,p.timezone);
+            IF due>least(demand.cutoff,public.stewardship_campaign_now_v1()) THEN exhausted:=true; EXIT; END IF;
+            last_day:=(candidate-shift)::text;
+            IF public.stewardship_catchup_due_v1(d.id,last_day) IS NOT NULL
+                AND NOT EXISTS(SELECT 1 FROM public.stewardship_schedule_occurrence o
+                    WHERE o.revision_id=v.id AND o.mode='production' AND o.target='admins'
+                        AND o.slot=last_day AND o.due_at=public.stewardship_catchup_due_v1(d.id,last_day))
+                AND NOT public.stewardship_schedule_slot_excluded_v1(d.id,'production','admins',last_day)
+                THEN RETURN false; END IF;
+            candidate:=public.stewardship_report_next_send_v1(v.values,p.start_date,p.end_date,candidate);
+        END LOOP;
+        exhausted:=exhausted OR candidate IS NULL;
+        stage:=CASE WHEN exhausted THEN 'cover' ELSE 'dates' END;
+        RETURN proposed->>'group_key'=prefix||'page:'||d.id::text||':'||coalesce(nullif(last_day,''),'empty')||':'||stage
+            AND proposed->>'cursor'=prefix||'digests:'||replace(d.id::text,'-','')||':'||stage||':'||last_day;
     END IF;
     IF stage='dates' THEN
         candidate:=greatest(p.start_date,CASE WHEN after_day<>'' THEN after_day::date+1 ELSE p.start_date END);
@@ -3427,6 +3459,11 @@ BEGIN
     IF d.kind IN ('initial','reminder') THEN
         RETURN CASE WHEN slot='once' THEN v.due_at END;
     END IF;
+    -- A report email (#1786) evaluates its own rule, slot basis, skips and
+    -- pauses (schedule_evaluation.ReportPlan).
+    IF d.kind='report' THEN
+        RETURN public.stewardship_report_slot_due_v1(v.values,p.start_date,p.end_date,p.timezone,slot);
+    END IF;
     IF slot !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN RETURN NULL; END IF;
     day:=slot::date;
     IF day<p.start_date OR day>p.end_date OR day::text<>slot THEN RETURN NULL; END IF;
@@ -3465,12 +3502,12 @@ BEGIN
             WHERE id=substring(proposed->>'target' FROM 8)::uuid AND campaign_id=d.campaign_id
                 AND created_at<=demand.created_at;
         IF family.id IS NULL THEN RETURN false; END IF;
-    ELSIF d.kind IN ('daily_digest','weekly_digest') THEN
+    ELSIF d.kind IN ('daily_digest','weekly_digest','report') THEN
         IF proposed->>'target'<>'admins' THEN RETURN false; END IF;
     ELSE RETURN false;
     END IF;
     expected:=public.stewardship_catchup_due_v1(d.id,proposed->>'slot');
-    IF proposed->>'slot'='recovery:'||demand.id::text AND d.kind IN ('daily_digest','weekly_digest') THEN
+    IF proposed->>'slot'='recovery:'||demand.id::text AND d.kind IN ('daily_digest','weekly_digest','report') THEN
         -- An aggregate must be dated from a real staged or cancelled covered
         -- predecessor; neither an arbitrary timestamp nor a caller flag is proof.
         SELECT max(o.due_at) INTO expected FROM public.stewardship_schedule_occurrence o
@@ -3529,8 +3566,11 @@ BEGIN
                         AND NOT public.stewardship_schedule_slot_excluded_v1(s.id,'production',proposed->>'target','once'))))
         ELSE selected.definition_id=d.id AND selected.due_at>=expected
             AND (d.kind<>'daily_digest' OR selected.slot='recovery:'||demand.id::text)
+            -- A report email (#1786) coalesces into its latest send, as the
+            -- weekly digest did; its recovery send reports the covered range.
             AND proposed->>'reason'=CASE d.kind
-                WHEN 'daily_digest' THEN 'missed_daily_recovery' ELSE 'missed_weekly_recovery' END END;
+                WHEN 'daily_digest' THEN 'missed_daily_recovery'
+                WHEN 'report' THEN 'missed_report_recovery' ELSE 'missed_weekly_recovery' END END;
 END $$;
 
 -- Bounded preparation alone may materialize work under its own demand hold.
@@ -3665,12 +3705,15 @@ BEGIN
            OR NEW.revision_id IS DISTINCT FROM d.current_revision_id
            OR c.id IS DISTINCT FROM r.current_campaign_id OR r.restore_review_required
            OR NEW.mode<>r.mode OR EXISTS (SELECT 1 FROM stewardship_campaign_work_gate WHERE campaign_id=c.id AND state IN ('preparing','running','tombstone'))
-           OR NOT EXISTS (SELECT 1 FROM stewardship_campaign_configuration p WHERE p.id=c.active_configuration_id
+           -- A report email (#1786) may send before its campaign starts and
+           -- after it closes, until it is archived (decision 9).
+           OR (d.kind='report' AND NOT ((NEW.mode='testing' AND c.state='draft')
+               OR (NEW.mode='production' AND c.state IN ('scheduled','active','closed'))))
+           OR (d.kind<>'report' AND NOT EXISTS (SELECT 1 FROM stewardship_campaign_configuration p WHERE p.id=c.active_configuration_id
                AND ((instant>=p.starts_at AND instant<p.ends_at
                    AND ((NEW.mode='testing' AND c.state='draft') OR (NEW.mode='production' AND c.state IN ('scheduled','active'))))
                    OR (NEW.mode='production' AND c.state='closed'
-                       AND (d.kind IN ('daily_digest','weekly_digest')
-                           OR (NEW.due_at>=p.starts_at AND NEW.due_at<p.ends_at)))))
+                       AND NEW.due_at>=p.starts_at AND NEW.due_at<p.ends_at))))
            OR (NEW.mode='production' AND EXISTS(SELECT 1 FROM stewardship_activation_catchup WHERE campaign_id=c.id AND completed_at IS NULL)
                AND NOT public.stewardship_catchup_materializing_v1(c.id,NEW.actor_id,NEW.correlation_id))
            OR EXISTS (SELECT 1 FROM stewardship_schedule_fulfillment WHERE definition_id=d.id AND mode=NEW.mode AND target=NEW.target AND slot=NEW.slot)
@@ -3678,8 +3721,8 @@ BEGIN
                JOIN public.stewardship_postclose_current covered ON covered.id=resolved.id
                WHERE resolved.campaign_id=c.id AND resolved.mode=NEW.mode
                    AND resolved.obligation_key='schedule:'||d.id::text||':'||NEW.slot)
-           -- A digest's skipped send (#1658) is never planned, by any writer.
-           OR (d.kind IN ('daily_digest','weekly_digest') AND EXISTS (
+           -- A report's skipped send (#1658) is never planned, by any writer.
+           OR (d.kind='report' AND EXISTS (
                SELECT 1 FROM stewardship_schedule_revision skipping WHERE skipping.id=NEW.revision_id
                    AND coalesce(skipping.values->'skip_dates' ? NEW.slot,false))) THEN
             RAISE EXCEPTION 'Occurrence creation is not admitted' USING ERRCODE='23514'; END IF;
@@ -3708,11 +3751,9 @@ BEGIN
             RAISE EXCEPTION 'Invalid occurrence transition' USING ERRCODE='23514'; END IF;
         IF NEW.state='running' THEN
             -- Branch before planning private report reads: SQL boolean order is
-            -- not a privilege boundary for unrelated Family/daily mail owners.
-            IF d.kind='weekly_digest' THEN
-                digest_completed:=public.stewardship_weekly_digest_completion_v1(to_jsonb(NEW));
-            ELSE
-                digest_completed:=public.stewardship_daily_digest_completion_v1(to_jsonb(NEW));
+            -- not a privilege boundary for unrelated Family mail owners.
+            IF d.kind='report' THEN
+                digest_completed:=public.stewardship_report_email_completion_v1(to_jsonb(NEW));
             END IF;
         END IF;
         IF NEW.state='running' AND NOT digest_completed THEN
@@ -3734,7 +3775,7 @@ BEGIN
                OR NOT EXISTS(SELECT 1 FROM stewardship_campaign_configuration p WHERE p.id=c.active_configuration_id
                    AND ((instant>=p.starts_at AND instant<p.ends_at
                        AND ((NEW.mode='testing' AND c.state='draft') OR (NEW.mode='production' AND c.state IN ('scheduled','active'))))
-                       OR (NEW.mode='production' AND c.state='closed' AND d.kind IN ('daily_digest','weekly_digest'))))
+                       OR (NEW.mode='production' AND c.state='closed' AND d.kind='report')))
                -- Not yet due. Only Family mail preparation of a Production
                -- occurrence may claim it early, within the two-hour lead
                -- window (BG-12, #447). Every other claim, including a
@@ -3753,7 +3794,8 @@ BEGIN
             RAISE EXCEPTION 'Occurrence worker identity changed' USING ERRCODE='23514'; END IF;
         IF OLD.state='running' AND NOT (
             (NEW.state='skipped' OR (NEW.state='coalesced' AND NEW.reason IN (
-                'missed_family_recovery','missed_daily_recovery','missed_weekly_recovery')))
+                'missed_family_recovery','missed_daily_recovery','missed_weekly_recovery',
+                'missed_report_recovery')))
             AND public.stewardship_schedule_effect_v1(
                 OLD.id,OLD.version,NEW.actor_id,NEW.correlation_id,NEW.reason)
         ) AND NOT EXISTS(SELECT 1 FROM stewardship_task_run owner_task WHERE owner_task.id=OLD.task_id
@@ -4122,7 +4164,7 @@ DECLARE
     actual bigint;
     rule public.stewardship_address_rule%ROWTYPE;
 BEGIN
-    IF NEW.validation_schema NOT IN ('foundation-policy-v2', 'campaign-foundation-v3', 'bootstrap-policy-v1', 'bootstrap-users-v10', 'ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8', 'users-v10', 'campaign-series-v11') THEN RETURN NULL; END IF;
+    IF NEW.validation_schema NOT IN ('foundation-policy-v2', 'campaign-foundation-v3', 'bootstrap-policy-v1', 'bootstrap-users-v10', 'ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8', 'users-v10', 'campaign-series-v11', 'campaign-series-v12') THEN RETURN NULL; END IF;
     expected := jsonb_array_length(NEW.canonical_document->'sections'->'login_rules');
     SELECT (SELECT count(*) FROM public.stewardship_domain_rule
             WHERE configuration_id = NEW.id)
@@ -4143,8 +4185,8 @@ BEGIN
     IF EXISTS (SELECT 1 FROM public.stewardship_address_rule
                WHERE configuration_id = NEW.id
                  AND (role IS NOT NULL)
-                     <> (NEW.validation_schema IN ('users-v10', 'campaign-series-v11', 'bootstrap-users-v10')))
-       OR (NEW.validation_schema IN ('users-v10', 'campaign-series-v11', 'bootstrap-users-v10') AND (
+                     <> (NEW.validation_schema IN ('users-v10', 'campaign-series-v11', 'campaign-series-v12', 'bootstrap-users-v10')))
+       OR (NEW.validation_schema IN ('users-v10', 'campaign-series-v11', 'campaign-series-v12', 'bootstrap-users-v10') AND (
            EXISTS (SELECT 1 FROM public.stewardship_domain_rule
                    WHERE configuration_id = NEW.id)
            OR EXISTS (SELECT 1 FROM public.stewardship_ministry_assignment
@@ -4199,7 +4241,7 @@ BEGIN
     SELECT item->'values' INTO expected
     FROM public.stewardship_configuration_version version,
         jsonb_array_elements(version.canonical_document->'sections'->'login_rules') item
-    WHERE version.id = config AND version.validation_schema IN ('foundation-policy-v2', 'campaign-foundation-v3', 'bootstrap-policy-v1', 'bootstrap-users-v10', 'ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8', 'users-v10', 'campaign-series-v11')
+    WHERE version.id = config AND version.validation_schema IN ('foundation-policy-v2', 'campaign-foundation-v3', 'bootstrap-policy-v1', 'bootstrap-users-v10', 'ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8', 'users-v10', 'campaign-series-v11', 'campaign-series-v12')
         AND item->>'id' = record::text;
     IF expected IS NULL THEN
         RAISE EXCEPTION 'Policy projection requires matching YAML record'
@@ -4458,7 +4500,7 @@ BEGIN
            WHERE c.id=NEW.campaign_id AND c.state='closed' AND NEW.mode=r.mode AND NOT r.restore_review_required)
        OR NEW.occurrence_id IS NULL OR NOT EXISTS(SELECT 1 FROM stewardship_schedule_occurrence o
            JOIN stewardship_schedule_definition d ON d.id=o.definition_id WHERE o.id=NEW.occurrence_id
-           AND d.campaign_id=NEW.campaign_id AND d.kind IN ('daily_digest','weekly_digest')
+           AND d.campaign_id=NEW.campaign_id AND d.kind='report'
            AND o.mode=NEW.mode AND o.state='skipped' AND o.reason='admin_post_close_skip'
            AND NEW.obligation_key='schedule:'||d.id::text||':'||o.slot
            AND NEW.task_id IS NOT DISTINCT FROM o.task_id AND NEW.outbox_id IS NOT DISTINCT FROM o.outbox_id)
@@ -5155,11 +5197,13 @@ CREATE FUNCTION public.stewardship_request_checkpoint_v2() RETURNS trigger
                             AND intent.request_schema='chair-seed-patch-v9'
                             AND current_user<>'pk_stewardship_web')
                          -- SQL's users-form guard refused the offline users
-                         -- upgrade (#952) inside its activation: refused and
+                         -- upgrade (#952), or SQL refused the report
+                         -- conversion (#1786), inside its activation: refused and
                          -- restored the same way, so the manifest never stays
                          -- ahead of the database and recovery still runs.
                         OR (NEW.state='failed' AND NEW.failure_code='invalid_candidate'
-                            AND intent.request_schema='operator-upgrade-users-v10'
+                            AND intent.request_schema IN ('operator-upgrade-users-v10',
+                                'operator-upgrade-reports-v12')
                             AND current_user<>'pk_stewardship_web')
                          -- A Ministry added to a live campaign that a source
                          -- promotion dropped, or that turned inactive, after
@@ -5843,7 +5887,7 @@ CREATE FUNCTION public.stewardship_schedule_definition_mutable_v1() RETURNS trig
     LANGUAGE plpgsql
     AS $$
             BEGIN
-                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."campaign_id" IS DISTINCT FROM OLD."campaign_id" OR NEW."kind" IS DISTINCT FROM OLD."kind" THEN
+                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."campaign_id" IS DISTINCT FROM OLD."campaign_id" OR (NEW."kind" IS DISTINCT FROM OLD."kind" AND NOT (NEW."kind"='report' AND OLD."kind" IN ('daily_digest','weekly_digest'))) THEN
                     RAISE EXCEPTION 'Record identity and bindings are immutable'
                         USING ERRCODE = '23514';
                 END IF;
@@ -5865,6 +5909,16 @@ DECLARE r stewardship_system_configuration%ROWTYPE; chosen stewardship_schedule_
 BEGIN
     IF TG_OP='DELETE' THEN RAISE EXCEPTION 'Schedules are removed through configuration' USING ERRCODE='23514'; END IF;
     SELECT * INTO r FROM stewardship_system_configuration;
+    -- The report conversion's kind-only retyping (#1786) of a digest the
+    -- applied report configuration no longer selects, in any campaign.
+    IF TG_OP='UPDATE' AND OLD.kind IN ('daily_digest','weekly_digest') AND NEW.kind='report'
+       AND NEW.current_revision_id IS NOT DISTINCT FROM OLD.current_revision_id
+       AND NEW.actor_id IS NOT DISTINCT FROM r.actor_id AND NEW.correlation_id=r.correlation_id
+       AND NOT r.restore_review_required
+       AND EXISTS(SELECT 1 FROM stewardship_configuration_version
+           WHERE id=r.active_configuration_id AND validation_schema='campaign-series-v12') THEN
+        RETURN NEW;
+    END IF;
     IF r.restore_review_required THEN
         RAISE EXCEPTION 'Restore review holds schedule selection changes' USING ERRCODE='23514'; END IF;
     SELECT * INTO chosen FROM stewardship_schedule_revision
@@ -5929,6 +5983,11 @@ CREATE FUNCTION public.stewardship_schedule_selection_effect_v1() RETURNS trigge
     AS $$
 DECLARE config uuid; prior uuid; evidence jsonb; event uuid:=gen_random_uuid();
 BEGIN
+    -- The report conversion's kind-only retyping (#1786) selects nothing.
+    IF TG_OP='UPDATE' AND NEW.current_revision_id IS NOT DISTINCT FROM OLD.current_revision_id
+       AND OLD.kind IN ('daily_digest','weekly_digest') AND NEW.kind='report' THEN
+        RETURN NEW;
+    END IF;
     SELECT active_configuration_id INTO config FROM stewardship_system_configuration;
     IF TG_OP='UPDATE' THEN prior:=OLD.current_revision_id; END IF;
     INSERT INTO stewardship_schedule_selection(id,definition_id,configuration_id,previous_revision_id,selected_revision_id,version,actor_id,correlation_id)
@@ -5962,7 +6021,21 @@ CREATE FUNCTION public.stewardship_schedules_activate_v1() RETURNS trigger
     AS $$
 DECLARE revision stewardship_schedule_revision%ROWTYPE; previous stewardship_schedule_definition%ROWTYPE;
 BEGIN
-    IF NEW.active_configuration_id IS NOT DISTINCT FROM OLD.active_configuration_id OR NEW.current_campaign_id IS NULL THEN RETURN NEW; END IF;
+    IF NEW.active_configuration_id IS NOT DISTINCT FROM OLD.active_configuration_id THEN RETURN NEW; END IF;
+    -- The report conversion (#1786) is refused, before anything is replaced,
+    -- while a digest send is in progress or uncertain. Only the conversion
+    -- itself (upgrade-reports, under the admin-recovery login) asks: no other
+    -- activation finds a digest definition beside a campaign-series-v12
+    -- configuration.
+    IF EXISTS(SELECT 1 FROM stewardship_configuration_version
+              WHERE id=NEW.active_configuration_id AND validation_schema='campaign-series-v12')
+       AND EXISTS(SELECT 1 FROM stewardship_schedule_definition WHERE kind IN ('daily_digest','weekly_digest')) THEN
+        IF public.stewardship_digest_work_open_v1() IS NOT NULL THEN
+            RAISE EXCEPTION 'The report conversion waits for every digest send to finish: %',
+                public.stewardship_digest_work_open_v1() USING ERRCODE='23514';
+        END IF;
+    END IF;
+    IF NEW.current_campaign_id IS NOT NULL THEN
     FOR revision IN SELECT * FROM stewardship_schedule_revision
         WHERE configuration_id=NEW.active_configuration_id AND campaign_id=NEW.current_campaign_id ORDER BY record_id LOOP
         SELECT * INTO previous FROM stewardship_schedule_definition WHERE id=revision.record_id FOR UPDATE;
@@ -5980,11 +6053,13 @@ BEGIN
             WHERE old_revision.id=previous.current_revision_id
               AND old_revision.values=revision.values
               AND old_campaign.timezone=new_campaign.timezone
-              AND (revision.kind NOT IN ('daily_digest','weekly_digest')
+              AND (revision.kind NOT IN ('daily_digest','weekly_digest','report')
                   OR (old_campaign.start_date=new_campaign.start_date
                       AND old_campaign.end_date=new_campaign.end_date))
         ) THEN
+            -- The report conversion (#1786) retypes a digest in place.
             UPDATE stewardship_schedule_definition SET current_revision_id=revision.id,removed_at=NULL,
+                kind=revision.kind,
                 version=version+1,actor_id=NEW.actor_id,correlation_id=NEW.correlation_id WHERE id=previous.id;
         END IF;
     END LOOP;
@@ -5992,6 +6067,18 @@ BEGIN
         actor_id=NEW.actor_id,correlation_id=NEW.correlation_id
     WHERE d.campaign_id=NEW.current_campaign_id AND d.current_revision_id IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM stewardship_schedule_revision WHERE configuration_id=NEW.active_configuration_id AND record_id=d.id);
+    END IF;
+    -- The report conversion (#1786): a configuration holding report emails
+    -- holds no digest, so every definition still of a digest kind, in any
+    -- campaign (one not current, or a removed one, keeps its selection), becomes a
+    -- report, kind only, once no digest send is in progress.
+    IF EXISTS(SELECT 1 FROM stewardship_configuration_version
+              WHERE id=NEW.active_configuration_id AND validation_schema='campaign-series-v12')
+       AND EXISTS(SELECT 1 FROM stewardship_schedule_definition WHERE kind IN ('daily_digest','weekly_digest')) THEN
+        UPDATE stewardship_schedule_definition SET kind='report',version=version+1,
+            actor_id=NEW.actor_id,correlation_id=NEW.correlation_id
+        WHERE kind IN ('daily_digest','weekly_digest');
+    END IF;
     RETURN NEW;
 END $$;
 
@@ -7068,9 +7155,9 @@ BEGIN
             CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE AND
         public.stewardship_family_mail_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
             CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE AND
-        public.stewardship_daily_digest_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
-            CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE AND
-        public.stewardship_weekly_digest_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
+        -- Report emails (#1786) replaced the Daily and Weekly digests, whose
+        -- own write admissions no longer admit anything.
+        public.stewardship_report_email_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
             CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE THEN
         RAISE EXCEPTION 'Worker configuration effects require atomic setup ownership'
             USING ERRCODE='23514';
@@ -9675,14 +9762,18 @@ BEGIN
                 USING ERRCODE='23514';
         END IF;
       ELSIF TG_OP='INSERT' AND NEW.parent_kind='digest' THEN
+        -- A report email's inputs (#1786) pin the current promoted source to
+        -- its preparation, by its live claim, as it records them.
         IF NEW.expires_at IS NOT NULL OR NOT EXISTS (
-            SELECT 1 FROM stewardship_daily_digest_snapshot s
-            WHERE s.id=NEW.parent_id AND s.source_id=NEW.snapshot_id
-              AND stewardship_daily_digest_live_v1(s.preparation_id,s.run_id,s.fence,s.worker_id)
+            SELECT 1 FROM stewardship_report_email_preparation p
+            JOIN stewardship_task_run t ON t.root_id=p.task_id AND t.state='running'
+            JOIN stewardship_source_current current ON current.snapshot_id=NEW.snapshot_id
+            WHERE p.id=NEW.parent_id AND p.phase='inputs' AND p.source_id IS NULL
+              AND stewardship_report_email_live_v1(p.id,t.id,t.fence,t.worker_id)
         ) OR NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
             AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
             AND mode='ExclusiveLock' AND granted) THEN
-            RAISE EXCEPTION 'Daily source protection requires its live exact snapshot'
+            RAISE EXCEPTION 'Report source protection requires its live preparation'
                 USING ERRCODE='23514';
         END IF;
       ELSIF TG_OP='INSERT' AND NEW.parent_kind='facts' THEN
@@ -10424,8 +10515,6 @@ CREATE FUNCTION public.stewardship_task_type_login_v1(task_type text) RETURNS te
             'campaign_boundary',
             'census_publication',
             'census_publication_preflight',
-            'daily_digest_finalize',
-            'daily_digest_prepare',
             'family_mail_prepare',
             'family_mail_test',
             'leader_email_prepare',
@@ -10435,6 +10524,7 @@ CREATE FUNCTION public.stewardship_task_type_login_v1(task_type text) RETURNS te
             'production_cleanup',
             'production_token_cleanup',
             'production_tokens',
+            'report_email_finalize',
             'report_email_prepare',
             'report_exact_export',
             'report_export',
@@ -10445,9 +10535,7 @@ CREATE FUNCTION public.stewardship_task_type_login_v1(task_type text) RETURNS te
             'setup_finalize',
             'setup_source_cleanup',
             'setup_source_load',
-            'source_refresh',
-            'weekly_digest_finalize',
-            'weekly_digest_prepare')
+            'source_refresh')
         THEN 'pk_stewardship_worker'
         WHEN task_type IN (
             'campaign_mail_test',
@@ -10760,6 +10848,9 @@ BEGIN
                  WHERE snapshot.campaign_id=NEW.id AND p.mode='testing')
        OR EXISTS(SELECT 1 FROM stewardship_weekly_digest_snapshot snapshot
                  JOIN stewardship_weekly_digest_preparation p ON p.id=snapshot.preparation_id
+                 WHERE snapshot.campaign_id=NEW.id AND p.mode='testing')
+       OR EXISTS(SELECT 1 FROM stewardship_report_email_snapshot snapshot
+                 JOIN stewardship_report_email_preparation p ON p.id=snapshot.preparation_id
                  WHERE snapshot.campaign_id=NEW.id AND p.mode='testing') THEN
         RAISE EXCEPTION 'Campaign requires a complete current token generation and rehearsal cleanup' USING ERRCODE='23514'; END IF;
     IF generation.configuration_request_id IS NULL THEN
@@ -10948,10 +11039,10 @@ BEGIN
     SELECT * INTO previous FROM public.stewardship_schedule_occurrence WHERE id=NEW.previous_id FOR UPDATE;
     SELECT * INTO replacement FROM public.stewardship_schedule_occurrence WHERE id=NEW.replacement_id FOR UPDATE;
     IF NEW.preparation_id IS NOT NULL THEN
-        IF NEW.demand_id IS NOT NULL OR NOT (
-            public.stewardship_daily_digest_replacement_v1(to_jsonb(NEW))
-            OR public.stewardship_weekly_digest_replacement_v1(to_jsonb(NEW))) THEN
-            RAISE EXCEPTION 'Recovery replacement requires current digest ownership' USING ERRCODE='23514';
+        -- A report email's cover page (#1786); the digests' replaced it.
+        IF NEW.demand_id IS NOT NULL
+           OR NOT public.stewardship_report_email_replacement_v1(to_jsonb(NEW)) THEN
+            RAISE EXCEPTION 'Recovery replacement requires current report ownership' USING ERRCODE='23514';
         END IF;
         RETURN NEW;
     END IF;
@@ -10969,7 +11060,7 @@ BEGIN
             JOIN public.stewardship_schedule_definition old_s ON old_s.id=previous.definition_id
             WHERE s.id=replacement.definition_id AND s.campaign_id=demand.campaign_id
                 AND old_s.campaign_id=s.campaign_id AND s.current_revision_id=replacement.revision_id
-                AND ((previous.target='admins' AND s.kind IN ('daily_digest','weekly_digest')
+                AND ((previous.target='admins' AND s.kind='report'
                         AND previous.definition_id=s.id AND previous.reason='schedule_replaced')
                     OR (starts_with(previous.target,'family:') AND s.kind IN ('initial','reminder')
                         AND old_s.kind IN ('initial','reminder'))))

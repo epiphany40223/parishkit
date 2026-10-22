@@ -151,18 +151,18 @@ def test_each_loop_reads_its_own_settings(live, monkeypatch):
 
     Every loop builds a new LoopSettings, so nothing read in one loop is used
     in the next: an unreleased work gate added between two loops holds the
-    next loop's digest producers before they read anything else.
+    next loop's report email producer before it reads anything else.
     """
-    from parishkit.stewardship.reports import digest_ownership
+    from parishkit.stewardship.reports import report_email_ownership
 
-    seen, real = [], digest_ownership.DailyDigestProducer.__call__
+    seen, real = [], report_email_ownership.ReportEmailProducer.__call__
 
     def spy(self, guard, *, settings=None):
         """Record which settings object each loop passed."""
         seen.append(settings)
         return real(self, guard, settings=settings)
 
-    monkeypatch.setattr(digest_ownership.DailyDigestProducer, "__call__", spy)
+    monkeypatch.setattr(report_email_ownership.ReportEmailProducer, "__call__", spy)
     loop = Loop(live.service.store, monkeypatch)
     instant = live.campaign.active_configuration.starts_at + timedelta(days=3)
     idle(loop, instant)

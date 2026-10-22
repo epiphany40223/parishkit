@@ -452,7 +452,15 @@ Pause and resume mail
 ([live delivery pause](../admin-portal/spec.md#live-delivery-pause)) is
 separate and unchanged: it holds every report send of the campaign, and
 resume's recovery plan coalesces held report sends as it coalesces held
-digests today.
+digests today. One difference: a digest's recovery skipped a recipient
+whose message for the same days had already been accepted, from the
+per-recipient coverage the digests kept; a report send keeps no such
+coverage, so its recovery send goes to its whole cohort again, and a
+recipient whose held send was accepted before a second pause gets the
+report twice. The case needs two pauses around one delivery and is
+accepted for now
+([#1835](https://github.com/epiphany40223/parishkit/issues/1835) tracks
+recipient coverage for report sends).
 
 ### Sends after the campaign ends
 
@@ -1266,9 +1274,11 @@ entries of the schedule commands (a daily digest's `comparison`, a digest's
 | `report-email copy SEND` | A saved copy, read from its snapshot through its page's functions: each block's figures, and for the additional information block each request's identifier and states, never a Family's text. Reads pre-migration daily and weekly copies too. Records `report_email_viewed`. |
 
 Other commands change with it: `delivery list --purpose` accepts
-`admin_report` and `admin_report_test` (and still the old `daily_digest`
-and `weekly_digest` for history), and the Resolve held messages commands'
-`--type` takes `report` in place of `daily_digest` and `weekly_digest`
+`admin_report` (and `admin_report_test` with Send a test to me, delivery
+plan item 7) and still the old `daily_digest` and `weekly_digest` for
+history, and the Resolve held messages commands' `--type` takes
+`admin_report`, keeping `daily_digest` and `weekly_digest` for digests held
+from before the conversion
 ([family email sends and delivery controls](../admin-automation/spec.md#family-email-sends-and-delivery-controls)).
 
 A full-scope session is needed for `preview`, `confirm`, `send-test` and
@@ -1302,19 +1312,38 @@ design notes before code:
 - **The YAML document and the database stay in step.** The converted
   document is built by Python from each campaign's applied document (the
   frozen SQL file never parses YAML) and installed through the
-  configuration installer's normal journaled path in the upgrade's
-  configuration step, so the YAML and database digests match afterwards; the
-  frozen file converts and checks the database rows against it. The PR
-  states the exact ordering against the migration run.
+  configuration installer's normal journaled path, so the YAML and database
+  digests match afterwards. The order, as delivery PR 4 built it: the
+  conversion file runs (refusing while digest work is open, see below), then
+  the grants, then the offline `pk-stewardship upgrade-reports` command
+  (admin-recovery profile; an operator upgrade request, as the users
+  upgrade of #952 was), whose activation retypes each converted definition
+  in place with its new revision; the upgrade script runs it on every
+  upgrade, and it does nothing once nothing is left to convert. The web,
+  worker, scheduler and mail dispatch services refuse to start while the
+  applied configuration still holds a digest.
 - **No re-plan and no hold.** The new revision covers exactly the slots the
   old one did, so the replacement cancels nothing (the migration refuses to
   run while any digest work is open; see below), creates no occurrence, and
   sets no activation hold; the gating test asserts the next planned sends
-  are unchanged.
+  are unchanged. A past slot is covered by its fulfillment, a hold, a
+  post-close resolution or an occurrence of the current revision, so a past
+  digest slot with none of those (an occurrence that failed without
+  settlement) is owed again after the conversion, as after any revision
+  change: the first scheduler pass makes one coalesced catch-up send of
+  that report to its Administrators. The runbook's precheck lists such
+  slots. A finished digest send (delivered, empty, failed or skipped)
+  stays the converted definition's own work, whichever digest task
+  settled it, so it never blocks the replacement; only one still in
+  flight does.
 - **Every lifecycle state.** Draft, active, closed and archived campaigns
-  are converted, in both modes. Archived campaigns' write guards refuse
-  ordinary changes, so the conversion uses a migration-only guarded path
-  that changes only the schedule kind and values and nothing else.
+  are converted, in both modes. The applied configuration's schedules get
+  their new revisions as above. A digest definition no applied record
+  selects (a removed digest, or one of a campaign the document no longer
+  holds) is retyped to `report` kind only, with its revisions kept as
+  history: the conversion file does so for the definitions unselected when
+  it runs, and the conversion's activation for any left after it. Neither
+  sends again, so no values are rewritten for them.
 - **Fail forward.** A release from before the conversion cannot read
   `report` rows, so there is no rollback to it short of restoring the
   pre-upgrade backup with the previous release, as the
@@ -1341,8 +1370,9 @@ sends are today's slots, including the post-close slot on the first chosen
 weekday after the campaign's last day.
 
 The converted Daily's output is byte-identical. The converted Weekly
-changes in exactly three ways at deploy, each an accepted behavior change;
-everything else in it stays byte-identical:
+changes in exactly three ways at deploy, each an accepted behavior change,
+besides the address its links open (below); everything else in it stays
+byte-identical:
 
 - **Scope** (decisions 14 and 15): its requests block lists every open
   request (To review and To handle) on every send, under "N open requests",
@@ -1358,6 +1388,11 @@ everything else in it stays byte-identical:
   still holding a built-in default, current ("Here are this week’s requests
   for follow-up.") or retired, becomes "Here are the additional information
   requests that are still open."; an edited introduction is kept.
+
+The converted Weekly's report and request links open the send's saved
+copy (`/admin/mail/report-emails/sends/<send>/`) in place of the weekly
+digest's pages, as every report email's do ([saved copies](#saved-copies));
+a request link opens that request on Additional information.
 
 The digest email templates the two schedules sent are kept, unchanged, for
 the saved copies that name them; the daily and weekly digest email types
@@ -1406,8 +1441,14 @@ migration:
   carries the final definitions (the implementing pull request lists the
   complete inventory in the file's header, found by searching the installed
   catalog, not only the baseline files). It widens the schedule kind and
-  revision checks to `report` and drops `daily_digest` and `weekly_digest`
-  from them after converting the rows; adds the outbox purposes
+  revision checks to `report`. It keeps `daily_digest` and `weekly_digest`
+  in them: the revision checks for the history rows, which are immutable,
+  and the definition check because the rows are converted after the file
+  runs (above); the configuration validation refuses any change that adds
+  a digest, and a later migration
+  ([#1834](https://github.com/epiphany40223/parishkit/issues/1834)) drops
+  the digest kinds from the definition check, the one SQL check that still
+  admits them, once every deployment is converted. It adds the outbox purposes
   `admin_report` and `admin_report_test`, keeping the old purposes valid for
   history; adds the new validation schema name; and makes the digest
   pipelines' write functions refuse (no digest kind remains to write for)
@@ -1419,14 +1460,20 @@ migration:
 Each file repeats every `ALTER FUNCTION … SECURITY DEFINER` the baseline sets
 for a function it replaces, and ends with a `DO` block that raises unless
 everything it installs is present (each new or replaced body, `prosecdef`
-for each definer function, the checks and purposes) and, for the conversion
-file, every former digest definition now has kind `report` and no revision
-names a digest kind.
+for each definer function, the checks and purposes). The conversion
+file's block also checks that no write gate admits a digest write and no
+task map names a digest task type; that every digest definition is
+converted is checked by the conversion command and by the services'
+startup check (above), since the rows are converted after the file.
 
 The conversion file refuses to run while any digest occurrence is
-`pending`, `running` or `delivery_unknown`, or any digest outbox message is
-not terminal, naming the counts, so a send is never converted mid-flight;
-the operator waits for the send to finish and runs the upgrade again. The
+`pending`, `running` or `delivery_unknown`, any digest outbox message is
+not terminal, or any digest task is open, naming the counts, so a send is never converted mid-flight;
+the migrations before it stay committed, so the operator restores the
+pre-upgrade backup with the previous release, lets the send finish and
+upgrades again; the precheck before the window avoids this
+([deploy conditions](#deploy-conditions)). The conversion's activation
+refuses the same way. The
 Python that reads `report` rows ships in the same release as the conversion
 file, so no release reads a `report` row with digest code.
 
@@ -1453,12 +1500,28 @@ and slot keys as before. The upgrade-parity, frozen-file digest,
 function-equality and `SECURITY DEFINER` tests of the schema policy apply
 unchanged.
 
+Delivery PR 4 meets the first test in two layers: the compiler cases above
+are the block suites' byte-for-byte comparisons with the old compilers
+(`test_report_blocks`, `test_report_document`), and the end-to-end suites
+send a converted Daily (default and edited intro) and a converted Weekly
+through the real producer, worker and mail dispatch after an actual
+conversion, comparing the Daily's subject, intro and envelope with the
+digest's and checking the Weekly's reworded intro, empty requests line and
+missing corrections section (`test_report_conversion_postgresql`); the conversion table's intro rules
+for every default, retired default and edited intro are unit-tested
+(`test_reports_conversion`).
+
 ### Deploy conditions
 
 The migration ships in a maintenance window with no report send pending
-(decision 13); the deploy precheck lists any pending, running or uncertain
-digest occurrence and outbox message, and the upgrade is not started while
-any exists. Nightly release windows do not move report send times. The
+(decision 13). Before the window, the operator runs the read-only precheck
+the [operations spec](../operations/spec.md#report-email-conversion)
+describes (its queries are in the deployment runbook), which lists
+any pending, running or uncertain digest occurrence, unfinished digest
+message or open digest task (the migration's own refusal counts the same
+three), and any past digest slot the conversion would owe again; the
+upgrade is not started while the first three show anything. The migration
+refuses as the last safeguard. Nightly release windows do not move report send times. The
 release notes tell operators to run the scripted upgrade with
 `STEWARDSHIP_SCHEMA_CHANGE=1` and that Reports › Emailed reports moves when
 the page ships.
@@ -1503,6 +1566,17 @@ require.
    their time, weekday, comparison block and skips; Emailed reports lists
    their sends, old and new; Send a weekly report now is Send now of the
    report converted from the Weekly; and the digest commands do the same.
+   Every report email links its send's saved copy, which until PR 5 is an
+   interim page at the saved copy's address (under Sent mail) showing the
+   email as it was sent, from its snapshot, with its chart images; its
+   request links open each request on Additional information. Copy
+   campaign copies the Family mail schedules only, leaving the reports
+   and the digest email templates behind, until PR 8's starting points.
+   It brings forward what PR 5 lists that the conversion needs to work:
+   Sent mail and Pause and resume mail name report emails, and the
+   delivery commands take the `admin_report` purpose and type. The interim
+   saved copy page has no command until PR 5's `report-email copy` (the
+   parity ledger lists it as pending).
 5. **Report emails list and sends**: the Report emails page's list, status
    and action matrix, Send now, Pause and Resume, Delete, past sends and
    saved copies, with `report-email list`, `show`, `sends`, `copy`,

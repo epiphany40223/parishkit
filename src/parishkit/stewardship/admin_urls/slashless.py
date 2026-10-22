@@ -92,6 +92,7 @@ SLASHLESS = (
     ("mail/queue", "mail_queue"),
     ("mail/family-history", "family_email_sends"),
     ("mail/sent", "deliveries"),
+    ("mail/report-emails/sends/<uuid:send_id>", "report_email_send"),
     ("mail/sent/<uuid:message_id>", "delivery"),
     ("mail/refusals", "delivery_refusals"),
     ("mail/refusals/<uuid:refusal_id>", "delivery_refusal"),

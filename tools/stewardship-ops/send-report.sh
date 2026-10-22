@@ -14,7 +14,8 @@
 #   --since, --until  the window of outcomes, as timestamps such as
 #                     '2026-10-03 12:00Z' (UTC is safest) or now
 #   --purpose         one Family mail purpose (initial, reminder, receipt,
-#                     family_test, daily_digest, weekly_digest) or an
+#                     family_test, admin_report, daily_digest,
+#                     weekly_digest) or an
 #                     Administrator alert purpose (operational,
 #                     security_event); empty or omitted means all Family mail
 #   --definition      one schedule definition's UUID
@@ -101,7 +102,7 @@ fi
 ops_require_timestamp --since "$since"
 ops_require_timestamp --until "$until"
 case $purpose in
-    "" | initial | reminder | receipt | family_test | daily_digest | weekly_digest | operational | security_event) ;;
+    "" | initial | reminder | receipt | family_test | admin_report | daily_digest | weekly_digest | operational | security_event) ;;
     *) ops_refuse "Unknown --purpose '$purpose'" ;;
 esac
 if [ -n "$definition" ] &&

@@ -175,6 +175,16 @@ def test_a_one_time_send_has_one_slot():
     assert plan.page(through=slot.due_at, after=page.cursor).slots == ()
 
 
+def test_only_a_one_time_send_has_a_one_time_due_instant():
+    """As ``SchedulePlan``'s field, which the schedule table reads for each row."""
+    once = SchedulePlan.from_values(
+        report(schedule={"type": "once", "date": "2026-12-01", "time": "09:00:00"}),
+        NEW_YORK,
+    )
+    assert once.one_time_due == datetime(2026, 12, 1, 14, tzinfo=UTC)
+    assert SchedulePlan.from_values(report(), NEW_YORK).one_time_due is None
+
+
 def test_planning_reads_only_the_schedule_fields():
     """A stored report whose blocks no longer validate still plans its sends.
 

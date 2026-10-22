@@ -32,6 +32,10 @@ DELIVERY_PURPOSES = (
     "operational",
     "security_event",
     "leader_email",
+    # Report emails (#1786): a scheduled or manual send, and Send a test to
+    # me. The digest purposes stay valid for the messages sent before.
+    "admin_report",
+    "admin_report_test",
 )
 # Purposes routed to Administrators as operational mail: no campaign, no
 # Family, no credential namespace and no Testing redirection.
@@ -204,6 +208,8 @@ class OutboxMessage(MutableRecord, DeliveryCommand):
                             "operational",
                             "security_event",
                             "leader_email",
+                            "admin_report",
+                            "admin_report_test",
                         ],
                         family=None,
                     )

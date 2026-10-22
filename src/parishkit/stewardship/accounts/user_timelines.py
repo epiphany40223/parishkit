@@ -118,6 +118,10 @@ EMAIL_NAMES = {
     "family_test": _("Chosen-Family test email"),
     "daily_digest": _("Daily Administrator report"),
     "weekly_digest": _("Weekly Administrator report"),
+    # Report emails (#1786) replace the digests; the digests above remain
+    # for the mail sent before they did.
+    "admin_report": _("Report email"),
+    "admin_report_test": _("Report email test"),
     "operational": _("Operational notice"),
     "security_event": _("Security notice"),
     "leader_email": _("Ministry leader email"),

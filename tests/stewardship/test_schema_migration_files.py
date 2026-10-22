@@ -513,6 +513,9 @@ FROZEN = {
     "0157_person_identity_reads.sql": (
         "85466fd212f85c2efe5d184d2485fad66a5022df25df531b235020ecdd85cb37"
     ),
+    "0161_report_conversion.sql": (
+        "3e723f78dcd1ac826e1d7b31309f34f513d6d9e31c23e713e279b41fc9f8a016"
+    ),
 }
 
 
@@ -680,17 +683,54 @@ def view_bodies(text, *, replace):
     return bodies
 
 
+# The views whose final definition reads a table or view that only a frozen
+# file creates (#1786's 0161 reads the report email records of 0156): the
+# baseline cannot create them in that form, since a view is checked when it
+# is created, so it keeps the last definition it can install and the frozen
+# file replaces it on every install path. The upgrade-parity test compares
+# the results.
+MIGRATION_FINAL_VIEWS = {
+    "0161_report_conversion.sql": frozenset(
+        {
+            "stewardship_admin_digest_work_row",
+            "stewardship_schedule_work_row",
+            "stewardship_delivery_digest_message",
+            "stewardship_delivery_digest_recovery",
+            "stewardship_delivery_closed_coverage",
+            "stewardship_delivery_closed_coverage_summary",
+            "stewardship_withdrawal_inventory",
+        }
+    ),
+}
+
+
 def test_latest_migration_copy_of_each_replaced_view_equals_the_baseline():
-    """A replaced view's latest frozen text is the fresh-install baseline's."""
-    baseline = {}
+    """A replaced view's latest frozen text is the fresh-install baseline's.
+
+    Except a view in ``MIGRATION_FINAL_VIEWS``, whose latest text must name
+    an object a frozen file creates (else it belongs in the baseline).
+    """
+    baseline, created = {}, set()
     for path in SCHEMA.glob("*.sql"):
         baseline.update(view_bodies(path.read_text(encoding="utf-8"), replace=False))
-    latest = {}
+    latest, final = {}, {}
     for path in sorted(MIGRATIONS.glob("*.sql")):
-        latest.update(view_bodies(path.read_text(encoding="utf-8"), replace=True))
+        text = path.read_text(encoding="utf-8")
+        replaced = view_bodies(text, replace=True)
+        latest.update(replaced)
+        for name in replaced:
+            final[name] = name in MIGRATION_FINAL_VIEWS.get(path.name, ())
+        created |= set(view_bodies(text, replace=False))
     assert "stewardship_delivery_family_recovery" in latest
     for name, body in latest.items():
+        # A view a frozen file created is replaced freely, as a migration-
+        # owned function is: every install path runs the migrations.
+        if name in created and name not in baseline:
+            continue
         assert name in baseline, f"{name} is replaced but has no baseline view"
+        if final[name]:
+            assert "stewardship_report_email" in body, f"{name} belongs in the baseline"
+            continue
         assert body == baseline[name], f"{name}: latest migration differs from baseline"
 
 

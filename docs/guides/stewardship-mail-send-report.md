@@ -20,7 +20,8 @@ Save the SQL below as `mail-send-report.sql` on the host. Then run it with
 the operator login, as the backup runbook does for its queries, choosing the
 time window (UTC is safest). An empty `purpose` means all mail the Family
 mail worker sends (`initial`, `reminder`, `receipt`, `family_test`,
-`daily_digest`, `weekly_digest`); name one of those to narrow it. Name
+`admin_report`, the report emails, and `daily_digest` and `weekly_digest`,
+the digests they replaced); name one of those to narrow it. Name
 `operational` or `security_event` to see Administrator alerts instead,
 which are never included otherwise (they record helper statistics but no
 transport). `definition` narrows to one schedule definition (its UUID):
@@ -125,8 +126,8 @@ WHERE e.previous_state = 'submitting'
   AND e.created_at >= :'since'::timestamptz
   AND e.created_at < :'until'::timestamptz
   AND (m.purpose = :'purpose' OR (:'purpose' = '' AND m.purpose IN
-      ('initial', 'reminder', 'receipt', 'family_test', 'daily_digest',
-       'weekly_digest')))
+      ('initial', 'reminder', 'receipt', 'family_test', 'admin_report',
+       'daily_digest', 'weekly_digest')))
   AND (:'definition' = '' OR EXISTS (
       SELECT 1 FROM stewardship_schedule_occurrence o
       WHERE o.id = m.semantic_key AND o.definition_id::text = :'definition'));

@@ -82,11 +82,12 @@ def test_live_campaign_explains_instead_of_asking_for_a_reload(scheduled):
         assert item.browser.get(test_path).status_code == 200
 
 
-@pytest.mark.parametrize(
-    "slot", ["initial", "reminder", "daily_digest", "weekly_digest"]
-)
+@pytest.mark.parametrize("slot", ["initial", "reminder"])
 def test_every_schedulable_email_previews_in_a_testing_draft(campaign_test, slot):
-    """Each mail type a schedule sends, both digests included, opens its test page."""
+    """Each mail type New scheduled email adds opens its test page.
+
+    Report emails replaced the digests (#1786), so New adds Family mail only.
+    """
     service, browser, _path, _ = campaign_test
     campaign = Campaign.objects.get()
     template = content(str(campaign.pk), kind="email", slot=slot)

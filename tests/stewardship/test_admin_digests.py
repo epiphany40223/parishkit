@@ -148,7 +148,7 @@ def request():
             "root_id": str(TASK),
             "parent_id": None,
             "retry_sequence": 0,
-            "type": "weekly_digest_prepare",
+            "type": "report_email_prepare",
             "state": "queued",
         },
     )
@@ -157,6 +157,15 @@ def request():
 def listed(*, administrator=True):
     """The Emailed reports lists, as the page's ``listing`` gives them."""
     lists = {
+        # The report email sends (#1786), listed before the digests' history.
+        "reports": [
+            {
+                "pk": KEY,
+                "name": "Weekly report",
+                "how": "manual",
+                "made_at": NOW,
+            }
+        ],
         "daily": [
             {
                 "pk": SNAPSHOT,
@@ -181,6 +190,14 @@ GOLDEN = {
         listed,
         {
             "campaign_id": str(CAMPAIGN),
+            "reports": [
+                {
+                    "send_id": str(KEY),
+                    "name": "Weekly report",
+                    "how": "manual",
+                    "made_at": ISO,
+                }
+            ],
             "daily": [
                 {
                     "snapshot_id": str(SNAPSHOT),
@@ -267,7 +284,7 @@ GOLDEN = {
                 "root_id": str(TASK),
                 "parent_id": None,
                 "retry_sequence": 0,
-                "type": "weekly_digest_prepare",
+                "type": "report_email_prepare",
                 "state": "queued",
             },
         },

@@ -293,6 +293,7 @@ sections:
     "Post-launch schema policy": [OPS-04, DAT-01]
     "Production upgrades": [OPS-04]
     "Users upgrade from sign-in rules": [OPS-04, ADM-07]
+    "Report email conversion": [OPS-04, DAT-02]
     "Offline bootstrap profile": [OPS-04]
     "Offline Admin-access recovery": [OPS-04]
     "Download capacity and timeouts": [OPS-04, ARC-08]

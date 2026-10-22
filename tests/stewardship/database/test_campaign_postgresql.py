@@ -240,11 +240,28 @@ def test_draft_edits_and_schedule_removal_are_atomic(tmp_path):
             pk=result.applied_version_id
         ).canonical_document
     )
-    mail["values"].update(kind="daily_digest", date=None)
-    failed = change(
-        store, latest, actor, [{"operation": "add", "section": "schedules", **mail}]
-    )
+    # A new invitation and the removed one's UUID as a reminder: valid but
+    # for the retyping. (No change may add a digest any more, #1786.)
+    retyped = schedule(row["id"], kind="reminder", date="2054-10-10")
+    retyped["id"] = mail["id"]
+    invitation = schedule(row["id"])
+
+    def readd(reminder):
+        """Add the new invitation and ``reminder`` to the latest version."""
+        return change(
+            store,
+            latest,
+            actor,
+            [
+                {"operation": "add", "section": "schedules", **invitation},
+                {"operation": "add", "section": "schedules", **reminder},
+            ],
+        )
+
+    failed = readd(retyped)
     assert failed.state == "failed" and failed.failure_code == "invalid_candidate"
+    # Under a fresh UUID the same reminder is accepted.
+    assert readd(retyped | {"id": str(uuid4())}).state == "applied"
 
 
 def test_competing_draft_requests_have_one_winner(tmp_path):

@@ -1,0 +1,10 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% comment %}A report send's saved copy (#1786, report_email_copy_views): the email as it was sent, drawn from the send's snapshot, its charts served beside it. The Report emails page's own saved copy replaces it (report-emails spec, "Saved copies").{% endcomment %}
+{% block title %}{% translate "Report email" %}{% endblock %}
+{% block content %}
+<h1>{{ subject }}</h1>
+{% aboutpage "report-email-copy" %}<p>{% translate "This is the report email as it was sent, with its charts. Its links work as they do in the email; a request it lists opens on Additional information." %}</p>{% endaboutpage %}
+<div class="report-email-copy">{{ email }}</div>
+{% comment %}Its trail's Sent mail is an Administrator page; Staff, who may open the copy too, go back to Emailed reports, which lists it.{% endcomment %}
+<p><a href="{% url 'admin:emailed_reports' %}">{% translate "Return to Emailed reports" %}</a></p>
+{% endblock %}

@@ -34,10 +34,10 @@ from parishkit.stewardship.storage import StorageInvariantError
 from .campaign_builders import campaign_clock, change, command, draft_campaign
 from .credential_builders import family_campaign, populate
 from .lock_observer import backend_pid, wait_for_lock
+from .report_builders import add_digest
 from .test_background_grants_postgresql import task_login
 from .test_catchup_preparation_postgresql import execution_arguments
 from .test_catchup_restore_proofs_postgresql import stage_family_pending
-from .test_digest_schedule_planning_postgresql import add_digest
 from .test_family_schedule_planning_postgresql import add_reminders
 from .test_taskrun_postgresql import act
 

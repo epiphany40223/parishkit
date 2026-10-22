@@ -488,8 +488,20 @@ must end in the same catalog. The rules:
   `CREATE OR REPLACE FUNCTION` copy equals the baseline's definition, and that
   a replaced function exists in the baseline or was created by an earlier
   frozen file (a migration-owned function is replaced freely, as every path
-  runs its migrations). Views and constraints have no such text check; only
-  the upgrade-parity test catches their drift.
+  runs its migrations). It checks a replaced view's latest text against the
+  baseline the same way (see the next rule); constraints have no such text
+  check, and only the upgrade-parity test catches their drift.
+- **A view that comes to name a migration's object keeps its baseline
+  body.** The baseline creates views with their bodies checked, before any
+  migration runs, so a view whose new body names a table or function only a
+  frozen file creates cannot take that body in `schema/*.sql`. It keeps the
+  last body the baseline can install, and the frozen file's
+  `CREATE OR REPLACE VIEW` is its final definition on every install path
+  (fresh installs run the migrations too).
+  `test_schema_migration_files.py` lists each such view by file
+  (`MIGRATION_FINAL_VIEWS`, first used by report emails,
+  [#1786](https://github.com/epiphany40223/parishkit/issues/1786)) and
+  checks every other replaced view's latest text against the baseline.
 - **A replaced function keeps the baseline's attributes.** `CREATE OR
   REPLACE FUNCTION` keeps the owner and grants but resets every attribute
   the command does not name. When the baseline sets one with a separate
@@ -883,6 +895,48 @@ access and links to the access step. The Administrator lists each person's
 address and saves the step again. A domain is never silently dropped, because
 that would quietly remove people's access. A step saved with empty domain
 lists is still read as it is.
+
+### Report email conversion
+
+Report emails replace the Daily and Weekly Admin digests in one release
+([#1786](https://github.com/epiphany40223/parishkit/issues/1786); the
+[report-emails spec](../report-emails/spec.md#migration-of-the-daily-and-weekly-digests)
+says what converts). The release's frozen migration rewrites the shared
+guards and functions; the rows are converted afterwards, offline, by
+`pk-stewardship upgrade-reports` in the `admin-recovery` one-shot profile,
+because the configuration document is in the YAML authority store too. Its
+operator upgrade request (operator `system`, reason "#1786 conversion",
+request schema `operator-upgrade-reports-v12`) installs the converted
+configuration through the installer's journaled path, and its activation
+retypes each digest definition in place. It needs no inputs and does
+nothing once nothing is left to convert, so the scripted upgrade runs it in
+step 4 after the migrations and the grants on every upgrade. Web, workers,
+scheduler and mail dispatch refuse to start while the applied
+configuration still holds a digest.
+
+- **Precheck, before the window.** Schedule the window away from the
+  digests' send times, and run, read-only with the operator login, the
+  migration's three counts: digest occurrences `pending`, `running` or
+  `delivery_unknown`; digest messages not `delivered`,
+  `permanent_failure` or `cancelled`; and digest tasks `queued`,
+  `running`, `retry_wait` or `abandoned`. Resolve any old stuck one
+  (Sent mail, Background work) before the window: any count above zero
+  makes the migration refuse. Also list the digest occurrences that
+  failed without a fulfillment: each digest with one gets one coalesced
+  catch-up report send to its Administrators right after the upgrade. The
+  deployment runbook gives both queries.
+- **If the migration refuses.** Its own changes are rolled back, but the
+  migrations before it in the release are committed, and the previous
+  release refuses a schema newer than its own. So restore the pre-upgrade
+  backup with the previous release, as
+  [production upgrades](#production-upgrades) allow, let the send finish,
+  and upgrade again. The precheck exists to avoid this.
+- **If `upgrade-reports` fails after the migration.** Fail forward: the
+  migrated schema no longer admits digest writes, so the previous release
+  cannot send its digests. Fix the cause and repeat the run, whose
+  conversion step resumes; only a catastrophic failure restores the
+  pre-upgrade backup with the previous release, as
+  [production upgrades](#production-upgrades) allow.
 
 ### Offline bootstrap profile
 

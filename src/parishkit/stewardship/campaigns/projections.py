@@ -42,6 +42,19 @@ def sql_boundaries_match(configuration_ids):
         return cursor.fetchone()[0]
 
 
+def projected_due(values, campaign, interval):
+    """A schedule record's one-time UTC due, or None for a repeating send.
+
+    A report email (#1786) has no one due instant: its sends are evaluated
+    from its rule (``schedule_evaluation.ReportPlan``). Its values were
+    validated with the document (``accounts.reports_schema``); every other
+    kind is validated and resolved here as before.
+    """
+    if values.get("kind") == "report":
+        return None
+    return schedule_values(values, campaign, interval=interval)
+
+
 def prepare_campaigns(snapshot, document, attribution):
     """Persist only validated configuration; preparation never creates a current
     draft.
@@ -73,10 +86,10 @@ def prepare_campaigns(snapshot, document, attribution):
             values=values,
             campaign_id=values["campaign_id"],
             kind=values["kind"],
-            due_at=schedule_values(
+            due_at=projected_due(
                 values,
                 campaigns[values["campaign_id"]],
-                interval=intervals[values["campaign_id"]],
+                intervals[values["campaign_id"]],
             ),
             **attribution,
         )
@@ -114,9 +127,7 @@ def stored_campaigns(snapshot):
             values != row.values
             or campaign is None
             or row.due_at
-            != schedule_values(
-                values, campaign, interval=intervals[str(row.campaign_id)]
-            )
+            != projected_due(values, campaign, intervals[str(row.campaign_id)])
         ):
             from parishkit.config import ConfigError
 

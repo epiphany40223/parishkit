@@ -50,8 +50,8 @@ from .campaign_builders import (
     restored_runtime,
 )
 from .credential_builders import family_campaign, populate
+from .report_builders import add_digest
 from .test_background_grants_postgresql import task_login
-from .test_digest_schedule_planning_postgresql import add_digest
 from .test_family_schedule_planning_postgresql import add_reminders
 from .test_taskrun_postgresql import act
 
@@ -133,7 +133,12 @@ def test_transient_database_failure_records_sanitized_retry_and_retains_hold(
 def test_digest_preparation_spans_pages_without_releasing_partial_coverage(
     tmp_path, cycle
 ):
-    """More than 100 dates require separate materialization and coverage commits."""
+    """More than 100 dates require separate materialization and coverage commits.
+
+    A report coalesces its missed sends into its latest one (report-emails
+    spec, "Catch-up, recovery and holds"), so the 108 earlier sends are
+    covered 100 to a page and only the latest stays pending.
+    """
     store, campaign, actor = draft_campaign(
         tmp_path,
         campaign_record(start_date="2054-01-01", end_date="2054-12-31"),
@@ -163,19 +168,20 @@ def test_digest_preparation_spans_pages_without_releasing_partial_coverage(
                     prepare_batch(demand, execution.claim)
                 demand.refresh_from_db()
                 assert demand.completed_at is None
-                assert ScheduleFulfillment.objects.count() == 99
+                assert ScheduleFulfillment.objects.count() == 100
                 execution.handler.execute(execution)
     demand.refresh_from_db()
     assert demand.completed_at is not None
-    assert ScheduleFulfillment.objects.count() == 109
+    assert ScheduleFulfillment.objects.count() == 108
     selected = ScheduleOccurrence.objects.get(state="pending")
-    assert selected.slot == f"recovery:{demand.pk}"
+    # The send of April 20 reports on April 19, the slot it keeps.
+    assert selected.slot == "2054-04-19"
     assert set(ScheduleFulfillment.objects.values_list("occurrence_id", flat=True)) == {
         selected.pk
     }
     assert max(CatchUpCheckpoint.objects.values_list("items", flat=True)) <= 100
     assert not OutboxMessage.objects.exists()
-    assert outcome_totals(demand)["coalesced_slots"] == 109
+    assert outcome_totals(demand)["coalesced_slots"] == 108
 
 
 def test_failed_family_effect_cannot_commit_its_checkpoint(tmp_path, monkeypatch):
@@ -428,8 +434,12 @@ def test_revision_change_after_partial_coverage_retains_all_original_dates(tmp_p
             for _ in range(4):
                 with execution.effect():
                     prepare_batch(demand, execution.claim)
-            previous = ScheduleOccurrence.objects.get(slot=f"recovery:{demand.pk}")
-            assert ScheduleFulfillment.objects.filter(occurrence=previous).count() == 99
+            previous = ScheduleOccurrence.objects.get(slot="2054-04-19")
+            assert (
+                ScheduleFulfillment.objects.filter(occurrence=previous).count() == 100
+            )
+            # A new send time is a new revision of the report's schedule.
+            saved = ScheduleDefinition.objects.get(pk=definition).current_revision
             result = change(
                 store,
                 store.active(),
@@ -439,7 +449,9 @@ def test_revision_change_after_partial_coverage_retains_all_original_dates(tmp_p
                         "operation": "update",
                         "section": "schedules",
                         "id": str(definition),
-                        "values": {"time": "01:15:00"},
+                        "values": {
+                            "schedule": saved.values["schedule"] | {"time": "01:15:00"}
+                        },
                     }
                 ],
             )
@@ -468,7 +480,7 @@ def test_revision_change_after_partial_coverage_retains_all_original_dates(tmp_p
     second = covered_dates(selected.pk, after=first[-1])
     assert len(first) == 100 and len(second) == 9
     assert len(set(first + second)) == 109
-    assert ScheduleFulfillment.objects.filter(occurrence=previous).count() == 99
+    assert ScheduleFulfillment.objects.filter(occurrence=previous).count() == 100
     assert not OutboxMessage.objects.exists()
     assert outcome_totals(demand)["coalesced_slots"] == 109
 

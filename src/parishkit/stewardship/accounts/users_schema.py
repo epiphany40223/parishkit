@@ -31,8 +31,13 @@ RECOVERY_SCHEMA = "operator-recovery-users-v10"
 # The three request formats above build its candidates too, so every rule of
 # the users form holds for it, and SQL treats it as the users form.
 SERIES_SCHEMA = "campaign-series-v11"
+# The users form plus report emails (#1786, ``reports_schema``): every rule
+# of the series schema for the other records, and report schedule records
+# in place of the Daily and Weekly digests. The same request formats build
+# its candidates.
+REPORTS_SCHEMA = "campaign-series-v12"
 # The post-setup schemas in the users form.
-FORM_SCHEMAS = frozenset({SCHEMA, SERIES_SCHEMA})
+FORM_SCHEMAS = frozenset({SCHEMA, SERIES_SCHEMA, REPORTS_SCHEMA})
 # Set by the release that swaps the SQL sign-in functions and brings the
 # Users page (#952 slices 4 and 5, shipped together): web, workers and
 # scheduler refuse to start on a configuration of sign-in rules

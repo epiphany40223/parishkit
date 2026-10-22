@@ -12,6 +12,7 @@ from django.db import connection
 
 from parishkit.stewardship.accounts import schedule_views
 from parishkit.stewardship.accounts.policy_models import PortalUser
+from parishkit.stewardship.accounts.report_rows import view_rows
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.accounts.schedule_forms import schedule_order
 from parishkit.stewardship.campaigns.models import Campaign, ScheduleDefinition
@@ -29,10 +30,10 @@ from .campaign_builders import (
     claimed_task,
     occurrence,
 )
+from .report_builders import add_digest
 from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
 from .test_campaign_views_postgresql import apply, post
-from .test_digest_schedule_planning_postgresql import add_digest
 from .test_parish_views_postgresql import token
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -61,14 +62,18 @@ def fields(store, campaign, *, editable=True):
     The page lists saved schedules in sending order (#448), and a browser
     posts its rows in that order, so the test does the same. Send times are
     the browser's (#558); this browser is in the campaign's own zone, so the
-    saved campaign-local values are also what the page shows.
+    saved campaign-local values are also what the page shows. A converted
+    report is posted as the digest row the page draws for it
+    (``report_rows.view_rows``, #1786).
     """
     document = store.active().document()
     rows = sorted(
-        (
-            row
-            for row in document["sections"].get("schedules", [])
-            if row["values"]["campaign_id"] == str(campaign.pk)
+        view_rows(
+            [
+                row
+                for row in document["sections"].get("schedules", [])
+                if row["values"]["campaign_id"] == str(campaign.pk)
+            ]
         ),
         key=schedule_order,
     )
@@ -227,16 +232,7 @@ def test_daily_preview_is_bounded_and_labels_reported_days(auth_service, google)
     """Recurring mail uses the same bounded evaluator as the future work planner."""
     store = auth_service.store
     campaign, path = setup(store)
-    digest = schedule(str(campaign.pk), kind="daily_digest", date=None, time="00:15:00")
-    assert (
-        change(
-            store,
-            store.active(),
-            uuid4(),
-            [{"operation": "add", "section": "schedules", **digest}],
-        ).state
-        == "applied"
-    )
+    add_digest(store, campaign)
     browser, _ = signed_in()
     data, indexes = fields(store, campaign)
     data[f"schedules-{indexes['daily_digest']}-time"] = "00:30:00"
@@ -256,16 +252,7 @@ def test_send_times_are_typed_in_any_common_form(auth_service, google):
     """The schedule page reads "12:30a" as 00:30 and refuses "12:30x" (#631)."""
     store = auth_service.store
     campaign, path = setup(store)
-    digest = schedule(str(campaign.pk), kind="daily_digest", date=None, time="00:15:00")
-    assert (
-        change(
-            store,
-            store.active(),
-            uuid4(),
-            [{"operation": "add", "section": "schedules", **digest}],
-        ).state
-        == "applied"
-    )
+    add_digest(store, campaign)
     browser, _ = signed_in()
     data, indexes = fields(store, campaign)
     field = f"schedules-{indexes['daily_digest']}-time"

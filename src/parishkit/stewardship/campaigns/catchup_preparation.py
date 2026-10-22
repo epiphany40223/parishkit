@@ -102,6 +102,7 @@ def prepare_batch(demand, claim):
         )
     if phase == "digests":
         from .catchup_digest import prepare_digest
+        from .report_values import REPORT_LIMIT
 
         definitions = list(
             ScheduleDefinition.objects.select_for_update(of=("self",))
@@ -109,13 +110,14 @@ def prepare_batch(demand, claim):
             .filter(
                 campaign_id=current.campaign_id,
                 current_revision_id__isnull=False,
-                kind__in=("daily_digest", "weekly_digest"),
+                # Report emails (#1786), at most 20 per campaign.
+                kind="report",
             )
-            .order_by("id")[:3]
+            .order_by("id")[: REPORT_LIMIT + 1]
         )
-        if len(definitions) > 2:
+        if len(definitions) > REPORT_LIMIT:
             raise StorageInvariantError(
-                "Digest definitions exceed configuration bounds."
+                "Report definitions exceed configuration bounds."
             )
         for definition in definitions:
             key = receipt_key(configuration, "digest", definition.pk)

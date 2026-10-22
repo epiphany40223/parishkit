@@ -1,7 +1,11 @@
-"""Resume preserves per-recipient delivery proof across digest replacement."""
+"""Resume preserves per-recipient delivery proof across report replacement.
+
+The reports are report emails (#1786), which replaced the Daily and Weekly
+digests: a report shaped as the converted Daily, two Administrators in its
+cohort, sent by the real report producer, worker and mail dispatch role.
+"""
 
 from datetime import timedelta
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -12,24 +16,18 @@ from parishkit.stewardship.campaigns.delivery_control_models import (
 )
 from parishkit.stewardship.campaigns.recovery_coverage import covered_dates
 from parishkit.stewardship.campaigns.schedule_models import ScheduleOccurrence
-from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.family_delivery import FamilyDeliveryResult
 from parishkit.stewardship.family_delivery import FamilyDeliveryStatus as Status
 from parishkit.stewardship.jobs.family_mail_dispatch import finish_submission
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage
-from parishkit.stewardship.reports.digest_fanout import fanout_daily
-from parishkit.stewardship.reports.digest_models import DailyDigestRecipient
-from parishkit.stewardship.reports.digest_tasks import daily_handler
+from parishkit.stewardship.reports.report_email_models import ReportEmailRecipient
 from parishkit.stewardship.storage import StaleRecordError
 
 from .campaign_builders import campaign_clock
+from .report_builders import add_digest, begin, execute, prepare_due, produce, set_user
 from .test_background_grants_postgresql import task_login
-from .test_daily_digest_dispatch_postgresql import begin
-from .test_daily_digest_fanout_postgresql import ready_report
-from .test_daily_digest_planning_postgresql import allocate
-from .test_daily_digest_tasks_postgresql import execute
 from .test_delivery_control_postgresql import accepted_sender_check
 from .test_family_mail_dispatch_postgresql import claim
 from .test_setup_mail_views_postgresql import web_login
@@ -43,19 +41,49 @@ from .test_withdrawal_postgresql import (  # noqa: F401
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
+SECOND = "second@example.org"
 
 
-def test_prepared_digest_resume_reuses_accepted_recipient_coverage(
+def latest_recipients():
+    """The recipients of the newest report send, by address."""
+    newest = ReportEmailRecipient.objects.order_by("-snapshot__created_at").first()
+    return {
+        row.address: row
+        for row in ReportEmailRecipient.objects.filter(
+            snapshot_id=newest.snapshot_id
+        ).select_related("outbox", "snapshot__preparation")
+    }
+
+
+def accept(message):
+    """Deliver one report message through the exact mail dispatch role."""
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        execution = claim(message)
+        assert begin(message, execution) is not None
+        finish_submission(
+            message.pk, execution.claim, FamilyDeliveryResult(Status.ACCEPTED, 1)
+        )
+
+
+def test_prepared_report_resume_keeps_accepted_recipient_delivery(
     scheduled,  # noqa: F811
     monkeypatch,
     tmp_path,
 ):
-    """One accepted child is never resent when its held sibling is replaced."""
+    """One accepted message is never resent when its held sibling is replaced.
+
+    Resume coalesces the held send into a recovery send covering the same
+    report days; the accepted message keeps its delivery, the held one is
+    cancelled, and an uncertain outcome of the recovery send blocks resume.
+    """
     item = scheduled
-    harness = SimpleNamespace(campaign=item.campaign, service=item.arguments[1])
+    store = item.arguments[1].store
+    add_digest(store, item.campaign)
+    set_user(store, "second@example.org", "administrator", name="Second, Admin")
     due = item.campaign.active_configuration.starts_at + timedelta(days=2, hours=12)
     with campaign_clock(due):
-        owner, ready = ready_report(harness, additional_admins=("second@example.org",))
+        statuses = produce()
+        assert statuses
         with web_login():
             _, token = commands.preview_pause(
                 *item.arguments, reason="Inspect report preparation"
@@ -64,29 +92,20 @@ def test_prepared_digest_resume_reuses_accepted_recipient_coverage(
         accepted_sender_check(item, monkeypatch, tmp_path)
         with web_login(), pytest.raises(StaleRecordError, match="report preparation"):
             commands.preview_resume(*item.arguments, reason="Too early")
-        with task_login(ServiceRole.WORKER, exact=True), work_transaction():
-            assert fanout_daily(owner).phase == "complete"
+        for status in statuses:
+            execute(status)
         with web_login():
             _, token = commands.preview_resume(
                 *item.arguments, reason="Finish prepared report"
             )
             commands.confirm(*item.arguments, token=token)
-        # The same dates now belong to a new unowned aggregate. The actual
-        # worker prepares its recipients; no test fabricates snapshot evidence.
-        status = allocate(claim_task=False)
-        with task_login(ServiceRole.WORKER, exact=True):
-            execute(status, daily_handler(public_origin="https://parish.example"))
-        latest = DailyDigestRecipient.objects.filter(
-            ready__snapshot__preparation__task_id=status.run_id
-        ).select_related("outbox")
-        first = latest.get(address=ready.recipients[0]).outbox
-        second = latest.get(address="second@example.org").outbox
-        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
-            execution = claim(first)
-            assert begin(first, execution) is not None
-            finish_submission(
-                first.pk, execution.claim, FamilyDeliveryResult(Status.ACCEPTED, 1)
-            )
+        # The same dates now belong to a new recovery send. The actual worker
+        # prepares its recipients; no test fabricates snapshot evidence.
+        prepare_due()
+        latest = latest_recipients()
+        first = next(row for address, row in latest.items() if address != SECOND)
+        first, second = first.outbox, latest[SECOND].outbox
+        accept(first)
         first.refresh_from_db()
         accepted_version = first.version
         with web_login():
@@ -98,7 +117,7 @@ def test_prepared_digest_resume_reuses_accepted_recipient_coverage(
             assert impact["prepared"] == impact["selected"] == 1
             assert impact["blocked"] == 0
         old_occurrence = ScheduleOccurrence.objects.get(
-            pk=latest.first().ready.snapshot.preparation.occurrence_id
+            pk=latest[SECOND].snapshot.preparation.occurrence_id
         )
         expected_dates = covered_dates(old_occurrence.pk)
         accepted_sender_check(item, monkeypatch, tmp_path)
@@ -136,23 +155,28 @@ def test_prepared_digest_resume_reuses_accepted_recipient_coverage(
         assert old_occurrence.state == "coalesced"
         selected = ScheduleOccurrence.objects.get(pk=old_occurrence.replacement_id)
         assert covered_dates(selected.pk) == expected_dates
-        status = allocate(claim_task=False)
-        with task_login(ServiceRole.WORKER, exact=True):
-            execute(status, daily_handler(public_origin="https://parish.example"))
-        recipients = DailyDigestRecipient.objects.filter(
-            ready__snapshot__preparation__task_id=status.run_id
+        prepare_due()
+        recipients = latest_recipients()
+        # A report's recovery send is a new report to its whole cohort: unlike
+        # the digests, whose recipients reused accepted coverage, the
+        # Administrator who accepted the earlier send gets one too (#1786; the
+        # documented difference in the report-emails spec, "Pause and resume").
+        # The accepted message itself is never resent or changed.
+        assert set(recipients) == set(latest) and all(
+            row.disposition == "queued" and row.outbox.state == "pending"
+            for row in recipients.values()
         )
-        covered = recipients.get(address=ready.recipients[0])
-        assert covered.outbox_id is None and covered.covered_messages == [str(first.pk)]
-        replacement = recipients.get(address="second@example.org")
-        assert replacement.outbox_id not in {None, second.pk}
-        assert OutboxMessage.objects.get(pk=replacement.outbox_id).state == "pending"
-        unresolved = OutboxMessage.objects.get(pk=replacement.outbox_id)
+        assert first.pk not in {row.outbox_id for row in recipients.values()}
+        assert recipients[SECOND].snapshot.preparation.occurrence_id == selected.pk
+        replacement = recipients[SECOND].outbox
+        assert replacement.pk != second.pk and replacement.state == "pending"
         with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
-            execution = claim(unresolved)
-            assert begin(unresolved, execution) is not None
+            execution = claim(replacement)
+            assert begin(replacement, execution) is not None
             finish_submission(
-                unresolved.pk, execution.claim, FamilyDeliveryResult(Status.UNKNOWN, 1)
+                replacement.pk,
+                execution.claim,
+                FamilyDeliveryResult(Status.UNKNOWN, 1),
             )
         with web_login():
             _, token = commands.preview_pause(
@@ -166,5 +190,5 @@ def test_prepared_digest_resume_reuses_accepted_recipient_coverage(
                 commands.preview_resume(
                     *item.arguments, reason="Must not resend uncertain mail"
                 )
-        unresolved.refresh_from_db()
-        assert unresolved.state == "delivery_unknown" and unresolved.attempt == 1
+        replacement = OutboxMessage.objects.get(pk=replacement.pk)
+        assert replacement.state == "delivery_unknown" and replacement.attempt == 1

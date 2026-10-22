@@ -23,6 +23,11 @@ from parishkit.stewardship.reports.digest_models import (
     DailyDigestSnapshot,
 )
 from parishkit.stewardship.reports.models import CampaignFactPin
+from parishkit.stewardship.reports.report_email_models import (
+    ReportEmailPreparation,
+    ReportEmailRecipient,
+    ReportEmailSnapshot,
+)
 from parishkit.stewardship.reports.weekly_models import (
     WeeklyDigestRecipient,
     WeeklyDigestSnapshot,
@@ -127,6 +132,12 @@ def inventory_queries(campaign_id):
         preparation__mode="testing",
         preparation__rehearsal_epoch_id__in=epochs,
     )
+    reports = ReportEmailPreparation.objects.filter(
+        campaign_id=campaign_id, mode="testing", rehearsal_epoch_id__in=epochs
+    )
+    report_snapshots = ReportEmailSnapshot.objects.filter(
+        preparation_id__in=reports.values("pk")
+    )
     queries = {
         CleanupCategory.BASELINE: baselines,
         CleanupCategory.SESSION_DATA: sessions.filter(session__isnull=False),
@@ -167,6 +178,7 @@ def inventory_queries(campaign_id):
             Q(parent_kind="submission", parent_id__in=responses.values("pk"))
             | Q(parent_kind="form_baseline", parent_id__in=baselines.values("pk"))
             | Q(parent_kind="digest", parent_id__in=snapshots.values("pk"))
+            | Q(parent_kind="digest", parent_id__in=reports.values("pk"))
         ),
         CleanupCategory.RECEIPT: SubmissionReceiptOccurrence.objects.filter(
             submission_id__in=responses.values("pk")
@@ -186,6 +198,13 @@ def inventory_queries(campaign_id):
         CleanupCategory.WEEKLY_SNAPSHOT: weekly,
         CleanupCategory.WEEKLY_RECIPIENT: WeeklyDigestRecipient.objects.filter(
             snapshot_id__in=weekly.values("pk")
+        ),
+        CleanupCategory.REPORT_SNAPSHOT: report_snapshots,
+        CleanupCategory.REPORT_RECIPIENT: ReportEmailRecipient.objects.filter(
+            snapshot_id__in=report_snapshots.values("pk")
+        ),
+        CleanupCategory.REPORT_FACT_PIN: CampaignFactPin.objects.filter(
+            parent_kind="digest", parent_id__in=reports.values("pk")
         ),
         CleanupCategory.ENGAGEMENT: FamilyEngagement.objects.filter(
             family__campaign_id=campaign_id, mode="test", rehearsal_epoch_id__in=epochs

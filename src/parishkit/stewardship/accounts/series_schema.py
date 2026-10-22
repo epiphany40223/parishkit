@@ -128,8 +128,9 @@ def upkeep(document, patch):
             removed.add(item["id"])
         elif "date" in item["values"]:
             dates[item["id"]] = item["values"]["date"]
+    # A report email (#1786) has no date of its own, and is in no series.
     current = {
-        row["id"]: row["values"]["date"]
+        row["id"]: row["values"].get("date")
         for row in document["sections"].get("schedules", [])
     }
     result = []

@@ -562,7 +562,6 @@ def scheduler_producer(store, *, bulk=False, web_health=None):
     from .accounts.setup_notifications import recover_pending as recover_setup_slack
     from .accounts.setup_staging import produce_setup_expiry
     from .campaigns.boundary_production import produce_boundaries
-    from .campaigns.digest_schedule_planning import DigestScheduleProducer
     from .campaigns.go_live_sequencing import GoLiveProducer
     from .campaigns.schedule_production import FamilyScheduleProducer
     from .jobs.leader_email_owner import LEADER
@@ -571,16 +570,12 @@ def scheduler_producer(store, *, bulk=False, web_health=None):
     from .jobs.operational_fanout import produce_fanout
     from .jobs.operational_slack_tasks import produce_slack
     from .jobs.security_owner import SECURITY
-    from .reports.digest_finalization import (
-        DailyDigestFinalizeProducer,
-        WeeklyDigestFinalizeProducer,
-    )
-    from .reports.digest_ownership import DailyDigestProducer
     from .reports.export_cleanup import produce_cleanup as produce_export_cleanup
     from .reports.export_cleanup import produce_discards
     from .reports.fact_production import produce_facts
+    from .reports.report_email_finalization import ReportEmailFinalizeProducer
+    from .reports.report_email_ownership import ReportEmailProducer
     from .reports.verification_production import produce_verifications
-    from .reports.weekly_ownership import WeeklyDigestProducer
     from .runtime_background import matching_authority
     from .source.production import SourceProducer
     from .source.setup_cleanup import produce_setup_cleanup
@@ -592,11 +587,9 @@ def scheduler_producer(store, *, bulk=False, web_health=None):
     # The bulk sweep only when the bulk Family send is on (#430); off,
     # the producer is built exactly as before.
     schedules = FamilyScheduleProducer(uuid4(), **({"bulk": True} if bulk else {}))
-    digests = DigestScheduleProducer(uuid4())
-    daily = DailyDigestProducer(uuid4())
-    daily_finalization = DailyDigestFinalizeProducer(uuid4())
-    weekly = WeeklyDigestProducer(uuid4())
-    weekly_finalization = WeeklyDigestFinalizeProducer(uuid4())
+    # Report emails (#1786): each send's own preparation plans its slots.
+    reports = ReportEmailProducer(uuid4())
+    report_finalization = ReportEmailFinalizeProducer(uuid4())
     maintenance = MaintenanceProducer()
 
     def produce(guard):
@@ -652,11 +645,8 @@ def scheduler_producer(store, *, bulk=False, web_health=None):
                 guard, partial(produce_boundaries, settings=settings), guard
             ),
             *independent_producer(guard, schedules, guard),
-            *independent_producer(guard, partial(digests, settings=settings), guard),
-            *independent_producer(guard, partial(daily, settings=settings), guard),
-            *independent_producer(guard, daily_finalization, guard),
-            *independent_producer(guard, partial(weekly, settings=settings), guard),
-            *independent_producer(guard, weekly_finalization, guard),
+            *independent_producer(guard, partial(reports, settings=settings), guard),
+            *independent_producer(guard, report_finalization, guard),
             *independent_producer(guard, partial(producer, settings=settings), guard),
             *independent_producer(guard, go_live, guard),
             *independent_producer(guard, produce_cleanup, guard),

@@ -234,6 +234,7 @@ ACTIVITY_TYPES = {
         "user_leader_imported",
         "admin_cmd_users_import_leaders",
         "operator_users_upgraded",
+        "operator_reports_converted",
         "hosted_file_uploaded",
         "hosted_file_slug_changed",
         "hosted_file_deleted",
@@ -443,6 +444,7 @@ UNGROUPED_REASONS = {
         "user_leaders_listed",
         "user_names_looked_up",
         "weekly_digest_viewed",
+        "report_email_viewed",
     ),
     "Staff follow-up on Family requests, not a setting": (
         "admin_cmd_census_edit",

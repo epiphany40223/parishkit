@@ -509,6 +509,10 @@ DESCRIPTIONS = {
         "The server operator converted the sign-in rules into users from the "
         "command line, keeping every Administrator."
     ),
+    "operator_reports_converted": _(
+        "The upgrade turned the Daily and Weekly digests into report emails "
+        "(Daily report and Weekly report), keeping their sends' history."
+    ),
     # Access-policy changes the settings activation records.
     "policy_security_event": _(
         "A settings change widened access (for example, a new Administrator or "
@@ -898,6 +902,7 @@ DESCRIPTIONS = {
     # Reports and pages (audit).
     "daily_digest_viewed": _("Someone opened a daily summary."),
     "weekly_digest_viewed": _("Someone opened a weekly report."),
+    "report_email_viewed": _("Someone opened a report email's saved copy."),
     "information_viewed": _("Someone opened the information changes report."),
     "information_updated": _("Someone updated follow-up on an information change."),
     "limitation_reviewed": _(
@@ -1134,6 +1139,7 @@ DIRECT_AUDIT_TYPES = frozenset(
         "family_tokens_ready",
         "limiter_recovered",
         "operator_admin_recovered",
+        "operator_reports_converted",
         "operator_users_upgraded",
         "policy_denial_namespace_reset",
         "policy_security_event",
