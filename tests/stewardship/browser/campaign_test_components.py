@@ -31,6 +31,10 @@ from parishkit.stewardship.accounts.setup_mail_views import LABELS
 PAGE = reverse("admin:campaign_mail", args=[UUID(int=5401)])
 SENT = f"{PAGE}?sent=1"
 SETTLED = f"{PAGE}?settled=1"
+# SENT once a newer test has taken the queued test's place (a new reference,
+# the same list otherwise), still pending, so a test sees an open Technical
+# details take the new reference (#1586).
+NEWER = f"{PAGE}?newer=1"
 REFUSED = reverse("admin:campaign_mail", args=[UUID(int=5402)])
 WIZARD = reverse("admin:campaign_mail", args=[UUID(int=5403)])
 WIZARD_SENT = f"{WIZARD}?sent=1"
@@ -53,16 +57,17 @@ def components(context, admin):
         "current": True,
     }
 
-    def mail(address, *, pending=False, latest=None, wizard=None):
+    def mail(address, *, pending=False, latest=None, wizard=None, newest=5411):
         """The test page drawn as the view draws it, with ``latest`` (a test
-        state) as the newest test above the earlier accepted one. ``wizard``
+        state, whose reference is ``newest``) as the newest test above the
+        earlier accepted one. ``wizard``
         (whether the step is done) draws it in Campaign setup, with no
         earlier test."""
         items = [earlier] if wizard is None else []
         if latest:
             items = [
                 {
-                    "id": UUID(int=5411),
+                    "id": UUID(int=newest),
                     "label": LABELS[latest],
                     "created_at": now,
                     "current": True,
@@ -108,6 +113,7 @@ def components(context, admin):
         # test can answer its polls (see the module docstring).
         SENT: mail(SENT, pending=True, latest="queued"),
         SETTLED: mail(PAGE, latest="accepted"),
+        NEWER: mail(SENT, pending=True, latest="queued", newest=5412),
         REFUSED: mail(REFUSED),
         WIZARD: mail(WIZARD, wizard=False),
         WIZARD_SENT: mail(WIZARD_SENT, pending=True, latest="queued", wizard=False),
