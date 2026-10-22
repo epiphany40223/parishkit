@@ -1,0 +1,72 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Report emails" %}{% endblock %}
+{% block content %}{% comment %}
+Mail › Report emails (report-emails spec, "Report emails page", #1786;
+report_email_views). One region (#report-emails-table) holds the status line,
+the action forms, the table, each report's past sends and the deleted reports,
+so the hidden re-read link (every 30 seconds) and every row action redraw it in
+place. Row actions are icon buttons that open the row actions' confirmation
+dialog; an action the row cannot take now stays in place, unavailable, with its
+reason in its tooltip. Staff see no recipients, no actions and no Edit links.
+{% endcomment %}
+<h1>{% translate "Report emails" %}</h1>
+{% aboutpage "report-emails" %}<p>{% translate "A report email is an email about the campaign that is sent once or on a repeating schedule. Each is made of blocks, such as the campaign totals, the response funnel or the open additional information requests, and goes to the people chosen for it: Administrators, Staff and other addresses." %}</p>
+<p>{% translate "Times are shown in this computer's time zone. Report emails keep sending after the campaign ends, as their schedules say, until the campaign is archived. The Family mail of the campaign is on Dates and mail schedules, and alerts and receipts are not report emails." %}</p>
+<p>{% translate "Send now sends a report email at once, outside its schedule. Pause stops its sends until you resume it; sends missed while it is paused are not made later. Delete stops its sends for good; its past sends stay listed below. Past sends open each email's saved copy. The list updates itself every 30 seconds." %}</p>{% endaboutpage %}
+{% if not campaign %}<p>{% translate "There is no current campaign." %}</p>{% else %}
+<section id="report-emails-table" class="panel" data-table-region data-refresh-url="{{ refresh_url }}" aria-labelledby="report-emails-title">
+<h2 id="report-emails-title" tabindex="-1">{% translate "Report emails" %}</h2>
+<p class="reserve-line" id="report-emails-status" role="status">{% if requested %}{% blocktranslate trimmed with name=requested.name %}Send now of {{ name }} was requested.{% endblocktranslate %} {% if requested.send_id %}<a href="{% url 'admin:report_email_send' requested.send_id %}">{% translate "Open its saved copy" %}</a>{% else %}<a href="{% url 'admin:background_task_page' requested.task_id %}">{% translate "Follow it in Background work" %}</a>{% endif %}{% endif %}</p>
+{% if archived %}<p class="notice">{% translate "This campaign is archived, so its report emails no longer send or change. Their past sends stay listed." %}</p>{% endif %}
+{% if administrator and not archived %}
+<form method="post" action="{{ change_url }}" id="report-pause">{% csrf_token %}<input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="operation" value="pause"></form>
+<form method="post" action="{{ change_url }}" id="report-resume">{% csrf_token %}<input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="operation" value="resume"></form>
+<form method="post" action="{{ change_url }}" id="report-delete">{% csrf_token %}<input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="operation" value="delete"></form>
+<form method="post" action="{{ send_now_url }}" id="report-send-now">{% csrf_token %}<input type="hidden" name="command_id" value="{{ command_id }}"><input type="hidden" name="configuration_id" value="{{ configuration_id }}"></form>
+{% endif %}
+{% if rows %}<div class="table-scroll" tabindex="0" role="region" aria-labelledby="report-emails-caption">
+<table class="data-table report-email-table">
+  <caption id="report-emails-caption" class="visually-hidden">{% translate "Report emails" %}</caption>
+  <thead><tr>
+    <th scope="col">{% translate "Report" %}</th>
+    <th scope="col">{% translate "Schedule" %}</th>
+    {% if administrator %}<th scope="col">{% translate "Recipients" %}</th>{% endif %}
+    <th scope="col">{% translate "Next send" %}</th>
+    <th scope="col">{% translate "Last send" %}</th>
+    <th scope="col">{% translate "Status" %}</th>
+    {% if administrator %}<th scope="col">{% translate "Actions" %}</th>{% endif %}
+  </tr></thead>
+  {% for row in rows %}<tbody data-report-status="{{ row.status }}">
+  <tr id="report-{{ row.id }}">
+    <th scope="row">{% if row.actions.edit is None and "edit" in row.actions %}<a href="{% url 'admin:schedule_edit' row.id %}">{{ row.name }}</a>{% else %}{{ row.name }}{% endif %}</th>
+    <td>{% include "stewardship/components/report-schedule.html" with segments=row.schedule %}</td>
+    {% if administrator %}<td>{{ row.recipients }}</td>{% endif %}
+    <td>{% if row.next %}<time datetime="{{ row.next.due_at|instant }}" data-local-instant data-compact>{{ row.next.due_at|instant }}</time>{% elif row.status == "paused" %}{% translate "None while paused" %}{% else %}{% translate "None ahead" %}{% endif %}</td>
+    <td>{% if row.last %}{% include "stewardship/components/report-send.html" with send=row.last %}{% else %}{% translate "None yet" %}{% endif %}</td>
+    <td><span class="status-badge{% if row.status == 'upcoming' %} status-badge-on{% endif %}">{{ row.status_label }}</span>{% if administrator and row.status == "attention" %}<br><a href="{% url 'admin:deliveries' %}">{% translate "Check it on Sent mail" %}</a>{% endif %}{% if row.paused_since %}<br><span class="help">{% translate "Paused since" %} <time datetime="{{ row.paused_since|instant }}" data-local-instant data-compact>{{ row.paused_since|instant }}</time></span>{% endif %}</td>
+    {% if administrator %}<td class="table-actions">{% include "stewardship/components/report-actions.html" %}</td>{% endif %}
+  </tr>
+  <tr class="report-sends-row"><td colspan="{% if administrator %}7{% else %}5{% endif %}">{% if row.sends %}<details class="disclosure" id="report-sends-{{ row.id }}" data-keep-open><summary>{% blocktranslate trimmed count sends=row.sends|length with name=row.name %}Past sends of {{ name }} ({{ sends }}){% plural %}Past sends of {{ name }} ({{ sends }}){% endblocktranslate %}</summary>
+  {% include "stewardship/components/report-sends.html" with sends=row.sends name=row.name %}</details>{% else %}<span class="help">{% blocktranslate with name=row.name %}{{ name }} has not sent yet.{% endblocktranslate %}</span>{% endif %}</td></tr>
+  </tbody>{% endfor %}
+</table>
+</div>{% else %}<p>{% translate "This campaign has no report emails." %}</p>{% endif %}
+{% if deleted %}<details class="disclosure" id="deleted-report-emails" data-keep-open><summary>{% blocktranslate trimmed count reports=deleted|length %}Deleted report emails ({{ reports }}){% plural %}Deleted report emails ({{ reports }}){% endblocktranslate %}</summary>
+{% for report in deleted %}<h3>{{ report.name }}</h3>
+{% include "stewardship/components/report-sends.html" with sends=report.sends name=report.name %}{% endfor %}
+</details>{% endif %}
+</section>
+{% if administrator and not archived %}
+{% translate "Pause {name}?" as title %}{% translate "No email is sent while it is paused, and sends missed while it is paused are not made later. Resume starts its sends again." as body %}
+{% include "stewardship/components/confirm-dialog.html" with dialog_id="report-pause-dialog" form_id="report-pause" fallback="report-emails-title" title_one=title title_many=title body=body accept=_("Pause") plain_accept=True done_one=_("Paused {name}.") done_many=_("Paused {name}.") %}
+{% translate "Resume {name}?" as title %}{% translate "Its sends start again with the next one its schedule makes. Sends missed while it was paused are not made." as body %}
+{% include "stewardship/components/confirm-dialog.html" with dialog_id="report-resume-dialog" form_id="report-resume" fallback="report-emails-title" title_one=title title_many=title body=body accept=_("Resume") plain_accept=True done_one=_("Resumed {name}.") done_many=_("Resumed {name}.") %}
+{% translate "Delete {name}?" as title %}{% translate "Deleting stops this report email's sends that are still to come. Sends already made are not recalled, and its past sends and their saved copies stay listed under Deleted report emails." as body %}
+{% include "stewardship/components/confirm-dialog.html" with dialog_id="report-delete-dialog" form_id="report-delete" fallback="report-emails-title" title_one=title title_many=title body=body accept=_("Delete") done_one=_("Deleted {name}.") done_many=_("Deleted {name}.") %}
+{% translate "Send {name} now?" as title %}{% translate "It is sent to its recipients now, outside its schedule, and recorded as a Send now, not a scheduled send. Its schedule is unchanged." as body %}
+{% include "stewardship/components/confirm-dialog.html" with dialog_id="report-send-now-dialog" form_id="report-send-now" fallback="report-emails-title" title_one=title title_many=title body=body accept=_("Send now") plain_accept=True answer_page=True done_one=_("Send now of {name} requested.") done_many=_("Send now of {name} requested.") %}
+{% endif %}
+{# The page updates itself (#1586): every 30 seconds ui-v1.js re-reads this page quietly in place through this hidden link; an opened past sends list stays open (data-keep-open). #}
+<a hidden data-in-place data-in-place-quiet data-reread-every="30000" href="{{ refresh_url }}#report-emails-table">{% translate "Check for updates" %}</a>
+{% endif %}
+{% endblock %}

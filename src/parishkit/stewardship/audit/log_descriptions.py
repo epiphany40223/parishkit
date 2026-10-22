@@ -155,6 +155,11 @@ DESCRIPTIONS = {
         "An automation session confirmed a reviewed change to mail schedules "
         "or campaign dates, which became a configuration request."
     ),
+    "admin_cmd_report_email_confirm": _(
+        "An automation session confirmed a reviewed pause, resume, deletion "
+        "or skipped send of report emails, which became a configuration "
+        "request."
+    ),
     "admin_cmd_users_confirm": _(
         "An automation session confirmed a reviewed change to Admin portal "
         "users, which became a configuration request."
@@ -495,7 +500,11 @@ DESCRIPTIONS = {
     ),
     "admin_cmd_digest_weekly_request": _(
         "An automation session requested a manual weekly report, as the "
-        "Send a weekly report now page does."
+        "Send a weekly report now page did."
+    ),
+    "admin_cmd_report_email_send_now": _(
+        "An automation session sent a report email now, as its Send now on "
+        "Report emails does."
     ),
     "admin_privileges_changed": _(
         "A portal user's roles changed, so their session was replaced with one "
@@ -1171,6 +1180,12 @@ PREFIXES = (
     # held when a campaign closed, and test emails to chosen Families (#953).
     ("outbox_", _("An outgoing email moved to a new step")),
     ("delivery_resolution_", _("An Administrator resolved an outgoing email")),
+    # Whether an earlier report email that was once unknown and then
+    # cancelled counts as delivered for the report's later sends (#1872).
+    (
+        "report_email_coverage_",
+        _("An Administrator decided whether an earlier report email counts as sent"),
+    ),
     ("delivery_held_", _("An Administrator decided on emails held at campaign close")),
     ("family_mail_test_", _("A test email to a chosen Family moved to a new step")),
     # Initial setup's test email and Slack message, and each Production
@@ -1244,6 +1259,10 @@ BUILT_TYPES = {
     "delivery_resolution_": (
         (("constraint", "delivery_resolution_action"),),
         ("note", "accept", "resend", "retry_failed", "retry_unsent", "confirm_unsent"),
+    ),
+    "report_email_coverage_": (
+        (("constraint", "report_email_coverage_decision_known"),),
+        ("delivered", "unsent"),
     ),
     # The decision a closed campaign's held-email command carries.
     "delivery_held_": (

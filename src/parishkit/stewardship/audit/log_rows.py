@@ -208,6 +208,7 @@ ACTIVITY_TYPES = {
         "policy_denial_namespace_reset",
         "schedule_selected",
         "admin_cmd_schedule_confirm",
+        "admin_cmd_report_email_confirm",
         "admin_cmd_config_request_cancel",
         "campaign_ministries_requested",
         "campaign_end_date_requested",
@@ -264,6 +265,7 @@ ACTIVITY_TYPES = {
         *built_types("outbox_"),
         "delivery_unknown",
         *built_types("delivery_resolution_"),
+        *built_types("report_email_coverage_"),
         *built_types("delivery_held_"),
         "delivery_bulk_resolved",
         "restore_hold_resolved",
@@ -346,6 +348,7 @@ ACTIVITY_TYPES = {
             )
         ),
         "admin_cmd_digest_weekly_request",
+        "admin_cmd_report_email_send_now",
         "weekly_manual_requested",
         "report_email_manual_requested",
         "campaign_comparison_exported",

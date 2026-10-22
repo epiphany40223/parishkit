@@ -30,11 +30,11 @@ from parishkit.stewardship.audit.models import AuditEvent
 
 from . import test_admin_test_sample_cli_postgresql as sample_cli
 from .automation_builders import as_staff, paired
-from .test_admin_digest_list_cli_postgresql import revoke
 from .test_admin_integration_keys_cli_postgresql import (  # noqa: F401
     existing_web_login,
     keys,
 )
+from .test_admin_report_email_cli_postgresql import revoke
 from .test_admin_test_sample_cli_postgresql import runner
 from .test_configuration_service_postgresql import (  # noqa: F401
     as_config_installer,

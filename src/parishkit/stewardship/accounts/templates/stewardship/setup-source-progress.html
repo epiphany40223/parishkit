@@ -20,5 +20,13 @@ Admin inactivity dialog, not this page, warns before sign-out.{% endcomment %}
 <details><summary>{% translate "Technical details" %}</summary>
 <div data-live-mirror-target="setup-load-details">{% include 'stewardship/setup-source-progress-details.html' %}</div>
 </details>
-{% include "stewardship/setup-navigation.html" with back_only=True %}
+{% comment %}The step action row (#1968): Back at the left and Continue to the
+next step at the right, drawn from the start so nothing moves when the load
+ends. Until the load is done Continue is unavailable, named by the reason
+line below it; once it is done the reason keeps its line, invisible. The row
+is an in-place region, so the settled status region's follow-up re-read
+(live-status-v1.js) swaps in the available Continue.{% endcomment %}
+<div id="setup-load-actions" data-in-place-region>{% translate "Continue to the next step" as continue_label %}{% if status_key == 'done' %}{% if wizard.next %}{% include "stewardship/setup-navigation.html" with continue_url=wizard.next.href %}{% else %}{% url 'admin:setup' as overview_url %}{% include "stewardship/setup-navigation.html" with continue_url=overview_url %}{% endif %}
+<p class="help reserve-ghost" aria-hidden="true">{% translate "Continue becomes available once the parish data is loaded." %}</p>{% else %}{% include "stewardship/setup-navigation.html" with continue_reason="setup-load-continue-reason" %}
+<p class="help" id="setup-load-continue-reason" data-continue-reason>{% if progress.active %}{% translate "Continue becomes available once the parish data is loaded." %}{% else %}{% translate "Continue is not available because this load cannot be used. The notice above says what to do." %}{% endif %}</p>{% endif %}</div>
 {% endblock %}

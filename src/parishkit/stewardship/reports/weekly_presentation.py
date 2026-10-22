@@ -86,7 +86,7 @@ def snapshot_context(snapshot, *, page=1, item_id=None):
                 "family_id": families.get(value.item_id) if linkable else None,
                 "captured": DISPOSITIONS[captured],
                 "current": DISPOSITIONS[current],
-                # The stored keys, for the command line's ``digest weekly``
+                # The stored keys, for the command line's ``report-email copy``
                 # (ADM-11 PR 8d); the template shows the labels above.
                 "information": information,
                 "captured_key": captured,

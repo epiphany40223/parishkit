@@ -2236,13 +2236,15 @@ by their Name or address),
 | `task` | `delivery show`: the latest task's `id`, `state`, `version` and `retry_sequence` |
 | `actions`, `retry_unavailable` | `delivery show`: the resolutions the page offers now, and whether a retry is refused by the campaign's resend rule |
 | `events` | `delivery show`: the history's `version`, `at`, `state`, `action`, `attempt` and `result` (a stored code) |
-| `notes` | `delivery show`: each resolution's `created_at` and `action` |
+| `notes` | `delivery show`: each resolution's `created_at` and `action` (`count_delivered` or `count_unsent` for a report email's coverage decision) |
+| `report_waiting` | `delivery list`: each report send waiting on an earlier email, whatever the filters, as its `send` id, `due_at` and the `message_id` it waits on; `delivery show`: the sends (`send`, `due_at`) waiting on this email (#1872) |
 | `refusals` | `delivery refusals`: each unresolved refusal's `id`, `kind` and `created_at` |
 | `id`, `kind`, `created_at`, `resolved`, `source`, `can_clear` | `delivery refusal-show`: the refusal (its `kind` is `provider` when the provider refused the address, `reported_bounce` when an Administrator reported a bounce; a report's note stays on the page), how and when it was resolved (`kind`, `at`), the source version to verify (`snapshot_id`, `generation`), and whether a clearance can be recorded now |
 
 `delivery resolve` takes `--action` (`note`, `accept`, `confirm_unsent`,
-`retry_failed` or `retry_unsent`, as offered in `actions`; an offered
-`resend` is `delivery resend`), `--expected-version` (the delivery's
+`retry_failed`, `retry_unsent`, or, for an earlier report email that was
+once unknown and then cancelled, `count_delivered` or `count_unsent`, as
+offered in `actions`; an offered `resend` is `delivery resend`), `--expected-version` (the delivery's
 `version`), `--note` (or `-`) and
 `--request-key`, made for you and written to standard error when left out.
 Give evidence that names people as `--note -` from a file or standard
@@ -2824,73 +2826,60 @@ the key recovers an unknown outcome, exit 6). Once the page's checks
 pass, a key the same command already used for another plan, or another
 Administrator's, is exit 1 (`invalid`).
 
-## Digests
+## Report emails
 
-Each emailed daily or weekly report links to a saved copy on the portal,
-`/admin/reports/emailed/daily/SNAPSHOT_ID/` or
-`/admin/reports/emailed/weekly/SNAPSHOT_ID/`. The `digest` commands read
-that saved copy, which never changes, and record the same "viewed" events
-as opening it. A session of any scope (read-only included) may read them;
-a weekly report needs an Administrator, as its page does.
+The `report-email` commands (#1786) are the **Mail › Report emails** page
+([report emails](../specs/stewardship/report-emails/spec.md#command-line)):
+the campaign's report emails, their past sends and saved copies,
+Send now, and Pause, Resume, Delete and Skip one send. They replaced the
+`digest` commands, which are gone, with no aliases.
 
 ```sh
-pk-admin digest list
-pk-admin digest daily SNAPSHOT_ID
-pk-admin digest weekly SNAPSHOT_ID --page 2
-pk-admin digest weekly-request --yes
-pk-admin digest list --requested REQUEST_KEY
+pk-admin report-email list
+pk-admin report-email show REPORT
+pk-admin report-email sends REPORT
+pk-admin report-email copy SEND [--page 2]
+pk-admin report-email send-now REPORT --yes [--request-key KEY]
+pk-admin report-email preview --expected-version VERSION --changes FILE|-
+pk-admin report-email confirm --token TOKEN|-
 ```
 
-- `digest list` is the **Emailed reports** page: where to find each
-  `SNAPSHOT_ID`. It prints the current `campaign_id`; `reports`, the newest
-  report email sends (#1786: `send_id`, the report's `name`, `how` it was
-  sent, `scheduled`, `manual` or `recovery`, and `made_at`; a send that made
-  no email is not listed); `daily`, the newest
-  ready daily reports (`snapshot_id`, `through_date`, `covered_dates`,
-  `observed_at`); `weekly`, the newest weekly reports (`snapshot_id`,
-  `manual`, `observed_at`; null for a reader who is not an Administrator);
-  `weekly_request_available`, whether the campaign has the Weekly report
-  `digest weekly-request` sends; and `shown`, how many of each
-  list it shows at most (60), newest first. With `--requested` and a
-  `digest weekly-request` key, `requested` holds that request's `task_id`
-  and, once its email is made, its `report_id` (the send's id, for its
-  saved copy; null until then); a key
-  that is not a request of the current campaign gives null. With no
-  current campaign the lists are empty. Like the page, it records no
-  event.
+- `list` is the page's table: each report's `id`, `name`, `schedule` in
+  plain words (times as UTC instants), `next_send`, `last_send` (its
+  `send_id`, `kind`, `made_at` and `result`), `status` (`upcoming`,
+  `sending`, `paused`, `done` or `attention`) and `paused_since`; for an
+  Administrator also `recipients` in short and the configuration
+  `version` a change document names. `deleted` lists the deleted reports
+  that sent something. Any session may read it; it records no event.
+- `show REPORT` prints the report's saved values (recipients by kind,
+  outside addresses to Administrators only), its blocks, skip dates, pause
+  intervals and `next_sends` (each `send`, the slot key a skip names, and
+  `due_at`).
+- `sends REPORT` lists its past sends, newest first: `send_id`, `kind`
+  (`report`, or `daily`/`weekly` for a digest sent before the
+  conversion), `made_at`, `how`, `as_of`, `recipients`, `result` and a
+  list block's `count`.
+- `copy SEND` prints a saved copy: each block's figures and, for the open
+  requests block, each request's `item_id`, `submitted_at` and current
+  `disposition`, never what a Family wrote. It records
+  `report_email_viewed`. A daily or weekly digest saved before the
+  conversion prints as `digest daily` and `digest weekly` printed it
+  (`--page` pages a weekly report's items).
+- `send-now REPORT` is the row's Send now: it asks the dialog's question
+  at the [confirmation prompt](#confirmations), or takes `--yes`, takes
+  `--request-key` as [task retries](#task-retries) do, and prints
+  `created`, `request_key`, `report_id` and `task`. While another send of
+  the report is being prepared or delivered, or the report changed, it is
+  exit 1 (`stale_version`). It records `report_email_manual_requested`
+  and `admin_cmd_report_email_send_now`.
+- `preview` reviews a change document, `{"changes": [{"operation":
+  "pause"|"resume"|"delete"|"skip", "id": REPORT}]}` (a skip adds `"send":
+  SLOT`), against `--expected-version`, and prints its token; `confirm`
+  applies it as a configuration request, recording
+  `admin_cmd_report_email_confirm`. A send in progress or uncertain
+  blocks a change (no token).
 
-- `digest daily` prints the saved figures: `participation` (the figures'
-  `fact_set_id`, source and dates), `statistics` (the active Families,
-  Members, email, responses and, with Financial stewardship, pledge
-  totals) and `days`, the daily table. `comparison` is the digest's
-  Compared with past campaigns section when its schedule included it (null
-  otherwise): the `day` and `report_date` compared, `compared_with` (the
-  years), the headline `figures` (each `figure`, `value` and its
-  `comparisons`, with Withheld where the small-count protection applies)
-  and the `archives` compared (each `year` and file `checksum`).
-- `digest weekly` prints the report's `information_count`,
-  `correction_count` and `total`, whether it was `manual`, and `items`, 50
-  to a page (`--page`): each item's `item_id`, whether it is new
-  `information` or a correction, its `captured` and `current` state
-  (`current_actionable`, `superseded` or `withdrawn`) and whether it
-  `changed`. It never prints what a Family wrote; open the page for that.
-- `digest weekly-request` sends the Weekly report now (Send now of the
-  report the conversion made from the Weekly digest, #1786), as the Send a
-  weekly report now page does, for the current campaign. It may repeat
-  what earlier sends included, which the page asks you to tick; the command asks the same at the
-  [confirmation prompt](#confirmations), or takes `--yes` (otherwise
-  nothing happens, exit 4). It
-  takes `--request-key`, as [task retries](#task-retries) do, and prints
-  `created`, `request_key` and `task`; follow the task with
-  `task show --watch`. Without a Weekly report it is exit 1
-  (`not_available`); while an earlier send of it is still being prepared
-  or its email is still being delivered or awaits review, or the report
-  changed, exit 1 (`stale_version`): try again once it is resolved.
-  System logs show `report_email_manual_requested` and
-  `admin_cmd_digest_weekly_request`.
-
-An unknown `SNAPSHOT_ID`, or a daily report's id given to `digest weekly`,
-is exit 1 (`not_available`).
+An unknown `REPORT` or `SEND` is exit 1 (`not_available`).
 
 ## Report exports
 
@@ -4391,3 +4380,9 @@ Each change is recorded in System logs as on the page
   --type` take `admin_report`; `digest weekly-request` sends the Weekly
   report now. `schedule` changes can no longer add a `daily_digest` or
   `weekly_digest` (exit 1, `invalid`).
+- `pk-admin/1` (#1786, delivery plan item 5): `report-email list`,
+  `show`, `sends`, `copy`, `send-now`, `preview` and `confirm`, the Report
+  emails page. Breaking: `digest list`, `digest daily`, `digest weekly`
+  and `digest weekly-request` are removed with no aliases; their reads
+  are `report-email list`, `sends` and `copy`, and the manual Weekly
+  report is `report-email send-now`.

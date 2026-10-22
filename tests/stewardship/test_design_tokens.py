@@ -385,7 +385,6 @@ def test_each_notice_kind_meets_the_contrast_minimums(kind, scheme):
 # them back into warnings.
 INFO_NOTICES = {
     "campaign-mail-families.html": ('id="family-test-sent"',),
-    "emailed-reports.html": ('id="weekly-requested"',),
     "hosted-files.html": ("Uploaded {{ name }}",),
     # The comparison's Updating notice lives in the shared figures status
     # (#1586); the Response dashboard's notice there stays a warning.

@@ -38,6 +38,9 @@ LABELS = STATE_LABELS | {
     "resend": _("Resend authorized"),
     "retry_failed": _("Failed delivery retry"),
     "retry_unsent": _("Unaccepted delivery retry"),
+    # A report email's coverage decision (#1872), shown for its note.
+    "count_delivered": _("Counted as delivered"),
+    "count_unsent": _("Counted as not delivered"),
     "mark_unknown": _("Acceptance unknown"),
     "authorize_resend": _("Duplicate-risk resend authorized"),
     "created": _("Created"),

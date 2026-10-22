@@ -96,27 +96,3 @@ def test_weekly_report_shows_the_response_funnel(
         page.goto(component_origin + "/weekly-detail")
         visible(page.get_by_role("heading", name="Full text at capture"))
         assert page.locator("[data-digest-funnel]").count() == 0
-
-
-@pytest.mark.parametrize("width", [320, 1280])
-def test_manual_report_requires_accessible_explicit_confirmation(
-    page, component_origin, axe_source, width
-):
-    """The real form retains native confirmation semantics and fits a phone."""
-    page.set_viewport_size({"width": width, "height": 900})
-    page.goto(component_origin + "/weekly-manual")
-    confirmation = page.get_by_role("checkbox")
-    assert not page.locator("form.panel").evaluate("form => form.checkValidity()")
-    confirmation.focus()
-    page.keyboard.press("Space")
-    assert confirmation.is_checked()
-    assert page.locator("form.panel").evaluate("form => form.checkValidity()")
-    visible(page.get_by_role("button", name="Queue new manual report"))
-    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-    page.evaluate(axe_source)
-    assert (
-        page.evaluate("""async () => (await axe.run(document, {
-      runOnly: {type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']}
-    })).violations.map(({id, impact}) => ({id, impact}))""")
-        == []
-    )

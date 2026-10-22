@@ -590,7 +590,6 @@ REPORTS = [
     "campaign_comparison",
     "financial_report",
     "family_directory",
-    "emailed_reports",
 ]
 # The Administrator's menu in the spec's order (admin-portal spec, "Menu
 # groups"), written out so that reordering MENU fails here. Entries for pages
@@ -610,6 +609,7 @@ SPEC_ORDER = [
     "mail_queue",
     "family_email_sends",
     "deliveries",
+    "report_emails",
     "family_portal",
     "presence",
     # Review work
@@ -623,7 +623,6 @@ SPEC_ORDER = [
     "campaign_comparison",
     "financial_report",
     "family_directory",
-    "emailed_reports",
     # Parish data
     "parish_settings",
     "branding_settings",
@@ -645,7 +644,8 @@ SPEC_ORDER = [
 SHAPES = {
     "administrator": SPEC_ORDER,
     # Staff see Parish data with its one entry for them (#1011).
-    "staff": [*REPORTS, "parishsoft_fixes"],
+    # and Mail with Report emails alone, read-only (#1786).
+    "staff": ["report_emails", *REPORTS, "parishsoft_fixes"],
     "ministry_leader": ["ministry_report"],
 }
 
@@ -697,6 +697,7 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
         "production_progress",
         "delivery_control",
         "family_email_sends",
+        "report_emails",
         "response_dashboard",
         "campaign_comparison",
         "financial_report",

@@ -215,6 +215,9 @@ PAGES = {
     "delivery_refusals": Page("mail", _("Refused addresses"), "deliveries"),
     "delivery_refusal": Page("mail", _("Refused address"), "delivery_refusals"),
     "family_portal": Page("mail", _("Family portal availability")),
+    # Report emails (#1786), after Sent mail in the menu: the campaign's
+    # report emails, their sends and each send's saved copy.
+    "report_emails": Page("mail", _("Report emails")),
     "presence": Page("mail", _("Families on the form now")),
     # Held emails a restore left undecided at release (#757). Not a menu
     # entry: it matters only after a restore, so Home links to it while any
@@ -236,21 +239,18 @@ PAGES = {
     "information_queue": Page("review", _("Additional information")),
     "information_item": Page("review", _("Information request"), "information_queue"),
     "report_export": Page("reports", _("Report export"), "reports"),
-    # The reports sent by email, listed on Emailed reports (ADM-12.17), and
-    # Send a weekly report now, its Administrator action.
-    "emailed_reports": Page("reports", _("Emailed reports")),
-    "weekly_digest_manual": Page(
-        "reports", _("Send a weekly report now"), "emailed_reports"
-    ),
-    "weekly_digest_snapshot": Page("reports", _("Weekly report"), "emailed_reports"),
+    # The daily and weekly reports emailed before report emails replaced
+    # them (#1786), listed with their report on Report emails.
+    # Their addresses stay under Reports, so links in emails already sent
+    # still open; their trail leads to Report emails.
+    "weekly_digest_snapshot": Page("mail", _("Weekly report"), "report_emails"),
     "weekly_digest_item": Page(
-        "reports", _("Weekly report item"), "weekly_digest_snapshot"
+        "mail", _("Weekly report item"), "weekly_digest_snapshot"
     ),
-    "daily_digest_snapshot": Page("reports", _("Daily report"), "emailed_reports"),
-    # A report send's saved copy (#1786), named by its subject: a sent
-    # email, under Sent mail until the Report emails page, its parent in
-    # the spec, ships. Emailed reports lists it too.
-    "report_email_send": Page("mail", _("Report email"), "deliveries"),
+    "daily_digest_snapshot": Page("mail", _("Daily report"), "report_emails"),
+    # A report send's saved copy (#1786), named by its subject, listed with
+    # its report on Report emails.
+    "report_email_send": Page("mail", _("Report email"), "report_emails"),
     # Ministry requests is the follow-up queue (#1133); Ministry follow-up,
     # once a page of its own, was merged into it.
     "ministry_report": Page("review", _("Ministry requests")),
@@ -494,8 +494,6 @@ class Entry:
 
 # The menu, in order within each group (admin-portal spec, "Menu groups").
 # Labels come from PAGES, so the menu, the trail and the page share a name.
-# Entries for pages that do not exist yet are added with those pages:
-# Emailed reports (ADM-12).
 _ADMIN = Capability.CONFIGURE
 MENU = (
     # Campaign setup
@@ -515,6 +513,8 @@ MENU = (
     Entry("mail_queue", _ADMIN),
     Entry("family_email_sends", _ADMIN, _campaign),
     Entry("deliveries", _ADMIN),
+    # Staff open it read-only, to reach the saved copies (#1786).
+    Entry("report_emails", Capability.CAMPAIGN_REPORT, _campaign),
     Entry("family_portal", _ADMIN),
     Entry("presence", _ADMIN),
     # Review work, in the Administrator's order (R39 finding 1).
@@ -528,8 +528,6 @@ MENU = (
     Entry("campaign_comparison", Capability.CAMPAIGN_REPORT, _campaign),
     Entry("financial_report", Capability.FINANCIAL_DETAIL, FINANCIAL),
     Entry("family_directory", Capability.FAMILY_CODES, _downloaded(_campaign)),
-    # Staff see its daily reports; Send a weekly report now is on the page.
-    Entry("emailed_reports", Capability.CAMPAIGN_REPORT),
     # Parish data
     Entry("parish_settings", _ADMIN),
     Entry("branding_settings", _ADMIN),
@@ -774,6 +772,10 @@ NON_PAGES = frozenset(
         "retry_export_cleanup",
         "retry_family_preparation",
         "retry_report_email",
+        # Report emails' row actions (#1786): Pause, Resume and Delete post
+        # as changes and Send now as a manual send; each answers the dialog.
+        "report_email_changes",
+        "report_email_send_now",
         # A report send's chart images, and its listed requests, which
         # redirect to their Additional information pages (#1786).
         "report_email_send_image",

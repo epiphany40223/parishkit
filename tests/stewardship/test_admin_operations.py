@@ -30,6 +30,7 @@ MESSAGE = UUID("00000000-0000-4000-8000-000000000010")
 CAMPAIGN = UUID("00000000-0000-4000-8000-000000000001")
 REFUSAL = UUID("00000000-0000-4000-8000-000000000011")
 SNAPSHOT = UUID("00000000-0000-4000-8000-000000000012")
+WAITING_SEND = UUID("00000000-0000-4000-8000-000000000013")
 NOW = datetime(2054, 10, 5, 14, tzinfo=UTC)
 WINDOW = SimpleNamespace(page=1, size=25)
 # A message as delivery_metadata.FIELDS reads it, recipient included: the
@@ -89,6 +90,10 @@ def delivery_list():
             "has_next": False,
             "total": (1, False),
             "send": None,
+            # A report send waiting on an earlier email (#1872).
+            "report_waiting": [
+                {"send": WAITING_SEND, "due_at": NOW, "message_id": MESSAGE_ROW["id"]}
+            ],
         }
     )
 
@@ -125,6 +130,9 @@ def delivery_show():
             "choices": [
                 {"choice": "send_again", "action": "retry_failed", "unavailable": None},
                 {"choice": "keep_failed", "action": "note", "unavailable": None},
+            ],
+            "report_waiting": [
+                {"send": WAITING_SEND, "due_at": NOW, "message_id": MESSAGE_ROW["id"]}
             ],
         }
     )
@@ -270,6 +278,13 @@ GOLDEN |= {
             "matching": 1,
             "matching_capped": False,
             "deliveries": [DELIVERY | {"refused": 2}],
+            "report_waiting": [
+                {
+                    "send": str(WAITING_SEND),
+                    "due_at": NOW.isoformat(),
+                    "message_id": DELIVERY["id"],
+                }
+            ],
         },
     ),
     "delivery show": (
@@ -303,6 +318,7 @@ GOLDEN |= {
                 }
             ],
             "notes": [{"created_at": NOW.isoformat(), "action": "note"}],
+            "report_waiting": [{"send": str(WAITING_SEND), "due_at": NOW.isoformat()}],
         },
     ),
     "delivery refusals": (
@@ -431,6 +447,10 @@ ALLOWED = {
         "send",
         "deliveries",
         "refused",
+        # The report sends waiting on an earlier email (#1872).
+        "report_waiting",
+        "due_at",
+        "message_id",
     }
     | PAGE_MEMBERS
     | DELIVERY_MEMBERS,
@@ -452,6 +472,9 @@ ALLOWED = {
         "action",
         "result",
         "notes",
+        "report_waiting",
+        "send",
+        "due_at",
     }
     | DELIVERY_MEMBERS,
     "delivery refusals": {"refusals", "id", "kind", "created_at"} | PAGE_MEMBERS,
@@ -613,16 +636,22 @@ def test_an_unknown_outcome_names_the_request_key(monkeypatch):
 
 
 def test_delivery_show_lists_every_action_the_page_offers():
-    """Each listed action has a command: resend is delivery resend (PR 9c)."""
+    """Each listed action has a command: resend is delivery resend (PR 9c).
+
+    The coverage decisions on a report email (#1872) are commands too.
+    """
     document = delivery_show().to_document()
     assert document["actions"] == ["note", "retry_failed"]
     # Every allowed answer of the page's question is an offered action (#1563).
     allowed = [row["action"] for row in document["choices"] if not row["unavailable"]]
     assert set(allowed) <= set(document["actions"])
     offered = admin_cli.RESOLVE_ACTIONS + ("resend",)
+    from parishkit.stewardship.jobs.delivery_reads import COUNT_ACTIONS, QUESTIONS
     from parishkit.stewardship.jobs.delivery_resolution import ACTIONS
 
-    assert set(offered) == set(ACTIONS)
+    assert set(offered) == set(ACTIONS) | set(COUNT_ACTIONS)
+    # Every question's answer is one of those commands.
+    assert {a for rows in QUESTIONS.values() for _, a in rows} <= set(offered)
 
 
 class Cause(Exception):
