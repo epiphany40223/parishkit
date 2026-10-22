@@ -933,9 +933,8 @@ three figures beside the funnel
 ([#1532](https://github.com/epiphany40223/parishkit/issues/1532)), which the
 Response dashboard and `pk-admin report responses` still show. It is counted
 at the report's as-of moment: the end of the report day, or the capture
-instant. The saved copy shows the stages as a table, counted again at the
-same moment from the same durable timestamps, so the two agree unless the
-engagement record is backfilled later. A Testing send omits the funnel,
+instant. The [saved copy](#saved-copies) shows the stages the snapshot
+kept as a table, so the two always agree. A Testing send omits the funnel,
 because a rehearsal's records are cleaned up and could not be counted again,
 and says instead that the Response dashboard's Testing view has it (today's
 Testing note).
@@ -1416,6 +1415,77 @@ recovery; a test send has no saved copy) and its recipients by kind (names for u
 and groups; outside addresses only to Administrators). Its access is
 audited (`report_email_viewed`).
 
+The page is drawn only from the send's snapshot: each block's kept data
+(`{block, version, data}`) through the block's saved copy renderer, and,
+for the Participation charts, the fact generation the snapshot pinned,
+which is kept as long as the snapshot is. It never reads current figures,
+and it is drawn in the date format the email was compiled in
+([#280](https://github.com/epiphany40223/parishkit/issues/280)), so it
+says what the email said however much later it is opened. In order:
+
+- **Heading:** the report's name and date, as the email's subject names
+  them, then the [page help](../ui-conventions/spec.md#page-help) About
+  panel.
+- **About this send:** a key/value list. "All data is as of the end of
+  October 6, 2026." for a report as of the end of the previous day (the
+  report day is a campaign date, never shifted); "All data is as of" the
+  capture moment, in the browser's time zone
+  ([dates and times](../ui-conventions/spec.md#dates-and-times)), for a
+  report as of when it is made. When it was made (browser-local); the
+  ParishSoft data age and connection line at that moment, as the saved
+  daily report page shows it; how it was sent (Scheduled, Send now, or
+  Recovery, with the days a recovery send covers). A Testing send says so
+  in a notice.
+- **Recipients:** by kind. Users by name; groups by name with how many
+  people they reached; outside addresses listed for Administrators, while
+  Staff see only how many there were.
+- **The blocks**, each in a panel under its label, in the send's order. A
+  block with nothing to show draws its empty statement, as the email did.
+  - Campaign totals: stat tiles, as described below.
+  - Response funnel: a table of the stages, their Families and their
+    share of the email invites sent, from the stages the snapshot kept
+    (so the copy and the email always agree); a Testing send shows the
+    email's Testing note instead.
+  - Participation charts: the
+    [participation graph](../reports/spec.md#participation-graph) drawn
+    by the [chart engine](../reports/spec.md#chart-engine) from the pinned
+    fact generation, with its Exact values table.
+  - Day by day table: an [Admin table](../ui-conventions/spec.md#admin-tables)
+    of the days the email showed, shown whole (no navigator, no sorting:
+    it is at most a recovery send's covered days).
+  - Compared with past campaigns: the retained section's charts, drawn
+    again by the chart engine from their stored specifications, and its
+    figures as stat tiles, as the saved daily report page shows them, with
+    the link to the Campaign comparison report.
+  - Open additional information requests: its heading with the count ("5
+    open requests"), then a table shown whole in the email's numbering
+    (1, 2, 3, oldest first): the Family (the
+    [shared Family-name link](../ui-conventions/spec.md#family-and-member-names)
+    to the Timeline, for the current campaign), its Family DUID, when it
+    was submitted (browser-local), the request text shortened as the email
+    shortened it, and a link to the request's own page.
+- **Show the email as it was sent:** a closed
+  [disclosure](../ui-conventions/spec.md#disclosures) holding the email
+  exactly as it was sent, from the snapshot's kept HTML with its retained
+  chart images, which is the exact record.
+
+A request's own page (`…/sends/<send>/items/<item>/`) shows the request as
+the send captured it (its Family, Family DUID, submitted time and full
+text) and its current state (Current actionable request, Superseded by
+a later response, Withdrawn by the Family, or No longer available), with
+**Open this request on Additional information** linking the live request
+([Additional information](../reports/spec.md#additional-information))
+while it still exists. Its trail leads back to the saved copy, named by
+its report and date. It takes the saved copy's access rule and opens only a request the send
+listed. Its opening is audited as the saved copy's is
+(`report_email_viewed`, naming the send only), since it shows a Family's
+text.
+
+`report-email copy SEND` reads the same snapshot through the same
+functions and prints the same as-of line, how it was sent and recipients
+by kind (outside addresses to Administrators only), so the command and
+the page agree.
+
 The saved copy draws the Campaign totals as
 [stat tiles](../ui-conventions/spec.md#stat-tiles), each with the email's
 own value text: Families that have responded show their count, with "out of
@@ -1502,7 +1572,7 @@ entries of the schedule commands (a daily digest's `comparison`, a digest's
 | `report-email send-test REPORT` | Send a test to me. |
 | `report-email send-now REPORT [--request-key KEY]` | Send now, keyed by its request key (the page's command id), with the confirmation at the prompt or `--yes`. |
 | `report-email sends REPORT` | Past sends, as the page lists them: each send's id, kind, when it was made, how, its as-of moment, its email count, result and a list block's count. |
-| `report-email copy SEND` | A saved copy, read from its snapshot through its page's functions: each block's figures, and for the additional information block each request's identifier and states, never a Family's text. Reads pre-migration daily and weekly copies too. Records `report_email_viewed`. |
+| `report-email copy SEND` | A saved copy, read from its snapshot through its page's functions: each block's figures, and for the additional information block each request's identifier and states, never a Family's text; its as-of line, how it was sent and its recipients by kind (outside addresses to Administrators only), as the page shows them. Reads pre-migration daily and weekly copies too. Records `report_email_viewed`. |
 
 Other commands change with it: `delivery list --purpose` accepts
 `admin_report` (and `admin_report_test` with Send a test to me, delivery
@@ -1832,7 +1902,8 @@ require.
    page, the email exactly as it was sent with its chart images, now under
    Report emails and with the [access rule](#saved-copies) of decision 11,
    until [#1946](https://github.com/epiphany40223/parishkit/issues/1946)
-   draws it as web components. The page re-reads itself every 30 seconds,
+   drew it as web components ([saved copies](#saved-copies)), keeping the
+   email as it was sent in a disclosure. The page re-reads itself every 30 seconds,
    as a page whose view records no audited read
    ([pages that update themselves](../ui-conventions/spec.md#pages-that-update-themselves)),
    so statuses, next and last sends follow the sends. Removes

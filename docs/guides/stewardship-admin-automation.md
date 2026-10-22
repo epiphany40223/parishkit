@@ -2862,7 +2862,11 @@ pk-admin report-email confirm --token TOKEN|-
   list block's `count`.
 - `copy SEND` prints a saved copy: each block's figures and, for the open
   requests block, each request's `item_id`, `submitted_at` and current
-  `disposition`, never what a Family wrote. It records
+  `disposition`, never what a Family wrote; `as_of_line`, the page's "All
+  data is as of" line; `how` it was sent and the days a recovery send
+  covers (`covers`); and `recipients` by kind (`users` by name, `groups`
+  with how many people each reached, and `outside` addresses, which only
+  an Administrator gets; Staff get `outside_count`). It records
   `report_email_viewed`. A daily or weekly digest saved before the
   conversion prints as `digest daily` and `digest weekly` printed it
   (`--page` pages a weekly report's items).
