@@ -385,24 +385,27 @@ def test_all_concrete_mutable_records_have_enabled_guard(db):
     with connection.cursor() as cursor:
         for model in models:
             table = model._meta.db_table
-            if table in {
-                "stewardship_daily_digest_preparation",
-                "stewardship_weekly_digest_preparation",
-            }:
+            preparations = {
+                "stewardship_daily_digest_preparation": "daily_digest",
+                "stewardship_weekly_digest_preparation": "weekly_digest",
+                # A report email send's preparation (#1786, frozen file 0156).
+                "stewardship_report_email_preparation": "report_email",
+            }
+            if table in preparations:
                 # This domain's single INSERT/UPDATE/DELETE guard compares an
                 # immutable identity tuple instead of generated per-field SQL.
-                kind = "weekly" if "weekly" in table else "daily"
+                kind = preparations[table]
                 cursor.execute(
                     "SELECT p.proname,t.tgtype,pg_get_functiondef(p.oid) "
                     "FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid "
                     "WHERE t.tgrelid=%s::regclass "
                     "AND t.tgname=%s "
                     "AND t.tgenabled='O' AND NOT t.tgisinternal",
-                    [table, f"{kind}_digest_preparation_write"],
+                    [table, f"{kind}_preparation_write"],
                 )
                 row = cursor.fetchone()
                 assert row and row[:2] == (
-                    f"stewardship_{kind}_digest_preparation_guard_v1",
+                    f"stewardship_{kind}_preparation_guard_v1",
                     31,
                 )
                 compact = "".join(row[2].split())
@@ -554,6 +557,12 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             "stewardship_refresh_check_guard",
             "stewardship_refresh_check_guard_v1",
         ),
+        # An added Member's ParishSoft link (#1670): INSERT only, by the
+        # promoting worker with its evidence, under its own name.
+        "stewardship_added_member_link": (
+            "stewardship_added_member_link_guard",
+            "stewardship_added_member_link_guard_v1",
+        ),
         # A roster tick's history (#528): INSERT only, under its own name.
         "stewardship_ministry_roster_entry": (
             "stewardship_ministry_roster_entry_guard",
@@ -569,6 +578,18 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
         "stewardship_limitation_review": (
             "stewardship_limitation_review_guard",
             "stewardship_limitation_review_guard_v1",
+        ),
+        # A refresh's check of a decided pledge (#1704): INSERT only, by the
+        # promoting worker, under its own name.
+        "stewardship_pledge_refresh_check": (
+            "stewardship_pledge_refresh_check_guard",
+            "stewardship_pledge_refresh_check_guard_v1",
+        ),
+        # A refresh's check of a To review pledge (#1747): INSERT only, by
+        # the promoting worker, under its own name.
+        "stewardship_pledge_open_check": (
+            "stewardship_pledge_open_check_guard",
+            "stewardship_pledge_open_check_guard_v1",
         ),
         # Publication plans and outcomes (#528, DAT-09.01): INSERT only,
         # each under its own name.
@@ -606,6 +627,10 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
         "stewardship_comparison_export_snapshot": (
             "comparison_export_capture",
             "stewardship_comparison_export_capture_v1",
+        ),
+        "stewardship_participation_export_snapshot": (
+            "participation_export_capture",
+            "stewardship_participation_export_capture_v1",
         ),
         "stewardship_information_revision": (
             "stewardship_information_revision_guard",
@@ -692,6 +717,19 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             "weekly_manual_guard",
             "stewardship_weekly_manual_guard_v1",
         ),
+        # A report email's Send now (#1786): its guard admits the web's
+        # insert and refuses every change, as the weekly request's does.
+        "stewardship_report_email_manual_request": (
+            "report_email_manual_guard",
+            "stewardship_report_email_manual_guard_v1",
+        ),
+        **{
+            "stewardship_report_email_" + name: (
+                "report_email_immutable",
+                "stewardship_report_email_immutable_v1",
+            )
+            for name in ("snapshot", "recipient")
+        },
         # One Administrator's Email Ministry leaders Apply (#1592): its
         # guard admits the web's reviewed insert and refuses every change.
         "stewardship_leader_email_request": (
@@ -886,6 +924,7 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                 "stewardship_family_test_names_export_snapshot",
                 "stewardship_timeline_export_snapshot",
                 "stewardship_comparison_export_snapshot",
+                "stewardship_participation_export_snapshot",
                 "stewardship_information_revision",
                 "stewardship_ministry_revision",
                 "stewardship_delivery_control",
@@ -899,6 +938,7 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                 "stewardship_family_mail_preparation",
                 "stewardship_fact_build_receipt",
                 "stewardship_weekly_manual_request",
+                "stewardship_report_email_manual_request",
                 "stewardship_leader_email_request",
                 "stewardship_proposal_resolution",
                 "stewardship_proposal_review",
@@ -909,6 +949,9 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                 "stewardship_refresh_check",
                 "stewardship_pledge_review",
                 "stewardship_limitation_review",
+                "stewardship_pledge_refresh_check",
+                "stewardship_pledge_open_check",
+                "stewardship_added_member_link",
                 "stewardship_publication_plan",
                 "stewardship_publication_entity",
                 "stewardship_publication_field",
@@ -923,6 +966,7 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             if function in {
                 "stewardship_daily_digest_immutable_v1",
                 "stewardship_weekly_immutable_v1",
+                "stewardship_report_email_immutable_v1",
             }:
                 # Verify the concrete cleanup category supplied to the common
                 # immutable guard, not just the presence of a generic function.
@@ -933,6 +977,8 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                     "stewardship_recovery_replacement": "recovery_replacements",
                     "stewardship_weekly_digest_snapshot": "weekly_digest_snapshots",
                     "stewardship_weekly_digest_recipient": "weekly_digest_recipients",
+                    "stewardship_report_email_snapshot": "report_email_snapshots",
+                    "stewardship_report_email_recipient": "report_email_recipients",
                 }[table]
                 cursor.execute(
                     "SELECT tgargs FROM pg_trigger WHERE tgrelid=%s::regclass "

@@ -206,9 +206,10 @@ PAGES = {
     "production_progress": Page("campaign", _("Production activation")),
     # Mail and Family portal
     "delivery_control": Page("mail", _("Pause and resume mail")),
-    # Watching a launch or reminder send (#413): a sidebar entry of its own,
-    # beside Pause and resume mail, so it is found without knowing where it is.
-    "family_email_progress": Page("mail", _("Family email progress")),
+    # Every email waiting to go out, with the launch or reminder send's
+    # progress (#413, #1562): a sidebar entry of its own, beside Pause and
+    # resume mail, so it is found without knowing where it is.
+    "mail_queue": Page("mail", _("Mail queue")),
     # The permanent record of every send (#432), listed beside the live panel.
     "family_email_sends": Page("mail", _("Family email history")),
     "deliveries": Page("mail", _("Sent mail")),
@@ -230,8 +231,9 @@ PAGES = {
     # Review work: each stream's review worklist (review pipeline spec).
     "limitations_report": Page("review", _("Limitations")),
     "census_changes": Page("review", _("Census changes")),
-    # Not a menu entry: Census changes links to it (#528, ADM-09).
-    "census_publication": Page("review", _("Publish to ParishSoft"), "census_changes"),
+    # Not a menu entry: Census changes links to it (#528, ADM-09; renamed
+    # from Publish to ParishSoft by #1688).
+    "update_parishsoft": Page("review", _("Update ParishSoft"), "census_changes"),
     "response_dashboard": Page("reports", _("Response dashboard")),
     "information_queue": Page("review", _("Additional information")),
     "information_item": Page("review", _("Information request"), "information_queue"),
@@ -285,6 +287,8 @@ PAGES = {
     "users": Page("users", _("Users")),
     "user_new": Page("users", _("New user"), "users"),
     "user_edit": Page("users", _("Edit user"), "users"),
+    # One user's Timeline (#1866), opened from the user's Email on Users.
+    "user_timeline": Page("users", _("Timeline"), "users"),
     # Answers only the table's confirmation dialog, with a change's status.
     "user_delete": Page("users", _("Delete user"), "users", linkable=False),
     # Answers only the leaders table's Import selected and Import all with
@@ -517,7 +521,8 @@ MENU = (
     Entry("production_progress", _ADMIN, _confirmed),
     # Mail and Family portal
     Entry("delivery_control", _ADMIN, _production),
-    Entry("family_email_progress", _ADMIN, _campaign),
+    # Always available: notices and Ministry leader emails need no campaign.
+    Entry("mail_queue", _ADMIN),
     Entry("family_email_sends", _ADMIN, _campaign),
     Entry("deliveries", _ADMIN),
     Entry("family_portal", _ADMIN),
@@ -724,9 +729,12 @@ NON_PAGES = frozenset(
         "delivery_refusal_clear",
         "dismiss_credential_result",
         "delivery_resolve",
-        "family_email_progress_status",
+        "mail_queue_status",
         # The header's presence count, polled at the old presence address.
         "presence_count",
+        # Dates and mail schedules' Add these schedules and continue (#1404
+        # PR 6), a POST answered with the change's status.
+        "schedule_suggested",
         "timeline_export",
         "family_directory_export",
         # Open form's hand-off (#529): a POST that opens the Family form.
@@ -747,6 +755,10 @@ NON_PAGES = frozenset(
         "logs_export",
         "limitations_export",
         "census_changes_export",
+        # Update ParishSoft's confirmation and Run again (#1688): POSTs that
+        # answer the review dialog with a fragment.
+        "update_parishsoft_confirmation",
+        "update_parishsoft_retries",
         "maintenance",
         "ministry_followup_export",
         "ministry_followup_update",
@@ -759,6 +771,9 @@ NON_PAGES = frozenset(
         # Campaign settings' live end-date check (#944), a fragment the
         # page reads.
         "campaign_end_date_check",
+        # The campaign work status Campaign settings and Home poll while
+        # campaign work holds their controls (#1619), a fragment.
+        "campaign_work_status",
         # New and Edit scheduled email's test of an unsaved edit (#446), a
         # POST the page script makes.
         "schedule_email_test",

@@ -515,7 +515,9 @@ ROSTER_STATES = frozenset({"active", "closed", "archived"})
 # Cannot contribute financially answer at its Pledges stage (R39 finding
 # 11), for a viewer Pledges admits, so the count adds those at To review,
 # read through Pledges' own stage selection
-# (stewardship_pledge_review_states_v1) and the response's cannot_give flag.
+# (stewardship_pledge_stages_v1, which places a pledge from its latest
+# refresh check, so a Conflict or Confirmed one is not To review) and the
+# response's cannot_give flag.
 # The statement's columns, by name and in order (each aliased in the SQL).
 # Read the row through these names, never by position: a caller that adds
 # columns (My review work's counts, #1727, cross-joined after these) takes
@@ -555,7 +557,7 @@ SELECT
            OR coalesce(a->>'decision','none')='none')
         + CASE WHEN %(pledges)s THEN (
             SELECT count(*)
-            FROM stewardship_pledge_review_states_v1(%(campaign)s, NULL::uuid) p
+            FROM stewardship_pledge_stages_v1(%(campaign)s, NULL::uuid) p
             JOIN stewardship_submission ps ON ps.id=p.submission_id
             WHERE p.stage='to_review'
               AND coalesce(ps.answers->'financial'->'cannot_give'='true'::jsonb,

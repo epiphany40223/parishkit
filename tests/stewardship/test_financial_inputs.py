@@ -23,7 +23,11 @@ def definition():
 
 
 def test_definition_keeps_explicit_periods_funds_and_noncalendar_year_label():
-    """A fiscal-year period stays intact rather than being relabeled calendar-year."""
+    """A fiscal-year period stays intact rather than being relabeled calendar-year.
+
+    The pledge is labeled by its period even when the campaign's Stewardship
+    year label says otherwise (#1923), so it agrees with the start date.
+    """
     values = configuration()
     values["financial"].update(start="2055-07-01", end="2056-06-30")
     result = financial_definition(values, campaign_id=CAMPAIGN)
@@ -32,10 +36,19 @@ def test_definition_keeps_explicit_periods_funds_and_noncalendar_year_label():
     assert result.comparison.funds == (9,)
     assert result.upcoming.funds == (4,)
     values["year_label"] = "Configured stewardship year"
-    assert (
-        financial_definition(values, campaign_id=CAMPAIGN).year_label
-        == values["year_label"]
-    )
+    assert financial_definition(values, campaign_id=CAMPAIGN).year_label == "2055–2056"
+
+
+def test_pledge_year_is_the_period_start_year_not_the_year_label():
+    """A 2026 label on a 2027 period shows "Your 2027 pledge" (#1923)."""
+    values = configuration()
+    values["financial"].update(start="2027-01-01", end="2027-12-31")
+    values["year_label"] = "2026"
+    result = financial_definition(values, campaign_id=CAMPAIGN)
+    assert result.year_label == "2027"
+    assert result.upcoming.start.year == 2027
+    # The campaign year for page and email text still follows the label.
+    assert result.campaign_year == "2026"
 
 
 @pytest.mark.parametrize(
@@ -216,3 +229,17 @@ def test_projection_includes_financial_definition_not_unrelated_metadata():
     before = financial_inputs(scope, None, family_duid=1, pledges=[], contributions=[])
     after = financial_inputs(changed, None, family_duid=1, pledges=[], contributions=[])
     assert before.comparison() != after.comparison()
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "label"),
+    [
+        (date(2027, 1, 1), date(2027, 12, 31), "2027"),
+        (date(2027, 7, 1), date(2028, 6, 30), "2027–2028"),
+    ],
+)
+def test_period_years_names_a_period_by_its_years(start, end, label):
+    """The one pledge-year rule: one year, or both years of a spanning period."""
+    from parishkit.stewardship.web.presentation import period_years
+
+    assert period_years(start, end) == label

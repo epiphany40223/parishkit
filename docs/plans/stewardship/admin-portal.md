@@ -117,7 +117,8 @@ action checks how long ago the Admin signed in; there is no step-up.
      guard test lists `schedule-summary.html` and `clone-preview.html` as
      still hand-drawn. Browser tests of the editor in three engines with
      `--require-no-skips`. No pk-local check: nothing is added or moved.
-   - **7c, the mail schedule review.** A from-now helper beside
+   - **7c, the mail schedule review.** A from-now helper,
+     `upcoming_slots`, replacing
      `preview_slots` (from `SchedulePlan.next_slot`, so no history is
      scanned) lists the next five sends after the database's now.
      `schedule_changes.describe` takes an optional zone: with the posted
@@ -271,10 +272,11 @@ slices of #952 are tracked on that issue.
 5. Test Staff view-only behavior, Admin-only API publication, stale plans,
    subset sessions, and every outcome.
 
-The [Publish to ParishSoft](../../specs/stewardship/reports/spec.md#publish-to-parishsoft)
-page ([#528](https://github.com/epiphany40223/parishkit/issues/528)) is
-delivered in these slices, each its own pull request with publication left
-switched off:
+The [Update ParishSoft](../../specs/stewardship/reports/spec.md#update-parishsoft)
+page ([#528](https://github.com/epiphany40223/parishkit/issues/528); Publish
+to ParishSoft until [#1688](https://github.com/epiphany40223/parishkit/issues/1688))
+is delivered in these slices, each its own pull request with publication
+left switched off:
 
 1. **Already in ParishSoft at the check** (forward migration 0112, the number
    assigned to it centrally): the derived-proposal guard's worker branch
@@ -291,14 +293,18 @@ switched off:
    switched off), the page's off and Testing states, Check ParishSoft with
    its in-place status, the plan table and counts, and
    `census_publication_viewed`.
-3. **Confirm and run**: Publish in the review dialog, the run's in-place status and per-Member outcomes, Run again,
-   the final full refresh, the refusal codes, the newest-plan check shared
-   with the command line, and the publication audit types moved into the
-   ParishSoft refreshes group, renamed "ParishSoft refreshes and
-   publishing" ([activity groups](../../specs/stewardship/admin-portal/spec.md#activity-groups));
+3. **Confirm and run**, built with the rename to Update ParishSoft by
+   [#1688](https://github.com/epiphany40223/parishkit/issues/1688): Update
+   in the review dialog, the run's in-place status and per-Member outcomes,
+   Run again, the final full refresh, the refusal codes, the newest-plan
+   check shared with the command line, and the update audit types moved
+   into the ParishSoft refreshes group, renamed "ParishSoft refreshes and
+   updates" ([activity groups](../../specs/stewardship/admin-portal/spec.md#activity-groups));
    the rename updates every test that names the old label.
-4. **Command-line parity**: `pk-admin census publish-check`,
-   `publish-plan`, `publish-confirm` and `publish-rerun`.
+4. **Command-line parity**: `pk-admin census update-check`,
+   `update-plan`, `update-confirm` and `update-rerun`, with `census review
+   --decision accepted`
+   ([#1755](https://github.com/epiphany40223/parishkit/issues/1755)).
 
 Slice 2 needs no schema, so it was delivered first.
 

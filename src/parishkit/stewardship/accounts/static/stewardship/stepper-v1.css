@@ -96,6 +96,13 @@
 .campaign-step-actions > * { margin: 0; }
 .campaign-step-actions > [data-campaign-continue], .campaign-step-actions > [data-campaign-create], .campaign-step-actions > [data-campaign-primary],
 .campaign-step-actions > [data-go-live-primary] { margin-inline-start: auto; }
+/* Dates and mail schedules' suggested schedules (#1404 PR 6): Continue
+   without schedules for now, secondary, sits just before the primary, so
+   only it takes the free space on its left. */
+.campaign-step-actions > [data-campaign-continue] + [data-campaign-primary] { margin-inline-start: 0; }
+/* Its button drops the global button margin, as the primary's does, so the
+   two are equally tall and line up. */
+.campaign-step-actions > [data-campaign-continue]:has(+ [data-campaign-primary]) button { margin: 0; }
 /* A direct-save step's primary (#1404 PR 4): Continue and Save and continue
    share one grid cell, so the cell is as wide as the longer label and the
    switch between them moves nothing; the one not offered keeps its space

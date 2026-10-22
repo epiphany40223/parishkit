@@ -504,3 +504,48 @@ def test_edit_review_waits_for_a_change(page, component_origin):
     page.get_by_role("group", name="Role").get_by_label("Staff").check()
     eventually(page, REVIEW_HELD, False)
     assert review.is_enabled()
+
+
+def test_google_account_guidance_shows_where_sign_in_fails(page, component_origin):
+    """The one Google Account guidance reaches a stuck leader and the Admin (#1593).
+
+    The Admin sign-in page and the generic Admin refusal show it with
+    Google's help link opening in a new tab; a Family refusal does not. On
+    Users, the line under the table counts the Ministry leader who never
+    signed in, and the About panel repeats the guidance for the
+    Administrator to pass on.
+    """
+    from parishkit.stewardship.accounts.google_account_help import (
+        HELP_URL,
+        LINK_LABEL,
+    )
+
+    for path in ("/login", "/denied-admin"):
+        page.goto(component_origin + path)
+        guidance = page.locator("[data-google-account-help]")
+        visible(guidance.get_by_text("It doesn't have to be a Gmail address"))
+        link = guidance.get_by_role("link", name=str(LINK_LABEL))
+        assert link.get_attribute("href") == HELP_URL, path
+        assert link.get_attribute("target") == "_blank", path
+    for path in ("/denied", "/denied-admin-signed-in"):
+        page.goto(component_origin + path)
+        assert page.locator("[data-google-account-help]").count() == 0, path
+    page.set_viewport_size({"width": 320, "height": 900})
+    page.goto(component_origin + LIST)
+    line = page.locator("#users-never-signed-in")
+    assert line.inner_text() == "1 Ministry leader has never signed in."
+    # The line keeps one height at 320 px in every form (count 1, the longest
+    # plural, and none), so the table below it never moves (#736).
+    heights = set()
+    for text in (
+        "1 Ministry leader has never signed in.",
+        "12 Ministry leaders have never signed in.",
+        "Every Ministry leader has signed in.",
+    ):
+        line.evaluate("(el, t) => { el.textContent = t; }", text)
+        heights.add(line.bounding_box()["height"])
+    assert len(heights) == 1, heights
+    page.set_viewport_size({"width": 1280, "height": 900})
+    about = page.locator("details[data-about-page]")
+    about.locator("summary").click()
+    visible(about.locator("[data-google-account-help]"))

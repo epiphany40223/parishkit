@@ -100,11 +100,14 @@ from .campaign_settings_components import POSTS as CAMPAIGN_SETTINGS_POSTS
 from .campaign_settings_components import components as campaign_settings_components
 from .campaign_test_components import components as campaign_test_components
 from .campaign_test_components import posts as campaign_test_posts
+from .campaign_work_components import components as campaign_work_components
 from .census_components import components as census_components
 from .chart_components import components as chart_components
 from .comparison_components import components as comparison_components
 from .content_catalog_components import POSTS as CONTENT_CATALOG_POSTS
 from .content_catalog_components import components as content_catalog_components
+from .content_review_components import POSTS as CONTENT_REVIEW_POSTS
+from .content_review_components import components as content_review_components
 from .data_to_fix_components import components as data_to_fix_components
 from .delivery_components import POSTS as DELIVERY_POSTS
 from .delivery_components import components as delivery_components
@@ -191,6 +194,7 @@ from .upload_defaults_components import components as upload_defaults_components
 from .upload_defaults_components import posts as upload_defaults_posts
 from .user_components import POSTS as USER_POSTS
 from .user_components import components as user_components
+from .user_timeline_components import components as user_timeline_components
 from .weekly_components import components as weekly_components
 
 # The default Ministry leader roles a new campaign starts with (#922).
@@ -780,28 +784,11 @@ def component_origin():
             },
         ),
         (
-            # The Backup encryption key change's review page; the other
-            # integrations review in the review dialog (#750).
-            "/integration-preview",
-            "integration-preview",
-            {
-                "target": "backup_key",
-                "label": "Backup encryption key",
-                "preview": "synthetic-preview",
-                "changes": [
-                    {
-                        "label": "Key fingerprint",
-                        "before": "0123456789abcdef",
-                        "after": "fedcba9876543210",
-                    }
-                ],
-            },
-        ),
-        (
             "/backup-key",
             "backup-key",
             {
                 "label": "Backup encryption key",
+                "page_url": "/admin/system/integrations/backup_key/",
                 "current": KeyStatus("installed", "0123456789abcdef", backup_at=NOW),
                 "key_error": "This is not a backup public key.",
             },
@@ -811,6 +798,7 @@ def component_origin():
             "backup-key",
             {
                 "label": "Backup encryption key",
+                "page_url": "/admin/system/integrations/backup_key/",
                 "current": KeyStatus("configured", "0123456789abcdef"),
                 "new_fingerprint": "fedcba9876543210",
                 # A real challenge line is one unbroken 87-character word.
@@ -866,7 +854,9 @@ def component_origin():
                         "after": "2055-10-01 through 2055-10-31",
                     }
                 ],
-                "schedules": [_describe(mail["values"], mail_campaign["values"])],
+                "schedules": [
+                    _describe(mail["values"], mail_campaign["values"], now=NOW)
+                ],
                 "preview": "synthetic-preview",
                 "content_previews": [
                     {
@@ -1442,22 +1432,6 @@ def component_origin():
             },
         ),
         (
-            "/content-preview",
-            "content-preview",
-            {
-                "campaign": {"pk": uuid4()},
-                "label": "Family welcome",
-                "before": None,
-                "after": {
-                    "html": "<p>Hello Sample Family</p>",
-                    "text": "Hello Sample Family",
-                    "subject": None,
-                },
-                "preview": "synthetic-preview",
-                "affected": [],
-            },
-        ),
-        (
             "/home",
             "home",
             {"configuration": {"mode": "testing"}, "admin_chrome": admin},
@@ -1740,6 +1714,18 @@ def component_origin():
         ("/availability", "availability", {"setup": True, "admin": True}),
         ("/family-maintenance", "family-maintenance", {"message": "Back by 3 PM."}),
         ("/denied", "denied", {"retry_path": "/admin/login"}),
+        # The generic Admin refusal, with the Google Account guidance (#1593).
+        (
+            "/denied-admin",
+            "denied",
+            {"retry_path": "/admin/login", "admin": True, "sign_in": True},
+        ),
+        # A signed-in person's refusal (a report view) gets no guidance.
+        (
+            "/denied-admin-signed-in",
+            "denied",
+            {"retry_path": "/admin/login", "admin": True},
+        ),
         ("/denied-code", "denied", {"retry_path": "/", "kind": "code"}),
         ("/denied-link", "denied", {"retry_path": "/", "kind": "link"}),
         (
@@ -1846,6 +1832,10 @@ def component_origin():
                 "is_refresh": True,
                 "refresh_label": "Full refresh",
                 "phase_text": "Downloading from ParishSoft",
+                # The run's stage boxes (#1579), as _task_read builds them.
+                "stages": campaign_wizard.task_stages(
+                    {"state": "running", "progress": {"phase": "fetching"}}
+                ),
                 "retry_text": "An earlier attempt stopped unexpectedly (for "
                 "example, the server restarted), so this work started again "
                 "automatically.",
@@ -2216,6 +2206,7 @@ def component_origin():
     responses.update(tabs_components(context, admin))
     responses.update(find_family_components(context, admin))
     responses.update(user_components(context, admin))
+    responses.update(user_timeline_components(context, admin))
     responses.update(security_components(context, admin))
     responses.update(not_found_components(context, admin))
     responses.update(go_live_components(context, admin))
@@ -2237,6 +2228,7 @@ def component_origin():
     responses.update(workgroup_components(context, admin))
     responses.update(schedule_list_components(context, admin))
     responses.update(content_catalog_components(context, admin))
+    responses.update(content_review_components(context, admin))
     responses.update(in_place_components(context, admin))
     responses.update(live_status_components(context, admin))
     responses.update(
@@ -2253,6 +2245,7 @@ def component_origin():
     responses.update(upload_defaults_components(context, admin))
     responses.update(settings_components(context, admin))
     responses.update(campaign_settings_components(context, admin))
+    responses.update(campaign_work_components(context, admin))
     responses.update(campaign_create_components(context, admin))
     responses.update(menu_components(context, admin))
     responses.update(review_work_components(context, admin))
@@ -2296,6 +2289,7 @@ def component_origin():
         | ARTWORK_POSTS
         | BRANDING_POSTS
         | CONTENT_CATALOG_POSTS
+        | CONTENT_REVIEW_POSTS
         | open_form_posts(context, admin)
         | family_test_posts(context, admin)
         | upload_defaults_posts()
@@ -2313,6 +2307,7 @@ def component_origin():
         ("admin-gate-v1.js", "application/javascript"),
         ("admin-menu-v1.js", "application/javascript"),
         ("admin-menu-state-v1.js", "application/javascript"),
+        ("remember-open-v1.js", "application/javascript"),
         ("find-family-v1.js", "application/javascript"),
         ("date-format-v1.js", "application/javascript"),
         ("family-v1.js", "application/javascript"),

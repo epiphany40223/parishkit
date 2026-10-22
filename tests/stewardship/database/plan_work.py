@@ -14,8 +14,11 @@ three readings discard), never reliably.
 """
 
 import json
+from contextlib import contextmanager
 
 from django.db import connection, transaction
+
+from parishkit.stewardship.jobs.broker import sql_timeout_kind
 
 
 def analyzed_plan(statement, params=None):
@@ -108,6 +111,40 @@ def analyze_all():
     Right after a bulk load the planner may still see the tables as tiny and
     pick a scan it would not use in a deployment, until autovacuum happens
     to analyze them. Row counts taken after this do not depend on that race.
+
+    Call it after a bulk fill and before the first measured or timed query,
+    not just before a plan assertion. A transactional test's flush truncates
+    the tables but keeps the column statistics an earlier test's ANALYZE
+    recorded, so a later test can plan against another campaign's values:
+    estimating one row for its own campaign, the planner re-aggregates a
+    table once per Family (#1930). Every table, not just the filled ones,
+    as a query also reads tables whose stale statistics another test left.
     """
     with connection.cursor() as cursor:
         cursor.execute("ANALYZE")
+
+
+@contextmanager
+def statement_limit(seconds):
+    """Fail the test when any one statement runs past ``seconds`` (#1930).
+
+    A bad plan over a realistic population can run for many minutes, and the
+    CI shard limit then stops the whole partition without naming the test or
+    the statement. The limit is set for the session, not with SET LOCAL,
+    because the code under test owns its transactions; it is reset after.
+    """
+    limit = int(seconds)
+    with connection.cursor() as cursor:
+        cursor.execute(f"SET statement_timeout = '{limit}s'")
+    try:
+        yield
+    except Exception as error:
+        if sql_timeout_kind(error) != "statement_timeout":
+            raise
+        raise AssertionError(
+            f"A statement ran past this test's {limit} s limit; a plan chosen "
+            "from stale planner statistics is the likely cause (#1930)."
+        ) from error
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("RESET statement_timeout")

@@ -43,6 +43,10 @@
 #     current choice over. Like the latency, a rollback never renders the
 #     real API (it falls back to the fake), and Production mode never reads
 #     the variable;
+#   - census publication (#1884) is rendered on while pk-local reads the
+#     fake ParishSoft, the only one it may write to, and off with the real
+#     API (the loader refuses it there). A rollback never renders it: a
+#     release before #1884 refuses it in the local profile;
 #   - the caller may set the forced mail redirect (#1399):
 #     PARISHKIT_LOCAL_MAIL_REDIRECT=ADDRESS|off, unset or "keep" carrying the
 #     current one over. A rollback never renders it: the previous release
@@ -445,6 +449,18 @@ if [ "$profile" = local ]; then
         # date: it may refuse a renewed one and accept a recently expired one.
         [ "$clock" != fake ] ||
             echo "    WARNING: the real ParishSoft API under the fake clock; prefer a normal-clock deployment" >&2
+    fi
+    # Census publication (#1884): Update ParishSoft writes to the fake only.
+    # With the real API it stays off, and the loader would refuse it anyway.
+    publication=false
+    if [ -z "$parishsoft" ]; then
+        if [ "$mode" = rollback ]; then
+            echo "    Update ParishSoft is not carried into a rollback (the previous release may refuse it); the next deploy turns it on again"
+        else
+            publication=true
+            switches+=(-e "PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION=1")
+            echo "    Update ParishSoft writes to the fake ParishSoft only"
+        fi
     fi
     # The forced mail redirect (#1399): one bare address, the developer's
     # Testing recipient. With it, a real Workspace key may send, but every
@@ -868,6 +884,11 @@ if [ "$profile" = local ]; then
     [ "$rendered" = "$latency" ] || problems+=("mail-dispatch: SMTP latency is $rendered ms, not $latency")
     rendered=$(jq -r '.deployment.parishsoft_base_url // empty' "$services/worker.yaml")
     [ "$rendered" = "$parishsoft" ] || problems+=("worker: ParishSoft base URL is '${rendered:-the fake}', not '${parishsoft:-the fake}'")
+    # Both halves of publication: web gates Check ParishSoft, worker runs it.
+    for role in web worker; do
+        rendered=$(jq -r '.deployment.parishsoft_publication // false' "$services/$role.yaml")
+        [ "$rendered" = "$publication" ] || problems+=("$role: ParishSoft publication is $rendered, not $publication")
+    done
     # Every role's document is rendered from the same inputs; the two mail
     # senders are checked.
     for role in worker mail-dispatch; do

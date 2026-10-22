@@ -5,13 +5,14 @@ from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
-from django.db import connection
+from django.db import connection, transaction
 
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs import processes
 from parishkit.stewardship.jobs.broker import BrokerRuntime
 from parishkit.stewardship.jobs.dispatch import Handler, WorkQueue, claim_hint
 from parishkit.stewardship.jobs.models import TaskRun
+from parishkit.stewardship.jobs.scanning import NEWEST_DUE_ROWS
 from parishkit.stewardship.jobs.scheduler import (
     SchedulerOwnershipLost,
     scan_once,
@@ -177,6 +178,13 @@ def test_no_early_scan_while_a_backlog_sweep_is_in_progress(monkeypatch):
         loops[-1].append((kwargs["cursor"] is None, len(locks) - before))
         return result
 
+    def newest(guard, **kwargs):
+        """Record the newest-due scan's lock takes (#1921)."""
+        before = len(locks)
+        result = real_newest(guard, **kwargs)
+        loops[-1].append(("newest", len(locks) - before))
+        return result
+
     def produce(guard):
         """Mark where the producers ran within this loop."""
         loops[-1].append("produce")
@@ -189,6 +197,8 @@ def test_no_early_scan_while_a_backlog_sweep_is_in_progress(monkeypatch):
             loops.append([])
 
     loops.append([])
+    real_newest = processes.scan_newest
+    monkeypatch.setattr(processes, "scan_newest", newest)
     monkeypatch.setattr(processes, "scan_once", scan)
     monkeypatch.setattr(
         processes, "publish_hint", lambda runtime, hint: seen.append(hint.run_id)
@@ -203,12 +213,15 @@ def test_no_early_scan_while_a_backlog_sweep_is_in_progress(monkeypatch):
         produce=produce,
     )
     # Loop 1 starts the sweep with a capped early page, and its late scan
-    # continues after it. Loops 2 and 3 are mid-sweep: no early scan. The
-    # 250 rows are published once each, at one lock take per row.
+    # continues after it. Loops 2 and 3 are mid-sweep: no early scan. Every
+    # loop first publishes the NEWEST_DUE_ROWS newest rows (#1921), which
+    # the sweep later skips as just published, so the 250 rows are still
+    # published once each, at one lock take per row.
+    cap, newest = processes.EARLY_SCAN_ROWS, NEWEST_DUE_ROWS
     assert loops == [
-        [(True, processes.EARLY_SCAN_ROWS), "produce", (False, 100)],
-        ["produce", (False, 100)],
-        ["produce", (False, 50 - processes.EARLY_SCAN_ROWS)],
+        [("newest", newest), (True, cap), "produce", (False, 100)],
+        [("newest", newest), "produce", (False, 100)],
+        [("newest", newest), "produce", (False, 50 - cap - 3 * newest)],
     ]
     assert sorted(seen) == sorted(backlog)
 
@@ -244,6 +257,13 @@ def test_held_rows_cost_the_early_scan_at_most_its_cap(monkeypatch):
         loops[-1].append(len(locks) - before)
         return result
 
+    def newest(guard, **kwargs):
+        """Record the newest-due scan's lock takes (#1921)."""
+        before = len(locks)
+        result = real_newest(guard, **kwargs)
+        loops[-1].append(len(locks) - before)
+        return result
+
     def heartbeat():
         """End after two loops, without real scheduler sleeps."""
         if len(loops) == 2:
@@ -251,6 +271,8 @@ def test_held_rows_cost_the_early_scan_at_most_its_cap(monkeypatch):
         else:
             loops.append([])
 
+    real_newest = processes.scan_newest
+    monkeypatch.setattr(processes, "scan_newest", newest)
     monkeypatch.setattr(processes, "scan_once", scan)
     monkeypatch.setattr(
         processes, "publish_hint", lambda runtime, hint: seen.append(hint.run_id)
@@ -264,8 +286,11 @@ def test_held_rows_cost_the_early_scan_at_most_its_cap(monkeypatch):
         heartbeat=heartbeat,
         produce=lambda guard: None,
     )
-    cap = processes.EARLY_SCAN_ROWS
-    assert loops == [[cap, 80 - cap], [cap, 80 - cap]] and not seen
+    # The newest-due scan (#1921) checks the newest few held rows first; the
+    # sweep then skips them, so each loop still costs one take per row.
+    cap, newest = processes.EARLY_SCAN_ROWS, NEWEST_DUE_ROWS
+    loop = [newest, cap, 80 - cap - newest]
+    assert loops == [loop, loop] and not seen
 
 
 def test_lost_ownership_in_the_early_scan_skips_the_producers(monkeypatch):
@@ -391,3 +416,231 @@ def test_loop_failure_retains_fair_cursor_and_discards_suffix_proof(
         assert not DueWorkHealth.objects.exists()
     else:
         assert DueWorkHealth.objects.get().signal == "unknown"
+
+
+def refusing_registry(admissions, loops):
+    """Refuse every dispatch_probe row; admit source_refresh (#1921).
+
+    Both handlers take the production Family mail handler's scope, so each
+    check costs a global-lock transaction, as in production. Every admission
+    check is recorded with the loop it ran in.
+    """
+    from parishkit.stewardship.jobs.family_mail_delivery_tasks import (
+        delivery_handler,
+    )
+
+    scope = delivery_handler(Mock(), scheduler=True).scope
+
+    def admit(answer):
+        """Record (loop, run id) and give the fixed answer."""
+
+        def check(action, status):
+            admissions.append((len(loops), status.run_id))
+            return answer
+
+        return check
+
+    return {
+        task_type: Handler(
+            WorkQueue.GENERAL, admit(answer), lambda *args: None, scope=scope
+        )
+        for task_type, answer in (("dispatch_probe", False), ("source_refresh", True))
+    }
+
+
+def enqueued(task_type, **options):
+    """Enqueue one synthetic row of ``task_type``."""
+    from parishkit.stewardship.jobs.storage import enqueue
+
+    return enqueue(
+        task_type=task_type,
+        domain_request_id=uuid4(),
+        actor_id=None,
+        correlation_id=uuid4(),
+        admit=lambda *args: True,
+        **options,
+    )
+
+
+def test_a_new_request_is_hinted_on_the_next_loop_behind_held_rows(monkeypatch):
+    """300 refused due rows no longer delay a newly requested task (#1921).
+
+    The held rows fell due ten minutes ago, as a paused send's messages
+    would have; the sweep needs three loops to page through them. A
+    source_refresh requested after loop 1 is hinted at the start of loop 2,
+    before its producers and long before the sweep reaches it. The sweep
+    still checks every held row, and no row is checked twice in one loop.
+    """
+    from datetime import timedelta
+
+    from parishkit.stewardship.jobs.ownership import database_now
+
+    with transaction.atomic():
+        past = database_now() - timedelta(minutes=10)
+    held = {enqueued("dispatch_probe", not_before=past).run_id for _ in range(300)}
+    stop, events, loops, admissions, requested = Event(), [], [[]], [], []
+    registry = refusing_registry(admissions, loops)
+
+    def heartbeat():
+        """Request the refresh after loop 1; end after loop 3."""
+        if len(loops) == 1:
+            requested.append(enqueued("source_refresh").run_id)
+        if len(loops) == 3:
+            stop.set()
+        else:
+            loops.append([])
+
+    monkeypatch.setattr(
+        processes,
+        "publish_hint",
+        lambda runtime, hint: events.append((len(loops), hint.run_id)),
+    )
+    monkeypatch.setattr(stop, "wait", lambda timeout: stop.is_set())
+    processes.serve_scheduler(
+        BrokerRuntime(Mock(), ServiceRole.SCHEDULER),
+        handlers=registry,
+        lease=Mock(),
+        stop=stop,
+        heartbeat=heartbeat,
+        produce=lambda guard: events.append((len(loops), "produce")),
+    )
+    [refresh] = requested
+    # Loop 2 hints the refresh before its producers run; nothing else is
+    # hinted, and it is not hinted again when the sweep reaches it in loop 3.
+    assert [event for event in events if event[0] == 2] == [
+        (2, refresh),
+        (2, "produce"),
+    ]
+    assert [event[1] for event in events if event[1] != "produce"] == [refresh]
+    # The fair sweep still reaches every held row: each is checked exactly
+    # once over the three loops, and no row is checked twice in a loop.
+    assert sorted(admissions) == sorted(set(admissions))
+    checked = [run for _, run in admissions]
+    assert sorted(checked) == sorted(held | {refresh})
+    assert TaskRun.objects.get(pk=refresh).state == "queued"
+
+
+def test_a_refused_new_row_is_checked_once_per_loop(monkeypatch):
+    """A held newest row costs one check a loop, not two (#1921).
+
+    The newest-due scan checks it, the sweep in the same loop skips it, and
+    the next loop's newest-due scan checks it again (the sweep let it go),
+    so a gate that clears is seen within a loop.
+    """
+    stop, loops, admissions = Event(), [[]], []
+    registry = refusing_registry(admissions, loops)
+    held = [enqueued("dispatch_probe").run_id for _ in range(3)]
+
+    def heartbeat():
+        """End after three loops, without real scheduler sleeps."""
+        if len(loops) == 3:
+            stop.set()
+        else:
+            loops.append([])
+
+    monkeypatch.setattr(processes, "publish_hint", lambda *args: None)
+    monkeypatch.setattr(stop, "wait", lambda timeout: stop.is_set())
+    processes.serve_scheduler(
+        BrokerRuntime(Mock(), ServiceRole.SCHEDULER),
+        handlers=registry,
+        lease=Mock(),
+        stop=stop,
+        heartbeat=heartbeat,
+        produce=lambda guard: None,
+    )
+    assert sorted(admissions) == sorted(
+        (loop, run) for loop in (1, 2, 3) for run in held
+    )
+
+
+def test_the_newest_due_query_reads_the_due_index(monkeypatch):
+    """The newest-due window is a range of task_due, not a full due scan."""
+    from datetime import timedelta
+
+    from parishkit.stewardship.jobs.ownership import database_now
+    from parishkit.stewardship.jobs.scanning import newest_due_rows
+
+    with transaction.atomic():
+        now = database_now()
+    for _ in range(300):
+        enqueued("dispatch_probe", not_before=now - timedelta(minutes=10))
+    new = enqueued("dispatch_probe").run_id
+    with connection.cursor() as cursor:
+        cursor.execute("ANALYZE stewardship_task_run")
+        cursor.execute("SET enable_seqscan = off")
+    try:
+        rows = newest_due_rows(
+            {"dispatch_probe": None},
+            cutoff=now - timedelta(minutes=1),
+            now=now + timedelta(minutes=1),
+        )
+        assert [row.pk for row in rows] == [new]
+        assert "task_due" in rows.explain()
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("RESET enable_seqscan")
+
+
+def newest_hinted(recent, **options):
+    """Run one newest-due scan with the permissive probe handler.
+
+    Returns the run ids it hinted.
+    """
+    from parishkit.stewardship.jobs.scanning import collect_newest_hints
+
+    hints, _ = collect_newest_hints(handlers=handlers(), recent=recent, **options)
+    return [hint.run_id for hint in hints]
+
+
+def test_a_request_that_fails_and_retries_inside_the_window_is_hinted_again():
+    """A changed row is not passed over because its old entry is still fresh.
+
+    A just-requested task is hinted, fails, and goes to retry_wait with a
+    short backoff, all within the newest-due window. The next scan hints it
+    again; an unchanged row is still passed over (#1921).
+    """
+    from parishkit.stewardship.jobs.scanning import RecentHints
+    from parishkit.stewardship.jobs.storage import change_run
+
+    recent = RecentHints()
+    run = enqueued("dispatch_probe").run_id
+    assert newest_hinted(recent) == [run]
+    # Unchanged: passed over, as the sweep will still reach it.
+    assert newest_hinted(recent) == []
+    # The task is claimed, fails, and waits one second to retry: a fresh
+    # version and not_before, still inside the window.
+    worker = uuid4()
+    for action, options in (
+        ("claim", {"lease_seconds": 60}),
+        ("retryable_failure", {"retry_seconds": 1}),
+    ):
+        row = TaskRun.objects.get(pk=run)
+        change_run(
+            run_id=run,
+            action=action,
+            expected_version=row.version,
+            actor_id=worker,
+            correlation_id=row.correlation_id,
+            fence=row.fence if action != "claim" else None,
+            admit=lambda *_: True,
+            **options,
+        )
+    assert TaskRun.objects.get(pk=run).state == "retry_wait"
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_sleep(1.1)")
+    assert newest_hinted(recent) == [run]
+    assert newest_hinted(recent) == []
+
+
+def test_repeated_scan_failures_cannot_widen_the_newest_due_window_far():
+    """``since`` stuck an hour back reaches only five minutes plus the slack."""
+    from datetime import timedelta
+
+    from parishkit.stewardship.jobs.ownership import database_now
+    from parishkit.stewardship.jobs.scanning import RecentHints
+
+    with transaction.atomic():
+        now = database_now()
+    near = enqueued("dispatch_probe", not_before=now - timedelta(minutes=5)).run_id
+    enqueued("dispatch_probe", not_before=now - timedelta(minutes=7))
+    assert newest_hinted(RecentHints(), since=now - timedelta(hours=1)) == [near]

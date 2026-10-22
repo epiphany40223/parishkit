@@ -1,5 +1,6 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
 {% block title %}{% translate "Home" %}{% endblock %}
+{% block head %}{% if dashboard.first_campaign == 'held' %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endif %}{% endblock %}
 {% block content %}
   <h1>{% translate "Home" %}</h1>
   {% comment %}Home is an overview dashboard (#1673; admin-portal spec "Home page", ui-conventions "Overview pages"): it counts and links, and the detail lives on the linked pages. Needs attention is one compact row of count lines, each linking the page that lists the items; it is page-load state, so it reserves no space when empty. A problem's sentence, the off-site line and the ParishSoft refresh block are on System health; viewers who cannot open System health get the one ParishSoft line instead. A problem that keeps System health from opening (an unreadable backup key) keeps its own sentence line instead, and the count line then links nothing, since that page cannot be shown. Every line that reports a problem leads with its state icon and word (components/status-lead.html); the notices and held-email lines count work waiting for a decision, so they are plain notices.{% endcomment %}
@@ -41,13 +42,7 @@
     {% if configuration.mode == 'testing' %}<p class="home-participation-foot">{% translate "Active Families with a response leaves out responses made in Testing mode." %}</p>{% endif %}
     </div>{% endif %}
     {% endwith %}
-    {% elif dashboard.first_campaign %}<h2>{% translate "No campaign yet" %}</h2>
-    {% comment %}Create the campaign (#142) is shown unavailable, with its reason, while the page would refuse it for a reason Home already knows (#563).{% endcomment %}{% if dashboard.first_campaign == 'source' %}<p id="create-campaign-reason">{% translate "Setup is complete. Load ParishSoft data before creating the campaign, so its Ministries and funds can be chosen: use Refresh now below." %}</p>
-    <p>{% button type="button" disabled=True aria-describedby="create-campaign-reason" %}{% translate "Create the campaign" %}{% endbutton %}</p>
-    {% elif dashboard.first_campaign == 'held' %}<p id="create-campaign-reason">{% translate "Create the campaign is available once the background campaign work now running finishes, usually within minutes. Reload this page then." %}</p>
-    <p>{% button type="button" disabled=True aria-describedby="create-campaign-reason" %}{% translate "Create the campaign" %}{% endbutton %}</p>
-    {% else %}<p>{% translate "Setup is complete. Next, create the campaign: its name, dates and what Families are asked." %}</p>
-    <p>{% url 'admin:campaign_create' as button_href %}{% button variant="primary" href=button_href %}{% translate "Create the campaign" %}{% endbutton %}</p>{% endif %}
+    {% elif dashboard.first_campaign %}{% include 'stewardship/home-first-campaign.html' with first_campaign=dashboard.first_campaign %}{% if dashboard.first_campaign == 'held' %}<p class="visually-hidden" role="status" data-live-announcer="first-campaign"></p>{% endif %}
     {% else %}<p>{% translate "There is no current campaign. Creating a campaign here is disabled until the single-campaign change (#145)." %}</p>{% endif %}
     {% if not dashboard.campaign %}<dl class="home-facts">{% include "stewardship/home-data-age.html" %}</dl>
     {% if dashboard.can_refresh %}<p><a href="{% url 'admin:source_refresh' %}">{% translate "Refresh now" %}</a></p>{% endif %}{% endif %}

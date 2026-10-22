@@ -10,7 +10,7 @@ from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _
 from django.utils.translation import ngettext
 
-from parishkit.stewardship.accounts import admin_navigation, stages
+from parishkit.stewardship.accounts import admin_navigation, google_account_help, stages
 from parishkit.stewardship.campaigns import single_campaign
 from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAME
 from parishkit.stewardship.source.source_status import source_status_label
@@ -665,6 +665,18 @@ def multi_campaign_control(control_id, label):
     shows the same tip, defined once in ``campaigns.single_campaign``.
     """
     return {"control_id": control_id, "label": label, "tip": single_campaign.TIP}
+
+
+@register.inclusion_tag(
+    "stewardship/components/google-account-help.html", name="google_account_help"
+)
+def google_account_guidance():
+    """The one Google Account guidance for a non-Gmail address (#1593).
+
+    The wording lives in ``accounts.google_account_help``, so every page that
+    shows it (and a later leader email, #1592) says exactly the same thing.
+    """
+    return google_account_help.context()
 
 
 @register.inclusion_tag("stewardship/components/menu-link.html", takes_context=True)

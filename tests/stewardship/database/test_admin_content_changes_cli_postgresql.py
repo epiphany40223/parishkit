@@ -130,6 +130,7 @@ def test_preview_and_confirm_delete_the_chosen_emails(admin, emails):
             {"id": reminder["id"], "slot": "reminder", "subject": "Spare too"},
         ],
         "plain_text": None,
+        "edit": None,
     }
     assert ConfigurationChangeRequest.objects.count() == requests and events() == 0
 
@@ -279,6 +280,7 @@ def test_the_plain_text_preview_answers_as_the_page(admin):
         "deleting": None,
         "plain_text": page.json(),
         "preview": None,
+        "edit": None,
     }
     code, piped, _ = admin(
         "content", "preview", "--html", "-", secret=secret, answer=source.encode()

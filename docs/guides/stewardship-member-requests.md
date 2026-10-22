@@ -120,6 +120,11 @@ contact changes to ParishSoft with the v2 Member contact PUT. It ships
    section says how a confirmed result is recorded on #528 before step 1's
    change is made.
 
+pk-local is the one exception to both: while it reads its fake ParishSoft
+the switch is on and the read is the fake's own, so every write reaches only
+the fake. pk-local never writes to the real ParishSoft (see the
+[local environment guide](stewardship-local-environment.md#updating-the-fake-parishsoft)).
+
 The switch is the deployment setting `parishsoft_publication: true` (or
 `PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION=1`), set on both the web and
 worker services. While it is off the web refuses to queue a preflight or to
@@ -132,7 +137,8 @@ section.
 
 Turning the switch on is the Administrator's decision; no pull request or
 default turns it on, and both steps above come first. Once it is on, an
-Administrator publishes from the
-[Publish to ParishSoft](../specs/stewardship/reports/spec.md#publish-to-parishsoft)
-page (its check is built; publishing from it is not yet), reached from
-Census changes, or with the `pk-admin census publish-*` commands.
+Administrator updates ParishSoft from the
+[Update ParishSoft](../specs/stewardship/reports/spec.md#update-parishsoft)
+page, reached from Census changes: Check ParishSoft, then Update in its
+confirmation dialog, or with the `pk-admin census update-*` commands
+([operator guide](stewardship-admin-automation.md#updating-parishsoft)).

@@ -49,6 +49,9 @@ STATUS_LABELS = {
     "passed": _("Past"),
     # One send of a digest that it skips (#1658, the Campaign calendar).
     "skipped": _("Skipped"),
+    # A suggested schedule Dates and mail schedules proposes in the campaign
+    # wizard (#1404 PR 6), listed but not saved.
+    "suggested": _("Not saved yet"),
 }
 # A schedule in one of these states has run, is running, or has work
 # prepared ahead of its time: it sent its email, failed to, or settled every

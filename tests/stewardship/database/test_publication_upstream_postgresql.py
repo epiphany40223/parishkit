@@ -148,7 +148,9 @@ def test_a_matching_change_is_marked_at_the_check_and_survives_the_run(world):  
     assert written == {"firstName": "Requested"}
     assert now(world.first)[0] == "published"
     assert now(last) == ("resolved_upstream", "approved", last.version + 1)
-    # The mark is final: the derived guard keeps resolved_upstream immutable.
+    # The worker never moves the mark on: the derived guard keeps
+    # resolved_upstream immutable to it (only Staff's Back to review, #1840,
+    # undoes it).
     with pytest.raises(DatabaseError, match="immutable"):
         worker_update(ProposedChange.objects.get(pk=last.pk), execution="pending")
 

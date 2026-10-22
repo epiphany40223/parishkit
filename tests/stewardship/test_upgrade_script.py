@@ -345,7 +345,7 @@ case "$*" in
         else json "${FAKE_OFFSITE:-uploaded}"; fi ;;
     *" retarget-image --config "*)
         [ -z "$FAKE_RETARGET_FAIL" ] || { echo "retarget refused" >&2; exit 1; }
-        bulk=false batch=20 latency="" window="" minutes=""
+        bulk=false batch=20 latency="" window="" minutes="" publication=false
         for arg in "$@"; do
             case "$arg" in
                 PARISHKIT_STEWARDSHIP_BULK_FAMILY_SEND=1) bulk=true ;;
@@ -359,6 +359,12 @@ case "$*" in
                     # FAKE_RETARGET_NO_PARISHSOFT: a retarget that lost it.
                     [ -n "$FAKE_RETARGET_NO_PARISHSOFT" ] ||
                         latency="$latency"', "parishsoft_base_url": "'"${arg#*=}"'"' ;;
+                PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION=1)
+                    # FAKE_RETARGET_NO_PUBLICATION: a retarget that lost it.
+                    [ -n "$FAKE_RETARGET_NO_PUBLICATION" ] || {
+                        publication=true
+                        latency="$latency"', "parishsoft_publication": true'
+                    } ;;
                 PARISHKIT_STEWARDSHIP_MAIL_REDIRECT=*)
                     # FAKE_RETARGET_NO_REDIRECT: a retarget that lost it.
                     [ -n "$FAKE_RETARGET_NO_REDIRECT" ] ||
@@ -377,7 +383,8 @@ case "$*" in
             echo "$doc"' "bulk_send_batch": '"$batch$latency$window"'}}' \
                 >"$(dirname "$FAKE_COMPOSE")/$role.yaml"
         done
-        # web.yaml keeps its other inputs; only the window is re-rendered.
+        # web.yaml keeps its other inputs; only the window and the
+        # publication switch are re-rendered.
         web="$(dirname "$FAKE_COMPOSE")/web.yaml"
         key=.deployment.export_download_window_minutes
         if [ -n "$minutes" ]; then
@@ -385,7 +392,13 @@ case "$*" in
         else
             jq "del($key)" "$web" >"$web.new"
         fi
-        mv "$web.new" "$web"
+        key=.deployment.parishsoft_publication
+        if [ "$publication" = true ]; then
+            jq "$key = true" "$web.new" >"$web"
+        else
+            jq "del($key)" "$web.new" >"$web"
+        fi
+        rm -f "$web.new"
         touch "$FAKE_STATE/retargeted" ;;
     *" --rm -T migration migrate --config "*" --users-upgrade-base")
         if [ -n "$FAKE_BASE_FAIL" ]; then
@@ -1378,25 +1391,34 @@ def rendered_real_parishsoft(root):
     path.write_text(json.dumps(document))
 
 
+# Census publication (#1884): rendered with the fake, never with the real API
+# and never into a rollback.
+PUBLICATION = "PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION=1"
+
+
 def test_local_mode_renders_the_chosen_parishsoft(tmp_path):
-    """real renders the real API; keep carries it; fake and rollback drop it."""
+    """real renders the real API; keep carries it; fake and rollback drop it.
+    Publication is on with the fake, except in a rollback (#1884)."""
     calls, output, _ = run_host(
         tmp_path / "real",
         "upgrade",
         profile="local",
         env={"PARISHKIT_LOCAL_PARISHSOFT": "real"},
     )
-    assert REAL_PARISHSOFT in calls[first(calls, " retarget-image ")]
+    retarget = calls[first(calls, " retarget-image ")]
+    assert REAL_PARISHSOFT in retarget and PUBLICATION not in retarget
     assert "reading the real ParishSoft API (never writing)" in output
+    assert "Update ParishSoft" not in output
     assert "NOT healthy" not in output
     calls, output, _ = run_host(
         tmp_path / "keep", "upgrade", profile="local", prepare=rendered_real_parishsoft
     )
-    assert REAL_PARISHSOFT in calls[first(calls, " retarget-image ")]
+    retarget = calls[first(calls, " retarget-image ")]
+    assert REAL_PARISHSOFT in retarget and PUBLICATION not in retarget
     assert "NOT healthy" not in output
-    for mode, env in (
-        ("upgrade", {"PARISHKIT_LOCAL_PARISHSOFT": "fake"}),
-        ("rollback", {}),
+    for mode, env, publication in (
+        ("upgrade", {"PARISHKIT_LOCAL_PARISHSOFT": "fake"}, True),
+        ("rollback", {}, False),
     ):
         calls, output, _ = run_host(
             tmp_path / mode,
@@ -1405,12 +1427,31 @@ def test_local_mode_renders_the_chosen_parishsoft(tmp_path):
             prepare=rendered_real_parishsoft,
             env=env,
         )
-        assert "PARISHSOFT" not in calls[first(calls, " retarget-image ")]
+        retarget = calls[first(calls, " retarget-image ")]
+        assert "PARISHSOFT_BASE_URL" not in retarget
+        assert (PUBLICATION in retarget) is publication
         assert "NOT healthy" not in output
     assert "not carried into a rollback (it reads the fake)" in output
-    # Unchanged from before the setting: the fake is not rendered at all.
-    calls, _, _ = run_host(tmp_path / "default", "upgrade", profile="local")
-    assert "PARISHSOFT" not in calls[first(calls, " retarget-image ")]
+    assert "Update ParishSoft is not carried into a rollback" in output
+    # The fake is still not rendered at all; publication is.
+    calls, output, _ = run_host(tmp_path / "default", "upgrade", profile="local")
+    retarget = calls[first(calls, " retarget-image ")]
+    assert "PARISHSOFT_BASE_URL" not in retarget and PUBLICATION in retarget
+    assert "Update ParishSoft writes to the fake ParishSoft only" in output
+
+
+def test_local_mode_reports_a_publication_switch_the_retarget_lost(tmp_path):
+    """The post-check names the publication switch it did not find rendered."""
+    _, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        profile="local",
+        status=1,
+        env={"FAKE_RETARGET_NO_PUBLICATION": "1"},
+    )
+    assert "NOT healthy" in output
+    assert "worker: ParishSoft publication is false, not true" in output
+    assert "web: ParishSoft publication is false, not true" in output
 
 
 def test_local_mode_reports_a_parishsoft_choice_the_retarget_lost(tmp_path):

@@ -231,9 +231,9 @@ sends included, and holds back 200 of its 1,800 for receipts and digests.
 The launch's roughly 1,400 recipients fit the remaining 1,600 only if little
 else was sent in the 24 hours before it.
 
-**While it runs.** Watch **Campaign › Family email progress** in the Admin
-portal
-([Family email progress](../specs/stewardship/admin-portal/spec.md#family-email-progress)).
+**While it runs.** Watch **Mail and Family portal › Mail queue** in the
+Admin portal
+([Family send progress](../specs/stewardship/admin-portal/spec.md#family-send-progress)).
 It updates by itself every few seconds with the sent, remaining, failed and
 uncertain counts, the current rate and an estimated finish time, and it does
 not slow the send down. It can be opened as soon as Production is
@@ -255,9 +255,9 @@ started with **Refresh now**.
 **Afterwards.** **Mail and Family portal › Family email history**
 ([Family email history](../specs/stewardship/admin-portal/spec.md#family-email-sends))
 keeps the send's final counts, its first and last times and its duration,
-and each count opens those emails on Sent mail. Once the progress page
-is settled, run the report again with `until` after the last outcome, and
-record in the operators' notes:
+and each count opens those emails on Sent mail. Once the Family send
+progress panel is settled, run the report again with `until` after the
+last outcome, and record in the operators' notes:
 
 - **Overview:** the message count, `wall_clock` and `accepted_per_minute`.
   With two mail consumers the send is expected to take about 20 minutes, at
@@ -876,8 +876,8 @@ each one is skipped when it is planned, and one already prepared is not sent.
 Nothing else changes. The Family still gets the invitation, receipts and
 confirmations, keeps its code and link (emailed codes and links are never
 changed), can still respond, and counts in every report. The Family's
-timeline says "Reminders skipped: in ParishSoft WorkGroup …", and Family
-email progress counts the skipped Reminders separately.
+timeline says "Reminders skipped: in ParishSoft WorkGroup …", and the Mail
+queue's Family send progress panel counts the skipped Reminders separately.
 
 **What you do.**
 
