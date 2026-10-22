@@ -540,6 +540,9 @@ FROZEN = {
     "0169_ministry_leader_coverage.sql": (
         "a155a572cc3c9190a6a31ba8a8879cc4fe3e4019e009c620c91fb7b71b8d7264"
     ),
+    "0170_parish_added_shown.sql": (
+        "464837acb882063ecf8374fe318cb9a87ead789a59dbb9b7a1672e6e5e555d73"
+    ),
 }
 
 

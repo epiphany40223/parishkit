@@ -4683,8 +4683,52 @@ BEGIN
                                 AND edited_response.family_id=NEW.family_id
                                 AND public.stewardship_response_comparison_v1(answer.field,edit.admin_value)
                                     IS NOT DISTINCT FROM submitted_key)))))
+               -- A change the parish added (#2008) that a response drawn as
+               -- the reviewed form left as shown, the added value in its
+               -- field: no Family change is made (reviewed rule 1;
+               -- responses/proposals.py derives the same). The entry names
+               -- this Family's addition for this very field, not withdrawn
+               -- (withdrawn is final), whose value is the answer.
+               AND NOT (NEW.reviewed_view AND EXISTS (
+                   SELECT 1 FROM jsonb_array_elements(NEW.shown_items) shown
+                   JOIN public.stewardship_census_addition addition ON addition.id::text=shown->>'item'
+                   WHERE shown->>'stream'='census' AND shown->>'shown'='parish'
+                     AND ROW(shown->>'entity',shown->>'key',shown->>'field')
+                         =ROW(answer.entity,answer.identity,answer.field)
+                     AND ROW(addition.entity_kind,addition.entity_key,addition.field)
+                         =ROW(answer.entity,answer.identity,answer.field)
+                     AND addition.family_id=NEW.family_id
+                     AND NOT EXISTS (SELECT 1 FROM public.stewardship_census_addition_resolution step
+                         WHERE step.addition_id=addition.id AND step.action='withdrawn')
+                     AND public.stewardship_response_comparison_v1(answer.field,addition.value)
+                         IS NOT DISTINCT FROM submitted_key))
             THEN
                 RAISE EXCEPTION 'Submitted census change requires atomic derived work' USING ERRCODE='23514';
+            END IF;
+            -- Under that same 'parish' entry any other answer is an
+            -- ordinary Family change To review (#2008, the Administrator's
+            -- decision 2), so it needs its row even where it is
+            -- ParishSoft's value or an Ignored change's (the rules above
+            -- would admit none); responses/proposals.py makes the same.
+            IF NEW.reviewed_view
+               AND NOT EXISTS (SELECT 1 FROM public.stewardship_proposed_change proposal
+                   WHERE proposal.submission_id=NEW.id AND proposal.entity_kind=answer.entity
+                     AND proposal.entity_key=answer.identity AND proposal.field=answer.field)
+               AND EXISTS (
+                   SELECT 1 FROM jsonb_array_elements(NEW.shown_items) shown
+                   JOIN public.stewardship_census_addition addition ON addition.id::text=shown->>'item'
+                   WHERE shown->>'stream'='census' AND shown->>'shown'='parish'
+                     AND ROW(shown->>'entity',shown->>'key',shown->>'field')
+                         =ROW(answer.entity,answer.identity,answer.field)
+                     AND ROW(addition.entity_kind,addition.entity_key,addition.field)
+                         =ROW(answer.entity,answer.identity,answer.field)
+                     AND addition.family_id=NEW.family_id
+                     AND NOT EXISTS (SELECT 1 FROM public.stewardship_census_addition_resolution step
+                         WHERE step.addition_id=addition.id AND step.action='withdrawn')
+                     AND public.stewardship_response_comparison_v1(answer.field,addition.value)
+                         IS DISTINCT FROM submitted_key)
+            THEN
+                RAISE EXCEPTION 'An edited census change the parish added requires a Family change' USING ERRCODE='23514';
             END IF;
         END LOOP;
         FOR prior IN
@@ -4789,6 +4833,31 @@ BEGIN
                                     IS NOT DISTINCT FROM
                                     public.stewardship_response_comparison_v1(prior.field,b.source->'value')))
                       ELSE false END) THEN
+                CONTINUE;
+            END IF;
+            -- An earlier change of a field whose change the parish added
+            -- (#2008) this response left as shown stays as it is, its stage
+            -- and decision (an Ignored change it was added in place of stays
+            -- Ignored): the answer is the added value of a shown 'parish'
+            -- entry naming this Family's addition for the field, not
+            -- withdrawn. responses/proposals.py derives the same.
+            IF NEW.reviewed_view AND prior.entity_kind IN ('family','member') AND EXISTS (
+                SELECT 1 FROM jsonb_array_elements(NEW.shown_items) shown
+                JOIN public.stewardship_census_addition addition ON addition.id::text=shown->>'item'
+                CROSS JOIN LATERAL (SELECT NEW.answers #> CASE prior.entity_kind
+                      WHEN 'family' THEN ARRAY['family',prior.field]
+                      ELSE ARRAY['members',prior.entity_key,prior.field] END AS value) given
+                WHERE shown->>'stream'='census' AND shown->>'shown'='parish'
+                  AND ROW(shown->>'entity',shown->>'key',shown->>'field')
+                      =ROW(prior.entity_kind,prior.entity_key,prior.field)
+                  AND ROW(addition.entity_kind,addition.entity_key,addition.field)
+                      =ROW(prior.entity_kind,prior.entity_key,prior.field)
+                  AND addition.family_id=NEW.family_id
+                  AND NOT EXISTS (SELECT 1 FROM public.stewardship_census_addition_resolution step
+                      WHERE step.addition_id=addition.id AND step.action='withdrawn')
+                  AND given.value IS NOT NULL
+                  AND public.stewardship_response_comparison_v1(prior.field,given.value)
+                      IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(prior.field,addition.value)) THEN
                 CONTINUE;
             END IF;
             -- Source removal is not withdrawal of independent terminal work.
@@ -5088,9 +5157,29 @@ BEGIN
             submitted_key := public.stewardship_response_comparison_v1(NEW.field,NEW.submitted_value);
             baseline_key := public.stewardship_response_comparison_v1(NEW.field,NEW.baseline_value);
             current_key := public.stewardship_response_comparison_v1(NEW.field,NEW.current_value);
-            IF (NEW.current_available AND submitted_key IS NOT DISTINCT FROM current_key)
-               OR (NOT NEW.current_available AND submitted_key IS NULL)
-               OR (NEW.baseline_available AND submitted_key IS NOT DISTINCT FROM baseline_key)
+            IF ((NEW.current_available AND submitted_key IS NOT DISTINCT FROM current_key)
+                OR (NOT NEW.current_available AND submitted_key IS NULL)
+                OR (NEW.baseline_available AND submitted_key IS NOT DISTINCT FROM baseline_key))
+               -- Except a change the parish added (#2008) that a response
+               -- drawn as the reviewed form edited back to ParishSoft's
+               -- value: its 'parish' entry names this Family's addition for
+               -- this field, not withdrawn, with another value. The Family
+               -- turned the added value down, which goes to review (the
+               -- Administrator's decision 2); responses/proposals.py makes
+               -- the same row.
+               AND NOT (response.reviewed_view AND EXISTS (
+                   SELECT 1 FROM jsonb_array_elements(response.shown_items) shown
+                   JOIN public.stewardship_census_addition addition ON addition.id::text=shown->>'item'
+                   WHERE shown->>'stream'='census' AND shown->>'shown'='parish'
+                     AND ROW(shown->>'entity',shown->>'key',shown->>'field')
+                         =ROW(NEW.entity_kind,NEW.entity_key,NEW.field)
+                     AND ROW(addition.entity_kind,addition.entity_key,addition.field)
+                         =ROW(NEW.entity_kind,NEW.entity_key,NEW.field)
+                     AND addition.family_id=response.family_id
+                     AND NOT EXISTS (SELECT 1 FROM public.stewardship_census_addition_resolution step
+                         WHERE step.addition_id=addition.id AND step.action='withdrawn')
+                     AND public.stewardship_response_comparison_v1(NEW.field,addition.value)
+                         IS DISTINCT FROM submitted_key))
             THEN
                 RAISE EXCEPTION 'Unchanged values cannot create actionable proposals' USING ERRCODE='23514';
             END IF;
