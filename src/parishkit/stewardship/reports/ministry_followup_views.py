@@ -63,7 +63,11 @@ from parishkit.stewardship.workflows.models import (
     STAFF_STATES,
     MinistryRequest,
 )
-from parishkit.stewardship.workflows.review import DecisionRefusal, MinistryDecisions
+from parishkit.stewardship.workflows.review import (
+    DecisionRefusal,
+    MinistryDecisions,
+    undo_entered,
+)
 from parishkit.stewardship.workflows.roster import (
     can_tick,
     mark,
@@ -1062,13 +1066,21 @@ def roster(request, campaign_id, request_id):
     queue token, so it refreshes in place. A tick someone else changed first
     is a conflict (409), as a stale follow-up save is. Roster changes to
     enter records its marks through its own worklist since #1687; clearing
-    a mistaken mark is this page's.
+    a mistaken mark is this page's, and is Back to review of Entered by
+    hand (#1840): its dialog posts the required note, and it is recorded
+    as the worklist's undo is (``review.undo_entered``).
     """
 
     def work(store, actor):
         """Validate the closed form, record the tick and name the answer."""
+        parameters = request.POST.copy()
+        # The undo's note may be longer than a filter input (2,000
+        # characters, checked by the service), so it is read on its own.
+        notes = parameters.pop("note", None)
+        if notes is not None and len(notes) != 1:
+            raise ValueError("The note is sent once.")
         values = filters(
-            request.POST,
+            parameters,
             allowed={
                 "sequence",
                 "entered",
@@ -1085,14 +1097,28 @@ def roster(request, campaign_id, request_id):
             raise ValueError("Invalid roster tick.")
         token = queue_token(values.get("queue", ""))
         _in_campaign(campaign_id, [request_id])
-        set_roster_entered(
-            store,
-            actor,
-            request_id,
-            sequence=expected_version(values.get("sequence", "")),
-            entered=values["entered"] == "yes",
-            request_key=UUID(values.get("request_key", "")),
-        )
+        sequence = expected_version(values.get("sequence", ""))
+        key = UUID(values.get("request_key", ""))
+        if values["entered"] == "yes":
+            if notes is not None:
+                raise ValueError("The mark takes no note.")
+            set_roster_entered(
+                store,
+                actor,
+                request_id,
+                sequence=sequence,
+                entered=True,
+                request_key=key,
+            )
+        else:
+            undo_entered(
+                store,
+                actor,
+                request_id,
+                sequence=sequence,
+                note=notes[0] if notes else "",
+                request_key=key,
+            )
         return with_queue(
             reverse("admin:ministry_followup_item", args=[request_id]), token
         )

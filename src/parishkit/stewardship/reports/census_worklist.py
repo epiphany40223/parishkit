@@ -21,6 +21,7 @@ from parishkit.stewardship.accounts.templatetags.stewardship import source_statu
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.pipeline import (
+    TERMINAL_STAGES,
     Action,
     Stage,
     Stream,
@@ -40,11 +41,15 @@ from parishkit.stewardship.responses.census_additions import (
     ADDED_PREFIX,
     FAMILY_ADD_FIELDS,
     AddRefusal,
+    ReopenOverOpen,
     add_census_change,
+    addition_state,
+    addition_version,
     parse_add,
     resolve_census_additions,
 )
 from parishkit.stewardship.responses.census_resolution import (
+    NoteRequired,
     ReopenCovered,
     member_correctable,
 )
@@ -165,7 +170,9 @@ def _withheld(row):
     Edit for a field no value can be typed for (moved, deceased, the email
     opt-out, a New Member), and Accept and Edit on a Conflict whose
     ParishSoft value is unknown, which waits for a refresh: Accept on a
-    Conflict is decided against ParishSoft's current value.
+    Conflict is decided against ParishSoft's current value. Back to review
+    on a change an open addition covers, on a terminal change a later
+    response replaced.
     """
     withheld = set()
     if row["editor"] is None:
@@ -174,6 +181,10 @@ def _withheld(row):
         withheld |= {Action.ACCEPT, Action.EDIT}
     if row.get("covered"):
         # An open addition of the field stands in for it (#1710).
+        withheld.add(Action.BACK_TO_REVIEW)
+    if row.get("replaced") and row["placement"].stage in TERMINAL_STAGES:
+        # A terminal change a later response of the Family replaced is
+        # history: it takes no undo (#1840), as the service refuses.
         withheld.add(Action.BACK_TO_REVIEW)
     return withheld
 
@@ -268,6 +279,12 @@ def worklist_rows(rows):
                 "stage_note": _stage_note(row),
                 "entered_template": _entered_template(row),
                 "remark": _remark(row),
+                # A Family's reviewed form (#1705) shows ParishSoft's value
+                # for an Ignored change of a Member's field or request; it
+                # cannot show a Family address or the email opt-out from
+                # ParishSoft, so it shows the Family's own answer for those,
+                # and it leaves an Ignored New Member out.
+                "shown_baseline": row["entity_kind"] == "member",
             }
         )
     return found
@@ -362,9 +379,14 @@ def worklist_page(result, query, table, action, *, mutable, paging=None):
     return worklist, table
 
 
-# An added change's Back to review withdraws it (spec, "Reviewed stage").
+# An open added change's Back to review withdraws it (spec, "Reviewed
+# stage"); an entered one's undoes the mark, worded as every terminal
+# stage's undo is (``review_worklist.undo_body``, #1840).
 WITHDRAW_TITLE = "Withdraw {name}?"
-BULK_WITHDRAW = "A ticked change the parish added is withdrawn instead."
+BULK_WITHDRAW = (
+    "A ticked change the parish added that is still To enter by hand is "
+    "withdrawn instead."
+)
 OVERLAP = (
     "The Family has an open change of this field too: decide that one, and "
     "withdraw this one if it is no longer needed."
@@ -378,7 +400,8 @@ WITHDRAW_BODY = (
 def _added_words(row, replacements):
     """Word a parish-added row's Back to review, and every row's Add history.
 
-    An added change's Back to review withdraws it, so its dialog says so;
+    An open added change's Back to review withdraws it, so its dialog says
+    so (an entered one's keeps the undo's own words, #1840);
     an ignored change the parish added another in place of names that one
     under its stage ("Ignored. Added in its place: ..."), and an addition
     made in place of one says so (#1710), as does one whose field the
@@ -387,7 +410,11 @@ def _added_words(row, replacements):
     parts = [row["decision_label"]] if row["decision_label"] else []
     if row.get("added"):
         for icon in row["icons"]:
-            if icon["action"] == Action.BACK_TO_REVIEW.value and not icon["selected"]:
+            if (
+                icon["action"] == Action.BACK_TO_REVIEW.value
+                and not icon["selected"]
+                and row["placement"].stage is Stage.TO_ENTER_BY_HAND
+            ):
                 icon["title_one"] = WITHDRAW_TITLE
                 icon["body"] = WITHDRAW_BODY
         if row.get("in_place_of"):
@@ -460,10 +487,11 @@ def addition_name(addition):
     return f"{label} for {who} in Family DUID {addition.family.family_duid}"
 
 
-# The worklist decisions an added change takes: its own later steps.
+# The worklist decisions an added change takes: its own later steps. Back
+# to review withdraws an open one and undoes an entered one's mark (#1840).
 ADDITION_STEPS = {
     Action.ENTERED_BY_HAND: "entered",
-    Action.BACK_TO_REVIEW: "withdrawn",
+    Action.BACK_TO_REVIEW: "back_to_review",
 }
 
 
@@ -553,7 +581,11 @@ class CensusDecisions:
         return proposals, additions
 
     def _additions(self, ids):
-        """The chosen additions, by id, each this campaign's; and the resolved ones."""
+        """The chosen additions, by id, each this campaign's; and their latest steps.
+
+        The latest steps map an addition id to its latest
+        ``CensusAdditionResolution``, absent before any step.
+        """
         found = {
             addition.pk: addition
             for addition in CensusAddition.objects.select_related("family").filter(
@@ -562,12 +594,12 @@ class CensusDecisions:
         }
         if len(found) != len(ids):
             raise PermissionError("A census change is unavailable.")
-        resolved = set(
-            CensusAdditionResolution.objects.filter(
-                addition_id__in=list(ids)
-            ).values_list("addition_id", flat=True)
-        )
-        return found, resolved
+        latest = {}
+        for step in CensusAdditionResolution.objects.filter(
+            addition_id__in=list(ids)
+        ).order_by("addition_id", "sequence"):
+            latest[step.addition_id] = step
+        return found, latest
 
     def _proposals(self, ids):
         """The chosen changes, by id, each this campaign's live change."""
@@ -604,7 +636,9 @@ class CensusDecisions:
         the ``DecisionService`` contract asks. A change whose version moved
         since the page was drawn is left to the service, which answers with
         the stale notice rather than a refusal. ``added`` are the open
-        additions' placements, which offer only their own later steps. A New
+        additions' placements at the version the page showed, which offer
+        only their own later steps (Back to review on an entered one undoes
+        its mark, #1840). A New
         Member Entered by hand also offers Entered by hand again, one row at a
         time, to correct its ParishSoft Member ID
         (``census_resolution.member_correctable``, #1773).
@@ -677,22 +711,22 @@ class CensusDecisions:
         and additions together (a bulk Entered by hand or Back to review):
         each is recorded by its own service in one work transaction, all or
         none. An addition takes only Entered by hand and Back to review,
-        which withdraws it.
+        which withdraws an open one and undoes an entered one's mark.
         """
         if decision.action is Action.ADD:
             return self._add(principal, decision)
         proposal_ids, addition_ids = self._split(decision.versions)
         proposals = self._proposals(proposal_ids)
-        additions, resolved = self._additions(addition_ids)
+        additions, latest = self._additions(addition_ids)
         self._offered(
             principal,
             decision.action,
             proposal_ids,
             proposals,
             added=[
-                census_addition_placement("open")
+                census_addition_placement(addition_state(latest.get(pk)))
                 for pk in additions
-                if pk not in resolved and addition_ids[pk] == 1
+                if addition_ids[pk] == addition_version(latest.get(pk))
             ],
             bulk=decision.bulk,
         )
@@ -748,9 +782,31 @@ class CensusDecisions:
             raise AddRefusal(
                 "reopen_added",
                 "A change the parish added for this field is still open, so this "
-                "ignored change cannot go back to review.",
+                "change cannot go back to review.",
                 field_ids=("bulk_note" if decision.bulk else "note",),
                 fix="Withdraw the added change first, then send this one back.",
+            ) from None
+        except ReopenOverOpen:
+            # An entered addition reopened while another open change of its
+            # field exists (one added or answered after it was entered,
+            # #1840): the field never has two open changes.
+            raise AddRefusal(
+                "reopen_open_change",
+                "This field has another open change now, so this added change "
+                "cannot go back to review.",
+                field_ids=("bulk_note" if decision.bulk else "note",),
+                fix="Decide or withdraw the other change first, then send this "
+                "one back.",
+            ) from None
+        except NoteRequired:
+            # The page's dialog requires the note too; a post without one
+            # (an older page, a script) is refused in plain words at it.
+            raise AddRefusal(
+                "note_required",
+                "Back to review of an ignored change, or of a mark or update "
+                "already made, needs a note saying why.",
+                field_ids=("bulk_note" if decision.bulk else "note",),
+                fix="Write a note, then choose Back to review again.",
             ) from None
         except BulkStale as error:
             if error.proposal_id in additions:
@@ -773,7 +829,10 @@ class CensusDecisions:
             return f"{len(recorded):,} changes {words}"
         if additions:
             (addition,) = additions.values()
-            if decision.action is Action.BACK_TO_REVIEW:
+            if (
+                decision.action is Action.BACK_TO_REVIEW
+                and recorded[0].action == "withdrawn"
+            ):
                 return f"{addition_name(addition)} withdrawn."
             return f"{addition_name(addition)} {words}"
         (proposal,) = proposals.values()

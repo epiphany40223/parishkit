@@ -1,0 +1,7 @@
+{% load i18n stewardship %}{% comment %}
+One list of content-review.html's schedules (content_views._affected_rows):
+each schedule's name as Dates and mail schedules shows it (Reminder 1, ...),
+its send moment in the browser's time zone (#558) in the shared schedule
+preview's words (data-day-time: weekday, date and time, #1949), or Recurring
+for a digest, and its saved subject.
+{% endcomment %}<ul>{% for row in rows %}<li>{{ row.label }} — {% if row.due %}<time datetime="{{ row.due|instant }}" data-local-instant data-day-time>{{ row.due|instant }}</time>{% else %}{% translate "Recurring" %}{% endif %} — {{ row.subject }}</li>{% endfor %}</ul>

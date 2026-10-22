@@ -29,7 +29,7 @@ from parishkit.stewardship.reports.ministry_worklist import (
     stage_counts,
 )
 from parishkit.stewardship.responses.models import ProposedChange
-from parishkit.stewardship.web.review_worklist import NOW_MATCHES, StaleDecision
+from parishkit.stewardship.web.review_worklist import NOW_MATCHES
 from parishkit.stewardship.workflows.models import RefreshCheck, RefreshCheckStart
 
 from ..policy_factory import address as rule
@@ -263,10 +263,12 @@ def view(harness, principal, stage="all"):
     return {row["id"]: row for row in result["rows"]}
 
 
-def test_an_accepted_request_is_confirmed_and_cannot_go_back(response_service):
+def test_an_accepted_request_is_confirmed_and_back_to_review_undoes_it(
+    response_service,
+):
     """A join Staff accepted is Confirmed by the refresh that finds the
-    Member in the roster, keeping its Accepted; Back to review is no longer
-    offered, so the service refuses it."""
+    Member in the roster, keeping its Accepted; Back to review, with its
+    required note, undoes that (#1840): To enter by hand again."""
     harness = setup(response_service)
     staff = actor(harness, {"staff"}, ())
     join, _ = requests()
@@ -293,8 +295,10 @@ def test_an_accepted_request_is_confirmed_and_cannot_go_back(response_service):
     row = view(harness, staff)[str(join.pk)]
     assert row["placement"].stage is Stage.CONFIRMED
     assert row["placement"].decision is Decision.ACCEPTED
-    with pytest.raises(StaleDecision):
-        ministry_decide(harness, staff, "back_to_review", join, note="Undo")
+    with pytest.raises(ValueError, match="needs a note"):
+        ministry_decide(harness, staff, "back_to_review", join)
+    ministry_decide(harness, staff, "back_to_review", join, note="Undo")
+    assert to_enter() == (1, 1)
 
 
 def test_a_ticked_request_not_in_the_roster_is_not_seen(response_service, started):

@@ -125,8 +125,9 @@ def test_the_correction_needs_a_new_valid_id(response_service):
 
 
 def test_a_confirmed_new_member_is_not_corrected(response_service):
-    """Once a refresh confirmed the Member, the mark is final: the service
-    and SQL refuse another."""
+    """Once a refresh confirmed the Member, no other Member ID may be
+    marked: the service and SQL refuse another (Back to review undoes the
+    mark first, #1840)."""
     harness, staff, rows = answered(response_service, new_member)
     change = mark(harness, staff, rows["new_member"], str(ADDED))
     with_added(harness)

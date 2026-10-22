@@ -21,7 +21,12 @@ from .test_response_submission_postgresql import form_and_answers, submit
 from .test_runtime_auth_grants_postgresql import web_login
 from .test_source_families_postgresql import prepare, promote
 
-pytestmark = pytest.mark.django_db(transaction=True)
+# These test the rule before the reviewed Family form (#1705): forms drawn
+# before its release, as one open across the deploy is.
+pytestmark = [
+    pytest.mark.django_db(transaction=True),
+    pytest.mark.usefixtures("earlier_rule"),
+]
 
 
 def send(harness, form, answers):

@@ -76,8 +76,8 @@ def refresh_controls(page):
     return page.locator("a, button").filter(has_text=PAGE_REFRESH)
 
 
-def test_family_email_progress_updates_itself(page, component_origin):
-    """Family email progress has no Refresh link (#1586) and brings its
+def test_mail_queue_updates_itself(page, component_origin):
+    """The Mail queue has no Refresh link (#1586) and brings its
     passive status's fresh counts in by itself, at its fixed pace: no
     reload, focus left where it was."""
     page.set_viewport_size(VIEWPORT)
@@ -176,7 +176,7 @@ def test_integration_dismiss_is_in_place(page, component_origin):
 
 
 def test_progress_keeps_one_poller(page, component_origin):
-    """Family email progress is watched for as long as a send runs, at the
+    """The Mail queue is watched for as long as a send runs, at the
     page's own pace, by one watcher: no two polls come closer together than
     half that pace."""
     page.set_viewport_size(VIEWPORT)
@@ -214,7 +214,7 @@ def test_finished_task_shows_its_final_steps_in_place(page, component_origin):
     visible(history.get_by_text("Downloading from ParishSoft"))
     assert history.get_by_role("cell", name="Finished", exact=True).count() == 0
     # The poll finds the run finished; the follow-up re-reads the page.
-    visible(page.get_by_text("Finished successfully."))
+    visible(page.locator("#task-status").get_by_text("Finished successfully."))
     visible(history.get_by_role("cell", name="Finished", exact=True))
     visible(history.get_by_text("Making the new data current").first)
     # The bar and the table agree: both at the last of 4,000 records.

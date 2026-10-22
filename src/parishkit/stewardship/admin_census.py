@@ -337,10 +337,11 @@ def resolve_census(
     """``census resolve``: a Census changes row's outcome.
 
     The page's ``resolve_census_change`` through ``_census_write``: it
-    checks the action's capability (Reopen is the Administrator's), the
-    version and the row's state. The command records
-    ``admin_cmd_census_resolve``. An action the row's state does not allow,
-    or a Reopen without a note, is ``invalid`` (the page's 400).
+    checks the action's capability (reopening an Ignore is the
+    Administrator's; Reopen of a terminal change, which undoes its step,
+    #1840, is Staff's too), the version and the row's state. The command
+    records ``admin_cmd_census_resolve``. An action the row's state does not
+    allow, or a Reopen without a note, is ``invalid`` (the page's 400).
     """
     from .audit.schemas import Action
     from .responses.census_resolution import resolve_census_change

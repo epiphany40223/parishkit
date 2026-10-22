@@ -17,7 +17,9 @@ from django.views.decorators.http import require_http_methods
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.authentication import runtime
 from parishkit.stewardship.accounts.limiting import LimiterUnavailable
-from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.accounts.policy import Capability
+from parishkit.stewardship.accounts.role_refusal import RoleDenied, require
+from parishkit.stewardship.accounts.role_refusal import response as role_response
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.jobs.ownership import database_now
@@ -126,9 +128,7 @@ def _principal(request, store, *, final=False):
     actor = authenticated_admin(
         request, store=store, activity=not final, read_only=final
     )
-    if not allows(actor, Capability.SYSTEM_LOGS):
-        raise PermissionError("System logs require an Administrator.")
-    return actor
+    return require(actor, Capability.SYSTEM_LOGS)
 
 
 def choice_labels(names):
@@ -251,6 +251,10 @@ def logs(request):
             )
         response["Cache-Control"] = "no-store"
         return response if refusal is None else refused(response)
+    except RoleDenied as error:
+        # A role that lacks the page: the shared role refusal (#1924), not
+        # this page's sign-in-again error.
+        return role_response(error)
     except PermissionError:
         return _error(ErrorCode.DENIED, 403)
     except DatabaseError:
@@ -319,6 +323,10 @@ def export_logs(request):
                 context={"outcome": Outcome.SUCCEEDED, "count": len(rows)},
             )
         return response
+    except RoleDenied as error:
+        # A role that lacks the page: the shared role refusal (#1924), not
+        # this page's sign-in-again error.
+        return role_response(error)
     except PermissionError:
         return _error(ErrorCode.DENIED, 403)
     except DatabaseError:

@@ -1,0 +1,34 @@
+{% load i18n stewardship delivery %}{% comment %}
+  The Mail queue's updated region (#1562), shared by the page and the
+  passive status fragment that live-status-v1.js polls: the four headline
+  tiles, the other mode's line, the queue by kind and the Family send panel.
+  It keeps polling whenever the system is available, so the next emails
+  appear by themselves. Nothing in it appears or vanishes as counts change:
+  the tiles keep their explanation lines, the other mode's line keeps its
+  height while empty, and the table always has one row per kind (a Kind
+  without queued email is plain text in the link's place). It is not itself
+  a live region: its counts change on every poll, so screen readers instead
+  hear data-live-announce, copied into the page's announcer only when the
+  Family send's coarse status changes. Only the page passes status_url.
+{% endcomment %}<section data-live-status="mail-queue"{% if status_url %} data-live-url="{{ status_url }}"{% endif %} data-live-interval="{{ poll_interval }}" data-live-give-up="{{ give_up }}" data-live-announce="{{ announcement }}"{% if follow %} data-live-pending{% endif %} aria-labelledby="mail-queue-heading">
+<h2 id="mail-queue-heading" class="visually-hidden">{% translate "Emails waiting to go out" %}</h2>
+{% include "stewardship/components/stat-tiles.html" with tiles=tiles tiles_labelledby="mail-queue-heading" %}
+<p class="mail-queue-other">{% if queue.other_mode_queued %}<a href="{% url 'admin:deliveries' %}?state=still_sending&amp;mode={{ other_mode }}">{% if other_mode == "testing" %}{% blocktranslate with count=queue.other_mode_queued|number count n=queue.other_mode_queued trimmed %}{{ count }} email queued in Testing{% plural %}{{ count }} emails queued in Testing{% endblocktranslate %}{% else %}{% blocktranslate with count=queue.other_mode_queued|number count n=queue.other_mode_queued trimmed %}{{ count }} email queued in Production{% plural %}{{ count }} emails queued in Production{% endblocktranslate %}{% endif %}</a>{% endif %}</p>
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="mail-queue-kinds-caption">
+<table class="data-table">
+  <caption id="mail-queue-kinds-caption">{% translate "Queued emails by kind" %}</caption>
+  <thead><tr>
+    <th scope="col">{% translate "Kind" %}</th>
+    <th scope="col" class="numeric">{% translate "Queued" %}</th>
+    <th scope="col" class="numeric">{% translate "Sending now" %}</th>
+    <th scope="col" class="numeric">{% translate "Waiting to retry" %}</th>
+    <th scope="col" class="numeric">{% translate "Paused" %}</th>
+  </tr></thead>
+  <tbody>{% for kind in queue.kinds %}<tr data-kind="{{ kind.purpose }}">
+    <th scope="row">{% if kind.linked %}<a href="{% url 'admin:deliveries' %}?purpose={{ kind.purpose }}&amp;state=still_sending&amp;mode={{ queue.mode }}">{{ kind.purpose|delivery_label }}</a>{% else %}{{ kind.purpose|delivery_label }}{% endif %}</th>
+    {% for count in kind.counts %}<td class="numeric{% if not count %} mail-queue-zero{% endif %}">{{ count|number }}</td>{% endfor %}
+  </tr>{% endfor %}</tbody>
+</table>
+</div>
+{% include "stewardship/family-send-progress.html" %}
+</section>

@@ -42,13 +42,13 @@ def test_final_confirmation_freezes_once_then_shows_passive_original_progress(
         assert SetupAttempt.objects.get().state == "collecting"
         response = post(browser, PATH, values)
         assert response.status_code == 302, response.content
-        assert response["Location"] == "/admin/setup/cancel"
+        assert response["Location"] == "/admin/setup/finishing"
         assert post(browser, PATH, values).status_code == 302
         assert SetupAttempt.objects.get().state == "frozen"
         before = PortalSession.objects.get(
             pk=request.portal_session.pk
         ).last_activity_at
-        response = browser.get("/admin/setup/cancel")
+        response = browser.get("/admin/setup/finishing")
         assert response.status_code == 200, response.content
         assert b"Finishing setup" in response.content
         assert b"Install the ParishSoft credential" in response.content
@@ -58,27 +58,31 @@ def test_final_confirmation_freezes_once_then_shows_passive_original_progress(
         assert response.context["attempt"].attempt_id == attempt.attempt_id
         assert response.context["overall"] == "working"
         # The page's poll is a passive read of the same status.
-        polled = browser.get("/admin/setup/cancel?format=json")
+        polled = browser.get("/admin/setup/finishing?format=json")
         assert polled.status_code == 200, polled.content
         assert polled.json() == {
             "overall": "working",
             "signature": response.context["signature"],
         }
         # The page's live status region is the same passive read (#1354).
-        region = browser.get("/admin/setup/cancel?format=status")
+        region = browser.get("/admin/setup/finishing?format=status")
         assert region.status_code == 200, region.content
         assert region["Cache-Control"] == "no-store"
         assert b'data-live-status="setup-finishing"' in region.content
         assert b"data-live-pending" in region.content
         assert b"Install the ParishSoft credential" in region.content
         assert b'name="csrfmiddlewaretoken" value=""' in region.content
-        assert b'data-live-url="/admin/setup/cancel?format=status"' in response.content
-        assert browser.get("/admin/setup/cancel?format=xml").status_code == 400
-        assert browser.get("/admin/setup/cancel?other=1").status_code == 400
+        assert (
+            b'data-live-url="/admin/setup/finishing?format=status"' in response.content
+        )
+        assert browser.get("/admin/setup/finishing?format=xml").status_code == 400
+        assert browser.get("/admin/setup/finishing?other=1").status_code == 400
+        # The page's old address is gone, with no redirect (#1903, #864).
+        assert browser.get("/admin/setup/cancel").status_code == 404
         # The setup overview sends a confirmed setup's owner to this page.
         overview = browser.get("/admin/setup")
         assert overview.status_code == 302
-        assert overview["Location"] == "/admin/setup/cancel"
+        assert overview["Location"] == "/admin/setup/finishing"
         assert (
             PortalSession.objects.get(pk=request.portal_session.pk).last_activity_at
             == before
@@ -105,13 +109,13 @@ def test_finishing_page_keeps_installing_after_an_old_sign_in(
     later = setup_finalization_status.database_now() + timedelta(minutes=10)
     monkeypatch.setattr(setup_finalization_status, "database_now", lambda: later)
     with web_login():
-        response = browser.get("/admin/setup/cancel")
+        response = browser.get("/admin/setup/finishing")
         assert response.status_code == 200, response.content
         body = response.content.decode()
         assert "needs a Google sign-in" not in body
         assert "reauthenticate" not in response.context
         # The polled region still follows installation, with no sign-in notice.
-        region = browser.get("/admin/setup/cancel?format=status").content.decode()
+        region = browser.get("/admin/setup/finishing?format=status").content.decode()
         assert "Install the ParishSoft credential" in region
         assert "setup-step-up" not in region
 

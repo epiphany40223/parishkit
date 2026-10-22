@@ -3,7 +3,7 @@
 {% block content %}
 <h1>{% translate "Family email history" %}</h1>
 {% aboutpage "family-email-sends" %}<p>{% translate "Each invitation and reminder email this campaign has sent to Families, newest first, and how it turned out. Select a count to see those emails on the Sent mail page." %}</p>
-<p>{% translate "Each row is one scheduled send: the invitation, or one reminder, in Testing or in Production. If a schedule is changed, the new time is a new row; the earlier row keeps the emails it sent and shows the unsent ones the change cancelled. Each Family counts once, by its most recent email for that send. The counts follow the same rules as the Family email progress page, so the two always agree." %}</p>
+<p>{% translate "Each row is one scheduled send: the invitation, or one reminder, in Testing or in Production. If a schedule is changed, the new time is a new row; the earlier row keeps the emails it sent and shows the unsent ones the change cancelled. Each Family counts once, by its most recent email for that send. The counts follow the same rules as the Family send panel on the Mail queue page, so the two always agree." %}</p>
 <dl><dt>{% translate "Scheduled" %}</dt><dd>{% translate "When the send was due. A send appears here once its first email is planned." %}</dd>
 <dt>{% translate "First email and latest result" %}</dt><dd>{% translate "When the first email was prepared, and when the last one got its result. A later fix, such as retrying a failed email, moves the latest result and the duration." %}</dd>
 <dt>{% translate "Total" %}</dt><dd>{% reminder_workgroup_name as workgroup %}{% blocktranslate trimmed %}Sent and failed emails and those that may not have arrived, plus any still to send. The counts listed under Not in the total (Cancelled, Not needed, Couldn't be emailed, Skipped: {{ workgroup }} and Held) are not part of it.{% endblocktranslate %}</dd>
@@ -15,8 +15,8 @@
 <dt>{% translate "Couldn't be emailed" %}</dt><dd>{% translate "The Family has no deliverable email address, or is no longer eligible." %}</dd>
 <dt>{% translate "Held" %}</dt><dd>{% translate "A reminder waiting because the Family's invitation failed or may not have arrived." %}</dd></dl>
 <p>{# Greyed out, as the menu greys it, on an archived campaign (#521). #}{% translate "Reminders are numbered by their current scheduled time, in every mode, so Reminder 1 is the earliest reminder on" %} {% menu_link "schedule_settings" _("Dates and mail schedules") %}. {% translate "A reminder that was removed has no number." %}</p>
-<p>{% translate "A send still in progress says so. The one the Family email progress page is showing links to it, and that page follows it live. This page does not update by itself, does not slow any send down, and does not extend your sign-in." %}</p>{% endaboutpage %}
-<p><a href="{% url 'admin:family_email_progress' %}">{% translate "Watch Family email progress" %}</a> · <a href="{% url 'admin:deliveries' %}">{% translate "Sent mail" %}</a></p>
+<p>{% translate "A send still in progress says so. The one the Mail queue's Family send panel is showing links to it, and that panel follows it live. This page does not update by itself, does not slow any send down, and does not extend your sign-in." %}</p>{% endaboutpage %}
+<p><a href="{% url 'admin:mail_queue' %}">{% translate "See the mail queue" %}</a> · <a href="{% url 'admin:deliveries' %}">{% translate "Sent mail" %}</a></p>
 {% if not campaign %}<p>{% translate "There is no current campaign." %}</p>
 {% else %}{% include "stewardship/family-email-sends-table.html" %}
 {% endif %}

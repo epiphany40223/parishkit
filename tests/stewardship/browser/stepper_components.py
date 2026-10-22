@@ -43,7 +43,9 @@ Continue), and ``LOADED`` the page once the load has brought the
 campaign's Families, whose action row offers Continue to Share options.
 While loading, the step polls ``LOAD_RUN``'s passive status
 (``LOAD_STATUS`` with ?view=load), answered by ``LOAD_STATUS_RUNNING`` and
-then ``LOAD_STATUS_DONE``. Its form posts to the real refresh address,
+then ``LOAD_STATUS_DONE``; ``LOAD_STATUS_QUEUED`` is that status while the
+run still waits for a worker, and ``LOAD_STATUS_STARTED`` once a worker
+has begun the download (#1916). Its form posts to the real refresh address,
 which another component already answers, so the test answers that POST
 (and the in-place re-read once the run ends) itself.
 
@@ -127,6 +129,8 @@ LOADED = "/campaign-stepper-loaded"
 LOAD_EMPTY = "/campaign-stepper-load-empty"
 LOAD_RUN = UUID(int=1405)
 LOAD_STATUS = reverse("admin:background_task_status", args=[LOAD_RUN])
+LOAD_STATUS_QUEUED = "/campaign-stepper-load-status-queued"
+LOAD_STATUS_STARTED = "/campaign-stepper-load-status-started"
 LOAD_STATUS_RUNNING = "/campaign-stepper-load-status-running"
 LOAD_STATUS_DONE = "/campaign-stepper-load-status-done"
 LOAD_STATUS_EMPTY = "/campaign-stepper-load-status-empty"
@@ -413,6 +417,8 @@ def components(context, admin):
         LOADING: load("loading"),
         LOADED: load(None),
         LOAD_EMPTY: load("empty"),
+        LOAD_STATUS_QUEUED: load_status("queued", "unspecified"),
+        LOAD_STATUS_STARTED: load_status("running", "fetching"),
         LOAD_STATUS_RUNNING: load_status("running", "staging"),
         LOAD_STATUS_DONE: load_status("succeeded", "promoting"),
         LOAD_STATUS_EMPTY: load_status("succeeded", "promoting", families=False),

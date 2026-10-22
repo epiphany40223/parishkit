@@ -196,7 +196,7 @@ def setup(request):
             # A confirmed setup finishes in the background; its owner sees
             # the "Finishing setup" progress page instead of the wizard.
             return _checked(
-                request, service, HttpResponseRedirect("/admin/setup/cancel")
+                request, service, HttpResponseRedirect("/admin/setup/finishing")
             )
         response = render(request, "stewardship/setup.html", _context(draft))
         return _checked(request, service, response, draft)

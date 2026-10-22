@@ -158,6 +158,9 @@ LEDGER = {
     ),
     # The live end-date check validates what ``schedule preview`` reviews.
     "campaign_end_date_check": command("schedule preview"),
+    # The campaign work status those pages poll while work holds them
+    # (#1619): ``campaign show`` reports the same locks.
+    "campaign_work_status": command("campaign show"),
     # Create the campaign's Review and Apply (#1899): the first campaign
     # only, admitted through the page's own ``_admitted`` and ``_scope``
     # (``single_campaign.first_campaign_admitted``) and confirmed with
@@ -187,9 +190,11 @@ LEDGER = {
         "workgroup show", "workgroup preview", "workgroup confirm"
     ),
     "content_catalog": command("content list"),
-    # The editor as it opens; its Review and Apply are still owed.
-    "content_edit": command("content show", owed="PR 10"),
-    "content_revision": command("content show", owed="PR 10"),
+    # The editor as it opens, and its Preview changes and review dialog
+    # Apply (``content preview --edit`` and ``content confirm --edit``,
+    # #1873); the campaign wizard's direct save is the same change.
+    "content_edit": command("content show", "content preview", "content confirm"),
+    "content_revision": command("content show", "content preview", "content confirm"),
     # The email tables' Delete, as a preview and a confirm (#879).
     "content_delete": command("content preview", "content confirm"),
     "content_history": command("content history"),
@@ -253,8 +258,8 @@ LEDGER = {
         "go-live cancel",
     ),
     # Family email history and Pause and resume mail.
-    "family_email_progress": command("send progress"),
-    "family_email_progress_status": command("send progress"),
+    "mail_queue": command("mail queue"),
+    "mail_queue_status": command("mail queue"),
     "family_email_sends": command("send history"),
     # Its read, and its pause, resume and resolution previews and their
     # confirmation (PR 7b, #463).
@@ -485,6 +490,8 @@ LEDGER = {
     "user_edit": command("users list", "users preview", "users confirm"),
     "user_delete": command("users preview", "users confirm"),
     "user_name_suggestions": command("users preview"),
+    # One user's Timeline (#1866): the same summary and lines.
+    "user_timeline": command("users timeline"),
     # The leaders table and its import review (#952 slice 6).
     "user_leader_import": command("users import-leaders"),
     # The leaders section's passive status (#1863): no data of its own.
@@ -532,7 +539,7 @@ LEDGER = {
         name: permanent(SETUP)
         for name in (
             "setup",
-            "setup_cancel",
+            "setup_finishing",
             "setup_source",
             "setup_source_progress",
             "setup_branding",

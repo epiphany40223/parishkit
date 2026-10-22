@@ -90,17 +90,23 @@ def actions(row, actor, *, mutable=True):
 
     Entered in ParishSoft and Ignore on a By-hand row still open (the census
     capability Staff hold too); Reopen on an ignored row, for an
-    Administrator only. None while other campaign work holds the campaign
-    (``mutable`` false), as the page then offers no row actions.
+    Administrator only, and on a terminal row, which undoes its step
+    (#1840), for Staff too (``census_resolution.capability``). None while
+    other campaign work holds the campaign (``mutable`` false), as the page
+    then offers no row actions.
     """
+    from types import SimpleNamespace
+
     from .accounts.policy import Capability, allows
+    from .responses.census_resolution import capability
 
     found = []
     if not mutable:
         return found
     if row["can_resolve"] and allows(actor, Capability.MANUAL_CENSUS):
         found += ["entered", "ignored"]
-    if row["can_reopen"] and allows(actor, Capability.PUBLISH_CENSUS):
+    state = SimpleNamespace(execution=row["execution"])
+    if row["can_reopen"] and allows(actor, capability("reopened", state)):
         found.append("reopened")
     return found
 

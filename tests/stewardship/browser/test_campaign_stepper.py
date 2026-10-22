@@ -16,7 +16,9 @@ from .stepper_components import (
     LOAD_STATUS,
     LOAD_STATUS_DONE,
     LOAD_STATUS_EMPTY,
+    LOAD_STATUS_QUEUED,
     LOAD_STATUS_RUNNING,
+    LOAD_STATUS_STARTED,
     LOADED,
     LOADING,
     PATH,
@@ -181,6 +183,10 @@ def test_continue_opens_the_next_step_and_a_sub_page_returns_to_it(
     assert failures == []
 
 
+# What the step's announcer says once a load is requested: the run is
+# queued, so Start the load is the box in progress (#1916).
+SPOKEN_QUEUED = "Loading the campaign's ParishSoft data. Start the load: In progress."
+
 # The regular Refresh from ParishSoft page's queue wording (D2.1), which
 # the step never shows.
 QUEUE = "No second refresh starts beside it"
@@ -237,13 +243,11 @@ def test_load_step_loads_then_continues_in_place(
         summary.inner_text()
         == "This campaign's ParishSoft data hasn't been loaded yet."
     )
-    assert [state for _key, state in stage_states(page)] == ["waiting"] * 4
+    assert [state for _key, state in stage_states(page)] == ["waiting"] * 5
     boxes = region.get_by_role("list", name="Parts of the load")
     # Each box's state is in its text, so in its name as a list item.
     first = boxes.get_by_role("listitem").first
-    assert first.evaluate("node => node.textContent") == (
-        "Download from ParishSoft: Not started"
-    )
+    assert first.evaluate("node => node.textContent") == ("Start the load: Not started")
     stage_boxes = region.locator("[data-load-stage]")
     sizes = boxes_sizes(stage_boxes)
     waiting = background(first)
@@ -271,13 +275,18 @@ def test_load_step_loads_then_continues_in_place(
     assert_no_refresh_wording(page)
     assert_same_box(above, summary.bounding_box())
     assert_same_box(below, back.bounding_box())
-    assert_spoken_once(page, "Loading the campaign's ParishSoft data.")
+    assert_spoken_once(page, SPOKEN_QUEUED)
     first_box = region.locator("[data-load-stage]").first.bounding_box()
-    # The poll moves the boxes on in place: Download done, Save in progress.
+    # The poll moves the boxes on in place: Start the load and Download
+    # done, Save in progress.
     has_attribute(
         region.locator('[data-load-stage="staging"]'), "data-stage-state", "active"
     )
-    assert stage_states(page)[:2] == [("fetching", "done"), ("staging", "active")]
+    assert stage_states(page)[:3] == [
+        ("start", "done"),
+        ("fetching", "done"),
+        ("staging", "active"),
+    ]
     # Each state has its own colour, Not started the page's own, In progress
     # yellow, Done light green, in light and dark, and no box changes size
     # as its state changes (UX conventions, "Stage boxes").
@@ -297,7 +306,7 @@ def test_load_step_loads_then_continues_in_place(
     count = region.locator("[data-campaign-load-count]")
     contains(count, "1,234 Families, as of")
     assert "UTC" not in count.inner_text()
-    assert [state for _key, state in stage_states(page)] == ["done"] * 4
+    assert [state for _key, state in stage_states(page)] == ["done"] * 5
     assert region.get_by_role("button").count() == 0
     assert_no_refresh_wording(page)
     assert "Step 2 of 8: Load ParishSoft data" in stepper.inner_text()
@@ -321,8 +330,8 @@ class Polls(list):
         self.done = True
 
 
-def answer_polls(page, origin, done=LOAD_STATUS_DONE):
-    """Answer the step's status polls: running until ``finish``, then ``done``.
+def answer_polls(page, origin, done=LOAD_STATUS_DONE, running=LOAD_STATUS_RUNNING):
+    """Answer the step's status polls: ``running`` until ``finish``, then ``done``.
 
     Returns the ``Polls`` answered.
     """
@@ -331,7 +340,7 @@ def answer_polls(page, origin, done=LOAD_STATUS_DONE):
     def answer(route):
         """Serve the running status until the test finishes the run."""
         polls.append(route.request.url)
-        shown = done if polls.done else LOAD_STATUS_RUNNING
+        shown = done if polls.done else running
         route.fulfill(response=route.fetch(url=origin + shown, method="GET"))
 
     page.route(lambda url: url.split("?")[0] == origin + LOAD_STATUS, answer)
@@ -354,11 +363,12 @@ def boxes_sizes(boxes):
 def assert_state_colours(page, boxes, waiting):
     """Assert Done, In progress and Not started boxes differ in colour.
 
-    ``boxes`` show Download done, Save in progress and the rest not started;
+    ``boxes`` show Start the load and Download done, Save in progress and the
+    rest not started;
     ``waiting`` is a Not started box's colour in light mode. Dark mode's
     colours differ from each other too, and from light mode's.
     """
-    done, active, rest = boxes.nth(0), boxes.nth(1), boxes.nth(2)
+    done, active, rest = boxes.nth(1), boxes.nth(2), boxes.nth(3)
     light = (background(done), background(active), background(rest))
     assert light[2] == waiting
     assert len(set(light)) == 3, light
@@ -463,7 +473,11 @@ def test_failed_load_says_so_and_try_again_loads_again(page, component_origin, w
     assert link.get_attribute("href") == reverse(
         "admin:background_task_page", args=[UUID(int=1404)]
     )
-    assert stage_states(page)[:2] == [("fetching", "done"), ("staging", "failed")]
+    assert stage_states(page)[:3] == [
+        ("start", "done"),
+        ("fetching", "done"),
+        ("staging", "failed"),
+    ]
     assert "Failed" in region.locator('[data-load-stage="staging"]').inner_text()
     row = page.locator("[data-campaign-step-actions]")
     assert row.get_by_role("link", name="Continue to Share options").count() == 0
@@ -478,10 +492,12 @@ def test_failed_load_says_so_and_try_again_loads_again(page, component_origin, w
     has_text(summary, "Loading the campaign's ParishSoft data…")
     assert region.get_by_role("button").count() == 0
     assert row.get_by_role("link", name="Continue to Share options").count() == 0
-    assert [state for _key, state in stage_states(page)] == ["waiting"] * 4
+    # The in-place answer is the run just queued: Start the load is in
+    # progress at once (#1916).
+    assert [state for _key, state in stage_states(page)] == ["active"] + ["waiting"] * 4
     assert_same_box(above, summary.bounding_box())
     assert_same_box(below, back.bounding_box())
-    assert_spoken_once(page, "Loading the campaign's ParishSoft data.")
+    assert_spoken_once(page, SPOKEN_QUEUED)
     assert page.evaluate(MARKED) == "kept"
     assert failures == []
 
@@ -519,7 +535,7 @@ def test_load_with_no_families_has_its_own_state(page, component_origin, width):
     assert summary.get_by_role("link", name="Refresh from ParishSoft").get_attribute(
         "href"
     ) == reverse("admin:source_refresh")
-    assert [state for _key, state in stage_states(page)] == ["done"] * 4
+    assert [state for _key, state in stage_states(page)] == ["done"] * 5
     assert region.get_by_role("button").count() == 0
     assert row.get_by_role("link", name="Continue to Share options").count() == 0
     assert_no_refresh_wording(page)
@@ -528,4 +544,73 @@ def test_load_with_no_families_has_its_own_state(page, component_origin, width):
     assert_same_box(below, back.bounding_box())
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert page.evaluate(MARKED) == "kept"
+    assert failures == []
+
+
+@pytest.mark.parametrize("width", [320, 660, 1280])
+def test_a_queued_load_shows_start_the_load_at_once_and_nothing_moves(
+    page, component_origin, width
+):
+    """While the requested load waits for a worker, the page says so (#1916).
+
+    Right after the click, in the in-place answer and before any worker has
+    the run, Start the load is In progress with the shared working spinner
+    and the line after the boxes says the run waits for the background
+    service; the polls keep saying so while it stays queued. When a worker
+    starts the download, Start the load is Done, Download from ParishSoft In
+    progress with the spinner, the line gives way to the records checked,
+    and nothing moves: no box, the summary line, the line after the boxes
+    nor the action row below.
+    """
+    from parishkit.stewardship.accounts.stages import QUEUED
+
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(answer_load(page, component_origin, LOAD))
+    region = page.locator("#refresh-run")
+    summary = region.locator("[data-campaign-load-summary]")
+    count = region.locator("[data-campaign-load-count]")
+    start_box = region.locator('[data-load-stage="start"]')
+    download = region.locator('[data-load-stage="fetching"]')
+    back = page.locator("[data-campaign-step-actions] [data-campaign-step-back]")
+    assert start_box.locator(".spinner").count() == 0
+    polls = answer_polls(
+        page, component_origin, LOAD_STATUS_STARTED, running=LOAD_STATUS_QUEUED
+    )
+    region.get_by_role("button", name="Load the campaign's ParishSoft data").click()
+    has_text(summary, "Loading the campaign's ParishSoft data…")
+    has_attribute(start_box, "data-stage-state", "active")
+    visible(start_box.locator(".spinner"))
+    assert start_box.locator(".stage-status").inner_text() == "In progress"
+    assert count.inner_text() == str(QUEUED)
+    assert download.get_attribute("data-stage-state") == "waiting"
+    assert download.locator(".spinner").count() == 0
+    stage_boxes = region.locator("[data-load-stage]")
+    boxes = [stage_boxes.nth(i).bounding_box() for i in range(5)]
+    places = [summary.bounding_box(), count.bounding_box(), back.bounding_box()]
+    # A poll answered while the run is still queued keeps saying so.
+    for _ in range(100):
+        if polls:
+            break
+        page.wait_for_timeout(100)
+    assert len(polls) == 1
+    page.wait_for_timeout(100)
+    assert start_box.get_attribute("data-stage-state") == "active"
+    assert count.inner_text() == str(QUEUED)
+    polls.finish()
+    has_attribute(download, "data-stage-state", "active")
+    assert stage_states(page)[:2] == [("start", "done"), ("fetching", "active")]
+    assert start_box.locator(".spinner").count() == 0
+    visible(download.locator(".spinner"))
+    has_text(count, "1,000 of 4,000 records checked")
+    for before, i in zip(boxes, range(5), strict=True):
+        assert_same_box(before, stage_boxes.nth(i).bounding_box())
+    for before, now in zip(
+        places,
+        [summary.bounding_box(), count.bounding_box(), back.bounding_box()],
+        strict=True,
+    ):
+        assert_same_box(before, now)
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert failures == []

@@ -63,6 +63,7 @@ when it lands.
   [addresses and legacy URLs](#addresses-and-legacy-urls),
   [not-found pages](#not-found-pages),
   [unavailable menu pages](#unavailable-menu-pages),
+  [pages the role may not open](#pages-the-role-may-not-open),
   [navigation rules](#navigation-rules), [wizards](#wizards).
 - Admin page layout: [page help](#page-help),
   [button labels](#button-labels), [button emphasis](#button-emphasis),
@@ -71,6 +72,7 @@ when it lands.
   [colour scheme](#colour-scheme),
   [status indicators](#status-indicators), [stat tiles](#stat-tiles),
   [overview pages](#overview-pages),
+  [working spinner](#working-spinner),
   [stage boxes](#stage-boxes), [time entry](#time-entry),
   [schedules](#schedules), [schedule previews](#schedule-previews).
 - Tables: [Admin tables](#admin-tables),
@@ -667,7 +669,9 @@ never scrolls to show it (Administrator, pk-local review of
   replaced, and the address is unchanged. The error summary, which the base
   template draws above the page content, moves to the top of the region when
   it is drawn outside the region; this page's own older summaries outside
-  the regions are removed then (a successful swap leaves them). The reader
+  the regions are removed then (a successful swap leaves them, except an
+  item whose field the swap removed, which goes, and the summary with it
+  once it lists nothing, #750). The reader
   keeps their place, focus moves to the summary (or to the control when
   there is none), the fields it names are marked in error beside their
   message as the fetched page draws them, and the live region reads the
@@ -854,7 +858,8 @@ browser reload lands on the same page and view with the current status.
 2026-10-17). **Shared code.** `live-status-v1.js` status regions and
 `ui-v1.js`'s periodic quiet re-read (`a[data-reread-every]`), both built on
 the [in-place controls](#in-place-controls); no other mechanism.
-**Precedent.** System health (#1214), Family email progress, #869, #1353.
+**Precedent.** System health (#1214), Family email progress (now the
+Mail queue, #1562), #869, #1353.
 
 - **Passive reads only.** Every automatic read is one the page already
   makes: a status region's passive status read
@@ -921,6 +926,19 @@ the [in-place controls](#in-place-controls); no other mechanism.
   are tried again once a minute later and, if that read fails too, wait for
   the next ParishSoft data
   ([admin portal](../admin-portal/spec.md#parishsoft-ministry-leaders-without-a-user)).
+- **Controls that background work holds.** A setting or button that
+  background work holds is shown unavailable with its reason, and the
+  reason never tells the reader to reload. The page follows that work
+  through a passive, unaudited status read and, once the work ends, brings
+  the held controls in by itself. A form page re-reads its own address
+  once, quietly, in place and passively (the hidden `a[data-reread]`
+  follow-up link above), so the re-read waits while the reader is editing
+  and never replaces a field being edited. A page whose own view is
+  audited takes the fresh controls from the status read instead, so it
+  records no view. Examples: [Campaign
+  settings](../admin-portal/spec.md#campaign-settings-page) and Home's
+  [Create the campaign](../admin-portal/spec.md#create-the-campaign)
+  ([#1619](https://github.com/epiphany40223/parishkit/issues/1619)).
 - **Pace.** While background work is pending a status region reads fast
   (2 s backing off to 10 s, or the fixed pace the page asks for). A page
   whose state changes without the reader's own action re-reads every 30
@@ -1051,7 +1069,12 @@ that would change an open band's height waits while the pointer is over
 the grid. First user: the
 [System health dashboard's tile grid](../admin-portal/spec.md#tile-grid)
 (Administrator, 2026-10-13, on
-[#1214](https://github.com/epiphany40223/parishkit/issues/1214)).
+[#1214](https://github.com/epiphany40223/parishkit/issues/1214)). A
+heading with more than one disclosure control beside it (Ministry
+requests' About this page and By Ministry,
+[#1653](https://github.com/epiphany40223/parishkit/issues/1653)) is such a
+row: the heading and the controls share it, and each opened content is a
+full-width band below it, in source order.
 
 Recorded exception (Administrator, 2026-10-11, on
 [#1015](https://github.com/epiphany40223/parishkit/issues/1015)): on the
@@ -1095,6 +1118,16 @@ never moves them.
   Space work as before. The details get no extra role or tab stop: the
   details click is a pointer convenience. The details keep the text
   cursor, so selection still looks possible.
+
+- **Remembered open, before the page shows.** A disclosure that starts
+  closed and that each browser remembers open (the About panel; Ministry
+  requests' By Ministry counts, #1653) stores only an "open" marker,
+  removed when it is closed, and every storage access is guarded, so
+  with storage refused it just starts closed. One whose opening moves
+  the page's data (By Ministry, above the worklist) is opened while the
+  page is parsed, by `remember-open-v1.js` loaded without defer straight
+  after it (`data-remember-open`), so a remembered open state never moves
+  the page after it shows ([no layout shift](#no-layout-shift)).
 
 **Why.** A link to one area should show that area, not every area that
 starts open; and a card that looks like one thing should answer a click
@@ -1323,7 +1356,10 @@ single-field check first used by a live campaign's
 [end date](../admin-portal/spec.md#campaign-configuration), #944; the ParishSoft refresh
 schedule's multi-row editor, #920, checks its whole formset with its own
 mechanism for now). Save is held while such an error stands only on forms
-that use the complete-before-submit gate above. Three shared checks in
+that use the complete-before-submit gate above or hold their buttons with
+their own gate (the [send date window](#schedules), #1787, and the
+[repeat rule](../admin-portal/spec.md#new-and-edit-scheduled-email), #1915).
+Three shared checks in
 `ui-v1.js` cover the common cases (#563): `data-not-before="<start id>"` on
 an end date (or a text amount) keeps it no earlier than its start, as the
 report and System logs filters and the campaign and financial period end
@@ -1600,8 +1636,11 @@ the campaign wizard in #1404 PR 4).
   form shows its error summary and marks each field, as the
   [field errors](#field-errors-and-live-checks) convention says, and becomes
   editable again. Where panes share one dialog and each pane has its own
-  status line (see After Apply below), the refusal is said in that pane's
-  line instead, which takes focus without scrolling, and the field is marked
+  status line (see After Apply below), or a form sits far below the page
+  heading and names its region's status line (Backup encryption key's code,
+  [#750](https://github.com/epiphany40223/parishkit/issues/750)), the
+  refusal is said in that line instead, which takes focus without
+  scrolling, and the field is marked
   and described by it: no summary is placed above the heading, since moving
   focus there would jump the page to the top, and no error line is added
   that would move the pane's controls. The line clears on the form's next
@@ -1794,6 +1833,7 @@ in-place preview of the counts.
 
 Current state, to be converted: Users' New user, Edit user and Import
 Ministry leaders, New and Edit scheduled email,
+[Pages and emails' editor](../admin-portal/spec.md#default-content),
 [Campaign settings](../admin-portal/spec.md#campaign-settings-page) (#1119),
 Share options, Campaign images, Parish logos, Parish settings, Create the
 campaign and No-reminders WorkGroup use the dialog; Create the campaign, New
@@ -1801,17 +1841,21 @@ user and No-reminders WorkGroup are confirmations under #1356, and so are a
 one-time New scheduled email, Import selected with nobody skipped and
 Campaign images' Remove this image. Edit user, Share options, a small
 Campaign settings change and Parish settings are compact reviews under the
-same issue. The
+same issue; the Pages and emails editor's Preview changes keeps its full
+review (the fictional sample) and returns to Pages and emails. The
 [integration settings pages](../admin-portal/spec.md#parish-and-integration-configuration)
 use the dialog too (#750): an ordinary settings edit is a compact review, a
 refresh schedule change keeps its full review, and setting up Off-site
 backups by its folder, removing Slack, turning off off-site copies, a key
 change and Finish switching to the new key are confirmations (#1568); the
-Backup encryption key change still uses its separate
-Review page. The in-place review panel of #532 is retired
+[Backup encryption key](../admin-portal/spec.md#parish-and-integration-configuration)
+change, once its code is proved, is a compact review (its proof steps act in
+place). The in-place review panel of #532 is retired
 ([#1429](https://github.com/epiphany40223/parishkit/issues/1429),
-[in-place controls](#in-place-controls)); the other editors use separate
-Review and Change status pages.
+[in-place controls](#in-place-controls)); Pages and emails' editor still uses
+its separate Review and Change status pages, as does Copy campaign, which
+refuses every request until
+[#145](https://github.com/epiphany40223/parishkit/issues/145).
 [#750](https://github.com/epiphany40223/parishkit/issues/750) tracks the
 conversion.
 
@@ -1884,6 +1928,15 @@ A Share options row ticked Delete greys its label, free-text box and order
 in place (`data-enabled-when` on the row's own Delete box), so the rows below
 never move; a redrawn form shows a deleted row's saved values, still greyed,
 and unticking Delete gives them back (#563).
+
+In the Pages and emails editor, ticking "Remove this selected content" greys
+the email subject, the HTML source, "Generate plain text from HTML" and the
+plain text in place (`data-enabled-when` on the Remove box), and the visual
+editor and its formatting buttons stop accepting edits, so nothing moves and
+none of the text is sent; the subject is required only while the box is
+unticked, and the server reads it the same way. The campaign banner box
+stays available, so a removal never changes the banner choice by leaving it
+out (#563, #750).
 
 ### Binary choices
 
@@ -2260,6 +2313,30 @@ and #1062 (Parish logos), then the scheduling editors of #1129.
   dialog it returns to the toggle's chosen segment. The focus ring is drawn
   on the chosen or focused segment and keeps the
   [theme's contrast](#accessibility-and-client-behavior).
+- **Additive editors.** An editor whose common case is already a few plain
+  fields, with less common tools that add to them, has no presets: Basic
+  shows those fields, and Advanced shows the same fields with the extra
+  tools. The fields both modes use stay outside the panels; each tool sits
+  where it applies, in an Advanced panel of its own (an editor may have
+  several). A Basic configuration is one with every Advanced tool off, so
+  the rules above narrow to these:
+  - Basic → Advanced writes nothing, and Advanced → Basic switches at once
+    while every Advanced tool is off. There is no Basic choice to make
+    before Review.
+  - Advanced → Basic with a tool in use asks in the same dialog ("Your
+    custom schedule has no basic equivalent."). The dialog's text names
+    only the Advanced tools in use that Switch to Basic will turn off,
+    not the editor's other tools. **Switch to Basic** turns each tool off,
+    as unticking it would, so the hidden panels post nothing and Basic
+    needs no exception to [conditional fields](#conditional-fields). A tool
+    that hides when another choice changes (Repeat, when the mail type is
+    no longer Reminder) is turned off then, and is not a tool in use.
+  - The mode is not stored with the setting: the page opens in Basic, or in
+    Advanced when it is drawn with a tool in use or answers a post sent
+    from Advanced (a refused Review, the browser restoring the page).
+  - First use: [New and Edit scheduled
+    email](../admin-portal/spec.md#new-and-edit-scheduled-email)
+    ([#1129](https://github.com/epiphany40223/parishkit/issues/1129)).
 
 A setting that can't change in the page's present state (rather than one
 that does not apply to the choices made) stays where it is, disabled, with
@@ -2365,10 +2442,11 @@ opens one page per kind of reason. **Precedent.** #1128.
   with the same reason, by any method (`admin_navigation.refuse_greyed`).
 - **Only for a viewer who sees the entry greyed.** The role still hides an
   entry ([stable menu shape](../admin-portal/spec.md#stable-menu-shape)), so
-  a page the viewer's role may not open is refused by its own view (403) as
-  before, without the reason; a signed-out visitor, or a session the page
-  would rotate or end, also goes to the view. The session is checked
-  read-only, renewing no idle time.
+  a page the viewer's role may not open is refused by its own view (403),
+  which says the role is the reason
+  ([pages the role may not open](#pages-the-role-may-not-open)); a signed-out
+  visitor, or a session the page would rotate or end, also goes to the view.
+  The session is checked read-only, renewing no idle time.
 - **Server checks stay.** The page shows only the menu's words and grants
   nothing; every view keeps its own checks, which still refuse anything the
   gate lets through.
@@ -2393,6 +2471,39 @@ opens one page per kind of reason. **Precedent.** #1128.
   (a stale page, busy configuration) is still retried. **Shared code.**
   `live-status-v1.js`. **Precedent.**
   [#1805](https://github.com/epiphany40223/parishkit/issues/1805).
+
+### Pages the role may not open
+
+**Rule.** A signed-in Staff user or Ministry leader who opens a page their
+role may not open (from a bookmark, a shared link or a typed address) is
+told the role is the reason, never to sign in again: the page keeps the
+"Access unavailable" heading and says "This page is for Administrators.
+Your access doesn't include it." ("for Administrators and Staff" on a Staff
+page), then "Choose a page from the menu, or ask a parish administrator if
+you need this one.", with the usual Administration home link and no Sign in
+again link. Only a missing or ended session keeps the sign-in wording
+("Your sign-in has ended…" or "Your session may have ended…", with Sign in
+again). The answer stays HTTP 403 with the closed `denied` code and
+refusal-log reason, and scripts and in-place regions get the same refusal as
+JSON. A Ministry leader's refusal within its scope (a Ministry it does not
+lead, or none at all) is about scope, not role, and keeps its own wording.
+The same holds for a page's role-only parts: Staff asking a report for its
+Testing responses, the Administrator-only timeline export, the weekly digest
+snapshot or an export cleanup retry get the role refusal too. **Deliberate
+exceptions.** Three refusals keep the generic denial: the setup-only steps
+(setup staging and cancelling setup), which only the setup Administrator
+reaches; a service's recheck after its page already admitted the session,
+which refuses only a role changed during the request; and the Admin command
+line, which has no sign-in page. **Why.** Signing in again cannot help when the role is the reason, and the
+old wording sent people round in a loop. Naming the page's roles tells a
+signed-in user nothing the 403 and their own menu do not already show; a
+visitor without a current session never gets past the session check to see
+it. **Shared code.** `accounts/role_refusal.py` (`role_denied` and `require`
+for a capability, `role_denied_for` and `require_role` for a role level,
+`RoleDenied`, `response`), used by `admin_editing.principal` and the
+page-level role checks; `web/error_pages.py` drops Sign in again for a
+refusal that says signing in cannot fix it (`Refusal.sign_in`).
+**Precedent.** #1924.
 
 ### Navigation rules
 
@@ -3273,6 +3384,36 @@ and `.link-cards` in `ui-v1.css`; `.home-alerts` for the count lines.
 ([#1673](https://github.com/epiphany40223/parishkit/issues/1673); see
 [Home page](../admin-portal/spec.md#home-page)).
 
+### Working spinner
+
+**Rule.** Anything that shows work in flight with a spinning icon uses the
+one shared spinner, never a spinner of its own: a small ring with one
+quarter open, turning once every .8 seconds. It is drawn by the
+`components/spinner.html` include (`<span class="spinner"
+aria-hidden="true">`), or, on a button whose request is in flight
+(`is-busy`), by the same CSS rule on the button's `::after`. The spinner
+is decorative: it is hidden from assistive technology, and words beside it
+(the button's label, "Working…", "In progress") carry the state. Its ring
+takes its colour from the [design tokens](#shared-visual-style) (the accent
+by default, the text colour on a busy button and the attention ink in an
+In progress stage box), so Dark mode keeps it readable. Under reduced motion it stands still, a static ring that still
+says "working", through the theme's one reduced-motion rule. A spinner's
+space is reserved, or it takes the place of a mark that was already there,
+so it never moves the content around it when it appears or goes
+([no layout shift](#no-layout-shift)). Never add another spinner class,
+spinning animation or keyframes: extend this one, with a placement rule
+for its context if needed. **Why.** The Administrator, 2026-10-20 (pk-local
+R40b), asking for a working spinner in an In progress stage box "like the
+spinner the export download buttons show", and: "Is the spinning icon
+common code? If it's not, it should be." **Shared code.** The
+`components/spinner.html` include; the one `.spinner` rule, shared with
+`is-busy` buttons, and `@keyframes busy-spin` in `ui-v1.css`;
+`test_spinner_guard.py` fails if another spinning rule or keyframes
+appears. **Precedent.** Busy buttons (export buttons included), the live
+"Working…" line (`live-running.html`), a point-in-time export's pending
+state and In progress stage boxes
+([#1847](https://github.com/epiphany40223/parishkit/issues/1847)).
+
 ### Stage boxes
 
 **Rule.** A page that follows a long piece of work through its major
@@ -3281,35 +3422,109 @@ left to right, wrapping onto more rows on a phone with no sideways scroll.
 Each box names its stage and its state in words, Not started, In progress,
 Done or Failed (Finishing setup also has Waiting for the server operator),
 so its text, and its name as a list item, carry the state; a mark (a
-bullet, a pointer, a check, a cross or a pause) and a colour from the
+bullet, the [working spinner](#working-spinner), a check, a cross or a
+pause) and a colour from the
 [design tokens](#shared-visual-style) only reinforce it, in light and dark:
 Not started keeps the page's own background, In progress is the attention
 yellow (`warning-bg`, `warning-border`), Done the light accent green
 (`accent-soft`, `accent-line`) and Failed the error tone (`error-bg`,
 `error-border`); Dark mode takes each token's dark value. A change of state
 changes only these colours, the mark and the words, never the box's size.
+An In progress box, and only that box, shows the
+[working spinner](#working-spinner) in its mark's reserved slot; setup's
+list of collections downloaded from ParishSoft marks its active row the
+same way.
 The boxes show only stages the server reports, never invented ones. While
 the work runs, the page updates the boxes in place from a passive status
 read, and announces a change of state politely through the page's
 announcer, once per change, not on every poll; every state draws the same
 boxes and keeps the lines around them reserved, so an update moves nothing
-([no layout shift](#no-layout-shift)). **Why.** The Administrator,
+([no layout shift](#no-layout-shift)).
+Work that waits in the background queue before a worker takes it starts
+with one more box, **Start the load**, ahead of its first real stage. It
+is In progress, with the spinner, from the moment the request is accepted,
+in the page's in-place answer to the button rather than after the first
+status read, and it says "Waiting for the background service to pick up
+the job. This can take a minute or two." (on Finishing setup that is the
+box's own detail line; on the other two pages it is the page's own line
+under the boxes, which keeps its place). It is Done as soon as
+a worker picks the job up, when the next box becomes In progress; a job
+that ends before any worker took it shows Failed on this box. The task's
+own state decides it: a worker's claim moves the task off its first
+phase, so no page guesses from elapsed time. Every page with a queued job
+in stage boxes draws this box and says that sentence, the one phrasing
+for a queued job. **Why.** The Administrator, 2026-10-21 (pk-local R40a):
+a load waited over a minute with every box Not started, and "if they have
+to wait 2-3 minutes before any visual progress occurs, they'll think
+something is wrong"; a first box "named ‘Setup’ or some benign name like
+that, and its spinner starts automatically. Then when the backend picks up
+and starts downloading from PS, it automatically completes the ‘Setup’
+pane and moves to the ‘Download from parishsoft’ pane"
+([#1916](https://github.com/epiphany40223/parishkit/issues/1916)).
+**Why (the boxes).** The Administrator,
 2026-10-17, on the campaign wizard's Load ParishSoft data: "one box for
 each major step in the loading process, proceeding from left to right",
 and the same boxes, from the same code, as setup's Loading parish data and
 Finishing setup, so a reader learns the pattern once; and on their colours
 (Administrator, 2026-10-17): "'normal' background before starting, yellow
-while running, and light green when done". **Shared code.** The
+while running, and light green when done"; and on the spinner
+(Administrator, 2026-10-20): a "working" spinning icon in a box while
+that stage is actively In progress, to show progress visually. **Shared
+code.** The
 `components/stage-boxes.html` include, `accounts/stages.py` (`rows`, which
-marks the stages before the current one done, and the state words) and
+marks the stages before the current one done, and the state words;
+`START`, `QUEUED` and `queued_index` for the Start the load box) and
 `.stage-boxes` in `ui-v1.css`. **Precedent.** Setup's Loading parish data
 and Finishing setup (#1354), Load ParishSoft data
 ([#1404](https://github.com/epiphany40223/parishkit/issues/1404) PR 5),
-and the [Go live page](../admin-portal/spec.md#go-live-page)'s Prepare
-step and Production activation
-([#1585](https://github.com/epiphany40223/parishkit/issues/1585));
-the other stage-progress displays move to it in
-[#1579](https://github.com/epiphany40223/parishkit/issues/1579).
+the [Go live page](../admin-portal/spec.md#go-live-page)'s Prepare step
+and Production activation
+([#1585](https://github.com/epiphany40223/parishkit/issues/1585)), and a
+ParishSoft refresh's Background task page and Refresh from ParishSoft
+([#1579](https://github.com/epiphany40223/parishkit/issues/1579)).
+
+**Every stage-progress display.** Every page that shows a long piece of
+work moving through stages the server reports uses this one component, so
+there is no second box pattern and no stage list in plain lines ("Step 2 of
+3: ..."). A guard test (`test_stage_boxes_guard.py`) fails when a template
+other than the component draws the stage-box classes, or when a live status
+region names the work's phase or stage without drawing the component; a
+template it still allows is listed there with why, and the list only
+shrinks. Work with a single stage of its own does not get boxes, since one
+box would only repeat its status line: a report export reports no phases,
+only waiting, preparing and ready
+([#1579](https://github.com/epiphany40223/parishkit/issues/1579)). Nor do
+the Administrator's own decisions on a page, such as Restore review's held
+emails and release, which are panels of controls rather than server work.
+
+Clarification for changing words. A box whose words change while the work
+runs (its status word, or a detail drawn under it, such as Finishing
+setup's explanation, acknowledgement count, records loaded and task
+reference) is as tall as the longest of the forms it can take while the
+work runs, from its first rendering: its shown words share one grid cell
+with invisible, aria-hidden copies of every one of those forms (with
+counts the size of a large parish's where the real ones are not known
+yet), so neither the box nor its row of boxes grows or shrinks as the
+work moves on. Likewise a
+status sentence above the boxes that changes with the work's state (Load
+parish data's "Current status") shares one grid cell with invisible copies
+of every wording it can take, so the boxes below it never move; and a
+line under the boxes that appears part-way through (Load parish data's
+"Records saved for this setup" bar) keeps its space, invisible, until it
+appears. Each row of a list whose status words change (Load parish data's
+downloaded items) likewise shares a cell with invisible copies of its label
+and every status wording, in the heaviest weight the row takes, so a row
+never wraps to another line part-way through. A grid cell, not a fixed line count, because each browser wraps
+the same words differently. The forms reserved are the ones the page can
+show while it still updates itself; a failed step's explanation, which
+comes with a failure notice above the boxes and stops the updates, is not
+reserved, so a running box is not drawn tall enough for a long failure.
+**Precedent.** The Administrator's pk-local check of R40a (2026-10-21,
+[#1903](https://github.com/epiphany40223/parishkit/issues/1903)): Load
+parish data's status sentence grew from one line to three and pushed the
+boxes down by about 52 pixels when the load started, and Finishing
+setup's boxes changed height as their words changed; Load ParishSoft
+data's summary line already worked this way (#1618).
 
 ### Time entry
 
@@ -3473,8 +3688,11 @@ learned once. **Shared code.**
 - **Basic and Advanced.** An editor whose full rule set is much harder than
   the common case follows [Basic and Advanced modes](#basic-and-advanced-modes):
   Basic has a few presets, and Advanced has the rules, the exceptions, and
-  "Edit as text" where the editor has it. An editor of one or two plain
-  fields, such as the campaign dates, has no modes.
+  "Edit as text" where the editor has it. An editor of a few plain fields
+  with less common tools, such as New and Edit scheduled email (Repeat and
+  the schedule's own email), is an
+  [additive editor](#basic-and-advanced-modes). An editor of one or two
+  plain fields, such as the campaign dates, has no modes.
 - **Times of day** are [time entry](#time-entry) fields. No schedule editor
   draws its own reading or uses a native time control.
 - **Days of the week** use one picker that lists Monday to Sunday with the
@@ -3543,8 +3761,11 @@ learned once. **Shared code.**
   ([schedule previews](#schedule-previews)). The
   preview is redrawn in place as the editor changes
   ([in-place controls](#in-place-controls)), in a region that keeps its
-  place ([no layout shift](#no-layout-shift)). The review lists every
-  occurrence a change adds. A feature-specific view, such as the refresh
+  place ([no layout shift](#no-layout-shift)). A generated occurrence whose
+  time has already passed is listed as not added, never counted or offered,
+  since a missed send would go at once
+  ([#1948](https://github.com/epiphany40223/parishkit/issues/1948)). The
+  review lists every occurrence a change adds. A feature-specific view, such as the refresh
   schedule's seven-day preview or the Campaign calendar, is an extra view of
   the same evaluation, not a second preview. Every list of a schedule's
   occurrences, live or in a review, is drawn by the one
@@ -3569,9 +3790,10 @@ shared zone note, as do System logs and Ministry requests; New and Edit
 scheduled email follows once its open changes land. The two mail
 repeat panels, New scheduled email's Repeat and the date-change review's
 Repeat a reminder, draw one repeat rule, so they offer the same choices in
-the same order and one page script expands both. Later
+the same order and one page script expands both. New and Edit scheduled
+email have the Basic and Advanced modes as an additive editor. Later
 [#1129](https://github.com/epiphany40223/parishkit/issues/1129) slices bring
-the shared preview and Basic and Advanced modes to the mail schedule
+the shared preview and Basic and Advanced modes to the date-change review's
 editors and reminder repeats; the report email editor is built with them
 ([#1786](https://github.com/epiphany40223/parishkit/issues/1786)). Until
 each change lands, an
@@ -3636,6 +3858,13 @@ its feature spec: the
   time on the server and marks the instant `data-other-zone-time`, which
   the same script fills with the browser's time when the zones differ, in
   the list's own 24-hour `HH:MM` form so the two times read alike.
+  A list of schedules that names each one's next send rather than a
+  schedule's occurrences (the Pages and emails review's "Schedules using
+  this template") writes that send in the same words, its weekday, date
+  and time in the browser's zone with no zone name
+  ("Thursday, October 22, 2026, 9:00 AM"), as
+  `<time datetime="…" data-local-instant data-day-time>`
+  ([#1949](https://github.com/epiphany40223/parishkit/issues/1949)).
 - **Daylight saving** follows the [one rule](#schedules). A day whose
   clocks change in the shown zone says so beside its name ("clocks go
   forward", "clocks go back"). An occurrence whose wall time the change
@@ -3752,11 +3981,20 @@ keep a reader's open days by date. `test_occurrences_component.py`
 renders each state and layout, and lists the templates that still draw an
 occurrence list by hand, so no new one is added.
 
-**Adoption.** The refresh schedule's seven-day list draws it (ADM-04
-slice 7b); the next
-[ADM-04](../../../plans/stewardship/admin-portal.md#adm-04-campaign-editor-content-schedules-and-previews)
-slice brings it to the mail schedule review. Until that lands, the review's
-feature spec stands.
+`occurrence_preview.wall_shift(day, wall, due, zone)` is the one test of
+whether a clock change moves a wall time ("forward", "back" or None), so
+the refresh list and the mail review give each line its `shift` the same
+way. A shifted send's wall time is written in the parish's clock ("sends
+at 3:00 AM"), as the line's "set for" time; a refresh list keeps its
+24-hour `HH:MM`.
+
+**Adoption.** The refresh schedule's seven-day list (ADM-04 slice 7b) and
+the mail schedule review (slice 7c) draw it
+([ADM-04](../../../plans/stewardship/admin-portal.md#adm-04-campaign-editor-content-schedules-and-previews)).
+Copy campaign's review still lists its copied schedules through the mail
+review's summary until
+[#145](https://github.com/epiphany40223/parishkit/issues/145) removes the
+page, which the server refuses.
 
 ## Tables
 
@@ -3908,11 +4146,19 @@ selection.
 A **worklist** (a table a reader works through, such as the review
 pipeline's [review worklist](../review-pipeline/spec.md#review-worklist)) has its filters
 always open, never behind a disclosure, above the table, and its export
-buttons below the table. Its filters sit in rows that wrap, each field
-13rem wide (on a phone, the whole row), and its Apply filters and
-Clear filters follow the last field as every filter form's do
-([Clear filters](#clear-filters)), with no line between that field and
-them (R38). Its view is in its address, so a reload re-renders the same
+buttons below the table. Its filters sit on one compact row, each label
+visible above its field: each field keeps a narrow fixed or bounded
+width (the exact widths are in the stylesheet), so at laptop width
+(1366 px, the Admin menu beside) the fields and Apply filters and Clear
+filters share one row and the first table row starts inside a 1366×768
+window ([#1653](https://github.com/epiphany40223/parishkit/issues/1653)).
+A label longer than its field wraps above it rather than being cut, and
+the row wraps only when the window is too narrow for it; on a phone each
+field takes the whole row. Its Apply filters and Clear filters follow
+the last field as every filter form's do
+([Clear filters](#clear-filters)): beside it, or Clear under Apply when a
+two-line label already makes the row that tall, with no line between
+that field and them (R38). Its view is in its address, so a reload re-renders the same
 view: after every in-place answer the address bar shows the page's own
 address with the Stage, the closed filters and the table's sort, size and
 page (`a[data-page-address]`), and the page draws that view from it. A
@@ -3982,11 +4228,15 @@ inventory on #879 lists.
   records rather than removes, and that the row's other action undoes, also
   takes an icon of its own and acts [in place](#in-place-controls) without a
   dialog; so far only the request page's tick, "Mark … entered in
-  ParishSoft" (a check mark) and "Clear Entered in ParishSoft for …" (an
-  undo arrow). An action that carries a note opens the confirmation dialog
+  ParishSoft" (a check mark), whose undo, "Clear Entered in ParishSoft for
+  …" (an undo arrow), opens the confirmation dialog for its required note
+  like every undo of a terminal step (below). An action that carries a note opens the confirmation dialog
   instead, which holds the note, with an ordinary confirm button unless the
-  action cannot be undone; so far only Census changes ([#879](https://github.com/epiphany40223/parishkit/issues/879)), whose
-  decisions take an optional note and Reopen a required one. A note field
+  action cannot be undone: Census changes ([#879](https://github.com/epiphany40223/parishkit/issues/879)), whose
+  decisions take an optional note and Reopen a required one; every review
+  worklist's Back to review on a terminal stage, which needs a note
+  ([#1840](https://github.com/epiphany40223/parishkit/issues/1840)); and the
+  Ministry request page's Clear Entered in ParishSoft, the same undo. A note field
   shared by several actions is labelled by the action chosen: "Note
   (optional)", and "Note (required)" only while that action needs one,
   changing in place as the dialog opens (the review worklist, R38). An
@@ -4006,7 +4256,11 @@ inventory on #879 lists.
   again is not an undo; the row's own undo action (the review pipeline's
   Back to review) is, so the selected icon is unavailable
   (`aria-disabled="true"`) and its tooltip names the state and the undo
-  in one phrase.
+  in one phrase. Every recorded state has that undo, a final-looking mark
+  (Entered by hand, Handled, Updated in ParishSoft, Confirmed) included,
+  and undoing such a mark needs a note saying why
+  ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
+  [#1840](https://github.com/epiphany40223/parishkit/issues/1840)): no row's state is left with no way back.
   So the decision shows on the icons, not only in a
   status column ([review pipeline](../review-pipeline/spec.md#selected-state-icons),
   [#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
