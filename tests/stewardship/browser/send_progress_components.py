@@ -27,6 +27,13 @@ from parishkit.stewardship.jobs.send_progress import RATE_WINDOW, SendCounts, pr
 PAGE = "/mail-queue"
 FINISHED = "/mail-queue-finished"
 STATUS = "/mail-queue/status"
+# The running page polling the same running send (STEADY_STATUS), and the
+# same counts once a reminder send has taken its place (STEADY_REMINDER):
+# Technical details' schedule type changes, so a test sees an open
+# disclosure take it in place (#2016).
+STEADY = "/mail-queue-steady"
+STEADY_STATUS = "/mail-queue-steady/status"
+STEADY_REMINDER = "/mail-queue-steady/status-reminder"
 # A launch in flight: invitations queued, sending and retrying, one daily
 # report waiting, and a Testing email left over in the other mode.
 QUEUE = QueueCounts(
@@ -138,6 +145,24 @@ def components(context, admin):
         FINISHED: (
             "text/html",
             render_to_string("stewardship/mail-queue.html", values(finished, EMPTY)),
+        ),
+        STEADY: (
+            "text/html",
+            render_to_string(
+                "stewardship/mail-queue.html",
+                values(running, status_url=STEADY_STATUS),
+            ),
+        ),
+        STEADY_STATUS: (
+            "text/html",
+            render_to_string("stewardship/mail-queue-status.html", values(running)),
+        ),
+        STEADY_REMINDER: (
+            "text/html",
+            render_to_string(
+                "stewardship/mail-queue-status.html",
+                values(_send(now, kind="reminder")),
+            ),
         ),
         # What the next poll of the running page reads: the send has finished
         # and the queue has emptied.

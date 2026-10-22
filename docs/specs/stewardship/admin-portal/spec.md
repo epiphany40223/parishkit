@@ -5337,7 +5337,9 @@ an hour after they are opened), so a page opened an hour early follows the
 whole send; after that it checks every 30 seconds. It has no manual Refresh
 link. The region's counts change on every read, so it is not itself an ARIA
 live region: screen readers hear only the Family send panel's
-announcements (below). Technical details sit outside the updated region. A
+announcements (below). Technical details sit outside the updated region
+and follow it in place ([open disclosures stay
+open](../ui-conventions/spec.md#pages-that-update-themselves)). A
 restore review that begins while the page renders withholds it, as on Sent
 mail.
 
@@ -8820,7 +8822,7 @@ Working with a summary that says so ("No current campaign").
 | **Debug logging** | none | in Production, debug logging is in effect in any service (`debug_logging`; a warning because nothing stops working, [decision 11](#administrator-decisions-2026-10-13)) | "Off"; "Turned off from this page by … at …"; "On in 4 services, as expected in Testing" | the [debug logging panel](#debug-logging-panel) | **Turn off debug logging**, drawn only while some service has debug logging in effect; once the switch is set, its status line and, only in Testing, **Allow debug logging again** ([clearing the switch](#turn-off-debug-logging)). |
 | **Families the form cannot open** | none | at least one Family cannot open the form; the check could not run | "Every Family can open the form"; "No current campaign" | the sentence and the link of [Families the form cannot open](#system-health-page) | none; the list's link is in the sentence |
 | **Pages and emails to re-save** | an invitation or reminder cannot be sent until it is fixed (the list's `blocked` items) | other items are marked "Re-save recommended"; the check could not run | "Nothing to re-save"; "No current campaign" | the sentence and the linked list of [pages and emails to re-save](#system-health-page) | none; each item links its editor |
-| **Version and services** | a core service other than mail dispatch is not running or has not reported (the rest of `not_running` and `not_reported`); the services run different versions (`versions_differ`); the database does not match (`schema_mismatch`) | an installer that reports is not running (the installers' part of `not_running`) | "Version 1.12.0, Production, all services running" | the [version panel](#version-panel), then the closed Technical details disclosure (its values as of page load) and the links to System logs and Background work | none; the deployment runbook's upgrade link is in the versions sentence |
+| **Version and services** | a core service other than mail dispatch is not running or has not reported (the rest of `not_running` and `not_reported`); the services run different versions (`versions_differ`); the database does not match (`schema_mismatch`) | an installer that reports is not running (the installers' part of `not_running`) | "Version 1.12.0, Production, all services running" | the [version panel](#version-panel), then the Technical details disclosure (it follows the poll; [open disclosures stay open](../ui-conventions/spec.md#pages-that-update-themselves)) and the links to System logs and Background work | none; the deployment runbook's upgrade link is in the versions sentence |
 
 Each action region is drawn when the page loads, whatever the tile's
 state, and never removed: when its action does not apply it stays greyed

@@ -955,19 +955,23 @@ Mail queue, #1562), #869, #1353.
   settings](../admin-portal/spec.md#campaign-settings-page) and Home's
   [Create the campaign](../admin-portal/spec.md#create-the-campaign)
   ([#1619](https://github.com/epiphany40223/parishkit/issues/1619)).
-- **Open disclosures stay open.** On Send to chosen Families and the Mail
-  page's test results, a disclosure about what a status region shows (a
-  Technical details list of test references) sits outside the region, so a
+- **Open disclosures stay open.** A disclosure about what a status region
+  shows, such as a Technical details list, sits outside the region, so a
   poll never redraws it and closes it under the reader. Its contents are a
   mirror target of the region: each poll's copy replaces only what is inside
   the disclosure, and only when it changed, so an open disclosure stays
   open, shows the current values and never says it is as of when the page
-  was opened or asks for a reload
-  ([#1586](https://github.com/epiphany40223/parishkit/issues/1586)). Other
-  pages' Technical details (Production progress, the Mail queue and the
-  System health tile) still say they are as of when the page was opened
-  until [#2016](https://github.com/epiphany40223/parishkit/issues/2016)
-  gives them the same treatment, which will make this a rule for every page.
+  was opened or asks for a reload. A disclosure whose height can change
+  with its values waits, as the content beside it does, while the pointer
+  is over it. This holds on Send to chosen Families and the Mail page's
+  test results (test references,
+  [#1586](https://github.com/epiphany40223/parishkit/issues/1586)), and on
+  Production activation, the Mail queue and the System health Version and
+  services tile
+  ([#2016](https://github.com/epiphany40223/parishkit/issues/2016)).
+  The one exception is the Background work task page: its Technical
+  details update through their own region only when the task finishes, and
+  say so ([#2019](https://github.com/epiphany40223/parishkit/issues/2019)).
 - **Pace.** While background work is pending a status region reads fast
   (2 s backing off to 10 s, or the fixed pace the page asks for). A page
   whose state changes without the reader's own action re-reads every 30
