@@ -2883,10 +2883,15 @@ place:" with the field and value of every addition made for it under its
 stage, and the added change says it was added in place of an ignored change.
 
 The field never has two open changes by the worklist's own decisions: while
-an addition of the field is open, an ignored change of the same field
-offers no Back to review, and one posted anyway is refused (`reopen_added`;
-withdraw the addition first), as is `pk-admin census review` or `census
-resolve` reopening it; the check runs under the work order. Likewise an
+an addition of the field is open, or Entered by hand and added after the
+Family's change was made, an ignored change of the same field, or one
+whose terminal step Back to review would undo, offers no Back to review,
+and one posted anyway is refused (`reopen_added`; withdraw the addition
+first), as is `pk-admin census review` or `census resolve` reopening it;
+the check runs under the work order. The Entered by hand case keeps the
+Family's reviewed form from drawing the addition over an older change
+reopened under it, whose own answer would then be lost
+([#2008](https://github.com/epiphany40223/parishkit/issues/2008); [What the reviewed form shows](../review-pipeline/spec.md#what-the-reviewed-form-shows)). Likewise an
 entered addition's Back to review is refused while the field has another open
 change, another open addition or the Family's own change that is not ignored
 (`reopen_open_change`; decide or withdraw that one first), in SQL too. A later Family response may still ask for the
@@ -2902,8 +2907,14 @@ and `pk-admin report census` include additions; the other `pk-admin census`
 commands act on the Family's changes only.
 
 An addition is not a proposed change: proposals belong to the Family submit
-path, whose guards stay as they are, and the Family form never shows an
-addition. Forward migration 0129 (provisional number) adds two
+path. The Family's reviewed form draws a standing addition in its field,
+editable, marked "Added by the parish", and a Family that submits that
+value unchanged makes no change of its own
+([What the reviewed form shows](../review-pipeline/spec.md#what-the-reviewed-form-shows),
+[#2008](https://github.com/epiphany40223/parishkit/issues/2008); forward
+migration 0170 lets the submission check admit it), which the dialog says:
+"The Family will see this value on its form, marked Added by the parish,
+the next time it signs in." Forward migration 0129 (provisional number) adds two
 migration-owned tables, each INSERT only: the addition (who, when, the note,
 the Family, the Member or Family, the field, the value and the change it
 replaced) and its one later step (Entered by hand or withdrawn, at most one
