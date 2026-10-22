@@ -1,0 +1,6 @@
+{% load stewardship %}{% comment %}
+  A report email's schedule in plain words (report_email_list.schedule_words):
+  text (carrying its own spacing), a calendar date in the parish format, an
+  instant's clock time or an instant's date and time, each in this browser's
+  zone (#558).
+{% endcomment %}{% for kind, value in segments %}{% if kind == "text" %}{{ value }}{% elif kind == "date" %}{{ value|parish_date }}{% elif kind == "time" %}<time datetime="{{ value|instant }}" data-local-instant data-time-only>{{ value|instant }}</time>{% else %}<time datetime="{{ value|instant }}" data-local-instant>{{ value|instant }}</time>{% endif %}{% endfor %}

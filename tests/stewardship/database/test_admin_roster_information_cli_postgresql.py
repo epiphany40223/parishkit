@@ -33,9 +33,9 @@ from parishkit.stewardship.workflows.models import (
 )
 
 from .auth_builders import signed_in
-from .test_admin_digest_list_cli_postgresql import revoke
 from .test_admin_export_cli_postgresql import read_only_session
 from .test_admin_report_cli_postgresql import parity
+from .test_admin_report_email_cli_postgresql import revoke
 from .test_admin_task_retry_cli_postgresql import approved_by_browser, runner
 from .test_export_views_postgresql import post
 from .test_information_followup_postgresql import search

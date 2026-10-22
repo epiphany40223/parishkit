@@ -1,32 +1,20 @@
-"""Digest commands of the Admin command line (ADM-11 PR 8d).
+"""The daily and weekly digests saved before report emails (ADM-11 PR 8d).
 
-``digest daily SNAPSHOT_ID`` and ``digest weekly SNAPSHOT_ID`` read a
-retained daily or weekly report, the page an emailed digest links to,
-through the page's own functions (``digest_views`` and ``weekly_views``):
-the stored snapshot, never the email's markup. A daily report is the
-retained participation figures; a weekly report is the selected information
-items' identifiers and states, never a Family's text. Each admits passively
-with its page's admission (any session), reads inside the campaign read
-guard the page's response holds (its deadline logs what it stopped, the
-limit and the elapsed time), rechecks the session, and records the page's
-``daily_digest_viewed`` or ``weekly_digest_viewed`` (started, then
-succeeded or failed) through the page's own audit function.
+``report-email copy SEND`` (#1786, ``admin_report_emails``) reads a daily
+or weekly report saved before the conversion, the page an emailed digest
+links to, through the page's own functions (``digest_views`` and
+``weekly_views``): the stored snapshot, never the email's markup. A daily
+report is the retained participation figures; a weekly report is the
+selected information items' identifiers and states, never a Family's
+text. Each admits passively with its page's admission (any session), reads
+inside the campaign read guard the page's response holds (its deadline logs
+what it stopped, the limit and the elapsed time), rechecks the session, and
+records the page's ``daily_digest_viewed`` or ``weekly_digest_viewed``
+(started, then succeeded or failed) through the page's own audit function.
 
-``digest weekly-request`` is the Send a weekly report now page's form
-(``weekly_manual.request_manual_report``) in the page's command scope:
-the same once-at-a-time rules (a digest still in progress or awaiting
-review is refused by the database, as on the page), the same task and
-events, plus ``admin_cmd_digest_weekly_request`` when it created the
-request. Its key is the page's ``command_id``: repeating it returns the
-original request. The page asks the reader to tick that a manual report
-may repeat items already reported; the command asks for the same
-acknowledgement at the confirmation prompt, or takes ``--yes``.
-
-``digest list`` is the Emailed reports page (``emailed_views.listing``):
-the current campaign's retained daily and, for an Administrator, weekly
-reports, by id and date only, so the other digest commands can be pointed
-at them. It admits passively as the page does and, as the page's read,
-records no event.
+``digest daily``, ``digest weekly``, ``digest list`` and ``digest
+weekly-request`` were retired with Emailed reports and Send a weekly
+report now (#1786, delivery plan item 5), with no aliases.
 """
 
 from dataclasses import dataclass
@@ -92,52 +80,6 @@ class WeeklyDigest(ReadModel):
     page: int
     pages: int
     items: list
-
-
-@dataclass(frozen=True)
-class WeeklyRequest(ReadModel):
-    """The manual weekly report a ``digest weekly-request`` created or found.
-
-    ``created`` is false for a repeated key, which returns the original
-    request's task unchanged. Follow ``task`` with ``task show --watch``.
-    """
-
-    created: bool
-    request_key: UUID
-    task: dict
-
-
-@dataclass(frozen=True)
-class DigestList(ReadModel):
-    """The Emailed reports page's lists: report ids and dates only.
-
-    ``reports`` are the newest report email sends (#1786: each its
-    ``send_id``, its report's ``name``, how it was sent and when it was
-    made); ``daily`` and ``weekly`` are the newest ``shown`` digests sent
-    before report emails replaced them, newest first;
-    ``weekly`` is None for a reader who is not an Administrator, who sees
-    the daily list only, as on the page. ``weekly_request_available`` is
-    whether the campaign has the converted Weekly report that ``digest
-    weekly-request`` sends now. ``requested`` is the ``--requested``
-    request's ``task_id`` and, once its email is made, ``report_id`` (its
-    report send's id); None
-    when not asked for, or when the key is not a current-campaign request.
-    """
-
-    campaign_id: UUID | None
-    reports: list
-    daily: list
-    weekly: list | None
-    weekly_request_available: bool
-    requested: dict | None
-    shown: int
-
-
-def acknowledgement():
-    """The manual report page's acknowledgement, as its checkbox words it."""
-    from .reports.weekly_manual_views import ManualReportForm
-
-    return str(ManualReportForm.base_fields["acknowledge"].label)
 
 
 def _section(section):
@@ -226,7 +168,7 @@ def weekly_model(snapshot_id, campaign_id, context):
     )
 
 
-# ------------------------------------------------- digest daily and weekly
+# ------------------------------------- saved daily and weekly digests
 
 
 def _campaign(kind, snapshot_id):
@@ -246,7 +188,7 @@ def _campaign(kind, snapshot_id):
 
 
 def read_digest(caller, service, snapshot_id, *, kind, page):
-    """``digest daily`` or ``digest weekly``: a retained report, as its page.
+    """A retained daily or weekly digest, as its page (``report-email copy``).
 
     ``kind`` is ``daily`` or ``weekly``. ``page`` (weekly only, as the page
     pages its items) is parsed by the page's ``page_number``; a page past
@@ -323,165 +265,3 @@ def read_digest(caller, service, snapshot_id, *, kind, page):
                     emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
 
     return _held(step)
-
-
-# --------------------------------------------------------------- digest list
-
-
-def list_model(campaign_id, lists, *, administrator):
-    """The command's projection of the page's ``listing``: ids and dates only.
-
-    The page's ``pk`` becomes ``snapshot_id``; a weekly row's
-    ``preparation_id`` (the manual request's key) is left out, as the page
-    shows only whether the report was ``manual``.
-    """
-    from .reports.emailed_views import SHOWN
-
-    return DigestList(
-        campaign_id=campaign_id,
-        reports=[
-            {
-                "send_id": row["pk"],
-                "name": row["name"],
-                "how": row["how"],
-                "made_at": row["made_at"],
-            }
-            for row in lists["reports"]
-        ],
-        daily=[
-            {
-                "snapshot_id": row["pk"],
-                "through_date": row["through_date"],
-                "covered_dates": row["covered_dates"],
-                "observed_at": row["observed_at"],
-            }
-            for row in lists["daily"]
-        ],
-        weekly=[
-            {
-                "snapshot_id": row["pk"],
-                "manual": row["manual"],
-                "observed_at": row["observed_at"],
-            }
-            for row in lists["weekly"]
-        ]
-        if administrator
-        else None,
-        weekly_request_available=lists["weekly_schedule"],
-        requested=lists["requested"],
-        shown=SHOWN,
-    )
-
-
-def read_list(caller, service, *, requested):
-    """``digest list``: the Emailed reports page's lists, as the page reads them.
-
-    Admits passively with the page's admission (report readers, any
-    session scope), reads the page's ``listing`` for the current campaign
-    (None, and empty lists, when there is none) and rechecks the session
-    before anything is reported. ``requested`` is a manual request key or
-    None. The page's read records no event, so neither does this. Like the
-    page's ``.get()``, a missing configuration row fails closed: its
-    ``ObjectDoesNotExist`` is ``not_available``, never empty lists.
-    """
-    from .accounts.runtime_models import SystemConfiguration
-    from .reports.emailed_views import listing
-    from .reports.export_views import _principal
-
-    def step():
-        """Admit, read the page's lists and recheck."""
-        actor = _admit(caller, service, _principal)
-        administrator = "administrator" in actor.roles
-        # .get(), as the page: a missing row must not read as "no campaign".
-        campaign_id = SystemConfiguration.objects.values_list(
-            "current_campaign_id", flat=True
-        ).get()
-        lists = listing(campaign_id, administrator=administrator, requested=requested)
-        _recheck(caller, service.store, actor)
-        return list_model(campaign_id, lists, administrator=administrator)
-
-    return _held(step)
-
-
-# --------------------------------------------------- digest weekly-request
-
-
-def request_weekly(caller, service, *, request_key, context):
-    """``digest weekly-request``: the Send a weekly report now form.
-
-    Admits as the page's form post does (recording activity, so a full-scope
-    session), for the current campaign, which needs a weekly digest
-    schedule (``not_available`` without one, as the page explains). In the
-    page's command scope it calls the page's ``request_manual_report`` with
-    the applied configuration (the page's form binds the one shown) and
-    ``request_key`` as the ``command_id``, and records
-    ``admin_cmd_digest_weekly_request`` only when it created the request. A
-    digest still in progress or awaiting review is refused by the database,
-    as on the page: ``stale_version``. A key bound to another request is
-    ``invalid``. ``context["committed"]`` is set once the request may have
-    committed (exit 6 then names the key).
-    """
-    from .accounts.runtime_models import SystemConfiguration
-    from .admin_operations import _admit as admit_form
-    from .admin_operations import (
-        _ended_or_raise,
-        _raise_stale_on_conflict,
-        task_retry_model,
-    )
-    from .audit.schemas import Action, ActorKind, Outcome
-    from .audit.services import record_action
-    from .jobs.task_retries import command_scope
-    from .observability import _guard_refusal
-    from .reports.report_email_models import ReportEmailManualRequest
-    from .reports.weekly_manual import request_manual_report
-    from .reports.weekly_manual_views import _has_weekly_schedule
-
-    actor = admit_form(caller, service)
-    context["request_id"] = str(request_key)
-    written = []
-
-    def step():
-        """Request the report inside the page's command scope."""
-        written.clear()
-        system = SystemConfiguration.objects.get()
-        campaign_id = system.current_campaign_id
-        if campaign_id is None:
-            raise NotAvailable("There is no current campaign.")
-        if not _has_weekly_schedule(campaign_id):
-            raise NotAvailable("The campaign has no Weekly report.")
-        with command_scope(caller, service, actor):
-            repeat = ReportEmailManualRequest.objects.filter(pk=request_key).exists()
-            task = request_manual_report(
-                service.store,
-                actor.identity,
-                campaign_id,
-                command_id=request_key,
-                configuration_id=system.active_configuration_id,
-            )
-            if not repeat:
-                record_action(
-                    Action.ADMIN_CMD_DIGEST_WEEKLY_REQUEST,
-                    actor_kind=ActorKind.PORTAL_USER,
-                    actor_id=actor.identity,
-                    subject_id=caller.automation_session_id,
-                    context={"outcome": Outcome.SUCCEEDED},
-                )
-                written.append(True)
-        retry = task_retry_model(task, created=not repeat, request_key=request_key)
-        return WeeklyRequest(
-            created=retry.created, request_key=request_key, task=retry.task
-        )
-
-    try:
-        model = _held(step)
-    except DatabaseError as error:
-        if written and not _guard_refusal(error):
-            context["committed"] = True
-        # The page's 409: a digest still in progress or awaiting review, or
-        # a scope that changed meanwhile.
-        _raise_stale_on_conflict(error)
-        raise
-    except (NotAvailable, PermissionError) as error:
-        _ended_or_raise(caller, service, actor, error)
-    context["committed"] = True
-    return model

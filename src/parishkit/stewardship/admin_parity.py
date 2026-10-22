@@ -412,22 +412,26 @@ LEDGER = {
     "report_export_cancel": command("export cancel", "export exact cancel"),
     "report_export_retry": command("export retry", "export exact retry"),
     "report_export_download": command("export download"),
-    # The digests (PR 8d): the retained reports an emailed digest links to,
-    # and the manual weekly report.
-    "daily_digest_snapshot": command("digest daily"),
-    "weekly_digest_snapshot": command("digest weekly"),
-    # One item of a weekly report: its states are in ``digest weekly``'s
+    # The digests saved before report emails (PR 8d; #1786): the retained
+    # reports an emailed digest links to, read by ``report-email copy``.
+    "daily_digest_snapshot": command("report-email copy"),
+    "weekly_digest_snapshot": command("report-email copy"),
+    # One item of a weekly report: its states are in ``report-email copy``'s
     # items; the Family's text is Family-level and stays on the page.
-    "weekly_digest_item": command("digest weekly"),
-    "weekly_digest_manual": command("digest weekly-request"),
-    # A report send's saved copy (#1786): ``report-email copy`` comes with
-    # the Report emails page (delivery plan item 5).
-    "report_email_send": pending("#1786", "report-email copy"),
-    "report_email_send_item": pending("#1786", "report-email copy"),
+    "weekly_digest_item": command("report-email copy"),
+    # Report emails (#1786, delivery plan item 5): the page and its row
+    # actions (Pause, Resume and Delete as one change; Send now), and each
+    # send's saved copy. The editor's New, Edit and Skip this send come
+    # with delivery plan item 6 (``report-email preview``'s skip entry is
+    # already here).
+    "report_emails": command(
+        "report-email list", "report-email show", "report-email sends"
+    ),
+    "report_email_changes": command("report-email preview", "report-email confirm"),
+    "report_email_send_now": command("report-email send-now"),
+    "report_email_send": command("report-email copy"),
+    "report_email_send_item": command("report-email copy"),
     "report_email_send_image": permanent(IMAGES),
-    # The Emailed reports page (NAV-14) lists the retained reports; its
-    # ``?requested=`` is ``digest list --requested``.
-    "emailed_reports": command("digest list"),
     "logs": command("logs list"),
     "logs_export": command("logs export"),
     # System health (ADM-13): the page, its polled fragment (``--watch``)

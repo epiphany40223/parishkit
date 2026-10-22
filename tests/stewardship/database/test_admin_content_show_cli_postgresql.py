@@ -19,7 +19,7 @@ from ..content_factory import content
 from .auth_builders import unguarded
 from .automation_builders import as_staff, paired
 from .test_admin_content_cli_postgresql import draft
-from .test_admin_digest_list_cli_postgresql import revoke
+from .test_admin_report_email_cli_postgresql import revoke
 from .test_admin_test_sample_cli_postgresql import runner
 from .test_content_resave_lists_postgresql import stale_rows
 from .test_content_views_postgresql import added, closing_note, plant, plant_stale

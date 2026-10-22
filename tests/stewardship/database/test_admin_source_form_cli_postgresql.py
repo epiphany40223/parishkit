@@ -22,9 +22,9 @@ from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 from .auth_builders import signed_in
 from .automation_builders import paired
 from .response_builders import response_source
-from .test_admin_digest_list_cli_postgresql import revoke
 from .test_admin_export_cli_postgresql import read_only_session
 from .test_admin_report_cli_postgresql import cli  # noqa: F401
+from .test_admin_report_email_cli_postgresql import revoke
 from .test_admin_test_sample_cli_postgresql import runner
 from .test_source_families_postgresql import prepare, promote
 

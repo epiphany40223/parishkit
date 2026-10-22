@@ -496,14 +496,25 @@ def test_building_the_menu_adds_only_the_open_counts_query(
     browser, _ = signed_in()
     # A report page the role may open now. An Administrator's or Staff
     # member's draft has no Ministry module, so Ministry requests is greyed
-    # out for them (its page shows that reason, #1128) and they read Emailed
-    # reports, which needs no campaign; a leader's draft asks about Ministry
-    # 9, so Ministry requests renders.
-    page = "ministry_report" if role == "ministry_leader" else "emailed_reports"
+    # out for them (its page shows that reason, #1128) and they read Report
+    # emails, or Home with no campaign at all (#1786: the retired page these
+    # read before needed no campaign); a leader's draft asks about Ministry 9, so
+    # Ministry requests renders.
+    page = (
+        "ministry_report"
+        if role == "ministry_leader"
+        else "report_emails"
+        if draft
+        else "index"
+    )
     response, content = read(browser, reverse(f"admin:{page}"))
     assert response.status_code == 200
     assert b'aria-label="Administration"' in content
     before, now = CHROME_QUERIES[(role, draft)]
+    if page == "index":
+        # Home hands the chrome the instant it read in its own snapshot
+        # (``_stewardship_display_now``), so its chrome reads no clock.
+        before, now = before - 1, now - 1
     assert counts == [now + BANNER_QUERIES.get(role, 0)], counts
     allowed = ((role, draft) in OPEN_COUNTS) + ((role, draft) in DOWNLOADED)
     assert now <= before + allowed, counts

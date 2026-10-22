@@ -28,7 +28,7 @@ from parishkit.stewardship.audit.models import AuditContext, AuditEvent, Operati
 
 from .automation_builders import as_staff, paired
 from .campaign_builders import change
-from .test_admin_digest_list_cli_postgresql import revoke
+from .test_admin_report_email_cli_postgresql import revoke
 from .test_admin_test_sample_cli_postgresql import runner
 from .test_backup_key_postgresql import configured, keypair, private_key_text
 from .test_backup_postgresql import recorded

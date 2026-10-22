@@ -32,7 +32,7 @@ from parishkit.stewardship.observability import Event
 from ..policy_factory import address
 from .auth_builders import signed_in
 from .automation_builders import approve_now, paired, start
-from .test_admin_digest_list_cli_postgresql import revoke
+from .test_admin_report_email_cli_postgresql import revoke
 from .test_admin_test_sample_cli_postgresql import runner
 from .test_critical_events_postgresql import critical
 from .test_security_events_postgresql import signed_in_as
