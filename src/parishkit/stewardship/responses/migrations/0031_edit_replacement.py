@@ -27,10 +27,12 @@ FROZEN_SQL = (
 
 class Migration(migrations.Migration):
     dependencies = [
-        # The migration that installs the latest frozen file of the stack
-        # (0160, #1895), this app's previous migration and the stack's one
-        # leaf, so this file applies after every earlier one.
+        # This app's previous migration (0160, #1895).
         ("stewardship_responses", "0030_resubmission_phase_order"),
+        # The migration that installs the previous frozen file (0162, the
+        # report recovery coverage, #1871), so this file applies after
+        # every earlier one.
+        ("stewardship_reports", "0042_report_recovery_coverage"),
     ]
 
     operations = [

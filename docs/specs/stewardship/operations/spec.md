@@ -488,8 +488,20 @@ must end in the same catalog. The rules:
   `CREATE OR REPLACE FUNCTION` copy equals the baseline's definition, and that
   a replaced function exists in the baseline or was created by an earlier
   frozen file (a migration-owned function is replaced freely, as every path
-  runs its migrations). Views and constraints have no such text check; only
-  the upgrade-parity test catches their drift.
+  runs its migrations). It checks a replaced view's latest text against the
+  baseline the same way (see the next rule); constraints have no such text
+  check, and only the upgrade-parity test catches their drift.
+- **A view that comes to name a migration's object keeps its baseline
+  body.** The baseline creates views with their bodies checked, before any
+  migration runs, so a view whose new body names a table or function only a
+  frozen file creates cannot take that body in `schema/*.sql`. It keeps the
+  last body the baseline can install, and the frozen file's
+  `CREATE OR REPLACE VIEW` is its final definition on every install path
+  (fresh installs run the migrations too).
+  `test_schema_migration_files.py` lists each such view by file
+  (`MIGRATION_FINAL_VIEWS`, first used by report emails,
+  [#1786](https://github.com/epiphany40223/parishkit/issues/1786)) and
+  checks every other replaced view's latest text against the baseline.
 - **A replaced function keeps the baseline's attributes.** `CREATE OR
   REPLACE FUNCTION` keeps the owner and grants but resets every attribute
   the command does not name. When the baseline sets one with a separate
@@ -883,6 +895,48 @@ access and links to the access step. The Administrator lists each person's
 address and saves the step again. A domain is never silently dropped, because
 that would quietly remove people's access. A step saved with empty domain
 lists is still read as it is.
+
+### Report email conversion
+
+Report emails replace the Daily and Weekly Admin digests in one release
+([#1786](https://github.com/epiphany40223/parishkit/issues/1786); the
+[report-emails spec](../report-emails/spec.md#migration-of-the-daily-and-weekly-digests)
+says what converts). The release's frozen migration rewrites the shared
+guards and functions; the rows are converted afterwards, offline, by
+`pk-stewardship upgrade-reports` in the `admin-recovery` one-shot profile,
+because the configuration document is in the YAML authority store too. Its
+operator upgrade request (operator `system`, reason "#1786 conversion",
+request schema `operator-upgrade-reports-v12`) installs the converted
+configuration through the installer's journaled path, and its activation
+retypes each digest definition in place. It needs no inputs and does
+nothing once nothing is left to convert, so the scripted upgrade runs it in
+step 4 after the migrations and the grants on every upgrade. Web, workers,
+scheduler and mail dispatch refuse to start while the applied
+configuration still holds a digest.
+
+- **Precheck, before the window.** Schedule the window away from the
+  digests' send times, and run, read-only with the operator login, the
+  migration's three counts: digest occurrences `pending`, `running` or
+  `delivery_unknown`; digest messages not `delivered`,
+  `permanent_failure` or `cancelled`; and digest tasks `queued`,
+  `running`, `retry_wait` or `abandoned`. Resolve any old stuck one
+  (Sent mail, Background work) before the window: any count above zero
+  makes the migration refuse. Also list the digest occurrences that
+  failed without a fulfillment: each digest with one gets one coalesced
+  catch-up report send to its Administrators right after the upgrade. The
+  deployment runbook gives both queries.
+- **If the migration refuses.** Its own changes are rolled back, but the
+  migrations before it in the release are committed, and the previous
+  release refuses a schema newer than its own. So restore the pre-upgrade
+  backup with the previous release, as
+  [production upgrades](#production-upgrades) allow, let the send finish,
+  and upgrade again. The precheck exists to avoid this.
+- **If `upgrade-reports` fails after the migration.** Fail forward: the
+  migrated schema no longer admits digest writes, so the previous release
+  cannot send its digests. Fix the cause and repeat the run, whose
+  conversion step resumes; only a catastrophic failure restores the
+  pre-upgrade backup with the previous release, as
+  [production upgrades](#production-upgrades) allow.
 
 ### Offline bootstrap profile
 
@@ -1869,7 +1923,7 @@ and the slot decision records (skipped and held).
 - **Last full refresh.** The start time of the newest promoted full
   refresh. Only this drives the alarm below, because only a full refresh
   re-reads everything.
-- **Data as of.** What pages, the digest and the command line show: the
+- **Data as of.** What pages, report emails and the command line show: the
   start time of the newest promoted snapshot that could have brought in
   ParishSoft changes, that is the last full refresh, or a later quick update
   that changed at least one record. The change count is the snapshot
@@ -1982,7 +2036,7 @@ scheduled full refresh is 02:00 tomorrow.
 
 - The alarm, the bulk-send hold and the Admin home page's problem line use
   the last full refresh and the out-of-date rule.
-- Home, the refresh page, the ParishSoft page, the daily digest and
+- Home, the refresh page, the ParishSoft page, report emails (their saved copies) and
   the `source` member of `pk-admin status` (see the
   [automation guide](../../../guides/stewardship-admin-automation.md#status))
   show "data as of" and the connection line, and, when the data is out of
@@ -1995,9 +2049,10 @@ scheduled full refresh is 02:00 tomorrow.
 - The settings page no longer refuses a schedule for its gaps: it states the
   longest wait for new data and when the alarm would sound (see
   [cost and freshness summary](../admin-portal/spec.md#cost-and-freshness-summary)).
-- Before Start, go-live readiness still requires a full refresh that
-  started within `source_stale_seconds`, and Start waives only that age
-  because it queues the go-live's own refresh. After Start, the go-live's
+- Before Start, Go live requires a completed full refresh of the
+  current organization and campaign window, of any age: one merely older
+  than `source_stale_seconds` does not block Check or Start, because Start
+  queues the go-live's own refresh. After Start, the go-live's
   checks require the attempt's refresh (or a later full refresh) and expire
   at the attempt's hold end instead; see
   [freshness during a go-live](../admin-portal/spec.md#go-live-page).
@@ -2133,8 +2188,8 @@ Required suites include:
   ordinary compaction, removed generations cannot be partially served, and
   task/audit history plus underlying submissions/protected source inputs are
   unchanged. After protection ends, eligible daily rows are reclaimed;
-- archive/Return tests for required daily and weekly digests not yet due or
-  materialized, explicit audited skips, empty/no-recipient coverage, coalesced
+- archive/Return tests for report email sends due by archive and not yet
+  settled or materialized, report sends still to come, explicit audited skips, empty/no-recipient coverage, coalesced
   replacements, failed and unknown deliveries, and new input racing final
   inventory verification; verify scheduler retries, schedule revisions, and
   unarchive/reopen do not resurrect resolved coverage or suppress newer inputs;
@@ -2309,7 +2364,7 @@ At minimum, end-to-end tests demonstrate:
    Testing/draft, and unlocks structural settings, while an active campaign and
    unresolved provider-submitting/delivery-unknown work cannot be withdrawn.
    Production readiness locks the Campaign timezone snapshot; later Parish
-   timezone changes do not alter its boundaries, schedules, digests, or
+   timezone changes do not alter its boundaries, schedules, report emails, or
    historical report buckets.
 4. Full/delta refresh success, interrupted/invalid load retaining prior truth,
    new/inactive/reactivated Family behavior, and non-overlap/manual coalescing;
@@ -2326,7 +2381,7 @@ At minimum, end-to-end tests demonstrate:
    columns, filters, consistent historical/current participation-chart scopes,
    atomic/pinned CampaignDailyFactSet generation and drift verification, chart
    parity, and CSV/XLSX/PDF/PNG output.
-8. Missed initial/reminder/digest occurrence, per-Family and daily-digest
+8. Missed initial/reminder/digest occurrence, per-Family and report email
    recovery coalescing, worker/broker restart, systemic email failure,
    deduplicated CRITICAL notification, active-campaign delivery pause with
    continued live submission and held receipts, pre-provider race checks,

@@ -68,7 +68,9 @@ entropy, failures do not consume guessable-code counters; ordinary request-
 abuse limits still apply uniformly through the
 [secure-link anti-flood policy](../architecture/spec.md#identity-and-session-security).
 
-An explicit Cancel and sign out action is available throughout. When the form
+An explicit Cancel and sign out action is available throughout: centered in
+the button row of every editing page, and below the flow on Review, where
+Submit takes the row's middle. When the form
 has unsaved answers it first asks the Family to confirm discarding them; it then
 clears client state, revokes the server session, and returns to `/`.
 
@@ -155,7 +157,12 @@ not shown. Browser history cannot resubmit or expose a completed form.
 
 Pages are action-first, because many Families answer on a phone. The Back/Next
 bar (Back to edit/Submit on Review) is sticky at the bottom of the screen, so
-the next action is always one tap away. Parish-written text is always shown in
+the next action is always one tap away. It is the
+[stepper button row](../ui-conventions/spec.md#stepper-button-row): Back at
+the left, Cancel and sign out (Submit on Review) centered, Next at the right,
+on every step including Welcome. On a phone it stays one line, showing
+Back, Cancel and Next (Back and Submit on Review), while each button keeps
+its full name for assistive technology. Parish-written text is always shown in
 full, exactly as the Administrator wrote it, with no "Read more" collapse.
 Occasional field help (phone formats, death-date review, the email opt-out)
 sits behind a small "i" toggletip beside the label, which opens on click, tap,
@@ -249,9 +256,38 @@ When census is enabled, show:
 - structured mailing address plus "same as home"; and
 - "opt out of all parish emails."
 
-Addresses contain line 1, optional line 2, city/locality, region/state,
-postal code, and country. Validation is country-aware and does not require a US
-state/ZIP for international addresses.
+Addresses contain country, line 1, optional line 2, city/locality,
+region/state, and postal code, in that order (#1777). Country comes first and
+defaults to United States, because it decides how the rest of the address is
+asked for:
+
+- **United States.** State is a drop-down of exactly the regions the server
+  accepts: the US states, the District of Columbia, the territories, and the
+  military AA, AE and AP. Each choice shows a readable name with its code, such
+  as "Kentucky (KY)", and submits the code. The postal field is labelled "ZIP
+  code" and takes five digits or ZIP+4.
+- **Any other country.** State is free text labelled "State, province or
+  region", and the postal field is labelled "Postal code". Both are optional
+  and are checked only as bounded single lines.
+
+Changing Country switches these controls in place, without moving the page,
+and loses nothing typed: the region text and the US selection are each kept
+while the other is showing, also after Review and Edit, so switching back
+restores them. Typed region text the drop-down offers, as a code or a name
+("ky", "Ky.", "Kentucky"), carries over to it on switching to United States.
+A US region the list does not offer, such as free text from parish records,
+stays shown and selected rather than being dropped, and its check asks the
+Family to "Choose a state from the list.", as the server's refusal of a US
+region it does not accept says too (#1785). The Admin census address editor
+asks for an address the same way
+([Census changes](../reports/spec.md#automatic-census-review)).
+
+A country on its own never makes an address nonblank: an address whose other
+fields are all empty is still "Not provided", even though Country shows a
+country (United States unless the Family chose another). An address that has
+other parts but no country shows no country selected, and its check asks for
+one. The US rule is the parish's, not ParishSoft's (which stores any text);
+the server and database apply the same checks whatever the browser shows.
 
 The email-opt-out answer becomes a manual census proposal for the parish's
 source systems. It does not alter mail from this campaign. Because reminders go
@@ -442,7 +478,11 @@ authoritative, and the page notes the final payment may differ slightly.
 Review shows the financial answer as "Your *year* pledge: *amount*", followed in
 parentheses by the payment amount under the same exact-or-approximate rule, and,
 for a positive pledge, "This pledge starts on **start date**" ("began on" once
-the period has started) with the date in bold. It does not
+the period has started) with the date in bold. The *year* names the
+upcoming financial period ("2027", or "2027–2028" for a period that spans two
+years), never the campaign's Stewardship year label, so it always agrees with
+the start date; the giving history's "towards your *year* pledge" names the
+comparison period the same way. It does not
 repeat the giving history, and neither Review nor its default text adds a
 "nothing is sent until Submit" prompt.
 

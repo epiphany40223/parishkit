@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta
 
 from .domain import UTCInterval
-from .schedule_evaluation import SchedulePlan
+from .schedule_evaluation import ReportPlan, SchedulePlan
 
 PREVIEW_LIFETIME = timedelta(minutes=5)
 
@@ -32,7 +32,8 @@ def confirmation_deadline(*, observed_at, source_expires_at, interval, plans):
     if deadline <= observed_at:
         raise ValueError("Confirmation readiness is already expired.")
     for plan in plans:
-        if not isinstance(plan, SchedulePlan):
+        # A report email's sends are a ReportPlan (#1786), which pages the same.
+        if not isinstance(plan, (SchedulePlan, ReportPlan)):
             raise TypeError("Confirmation preview requires canonical schedules.")
         cursor = None
         while True:

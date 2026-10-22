@@ -28,12 +28,16 @@ from .delivery_forecast import next_due
 from .sessions import sign_in_instant
 
 SALT = "stewardship-delivery-control-v1"
-RESOLVABLE_TYPES = frozenset({"receipt", "daily_digest", "weekly_digest"})
+RESOLVABLE_TYPES = frozenset(
+    {"receipt", "daily_digest", "weekly_digest", "admin_report"}
+)
 # The Resolve held messages form's names for them, in its display order.
 RESOLVABLE_LABELS = {
     "receipt": _("Submission receipts"),
     "daily_digest": _("Daily Admin reports"),
     "weekly_digest": _("Weekly Admin reports"),
+    # Report emails (#1786) replaced the two digests.
+    "admin_report": _("Report emails"),
 }
 # The preview panels' cautions and a resolution's coverage labels. The page
 # draws them and ``pk-admin send confirm`` prints them at its prompt (#463),

@@ -1,4 +1,4 @@
-"""Go-live readiness and System health list content to re-save (#838)."""
+"""Go live's Check step and System health list content to re-save (#838)."""
 
 # ruff: noqa: F811 -- imported pytest fixtures are injected by name.
 

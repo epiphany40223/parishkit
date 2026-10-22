@@ -213,6 +213,11 @@ RETURNS SETOF uuid LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_t
     JOIN public.stewardship_weekly_digest_snapshot s ON s.preparation_id=p.id
     JOIN public.stewardship_weekly_digest_recipient recipient ON recipient.snapshot_id=s.id
     WHERE p.definition_id=$1 AND p.revision_id=$2
+    UNION
+    SELECT recipient.outbox_id FROM public.stewardship_report_email_preparation p
+    JOIN public.stewardship_report_email_snapshot s ON s.preparation_id=p.id
+    JOIN public.stewardship_report_email_recipient recipient ON recipient.snapshot_id=s.id
+    WHERE p.definition_id=$1 AND p.revision_id=$2 AND recipient.outbox_id IS NOT NULL
 $$;
 CREATE FUNCTION public.stewardship_schedule_task_roots_v1(definition uuid,revision uuid)
 RETURNS SETOF uuid LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
@@ -231,6 +236,11 @@ RETURNS SETOF uuid LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_t
     UNION SELECT t.root_id FROM public.stewardship_task_run t
     JOIN public.stewardship_weekly_digest_preparation p ON p.id=t.domain_request_id
     WHERE t.task_type='weekly_digest_finalize' AND p.definition_id=$1 AND p.revision_id=$2
+    UNION SELECT p.task_id FROM public.stewardship_report_email_preparation p
+    WHERE p.definition_id=$1 AND p.revision_id=$2
+    UNION SELECT t.root_id FROM public.stewardship_task_run t
+    JOIN public.stewardship_report_email_preparation p ON p.id=t.domain_request_id
+    WHERE t.task_type='report_email_finalize' AND p.definition_id=$1 AND p.revision_id=$2
 $$;
 REVOKE ALL ON FUNCTION public.stewardship_schedule_message_ids_v1(uuid,uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.stewardship_schedule_task_roots_v1(uuid,uuid) FROM PUBLIC;

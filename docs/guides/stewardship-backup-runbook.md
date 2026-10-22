@@ -104,8 +104,9 @@ the Administrator proves they hold it:
    It prints one JSON line with the `code` and the key's
    `recipient_fingerprint`; a key that is not the pasted key's pair is
    refused.
-4. Type the code on the page, review the old and new fingerprints and
-   confirm. The change is applied like any other settings change.
+4. Type the code on the page and select **Check code and continue**. Check
+   the old and new fingerprints in the dialog and select **Apply**. The
+   change is applied like any other settings change.
 
 The next backup seals to the new key and prints `"recipient_source":
 "configured"`; the `backup_data` file is no longer used, and the key cannot

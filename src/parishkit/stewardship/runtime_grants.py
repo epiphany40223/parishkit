@@ -325,6 +325,11 @@ AUTOMATION_REQUEST_FUNCTION = (
 # The credential installers whose secret requests an automation session may
 # make (key replacement); the other targets have no such request.
 AUTOMATION_SECRET_TARGETS = frozenset({"parishsoft", "google_workspace", "slack"})
+# What still holds the report email conversion back (0161, #1786): the
+# schedule activation trigger asks it only while converting the digests,
+# which the offline admin-recovery login's ``upgrade-reports`` does; counts
+# only.
+DIGEST_WORK_FUNCTION = "stewardship_digest_work_open_v1()"
 # The general worker's export recovery counts a task's read-guard stops
 # (#386, L3) without reading the operational log's context.
 READ_GUARD_KILLS_FUNCTION = "stewardship_read_guard_kills_v1(uuid)"
@@ -398,6 +403,15 @@ ADDRESS_RETRIES_FUNCTION = "stewardship_delivery_address_retries_v1(uuid, uuid)"
 # renderings that hold them.
 ADDRESS_DELIVERIES_FUNCTION = "stewardship_delivery_ids_for_address_v1(text, uuid)"
 PAGE_RECIPIENTS_FUNCTION = "stewardship_delivery_page_recipients_v1(uuid[], uuid)"
+# The ParishSoft Member name of each of a page's emails to people (0145,
+# #1562), for the same caller: one name per email, never an address.
+PAGE_MEMBER_NAMES_FUNCTION = "stewardship_delivery_page_member_names_v1(uuid[], uuid)"
+# The person identity reads (#1867), for an Administrator only: the
+# ParishSoft Families and Members whose contacts hold one address, and the
+# user record ids whose address is a contact of one Family or its Members;
+# identifiers only, without any grant on the contact records.
+ADDRESS_PEOPLE_FUNCTION = "stewardship_address_people_v1(text, uuid)"
+FAMILY_USERS_FUNCTION = "stewardship_family_users_v1(bigint, uuid)"
 # An Administrator's report that a delivered email bounced at one address
 # (#806 slice 4): the report's only writer, so web keeps SELECT only on the
 # refusal table; the definer and the refusal guard admit it only from web.
@@ -564,6 +578,16 @@ CLOSURE_FUNCTIONS = {
     LEADER_EMAILS_FUNCTION: ("stewardship_jobs", "0035_leader_emails"),
     # The pledges a refresh re-evaluates (0135, provisional, #1747).
     PLEDGE_REFRESH_ITEMS_FUNCTION: ("stewardship_reports", "0034_pledge_conflicts"),
+    # Sent mail's Member names (0145, #1562).
+    PAGE_MEMBER_NAMES_FUNCTION: ("stewardship_jobs", "0036_page_member_names"),
+    # The person identity reads (0157, #1867).
+    **dict.fromkeys(
+        (ADDRESS_PEOPLE_FUNCTION, FAMILY_USERS_FUNCTION),
+        ("stewardship_accounts", "0031_person_identity_reads"),
+    ),
+    # The report conversion's open digest work check (0161,
+    # #1786), which the admin-recovery login's offline conversion asks.
+    DIGEST_WORK_FUNCTION: ("stewardship_reports", "0041_report_conversion"),
 }
 
 
@@ -700,6 +724,19 @@ CLOSURE_TABLES = {
         "stewardship_responses",
         "0021_added_member_links",
     ),
+    # The report email pipeline (0156, #1786): web records
+    # Send now requests, the scheduler allocates preparations, the worker
+    # captures and fans them out, and mail dispatch reads the snapshots.
+    **dict.fromkeys(
+        (
+            "stewardship_report_email_manual_request",
+            "stewardship_report_email_preparation",
+            "stewardship_report_email_snapshot",
+            "stewardship_report_email_recipient",
+            "stewardship_report_email_completion_ready",
+        ),
+        ("stewardship_reports", "0040_report_pipeline"),
+    ),
 }
 
 
@@ -831,7 +868,8 @@ def runtime_functions(role, *, target=None):
     opens that follow-up and reads its link token. Web records an
     Administrator's report that a delivered email bounced (#806 slice 4),
     and, for an Administrator, reads the emails meant for one address and
-    the addresses of a Sent mail page's reports and notices (#1562).
+    the addresses of a Sent mail page's reports and notices (#1562), and
+    the Families an address belongs to and a Family's users (#1867).
     The general worker asks whether a publication plan's or outcome's audit
     event is recorded (#528), since it cannot read audit rows itself, and
     which added Member links a promoted snapshot supports (#1670).
@@ -839,7 +877,9 @@ def runtime_functions(role, *, target=None):
     owner-run batch that rechecks each export has ended.
     Every login a running service or an operator command uses reads whether
     the debug-off switch is set (#530); the offline admin-recovery login
-    also clears it (``pk-stewardship debug-off-clear``). The backup login
+    also clears it (``pk-stewardship debug-off-clear``), and its
+    ``upgrade-reports`` asks whether digest work still holds the report
+    email conversion back (#1786). The backup login
     reads the table through pg_read_all_data instead: its admission refuses
     any definer grant.
     """
@@ -870,6 +910,9 @@ def runtime_functions(role, *, target=None):
                 BOUNCE_REPORT_FUNCTION,
                 ADDRESS_DELIVERIES_FUNCTION,
                 PAGE_RECIPIENTS_FUNCTION,
+                PAGE_MEMBER_NAMES_FUNCTION,
+                ADDRESS_PEOPLE_FUNCTION,
+                FAMILY_USERS_FUNCTION,
                 DEBUG_OFF_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {
@@ -901,6 +944,7 @@ def runtime_functions(role, *, target=None):
             },
             "download": {LEADER_SCOPE_FUNCTION},
             ServiceRole.ADMIN_RECOVERY: {
+                DIGEST_WORK_FUNCTION,
                 PORTAL_IDENTITIES_FUNCTION,
                 MEMBER_NAMES_FUNCTION,
                 DEBUG_OFF_FUNCTION,
@@ -1242,6 +1286,9 @@ def runtime_grants(role, *, target=None):
         from .jobs.leader_email_grants import add_leader_email_web_grants
 
         add_leader_email_web_grants(tables, columns)
+        from .reports.report_email_grants import add_report_email_web_grants
+
+        add_report_email_web_grants(tables, columns)
         from .reports.archive_grants import add_archive_web_grants
 
         add_archive_web_grants(tables, columns)

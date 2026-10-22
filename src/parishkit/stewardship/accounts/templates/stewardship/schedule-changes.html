@@ -9,14 +9,17 @@ times.
 Drawn by the review dialog of New and Edit scheduled email and of the
 date-change review (schedule-review.html, #750, headings from level 3 under
 the dialog's title). ``level`` is the level of each section's heading, ``sublevel`` that of
-the headings inside a section.
-{% endcomment %}<p class="notice">{% translate "Email already sent cannot be recalled." %}</p>
+the headings inside a section. The notice that sent email cannot be
+recalled shows only when a changed schedule has already sent (``delivered``,
+build_preview's sum of the changes' sent email); a change to schedules that
+have sent nothing yet has nothing to recall.
+{% endcomment %}{% if delivered %}<p class="notice">{% translate "Email already sent cannot be recalled." %}</p>{% endif %}
 {% if window_changes %}<section class="panel"><h{{ level }}>{% translate "Campaign window" %}</h{{ level }}><p>{% translate "Current:" %} {{ before_window.start_date|parish_date }} – {{ before_window.end_date|parish_date }} ({{ before_window.timezone }})</p><p>{% translate "Proposed:" %} {{ after_window.start_date|parish_date }} – {{ after_window.end_date|parish_date }} ({{ after_window.timezone }})</p></section>{% endif %}
 {% if 'financial' in window_changes %}<section class="panel"><h{{ level }}>{% translate "Financial overlap acknowledgment" %}</h{{ level }}><p>{% translate "Current:" %} {{ before_window.financial.overlap_confirmed|yesno }}</p><p>{% translate "Proposed:" %} {{ after_window.financial.overlap_confirmed|yesno }}</p></section>{% endif %}
 {% for change in changes %}<section class="panel"><h{{ level }}>{{ change.label }} — {{ change.operation|capfirst }}</h{{ level }}>
 <h{{ sublevel }}>{% translate "Current schedule" %}</h{{ sublevel }}>{% include 'stewardship/schedule-summary.html' with value=change.before %}
 <h{{ sublevel }}>{% translate "Proposed schedule" %}</h{{ sublevel }}>{% include 'stewardship/schedule-summary.html' with value=change.after %}
-{% if change.dropped_skips %}<p>{% translate "These skipped sends are no longer sends of the digest after this change, so they are no longer skipped (shown in your computer's time zone):" %}</p><ul>{% for send in change.dropped_skips %}<li><time datetime="{{ send.due_at }}" data-local-instant>{{ send.due_at }}</time></li>{% endfor %}</ul>{% endif %}
+{% if change.dropped_skips %}<p>{% translate "These skipped sends are no longer sends of the report after this change, so they are no longer skipped (shown in your computer's time zone):" %}</p><ul>{% for send in change.dropped_skips %}<li><time datetime="{{ send.due_at }}" data-local-instant>{{ send.due_at }}</time></li>{% endfor %}</ul>{% endif %}
 <dl><dt>{% translate "Emails already sent by this schedule" %}</dt><dd>{{ change.impact.delivered|default:0|number }}</dd><dt>{% translate "Planned sends not started yet (will be replaced)" %}</dt><dd>{{ change.impact.cancellable|default:0|number }}</dd><dt>{% translate "Sends that failed" %}</dt><dd>{{ change.impact.failed|default:0|number }}</dd><dt>{% translate "Sends in progress or with an uncertain result (these block the change)" %}</dt><dd>{{ change.impact.blocking|default:0|number }}</dd><dt>{% translate "Send times planned so far" %}</dt><dd>{{ change.impact.occurrences|default:0|number }}</dd><dt>{% translate "Individual messages created so far" %}</dt><dd>{{ change.impact.outboxes|default:0|number }}</dd></dl>
 </section>{% endfor %}
 {% if blocking %}<p class="notice notice-error" role="alert">{% url 'admin:deliveries' as outgoing_url %}{% blocktranslate %}Email from these schedules is being sent right now, or has an uncertain result. Wait for it to finish, or resolve it on <a href="{{ outgoing_url }}">Sent mail</a>, then preview again. Sends blocking the change:{% endblocktranslate %} {{ blocking|number }}</p>{% endif %}

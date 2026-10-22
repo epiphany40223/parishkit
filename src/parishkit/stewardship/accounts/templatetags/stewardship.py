@@ -10,7 +10,7 @@ from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _
 from django.utils.translation import ngettext
 
-from parishkit.stewardship.accounts import admin_navigation
+from parishkit.stewardship.accounts import admin_navigation, google_account_help, stages
 from parishkit.stewardship.campaigns import single_campaign
 from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAME
 from parishkit.stewardship.source.source_status import source_status_label
@@ -66,6 +66,15 @@ def reminder_workgroup_name():
     Templates take it from its one source, so renaming it is one line.
     """
     return _(REMINDER_WORKGROUP_NAME)
+
+
+@register.simple_tag
+def stage_queued():
+    """The Start the load box's waiting sentence (``stages.QUEUED``, #1916).
+
+    Templates take it from its one source, so every page says it alike.
+    """
+    return str(stages.QUEUED)
 
 
 @register.simple_tag
@@ -375,7 +384,14 @@ def applied_filters(query, ignore=()):
     actionable requests" is the page's normal list, so it does not count).
     Sort, page, zone and mode are left out (``NOT_FILTERS``), as is any field
     named in ``ignore``: one another choice currently overrides.
+
+    As a template filter, ``ignore`` is one comma-separated string
+    (``query|applied_filters:"reach,responses"``); it is split into names so
+    a field is matched whole, never as a substring ("response" is not
+    ignored by "responses").
     """
+    if isinstance(ignore, str):
+        ignore = tuple(ignore.split(","))
     return sum(
         getattr(query, name) != field.default
         for name, field in query.__dataclass_fields__.items()
@@ -603,6 +619,7 @@ def table_actions(
     field="id",
     verb="delete",
     confirm_name=None,
+    caution=False,
 ):
     """One row's Actions cell in an action table (#879).
 
@@ -617,6 +634,9 @@ def table_actions(
     ``confirm_name`` is what the dialog's title and announcement call the
     row, when that needs more than ``name``
     (Users: the address with its Name and role); it defaults to ``name``.
+    ``caution`` marks the row's action ``data-confirm-caution``, for a
+    dialog whose caution is said only for marked rows (confirm-dialog.html
+    caution_marked; a scheduled email that has sent, R40b).
     Leave out an action the row does not offer; a row with none gets an
     empty cell.
     """
@@ -633,6 +653,7 @@ def table_actions(
         "verb": verb,
         "icon": TABLE_ACTION_VERBS[verb],
         "confirm_name": confirm_name or name,
+        "caution": bool(caution),
     }
 
 
@@ -644,6 +665,18 @@ def multi_campaign_control(control_id, label):
     shows the same tip, defined once in ``campaigns.single_campaign``.
     """
     return {"control_id": control_id, "label": label, "tip": single_campaign.TIP}
+
+
+@register.inclusion_tag(
+    "stewardship/components/google-account-help.html", name="google_account_help"
+)
+def google_account_guidance():
+    """The one Google Account guidance for a non-Gmail address (#1593).
+
+    The wording lives in ``accounts.google_account_help``, so every page that
+    shows it (and a later leader email, #1592) says exactly the same thing.
+    """
+    return google_account_help.context()
 
 
 @register.inclusion_tag("stewardship/components/menu-link.html", takes_context=True)

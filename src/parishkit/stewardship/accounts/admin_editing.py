@@ -36,7 +36,6 @@ from parishkit.stewardship.web.contracts import (
     validation_response,
 )
 from parishkit.stewardship.web.refusals import (
-    AccessDenied,
     UserFacingDenied,
     UserFacingGone,
     UserFacingUnavailable,
@@ -56,6 +55,7 @@ from .configuration_request_reads import receipt as configuration_receipt
 from .configuration_requests import record_request
 from .policy import Capability, allows
 from .request_models import ConfigurationChangeRequest
+from .role_refusal import role_denied
 from .sessions import authenticated_admin, sign_in_instant
 
 
@@ -80,7 +80,9 @@ def principal(
         # rather than implying the signed-in account lacks a capability.
         raise signed_out()
     if not allows(value, capability):
-        raise AccessDenied(f"This page requires the {capability} capability.")
+        # A current session without the role: say the role is the reason,
+        # not the session (#1924).
+        raise role_denied(capability)
     return value
 
 
@@ -174,6 +176,12 @@ def sign_preview(
     still ahead at review; confirmation refuses once any has passed
     (``refuse_passed_sends``, #1464). A preview without any carries no key.
     """
+    from .report_rows import translate
+
+    # A schedule editor's change to a converted report (#1786) is recorded
+    # in the report's own values; no other change needs the document.
+    if any(item.get("section") == "schedules" for item in patch):
+        patch = translate(configuration.active_configuration.canonical_document, patch)
     intent = {
         "actor": str(actor.identity),
         "key": str(key or uuid4()),

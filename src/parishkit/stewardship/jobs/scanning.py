@@ -7,7 +7,7 @@ the cursor so a large held prefix cannot permanently starve later eligible work.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from time import monotonic
 from uuid import UUID
 
@@ -55,6 +55,19 @@ class ExecutionHint:
 # hint still waiting deep in a backed-up queue is replaced before it expires.
 RECENT_HINT_SECONDS = 45
 
+# The newest-due scan (#1921) looks at no more than this many rows a loop.
+NEWEST_DUE_ROWS = 10
+# How far before the previous newest-due scan its window starts. A new row's
+# not_before is its transaction's start (the column's database default), so a
+# request that waited for a lock commits after a scan that could not see it
+# yet; this overlap still catches it on the next loop.
+NEWEST_DUE_SLACK = timedelta(seconds=60)
+
+# The farthest back the window may reach beyond the slack. ``since`` stays
+# put while newest-due scans fail, so without this a long run of failures
+# would widen the window (and the seen-row record) without bound.
+NEWEST_DUE_MAX_LOOKBACK = timedelta(minutes=5)
+
 
 @dataclass
 class RecentHints:
@@ -93,6 +106,15 @@ class RecentHints:
     per_page: int = 2
     # task type -> bulk rows admitted in the current page.
     counts: dict = field(default_factory=dict)
+    # The newest-due scan (#1921). run_id -> (not_before, version) of each
+    # row it has looked at, which later newest-due scans pass over while the
+    # row is inside the window and unchanged; a row whose not_before or
+    # version differs (it failed and is retrying, say) is looked at again.
+    # The fair sweep still reaches every one.
+    newest_seen: dict = field(default_factory=dict)
+    # run_id -> row version of each row the newest-due scan checked for
+    # admission in this loop, which this loop's sweep scans then skip.
+    newest_checked: dict = field(default_factory=dict)
 
     def fresh(self, row, *, bulk=False):
         """Whether this unchanged row was published within the window.
@@ -204,6 +226,99 @@ def collect_hints(*, handlers, cursor=None, limit=100, health=None, recent=None)
             )
         page = list(rows.order_by("not_before", "id")[:limit])
         bulk = _bulk_rows(page, recent.drained) if recent is not None else set()
+    hints = _admit_page(
+        page, now=now, handlers=handlers, bulk=bulk, health=health, recent=recent
+    )
+    position = (
+        ScanCursor(page[-1].not_before, page[-1].pk) if len(page) == limit else None
+    )
+    return hints, position
+
+
+def collect_newest_hints(*, handlers, recent, since=None, limit=NEWEST_DUE_ROWS):
+    """Admit the newest few rows that fell due since the last loop (#1921).
+
+    The fair sweep pages due rows oldest first, so a row that fell due just
+    now (a requested refresh, load or export) waits until the sweep reaches
+    it, behind every due row the scheduler keeps refusing (a paused send's
+    messages, say). This scan runs on every loop and looks at no more than
+    ``limit`` queued or retry-waiting rows whose ``not_before`` lies after
+    ``since`` minus NEWEST_DUE_SLACK, newest first, skipping the rows an
+    earlier newest-due scan already looked at and that have not changed
+    since. ``since`` is the clock that scan returned; None (the first loop)
+    means now. It is never taken to be more than NEWEST_DUE_MAX_LOOKBACK
+    before now, however long scans have been failing.
+
+    Each row goes through exactly the sweep's admission (_admit_page): the
+    handler's scope and row lock, one transaction per row, and RecentHints.
+    It keeps no cursor and records no due-work health; the fair sweep still
+    pages every due row in order. Returns the hints and this scan's clock.
+    """
+    if connection.in_atomic_block:
+        raise StorageInvariantError("Scheduler scanning must own its transactions.")
+    if not isinstance(recent, RecentHints):
+        raise ValueError("The newest-due scan requires the scheduler's hint memory.")
+    if type(limit) is not int or not 1 <= limit <= 100:
+        raise ValueError("Scheduler hint pages must be bounded.")
+    handlers = dict(handlers)
+    if any(not isinstance(handler, Handler) for handler in handlers.values()):
+        raise ValueError("Scheduler requires the internal handler registry.")
+    recent.start_page()
+    recent.newest_checked.clear()
+    with transaction.atomic():
+        now = database_now()
+        start = (
+            now
+            if since is None
+            else max(min(since, now), now - NEWEST_DUE_MAX_LOOKBACK)
+        )
+        cutoff = start - NEWEST_DUE_SLACK
+        recent.newest_seen = {
+            key: seen for key, seen in recent.newest_seen.items() if seen[0] > cutoff
+        }
+        # Over-read by the number of remembered rows, since any of them may
+        # still be unchanged and so be passed over below.
+        rows = newest_due_rows(handlers, cutoff=cutoff, now=now)[
+            : limit + len(recent.newest_seen)
+        ]
+        page = [
+            row
+            for row in rows
+            if recent.newest_seen.get(row.pk) != (row.not_before, row.version)
+        ][:limit]
+        bulk = _bulk_rows(page, recent.drained)
+    for row in page:
+        recent.newest_seen[row.pk] = (row.not_before, row.version)
+    hints = _admit_page(
+        page, now=now, handlers=handlers, bulk=bulk, recent=recent, newest=True
+    )
+    return hints, now
+
+
+def newest_due_rows(handlers, *, cutoff, now):
+    """Queued or retry-waiting rows that fell due after ``cutoff``, newest first.
+
+    A range of the task_due (state, not_before) index, so only the rows that
+    fell due inside the window are read, however many older due rows the
+    fair sweep has to page through; no other index is needed.
+    """
+    return TaskRun.objects.filter(
+        task_type__in=handlers,
+        state__in=("queued", "retry_wait"),
+        not_before__gt=cutoff,
+        not_before__lte=now,
+    ).order_by("-not_before", "-id")
+
+
+def _admit_page(page, *, now, handlers, bulk, health=None, recent=None, newest=False):
+    """Admit each selected row under its handler's locks; return its hints.
+
+    One transaction per row, under the handler's scope (for most tasks the
+    global work-order lock) and the row's lock, rechecking that it is due.
+    ``newest`` marks the newest-due scan, which notes each row it checks in
+    ``recent.newest_checked``; a sweep page skips such a row if it has not
+    changed, so no row is checked twice in one loop.
+    """
     hints = []
     for candidate in page:
         if recent is not None and recent.fresh(candidate, bulk=candidate.pk in bulk):
@@ -213,6 +328,22 @@ def collect_hints(*, handlers, cursor=None, limit=100, health=None, recent=None)
             # 4). Its lateness uses this page's clock and row.
             if health is not None:
                 health.admitted(candidate, now)
+            continue
+        if newest:
+            recent.newest_checked[candidate.pk] = candidate.version
+        elif (
+            recent is not None
+            and recent.newest_checked.get(candidate.pk) == candidate.version
+        ):
+            # This loop's newest-due scan checked the unchanged row already
+            # and did not publish it (refused, or its publication failed),
+            # which the health proof counts as unknown, as a refusal here
+            # would be. Forgetting it lets the next newest-due scan check it
+            # again, so a gate that cleared during this loop delays it by one
+            # loop, not one sweep.
+            recent.newest_seen.pop(candidate.pk, None)
+            if health is not None:
+                health.unknown()
             continue
         handler = handlers[candidate.task_type]
         try:
@@ -251,7 +382,4 @@ def collect_hints(*, handlers, cursor=None, limit=100, health=None, recent=None)
             emit_failure(error)
             if health is not None:
                 health.unknown()
-    position = (
-        ScanCursor(page[-1].not_before, page[-1].pk) if len(page) == limit else None
-    )
-    return tuple(hints), position
+    return tuple(hints)

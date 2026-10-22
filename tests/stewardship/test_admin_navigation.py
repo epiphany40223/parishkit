@@ -219,6 +219,37 @@ def test_exact_page_entry_is_marked_as_the_current_page():
     ]
 
 
+def test_a_step_of_a_guided_page_marks_that_page_and_never_repeats_it():
+    """Go live's Prepare step is the Go live page: same name, its menu entry
+    is aria-current="page", and the trail names Go live once (``step_of``)."""
+    match = SimpleNamespace(url_name="go_live_prepare", namespace="admin", kwargs={})
+    sections, trail = navigation.build(match, _items())
+    marked = [
+        (item["name"], item["current"])
+        for section in sections
+        for item in section["items"]
+        if item["current"]
+    ]
+    assert marked == [("go_live", "page")]
+    assert [section["key"] for section in sections if section["current"]] == [
+        "campaign"
+    ]
+    labels = [str(crumb["label"]) for crumb in trail]
+    assert labels == [
+        str(navigation.PAGES["index"].label),
+        str(navigation.SECTION_LABELS["campaign"]),
+        "Go live",
+    ]
+    assert (
+        navigation.PAGES["go_live_prepare"].label == navigation.PAGES["go_live"].label
+    )
+    html = render_to_string(
+        "stewardship/admin-breadcrumbs.html", {"admin_chrome": {"breadcrumbs": trail}}
+    )
+    assert html.count("Go live") == 1
+    assert html.count('aria-current="page"') == 1
+
+
 def test_retained_content_trail_avoids_the_current_campaign_editor():
     """Historical content links back through Campaign settings, not the editor."""
     assert navigation._chain("content_history_revision") == [
@@ -454,20 +485,14 @@ def test_change_origins_need_a_session():
     assert navigation.change_origin(request, uuid4()) is None
 
 
-def test_go_live_steps_run_from_readiness_to_activation():
-    """Going live shows its five steps; earlier ones are done, none are links."""
-    shown = navigation.steps(navigation.Placement(flow="go_live", step="links"))
-    assert [item["state"] for item in shown] == [
-        "done",
-        "done",
-        "current",
-        "upcoming",
-        "upcoming",
-    ]
-    html = render_to_string(
-        "stewardship/admin-flow-steps.html", {"admin_chrome": {"flow_steps": shown}}
-    )
-    assert "<a " not in html and html.count("<li") == 5
+def test_going_live_draws_only_its_own_step_bar():
+    """Going live has no numbered flow list: every Go live step, Production
+    activation included (#1585 slice 5), draws the Go live step bar instead,
+    whose last step is Activation."""
+    from parishkit.stewardship.accounts.go_live_check import STEPS
+
+    assert "go_live" not in navigation.FLOWS
+    assert [str(label) for _key, label in STEPS][-1] == "Activation"
 
 
 @pytest.mark.parametrize("offered", [True, False])
@@ -502,8 +527,8 @@ def test_an_error_page_shows_no_step_or_placed_trail():
     from parishkit.stewardship.web.error_pages import ERROR_PAGE_ATTRIBUTE
 
     request = SimpleNamespace()
-    navigation.place(request, flow="go_live", step="confirm")
-    assert navigation.placement(request).step == "confirm"
+    navigation.place(request, flow="export", step="prepare")
+    assert navigation.placement(request).step == "prepare"
     setattr(request, ERROR_PAGE_ATTRIBUTE, True)
     assert navigation.placement(request) is None
 
@@ -578,7 +603,7 @@ SPEC_ORDER = [
     "production_progress",
     # Mail and Family portal
     "delivery_control",
-    "family_email_progress",
+    "mail_queue",
     "family_email_sends",
     "deliveries",
     "family_portal",
@@ -667,7 +692,6 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
         "go_live",
         "production_progress",
         "delivery_control",
-        "family_email_progress",
         "family_email_sends",
         "response_dashboard",
         "campaign_comparison",
@@ -694,16 +718,14 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
             "draft",
             "testing",
             "production_progress",
-            "Production has not been confirmed for this campaign; "
-            "start at Go-live readiness",
+            "Production has not been confirmed for this campaign; start at Go live",
         ),
         # Production mode set without a confirmation: the draft never went live.
         (
             "draft",
             "production",
             "production_progress",
-            "Production has not been confirmed for this campaign; "
-            "start at Go-live readiness",
+            "Production has not been confirmed for this campaign; start at Go live",
         ),
         (
             "active",
@@ -835,7 +857,7 @@ def test_way_forward_links_only_entries_the_viewer_is_offered():
     assert str(greyed.refusal().refusal.link_label) == "Go to Campaign settings"
     draft = _menu("administrator", CAMPAIGNS["draft"], "testing")
     assert navigation.greyed_entry("delivery_control", draft).forward == (
-        "Go-live readiness",
+        "Go live",
         reverse("admin:go_live"),
     )
     live = _menu("administrator", CAMPAIGNS["active"], "production")

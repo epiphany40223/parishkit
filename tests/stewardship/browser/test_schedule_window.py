@@ -152,10 +152,11 @@ def test_new_refuses_a_date_outside_the_campaign_at_the_field(page, component_or
     available(button)
     assert button.get_attribute("data-window-gated") is None
     assert top(time) == below
-    # A digest has no send date to judge: choosing one clears the refusal.
+    # No mail type, no send date to judge: clearing the type clears the
+    # refusal. (New offers no digest any more, #1786.)
     time.fill("10 PM")
     visible(line)
-    page.locator('[name="schedule-kind"]').select_option("daily_digest")
+    page.locator('[name="schedule-kind"]').select_option("")
     hidden(line)
     assert button.get_attribute("data-window-gated") is None
     assert not failures

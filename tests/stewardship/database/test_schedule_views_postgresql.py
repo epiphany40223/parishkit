@@ -12,6 +12,7 @@ from django.db import connection
 
 from parishkit.stewardship.accounts import schedule_views
 from parishkit.stewardship.accounts.policy_models import PortalUser
+from parishkit.stewardship.accounts.report_rows import view_rows
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.accounts.schedule_forms import schedule_order
 from parishkit.stewardship.campaigns.models import Campaign, ScheduleDefinition
@@ -29,10 +30,10 @@ from .campaign_builders import (
     claimed_task,
     occurrence,
 )
+from .report_builders import add_digest
 from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
 from .test_campaign_views_postgresql import apply, post
-from .test_digest_schedule_planning_postgresql import add_digest
 from .test_parish_views_postgresql import token
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -61,14 +62,18 @@ def fields(store, campaign, *, editable=True):
     The page lists saved schedules in sending order (#448), and a browser
     posts its rows in that order, so the test does the same. Send times are
     the browser's (#558); this browser is in the campaign's own zone, so the
-    saved campaign-local values are also what the page shows.
+    saved campaign-local values are also what the page shows. A converted
+    report is posted as the digest row the page draws for it
+    (``report_rows.view_rows``, #1786).
     """
     document = store.active().document()
     rows = sorted(
-        (
-            row
-            for row in document["sections"].get("schedules", [])
-            if row["values"]["campaign_id"] == str(campaign.pk)
+        view_rows(
+            [
+                row
+                for row in document["sections"].get("schedules", [])
+                if row["values"]["campaign_id"] == str(campaign.pk)
+            ]
         ),
         key=schedule_order,
     )
@@ -192,7 +197,14 @@ def test_preview_resolves_applied_and_proposed_times_in_their_own_campaign_zones
     assert b"America/New_York" in response.content
     assert b"America/Los_Angeles" in response.content
     assert b"data-local-instant" in response.content
-    assert b"not a list of who will receive it" in response.content
+    # The shared schedule preview (#1129): the posted browser zone groups
+    # each side's sends by day, so each time is written alone after its
+    # day; the always-on sentences are gone (no send here is on a
+    # daylight-saving day).
+    assert b"data-time-only" in response.content
+    assert b"Thursday, October 1, 2054, <time" in response.content
+    assert b"not a list of who will receive it" not in response.content
+    assert b"When clocks change" not in response.content
     # Merely inspecting candidate instants cannot allocate or apply anything.
     assert ConfigurationChangeRequest.objects.count() == requests_before
     campaign.refresh_from_db()
@@ -220,23 +232,17 @@ def test_daily_preview_is_bounded_and_labels_reported_days(auth_service, google)
     """Recurring mail uses the same bounded evaluator as the future work planner."""
     store = auth_service.store
     campaign, path = setup(store)
-    digest = schedule(str(campaign.pk), kind="daily_digest", date=None, time="00:15:00")
-    assert (
-        change(
-            store,
-            store.active(),
-            uuid4(),
-            [{"operation": "add", "section": "schedules", **digest}],
-        ).state
-        == "applied"
-    )
+    add_digest(store, campaign)
     browser, _ = signed_in()
     data, indexes = fields(store, campaign)
     data[f"schedules-{indexes['daily_digest']}-time"] = "00:30:00"
     response = post(browser, path, data)
     assert response.status_code == 200
-    assert b"Only the first five dates are shown" in response.content
-    assert b"campaign day the digest reports on" in response.content
+    assert b"Only the next 5 sends are shown" in response.content
+    # Each line names the campaign day it reports on, which replaces the
+    # general sentence about digest dates (#1129).
+    assert b"Daily Admin digest for Thursday, October 1, 2054" in response.content
+    assert b"campaign day the digest reports on" not in response.content
     assert b"2054-10-02T04:15:00+00:00" in response.content
     assert b"2054-10-02T04:30:00+00:00" in response.content
     assert response.content.count(b"data-local-instant") == 10
@@ -246,16 +252,7 @@ def test_send_times_are_typed_in_any_common_form(auth_service, google):
     """The schedule page reads "12:30a" as 00:30 and refuses "12:30x" (#631)."""
     store = auth_service.store
     campaign, path = setup(store)
-    digest = schedule(str(campaign.pk), kind="daily_digest", date=None, time="00:15:00")
-    assert (
-        change(
-            store,
-            store.active(),
-            uuid4(),
-            [{"operation": "add", "section": "schedules", **digest}],
-        ).state
-        == "applied"
-    )
+    add_digest(store, campaign)
     browser, _ = signed_in()
     data, indexes = fields(store, campaign)
     field = f"schedules-{indexes['daily_digest']}-time"
@@ -373,7 +370,10 @@ def test_proposed_dates_page_posts_to_its_clean_path(auth_service, google):
     assert page.status_code == 200
     body = page.content.decode()
     assert f'<form method="post" action="{path}" id="schedule-dates-form"' in body
-    assert f'<form method="post" action="{path}" data-review-apply>' in body
+    assert (
+        '<form id="schedule-dates-review-apply" method="post" '
+        f'action="{path}" data-review-apply>' in body
+    )
     assert f'data-review-return="{path}"' in body
     data, _ = fields(store, campaign)
     data["window-start_date"] = "2054-09-30"

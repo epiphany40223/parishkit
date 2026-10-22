@@ -18,10 +18,19 @@ from parishkit.stewardship.jobs.delivery_bulk import BulkResult
 from parishkit.stewardship.jobs.delivery_metadata import (
     DELIVERY_SORTING,
     PURPOSE_CHOICES,
+    RECIPIENT_PATTERN,
+    RECIPIENT_REFUSAL,
     STATES,
 )
-from parishkit.stewardship.jobs.delivery_views import REFUSAL_SORTING
+from parishkit.stewardship.jobs.delivery_reads import email_outcome, question_choices
+from parishkit.stewardship.jobs.delivery_views import (
+    FIELD_IDS,
+    FIELD_LINES,
+    REFUSAL_SORTING,
+    outcome_context,
+)
 from parishkit.stewardship.web.contracts import PageWindow
+from parishkit.stewardship.web.filter_errors import FilterError, error_context
 from parishkit.stewardship.web.tables import window_table
 
 REFUSAL_ID = UUID(int=935)
@@ -73,6 +82,9 @@ LIST_FILTERS = dict(
     purposes=PURPOSE_CHOICES,
     selected_purpose="all",
     recipient="",
+    # The Recipient's browser check and its words, as the view passes them.
+    recipient_pattern=RECIPIENT_PATTERN,
+    recipient_hint=RECIPIENT_REFUSAL,
     start="",
     end="",
     zone="",
@@ -82,13 +94,52 @@ LIST_FILTERS = dict(
 )
 
 
+# Every action an uncertain email's page offers when nothing holds it.
+UNKNOWN_ACTIONS = ("note", "accept", "confirm_unsent", "resend")
+
+
+def panel(state, actions, *, task="failed", blocked=None, refusal=None, **extra):
+    """The outcome panel's context as the view draws it (#1563): the email
+    in ``state`` offering ``actions``, its latest task ``task``, with
+    ``blocked`` or a send's ``refusal`` naming why an answer is unavailable;
+    ``extra`` overrides read_detail's other fields (refused, paused,
+    last_attempt_at)."""
+    data = dict(refused=[], paused=False, last_attempt_at=None) | extra
+    return outcome_context(
+        data
+        | dict(
+            outcome=email_outcome(state, bool(data["refused"])),
+            actions=list(actions),
+            choices=question_choices(
+                state, task, actions, blocked=blocked, refusal=refusal
+            ),
+        )
+    )
+
+
+def refused_recipient(context, typed):
+    """``context`` drawn again for a Recipient ``typed`` that the server
+    refuses at its field (#1562), as the view draws it: the field shows what
+    was typed, marked, with the message in the hint row and the summary."""
+    error = FilterError("recipient", RECIPIENT_REFUSAL, {"recipient": typed})
+    return (
+        context
+        | dict(recipient=typed)
+        | error_context(error, FIELD_IDS, FIELD_LINES)
+        | {"filter_sizes": {FIELD_LINES["recipient"]: RECIPIENT_REFUSAL}}
+    )
+
+
 def components(now):
     """Keep each operational state visible without browser provider credentials."""
     message = dict(
         id=uuid4(),
         family_id=uuid4(),
         family__family_duid=12345,
-        # Recipient lists everything sent to this Family (#1562).
+        # Recipient lists everything sent to this Family (#1562). With no
+        # timeline_family_id this models a Production Family the current
+        # campaign has no record of, so it keeps the in-place filter; the
+        # Timeline link is checked in test_sent_mail_postgresql.
         recipient_fields=[("recipient", "12345"), ("mode", "production")],
         # The Family's name beside its DUID (#931), long enough to wrap.
         family_name="Castellanos, Maximiliana and Bartholomew",
@@ -136,65 +187,66 @@ def components(now):
     # ParishSoft data no longer has, and an Administrator report. The first
     # two emails have unresolved refused addresses (#935), counted in the
     # link line.
-    yield (
-        "/deliveries-names",
-        "deliveries",
-        dict(
-            refusal_count=3,
-            table=sent_table(
-                PageWindow(1, 25),
-                [
-                    message | dict(refused=2),
-                    message
-                    | dict(
-                        id=uuid4(),
-                        family__family_duid=4021,
-                        family_name=None,
-                        refused=1,
-                    ),
-                    # An Administrator's report, named by the Users page
-                    # (#1562), and a notice to an address with no Name.
-                    message
-                    | dict(
-                        id=uuid4(),
-                        family_id=None,
-                        family__family_duid=None,
-                        family_name=None,
-                        purpose="daily_digest",
-                        state="delivered",
-                        recipient_name="Morgan Administrator",
-                        recipient_address="morgan@example.org",
-                        recipient_fields=[
-                            ("recipient", "morgan@example.org"),
-                            ("mode", "production"),
-                        ],
-                    ),
-                    message
-                    | dict(
-                        id=uuid4(),
-                        family_id=None,
-                        family__family_duid=None,
-                        family_name=None,
-                        purpose="security_event",
-                        state="permanent_failure",
-                        recipient_name=None,
-                        recipient_address="pat@example.org",
-                        recipient_fields=[
-                            ("recipient", "pat@example.org"),
-                            ("mode", "production"),
-                        ],
-                    ),
-                ],
-                False,
-                total=(4, False),
-                sorting=DELIVERY_SORTING,
-                sort=DELIVERY_SORTING.default,
-            ),
-            states=STATES,
-            selected_state="all",
-            **LIST_FILTERS,
+    names = dict(
+        refusal_count=3,
+        table=sent_table(
+            PageWindow(1, 25),
+            [
+                message | dict(refused=2),
+                message
+                | dict(
+                    id=uuid4(),
+                    family__family_duid=4021,
+                    family_name=None,
+                    refused=1,
+                ),
+                # An Administrator's report, named by the Users page
+                # (#1562), and a notice to an address with no Name.
+                message
+                | dict(
+                    id=uuid4(),
+                    family_id=None,
+                    family__family_duid=None,
+                    family_name=None,
+                    purpose="daily_digest",
+                    state="delivered",
+                    recipient_name="Morgan Administrator",
+                    recipient_address="morgan@example.org",
+                    recipient_fields=[
+                        ("recipient", "morgan@example.org"),
+                        ("mode", "production"),
+                    ],
+                ),
+                message
+                | dict(
+                    id=uuid4(),
+                    family_id=None,
+                    family__family_duid=None,
+                    family_name=None,
+                    purpose="security_event",
+                    state="permanent_failure",
+                    recipient_name=None,
+                    recipient_address="pat@example.org",
+                    recipient_fields=[
+                        ("recipient", "pat@example.org"),
+                        ("mode", "production"),
+                    ],
+                ),
+            ],
+            False,
+            total=(4, False),
+            sorting=DELIVERY_SORTING,
+            sort=DELIVERY_SORTING.default,
         ),
+        states=STATES,
+        selected_state="all",
+        **LIST_FILTERS,
     )
+    yield ("/deliveries-names", "deliveries", names)
+    # The same page drawn again for a Recipient the server refuses at its
+    # field (#1562): a DUID out of range, which the field's pattern lets
+    # through.
+    yield ("/deliveries-refused", "deliveries", refused_recipient(names, "0"))
     # Sent mail's filters and its Production / Testing links acting in
     # place (#1562): the answers a test routes the Testing link and an
     # applied filter to.
@@ -373,20 +425,8 @@ def components(now):
             reached=None,
             refused_for_now=False,
         ),
-        # A decision is offered, so the "Resolve this email" section shows.
-        decisions=True,
-        commands=[
-            dict(id=uuid4(), action=action, label=label)
-            for action, label in (
-                ("note", "Save evidence note"),
-                ("accept", "Confirm delivery using external evidence"),
-                (
-                    "confirm_unsent",
-                    "Record that the provider did not send it (no resend)",
-                ),
-                ("resend", "Authorize potentially duplicate resend"),
-            )
-        ],
+        # Not sure it arrived, with every answer allowed (#1563).
+        **panel("delivery_unknown", UNKNOWN_ACTIONS, last_attempt_at=now),
         notes=[
             dict(
                 action="note",
@@ -411,21 +451,7 @@ def components(now):
     yield (
         "/delivery-held",
         "delivery",
-        delivery
-        | dict(
-            commands=[],
-            held=[
-                dict(action=action, label=label)
-                for action, label in (
-                    ("accept", "Confirm delivery using external evidence"),
-                    (
-                        "confirm_unsent",
-                        "Record that the provider did not send it (no resend)",
-                    ),
-                    ("resend", "Authorize potentially duplicate resend"),
-                )
-            ],
-        ),
+        delivery | panel("delivery_unknown", (), blocked="held"),
     )
     # A delivered email offers only the evidence note: no decision, so the
     # note form waits closed in a disclosure (#1015).
@@ -434,10 +460,9 @@ def components(now):
         "delivery",
         delivery
         | dict(
-            delivery=page_message | dict(state="delivered"),
+            delivery=page_message | dict(state="delivered", finished_at=now),
             refused=[],
-            decisions=False,
-            commands=[dict(id=uuid4(), action="note", label="Save evidence note")],
+            **panel("delivered", ("note",)),
         ),
     )
     # A Production email accepted for one address and refused for now by
@@ -449,10 +474,10 @@ def components(now):
         "delivery",
         delivery
         | dict(
-            delivery=page_message | dict(state="delivered", mode="production"),
+            delivery=page_message
+            | dict(state="delivered", mode="production", finished_at=now),
             refused=[],
-            decisions=False,
-            commands=[dict(id=uuid4(), action="note", label="Save evidence note")],
+            **panel("delivered", ("note",)),
             recipients=dict(
                 intended=production,
                 routed=production,
@@ -473,10 +498,10 @@ def components(now):
     # addresses (#806 slice 4), at its real address so the form posts in
     # place; after the report, the panel lists it and offers the other.
     bounce_page = delivery | dict(
-        delivery=page_message | dict(id=DELIVERED_ID, state="delivered"),
+        delivery=page_message
+        | dict(id=DELIVERED_ID, state="delivered", finished_at=now),
         refused=[],
-        decisions=False,
-        commands=[dict(id=uuid4(), action="note", label="Save evidence note")],
+        **panel("delivered", ("note",)),
         recipients=dict(
             intended=production,
             routed=production,
@@ -576,6 +601,72 @@ def components(now):
             previous_query="page=1",
         ),
     )
+    # The outcome panel's other states (#1563), each a Production email.
+    production_email = page_message | dict(mode="production")
+    head = [dict(id=REFUSAL_ID, address="head@example.org", kind="provider")]
+    for path, state, actions, extra in (
+        # Failed, with a refused address; Send it again offered.
+        ("/delivery-failed", "permanent_failure", ("note", "retry_failed"), {}),
+        # Failed, and the Family has responded, so it is not sent again.
+        (
+            "/delivery-failed-responded",
+            "permanent_failure",
+            ("note",),
+            dict(refusal="family_responded"),
+        ),
+        # Not sure it arrived after the campaign ended: no resend.
+        (
+            "/delivery-unknown-ended",
+            "delivery_unknown",
+            ("note", "accept", "confirm_unsent"),
+            dict(refusal="campaign_ended"),
+        ),
+        # Not sure it arrived while mail is paused: a resend waits.
+        ("/delivery-unknown-paused", "delivery_unknown", UNKNOWN_ACTIONS, {}),
+        # Waiting to retry after its task failed: Try again now.
+        ("/delivery-sending", "retry_wait", ("note", "retry_unsent"), {}),
+        # Waiting to retry on its own: the next attempt's time.
+        ("/delivery-waiting", "retry_wait", ("note",), dict(task="running")),
+        # Queued while its task still runs: nothing to answer.
+        ("/delivery-queued", "pending", ("note",), dict(task="running")),
+        ("/delivery-cancelled", "cancelled", ("note",), {}),
+        # Delivered, but one address was refused: check and clear it.
+        ("/delivery-delivered-refused", "delivered", ("note",), {}),
+    ):
+        refused = head if state in {"permanent_failure", "delivered"} else []
+        if path == "/delivery-failed-responded":
+            refused = []
+        paused = path in {"/delivery-unknown-paused", "/delivery-queued"}
+        yield (
+            path,
+            "delivery",
+            delivery
+            | dict(
+                delivery=production_email
+                | dict(
+                    state=state,
+                    finished_at=now,
+                    not_before=now + timedelta(minutes=10),
+                ),
+                refused=refused,
+                recipients=dict(
+                    intended=production,
+                    routed=production,
+                    intended_rows=[(address, None) for address in production],
+                    routed_rows=[(address, None) for address in production],
+                    reached=None,
+                    refused_for_now=False,
+                ),
+            )
+            | panel(
+                state,
+                actions,
+                refused=refused,
+                paused=paused,
+                last_attempt_at=now,
+                **extra,
+            ),
+        )
     yield (
         "/delivery-refusals",
         "delivery-refusals",

@@ -16,10 +16,13 @@ LABELS = STATE_LABELS | {
     "reminder": _("Reminder"),
     "daily_digest": _("Daily Administrator report"),
     "weekly_digest": _("Weekly Administrator report"),
+    "admin_report": _("Report email"),
+    "admin_report_test": _("Report email test"),
     "receipt": _("Submission receipt"),
     "family_test": _("Selected-Family test"),
     "operational": _("Operational notice"),
     "security_event": _("Security notice"),
+    "leader_email": _("Ministry leader email"),
     # Sent mail's grouped Delivery choices (#1562, STATE_GROUPS).
     "needs_attention": _("Needs attention"),
     "needs_review": _("Not sure it arrived — review needed"),

@@ -483,6 +483,11 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # one of 0126's guards in place (the information revision guard and the
 # limitation review guard), which 0126's rerun brings back older, so
 # ``CLOSURE_REPLACED`` runs each file again after it.
+# 0152 (#1866) creates only the audit actor index, only when missing, and
+# replaces nothing; the swap drops none of it, so nothing is registered.
+# 0157 (#1867) creates the two person identity reads (in
+# runtime_grants.CLOSURE_FUNCTIONS), which go, and replaces nothing, so its
+# file installs whole again.
 # 0158 (#1889) creates nothing: it replaces six guards in place on 0130's,
 # 0146's, 0148's, 0149's, 0150's and 0151's bodies, which the reruns of
 # those files (``CLOSURE_REPLACED``) bring back older, so
@@ -738,6 +743,13 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_jobs", "0034_sent_mail_recipients"),
     ),
+    **dict.fromkeys(
+        (
+            "public.stewardship_address_people_v1(text,uuid)",
+            "public.stewardship_family_users_v1(bigint,uuid)",
+        ),
+        ("stewardship_accounts", "0031_person_identity_reads"),
+    ),
     # 0120 (#1592) creates the Ministry leader email tables (in
     # CLOSURE_TABLES) and these functions, and replaces the four outbox
     # guards and the two task-type maps in place with bodies that keep every
@@ -865,7 +877,83 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_reports", "0036_participation_summary"),
     ),
+    # 0145 (#1562) creates only Sent mail's Member-name read.
+    "public.stewardship_delivery_page_member_names_v1(uuid[],uuid)": (
+        "stewardship_jobs",
+        "0036_page_member_names",
+    ),
+    # 0156 (#1786) creates the report email tables (in
+    # CLOSURE_TABLES) and these functions, and replaces the two task-type
+    # maps with 0120's bodies plus report_email_prepare, so its file installs
+    # whole again after 0120's.
+    **dict.fromkeys(
+        (
+            "public.stewardship_report_next_send_v1(jsonb,date,date,date)",
+            "public.stewardship_report_slot_due_v1(jsonb,date,date,text,text)",
+            "public.stewardship_report_due_v1(uuid,text)",
+            "public.stewardship_report_email_scope_v1(uuid,uuid,uuid,text,uuid)",
+            "public.stewardship_report_email_live_v1(uuid,uuid,bigint,uuid)",
+            "public.stewardship_report_email_page_v1(jsonb,jsonb)",
+            "public.stewardship_report_email_predecessors_v1(uuid,text,uuid)",
+            "public.stewardship_report_email_replacement_v1(jsonb)",
+            "public.stewardship_report_email_slots_v1(uuid,text)",
+            "public.stewardship_report_email_inputs_v1("
+            "jsonb,jsonb,timestamp with time zone,date,date,text)",
+            "public.stewardship_report_email_cohort_v1(jsonb,uuid)",
+            "public.stewardship_report_email_current_v1(uuid,text,text,text)",
+            "public.stewardship_report_email_label_v1(text,text,text)",
+            "public.stewardship_report_email_skipped_v1(uuid)",
+            "public.stewardship_report_email_requests_v1("
+            "uuid,uuid,timestamp with time zone)",
+            "public.stewardship_report_email_preparation_guard_v1()",
+            "public.stewardship_report_email_source_commit_v1()",
+            "public.stewardship_report_email_snapshot_guard_v1()",
+            "public.stewardship_report_email_snapshot_commit_v1()",
+            "public.stewardship_report_email_recipient_guard_v1()",
+            "public.stewardship_report_email_render_v1(jsonb,uuid,text,text,text)",
+            "public.stewardship_report_email_write_admitted_v1(text,jsonb,jsonb)",
+            "public.stewardship_report_email_mail_write_v1(uuid,text,jsonb,jsonb)",
+            "public.stewardship_report_email_mail_commit_v1()",
+            "public.stewardship_report_email_reason_v1(text)",
+            "public.stewardship_report_email_completion_v1(jsonb)",
+            "public.stewardship_report_email_settle_v1()",
+            "public.stewardship_report_email_dispatch_live_v1(uuid,boolean)",
+            "public.stewardship_report_email_seed_v1(uuid,uuid)",
+            "public.stewardship_report_email_dispatch_write_v1(text,jsonb,jsonb)",
+            "public.stewardship_report_email_manual_guard_v1()",
+            "public.stewardship_report_email_manual_allocate_v1()",
+            "public.stewardship_report_email_immutable_v1()",
+            "public.stewardship_report_email_pin_retained_v1()",
+        ),
+        ("stewardship_reports", "0040_report_pipeline"),
+    ),
+    # 0161 (#1786) creates these two and replaces many base
+    # and closure functions and views in place (``before_report_conversion``
+    # puts those back while the swap is pending), so its file installs
+    # whole again after 0156's.
+    **dict.fromkeys(
+        (
+            "public.stewardship_digest_work_open_v1()",
+            "public.stewardship_report_slots_v1(uuid,timestamp with time zone)",
+        ),
+        ("stewardship_reports", "0041_report_conversion"),
+    ),
+    # 0162 (#1835) creates the coverage comparison, adds a
+    # column to 0156's recipient table (in CLOSURE_TABLES) and replaces
+    # 0156's recipient guard and 0161's completion view. All three files'
+    # objects are dropped, so 0156's file runs again first, then 0161's
+    # (their entries are above, in that order), and then 0162's, whole,
+    # puts back the column, guard, view and function.
+    "public.stewardship_report_email_prior_v1(uuid,text)": (
+        "stewardship_reports",
+        "0042_report_recovery_coverage",
+    ),
 }
+
+
+# The CLOSURE_TABLES entries that are views: the report email completion
+# proof (0156, #1786).
+CLOSURE_VIEWS = {"stewardship_report_email_completion_ready"}
 
 
 # A closure migration whose frozen file only replaces functions another
@@ -1647,6 +1735,176 @@ def before_submission_upcoming_pledge():
     ]
 
 
+# 0161 (#1786) replaces, in place, functions and views of the
+# base and of earlier closure files so that they read 0156's report email
+# tables and functions, which ``swap_pending`` drops; 0156's table drops take
+# many of those views with them. While the swap is pending each gets the
+# definition it had before 0156, from the frozen copy ``PRE_CONVERSION``
+# (``before_report_conversion``), as a database at the users upgrade's base
+# has them, and every view a drop took is made again. Afterwards 0161's file
+# runs whole again after 0156's (its two new functions are in
+# ``CLOSURE_CREATED``), and any view still missing is made again from its
+# current definition (``restore_views``).
+REPORT_CONVERSION = MIGRATIONS / "migrations/0161_report_conversion.sql"
+REPORT_PIPELINE = MIGRATIONS / "migrations/0156_report_pipeline.sql"
+PRE_CONVERSION = Path(__file__).with_name("pre_report_conversion_definitions.sql")
+
+
+def schema_sources():
+    """Each SQL text a fresh install applies, in order.
+
+    The baseline's schema files (migration 0001) come first, then every
+    frozen migration file in prefix order.
+    """
+    import importlib
+
+    initial = importlib.import_module(
+        "parishkit.stewardship.accounts.migrations.0001_initial_schema"
+    )
+    files = sorted((MIGRATIONS / "migrations").glob("*.sql"))
+    return [("0001", initial.schema_sql())] + [
+        (path.name, path.read_text(encoding="utf-8")) for path in files
+    ]
+
+
+def _statement(text, start, *, view):
+    """The whole CREATE statement that begins at ``start``.
+
+    A function ends at the first ``;`` after its dollar-quoted body (which
+    a trailing LANGUAGE clause may follow); a view, which has no body
+    quote, at the first ``;`` that ends a line.
+    """
+    if view:
+        return text[start : re.compile(r";[ \t]*$", re.M).search(text, start).end()]
+    quote = re.compile(r"\bAS\s+(\$\w*\$)").search(text, start)
+    close = text.index(quote[1], quote.end()) + len(quote[1])
+    return text[start : text.index(";", close) + 1]
+
+
+def latest_definitions(names, sources):
+    """Each named function or view's latest definition among ``sources``.
+
+    ``names`` maps a name to ``FUNCTION`` or ``VIEW``; one no source
+    defines (0156's own, which ``swap_pending`` drops and the file makes
+    again) is left out. The result keeps the order in which the
+    definitions appear, so a view comes after the views it reads. A
+    baseline file may leave out the ``public.`` qualifier.
+    """
+    found = {}
+    for name, kind in names.items():
+        pattern = re.compile(
+            rf"^CREATE (?:OR REPLACE )?{kind} (?:public\.)?{name}\b", re.M
+        )
+        hits = [
+            (index, match.start(), text)
+            for index, (label, text) in enumerate(sources)
+            for match in pattern.finditer(text)
+        ]
+        if not hits:
+            continue
+        index, start, text = hits[-1]
+        found[name] = (
+            (index, start),
+            kind,
+            _statement(text, start, view=kind == "VIEW").replace(
+                f"CREATE {kind}", f"CREATE OR REPLACE {kind}", 1
+            ),
+        )
+    return {
+        name: (kind, statement)
+        for name, (_, kind, statement) in sorted(
+            found.items(), key=lambda item: item[1][0]
+        )
+    }
+
+
+def public_views(cursor):
+    """The names of the views in the public schema."""
+    cursor.execute("SELECT viewname FROM pg_views WHERE schemaname='public'")
+    return {name for (name,) in cursor.fetchall()}
+
+
+def create_views(cursor, definitions):
+    """Create each view, retrying those whose inputs a later one makes.
+
+    Each attempt runs in a savepoint; a pass that makes no view fails the
+    test with the first refusal, rather than looping.
+    """
+    pending = dict(definitions)
+    while pending:
+        made, refusal = [], None
+        for name, statement in pending.items():
+            try:
+                with transaction.atomic():
+                    cursor.execute(statement)
+                made.append(name)
+            except DatabaseError as error:
+                refusal = refusal or error
+        if not made:
+            raise refusal
+        for name in made:
+            del pending[name]
+
+
+def before_report_conversion(cursor, views_before):
+    """Put back what 0161 replaced as it was before 0156; remake lost views.
+
+    Functions keep their grants (CREATE OR REPLACE) and their SECURITY
+    DEFINER, which 0161's file repeats for the three the baseline alters.
+    """
+    text = REPORT_CONVERSION.read_text(encoding="utf-8")
+    names = {
+        name: kind
+        for kind, name in re.findall(
+            r"^CREATE OR REPLACE (FUNCTION|VIEW) public\.(\w+)\b", text, re.M
+        )
+    }
+    definitions = latest_definitions(
+        names, [("frozen", PRE_CONVERSION.read_text(encoding="utf-8"))]
+    )
+    cursor.execute(
+        "SELECT proname FROM pg_proc WHERE pronamespace='public'::regnamespace "
+        "AND prosecdef AND proname=ANY(%s)",
+        [list(definitions)],
+    )
+    definers = {name for (name,) in cursor.fetchall()}
+    views = {
+        name: statement
+        for name, (kind, statement) in definitions.items()
+        if kind == "VIEW"
+    }
+    for name in views:
+        cursor.execute(f"DROP VIEW IF EXISTS public.{name} CASCADE")
+    create_views(cursor, views)
+    # As a fresh install does: a body is checked when it runs, so a SQL
+    # function may name what a later statement makes.
+    cursor.execute("SET LOCAL check_function_bodies = false")
+    for name, (kind, statement) in definitions.items():
+        if kind == "FUNCTION":
+            cursor.execute(statement)
+            if name in definers:
+                cursor.execute(f"ALTER FUNCTION public.{name} SECURITY DEFINER")
+    cursor.execute("SET LOCAL check_function_bodies = true")
+    # The views 0156 and 0161 create stay absent, as on the base.
+    created = {
+        name
+        for path in (REPORT_CONVERSION, REPORT_PIPELINE)
+        for name in re.findall(
+            r"^CREATE VIEW public\.(\w+)\b", path.read_text(encoding="utf-8"), re.M
+        )
+    }
+    restore_views(cursor, views_before - created, sources=schema_sources())
+
+
+def restore_views(cursor, views_before, *, sources):
+    """Make again each view of ``views_before`` now missing, from ``sources``."""
+    missing = views_before - public_views(cursor)
+    definitions = latest_definitions(dict.fromkeys(missing, "VIEW"), sources)
+    create_views(
+        cursor, {name: statement for name, (_, statement) in definitions.items()}
+    )
+
+
 def before_ministry_review_pipeline():
     """The statements that put Ministry requests back as they were before 0131.
 
@@ -1708,7 +1966,8 @@ def swap_pending():
     (``before_branding_bundle_mode``), and the digest ready row's funnel
     charts as they were before 0083 (``before_digest_funnel_charts``), and
     form baselines and submissions as they were before 0143
-    (``before_reviewed_form_shown_items``).
+    (``before_reviewed_form_shown_items``), and the functions and views 0161
+    replaced as they were before 0156 (``before_report_conversion``).
     """
     from django.db.migrations.loader import MigrationLoader
 
@@ -1727,6 +1986,7 @@ def swap_pending():
     assert {key for key, _ in CLOSURE_REPLACED_ONLY.values()} <= set(closure)
     removed = []
     with transaction.atomic(), connection.cursor() as cursor:
+        views_before = public_views(cursor)
         for app, name in closure:
             cursor.execute(
                 "DELETE FROM django_migrations WHERE app=%s AND name=%s "
@@ -1738,7 +1998,11 @@ def swap_pending():
         for definition in old_definitions().values():
             cursor.execute(definition)
         for table in CLOSURE_TABLES:
-            cursor.execute(f"DROP TABLE public.{table} CASCADE")
+            # A view a dropped table's CASCADE took with it is gone already.
+            if table in CLOSURE_VIEWS:
+                cursor.execute(f"DROP VIEW IF EXISTS public.{table} CASCADE")
+            else:
+                cursor.execute(f"DROP TABLE public.{table} CASCADE")
         for function in CLOSURE_CREATED:
             cursor.execute(f"DROP FUNCTION {function} CASCADE")
         for statement in (
@@ -1757,6 +2021,7 @@ def swap_pending():
             *before_reviewed_form_shown_items(),
         ):
             cursor.execute(statement)
+        before_report_conversion(cursor, views_before)
     try:
         yield
     finally:
@@ -1812,6 +2077,7 @@ def swap_pending():
                     module = sys.modules[loader.disk_migrations[key].__module__]
                     text = Path(module.FROZEN_SQL).read_text(encoding="utf-8")
                     cursor.execute(_replaced(text, function))
+            restore_views(cursor, views_before, sources=schema_sources())
             for app, name, applied in removed:
                 # A test that ran the full migration recorded the row again.
                 cursor.execute(
@@ -2031,6 +2297,24 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
             # Added Member links (0141, #1670): the worker records them in
             # promotion; web only reads them.
             "stewardship_added_member_link": ("pk_stewardship_worker", "INSERT"),
+            # The report email pipeline (0156, #1786): the scheduler
+            # allocates preparations, the worker writes snapshots and
+            # recipients, and web reads the completion proof.
+            "stewardship_report_email_preparation": (
+                "pk_stewardship_scheduler",
+                "INSERT",
+            ),
+            **dict.fromkeys(
+                (
+                    "stewardship_report_email_snapshot",
+                    "stewardship_report_email_recipient",
+                ),
+                ("pk_stewardship_worker", "INSERT"),
+            ),
+            "stewardship_report_email_completion_ready": (
+                "pk_stewardship_web",
+                "SELECT",
+            ),
         }
         for table in CLOSURE_TABLES:
             login, privilege = writers.get(table, ("pk_stewardship_web", "INSERT"))

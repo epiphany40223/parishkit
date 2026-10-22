@@ -1,42 +1,42 @@
-"""Manual reports are explicit, separately audited, idempotent Admin obligations."""
+"""Send a weekly report now: Send now of the converted Weekly report (#1786).
 
-from datetime import UTC, datetime
+An explicit, separately audited, idempotent Administrator request. Report
+emails replaced the Weekly digest: the page and ``digest weekly-request``
+send the Weekly report through its Send now (``report_email_manual``),
+whose database guard checks the report's current revision and that no other
+send of it is still being prepared.
+"""
+
 from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection
 from django.urls import reverse
 
-from parishkit.stewardship.accounts import admin_navigation as navigation
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.models import AuditEvent
-from parishkit.stewardship.campaigns.production_models import ProductionCleanupTarget
+from parishkit.stewardship.campaigns.schedule_models import (
+    ScheduleFulfillment,
+    ScheduleOccurrence,
+)
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.storage import enqueue
-from parishkit.stewardship.reports.weekly_manual import request_manual_report
-from parishkit.stewardship.reports.weekly_models import (
-    WeeklyDigestPreparation,
-    WeeklyDigestRecipient,
-    WeeklyDigestSnapshot,
-    WeeklyManualRequest,
+from parishkit.stewardship.reports.report_email_models import (
+    ReportEmailManualRequest,
+    ReportEmailPreparation,
+    ReportEmailSnapshot,
 )
+from parishkit.stewardship.reports.weekly_manual import request_manual_report
 
-from .auth_builders import signed_in, unguarded
-from .campaign_builders import campaign_clock
+from .auth_builders import signed_in
+from .campaign_builders import campaign_clock, complete_empty_catchup
+from .report_builders import WEEKLY_INSTANT as INSTANT
+from .report_builders import add_digest, execute, produce, settle_messages
+from .report_builders import weekly_allocated as allocated
 from .test_background_grants_postgresql import task_login
-from .test_cleanup_batches_postgresql import delete_batch, running_request
-from .test_digest_schedule_planning_postgresql import add_digest
 from .test_policy_postgresql import user
-from .test_response_revisit_postgresql import revisit
-from .test_response_submission_postgresql import submit as respond_form
-from .test_weekly_capture_postgresql import INSTANT
-from .test_weekly_completion_postgresql import history
-from .test_weekly_coverage_postgresql import accepted, publish, replacement
-from .test_weekly_dispatch_postgresql import allocated
-from .test_weekly_fanout_postgresql import configure_content
-from .test_weekly_tasks_postgresql import execute
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -53,180 +53,158 @@ def request(harness, principal, command):
         )
 
 
-def test_manual_after_success_repeats_only_by_explicit_intent(live_response_service):
-    """A fresh manual report can repeat prior content without reopening its slot."""
+def weekly(harness):
+    """The converted Weekly report, ready to send now: its definition ID."""
+    identifier = add_digest(harness.service.store, harness.campaign, weekly=True)
+    harness.campaign.refresh_from_db()
+    if harness.campaign.state == "active":
+        complete_empty_catchup(harness.campaign, uuid4())
+    return identifier
+
+
+def test_send_now_is_one_audited_send_and_moves_no_scheduled_slot(
+    live_response_service,
+):
+    """A replay returns the same send; the scheduled sends stay as they were."""
     harness = live_response_service
     principal = user("admin@example.org")
     with campaign_clock(INSTANT):
-        original = allocated(harness)
-        accepted(WeeklyDigestRecipient.objects.get(snapshot=original))
-        before = history(original)
+        scheduled = allocated(harness)
+        # Send now waits for the scheduled send's email to be delivered.
+        settle_messages()
+        fulfilled = set(ScheduleFulfillment.objects.values_list("slot", "disposition"))
         command = uuid4()
         task = request(harness, principal, command)
-        row = WeeklyDigestPreparation.objects.get(pk=command)
-        assert row.phase == "capture" and row.occurrence_id == command
+        row = ReportEmailPreparation.objects.get(pk=command)
+        assert row.phase == "inputs" and row.occurrence_id == command
+        assert row.definition_id == scheduled.definition_id
+        occurrence = ScheduleOccurrence.objects.get(pk=command)
+        assert occurrence.slot == f"manual:{command}"
         assert request(harness, principal, command).run_id == task.run_id
-        with task_login(ServiceRole.WORKER, exact=True):
-            execute(task)
-        snapshot = WeeklyDigestSnapshot.objects.get(preparation=row)
-        recipient = WeeklyDigestRecipient.objects.get(snapshot=snapshot)
-        assert snapshot.information == original.information
-        assert recipient.covered_messages == []
-        assert "Manual weekly" in recipient.subject
-        assert "1 current actionable request" in recipient.text
-        accepted(recipient)
-        assert history(original).watermark == before.watermark
-        assert request(harness, principal, command).run_id == task.run_id
-        assert WeeklyManualRequest.objects.count() == 1
+        execute(task)
+        assert ReportEmailPreparation.objects.get(pk=command).phase == "complete"
+        snapshot = ReportEmailSnapshot.objects.get(preparation_id=command)
+        assert "manual" in snapshot.subject
+        assert ReportEmailManualRequest.objects.count() == 1
         assert (
             AuditEvent.objects.filter(
-                event_type="weekly_manual_requested", subject_id=command
+                event_type="report_email_manual_requested",
+                subject_id=scheduled.definition_id,
             ).count()
             == 1
         )
+        # Send now fulfills no scheduled slot and moves none.
+        assert set(
+            ScheduleFulfillment.objects.exclude(slot__startswith="manual:").values_list(
+                "slot", "disposition"
+            )
+        ) == {item for item in fulfilled if not item[0].startswith("manual:")}
 
 
-def test_manual_waits_for_unresolved_prior_work(live_response_service):
-    """Explicit intent cannot bypass unresolved recipients or provider uncertainty."""
-    with campaign_clock(INSTANT):
-        allocated(live_response_service)
-        before = TaskRun.objects.count()
-        with pytest.raises(DatabaseError, match="resolved prior work"):
-            request(live_response_service, user("admin@example.org"), uuid4())
-        assert TaskRun.objects.count() == before
-        assert not WeeklyManualRequest.objects.exists()
-
-
-def test_manual_delivery_does_not_consume_regular_information_or_corrections(
+def test_send_now_waits_for_an_earlier_send_still_being_prepared(
     live_response_service,
 ):
-    """A new manual snapshot is history, not the next scheduled success boundary."""
+    """Explicit intent cannot start a second send while one is open."""
     harness = live_response_service
-    with campaign_clock(datetime(2054, 10, 8, tzinfo=UTC)):
-        original = allocated(harness)
-        accepted(WeeklyDigestRecipient.objects.get(snapshot=original))
-        harness, form, answers, _ = revisit(harness)
-        answers["additional_information"] = "New request after scheduled success"
-        respond_form(harness, form, answers)
-        command = uuid4()
-        task = request(harness, user("admin@example.org"), command)
-        with task_login(ServiceRole.WORKER, exact=True):
-            execute(task)
-        manual = WeeklyDigestSnapshot.objects.get(preparation_id=command)
-        assert manual.submission_watermark == 2
-        assert manual.corrections == [[original.information[0], "superseded"]]
-        accepted(WeeklyDigestRecipient.objects.get(snapshot=manual))
-        regular_history = history(original)
-        assert regular_history.watermark == 1
-        assert not regular_history.corrected
-    with campaign_clock(datetime(2054, 10, 15, tzinfo=UTC)):
-        claim, regular = replacement()
-        publish(claim)
-        recipient = WeeklyDigestRecipient.objects.get(snapshot=regular)
-        assert regular.information == manual.information
-        assert regular.corrections == manual.corrections
-        assert recipient.information == manual.information
-        assert recipient.corrections == manual.corrections
-        assert recipient.covered_messages == []
-        accepted(recipient)
-        assert history(regular).watermark == 2
-
-
-def test_testing_manual_records_empty_without_mail(response_service):
-    """Rehearsal submission text cannot become live AdditionalInformationItems."""
     with campaign_clock(INSTANT):
-        add_digest(
-            response_service.service.store, response_service.campaign, weekly=True
-        )
-        configure_content(response_service)
-        task = request(response_service, user("admin@example.org"), uuid4())
-        with task_login(ServiceRole.WORKER, exact=True):
-            execute(task)
-        assert TaskRun.objects.get(pk=task.run_id).state == "succeeded"
-        assert WeeklyDigestSnapshot.objects.get().information == []
-        assert not WeeklyDigestRecipient.objects.exists()
+        weekly(harness)
+        assert produce()  # The scheduled send is allocated, not yet run.
+        before = TaskRun.objects.count()
+        with pytest.raises(DatabaseError, match="no open send"):
+            request(harness, user("admin@example.org"), uuid4())
+        assert TaskRun.objects.count() == before
+        assert not ReportEmailManualRequest.objects.exists()
+
+
+def test_send_now_waits_for_an_earlier_sends_email(live_response_service, google):
+    """While a scheduled send's email is undelivered, Send now is refused
+    (spec, "Send now"), and the page says so on GET; once it is delivered,
+    Send now is allowed."""
+    harness = live_response_service
+    with campaign_clock(INSTANT):
+        allocated(harness)
+        browser, _ = signed_in()
+        path = reverse("admin:weekly_digest_manual")
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            page = browser.get(path)
+        assert page.status_code == 200
+        assert b"still being prepared or delivered" in page.content
+        before = TaskRun.objects.count()
+        with pytest.raises(DatabaseError, match="no open send"):
+            request(harness, user("admin@example.org"), uuid4())
+        assert TaskRun.objects.count() == before
+        settle_messages()
+        request(harness, user("admin@example.org"), uuid4())
+        assert ReportEmailManualRequest.objects.count() == 1
 
 
 @pytest.mark.parametrize("raw", [False, True])
-def test_manual_command_rejects_nonadmin_independently(response_service, raw):
+def test_send_now_rejects_a_non_administrator_independently(response_service, raw):
     """The SQL intent guard still checks Admin authority if Python is bypassed."""
     with campaign_clock(INSTANT):
         harness = response_service
-        add_digest(harness.service.store, harness.campaign, weekly=True)
-        configure_content(harness)
+        definition = weekly(harness)
         principal, command = user("external@example.org"), uuid4()
         before = TaskRun.objects.count()
         with pytest.raises(DatabaseError if raw else PermissionError):
             if not raw:
                 request(harness, principal, command)
             else:
+                from parishkit.stewardship.campaigns.schedule_models import (
+                    ScheduleDefinition,
+                )
+
+                revision = ScheduleDefinition.objects.get(
+                    pk=definition
+                ).current_revision_id
                 with task_login(ServiceRole.WEB, exact=True), work_transaction():
                     task = enqueue(
-                        task_type="weekly_digest_prepare",
+                        task_type="report_email_prepare",
                         domain_request_id=command,
                         actor_id=principal.pk,
                         correlation_id=command,
                         idempotency_key=command,
                         admit=lambda *args: True,
                     )
-                    WeeklyManualRequest.objects.create(
+                    ReportEmailManualRequest.objects.create(
                         id=command,
                         campaign_id=harness.campaign.pk,
+                        definition_id=definition,
+                        revision_id=revision,
                         configuration_id=SystemConfiguration.objects.get().active_configuration_id,
                         task_id=task.run_id,
                         actor_id=principal.pk,
                         correlation_id=command,
                     )
         assert TaskRun.objects.count() == before
-        assert not WeeklyManualRequest.objects.exists()
+        assert not ReportEmailManualRequest.objects.exists()
 
 
-def test_manual_history_survives_testing_cleanup_and_cannot_reopen(response_service):
-    """Cleanup removes private captures, retaining the original command receipt."""
+def test_a_send_now_request_is_immutable(response_service):
+    """The command's receipt stays as it was recorded."""
     harness = response_service
     with campaign_clock(INSTANT):
-        add_digest(harness.service.store, harness.campaign, weekly=True)
-        configure_content(harness)
-        principal, command = user("admin@example.org"), uuid4()
-        task = request(harness, principal, command)
-        with task_login(ServiceRole.WORKER, exact=True):
-            execute(task)
-        assert WeeklyDigestSnapshot.objects.exists()
-        status = running_request(harness)
-        for _ in range(status.inventory_total * 4):
-            if not ProductionCleanupTarget.objects.filter(
-                request_id=status.request_id
-            ).exists():
-                break
-            delete_batch(status, maximum=2)
-        assert not ProductionCleanupTarget.objects.filter(
-            request_id=status.request_id
-        ).exists()
-        assert not WeeklyDigestSnapshot.objects.exists()
-        assert WeeklyManualRequest.objects.filter(pk=command).exists()
-        assert request(harness, principal, command).run_id == task.run_id
-        assert not WeeklyDigestSnapshot.objects.exists()
+        weekly(harness)
+        command = uuid4()
+        request(harness, user("admin@example.org"), command)
         with (
             pytest.raises(DatabaseError, match="immutable"),
             connection.cursor() as cursor,
         ):
             cursor.execute(
-                "DELETE FROM stewardship_weekly_manual_request WHERE id=%s", [command]
+                "DELETE FROM stewardship_report_email_manual_request WHERE id=%s",
+                [command],
             )
 
 
 @pytest.mark.parametrize("stale", [False, True])
-def test_manual_form_requires_csrf_confirmation_and_reviewed_configuration(
+def test_the_form_requires_csrf_confirmation_and_reviewed_configuration(
     response_service, google, stale
 ):
-    """A reviewed Testing form cannot silently authorize a changed mail policy."""
-    from ..policy_factory import address
-    from .campaign_builders import change
-
+    """A reviewed form cannot silently authorize a changed configuration."""
     harness = response_service
     with campaign_clock(INSTANT):
-        add_digest(harness.service.store, harness.campaign, weekly=True)
-        configure_content(harness)
+        weekly(harness)
         configuration = SystemConfiguration.objects.get().active_configuration_id
         browser, _ = signed_in()
         path = reverse("admin:weekly_digest_manual")
@@ -246,7 +224,6 @@ def test_manual_form_requires_csrf_confirmation_and_reviewed_configuration(
             assert f'<li><a href="{emailed}">Emailed reports</a></li>'.encode() in (
                 page.content
             )
-            assert b"Return to Emailed reports" not in page.content
             assert browser.post(path, values).status_code == 403
             assert (
                 browser.post(
@@ -257,19 +234,16 @@ def test_manual_form_requires_csrf_confirmation_and_reviewed_configuration(
                 == 400
             )
         if stale:
+            # Any applied change makes the reviewed configuration stale.
+            from .report_builders import edit_report
+
             store = harness.service.store
-            change(
-                store,
-                store.active(),
-                uuid4(),
-                [
-                    {
-                        "operation": "add",
-                        "section": "login_rules",
-                        **address("staff@example.org", roles=("staff",)),
-                    }
-                ],
+            weekly_id = next(
+                row["id"]
+                for row in store.active().document()["sections"]["schedules"]
+                if row["values"]["kind"] == "report"
             )
+            edit_report(store, weekly_id, subject="Changed")
         before = TaskRun.objects.count()
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             for _ in range(2):
@@ -288,12 +262,12 @@ def test_manual_form_requires_csrf_confirmation_and_reviewed_configuration(
             ):
                 link = f'<a href="{reverse(f"admin:{name}")}">{label}</a>'
                 assert link.encode() in response.content
-        assert WeeklyManualRequest.objects.count() == (0 if stale else 1)
+        assert ReportEmailManualRequest.objects.count() == (0 if stale else 1)
         assert TaskRun.objects.count() == before + (0 if stale else 1)
 
 
-def test_manual_form_explains_a_missing_weekly_schedule(response_service, google):
-    """Without a Weekly digest schedule the page says so instead of refusing blindly."""
+def test_the_form_explains_a_missing_weekly_report(response_service, google):
+    """Without a Weekly report the page says so instead of refusing blindly."""
     with campaign_clock(INSTANT):
         browser, _ = signed_in()
         path = reverse("admin:weekly_digest_manual")
@@ -301,59 +275,34 @@ def test_manual_form_explains_a_missing_weekly_schedule(response_service, google
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             page = browser.get(path)
         assert page.status_code == 409
-        assert b"no Weekly Admin digest schedule" in page.content
-        schedules = "/admin/campaign/schedules/"
-        assert schedules.encode() in page.content
-        assert b"Dates and mail schedules</a>, then return here." in page.content
+        assert b"This campaign has no Weekly report" in page.content
         # Queue is in view but unavailable, named by why; no form (#1331).
         assert (
             b'disabled aria-describedby="manual-no-schedule">'
             b"Queue new manual report</button>"
         ) in page.content
         assert b'name="acknowledge"' not in page.content
-        assert WeeklyManualRequest.objects.count() == 0
+        assert ReportEmailManualRequest.objects.count() == 0
         assert TaskRun.objects.count() == before
 
 
-def test_manual_form_greys_the_schedule_link_for_an_archived_campaign(
-    response_service, google
-):
-    """The missing-schedule notice greys its link on an archived campaign (#1261).
-
-    Dates and mail schedules refuses an archived campaign (#1258), so the
-    notice shows the link text as the shared greyed-out control with the
-    menu's reason instead of linking the refusal.
-    """
-    with campaign_clock(INSTANT):
-        browser, _ = signed_in()
-        with unguarded(), connection.cursor() as cursor:
-            cursor.execute("UPDATE public.stewardship_campaign SET state='archived'")
-        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            page = browser.get(reverse("admin:weekly_digest_manual"))
-        body = page.content.decode()
-        assert page.status_code == 409
-        assert "no Weekly Admin digest schedule" in body
-        assert 'href="/admin/campaign/schedules/"' not in body
-        assert 'aria-describedby="schedule-settings-link-tip"' in body
-        assert f"{navigation.ARCHIVED}</span>" in body
-        assert WeeklyManualRequest.objects.count() == 0
-
-
-def test_manual_form_shows_queue_unavailable_while_a_digest_is_unresolved(
+def test_the_form_shows_queue_unavailable_while_a_send_is_being_prepared(
     live_response_service, google
 ):
-    """An earlier digest still being delivered is found on GET, as the guard
+    """An earlier send still being prepared is found on GET, as the guard
     would refuse it: Queue is shown unavailable with why, and nothing runs."""
+    harness = live_response_service
     with campaign_clock(INSTANT):
-        allocated(live_response_service)
+        weekly(harness)
+        assert produce()
         browser, _ = signed_in()
         path = reverse("admin:weekly_digest_manual")
         before = TaskRun.objects.count()
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             page = browser.get(path)
         assert page.status_code == 200
-        assert b"still being prepared or delivered" in page.content
+        assert b"an earlier send of it is still being prepared" in page.content
         assert b'disabled aria-describedby="manual-unavailable"' in page.content
         assert b'name="acknowledge"' not in page.content
         assert TaskRun.objects.count() == before
-        assert not WeeklyManualRequest.objects.exists()
+        assert not ReportEmailManualRequest.objects.exists()

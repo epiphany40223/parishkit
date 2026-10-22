@@ -1,9 +1,16 @@
-"""Read-only exact Admin mail impact, without materializing dates or report facts."""
+"""Read-only exact Admin mail impact, without materializing dates or report facts.
+
+Report emails (#1786) replaced the Daily and Weekly digests: the impact counts
+each report's immediately due send, one message per address of its cohort
+now. A report as of the end of the previous day is counted as the Daily was
+("daily report messages"), one as of when it is made as the Weekly was; a
+send that would be skipped as empty (report-emails spec, "Sending only when
+there is content") makes no message and is counted as an empty report.
+"""
 
 import hashlib
 from dataclasses import dataclass
 
-from parishkit.stewardship.reports.readiness_weekly import weekly_message_count
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .models import RestoreDeliveryHold
@@ -29,23 +36,25 @@ class DigestImpact:
 def digest_impact(campaign, *, cutoff, recipients):
     """Coalesce the complete due range using the execution owner's count planner.
 
-    Read at most 100 dates' metadata per page. A weekly interval with no new
-    actionable information or correction produces no message, and previously
-    accepted per-recipient item coverage suppresses duplicates. These counts
-    exclude Testing history even while the campaign is still in Testing mode.
+    Read at most 100 dates' metadata per page. ``recipients`` (the
+    Administrators' addresses) is bound into the digest as before; each
+    report's own cohort decides its message count. These counts exclude
+    Testing history even while the campaign is still in Testing mode.
     """
+    from .report_values import REPORT_LIMIT
+
     require_work_order()
     definitions = list(
         ScheduleDefinition.objects.filter(
             campaign=campaign,
             current_revision__isnull=False,
-            kind__in=("daily_digest", "weekly_digest"),
+            kind="report",
         )
         .select_related("current_revision")
-        .order_by("id")[:3]
+        .order_by("id")[: REPORT_LIMIT + 1]
     )
-    if len(definitions) > 2:
-        raise StorageInvariantError("Readiness digest definitions exceed their bound.")
+    if len(definitions) > REPORT_LIMIT:
+        raise StorageInvariantError("Readiness report definitions exceed their bound.")
     digest = hashlib.sha256(b"stewardship-readiness-digests-v1\x00")
 
     def bind(value):
@@ -64,13 +73,54 @@ def digest_impact(campaign, *, cutoff, recipients):
             continue
         if choice == "empty":
             continue
-        coalesced += count if choice == "aggregate" else count - 1
-        if definition.kind == "daily_digest":
-            daily += len(recipients)
+        coalesced += count - 1
+        values = definition.current_revision.values
+        messages = _report_messages(campaign, values, bind)
+        if messages == 0:
+            empty += 1
+        elif values["as_of"] == "previous_day_end":
+            daily += messages
         else:
-            weekly += weekly_message_count(campaign.pk, recipients, bind=bind)
-            empty += int(weekly == 0)
+            weekly += messages
     return DigestImpact(daily, weekly, coalesced, empty, blocked, digest.hexdigest())
+
+
+def _report_messages(campaign, values, bind):
+    """One send's messages: its cohort, unless it would be skipped as empty.
+
+    It is skipped only when the report sends only with something to report
+    and every block is a list block with nothing to list (every list block
+    today is the open requests'); a status block always has content.
+    """
+    from parishkit.stewardship.reports.report_blocks import REGISTRY
+    from parishkit.stewardship.reports.report_blocks.registry import LIST
+    from parishkit.stewardship.reports.report_email_cohort import frozen_cohort
+    from parishkit.stewardship.responses.models import AdditionalInformationItem
+
+    cohort = frozen_cohort(values, campaign_configuration_root(campaign))
+    bind(len(cohort))
+    if values["content_required"] and all(
+        REGISTRY[entry["block"]].kind == LIST for entry in values["blocks"]
+    ):
+        open_items = AdditionalInformationItem.objects.filter(
+            submission__campaign_id=campaign.pk,
+            submission__mode="live",
+            disposition="current_actionable",
+            followed_up_at__isnull=True,
+        ).count()
+        bind(open_items)
+        if open_items == 0:
+            return 0
+    return len(cohort)
+
+
+def campaign_configuration_root(campaign):
+    """The applied configuration a report's cohort is resolved under now."""
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+
+    return SystemConfiguration.objects.values_list(
+        "active_configuration_id", flat=True
+    ).get()
 
 
 def _candidates(campaign, definition, cutoff, bind):

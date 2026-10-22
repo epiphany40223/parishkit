@@ -49,6 +49,9 @@ STATUS_LABELS = {
     "passed": _("Past"),
     # One send of a digest that it skips (#1658, the Campaign calendar).
     "skipped": _("Skipped"),
+    # A suggested schedule Dates and mail schedules proposes in the campaign
+    # wizard (#1404 PR 6), listed but not saved.
+    "suggested": _("Not saved yet"),
 }
 # A schedule in one of these states has run, is running, or has work
 # prepared ahead of its time: it sent its email, failed to, or settled every
@@ -107,6 +110,15 @@ class ScheduleRow:
     def digest(self):
         """Whether this is a repeating Admin digest rather than a Family send."""
         return self.kind in DIGESTS
+
+    @property
+    def movable(self):
+        """Whether the Campaign calendar offers Move… for this send (#1521).
+
+        Only a dated Family send that has not run and whose time has not
+        passed without sending: a digest is one repeating schedule.
+        """
+        return not self.read_only and not self.digest and self.status != "missed"
 
     @property
     def last_send(self):
@@ -198,7 +210,8 @@ def schedule_rows(previous, campaign, summary, now, names=None):
     ):
         values = record["values"]
         kind = values["kind"]
-        plan = SchedulePlan.from_values(values, campaign)
+        # A converted report (#1786) plans by its own rule.
+        plan = SchedulePlan.from_values(record.get("report", values), campaign)
         counts = summary.get(str(record["id"]), {})
         slot = plan.next_slot(after=now) if kind in DIGESTS else None
         rows.append(

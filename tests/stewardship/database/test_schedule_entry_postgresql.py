@@ -33,6 +33,7 @@ from ..content_factory import content
 from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import add_draft, change
+from .report_builders import add_digest
 from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_campaign_views_postgresql import apply, post
 from .test_content_views_postgresql import assert_lacks_capability
@@ -251,7 +252,10 @@ def test_a_new_reminder_is_reviewed_then_applied_from_the_list(
     dialog = dialog[dialog.index('<dialog id="schedule-review"') :]
     assert f'data-review-return="{LIST}"' in dialog
     assert 'data-review-outcome="schedules-outcome"' in dialog
-    assert f'<form method="post" action="{LIST}" data-review-apply>' in dialog
+    assert (
+        '<form id="schedule-review-apply" method="post" '
+        f'action="{LIST}" data-review-apply>' in dialog
+    )
     assert ConfigurationChangeRequest.objects.count() == before
     accepted = post(browser, LIST, {"action": "confirm", "preview": token(review)})
     apply(store, accepted)
@@ -300,8 +304,12 @@ def test_a_repeat_with_one_date_keeps_the_full_review(auth_service, google):
     ("kind", "fields"),
     [("daily_digest", {}), ("weekly_digest", {"weekday": "1"})],
 )
-def test_a_new_digest_keeps_the_full_review(auth_service, google, kind, fields):
-    """A digest's send times are resolved, so it is not a confirmation."""
+def test_new_scheduled_email_cannot_add_a_digest(auth_service, google, kind, fields):
+    """Report emails replaced the digests (#1786): New offers Family mail only.
+
+    A posted Daily or Weekly digest, which the page no longer offers, is
+    refused for its fields (400) and records no change.
+    """
     store = auth_service.store
     row = campaign_record()
     setup(store, row)
@@ -314,50 +322,35 @@ def test_a_new_digest_keeps_the_full_review(auth_service, google, kind, fields):
     )
     assert added.state == "applied"
     browser, _ = signed_in()
-    review = post(
+    before = ConfigurationChangeRequest.objects.count()
+    refused = post(
         browser,
         NEW,
         entry(store, kind=kind, time="07:00", template_version=digest["id"], **fields),
     )
-    assert review.status_code == 200, review.content
-    assert "data-review-title" not in review.content.decode()
+    assert refused.status_code == 400, refused.content
+    assert "data-error-summary" in refused.content.decode()
+    assert ConfigurationChangeRequest.objects.count() == before
 
 
 def test_an_applied_digest_is_listed_at_its_next_send(
     auth_service, google, monkeypatch
 ):
-    """A new Daily Admin digest sorts among the dated sends (#1652).
+    """A converted Daily report sorts among the dated sends (#1652, #1786).
 
-    Added through New scheduled email and Apply, as an Administrator would.
+    Added as a configuration change, shaped as the converted Daily digest.
     At 9 AM in New York on October 10 its 9:30 AM send is next, after the
     Initial invitation (October 1) and before Reminder 1 (October 25), in
     both directions of the When heading; it is not listed last.
     """
     monkeypatch.setattr(campaign_wizard, "shown", lambda *_, **__: False)
     store = auth_service.store
-    row = campaign_record()
-    setup(store, row)
-    digest = content(row["id"], kind="email", slot="daily_digest", subject="Digest")
-    added = change(
-        store,
-        store.active(),
-        uuid4(),
-        [{"operation": "add", "section": "content", **digest}],
-    )
-    assert added.state == "applied"
+    campaign, _ = setup(store)
+    add_digest(store, campaign, time="09:30:00")
     browser, _ = signed_in()
-    review = post(
-        browser,
-        NEW,
-        entry(store, kind="daily_digest", time="09:30", template_version=digest["id"]),
-    )
-    assert review.status_code == 200, review.content
-    accepted = post(browser, LIST, {"action": "confirm", "preview": token(review)})
-    apply(store, accepted)
-    assert definition("daily_digest")
     now = datetime(2054, 10, 10, 13, tzinfo=UTC)
     monkeypatch.setattr(schedule_views, "timezone", SimpleNamespace(now=lambda: now))
-    order = ["Initial invitation", "Daily Admin digest", "Reminder 1"]
+    order = ["Initial invitation", "Daily report", "Reminder 1"]
     for path, expected in ((LIST, order), (f"{LIST}?sort=-when", order[::-1])):
         response = browser.get(path)
         assert response.status_code == 200
@@ -401,6 +394,71 @@ def test_a_repeat_adds_one_ordinary_reminder_per_date(auth_service, google):
     )
     assert refused.status_code == 400
     assert "Only reminders repeat." in unescape(refused.content.decode())
+    # A rule that gives no date is refused at the fields the page marks:
+    # Until before From marks both, said once in Until's line (#1915).
+    order = post(
+        browser,
+        NEW,
+        data
+        | {
+            "repeat-start": "2054-10-14",
+            "repeat-until": "2054-10-01",
+            "repeat-dates": [],
+            "base_digest": store.active().digest,
+        },
+    )
+    assert order.status_code == 400
+    page = unescape(order.content.decode())
+    assert (
+        '<ul class="errorlist" id="repeat-until_error"><li>The last date is before '
+        "the first.</li></ul>"
+    ) in page
+    # The summary links to the first marked field (a control that exists).
+    assert re.search(r'<a href="#repeat-from">The last date is before', page)
+    for control in ("repeat-from", "repeat-until"):
+        assert re.search(
+            rf'id="{control}"[^>]*aria-invalid="true" '
+            r'aria-describedby="repeat-until_error"',
+            page,
+        )
+    assert "This rule gives no date that can be added" not in page
+
+
+def test_a_repeat_date_whose_time_has_passed_is_refused(
+    auth_service, google, monkeypatch
+):
+    """#1948: on October 10 a repeat posting October 6 would add a reminder
+    in the past, which would send at once. Refused at Repeat, naming the
+    date and time, and nothing is recorded; the later date alone reviews."""
+    store = auth_service.store
+    _, emails = setup(store)
+    now = datetime(2054, 10, 10, 13, tzinfo=UTC)
+    monkeypatch.setattr(
+        schedule_entry_views, "timezone", SimpleNamespace(now=lambda: now)
+    )
+    browser, _ = signed_in()
+    data = entry(
+        store, kind="reminder", time="09:00", template_version=emails["reminder"]["id"]
+    ) | {
+        "repeat-repeat": "on",
+        "repeat-frequency": "weekly",
+        "repeat-weekdays": "1",
+        "repeat-start": "2054-10-01",
+        "repeat-until": "2054-10-14",
+        "repeat-dates": ["2054-10-06", "2054-10-13"],
+    }
+    before = ConfigurationChangeRequest.objects.count()
+    refused = post(browser, NEW, data)
+    assert refused.status_code == 400
+    assert (
+        "The reminder on October 6, 2054 at 9:00 AM would send at a time that "
+        "has already passed" in unescape(refused.content.decode())
+    )
+    errors = refused.context["repeat"].errors.as_data()["repeat"]
+    assert [error.code for error in errors] == ["repeat_time_passed"]
+    assert ConfigurationChangeRequest.objects.count() == before
+    review = post(browser, NEW, data | {"repeat-dates": ["2054-10-13"]})
+    assert review.status_code == 200, review.content
 
 
 def test_a_refused_new_schedule_shows_its_errors_and_records_nothing(
@@ -593,6 +651,44 @@ def test_delete_records_one_change_that_removes_the_schedule(auth_service, googl
     assert definition("initial")
     status = browser.get(accepted["Location"]).content.decode()
     assert "Return to Dates and mail schedules" in status
+
+
+def test_delete_review_draws_its_sends_with_the_schedule_preview(
+    auth_service, google, monkeypatch
+):
+    """#1949: Edit's Delete review lists the Current schedule's send as Add
+    and Update do, by its day in words and a browser-local time (the shared
+    schedule preview's compact layout), not as a full date with a zone.
+    Outside the campaign wizard, where Edit offers Delete."""
+    monkeypatch.setattr(campaign_wizard, "shown", lambda *_, **__: False)
+    store = auth_service.store
+    setup(store)
+    browser, _ = signed_in()
+    reminder = definition("reminder")
+    page = unescape(
+        browser.get(f"/admin/campaign/schedules/{reminder.pk}/").content.decode()
+    )
+    delete_form = page[page.index('id="schedule-delete-form"') :]
+    assert (
+        '<input type="hidden" name="zone" value="" data-browser-zone>'
+        in (delete_form[: delete_form.index("</form>")])
+    )
+    review = post(
+        browser,
+        DELETE,
+        {
+            "action": "preview",
+            "base_digest": store.active().digest,
+            "schedule_id": str(reminder.pk),
+            "zone": "America/New_York",
+        },
+    )
+    assert review.status_code == 200, review.content
+    text = unescape(review.content.decode())
+    assert "Current schedule" in text
+    assert "Sunday, October 25, 2054, <time " in text
+    assert "data-local-instant data-time-only>" in text
+    assert "When it sends (shown in your computer's time zone):" in text
 
 
 def test_delete_cancels_only_the_deleted_schedules_planned_sends(auth_service, google):

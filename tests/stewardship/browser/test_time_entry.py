@@ -223,7 +223,7 @@ def test_schedule_send_times_read_live_normalise_and_gate_save(
     assert save.is_enabled()
     # An added row is wired too.
     page.get_by_role("button", name="Add another schedule").click()
-    page.locator('[name="schedules-2-kind"]').select_option("daily_digest")
+    page.locator('[name="schedules-2-kind"]').select_option("reminder")
     added = '[name="schedules-2-time"]'
     page.locator(added).fill("6:15 PM")
     has_text(reading(page, added), "Reads as 18:15 (6:15 PM)")
@@ -303,7 +303,7 @@ def test_another_controls_change_announces_no_time_field(page, component_origin)
     saved = '[name="schedules-0-time"]'
     has_text(reading(page, saved), "Reads as 06:00 (6:00 AM)")
     page.locator(f'[name="{NEW}kind"]').select_option("reminder")
-    page.locator(f'[name="{NEW}kind"]').select_option("daily_digest")
+    page.locator(f'[name="{NEW}kind"]').select_option("initial")
     page.wait_for_timeout(700)
     # The saved row's, the new row's and the Repeat panel's send time (#1117).
     assert page.locator(".time-reading + [aria-live=polite]").evaluate_all(

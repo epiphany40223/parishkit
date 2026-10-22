@@ -489,3 +489,67 @@ def test_unknown_family_address_shows_the_family_page(client):
     assert json.loads(script.content)["refusal"]["message"] == (
         "There is no page at this address."
     )
+
+
+def _role_refusal():
+    """The 403 a current Staff session gets for an Administrator page."""
+    from parishkit.stewardship.accounts.policy import Capability
+    from parishkit.stewardship.accounts.role_refusal import response, role_denied
+
+    return response(role_denied(Capability.SYSTEM_LOGS))
+
+
+def test_a_role_refusal_page_offers_home_and_no_sign_in():
+    """The page says the role is the reason; signing in again cannot help."""
+    request = RequestFactory().get("/admin/system/logs", **PAGE)
+    response = through(request, _role_refusal())
+    body = response.content.decode()
+    assert response.status_code == 403
+    assert "<h1>Access unavailable</h1>" in body
+    assert "This page is for Administrators. Your access doesn&#x27;t include it." in (
+        body
+    )
+    assert "Choose a page from the menu" in body
+    assert "Your session may have ended" not in body
+    # The error page's own sign-in link (the Admin base also carries a hidden
+    # signed-out dialog with that text).
+    assert '<p><a href="/admin/login">Sign in again</a></p>' not in body
+    # One home link, in the actions row, not a second one as the fix.
+    assert '<p><a href="/admin/">' not in body
+    assert body.count('href="/admin/">Administration home</a>') == 1
+
+
+def test_a_role_refusal_reaches_scripts_as_the_same_closed_json():
+    """In-place regions and scripts get the same refusal and closed code."""
+    request = RequestFactory().get(
+        "/admin/system/logs",
+        HTTP_ACCEPT="application/json",
+        HTTP_SEC_FETCH_MODE="cors",
+    )
+    response = through(request, _role_refusal())
+    data = json.loads(response.content)
+    assert response.status_code == 403
+    assert data["errors"][0]["code"] == "denied"
+    assert data["refusal"] == {
+        "message": "This page is for Administrators. Your access doesn't include it.",
+        "fix": (
+            "Choose a page from the menu, or ask a parish administrator if you "
+            "need this one."
+        ),
+        "link": {"url": "/admin/", "label": "Administration home"},
+    }
+
+
+def test_a_denial_linking_home_still_offers_sign_in_unless_it_says_not():
+    """Sign in again is dropped by ``Refusal.sign_in``, not by the link (#1924)."""
+    from parishkit.stewardship.accounts.role_refusal import response
+    from parishkit.stewardship.web.refusals import UserFacingDenied
+
+    error = UserFacingDenied(
+        "This action is unavailable.", link="/admin/", link_label="Administration home"
+    )
+    request = RequestFactory().get("/admin/system/logs", **PAGE)
+    body = through(request, response(error)).content.decode()
+    assert '<p><a href="/admin/login">Sign in again</a></p>' in body
+    # The home link still shows once, in the actions row.
+    assert body.count('href="/admin/">Administration home</a>') == 1

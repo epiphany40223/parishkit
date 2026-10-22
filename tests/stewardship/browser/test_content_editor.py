@@ -80,18 +80,23 @@ def caret_to_end(page):
     )
 
 
-def submit(page):
-    """Save the form and wait until the rendered response page has loaded.
+# A review dialog's answer (#750): the form's posted content is the test's.
+REVIEW = (
+    '<div data-review-answer data-review-done="Saved.">'
+    '<input type="hidden" name="preview" value="synthetic" data-review-preview>'
+    "</div>"
+)
 
-    The page posts back to its own URL, so waiting for the POST response and
-    then ``wait_for_load_state()`` is not enough: when Playwright has not yet
-    seen the new document commit, the old page's already-fired ``load``
-    satisfies the wait and the next query races the swap to the new page
-    (#544, "assert 0 == 3" on loaded CI runners). ``expect_navigation`` waits
-    for the new document itself to commit and finish loading.
+
+def submit(page):
+    """Post the form with Preview changes and wait for the review dialog.
+
+    Preview changes posts without a page load (the review dialog, #750), so
+    the test waits for the POST's answer and then for the dialog it opens.
     """
-    with page.expect_navigation():
+    with page.expect_response(lambda response: response.request.method == "POST"):
         page.get_by_role("button", name="Preview changes").click()
+    visible(page.locator("dialog#content-review"))
 
 
 def test_typed_paragraphs_breaks_bold_lists_and_links_round_trip(
@@ -101,9 +106,10 @@ def test_typed_paragraphs_breaks_bold_lists_and_links_round_trip(
     saved = []
 
     def serve(route):
-        """Sanitize a posted form like the server does, then render it again."""
+        """Sanitize a posted form like the server does and answer with a
+        review; a load renders the newest saved HTML again."""
         request = route.request
-        html = START
+        html = saved[-1].html if saved else START
         if request.method == "POST":
             posted = {
                 name: values[0]
@@ -119,7 +125,7 @@ def test_typed_paragraphs_breaks_bold_lists_and_links_round_trip(
             status=200,
             content_type="text/html; charset=utf-8",
             headers={"Content-Security-Policy": CSP},
-            body=editor_page(html),
+            body=REVIEW if request.method == "POST" else editor_page(html),
         )
 
     page.route(component_origin + PATH, serve)
@@ -166,10 +172,12 @@ def test_typed_paragraphs_breaks_bold_lists_and_links_round_trip(
     # Rendering the stored HTML again shows, and resubmits, the same structure.
     from playwright.sync_api import expect
 
+    page.goto(component_origin + PATH)
     editor = page.locator("[data-content-editor]")
     expect(editor.locator("p")).to_have_count(3)
     expect(editor.locator("li")).to_have_count(2)
     expect(editor.locator("strong")).to_have_text("a way of life")
+    caret_to_end(page)
     keyboard.press("Tab")  # No edit: the source still holds the stored HTML.
     submit(page)
     assert saved[1].html == stored.html

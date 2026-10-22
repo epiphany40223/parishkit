@@ -14,7 +14,19 @@ New and Edit scheduled email review in the shared review dialog (#750) and
 return here once the change is applied: the reserved status line above the
 table (components/review-outcome.html, outside the table region, so a
 redraw keeps it) then says what was applied and when, and takes focus.
-{% endcomment %}
+The Delete confirmation's caution (email already sent is never recalled) is
+said only when a chosen schedule has sent email (R40b): the row's Delete and
+box carry data-confirm-caution while its delivered count is above zero, the
+same count as the review's notice (schedule-changes.html).
+While the campaign wizard proposes them (admin_chrome.campaign_wizard
+.suggest, #1404 PR 6), the Suggested schedules panel after the table lists
+the suggested starting schedules (schedule_suggestions) as the table lists
+saved ones, each "Not saved yet", and holds the form the action row's Add
+these schedules and continue posts (data-direct-save, followed in place by
+ui-v1.js, which then opens the next step with "Suggested schedules added.").
+The form carries only the page's version and request key: the server works
+the same set out again.
+{% endcomment %}{% with suggest=admin_chrome.campaign_wizard.suggest %}
 <h1>{% translate "Dates and mail schedules" %}</h1>
 {% aboutpage "schedules" %}{% include 'stewardship/schedule-guide.html' %}
 <p>{% translate "New scheduled email adds a schedule; Edit changes one that has not run yet. Either shows what would change in a review before you apply it, and nothing takes effect until it says Applied; then you return here. Delete asks first, then removes the schedule; email already sent is never recalled." %}</p>{% endaboutpage %}
@@ -41,13 +53,13 @@ redraw keeps it) then says what was applied and when, and takes focus.
   </tr></thead>
   <tbody>
   {% for row in table.rows %}<tr data-schedule-state="{{ row.status }}"{% if row.read_only %} class="schedule-past"{% endif %}>
-    <td class="select-col">{% if not row.read_only %}<input type="checkbox" name="schedule_id" value="{{ row.id }}" data-select-row data-confirm-name="{{ row.label }}" aria-label="{% blocktranslate with name=row.label %}Select {{ name }}{% endblocktranslate %}">{% endif %}</td>
+    <td class="select-col">{% if not row.read_only %}<input type="checkbox" name="schedule_id" value="{{ row.id }}" data-select-row data-confirm-name="{{ row.label }}"{% if row.delivered %} data-confirm-caution{% endif %} aria-label="{% blocktranslate with name=row.label %}Select {{ name }}{% endblocktranslate %}">{% endif %}</td>
     <th scope="row">{{ row.label }}</th>
     <td>{% if row.due %}<time datetime="{{ row.due|instant }}" data-local-instant data-compact>{{ row.due|instant }}</time>{% else %}{% if row.weekday %}{% blocktranslate trimmed with day=row.weekday %}Every {{ day }}{% endblocktranslate %}{% else %}{% translate "Every day" %}{% endif %}<br>{% if row.next_due %}{% translate "Next:" %} <time datetime="{{ row.next_due|instant }}" data-local-instant data-compact>{{ row.next_due|instant }}</time>{% else %}{% translate "No more this campaign" %}{% endif %}{% endif %}</td>
     <td>{{ row.email }}</td>
     <td><span class="status-badge{% if row.status == 'upcoming' %} status-badge-on{% endif %}">{{ row.status_label }}</span></td>
     <td>{% if row.last_send %}{% blocktranslate trimmed with shown=row.delivered|number count delivered=row.delivered %}{{ shown }} email delivered{% plural %}{{ shown }} emails delivered{% endblocktranslate %}{% if row.failed %}, {% blocktranslate trimmed with shown=row.failed|number count failed=row.failed %}{{ shown }} send failed{% plural %}{{ shown }} sends failed{% endblocktranslate %}{% endif %}<br><a href="{% url 'admin:family_email_sends' %}">{% translate "Family email history" %}</a>{% else %}{% translate "None yet" %}{% endif %}</td>
-    {% if row.read_only %}{% table_actions name=row.label %}{% else %}{% table_actions name=row.label edit=row.edit_url delete=row.id confirm="schedule-delete" field="schedule_id" %}{% endif %}
+    {% if row.read_only %}{% table_actions name=row.label %}{% else %}{% table_actions name=row.label edit=row.edit_url delete=row.id confirm="schedule-delete" field="schedule_id" caution=row.delivered %}{% endif %}
   </tr>{% endfor %}
   </tbody>
 </table>
@@ -55,8 +67,32 @@ redraw keeps it) then says what was applied and when, and takes focus.
 </form>
 {% translate "Email already sent is never recalled, and Family codes and links already emailed keep working." as caution %}
 {% translate "Delete {name}?" as title_one %}{% translate "Delete {count} scheduled emails?" as title_many %}{% translate "Deleting cancels the sends of these schedules that have not started. A schedule that starts sending first can't be deleted." as body %}{% translate "Delete" as accept %}
-{% include "stewardship/components/confirm-dialog.html" with dialog_id="schedule-delete" form_id="schedule-actions" fallback="schedule-table-title" title_one=title_one title_many=title_many body=body caution=caution accept=accept done_one=_("Deleted {name}.") done_many=_("Deleted {count} scheduled emails.") %}
-{% else %}<p>{% translate "No emails are scheduled yet. Choose New scheduled email to add the Initial invitation first." %}</p>{% endif %}
-<p class="help">{% translate "Every reminder sends after the Initial invitation, no two Family emails share a date and time, and there is at most one Daily and one Weekly Admin digest." %}</p>
+{% include "stewardship/components/confirm-dialog.html" with dialog_id="schedule-delete" form_id="schedule-actions" fallback="schedule-table-title" title_one=title_one title_many=title_many body=body caution=caution caution_marked=True accept=accept done_one=_("Deleted {name}.") done_many=_("Deleted {count} scheduled emails.") %}
+{% elif suggest and suggested %}<p>{% translate "No emails are scheduled yet. The suggested schedules below are not saved until you add them." %}</p>{% else %}<p>{% translate "No emails are scheduled yet. Choose New scheduled email to add the Initial invitation first." %}</p>{% endif %}
+<p class="help">{% translate "Every reminder sends after the Initial invitation, no two Family emails share a date and time, and there is at most one Daily and one Weekly report." %}</p>
 </section>
+{% if suggest and suggested %}<section id="suggested-schedules" class="panel" aria-labelledby="suggested-schedules-title">
+<h2 id="suggested-schedules-title">{% translate "Suggested schedules" %}</h2>
+<p class="help">{% translate "A starting set for this campaign. Add these schedules and continue saves them; you can change or delete any of them later." %}</p>
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="suggested-schedules-caption">
+<table class="data-table schedule-table">
+  <caption id="suggested-schedules-caption" class="visually-hidden">{% translate "Suggested schedules" %}</caption>
+  <thead><tr>
+    <th scope="col">{% translate "Schedule" %}</th>
+    <th scope="col">{% translate "When" %}</th>
+    <th scope="col">{% translate "Email to send" %}</th>
+    <th scope="col">{% translate "Status" %}</th>
+  </tr></thead>
+  <tbody>
+  {% for row in suggested %}<tr data-schedule-state="{{ row.status }}" data-suggested-kind="{{ row.kind }}">
+    <th scope="row">{{ row.label }}</th>
+    <td>{% if row.due %}<time datetime="{{ row.due|instant }}" data-local-instant data-compact>{{ row.due|instant }}</time>{% else %}{% blocktranslate trimmed with day=row.weekday %}Every {{ day }}{% endblocktranslate %}<br>{% if row.next_due %}{% translate "Next:" %} <time datetime="{{ row.next_due|instant }}" data-local-instant data-compact>{{ row.next_due|instant }}</time>{% else %}{% translate "No more this campaign" %}{% endif %}{% endif %}</td>
+    <td>{{ row.email }}</td>
+    <td><span class="status-badge">{{ row.status_label }}</span></td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+<form method="post" action="{{ suggested_url }}" id="suggested-schedules-form" data-direct-save data-direct-saved="{% translate 'Suggested schedules added.' %}">{% csrf_token %}<input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="request_key" value="{{ admin_chrome.campaign_wizard.save_key }}"></form>
+</section>{% endif %}{% endwith %}
 {% endblock %}

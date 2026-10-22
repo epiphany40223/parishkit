@@ -285,7 +285,8 @@ def test_default_content_selects_new_page_revisions_for_a_new_campaign():
     assert [
         (row["values"]["kind"], row["values"]["slot"]) for row in records
     ] == applicable_slots(values)
-    assert len(records) == 10 + 5
+    # Ten pages and three emails: report emails replaced the digests' (#1786).
+    assert len(records) == 10 + 3
     assert all(matches_default(row["values"]) for row in records)
     assert versions == {
         row["values"]["slot"]: row["id"]

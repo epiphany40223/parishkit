@@ -1,7 +1,10 @@
-"""The daily report email itself fits a 320px phone (#1559, #1564).
+"""The daily report email's own layout, on a desktop and a phone (#1844).
 
-Mail programs cannot scroll a table sideways, so the compiled email's own
-layout must fit. The tests load the complete HTML part (``email_document``
+On a desktop each Campaign total and each day is one line: label, bar and
+value side by side, the date leading its day's row. Mail programs cannot
+scroll a table sideways, so on a 320px phone the email must still fit
+(#1559, #1564); mail programs that keep the email's <style> block restack
+the rows there. The tests load the complete HTML part (``email_document``
 at the report width) with realistic worst-case values: four-digit Family
 counts, a four-digit busiest day and a seven-figure pledge total.
 """
@@ -96,16 +99,81 @@ def test_the_email_fits_a_phone_with_four_digit_counts(page, width):
     assert_fits(page)
 
 
-def test_the_totals_fit_without_the_style_block(page):
-    """A mail program that drops the ``<style>`` block keeps 32px card padding.
+# The number of lines each Campaign total's label and value, and each
+# visible date in the day table, are drawn on, with the top of the label's
+# and the value's first line of text, so a test can tell one-line rows
+# from stacked ones.
+LINES = """() => {
+  const tops = element => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    return [...new Set([...range.getClientRects()].filter(r => r.width).map(
+      r => Math.round(r.top)))];
+  };
+  const lines = element => tops(element).length;
+  const totals = document.evaluate(
+    "//h2[.='Campaign totals']/following-sibling::table[1]",
+    document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null,
+  ).singleNodeValue;
+  const rows = [...totals.tBodies[0].rows].map(row => {
+    const [label, figure] = row.cells;
+    const value = figure.querySelector(".pk-wrap");
+    return {
+      label: lines(label), value: lines(value),
+      top: [label, value].map(cell => tops(cell)[0]),
+    };
+  });
+  const dates = [...document.querySelectorAll(
+    "table:has(> caption) tbody th")].filter(th => th.offsetParent).map(
+    th => ({scope: th.scope, lines: lines(th)}));
+  return {rows, dates};
+}"""
 
-    The Campaign totals and the funnel still fit a 320px window then. The
-    day-by-day table is taken out first: it needs the media query's narrower
-    padding (#1559), so it would hide what this test measures.
+
+@pytest.mark.parametrize("styles", [True, False])
+@pytest.mark.parametrize("width", [640, 1024])
+def test_each_total_and_day_is_one_line_on_a_desktop(page, styles, width):
+    """On a desktop every figure and every day is one line (#1844).
+
+    Label, bar and value share their row; the date leads its day's row and
+    does not wrap. 640px is just above the phone breakpoint (620px). The
+    same holds where a mail program drops the <style> block, since the
+    desktop layout is the default.
+    """
+    page.set_viewport_size({"width": width, "height": 900})
+    page.set_content(worst_case_html(styles=styles))
+    lines = page.evaluate(LINES)
+    assert len(lines["rows"]) == 3
+    for row in lines["rows"]:
+        assert row["label"] == row["value"] == 1, lines
+        assert row["top"][0] == row["top"][1], lines
+    assert lines["dates"] == [{"scope": "row", "lines": 1}] * 3, lines
+    assert_fits(page)
+
+
+def test_a_phone_stacks_each_total_and_heads_each_day_with_its_date(page):
+    """At 320px the label sits above its bar and value; the date row shows.
+
+    The date column is hidden, so each date is shown once, on its own row
+    across the values (#1559).
+    """
+    page.set_viewport_size({"width": 320, "height": 900})
+    page.set_content(worst_case_html())
+    lines = page.evaluate(LINES)
+    for row in lines["rows"]:
+        assert row["top"][0] < row["top"][1], lines
+    assert lines["dates"] == [{"scope": "rowgroup", "lines": 1}] * 3, lines
+    assert_fits(page)
+
+
+def test_without_the_style_block_the_desktop_layout_stays_bounded(page):
+    """A mail program that drops the <style> block shows the desktop layout.
+
+    It cannot restack for a phone, so a 320px window scrolls sideways (the
+    spec records this trade-off, #1844), but the email stays within about
+    560px, the one-line totals with four-digit values. This keeps a later
+    change from widening it quietly.
     """
     page.set_viewport_size({"width": 320, "height": 900})
     page.set_content(worst_case_html(styles=False))
-    page.locator("table:has(> caption)").evaluate("table => table.remove()")
-    assert page.locator("h2:text-is('Campaign totals') + table").count() == 1
-    assert page.locator("h2:text-is('Response funnel') + table").count() == 1
-    assert_fits(page)
+    assert page.evaluate("document.documentElement.scrollWidth") <= 580

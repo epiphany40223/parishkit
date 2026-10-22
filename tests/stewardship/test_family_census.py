@@ -9,6 +9,7 @@ from parishkit.stewardship.responses.census import (
     InvalidHousehold,
     blank_address,
     country_choices,
+    us_region_choices,
     us_regions,
     validate_address,
     validate_household,
@@ -38,6 +39,30 @@ def test_country_and_region_choices_are_stable_immutable_public_data():
     assert type(us_regions()) is frozenset
     assert {"KY", "DC", "PR", "AA", "AE", "AP"} <= us_regions()
     assert "ON" not in us_regions()
+
+
+def test_us_state_choices_offer_exactly_the_accepted_codes():
+    """The Family form's State drop-down offers every code the server accepts.
+
+    Each choice reads as a name with its code (#1777); states and territories
+    are in name order and the military regions follow them.
+    """
+    choices = us_region_choices()
+    assert type(choices) is tuple
+    codes = [code for code, _ in choices]
+    assert len(codes) == len(set(codes))
+    assert set(codes) == us_regions()
+    labels = dict(choices)
+    assert labels["KY"] == "Kentucky (KY)"
+    assert labels["DC"] == "District of Columbia (DC)"
+    assert labels["PR"] == "Puerto Rico (PR)"
+    assert labels["VI"] == "U.S. Virgin Islands (VI)"
+    assert codes[-3:] == ["AA", "AE", "AP"]
+    assert labels["AE"] == "Armed Forces Europe (AE)"
+    names = [label for code, label in choices[:-3]]
+    assert names == sorted(names, key=str.casefold)
+    for code in codes:
+        validate_address(address(region=code))
 
 
 def test_address_text_normalization_preserves_meaningful_display():
@@ -235,3 +260,11 @@ def test_household_shapes_and_source_owner_are_closed():
         validate_household(household(), {})
     with pytest.raises(TypeError):
         validate_household(household(), sources(email_opt_out=False))
+
+
+def test_a_us_region_refusal_says_what_the_state_drop_down_says():
+    """The server's US region refusal reads as the Family form's and the
+    Admin editor's State drop-down check does (#1785)."""
+    with pytest.raises(InvalidHousehold) as denied:
+        validate_address(address(region="Ontario"))
+    assert denied.value.fields["region"] == "Choose a state from the list."

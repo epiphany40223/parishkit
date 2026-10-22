@@ -3,7 +3,6 @@
 # ruff: noqa: F811 -- pytest injects imported fixture dependencies by name.
 
 from datetime import datetime, timedelta
-from time import time
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
@@ -13,6 +12,7 @@ from django.db import DatabaseError, connection
 from django.db.models import F
 from django.urls import reverse
 
+from parishkit.stewardship.accounts import confirmation_views as views
 from parishkit.stewardship.accounts import withdrawal_commands as commands
 from parishkit.stewardship.accounts.confirmation_commands import confirm
 from parishkit.stewardship.accounts.models import PortalUser
@@ -25,7 +25,8 @@ from parishkit.stewardship.storage import StaleRecordError
 
 from . import test_setup_preparation_postgresql as setup_inputs
 from .campaign_builders import campaign_clock
-from .preview_builders import assert_out_of_date, previews_aged
+from .preview_builders import previews_aged
+from .test_activation_views_postgresql import Links
 from .test_confirmation_readiness_postgresql import (  # noqa: F401
     bootstrapped,
     config_role,
@@ -82,80 +83,111 @@ def scheduled(request, monkeypatch):
         campaign=campaign,
         confirmation=receipt,
         arguments=arguments[:3],
-        path=reverse("admin:production_withdrawal"),
+        path=reverse("admin:production_progress"),
         activation_arguments=arguments,
         activation_token=token,
         ring=links[2],
     )
 
 
-def test_withdrawal_http_is_exact_atomic_and_preserves_cleanup(scheduled, monkeypatch):
-    """No hidden toggle: CSRF, consent, fresh intent, history and replay all matter."""
+def _cancel_review(item):
+    """Open the Cancel go-live dialog's Review; returns its answer."""
+    return post(item.browser, item.path, {"action": "review_cancel"})
+
+
+def test_cancel_go_live_dialog_is_exact_atomic_and_preserves_cleanup(
+    scheduled, monkeypatch
+):
+    """No hidden toggle: CSRF, the reason, intent, history and replay all matter.
+
+    Cancel go-live is a review dialog on Production activation (#1585
+    slice 5): its Review answers the counts and a signed binding without a
+    time, its Apply mints the owner's 5-minute intent then (so an hour-old
+    dialog still cancels) and opens Check, which says when.
+    """
     item = scheduled
     campaign = item.campaign
     revision = campaign.readiness_revision
+    check = reverse("admin:go_live")
     with web_login():
-        progress = item.browser.get(reverse("admin:production_progress"))
-        assert progress.status_code == 200
-        assert progress.context["withdrawal_available"]
         page = item.browser.get(item.path)
         assert page.status_code == 200, page.content
-        assert page.context["available"]
+        assert page.context["withdrawal_available"]
+        assert page.context["state"] == "scheduled"
         assert page["Cache-Control"] == "no-store"
+        assert b'value="review_cancel"' in page.content
+        assert b"Scheduled to start" in page.content
+        # A scheduled campaign is the ordinary menu page: no step bar, and
+        # no Refresh link (it updates itself).
+        assert b"Step 4 of 4" not in page.content
+        assert b"Refresh Production progress" not in page.content
         assert item.browser.head(item.path).status_code == 200
-        values = {
-            "action": "preview",
-            "reason": "Correct campaign configuration",
-            "acknowledged": "yes",
-        }
-        assert item.browser.post(item.path, values).status_code == 403
-        for changed in (
-            values | {"reason": " "},
-            values | {"acknowledged": "no"},
-            values | {"actor": str(uuid4())},
+        # The old page is gone, with no redirect (#864).
+        for retired in (
+            "/admin/campaign/production/cancellation/",
+            "/admin/campaign/production/cancellation",
         ):
-            assert post(item.browser, item.path, changed).status_code == 400
-        page = post(item.browser, item.path, values)
-        assert page.status_code == 200, page.content
-        inventory = page.context["preview"]["inventory"]
+            assert item.browser.get(retired).status_code == 404
+        assert item.browser.post(
+            item.path, {"action": "review_cancel"}
+        ).status_code == (403)
+        review = _cancel_review(item)
+        assert review.status_code == 200, review.content
+        inventory = review.context["inventory"]
         assert (
             inventory["blocking"]
             == inventory["cancellable"]
             == inventory["messages"]
             == 0
         )
-        token = page.context["withdrawal_token"]
-        confirm_values = {"action": "confirm", "preview": token}
-        assert (
-            post(
-                item.browser, item.path, confirm_values | {"reason": "Changed reason"}
-            ).status_code
-            == 400
+        assert b'id="production-cancel-reason"' in review.content
+        binding = review.context["review"]
+        values = {
+            "action": "cancel",
+            "review": binding,
+            "reason": "Correct campaign configuration",
+        }
+        assert post(item.browser, item.path, values | {"actor": "x"}).status_code == (
+            400
         )
-        # An expired preview is the plain out-of-date refusal (#398).
-        with previews_aged(monkeypatch):
-            assert_out_of_date(post(item.browser, item.path, confirm_values), item.path)
+        for reason in ("  ", "x" * 2001):
+            refused = post(item.browser, item.path, values | {"reason": reason})
+            assert refused.status_code == 400, reason
+            assert b'data-production-cancel-refused="no_reason"' in refused.content
+        forged = post(item.browser, item.path, values | {"review": binding + "x"})
+        assert forged.status_code == 400
+        # Another sign-in's Review binding.
+        other = signing.Signer(salt=views.SALT).unsign_object(binding)
+        other["actor"] = str(uuid4())
+        stolen = values | {"review": signing.Signer(salt=views.SALT).sign_object(other)}
+        assert post(item.browser, item.path, stolen).status_code == 403
         assert not ProductionWithdrawal.objects.exists()
-        response = post(item.browser, item.path, confirm_values)
-        assert response.status_code == 302, response.content
+        # An hour-old dialog still cancels: no page age reaches the
+        # Administrator, since the intent is minted at Apply.
+        with previews_aged(monkeypatch, seconds=3600):
+            response = post(item.browser, item.path, values)
+        assert response.status_code == 303, response.content
+        assert response["Location"] == check
         receipt = ProductionWithdrawal.objects.get()
         assert receipt.reason == values["reason"]
         assert receipt.cleanup_acknowledged
         assert receipt.confirmation_id == item.confirmation.pk
-        assert post(item.browser, item.path, confirm_values).status_code == 302
+        # A resend opens Check and cancels nothing more.
+        resend = post(item.browser, item.path, values)
+        assert resend.status_code == 303 and resend["Location"] == check
         assert ProductionWithdrawal.objects.count() == 1
-        with monkeypatch.context() as patch:
-            patch.setattr(signing, "time", SimpleNamespace(time=lambda: time() + 301))
-            with pytest.raises(signing.SignatureExpired):
-                signing.loads(token, salt=commands.SALT, max_age=300)
-            assert post(item.browser, item.path, confirm_values).status_code == 302
-        result = item.browser.get(item.path)
-        assert b"Go-live cancelled" in result.content
-        assert not result.context["available"]
+        result = item.browser.get(check)
+        assert result.status_code == 200, result.content
+        assert b"Go-live cancelled at" in result.content
+        assert result.context["stage"].cancelled_at == receipt.created_at
         # Back in Testing, its greyed menu entry's reason (#1128).
-        progress = item.browser.get(reverse("admin:production_progress"))
+        progress = item.browser.get(item.path)
         assert progress.status_code == 409
         assert b"Production has not been confirmed" in progress.content
+        # This Administrator's own cancellation, reviewed again from an old
+        # tab, opens Check.
+        again = _cancel_review(item)
+        assert again.status_code == 303 and again["Location"] == check
         # Old signed activation intent cannot reactivate the withdrawn campaign.
         replay = confirm(
             *item.activation_arguments, token=item.activation_token, typed="Production"
@@ -175,7 +207,75 @@ def test_withdrawal_http_is_exact_atomic_and_preserves_cleanup(scheduled, monkey
     PortalUser.objects.update(disabled=True, version=F("version") + 1)
     with web_login():
         assert item.browser.get(item.path).status_code == 403
-        assert post(item.browser, item.path, confirm_values).status_code == 403
+        assert post(item.browser, item.path, values).status_code == 403
+
+
+def test_cancel_go_live_dialog_refuses_what_changed(scheduled, monkeypatch):
+    """Blocking mail, changed counts and a passed start are said in the dialog.
+
+    Each refusal cancels nothing; a second tab's Apply after the first
+    cancelled opens Check and cancels nothing more.
+    """
+    item = scheduled
+    original = commands._inventory
+    with web_login():
+        assert item.browser.get(item.path).status_code == 200
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                commands,
+                "_inventory",
+                lambda campaign: original(campaign) | {"blocking": 1},
+            )
+            blocked = _cancel_review(item)
+        assert blocked.status_code == 409, blocked.content
+        assert b'data-production-cancel-refused="blocking"' in blocked.content
+        assert reverse("admin:delivery_control").encode() in blocked.content
+        assert b"data-review-preview" not in blocked.content
+        first, second = _cancel_review(item), _cancel_review(item)
+        values = {"action": "cancel", "reason": "Fix dates"}
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                commands,
+                "_inventory",
+                lambda campaign: original(campaign) | {"messages": 7},
+            )
+            changed = post(
+                item.browser, item.path, values | {"review": first.context["review"]}
+            )
+        assert changed.status_code == 409, changed.content
+        assert b'data-production-cancel-refused="changed"' in changed.content
+    # The clock is moved outside a web sign-in, as the SQL clock needs.
+    with campaign_clock(item.campaign.active_configuration.starts_at), web_login():
+        started = post(
+            item.browser, item.path, values | {"review": first.context["review"]}
+        )
+    assert started.status_code == 409, started.content
+    assert b'data-production-cancel-refused="started"' in started.content
+    assert not ProductionWithdrawal.objects.exists()
+    with web_login():
+        # Two Applies of one Review racing: the second's owner call finds
+        # the first's withdrawal under its key and refuses its newer
+        # intent; that is this Administrator's own cancellation, so Check.
+        real = commands.withdraw
+
+        def raced(*args, **kwargs):
+            """Cancel, then refuse as the losing concurrent Apply's owner does."""
+            real(*args, **kwargs)
+            raise PermissionError("Withdrawal replay belongs to another intent.")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(commands, "withdraw", raced)
+            applied = post(
+                item.browser, item.path, values | {"review": first.context["review"]}
+            )
+        assert applied.status_code == 303, applied.content
+        assert applied["Location"] == reverse("admin:go_live")
+        other_tab = post(
+            item.browser, item.path, values | {"review": second.context["review"]}
+        )
+        assert other_tab.status_code == 303, other_tab.content
+        assert other_tab["Location"] == reverse("admin:go_live")
+    assert ProductionWithdrawal.objects.count() == 1
 
 
 def test_withdrawal_expiry_start_and_private_effect_rollback(scheduled):
@@ -268,6 +368,19 @@ def test_withdrawal_direct_sql_rechecks_session_inventory_and_lock_order(schedul
             )
 
 
+def report_sends(*, production_cycle):
+    """Each report's scheduled sends in ``production_cycle``: (report, slot)."""
+    from parishkit.stewardship.campaigns.schedule_models import ScheduleOccurrence
+
+    return sorted(
+        ScheduleOccurrence.objects.filter(
+            definition__kind="report", production_cycle=production_cycle
+        )
+        .exclude(slot__startswith="manual:")
+        .values_list("definition_id", "slot")
+    )
+
+
 @pytest.mark.parametrize("failed", [False, True])
 def test_next_go_live_requires_new_test_cleanup_links_and_confirmation(
     scheduled, tmp_path, failed
@@ -284,49 +397,41 @@ def test_next_go_live_requires_new_test_cleanup_links_and_confirmation(
     from parishkit.stewardship.campaigns.confirmation_models import (
         ProductionConfirmation,
     )
-    from parishkit.stewardship.campaigns.digest_schedule_planning import (
-        DigestScheduleProducer,
-    )
     from parishkit.stewardship.campaigns.family_schedule_planning import plan_family
     from parishkit.stewardship.campaigns.production_models import (
         ProductionTransitionRequest,
     )
-    from parishkit.stewardship.campaigns.schedule_models import ScheduleOccurrence
+    from parishkit.stewardship.campaigns.schedule_models import (
+        ScheduleDefinition,
+        ScheduleOccurrence,
+    )
     from parishkit.stewardship.campaigns.schedules import occurrence_key
     from parishkit.stewardship.deployment import ServiceRole
     from parishkit.stewardship.jobs.dispatch import execute_hint
     from parishkit.stewardship.jobs.queues import WorkQueue
     from parishkit.stewardship.jobs.scheduler import scheduler_session
-    from parishkit.stewardship.reports.weekly_manual import request_manual_report
+    from parishkit.stewardship.reports.report_email_manual import request_send_now
 
     from .production_cycle_checks import reject_retired_cycle
+    from .report_builders import add_digest, execute, prepare_due
     from .test_background_grants_postgresql import task_login
     from .test_campaign_mail_postgresql import deliver
     from .test_cleanup_tasks_postgresql import run
-    from .test_daily_digest_fanout_postgresql import configure_content as daily_content
-    from .test_digest_schedule_planning_postgresql import add_digest
-    from .test_weekly_fanout_postgresql import configure_content as weekly_content
     from .test_withdrawal_work_postgresql import fail_retained, future_message
 
     item = scheduled
     login, service, campaign_id = item.arguments
     for weekly in (False, True):
         add_digest(service.store, item.campaign, weekly=weekly)
-    harness = SimpleNamespace(service=service, campaign=item.campaign)
-    daily_content(harness)
-    weekly_content(harness)
     previous, old_message = future_message(item)
     if failed:
         old_message = fail_retained(previous, old_message)
     cutoff = item.campaign.active_configuration.starts_at + timedelta(days=9)
-    producer = DigestScheduleProducer(uuid4())
-    with (
-        campaign_clock(cutoff),
-        task_login(ServiceRole.SCHEDULER, exact=True, reconnect=True),
-        scheduler_session() as guard,
-    ):
-        first_reports = producer(guard) + producer(guard)
-        assert all(report.created for report in first_reports)
+    with campaign_clock(cutoff):
+        # Each report's due sends, by the real producer and worker.
+        assert prepare_due()
+    first_sends = report_sends(production_cycle=0)
+    assert first_sends
     with web_login():
         _, token = commands.preview(
             *item.arguments, reason="Revise before opening", acknowledged=True
@@ -362,12 +467,9 @@ def test_next_go_live_requires_new_test_cleanup_links_and_confirmation(
         assert status.request_id != item.confirmation.request_id
     with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
         assert run(status)
-    path = reverse("admin:go_live_links", args=[status.request_id])
+    links = Links(*item.arguments, status.request_id)
     with web_login():
-        page = item.browser.get(path)
-        assert page.status_code == 200, page.content
-        response = post(item.browser, path, {"control": page.context["prepare"]})
-        assert response.status_code == 302, response.content
+        links.act(links.page()["prepare"])
     preparation = ProductionTokenPreparation.objects.get(
         transition_id=status.request_id
     )
@@ -402,20 +504,25 @@ def test_next_go_live_requires_new_test_cleanup_links_and_confirmation(
     assert item.campaign.production_cycle == 1
     with campaign_clock(previous.due_at):
         reject_retired_cycle(item, previous, old_message, failed=failed)
+        weekly = ScheduleDefinition.objects.filter(kind="report").order_by("id")[1]
         with web_login():
             command = uuid4()
-            request_manual_report(
+            sent_now = request_send_now(
                 service.store,
                 login.portal_session.principal_id,
                 campaign_id,
+                weekly.pk,
+                weekly.current_revision_id,
                 command_id=command,
                 configuration_id=SystemConfiguration.objects.get().active_configuration_id,
             )
-        manual = ScheduleOccurrence.objects.get(pk=command)
+        manual = ScheduleOccurrence.objects.get(slot=f"manual:{command}")
         assert manual.production_cycle == 1
         assert manual.occurrence_key == occurrence_key(
             manual.revision_id, "production", "admins", manual.slot, production_cycle=1
         )
+        # The Send now runs, so its report is free for its scheduled sends.
+        execute(sent_now)
     with (
         campaign_clock(previous.due_at),
         task_login(ServiceRole.SCHEDULER, exact=True, reconnect=True),
@@ -435,28 +542,20 @@ def test_next_go_live_requires_new_test_cleanup_links_and_confirmation(
     assert replacement.state == "pending"
     assert replacement.occurrence_key != previous.occurrence_key
     assert replacement.slot == previous.slot
-    with (
-        campaign_clock(cutoff),
-        task_login(ServiceRole.SCHEDULER, exact=True, reconnect=True),
-        scheduler_session() as guard,
-    ):
-        # Reuse the same long-lived producer, not just a clean process cursor.
-        next_reports = producer(guard) + producer(guard)
-        assert [report.created for report in next_reports] == [
-            report.created for report in first_reports
-        ]
-    assert (
-        ScheduleOccurrence.objects.filter(
-            definition__kind__in=("daily_digest", "weekly_digest"),
-            production_cycle=0,
-        )
-        .exclude(state="skipped", reason="production_withdrawn")
-        .count()
-        == 0
+    with campaign_clock(cutoff):
+        assert prepare_due()
+    # The withdrawn cycle's sends are all retired: each one still owed is
+    # skipped, and the new cycle makes it again under its own occurrence
+    # key. A slot coalesced into a send keeps its coalesced fulfillment, so
+    # it is not owed again.
+    retired = ScheduleOccurrence.objects.filter(
+        definition__kind="report", production_cycle=0
+    ).exclude(slot__startswith="manual:")
+    assert not retired.exclude(state="skipped", reason="production_withdrawn").exclude(
+        state="coalesced"
     )
-    assert ScheduleOccurrence.objects.filter(
-        definition__kind__in=("daily_digest", "weekly_digest"),
-        production_cycle=1,
-    ).exclude(slot__startswith="manual:").count() == sum(
-        report.created for report in first_reports
+    withdrawn = sorted(
+        retired.filter(state="skipped").values_list("definition_id", "slot")
     )
+    assert withdrawn and set(withdrawn) <= set(first_sends)
+    assert report_sends(production_cycle=1) == withdrawn

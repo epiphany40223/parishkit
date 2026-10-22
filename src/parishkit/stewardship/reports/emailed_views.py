@@ -1,5 +1,11 @@
 """Emailed reports: the past daily and weekly Admin digests in one place (ADM-12.17).
 
+Report emails (#1786) replaced the digests: until the Report emails page
+ships (report-emails spec, delivery plan item 5) this page also lists the
+report sends, newest first, each linking its saved copy, above the digests
+sent before the conversion. Send a weekly report now is Send now of the
+converted Weekly report (``weekly_manual``).
+
 A digest page used to be reachable only from its email. This page lists the
 current campaign's daily reports and, for Administrators, its weekly reports,
 newest first, each linking its page (admin-portal spec, "Menu groups",
@@ -35,8 +41,9 @@ from parishkit.stewardship.web.security import private_response
 
 from .digest_models import DailyDigestReady, DailyDigestSnapshot
 from .export_views import _principal
+from .report_email_models import ReportEmailManualRequest, ReportEmailSnapshot
 from .weekly_manual_views import _has_weekly_schedule
-from .weekly_models import WeeklyDigestSnapshot, WeeklyManualRequest
+from .weekly_models import WeeklyDigestSnapshot
 
 # Each list shows this many of the newest reports: about two months of daily
 # reports, more than one campaign's weekly reports.
@@ -44,26 +51,88 @@ SHOWN = 60
 
 
 def _requested(value, campaign_id):
-    """The current campaign's manual weekly request ``value``, or None.
+    """The current campaign's Send now request ``value``, or None.
 
     ``value`` is the request's key: a UUID, or the page's ``?requested=``
     text, which raises ValueError when malformed. Returns a dict with its
-    background task and, once captured, the report it produced; a key that
-    is not a request of ``campaign_id`` answers None.
+    background task and, once its email is made, the send to link (a report
+    send is named by its preparation, which shares the request's key); a key
+    that is not a request of ``campaign_id`` answers None.
     """
     manual = (
-        WeeklyManualRequest.objects.filter(pk=UUID(str(value)), campaign_id=campaign_id)
+        ReportEmailManualRequest.objects.filter(
+            pk=UUID(str(value)), campaign_id=campaign_id
+        )
         .values("pk", "task_id")
         .first()
     )
     if manual is None:
         return None
-    report = (
-        WeeklyDigestSnapshot.objects.filter(preparation_id=manual["pk"])
-        .values_list("pk", flat=True)
-        .first()
+    made = ReportEmailSnapshot.objects.filter(preparation_id=manual["pk"]).exists()
+    return {"task_id": manual["task_id"], "report_id": manual["pk"] if made else None}
+
+
+def report_sends(campaign_id):
+    """The newest report sends of the campaign that made an email.
+
+    Read from binding columns only: each is its send id (its preparation's),
+    its report's name (from the revision it sent), how it was sent
+    (scheduled, manual or recovery), when its email was made and, for a
+    report of whole days, the last day it covers (``through_date``, None
+    otherwise). A send that made no email (nothing to report, or no
+    recipient) is not listed.
+    """
+    from django.db.models import Exists, OuterRef, Subquery
+
+    from parishkit.stewardship.campaigns.models import ScheduleRevision
+    from parishkit.stewardship.campaigns.schedule_models import ScheduleOccurrence
+
+    from .report_email_models import ReportEmailRecipient
+
+    rows = (
+        ReportEmailSnapshot.objects.filter(campaign_id=campaign_id)
+        .filter(
+            Exists(
+                ReportEmailRecipient.objects.filter(
+                    snapshot_id=OuterRef("pk"), outbox_id__isnull=False
+                )
+            )
+        )
+        .annotate(
+            name=Subquery(
+                ScheduleRevision.objects.filter(
+                    pk=OuterRef("preparation__revision_id")
+                ).values("values__name")[:1]
+            ),
+            slot=Subquery(
+                ScheduleOccurrence.objects.filter(
+                    pk=OuterRef("preparation__occurrence_id")
+                ).values("slot")[:1]
+            ),
+        )
+        .order_by("-created_at", "-id")
+        .values(
+            "preparation_id",
+            "created_at",
+            "name",
+            "slot",
+            "preparation__through_date",
+        )[:SHOWN]
     )
-    return {"task_id": manual["task_id"], "report_id": report}
+    return [
+        {
+            "pk": row["preparation_id"],
+            "name": row["name"],
+            "made_at": row["created_at"],
+            "through_date": row["preparation__through_date"],
+            "how": "manual"
+            if row["slot"].startswith("manual:")
+            else "recovery"
+            if row["slot"].startswith("recovery:")
+            else "scheduled",
+        }
+        for row in rows
+    ]
 
 
 def listing(campaign_id, *, administrator, requested=None):
@@ -78,7 +147,14 @@ def listing(campaign_id, *, administrator, requested=None):
     empty.
     """
     if campaign_id is None:
-        return {"daily": [], "weekly": [], "requested": None, "weekly_schedule": False}
+        return {
+            "reports": [],
+            "daily": [],
+            "weekly": [],
+            "requested": None,
+            "weekly_schedule": False,
+        }
+    reports = report_sends(campaign_id)
     ready = DailyDigestReady.objects.values_list("snapshot_id", flat=True)
     daily = list(
         DailyDigestSnapshot.objects.filter(campaign_id=campaign_id, pk__in=ready)
@@ -87,11 +163,14 @@ def listing(campaign_id, *, administrator, requested=None):
     )
     if not administrator:
         return {
+            "reports": reports,
             "daily": daily,
             "weekly": [],
             "requested": None,
             "weekly_schedule": False,
         }
+    from .weekly_models import WeeklyManualRequest
+
     manual = set(
         WeeklyManualRequest.objects.filter(campaign_id=campaign_id).values_list(
             "pk", flat=True
@@ -104,6 +183,7 @@ def listing(campaign_id, *, administrator, requested=None):
         .values("pk", "preparation_id", "observed_at")[:SHOWN]
     ]
     return {
+        "reports": reports,
         "daily": daily,
         "weekly": weekly,
         "requested": None if requested is None else _requested(requested, campaign_id),

@@ -299,8 +299,7 @@ BEGIN
     IF current_user='pk_stewardship_worker' AND
        public.stewardship_family_mail_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),NULL) IS NOT TRUE
        AND public.stewardship_family_test_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW)) IS NOT TRUE
-       AND public.stewardship_daily_digest_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),NULL) IS NOT TRUE
-       AND public.stewardship_weekly_digest_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),NULL) IS NOT TRUE
+       AND public.stewardship_report_email_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),NULL) IS NOT TRUE
        AND public.stewardship_ops_prepare_write_v1(TG_TABLE_NAME,to_jsonb(NEW)) IS NOT TRUE
        AND public.stewardship_security_prepare_write_v1(TG_TABLE_NAME,to_jsonb(NEW)) IS NOT TRUE
        AND public.stewardship_leader_email_prepare_write_v1(TG_TABLE_NAME,to_jsonb(NEW)) IS NOT TRUE THEN
@@ -765,10 +764,12 @@ DECLARE
     recipients jsonb;
     body_limit integer;
 BEGIN
-    -- Only a weekly message may retain the separately bounded multi-Family
-    -- compiled report. Unknown owners and other purposes keep the original cap.
+    -- Only a report email (#1786; a weekly digest before it) may retain the
+    -- separately bounded multi-Family compiled report. Unknown owners and
+    -- other purposes keep the original cap.
     body_limit:=CASE WHEN EXISTS(SELECT 1 FROM stewardship_outbox_message
-        WHERE id=NEW.message_id AND purpose='weekly_digest') THEN 8388608 ELSE 1048576 END;
+        WHERE id=NEW.message_id AND purpose IN ('weekly_digest','admin_report','admin_report_test'))
+        THEN 8388608 ELSE 1048576 END;
     IF NEW.subject ~ E'[\r\n]' OR btrim(NEW.subject)=''
        OR btrim(NEW.html)='' OR btrim(NEW.text)=''
        OR octet_length(NEW.html)>body_limit OR octet_length(NEW.text)>body_limit
@@ -883,7 +884,7 @@ BEGIN
     SELECT * INTO r FROM public.stewardship_outbox_render WHERE id=e.render_id;
     SELECT * INTO m FROM public.stewardship_outbox_message WHERE id=e.message_id;
     IF e.id IS NULL OR r.id IS NULL OR m.id IS NULL OR e.previous_state<>'submitting'
-       OR m.purpose NOT IN ('initial','reminder','receipt','family_test','daily_digest','weekly_digest','operational','security_event','leader_email') OR e.attempt<1
+       OR m.purpose NOT IN ('initial','reminder','receipt','family_test','daily_digest','weekly_digest','admin_report','operational','security_event','leader_email') OR e.attempt<1
        OR e.evidence_digest<>encode(sha256(convert_to(e.evidence_note,'UTF8')),'hex')
        OR e.provider_key_digest<>encode(sha256(convert_to(m.semantic_key::text,'UTF8')),'hex')
        THEN RETURN NULL; END IF;

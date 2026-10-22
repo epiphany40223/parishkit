@@ -45,6 +45,7 @@ from .schedule_list_components import (
     NEW_INVALID,
     NEW_PENDING,
     NEW_REPEAT,
+    NEW_RULE_REFUSED,
     NEW_STALE,
     NOT_OPEN,
     PASSED_REFUSAL,
@@ -54,7 +55,16 @@ from .schedule_list_components import (
     TEST_SEND,
 )
 from .test_components import axe_violations
-from .waits import eventually, has_attribute, hidden, same_place, visible
+from .waits import (
+    available,
+    eventually,
+    greyed,
+    has_attribute,
+    has_text,
+    hidden,
+    same_place,
+    visible,
+)
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -120,7 +130,7 @@ def test_list_has_one_line_of_dates_and_actions_only_on_unsent_rows(
     # The weekly digest sits at its next send (that Monday), not last (#1652).
     assert names(page) == [
         "Initial invitation",
-        "Weekly Admin digest",
+        "Weekly report",
         "Reminder 1",
         "Reminder 2",
     ]
@@ -171,7 +181,7 @@ def test_when_heading_sorts_the_table_in_place(page, component_origin):
     assert names(page) == [
         "Reminder 2",
         "Reminder 1",
-        "Weekly Admin digest",
+        "Weekly report",
         "Initial invitation",
     ]
     assert "sort=-when" in page.url
@@ -179,7 +189,7 @@ def test_when_heading_sorts_the_table_in_place(page, component_origin):
     has_attribute(page.locator('th[data-sort-column="when"]'), "aria-sort", "ascending")
     assert names(page) == [
         "Initial invitation",
-        "Weekly Admin digest",
+        "Weekly report",
         "Reminder 1",
         "Reminder 2",
     ]
@@ -199,7 +209,8 @@ def test_delete_asks_in_a_dialog_then_redraws_the_table_in_place(
     delete.click()
     visible(dialog(page))
     assert dialog(page).locator("h2").inner_text() == "Delete Reminder 1?"
-    assert "never recalled" in dialog(page).inner_text()
+    # Reminder 1 has sent nothing, so nothing is said about recalling (R40b).
+    assert "never recalled" not in dialog(page).inner_text()
     # The safe choice has focus, and Tab stays inside the dialog.
     assert page.evaluate("document.activeElement.textContent.trim()") == "Cancel"
     page.keyboard.press("Tab")
@@ -222,7 +233,7 @@ def test_delete_asks_in_a_dialog_then_redraws_the_table_in_place(
     # Applied: the table is redrawn without that reminder, nothing reloads.
     has_count(rows(page), 3)
     hidden(dialog(page))
-    assert names(page) == ["Initial invitation", "Weekly Admin digest", "Reminder 1"]
+    assert names(page) == ["Initial invitation", "Weekly report", "Reminder 1"]
     assert page.locator(f'button[value="{identifier}"]').count() == 0
     eventually(page, "document.activeElement.id === 'schedule-table-title'")
     visible(page.locator("main > [role=status]", has_text="Deleted Reminder 1."))
@@ -245,15 +256,52 @@ def test_delete_selected_names_the_count(page, component_origin):
     bulk.click()
     visible(dialog(page))
     assert dialog(page).locator("h2").inner_text() == "Delete 2 scheduled emails?"
+    # Neither reminder has sent: no word about recalling sent email (R40b).
+    assert "never recalled" not in dialog(page).inner_text()
     with page.expect_request(lambda request: request.method == "POST") as sent:
         dialog(page).get_by_role("button", name="Delete", exact=True).click()
     assert len(posted(sent.value)["schedule_id"]) == 2
     has_count(rows(page), 2)
-    assert names(page) == ["Initial invitation", "Weekly Admin digest"]
+    assert names(page) == ["Initial invitation", "Weekly report"]
     visible(
         page.locator("main > [role=status]", has_text="Deleted 2 scheduled emails.")
     )
     assert page.evaluate("window.notReloaded === true")
+    assert not failures
+
+
+def test_delete_says_sent_email_is_not_recalled_only_for_one_that_sent(
+    page, component_origin
+):
+    """The Delete confirmation's caution (R40b) is said only while a chosen
+    schedule has sent email: the Weekly report has, the reminders
+    have not. Delete selected says it once the digest is ticked too."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + BULK)
+    failures = watch(page)
+    caution = dialog(page).get_by_text("Email already sent is never recalled")
+    page.get_by_role("button", name="Delete Weekly report").click()
+    visible(dialog(page))
+    visible(caution)
+    page.keyboard.press("Escape")
+    hidden(dialog(page))
+    page.get_by_role("button", name="Delete Reminder 2").click()
+    visible(dialog(page))
+    hidden(caution)
+    page.keyboard.press("Escape")
+    hidden(dialog(page))
+    boxes = page.locator("input[data-select-row]")
+    boxes.nth(1).check()
+    page.get_by_role("button", name="Delete selected").click()
+    visible(dialog(page))
+    hidden(caution)
+    page.keyboard.press("Escape")
+    hidden(dialog(page))
+    boxes.nth(0).check()
+    page.get_by_role("button", name="Delete selected").click()
+    visible(dialog(page))
+    assert dialog(page).locator("h2").inner_text() == "Delete 2 scheduled emails?"
+    visible(caution)
     assert not failures
 
 
@@ -429,6 +477,178 @@ def test_new_repeating_reminder_lists_and_posts_the_dates_that_fit(
     assert not failures
 
 
+# The rule errors' words (recurrence.RULE_ERRORS, the page's REPEAT_ERRORS).
+ORDER = "The last date is before the first."
+NO_WEEKDAY = "Choose at least one day of the week."
+
+
+def start_repeat(page, origin, path=NEW):
+    """New with Repeat ticked for a reminder every Tuesday at 6:00 AM."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(origin + path)
+    choose(page, "kind", "reminder")
+    page.get_by_label("Repeat", exact=True).check()
+    page.get_by_label("Tuesday").check()
+    page.locator('[name="schedule-time"]').fill("06:00")
+    choose(page, "template_version", email_for(page, "reminder"))
+
+
+def reason(button):
+    """The words of the visually hidden line naming why ``button`` waits."""
+    return button.evaluate(
+        "node => (node.getAttribute('aria-describedby') || '').split(/\\s+/)"
+        ".map((id) => document.getElementById(id))"
+        ".filter((line) => line && line.classList.contains('visually-hidden'))"
+        ".map((line) => line.textContent).join(' ')"
+    )
+
+
+def test_a_repeat_rule_error_shows_at_its_fields_and_holds_add(page, component_origin):
+    """Until before From marks both and says so once, after Until (#1915).
+
+    Add waits meanwhile, named by the same words; the summary does not say
+    them again, and the reserved lines move nothing. Fixing Until clears
+    both marks and frees Add. Unticking the only weekday marks the days.
+    """
+    start_repeat(page, component_origin)
+    failures = watch(page)
+    add = page.get_by_role("button", name=ADD)
+    available(add)
+    start, until = page.locator("#repeat-from"), page.locator("#repeat-until")
+    line = page.locator("#repeat-until_error")
+    summary = page.locator("[data-repeat-summary]")
+    has_text(summary, "3 reminders to add, 1 not added.")
+    hidden(line)
+    places = [add, summary, page.locator('[name="schedule-time"]')]
+    before = [page_top(item) for item in places]
+    until.fill("2054-09-30")
+    has_attribute(until, "aria-invalid", "true")
+    has_attribute(start, "aria-invalid", "true")
+    visible(line)
+    assert line.inner_text() == ORDER
+    for field in (start, until):
+        assert "repeat-until_error" in field.get_attribute("aria-describedby").split()
+    # Said once: not at From, and not in the summary.
+    hidden(page.locator("#repeat-from_error"))
+    has_text(summary, "")
+    greyed(add)
+    assert reason(add) == ORDER
+    assert [page_top(item) for item in places] == pytest.approx(before, abs=1)
+    # Leaving Until keeps the marks (the browser's own blur check runs too).
+    until.blur()
+    assert until.get_attribute("aria-invalid") == "true"
+    until.fill("2054-10-31")
+    has_attribute(until, "aria-invalid", "false")
+    assert start.get_attribute("aria-invalid") == "false"
+    hidden(line)
+    assert "repeat-until_error" not in (until.get_attribute("aria-describedby") or "")
+    available(add)
+    assert reason(add) == ""
+    has_text(summary, "3 reminders to add, 1 not added.")
+    # The only weekday unticked: the days are marked, with their own line.
+    page.get_by_label("Tuesday").uncheck()
+    days = page.locator('[data-repeat="weekday"]')
+    has_attribute(days.first, "aria-invalid", "true")
+    assert days.evaluate_all(
+        "boxes => boxes.every((box) => box.getAttribute('aria-invalid') === 'true'"
+        " && box.getAttribute('aria-describedby') === 'repeat-weekdays_error')"
+    )
+    has_text(page.locator("#repeat-weekdays_error"), NO_WEEKDAY)
+    greyed(add)
+    assert reason(add) == NO_WEEKDAY
+    assert [page_top(item) for item in places] == pytest.approx(before, abs=1)
+    page.get_by_label("Thursday").check()
+    has_attribute(days.first, "aria-invalid", "false")
+    hidden(page.locator("#repeat-weekdays_error"))
+    available(add)
+    assert not failures
+
+
+def test_a_repeat_with_no_date_to_add_holds_add_with_the_summary(
+    page, component_origin
+):
+    """A rule without an error but with nothing to add (no date that fits)
+    holds Add, named by the summary's words; a fresh rule's missing weekday
+    is said there too, not marked (#1915). The hold is worked out again
+    when the page is shown from history."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + NEW)
+    failures = watch(page)
+    choose(page, "kind", "reminder")
+    choose(page, "template_version", email_for(page, "reminder"))
+    time = page.locator('[name="schedule-time"]')
+    time.fill("06:00")
+    page.get_by_label("Repeat", exact=True).check()
+    add = page.get_by_role("button", name=ADD)
+    summary = page.locator("[data-repeat-summary]")
+    # A fresh rule's missing weekday, never reached, is not marked: the
+    # summary says it is missing, and names Add's wait.
+    has_text(summary, NO_WEEKDAY)
+    assert page.get_by_label("Tuesday").get_attribute("aria-invalid") != "true"
+    hidden(page.locator("#repeat-weekdays_error"))
+    greyed(add)
+    assert reason(add) == NO_WEEKDAY
+    page.get_by_label("Tuesday").check()
+    available(add)
+    # Without a send time no date can be checked (the time entry's own
+    # gate holds Add too).
+    time.fill("")
+    has_text(summary, "Enter a send time to check these dates.")
+    greyed(add)
+    assert "Enter a send time to check these dates." in reason(add)
+    time.fill("06:00")
+    available(add)
+    # From and Until on a Wednesday: no Tuesday between them.
+    page.locator("#repeat-from").fill("2054-10-07")
+    page.locator("#repeat-until").fill("2054-10-07")
+    has_text(summary, "This rule gives no dates between the first and last date.")
+    greyed(add)
+    assert reason(add) == "This rule gives no dates between the first and last date."
+    # A page shown again re-checks the hold (pageshow), from what it holds.
+    page.evaluate(
+        "document.getElementById('repeat-until').value = '2054-10-31';"
+        " window.dispatchEvent(new Event('pageshow'))"
+    )
+    available(add)
+    assert reason(add) == ""
+    assert not failures
+
+
+def test_a_refused_repeat_rule_is_marked_at_from_and_until(page, component_origin):
+    """The server refuses a rule at the fields the page marks (#1915).
+
+    The page's own check admits October's Tuesdays, so this is a refusal
+    only the server makes (its answer refuses Until before From). From and
+    Until are marked, the words are in Until's line, and editing Until
+    clears both.
+    """
+    start_repeat(page, component_origin, NEW_RULE_REFUSED)
+    failures = watch(page)
+    page.get_by_role("button", name=ADD).click()
+    visible(page.locator("[data-error-summary]"))
+    assert not page.locator(REVIEW_DIALOG).is_visible()
+    # The summary links to the first marked field, which exists.
+    link = page.locator('[data-error-summary] a[href="#repeat-from"]')
+    visible(link)
+    assert link.inner_text() == ORDER
+    start, until = page.locator("#repeat-from"), page.locator("#repeat-until")
+    line = page.locator("#repeat-until_error")
+    visible(line)
+    assert line.inner_text() == ORDER
+    for field in (start, until):
+        assert field.get_attribute("aria-invalid") == "true"
+        assert "repeat-until_error" in field.get_attribute("aria-describedby").split()
+    hidden(page.locator("#repeat-from_error"))
+    # The reader's values stay, and an edit of either clears both.
+    assert until.input_value() == "2054-10-31"
+    until.fill("2054-10-30")
+    has_attribute(until, "aria-invalid", "false")
+    assert start.get_attribute("aria-invalid") == "false"
+    hidden(line)
+    assert page.evaluate("window.notReloaded === true")
+    assert not failures
+
+
 def test_change_scheduled_email_is_filled_in_and_saves_that_schedule(
     page, component_origin, axe_source
 ):
@@ -459,6 +679,34 @@ def test_change_scheduled_email_is_filled_in_and_saves_that_schedule(
     dialog = page.get_by_role("dialog", name="Review scheduled email change")
     visible(dialog)
     assert "Reminder — Update" in dialog.inner_text()
+    assert not failures
+
+
+def test_a_reviews_send_times_name_their_day_and_browser_time(page, component_origin):
+    """The shared schedule preview (#1129): each side lists its next sends
+    as one compact line, its day in words, then the time alone in this
+    browser's zone and what sends; no date key and no always-on sentences."""
+    from playwright.sync_api import expect
+
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + EDIT)
+    failures = watch(page)
+    page.locator('[name="schedule-time"]').fill("10:30")
+    page.get_by_role("button", name=REVIEW).click()
+    dialog = page.get_by_role("dialog", name="Review scheduled email change")
+    visible(dialog)
+    lines = dialog.locator("ul.occurrence-list li")
+    # 9:00 AM in New York is 6:00 AM here; the proposed 10:30 is typed here.
+    expect(lines).to_have_text(
+        [
+            re.compile(r"^Saturday, October 10, 2054, 6:00\sAM Reminder$"),
+            re.compile(r"^Saturday, October 10, 2054, 10:30\sAM Reminder$"),
+        ]
+    )
+    text = dialog.inner_text()
+    assert text.count("When it sends (shown in your computer's time zone):") == 2
+    for gone in ("once —", "not a list of who", "When clocks change", "Only the"):
+        assert gone not in text
     assert not failures
 
 
@@ -701,7 +949,7 @@ def test_new_waits_for_a_known_browser_zone(page, component_origin, reported):
     assert save.is_disabled()
     assert "schedule-zone-missing" in save.get_attribute("aria-describedby")
     # Typing a readable time does not make it available.
-    choose(page, "kind", "daily_digest")
+    choose(page, "kind", "initial")
     page.locator('[name="schedule-time"]').fill("9am")
     page.locator('[name="schedule-time"]').blur()
     assert save.is_disabled()
@@ -1045,7 +1293,8 @@ def test_date_change_review_applies_in_the_dialog_and_returns_to_the_list(
     assert page.evaluate(FOCUSED) == "schedule-dates-review-title"
     text = shown.inner_text()
     assert "Campaign window" in text and "Reminder — Update" in text
-    assert "Email already sent cannot be recalled." in text
+    # The re-planned reminder has sent nothing: nothing to recall (R40b).
+    assert "Email already sent cannot be recalled." not in text
     assert axe_violations(page, axe_source) == []
     assert page.evaluate("window.notReloaded === true")
     with page.expect_request(lambda request: request.method == "POST") as sent:
@@ -1238,7 +1487,7 @@ def test_new_offers_the_email_of_the_chosen_mail_type(page, component_origin):
 
     Ticked, the fields fill from the chosen reminder email; another mail type
     narrows Email to send to nothing chosen, which empties the unedited
-    fields rather than leave a reminder's text for a digest; Reset fills the
+    fields rather than leave a reminder's text for an invitation; Reset fills the
     chosen type's default, and edited text then stays while the type
     changes. The fields post with New's schedule.
     """
@@ -1271,17 +1520,17 @@ def test_new_offers_the_email_of_the_chosen_mail_type(page, component_origin):
     visible(subject)
     assert subject.input_value() == "reminder mail"
     # Another mail type leaves no email chosen: the unedited fields empty.
-    kind.select_option("daily_digest")
+    kind.select_option("initial")
     assert choice.input_value() == ""
     assert (subject.input_value(), html.input_value()) == ("", "")
     reset.click()
-    assert "{{ family_code }}" not in html.input_value()
-    digest = subject.input_value()
-    assert digest
+    invitation = subject.input_value()
+    assert invitation
     # Reset text is the reader's: changing the type keeps it.
     kind.select_option("reminder")
-    assert subject.input_value() == digest
+    assert subject.input_value() == invitation
     reset.click()
+    assert subject.input_value() != invitation
     assert "{{ family_code }}" in html.input_value()
     # Clearing the mail type unticks the box and closes the fields.
     kind.select_option("")
@@ -1642,7 +1891,7 @@ def test_the_test_waits_for_an_email_and_for_an_open_campaign(page, component_or
         choice.locator('option[data-kind="reminder"]').first.get_attribute("value")
     )
     assert button.is_enabled() and status.inner_text() == ""
-    page.locator('[name="schedule-kind"]').select_option("daily_digest")
+    page.locator('[name="schedule-kind"]').select_option("initial")
     assert choice.input_value() == ""
     assert button.is_disabled()
     assert status.inner_text() == "Choose an email to send first."
@@ -1651,3 +1900,38 @@ def test_the_test_waits_for_an_email_and_for_an_open_campaign(page, component_or
     visible(button)
     assert button.is_disabled() and status.inner_text() == NOT_OPEN
     assert not failures
+
+
+@pytest.mark.parametrize("path", [NEW, EDIT])
+def test_send_date_and_time_boxes_line_up_and_stack(page, component_origin, path):
+    """Send date's box is level with Send time's at desktop width (#1851).
+
+    The date field's reserved answer line used to sit above its box and push
+    it about 38px below the time's. At phone width the two fields stack in
+    one column, the date first, without overlapping or scrolling sideways.
+    """
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + path)
+    if path == NEW:
+        choose(page, "kind", "reminder")
+    date = page.locator('[name="schedule-date"]')
+    time = page.locator('[name="schedule-time"]')
+    visible(date)
+    visible(time)
+    assert abs(date.bounding_box()["y"] - time.bounding_box()["y"]) <= 1
+    page.set_viewport_size({"width": 390, "height": 900})
+    # Both boxes are read in one script step, so the page cannot reflow
+    # between the two measurements.
+    first, second = page.evaluate(
+        """() => ['schedule-date', 'schedule-time'].map((name) => {
+            const box = document.querySelector(`[name="${name}"]`)
+                .getBoundingClientRect();
+            return {x: box.x, y: box.y, width: box.width, height: box.height};
+        })"""
+    )
+    assert first["y"] + first["height"] <= second["y"]
+    assert first["x"] >= 0 and first["x"] + first["width"] <= 390
+    assert second["x"] >= 0 and second["x"] + second["width"] <= 390
+    assert page.evaluate(
+        "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
+    )

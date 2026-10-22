@@ -445,7 +445,14 @@ def test_the_page_lists_decides_and_downloads_for_staff_only(response_service, g
         assert b"To review (1)" in body and b"$1,234.50, Monthly" in body
         assert f'value="{submission.pk}:0"'.encode() in body
         assert get(browser, route + "?search=Example")[0].status_code == 400
-        assert get(browser, route + "?stage=to_enter_by_hand")[0].status_code == 200
+        response, body = get(browser, route + "?stage=to_enter_by_hand")
+        assert response.status_code == 200
+        # The page's address carries its Stage (#1820): a reload draws it.
+        assert (
+            f'<a href="{route}?stage=to_enter_by_hand" data-page-address'.encode()
+            in body
+        )
+        assert f'<a href="{route}" data-page-address'.encode() in get(browser, route)[1]
         response, body = search(
             browser,
             route,

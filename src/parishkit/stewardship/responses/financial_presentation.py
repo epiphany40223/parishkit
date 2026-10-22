@@ -2,7 +2,7 @@
 
 from parishkit.stewardship.campaigns.models import CampaignConfiguration
 from parishkit.stewardship.web.content import render_template
-from parishkit.stewardship.web.presentation import parish_date
+from parishkit.stewardship.web.presentation import parish_date, period_years
 
 from .financial import (
     FREQUENCIES,
@@ -96,6 +96,10 @@ def financial_presentation(inputs, prior, *, parish_name, shown=None):
             "label": (
                 f"{parish_date(definition.comparison.start)} – "
                 f"{parish_date(definition.comparison.end)}"
+            ),
+            # "towards your 2026 pledge": the same rule as year_label (#1923).
+            "years": period_years(
+                definition.comparison.start, definition.comparison.end
             ),
         },
         "year_label": definition.year_label,

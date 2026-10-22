@@ -90,6 +90,8 @@ _COMMAND_OPTIONS = {
         "reason",
         "confirm_administrators",
     },
+    # The one offline conversion of the digests into report emails (#1786).
+    "upgrade-reports": {"config", "confirm_deployment"},
     # Ends every live Admin automation session (ADM-11); run in every restore.
     "revoke-automation-sessions": {"config", "reason"},
     # Closes the site for a restore review (#537); run in every real restore.
@@ -340,6 +342,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "recover-admin",
         "preview-admin-recovery",
         "upgrade-users",
+        "upgrade-reports",
         "revoke-automation-sessions",
         "restore-begin",
         "debug-off-clear",

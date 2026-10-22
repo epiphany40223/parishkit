@@ -247,7 +247,7 @@ def sample_mail(request, service, campaign_id, revision_id):
 
     This is the campaign email page's "send a sample" action (``prepare`` is
     its review, ``request_sample`` its send, the signed preview between them
-    the page's own binding), and the test go-live readiness requires of a
+    the page's own binding), and the test Go live requires of a
     Family template: an accepted ``CampaignMailTest`` for the Initial or a
     Reminder revision under the current configuration and credential.
     """
@@ -274,10 +274,14 @@ def start_go_live(request, service, campaign_id):
     )
 
     inputs, verified, token = verify_preview(request, service, campaign_id)
-    if inputs.problems or not verified or token is None:
+    # Readiness waives a stale full refresh only because Start go-live
+    # queues its own (#1812); this tool starts cleanup without one.
+    problems = list(inputs.problems)
+    if inputs.source.reason == "full_refresh_stale":
+        problems.append(inputs.source.reason)
+    if problems or not verified or token is None:
         raise SeedWebRefused(
-            "Go-live readiness is not met: "
-            + (", ".join(inputs.problems) or "origin unverified")
+            "Go live is not ready: " + (", ".join(problems) or "origin unverified")
         )
     if inputs.target_state != "scheduled":
         raise SeedWebRefused(

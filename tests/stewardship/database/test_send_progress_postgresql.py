@@ -1,4 +1,6 @@
-"""Family email progress against PostgreSQL (#413): counts, cost, grants and locks.
+"""The Mail queue and its Family send panel against PostgreSQL (#1562, #413).
+
+Counts, cost, grants and locks.
 
 A real prepared (and a real uncertain) Family email is read through the
 restricted web login, including while another session holds the global
@@ -59,12 +61,14 @@ from parishkit.stewardship.campaigns.work_locks import (
 )
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs import send_progress
+from parishkit.stewardship.jobs.delivery_metadata import other_mode
 from parishkit.stewardship.jobs.dispatch import execute_hint
 from parishkit.stewardship.jobs.family_mail_models import FamilyMailPreparation
 from parishkit.stewardship.jobs.family_mail_tasks import (
     enqueue_preparation,
     retry_preparation,
 )
+from parishkit.stewardship.jobs.mail_queue import queued_rows, read_queue
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage
 from parishkit.stewardship.jobs.ownership import database_now
@@ -107,7 +111,7 @@ from .test_taskrun_postgresql import act, expire
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
-PAGE = "/admin/mail/family-progress/"
+PAGE = "/admin/mail/queue/"
 STATUS = PAGE + "status/"
 SHADOWED = (
     "stewardship_schedule_definition",
@@ -184,12 +188,16 @@ def test_the_web_login_follows_a_real_send_during_a_work_order_hold(
         body = page.content.decode()
         assert "Invitation email" in body
         assert "0 of 1 emails finished (0%)" in body
-        assert 'data-live-url="/admin/mail/family-progress/status/"' in body
+        assert 'data-live-url="/admin/mail/queue/status/"' in body
+        # The queue counts the prepared invitation, and its Kind links Sent
+        # mail filtered to it (#1562).
+        assert '<tr data-kind="initial">' in body
+        assert "purpose=initial&amp;state=still_sending" in body
         assert "data-live-pending" in body
         assert "live-status-v1.js" in body
         # The panel is in the sidebar and the breadcrumb trail.
-        assert '<a href="/admin/mail/family-progress/" aria-current="page">' in body
-        assert '<span aria-current="page">Family email progress</span>' in body
+        assert '<a href="/admin/mail/queue/" aria-current="page">' in body
+        assert '<span aria-current="page">Mail queue</span>' in body
         # The help links each page it tells the reader to use (navigation
         # rule 6, #521). The help's own words around each link keep the
         # sidebar's links to the same pages from satisfying the check.
@@ -208,7 +216,7 @@ def test_the_web_login_follows_a_real_send_during_a_work_order_hold(
             status = future.result(timeout=60)
         assert status.status_code == 200
         fragment = status.content.decode()
-        assert 'data-live-status="send-progress"' in fragment
+        assert 'data-live-status="mail-queue"' in fragment
         assert "data-live-pending" in fragment and "data-live-url" not in fragment
         # A fragment, not a page: no Admin chrome and no second audited view.
         assert 'aria-label="Administration"' not in fragment
@@ -249,7 +257,7 @@ def test_progress_is_for_administrators_only(auth_service, google, role):
     add_draft(store, store.active(), uuid4())
     admin, _ = signed_in()
     assert admin.get(PAGE).status_code == 200
-    assert b"Family email progress" in admin.get("/admin/").content
+    assert b"Mail queue" in admin.get("/admin/").content
     change(
         store,
         store.active(),
@@ -266,7 +274,7 @@ def test_progress_is_for_administrators_only(auth_service, google, role):
     reader, _ = signed_in()
     assert reader.get(PAGE).status_code == 403
     assert reader.get(STATUS).status_code == 403
-    assert b"Family email progress" not in reader.get("/admin/").content
+    assert b"Mail queue" not in reader.get("/admin/").content
 
 
 def test_no_send_yet_says_so_and_keeps_checking(auth_service, google):
@@ -713,6 +721,65 @@ def relations(node, kind):
     for child in node.get("Plans", []):
         found |= relations(child, kind)
     return found
+
+
+def test_mail_queue_counts_unsettled_email_through_the_state_index(
+    family_mail,  # noqa: F811
+    google,
+):
+    """The queue counts every unsettled email by column, reading few rows.
+
+    A launch-size send's 405 unsettled emails among 20,000 delivered ones:
+    the grouped count finds them through ``outbox_due (state, not_before)``,
+    never by scanning the outbox, and a held email counts as Paused. The
+    other mode sees them all as the other mode's queue (#1562).
+    """
+    real = source(family_mail)
+    _, mode, cycle = scope()
+    initial = ScheduleDefinition.objects.get(kind="initial")
+    with shadowed():
+        delivered = [
+            (9000 + n, "succeeded", "delivered", 30, 0, "") for n in range(1, 20001)
+        ]
+        clone_rows(
+            plan() + delivered,
+            source=real,
+            cycle=cycle,
+            definition=initial.pk,
+            due_minutes=20,
+            label="pk1562",
+        )
+        with connection.cursor() as cursor:
+            # A pause hold needs Production routing; the copy drops that rule
+            # so a Testing harness's emails can stand in for held ones.
+            cursor.execute(
+                "ALTER TABLE pg_temp.stewardship_outbox_message "
+                "DROP CONSTRAINT outbox_pause_shape"
+            )
+            cursor.execute(
+                "UPDATE pg_temp.stewardship_outbox_message SET "
+                "pause_hold_id=md5('pk1562-hold')::uuid, pause_version=1 "
+                "WHERE id IN (SELECT id FROM pg_temp.stewardship_outbox_message "
+                "WHERE state IN ('pending','retry_wait') ORDER BY state, id LIMIT 2)"
+            )
+            cursor.execute("ANALYZE pg_temp.stewardship_outbox_message")
+        with read_transaction():
+            queue = read_queue(mode)
+            elsewhere = read_queue(other_mode(mode))
+            statement, values = queued_rows().query.sql_with_params()
+            with connection.cursor() as cursor:
+                plan_ = explain(cursor, statement, values)
+    kinds = {kind.purpose: kind.counts for kind in queue.kinds}
+    # The two held emails are pending (ORDER BY state), so Queued loses two.
+    assert kinds.pop("initial") == (383, 10, 10, 2)
+    assert set(kinds.values()) == {(0, 0, 0, 0)}
+    assert (queue.total, queue.other_mode_queued) == (405, 0)
+    assert elsewhere.total == 0 and elsewhere.other_mode_queued == 405
+    assert len(elsewhere.kinds) == len(queue.kinds)
+    assert "stewardship_outbox_message" not in relations(plan_["Plan"], "Seq Scan"), (
+        json.dumps(plan_)
+    )
+    assert rows_visited(plan_["Plan"]) < 2000, json.dumps(plan_)
 
 
 def test_launch_scale_counts_every_state_cheaply_through_indexes(
