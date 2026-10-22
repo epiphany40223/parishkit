@@ -9,8 +9,8 @@ that a dry run removes nothing, that a failure is reported without
 stopping the rest, and that a failed lookup of what to keep stops it. The
 local half of `tools/stewardship-upgrade.sh` is run with a recording `ssh`
 to pin that it prunes only after a successful run that reported a
-different replaced release, protects that release, is a dry run by
-default, and never fails because pruning did.
+different replaced release, protects that release, removes by default
+(a dry run only when asked), and never fails because pruning did.
 """
 
 import json
@@ -375,12 +375,17 @@ echo "pruned"; exit {prune_rc}""",
 def test_a_successful_upgrade_prunes_keeping_both_releases(tmp_path):
     """The pruning protects the started and the replaced release.
 
-    By default it is a dry run until the Administrator has reviewed one
-    Production dry-run log; STEWARDSHIP_PRUNE=on removes.
+    By default it removes (#1671); STEWARDSHIP_PRUNE=on says so explicitly
+    and STEWARDSHIP_PRUNE=dry-run only lists what it would remove.
     """
     for n, mode in enumerate(((), ("--rollback",))):
-        for prune, tail in (({}, " --dry-run"), ({"STEWARDSHIP_PRUNE": "on"}, "")):
-            result, calls = run_upgrade(tmp_path / f"{n}{tail}", *mode, env=prune)
+        for prune, tail in (
+            ({}, ""),
+            ({"STEWARDSHIP_PRUNE": "on"}, ""),
+            ({"STEWARDSHIP_PRUNE": "dry-run"}, " --dry-run"),
+        ):
+            tag = prune.get("STEWARDSHIP_PRUNE", "default")
+            result, calls = run_upgrade(tmp_path / f"{n}{tag}", *mode, env=prune)
             assert result.returncode == 0, result.stderr
             assert len(calls) == 2
             assert (
@@ -454,11 +459,23 @@ def test_the_pruning_settings_reach_the_host(tmp_path):
 
 
 def test_a_failed_pruning_never_fails_the_upgrade(tmp_path):
-    """The upgrade succeeded, so a pruning failure is only a warning."""
-    result, calls = run_upgrade(tmp_path, prune_rc=1, env={"STEWARDSHIP_PRUNE": "on"})
-    assert result.returncode == 0
-    assert len(calls) == 2
-    assert "WARNING: pruning old release images failed" in result.stderr
+    """The upgrade succeeded, so a pruning failure is only a warning.
+
+    That holds for the default (real removal), an explicit mode, a
+    rollback, and an ssh failure (255) as much as the script's own exit 1.
+    """
+    cases = [
+        ((), {}, 1),
+        ((), {}, 255),
+        (("--rollback",), {}, 1),
+        ((), {"STEWARDSHIP_PRUNE": "on"}, 1),
+        ((), {"STEWARDSHIP_PRUNE": "dry-run"}, 1),
+    ]
+    for n, (mode, env, rc) in enumerate(cases):
+        result, calls = run_upgrade(tmp_path / str(n), *mode, prune_rc=rc, env=env)
+        assert result.returncode == 0, (mode, env, rc, result.stderr)
+        assert len(calls) == 2
+        assert "WARNING: pruning old release images failed" in result.stderr
 
 
 def test_a_failed_upgrade_does_not_prune(tmp_path):

@@ -51,17 +51,18 @@
 #                           lists. Step 4 then converts the sign-in rules
 #                           between the release's two migrations (host
 #                           half's header). Refused with --rollback.
-#   STEWARDSHIP_PRUNE       dry-run (default), on or off: after a successful
+#   STEWARDSHIP_PRUNE       on (default), dry-run or off: after a successful
 #                           run, remove old release images from the host
 #                           with tools/stewardship-prune-images.sh (#1661),
 #                           keeping the started and the replaced release;
-#                           dry-run only lists what it would remove. It is
-#                           skipped, with a message, unless the host half
-#                           reported the replaced release as a digest of
-#                           the repository different from the started one.
-#                           A pruning failure is a warning, never a failure.
-#                           The default becomes on once the Administrator
-#                           has reviewed one Production dry-run log.
+#                           dry-run only lists what it would remove, off
+#                           skips pruning. It is skipped, with a message,
+#                           unless the host half reported the replaced
+#                           release as a digest of the repository different
+#                           from the started one. A pruning failure is a
+#                           warning, never a failure. The default was
+#                           dry-run until the Administrator reviewed a
+#                           Production dry-run log (#1671).
 #   STEWARDSHIP_KEEP_RELEASES  how many newest other release images the
 #                           pruning keeps besides those (1-99, default 4)
 #   STEWARDSHIP_KEEP_BUILD_CACHE  1 to leave Docker's build cache alone
@@ -83,7 +84,7 @@ project=${STEWARDSHIP_PROJECT:-stewardship}
 yaml=${STEWARDSHIP_YAML:-/etc/parishkit/stewardship-deployment.yaml}
 repo=${STEWARDSHIP_IMAGE_REPO:-ghcr.io/epiphany40223/parishkit/stewardship}
 schema_change=${STEWARDSHIP_SCHEMA_CHANGE:-0}
-prune=${STEWARDSHIP_PRUNE:-dry-run}
+prune=${STEWARDSHIP_PRUNE:-on}
 keep=${STEWARDSHIP_KEEP_RELEASES:-4}
 
 hex=${image#"${repo}@sha256:"}

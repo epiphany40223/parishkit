@@ -759,11 +759,10 @@ started, the replaced release the run reported, and the
 image ID, then clears Docker's build cache (`STEWARDSHIP_KEEP_BUILD_CACHE=1`
 keeps it). It prints each image removed or kept and the space freed, and
 keeps that log on the host as `/var/log/stewardship-prune-TIMESTAMP.log`.
-For now `STEWARDSHIP_PRUNE` defaults to `dry-run`, which lists what it would
-remove and removes nothing: the first real prune happens only after the
-Administrator has reviewed one Production dry-run log, and then a one-line
-follow-up (#1671) makes `on` the default. Until then
-`STEWARDSHIP_PRUNE=on` removes; `STEWARDSHIP_PRUNE=off` skips pruning.
+`STEWARDSHIP_PRUNE` defaults to `on`, which removes; the Administrator
+approved that default (#1671) after reviewing a Production dry-run log.
+`STEWARDSHIP_PRUNE=dry-run` lists what it would remove and removes nothing;
+`STEWARDSHIP_PRUNE=off` skips pruning.
 It prunes only when the host half's last line reports the replaced release
 as a digest of `STEWARDSHIP_IMAGE_REPO`; when that line is missing,
 reworded or empty, it warns and removes nothing. A re-run with the digest
