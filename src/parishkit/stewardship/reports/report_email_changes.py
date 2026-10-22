@@ -373,6 +373,7 @@ DOCUMENT_FIELDS = {
     "recipient": "recipients",
     "block": "blocks",
     "days_shown": "blocks",
+    "charts": "blocks",
     "sends": "schedule",
     "once_date": "schedule",
     "time": "schedule",
@@ -563,7 +564,13 @@ def change_rows(entries, records, campaign, now, *, campaign_id=None, users=()):
 
 def _write(entry, records, campaign, now, campaign_id, users, patch, due):
     """One ``create`` or ``edit`` entry: its row, signed time and description."""
-    from .report_email_editor import after_campaign, one_time_due
+    from .report_email_editor import (
+        after_campaign,
+        chart_choice,
+        one_time_due,
+        stored_charts,
+        with_charts,
+    )
 
     identifier = entry.get("id")
     saved = records.get(identifier) if identifier else None
@@ -581,6 +588,12 @@ def _write(entry, records, campaign, now, campaign_id, users, patch, due):
         now=now,
         sent=bool(identifier) and report_sent(identifier),
     )
+    # The "which charts" choice is stored as the editor stores it: every
+    # chart the campaign offers is no choice (#1956).
+    choice = chart_choice(values)
+    stored = stored_charts(choice, saved, campaign)
+    if stored != choice:
+        values = with_charts(values, stored)
     dropped = []
     if saved is not None:
         dropped = _dropped_skips(saved, values, campaign, now)

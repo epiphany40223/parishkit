@@ -370,3 +370,88 @@ def test_the_day_by_day_option_sets_the_days_shown():
     assert report.html.count('scope="rowgroup"') == 9
     default = compile_report(value, ("day_by_day",), public_origin=ORIGIN)
     assert default.html.count('scope="rowgroup"') == 5
+
+
+# ------------------------------------------------- which charts (#1956)
+
+ALL_CHARTS = ["first_submissions", "cumulative_families", "pledges"]
+
+
+def charts_report(value, charts=None):
+    """Compile ``value``'s Participation charts block, with ``charts`` chosen."""
+    options = {} if charts is None else {"participation_charts": {"charts": charts}}
+    return compile_report(
+        value, ("participation_charts",), public_origin=ORIGIN, options=options
+    )
+
+
+@pytest.mark.parametrize("case", ["single day, no mode", "no financial stewardship"])
+def test_every_chart_chosen_is_the_default_byte_for_byte(case):
+    """Choosing all three charts draws the converted Daily's block exactly."""
+    value = DAILY_CASES[case]()
+    chosen, default = charts_report(value, ALL_CHARTS), charts_report(value)
+    assert chosen.html == default.html
+    assert [(i.content_id, i.data) for i in chosen.images] == [
+        (i.content_id, i.data) for i in default.images
+    ]
+
+
+def test_a_chosen_chart_draws_only_its_panel_and_figures():
+    """The image and the alt text carry only the chosen charts."""
+    value = daily_document()
+    default = charts_report(value)
+    first = charts_report(value, ["first_submissions"])
+    assert first.images[0].data != default.images[0].data
+    assert "First submissions that day:" in first.html
+    assert "Families that have responded:" not in first.html
+    assert "Cumulative annual pledges" not in first.html
+    pledges = charts_report(value, ["cumulative_families", "pledges"])
+    assert "Families that have responded:" in pledges.html
+    assert "Cumulative annual pledges (USD):" in pledges.html
+    assert "First submissions that day:" not in pledges.html
+
+
+def test_pledges_alone_without_financial_draws_every_chart():
+    """Pledges chosen after financial stewardship was turned off: all charts."""
+    value = no_financial()
+    alone = charts_report(value, ["pledges"])
+    default = charts_report(value)
+    assert alone.html == default.html
+    assert alone.images[0].data == default.images[0].data
+    block = REGISTRY["participation_charts"]
+    assert block.capture(value, {"charts": ["pledges"]})["charts"] == [
+        "first_submissions",
+        "cumulative_families",
+    ]
+    assert block.capture(daily_document(), {"charts": ["pledges"]})["charts"] == [
+        "pledges"
+    ]
+
+
+@pytest.mark.parametrize(
+    "charts",
+    [
+        [],
+        ["unknown"],
+        ["pledges", "pledges"],
+        ["pledges", "first_submissions"],
+        "pledges",
+        None,
+        [1],
+    ],
+)
+def test_the_charts_check_refuses_an_empty_unknown_or_unordered_choice(charts):
+    """Only a non-empty list of known charts, each once and in order, passes."""
+    with pytest.raises(ValueError, match="at least one known chart"):
+        REGISTRY["participation_charts"].check({"charts": charts})
+
+
+def test_the_charts_check_accepts_every_ordered_subset():
+    """Any non-empty ordered subset, and no value at all, is accepted."""
+    check = REGISTRY["participation_charts"].check
+    check({})
+    for mask in range(1, 8):
+        check(
+            {"charts": [key for bit, key in enumerate(ALL_CHARTS) if mask >> bit & 1]}
+        )
+    assert REGISTRY["participation_charts"].options == {"charts": ALL_CHARTS}

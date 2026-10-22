@@ -4,10 +4,9 @@ The Daily digest's "Daily participation" section: the participation graph
 drawn in process as one inline PNG, whose alt text carries the report day's
 totals. It adds nothing to the text part, as the digest never did.
 
-It always draws every panel, as the digest did. Its "which charts" option
-(spec, "Participation charts block") arrives with the editor (delivery
-plan item 6), which is the first place a report can choose panels; it is
-not declared before the renderer honours it.
+Its "which charts" option (``charts``, #1956) chooses the graph's panels;
+a report without it draws every panel the campaign has, as the digest did,
+byte for byte.
 """
 
 from html import escape
@@ -17,17 +16,51 @@ from parishkit.email.base import InlineImage
 from parishkit.stewardship.web.dates import format_date
 from parishkit.stewardship.web.digest_content import CHART_ID, EMAIL_CHART_WIDTH
 
-from ..charts import render_participation
+from ..charts import (
+    CHARTS,
+    CUMULATIVE_FAMILIES,
+    FIRST_SUBMISSIONS,
+    PLEDGES,
+    render_participation,
+)
 from ..daily_digest import report_day_cards
 from .markup import style
 from .registry import STATUS, Block, Section
 
+# The chart each of ``report_day_cards``' figures belongs to, in its order:
+# participation so far, the day's first submissions, then the pledges (only
+# with financial stewardship, so the cards may stop short of it).
+CARD_CHARTS = (CUMULATIVE_FAMILIES, FIRST_SUBMISSIONS, PLEDGES)
 
-def chart_alt(document):
-    """Alt text that carries the chart's key numbers, not a picture description."""
+
+def shown_charts(document, options):
+    """The chosen charts the campaign has, in their order (spec, the block).
+
+    Pledges are drawn only with financial stewardship. When nothing chosen
+    remains (only pledges, and financial stewardship turned off since), the
+    block draws every chart the campaign has, so a report never loses its
+    chart: a report's other images travel only beside it.
+    """
+    available = [
+        key
+        for key in CHARTS
+        if key != PLEDGES or document.participation.financial_enabled
+    ]
+    return [key for key in available if key in options["charts"]] or available
+
+
+def chart_alt(document, charts=CHARTS):
+    """Alt text that carries the chart's key numbers, not a picture description.
+
+    Only the figures of the ``charts`` drawn are named.
+    """
     chart = document.participation
     totals = " ".join(
-        f"{label}: {value}." for label, value in report_day_cards(document)
+        f"{label}: {value}."
+        for key, (label, value) in zip(
+            CARD_CHARTS, report_day_cards(document), strict=False
+        )
+        if key in charts
     )
     return (
         f"Daily participation chart, {format_date(chart.first_date)} to "
@@ -38,9 +71,10 @@ def chart_alt(document):
 
 def draw(document, frame, options):
     """The heading and the chart image; the PNG travels as an inline image."""
+    charts = shown_charts(document, options)
     # Match weekly display normalization; retained observations remain exact.
     # The strict HTML compiler boundary rejects NBSP parser rewrites.
-    alt = " ".join(chart_alt(document).split())
+    alt = " ".join(chart_alt(document, charts).split())
     html = f"<h2{style('heading')}>Daily participation</h2>"
     html += (
         f'<img src="cid:{CHART_ID}" alt="{escape(alt, quote=True)}" '
@@ -48,18 +82,45 @@ def draw(document, frame, options):
         f"{style('image')}>"
     )
     stream = BytesIO()
-    render_participation(document.participation, stream, format="png", email=True)
+    render_participation(
+        document.participation, stream, format="png", email=True, charts=charts
+    )
     return Section(html, "", (InlineImage(stream.getvalue(), CHART_ID),))
 
 
 def capture(document, options):
-    """The charted dates and the alt text's figures; the image is kept beside them."""
+    """The charted dates, the charts drawn and the alt text's figures.
+
+    The image is kept beside them.
+    """
     chart = document.participation
+    charts = shown_charts(document, options)
     return {
         "first_date": chart.first_date.isoformat(),
         "last_date": chart.last_date.isoformat(),
-        "alt": " ".join(chart_alt(document).split()),
+        "charts": charts,
+        "alt": " ".join(chart_alt(document, charts).split()),
     }
+
+
+def check(options):
+    """Refuse a "which charts" choice that is empty, unknown or out of order.
+
+    The stored list is canonical: distinct known keys in the panels' order.
+    The editor and the command line both store every chart the campaign
+    offers as no choice (``report_email_editor.stored_charts``), so two
+    reports with the same choice store the same value. Whether the
+    campaign has financial stewardship for pledges is the editor's check
+    (``report_email_editor.value_problems``), since a campaign can turn it
+    off after a report chose pledges.
+    """
+    charts = options.get("charts", list(CHARTS))
+    if (
+        type(charts) is not list
+        or not charts
+        or charts != [key for key in CHARTS if key in charts]
+    ):
+        raise ValueError("Choose at least one known chart, each once, in order.")
 
 
 BLOCK = Block(
@@ -74,4 +135,6 @@ BLOCK = Block(
     draw=draw,
     capture=capture,
     empty="No campaign day has ended yet.",
+    options={"charts": list(CHARTS)},
+    check=check,
 )
