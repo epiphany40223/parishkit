@@ -5,12 +5,14 @@ process (the isolated helper has its own tests). The page's Review route
 takes a large upload, so the refusals it owes before reading the body are
 asserted with a request body that counts its reads: POST only, the
 X-CSRFToken header, the role, ``Content-Length`` and one Review at a time.
+Review answers the review dialog's card (or its refusal) and Apply, posted
+as the dialog posts it (``action=confirm``), redirects to the page (#750).
 """
 
+import re
 import threading
 from html import unescape
-from urllib.parse import parse_qs, urlsplit
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -87,13 +89,19 @@ def post(browser, path, values):
     return browser.post(path, values | {"csrfmiddlewaretoken": token(browser)})
 
 
-def query(response):
-    """The redirect's query values."""
-    assert response.status_code == 302, response.content
-    return {
-        key: value[0]
-        for key, value in parse_qs(urlsplit(response["Location"]).query).items()
-    }
+def apply(browser, preview, **values):
+    """Apply a preview as the review dialog's Apply posts it."""
+    return post(browser, APPLY, {"action": "confirm", "preview": preview} | values)
+
+
+def preview_of(response):
+    """The preview id a Review card carries for Apply (the dialog's answer)."""
+    assert response.status_code == 200, response.content
+    shown = text(response)
+    assert "data-review-answer" in shown
+    found = re.search(r'name="preview" value="([0-9a-f-]+)" data-review-preview', shown)
+    assert found, shown
+    return found.group(1)
 
 
 def text(response):
@@ -111,38 +119,43 @@ def test_review_apply_replace_and_remove_in_the_page(auth_service, google):
         assert "No past campaigns are imported yet" in text(page)
         reviewed = review(browser, first, name="C:\\archive\\stewardship-2054.xlsx")
         assert reviewed["Cache-Control"] == "no-store"
-        assert reviewed["Location"].endswith("#archive-review")
-        preview = query(reviewed)["preview"]
-        card = browser.get(PAGE, {"preview": preview})
-        shown = text(card)
-        assert "Add 2054" in shown and "stewardship-2054.xlsx" in shown
+        preview = preview_of(reviewed)
+        shown = text(reviewed)
+        assert 'data-review-title="Add 2054?"' in shown
+        assert "stewardship-2054.xlsx" in shown
         assert "Synthetic data for tests" in shown
         assert "Apply adds 2054" in shown
-        applied = post(browser, APPLY, {"preview": preview})
-        assert query(applied) == {
-            "applied": str(CampaignArchive.objects.get(state="active").pk),
-            "outcome": "imported",
-        }
-        result = text(browser.get(applied["Location"].split("#")[0]))
-        assert "Imported 2054" in result
+        # Without the dialog's action, Apply is refused and nothing changes.
+        assert post(browser, APPLY, {"preview": preview}).status_code == 400
+        assert not CampaignArchive.objects.filter(state="active").exists()
+        applied = apply(browser, preview)
+        assert applied.status_code == 302 and applied["Location"] == PAGE
+        assert CampaignArchive.objects.get(state="active").pk == UUID(preview)
+        result = text(browser.get(PAGE))
         assert "by admin<wbr>@example.org" in result and "Stewardship 2054" in result
-        # The same file again: already imported, so Apply has nothing to do.
-        again = text(browser.get(PAGE, query(review(browser, first))))
+        assert 'id="archive-outcome"' in result
+        # The same file again: already imported, so Apply is unavailable.
+        again_response = review(browser, first)
+        assert again_response.status_code == 200
+        again = text(again_response)
         assert "2054 is already imported" in again
         assert "Unavailable: imported by admin@example.org on" in again
+        assert "data-review-unavailable" in again
+        assert "data-review-preview" not in again
         # A corrected file replaces the year only with the acknowledgement.
-        corrected = query(review(browser, workbook(2054, note="Corrected")))
+        corrected_response = review(browser, workbook(2054, note="Corrected"))
+        corrected = preview_of(corrected_response)
         assert "This replaces the 2054 figures already imported" in text(
-            browser.get(PAGE, corrected)
+            corrected_response
         )
-        refused = post(browser, APPLY, {"preview": corrected["preview"]})
+        refused = apply(browser, corrected)
         assert refused.status_code == 400
         assert "acknowledge that to apply it" in text(refused)
-        assert 'data-review-of="archive-upload"' in text(refused)
-        replaced = post(
-            browser, APPLY, {"preview": corrected["preview"], "replace": "yes"}
-        )
-        assert query(replaced)["outcome"] == "replaced"
+        assert "data-review-refusal" in text(refused)
+        assert "This was not applied." in text(refused)
+        replaced = apply(browser, corrected, replace="yes")
+        assert replaced.status_code == 302 and replaced["Location"] == PAGE
+        assert CampaignArchive.objects.get(state="active").pk == UUID(corrected)
         active = CampaignArchive.objects.get(state="active")
         # Remove: the confirmation dialog's <year>:<version>.
         stale = post(browser, REMOVE, {"archive": f"2054:{active.version - 1}"})
@@ -177,7 +190,8 @@ def test_a_refused_file_lists_cells_never_values(auth_service, google):
     shown = text(response)
     assert "This file can't be imported" in shown
     assert "families!J2" in shown and "SECRETFORMULA" not in shown
-    assert "data-error-summary" in shown
+    # The dialog's refusal, not the page: the form keeps its chosen file.
+    assert "data-review-refusal" in shown and 'id="archive-upload"' not in shown
     assert not CampaignArchive.objects.exists()
     unreadable = text(review(browser, b"not a workbook"))
     assert "This file can't be imported" in unreadable
@@ -186,11 +200,11 @@ def test_a_refused_file_lists_cells_never_values(auth_service, google):
 def test_keep_family_rows_unticked_keeps_none(auth_service, google):
     """The box is the service's keep_family_rows."""
     browser, _ = signed_in()
-    preview = query(review(browser, workbook(2052), keep=False))["preview"]
-    archive = CampaignArchive.objects.get(pk=preview)
+    reviewed = review(browser, workbook(2052), keep=False)
+    archive = CampaignArchive.objects.get(pk=preview_of(reviewed))
     assert not archive.family_rows_kept
     assert not CampaignArchiveFamily.objects.filter(archive=archive).exists()
-    assert "Family rows kept" in text(browser.get(PAGE, {"preview": preview}))
+    assert "Family rows kept" in text(reviewed)
 
 
 def test_an_unresolvable_year_makes_review_unavailable(
@@ -245,8 +259,12 @@ def test_refusals_come_before_the_body_is_read(auth_service, google):
     response, reads = untouched(browser, length="")
     assert response.status_code == 400 and reads == 0
     response, reads = untouched(browser, length=str(21 * 1024 * 1024 + 1))
-    assert response.status_code == 413 and reads == 0
-    assert "The file is larger than 20 MB" in text(response)
+    # Too large is the file field's error: the page again, field marked.
+    assert response.status_code == 400 and reads == 0
+    shown = text(response)
+    assert 'id="archive-file_error"' in shown and 'aria-invalid="true"' in shown
+    assert "This file is larger than 20 MB." in shown
+    assert "data-error-summary" in shown and "data-review-refusal" not in shown
     # The form's token in the body is not enough: only the header counts.
     response = browser.post(
         REVIEW,
@@ -256,6 +274,18 @@ def test_refusals_come_before_the_body_is_read(auth_service, google):
         },
     )
     assert response.status_code == 403
+    assert not CampaignArchive.objects.exists()
+
+
+def test_a_file_over_the_limit_is_the_file_fields_error(auth_service, google):
+    """A file just over 20 MiB inside the request bound: the page again (400)
+    with the file field marked, never a dialog refusal; nothing stored."""
+    browser, _ = signed_in()
+    response = review(browser, b"x" * (20 * 1024 * 1024 + 1))
+    assert response.status_code == 400
+    shown = text(response)
+    assert 'id="archive-file_error"' in shown and 'aria-invalid="true"' in shown
+    assert "data-review-refusal" not in shown and "data-review-answer" not in shown
     assert not CampaignArchive.objects.exists()
 
 
@@ -324,21 +354,24 @@ def test_one_review_at_a_time(auth_service, google):
     assert response.status_code == 503 and reads == 0
     assert "Another archive is being checked" in text(response)
     # Once it is released, a Review goes ahead.
-    assert review(browser, workbook(2048)).status_code == 302
+    preview_of(review(browser, workbook(2048)))
 
 
-def test_an_expired_or_foreign_preview_shows_no_card(auth_service, google, monkeypatch):
-    """The card is only the reviewer's own, unexpired preview."""
+def test_an_expired_preview_is_refused_in_the_dialog(auth_service, google, monkeypatch):
+    """An expired preview's Apply is the dialog's refusal; the page takes no
+    query but its sort (no ?preview= or ?applied=, #750)."""
     browser, _ = signed_in()
-    preview = query(review(browser, workbook(2047)))["preview"]
+    preview = preview_of(review(browser, workbook(2047)))
     monkeypatch.setattr(imports, "PREVIEW_SECONDS", 0)
-    shown = text(browser.get(PAGE, {"preview": preview}))
-    assert "Add 2047" not in shown
-    assert "This review expired or was already applied" in shown
-    stale = post(browser, APPLY, {"preview": preview})
+    stale = apply(browser, preview)
     assert stale.status_code == 409
-    assert browser.get(PAGE, {"preview": "not-a-uuid"}).status_code == 400
-    assert browser.get(PAGE, {"other": "1"}).status_code == 400
+    shown = text(stale)
+    assert "data-review-refusal" in shown
+    assert "This review expired or was already applied" in shown
+    assert CampaignArchive.objects.get(pk=preview).state == "pending"
+    for query in ({"preview": preview}, {"applied": preview}, {"other": "1"}):
+        assert browser.get(PAGE, query).status_code == 400
+    assert browser.get(PAGE, {"sort": "year"}).status_code == 200
 
 
 def test_a_review_through_the_real_helper(auth_service, google, monkeypatch):
@@ -347,9 +380,10 @@ def test_a_review_through_the_real_helper(auth_service, google, monkeypatch):
     monkeypatch.setattr(imports, "check_archive", check_archive)
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB):
-        preview = query(review(browser, workbook(2046)))["preview"]
-        shown = text(browser.get(PAGE, {"preview": preview}))
+        reviewed = review(browser, workbook(2046))
+        preview = preview_of(reviewed)
+        shown = text(reviewed)
     archive = CampaignArchive.objects.get(pk=preview)
     assert archive.state == "pending" and archive.campaign_year == 2046
     assert archive.families_responded == len(campaign()[1]["families"])
-    assert "Add 2046" in shown
+    assert 'data-review-title="Add 2046?"' in shown

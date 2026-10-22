@@ -12,10 +12,7 @@
 The imported years are an action table (ui-conventions, "Row actions and
 confirmation"): its region holds the Remove form, the table and the
 confirmation dialog, which posts here and then redraws every region from
-data-refresh-url (this page's address, so a Review card shown stays). The
-review region below the form shows the Review card, a refusal's located
-problems or what Apply did; the Review form and Apply act in place and
-answer with this page (past_campaign_views).
+data-refresh-url (this page's address, with its sort).
 {% endcomment %}<div id="{{ table.anchor }}" data-table-region data-refresh-url="{{ refresh_url }}">
 {% if table.rows %}<form method="post" action="{% url 'admin:past_campaign_removal' %}" id="past-campaign-actions" data-row-actions>{% csrf_token %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="past-campaigns-caption">
@@ -61,14 +58,30 @@ download is unavailable now the button is too, with the reason beside it
 {% if archive.available %}{% button type="submit" %}{% translate "Download campaign archive" %}{% endbutton %}
 {% else %}{% button type="submit" enabled=False aria-describedby="campaign-archive-reason" %}{% translate "Download campaign archive" %}{% endbutton %}<p class="help" id="campaign-archive-reason">{% if archive.reason == "no_campaign" %}{% translate "Unavailable: there is no current campaign." %}{% elif archive.reason == "before_day_1" %}{% translate "Unavailable until the campaign's first day has ended." %}{% elif archive.reason == "closed_today" %}{% translate "Available tomorrow: the campaign closed today, and today's responses are not in a complete day yet." %}{% elif archive.reason == "no_response" %}{% translate "Unavailable: no Family has responded yet." %}{% elif archive.reason == "no_year" %}{% translate "Unavailable: this campaign's year can't be worked out." %} <a href="{% url 'admin:campaign_settings' %}">{% translate "Set the year label in Campaign settings" %}</a>{% else %}{% blocktranslate with day=archive.day|number %}Unavailable until the report's daily figures include every response through day {{ day }}. They are recalculated automatically after responses arrive.{% endblocktranslate %}{% endif %}</p>{% endif %}
 <p class="help reserve-lines-wrap export-status" id="campaign-archive-status" role="status" data-export-status></p></form></section>
-<form id="archive-upload" method="post" action="{% url 'admin:past_campaign_review' %}#archive-review" enctype="multipart/form-data" class="panel" data-in-place data-csrf-header data-require-complete data-in-place-message="{% translate 'Review ready.' %}">{% csrf_token %}
+{% comment %}
+Add an archive file reviews in the shared review dialog below (data-review-open;
+UX conventions "Review dialog", #750): Review posts the file without a page
+load, multipart, its CSRF token in the X-CSRFToken header (data-csrf-header,
+since review/ refuses before reading the body), and the dialog shows
+past-campaigns-review.html's card, or the refused file's problems. Apply
+posts the card's preview id to imports/; once it answers, every region is
+redrawn from this page's address: the table with the year, and this form's
+region as on a fresh page (no file chosen, Keep Family rows ticked), so
+Review is held with its hint again. The status line under the form says
+what was applied and when. Review waits for a chosen file of at most 20 MB
+(data-require-complete, data-max-bytes), its hint in a reserved line. A
+file the server finds too large anyway is the file field's error: the
+answer is this page again (400) with file_error, whose list the review
+script places before the field, as Django draws one.
+{% endcomment %}<div id="archive-editor" data-in-place-region data-refresh-url="{{ refresh_url }}"><form id="archive-upload" method="post" action="{% url 'admin:past_campaign_review' %}" enctype="multipart/form-data" class="panel" data-review-open="archive-review-dialog" data-csrf-header data-require-complete>{% csrf_token %}
 <h2>{% translate "Add an archive file" %}</h2>
 <div data-missing-hint="{% translate 'Choose an archive file (.xlsx) to review it.' %}"><label for="archive-file">{% translate "Archive file" %}</label>
 <p class="help" id="archive-file-help">{% translate "One campaign's .xlsx file, up to 20 MB." %}</p>
-<input type="file" id="archive-file" name="file" accept=".xlsx" required aria-describedby="archive-file-help" data-max-bytes="{{ max_bytes }}" data-too-large="{% translate 'Choose a file no larger than 20 MB.' %}"></div>
+{% if file_error %}<ul class="errorlist" id="archive-file_error"><li>{{ file_error }}</li></ul>{% endif %}
+<input type="file" id="archive-file" name="file" accept=".xlsx" required aria-describedby="archive-file-help{% if file_error %} archive-file_error{% endif %}"{% if file_error %} aria-invalid="true"{% endif %} data-max-bytes="{{ max_bytes }}" data-too-large="{% translate 'Choose a file no larger than 20 MB.' %}"></div>
 <div class="label-row"><label id="keep-family-rows-label"><input type="checkbox" name="keep_family_rows" value="yes" checked> {% translate "Keep Family rows" %}</label> {% translate "Keeps each responding Family's id and first response day, which the renewal figure on Campaign comparison needs. The rows never leave the Admin portal, and no pledge is kept with them." as keep_tip %}{% include "stewardship/components/toggletip.html" with tip_id="keep-family-rows-tip" tip_label_id="keep-family-rows-label" tip_text=keep_tip %}</div>
 {% if year_problem %}{% button type="submit" enabled=False aria-describedby="archive-year-reason" %}{% translate "Review" %}{% endbutton %}<p class="help" id="archive-year-reason">{% translate "Unavailable: this campaign's year can't be worked out, so last year can't be told apart." %} <a href="{% url 'admin:campaign_settings' %}">{% translate "Set the year label in Campaign settings" %}</a></p>
 {% else %}{% button type="submit" aria-describedby="archive-review-hint" %}{% translate "Review" %}{% endbutton %}<p class="help" id="archive-review-hint" data-complete-hint="reserve"></p>{% endif %}
-</form>
-<div id="archive-review" data-in-place-region data-keep-height>{% include "stewardship/past-campaigns-review.html" %}</div>
+{% include "stewardship/components/review-outcome.html" with outcome_id="archive-outcome" %}</form></div>
+{% translate "Review archive file" as review_title %}{% url 'admin:past_campaign_import' as apply_url %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="archive-review-dialog" title=review_title apply_url=apply_url outcome_id="archive-outcome" fallback="archive-upload" %}
 {% endblock %}

@@ -2,9 +2,9 @@
 
 The header-only CSRF check (``csrf_header_only``) must refuse or admit an
 upload without reading its body; the Review card's notes are flagged as the
-helper flags them; and the review region's Apply follows the prerequisite
-gates (a replacement waits for its acknowledgement, a file already imported
-has nothing to apply).
+helper flags them; and the review dialog's card follows the prerequisite
+gates (a replacement holds Apply for its acknowledgement, a file already
+imported offers no Apply).
 """
 
 from datetime import UTC, date, datetime
@@ -156,7 +156,7 @@ def test_notes_are_flagged_as_the_helper_flags_them():
 
 
 def card(action, **fields):
-    """The review region with one Review card."""
+    """The review dialog's answer with one Review card."""
     pending = archive()
     current = archive(pk=uuid4(), campaign_name="Stewardship 2025 (old)")
     values = {
@@ -176,33 +176,53 @@ def card(action, **fields):
     }
     return render_to_string(
         "stewardship/past-campaigns-review.html",
-        {"card": values | fields, "problems": [], "applied": None},
+        {"card": values | fields, "problems": []},
     )
 
 
 def test_a_replacement_waits_for_its_acknowledgement():
-    """Replace shows the acknowledgement box, which the shared gate holds Apply
-    on; Add has none."""
+    """Replace shows the acknowledgement box, a field of the dialog's Apply form
+    that holds Apply until it is ticked; Add has none. Both carry the preview
+    id Apply posts and name the dialog's question and status line."""
     replace = card("replace")
-    assert "Replace 2025" in replace
-    assert 'name="replace" value="yes" required data-acknowledgment' in replace
+    assert 'data-review-title="Replace 2025?"' in replace
+    assert 'data-review-done="Replaced 2025."' in replace
+    assert (
+        'name="replace" value="yes" form="archive-review-dialog-apply" required'
+        " data-review-require" in replace
+    )
     assert "This replaces the 2025 figures already imported" in replace
     added = card("add")
-    assert "Add 2025" in added and 'name="replace"' not in added
-    assert 'data-review-of="archive-upload"' in added
-    assert 'action="/admin/parish/past-campaigns/imports/#archive-review"' in added
+    assert 'data-review-title="Add 2025?"' in added
+    assert 'data-review-done="Imported 2025."' in added
+    assert 'name="replace"' not in added
+    for text in (replace, added):
+        assert text.count("data-review-preview") == 1
+        assert "data-review-answer" in text and "data-review-of" not in text
 
 
 def test_a_file_already_imported_has_nothing_to_apply():
-    """Apply is unavailable, named by its reason; the card says who imported it."""
+    """No preview: the card's reason, marked data-review-unavailable, says who
+    imported it and when, so the dialog shows Apply greyed with it
+    (Administrator decision 12); its title is a statement, not a question."""
     text = card("already")
-    assert "2025 is already imported" in text
-    assert "admin@example.org" in text
-    assert "disabled" in text and 'aria-describedby="archive-apply-reason"' in text
-    assert "Unavailable: imported by admin@example.org on" in text
+    assert 'data-review-title="2025 is already imported"' in text
+    assert (
+        "<p data-review-unavailable>Unavailable: imported by admin@example.org on"
+        in text
+    )
+    assert "Apply would change nothing." not in text
+    assert "data-review-preview" not in text and 'name="preview"' not in text
     blocked = card("replace", replace_blocked=True)
-    assert "a partial file can't replace the final 2025 import" in blocked
-    assert 'name="replace"' not in blocked
+    assert 'data-review-title="2025 has a final import"' in blocked
+    assert "Replace 2025?" not in blocked and "Apply replaces" not in blocked
+    assert (
+        "<p data-review-unavailable>Unavailable: a partial file can't replace the"
+        " final 2025 import.</p>" in blocked
+    )
+    assert 'name="replace"' not in blocked and "data-review-preview" not in blocked
+    for answer in (card("add"), card("replace")):
+        assert "data-review-unavailable" not in answer
 
 
 def test_problems_name_places_never_values():
@@ -212,7 +232,6 @@ def test_problems_name_places_never_values():
         "stewardship/past-campaigns-review.html",
         {
             "card": None,
-            "applied": None,
             "problems": [
                 {
                     "code": "money",
@@ -227,7 +246,8 @@ def test_problems_name_places_never_values():
     assert "<code>families!J17</code>: annual_pledge must be greater" in text
     assert "Set the year" in text and 'href="/admin/campaign/settings/"' in text
     assert "3 more problems are not shown." in text
-    assert "data-error-summary" in text
+    assert "data-review-refusal" in text and "This file can't be imported:" in text
+    assert "data-review-answer" not in text
 
 
 def test_the_table_dates_are_compact():

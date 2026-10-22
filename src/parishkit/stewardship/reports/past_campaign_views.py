@@ -1,14 +1,13 @@
 """Past campaigns (#1018, slice 4): the Administrator's archive import page.
 
 The page lists the imported past campaigns and adds one archive workbook at
-a time through Review and Apply, in place, with the import service the
-command line uses (``archive.imports``; campaign-history spec, "Past
-campaigns page"):
+a time through Review and Apply in the shared review dialog (UX conventions,
+"Review dialog", #750), with the import service the command line uses
+(``archive.imports``; campaign-history spec, "Past campaigns page"):
 
-- ``page`` (GET) draws the table of imported years, the Add an archive file
-  form and the review region. ``?preview=<id>`` shows the Review card of
-  this Administrator's own pending preview; ``?applied=<id>&outcome=…`` what
-  Apply did. Neither value identifies a Family.
+- ``page`` (GET) draws the table of imported years and the Add an archive
+  file form, whose region the dialog redraws once Apply has answered. It
+  takes no query but the table's sort.
 - ``review`` (POST, ``review/``) takes one upload of at most 20 MB. It is
   the second route allowed a body over the ingress default (21 MB,
   ``runtime_ingress``), so it refuses everything it can before anything
@@ -17,11 +16,14 @@ campaigns page"):
   ``Content-Length`` is refused, and the deployment-wide Review lock is
   taken, so the web container's ``/tmp`` spool holds at most one file. The
   spooled file is closed (and deleted) inside the lock, before the isolated
-  check runs. A stored preview answers with a redirect to ``?preview=``; a
-  refused file with this page and its located problems (never a value).
-- ``apply`` (POST, ``imports/``) makes the preview active, with the replace
-  acknowledgement when the year already has an import, then redirects to
-  ``?applied=``.
+  check runs. A stored preview answers with the dialog's Review card (its
+  preview id, an import's own, never a Family's, is what Apply posts); a
+  refused file with its located problems (never a value) as the dialog's
+  refusal.
+- ``apply`` (POST, ``imports/``, the dialog's Apply with ``action=confirm``)
+  makes the preview active, with the replace acknowledgement when the year
+  already has an import, then redirects to the page; a refusal is the
+  dialog's.
 - ``remove`` (POST, ``removal/``) is the table's Remove row action, which
   the shared confirmation dialog posts as ``<year>:<version>``; it leaves a
   tombstone and redirects back.
@@ -76,11 +78,8 @@ from .comparison import money_text
 # The Review route's body limit: one 20 MB file plus form overhead. Caddy
 # admits the same bound on this route only (runtime_ingress).
 MAX_REVIEW_REQUEST = 21 * 1024 * 1024
-# The review region's id, which every in-place control here names.
-REGION = "archive-review"
 REVIEW_FIELDS = {"keep_family_rows", "csrfmiddlewaretoken"}
-APPLY_FIELDS = {"preview", "replace", "csrfmiddlewaretoken"}
-OUTCOMES = {"imported", "replaced", "already"}
+APPLY_FIELDS = {"action", "preview", "replace", "csrfmiddlewaretoken"}
 # A Remove row action's value: the year and the version it was shown at.
 REMOVE_VALUE = re.compile(r"([0-9]{4}):([0-9]{1,9})")
 # The longest provenance shown in the table's toggletip.
@@ -95,13 +94,10 @@ ERRORS = (
     signing.BadSignature,
 )
 
+# A file over the limit is the file field's error, shown on the form (UX
+# conventions, "Review dialog", Uploads), not a refusal in the dialog.
+TOO_LARGE = "This file is larger than 20 MB. Choose a file no larger than 20 MB."
 # Problems the page words itself, in the import service's problem shape.
-TOO_LARGE = {
-    "code": "file_size",
-    "sheet": None,
-    "cell": None,
-    "rule": "the file is larger than 20 MB",
-}
 BUSY = {
     "code": "busy",
     "sheet": None,
@@ -269,29 +265,6 @@ def _card(actor, preview):
     }
 
 
-def _applied(selected):
-    """What an Apply did, from ``?applied=<id>&outcome=…``, or None."""
-    from .archive_models import CampaignArchive
-
-    if "applied" not in selected:
-        return None
-    outcome = selected.get("outcome")
-    if outcome not in OUTCOMES:
-        raise ValueError("Unknown Apply outcome.")
-    archive = CampaignArchive.objects.filter(
-        pk=UUID(selected["applied"]), state="active"
-    ).first()
-    if archive is None:
-        return None
-    return {
-        "outcome": outcome,
-        "archive": archive,
-        "imported_by": _emails([archive.imported_by_id]).get(
-            archive.imported_by_id, ""
-        ),
-    }
-
-
 def _year_problem():
     """The year refusal every import would get now, or None.
 
@@ -321,33 +294,24 @@ def _page_url(selected=None):
     return reverse("admin:past_campaigns") + (f"?{query}" if query else "")
 
 
-def _render(request, actor, selected, *, status=200, problems=(), more=0):
-    """Draw the page: the table, the form and the review region.
+def _render(request, actor, selected, *, status=200, file_error=""):
+    """Draw the page: the table, the upload form and This campaign's archive.
 
-    ``selected`` holds the validated query (sort, preview, applied and
-    outcome); ``problems`` the located problems of a refused Review or
-    Apply, which the review region lists instead of a card.
+    ``selected`` holds the validated query (the table's sort only).
+    ``file_error`` is the upload's refusal for the file itself (too large),
+    drawn on the file field with the page's error summary, so the review
+    dialog marks the field and stays shut.
     """
     rows = imports.archives()
     active = [row for row in rows if row.state == "active"]
     emails = _emails(
         [row.imported_by_id for row in rows] + [row.removed_by_id for row in rows]
     )
-    # The review card or Apply outcome shown stays when the table is sorted.
-    view = {key: value for key, value in selected.items() if key != "sort"}
     table = whole_table(
         [_row(archive, emails) for archive in active],
         sorting=SORTING,
         sort=SORTING.parse(selected),
-        carry=tuple(view.items()),
     )
-    preview = selected.get("preview")
-    card = _card(actor, UUID(preview)) if preview else None
-    problems = list(problems)
-    if preview and card is None and not problems:
-        problems = [EXPIRED]
-    # Each problem's place ("families!J17"), never the value found there.
-    problems = [dict(problem, place=imports.place(problem)) for problem in problems]
     response = render(
         request,
         "stewardship/past-campaigns.html",
@@ -355,14 +319,16 @@ def _render(request, actor, selected, *, status=200, problems=(), more=0):
             "table": table,
             "tombstones": [_tombstone(archive, emails) for archive in rows],
             "refresh_url": _page_url(selected),
-            "card": card,
-            "applied": _applied(view),
-            "problems": problems,
-            "more_problems": more,
             "year_problem": _year_problem(),
             "max_bytes": MAX_ARCHIVE_BYTES,
             "archive": _archive_offer(),
             "request_key": uuid4(),
+            "file_error": file_error,
+            "errors": (
+                [{"field_id": "archive-file", "message": file_error}]
+                if file_error
+                else []
+            ),
         },
         status=status,
     )
@@ -373,14 +339,41 @@ def _render(request, actor, selected, *, status=200, problems=(), more=0):
     return _no_store(response)
 
 
+def _answer(request, *, card=None, status=200, problems=(), more=0, applying=False):
+    """The review dialog's answer: a Review card, or a refusal's problems.
+
+    ``card`` is the pending preview's Review card (``_card``), which the
+    dialog shows with Apply when there is something to apply. Otherwise
+    ``problems`` (the import service's problem shape) are listed by place
+    ("families!J17"), never by the value found there, as the dialog's
+    refusal (``data-review-refusal``); ``more`` counts those cut off, and
+    ``applying`` says they refused an Apply rather than the file's Review.
+    """
+    problems = [dict(problem, place=imports.place(problem)) for problem in problems]
+    response = render(
+        request,
+        "stewardship/past-campaigns-review.html",
+        {
+            "card": card,
+            "problems": problems,
+            "more_problems": more,
+            "applying": applying,
+        },
+        status=status,
+    )
+    if status != 200:
+        response.stewardship_safe_error = True
+        # The refusal log's code for this answer's refusal (#1444).
+        with_default_code(response)
+    return _no_store(response)
+
+
 @require_http_methods(["GET", "HEAD"])
 def page(request):
-    """The imported years, the upload form and any Review card or outcome."""
+    """The imported years, the upload form and This campaign's archive."""
     try:
         actor = _administrator(request)
-        selected = filters(
-            request.GET, allowed={"sort", "preview", "applied", "outcome"}
-        )
+        selected = filters(request.GET, allowed={"sort"})
         return _render(request, actor, selected)
     except ERRORS as error:
         return error_response(error)
@@ -433,7 +426,10 @@ def review(request):
 
     Everything that can refuse without the body does so first: the token in
     the X-CSRFToken header (middleware), the role, the ``Content-Length``
-    and the deployment-wide lock. Only then is ``request.FILES`` read.
+    and the deployment-wide lock. Only then is ``request.FILES`` read. The
+    answer is the review dialog's: the stored preview's Review card, or the
+    refusal's problems with the refusal's status; a file over the limit is
+    instead the page again (400) with the file field marked.
     """
     try:
         actor = _administrator(request)
@@ -442,12 +438,12 @@ def review(request):
         if not length.isdecimal():
             raise ValueError("A Review needs its Content-Length.")
         if int(length) > MAX_REVIEW_REQUEST:
-            return _render(request, actor, {}, status=413, problems=[TOO_LARGE])
+            return _render(request, actor, {}, status=400, file_error=TOO_LARGE)
         try:
             with imports.ReviewLock():
                 data, keep, name = _read_upload(request)
                 if data is None or len(data) > MAX_ARCHIVE_BYTES:
-                    return _render(request, actor, {}, status=413, problems=[TOO_LARGE])
+                    return _render(request, actor, {}, status=400, file_error=TOO_LARGE)
                 outcome = imports.review(
                     runtime().store,
                     actor.identity,
@@ -456,28 +452,27 @@ def review(request):
                     file_name=name,
                 )
         except imports.ReviewBusy:
-            return _render(request, actor, {}, status=503, problems=[BUSY])
+            return _answer(request, status=503, problems=[BUSY])
         except imports.ArchiveRefusal as refusal:
-            return _render(
-                request,
-                actor,
-                {},
-                status=400,
-                problems=refusal.problems,
-                more=refusal.more,
+            return _answer(
+                request, status=400, problems=refusal.problems, more=refusal.more
             )
-        return _no_store(
-            HttpResponseRedirect(
-                _page_url({"preview": outcome.archive.pk}) + f"#{REGION}"
-            )
-        )
+        card = _card(actor, outcome.archive.pk)
+        if card is None:
+            return _answer(request, status=409, problems=[EXPIRED])
+        return _answer(request, card=card)
     except ERRORS as error:
         return error_response(error)
 
 
 @require_http_methods(["POST"])
 def apply(request):
-    """Apply one pending preview: add, replace (acknowledged) or already."""
+    """Apply one pending preview: add, replace (acknowledged) or already.
+
+    The review dialog's Apply posts the card's preview id, the replacement
+    box and ``action=confirm``. Applied, it redirects to the page, which the
+    dialog then redraws in place; a refusal is the dialog's to show.
+    """
     try:
         actor = _administrator(request)
         filters(request.GET, allowed=set())
@@ -487,26 +482,24 @@ def apply(request):
             or any(len(values) != 1 for _, values in request.POST.lists())
         ):
             raise unexpected_fields(request.POST, request.FILES, allowed=APPLY_FIELDS)
+        if request.POST.get("action") != "confirm":
+            # No sources: the fields were allowed; a value is missing or wrong.
+            raise unexpected_fields()
         preview = UUID(request.POST.get("preview") or "")
         try:
-            outcome = imports.apply(
+            imports.apply(
                 runtime().store,
                 actor.identity,
                 preview,
                 replace_acknowledged=request.POST.get("replace") == "yes",
             )
         except imports.ArchiveRefusal as refusal:
-            return _render(
-                request,
-                actor,
-                {"preview": str(preview)},
-                status=400,
-                problems=refusal.problems,
+            return _answer(
+                request, status=400, problems=refusal.problems, applying=True
             )
         except StaleRecordError:
-            return _render(request, actor, {}, status=409, problems=[EXPIRED])
-        query = {"applied": outcome.archive.pk, "outcome": outcome.outcome}
-        return _no_store(HttpResponseRedirect(_page_url(query) + f"#{REGION}"))
+            return _answer(request, status=409, problems=[EXPIRED], applying=True)
+        return _no_store(HttpResponseRedirect(_page_url()))
     except ERRORS as error:
         return error_response(error)
 
