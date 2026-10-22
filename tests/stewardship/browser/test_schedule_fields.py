@@ -16,7 +16,7 @@ pytestmark = pytest.mark.parametrize(
 
 # The blank new row follows the one saved initial invitation.
 NEW = "schedules-1-"
-FIELDS = ("date", "time", "weekday", "template_version", "comparison")
+FIELDS = ("date", "time", "weekday", "template_version")
 # A new row is Family mail only: report emails replaced the digests (#1786).
 SHOWN = {
     "": set(),

@@ -6,9 +6,7 @@ dialog, and Apply confirms on Dates and mail schedules (``APPLY``, Applied at
 once), then returns to where Cancel goes: the list, or the calendar's
 October for ``EDIT_FROM_CALENDAR``. A series' reminder chooses This reminder
 only or The whole series (``SERIES_DELETE``); the Initial invitation's
-delete is refused in the server's words (``INITIAL_DELETE``). A digest
-opened for one of its calendar sends chooses This email only or The whole
-digest (``DIGEST_SKIP``, #1658).
+delete is refused in the server's words (``INITIAL_DELETE``).
 """
 
 import re
@@ -19,11 +17,8 @@ import pytest
 from .schedule_list_components import (
     APPLY,
     CALENDAR_OCTOBER,
-    DIGEST_SKIP,
     EDIT,
     EDIT_DELETE,
-    EDIT_DIGEST,
-    EDIT_DIGEST_SEND,
     EDIT_FROM_CALENDAR,
     EDIT_INITIAL,
     EDIT_SERIES,
@@ -31,7 +26,6 @@ from .schedule_list_components import (
     LIST,
     REFUSAL,
     SERIES_DELETE,
-    SKIP_DAY,
 )
 from .test_components import axe_violations
 from .test_schedule_calendar import page_place
@@ -189,75 +183,3 @@ def test_delete_from_the_calendar_returns_to_its_month(page, component_origin):
     _request, shown = open_review(page, EDIT_FROM_CALENDAR)
     applied(page, shown, CALENDAR_OCTOBER, "Scheduled email deleted.")
     assert page.locator("table.calendar-month caption").inner_text() == "October 2054"
-
-
-def test_a_digest_says_its_delete_stops_every_later_send(page, component_origin):
-    """A digest has no single-day exceptions: its help says Delete stops it."""
-    page.set_viewport_size({"width": 1280, "height": 900})
-    page.goto(component_origin + EDIT_DIGEST)
-    help_line = page.locator("#schedule-delete-help").inner_text()
-    assert help_line.startswith("This report repeats, so deleting it stops every")
-
-
-@pytest.mark.parametrize("width", [320, 1280])
-def test_a_digest_send_skips_this_email_only_or_the_whole_digest(
-    page, component_origin, axe_source, width
-):
-    """Opened for one calendar send, Delete offers This email only (chosen) and
-    The whole digest; choosing moves nothing, and This email only posts its
-    send and reviews the skip; Apply returns to the calendar's month."""
-    page.set_viewport_size({"width": width, "height": 900})
-    page.goto(component_origin + EDIT_DIGEST_SEND)
-    failures = watch(page)
-    form = page.locator("#schedule-delete-form")
-    only = form.get_by_role("radio", name="This email only")
-    whole = form.get_by_role("radio", name="The whole report")
-    assert only.is_checked() and not whole.is_checked()
-    help_line = page.locator("#schedule-delete-help").inner_text()
-    assert help_line.startswith("This email only skips just the report's send at")
-    # The send time is shown in the browser's zone, never the raw instant.
-    assert "+00:00" not in help_line
-    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-    before = page_place(delete_button(page))
-    whole.check()
-    assert same_place(page_place(delete_button(page)), before)
-    only.check()
-    assert same_place(page_place(delete_button(page)), before)
-    request, shown = open_review(page, EDIT_DIGEST_SEND)
-    assert request.url.endswith(DIGEST_SKIP)
-    posted = fields(request)
-    assert (posted["scope"], posted["send"]) == ("send", SKIP_DAY)
-    text = shown.inner_text()
-    # The skipped send is named by its send time alone (a <time> the page
-    # shows browser-local), not by its slot key (#1658).
-    sentence = shown.get_by_text("This email only: the report skips its send at")
-    assert sentence.locator("time[data-local-instant]").count() == 1
-    # Every <time> the review drew is rewritten browser-local once the
-    # dialog shows it, never left as the server's ISO instant.
-    when = sentence.locator("time[data-local-instant]")
-    assert when.inner_text() != when.get_attribute("datetime")
-    assert "+00:00" not in text and "T00:00:00" not in text
-    assert f"for {SKIP_DAY}" not in sentence.inner_text()
-    assert "Applying skips this send" in text
-    assert axe_violations(page, axe_source) == []
-    assert not failures
-    applied(page, shown, CALENDAR_OCTOBER, "Email skipped.")
-
-
-def test_the_whole_digest_is_posted_with_its_own_scope(page, component_origin):
-    """The whole digest posts scope ``this``: the digest's delete."""
-    page.set_viewport_size({"width": 1280, "height": 900})
-    page.goto(component_origin + EDIT_DIGEST_SEND)
-    page.locator("#schedule-delete-form").get_by_role(
-        "radio", name="The whole report"
-    ).check()
-    request, _shown = open_review(page, EDIT_DIGEST_SEND)
-    assert fields(request)["scope"] == "this"
-
-
-def test_a_digest_opened_from_the_list_has_no_choice(page, component_origin):
-    """Without a send named, a digest's Delete is the whole digest alone."""
-    page.set_viewport_size({"width": 1280, "height": 900})
-    page.goto(component_origin + EDIT_DIGEST)
-    assert page.locator('#schedule-delete-form [name="scope"]').count() == 0
-    assert page.locator('#schedule-delete-form [name="send"]').count() == 0

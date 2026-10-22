@@ -2,10 +2,10 @@
 
 A page under Dates and mail schedules that changes nothing itself. It lists
 each send the current schedule revisions make, in sending order: the
-Initial invitation, each reminder, and every day or week of the Daily and
-Weekly Admin digests, expanded with the scheduler's own evaluation
-(``SchedulePlan.page``). A report email's passed times show only the sends
-it made, never the rule's (Administrator, R43; ``report_calendar_sends``).
+Initial invitation, each reminder, and every send of each report email,
+expanded with the reports' own evaluation. A report email's passed times
+show only the sends it made, never the rule's (Administrator, R43;
+``report_calendar_sends``).
 The table of sends is the page's text equivalent;
 the page script (``calendar-v1.js``) draws the same sends as a month grid,
 one month at a time with Previous and Next (#1656), bucketed by the
@@ -53,12 +53,11 @@ from parishkit.stewardship.web.tables import Sorting, whole_table
 from .admin_editing import error_response, principal
 from .authentication import runtime
 from .content_views import _records
-from .digest_skips import digest_sends, skipped
 from .schedule_entry_views import ERRORS, _recheck, year_month
 from .schedule_forms import schedule_order
 from .schedule_preview import work_summary
 from .schedule_reads import campaign_schedules, schedule_state
-from .schedule_table import DIGESTS, ScheduleRow, schedule_rows
+from .schedule_table import ScheduleRow, schedule_rows
 from .schedule_views import campaign_email_names
 
 # The address parameter naming the month shown (``2054-11``, #1656).
@@ -90,46 +89,16 @@ WEEK = tuple(
 
 
 def calendar_sends(previous, campaign, summary, now, names=None):
-    """Every send of the saved schedules, in sending order.
+    """Every send of the saved Family mail schedules, by time.
 
     ``previous``, ``campaign``, ``summary``, ``now`` and ``names`` are
-    ``schedule_table.schedule_rows``'s. A one-time schedule is its own row; a
-    digest becomes one row per send, each a copy of the digest's row with that
-    send's time in ``due``, so it keeps the digest's name, email, status and
-    Edit link. A digest send whose time has passed is "passed" instead: muted
-    and not linked, like a schedule that has run, since editing the digest
-    changes only its later sends; and one the digest skips (#1658) is
-    "skipped", muted and not linked too. A digest send still to come names
-    its slot (``ScheduleRow.slot``), so its Edit link opens Edit for that
-    send (``?send=``) and Delete can offer This email only. Sends at the
-    same moment keep the table's sending order.
+    ``schedule_table.schedule_rows``'s; each schedule is its one send's
+    row. Sends at the same moment keep the table's sending order.
     """
-    previous = sorted(previous, key=schedule_order)
-    sends = []
-    for record, row in zip(
-        previous,
-        schedule_rows(previous, campaign, summary, now, names),
-        strict=True,
-    ):
-        if row.kind not in DIGESTS:
-            sends.append(row)
-            continue
-        skips = skipped(record["values"])
-        sends.extend(
-            replace(
-                row,
-                due=slot.due_at,
-                next_due=None,
-                status="skipped"
-                if slot.key in skips
-                else "passed"
-                if slot.due_at <= now
-                else row.status,
-                slot=slot.key,
-            )
-            for slot in digest_sends(record["values"], campaign)
-        )
-    return sorted(sends, key=lambda send: (send.due, send.position))
+    rows = schedule_rows(
+        sorted(previous, key=schedule_order), campaign, summary, now, names
+    )
+    return sorted(rows, key=lambda send: (send.due, send.position))
 
 
 # Report email sends are listed up to this long after the campaign's last

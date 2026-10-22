@@ -42,8 +42,8 @@ def records():
 def test_the_chosen_email_names_its_own_mail_type():
     """The text is checked against the chosen email's type, the page's."""
     saved = records()
-    kinds = ("reminder", "initial", "daily_digest")
-    for row, kind in zip(saved[:3], kinds, strict=True):
+    kinds = ("reminder", "initial")
+    for row, kind in zip(saved[:2], kinds, strict=True):
         assert _chosen(saved, row["id"]) == (row["id"], kind)
     # An upper-case ID is the same email.
     assert _chosen(saved, saved[0]["id"].upper()) == (saved[0]["id"], "reminder")
@@ -58,9 +58,17 @@ def test_no_chosen_email_is_refused_with_the_page_reason(value):
 
 
 def test_an_email_no_schedule_can_send_or_no_longer_saved_is_stale():
-    """Only a saved email of a schedulable type can be the base of a test."""
+    """Only a saved email of a schedulable type can be the base of a test.
+
+    A retired Daily digest email is not one: report emails replaced the
+    digests (#1786), and no schedule sends it.
+    """
     saved = records()
-    for identifier in (saved[3]["id"], "f" * 8 + "-0000-4000-8000-000000000009"):
+    for identifier in (
+        saved[2]["id"],
+        saved[3]["id"],
+        "f" * 8 + "-0000-4000-8000-000000000009",
+    ):
         with pytest.raises(UserFacingStale):
             _chosen(saved, identifier)
 

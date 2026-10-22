@@ -314,7 +314,7 @@ def test_a_series_that_cannot_be_matched_is_refused(
     def shifted(text):
         """The real parse, with an empty added entry first."""
         parsed = parse(text)
-        empty = {"comparison": False, admin_changes.LABEL: "new9"}
+        empty = {admin_changes.LABEL: "new9"}
         return parsed | {
             "schedules": [empty, *parsed["schedules"]],
             "series": [

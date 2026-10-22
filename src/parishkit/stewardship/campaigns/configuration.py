@@ -441,7 +441,7 @@ def skip_dates(value):
     digest's send day, a daily digest's reported day. Only the form is
     checked here. A change that moves the digest's sends (its weekday or the
     campaign's dates) drops each skip of a send still ahead that is no
-    longer a send (``accounts.digest_skips.drop_stale``); a past one is kept
+    longer a send; a past one is kept
     on every later revision, though it then skips nothing, since a skipped
     past slot has no fulfillment and a revision without it would plan that
     send again as missed.

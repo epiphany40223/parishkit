@@ -10,7 +10,7 @@ the caller admits first and runs ``build_preview`` inside its own work
 transaction.
 """
 
-from datetime import time, timedelta
+from datetime import time
 from uuid import uuid4
 
 from django.core.exceptions import ValidationError
@@ -22,16 +22,13 @@ from parishkit.stewardship.campaigns.configuration import schedule_window_change
 from parishkit.stewardship.campaigns.schedule_evaluation import upcoming_slots
 from parishkit.stewardship.occurrence_preview import Occurrence, build, wall_shift
 from parishkit.stewardship.storage import StaleRecordError
-from parishkit.stewardship.wall_clock import WEEKDAYS
 from parishkit.stewardship.web.dates import UnknownZone, browser_zone, format_time
-from parishkit.stewardship.web.presentation import parish_date
 from parishkit.stewardship.web.refusals import stale_page
 
-from . import admin_editing, digest_skips, schedule_local
+from . import admin_editing, schedule_local
 from .admin_editing import sign_preview
 from .campaign_views import _state
 from .content_forms import EMAIL_LABELS
-from .report_rows import planned, translate
 from .request_patch import build_candidate
 from .schedule_preview import fingerprint, work_summary
 from .schedule_reads import refuse_archived
@@ -97,7 +94,7 @@ def reviewed_sends(changes, prior, before_zone, after_zone):
 
     ``changes`` are the change's schedule rows, ``prior`` the saved values by
     id, and the zones the campaign's before and after the change. Each added
-    or changed dated schedule (a digest has no one send) whose resolved
+    or changed schedule whose resolved
     moment differs from its saved one, and is after the database's clock
     now, is listed as an ISO 8601 instant; the confirmation refuses once any
     has passed (``admin_editing.refuse_passed_sends``). A moment already
@@ -110,7 +107,7 @@ def reviewed_sends(changes, prior, before_zone, after_zone):
     for row in changes:
         values = row.get("values")
         if not values or not values.get("date"):
-            continue  # a delete, or a digest
+            continue  # a delete
         moment = schedule_local.instant(values, after_zone, now)
         saved = prior.get(row["id"])
         if (
@@ -166,29 +163,15 @@ def report_window_rows(configuration, campaign, after, explicit):
     ]
 
 
-def _day_words(day):
-    """A campaign day in words: its weekday and its date in the parish format."""
-    return f"{WEEKDAYS[day.weekday()]}, {parish_date(day)}"
-
-
-def _what(values, slot, *, shift, same_zone):
+def _what(values, *, shift, same_zone):
     """What one send is, in words, for its line in the schedule preview.
 
-    A daily digest names the campaign day it reports on (its slot's day, the
-    day before it sends); a weekly digest reports what is new since its last
-    send, so it names only its send day. A dated email is its mail type; when
-    the shown zone is the campaign's and a clock change moves its wall time
-    forward, the line also names the time it was set for, since the
-    daylight-saving words then name the time it really sends.
+    A send is its mail type; when the shown zone is the campaign's and a
+    clock change moves its wall time forward, the line also names the time
+    it was set for, since the daylight-saving words then name the time it
+    really sends.
     """
-    kind = values["kind"]
-    if kind == "daily_digest":
-        return _("Daily Admin digest for %(day)s") % {
-            "day": _day_words(slot.local_date)
-        }
-    if kind == "weekly_digest":
-        return _("Weekly Admin digest, %(day)s") % {"day": _day_words(slot.local_date)}
-    label = str(EMAIL_LABELS[kind])
+    label = str(EMAIL_LABELS[values["kind"]])
     if same_zone and shift == "forward":
         return _("%(label)s, set for %(time)s") % {
             "label": label,
@@ -216,14 +199,12 @@ def sends_preview(values, campaign, page, *, now, zone=None, paused=False):
     same_zone = shown is not None and zone == schedule_zone
     occurrences = []
     for slot in page.slots:
-        # A daily digest sends the day after the day it reports on.
-        sends_on = slot.local_date + timedelta(days=values["kind"] == "daily_digest")
-        shift = wall_shift(sends_on, values["time"], slot.due_at, schedule_zone)
+        shift = wall_shift(slot.local_date, values["time"], slot.due_at, schedule_zone)
         occurrences.append(
             Occurrence(
                 slot.due_at.astimezone(shown).date() if shown is not None else None,
                 slot.due_at,
-                _what(values, slot, shift=shift, same_zone=same_zone),
+                _what(values, shift=shift, same_zone=same_zone),
                 kind=values["kind"],
                 shift=shift,
             )
@@ -256,20 +237,12 @@ def describe(values, campaign, *, now, zone=None, paused=False):
     as ``schedule show`` and ``schedule preview`` list them;
     ``occurrences`` is the same sends as the shared schedule preview's
     context (``sends_preview``), shown in the browser's ``zone`` when one is
-    given, and with the paused notice while live delivery is ``paused``. A
-    digest's ``skipped_sends`` (#1658) are the sends its skip dates still
-    skip, with their UTC times, so the review shows each as a browser-local
-    send time rather than its slot key.
+    given, and with the paused notice while live delivery is ``paused``.
     """
     if values is None:
         return None
-    # A converted report's digest view previews the report's own sends.
-    page = upcoming_slots(planned(values), campaign, now=now, limit=SHOWN_SENDS)
+    page = upcoming_slots(values, campaign, now=now, limit=SHOWN_SENDS)
     return values | {
-        "skipped_sends": digest_skips.skipped_sends(values, campaign),
-        "weekday_label": WEEKDAYS[values["weekday"]]
-        if values["weekday"] is not None
-        else None,
         "timezone": campaign["timezone"],
         "resolved_slots": [
             {"key": slot.key, "due_at": slot.due_at.isoformat()} for slot in page.slots
@@ -296,7 +269,6 @@ def build_preview(
     series=(),
     series_changes=(),
     request_key=None,
-    skips=None,
     zone=None,
 ):
     """Validate the complete candidate, including each stranded or reordered mailing.
@@ -329,12 +301,10 @@ def build_preview(
     Delivery never reads a series, so no series operation changes a send.
     ``request_key`` signs the preview with a direct save's request key
     (#1404 PR 4b, ``admin_editing.direct_key``); a review shown in a dialog
-    takes a fresh one. ``skips`` maps a saved digest's id to the one send
-    (slot date) it skips (#1658, ``digest_skips.apply``), which adds the date
-    to its ``skip_dates`` and signs the send's time with the others.
-    ``zone`` is the browser's posted time zone, which each side's send
-    times are grouped and shown in (``describe``); a caller with no browser
-    (the command line, Campaign settings' end-date review) passes none.
+    takes a fresh one. ``zone`` is the browser's posted time zone, which
+    each side's send times are grouped and shown in (``describe``); a caller
+    with no browser (the command line, Campaign settings' end-date review)
+    passes none.
     """
     configuration = state[0]
     digest = configuration.active_configuration.digest
@@ -353,19 +323,6 @@ def build_preview(
     }
     patch = schedules.patch()
     prior = {row["id"]: row["values"] for row in schedules.previous}
-    # A digest send skipped by this change (#1658): refused here unless it
-    # may be skipped, and its send time is signed below with the others.
-    skipped_due = (
-        digest_skips.apply(
-            patch,
-            skips,
-            prior,
-            campaign.active_configuration.values,
-            admin_editing.database_now(),
-        )
-        if skips
-        else []
-    )
     explicit = {row["id"] for row in patch}
     # A repeat's positions index the added forms, in form order. They name
     # the ids the form set just minted only if every added form produced
@@ -403,11 +360,8 @@ def build_preview(
         for item in series
     ]
     remembered.extend(series_changes)
-    # A new timezone or digest date window also replaces unchanged civil mail
-    # fields. Include their existing work in the reviewed cancellation inventory.
-    # Only the record's id and values: a converted report's row also
-    # carries its report values (``report_rows.view_rows``), which are no
-    # part of a change.
+    # A new timezone also replaces unchanged civil mail fields. Include their
+    # existing work in the reviewed cancellation inventory.
     patch.extend(
         {
             "operation": "update",
@@ -423,21 +377,11 @@ def build_preview(
             kind=row["values"]["kind"],
         )
     )
-    # A skip of a send still ahead that the change moves off the digest's
-    # sends (a new weekday or campaign dates, #1658) is dropped, so it never
-    # applies again if the digest later moves back; the review lists it.
-    dropped = digest_skips.drop_stale(
-        patch,
-        prior,
-        campaign.active_configuration.values,
-        window.values(),
-        admin_editing.database_now,
-    )
     schedule_changes = list(patch)
     # Report emails (#1786) are edited on Report emails, not here, but a
     # report's rule follows the campaign's dates and zone: a change of them
     # replaces each report's revision too, so its planned sends are made
-    # again, as the digests' were (``schedule_window_changed``). The review
+    # again (``schedule_window_changed``). The review
     # names them.
     reports = report_window_rows(configuration, campaign, window.values(), explicit)
     patch.extend(reports)
@@ -471,10 +415,7 @@ def build_preview(
     # intent. The review lists only the schedule changes.
     patch.extend(upkeep(base.document(), patch))
     try:
-        # The candidate is checked as it will be recorded: a converted
-        # report's change in its own values (#1786, ``admin_editing.sign_preview``
-        # translates the signed patch the same way).
-        build_candidate(base, translate(base.document(), patch), candidate_id=uuid4())
+        build_candidate(base, patch, candidate_id=uuid4())
     except (ConfigError, ValueError):
         # With an added email, the email is the likelier cause (#446).
         window.add_error(
@@ -503,8 +444,6 @@ def build_preview(
             "after": describe(row.get("values"), window.values(), **shown),
             "impact": summary.get(row["id"], {}),
             "label": EMAIL_LABELS[(row.get("values") or prior[row["id"]])["kind"]],
-            # Skips this change drops (#1658, ``digest_skips.drop_stale``).
-            "dropped_skips": dropped.get(row["id"], []),
         }
         for row in schedule_changes
     ]
@@ -557,16 +496,11 @@ def build_preview(
             snapshot=fingerprint(state[-1], summary),
             # Each send time still ahead now, which the confirmation checks
             # again: a review lives 15 minutes (#1464).
-            due=sorted(
-                {
-                    *reviewed_sends(
-                        schedule_changes,
-                        prior,
-                        campaign.active_configuration.values["timezone"],
-                        window.values()["timezone"],
-                    ),
-                    *(moment.isoformat() for moment in skipped_due),
-                }
+            due=reviewed_sends(
+                schedule_changes,
+                prior,
+                campaign.active_configuration.values["timezone"],
+                window.values()["timezone"],
             ),
             key=request_key,
         ),

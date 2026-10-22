@@ -30,7 +30,6 @@ from .schedule_list_components import (
     DAY_MOVED_TEXT,
     EDIT,
     EDIT_CLOSED,
-    EDIT_DIGEST,
     EDIT_EMAIL_REFUSED,
     EDIT_INITIAL,
     EDIT_PASSED,
@@ -127,13 +126,7 @@ def test_list_has_one_line_of_dates_and_actions_only_on_unsent_rows(
     visible(main.locator(".campaign-dates", has_text="Campaign dates:"))
     new = page.get_by_role("link", name="New scheduled email")
     assert new.get_attribute("href") == NEW
-    # The weekly digest sits at its next send (that Monday), not last (#1652).
-    assert names(page) == [
-        "Initial invitation",
-        "Weekly report",
-        "Reminder 1",
-        "Reminder 2",
-    ]
+    assert names(page) == ["Initial invitation", "Reminder 1", "Reminder 2"]
     heading = page.locator('th[data-sort-column="when"]')
     assert "(your time)" not in heading.inner_text()
     sent = rows(page).nth(0)
@@ -141,7 +134,7 @@ def test_list_has_one_line_of_dates_and_actions_only_on_unsent_rows(
     assert sent.locator("input[type=checkbox]").count() == 0
     assert sent.get_by_role("button").count() == 0
     assert sent.get_by_role("link", name="Edit Initial invitation").count() == 0
-    reminder = rows(page).nth(2)
+    reminder = rows(page).nth(1)
     edit = reminder.get_by_role("link", name="Edit Reminder 1")
     assert edit.get_attribute("title") == "Edit Reminder 1"
     assert edit.get_attribute("href").startswith("/admin/campaign/schedules/")
@@ -158,7 +151,7 @@ def test_row_action_icons_are_the_same_size(page, component_origin, width):
     """The Edit link and Delete button draw as equal squares (#879 pattern)."""
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + LIST)
-    reminder = rows(page).nth(2)
+    reminder = rows(page).nth(1)
     edit = reminder.get_by_role("link", name="Edit Reminder 1").bounding_box()
     delete = reminder.get_by_role("button", name="Delete Reminder 1").bounding_box()
     sizes = [(round(b["width"], 1), round(b["height"], 1)) for b in (edit, delete)]
@@ -169,8 +162,7 @@ def test_row_action_icons_are_the_same_size(page, component_origin, width):
 
 
 def test_when_heading_sorts_the_table_in_place(page, component_origin):
-    """Time order reversed and back, without a reload; the digest stays at its
-    next send either way (#1652)."""
+    """Time order reversed and back, without a reload (#1652)."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + LIST)
     failures = watch(page)
@@ -178,21 +170,11 @@ def test_when_heading_sorts_the_table_in_place(page, component_origin):
     has_attribute(
         page.locator('th[data-sort-column="when"]'), "aria-sort", "descending"
     )
-    assert names(page) == [
-        "Reminder 2",
-        "Reminder 1",
-        "Weekly report",
-        "Initial invitation",
-    ]
+    assert names(page) == ["Reminder 2", "Reminder 1", "Initial invitation"]
     assert "sort=-when" in page.url
     page.locator('th[data-sort-column="when"] .sort-link').click()
     has_attribute(page.locator('th[data-sort-column="when"]'), "aria-sort", "ascending")
-    assert names(page) == [
-        "Initial invitation",
-        "Weekly report",
-        "Reminder 1",
-        "Reminder 2",
-    ]
+    assert names(page) == ["Initial invitation", "Reminder 1", "Reminder 2"]
     assert page.evaluate("window.notReloaded === true")
     assert not failures
 
@@ -222,7 +204,7 @@ def test_delete_asks_in_a_dialog_then_redraws_the_table_in_place(
         page,
         "document.activeElement.getAttribute('aria-label') === 'Delete Reminder 1'",
     )
-    assert rows(page).count() == 4
+    assert rows(page).count() == 3
     delete.click()
     with page.expect_request(lambda request: request.method == "POST") as sent:
         dialog(page).get_by_role("button", name="Delete", exact=True).click()
@@ -231,9 +213,9 @@ def test_delete_asks_in_a_dialog_then_redraws_the_table_in_place(
     assert fields["base_digest"] == ["a" * 64]
     assert "csrfmiddlewaretoken" in fields
     # Applied: the table is redrawn without that reminder, nothing reloads.
-    has_count(rows(page), 3)
+    has_count(rows(page), 2)
     hidden(dialog(page))
-    assert names(page) == ["Initial invitation", "Weekly report", "Reminder 1"]
+    assert names(page) == ["Initial invitation", "Reminder 1"]
     assert page.locator(f'button[value="{identifier}"]').count() == 0
     eventually(page, "document.activeElement.id === 'schedule-table-title'")
     visible(page.locator("main > [role=status]", has_text="Deleted Reminder 1."))
@@ -250,19 +232,15 @@ def test_delete_selected_names_the_count(page, component_origin):
     assert bulk.is_disabled()
     page.locator("input[data-select-all]").check()
     boxes = page.locator("input[data-select-row]")
-    assert boxes.count() == 3
-    # Keep the digest (the first unsent row): tick only the two reminders.
-    boxes.nth(0).uncheck()
+    assert boxes.count() == 2
     bulk.click()
     visible(dialog(page))
     assert dialog(page).locator("h2").inner_text() == "Delete 2 scheduled emails?"
-    # Neither reminder has sent: no word about recalling sent email (R40b).
-    assert "never recalled" not in dialog(page).inner_text()
     with page.expect_request(lambda request: request.method == "POST") as sent:
         dialog(page).get_by_role("button", name="Delete", exact=True).click()
     assert len(posted(sent.value)["schedule_id"]) == 2
-    has_count(rows(page), 2)
-    assert names(page) == ["Initial invitation", "Weekly report"]
+    has_count(rows(page), 1)
+    assert names(page) == ["Initial invitation"]
     visible(
         page.locator("main > [role=status]", has_text="Deleted 2 scheduled emails.")
     )
@@ -274,30 +252,31 @@ def test_delete_says_sent_email_is_not_recalled_only_for_one_that_sent(
     page, component_origin
 ):
     """The Delete confirmation's caution (R40b) is said only while a chosen
-    schedule has sent email: the Weekly report has, the reminders
-    have not. Delete selected says it once the digest is ticked too."""
+    schedule has sent email: Reminder 2 has (its send was re-planned after
+    it delivered), Reminder 1 has not. Delete selected says it once
+    Reminder 2 is ticked too."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + BULK)
     failures = watch(page)
     caution = dialog(page).get_by_text("Email already sent is never recalled")
-    page.get_by_role("button", name="Delete Weekly report").click()
+    page.get_by_role("button", name="Delete Reminder 2").click()
     visible(dialog(page))
     visible(caution)
     page.keyboard.press("Escape")
     hidden(dialog(page))
-    page.get_by_role("button", name="Delete Reminder 2").click()
+    page.get_by_role("button", name="Delete Reminder 1").click()
     visible(dialog(page))
     hidden(caution)
     page.keyboard.press("Escape")
     hidden(dialog(page))
     boxes = page.locator("input[data-select-row]")
-    boxes.nth(1).check()
+    boxes.nth(0).check()
     page.get_by_role("button", name="Delete selected").click()
     visible(dialog(page))
     hidden(caution)
     page.keyboard.press("Escape")
     hidden(dialog(page))
-    boxes.nth(0).check()
+    boxes.nth(1).check()
     page.get_by_role("button", name="Delete selected").click()
     visible(dialog(page))
     assert dialog(page).locator("h2").inner_text() == "Delete 2 scheduled emails?"
@@ -320,7 +299,7 @@ def test_a_refused_delete_explains_why_inside_the_dialog(page, component_origin)
     # The reason appears below the buttons, so they did not move.
     assert accept.bounding_box() == before
     assert accept.is_disabled()
-    assert rows(page).count() == 4
+    assert rows(page).count() == 3
     dialog(page).get_by_role("button", name="Cancel").click()
     hidden(dialog(page))
     eventually(
@@ -342,7 +321,7 @@ def test_a_change_that_did_not_apply_is_reported(page, component_origin):
     visible(error)
     assert "Not applied" in error.inner_text()
     visible(error.get_by_role("link", name="See the change's status"))
-    assert rows(page).count() == 4
+    assert rows(page).count() == 3
     assert not failures
 
 
@@ -721,9 +700,7 @@ def test_edit_review_waits_for_a_change_and_greys_again_on_revert(
     failures = watch(page)
     button = page.get_by_role("button", name=REVIEW)
     assert button.is_disabled()
-    visible(
-        page.get_by_text("Change the date, time, email or comparison to review it.")
-    )
+    visible(page.get_by_text("Change the date, time or email to review it."))
     time = page.locator('[name="schedule-time"]')
     time.fill("10:30")
     assert button.is_enabled()
@@ -738,16 +715,6 @@ def test_edit_review_waits_for_a_change_and_greys_again_on_revert(
     date.fill("2054-10-11")
     assert button.is_enabled()
     date.fill("2054-10-10")
-    assert button.is_disabled()
-    # The weekly digest's weekday, filled in by the script, is saved too.
-    page.goto(component_origin + EDIT_DIGEST)
-    button = page.get_by_role("button", name=REVIEW)
-    assert button.is_disabled()
-    weekday = page.locator('[name="schedule-weekday"]')
-    saved = weekday.input_value()
-    weekday.select_option("3")
-    assert button.is_enabled()
-    weekday.select_option(saved)
     assert button.is_disabled()
     assert not failures
 
@@ -852,9 +819,8 @@ def test_edit_fills_and_posts_times_in_a_zone_a_day_ahead(
     """In Auckland, a 9:00 AM New York send is 2:00 AM the next day.
 
     Reminder 1 (Saturday, October 10, 9:00 AM in New York) shows as October
-    11 at 02:00, and the weekly digest (Monday 9:00 AM) as Tuesday 02:00;
-    what is posted is what is shown, with the zone, for the server to
-    convert back.
+    11 at 02:00; what is posted is what is shown, with the zone, for the
+    server to convert back.
     """
     context = browser_engine.new_context(timezone_id="Pacific/Auckland")
     try:
@@ -877,9 +843,6 @@ def test_edit_fills_and_posts_times_in_a_zone_a_day_ahead(
         assert fields["schedule-time"] == ["03:00"]
         assert fields["zone"] == ["Pacific/Auckland"]
         visible(page.get_by_role("dialog", name="Review scheduled email change"))
-        page.goto(component_origin + EDIT_DIGEST)
-        assert page.locator('[name="schedule-weekday"]').input_value() == "1"
-        assert page.locator('[name="schedule-time"]').input_value() == "02:00"
         assert not failures
     finally:
         context.close()

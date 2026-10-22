@@ -6,10 +6,10 @@ each send on its day in the browser's time zone. The campaign (October
 1–31, 2054) is in New York's zone; the default page is Los Angeles's,
 three hours behind, and Auckland is a day ahead. The schedules are
 schedule_list_components': the Initial invitation (sent, October 1),
-Reminder 1 (October 10), Reminder 2 (October 20) and a weekly digest on
-Mondays, each at 9:00 AM New York time, plus a daily digest at 7:00 AM
-from October 2 through November 1, the day after the campaign closes;
-"now" is October 5, so its first four sends have passed.
+Reminder 1 (October 10), Reminder 2 (October 20) and the Weekly report
+email on Mondays, each at 9:00 AM New York time, plus the Daily report
+email at 7:00 AM from October 2 through November 1, the day after the
+campaign closes; "now" is October 5, so it has made its first four sends.
 
 Each campaign day's (+) Add opens New scheduled email with that send date
 (``ADD_ON``, October 12), whose Cancel and Apply return to the calendar's
@@ -63,7 +63,7 @@ MONDAYS = [5, 12, 19, 26]
 # the weekly report's Mondays, its first Monday after the close (November 2:
 # the converted Weekly sends until then, #1786) and the daily one's 31
 # days), and the upcoming ones, without the sent invitation and the daily
-# report's four past days.
+# report's four sends already made.
 ALL_ROWS = 3 + len(MONDAYS) + 1 + 31
 UPCOMING_ROWS = ALL_ROWS - 5
 
@@ -113,13 +113,13 @@ def test_calendar_draws_each_send_on_its_local_day(
     for monday in MONDAYS:
         assert "Weekly report" in cell(page, monday).inner_text()
     assert "Campaign closes" in cell(page, 31).inner_text()
-    # A daily digest day that has passed is muted, unlinked and read as Past;
-    # a later one links to the digest's Edit page.
+    # A daily report send already made is muted, unlinked and read as Sent;
+    # a later one links to the report's Edit report email page.
     past = cell(page, 3).locator("li")
     assert past.inner_text().startswith("4:00 AM Daily report")
     assert past.get_attribute("class") == "schedule-past"
     assert past.get_by_role("link").count() == 0
-    assert past.locator(".visually-hidden").inner_text() == ", Past"
+    assert past.locator(".visually-hidden").inner_text() == ", Sent"
     visible(cell(page, 6).get_by_role("link", name="4:00 AM Daily report"))
     # A phone scrolls the grid inside its region; the page never scrolls sideways.
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
@@ -133,7 +133,7 @@ def test_calendar_draws_each_send_on_its_local_day(
     visible(november.get_by_role("link", name="4:00 AM Daily report"))
     assert "Campaign" not in november.inner_text()
     # The table lists the same sends as text, with compact times: by default
-    # the upcoming ones (not the sent invitation or four past digest days).
+    # the upcoming ones (not the sent invitation or the four reports sent).
     rows = page.locator("table.calendar-sends tbody tr")
     assert rows.count() == UPCOMING_ROWS
     assert rows.first.locator("time").inner_text() == "Oct 5, 2054 6:00 AM"
@@ -270,7 +270,7 @@ def test_a_keyboard_reaches_a_day_add_and_opens_new_with_that_date(
     page.set_viewport_size({"width": 1280, "height": 900})
     at_now(page)
     page.goto(component_origin + CALENDAR)
-    # From October 11's Add, Tab reaches that day's send (a daily digest),
+    # From October 11's Add, Tab reaches that day's send (the daily report),
     # then October 12's Add: each day's Add comes before its sends.
     add_link(page, 11).focus()
     tab_to_next(page)
@@ -443,10 +443,12 @@ def test_edit_links_carry_the_month_shown(page, component_origin):
     assert table.get_attribute("href").endswith("/?calendar=2054-10")
     page.get_by_role("button", name="Next month").click()
     assert table.get_attribute("href").endswith("/?calendar=2054-11")
-    # A digest send also names its own slot (#1658): the daily digest sent on
-    # November 1 reports on October 31.
-    digest = cell(page, 1).get_by_role("link", name="4:00 AM Daily report")
-    assert digest.get_attribute("href").endswith("/?send=2054-10-31&calendar=2054-11")
+    # A report email's send also names its own slot (#1786): the daily report
+    # sent on November 1 reports on October 31.
+    report = cell(page, 1).get_by_role("link", name="4:00 AM Daily report")
+    href = report.get_attribute("href")
+    assert href.startswith("/admin/mail/report-emails/")
+    assert href.endswith("/?send=2054-10-31&calendar=2054-11")
 
 
 def unavailable_look(button):
@@ -689,7 +691,7 @@ def test_move_reviews_in_its_dialog_and_applies_in_place(
 ):
     """Move… on Reminder 1, a new date, Review, then Apply (#1521).
 
-    Only the reminders have Move… (not the sent invitation, not a digest),
+    Only the reminders have Move… (not the sent invitation, not a report),
     each a named icon at least 24px square. The dialog says the send's time
     and that only its date changes; Review the move waits for another date.
     Review posts the move to the reminder's Edit page, whose review opens

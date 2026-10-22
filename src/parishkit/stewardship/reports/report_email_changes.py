@@ -16,9 +16,8 @@ inside their own work transaction.
   name the moment of its own Apply); Apply is refused once any work of the
   report changed since, so no send falls between the two unnoticed.
 - **Delete** removes the record; the definition keeps its history.
-- **Skip** adds the slot keys of one or more sends to ``skip_dates``, with
-  the digest skip's rules (``accounts.digest_skips``), each send checked on
-  its own: only a send of the report that is still ahead, not skipped
+- **Skip** adds the slot keys of one or more sends to ``skip_dates``, each
+  send checked on its own: only a send of the report that is still ahead, not skipped
   already and without Production work. **Unskip** removes them again, for a
   send still ahead that is skipped now (a past skip is kept on every
   revision). Each send's time is signed into the review, so Apply refuses
@@ -290,7 +289,7 @@ def send_worked(identifier, slot):
     """Whether the send has Production work: prepared, sending, sent or failed.
 
     A Testing rehearsal's occurrence is practice mail, so skipping the real
-    send is still allowed, as for the digests (``digest_skips._worked``).
+    send is still allowed.
     """
     return ScheduleOccurrence.objects.filter(
         definition_id=identifier, slot=slot, mode="production"
@@ -464,7 +463,7 @@ def _dropped_skips(saved, values, campaign, now):
 
     Each such skip is dropped, so it never applies again if the report
     later moves back; past skips are kept (a skipped past send has no
-    fulfillment), as for the digests' skips (``digest_skips.drop_stale``).
+    fulfillment).
     """
     ahead = [
         key

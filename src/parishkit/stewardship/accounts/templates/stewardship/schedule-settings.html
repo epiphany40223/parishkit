@@ -55,7 +55,7 @@ the same set out again.
   {% for row in table.rows %}<tr data-schedule-state="{{ row.status }}"{% if row.read_only %} class="schedule-past"{% endif %}>
     <td class="select-col">{% if not row.read_only %}<input type="checkbox" name="schedule_id" value="{{ row.id }}" data-select-row data-confirm-name="{{ row.label }}"{% if row.delivered %} data-confirm-caution{% endif %} aria-label="{% blocktranslate with name=row.label %}Select {{ name }}{% endblocktranslate %}">{% endif %}</td>
     <th scope="row">{{ row.label }}</th>
-    <td>{% if row.due %}<time datetime="{{ row.due|instant }}" data-local-instant data-compact>{{ row.due|instant }}</time>{% else %}{% if row.weekday %}{% blocktranslate trimmed with day=row.weekday %}Every {{ day }}{% endblocktranslate %}{% else %}{% translate "Every day" %}{% endif %}<br>{% if row.next_due %}{% translate "Next:" %} <time datetime="{{ row.next_due|instant }}" data-local-instant data-compact>{{ row.next_due|instant }}</time>{% else %}{% translate "No more this campaign" %}{% endif %}{% endif %}</td>
+    <td><time datetime="{{ row.due|instant }}" data-local-instant data-compact>{{ row.due|instant }}</time></td>
     <td>{{ row.email }}</td>
     <td><span class="status-badge{% if row.status == 'upcoming' %} status-badge-on{% endif %}">{{ row.status_label }}</span></td>
     <td>{% if row.last_send %}{% blocktranslate trimmed with shown=row.delivered|number count delivered=row.delivered %}{{ shown }} email delivered{% plural %}{{ shown }} emails delivered{% endblocktranslate %}{% if row.failed %}, {% blocktranslate trimmed with shown=row.failed|number count failed=row.failed %}{{ shown }} send failed{% plural %}{{ shown }} sends failed{% endblocktranslate %}{% endif %}<br><a href="{% url 'admin:family_email_sends' %}">{% translate "Family email history" %}</a>{% else %}{% translate "None yet" %}{% endif %}</td>
@@ -87,7 +87,7 @@ the same set out again.
   <tbody>
   {% for row in suggested %}<tr data-schedule-state="{{ row.status }}" data-suggested-kind="{{ row.kind }}">
     <th scope="row">{{ row.label }}</th>
-    <td>{% if row.due %}<time datetime="{{ row.due|instant }}" data-local-instant data-compact>{{ row.due|instant }}</time>{% else %}{% blocktranslate trimmed with day=row.weekday %}Every {{ day }}{% endblocktranslate %}<br>{% if row.next_due %}{% translate "Next:" %} <time datetime="{{ row.next_due|instant }}" data-local-instant data-compact>{{ row.next_due|instant }}</time>{% else %}{% translate "No more this campaign" %}{% endif %}{% endif %}</td>
+    <td><time datetime="{{ row.due|instant }}" data-local-instant data-compact>{{ row.due|instant }}</time></td>
     <td>{{ row.email }}</td>
     <td><span class="status-badge">{{ row.status_label }}</span></td>
   </tr>{% endfor %}

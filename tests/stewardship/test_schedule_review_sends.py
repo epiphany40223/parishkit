@@ -2,8 +2,8 @@
 
 admin-portal "Dates and mail schedules" and ui-conventions "Schedule
 previews" (ADM-04 slice 7c): each side of a schedule change lists its next
-five sends after now in the compact layout, grouped by the browser's days,
-each digest line naming its day; a passed send is the empty state; paused
+five sends after now in the compact layout, grouped by the browser's days;
+a passed send is the empty state; paused
 live delivery adds the notice; a review with no zone lists full
 browser-local instants; the daylight-saving words name the campaign's wall
 time only when the browser shares the campaign's zone.
@@ -64,37 +64,6 @@ def test_a_dated_email_lists_its_one_send_on_its_browser_day():
         "not a list of who will receive it",
     ):
         assert gone not in html
-
-
-def test_digest_lines_name_their_day_and_the_more_line_names_the_limit():
-    """A daily digest names the day it reports on, a weekly one its send
-    day; five sends, then the more line; the digest-date sentence is gone."""
-    owner = campaign()
-    daily = schedule(owner["id"], kind="daily_digest", date=None)["values"]
-    value, html = side(daily, owner, zone=NY)
-    assert [text for _day, _at, text, _shift in lines(value)] == [
-        f"Daily Admin digest for {day}, October {number}, 2054"
-        for day, number in (
-            ("Thursday", 1),
-            ("Friday", 2),
-            ("Saturday", 3),
-            ("Sunday", 4),
-            ("Monday", 5),
-        )
-    ]
-    # The report on October 1 sends on October 2, the day it is listed on.
-    assert lines(value)[0][0].isoformat() == "2054-10-02"
-    assert value["more_slots"] is True
-    assert (
-        "Only the next 5 sends are shown. Later sends follow the same pattern."
-    ) in html
-    assert "campaign day the digest reports on" not in html
-    assert "Does not include Compared with past campaigns." in html
-    weekly = schedule(owner["id"], kind="weekly_digest", date=None, weekday=2)
-    value, html = side(weekly["values"], owner, zone=NY)
-    assert lines(value)[0][2] == "Weekly Admin digest, Wednesday, October 7, 2054"
-    assert lines(value)[0][0].isoformat() == "2054-10-07"
-    assert "Sent every week." in html
 
 
 def test_a_passed_send_is_the_empty_state():

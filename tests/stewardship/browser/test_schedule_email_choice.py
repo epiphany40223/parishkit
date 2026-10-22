@@ -77,8 +77,8 @@ def test_a_new_schedule_describes_the_email_it_chooses(page, component_origin):
     row = page.locator("fieldset[data-schedule-row]").filter(
         has=page.locator("legend", has_text="New schedule")
     )
-    row.locator('[name="schedules-4-kind"]').select_option("initial")
-    email = row.locator('[name="schedules-4-template_version"]')
+    row.locator('[name="schedules-3-kind"]').select_option("initial")
+    email = row.locator('[name="schedules-3-template_version"]')
     assert summary(row).inner_text().strip() == ""
     email.select_option(index=1)
     text = summary(row).inner_text()

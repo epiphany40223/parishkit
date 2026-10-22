@@ -7351,7 +7351,10 @@
     const kind = row.querySelector('[data-schedule-field="kind"] select');
     const template = row.querySelector('[data-schedule-field="template_version"] select');
     if (!kind || !template || !rules) return;
-    const governed = new Set(Object.values(rules).flat());
+    // The weekday follows the mail type too: no mail type uses it since
+    // report emails replaced the digests (#1786), but it stays a field of
+    // the stored record, so it is hidden, not left out.
+    const governed = new Set([...Object.values(rules).flat(), "weekday"]);
     const emails = [...template.options];
     const update = (firstLoad) => {
       const wanted = rules[kind.value] || [];
@@ -7362,8 +7365,8 @@
         const show = wanted.includes(group.dataset.scheduleField)
           || (firstLoad && group.querySelector(".errorlist:not([hidden])") !== null);
         group.hidden = !show;
-        // A checkbox (the daily digest's comparison, #1018) is cleared by
-        // unticking it: its value is what it posts when ticked.
+        // A checkbox is cleared by unticking it: its value is what it posts
+        // when ticked.
         if (!show) group.querySelectorAll("input, select").forEach((control) => {
           if (control.type === "checkbox") control.checked = false;
           else control.value = "";

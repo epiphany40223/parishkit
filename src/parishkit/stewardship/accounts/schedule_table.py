@@ -25,12 +25,10 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.campaigns.schedule_evaluation import SchedulePlan
-from parishkit.stewardship.wall_clock import WEEKDAYS
 from parishkit.stewardship.web.tables import Sorting
 
 from .schedule_forms import schedule_labels
 
-DIGESTS = frozenset({"daily_digest", "weekly_digest"})
 STATUS_LABELS = {
     "upcoming": _("Upcoming"),
     "preparing": _("Preparing"),
@@ -43,11 +41,8 @@ STATUS_LABELS = {
     # Its time passed with no work yet: the scheduler, a hold or catch-up
     # may still send it, and a draft that never went live never will.
     "missed": _("Not sent yet"),
-    "repeats": _("Repeats"),
-    # One send of a digest whose time has passed (the Campaign calendar,
-    # #469); the list's digest row itself always repeats.
-    "passed": _("Past"),
-    # One send of a digest that it skips (#1658, the Campaign calendar).
+    # One send of a report email that it skips (#1658, the Campaign
+    # calendar).
     "skipped": _("Skipped"),
     # A suggested schedule Dates and mail schedules proposes in the campaign
     # wizard (#1404 PR 6), listed but not saved.
@@ -66,9 +61,9 @@ STATUS_LABELS = {
 # prepared ahead of its time: it sent its email, failed to, or settled every
 # Family without one of its own. Moving it would make a new
 # revision and plan the send again, so the page shows it read-only; the
-# server still blocks changes to work in progress on its own. "passed" is
-# one past send of a digest on the Campaign calendar, and "skipped" one it
-# skips (#1658), shown read-only too.
+# server still blocks changes to work in progress on its own. On the
+# Campaign calendar a report email's skipped or paused send, and each send
+# it made, are shown read-only too.
 PAST = frozenset(
     {
         "preparing",
@@ -76,7 +71,6 @@ PAST = frozenset(
         "sent",
         "failed",
         "done",
-        "passed",
         "skipped",
         "paused",
         "report_failed",
@@ -91,16 +85,16 @@ PAST = frozenset(
 class ScheduleRow:
     """One saved schedule as the table shows it.
 
-    ``due`` is the one-time UTC send time of an initial invitation or
-    reminder; ``next_due`` is a digest's next UTC send time (None once the
-    campaign has no more). ``open`` says whether the schedule's editor starts
-    open: after a refused preview, an editor with an error or an unsaved
-    change stays open so the reader sees it. ``email`` is the readable name
-    of the email it sends (``schedule_forms.email_names``), and ``position``
-    its place in sending order, which breaks ties in the When heading's sort.
-    ``slot`` is one digest send's slot key on the Campaign calendar
-    (#1658), which its Edit link names (``?send=``) so Delete can skip
-    that send alone.
+    ``due`` is the UTC send time of an initial invitation or reminder, or
+    of one report email send on the Campaign calendar. ``open`` says whether
+    the schedule's editor starts open: after a refused preview, an editor
+    with an error or an unsaved change stays open so the reader sees it.
+    ``email`` is the readable name of the email it sends
+    (``schedule_forms.email_names``), and ``position`` its place in sending
+    order, which breaks ties in the When heading's sort.
+    ``slot`` is one report email send's slot key on the Campaign calendar,
+    which its Edit link names (``?send=``) so that send's box is ticked for
+    Skip (or Send) selected sends.
     """
 
     id: str
@@ -111,8 +105,6 @@ class ScheduleRow:
     position: int = 0
     email: str = ""
     due: datetime | None = None
-    next_due: datetime | None = None
-    weekday: str | None = None
     delivered: int = 0
     failed: int = 0
     open: bool = False
@@ -133,19 +125,19 @@ class ScheduleRow:
 
     @property
     def digest(self):
-        """Whether this is a repeating Admin report rather than a Family send.
+        """Whether this is an Admin report rather than a Family send.
 
-        A report email's send on the Campaign calendar (#1786) is one too:
-        it is never moved from there, and has no Family send results.
+        A report email's send on the Campaign calendar (#1786): it is never
+        moved from there, and has no Family send results.
         """
-        return self.kind in DIGESTS or self.kind == "report"
+        return self.kind == "report"
 
     @property
     def movable(self):
         """Whether the Campaign calendar offers Move… for this send (#1521).
 
-        Only a dated Family send that has not run and whose time has not
-        passed without sending: a digest is one repeating schedule.
+        Only a Family send that has not run and whose time has not passed
+        without sending: a report email is moved on Report emails.
         """
         return not self.read_only and not self.digest and self.status != "missed"
 
@@ -161,9 +153,10 @@ class ScheduleRow:
 
     @property
     def edit_url(self):
-        """This schedule's Edit scheduled email page, or None when read-only.
+        """This schedule's Edit page, or None when read-only.
 
-        A digest send on the Campaign calendar names its slot (#1658).
+        A report email's send on the Campaign calendar opens its Edit report
+        email page naming its slot.
         """
         if self.read_only:
             return None
@@ -172,16 +165,12 @@ class ScheduleRow:
 
 
 def when(row):
-    """The When heading's sort key: the moment the row next sends (#1652).
+    """The When heading's sort key: the moment the row sends (#1652).
 
-    A dated send sorts at its send time and a digest at its next send, the
-    time its When cell shows, so a digest falls among the dated sends rather
-    than after them all. Rows at one moment keep sending order (``position``:
-    the Initial invitation first, then the saved ID). A digest with no more
-    sends this campaign has no key and so lists last either way.
+    Rows at one moment keep sending order (``position``: the Initial
+    invitation first, then the saved ID).
     """
-    moment = row.due or row.next_due
-    return None if moment is None else (moment, row.position)
+    return (row.due, row.position)
 
 
 # The When heading sorts chronologically or the reverse; chronological is the
@@ -192,7 +181,7 @@ SORTING = Sorting.by_column({"when": when}, default="when")
 def status(kind, due, counts, now):
     """The status of one schedule from its due time and its work counts.
 
-    A digest repeats. Work that blocks a change (in progress or with an
+    Work that blocks a change (in progress or with an
     uncertain result) is checked first: before the send time it is
     preparing, after it sending. Otherwise an initial invitation or reminder
     is upcoming until its time; after it, the schedule is sending while any
@@ -204,8 +193,6 @@ def status(kind, due, counts, now):
     the scheduler, a hold or catch-up may still send it, or it belongs to a
     draft that never went live.
     """
-    if kind in DIGESTS:
-        return "repeats"
     if counts.get("blocking"):
         return "preparing" if due > now else "sending"
     if due > now:
@@ -239,10 +226,8 @@ def schedule_rows(previous, campaign, summary, now, names=None):
     ):
         values = record["values"]
         kind = values["kind"]
-        # A converted report (#1786) plans by its own rule.
-        plan = SchedulePlan.from_values(record.get("report", values), campaign)
+        plan = SchedulePlan.from_values(values, campaign)
         counts = summary.get(str(record["id"]), {})
-        slot = plan.next_slot(after=now) if kind in DIGESTS else None
         rows.append(
             ScheduleRow(
                 id=str(record["id"]),
@@ -253,10 +238,6 @@ def schedule_rows(previous, campaign, summary, now, names=None):
                 position=position,
                 email=(names or {}).get(values["template_version"], values["subject"]),
                 due=plan.one_time_due,
-                next_due=slot.due_at if slot else None,
-                weekday=str(WEEKDAYS[values["weekday"]])
-                if values["weekday"] is not None
-                else None,
                 delivered=counts.get("delivered", 0),
                 failed=counts.get("failed", 0),
             )

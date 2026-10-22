@@ -47,12 +47,7 @@ def test_table_lists_schedules_in_sending_order(
             ".forEach(part => part.remove()); return copy.textContent.trim(); })"
         )
     )
-    assert names == [
-        "Initial invitation",
-        "Reminder 1",
-        "Reminder 2",
-        "Weekly report",
-    ]
+    assert names == ["Initial invitation", "Reminder 1", "Reminder 2"]
     first = rows(page).nth(0)
     assert first.get_attribute("data-schedule-state") == "sent"
     assert "Sent" in first.inner_text()
@@ -63,19 +58,16 @@ def test_table_lists_schedules_in_sending_order(
     when = first.locator("time[data-local-instant]")
     assert when.inner_text() != when.get_attribute("datetime")
     assert "Oct 1, 2054" in when.inner_text()  # compact table-cell form (#1093)
-    assert "Every Monday" in rows(page).nth(3).inner_text()
     # Every saved editor starts closed; only the blank new row shows, and it
     # reads "New schedule".
     for label in ("Initial invitation", "Reminder 1", "Reminder 2"):
         hidden(editor(page, label))
     visible(page.locator("fieldset[data-schedule-row] legend", has_text="New schedule"))
-    # Each saved Family mail row keeps its real saved email selected (not an
-    # unresolved placeholder), so nothing differs from the server and
-    # nothing opens. The weekly report (row 4) sends no email (#1786).
+    # Each saved row keeps its real saved email selected (not an unresolved
+    # placeholder), so nothing differs from the server and nothing opens.
     for index in range(3):
         email = page.locator(f'[name="schedules-{index}-template_version"]')
         assert email.input_value()
-    assert page.locator('[name="schedules-3-template_version"]').input_value() == ""
     assert "unresolved" not in page.inner_text("main")
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
@@ -110,14 +102,13 @@ def test_closed_and_past_editors_still_post_their_saved_values(page, component_o
     page.get_by_role("button", name="Change Reminder 1").click()
     page.locator('[name="schedules-1-date"]').fill("2054-10-11")
     fields = posted(page, component_origin, PATH)
-    assert fields["schedules-INITIAL_FORMS"] == "4"
+    assert fields["schedules-INITIAL_FORMS"] == "3"
     # A saved mail type is a disabled control, so it never posts; the ID and
     # values of the sent invitation do.
     assert fields["schedules-0-id"]
     assert fields["schedules-0-date"] == "2054-10-01"
     assert fields["schedules-1-date"] == "2054-10-11"
     assert fields["schedules-2-date"] == "2054-10-20"
-    assert fields["schedules-3-weekday"] == "0"
 
 
 def test_a_restored_change_reopens_its_editor_on_pageshow(page, component_origin):

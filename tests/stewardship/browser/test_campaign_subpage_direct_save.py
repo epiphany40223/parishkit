@@ -247,7 +247,7 @@ def test_edit_scheduled_email_saves_a_change_and_goes_back(page, component_origi
     page.goto(component_origin + EDIT_DIRECT)
     _, save = row(page)
     assert save.is_disabled()
-    visible(page.get_by_text("Change the date, time, email or comparison to save it."))
+    visible(page.get_by_text("Change the date, time or email to save it."))
     time = page.locator('[name="schedule-time"]')
     time.fill("1:30 pm")
     time.blur()
