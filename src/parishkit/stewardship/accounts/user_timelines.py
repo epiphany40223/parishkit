@@ -14,10 +14,13 @@ that holds the record. Its lines come from four sources, each one read:
 - sign-ins and sign-outs: the audit records of the Users page's Sign-in
   activity types (``audit.log_rows.ACTIVITY_TYPES["sign_in"]``) whose actor
   is one of the address's Google accounts (``PortalUser`` rows);
-- Admin actions: every other audit record by those accounts, worded with
-  its System logs sentence (``audit.log_descriptions.describe``), except
-  page views and lookups (``log_rows.PAGE_READS``), which #1570's slice 3
-  adds as a kind of their own;
+- Admin actions: every other audit record by those accounts, worded from
+  its System logs sentence (``timeline_sentence``), except page views and
+  lookups (``log_rows.PAGE_READS``);
+- Pages viewed (#2006, #1570's slice 3): those page views and lookups,
+  worded the same way. They are read only while Kind is Pages viewed, and
+  All never lists them (``reports.timelines.narrow``): a busy
+  Administrator opens hundreds of pages a week, which would drown the rest;
 - role changes: the record's role in each activated configuration, in
   activation order;
 - emails: every email whose intended recipients include the address,
@@ -49,6 +52,7 @@ read only while the campaign's report admission is open, as the Family's
 Timeline is.
 """
 
+import re
 from dataclasses import dataclass, replace
 from datetime import datetime
 from uuid import UUID
@@ -72,6 +76,8 @@ KINDS = {
     "all": _("All"),
     "sessions": _("Sign-ins and sign-outs"),
     "actions": _("Admin actions"),
+    # Page views and lookups (#2006): only while chosen, never under All.
+    "views": _("Pages viewed"),
     "roles": _("Role changes"),
     "emails": _("Emails"),
     # A Family member's Family form lines (#1867); the menu offers it only
@@ -126,6 +132,16 @@ EMAIL_NAMES = {
     "security_event": _("Security notice"),
     "leader_email": _("Ministry leader email"),
 }
+# The subjects of System logs sentences that stand for whoever acted. On a
+# person's Timeline the actor is always that person, so a line drops them
+# ("Someone opened ..." reads "Opened ..."); any other subject ("An
+# automation session ...", "A background task ...") says something the
+# line should keep (#2006).
+ACTOR_SUBJECTS = ("Someone ", "An Administrator ")
+# Where a System logs sentence's first sentence ends: a full stop before
+# the next sentence's capital. The guard test checks no sentence breaks
+# early at an abbreviation.
+SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
 # The outbox fields an email line needs.
 EMAIL_FIELDS = ("id", "purpose", "mode", "state", "created_at", "finished_at")
 
@@ -276,12 +292,32 @@ def role_changes(activations, roles):
     return lines
 
 
-def audit_lines(rows):
-    """The sign-in and Admin action lines of ``(instant, type, outcome)`` rows.
+def timeline_sentence(event_type, outcome=None):
+    """A record's System logs sentence as a line of the actor's own Timeline.
 
-    A Sign-in activity type reads as its ``SESSION_WORDS`` line; any other
-    type is an Admin action whose line is its System logs sentence, with
-    "Refused" or "Failed" as the detail when that is its recorded outcome.
+    System logs' sentences (``describe``) are written for a list of
+    everyone's records, often with advice about the entry's detail after
+    the first sentence. The Timeline shows no detail, and its actor is the
+    person the page is about, so the line is the first sentence alone,
+    without its subject when that stands for the actor (``ACTOR_SUBJECTS``):
+    "Someone opened a Family's timeline." reads "Opened a Family's
+    timeline." (admin-portal spec, "User timeline", Wording).
+    """
+    text = SENTENCE_END.split(str(describe(event_type, {"outcome": outcome})), 1)[0]
+    for subject in ACTOR_SUBJECTS:
+        if text.startswith(subject):
+            rest = text.removeprefix(subject)
+            return rest[:1].upper() + rest[1:]
+    return text
+
+
+def audit_lines(rows):
+    """The sign-in, Admin action and page lines of ``(instant, type, outcome)``.
+
+    A Sign-in activity type reads as its ``SESSION_WORDS`` line; a page view
+    or lookup (``PAGE_READS``) is a Pages viewed line and any other type an
+    Admin action, each worded by ``timeline_sentence``, with "Refused" or
+    "Failed" as the detail when that is its recorded outcome.
     """
     # A sign-in ends the browser's earlier session in the same transaction,
     # so both records share an instant and their random ids would order them
@@ -303,9 +339,9 @@ def audit_lines(rows):
         lines.append(
             Event(
                 at,
-                describe(event_type, {"outcome": outcome}),
+                timeline_sentence(event_type, outcome),
                 OUTCOME_WORDS.get(outcome, ""),
-                kind="actions",
+                kind="views" if event_type in PAGE_READS else "actions",
             )
         )
     return lines
@@ -410,24 +446,27 @@ def read_person(user_id):
     return person, activations, roles
 
 
-def audit_records(accounts):
+def audit_records(accounts, *, views=False):
     """The audit read: ``(instant, type, outcome)`` of the accounts' records.
 
-    Oldest first, without page views, through ``audit_event_actor_time``
-    (frozen migration 0152). Only each record's recorded ``outcome`` is
-    taken from its context row, never the rest of the context.
+    Oldest first, through ``audit_event_actor_time`` (frozen migration
+    0152). Page views are left out unless ``views`` (Kind is Pages viewed,
+    #2006): the same one statement then keeps them, so the default page
+    reads no page-view rows and either reads as many statements. Only each
+    record's recorded ``outcome`` is taken from its context row, never the
+    rest of the context.
     """
-    return (
-        AuditEvent.objects.filter(actor_id__in=accounts)
-        .exclude(event_type__in=PAGE_READS)
-        .order_by("created_at", "id")
-        .values_list("created_at", "event_type", "auditcontext__context__outcome")
+    records = AuditEvent.objects.filter(actor_id__in=accounts)
+    if not views:
+        records = records.exclude(event_type__in=PAGE_READS)
+    return records.order_by("created_at", "id").values_list(
+        "created_at", "event_type", "auditcontext__context__outcome"
     )
 
 
-def read_audit(accounts):
+def read_audit(accounts, *, views=False):
     """Every audit record by the accounts (``audit_records``), as a list."""
-    return list(audit_records(accounts)) if accounts else []
+    return list(audit_records(accounts, views=views)) if accounts else []
 
 
 def read_emails(address, actor_id):
@@ -626,14 +665,16 @@ def family_lines(families):
     ]
 
 
-def read_timeline(user_id, actor_id, *, codes=False, test_link=False):
+def read_timeline(user_id, actor_id, *, codes=False, test_link=False, views=False):
     """One user's page: the person, summary, lines, accounts and Families.
 
     Runs inside the caller's read-only snapshot. ``actor_id`` is the
     reading Administrator, for the email and identity reads and, for a user
     who never signed in, the Ministries read; ``codes`` says the reader may
     see Family codes and ``test_link`` the chosen-Family test page
-    (``read_families``). An unknown user raises ``LookupError``. Ministries
+    (``read_families``), and ``views`` that Kind is Pages viewed, so page
+    views are read (``audit_records``). An unknown user raises
+    ``LookupError``. Ministries
     are read only for a current user: a former user leads nothing here. A
     Family email that also went to the
     user's address is listed once, as the Family's line, which names it as
@@ -647,7 +688,7 @@ def read_timeline(user_id, actor_id, *, codes=False, test_link=False):
         .order_by("id")
         .values("id", "disabled")
     )
-    rows = read_audit([account["id"] for account in accounts])
+    rows = read_audit([account["id"] for account in accounts], views=views)
     emails = read_emails(person.email, actor_id)
     ministries = (
         read_ministries(accounts, person.email, actor_id) if person.role else ()

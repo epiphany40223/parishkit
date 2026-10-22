@@ -6799,11 +6799,17 @@ default, with the shared row navigator. Its lines are:
   sign-in of the person's Google accounts (System logs'
   [sign-in activity](#sign-in-activity) types).
 - **Admin actions:** every other audit record whose actor is one of those
-  accounts, worded with its [System logs](#logs) sentence, plus
-  "Refused" or "Failed" when that is its outcome. Opening pages and lookups
-  (the types System logs leaves ungrouped because they only read) are left
-  out until #1570's slice 3 adds them as their own kind; an Administrator
-  signing out another person's session is an action.
+  accounts, except page views, worded from its [System logs](#logs)
+  sentence (see Wording below), plus "Refused" or
+  "Failed" when that is its outcome. An Administrator signing out another
+  person's session is an action.
+- **Pages viewed:** the person's records of the types System logs leaves
+  ungrouped because they only read (opening a page or report, or looking
+  something up), worded and marked the same way
+  ([#2006](https://github.com/epiphany40223/parishkit/issues/2006), #1570's
+  slice 3). A busy Administrator opens hundreds of pages a week, so these
+  lines would drown the rest: they are listed only while Kind is Pages
+  viewed, never under All.
 - **Role changes:** "Became a user", "Role changed" and "Removed as a user",
   from the user's role in each activated configuration, at its activation
   time. A Name change is not a line. Role changes follow the user's record,
@@ -6816,10 +6822,21 @@ default, with the shared row navigator. Its lines are:
   Testing email; an email Sent mail lists links its
   [Mail message page](#mail-message-page).
 
+**Wording.** System logs' sentences are
+written for a list of everyone's records, so on a person's Timeline an
+action or page view shows only the first sentence, and drops its subject
+when the subject stands for the person who acted ("Someone" or "An
+Administrator"): "Someone opened a Family's timeline." reads "Opened a
+Family's timeline." A sentence with another subject ("An automation
+session ...", "A background task ...") is kept whole. The later sentences
+are System logs advice about the entry's detail, which the Timeline does not
+show.
+
 **Filters.** The Family Timeline's filter bar, acting in place on the
-table: **Kind** (All, Sign-ins and sign-outs, Admin actions, Role changes,
-Emails, and Family form activity for a user with a
-[Family](#user-timeline-family-part)) and **From** and **Through** days in
+table: **Kind** (All, Sign-ins and sign-outs, Admin actions, Pages viewed,
+Role changes, Emails, and Family form activity for a user with a
+[Family](#user-timeline-family-part); All is every kind but Pages viewed)
+and **From** and **Through** days in
 the browser's time zone, with
 the same validation (a refused choice is 400). Paging and the When sort
 keep the filters. The summary is not filtered.
@@ -6827,7 +6844,9 @@ keep the filters. The summary is not filtered.
 **Reads and audit.** One read-only snapshot: the user's records in every
 configuration and the activations, the Google accounts of the address, their
 audit records through the audit's `(actor_id, created_at)` index (frozen
-migration 0152, which adds that index), the emails
+migration 0152, which adds that index; page views are read only while Kind
+is Pages viewed, in the same one statement, so the default page reads no
+page-view rows), the emails
 through the Administrator-only address read of
 [Sent mail](#sent-mail) (frozen migration 0116), and the leader scope (for a
 user with no Google account, the Administrator-only address form of it,

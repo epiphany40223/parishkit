@@ -20,8 +20,11 @@ from django.test.utils import CaptureQueriesContext
 from parishkit.stewardship import admin_cli
 from parishkit.stewardship.accounts import family_maintenance
 from parishkit.stewardship.accounts.policy_models import PortalUser
-from parishkit.stewardship.accounts.user_timelines import audit_records
-from parishkit.stewardship.audit.log_descriptions import describe
+from parishkit.stewardship.accounts.sessions import database_now
+from parishkit.stewardship.accounts.user_timelines import (
+    audit_records,
+    timeline_sentence,
+)
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 
 from ..policy_factory import user
@@ -105,7 +108,8 @@ def people(response_service, google):
     assert second_login.status_code == 302
     claims.update(email="admin@example.org", sub="synthetic-google-subject")
     portal = PortalUser.objects.get(email=SECOND).pk
-    # An action and a page view by the second user; only the action is shown.
+    # An action and a page view by the second user; the page view is listed
+    # only under Pages viewed (#2006).
     AuditEvent.objects.create(event_type="export_requested", actor_id=portal)
     AuditEvent.objects.create(event_type="family_directory_viewed", actor_id=portal)
     message = family_message(harness)
@@ -123,14 +127,25 @@ def test_an_administrator_sees_the_whole_timeline(people):
     assert f'href="/admin/users/{record}/edit/"' in page
     assert "Became a user" in page and "Ministry leader to Staff" in page
     assert "Signed in" in page
-    assert str(describe("export_requested")) in page
-    # Page views are left out until #1570's slice 3.
-    assert str(describe("family_directory_viewed")) not in page
+    assert timeline_sentence("export_requested") in page
+    # Page views are listed only under Pages viewed (#2006).
+    opened = timeline_sentence("family_directory_viewed")
+    assert opened not in page
+    status, listed = get(browser, timeline_path(record) + "?kind=views")
+    assert status == 200 and opened in listed
+    assert timeline_sentence("export_requested") not in listed
+    # The days narrow Pages viewed too.
+    status, later = get(
+        browser, timeline_path(record) + "?kind=views&start=2099-01-01&zone=UTC"
+    )
+    assert status == 200 and opened not in later
+    assert "No lines match these filters" in later
     # The Family email that went to the address links its Mail message page.
     assert f'href="/admin/mail/sent/{message}/"' in page
     assert f'name="actor" value="{portal}"' in page
     administrator = PortalUser.objects.get(email="admin@example.org").pk
-    assert viewed() == [(administrator, UUID(record), {"outcome": "succeeded"})]
+    # Each view, Pages viewed and its days too, is recorded alike.
+    assert viewed() == [(administrator, UUID(record), {"outcome": "succeeded"})] * 3
     # Nothing but the outcome is recorded; never the address.
     assert "@" not in str(
         AuditContext.objects.filter(event__event_type="user_timeline_viewed").values()
@@ -149,7 +164,7 @@ def test_filters_narrow_in_place_and_refuse_anything_else(people):
     )
     assert status == 200 and "No lines match these filters" in page
     for query in (
-        "kind=views",
+        "kind=pages",
         "mode=testing",
         "sort=what",
         "size=7",
@@ -222,32 +237,36 @@ def test_the_page_reads_a_fixed_number_of_statements(people, monkeypatch):
     monkeypatch.setitem(family_maintenance._cache, "at", None)
     monkeypatch.setattr(family_maintenance, "CACHE_SECONDS", 3600)
 
-    def statements():
-        """How many statements one view runs.
+    def statements(query=""):
+        """How many statements one view (with ``query``) runs.
 
         A first, uncounted view comes before the counted one and fills
         the Family portal switch's cache, which the test holds (above).
         """
-        get(browser, timeline_path(record))
+        get(browser, timeline_path(record) + query)
         with CaptureQueriesContext(connection) as queries:
-            status, _page = get(browser, timeline_path(record))
+            status, _page = get(browser, timeline_path(record) + query)
         assert status == 200
         return len(queries)
 
     before = statements()
     for _ in range(30):
         AuditEvent.objects.create(event_type="export_requested", actor_id=portal)
+        AuditEvent.objects.create(event_type="dashboard_viewed", actor_id=portal)
     assert statements() == before
+    # Pages viewed reads page views in the same one audit statement (#2006).
+    assert statements("?kind=views") == before
 
 
 def test_the_actor_read_uses_the_new_index(people):
     """With sequential scans priced out, the page's own audit read (its
     page-view exclusion, outcome join and order included) uses the index."""
     store, browser, record, portal, message = people
-    with transaction.atomic(), connection.cursor() as cursor:
-        cursor.execute("SET LOCAL enable_seqscan = off")
-        plan = audit_records([portal, uuid4()]).explain()
-    assert "audit_event_actor_time" in plan, plan
+    for with_views in (False, True):
+        with transaction.atomic(), connection.cursor() as cursor:
+            cursor.execute("SET LOCAL enable_seqscan = off")
+            plan = audit_records([portal, uuid4()], views=with_views).explain()
+        assert "audit_event_actor_time" in plan, (with_views, plan)
 
 
 def test_the_migration_check_accepts_the_catalog():
@@ -290,6 +309,12 @@ def test_users_timeline_prints_the_page(admin, google):  # noqa: F811
     add_rules(store, user(SECOND, role="ministry_leader", name="Second, Sam"))
     record = user_id(store, SECOND)
     update(store, record, {"role": "staff"})
+    # A page view by the user's account, listed only under views (#2006).
+    portal = PortalUser.objects.create(
+        email=SECOND, google_subject="synthetic-cli", verified_at=database_now()
+    )
+    AuditEvent.objects.create(event_type="dashboard_viewed", actor_id=portal.pk)
+    opened = timeline_sentence("dashboard_viewed")
     _, secret, _ = paired(admin.service, scope="read-only")
     before = views("user_timeline_viewed")
     code, document = one(admin, "users", "timeline", "--user", record, secret=secret)
@@ -315,8 +340,31 @@ def test_users_timeline_prints_the_page(admin, google):  # noqa: F811
         secret=secret,
     )
     assert code == 0 and document["result"]["lines"] == [], document
+    assert opened not in [line["what"] for line in result["lines"]]
+    # Pages viewed, as on the page (#2006).
+    code, document = one(
+        admin, "users", "timeline", "--user", record, "--kind", "views", secret=secret
+    )
+    assert code == 0 and document["result"]["kind"] == "views", document
+    assert [line["what"] for line in document["result"]["lines"]] == [opened]
+    # --from and --to narrow a chosen kind too.
+    for options in (("--from", "2099-01-01"), ("--to", "2000-01-01")):
+        code, document = one(
+            admin,
+            "users",
+            "timeline",
+            "--user",
+            record,
+            "--kind",
+            "views",
+            *options,
+            "--zone",
+            "UTC",
+            secret=secret,
+        )
+        assert code == 0 and document["result"]["lines"] == [], document
     # An unknown kind, or a day without a zone, is refused before reading.
-    for options in (("--kind", "views"), ("--from", "2026-10-01")):
+    for options in (("--kind", "pages"), ("--from", "2026-10-01")):
         code, document = one(
             admin, "users", "timeline", "--user", record, *options, secret=secret
         )
@@ -325,5 +373,5 @@ def test_users_timeline_prints_the_page(admin, google):  # noqa: F811
         admin, "users", "timeline", "--user", str(uuid4()), secret=secret
     )
     assert code == 1 and document["error"]["code"] == "not_available", document
-    assert views("user_timeline_viewed") == before + 2
+    assert views("user_timeline_viewed") == before + 5
     assert re.fullmatch(r"[0-9a-f-]{36}", record)

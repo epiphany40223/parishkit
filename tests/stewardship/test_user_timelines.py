@@ -38,8 +38,9 @@ from parishkit.stewardship.accounts.user_timelines import (
     role_changes,
     rule_role,
     summarize,
+    timeline_sentence,
 )
-from parishkit.stewardship.audit.log_descriptions import describe
+from parishkit.stewardship.audit.log_descriptions import DESCRIPTIONS, describe
 from parishkit.stewardship.audit.log_rows import ACTIVITY_TYPES, PAGE_READS
 from parishkit.stewardship.jobs.outbox_models import DELIVERY_PURPOSES
 from parishkit.stewardship.reports.timeline_views import Identity
@@ -49,6 +50,7 @@ from parishkit.stewardship.reports.timelines import (
     Submitted,
     Timeline,
     events,
+    narrow,
     summary,
 )
 from parishkit.stewardship.web.dates import using
@@ -132,6 +134,8 @@ def test_audit_lines_are_sessions_or_actions():
         (START + 3 * MINUTE, "family_form_opened", "denied"),
         (START + 4 * MINUTE, SIGNED_OUT_OTHER, None),
         (START + 5 * MINUTE, "export_requested", "failed"),
+        (START + 6 * MINUTE, "family_timeline_viewed", "succeeded"),
+        (START + 7 * MINUTE, "system_logs_viewed", "denied"),
     ]
     lines = audit_lines(rows)
     assert [line.kind for line in lines] == [
@@ -141,17 +145,72 @@ def test_audit_lines_are_sessions_or_actions():
         "actions",
         "actions",
         "actions",
+        "views",
+        "views",
     ]
     assert str(lines[0].what) == "Signed in" and lines[0].detail == ""
     assert str(lines[1].what) == "Session ended"
     assert "an Administrator signed it out" in str(lines[1].detail)
-    assert lines[2].what == describe("user_change_requested")
+    # The person acted, so the line drops System logs' "An Administrator".
+    assert lines[2].what == "Asked to add, change or delete Admin portal users."
     assert lines[2].detail == ""
     # A refused Open form has its own System logs sentence, and is Refused.
-    assert lines[3].what == describe("family_form_opened", {"outcome": "denied"})
+    assert lines[3].what == timeline_sentence("family_form_opened", "denied")
+    assert lines[3].what.startswith("Open form was refused for a Family")
     assert str(lines[3].detail) == "Refused"
-    assert lines[4].what == describe(SIGNED_OUT_OTHER)
+    # Only the first sentence: System logs' note about the actor is left out.
+    assert lines[4].what == (
+        "Signed out someone's portal session on Signed-in sessions."
+    )
     assert str(lines[5].detail) == "Failed"
+    # Page views and lookups are Pages viewed lines (#2006), worded alike.
+    assert lines[6].what == "Opened a Family's timeline." and lines[6].detail == ""
+    assert lines[7].what == "Opened System logs." and str(lines[7].detail) == "Refused"
+
+
+def test_timeline_sentences_read_as_the_persons_own():
+    """Every page view, and every sentence whose subject is the actor, reads as
+    one sentence without that subject; other subjects are kept (#2006)."""
+    actors = [
+        key
+        for key, text in DESCRIPTIONS.items()
+        if str(text).startswith(("Someone ", "An Administrator "))
+    ]
+    assert set(PAGE_READS) <= set(DESCRIPTIONS) and len(actors) > len(PAGE_READS)
+    for key in {*PAGE_READS, *actors}:
+        line = timeline_sentence(key)
+        assert line[:1].isupper() and line.endswith((".", ")")), (key, line)
+        assert not line.startswith(("Someone", "An Administrator")), (key, line)
+        assert ". " not in line.rstrip("."), (key, line)
+        assert line[1:] in str(describe(key)), (key, line)
+    # No first sentence ends early at an abbreviation.
+    for key in DESCRIPTIONS:
+        assert not timeline_sentence(key).endswith(("e.g.", "i.e.", "etc.")), key
+    # Another subject says something the line keeps.
+    assert timeline_sentence("task_created") == "A background task was queued."
+    assert timeline_sentence("automation_session_ended").startswith(
+        "An automation session ended"
+    )
+
+
+def test_all_leaves_pages_viewed_out():
+    """All lists every kind but Pages viewed; Pages viewed lists only those."""
+    lines = ordered(
+        audit_lines(
+            [
+                (START, "admin_login", None),
+                (START + MINUTE, "dashboard_viewed", None),
+                (START + 2 * MINUTE, "backup_requested", None),
+            ]
+        )
+    )
+    assert [line.kind for line in narrow(lines)] == ["sessions", "actions"]
+    assert [line.what for line in narrow(lines, "views")] == ["Opened the dashboard."]
+    # From and Through hold for Pages viewed as for every kind.
+    assert narrow(lines, "views", (START + 2 * MINUTE, None)) == ()
+    assert narrow(lines, "views", (None, START + MINUTE)) == ()
+    assert list(KINDS)[:4] == ["all", "sessions", "actions", "views"]
+    assert str(KINDS["views"]) == "Pages viewed"
 
 
 def test_an_earlier_sessions_end_comes_before_the_sign_in_at_its_instant():
@@ -240,7 +299,7 @@ def test_the_query_takes_only_this_pages_kinds():
     assert UserTimelineQuery.parse({}).kind == "all"
     for kind in KINDS:
         assert UserTimelineQuery.parse({"kind": kind}).kind == kind
-    for kind in ("reviews", "views", ""):
+    for kind in ("reviews", "pages", ""):
         with pytest.raises(ValueError):
             UserTimelineQuery.parse({"kind": kind})
     query = UserTimelineQuery.parse(
@@ -263,20 +322,24 @@ def test_parse_query_refuses_anything_else():
         "page": "2",
         "size": "100",
     }
-    for bad in ("mode=testing", "sort=what", "size=7", "user=x", "kind=views"):
+    for bad in ("mode=testing", "sort=what", "size=7", "user=x", "kind=pages"):
         with pytest.raises(ValueError):
             parse_query(QueryDict(bad))
 
 
 def timeline(count=3):
-    """A timeline of ``count`` sign-ins plus one email and one role change."""
+    """A timeline of ``count`` sign-ins plus one email, one role change and
+    one page view (listed only under Pages viewed)."""
     lines = ordered(
         [
             *role_changes(ACTIVATIONS[:1], {CONFIGURATIONS[0]: "staff"}),
             *audit_lines(
                 [
-                    (START + number * MINUTE, "admin_login", None)
-                    for number in range(count)
+                    *(
+                        (START + number * MINUTE, "admin_login", None)
+                        for number in range(count)
+                    ),
+                    (START + MINUTE / 2, "family_directory_viewed", None),
                 ]
             ),
             *email_lines([email(9, "daily_digest", "delivered")]),
@@ -348,6 +411,13 @@ def test_the_table_pages_and_filters():
     assert "kind=" not in page.split('id="table"')[1].split("</nav>")[0]
     filtered = render(many, UserTimelineQuery("roles"), {})
     assert "Became a user" in filtered and "Signed in</th>" not in filtered
+    # The page view is listed only under Pages viewed (#2006).
+    viewed = "Opened the active parishioner family directory."
+    assert viewed not in page
+    views = render(many, UserTimelineQuery("views"), {})
+    assert viewed in views and "Signed in</th>" not in views
+    assert "Showing 1–1 of 1" in views
+    assert '<option value="views" selected>Pages viewed</option>' in views
     nothing = render(
         many,
         UserTimelineQuery(start="2099-01-01", zone="America/New_York"),

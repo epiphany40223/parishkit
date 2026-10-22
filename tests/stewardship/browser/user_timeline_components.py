@@ -6,8 +6,8 @@ role change, sixty sign-ins and one email, so the table has two pages.
 Besides the first page (``PAGE``), the fixtures serve the pages its
 controls fetch at the exact addresses they carry: the navigator's Next
 (``NEXT``), the When heading's oldest first (``OLDEST``) and the filter
-bar's Kind Role changes (``ROLES``, in the sorted-query form the fixture
-server also matches).
+bar's Kind Role changes (``ROLES``) and Pages viewed (``VIEWS``, #2006),
+each in the sorted-query form the fixture server also matches.
 """
 
 from urllib.parse import urlencode
@@ -40,32 +40,42 @@ def _table(values):
 # table builds their queries.
 NEXT = PAGE + "?" + _table({}).next_query
 OLDEST = PAGE + "?size=50&sort=when"
-# The filter bar's Apply filters for Kind Role changes, from the Pacific
-# fixture browser: its zone, the table's hidden size and sort, and the blank
-# days, as a native GET form sends them.
-ROLES = canonical(
-    PAGE
-    + "?"
-    + urlencode(
-        [
-            ("zone", "America/Los_Angeles"),
-            ("size", "50"),
-            ("sort", "-when"),
-            ("kind", "roles"),
-            ("start", ""),
-            ("end", ""),
-        ]
+
+
+def applied(kind):
+    """The filter bar's Apply filters address for ``kind``.
+
+    From the Pacific fixture browser: its zone, the table's hidden size
+    and sort, and the blank days, as a native GET form sends them.
+    """
+    return canonical(
+        PAGE
+        + "?"
+        + urlencode(
+            [
+                ("zone", "America/Los_Angeles"),
+                ("size", "50"),
+                ("sort", "-when"),
+                ("kind", kind),
+                ("start", ""),
+                ("end", ""),
+            ]
+        )
     )
-)
+
+
+ROLES = applied("roles")
+VIEWS = applied("views")
 
 
 def components(context, admin):
-    """The first page, the next one, the oldest-first one and Role changes."""
+    """The first page, the next one, the oldest-first one and two Kinds."""
     pages = {
         PAGE: (UserTimelineQuery(), {}),
         NEXT: (UserTimelineQuery(), {"page": "2", "size": "50", "sort": "-when"}),
         OLDEST: (UserTimelineQuery(), {"size": "50", "sort": "when"}),
         ROLES: (UserTimelineQuery("roles"), {"size": "50", "sort": "-when"}),
+        VIEWS: (UserTimelineQuery("views"), {"size": "50", "sort": "-when"}),
     }
     responses = {}
     with using("us_long"):
