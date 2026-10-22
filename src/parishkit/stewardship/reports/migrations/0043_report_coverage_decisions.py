@@ -36,6 +36,9 @@ class Migration(migrations.Migration):
         # The reports app's previous migration, which installs the previous
         # frozen file (0162), so the files apply in prefix order.
         ("stewardship_reports", "0042_report_recovery_coverage"),
+        # The migration that installs the previous frozen file (0163, the
+        # edit replacement), so the files apply in prefix order.
+        ("stewardship_responses", "0031_edit_replacement"),
     ]
 
     operations = [
