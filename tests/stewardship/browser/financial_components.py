@@ -64,8 +64,10 @@ def components(context, admin):
         frequency_label=FREQUENCY_LABELS["monthly"],
         frequency_short="mo",
         shares=[
-            dict(label="Online <giving>", text=""),
-            dict(label="Another way", text="Stock <gift>"),
+            # The first has a short label (#1569); the second does not, so its
+            # short form is its label.
+            dict(label="Online <giving>", short="Online", text=""),
+            dict(label="Another way", short="Another way", text="Stock <gift>"),
         ],
         source_pledge=MoneyAmount(120000),
         source_contributions=MoneyAmount(10000),
@@ -86,9 +88,10 @@ def components(context, admin):
         staff_entered=False,
     )
     # Rows as a parish's typically read (#1544): a longer surname-first
-    # name, a seven-digit DUID, five-figure sums and up to three methods,
-    # one with Other text, an inactive Family with its badge, and a Family
-    # with a single Other method.
+    # name, a seven-digit DUID, five-figure sums and up to three methods
+    # (each row carries its short labels, #1569), one with Other text, an
+    # inactive Family with its badge, and a Family with a single Other
+    # method.
     typical = [
         row
         | dict(
@@ -97,9 +100,9 @@ def components(context, admin):
             annual=MoneyAmount(1200000),
             installment=MoneyAmount(100000),
             shares=[
-                dict(label="Online giving", text=""),
-                dict(label="Envelope", text=""),
-                dict(label="Other", text="Quarterly stock transfer"),
+                dict(label="Online giving", short="Online", text=""),
+                dict(label="Envelope", short="Envelope", text=""),
+                dict(label="Other", short="Other", text="Quarterly stock transfer"),
             ],
             source_pledge=MoneyAmount(1150000),
             source_contributions=MoneyAmount(1098765),
@@ -109,7 +112,7 @@ def components(context, admin):
         | dict(
             family_name="Smith, John",
             staff_entered=False,
-            shares=[dict(label="Other", text="Payroll gift")],
+            shares=[dict(label="Other", short="Other", text="Payroll gift")],
         ),
     ]
     # Share methods are stable option identities, as the closed grammar requires.

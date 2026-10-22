@@ -357,6 +357,23 @@
       "{{ fi{{ pronoun }}le.a }}"
     ]
   },
+  "share_short_label": {
+    "accept": [
+      "Bank check",
+      "  Web gift\t",
+      "100% e-gift",
+      "Stra\u00dfe",
+      "\u00a0Gift\u3000"
+    ],
+    "refuse": [
+      "{{ year }}",
+      "{year}",
+      "a}b",
+      "tab\tinside",
+      "line\u0085next",
+      "del\u007f"
+    ]
+  },
   "family_test_duids": {
     "accept": [
       "123",

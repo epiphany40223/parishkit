@@ -3232,7 +3232,9 @@ search matches that name and the Family sort orders by surname, then that
 name), Family DUID in its own sortable column
 ([#960](https://github.com/epiphany40223/parishkit/issues/960)), Annual
 pledge, Frequency, Approximate installment, Share methods (selected
-share-option labels with any Other text), the ParishSoft comparison pledge
+share-option labels with any Other text; the page uses each option's
+[short label](../admin-portal/spec.md#campaign-configuration) where one is
+set, the exports always the full label), the ParishSoft comparison pledge
 and contribution aggregates, Latest response (the time the Family last
 updated its response), First response (when it first responded) and,
 as the last column, Entered by Staff (described below), in exactly this
@@ -3252,10 +3254,13 @@ the frequency alone, or why there is none, when there is no installment),
 Share methods, ParishSoft, and Latest response. Money on the page is in
 whole dollars, rounded half away from zero; a screen reader hears the exact
 amount, and the exports and the summary keep the cents. Share methods shows
-the first chosen method as a chip; with more, a "+N" chip opens a toggletip
-listing every method in order, with any Other text after its label ("Other:
-stock gift"); a single method with Other text has an "i" toggletip with that
-text. The ParishSoft column stacks the comparison pledge total ("Pledged")
+every chosen method as its own chip, in order, each named by its short label
+(or its full label when it has none,
+[#1569](https://github.com/epiphany40223/parishkit/issues/1569)); a method
+with Other text has an "i" toggletip beside its chip with the full label and
+that text ("Other: stock gift"). The chips may wrap onto a second line inside
+the cell, which makes that row taller; most Families choose one method. The
+ParishSoft column stacks the comparison pledge total ("Pledged")
 with the contribution total ("Contributed") under it in one cell, each named
 for a screen reader; its heading carries the comparison years and names
 Pledged and Contributed in that order, each with its period toggletip.
@@ -3264,7 +3269,7 @@ projection cannot order them without a schema change. Latest response is the
 compact date alone, in the browser's time zone, with a "Staff" chip when
 Staff entered the current response. The page has no First response column
 (its date filter stays) and no Entered by Staff column; the exports keep
-both. No cell wraps (the ParishSoft cell has one line per total): a table
+both. No other cell wraps (the ParishSoft cell has one line per total): a table
 still wider than the space beside the Admin menu scrolls in its own box,
 and money and DUIDs are right-aligned. The page marks a Family the data no longer has, or marks
 inactive, with the shared
@@ -3296,7 +3301,9 @@ A file captured before frozen migration 0066 added the marker to
 the projection leaves the column blank, never No (#794).
 
 Filters include active/inactive, first/latest submission dates, pledge range,
-zero/nonzero/cannot contribute, frequency, and share method. The first and
+zero/nonzero/cannot contribute, frequency, and share method (its choices,
+like the "Share methods chosen" bars below, name each method by its short
+label where one is set, else its full label). The first and
 latest response dates (From, Through) are whole days in the viewer's browser
 time zone: the form sends the browser's zone with the dates, and a date
 without a known zone is refused, never read in another zone

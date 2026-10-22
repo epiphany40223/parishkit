@@ -683,7 +683,7 @@ these groups, each listing the entries the viewer's role may open:
 | Campaign setup | Pages and emails | `/admin/campaign/content/` | Administrator | No current campaign, or it is archived |
 | Campaign setup | Campaign images | `/admin/campaign/images/` | Administrator | No current campaign, or it is archived |
 | Campaign setup | Dates and mail schedules | `/admin/campaign/schedules/` | Administrator | No current campaign, or it is archived |
-| Campaign setup | Share options | `/admin/campaign/share-options/` | Administrator | The campaign has no financial module, or it is not an unlocked Testing draft |
+| Campaign setup | Share options | `/admin/campaign/share-options/` | Administrator | The campaign has no financial module, or it is archived (a locked campaign edits only short labels, #1569) |
 | Campaign setup | No-reminders WorkGroup | `/admin/campaign/no-reminders-workgroup/` | Administrator | No current campaign, or it is archived |
 | Campaign setup | Go live | `/admin/campaign/go-live/` | Administrator | The campaign is not a draft (it points to Production activation) |
 | Campaign setup | Production activation | `/admin/campaign/production/` | Administrator | Production has not been confirmed for this campaign |
@@ -1340,8 +1340,8 @@ POST (the Import Ministry leaders review); one-time reviews that refuse once the
 confirmed (Copy campaign); and Finish
 switching, which still opens afterward but has nothing left to do. A menu page is linked in a trail or "Return to" only while
 the viewer's menu entry for it is available, so a page whose entry is
-unavailable because it would now refuse (Share options once the campaign is
-locked, Campaign images for an archived campaign) is named without a link.
+unavailable because it would now refuse (Campaign images for an archived
+campaign) is named without a link.
 The same holds for a role: a page the viewer's menu does not offer is named
 without a link, including a report root that only redirects to a menu entry,
 so a Ministry leader's export status page names the Response dashboard
@@ -2729,8 +2729,64 @@ The campaign editor includes:
   Share options, whose **Save** opens a
   [compact review](../ui-conventions/spec.md#review-dialog) (#1356) that
   marks only what changed, one line each (an option added, removed,
-  relabelled, given or losing its free-text response, or moved, with its old
-  and new position), never both whole lists;
+  relabelled, given or losing its free-text response, given a new short
+  label, or moved, with its old and new position), never both whole lists.
+  Each option also has an optional **Short label**
+  ([#1569](https://github.com/epiphany40223/parishkit/issues/1569)): plain
+  text (no placeholders), at most 12 characters, unique among the
+  campaign's short labels ignoring case and surrounding spaces (compared
+  by upper then lower case, which the browser and the server both apply,
+  so "Straße" and "STRASSE" are one). Both rules are checked at the field
+  as the Admin types, under the
+  [field errors](../ui-conventions/spec.md#field-errors-and-live-checks)
+  rule: braces are a shared format rule, said when the box is left; a short
+  label another kept option also has marks every box that has it with
+  "Another option already has this short label." in its reserved error line
+  (after a pause in typing, or at once when the box is left), and **Save**
+  waits with those words as its reason, in a line kept below it so nothing
+  moves, while any repeat stands. Resolving it
+  takes the marks off every box at once and gives Save back. A deleted
+  option (Delete ticked) does not count. The server refuses the same
+  values in the same words at the same boxes. Its help says "Shown in the Admin
+  tables and charts instead of the long label. Families still see the full
+  label." Admin screens that list share methods compactly use it (see
+  [Financial stewardship detail](../reports/spec.md#financial-stewardship-detail));
+  blank means the full label, so a campaign without short labels reads as
+  before. Those screens take each short label from the current settings, so
+  one set, changed or cleared later names the method the same way in every
+  row, also for answers given earlier; the full label stays the one each
+  Family saw. The Family portal, the form definition digest (so changing a
+  short label never makes an open Family form stale) and downloads keep the
+  full label. It greys with its row's Delete box like the row's other
+  fields, is stored only when set (the option's `short_label` key) and is
+  carried when a campaign is cloned. On a locked campaign (the current,
+  unarchived campaign whose settings cannot be edited: it is outside Testing
+  mode, structurally locked or has been live, and no background work holds
+  its settings) Share options still opens, for the short labels only: the
+  Administrator decided on 2026-10-17 that the live campaign's Financial
+  stewardship table must be able to use them. Every other field (label,
+  free-text choice, order, Delete) stays where it is, disabled, with the
+  reason in its tip ("This campaign is locked, so only the short
+  labels can change."), as
+  [Campaign settings](#campaign-settings-page) does; there
+  is no blank row and no placeholders paragraph, since no label can change;
+  the page says "This campaign is locked, so only the short labels can
+  change. Admin tables and charts show them, and Families always see the
+  full label."; and Save's hint is "Change a short label to save it." The
+  change goes through the same review dialog, validation and audited
+  settings request as any other. A post naming any other field (a form
+  drawn before the campaign was locked, or one built by hand) is refused in
+  the dialog with "This campaign is locked, so only the short labels can
+  change." The installer's
+  structure lock (`campaigns/admission.py`) and SQL's
+  `stewardship_campaign_pointer_v1` (frozen migration 0166) compare a
+  locked campaign's share options without their short labels, so nothing
+  else about them can change; since the Family form and its digest leave
+  the short label out, the change rewords nothing a Family sees and makes
+  no open Family form stale. The default options come with short
+  labels ("Bank check", "Online", "New e-giving", "Stock gift", "IRA",
+  "Envelopes", "Other"), so a new campaign's chips are short from the
+  start;
 - initial and repeatable reminder date/time, subject, and templates;
 - [report email](../report-emails/spec.md) schedules (on Report emails);
 - additional-information toggle;

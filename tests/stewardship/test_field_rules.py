@@ -40,7 +40,11 @@ from parishkit.stewardship.accounts.setup_forms import (
     SetupSlackForm,
     SetupTestingForm,
 )
-from parishkit.stewardship.accounts.share_forms import SHARE_LABEL, ShareOptionForm
+from parishkit.stewardship.accounts.share_forms import (
+    SHARE_LABEL,
+    SHORT_LABEL_RULE,
+    ShareOptionForm,
+)
 from parishkit.stewardship.schema_primitives import typed
 from parishkit.stewardship.web.field_rules import (
     EMAIL,
@@ -94,6 +98,7 @@ GUARDS = {
         {"base_digest": "0" * 64, "html": "<p>Thanks</p>", "generate_text": "on"},
     ),
     SHARE_LABEL.name: (ShareOptionForm, "label", {}),
+    SHORT_LABEL_RULE.name: (ShareOptionForm, "short_label", {}),
 }
 # Checks no pattern can say, with their cases in the same table: each is run
 # through its server parser here and through the page script's own check in

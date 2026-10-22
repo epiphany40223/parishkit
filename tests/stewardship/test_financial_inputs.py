@@ -51,6 +51,26 @@ def test_pledge_year_is_the_period_start_year_not_the_year_label():
     assert result.campaign_year == "2026"
 
 
+def test_definition_leaves_out_short_labels():
+    """A short label (#1569) is Admin wording, never in the Family's definition."""
+    option = {"id": str(uuid4()), "label": "Online giving", "free_text": False}
+    values = configuration() | {"share_options": [option]}
+    plain = financial_definition(values, campaign_id=CAMPAIGN)
+    assert len(plain.options) == 1
+    values["share_options"] = [option | {"short_label": "Online"}]
+    assert financial_definition(values, campaign_id=CAMPAIGN) == plain
+
+
+@pytest.mark.parametrize(
+    "options", [["not an option"], [{"id": "x", "label": "y", "unknown": 1}]]
+)
+def test_malformed_share_options_are_not_a_usable_form(options):
+    """An option that is not an object, or has an unknown key, still refuses."""
+    values = configuration() | {"share_options": options}
+    with pytest.raises(InvalidFinancialSource, match="definition is unavailable"):
+        financial_definition(values, campaign_id=CAMPAIGN)
+
+
 @pytest.mark.parametrize(
     "change", [{"financial": None}, {"modules": []}, {"financial": {}}]
 )
