@@ -71,10 +71,13 @@ def page(browser, path=USERS):
 
 
 def row(body, email):
-    """The Users table row whose header cell is this address."""
+    """The Users table row whose header cell is this address.
+
+    The address links the user's Timeline (#1866).
+    """
     found = re.findall(
-        r'<tr>\s*<th scope="row"><span class="cell-ellipsis" '
-        rf'title="{re.escape(email)}">.*?</tr>',
+        r'<tr>\s*<th scope="row"><a href="/admin/users/[0-9a-f-]+/timeline/" '
+        rf'class="cell-ellipsis" title="{re.escape(email)}">.*?</tr>',
         body,
         flags=re.S,
     )
@@ -152,6 +155,29 @@ def test_the_own_row_note_counts_every_page(auth_service, google):
     assert note in page(
         browser, USERS + "?users_sort=-email&users_size=25&users_page=2"
     )
+
+
+def test_the_page_counts_leaders_who_never_signed_in(auth_service, google):
+    """The line under the table counts Ministry leaders never signed in (#1593).
+
+    Staff without a sign-in are not counted; the About panel carries the
+    shared Google Account guidance for the Administrator to pass on.
+    """
+    add_rules(
+        auth_service.store,
+        address("lee@example.org", ("ministry_leader",)),
+        address("lou@example.org", ("ministry_leader",)),
+        address("staff@example.org", ("staff",)),
+    )
+    convert(auth_service.store)
+    browser, login = signed_in()
+    assert login.status_code == 302
+    body = page(browser)
+    assert (
+        '<p class="help" id="users-never-signed-in">'
+        "2 Ministry leaders have never signed in.</p>"
+    ) in body
+    assert body.count("data-google-account-help") == 1
 
 
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])

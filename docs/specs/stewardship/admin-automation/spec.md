@@ -1786,7 +1786,11 @@ signatures:
   which the page now calls. `content preview` moved the email tables'
   Delete build into `content_delete_views.review_deletion` (and its choice
   check into `chosen_ids`) and the editors' plain-text conversion into
-  `content_views.plain_text`, which the pages now call.
+  `content_views.plain_text`, which the pages now call; `content preview
+  --edit` moved the editor's Preview changes build (after the form, up to
+  the signed preview and the review's samples) into
+  `content_views.review_change`, and its salt into `preview_salt`, which
+  the editor now calls (#1873).
   `parish show`, `ministries list` and `campaign shares` needed none: the
   pages' profile, catalog and campaign-target reads were already
   request-free; `branding show` moved the logo page's current-logo query
@@ -1995,15 +1999,15 @@ that background work holds while mail is sent, is `stale_version`. Its
 reminder series, each with its rule and the reminders it holds.
 
 Each schedule's `resolved` (at most five UTC send times, with `more` when
-there are others) lists its first sends from the campaign's start, as does
-each side of `schedule preview`. Once the mail review adopts the shared
-[schedule preview](../ui-conventions/spec.md#schedule-previews)
+there are others) lists its next sends after the database's now, as does
+each side of `schedule preview`, through the one from-now helper
+(`schedule_evaluation.upcoming_slots`) that the mail review's shared
+[schedule preview](../ui-conventions/spec.md#schedule-previews) uses
 ([#1129](https://github.com/epiphany40223/parishkit/issues/1129), ADM-04
-slice 7c), both commands list the next sends after the database's now
-instead, through the one from-now helper beside `preview_slots` that the
-page uses, so the page, `schedule show` and `schedule preview` agree. The
-keys and their shape stay; a passed send is no longer listed. The command
-line has no browser zone, so its sends are not grouped by day.
+slice 7c), so the page, `schedule show` and `schedule preview` agree. A
+passed send is not listed. Before slice 7c they listed the first sends
+from the campaign's start; the keys and their shape are unchanged. The
+command line has no browser zone, so its sends are not grouped by day.
 
 ### Source refresh
 
@@ -2044,11 +2048,12 @@ none.
 | `schedule_settings`, `schedule_new`, `schedule_edit`, `schedule_delete`, `schedule_suggested` | `schedule show` (PR 3a); `schedule preview`, `schedule confirm` (PR 4): a change document adds, changes or deletes the same schedules (the campaign wizard's suggested schedules, #1404 PR 6a, are three ordinary schedules a change document adds). Its `series` entries (#469) edit or delete a remembered reminder series; Edit scheduled email offers the same "this and following" and "the whole series" for a time or email change, while a new rule or deleting a series is the command line's alone for now |
 | `schedule_calendar` | `schedule show` (PR 3a): the read-only Campaign calendar (#469) draws the saved schedules and campaign dates that `schedule show` lists |
 | `campaign_end_date_check` | `schedule preview` (PR 4): Campaign settings' no-save live check of a live campaign's end date answers what a preview of that end date would refuse |
+| `campaign_work_status` | `campaign show` ([#1619](https://github.com/epiphany40223/parishkit/issues/1619)): the passive campaign work status that Campaign settings and Home poll while campaign work holds changes; `campaign show` reports the same locks, each with its reason |
 | `configuration_request` | `config request show --watch` (PR 4); `config request cancel` ([#944](https://github.com/epiphany40223/parishkit/pull/944)), an operator recovery with no page button |
 | `campaign_settings`, `campaign_create`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), Campaign settings' read, Review and Apply, a live campaign's Ministries included (#1119); `campaign create-preview`, `campaign create` ([#1899](https://github.com/epiphany40223/parishkit/issues/1899)), [Create the campaign](../admin-portal/spec.md#create-the-campaign)'s Review and Apply for the first campaign (#142); `campaign_clone` is deferred on #145: until then creating or copying a campaign is refused, except the first campaign ([navigation rule 10](../ui-conventions/spec.md#navigation-rules)), and Copy campaign refuses every request before reading anything, so a command could only repeat that refusal. Commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
 | `share_settings` | `campaign shares`, `campaign shares-preview`, `campaign shares-confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), Share options' read, Review and Apply |
 | `reminder_workgroup` (its review and apply, #750) | `workgroup show`, `workgroup preview`, `workgroup confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
-| `content_catalog`, `content_edit`, `content_revision`, `content_delete`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content history`, `content preview` (the Delete and the plain-text preview), `content confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the editor's Review and Apply (PR 10) |
+| `content_catalog`, `content_edit`, `content_revision`, `content_delete`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content history`, `content preview` (the editor's Preview changes, the Delete and the plain-text preview), `content confirm` (the review dialog's Apply and the Delete's) ([#463](https://github.com/epiphany40223/parishkit/issues/463), [#1873](https://github.com/epiphany40223/parishkit/issues/1873)) |
 | `parish_settings`, `ministries` | `parish show`, `parish preview`, `parish confirm`, `ministries list` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); Ministries changes nothing since [#1267](https://github.com/epiphany40223/parishkit/issues/1267) |
 | `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list`, `files delete`, `files rename` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
 | `artwork_settings` (its upload and removal reviews, #750) | `artwork show`, `artwork remove-preview`, `artwork remove` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); uploads are `artwork_upload`'s, below |
@@ -2324,10 +2329,59 @@ campaign and scope (`campaign_views._scope`), with
 returns the original request. Both need a full-scope session; neither is
 fresh-gated nor prompts, as the page's action is not privileged and the
 reviewed token replaces its dialog. Each checks the role first
-(#1341). The editor's own Review and Apply join these verbs in a later
-slice. The two modes, `--delete` repeated for several emails, no prompt,
+(#1341). The two modes, `--delete` repeated for several emails, no prompt,
 the `deleting` and `plain_text` fields, the plain-text mode needing a
 full-scope session and the command-only event are defaults, pending
+Administrator confirmation.
+
+`content preview --edit {page,email} SLOT [--revision ID]
+--expected-version … -` and `content confirm --edit {page,email} SLOT
+[--revision ID] --token …` are the content editor's **Preview changes**
+and its review dialog's **Apply** (#750, #1873), outside the campaign
+wizard. The page or email is named as for `content show`. A page or email
+has several multi-line fields and the wrapper forwards standard input only
+once, so the fields come as one JSON object on standard input after the
+preamble: `subject`, `html`, `text` (strings), `generate_text`,
+`show_banner` and `clear` (booleans). An absent field keeps the editor's
+own value as it opens (`content show`), except that with
+`generate_text` true an absent `text` is the generated one, as the editor
+fills it; with `clear` true the content fields are greyed and not sent on
+the page, so giving one is `invalid`. A field the editor does not show
+(`subject`, `text` or `generate_text` on a page, `show_banner` where the
+banner choice does not apply), an unknown name or a wrong type is
+`invalid` at `content.<name>`. The preview admits as the editor's post
+does (`CONFIGURE`, recording activity), then, in the editor's work
+transaction, reads the page's pinned state and campaign check
+(`content_views._content_campaign`) and the editor's lookup
+(`editor_content`), checks the version (another is `stale_version`),
+binds the page's own `ContentForm` (with its Remove rule: the subject is
+not required while `clear` is set) and builds the change through the
+page's own `content_views.review_change` (`revision_patch`,
+`build_candidate` and `sign_preview` with the editor's salt,
+`preview_salt`). The form's refusals are `invalid` at `content.<field>`
+(or `content`) with the page's words; no change is `invalid` at `content`
+("No content has changed."); removing an email a schedule still sends is
+`invalid` at `content.clear` with the page's fix; background work holding
+the campaign is `stale_version`; an archived campaign, none, or an unknown
+slot or revision `not_available`. It prints `action` (`edit`), `version`,
+`campaign_id`, `edit` (`kind`, `slot`, `revision_id`, `name`, the
+fictional sample's `before` and `after`, each `subject`, `html` and `text`
+or null, and `schedules`, the saved schedules the new text switches, in
+sending order, each `id`, `kind`, `name` (as Dates and mail schedules names
+it), `subject`, `due_at` (null for a recurring digest) and `sent`, true for
+one that already sent, which the review dialog lists apart) and
+`preview.token`, and records nothing, as the editor's Preview
+changes records nothing. `content confirm --edit` is the dialog's Apply:
+`confirm_intent` with the editor's salt for the same page or email and the
+page's scope (`campaign_views._scope`), with one
+`admin_cmd_content_confirm` in the request's own transaction; a repeat
+returns the original request. A token for another page or email, or the
+Delete's, is `invalid`. As for the Delete, both need a full-scope session,
+neither is fresh-gated nor prompts, and the role is checked before
+standard input is read. The campaign wizard's direct save (#1404 PR 4b)
+stays on the page: outside the wizard the reviewed change is the same.
+The JSON object on standard input, `--edit` on both verbs, the `edit`
+field and reusing `admin_cmd_content_confirm` are defaults, pending
 Administrator confirmation.
 
 `artwork remove-preview SLOT --expected-version …` and `artwork remove
@@ -3822,6 +3876,7 @@ unknown email `not_available`, and a key used with another intent `invalid`.
 | `user_name_suggestions` | Covered by `users preview` (#952 slice 5): a new user in the change document without a `name` gets the [default from ParishSoft](../admin-portal/spec.md#name-from-parishsoft), which the preview shows; the other suggested Member names are only counted, under the [personal data](#personal-data-on-the-command-line) rule. Each such lookup is audited and counts toward the Administrator's 60 lookups an hour; past that the preview is `unavailable`. The lookup definer checks the command session itself, so a session it refuses (ended, begun before a recovery, or no longer an Administrator's) is `session_ended` |
 | `user_leader_import`, `user_leaders_status` (the leaders section's passive status, [#1863](https://github.com/epiphany40223/parishkit/issues/1863)) | `users import-leaders --preview`, `users import-leaders --confirm` (#952 leaders slice) |
 | `user_leader_emails` | `users email-leaders --preview`, `users email-leaders --confirm` ([#1622](https://github.com/epiphany40223/parishkit/issues/1622)) |
+| `user_timeline` | `users timeline --user ID [--kind K] [--from DAY] [--to DAY] [--zone ZONE]` ([#1866](https://github.com/epiphany40223/parishkit/issues/1866)); see below |
 | `user_rules`, `rule_apply`, `rule_base`, `rule_request` | Retired by #952: removed with the rule tables and autosave when the users commands land; no rule commands are built |
 | `chair_confirmations`, `chair_reviews`, `assignments` | Retired by #922: removed with Ministry assignments and Chairperson flows; no commands are built |
 | `security_event_acknowledge`, `critical_events_acknowledge` | `events list`, `events acknowledge` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); see below |
@@ -3904,9 +3959,21 @@ checks, audit and alerts:
   `admin_cmd_users_email_leaders` with the page's
   `user_leader_emails_requested`, once: applying the same review again
   returns the first request. No document names a parishioner.
+- `users timeline --user ID` prints one user's
+  [Timeline](../admin-portal/spec.md#user-timeline): the summary (Name,
+  role or when the user was removed, address, Ministries led, last sign-in
+  and last email) and every line, newest first, each with its instant,
+  kind, what happened, detail and, for an email, its delivery ID. `--kind`
+  takes the page's Kind keys (`all`, `sessions`, `actions`, `roles`,
+  `emails`) and `--from` and `--to` whole days in `--zone` (an IANA time
+  zone, required with a day), as the page's From and Through do; the
+  command prints every matching line, unpaged. An unknown user is
+  `not_available` and a refused filter `invalid`. It is read-only, runs
+  the page's own reads, and records the page's `user_timeline_viewed`
+  with the user's record ID.
 
-These need a full-scope session, except `users list` and
-`users preview-upgrade`; none is fresh-gated, as the page asks for no fresh
+These need a full-scope session, except `users list`,
+`users preview-upgrade` and `users timeline`; none is fresh-gated, as the page asks for no fresh
 sign-in. The command shapes are defaults, pending Administrator confirmation.
 
 `users list` and `users preview-upgrade` record the page's view event,
@@ -4456,7 +4523,7 @@ backup`, and backup status is part of `status`.
 
 ### Setup wizard
 
-`setup`, `setup_cancel`, `setup_source`, `setup_source_progress`,
+`setup`, `setup_finishing`, `setup_source`, `setup_source_progress`,
 `setup_branding`, `setup_branding_asset`, `setup_credential`,
 `setup_preview`, `setup_confirmation`, `setup_mail`, `setup_mail_status`,
 `setup_notification`, `setup_notification_status` and `setup_step` are
@@ -4887,7 +4954,8 @@ exactly the commands that exist.
   the prompt.
 - **PR 10, other configuration:** campaign, content (`content list`,
   `content show` and `content history` first, then `content preview` and
-  `content confirm` for the Delete and the plain-text preview), Ministries, parish, logos
+  `content confirm` for the Delete and the plain-text preview, then their
+  `--edit` mode for the editor's Review and Apply, #1873), Ministries, parish, logos
   and Share options
   (`parish show`, `ministries list`, `branding show` and `campaign shares`
   first, then `parish preview` and `parish confirm`, and `campaign

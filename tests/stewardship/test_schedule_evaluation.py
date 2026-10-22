@@ -7,12 +7,14 @@ import pytest
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.schedule_evaluation import (
     SchedulePlan,
-    preview_slots,
+    upcoming_slots,
 )
 
 from .campaign_factory import campaign, schedule
 
 FUTURE = datetime(2058, 1, 1, tzinfo=UTC)
+# Before the factory campaign starts.
+BEFORE = datetime(2054, 9, 1, tzinfo=UTC)
 
 
 def plan(kind="daily_digest", *, campaign_options=None, **options):
@@ -256,9 +258,12 @@ def test_preview_is_bounded_and_recomputed_from_the_proposed_campaign_zone():
     """A draft timezone preview cannot accidentally use the parish's old zone."""
     owner = campaign()
     values = schedule(owner["id"], kind="daily_digest", date=None)["values"]
-    before = preview_slots(values, owner["values"], limit=2)
-    after = preview_slots(
-        values, owner["values"] | {"timezone": "America/Los_Angeles"}, limit=2
+    before = upcoming_slots(values, owner["values"], now=BEFORE, limit=2)
+    after = upcoming_slots(
+        values,
+        owner["values"] | {"timezone": "America/Los_Angeles"},
+        now=BEFORE,
+        limit=2,
     )
     assert len(before.slots) == len(after.slots) == 2
     assert [slot.key for slot in before.slots] == [slot.key for slot in after.slots]
@@ -330,3 +335,51 @@ def test_family_mail_never_takes_skip_dates(kind):
     """Only an Admin digest skips a send; Family mail refuses skip dates."""
     with pytest.raises(ConfigError):
         plan(kind, skip_dates=["2054-10-01"])
+
+
+@pytest.mark.parametrize(
+    ("kind", "keys"),
+    [
+        # A daily digest's key is the day it reports on, the day before it
+        # sends: the one due now (9:00 AM October 10) reports on October 9.
+        ("daily_digest", ["2054-10-10", "2054-10-11"]),
+        # The weekly digest sends on Saturdays, so October 10's is due now.
+        ("weekly_digest", ["2054-10-17", "2054-10-24"]),
+    ],
+)
+def test_upcoming_sends_start_after_now_and_never_list_a_passed_one(kind, keys):
+    """The next sends after now, not the first from the campaign's start (#1129)."""
+    owner = campaign()
+    values = schedule(
+        owner["id"],
+        kind=kind,
+        date=None,
+        **({"weekday": 5} if kind == "weekly_digest" else {}),
+    )["values"]
+    # 9:00 AM New York on Saturday, October 10, 2054 is 13:00 UTC: a send
+    # due exactly now is not after now, so it is not listed.
+    now = datetime(2054, 10, 10, 13, tzinfo=UTC)
+    page = upcoming_slots(values, owner["values"], now=now, limit=2)
+    assert [slot.key for slot in page.slots] == keys
+    assert all(slot.due_at > now for slot in page.slots)
+    assert not page.exhausted
+
+
+def test_upcoming_sends_end_with_the_schedule():
+    """A dated send lists once until it passes; the last sends exhaust the page."""
+    owner = campaign()
+    values = schedule(owner["id"])["values"]
+    due = datetime(2054, 10, 1, 13, tzinfo=UTC)
+    ahead = upcoming_slots(values, owner["values"], now=due - timedelta(seconds=1))
+    assert [(slot.key, slot.due_at) for slot in ahead.slots] == [("once", due)]
+    assert ahead.exhausted
+    passed = upcoming_slots(values, owner["values"], now=due)
+    assert passed.slots == () and passed.exhausted
+    digest = schedule(owner["id"], kind="daily_digest", date=None)["values"]
+    # Two sends remain on October 30: the reports on October 30 and 31,
+    # sent the next mornings.
+    last = upcoming_slots(
+        digest, owner["values"], now=datetime(2054, 10, 30, 14, tzinfo=UTC), limit=2
+    )
+    assert [slot.key for slot in last.slots] == ["2054-10-30", "2054-10-31"]
+    assert last.exhausted

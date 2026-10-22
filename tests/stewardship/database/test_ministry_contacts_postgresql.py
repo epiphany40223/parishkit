@@ -389,6 +389,9 @@ def test_a_cannot_participate_leave_hides_the_contact_on_an_earlier_join(
     assert EMAIL not in json.dumps(snapshot.document)
 
 
+# The rule before the reviewed Family form (#1705): forms drawn before
+# its release, as one open across the deploy is.
+@pytest.mark.usefixtures("earlier_rule")
 def test_contacts_and_counts_follow_an_edit(response_service, google):
     """Staff edit Member 3's Food pantry (9) join into Ministry 4 (#1684):
     its contact details are read under Ministry 4 from then on (#1718), so

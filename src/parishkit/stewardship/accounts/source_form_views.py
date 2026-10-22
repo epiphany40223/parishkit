@@ -23,7 +23,7 @@ from parishkit.stewardship.accounts.admin_context import (
     parishsoft_downloaded,
 )
 from parishkit.stewardship.accounts.authentication import denial, runtime
-from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.accounts.policy import Capability
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
@@ -41,6 +41,8 @@ from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import with_default_code
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
+
+from .role_refusal import require
 
 TEMPLATE = "stewardship/source-form.html"
 
@@ -66,9 +68,7 @@ def _principal(request, store, *, read_only=False):
     principal = authenticated_admin(
         request, store=store, activity=not read_only, read_only=read_only
     )
-    if not allows(principal, Capability.SYSTEM_LOGS):
-        raise PermissionError("This list requires an Administrator.")
-    return principal
+    return require(principal, Capability.SYSTEM_LOGS)
 
 
 def _current_campaign():

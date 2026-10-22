@@ -486,6 +486,21 @@ FROZEN = {
     "0151_limitation_handled_undo.sql": (
         "576d22f2d53cb5093794e599ef8f8a0384a187dcd9ee2c8d8505b9291d5d020e"
     ),
+    "0152_audit_actor_time.sql": (
+        "1f7ac38ef615a918afcc7a6ff87d743484b013b5af31b5174b743c87868b96fb"
+    ),
+    "0153_reviewed_census_resubmission.sql": (
+        "a6f73dc9bd0bffa4d2e8527ba33e45cf3da1c4029e7d6aa1def2f4106f4d92b9"
+    ),
+    "0154_reviewed_ministry_resubmission.sql": (
+        "ebfd4ab090cde6e8676a42dd4ec73ada1b4c116b7bc533c994efdf52da81435d"
+    ),
+    "0155_reviewed_pledge_resubmission.sql": (
+        "c58fed6f43b79cd5bf5c6b8979df949d68cd461d7be04c816afc3a38055427f3"
+    ),
+    "0156_report_pipeline.sql": (
+        "dc04b332bc79d4ebeb52f4349e426744b79a83aac233fe9eea833ede7ee43a69"
+    ),
 }
 
 

@@ -228,6 +228,14 @@ UNDO_PORTAL_ONLY = (
     " Nothing is written to ParishSoft: only this portal's record changes, and "
     "a later update reads ParishSoft again first."
 )
+# What the reviewed Family form (#1705) shows a Family that signs in again,
+# said in the dialogs whose decision it shows: Ignore on an item whose
+# ParishSoft value the form shows (``shown_baseline`` rows), and Add.
+IGNORE_SEEN = "The Family will see ParishSoft's value the next time it signs in."
+ADD_BODY = (
+    "Add a change the Family did not ask for. It starts Accepted, shown as "
+    "Added by the parish."
+)
 REOPEN = "reopen"
 # The choice of an action whose decision records no note (a Ministry roster
 # tick has none): its dialog hides the note (ui-v1.js data-note-field), and
@@ -566,8 +574,14 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
             icon["body"] = undo_body(
                 stream, placement, by_hand=row.get("by_hand", False)
             )
+        elif action is Action.EDIT:
+            # Edit opens the row's own editor, which draws its own body (the
+            # Family will see the reviewer's value); an empty body keeps it.
+            icon["body"] = ""
         else:
             icon["body"] = bodies.get(action, DECIDE_BODY)
+        if action is Action.IGNORE and row.get("shown_baseline"):
+            icon["body"] = f"{icon['body']} {IGNORE_SEEN}"
     remark = row.get("remark")
     if remark is not None and any(
         icon["action"] == Action.ENTERED_BY_HAND and icon["selected"] for icon in icons
@@ -665,6 +679,8 @@ class Worklist:
     # address bar after each in-place answer, so a reload shows the same
     # view; empty for a stream that keeps none.
     address: str = ""
+    # What Add's dialog says (a stream whose Add a Family sees says so).
+    add_body: str = ADD_BODY
 
     max_bulk = MAX_BULK
 
@@ -755,6 +771,7 @@ def build(
     fields=None,
     address="",
     silent=frozenset(),
+    add_body=ADD_BODY,
     **templates,
 ):
     """The ``worklist`` for one reader of one page of ``stream``'s rows.
@@ -771,8 +788,10 @@ def build(
     (the stream's own line under the stage), ``entered_template`` (the
     fields its Entered by hand asks for, in a dialog of its own), ``remark``
     (a ``Remark``: the row may make its Entered by hand mark again, in that
-    dialog) and ``withheld`` (actions this item cannot take). ``roles`` is
-    the reader's role set.
+    dialog), ``withheld`` (actions this item cannot take) and
+    ``shown_baseline`` (a Family that signs in again sees ParishSoft's value
+    for it once it is Ignored, #1705, which its Ignore dialog says). ``roles``
+    is the reader's role set. ``add_body`` is what Add's dialog says.
     ``stage`` is the Stage filter's value and ``fields`` the stream's other
     filters, posted by every form; ``baseline`` and ``reviewer`` say whether
     the stream has those columns. ``address`` is the view's own address
@@ -805,6 +824,7 @@ def build(
         shows_now=any(row["shows_now"] for row in decorated),
         bulk_too_many=len(decorated) > MAX_BULK,
         address=address,
+        add_body=add_body,
         **templates,
     )
 

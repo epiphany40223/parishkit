@@ -5,6 +5,7 @@ startup owns that admission and supplies its retained lifecycle lease. No CLI
 options, module names or broker headers can expand the compiled task registry.
 """
 
+import logging
 import signal
 from threading import Event, current_thread, main_thread
 
@@ -18,7 +19,14 @@ from .broker import BrokerRuntime, publish_hint
 from .due_work_health import DueWorkScan
 from .queues import ROLE_QUEUES
 from .scanning import RecentHints
-from .scheduler import SchedulerOwnershipLost, scan_once, scheduler_session
+from .scheduler import (
+    SchedulerOwnershipLost,
+    scan_newest,
+    scan_once,
+    scheduler_session,
+)
+
+DEBUG = logging.getLogger("parishkit.stewardship.debug")
 
 
 def worker_options(runtime):
@@ -182,7 +190,7 @@ def serve_scheduler(
         or not callable(produce)
     ):
         raise ConfigError("An isolated scheduler and compiled producer are required.")
-    cursor, delay = None, 2
+    cursor, delay, since = None, 2, None
     health = DueWorkScan()
     # In memory only: a restarted scheduler hints every due row again.
     recent = RecentHints(drained=frozenset(drained))
@@ -209,6 +217,30 @@ def serve_scheduler(
             recent=recent,
             **limit,
         ).cursor
+
+    def newest(guard):
+        """Publish the newest few newly due hints (#1921); keep the window going.
+
+        ``since`` advances only after a scan that ran to the end, so a failed
+        or interrupted one leaves the next scan's window wider, not shorter.
+        """
+        nonlocal since
+        result = scan_newest(
+            guard,
+            handlers=handlers,
+            publish=publish,
+            recent=recent,
+            since=since,
+            stop=stop,
+        )
+        if not stop.is_set():
+            since = result.now
+        if result.published or result.unconfirmed:
+            DEBUG.debug(
+                "newest-due scan: %d hinted, %d unconfirmed",
+                result.published,
+                result.unconfirmed,
+            )
 
     def failed(guard, error):
         """Report a failed step and discard this sweep's partial health proof."""
@@ -255,6 +287,29 @@ def serve_scheduler(
                 # loop in which any step failed, as it did when there was one
                 # scan, and returns to 2 s after a clean loop.
                 failures = 0
+                # First, on every loop, the newest few rows that fell due
+                # since the last one (#1921). The fair sweep below pages due
+                # rows oldest first, and every row it refuses (a paused
+                # send's messages, a held task) stays due and is checked
+                # again each sweep, so with a few hundred of them a newly
+                # requested task (a refresh, a load, an export) waited a
+                # minute or more for the sweep to reach it. This scan is
+                # capped at NEWEST_DUE_ROWS rows, one global-lock transaction
+                # each, and checks a row no more than once per loop: the
+                # sweep scans skip a row it checked whose version is
+                # unchanged (RecentHints). It keeps no cursor and leaves the
+                # fair sweep, its cursor and its health proof as they were,
+                # so every due row is still reached in order. Failures count
+                # like the early scan's.
+                try:
+                    newest(guard)
+                except SchedulerOwnershipLost:
+                    raise
+                except Exception as error:
+                    failed(guard, error)
+                    failures += 1
+                if stop.is_set():
+                    break
                 if cursor is None:
                     try:
                         scan(guard, limit=EARLY_SCAN_ROWS)

@@ -630,8 +630,8 @@ class ScheduleShow(ReadModel):
     change (PR 4) is previewed against. ``editable`` says whether the
     campaign's dates may still change. Each schedule lists its civil values
     (a daily digest's ``comparison`` too, #1018)
-    and its first resolved send times (``resolved``, at most five, with
-    ``more`` when there are others). ``series`` lists the campaign's
+    and its next resolved send times after now (``resolved``, at most five,
+    with ``more`` when there are others). ``series`` lists the campaign's
     remembered reminder series (#469): each one's ``id``, repeat ``rule``
     and the ids of the reminders it holds (``schedules``).
     """
@@ -644,15 +644,17 @@ class ScheduleShow(ReadModel):
     series: list
 
 
-def schedule_entry(row, campaign):
-    """One schedule record with its first resolved send times.
+def schedule_entry(row, campaign, *, now):
+    """One schedule record with its next resolved send times after ``now``.
 
-    ``campaign`` is the campaign's applied values (its time zone and dates).
+    ``campaign`` is the campaign's applied values (its time zone and dates);
+    ``now`` is the database's clock, so the sends listed are the ones the
+    Dates and mail schedules review lists (#1129).
     """
-    from .campaigns.schedule_evaluation import preview_slots
+    from .campaigns.schedule_evaluation import upcoming_slots
 
     values = row["values"]
-    page = preview_slots(values, campaign)
+    page = upcoming_slots(values, campaign, now=now)
     return {
         "id": row["id"],
         "kind": values["kind"],
@@ -694,6 +696,7 @@ def read_schedule(caller, service, campaign_id):
     at all, is ``not_available``; a campaign that is not the current one,
     or that background work holds, is ``stale_version``.
     """
+    from .accounts.admin_editing import database_now
     from .accounts.policy import Capability
     from .accounts.schedule_reads import campaign_schedules, schedule_state
     from .campaigns.work_locks import read_transaction
@@ -718,6 +721,8 @@ def read_schedule(caller, service, campaign_id):
             except LookupError:
                 raise NotAvailable("No such campaign.") from None
             values = campaign.active_configuration.values
+            # Every schedule lists its sends from the database's one now.
+            now = database_now()
             model = ScheduleShow(
                 campaign_id=campaign.pk,
                 version=state[0].active_configuration.digest,
@@ -728,7 +733,7 @@ def read_schedule(caller, service, campaign_id):
                     "timezone": values["timezone"],
                 },
                 schedules=[
-                    schedule_entry(row, values)
+                    schedule_entry(row, values, now=now)
                     for row in campaign_schedules(state[0], target)
                 ],
                 series=campaign_series(state[0], target),
@@ -1239,3 +1244,93 @@ def read_users_upgrade(caller, service, *, audit=True):
         return model, len(model.users)
 
     return _read_users(caller, service, read, audit=audit)
+
+
+@dataclass(frozen=True)
+class UserTimelineRead(ReadModel):
+    """``users timeline``: one user's Timeline, as the page shows it (#1866).
+
+    ``user`` is the person (record ID, email, Name, ``role`` or null for a
+    former user with ``removed_at``); ``summary`` the page's summary
+    (``last_sign_in``, ``last_email`` and ``ministries``); ``lines`` every
+    line the filters keep, newest first, each with its instant, kind, what
+    happened, detail and, for an email Sent mail lists, its delivery ID.
+    The command prints them all, unpaged.
+    """
+
+    user: dict
+    summary: dict
+    kind: str
+    lines: list
+
+
+def _timeline_line(line):
+    """One timeline line as the document prints it."""
+    return {
+        "at": line.at,
+        "kind": line.kind,
+        "what": str(line.what),
+        "detail": str(line.detail),
+        "message_id": line.message_id,
+    }
+
+
+def read_user_timeline(
+    caller, service, user_id, *, kind="all", start="", end="", zone=""
+):
+    """``users timeline``: one user's Timeline, read as the page reads it.
+
+    Admits as the page does (``MANAGE_USERS``), then validates the filters
+    with the page's own ``UserTimelineQuery`` before anything is read (a refused
+    one is ``invalid``), reads in one read-only snapshot through the page's
+    reader, rechecks the session and records the page's
+    ``user_timeline_viewed`` with the user's record ID. An unknown user is
+    ``not_available``, with no audit record.
+    """
+    from .accounts.policy import Capability
+    from .accounts.user_timeline_views import UserTimelineQuery
+    from .accounts.user_timelines import read_timeline
+    from .audit.schemas import Action
+    from .campaigns.work_locks import read_transaction
+    from .reports.timelines import narrow
+
+    values = {"kind": kind, "start": start, "end": end, "zone": zone}
+
+    def step():
+        """Admit, check the filters, read in the snapshot, recheck and audit."""
+        actor = _admit(caller, service.store, Capability.MANAGE_USERS)
+        # As on the page, the filters are checked once the reader is admitted.
+        query = UserTimelineQuery.parse(
+            {key: value for key, value in values.items() if value}
+        )
+        with read_transaction():
+            try:
+                timeline = read_timeline(user_id, actor.identity)
+            except LookupError:
+                raise NotAvailable("No such user.") from None
+        with transaction.atomic():
+            current = _recheck(caller, service.store, actor, Capability.MANAGE_USERS)
+            _audit(Action.USER_TIMELINE_VIEWED, current, subject_id=user_id)
+        return timeline, query
+
+    timeline, query = _held(step)
+    person, summary = timeline.person, timeline.summary
+    lines = narrow(timeline.events, query.kind, query.bounds)
+    return UserTimelineRead(
+        user={
+            "id": person.id,
+            "email": person.email,
+            "name": person.name,
+            "role": person.role,
+            "removed_at": person.removed_at,
+        },
+        summary={
+            "last_sign_in": summary.last_sign_in,
+            "last_email": None
+            if summary.last_email is None
+            else _timeline_line(summary.last_email),
+            "ministries": list(summary.ministries),
+        },
+        kind=query.kind,
+        lines=[_timeline_line(line) for line in reversed(lines)],
+    )

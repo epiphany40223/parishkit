@@ -56,6 +56,7 @@ from parishkit.stewardship.accounts.family_authentication import (
     runtime as family_runtime,
 )
 from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.accounts.role_refusal import require, role_denied_for
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin, database_now
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
@@ -465,9 +466,7 @@ def _principal(request, store, *, read_only=False):
     principal = authenticated_admin(
         request, store=store, activity=not read_only, read_only=read_only
     )
-    if not allows(principal, Capability.CAMPAIGN_REPORT):
-        raise PermissionError("The timeline is unavailable.")
-    return principal
+    return require(principal, Capability.CAMPAIGN_REPORT)
 
 
 def _full(principal):
@@ -725,9 +724,7 @@ def export(request, campaign_id, family_id):
         service = runtime()
         principal = _principal(request, service.store)
         if not _full(principal):
-            raise PermissionError(
-                "The timeline export is for Administrators and Staff."
-            )
+            raise role_denied_for("staff")
         parameters = request.POST.copy()
         parameters.pop("csrfmiddlewaretoken", None)
         # The browser's zone is posted unasked, so it is optional and never

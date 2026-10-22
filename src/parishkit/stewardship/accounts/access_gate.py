@@ -65,7 +65,7 @@ class AccessGateMiddleware(MiddlewareMixin):
         )
         if (not admin and not family) or request.path_info in AUTH_ROUTES:
             return None
-        if request.path_info == "/admin/setup/cancel":
+        if request.path_info == "/admin/setup/finishing":
             # The dedicated view authenticates only the original setup login
             # against its still-applied bootstrap predecessor. No other route
             # may use that narrow selected-but-unapplied cancellation exception.

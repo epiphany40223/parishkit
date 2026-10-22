@@ -268,7 +268,7 @@ value Sent mail's send filter takes), `number`, `mode`, `cycle`,
 | `campaign_id`, `editable` | The campaign, and whether its dates may still change |
 | `version` | What a schedule change is previewed against |
 | `window` | `start_date`, `end_date`, `timezone` |
-| `schedules` | Each schedule's `id`, `kind`, `date`, `time`, `weekday`, `subject`, `template_version`, `comparison` (whether a daily digest includes Compared with past campaigns), its first resolved send times (`resolved`: `key`, `due_at`) and `more` |
+| `schedules` | Each schedule's `id`, `kind`, `date`, `time`, `weekday`, `subject`, `template_version`, `comparison` (whether a daily digest includes Compared with past campaigns), its next five send times from now (`resolved`: `key`, `due_at`; a send that has passed is never listed) and `more` |
 | `series` | Each remembered reminder series (a repeat saved with `"remember": true`): its `id`, its repeat `rule` and the `schedules` (reminder ids) it holds |
 
 `schedule show` reads the current campaign unless `--campaign UUID` names
@@ -718,7 +718,7 @@ the page and email templates (a command for those arrives later).
 | --- | --- |
 | `campaign_id`, `version` | The campaign, and the configuration version the change was made against |
 | `window` | `before` and `after` (`start_date`, `end_date`, `timezone`), and the names of the campaign values that `changed` |
-| `changes` | Each change's `id`, `operation` (`add`, `update` or `remove`), `kind`, its values and first send times `before` and `after` (as in `schedule show`; `null` when added or removed), and its `impact`: `delivered`, `cancellable`, `failed`, `blocking`, `occurrences` and `outboxes`, the page's counts |
+| `changes` | Each change's `id`, `operation` (`add`, `update` or `remove`), `kind`, its values and next five send times from now `before` and `after` (as in `schedule show`; `null` when added or removed), and its `impact`: `delivered`, `cancellable`, `failed`, `blocking`, `occurrences` and `outboxes`, the page's counts |
 | `blocking` | Sends in progress or with an uncertain result. While it is above zero, `preview` is `null`, as the page offers no **Confirm** |
 | `preview` | `token`, which `schedule confirm` takes |
 | `series` | Each reminder series the change remembers (a repeat with `"remember": true`): its new `id`, its `rule` and its reminders' ids (`schedules`); empty otherwise. A series edit lists here the new series it starts |
@@ -1129,8 +1129,7 @@ its `id`, `kind` (`page` or `email`), `slot`, `name` and `subject`. With
 `kind`, `slot`, `name` and `sample`: the page's fictional sample, its
 `subject`, `html` and `text`; without it, `revision` is null. An ID the
 campaign did not retain, a purged campaign, or a campaign whose retained
-configuration is gone is exit 1 (`not_available`). Editing a page's or
-email's text stays on the page for now.
+configuration is gone is exit 1 (`not_available`).
 
 `content preview --delete` and `content confirm` are the email tables'
 **Delete**, split in two as `schedule preview` and `schedule confirm` are
@@ -1171,6 +1170,62 @@ records nothing. It prints `action` (`plain_text`) and `plain_text`:
 `html` (the cleaned HTML), `text` (the plain text "Generate plain text
 from HTML" would save) and `removed` (the markup cleaning drops, in plain
 words). HTML longer than the editor accepts is exit 1 (`invalid`).
+
+### Changing a page's or email's text
+
+`content preview --edit` and `content confirm --edit` are the content
+editor's **Preview changes** and its review's **Apply**: the preview
+checks the new text as the editor does and prints the review, with a
+token; nothing changes until `content confirm`. They need a full-scope
+session and an Administrator, and work outside the campaign wizard (in the
+wizard, the editor's Save and go back makes the same change). Name the page
+or email as for `content show`. The fields go on standard input as one
+JSON object after `-`:
+
+```sh
+VERSION=$(pk-admin content list | jq -r .result.version)
+printf '%s' '{"subject": "Our {{ campaign_name }} campaign"}' |
+  pk-admin content preview --edit email initial --revision ID \
+  --expected-version "$VERSION" - | jq -r .result.preview.token |
+  pk-admin content confirm --edit email initial --revision ID --token -
+```
+
+| Field on standard input | What it sets |
+| --- | --- |
+| `subject` | The email subject (emails only) |
+| `html` | The HTML source |
+| `text` | The plain-text version (emails only) |
+| `generate_text` | "Generate plain text from HTML" (emails only), true or false |
+| `show_banner` | "Show the campaign banner" (Family emails only), true or false |
+| `clear` | "Remove this selected content", true or false |
+
+A field you leave out keeps the value the editor opens with (`content
+show`); while `generate_text` is true, the plain text is generated from the
+HTML, and a different `text` is refused (set `generate_text` to false to
+keep typed text). With `clear` true, give no `subject`, `html`,
+`generate_text` or `text`: removing sends no text.
+
+| Field | What it holds |
+| --- | --- |
+| `action` | `edit` |
+| `version`, `campaign_id` | The configuration version the change was built against, and the current campaign |
+| `edit.kind`, `edit.slot`, `edit.revision_id`, `edit.name` | The page or email, and its name on the page |
+| `edit.before`, `edit.after` | The fictional sample of the current and the proposed content: `subject`, `html` and `text`, or null when empty |
+| `edit.schedules` | The schedules the new text switches at once, in sending order: `id`, `kind`, `name` (as Dates and mail schedules names it, such as Reminder 2), `subject`, `due_at` (null for a recurring digest) and `sent` (true when it already sent: it switches too, but Families who got it are not sent it again) |
+| `preview.token` | What `content confirm --edit --token` takes, valid for fifteen minutes |
+| `created`, `request` (`content confirm`) | As `parish confirm` prints them; follow the change with `config request show --watch` |
+
+A value the editor refuses (an unknown placeholder, a missing subject, a
+field the editor does not have, a wrong type) is exit 1 (`invalid`), with
+the editor's explanation at `content.<field>`. No change at all, or
+removing an email a schedule still sends, is exit 1 (`invalid`) with the
+page's explanation and fix. A version that is no longer current,
+background work holding the campaign, or an expired token is exit 1
+(`stale_version`): read `content list` again. An unknown slot or revision
+is exit 1 (`not_available`). A token for another page or email, or an
+altered one, is exit 1 (`invalid`). The preview records nothing; `content
+confirm` records `admin_cmd_content_confirm` in System logs with the
+request, and repeating it with the same token returns the same request.
 
 ## Campaign images
 
@@ -3374,6 +3429,29 @@ never signed in come last either way.
 | `sort` | The sort used |
 | `users` | Each user's `email`, `name`, `role` (`administrator`, `staff` or `ministry_leader`) and `last_login`, the newest successful sign-in of any Google account with that address, or `null` |
 
+`users timeline` prints one user's
+[Timeline](../specs/stewardship/admin-portal/spec.md#user-timeline)
+([#1866](https://github.com/epiphany40223/parishkit/issues/1866)): the
+user's sign-ins and sign-outs, Admin actions, role changes and emails,
+newest first, unpaged. Name the user by the `id` that `users list` prints.
+Any session may run it, and it records the page's `user_timeline_viewed`.
+
+```sh
+pk-admin users timeline --user USER_ID
+pk-admin users timeline --user USER_ID --kind emails
+pk-admin users timeline --user USER_ID --from 2026-10-01 --to 2026-10-07 --zone America/New_York
+```
+
+`--kind` is `all` (the default), `sessions`, `actions`, `roles` or
+`emails`; `--from` and `--to` are whole days in `--zone`, which a day needs.
+
+| `users timeline` field | What it holds |
+| --- | --- |
+| `user` | The user's `id`, `email`, `name`, `role` (`null` once no longer a user) and `removed_at` |
+| `summary` | `last_sign_in`, `last_email` (a line, or `null`) and the `ministries` the user leads now |
+| `kind` | The Kind used |
+| `lines` | Each line, newest first: `at`, `kind`, `what`, `detail` and, for an email Sent mail lists, its `message_id` |
+
 Until the users upgrade, the users are the exact-address rules that grant a
 role, each with its highest role and a `null` name. Deny rules and
 hosted-domain rules are not users: see the upgrade preview for a domain
@@ -4276,3 +4354,10 @@ Each change is recorded in System logs as on the page
   it in `stages`.
 - `pk-admin/1` (#1562): additive. `delivery list` also lists the Ministry
   leader emails, as Sent mail does, and `--purpose` takes `leader_email`.
+- `pk-admin/1` (#1873): additive. `content preview --edit {page,email}
+  SLOT [--revision ID] --expected-version VERSION -` and `content confirm
+  --edit {page,email} SLOT [--revision ID] --token TOKEN|-`, the content
+  editor's Preview changes and its review's Apply (full scope,
+  Administrators only; the fields as one JSON object on standard input;
+  `content confirm` records `admin_cmd_content_confirm`). `content preview`
+  prints `edit` (null for the Delete and the plain-text preview).

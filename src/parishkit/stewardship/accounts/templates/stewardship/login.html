@@ -7,6 +7,7 @@
   <form method="post" action="{% url 'admin:login' %}">
     {% csrf_token %}{% button type="submit" %}{% translate "Sign in with Google" %}{% endbutton %}
   </form>
+  {% google_account_help %}
   <p>{% translate "Or, for a test sign-in link:" %}</p>{% else %}<p>{% translate "Google sign-in is not available in the local laptop environment." %}</p>{% endif %}
   <ol><li>{% translate "On the laptop, run" %} <code>tools/stewardship-local.sh sign-in --email you@example.org</code></li>
   <li>{% translate "Open the printed link in this browser. The link works once, within 15 minutes of being printed." %}</li></ol>
@@ -15,6 +16,7 @@
   <form method="post" action="{% url 'admin:login' %}">
     {% csrf_token %}{% button type="submit" %}{% translate "Sign in with Google" %}{% endbutton %}
   </form>
+  {% google_account_help %}
   {% endif %}
   <p><a href="/">{% translate "Family campaign portal" %}</a></p>
 </section>{% endblock %}

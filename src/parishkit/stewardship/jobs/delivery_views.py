@@ -26,6 +26,8 @@ from parishkit.stewardship.accounts.admin_caller import AdminCaller
 from parishkit.stewardship.accounts.authentication import runtime
 from parishkit.stewardship.accounts.cryptography import CryptographicError
 from parishkit.stewardship.accounts.limiting import LimiterUnavailable
+from parishkit.stewardship.accounts.role_refusal import RoleDenied
+from parishkit.stewardship.accounts.role_refusal import response as role_response
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
@@ -223,6 +225,10 @@ def _page(request, template, load, *, subject=None, status=200):
             with_default_code(response)
         response["Cache-Control"] = "no-store"
         return response
+    except RoleDenied as error:
+        # A role that lacks the page: the shared role refusal (#1924), not
+        # this page's sign-in-again error.
+        return role_response(error)
     except PermissionError:
         return _error(ErrorCode.DENIED, 403)
     except MISSING_TARGET:
@@ -629,6 +635,10 @@ def _bulk(request):
         return _bulk_refused("empty", 409)
     except (StaleRecordError, TaskRetryConflict, signing.BadSignature):
         return _bulk_refused("stale", 409)
+    except RoleDenied as error:
+        # A role that lacks the page: the shared role refusal (#1924), not
+        # this page's sign-in-again error. ``_bulk`` returns a pair.
+        return role_response(error), 403
     except PermissionError:
         return _error(ErrorCode.DENIED, 403), 403
     except DatabaseError as error:
@@ -817,6 +827,10 @@ def clear_refusal(request, refusal_id):
         return response
     except (StaleRecordError, TaskRetryConflict):
         return _error(ErrorCode.STALE, 409)
+    except RoleDenied as error:
+        # A role that lacks the page: the shared role refusal (#1924), not
+        # this page's sign-in-again error.
+        return role_response(error)
     except PermissionError:
         return _error(ErrorCode.DENIED, 403)
     except MISSING_TARGET:
@@ -874,6 +888,10 @@ def bounce_report(request, message_id):
         return response
     except (StaleRecordError, TaskRetryConflict):
         return _error(ErrorCode.STALE, 409)
+    except RoleDenied as error:
+        # A role that lacks the page: the shared role refusal (#1924), not
+        # this page's sign-in-again error.
+        return role_response(error)
     except PermissionError:
         return _error(ErrorCode.DENIED, 403)
     except MISSING_TARGET:
@@ -929,6 +947,10 @@ def resolution_command(request, message_id):
         return response
     except (StaleRecordError, TaskRetryConflict):
         return _error(ErrorCode.STALE, 409)
+    except RoleDenied as error:
+        # A role that lacks the page: the shared role refusal (#1924), not
+        # this page's sign-in-again error.
+        return role_response(error)
     except PermissionError:
         return _error(ErrorCode.DENIED, 403)
     except MISSING_TARGET:
@@ -975,6 +997,10 @@ def preparation_retry(request, task_id, *, daily=False, weekly=False):
         return response
     except (StaleRecordError, TaskRetryConflict):
         return _error(ErrorCode.STALE, 409)
+    except RoleDenied as error:
+        # A role that lacks the page: the shared role refusal (#1924), not
+        # this page's sign-in-again error.
+        return role_response(error)
     except PermissionError:
         return _error(ErrorCode.DENIED, 403)
     except MISSING_TARGET:

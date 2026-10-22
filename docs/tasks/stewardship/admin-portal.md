@@ -99,7 +99,7 @@ Scope and dependencies: [ADM-04 work package](../../plans/stewardship/admin-port
 - [x] ADM-04.04 — Build page previews and readiness-test emails.
 - [x] ADM-04.05 — Build atomic schedule reconciliation previews.
 - [x] ADM-04.06 — Test campaign editing, previews, and schedule races.
-- [ ] ADM-04.07 — Shared schedule preview (#1129), in three slices: 7a specify the component and its adoption (docs only); 7b add the component and draw the refresh schedule's seven-day list with it; 7c draw the mail schedule review's send times with it.
+- [x] ADM-04.07 — Shared schedule preview (#1129), in three slices: 7a specify the component and its adoption (docs only); 7b add the component and draw the refresh schedule's seven-day list with it; 7c draw the mail schedule review's send times with it.
 
 Evidence: Implemented with passing integrated acceptance and review closure. Guarded
 draft creation, archived cloning, structural forms, current-source Ministry/fund
@@ -114,7 +114,7 @@ three-engine browser tests cover these boundaries; see
 Production transitions and live campaign delivery remain with their later
 phase owners, not this preparation package.
 
-ADM-04.07 is post-launch work for #1129. Slice 7b draws the refresh schedule's seven-day list with the shared `occurrence_preview` component and `components/occurrences.html`, render-identical except the `data-day`, `data-today` and `data-other-zone-time` hooks (`test_refresh_preview_render.py`); slice 7c remains. Slice 7a is a docs-only change that adds the [schedule previews](../../specs/stewardship/ui-conventions/spec.md#schedule-previews) convention (with its traceability entry), the adoption paragraphs in the admin-portal spec's seven-day preview and mail schedule review, the command line's from-now send times in the admin-automation spec, and this item's delivery plan.
+ADM-04.07 is post-launch work for #1129. Slice 7b draws the refresh schedule's seven-day list with the shared `occurrence_preview` component and `components/occurrences.html`, render-identical except the `data-day`, `data-today` and `data-other-zone-time` hooks (`test_refresh_preview_render.py`). Slice 7c draws the mail schedule review's send times with it: the next five sends after the database's now (`upcoming_slots`, which `schedule show` and `schedule preview` use too), compact, grouped by the browser's days, with digest lines naming their day, the paused notice and the daylight-saving words only when a send is affected (`test_schedule_review_sends.py`, `test_schedule_views_postgresql.py`, the review dialogs' browser tests). Slice 7a is a docs-only change that adds the [schedule previews](../../specs/stewardship/ui-conventions/spec.md#schedule-previews) convention (with its traceability entry), the adoption paragraphs in the admin-portal spec's seven-day preview and mail schedule review, the command line's from-now send times in the admin-automation spec, and this item's delivery plan.
 
 ## ADM-05: Production transition and pre-start withdrawal
 
@@ -1128,6 +1128,24 @@ Administrator's token denied, a token built before the settings changed,
 no current campaign, the plain-text preview equal to the page's answer
 with no event and no renewed session, a read-only session and Staff
 denied, an ended session) and the unchanged content page suites.
+
+Another part (#1873) adds the `--edit` mode of `content preview` and
+`content confirm`, the content editor's Preview changes and its review
+dialog's Apply, in `parishkit.stewardship.admin_content`: the fields come
+as one JSON object on standard input (`editor_data`), are bound to the
+page's own `ContentForm` and built through the editor's own change (moved
+into `content_views.review_change` and `preview_salt`, which the editor now
+calls), with the existing `admin_cmd_content_confirm` and no schema change;
+proven by `tests/stewardship/test_admin_content_changes.py` (catalog flags,
+usage errors, the fields' defaults and refusals, the salt),
+`tests/stewardship/test_admin_content.py` (the ledger owes nothing),
+`tests/stewardship/database/test_admin_content_edit_cli_postgresql.py` (a
+page changed, confirmed and installed with one event and a repeat, an
+email's switched schedules, the form's refusals at their fields, no
+change, removing a sent email, a stale version, an unknown slot or
+revision, a removal without a subject, another editor's, the Delete's or
+an altered token, a held campaign, a read-only session and Staff denied,
+an ended session) and the unchanged content page suites.
 
 Another part adds `integration list`, `integration show` and `integration
 status`, the Integrations pages' reads, in

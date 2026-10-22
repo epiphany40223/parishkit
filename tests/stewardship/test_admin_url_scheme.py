@@ -259,6 +259,7 @@ SLASHLESS_EXPECTED = {
     "/admin/users": "/admin/users/",
     "/admin/users/new": "/admin/users/new/",
     f"/admin/users/{T}/edit": f"/admin/users/{T}/edit/",
+    f"/admin/users/{T}/timeline": f"/admin/users/{T}/timeline/",
     "/admin/users/sessions": "/admin/users/sessions/",
     "/admin/users/automation": "/admin/users/automation/",
     "/admin/users/automation/approval": "/admin/users/automation/approval/",
@@ -372,6 +373,25 @@ OLD_ADDRESSES = (
     "/admin/users/rules/base",
     f"/admin/users/rules/requests/{T}",
 )
+
+
+def test_finishing_setup_is_named_for_its_page():
+    """Finishing setup's progress page (which also holds Cancel initial
+    setup) lives at /admin/setup/finishing, with no alias at its old
+    /admin/setup/cancel address (#1903, #864). The old address now falls to
+    the wizard's step route, which answers 404 for a step it does not have
+    (setup_views.setup_step), as for any other unknown step."""
+    from parishkit.stewardship.accounts.setup_cancellation_views import (
+        setup_cancellation,
+    )
+    from parishkit.stewardship.accounts.setup_views import FORMS
+
+    assert reverse("admin:setup_finishing") == "/admin/setup/finishing"
+    assert resolve("/admin/setup/finishing").func is setup_cancellation
+    assert resolve("/admin/setup/cancel").url_name == "setup_step"
+    assert "cancel" not in FORMS
+    with pytest.raises(NoReverseMatch):
+        reverse("admin:setup_cancel")
 
 
 @pytest.mark.parametrize("old", OLD_ADDRESSES)

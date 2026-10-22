@@ -38,6 +38,36 @@ defined by the
 All login and callback denial pages preserve the retry path while honoring
 `429`/`Retry-After`; they never reveal which authorization check failed.
 
+A user's address need not be a Gmail address, but it must have a Google
+Account, and many volunteer Ministry leaders' addresses have none
+([#1593](https://github.com/epiphany40223/parishkit/issues/1593)). Google
+itself refuses such an address before it ever reaches the callback, so the
+portal says how to fix it where the person meets the problem. The Admin
+login page (below Sign in with Google) and the Admin generic not-authorized
+page both show the same short **Google Account guidance**: sign in with the
+address the parish gave access to; an address with no Google Account needs
+one created for it first, keeping the existing address (Google's sign-up
+offers to use an existing email address instead of a new Gmail address),
+with a link to Google's own "Create a Google Account" help; and whom to ask
+when it still fails. The not-authorized page shows it for every sign-in
+refusal alike (a refusal of a signed-in person, such as a report view
+they may not read, does not), so it still reveals nothing about which check failed. The
+temporary-unavailability page and the Family portal's pages do not show it.
+The local laptop environment's test sign-in branch does not either,
+nor do its refused test sign-in links. The
+guidance's wording is kept in one place in code
+(`accounts/google_account_help.py`), so the [Users page](#users-table) and a
+later leader email ([#1592](https://github.com/epiphany40223/parishkit/issues/1592))
+repeat it rather than restate it. The
+[leader sign-in guide](../../../guides/stewardship-leader-sign-in.md) is the
+same help for an Administrator to send to leaders.
+
+Authentication itself is unchanged: Google is the only sign-in method.
+Rejected for v1 (default of #1593, which the Administrator may override
+there): a second sign-in method such as emailed one-time links, which would
+be a new authentication surface under the
+[identity security policy](../architecture/spec.md#identity-and-session-security).
+
 If bootstrap exists but setup is incomplete, an Admin is routed only to the
 setup wizard, and the Admin navigation offers only the wizard. The read-only
 background-work list, task detail and header counts stay available so the
@@ -354,7 +384,12 @@ warns five minutes before sign-out and lets the Admin stay signed in, which
 also keeps the setup attempt. The progress page names the three parts of the load
 (download, save, check) as
 [stage boxes](../ui-conventions/spec.md#stage-boxes), as Finishing setup
-names its steps, and, during the download, each ParishSoft collection
+names its steps; each starts its queued load with the shared Start the
+load box, whose queued sentence the progress page's summary line also
+says while the load waits for a worker
+([#1916](https://github.com/epiphany40223/parishkit/issues/1916)), and a
+load that stopped for good marks the box it stopped in Failed. During the
+download, each ParishSoft collection
 as done, in progress (Ministry rosters as "N of M") or waiting, with its
 record count; the saved-record bar appears once saving starts. The worker
 encodes one step per finished collection in the task's two monotonic
@@ -901,7 +936,9 @@ entry's accessible description (`aria-describedby`), so screen readers
 announce it with the entry. The reason names what to do when there
 is something to do. An unavailable entry's page, opened directly, shows the
 same reason and a way forward
-([unavailable menu pages](../ui-conventions/spec.md#unavailable-menu-pages)).
+([unavailable menu pages](../ui-conventions/spec.md#unavailable-menu-pages)),
+and a page the role hides, opened directly, says the role is the reason
+([pages the role may not open](../ui-conventions/spec.md#pages-the-role-may-not-open)).
 The conditions come from the campaign
 state, modules and mode the chrome already reads, and from whether
 ParishSoft data has been downloaded yet (#1242): one small query, run once
@@ -1191,6 +1228,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `users` | Users | Menu: Users | Administrator | Portal users; Sign-in rules | `/admin/users` | `/admin/users/` | One table of users (#952), which replaces the planned split into Sign-in rules, Ministry assignments and Chairpersons (decision 13). |
 | `user_new` | New user | Users | Administrator | (new, #952) | (none) | `/admin/users/new/` | Its review applies through Users. |
 | `user_edit` | Edit user | Users | Administrator | (new, #952) | (none) | `/admin/users/<user>/edit/` | The New page filled in; `<user>` is the user's stable ID. |
+| `user_timeline` | Timeline | Users | Administrator | (new, [#1866](https://github.com/epiphany40223/parishkit/issues/1866)) | (none) | `/admin/users/<user>/timeline/` | One user's [Timeline](#user-timeline): sign-ins, Admin actions, role changes and emails; opened from each user's Email on Users and from Edit user; `<user>` is the user's stable ID. |
 | `user_delete` | Delete user | Users | Administrator | (new, #952) | (none) | `/admin/users/deletion/` (POST only) | The table's confirmation dialog posts here. |
 | `user_name_suggestions` | (not a page) | New user | Administrator | (new, #952) | (none) | `/admin/users/new/names/` (POST only, JSON) | Read-only Name suggestions from ParishSoft. |
 | `user_leader_import` | Import Ministry leaders | Users | Administrator | (new, #952) | (none) | `/admin/users/leaders/import/` (POST only) | Review of the chosen ParishSoft Ministry leaders, shown in the review dialog on Users; applies through Users. |
@@ -1237,7 +1275,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `setup_mail` | Test email | Setup stepper | Administrator | Setup email test (stepper: Test email) | `/admin/setup/mail-test` | (same) |  |
 | `setup_notification` | Test Slack | Setup stepper | Administrator | Setup Slack test (stepper: Test Slack) | `/admin/setup/slack-test` | (same) |  |
 | `setup_confirmation` | Finish setup | Setup stepper | Administrator | Finish initial setup (stepper: Finish setup) | `/admin/setup/confirm` | (same) |  |
-| `setup_cancel` | Finishing setup | Setup stepper | Administrator | (same) | `/admin/setup/cancel` | (same) |  |
+| `setup_finishing` | Finishing setup | Setup stepper | Administrator | (same) | `/admin/setup/finishing` | (same) |  |
 | `setup_unavailable` | Setup step not available | Setup stepper | Administrator | (same) | (any setup step whose prerequisites are missing) | (same) |  |
 
 #### URL scheme
@@ -2039,6 +2077,20 @@ credential file, and only the one-shot `backup-worker` profile reads it
   the proof) never reaches the page source. Only then is the change offered
   for review and confirmation; the review shows the old and new
   fingerprints.
+- **On the page (#750).** The paste step's **Continue** and the challenge's
+  **Start over** act [in place](../ui-conventions/spec.md#in-place-controls),
+  and the challenge's heading ("Prove you have the new private key") takes
+  focus. **Check code and continue** opens the
+  [review dialog](../ui-conventions/spec.md#review-dialog) with a compact
+  review, "Replace the backup encryption key?": "Key fingerprint: old →
+  new" ("Not known yet" before the first backup) and a sentence that
+  backups already made still need the old private key. A wrong code is the
+  code field's refusal, with the same challenge; so is a code checked after
+  the challenge's 15 minutes, which says the code expired and to choose
+  **Start over** and paste the public key again. Either is said in the
+  change's status line under the step, where the reader is, never in a
+  summary above the page heading. Once applied, the key in use
+  and the change, back at its paste step, are redrawn in place.
 - **Authority and audit.** Only Administrators with the Configure capability
   may use the page; neither starting a change nor confirming it checks the
   sign-in's age ([#1547](https://github.com/epiphany40223/parishkit/issues/1547)).
@@ -2813,6 +2865,23 @@ every campaign state. There is no second, read-only copy of the settings.
   alone holds says it can change once that work finishes. A disabled
   setting is not sent, and the server keeps its saved value whatever is
   posted, so a locked setting never changes through this page.
+- **Held settings open by themselves.** While background work or going
+  live holds any of the page's settings, no reason tells the reader to
+  reload. The page follows that hold through the passive, unaudited
+  campaign work status (`campaign_work_status`, which says only whether
+  campaign work still holds changes), polled as a pending status region
+  is. Once the hold ends the page re-reads its own address once, quietly,
+  in place and passively ([controls that background work
+  holds](../ui-conventions/spec.md#pages-that-update-themselves),
+  [#1619](https://github.com/epiphany40223/parishkit/issues/1619)), so the
+  freed settings, their tips and Save's hint are drawn again from the
+  server. The re-read waits while the reader is editing an open setting
+  (a live campaign's leader roles) and never replaces it; that read
+  never extends the sign-in and records nothing. A browser reload draws
+  the page with the current hold, still followed while it lasts. A Review
+  refused because a setting became locked after the page was drawn says
+  that setting's reason and to reload the page, since that page was drawn
+  before the hold and does not follow it.
 - **One Save.** The page has exactly one **Save** (its Review),
   unavailable until the form holds a real change, with its hint after it
   ([review dialog](../ui-conventions/spec.md#review-dialog)); with nothing
@@ -2969,10 +3038,10 @@ schedule sends only as moments in the browser's zone, never the saved campaign-l
 Each side of a schedule change (Current schedule and Proposed schedule)
 lists when it sends with the shared
 [schedule preview](../ui-conventions/spec.md#schedule-previews), in its
-compact layout, once its
+compact layout, since its
 [#1129](https://github.com/epiphany40223/parishkit/issues/1129) slice
-lands; until then each lists its first five sends from the campaign's
-start as a date key and a browser-local moment. With the component, a side
+(ADM-04 7c); before it, each listed its first five sends from the
+campaign's start as a date key and a browser-local moment. A side
 uses the count-from-now scope: its next five sends after now, each line
 naming the day in words ("Tuesday, October 20, 2026") and the
 browser-local time. A dated email lists its one send. A report email whose
@@ -2984,7 +3053,9 @@ listed under the component's paused notice, with a link to Pause and
 resume mail, which shows what resume's recovery plan sends. The
 daylight-saving sentence is shown only when a listed send is affected. The
 page takes the browser's zone with the post, as it does for typed times,
-so the server groups the sends by the browser's day. Campaign settings'
+so the server groups the sends by the browser's day; a posted zone it
+cannot use draws no list, only the component's *unavailable* line naming
+the browser's missing time zone. Campaign settings'
 end-date review, which builds the same review with no zone, lists each
 side's sends ungrouped, each as a full browser-local day and time. The
 command line's `schedule show` and `schedule preview` list the same sends
@@ -3199,15 +3270,37 @@ first, second, third, fourth or last chosen weekday) and the first and last
 dates (the campaign's dates to start with). The send time and Email to send
 apply to every date. Only the fields of the chosen repeat show. As the Admin
 types, the page lists every date the rule gives, with its weekday, and says
-which it will not add and why: outside the campaign dates, not after the
+which it will not add and why: outside the campaign dates, its time has
+passed (a reminder added in the past would send at once,
+[#1948](https://github.com/epiphany40223/parishkit/issues/1948)), not after the
 initial invitation, at the same moment as a saved invitation or reminder, over
 30 reminders from one rule, or over the campaign's limit of schedules (the
-schedule form set's maximum, 100). A short summary above **Review changes**, the only live region of
-the rule, says how many reminders the rule adds, or what is still missing:
+schedule form set's maximum, 100). A short summary above **Review changes**
+says how many reminders the rule adds, or what is still missing:
 "Enter a send time to check these dates" until the time reads, since the timed
 checks cannot run without it, and "Choose the email to send" without an email.
 Two lines are reserved for it (a phone wraps the longer messages) and the date
-list sits below the button, so neither moves the button. A month without the
+list sits below the button, so neither moves the button.
+A rule that gives no dates is an error at its fields, under the shared
+[field errors](../ui-conventions/spec.md#field-errors-and-live-checks) rule
+([#1915](https://github.com/epiphany40223/parishkit/issues/1915)): the last
+date before the first, or a span over a year, marks From and Until and is
+said once, after Until; a missing date marks the empty date; no weekday
+marks the days; a day of the month outside 1 to 31 marks the day. Each
+place has its own reserved line, so a message coming or going moves
+nothing. As with the browser's own checks, a field is marked once the Admin
+has edited or left one of its fields (a fresh rule's missing weekday is said
+in the summary as what is missing), and a date being typed is judged after
+a pause. While the rule gives no date to add (a rule error, or no date that
+fits), the page's button (**Add the scheduled email**, or **Save and go
+back** in the campaign wizard) is unavailable, named by the same words, under
+the [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates) rule,
+and worked out again when the page is shown from the browser's history. The
+server refuses such a rule at the same fields in the same words, and
+otherwise refuses a rule none of whose dates can be added at Repeat. The
+date-change review's **Repeat a reminder** shows rule errors at its fields
+the same way, and its **Add these reminders** is unavailable, named by that
+line or by its summary, while there is nothing to add. A month without the
 chosen day (the 31st in September) is skipped and listed as skipped, not
 moved. Every day comes with a note that each reminder goes to every Family that
 has not responded and that sending spreads out or waits near the mailbox's
@@ -3220,8 +3313,9 @@ dates that fit as ordinary reminders, each its own schedule, reviewed,
 confirmed and delivered exactly like reminders added one at a time (see [Family
 invitations and
 reminders](../background-processing/spec.md#family-invitations-and-reminders)).
-The server checks each date as it checks any reminder, and refuses more than 30
-at once. The page script's expansion and the server's
+The server checks each date as it checks any reminder, refuses more than 30
+at once, and refuses a repeat whose send time on any date has already passed,
+naming that date and time at Repeat. The page script's expansion and the server's
 (`campaigns/recurrence.py`, used by the command line's
 [repeat entry](../admin-automation/spec.md#schedules-and-configuration)) both
 run the shared case table
@@ -3587,6 +3681,33 @@ email, or is no longer listed, or if the page is out of date. The
 confirmation email has no schedules and stays a single entry, with Edit
 only.
 
+The editor of one page or email (a table's Edit, or a Family page's link)
+stays a full page with its visual editor, HTML source and plain-text panel.
+Its **Preview changes** reviews in the shared
+[review dialog](../ui-conventions/spec.md#review-dialog)
+([#750](https://github.com/epiphany40223/parishkit/issues/750)), a full
+review: a fictional sample of the current and proposed content (subject,
+the page or email as Families see it, and its plain-text version, with
+placeholders filled in with sample values and disallowed markup removed),
+and the schedules the new text switches at once, in sending order and named
+as Dates and mail schedules names them (Reminder 1, Reminder 2, ...). Apply
+switches every schedule that sends the email, since the old text is
+removed, but a schedule that already sent is listed apart under Already
+sent: Families who already got it are not sent it again. A schedule whose
+send failed for every Family stays with the others, since nobody got it.
+Apply records the change;
+once it is applied the dialog closes and the reader returns to Pages and
+emails, whose status line says what was applied and when ("Family welcome
+changed. Applied at 3:04 PM."), as New and Edit scheduled email return to
+their table: saving an email makes a new revision, so the editor's own
+address would no longer name the current text. Preview changes waits for a
+change ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)).
+A refusal of the values (a placeholder, a hosted file, a required link) stays
+on the form, with an HTML source error also shown at the visual editor; a
+stale page, an expired or out-of-date preview, or removing an email a
+schedule now sends is refused in the dialog. Inside the Campaign setup
+stepper the editor saves directly instead (below).
+
 ### Create the campaign
 
 System setup ends without a campaign
@@ -3633,7 +3754,14 @@ or a direct request cannot bypass them. Home shows what it already knows:
 before any ParishSoft data is loaded, Create the campaign is shown unavailable
 with the reason that ParishSoft data must be loaded first (Refresh now is
 beside it); while campaign work or a Testing cleanup holds it, it is shown
-unavailable with that reason; otherwise it is offered. Once a campaign row
+unavailable with that reason; otherwise it is offered. While it is held,
+Home follows the hold through the passive, unaudited campaign work status,
+which answers with the panel's fresh contents: once the hold ends, Create
+the campaign is offered there by itself, with no reload (Home's own view is
+audited, so Home is not re-read; [controls that background work
+holds](../ui-conventions/spec.md#pages-that-update-themselves),
+[#1619](https://github.com/epiphany40223/parishkit/issues/1619)). Should a
+campaign exist by then, the panel says so instead. Once a campaign row
 exists, in Production mode, or during a restore review, Home keeps its
 no-campaign text instead.
 
@@ -3780,9 +3908,14 @@ live.
   not a refresh to repeat (Administrator, 2026-10-17). Below its summary
   line, the full refresh's major stages are
   [stage boxes](../ui-conventions/spec.md#stage-boxes), left to right:
-  Download from ParishSoft, Save the downloaded records, Check the new data
-  and Make the new data current, the phases the refresh's worker reports,
-  each marked not started, in progress, done or failed in words.
+  the shared **Start the load** box for the time the run waits for a
+  worker, then Download from ParishSoft, Save the downloaded records, Check
+  the new data and Make the new data current, the phases the refresh's
+  worker reports, each marked not started, in progress, done or failed in
+  words. While the run waits for a worker, the line after the boxes says
+  so in the stage boxes' queued sentence; that line keeps the sentence's
+  height in every state, so nothing moves when the first stage starts
+  ([#1916](https://github.com/epiphany40223/parishkit/issues/1916)).
   The step's state follows only the campaign's *full* refreshes, those
   requested since the campaign was created. A quick (delta) refresh, such as
   a scheduled one, is never "the load": it neither shows the step as
@@ -4017,7 +4150,7 @@ notice, a folded closing note, a refused save) it stays available, as
 Preview changes does; the server still refuses an unchanged save at the
 form ("No content has changed."). The
 editor's own preview (the visual editor and the plain text drawn from it)
-stays; the Preview changes page with its fictional sample and the schedules
+stays; the Preview changes review with its fictional sample and the schedules
 the new text switches is not shown on a draft, whose schedules have sent
 nothing, and Preview and test email shows the sample. Send work in progress
 that would block a schedule change refuses the save with its reason, and the
@@ -6302,6 +6435,23 @@ time ([date format](../ui-conventions/spec.md#date-format)), with users who
 never signed in sorting last; it sorts by the time itself. The default order is Email. The table
 refreshes in place like every other Admin table.
 
+Each row's Email links that user's [Timeline](#user-timeline).
+
+A muted line under the table counts the Ministry leader users who have
+never signed in (their Last successful sign-in reads Never), across every
+page of the table, such as "3 Ministry leaders have never signed in."
+([#1593](https://github.com/epiphany40223/parishkit/issues/1593)), so an
+Administrator sees who may be stuck, often for want of a Google Account
+for their address. With none it says "Every Ministry leader has signed
+in.", so the line is always there, keeps one height in every form (a narrow
+screen reserves two lines for the count that may wrap), and a redraw
+moves nothing below it. It is counted from the rows the
+page already reads, adding no query. The About panel says users
+sign in with a Google Account for their address and repeats the
+[Google Account guidance](#login-and-denial-behavior) word for word, so an
+Administrator can pass it on (in the local laptop environment, only while
+it offers Google sign-in beside its test sign-in links).
+
 Each row is one line. An email or Name too long for its column is cut short
 with an ellipsis; the full value stays the cell's text for screen readers and
 copying, the cell's `title` attribute shows it whole as a hover tooltip, and
@@ -6409,6 +6559,102 @@ added again later as a new user. Confirming records one configuration change
 and follows it until it is applied, as
 [row actions](../ui-conventions/spec.md#row-actions-and-confirmation) describe.
 
+### User timeline
+
+**Timeline** (`/admin/users/<user>/timeline/`, URL name `user_timeline`;
+[#1866](https://github.com/epiphany40223/parishkit/issues/1866), the first
+half of [#1570](https://github.com/epiphany40223/parishkit/issues/1570)'s
+person timelines) answers "did this person sign in, what did they do, which
+role did they have when, and what did we email them?" for one user, so an
+Administrator helping a Staff member or Ministry leader does not have to
+search Sent mail and System logs by hand. It is the person counterpart of a
+Family's [Timeline](../reports/spec.md#timeline) and shares its table and
+filter rules; the Family part of a person's timeline (the ParishSoft Family
+they belong to, and that Family's lines) follows in
+[#1867](https://github.com/epiphany40223/parishkit/issues/1867).
+
+**Access and address.** Administrators only (`MANAGE_USERS`, rechecked after
+the answer is built, as every Users route does); Staff and Ministry leaders
+get the standard denial. `<user>` is the user's stable record ID, the one
+Edit user's address uses; the address is never in a URL. Each user's Email
+in the [Users table](#users-table) links the page, and Edit user links it
+beside the Sign-in activity controls. A user deleted since is still found
+through the latest configuration that held the record, and reads as no
+longer a user; an ID no configuration ever held is refused as not found,
+with no audit row. The heading is the user's Name (the address when the
+Name is blank), but the browser title is "Timeline" alone, so browser
+history does not keep the name. Its breadcrumb parent is Users.
+
+**Summary.** Fields shown only when they apply
+([conditional fields](../ui-conventions/spec.md#conditional-fields)):
+
+- **Role:** Administrator, Staff or Ministry leader, or "No longer a user since"
+  followed by the activation time of the configuration that removed
+  the user.
+- **Email:** the user's address, which this Administrator-only page may show.
+- **Ministry leader of:** the Ministries the person leads now through a
+  ParishSoft leader role (the shared leader scope), when there are any.
+- **Last signed in:** the newest successful sign-in of any Google account
+  with the address, or "Never".
+- **Last email:** the email to the address, not cancelled, whose line is
+  newest (its outcome's time, or when it was planned while still on its
+  way), with that time and its outcome in the shared outcome words, or
+  "None sent".
+
+**Timeline table.** The Family Timeline's
+[shared Admin table](../ui-conventions/spec.md#admin-tables): When, What
+happened and Details, newest first, with When reversing it in place. A
+person can have thousands of lines, so it is paged, 50 rows a page by
+default, with the shared row navigator. Its lines are:
+
+- **Sign-ins and sign-outs:** every Admin portal sign-in, confirmed sign-in,
+  sign-out, inactivity sign-out, session replaced or ended, and refused
+  sign-in of the person's Google accounts (System logs'
+  [sign-in activity](#sign-in-activity) types).
+- **Admin actions:** every other audit record whose actor is one of those
+  accounts, worded with its [System logs](#logs) sentence, plus
+  "Refused" or "Failed" when that is its outcome. Opening pages and lookups
+  (the types System logs leaves ungrouped because they only read) are left
+  out until #1570's slice 3 adds them as their own kind; an Administrator
+  signing out another person's session is an action.
+- **Role changes:** "Became a user", "Role changed" and "Removed as a user",
+  from the user's role in each activated configuration, at its activation
+  time. A Name change is not a line. Role changes follow the user's record,
+  but sign-ins, actions and emails follow the address (its Google accounts
+  and the emails meant for it), so a user deleted and added again (a new
+  record) also shows the address's earlier sign-ins, actions and emails.
+- **Emails:** every email whose intended recipients include the address, of
+  every kind (Administrator reports, notices, Ministry leader emails, and a
+  Family email that went to it), with its outcome and a Testing tag for a
+  Testing email; an email Sent mail lists links its
+  [Mail message page](#mail-message-page).
+
+**Filters.** The Family Timeline's filter bar, acting in place on the
+table: **Kind** (All, Sign-ins and sign-outs, Admin actions, Role changes,
+Emails) and **From** and **Through** days in the browser's time zone, with
+the same validation (a refused choice is 400). Paging and the When sort
+keep the filters. The summary is not filtered.
+
+**Reads and audit.** One read-only snapshot: the user's records in every
+configuration and the activations, the Google accounts of the address, their
+audit records through the audit's `(actor_id, created_at)` index (frozen
+migration 0152, which adds that index), the emails
+through the Administrator-only address read of
+[Sent mail](#sent-mail) (frozen migration 0116), and the leader scope. Each
+view sends `Cache-Control: no-store` and records one `user_timeline_viewed`
+audit event ("Someone opened a user's timeline") whose subject is the user's
+record ID, with the outcome and no address, Name, filter or shown value.
+The role history reads the user's rows of every configuration version by
+record ID with no index (a few thousand rows at parish scale). Unlike the
+other Users routes, the page reads the configuration records directly
+rather than through the applied configuration, as a Family's Timeline
+does: it only reads history, so it still answers during a restore review.
+A sign-in ends the browser's earlier session in the same transaction, so
+that end ("Earlier session ended", replaced by a new sign-in) is listed as
+happening just before the sign-in in both sort directions.
+`pk-admin users timeline` prints the same lines
+([Admin automation](../admin-automation/spec.md#users-and-follow-up)).
+
 ### User change checks and alerts
 
 Every save, delete and import is checked on the server, in the transaction
@@ -6510,6 +6756,9 @@ count and one audit row per new user, and both tables then refresh in place.
 Import never changes an existing user, never grants more than Ministry
 leader, and so raises no security alert; the last-Administrator guard is
 unaffected. Each imported Name stays editable on that user's Edit page.
+Import sends nothing to the leaders, so the Administrator tells them; the
+About panel's [Google Account guidance](#login-and-denial-behavior) is what
+to pass on to a leader whose address has no Google Account (#1593).
 
 The bulk bar is the [shared one](../ui-conventions/spec.md#admin-tables):
 while no row is ticked, its reserved reason line under the buttons says
@@ -6764,9 +7013,26 @@ takes a few minutes; they say nothing of quick updates
 A refresh run's background task page,
 and its row in the background-work list, name the run as a "Full refresh" or a
 "Quick update" from its request kind (whatever the quick-update cadence, so the
-label never claims a 15-minute cadence that is not configured), and describe
-the current phase in words ("Downloading from ParishSoft", "Saving the
-downloaded records", "Checking the new data", "Making the new data current").
+label never claims a 15-minute cadence that is not configured). The list
+names the run's current phase in words ("Downloading from ParishSoft",
+"Saving the downloaded records", "Checking the new data", "Making the new
+data current"). The task page's Current status, which Refresh from
+ParishSoft also draws for the run it requested, shows those four phases as
+[stage boxes](../ui-conventions/spec.md#stage-boxes) (Download from
+ParishSoft, Save the downloaded records, Check the new data, Make the new
+data current) after the shared Start the load box, the same boxes as Load
+ParishSoft data
+([#1579](https://github.com/epiphany40223/parishkit/issues/1579),
+[#1916](https://github.com/epiphany40223/parishkit/issues/1916)): Start the
+load In progress while the run waits for a worker, waits to try again or is
+being recovered (each attempt starts again from the download and waits for a
+worker again), the rest Not started; Start the load Done, the stages before
+the current one Done and the current one In progress while it runs; every
+box Done once it succeeded; the stage it stopped in Failed when it failed
+(Start the load when it stopped before a worker took it); and, when it was
+cancelled, the stages it finished Done and the rest Not started. The region then names its state and current stage in one
+sentence that the page's announcer reads out only when it changes, rather
+than reading the whole region out on every poll.
 The download phase has no count, so while a refresh is downloading the page
 says so instead of a bare wait message; other steps without a count keep the
 general message. Counts are labeled as records checked, since every refresh places every record into a
@@ -10293,7 +10559,7 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   line's parish profile changes (`admin_cmd_parish_confirm`) and Campaign
   image removals (`admin_cmd_artwork_remove`), parish logo uploads and
   their Apply (`admin_cmd_branding_preview`, `admin_cmd_branding_confirm`),
-  email template deletions
+  email template deletions and page and email text changes
   (`admin_cmd_content_confirm`), No-reminders WorkGroup changes
   (`admin_cmd_workgroup_confirm`), Campaign settings changes
   (`admin_cmd_campaign_confirm`), the first campaign's creation

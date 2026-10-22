@@ -28,9 +28,12 @@ def sections(document):
     """
     new = "current" if document.manual else "new"
     information, corrections = document.information, document.corrections
+    # A report email lists every open request (decisions 14 and 15); the
+    # Weekly digest lists what is new or current until it is converted.
+    kind = "open" if getattr(document, "open_requests", False) else f"{new} actionable"
     candidates = (
         (
-            f"{len(information):,} {new} actionable request"
+            f"{len(information):,} {kind} request"
             + ("" if len(information) == 1 else "s"),
             information,
         ),
@@ -98,6 +101,22 @@ def draw(document, frame, options):
     return Section(html, text)
 
 
+def capture(document, options):
+    """Each listed request: id, Family DUID and name, submitted time and text."""
+    return {
+        "items": [
+            [
+                str(row.item_id),
+                row.family_duid,
+                row.family_name,
+                row.submitted_at.isoformat(),
+                row.text,
+            ]
+            for row in document.information
+        ]
+    }
+
+
 BLOCK = Block(
     key="additional_information",
     label="Open additional information requests",
@@ -108,5 +127,6 @@ BLOCK = Block(
     kind=LIST,
     fact=False,
     draw=draw,
+    capture=capture,
     empty="No open requests.",
 )
