@@ -238,7 +238,7 @@ def test_to_enter_step_follows_ministry_requests():
 
 def test_closed_and_activating_steps():
     """The closed row offers the campaign-end work lists with their counts
-    (#1590) and Emailed reports. Activation lists its progress and mail."""
+    (#1590) and Report emails. Activation lists its progress and mail."""
     entries = menu(
         counts={
             "census_changes": 2,
@@ -248,7 +248,7 @@ def test_closed_and_activating_steps():
         }
     )
     closed = home_steps.next_steps("closed", entries)
-    assert labels(closed) == [*WORK, "Emailed reports"]
+    assert labels(closed) == [*WORK, "Report emails"]
     assert [(step.count, str(step.note)) for step in closed[0:4]] == [
         (2, "to do"),
         (0, "to enter by hand"),

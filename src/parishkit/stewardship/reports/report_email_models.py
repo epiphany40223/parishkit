@@ -212,3 +212,28 @@ class ReportEmailRecipient(ImmutableRecord):
                 name="report_email_recipient_coverage",
             ),
         ]
+
+
+class ReportEmailCoverageDecision(ImmutableRecord):
+    """An Administrator's decision about a report email no outcome can settle.
+
+    For an earlier report message whose outcome was once unknown and which
+    then ended cancelled (#1872): ``delivered`` counts it as having reached
+    its recipient, so it covers its slots for a later send; ``unsent``
+    counts it as never sent, so a later send gives that recipient its own
+    message (``stewardship_report_email_prior_v1``, frozen file 0164). Its
+    id is the evidence note (``DeliveryResolution``) recorded with it, in
+    the same transaction. One per message, never changed.
+    """
+
+    message_id = models.UUIDField(unique=True)
+    decision = models.CharField(max_length=16)
+
+    class Meta:
+        db_table = "stewardship_report_email_coverage_decision"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(decision__in=("delivered", "unsent")),
+                name="report_email_coverage_decision_known",
+            )
+        ]

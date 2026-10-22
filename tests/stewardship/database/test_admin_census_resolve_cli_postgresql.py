@@ -22,9 +22,9 @@ from parishkit.stewardship.responses.models import ProposalResolution, ProposedC
 from .auth_builders import signed_in
 from .automation_builders import as_staff
 from .test_admin_census_cli_postgresql import submitted, with_roles
-from .test_admin_digest_list_cli_postgresql import revoke
 from .test_admin_export_cli_postgresql import read_only_session
 from .test_admin_report_cli_postgresql import cli  # noqa: F401
+from .test_admin_report_email_cli_postgresql import revoke
 from .test_admin_status_cli_postgresql import (
     admin,  # noqa: F401
     one,

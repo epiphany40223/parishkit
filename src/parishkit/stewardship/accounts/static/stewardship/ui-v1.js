@@ -288,8 +288,12 @@
   const sayRule = (field, invalid) => {
     const line = ruleLine(field);
     if (!line) return;
+    // A page check's own refusal (a short label another option has,
+    // data-distinct) says its own words, not the format rule's.
     const message = !invalid ? ""
       : (field.validity.valueMissing && field.dataset.emptyHint)
+        || (field.hasAttribute("data-distinct") && field.validity.customError
+          && field.validationMessage)
         || field.dataset.missingHint || field.validationMessage;
     // Unchanged words stay untouched: rewriting the live region on every
     // keystroke would make a screen reader read them again.
@@ -4130,7 +4134,7 @@
         ? (missing.dataset.clientError
           // An unreadable time entry (#398) or DUID list (#1577) says why
           // itself.
-          || (missing.matches("[data-time-entry], [data-duid-list]")
+          || (missing.matches("[data-time-entry], [data-duid-list], [data-distinct]")
             && missing.validity.customError && missing.validationMessage)
           || (empty && missing.dataset.emptyHint)
           || (missing.hasAttribute("data-max-ticked-over") && missing.validationMessage)
@@ -4418,6 +4422,97 @@
       patternCheck.set(field, check);
       check();
       patternChecks.push({field, check});
+    });
+  };
+  // No two values alike (#1569, Share options' short labels): every text
+  // box of a form marked data-distinct="<group>" is compared with the
+  // others of its group as the Admin types, as the server compares them
+  // (campaigns.configuration.short_label_key): around them Python's
+  // whitespace, which the field strips (SERVER_SPACE), is left out, and
+  // case is ignored by upper then lower case, the full Unicode mapping
+  // both engines apply. A disabled box (its row's Delete is ticked) is not
+  // sent, so it does not count. Every box whose value another box has is
+  // invalid with its data-distinct-message, so the form's gate holds Save
+  // with those words, and is marked at the field as the browser's own
+  // checks are (wireValidity): in its reserved error line ("<id>_error",
+  // the shared rule line, so nothing moves), aria-invalid and described by
+  // it. A new mark waits for a pause in typing (TIME_PAUSE), so a label
+  // being typed past another ("IRA" on the way to "IRAs") flashes nothing,
+  // and shows at once when a box is left; a mark that no longer applies
+  // goes at once, from every box it was on. A server refusal in the same
+  // words on a box the Admin did not edit goes too once it no longer holds.
+  const SERVER_STRIP = new RegExp(`^${SERVER_SPACE.source.slice(1, -1)}|${
+    SERVER_SPACE.source.slice(1, -2)}+$`, "g");
+  const distinctKey = (value) => value.replace(SERVER_STRIP, "").toUpperCase().toLowerCase();
+  const distinctForms = new WeakMap(); // form -> its check
+  let distinctChecks = []; // {form, check} for each wired form, for pageshow
+  // Set each box's validity in ``form`` from the values now in it.
+  const distinctValidity = (form) => {
+    const groups = new Map(); // group -> key -> count
+    const boxes = [...form.querySelectorAll("input[data-distinct]")];
+    const keyOf = (box) => (box.disabled ? "" : distinctKey(box.value));
+    boxes.forEach((box) => {
+      const keys = groups.get(box.dataset.distinct) || new Map();
+      const key = keyOf(box);
+      if (key) keys.set(key, (keys.get(key) || 0) + 1);
+      groups.set(box.dataset.distinct, keys);
+    });
+    boxes.forEach((box) => {
+      const key = keyOf(box);
+      const repeated = Boolean(key) && groups.get(box.dataset.distinct).get(key) > 1;
+      box.setCustomValidity(repeated ? box.dataset.distinctMessage || "Use a different value." : "");
+    });
+    return boxes;
+  };
+  const wireDistinct = (root) => {
+    const forms = new Set(within(root, "input[data-distinct]").map((box) => box.form));
+    forms.forEach((form) => {
+      if (!form || distinctForms.has(form)) return;
+      let pause = null;
+      // ``show`` marks a box newly found repeated; without it only marks
+      // already shown follow the values (typing, before the pause).
+      const check = (show) => {
+        window.clearTimeout(pause);
+        distinctValidity(form).forEach((box) => {
+          const repeated = box.validity.customError;
+          const message = box.dataset.distinctMessage;
+          const line = ruleLine(box);
+          if (!repeated && box.hasAttribute("data-field-error")
+              && line?.textContent.trim() === message) {
+            clearFieldError(box);
+          } else if (blurMarked.has(box)) {
+            const invalid = !box.validity.valid;
+            box.setAttribute("aria-invalid", String(invalid));
+            if (!invalid) blurMarked.delete(box);
+            sayRule(box, invalid);
+          } else if (repeated && show && !box.hasAttribute("data-field-error")) {
+            box.setAttribute("aria-invalid", "true");
+            blurMarked.add(box);
+            sayRule(box, true);
+          }
+        });
+        gateComplete(form);
+      };
+      // The box's own listeners (wireValidity) and the form's gate see this
+      // input's verdict: validity is set first, in the capture phase.
+      form.addEventListener("input", () => distinctValidity(form), true);
+      form.addEventListener("change", () => distinctValidity(form), true);
+      // Then the marks, once the box's own listeners have run. Ticking a
+      // row's Delete disables its box (data-enabled-when, a change
+      // listener on the box), which this runs after too.
+      form.addEventListener("input", (event) => {
+        check(false);
+        if (event.target.matches?.("input[data-distinct]")) {
+          pause = window.setTimeout(() => check(true), TIME_PAUSE);
+        }
+      });
+      form.addEventListener("change", () => check(true));
+      form.addEventListener("focusout", (event) => {
+        if (event.target.matches?.("input[data-distinct]")) check(true);
+      });
+      distinctForms.set(form, check);
+      distinctChecks.push({form, check});
+      check(true);
     });
   };
   // Run as the page's first input listener (the document's capture phase),
@@ -4808,6 +4903,7 @@
     completeForms = completeForms.filter((form) => form.isConnected);
     notFutureChecks = notFutureChecks.filter(({date}) => date.isConnected);
     patternChecks = patternChecks.filter(({field}) => field.isConnected);
+    distinctChecks = distinctChecks.filter(({form}) => form.isConnected);
     liveChecks = liveChecks.filter(({form}) => form.isConnected);
     wireShowWhen(root);
     wireChoices(root);
@@ -4815,6 +4911,7 @@
     wireNotBefore(root);
     wirePattern(root);
     wireDuidList(root);
+    wireDistinct(root);
     wireComplete(root);
     wireNotFuture(root);
     wireLiveCheck(root);
@@ -4836,6 +4933,7 @@
     lockedUpdates.forEach(({update}) => update());
     document.querySelectorAll("input[data-not-before]").forEach(checkNotBefore);
     patternChecks.forEach(({check}) => check());
+    distinctChecks.forEach(({check}) => check(true));
     completeForms.forEach(gateComplete);
     notFutureChecks.forEach(({check}) => check());
     liveChecks = liveChecks.filter(({form}) => form.isConnected);

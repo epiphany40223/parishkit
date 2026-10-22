@@ -14,11 +14,16 @@ from ..test_financial_answers import CHECK, OPTIONS, OTHER
 pytestmark = [pytest.mark.django_db, pytest.mark.sql_rules]
 
 
-def guard(answer, *, annual=Decimal("12.30")):
-    """Exercise the exact helper invoked by the immutable Submission INSERT trigger."""
+def guard(answer, *, annual=Decimal("12.30"), short_labels=False):
+    """Exercise the exact helper invoked by the immutable Submission INSERT trigger.
+
+    ``short_labels`` gives each option the Admin-only ``short_label`` key
+    (#1569), which the guard must ignore.
+    """
     options = [
         {"id": row.id, "label": row.label, "free_text": row.free_text}
-        for row in OPTIONS
+        | ({"short_label": f"Way {index}"} if short_labels else {})
+        for index, row in enumerate(OPTIONS)
     ]
     with connection.cursor() as cursor:
         cursor.execute(
@@ -44,6 +49,16 @@ def test_sql_accepts_exact_annual_and_known_share_options(frequency):
     """The guard accepts canonical normalized data, including text-bearing options."""
     guard(answer(frequency=frequency, shares={CHECK: "", OTHER: "Café gift"}))
     guard(answer(annual_pledge="0.00", frequency="", shares={}), annual=Decimal(0))
+
+
+def test_sql_ignores_a_short_label_on_the_options():
+    """Options carrying short labels (#1569) admit the same answers."""
+    guard(answer(shares={CHECK: "", OTHER: "Café gift"}), short_labels=True)
+    with (
+        pytest.raises(IntegrityError),
+        transaction.atomic(),
+    ):
+        guard(answer(shares={"foreign": ""}), short_labels=True)
 
 
 def test_sql_requires_a_share_method_only_for_a_positive_pledge():

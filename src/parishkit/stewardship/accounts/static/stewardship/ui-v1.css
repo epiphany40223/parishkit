@@ -1581,11 +1581,6 @@ details.technical-details dd { overflow-wrap: anywhere; }
 /* A 44px touch target around the 28px circle, without enlarging the icon. */
 .toggletip-button::before { content: ""; position: absolute; inset: -.5rem; }
 .toggletip-button:not(:disabled):hover, .toggletip-button[aria-expanded=true] { background: var(--accent); color: var(--paper); box-shadow: none; }
-/* A "+N" chip (ui-conventions "Table fit and row height", #1544): a
-   toggletip whose button looks like the status-badge chip it follows and
-   shows "+2" for the rest of a list, which its bubble lists one per line. */
-.toggletip-button.toggletip-chip { width: auto; height: auto; padding: .1rem .5rem; border-width: 1px; border-radius: 999px; font-family: inherit; font-size: .8125rem; font-style: normal; font-weight: 600; }
-.toggletip-line { display: block; }
 .toggletip-bubble { position: fixed; inset: auto; z-index: 3; display: block; width: max-content; max-width: min(20rem, calc(100vw - 2rem)); padding: .6rem .8rem; border: 1px solid var(--border); border-inline-start: .3rem solid var(--accent); border-radius: var(--radius-small); background: var(--paper-soft, var(--paper)); color: var(--ink); font-size: .925rem; font-weight: 450; font-style: normal; line-height: 1.4; box-shadow: var(--shadow); }
 
 /* A Member's section groups fields without a second box around them. */

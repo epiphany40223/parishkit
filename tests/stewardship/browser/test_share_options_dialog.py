@@ -18,7 +18,7 @@ import pytest
 from .review_helpers import RESTORE, answer_reviews, expect_review
 from .settings_components import SHARE, SHARE_REFUSED, SHARE_REVIEW
 from .test_in_place import MARK, MARKED
-from .waits import eventually, has_attribute, hidden, same_place, visible
+from .waits import eventually, has_attribute, has_text, hidden, same_place, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -257,4 +257,247 @@ def test_a_refused_apply_shows_in_the_dialog(page, component_origin):
     assert page.locator("#id_options-0-label").input_value() == "Renamed option"
     assert page.locator(DIGEST).input_value() == "a" * 64
     assert page.evaluate(MARKED) == "kept"
+    assert not failures
+
+
+def test_the_short_label_is_offered_and_greys_with_delete(page, component_origin):
+    """Each option has a Short label field (#1569) with its help, limited to
+    12 characters; changing it makes Save available, and ticking the row's
+    Delete greys it in place without moving anything below."""
+    from playwright.sync_api import expect
+
+    page.goto(component_origin + SHARE)
+    failures = watch(page)
+    short = page.locator("#id_options-0-short_label")
+    assert short.input_value() == "Bank check"
+    assert short.get_attribute("maxlength") == "12"
+    expect(short).to_have_accessible_name(re.compile(r"^Short label"))
+    expect(short).to_have_accessible_description(
+        re.compile(r"Families still see the full label\.")
+    )
+    expect_review(page, enabled=False, hint=OPTION_HINT, name="Save")
+    short.fill("Check")
+    expect_review(page, enabled=True, hint=OPTION_HINT, name="Save")
+    short.fill("Bank check")
+    expect_review(page, enabled=False, hint=OPTION_HINT, name="Save")
+    places = [page.evaluate(PLACE, id) for id in ("settings-form", "share-outcome")]
+    page.locator("#id_options-0-DELETE").check()
+    expect(short).to_be_disabled()
+    page.locator("#id_options-0-DELETE").uncheck()
+    expect(short).to_be_enabled()
+    assert same_place(
+        [page.evaluate(PLACE, id) for id in ("settings-form", "share-outcome")],
+        places,
+    )
+    assert not failures
+
+
+def test_a_locked_campaign_edits_only_the_short_labels(page, component_origin):
+    """On a locked campaign (#1569) every field but each short label is
+    disabled with the reason in its tip, there is no blank row, the page
+    says why and leaves out the placeholders paragraph, and changing a
+    short label makes Save available."""
+    from playwright.sync_api import expect
+
+    from .settings_components import SHARE_LIVE
+
+    page.goto(component_origin + SHARE_LIVE)
+    failures = watch(page)
+    total = int(page.locator("[name=options-TOTAL_FORMS]").input_value())
+    initial = int(page.locator("[name=options-INITIAL_FORMS]").input_value())
+    assert total == initial == 7
+    for index in range(total):
+        for name in ("label", "free_text", "ORDER", "DELETE"):
+            expect(page.locator(f"#id_options-{index}-{name}")).to_be_disabled()
+        expect(page.locator(f"#id_options-{index}-short_label")).to_be_enabled()
+    reason = "This campaign is locked, so only the short labels can change."
+    assert page.locator("p", has_text=reason).count() == 1
+    assert page.get_by_text("placeholders inside double braces").count() == 0
+    # A locked field's "i" tip says why, as on Campaign settings.
+    label = page.locator("#id_options-0-label")
+    expect(label).to_have_accessible_description(re.compile(re.escape(reason)))
+    tip = page.locator("#id_options-0-label_tip")
+    page.locator("[aria-controls=id_options-0-label_tip]").click()
+    expect(tip).to_be_visible()
+    assert tip.inner_text() == reason
+    page.keyboard.press("Escape")
+    hint = "Change a short label to save it."
+    expect_review(page, enabled=False, hint=hint, name="Save")
+    page.locator("#id_options-0-short_label").fill("Check")
+    expect_review(page, enabled=True, hint=hint, name="Save")
+    assert not failures
+
+
+REPEATED = "Another option already has this short label."
+# Set a box's exact value as typing would and say, before any timer runs,
+# whether it is marked and whether Save is held; the page's input listeners
+# run synchronously, so the answer is the check's verdict on this keystroke.
+TYPE_NOW = """([id, value]) => {
+  const box = document.getElementById(id);
+  box.value = value;
+  box.dispatchEvent(new Event("input", {bubbles: true}));
+  const save = [...box.form.querySelectorAll("button")]
+    .find((node) => node.textContent.trim() === "Save");
+  return {marked: box.getAttribute("aria-invalid") === "true",
+          valid: box.validity.valid, held: save.disabled};
+}"""
+
+
+def short_box(page, row):
+    """Option ``row``'s (0-based) Short label box."""
+    return page.locator(f"#id_options-{row}-short_label")
+
+
+def assert_repeated(page, rows, marked=True):
+    """Each of ``rows``' short labels is (or is not) marked as repeated, in
+    its own reserved line, which describes it."""
+    for row in rows:
+        box = short_box(page, row)
+        line = page.locator(f"#id_options-{row}-short_label_error")
+        if marked:
+            has_attribute(box, "aria-invalid", "true")
+            visible(line)
+            assert line.inner_text() == REPEATED
+            described = box.get_attribute("aria-describedby").split()
+            assert line.get_attribute("id") in described
+        else:
+            eventually(
+                page,
+                "(id) => document.getElementById(id)"
+                ".getAttribute('aria-invalid') !== 'true'",
+                arg=box.get_attribute("id"),
+            )
+            hidden(line)
+            described = (box.get_attribute("aria-describedby") or "").split()
+            assert line.get_attribute("id") not in described
+
+
+def test_a_repeated_short_label_is_marked_in_place_and_holds_save(
+    page, component_origin
+):
+    """A short label another option has (in another case, with spaces
+    around it) marks both boxes at their own reserved lines once typing
+    pauses, or at once when the box is left; Save is unavailable at once,
+    with the same words as its reason. Changing either label takes both
+    marks off at once and gives Save back. Nothing moves, nothing reloads."""
+    page.goto(component_origin + SHARE)
+    failures = watch(page)
+    save = page.get_by_role("button", name="Save", exact=True)
+    hint = page.locator("#share-complete-hint")
+    watched = ("id_options-2-label", "id_options-1-free_text", "share-outcome")
+    places = [page.evaluate(PLACE, id) for id in watched]
+    # The keystroke itself holds Save; the marks wait for the pause.
+    now = page.evaluate(TYPE_NOW, ["id_options-1-short_label", "  bank CHECK "])
+    assert now == {"marked": False, "valid": False, "held": True}
+    assert_repeated(page, [0, 1])
+    assert save.is_disabled()
+    has_text(hint, REPEATED)
+    assert "share-complete-hint" in save.get_attribute("aria-describedby").split()
+    assert same_place([page.evaluate(PLACE, id) for id in watched], places)
+    assert_repeated(page, [2, 3, 4, 5, 6], marked=False)
+    # Resolving it from the other box clears both at once.
+    now = page.evaluate(TYPE_NOW, ["id_options-0-short_label", "Check"])
+    assert now == {"marked": False, "valid": True, "held": False}
+    assert_repeated(page, [0, 1], marked=False)
+    assert save.is_enabled()
+    has_text(hint, "")
+    # Leaving a box shows a new repeat at once, without waiting.
+    short_box(page, 2).fill("check")
+    short_box(page, 2).press("Tab")
+    assert page.evaluate(
+        "() => ['id_options-0-short_label', 'id_options-2-short_label']"
+        ".map((id) => document.getElementById(id).getAttribute('aria-invalid'))"
+    ) == ["true", "true"]
+    assert save.is_disabled()
+    assert same_place([page.evaluate(PLACE, id) for id in watched], places)
+    assert page.evaluate(MARKED) == "kept"
+    assert not failures
+
+
+def test_deleting_one_of_the_options_resolves_the_repeat(page, component_origin):
+    """A deleted option's short label no longer counts: ticking its Delete
+    takes the marks off and gives Save back; unticking brings them back."""
+    page.goto(component_origin + SHARE)
+    failures = watch(page)
+    save = page.get_by_role("button", name="Save", exact=True)
+    short_box(page, 1).fill("Bank check")
+    short_box(page, 1).press("Tab")
+    assert_repeated(page, [0, 1])
+    page.locator("#id_options-0-DELETE").check()
+    assert_repeated(page, [1], marked=False)
+    assert save.is_enabled()
+    page.locator("#id_options-0-DELETE").uncheck()
+    assert_repeated(page, [0, 1])
+    assert save.is_disabled()
+    assert not failures
+
+
+def test_the_page_compares_short_labels_as_the_server_does(page, component_origin):
+    """The pairs the server reads as one short label (upper then lower
+    case, Python's spaces around it) are a repeat here too, and the pairs it
+    keeps apart are not (test_share_forms' table)."""
+    from ..test_share_forms import OTHER_SHORT_LABELS, SAME_SHORT_LABELS
+
+    page.goto(component_origin + SHARE)
+    failures = watch(page)
+    pairs = [(pair, False) for pair in SAME_SHORT_LABELS] + [
+        (pair, True) for pair in OTHER_SHORT_LABELS
+    ]
+    for (first, second), apart in pairs:
+        page.evaluate(TYPE_NOW, ["id_options-0-short_label", first])
+        now = page.evaluate(TYPE_NOW, ["id_options-1-short_label", second])
+        assert now["valid"] is apart, (first, second)
+    assert not failures
+
+
+def test_a_refused_repeat_clears_once_resolved(page, component_origin):
+    """The server's refusal marks both options that share the short label;
+    changing one takes both marks off, and the summary's links with them."""
+    from .settings_components import SHARE_DUPLICATE
+
+    page.goto(component_origin + SHARE_DUPLICATE)
+    failures = watch(page)
+    assert_repeated(page, [0, 1])
+    short_box(page, 1).fill("Bank draft")
+    assert_repeated(page, [0, 1], marked=False)
+    assert page.locator("[data-error-summary]").count() == 0
+    assert not failures
+
+
+def test_a_repeat_at_phone_width_in_dark(page, component_origin):
+    """At 320 px in Dark the repeat's words show in the error colour at the
+    box, which has the error border; the page does not scroll sideways and
+    the message moves nothing, even where it wraps."""
+    from .test_campaign_stepper import scheme
+
+    page.set_viewport_size({"width": 320, "height": 900})
+    page.goto(component_origin + SHARE)
+    scheme(page, "dark")
+    failures = watch(page)
+    # Every field after the marked box stays put. (Save's reason under it
+    # wraps to a second line at this width, which moves only the status
+    # line below the button, as the prerequisite gates rule allows.)
+    watched = ("id_options-1-free_text", "id_options-2-label", "id_options-6-label")
+    places = [page.evaluate(PLACE, id) for id in watched]
+    short_box(page, 1).fill("BANK CHECK")
+    short_box(page, 1).press("Tab")
+    assert_repeated(page, [0, 1])
+    line = page.locator("#id_options-1-short_label_error")
+    colours = line.evaluate(
+        """(line) => {
+          const probe = document.createElement("span");
+          probe.style.color = "var(--error-ink)";
+          line.append(probe);
+          const ink = getComputedStyle(probe).color;
+          probe.remove();
+          const box = getComputedStyle(
+            document.getElementById("id_options-1-short_label"));
+          return {text: getComputedStyle(line).color, ink, shadow: box.boxShadow,
+                  wide: document.documentElement.scrollWidth > window.innerWidth};
+        }"""
+    )
+    assert colours["text"] == colours["ink"]
+    assert colours["shadow"] not in ("", "none")
+    assert colours["wide"] is False
+    assert same_place([page.evaluate(PLACE, id) for id in watched], places)
     assert not failures

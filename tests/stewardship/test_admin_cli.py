@@ -200,10 +200,14 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "export roster",
         "report source-form",
         "report data-to-fix",
-        "digest list",
-        "digest daily",
-        "digest weekly",
-        "digest weekly-request",
+        # Report emails (#1786), which replaced the digest commands.
+        "report-email list",
+        "report-email show",
+        "report-email sends",
+        "report-email copy",
+        "report-email send-now",
+        "report-email preview",
+        "report-email confirm",
         "export financial",
         "export information",
         "export ministry",
@@ -437,23 +441,15 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert options["--state"]["required"]
     assert options["--state"]["choices"] == ["closed", "open"]
     assert not options["--message"]["required"]
-    # The manual weekly report asks for the page's acknowledgement (PR 8d).
-    assert entries["digest weekly-request"]["prompts"]
-    # The Emailed reports list: any session, and no event, as the page's GET.
-    listed = entries["digest list"]
+    # Send now asks at the prompt; the Report emails list is any session's
+    # read and records no event, as the page's GET (#1786).
+    assert entries["report-email send-now"]["prompts"]
+    listed = entries["report-email list"]
     assert listed["scope"] == "read_only" and not listed["changes_state"]
     assert listed["audit_event"] is None and not listed["prompts"]
-    assert listed["result_fields"] == [
-        "campaign_id",
-        "reports",
-        "daily",
-        "weekly",
-        "weekly_request_available",
-        "requested",
-        "shown",
-    ]
+    assert listed["result_fields"] == ["campaign_id", "version", "reports", "deleted"]
     options = {option["name"]: option for option in listed["options"]}
-    assert not options["--requested"]["required"]
+    assert not options["--campaign"]["required"]
     # The hosted file library (PR 10): any session, and no event, as the
     # page's GET.
     library = entries["files list"]
@@ -807,16 +803,13 @@ def test_the_catalog_lists_every_command_with_its_flags():
     }
     assert ministry["--requests"]["choices"] == ["join", "leave"]
     assert "fact_set_id" in entries["report participation"]["result_fields"]
-    # The digests: the retained reports are any session's reads with their
-    # page's view event; the manual weekly report is a keyed change that
-    # needs a full-scope session and --yes, its page's acknowledgement.
-    for name, event in (
-        ("digest daily", "daily_digest_viewed"),
-        ("digest weekly", "weekly_digest_viewed"),
-    ):
-        entry = entries[name]
-        assert entry["scope"] == "read_only" and not entry["changes_state"], name
-        assert entry["audit_event"] == event and entry["arguments"] == ["SNAPSHOT_ID"]
+    # Report emails (#1786): a saved copy is any session's read with its
+    # page's view event; Send now is a keyed change that needs a full-scope
+    # session and --yes, its dialog's question.
+    copy = entries["report-email copy"]
+    assert copy["scope"] == "read_only" and not copy["changes_state"]
+    assert copy["audit_event"] == "report_email_viewed"
+    assert copy["arguments"] == ["SEND"]
     # The Family-level exports: full-scope, keyed changes that create an
     # export record (fetched with export fetch), never a search option.
     # The campaign archive (#1018 part (a)) is the same kind of keyed,
@@ -841,12 +834,18 @@ def test_the_catalog_lists_every_command_with_its_flags():
         options = {option["name"]: option for option in entry["options"]}
         assert options["--format"]["choices"] == ["csv", "xlsx", "pdf"], name
         assert options["--timezone"]["required"] and "--search" not in options
-    manual = entries["digest weekly-request"]
+    manual = entries["report-email send-now"]
     assert manual["scope"] == "full" and manual["changes_state"]
     assert manual["request_key"] and manual["prompts"]
-    assert manual["audit_event"] == "admin_cmd_digest_weekly_request"
-    assert manual["result_fields"] == ["created", "request_key", "task"]
+    assert manual["audit_event"] == "admin_cmd_report_email_send_now"
+    assert manual["arguments"] == ["REPORT"]
+    assert manual["result_fields"] == ["created", "request_key", "report_id", "task"]
     assert "--yes" in {option["name"] for option in manual["options"]}
+    change = entries["report-email confirm"]
+    assert change["scope"] == "full" and change["changes_state"]
+    assert change["audit_event"] == "admin_cmd_report_email_confirm"
+    preview = entries["report-email preview"]
+    assert preview["expected_version"] and not preview["changes_state"]
     # resend and refusal-clear: keyed, full scope, asking at the prompt.
     resend = entries["delivery resend"]
     assert resend["scope"] == "full" and resend["changes_state"]
@@ -1050,7 +1049,9 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_export_exact_cancel",
         "admin_cmd_export_exact_retry",
         "admin_cmd_export_family_timeline",
-        "admin_cmd_digest_weekly_request",
+        # report-email send-now and confirm (#1786).
+        "admin_cmd_report_email_send_now",
+        "admin_cmd_report_email_confirm",
         # census resolve: a Census changes row's Record outcome (#528).
         "admin_cmd_census_resolve",
         # census review: an Automatic row's Review (#528, ADM-09).

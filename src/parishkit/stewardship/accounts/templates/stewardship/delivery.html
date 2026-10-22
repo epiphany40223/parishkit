@@ -33,7 +33,21 @@ whole.{% endcomment %}
 <p class="help">{% translate "Delivered means the mail service accepted it; that does not prove it reached the inbox. Nothing is left to do." %}</p>
 {% elif outcome == "cancelled" %}
 <h2 id="outcome-heading" tabindex="-1" data-in-place-focus>{% translate "Not sent (cancelled)" %}</h2>
-<p>{% translate "This email was cancelled before it was sent, so nothing is left to do." %}</p>
+{% if choices %}{# A report email once unknown and then cancelled (#1872): no outcome can arrive now, so the Administrator says whether it reached its recipient, which the report's later sends rely on. #}<p>{% translate "This report email was cancelled after the mail service could not confirm whether an earlier try was sent, so no outcome can arrive now. The report's later sends need to know whether it reached its recipient." %}</p>
+<fieldset class="choice-question">
+<legend>{% translate "Did it reach its recipient?" %}</legend>
+<div class="choice-options">
+<label><input type="radio" name="reached" value="yes"{% if choices.reached.unavailable %} disabled aria-describedby="reason-reached-{{ choices.reached.unavailable }}"{% endif %}> {% translate "Yes, it was sent" %}</label>
+<label><input type="radio" name="reached" value="no"{% if choices.not_reached.unavailable %} disabled aria-describedby="reason-reached-{{ choices.not_reached.unavailable }}"{% endif %}> {% translate "No, or I can't tell" %}</label>
+</div>
+{% for row in choice_rows %}{% if row.unavailable %}{% ifchanged row.unavailable %}<p class="help" id="reason-reached-{{ row.unavailable }}">{{ row.reason }}</p>{% endifchanged %}{% endif %}{% endfor %}
+</fieldset>
+{% if not choices.reached.unavailable or not choices.not_reached.unavailable %}<div class="choice-slot">
+<p class="help" data-choice-panel="reached=">{% translate "Choose whether it reached its recipient." %}</p>
+{% if not choices.reached.unavailable %}{% translate "Where did you see that it was sent?" as prompt %}{% translate "Counted as delivered." as message %}{% translate "Count as delivered" as label %}{% translate "The report's later sends then count it as sent and do not send it to them again." as extra %}{% include "stewardship/delivery-answer.html" with row=choices.reached panel="reached=yes" prompt=prompt message=message label=label extra=extra %}{% endif %}
+{% if not choices.not_reached.unavailable %}{% translate "Why count it as not delivered?" as prompt %}{% translate "Counted as not delivered." as message %}{% translate "Count as not delivered" as label %}{% translate "This counts every try to send it, including any before a resend, as not delivered: the report's later sends then send the recipient their own copy." as extra %}{% include "stewardship/delivery-answer.html" with row=choices.not_reached panel="reached=no" prompt=prompt message=message label=label extra=extra %}{% endif %}
+</div>{% endif %}
+{% else %}<p>{% translate "This email was cancelled before it was sent, so nothing is left to do." %}</p>{% endif %}
 {% elif outcome == "still_sending" %}
 <h2 id="outcome-heading" tabindex="-1" data-in-place-focus>{% translate "Still sending" %}</h2>
 <p>{% if choices.try_again %}{% translate "The mail service did not accept it, and its background task stopped, so it is not tried again on its own." %}{% elif delivery.state == "retry_wait" %}{% translate "A temporary problem stopped the last try, so it waits to try again." %}{% if delivery.not_before %} {% translate "Next attempt:" %} <time datetime="{{ delivery.not_before|instant }}" data-local-instant>{{ delivery.not_before|instant }}</time>.{% endif %}{% elif delivery.state == "submitting" %}{% translate "It is being handed to the mail service now." %}{% else %}{% translate "It is queued, waiting its turn to be sent." %}{% endif %}</p>
@@ -97,6 +111,8 @@ whole.{% endcomment %}
 {% include "stewardship/delivery-reached.html" %}
 <p>{% translate "The other addresses have this email, so it is not sent again. Check the address, then clear it on its Refused address page so future email reaches it:" %} {% for refusal in refused %}<a href="{% url 'admin:delivery_refusal' refusal.id %}">{{ refusal.address }}</a>{% if refusal.kind == 'reported_bounce' %} ({% translate "bounce reported" %}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
 {% endif %}
+{# A later send of this report waits on this email's outcome (#1872). It is in the outcome panel's region, so an answer applied in place redraws it, gone once nothing waits. It points to the question only when one is asked. #}
+{% if report_waiting %}<p class="notice" id="delivery-report-waiting">{% translate "A later send of this report is waiting for this email's outcome: it may already have reached its recipient, so the report is not sent to them again until this email is settled." %} {% if answerable %}{% translate "Answer the question above." %}{% elif choice_rows %}{% translate "The question above says why it can't be answered yet." %}{% else %}{% translate "Nothing needs doing yet: the report goes out by itself once this email's delivery finishes." %}{% endif %}</p>{% endif %}
 </section>
 </div>
 {# The email's state, Family and recipient lines are one region (#519): an answer applied in place replaces them, so no line keeps a stale outcome ("not sure it arrived"). #}

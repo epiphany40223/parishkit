@@ -358,7 +358,7 @@ def test_retained_wording_survives_a_later_year_label_edit(response_service):
     after = report(harness)
     # The real lookup finds the immutable configuration that Family answered,
     # not the campaign's newer active one.
-    assert after["rows"][0]["shares"] == [{"label": seen, "text": ""}]
+    assert after["rows"][0]["shares"] == [{"label": seen, "short": seen, "text": ""}]
     assert after["share_choices"] == [(CHECK, "By check in Jubilee")]
     assert after["summary"]["shares"] == [("By check in Jubilee", 1)]
 

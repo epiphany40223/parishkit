@@ -406,26 +406,6 @@ def _openness(state, campaign, editable):
     return frozenset(open_fields), live_at, reasons
 
 
-def _lock(field, reason):
-    """Draw ``field`` disabled where it stands, with ``reason`` in its tip.
-
-    A disabled control is not sent, and Django's disabled field takes its
-    saved value whatever is posted, so a locked setting can never change
-    through this form. A field whose long help already moved into a tip
-    (``field_tips``) gets the reason first in that tip; any other gets a tip
-    of its own, keeping its short help visible. A field drawn by its own
-    template (the overlap confirmation, shown only while the dates overlap)
-    is only disabled.
-    """
-    field.disabled = True
-    if field.template_name not in (None, field_tips.TIP_TEMPLATE):
-        return
-    tip = getattr(field, "tip", None)
-    field_tips.add(
-        field, format_lazy("{} {}", reason, tip) if tip else reason, field.help_text
-    )
-
-
 def _settings_form(
     configuration,
     campaign,
@@ -501,7 +481,7 @@ def lock_settings(form, *, open_fields, reason, reasons=None, live_end=False):
         field_tips.add(form.fields["end_date"], LIVE_END_HELP)
     for name, field in form.fields.items():
         if name != "base_digest" and name not in open_fields:
-            _lock(field, (reasons or {}).get(name, reason))
+            field_tips.lock(field, (reasons or {}).get(name, reason))
     return form
 
 

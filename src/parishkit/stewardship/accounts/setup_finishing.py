@@ -95,18 +95,20 @@ SOURCE_TEXT = {
 SOURCE_ENDED = frozenset({"failed", "cancelled", "abandoned"})
 SOURCE_FAILED = _(
     "The final load did not finish. Ask the operator to check the service logs "
-    "for the task reference below, then cancel this setup before starting again."
+    "for the failed final parish data load, then cancel this setup before "
+    "starting again."
 )
-# Stand-ins for the counts and task reference of a reserved form (#1903)
-# that the step cannot show yet: an acknowledgement count of one digit (a
-# deployment has a handful of credential consumers), a final load as large
-# as a big parish's, and a task reference, which is always this long. The
-# first two are assumptions: with ten or more credential consumers, or a
-# final load of a million or more records, the shown form can be longer
-# than its reserve, and that box grows once, when it first appears.
+# Stand-ins for the counts of a reserved form (#1903) that the step cannot
+# show yet: an acknowledgement count of one digit (a deployment has a
+# handful of credential consumers) and a final load as large as a big
+# parish's. Both are assumptions: with ten or more credential consumers, or
+# a final load of a million or more records, the shown form can be longer
+# than its reserve, and that box grows once, when it first appears. No step
+# shows its background task's reference: an IT administrator finishing
+# setup has no use for the raw identifier, and the operator finds the one
+# final load of the attempt in the service logs (#1969).
 SAMPLE_COUNT = {"done": 8, "total": 8}
 SAMPLE_PROGRESS = Percentage(888_888, 999_999)
-SAMPLE_TASK = "00000000-0000-0000-0000-000000000000"
 # Every form each step can take while the page still updates itself, as
 # (state, text, extras): a failure is left out, since it stops the updates
 # and brings its notice above the boxes, and a box reserved for a long
@@ -130,7 +132,7 @@ RUNNING_FORMS = {
         (
             "active",
             SOURCE_TEXT["active"],
-            {"progress": SAMPLE_PROGRESS, "task": SAMPLE_TASK},
+            {"progress": SAMPLE_PROGRESS},
         ),
         ("done", SOURCE_TEXT["done"], {}),
     ),
@@ -211,8 +213,8 @@ def _start(source, completed):
     In progress, with the waiting sentence every Start the load box says
     (``stages.QUEUED``), from the moment the final load is queued until a
     worker picks it up; Done from then on. A final load that ended before
-    any worker took it fails here, with its task reference, rather than on
-    the load's own step, which never began.
+    any worker took it fails here, rather than on the load's own step,
+    which never began.
     """
     label = stages.START[1]
     if completed or (source and stages.picked_up(source.get("phase"))):
@@ -220,7 +222,7 @@ def _start(source, completed):
     if source is None:
         return _row("start", label, "waiting", START_TEXT["waiting"])
     if source["state"] in SOURCE_ENDED:
-        return _row("start", label, "failed", SOURCE_FAILED) | {"task": source["id"]}
+        return _row("start", label, "failed", SOURCE_FAILED)
     return _row("start", label, "active", START_TEXT["active"])
 
 
@@ -270,11 +272,9 @@ def finishing(status, *, completed=False):
         rows.append(_row("source", label, "done", SOURCE_TEXT["done"]))
     elif picked and source["state"] in SOURCE_ENDED:
         rows.append(_row("source", label, "failed", SOURCE_FAILED))
-        rows[-1]["task"] = source["id"]
     elif picked:
         rows.append(_row("source", label, "active", SOURCE_TEXT["active"]))
         rows[-1]["progress"] = source["progress"]
-        rows[-1]["task"] = source["id"]
     elif source and source["state"] in SOURCE_ENDED:
         rows.append(_row("source", label, "waiting", _("The load did not start.")))
     elif source:

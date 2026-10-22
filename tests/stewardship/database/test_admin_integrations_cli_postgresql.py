@@ -23,7 +23,7 @@ from parishkit.stewardship.audit.models import AuditEvent
 
 from . import campaign_builders
 from .automation_builders import as_staff, paired
-from .test_admin_digest_list_cli_postgresql import revoke
+from .test_admin_report_email_cli_postgresql import revoke
 from .test_admin_test_sample_cli_postgresql import runner
 
 pytestmark = pytest.mark.django_db(transaction=True)

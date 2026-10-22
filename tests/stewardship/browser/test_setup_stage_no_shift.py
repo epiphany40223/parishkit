@@ -139,7 +139,8 @@ def test_finishing_setup_boxes_keep_their_place(page, component_origin, width):
     """Every Finishing setup box keeps its place and size as its words change,
     from waiting through installing, the server operator's acknowledgement,
     preparing the configuration, the final load waiting for a worker and
-    the worker picking it up (#1903, #1916)."""
+    the worker picking it up (#1903, #1916); the running final load shows
+    no task reference (#1969)."""
     page.set_viewport_size({"width": width, "height": 900})
     page.clock.install(time=NOW)
 
@@ -198,4 +199,9 @@ def test_finishing_setup_boxes_keep_their_place(page, component_origin, width):
         )
         assert same_place(places(page, steps), boxes), (key, state)
         assert same_place(places(page, "[data-finishing-elapsed]"), elapsed)
+    # The running final load, its reserved forms included, names no task.
+    final = page.locator('[data-finishing-step="source"]')
+    assert "1,234" in final.inner_text()
+    html = final.evaluate("node => node.outerHTML")
+    assert "Task reference" not in html and str(load["id"]) not in html
     assert page.evaluate(MARKED) == "kept"

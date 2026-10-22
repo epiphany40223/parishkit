@@ -29,7 +29,7 @@ from parishkit.stewardship.audit.models import AuditEvent
 from ..schedule_rows import rows, shown
 from . import campaign_builders
 from .automation_builders import as_staff, paired
-from .test_admin_digest_list_cli_postgresql import revoke
+from .test_admin_report_email_cli_postgresql import revoke
 from .test_admin_test_sample_cli_postgresql import runner
 from .test_integration_views_postgresql import (
     apply_rules_schedule,

@@ -78,14 +78,17 @@ class CampaignShares(ReadModel):
 
     ``editable`` is the page's own check (an unlocked current Testing draft
     that background work does not hold, with the financial module);
+    ``short_names_editable`` whether the short labels can change now: when
+    ``editable``, or on a live campaign, where nothing else can (#1569);
     ``financial`` whether the campaign has the financial module; ``options``
-    each option's ``id``, ``name`` (the page's label) and ``free_text``, in
-    order.
+    each option's ``id``, ``name`` (the page's label), ``short_name`` (its
+    short label, empty when unset, #1569) and ``free_text``, in order.
     """
 
     version: str
     campaign_id: UUID
     editable: bool
+    short_names_editable: bool
     financial: bool
     options: list
 
@@ -114,10 +117,12 @@ def ministry_model(state):
     )
 
 
-def shares_model(configuration, campaign, editable):
+def shares_model(configuration, campaign, editable, *, short_only=False):
     """``campaign shares``'s document from the page's ``_target``.
 
     The options are the page's own list (``share_views.EDITOR.current``).
+    ``short_only`` is the page's ``short_labels_only``: a live campaign
+    whose short labels alone can change (#1569).
     """
     from .accounts.share_views import EDITOR
 
@@ -126,11 +131,13 @@ def shares_model(configuration, campaign, editable):
         version=configuration.active_configuration.digest,
         campaign_id=campaign.pk,
         editable=editable and financial,
+        short_names_editable=(editable or short_only) and financial,
         financial=financial,
         options=[
             {
                 "id": option["id"],
                 "name": option["label"],
+                "short_name": option.get("short_label", ""),
                 "free_text": option["free_text"],
             }
             for option in EDITOR.current(campaign)
@@ -228,6 +235,7 @@ def read_shares(caller, service, campaign_id):
     An unknown campaign, or no current campaign, is ``not_available``.
     """
     from .accounts.campaign_views import _state, _target
+    from .accounts.option_editing import short_labels_only
 
     def read():
         """The page's campaign state and target check, without its refusal."""
@@ -242,6 +250,11 @@ def read_shares(caller, service, campaign_id):
             raise
         except LookupError:
             raise NotAvailable("No such campaign.") from None
-        return shares_model(configuration, campaign, editable)
+        return shares_model(
+            configuration,
+            campaign,
+            editable,
+            short_only=short_labels_only(configuration, campaign, held, editable),
+        )
 
     return _read(caller, service, read)

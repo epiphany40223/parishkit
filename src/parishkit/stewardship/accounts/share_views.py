@@ -1,4 +1,4 @@
-"""Versioned share-option editing; these structural values never change live.
+"""Versioned share-option editing; live, only the short labels change (#1569).
 
 The editor is ``option_editing``'s, reviewed and applied in the review dialog
 (#750).
@@ -24,5 +24,5 @@ EDITOR = OptionEditor(
 
 @require_http_methods(["GET", "HEAD", "POST"])
 def share_settings(request, campaign_id):
-    """Current Admins may review and request changes only for an unlocked draft."""
+    """Current Admins edit a draft's options, or a live campaign's short labels."""
     return option_settings(request, campaign_id, EDITOR)

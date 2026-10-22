@@ -1,0 +1,13 @@
+{% load i18n stewardship %}{% comment %}
+  Sent mail's note on a report send waiting on an earlier email (#1872),
+  from jobs.delivery_reads.waiting_emails: each earlier report email whose
+  outcome a later send of its report must know before it can go out (it may
+  already have reached that recipient, so sending again could give them a
+  second copy). Each links its Mail message page, where it is resolved.
+  Sent mail draws it once per page load, outside its in-place regions, as
+  the sending limit note, so it never appears or vanishes under the pointer.
+{% endcomment %}{% if report_waiting %}<aside class="notice" id="delivery-report-waiting" aria-labelledby="delivery-report-waiting-heading">
+<h2 id="delivery-report-waiting-heading">{% translate "A report email is waiting" %}</h2>
+<p>{% translate "An earlier copy to one of its recipients may already have been delivered, so the report is not sent again until that is settled. Resolve that email so the report can go out:" %}</p>
+<ul>{% for email in report_waiting %}<li><a href="{% url 'admin:delivery' email.id %}">{% translate "Report email created" %} <time datetime="{{ email.created_at|instant }}" data-local-instant>{{ email.created_at|instant }}</time></a>{% if email.sends > 1 %} {% blocktranslate trimmed count sends=email.sends %}({{ sends }} send waits on it){% plural %}({{ sends }} sends wait on it){% endblocktranslate %}{% endif %}</li>{% endfor %}</ul>
+</aside>{% endif %}
