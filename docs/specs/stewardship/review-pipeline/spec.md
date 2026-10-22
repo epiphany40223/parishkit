@@ -337,11 +337,26 @@ The rule, for every stream and every terminal stage:
   review again and Edit. Entered by hand again stays its other fix.
 - The undo is a stream audit event (versions and counts only), and the
   Family's [Timeline](../reports/spec.md#timeline-review-lines) lists it as
-  a Back to review line; like every Timeline line it shows no note (notes
-  can hold personal detail), which the item's own row keeps.
+  a Back to review line with its note, shown only to a reader who may open
+  that stream's work page, where the same note is on the item's row.
 - The same undo is in `pk-admin` wherever the stream's Back to review is
   ([admin automation](../admin-automation/spec.md)), with the required
-  `--note`; no command asks "cannot be undone" for these marks any more.
+  `--note`; no command asks "cannot be undone" for these marks any more,
+  and none takes `--yes`.
+- A Ministry request's own page offers the same undo as **Back to review**,
+  with the worklist's icon and dialog
+  ([Ministry requests](../admin-portal/spec.md#roster-entry-on-ministry-requests)).
+
+The Administrator confirmed these defaults on 2026-10-21
+([#1893](https://github.com/epiphany40223/parishkit/issues/1893)), with
+three changes: the request page's "Clear Entered in ParishSoft" became that
+page's Back to review; the `pk-admin` decision commands lost `--yes`
+entirely, with no backwards compatibility; and the Timeline shows the
+undo's note ("If staff can see the changes in Census/Ministry work pages,
+it's ok for them to see the changes (including back to review) in the
+timeline, too"). The Timeline rule is an exception for Back to review
+lines, not a relaxation for every review line: Back to review always
+carries a reason, the other lines keep showing no note.
 
 How each stream stores the undo:
 

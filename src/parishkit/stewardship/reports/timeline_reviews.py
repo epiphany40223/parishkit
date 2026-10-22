@@ -18,8 +18,11 @@ from the audit log, whose context deliberately names no item or value:
 Each history row stores the item's state after the step, not the step
 itself, so ``steps`` replays one item's rows in order and words each from
 the state before and after it (``word``), in the review pipeline's words.
-A line never carries a value or a note: the Member tabs show the values,
-and notes can hold personal detail.
+A line never carries a value (the Member tabs show the values), and only a
+Back to review line carries its note, to a reader who may open that
+stream's work page, where the same note is on the item's row
+(``note_visible``, #1893): notes can hold personal detail, so every other
+line shows none.
 
 ``read_reviews`` runs one statement (plus the Ministry names when a line
 needs them); everything else is pure, so a unit test drives it from plain
@@ -35,6 +38,7 @@ from django.db import connection
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.accounts.leader_import import ministry_names
+from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.pipeline import (
     DECISION_LABELS,
     Decision,
@@ -49,8 +53,11 @@ from .ministries import outcome_label
 # One Family's decision history in one scope, oldest first: one row per
 # stored step, across every stream, each with the submission it belongs to
 # (for the Member's name as the Family answered it), the acting user's
-# address and the step's own columns (``a`` to ``d``, by stream: see
-# ``state_after``). ``item`` keys one change, request or Additional
+# address, the step's own columns (``a`` to ``d``, by stream: see
+# ``state_after``) and the note it was recorded with (``note``: a census
+# review's or resolution's note, a Ministry revision's decision note, an
+# Additional information revision's Staff notes; shown only on a Back to
+# review line, ``note_visible``). ``item`` keys one change, request or Additional
 # information item; ``step`` orders its rows (the change's or request's
 # version, a tick's sequence). Every branch reaches the stream's rows
 # through the Family's submissions and the history's foreign-key indexes.
@@ -96,27 +103,29 @@ WITH subs AS (
         v.created_at AS at, v.actor_id, p.submission_id, p.entity_kind,
         p.entity_key, p.field AS subject, v.decision AS a,
         v.admin_value_set::text AS b, v.admin_value::text AS c,
-        v.accepted_base::text AS d, p.seed_decision, p.seed_set, p.seed_value
+        v.accepted_base::text AS d, p.seed_decision, p.seed_set, p.seed_value,
+        v.note
     FROM props p
     JOIN stewardship_proposal_review v ON v.proposal_id=p.id
     UNION ALL
     SELECT 'census_resolution', p.id::text, r.expected_version, r.created_at,
         r.actor_id, p.submission_id, p.entity_kind, p.entity_key, p.field,
-        r.action, NULL, NULL, NULL, p.seed_decision, p.seed_set, p.seed_value
+        r.action, NULL, NULL, NULL, p.seed_decision, p.seed_set, p.seed_value,
+        r.note
     FROM props p
     JOIN stewardship_proposal_resolution r ON r.proposal_id=p.id
     UNION ALL
     SELECT 'ministry_revision', q.id::text, v.expected_version, v.created_at,
         v.actor_id, q.submission_id, q.entity_kind, q.entity_key,
         q.ministry_duid::text, v.state, v.outcome, q.action,
-        (v.decision_note<>'')::text, NULL, NULL, NULL
+        (v.decision_note<>'')::text, NULL, NULL, NULL, v.decision_note
     FROM subs JOIN stewardship_ministry_request q ON q.submission_id=subs.id
     JOIN stewardship_ministry_revision v ON v.request_id=q.id
     UNION ALL
     SELECT 'ministry_roster', q.id::text, e.sequence, e.created_at,
         e.actor_id, q.submission_id, q.entity_kind, q.entity_key,
         q.ministry_duid::text, e.entered::text, NULL, q.action, NULL,
-        NULL, NULL, NULL
+        NULL, NULL, NULL, NULL
     FROM subs JOIN stewardship_ministry_request q ON q.submission_id=subs.id
     JOIN stewardship_ministry_roster_entry e ON e.request_id=q.id
     -- A tick cleared by Back to review's undo (#1840) is part of that undo,
@@ -130,12 +139,13 @@ WITH subs AS (
     SELECT 'information', i.id::text, v.expected_version, v.created_at,
         v.actor_id, i.submission_id, NULL, NULL, NULL,
         v.follow_up_needed::text, v.followed_up::text, NULL, NULL,
-        NULL, NULL, NULL
+        NULL, NULL, NULL, v.notes
     FROM subs JOIN stewardship_additional_information i ON i.submission_id=subs.id
     JOIN stewardship_information_revision v ON v.item_id=i.id
 )
 SELECT h.stream, h.item, h.step, h.at, u.email, h.entity_kind, h.entity_key,
     h.subject, h.a, h.b, h.c, h.d, h.seed_decision, h.seed_set, h.seed_value,
+    h.note,
     (coalesce(subs.answers->'members'->h.entity_key,
         subs.answers->'proposed_members'->h.entity_key)
         -> 'first_name')::text,
@@ -167,6 +177,7 @@ COLUMNS = (
     "seed_decision",
     "seed_set",
     "seed_value",
+    "note",
     "answer_first",
     "answer_last",
     "source_first",
@@ -174,6 +185,14 @@ COLUMNS = (
 )
 # A census change's stored decision, as the replay's decision.
 CENSUS_DECISIONS = {"approved": Decision.ACCEPTED, "ignored": Decision.IGNORED}
+# The capability of each stream's work page, whose readers see the note
+# of that stream's Back to review lines (#1893): Census changes, Ministry
+# requests (scoped to the request's Ministry) and Additional information.
+NOTE_READERS = {
+    "census": Capability.VIEW_CENSUS,
+    "ministry": Capability.MINISTRY_FOLLOWUP,
+    "information": Capability.ADDITIONAL_FOLLOWUP,
+}
 # Who acted when the user record is gone, as Ministry requests says it.
 FORMER_USER = "Former portal user"
 # The words of a step that undoes a decision, and of one that changes
@@ -393,20 +412,45 @@ def first_state(row):
     )
 
 
-def steps(rows, names=None):
+def note_visible(principal, row):
+    """Whether ``principal`` may read the note of this history row's line.
+
+    The reader of the line's stream's work page (``NOTE_READERS``) already
+    sees the note there, on the item's row, so the Timeline may show it too
+    (the Administrator, #1893); anyone else may not. A Ministry line is
+    judged for the request's own Ministry, as its page's scope is. No
+    principal (a caller that names no reader) sees none.
+    """
+    stream = row["stream"].split("_")[0]
+    ministry = int(row["subject"]) if stream == "ministry" else None
+    return principal is not None and allows(
+        principal, NOTE_READERS[stream], ministry_id=ministry
+    )
+
+
+def steps(rows, names=None, reader=None):
     """The review lines, oldest first: ``(at, what, detail)`` per history row.
 
     ``rows`` are ``_HISTORY``'s rows as dicts, oldest first. Each item's
     rows are replayed from its first state (``first_state``), so each line
-    is worded from the state before and after its step.
+    is worded from the state before and after its step. A Back to review
+    line's detail ends with its note, when it has one and ``reader`` may
+    read it (``note_visible``); no other line carries one.
     """
     names = names or {}
-    states, lines = {}, []
+    states, notes, lines = {}, {}, []
     for row in rows:
         key = (row["stream"].split("_")[0], row["item"])
         before = states.get(key) or first_state(row)
         after = state_after(row, before)
         states[key] = after
+        # An Additional information revision stores the item's whole Staff
+        # notes, carried over when a step adds none, so only notes that
+        # changed with this step are its own; the other streams store each
+        # step's own note.
+        note = (row["note"] or "").strip()
+        own = row["stream"] != "information" or note != notes.get(key)
+        notes[key] = note
         who = row["actor"] or FORMER_USER
         detail = str(
             _("%(item)s; by %(who)s") % {"item": item_words(row, names), "who": who}
@@ -422,14 +466,21 @@ def steps(rows, names=None):
                 if after.decision
                 else BACK_TO_REVIEW
             )
+        shown = own and note and str(what) == str(BACK_TO_REVIEW)
+        if shown and note_visible(reader, row):
+            detail = str(
+                _("%(detail)s; note: %(note)s") % {"detail": detail, "note": note}
+            )
         lines.append((row["at"], what, detail))
     return lines
 
 
-def read_reviews(values):
+def read_reviews(values, reader=None):
     """One Family's review lines in a scope: ``steps`` over ``_HISTORY``.
 
-    ``values`` are ``timelines.scope_values``. One statement, plus the
+    ``values`` are ``timelines.scope_values``; ``reader`` is the principal
+    the lines are for, who sees the Back to review notes their roles allow
+    (``note_visible``). One statement, plus the
     current catalog's Ministry names (``ministry_names``) only when a
     Ministry line needs them. Runs inside the page's read guard.
     """
@@ -439,4 +490,4 @@ def read_reviews(values):
     duids = {
         int(row["subject"]) for row in rows if row["stream"].startswith("ministry")
     }
-    return steps(rows, ministry_names(duids) if duids else {})
+    return steps(rows, ministry_names(duids) if duids else {}, reader)

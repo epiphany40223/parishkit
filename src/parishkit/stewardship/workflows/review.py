@@ -661,7 +661,7 @@ def _undo(actor_id, target, version, key, note, current):
 
 
 def undo_entered(store, actor_id, request_id, *, sequence, note, request_key):
-    """The request page's Clear Entered in ParishSoft: Back to review of the tick.
+    """The request page's Back to review of the tick (#1840, #1893).
 
     The same undo as the worklist's Back to review on Entered by hand
     (#1840), with its required note: Staff and Administrators only, and,

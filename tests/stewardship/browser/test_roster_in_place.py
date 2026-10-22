@@ -143,14 +143,15 @@ def test_the_request_page_ticks_in_place(page, component_origin):
     visible(page.get_by_text("Not yet entered in ParishSoft"))
     page.get_by_role("button", name="Mark entered in ParishSoft").click()
     visible(page.get_by_text("Entered in ParishSoft by staff@example.org"))
-    visible(page.get_by_role("button", name="Clear Entered in ParishSoft"))
+    visible(page.get_by_role("button", name="Back to review", exact=True))
     assert page.evaluate(MARKED) == "kept"
 
 
 def test_the_request_page_clear_asks_for_the_note(page, component_origin):
-    """Clear Entered in ParishSoft opens the shared dialog, which says the
-    mark is undone and waits for the required note; Record posts it with
-    the clear, and the page is redrawn in place, not yet entered."""
+    """Back to review (#1893: the worklist's icon, name and dialog) opens
+    the shared dialog, which says the mark is undone and waits for the
+    required note; Record posts it with the clear, and the page is redrawn
+    in place, not yet entered."""
     page.goto(component_origin + TICKED)
     page.evaluate(MARK)
     sent = []
@@ -170,14 +171,22 @@ def test_the_request_page_clear_asks_for_the_note(page, component_origin):
             route.continue_()
 
     page.route(lambda url: TICK_ITEM in url, answer)
-    page.get_by_role("button", name="Clear Entered in ParishSoft").click()
+    undo = page.get_by_role("button", name="Back to review", exact=True)
+    # The worklist row's tooltip and undo-arrow icon.
+    title = "Send Example <Member> — Example <Ministry> back to review"
+    assert undo.get_attribute("title") == title
+    assert undo.locator("svg.action-icon").count() == 1
+    undo.click()
     dialog = page.locator("#followup-roster-clear-dialog")
     visible(dialog)
-    has_text(dialog.locator("h2"), "Clear Entered in ParishSoft?")
+    has_text(
+        dialog.locator("h2"),
+        "Send Example <Member> — Example <Ministry> back to review?",
+    )
     has_text(
         dialog.locator("[data-confirm-body]"),
-        "Entered by hand is undone: the request goes back to To enter by hand, "
-        "with its decision kept. Nothing changes in ParishSoft. Say why.",
+        "Entered by hand is undone: the item goes back to To enter by hand, "
+        "with its decision kept. Say why.",
     )
     record = dialog.get_by_role("button", name="Record")
     assert record.is_disabled()
