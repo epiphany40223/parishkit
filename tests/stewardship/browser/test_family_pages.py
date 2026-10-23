@@ -322,6 +322,26 @@ def test_enter_in_a_field_moves_to_the_next_page_not_review(page, component_orig
     assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
 
 
+def test_enter_on_the_last_page_opens_review(page, component_origin):
+    """Enter in a field of the last page still submits the form to Review.
+
+    The last page's Next is the form's submit button, drawn in the button row
+    outside the form and joined to it by its id (#2063), so it must still be
+    the form's default button for Enter (a phone keyboard's Go).
+    """
+    form = paged_form()
+    form["additional_enabled"] = False
+    begin(page, component_origin, form, None)
+    assert visit_every_page(page)
+    expect(
+        page.get_by_role("heading", name="Financial stewardship", level=3)
+    ).to_be_visible()
+    pledge = page.get_by_label("Annual pledge (USD)")
+    pledge.fill("0")
+    pledge.press("Enter")
+    expect(page.get_by_role("button", name="Back to edit")).to_be_visible()
+
+
 LOCKED = ". Not available yet. Use Next to continue."
 
 
@@ -1019,3 +1039,59 @@ def test_button_row_keeps_back_left_action_centered_next_right(
     expect(cancel).to_have_attribute("form", "family-cancel")
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert not errors
+
+
+# The visible bar's box, the window's height, the page's scroll range and the
+# bottom of the content above the bar (the flow's last visible box), and
+# whether the bar spans the flow's column (#2063).
+BAR_PLACE = """() => {
+  const bar = [...document.querySelectorAll('.family-nav')]
+    .find(n => n.checkVisibility()).getBoundingClientRect();
+  const flow = document.querySelector('main > .flow');
+  const boxes = [...flow.querySelectorAll('*')].filter(e => e.checkVisibility()
+    && !e.closest('.visually-hidden')).map(e => e.getBoundingClientRect());
+  const column = flow.getBoundingClientRect();
+  return {top: bar.top, bottom: bar.bottom, view: innerHeight,
+    scroll: document.documentElement.scrollHeight - innerHeight,
+    content: Math.max(...boxes.map(box => box.bottom)),
+    column: Math.abs(bar.left - column.left) < 1
+      && Math.abs(bar.right - column.right) < 1};
+}"""
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_button_row_is_always_at_the_bottom_of_the_screen(
+    page, component_origin, width
+):
+    """#2063: the bar is along the screen's bottom whatever the page's height.
+
+    A page shorter than the screen (Welcome) puts the bar at the bottom edge,
+    not right under the content, without making the page scroll. A page taller
+    than the screen (Review) keeps it there at the top, midway and at the end,
+    and the bar never covers the content at the end. The bar spans the flow's
+    column at every width.
+    """
+    page.set_viewport_size({"width": width, "height": 900})
+    begin(page, component_origin, paged_form(), None)
+    expect(page.get_by_role("heading", name="Welcome", level=3)).to_be_focused()
+    for height in (900, 2000):
+        page.set_viewport_size({"width": width, "height": height})
+        place = page.evaluate(BAR_PLACE)
+        assert abs(place["bottom"] - place["view"]) < 1, (height, place)
+        assert place["scroll"] == 0 and place["column"], (height, place)
+        assert place["content"] <= place["top"], (height, place)
+    page.set_viewport_size({"width": width, "height": 900})
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    assert review(page)
+    expect(page.get_by_role("button", name="Back to edit")).to_be_visible()
+    assert page.evaluate(BAR_PLACE)["scroll"] > 900
+    for where in ("0", "document.documentElement.scrollHeight / 2", "1e6"):
+        page.evaluate(f"window.scrollTo(0, {where})")
+        place = page.evaluate(BAR_PLACE)
+        assert abs(place["bottom"] - place["view"]) < 1, (where, place)
+        assert place["column"], (where, place)
+    # At the end, the content (Review's own Cancel and sign out last) stops
+    # above the bar, with the bar's 1.5rem gap (to the pixel: the stuck bar
+    # snaps to whole pixels, the content does not).
+    assert round(place["top"] - place["content"]) >= 24, place
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")

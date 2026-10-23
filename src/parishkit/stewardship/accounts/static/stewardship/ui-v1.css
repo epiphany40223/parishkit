@@ -1694,6 +1694,29 @@ fieldset.artwork-upload { border: 0; border-radius: 0; background: none; padding
 /* Keep a field that receives focus (Next to an error, Tab) clear of the
    sticky bar instead of scrolling it underneath. */
 html:has(.family-nav) { scroll-padding-bottom: 6rem; }
+/* The bar is always along the bottom of the screen (ui-conventions "Stepper
+   button row", #2063). Sticky alone holds it there only on a page taller
+   than the screen; a shorter page would leave it right under the content.
+   So the page fills at least the screen (dvh: a phone's browser toolbars
+   are not counted), main is a flex column, and the flow above the bar
+   grows to take the free space, which puts the bar at the screen's bottom.
+   family-v1.js draws the bar in #family-actions, main's last child, rather
+   than inside the form: as a child of main it sticks over the whole page,
+   and only main needs to be a flex column. Making the boxes between main
+   and the form flex columns would stop the margins of the content inside
+   them from collapsing, which would change the spacing of every page.
+   #family-actions itself makes no box, so main lays out the bar. main's
+   bottom padding goes, so the bar also ends at the screen's bottom at the
+   page's end. The flow's ::after keeps the gap above the bar the larger of
+   1.5rem and the content's own bottom margin, which collapse together, as
+   when the bar followed the content. Pure CSS: nothing is measured, so
+   nothing moves after the first paint. */
+body:has(.family-nav) { min-height: 100dvh; }
+main:has(> #family-actions > .family-nav) { display: flex; flex-direction: column; padding-bottom: 0; }
+main:has(> #family-actions > .family-nav) > .flow { flex: 1 0 auto; width: 100%; }
+main:has(> #family-actions > .family-nav) > .flow::after { content: ""; display: block; margin-top: 1.5rem; }
+#family-actions { display: contents; }
+#family-actions > .family-nav { margin: 0 auto; width: 100%; max-width: 42rem; }
 /* Step bars (ui-conventions "Step bars", #1402): the Family step bar and the
    Admin steppers' bar (stepper-steps.html, for the setup wizard and Campaign
    setup) share these segment rules. Each segment is a 44px-tall control (a
@@ -1773,7 +1796,7 @@ label.limitation { display: block; margin-block: 1rem; font-weight: 600; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 @media print {
-  button, .skip-link, .site-header::before, .admin-sidebar, nav.breadcrumbs, .appearance-switch { display: none; }
+  button, .skip-link, .site-header::before, .admin-sidebar, nav.breadcrumbs, .appearance-switch, .family-nav { display: none; }
   .admin-shell { display: block; }
   body { background: white; }
   main { padding: 0; }

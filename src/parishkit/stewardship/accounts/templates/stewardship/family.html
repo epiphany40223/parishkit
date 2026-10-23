@@ -22,4 +22,7 @@
     </div>
   </div>
   <form method="post" action="{% url 'family:logout' %}" id="family-cancel">{% csrf_token %}<button type="submit" class="button-secondary">{% translate "Cancel and sign out" %}</button></form>
-</section>{% endblock %}
+</section>
+{% comment %}family-v1.js draws the button row here, as main's last child, so it
+stays along the bottom of the screen on every page, short or long (#2063).{% endcomment %}
+<div id="family-actions"></div>{% endblock %}

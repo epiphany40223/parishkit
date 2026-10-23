@@ -11,6 +11,10 @@
   // editing page shows, the button row carries Cancel in its middle slot
   // instead (cancelSlot), so this one is hidden then (#1933).
   const cancelButton = cancel.querySelector("button");
+  // The button row's home: main's last child, after the flow, so the row
+  // stays along the bottom of the screen on every page (#2063, ui-v1.css).
+  // A page from before that change has none; the row then joins the flow.
+  const actions = document.getElementById("family-actions") || root;
   const testing = root.dataset.testing === "true";
   let form = null, answers = null, initial = null, busy = false, finished = false;
   let accepted = false, submissionAttempted = false;
@@ -135,6 +139,7 @@
     // an anchored edit() kept (#384 L5).
     root.style.minHeight = "";
     root.replaceChildren();
+    actions.replaceChildren();
   }
   function expired() {
     if (accepted) return;
@@ -365,6 +370,7 @@
     // re-applies it after this call (#384 L5).
     root.style.minHeight = "";
     root.replaceChildren();
+    actions.replaceChildren();
     session.dataset.presenceSection = section;
     const title = node("h2", text, root, {tabindex: "-1"});
     focusTop(title);
@@ -517,7 +523,7 @@
         const editing = Boolean(root.querySelector("[data-page]"));
         if (step.key === "review") {
           // Review validates every page; it opens only when all are complete.
-          root.querySelector("[data-page-review]")?.click();
+          actions.querySelector("[data-page-review]")?.click();
         } else if (editing) {
           showPage(step.key, {push: true});
         } else {
@@ -2017,9 +2023,9 @@
     const step = root.querySelector("[data-family-step]");
     if (step) step.textContent = "Step " + (index + 1) + " of " + (pages.length + 1) + ": " + page.title;
     paintTrack(page.key);
-    root.querySelector("[data-page-back]").hidden = index === 0;
-    root.querySelector("[data-page-next]").hidden = index === pages.length - 1;
-    root.querySelector("[data-page-review]").hidden = index !== pages.length - 1;
+    actions.querySelector("[data-page-back]").hidden = index === 0;
+    actions.querySelector("[data-page-next]").hidden = index === pages.length - 1;
+    actions.querySelector("[data-page-review]").hidden = index !== pages.length - 1;
     if (push) pushPage({familyPage: page.key}, "");
     if (focus) focusTop(page.element.querySelector("h3"));
   }
@@ -2034,10 +2040,10 @@
   }
   function cancelSlot(nav) {
     // Cancel and sign out in the editing pages' middle slot (#1933). The row
-    // sits inside the editor's form, and forms cannot nest, so this button
-    // submits the page's own #family-cancel form by its form attribute: the
-    // same form, confirmation and sign-out as before. The page's own button
-    // is hidden meanwhile, so only one Cancel shows. Returns the button.
+    // is outside the page's own #family-cancel form, so this button submits
+    // that form by its form attribute: the same form, confirmation and
+    // sign-out as before. The page's own button is hidden meanwhile, so only
+    // one Cancel shows. Returns the button.
     const button = navButton("Cancel", " and sign out", nav, {type: "submit", form: cancel.id,
       class: "button-secondary", "data-nav-slot": "action"});
     cancelButton.hidden = true;
@@ -2083,7 +2089,7 @@
     // empty text hides it and removes that description. A quiet note is for
     // assistive technology only: sighted Families already see the field's
     // own error line.
-    const note = root.querySelector("[data-nav-error]");
+    const note = actions.querySelector("[data-nav-error]");
     if (!note) return;
     note.textContent = text;
     note.hidden = !text;
@@ -2162,15 +2168,19 @@
     if (lastSubmitted) root.prepend(lastSubmitted);
     pages = [];
     stepHeader(root);
-    const editor = node("form", null, root, {autocomplete: "off", novalidate: ""});
+    const editor = node("form", null, root, {id: "family-editor", autocomplete: "off", novalidate: ""});
     let reviewPointerDown = false;
-    editor.addEventListener("pointerdown", (event) => {
+    function watchPresses(target) {
       // Any navigation button (Back, Next, Review): an error revealed on blur
       // during its mousedown could move it before mouseup and lose the click.
-      reviewPointerDown = Boolean(event.target.closest('.family-nav button, button[type="submit"]'));
-    }, true);
-    editor.addEventListener("keydown", () => { reviewPointerDown = false; }, true);
-    editor.addEventListener("pointercancel", () => { reviewPointerDown = false; });
+      // Watched on the form and on the button row, which is outside it (#2063).
+      target.addEventListener("pointerdown", (event) => {
+        reviewPointerDown = Boolean(event.target.closest('.family-nav button, button[type="submit"]'));
+      }, true);
+      target.addEventListener("keydown", () => { reviewPointerDown = false; }, true);
+      target.addEventListener("pointercancel", () => { reviewPointerDown = false; });
+    }
+    watchPresses(editor);
     const fields = [];
     // The wide campaign banner is for emails only; the Welcome page shows just
     // its icon, below the Family heading (and any "last submitted" notice
@@ -2245,7 +2255,10 @@
       extra.addEventListener("input", () => { answers.additional_information = extra.value; });
       conflictChoice("additional", extra, additional.element);
     }
-    const nav = node("div", null, editor, {class: "actions family-nav"});
+    // The row is drawn outside the form, at the end of main (#2063), so its
+    // buttons join the form by its id, as Review's Submit does.
+    const nav = node("div", null, actions, {class: "actions family-nav"});
+    watchPresses(nav);
     node("p", null, nav, {class: "notice notice-error family-nav-error", role: "alert",
       id: "family-nav-error", "data-nav-error": "", hidden: ""});
     // One three-slot row on every page (#1933): Back left, the action
@@ -2275,8 +2288,8 @@
     // below checks every page before Review (#330). It looks and reads exactly
     // like the earlier pages' Next (#1422): both carry the same class, so they
     // share one style and position whatever their type.
-    node("button", "Next", nav, {type: "submit", class: "button-secondary", "data-page-review": "",
-      "data-nav-slot": "next"});
+    node("button", "Next", nav, {type: "submit", form: editor.id, class: "button-secondary",
+      "data-page-review": "", "data-nav-slot": "next"});
     // Enter in a field (or a phone keyboard's Go) means Next on every page but
     // the last, instead of implicitly submitting straight to Review.
     editor.addEventListener("keydown", (event) => {
@@ -2446,18 +2459,18 @@
       node("p", answers.additional_information || "Not provided", additional);
     }
     const confirmation = node("form", null, root, {autocomplete: "off", id: "family-confirmation"});
-    // The same sticky bar as the editing pages, so Submit stays in reach. A
-    // sticky element only sticks within its parent, so the bar belongs to the
-    // whole Review page and its Submit button joins the form by id.
-    const actions = node("div", null, root, {class: "actions family-nav"});
+    // The same sticky bar as the editing pages, so Submit stays in reach,
+    // in the same place at the end of main (#2063); its Submit button joins
+    // the confirmation form by id.
+    const bar = node("div", null, actions, {class: "actions family-nav"});
     // The same three slots as the editing pages (#1933): Back to edit left,
     // Submit centered, the Next slot empty. Cancel and sign out shows below
     // the flow again, as the page's own button.
     cancelButton.hidden = false;
-    const back = navButton("Back", " to edit", actions, {type: "button", class: "button-secondary",
+    const back = navButton("Back", " to edit", bar, {type: "button", class: "button-secondary",
       "data-nav-slot": "back"});
     back.addEventListener("click", () => { edit(); pushPage({familyPage: currentPage}, ""); });
-    const submit = navButton("Submit", submitRest, actions, {type: "submit", form: confirmation.id,
+    const submit = navButton("Submit", submitRest, bar, {type: "submit", form: confirmation.id,
       "data-nav-slot": "action"});
     confirmation.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -2580,7 +2593,7 @@
     if (!key || !form || finished || busy) return;
     const editing = Boolean(root.querySelector("[data-page]"));
     if (key === "review") {
-      if (editing) root.querySelector("[data-page-review]")?.click();
+      if (editing) actions.querySelector("[data-page-review]")?.click();
       return;
     }
     if (!editing) edit();

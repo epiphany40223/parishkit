@@ -388,7 +388,15 @@ never on the step's labels, so every step of the flow looks the same.
   the final review) with tighter spacing, and keeps its full label (Back to
   edit, Cancel and sign out, Submit to the parish) as its accessible name.
   The one-line bar keeps 44 px tap targets while covering little of a
-  phone's screen.
+  phone's screen. The row is always along the bottom of the screen: on a
+  page shorter than the screen it sits at the screen's bottom edge, not
+  right under the content, and on a longer page it stays there while the
+  Family scrolls, to the page's end (on Review, the page's own Cancel and
+  sign out sits just above the row)
+  ([#2063](https://github.com/epiphany40223/parishkit/issues/2063)). It
+  never covers content: the page grows to fill the screen, and a focused
+  field scrolls clear of the row. A printed page leaves the row out, as it
+  leaves out every button.
 - **Admin wizards.** Back is Back (Return to *step* on a step's sub-page).
   Next holds the step's one primary control
   ([wizards](#wizards) rule 2): Continue to *next step*, Save and continue,
@@ -419,7 +427,8 @@ Administrator asked for the Admin wizards to match
 Campaign setup row wrapped by label length on a narrow screen, and the setup
 wizard's primary dropped to a full-width line of its own. **Shared code.**
 The Family form's sticky bar (`.family-nav` in `ui-v1.css`, drawn by
-`family-v1.js`) and the Admin action rows (`.setup-actions` and
+`family-v1.js` into `#family-actions`, the last box of the page's `main`,
+which `family.html` provides) and the Admin action rows (`.setup-actions` and
 `.campaign-step-actions` in `stepper-v1.css`, drawn by
 `setup-navigation.html`, `setup-test-actions.html`,
 `campaign-step-actions.html`, Create the campaign and the Go live pages),
