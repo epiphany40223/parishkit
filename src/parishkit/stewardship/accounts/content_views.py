@@ -981,6 +981,13 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
             raise PermissionError("Content access was revoked.")
         response["Cache-Control"] = "no-store"
         return response
+    except (KeyError, IndexError):
+        # A plain LookupError is this view's "not found" (an unknown
+        # campaign, slot or revision raises one on purpose), but only a
+        # defect raises these two subclasses here. Let them reach Django's
+        # closed 500 boundary, logged with their traceback, rather than
+        # answer an unknown page (#2034; #2029's KeyError looked like one).
+        raise
     except (
         ConfigError,
         DatabaseError,
