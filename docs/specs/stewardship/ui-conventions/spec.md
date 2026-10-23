@@ -2607,8 +2607,12 @@ page), then "Choose a page from the menu, or ask a parish administrator if
 you need this one.", with the usual Administration home link and no Sign in
 again link. Only a missing or ended session keeps the sign-in wording
 ("Your sign-in has ended…" or "Your session may have ended…", with Sign in
-again). The answer stays HTTP 403 with the closed `denied` code and
-refusal-log reason, and scripts and in-place regions get the same refusal as
+again); a page load whose session has ended goes straight to the sign-in
+page, and any page that still shows that refusal offers its one sign-in
+link and nothing else
+([ended sessions](../admin-portal/spec.md#login-and-denial-behavior)).
+The answer stays HTTP 403 with the closed `denied` code and refusal-log
+reason, and scripts and in-place regions get the same refusal as
 JSON. A Ministry leader's refusal within its scope (a Ministry it does not
 lead, or none at all) is about scope, not role, and keeps its own wording.
 The same holds for a page's role-only parts: Staff asking a report for its
