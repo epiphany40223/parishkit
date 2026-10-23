@@ -5372,6 +5372,10 @@
       else acceptConfirm(confirming);
     });
   };
+  // A page script's own confirmation dialog (New report email's Start
+  // from, #2037) takes the same Tab wrap, Escape and Cancel handling; its
+  // script still decides what Confirm and closing do.
+  window.ParishConfirm = Object.freeze({wire: wireDialog});
   // A bulk button may carry its own dialog text and post its own name and
   // value (confirm-dialog.html; the Ministry follow-up queue's bulk
   // outcomes, #1131). One limited to one kind of row is available only
@@ -6915,6 +6919,15 @@
   });
   window.ParishEditorMode = Object.freeze({
     register(name, adapter) { editorAdapters.set(name, adapter); },
+    // Show root in mode at once, for a page script that has just written
+    // both modes' fields itself (New report email's Start from, #2037), so
+    // there is nothing to map or ask about; the gates then look again.
+    show(root, mode) {
+      const choice = modeChoice(root, mode);
+      if (!choice) return;
+      choice.checked = true;
+      if (showMode(root, mode)) choice.dispatchEvent(new Event("change", {bubbles: true}));
+    },
   });
   // Parish logos (#1062): Basic is one image, resized for every size;
   // Advanced is each size uploaded separately, where a size left empty

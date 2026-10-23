@@ -822,3 +822,82 @@ def test_the_calendar_shows_only_sends_made_and_sends_to_come(
     (made,) = [send for send in sends if send[0] != "Upcoming"]
     assert made[0] == "Sent"
     assert [send for send in sends if send[0] == "Upcoming"] == upcoming
+
+
+def starting_points(page):
+    """The starting points New embeds for Start from (#2037)."""
+    import html
+    import json
+
+    text = page.content.decode()
+    marker = '<script id="report-starting-points" type="application/json">'
+    start = text.index(marker) + len(marker)
+    return json.loads(html.unescape(text[start : text.index("</script>", start)]))
+
+
+def start_post(point, time):
+    """The editor post a page filled from ``point`` sends, with ``time``."""
+    data = {
+        name: value
+        for name, value in point["fields"].items()
+        if name != "content_required" and value not in ("", [])
+    }
+    if point["fields"]["content_required"]:
+        data["content_required"] = "on"
+    data |= {
+        "action": "preview",
+        "time": time,
+        "recipient": [chip["value"] for chip in point["recipients"]],
+        "block": point["blocks"],
+        "html": "",
+        "text": "",
+        "zone": ZONE,
+    }
+    if "participation_charts" in point["blocks"]:
+        data["charts"] = point["charts"]
+    return data
+
+
+def test_start_from_fills_new_with_the_starting_points(live_response_service, google):
+    """New embeds Blank and both starting points; a form filled from one,
+    with a time chosen, adds exactly that starting point's values. A
+    refused Add draws Start from with no choice and as typed; Edit has
+    none."""
+    from parishkit.stewardship.campaigns.report_presets import starting_point
+
+    harness = live_response_service
+    with campaign_clock(INSTANT):
+        admin = started(harness)
+        path = reverse("admin:report_email_new")
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            page = admin.get(path)
+        assert page.status_code == 200
+        text = page.content.decode()
+        assert 'name="start_from" value="blank" checked' in text
+        assert "data-start-changed" not in text
+        assert 'id="report-start-replace"' in text
+        points = starting_points(page)
+        assert [point["key"] for point in points] == ["blank", "daily", "weekly"]
+        assert all(point["fields"]["time"] == "" for point in points)
+        for point, clock in ((points[1], "7:00"), (points[2], "8:00")):
+            answer = post(admin, path, start_post(point, clock))
+            assert answer.status_code == 200, answer.content
+            done = confirm(admin, path, answer, after_campaign="yes")
+            assert done.status_code == 302, done.content
+            apply_requests(harness.service.store)
+            expected = starting_point(point["key"], harness.campaign.pk)
+            expected["schedule"]["time"] = f"0{clock}:00"
+            assert reports()[expected["name"]]["values"] == expected
+        # The same starting point again: its name is taken, at the field.
+        refused = post(admin, path, start_post(points[1], "7:00"))
+        assert refused.status_code == 400
+        text = refused.content.decode()
+        assert "Another report email of this campaign has this name." in text
+        assert "data-start-changed" in text
+        assert 'value="blank" checked' not in text
+        identifier = reports()["Weekly report"]["id"]
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            edit = admin.get(reverse("admin:report_email_edit", args=[identifier]))
+        assert edit.status_code == 200
+        assert b"start_from" not in edit.content
+        assert b"report-starting-points" not in edit.content

@@ -19,7 +19,12 @@
 //     feed Skip selected sends and Send selected sends (the shared
 //     selectable table, wired again after each redraw);
 //   - the line saying a repeating report's days are the campaign's, shown
-//     when this browser's zone is not the campaign's.
+//     when this browser's zone is not the campaign's;
+//   - New's Start from (#2037): Blank, Daily report or Weekly report fills
+//     every field in place from the starting points the server embeds
+//     (report-starting-points, drawn from campaigns/report_presets.py), the
+//     time left empty, asking first when the form holds typing it would
+//     replace.
 // The review dialog's "Send after the campaign ends" tick needs no code
 // here: it is the Apply form's own field, held by the shared review gate.
 // The server reads and checks every value again; nothing here decides one.
@@ -162,17 +167,32 @@
     if (empty && reason) reason.textContent = reason.dataset.allIn;
   };
   const position = (row) => rows().indexOf(row) + 1;
-  select?.addEventListener("change", refresh);
-  addButton?.addEventListener("click", () => {
-    if (addButton.getAttribute("aria-disabled") === "true") return;
-    const key = select.value;
+  // Put block ``key``'s row in the list (before a block that stays last)
+  // and take it out of Add a block; the row, or null for an unknown key.
+  const listBlock = (key) => {
     const source = templates?.content.querySelector(`[data-block="${CSS.escape(key)}"]`);
-    if (!source) return;
+    if (!source) return null;
     const row = source.cloneNode(true);
     const stays = rows().find((item) => item.hasAttribute("data-block-last"));
     if (stays && !row.hasAttribute("data-block-last")) list.insertBefore(row, stays);
     else list.append(row);
     select.querySelector(`option[value="${CSS.escape(key)}"]`)?.remove();
+    return row;
+  };
+  // Take a row out of the list and offer its block in Add a block again.
+  const unlistBlock = (row) => {
+    const option = document.createElement("option");
+    option.value = row.dataset.block;
+    option.textContent = labelOf(row);
+    option.dataset.help = row.querySelector(".help")?.textContent || "";
+    select.append(option);
+    row.remove();
+  };
+  select?.addEventListener("change", refresh);
+  addButton?.addEventListener("click", () => {
+    if (addButton.getAttribute("aria-disabled") === "true") return;
+    const row = listBlock(select.value);
+    if (!row) return;
     refresh();
     changed(row.querySelector('input[name="block"]'));
     (row.querySelector("[data-block-remove]") || row).focus();
@@ -185,12 +205,7 @@
     const name = labelOf(row);
     if (button.hasAttribute("data-block-remove")) {
       const next = row.nextElementSibling?.querySelector("[data-block-remove]");
-      const option = document.createElement("option");
-      option.value = row.dataset.block;
-      option.textContent = name;
-      option.dataset.help = row.querySelector(".help")?.textContent || "";
-      select.append(option);
-      row.remove();
+      unlistBlock(row);
       refresh();
       changed(form);
       (next || select).focus();
@@ -323,6 +338,167 @@
     const version = form.elements.namedItem("base_digest");
     if (version && event.target.dataset.baseDigest) version.value = event.target.dataset.baseDigest;
   });
+
+  // ---------------------------------------------------------- Start from
+  // New's Start from (report-emails spec, "New and Edit report email"):
+  // three radios above the form (never posted), each filling every field
+  // from one starting point the server embeds, in initial()'s field form.
+  // The time is left empty, so the complete gate asks for it. When the form
+  // differs from what the page drew or Start from last filled, the shared
+  // confirmation dialog asks first; Keep what I entered puts the previous
+  // choice back.
+  const start = document.querySelector("[data-start-from]");
+  let points = [];
+  try {
+    points = JSON.parse(document.getElementById("report-starting-points")?.textContent || "[]");
+  } catch { /* none embedded: Start from does nothing */ }
+  if (start && points.length) {
+    const radios = [...start.querySelectorAll('input[name="start_from"]')];
+    const startNote = start.querySelector("[data-start-note]");
+    const dialog = document.getElementById("report-start-replace");
+    // The form as it would post, less the fields no reader types (the CSRF
+    // token, the browser's zone and its drawn moment), the mode and the
+    // Basic panel's choice: the Advanced fields always hold the schedule
+    // (ParishEditorMode), and the Basic panel posts nothing while Advanced
+    // is shown, so switching modes alone is never typing to replace.
+    const UNTYPED = new Set(["csrfmiddlewaretoken", "zone", "drawn", "editor_mode",
+      "preset", "preset_weekday"]);
+    const snapshot = () => [...new FormData(form)]
+      .filter(([name]) => !UNTYPED.has(name))
+      .map(([name, value]) => `${name}=${value}`).join("&");
+    // A refused Add's page holds what was typed: it counts as changed.
+    let filled = start.hasAttribute("data-start-changed") ? null : snapshot();
+    let previous = radios.find((radio) => radio.checked) || null;
+    // The introduction's shared editor: its pane, HTML source and text.
+    const pane = form.querySelector("[data-content-editor]");
+    const generate = field("generate_text");
+    const generateDrawn = generate instanceof HTMLInputElement && generate.checked;
+    // A field's value from the starting point: radios and checkbox groups
+    // tick the listed values, a lone checkbox takes a flag, anything else
+    // its text. A change event then tells the gates, the conditional
+    // fields and Next sends, as typing would; a text field gets an input
+    // event too, so the shared live checks clear any mark on what it held.
+    const setField = (name, value) => {
+      const node = field(name);
+      if (!node) return;
+      if (node instanceof RadioNodeList) {
+        const wanted = (Array.isArray(value) ? value : [value]).map(String);
+        [...node].forEach((box) => { box.checked = wanted.includes(box.value); });
+        const target = [...node].find((box) => box.checked) || node[0];
+        if (target) changed(target);
+        return;
+      }
+      if (node.type === "checkbox") node.checked = Boolean(value);
+      else {
+        node.value = value === null || value === undefined ? "" : String(value);
+        node.dispatchEvent(new Event("input", {bubbles: true}));
+      }
+      changed(node);
+    };
+    const clearIntroduction = () => {
+      if (pane && pane.textContent.trim() !== "") {
+        pane.replaceChildren();
+        // The pane's own input listener writes the (empty) HTML source.
+        pane.dispatchEvent(new Event("input", {bubbles: true}));
+      }
+      const source = field("html");
+      if (source && source.value !== "") setField("html", "");
+      if (generate instanceof HTMLInputElement && generate.checked !== generateDrawn) {
+        setField("generate_text", generateDrawn);
+      }
+      if (field("text") && field("text").value !== "") setField("text", "");
+    };
+    const fillFrom = (point) => {
+      // Recipients: the starting point's chips only.
+      chips.querySelectorAll("[data-chip]").forEach((chip) => chip.remove());
+      point.recipients.forEach(({value, label}) => addChip(value, label));
+      if (input) input.value = "";
+      say("");
+      // Blocks: the starting point's rows, in order, and Add a block offers
+      // the others in the registry's order (the templates').
+      rows().forEach((row) => row.remove());
+      select.replaceChildren();
+      [...(templates?.content.querySelectorAll(":scope > [data-block]") || [])].forEach((row) => {
+        const option = document.createElement("option");
+        option.value = row.dataset.block;
+        option.textContent = labelOf(row);
+        option.dataset.help = row.dataset.help || "";
+        select.append(option);
+      });
+      point.blocks.forEach(listBlock);
+      announce("");
+      refresh();
+      changed(form);
+      // The Basic choice first: an edit in the Basic panel rewrites the
+      // Advanced fields from the choice it holds (ParishEditorMode), so the
+      // choice and its day are set before the Advanced fields, which are
+      // then written as the starting point has them; the mode last. The
+      // listed rows' options (Day by day's days, the charts) are among them.
+      const {editor_mode: mode, preset, preset_weekday: weekday, ...rest} = point.fields;
+      setField("preset", preset);
+      setField("preset_weekday", weekday);
+      Object.entries(rest).forEach(([name, value]) => setField(name, value));
+      setField("charts", point.charts);
+      const modes = form.querySelector('[data-editor-modes="report-schedule"]');
+      if (modes) window.ParishEditorMode?.show(modes, mode);
+      clearIntroduction();
+      filled = snapshot();
+    };
+    // Choose ``radio``'s starting point: fill the form, keep focus on the
+    // radio and say what happened.
+    const choose = (radio) => {
+      const point = points.find((item) => item.key === radio.value);
+      if (!point) return;
+      fillFrom(point);
+      previous = radio;
+      radio.checked = true;
+      radio.focus();
+      if (startNote) {
+        startNote.textContent = point.key === "blank" ? start.dataset.blankNote
+          : fill(start.dataset.filledNote, {name: point.label});
+      }
+    };
+    let pending = null;
+    dialog?.querySelector("[data-confirm-accept]")?.addEventListener("click", () => {
+      const radio = pending;
+      pending = null;
+      dialog.close();
+      if (radio) choose(radio);
+    });
+    // Keep what I entered, Escape or closing: nothing changes, and Start
+    // from goes back to its previous choice, with focus on it. On a refused
+    // Add there is none: nothing is checked and focus returns to the
+    // segment just chosen, the control that opened the dialog. Keep puts
+    // it back at once; Escape's close event, which comes a moment after
+    // the dialog shuts, does the same.
+    const keep = () => {
+      const chosen = pending;
+      if (!chosen) return;
+      pending = null;
+      radios.forEach((radio) => { radio.checked = radio === previous; });
+      (previous || chosen).focus();
+    };
+    dialog?.querySelector("[data-confirm-cancel]")?.addEventListener("click", () => {
+      dialog.close();
+      keep();
+    });
+    dialog?.addEventListener("close", keep);
+    start.addEventListener("change", (event) => {
+      const radio = event.target;
+      if (!(radio instanceof HTMLInputElement) || !radio.checked || !radios.includes(radio)) return;
+      if (filled !== null && snapshot() === filled) {
+        choose(radio);
+        return;
+      }
+      if (!(dialog instanceof HTMLDialogElement)) return;
+      pending = radio;
+      // The shared confirmation dialog's Tab wrap and Escape (ui-v1.js).
+      window.ParishConfirm?.wire(dialog);
+      dialog.showModal();
+      // The safe choice takes focus first.
+      dialog.querySelector("[data-confirm-cancel]")?.focus();
+    });
+  }
 
   // ------------------------------------------ the campaign's weekdays
   // A repeating report's days are the campaign's days; only its time is

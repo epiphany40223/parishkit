@@ -10,7 +10,8 @@ it, for a one-time send whose time has passed. Edit of a report choosing
 two of the three Participation charts, in a campaign with financial
 stewardship, draws its Charts boxes (#1956), and New as a Review refused
 for a weekly rule with no day and a Charts block with no chart draws both
-refusals at their groups (#2009).
+refusals at their groups (#2009). New embeds Start from's starting points
+(#2037).
 """
 
 import re
@@ -216,6 +217,10 @@ def _page(context, admin, saved, data=None, campaign=CAMPAIGN):
             ]
             if posted is not None
             else None,
+            # New's Start from (#2037), as the view embeds it.
+            "starting_points": None
+            if saved
+            else editor.starting_points(campaign, UUID(int=5), choices),
         },
     )
 

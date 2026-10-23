@@ -19,6 +19,8 @@ line, start all ticked when the block is added, and tick in place (#1956).
 Unticking the last chart, or Advanced's last day, says so at the group at
 once, moving nothing, and a tick clears it; the server's refusal of either
 is drawn at the group and cleared by a tick (#2009).
+New's Start from fills every field in place from Daily report or Weekly
+report, the time left empty, and asks before replacing typing (#2037).
 """
 
 import re
@@ -150,7 +152,7 @@ def test_binary_choices_are_segmented_pairs(page, component_origin):
 def test_basic_weekly_writes_the_advanced_rule(page, component_origin):
     """Choosing Weekly on Thursday shows the same rule in Advanced."""
     page.goto(component_origin + NEW)
-    page.get_by_role("radio", name="Weekly").check()
+    page.get_by_role("radio", name="Weekly", exact=True).check()
     page.get_by_label("Day", exact=True).select_option("3")
     page.get_by_label("Advanced").check()
     eventually(
@@ -194,7 +196,7 @@ def test_the_campaign_days_line_follows_the_zone(
     another name for the campaign's zone is the same zone (#1973)."""
     days = "These are the days where the parish is"
     page.goto(component_origin + NEW)
-    page.get_by_role("radio", name="Weekly").check()
+    page.get_by_role("radio", name="Weekly", exact=True).check()
     # The fixture's browser is in Los Angeles; the campaign in New York.
     visible(page.get_by_text(days).first)
     # America/Detroit keeps New York's clock under another name. (The
@@ -205,7 +207,7 @@ def test_the_campaign_days_line_follows_the_zone(
         try:
             same = context.new_page()
             same.goto(component_origin + NEW)
-            same.get_by_role("radio", name="Weekly").check()
+            same.get_by_role("radio", name="Weekly", exact=True).check()
             # Each line keeps its hidden attribute (the Advanced panel's
             # line is hidden with its panel either way).
             lines = same.locator("[data-campaign-days]")
@@ -239,7 +241,7 @@ def test_a_one_hour_clock_difference_shows_the_campaign_days_line(
         page = context.new_page()
         page.route(component_origin + NEW, october_2026)
         page.goto(component_origin + NEW)
-        page.get_by_role("radio", name="Weekly").check()
+        page.get_by_role("radio", name="Weekly", exact=True).check()
         visible(page.get_by_text("These are the days where the parish is").first)
     finally:
         context.close()
@@ -281,7 +283,7 @@ def open_review(page):
     page.get_by_label("Report name", exact=True).fill("Staff daily")
     page.get_by_label("Add a recipient").fill("All Staff (group, 1 person now)")
     page.get_by_role("button", name="Add", exact=True).first.click()
-    page.get_by_role("radio", name="Daily").check()
+    page.get_by_role("radio", name="Daily", exact=True).check()
     page.get_by_label("Time", exact=True).fill("7:00 AM")
     page.get_by_role("button", name="Add", exact=True).last.click()
     page.get_by_role("button", name="Add the report email").click()
@@ -796,3 +798,147 @@ def test_the_servers_group_refusals_clear_on_a_tick(page, component_origin):
         "Choose at least one day.",
     )
     assert summary.get_by_role("link").count() == 1
+
+
+def start_from(page, name):
+    """New's Start from radio named ``name``."""
+    return page.get_by_role("group", name="Start from").get_by_role(
+        "radio", name=name, exact=True
+    )
+
+
+def checked(page, name):
+    """The value of the checked radio ``name`` posts, or None."""
+    return page.evaluate(
+        "(name) => document.querySelector(`input[name=${name}]:checked`)?.value"
+        " ?? null",
+        name,
+    )
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_start_from_fills_the_form_in_place(page, component_origin, width):
+    """Daily report and Weekly report fill every field in place, with no
+    reload and nothing above the form moving; the time stays empty and
+    focus stays on the choice (#2037)."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + NEW)
+    group = page.get_by_role("group", name="Start from")
+    visible(group)
+    assert group.evaluate("node => node.classList.contains('choice-pair')")
+    assert start_from(page, "Blank").is_checked()
+    page.evaluate("window.parishNoReload = true")
+    name = page.get_by_label("Report name")
+    before = (group.bounding_box(), name.bounding_box()["y"])
+    start_from(page, "Daily report").check()
+    assert name.input_value() == "Daily report"
+    assert page.get_by_label("Email subject line (optional)").input_value() == (
+        "{{ campaign_name }} — daily report"
+    )
+    assert posted(page, "recipient") == ["group:administrators"]
+    assert posted(page, "block") == [
+        "campaign_totals",
+        "response_funnel",
+        "participation_charts",
+        "day_by_day",
+    ]
+    assert posted(page, "charts") == ["first_submissions", "cumulative_families"]
+    assert posted(page, "days_shown") == ["5"]
+    assert checked(page, "sends") == "repeat"
+    assert checked(page, "preset") == "daily"
+    assert checked(page, "as_of") == "previous_day_end"
+    assert not page.get_by_label(
+        "Send only when there is something to report"
+    ).is_checked()
+    assert page.get_by_label("Time", exact=True).input_value() == ""
+    assert page.evaluate("document.activeElement.value") == "daily"
+    visible(page.get_by_text("Filled in from Daily report."))
+    assert (group.bounding_box(), name.bounding_box()["y"]) == before
+    # Weekly next: the form is as Daily filled it, so it is filled at once.
+    start_from(page, "Weekly report").check()
+    assert name.input_value() == "Weekly report"
+    assert posted(page, "block") == ["additional_information", "response_funnel"]
+    assert checked(page, "preset") == "weekly"
+    assert page.get_by_label("Day", exact=True).input_value() == "0"
+    assert checked(page, "as_of") == "send_time"
+    assert page.get_by_label("Send only when there is something to report").is_checked()
+    assert page.get_by_role("dialog").count() == 0
+    assert page.evaluate("window.parishNoReload") is True
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
+
+def test_start_from_asks_before_replacing_typing(page, component_origin, axe_source):
+    """A form holding typing asks first; Keep what I entered changes nothing
+    and puts Blank back; Replace fills it. Blank empties the form again, and
+    switching to Advanced alone is not typing (#2037)."""
+    page.goto(component_origin + NEW)
+    name = page.get_by_label("Report name")
+    name.fill("My report")
+    start_from(page, "Daily report").check()
+    dialog = page.get_by_role("dialog", name="Replace what you have entered?")
+    visible(dialog)
+    keep = dialog.get_by_role("button", name="Keep what I entered")
+    assert page.evaluate("document.activeElement.textContent.trim()") == (
+        "Keep what I entered"
+    )
+    assert axe_violations(page, axe_source) == []
+    # The shared dialog's Tab wrap: Tab from its last button returns to its
+    # first, and Shift+Tab from the first goes to the last.
+    buttons = dialog.get_by_role("button")
+    buttons.last.focus()
+    page.keyboard.press("Tab")
+    assert buttons.first.evaluate("node => node === document.activeElement")
+    page.keyboard.press("Shift+Tab")
+    assert buttons.last.evaluate("node => node === document.activeElement")
+    keep.click()
+    eventually(page, "() => document.querySelector('dialog[open]') === null", True)
+    assert name.input_value() == "My report"
+    assert start_from(page, "Blank").is_checked()
+    assert page.evaluate("document.activeElement.value") == "blank"
+    start_from(page, "Daily report").check()
+    dialog.get_by_role("button", name="Replace").click()
+    assert name.input_value() == "Daily report"
+    assert start_from(page, "Daily report").is_checked()
+    # Unchanged since Daily filled it: Blank empties the form at once.
+    start_from(page, "Blank").check()
+    assert page.get_by_role("dialog").count() == 0
+    assert name.input_value() == ""
+    assert posted(page, "recipient") == []
+    assert posted(page, "block") == []
+    visible(page.get_by_text("The form is blank again."))
+    # The mode alone is no change; Weekly then opens the schedule in Basic.
+    page.get_by_label("Advanced").check()
+    start_from(page, "Weekly report").check()
+    assert page.get_by_role("dialog").count() == 0
+    assert page.get_by_label("Basic", exact=True).is_checked()
+    visible(page.get_by_label("Day", exact=True))
+    assert posted(page, "weekdays") == ["0"]
+    assert posted(page, "editor_mode") == ["basic"]
+
+
+def test_a_refused_add_asks_before_start_from(page, component_origin):
+    """A refused Add holds what was typed: no choice is made, and choosing
+    one asks first; Escape or Keep what I entered leaves none chosen, with
+    focus on the segment just chosen (#2037)."""
+    page.goto(component_origin + NEW_REFUSED)
+    assert checked(page, "start_from") is None
+    start_from(page, "Weekly report").check()
+    dialog = page.get_by_role("dialog", name="Replace what you have entered?")
+    visible(dialog)
+    page.keyboard.press("Escape")
+    # The dialog's close event puts the choice back a moment after it shuts.
+    eventually(
+        page,
+        "() => !document.querySelector('dialog[open]')"
+        " && !document.querySelector('input[name=start_from]:checked')",
+        True,
+    )
+    assert page.get_by_label("Report name").input_value() == "Staff requests"
+    assert page.evaluate("document.activeElement.value") == "weekly"
+    start_from(page, "Daily report").check()
+    visible(dialog)
+    dialog.get_by_role("button", name="Keep what I entered").click()
+    eventually(page, "() => document.querySelector('dialog[open]') === null", True)
+    assert checked(page, "start_from") is None
+    assert page.evaluate("document.activeElement.value") == "daily"
+    assert page.get_by_label("Report name").input_value() == "Staff requests"
