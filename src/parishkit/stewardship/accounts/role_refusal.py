@@ -7,7 +7,8 @@ reason. This refusal says so in fixed, reviewed words, naming the roles
 that hold the page's capability, and links to Administration home instead
 of the sign-in page. It is still a 403 with the closed ``denied`` code and
 refusal-log reason. Only a current session reaches it: a missing or ended
-one keeps the generic denial, so a visitor without one learns nothing new.
+one gets the signed-out refusal (``signed_out``), which says only to sign
+in, so a visitor without one learns nothing new.
 """
 
 from django.utils.translation import gettext_lazy as _
@@ -21,6 +22,7 @@ from parishkit.stewardship.web.namespaces import ADMIN_HOME
 from parishkit.stewardship.web.refusals import (
     AccessDenied,
     UserFacingDenied,
+    UserFacingSignedOut,
     annotate,
 )
 
@@ -46,6 +48,26 @@ class RoleDenied(UserFacingDenied):
     """
 
     offers_sign_in = False
+
+
+def signed_out():
+    """The refusal for a request with no current Admin session.
+
+    For an ended session (idle timeout, sign-out in another tab,
+    revocation) and for none at all. A browser's page load (GET) with it
+    goes to the sign-in page instead of an error page
+    (``web.error_pages``, #2058); scripts and in-place regions still get
+    this 403.
+    """
+    return UserFacingSignedOut(
+        _(
+            "Your sign-in has ended, for example after an hour without "
+            "activity or after signing out in another tab."
+        ),
+        fix=_("Sign in again to continue."),
+        link="/admin/login",
+        link_label=_("Sign in"),
+    )
 
 
 def role_denied(capability):
@@ -91,11 +113,11 @@ def require_role(actor, level):
     """Return ``actor`` if it holds role ``level``, else raise its refusal.
 
     ``"administrator"`` needs the Administrator role; ``"staff"`` needs the
-    Administrator or Staff role. ``None`` (no current session) keeps the
-    generic denial, as in ``require``.
+    Administrator or Staff role. ``None`` (no current session) gets the
+    signed-out refusal, as in ``require``.
     """
     if actor is None:
-        raise AccessDenied("Access is unavailable.")
+        raise signed_out()
     allowed = {"administrator", level}
     if not allowed & actor.roles:
         raise role_denied_for(level)
@@ -106,11 +128,12 @@ def require(actor, capability):
     """Return ``actor`` if it may use ``capability``, else raise its refusal.
 
     ``actor`` is ``authenticated_admin``'s result: ``None`` (no current
-    session) keeps the generic denial, which tells the person to sign in
-    again; a current principal without the capability gets ``role_denied``.
+    session) gets the signed-out refusal, which tells the person to sign in
+    again (#2058); a current principal without the capability gets
+    ``role_denied``.
     """
     if actor is None:
-        raise AccessDenied("Access is unavailable.")
+        raise signed_out()
     if not allows(actor, capability):
         raise role_denied(capability)
     return actor

@@ -396,13 +396,19 @@ def test_a_ministry_leader_gets_the_role_refusal(monkeypatch):
     assert b"Delivery" not in response.content
 
 
-def test_no_current_session_gets_the_shared_denial(monkeypatch):
-    """Without a current session the refusal stays the generic one."""
-    from parishkit.stewardship.accounts.authentication import denial
+def test_no_current_session_gets_the_signed_out_refusal(monkeypatch):
+    """Without a current session: the shared signed-out refusal (#2058).
 
+    A browser's page load with it goes to the sign-in page (the middleware,
+    not run here); this is the typed 403 scripts get.
+    """
     response = _view(monkeypatch, None)
     assert response.status_code == 403
-    assert response.content == denial().content
+    assert response.stewardship_refusal.signed_out is True
+    assert json.loads(response.content)["refusal"]["link"] == {
+        "url": "/admin/login",
+        "label": "Sign in",
+    }
 
 
 @pytest.mark.parametrize("principal", [STAFF, ADMIN], ids=["staff", "administrator"])

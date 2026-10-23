@@ -3,7 +3,8 @@
   Browser rendering of a typed error response. Every message is a closed,
   server-owned string; nothing submitted or raised is ever shown here.
   Admin errors (admin is true) extend the JavaScript-gated Admin base
-  (#565); Family errors extend the ungated base.
+  (#565); Family errors extend the ungated base. An ended Admin session's
+  page has no back or home link (home is empty): only signing in helps.
 {% endcomment %}
 {% block title %}{{ title }}{% endblock %}
 {% block content %}<section class="flow panel">
@@ -12,5 +13,5 @@
   <p>{{ guidance }}</p>
   {% if fix_link %}<p><a href="{{ fix_link }}">{{ fix_label }}</a></p>{% endif %}
   {% if sign_in %}<p><a href="{{ sign_in }}">{% translate "Sign in again" %}</a></p>{% endif %}
-  <p class="actions">{% if back %}<a href="{{ back }}">{% translate "Return to the previous page" %}</a>{% endif %}<a href="{{ home }}">{{ home_label }}</a></p>
+  {% if back or home %}<p class="actions">{% if back %}<a href="{{ back }}">{% translate "Return to the previous page" %}</a>{% endif %}{% if home %}<a href="{{ home }}">{{ home_label }}</a>{% endif %}</p>{% endif %}
 </section>{% endblock %}
