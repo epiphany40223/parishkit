@@ -16,8 +16,8 @@ from .quality_pytest import failures_path, running_path
 from .quality_sharding import BROWSER_ENGINES, browser_label, parse_browser_runs
 
 # 50 minutes for all of one job's partitions together; a job's tests should
-# take at most about 30 on an ordinary runner (a Firefox half, #1380, or a
-# Chromium and WebKit fifth, #1529); when they near 38, split the engines
+# take about 24 to 28 on an ordinary runner (a Firefox quarter, or a
+# Chromium and WebKit seventh, #2051); when they near 30, split the engines
 # further (quality_sharding.BROWSER_JOBS) rather than raising this. Setup
 # usually takes 1 to 2 minutes, so this leaves 10 minutes of the 60-minute
 # job limit for setup and post-job steps, and this bounded timeout, not the job cancel,
