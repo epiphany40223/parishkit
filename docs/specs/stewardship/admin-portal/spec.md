@@ -8372,9 +8372,77 @@ holds a second comparison that could drift from the review worklist:
   and [Additional information](../review-pipeline/spec.md#additional-information-stream)
   streams.
 
-The tabs show; they do not act. Review decisions stay on the review
-worklist, which each panel links to. Each slice specifies its tab's columns and
-reads here before it is built, and adds a query-count test for its panel.
+Each changed row offers the same row actions its stream's review page
+offers for that item ([hub row actions](#hub-row-actions), #2064), and each
+panel links to that page. Each slice specifies its tab's columns and reads
+here before it is built, and adds a query-count test for its panel.
+
+### Hub row actions
+
+Staff and Administrators review a Family's changes from its hub, which has
+room and already shows one change per row (Administrator, 2026-10-23,
+[#2064](https://github.com/epiphany40223/parishkit/issues/2064)). Each
+changed row of a content tab offers exactly the
+[individual actions](../review-pipeline/spec.md#individual-actions) the
+row's stream page offers that reader for that item at its stage, with the
+same icons, selected states, words and dialogs:
+
+| Tab and rows | Stream page | Its actions |
+| --- | --- | --- |
+| Family and Member tabs: Changed fields, and a New Member's addition line | [Census changes](../reports/spec.md#pending-census-changes) | as its rows ([census stream](../review-pipeline/spec.md#role-specific-actions)) |
+| Member tabs: Ministry joins and leaves | [Ministry requests](../reports/spec.md#ministry-change-summary), with its [roster entry](#roster-entry-on-ministry-requests) | as its rows |
+| Financial tab: the pledge's table | [Pledges](../reports/spec.md#pledges) | as its rows |
+| Additional tab: each Yes to a cannot answer | [Limitations](../reports/spec.md#limitations) | as its rows |
+| Additional tab: the current Additional information item | [Additional information](../reports/spec.md#additional-information) | as its rows |
+
+- **One implementation.** The tab reads its items through the stream page's
+  own reader and row decoration (`reports/hub_actions.py`), narrowed to the
+  Family and to every stage but History, and draws each row's icons, its own
+  Edit and Entered by hand dialogs and the stream's decision dialog through
+  the review worklist's own includes, so wording, warnings, the note and its
+  required or optional rule, and Record and Cancel are the stream page's.
+  An item drawn on a line of its own (a New Member's addition) carries its
+  icons after its stage on that line; the pledge, one item whose fields are
+  its table's rows, carries them in the Actions cell spanning those rows.
+  The stage chip then comes from the same row as its icons.
+- **Where it posts.** Each decision posts to the stream page with that
+  page's view fields, through the same decision path, so the role checks,
+  version checks, refusals, audit and the notice are the stream's; a row
+  someone else changed first is left as it is and the notice says so
+  ([concurrency](../review-pipeline/spec.md#concurrency)).
+- **Redraw.** The tab's content is a region of its own: once the decision is
+  applied, the dialog redraws it from the tab's own address, in place, with
+  focus back on the same action's icon in the redrawn row
+  ([in-place controls](../ui-conventions/spec.md#in-place-controls),
+  [row actions and confirmation](../ui-conventions/spec.md#row-actions-and-confirmation)).
+- **Who.** Only Administrators and Staff open the hub. A row shows only the
+  actions its stream page shows that reader (hidden, not disabled); a
+  reader the stream page would refuse sees the rows without icons. While
+  other campaign work holds the campaign no icon is drawn, as on the stream
+  pages. The server checks stay the stream's.
+- **Layout.** A tab with an action adds a last **Actions** column, drawn
+  with the page, so nothing moves on click
+  ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). There is
+  no selection column, bulk bar or Add: those stay on the stream pages. The
+  panel's link sentence then says the reader can also act on the stream
+  page, which lists every Family's items.
+- **Reads.** Only the chosen tab reads its stream, and only when it shows an
+  item and the reader may open the stream's page: the census tabs read
+  Census changes' own reads narrowed to this Family (its changes, with
+  their refresh checks, and the parish's additions); the Financial tab
+  Pledges' read narrowed by the Family's DUID; the Additional tab the
+  Limitations report narrowed by that DUID (without the Cannot contribute
+  financially rows, decided on Pledges) and Additional information's
+  requests narrowed the same way. A Member tab with a request reads
+  Ministry requests' own selection (two statements) for the whole campaign
+  and keeps the tab's requests: that selection's SQL has no Family filter
+  (its search matches Member names only), and adding one would be a schema
+  change for a read Ministry requests already makes on every view.
+- **Audit.** The view's audit is unchanged. A decision is audited by its
+  stream page as from that page (the page's own view audit of its answer
+  included: the decision's POST records the stream page's own view, whose
+  answer is discarded because the hub tab is refetched), and the tab's
+  redraw that follows is one more hub view.
 
 ### Family and Member tabs
 
@@ -8450,7 +8518,8 @@ Member's tab shows the addition's stage once, above a table of **Field** and
 census stream records it
 ([#1683](https://github.com/epiphany40223/parishkit/issues/1683)). Each
 panel links to [Census changes](../reports/spec.md#pending-census-changes), where
-the changes are reviewed.
+the changes are reviewed too; each change offers its row actions there
+([hub row actions](#hub-row-actions)), in a last **Actions** column.
 
 **Reads.** When census is part of the campaign the page reads two
 statements more, whichever tab is chosen, since the Member tabs' labels need
@@ -8502,7 +8571,8 @@ changes the Family asked for: the Ministries a Member stays in are not
 requests, so there is no Show unchanged list (each Ministry's roster is on
 the Ministry pages). A Member with no request says "No Ministry joins or
 leaves requested." The panel links to Ministry requests, where the requests
-are handled.
+are handled too; each request offers its row actions there
+([hub row actions](#hub-row-actions)).
 
 **Reads.** Only the chosen Member tab reads them, so they add nothing to the
 other tabs: one statement for the Member's requests, each with its latest
@@ -8527,8 +8597,11 @@ A pledge is one item of the
 field, so its stage (`pipeline.financial_placement`: To review, since no
 decision is stored yet,
 [#1686](https://github.com/epiphany40223/parishkit/issues/1686)) is shown
-once, above its table, as a New Member's addition is. The table has
-**Field**, **Baseline** and **Family's answer**:
+once. The pledge's fields are drawn as the census tabs' Changed table, with
+the same columns: **Field**, **Baseline**, **Family's answer**, a
+**Reviewer's value** column while a reviewer's Edit is in force, **Stage**
+and, when the pledge offers its row actions, **Actions**; the Stage and
+Actions cells are drawn once, spanning the pledge's rows:
 
 - **Annual pledge**: the Baseline is the Family's pledges recorded in
   ParishSoft for the campaign's comparison period (the report's ParishSoft
@@ -8547,10 +8620,18 @@ once, above its table, as a New Member's addition is. The table has
 
 A line below the table gives the ParishSoft contributions for the same
 period (the report's Contributed), as context for the pledge. Every row
-belongs to the pledge item, so the tab has no Show unchanged list, and no
-Reviewer's value column: a pledge cannot be edited yet. A Family whose
+belongs to the pledge item, so the tab has no Show unchanged list. Once a
+reviewer edits the pledge (Pledges' Edit, also offered here,
+[hub row actions](#hub-row-actions)), the Reviewer's value column shows the
+edited annual pledge beside Annual pledge and the edited frequency, with its
+installment as the Family's answer has, beside
+Frequency, as an edited census field shows its value in that column
+(Administrator, 2026-10-23); Share methods has none, since an Edit does not
+change them. A Family whose
 current response has no financial answers says "This Family has not answered
-the financial questions yet." The panel links to Financial stewardship.
+the financial questions yet." The panel links to Financial stewardship, or
+to Pledges once the pledge offers its row actions
+([hub row actions](#hub-row-actions)).
 
 **Reads.** Only the Financial tab reads them: the proof's two statements
 (the current or pinned snapshot and its giving cursor), the selection and
@@ -8589,9 +8670,10 @@ answer**, **Stage**), with the unchanged ones in a closed **Show unchanged**
 disclosure (**Field**, **Value**), as on the census tabs. The panel links to
 Limitations (with Ministry stewardship) and, with Additional information, to
 the Family's Additional information item, or its queue when the Family has
-no current item, where these answers are handled; a campaign without
-Additional information never mentions it on this tab. A Family with no
-response yet says so.
+no current item, where these answers are handled; each answer offers its
+page's row actions here too ([hub row actions](#hub-row-actions)). A
+campaign without Additional information never mentions it on this tab. A
+Family with no response yet says so.
 
 **Reads.** Only this tab reads them: one statement for the effective live
 response's answers and the Family's current Additional information item.

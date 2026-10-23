@@ -1920,7 +1920,10 @@ Member Entered by hand also offers Correct (or Add) the ParishSoft Member ID
 [refresh checks](#refresh-checks)). Each takes the optional note in the
 shared confirmation dialog; Back to review requires it only on a
 [terminal stage](#undoing-a-terminal-stage), whose dialog says where the row
-goes (on an Ignored row the note stays optional, #1889).
+goes (on an Ignored row the note stays optional, #1889). The Family hub
+draws the same icons and dialogs on its changed rows, posting to the
+stream's page (#2064,
+[hub row actions](../admin-portal/spec.md#hub-row-actions)).
 
 ### Selected-state icons
 
