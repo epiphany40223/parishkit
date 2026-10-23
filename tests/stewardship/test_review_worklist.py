@@ -71,14 +71,15 @@ def icons(stream, placement, roles=STAFF, **flags):
             {},
             [("ignore", True, True), ("back_to_review", False, None)],
         ),
-        # A mark in force is selected too; Back to review undoes it (#1840).
+        # A mark in force is selected too; Back to review undoes it (#1840),
+        # so it is drawn just right of the mark (R45 W, #2041).
         (
             Placement(Stage.ENTERED_BY_HAND, Decision.ACCEPTED),
             {},
             [
                 ("accept", True, True),
-                ("back_to_review", False, None),
                 ("entered_by_hand", True, True),
+                ("back_to_review", False, None),
             ],
         ),
         # Entered incorrectly's old mark is not in force: mark it again.
@@ -135,8 +136,8 @@ def test_selected_icons_are_named_and_filled():
     titles = [icon["title"] for icon in row_icons("census", marked, STAFF, name="x")]
     assert titles == [
         "Accepted; choose Back to review to change it",
-        "Send x back to review",
         "Entered by hand; choose Back to review to change it",
+        "Send x back to review",
     ]
     assert accept["focus"] == "accept"
     edit = row_icons("census", Placement(Stage.TO_REVIEW), STAFF, name="x")[1]

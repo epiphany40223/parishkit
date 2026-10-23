@@ -41,7 +41,8 @@ from parishkit.stewardship.pipeline import (
 from parishkit.stewardship.web.refusals import Refusal
 
 # The row icons, in the order every row draws them, so an action keeps its
-# place from row to row (UX conventions, "Row actions and confirmation").
+# place from row to row (UX conventions, "Row actions and confirmation"),
+# save Back to review, drawn just right of the state it undoes.
 ROW_ORDER = (
     Action.ACCEPT,
     Action.EDIT,
@@ -351,7 +352,8 @@ def row_icons(
     withheld=(),
     offers=None,
 ):
-    """One row's action icons for one reader, in ``ROW_ORDER``.
+    """One row's action icons for one reader, in ``ROW_ORDER``, its undo
+    beside the state it undoes (``_undo_after_selected``).
 
     Each is offered (an icon that opens its dialog, ``aria-pressed`` false
     for an action that records a state) or selected (the decision or mark
@@ -395,7 +397,25 @@ def row_icons(
                 "pressed": on if words.selected else None,
             }
         )
-    return icons
+    return _undo_after_selected(icons)
+
+
+def _undo_after_selected(icons):
+    """Move Back to review to just right of the last selected icon.
+
+    Back to review undoes the latest state in force, so it sits beside the
+    icon it undoes (Administrator, R45 W, #2041): an Entered by hand or
+    Handled mark is drawn after Back to review in ``ROW_ORDER``, so the
+    undo moves after it; on a decided row it is already there. A row with
+    no selected icon or no undo keeps ``ROW_ORDER``.
+    """
+    undo = next((i for i in icons if i["action"] == Action.BACK_TO_REVIEW.value), None)
+    chosen = [n for n, icon in enumerate(icons) if icon["selected"]]
+    if undo is None or not chosen:
+        return icons
+    rest = [icon for icon in icons if icon is not undo]
+    last = rest.index(icons[chosen[-1]])
+    return [*rest[: last + 1], undo, *rest[last + 1 :]]
 
 
 def bulk_buttons(stream, roles, *, items="items", silent=frozenset()):
@@ -634,13 +654,15 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
     ):
         icons.append(remark_icon(remark, row, prefix, name=name))
     row["icons"] = icons
-    # A remark is one row at a time: it asks for the row's own fields.
-    kinds = [
+    # A remark is one row at a time: it asks for the row's own fields. The
+    # kinds keep BULK's order whatever order the icons are drawn in, so rows
+    # offering the same kinds list them alike (ui-v1.js compares the lists).
+    kinds = {
         icon["action"]
         for icon in icons
         if not icon["selected"] and not icon.get("remark")
-    ]
-    row["kinds"] = " ".join(kind for kind in kinds if Action(kind) in BULK)
+    }
+    row["kinds"] = " ".join(kind.value for kind in BULK if kind.value in kinds)
     # A bulk Back to review asks for a note while a ticked row is at a
     # terminal stage.
     row["choice"] = REOPEN if reopen else ""

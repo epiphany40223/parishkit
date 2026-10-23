@@ -165,7 +165,8 @@ def test_back_to_review_undoes_handled_with_a_note(page, component_origin):
         node.get_attribute("data-row-action")
         for node in row(page, 0).locator(".table-actions button").all()
     ]
-    assert actions == ["accept", "back_to_review", "handled"]
+    # The undo sits just right of the mark it undoes (R45 W, #2041).
+    assert actions == ["accept", "handled", "back_to_review"]
     icon(page, 0, "Send", " back to review").click()
     dialog = page.locator("#information-decide-dialog")
     has_text(

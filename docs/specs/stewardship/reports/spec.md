@@ -2884,8 +2884,12 @@ required note, as on every terminal stage
 so the added change is *To enter by hand* again, at its next version, and
 **Withdraw**, which undoes the mark and withdraws it in one action, with the
 same required note (its two steps, `reopened` then `withdrawn`, each with
-its own audit event). Every step stays in its history. Entered by hand, Not
-entered yet (the bulk bar's Back to review, whose dialog says so while the
+its own audit event). An entered one's row draws Accept (selected, Added
+by the parish), Withdraw, Entered by hand (selected), then Not entered yet,
+the undo just right of the mark it undoes
+([row actions](../ui-conventions/spec.md#row-actions-and-confirmation)).
+Every step stays in its history. Entered by hand, Not entered yet (the
+bulk bar's Back to review, whose dialog says so while the
 page lists an entered addition) and Withdraw are in the bulk bar too,
 together with the Family's own changes, all or none; the bulk bar offers
 Withdraw only while the page lists a change the parish added, and a ticked

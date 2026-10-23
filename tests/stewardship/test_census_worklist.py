@@ -584,6 +584,8 @@ def test_an_entered_addition_is_undone_back_to_enter_by_hand():
         "Entered by hand; choose Not entered yet to change it"
     )
     assert icons["accept"]["title"] == "Added by the parish"
+    # Not entered yet sits just right of the mark it undoes (R45 W, #2041).
+    assert list(icons) == ["accept", "withdraw", "entered_by_hand", "back_to_review"]
     assert rows["add-a1"]["kinds"] == "back_to_review withdraw"
     icons = {icon["action"]: icon for icon in rows["add-a2"]["icons"]}
     assert set(icons) == {"accept", "withdraw", "entered_by_hand"}
@@ -953,8 +955,8 @@ def test_an_entered_new_member_offers_correcting_its_member_id():
     (shown,) = worklist.rows
     assert icons(worklist) == [
         ("accept", True),
-        ("back_to_review", False),
         ("entered_by_hand", True),
+        ("back_to_review", False),
         ("entered_by_hand", False),
     ]
     correct = shown["icons"][3]
@@ -1030,6 +1032,6 @@ def test_no_correction_without_the_census_roles_or_on_other_rows():
     worklist, _ = page([suffix])
     assert icons(worklist) == [
         ("accept", True),
-        ("back_to_review", False),
         ("entered_by_hand", True),
+        ("back_to_review", False),
     ]

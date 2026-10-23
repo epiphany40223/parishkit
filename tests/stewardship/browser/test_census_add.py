@@ -247,7 +247,8 @@ def test_withdraw_after_entered_needs_the_undos_note(page, component_origin):
         node.get_attribute("data-row-action")
         for node in added.locator(".table-actions button").all()
     ]
-    assert actions == ["accept", "back_to_review", "withdraw", "entered_by_hand"]
+    # Not entered yet sits just right of the mark it undoes (R45 W, #2041).
+    assert actions == ["accept", "withdraw", "entered_by_hand", "back_to_review"]
     assert added.locator('[data-row-action="entered_by_hand"]').get_attribute(
         "title"
     ) == ("Entered by hand; choose Not entered yet to change it")
