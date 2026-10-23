@@ -3364,21 +3364,51 @@ the campaign wizard it saves directly instead, with Save and go back
 from the saved schedule, whose mail type is fixed; a schedule that is unknown or
 read-only is refused there too, even from an old link (a GET or a POST).
 The editor follows the shared
-[schedules](../ui-conventions/spec.md#schedules) rules, and is an
-[additive editor](../ui-conventions/spec.md#basic-and-advanced-modes)
-([#1129](https://github.com/epiphany40223/parishkit/issues/1129)): the
-Basic and Advanced toggle sits under the zone note, above the schedule's
-fields. Both modes show the mail type, send date, send time, Email to
-send and, on Edit of a series' reminder, its "Part of" line and Change scope, which decides what
-the Edit changes. Advanced adds New's **Repeat** and **Edit this schedule's
-email**, each where it is drawn below. Switching to Basic while either is
-ticked asks first ("Your custom schedule has no basic equivalent."; on Edit,
-which has no Repeat, the text names only the schedule's own email), and
-Switch to Basic unticks both. Choosing a mail type other than Reminder
-unticks Repeat, which only a Reminder has. The page opens in Basic, or in Advanced when
-it is drawn with either ticked or answers a post sent from Advanced.
-Switching modes is not a change, so the button and its hint are as below.
-The date-change review's editors have no modes yet.
+[schedules](../ui-conventions/spec.md#schedules) rules, including
+[Once or Repeating](../ui-conventions/spec.md#schedules), as the
+date-change review's [New schedule](#new-schedule-on-the-date-change-review)
+does, and has no Basic and Advanced toggle
+([#2022](https://github.com/epiphany40223/parishkit/issues/2022),
+following the Administrator's R43 and R44 decisions on
+[#1944](https://github.com/epiphany40223/parishkit/issues/1944)): Sends is
+its disclosure for a repeat, and **Edit this schedule's email** is a
+checkbox that shows its own fields. A posted `editor_mode` is refused as an
+unknown field.
+
+- **New: Mail type first.** New opens with only **Mail type**; nothing else
+  shows until a type is chosen ([conditional
+  fields](../ui-conventions/spec.md#conditional-fields)). The type then
+  shows its own fields: for an Initial invitation, Send date, Send time,
+  Email to send and Edit this schedule's email.
+- **New, Reminder: Sends.** For a Reminder the next field is **Sends**, the
+  shared two-way pair **Once** | **Repeating**, Once chosen to start; an
+  Initial invitation is always Once and shows no Sends. **Once** shows Send
+  date, Send time and Email to send. **Repeating** shows the
+  repeat rule (below) in the send date's place,
+  then the same Send time and Email to send, which both share. Edit this
+  schedule's email follows Email to send in both. Switching keeps what was
+  typed for each, and each choice changes the page in place below the
+  control just used, with no reload or jump. Changing the mail type away
+  from Reminder hides Sends and the rule (and shows the send date, as
+  Once does); the choice is kept for when Reminder is chosen again.
+- **What Sends posts.** New's server reads the repeat (it refuses a rule at
+  its fields and remembers the reminder series below), so Sends is posted,
+  as `repeat-sends` (`once` or `repeat`), while it is shown; a hidden Sends
+  is disabled and posts nothing, which the server reads as Once. It is
+  never stored: Repeating posts the dates that fit as ordinary reminders.
+  A Sends of Repeating with another mail type is refused at Sends ("Only
+  reminders repeat."), and the error summary links each refusal at Sends
+  to its first choice.
+- **Edit** shows the fields of the schedule's fixed type, with no Sends (a
+  saved schedule is one send; a repeat is offered on New only). Edit of a
+  reminder or invitation shows Edit this schedule's email under Email to
+  send, and on Edit of a series' reminder its "Part of" line and Change
+  scope, which decides what the Edit changes. Edit of a Daily or Weekly
+  report has neither.
+- **A page drawn again** (a refused Review) is drawn as it was posted:
+  Sends as chosen, and the parts the mail type and Sends show drawn shown,
+  so nothing flashes. When the browser shows the page again from its
+  history, the parts are worked out again from their values (`pageshow`).
 
 The send date, time and day of the week are shown and typed in the browser's
 time zone, like every Admin time ([#558](https://github.com/epiphany40223/parishkit/issues/558),
@@ -3404,7 +3434,23 @@ drawn with (on Edit, the saved schedule as shown in the browser's zone, so a
 time typed another way that reads the same, such as "6am" for 06:00, is no
 change; on New, the blank form), with a short hint after it; there is no
 "nothing has changed" review (the server still refuses an unchanged Edit,
-only as a safeguard). It sends the page to the same review as every schedule
+only as a safeguard). It is also unavailable until the form holds a whole
+schedule ([prerequisite
+gates](../ui-conventions/spec.md#prerequisite-gates), #2025): a mail type
+and, for it, a send date, a send time that can be read and an Email to send,
+the hint after the button naming the first one missing ("Enter the send
+date.", "Choose the email to send."), or the send date's own refusal once
+it shows. For Repeating the rule must also give a date to add; the repeat
+summary above the button says why it gives none. On New, while the campaign already
+has its one Initial invitation, choosing Initial invitation makes the button
+unavailable at once, before anything else is filled in, with "This campaign
+already has an Initial invitation. Change it from Dates and mail schedules
+instead.", or, once that invitation has sent or is being prepared, "This
+campaign's Initial invitation has already been sent or is being prepared,
+so it can't have another." The server's one-Initial-invitation rule still
+refuses a second, as a safeguard. The unchanged hint and this hint share
+one place after the button, one at a time, so neither moves the button. It
+sends the page to the same review as every schedule
 change: the server builds the complete set of schedules (the saved ones
 unchanged, plus this one added or changed) and validates, previews and signs
 it exactly as the schedule commands do. A refusal of the values posted keeps
@@ -3442,8 +3488,8 @@ confirms on Dates and mail schedules, including series edits and the
 date-change review.
 **Cancel** on the page returns to the list without saving.
 
-In Advanced, New and Edit both offer **Edit this schedule's email**, a checkbox under Email
-to send ([#446](https://github.com/epiphany40223/parishkit/issues/446)). Ticking it
+New (once a mail type is chosen) and Edit (of a reminder or invitation)
+both offer **Edit this schedule's email**, a checkbox under Email to send ([#446](https://github.com/epiphany40223/parishkit/issues/446)). Ticking it
 shows, below it, the email's subject, HTML source and plain text with
 "Generate plain text from HTML", filled in from the chosen email, and **Reset to
 the default text**, which fills the mail type's built-in default (the text
@@ -3485,19 +3531,18 @@ can't be changed either.
 
 On New, the mail type is chosen on the page, so the fields are checked against
 the mail type posted, and Reset fills that type's default. Until a mail type
-is chosen, "Edit this schedule's email" and Reset are unavailable and a
-reserved line under the checkbox says "Choose a mail type first."
-([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)); the
-line keeps its space, so choosing a type moves nothing. Clearing the type
-unticks the box. The plain-text help states the invitation and reminder rule
+is chosen, "Edit this schedule's email" is not shown (Mail type first,
+above). Clearing the type hides it again and unticks the box, so its
+fields are not sent. The plain-text help states the invitation and reminder rule
 for every type, and the help under the fields says the text is checked
 against the chosen type. Changing the mail type, which narrows Email to send, fills
 the fields again like choosing another email: from the email still chosen,
 or empty while none is, so another type's text is never left to be saved as
 this one's. An email must still be chosen; the new email is compared with it.
 On New the fields start empty, and the change gate compares them with the
-blank form like the rest of New. With **Repeat**, every reminder the rule adds
-sends the one new email, so they share it; the help and the review say so.
+blank form like the rest of New. With Sends **Repeating**, every reminder the
+rule adds sends the one new email, so they share it; the help and the review
+say so.
 
 Under the fields, **Send a test of this text** sends them as they are now as
 a test, without saving anything
@@ -3530,10 +3575,11 @@ is refused for one. A send that gets no answer is not repeated, and the line
 says to check the Testing mailbox first. The command line has no
 counterpart: `test sample` tests a saved email.
 
-In Advanced on New, choosing Reminder offers a **Repeat** checkbox
-([#469](https://github.com/epiphany40223/parishkit/issues/469)); other mail
-types do not repeat (one Initial invitation).
-Checking it replaces the send date with the repeat fields: how often (every day;
+On New, a Reminder's Sends **Repeating**
+([#469](https://github.com/epiphany40223/parishkit/issues/469),
+[#2022](https://github.com/epiphany40223/parishkit/issues/2022)) replaces
+the send date with the repeat fields; other mail types do not repeat (one
+Initial invitation). The repeat fields are: how often (every day;
 every week on the chosen days; or every month on a day of the month or on the
 first, second, third, fourth or last chosen weekday) and the first and last
 dates (the campaign's dates to start with). The send time and Email to send
@@ -3566,7 +3612,7 @@ back** in the campaign wizard) is unavailable, named by the same words, under
 the [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates) rule,
 and worked out again when the page is shown from the browser's history. The
 server refuses such a rule at the same fields in the same words, and
-otherwise refuses a rule none of whose dates can be added at Repeat. The
+otherwise refuses a rule none of whose dates can be added at Sends. The
 date-change review's New schedule, Sends Repeating, shows rule errors at
 its fields the same way, and **Review changes** waits, named by the pane's help
 line, while the rule gives nothing to add. A month without the
@@ -3584,11 +3630,11 @@ invitations and
 reminders](../background-processing/spec.md#family-invitations-and-reminders)).
 The server checks each date as it checks any reminder, refuses more than 30
 at once, and refuses a repeat whose send time on any date has already passed,
-naming that date and time at Repeat. The page script's expansion and the server's
+naming that date and time at Sends. The page script's expansion and the server's
 (`campaigns/recurrence.py`, used by the command line's
 [repeat entry](../admin-automation/spec.md#schedules-and-configuration)) both
 run the shared case table
-`tests/stewardship/fixtures/recurrence_cases.json`. Repeat is offered on New
+`tests/stewardship/fixtures/recurrence_cases.json`. Repeating is offered on New
 only.
 
 The same change also remembers the rule as a **reminder series** holding
