@@ -26,25 +26,20 @@ from .campaign_forms import OVERLAP_TEMPLATE, overlap_attributes, overlaps
 from .content_forms import EMAIL_LABELS
 from .timezone_field import TimezoneField
 
-KINDS = ("initial", "reminder", "daily_digest", "weekly_digest")
-# The converted Daily and Weekly reports (#1786), which these forms edit as
-# the digests they were (``report_rows``) until the Report emails page's
-# editor ships. No new one can be added: report emails replaced them.
-DIGEST_KINDS = frozenset({"daily_digest", "weekly_digest"})
+# The Family mail types a schedule sends. Report emails (#1786) are
+# edited on Report emails, never here.
+KINDS = ("initial", "reminder")
 # The fields each mail type uses besides the type itself, as
 # configuration.schedule_values requires them. The page script reads this (as
-# ScheduleForm.field_rules) to show only these fields. A converted report
-# sends no email template: its subject and introduction are its own.
+# ScheduleForm.field_rules) to show only these fields.
 FIELDS = {
     "initial": ("date", "time", "template_version"),
     "reminder": ("date", "time", "template_version"),
-    "daily_digest": ("time", "comparison"),
-    "weekly_digest": ("weekday", "time"),
 }
 
 
 NO_TEMPLATES = _(
-    "No invitation, reminder or digest email is saved yet, so there is nothing "
+    "No invitation or reminder email is saved yet, so there is nothing "
     "to choose. Save those emails with the page and email templates first."
 )
 # A mailing dated outside the campaign, and its error code: a live end-date
@@ -95,8 +90,8 @@ def saved_send_attrs(values, moment):
     server judges its saved date, not the shown one read again in a
     (possibly proposed) campaign zone. ``moment`` is the saved send's
     instant (``schedule_local.instant``), which the page shows; the script
-    compares the row's fields with it to tell such a row. A digest (no
-    date) has nothing to judge.
+    compares the row's fields with it to tell such a row. A row without a
+    date has nothing to judge.
     """
     if not values.get("date"):
         return {}
@@ -515,17 +510,6 @@ class ScheduleForm(AdminForm):
             "and email templates."
         ),
     )
-    # The daily digest's optional Compared with past campaigns section
-    # (#1018), off unless ticked. It is saved only when on (see _values).
-    comparison = forms.BooleanField(
-        label=_("Include Compared with past campaigns"),
-        required=False,
-        help_text=_(
-            "Daily Admin digests only: add charts and figures comparing this "
-            "campaign with the past campaigns imported on Past campaigns, "
-            "with the same protections as the comparison downloads."
-        ),
-    )
 
     def __init__(
         self,
@@ -567,15 +551,6 @@ class ScheduleForm(AdminForm):
         fixed = self.initial.get("kind") if self.initial.get("id") else None
         if fixed:
             self.fields["kind"].disabled = True
-        else:
-            # A new schedule is Family mail: no new digest exists to add.
-            self.fields["kind"].choices = [
-                choice
-                for choice in self.fields["kind"].choices
-                if choice[0] not in DIGEST_KINDS
-            ]
-        if fixed in DIGEST_KINDS:
-            self.fields["template_version"].required = False
         emails = [
             row
             for row in templates
@@ -864,11 +839,6 @@ class ScheduleSet(AdminFormSet):
                 field_errors = True
                 continue
             values = self._values(form, old.get(identifier))
-            if values["kind"] in DIGEST_KINDS:
-                # A converted report (#1786): its own values are checked
-                # when the change is saved (report_rows.translate).
-                rows.append((values["kind"], None))
-                continue
             try:
                 due = schedule_values(values, self.campaign)
             except ConfigError:
@@ -920,27 +890,13 @@ class ScheduleSet(AdminFormSet):
 
         The rules are those of configuration.schedule_values: initial and
         reminder mail needs a date within the campaign's (inclusive) dates and
-        no weekday; a weekly digest needs a weekday and no date; a daily digest
-        needs neither. Every schedule sends a saved email of its own mail type.
+        no weekday, and sends a saved email of its own mail type.
         """
         data = form.cleaned_data
         kind = data["kind"]
         start, end = self.window
         problems = []
-        if "date" not in FIELDS[kind]:
-            if data["date"] is not None:
-                problems.append(
-                    (
-                        "date",
-                        _(
-                            "A date applies only to initial invitations and "
-                            "reminders — leave it empty. Digests are sent "
-                            "throughout the campaign."
-                        ),
-                        "date_not_allowed",
-                    )
-                )
-        elif data["date"] is None:
+        if data["date"] is None:
             problems.append(
                 (
                     "date",
@@ -952,38 +908,20 @@ class ScheduleSet(AdminFormSet):
             # Its own code, which a live end-date review recognizes
             # (campaign_end_date.end_review).
             problems.append(("date", OUTSIDE_WINDOW, OUTSIDE_CAMPAIGN))
-        if "weekday" not in FIELDS[kind]:
-            if data["weekday"] is not None:
-                problems.append(
-                    (
-                        "weekday",
-                        _(
-                            "A weekday applies only to weekly digests — leave it "
-                            "at Not weekly."
-                        ),
-                        "weekday_not_allowed",
-                    )
-                )
-        elif data["weekday"] is None:
+        # The weekday field stays for the stored record's shape and the
+        # schedule commands' change documents; Family mail never has one.
+        if data["weekday"] is not None:
             problems.append(
                 (
                     "weekday",
-                    _("Choose the day of the week the digest is sent."),
-                    "weekday_missing",
-                )
-            )
-        if data.get("comparison") and "comparison" not in FIELDS[kind]:
-            problems.append(
-                (
-                    "comparison",
                     _(
-                        "Only daily Admin digests can include the comparison "
-                        "with past campaigns — leave it unticked."
+                        "A weekday applies only to weekly digests — leave it "
+                        "at Not weekly."
                     ),
-                    "comparison_not_allowed",
+                    "weekday_not_allowed",
                 )
             )
-        if kind not in DIGEST_KINDS and self._subject(data, previous) is None:
+        if self._subject(data, previous) is None:
             problems.append(
                 (
                     "template_version",
@@ -1002,12 +940,11 @@ class ScheduleSet(AdminFormSet):
     def _check_collection(self, rows):
         """Rules between schedules, as validate_campaign_sections applies them.
 
-        ``rows`` holds (kind, due) for every retained schedule; ``due`` is the
-        UTC send time of initial/reminder mail and None for digests.
+        ``rows`` holds (kind, due) for every retained schedule; ``due`` is its
+        UTC send time.
         """
-        mail = [(due, kind) for kind, due in rows if due is not None]
+        mail = [(due, kind) for kind, due in rows]
         initial = [due for due, kind in mail if kind == "initial"]
-        digests = [kind for kind, due in rows if due is None]
         errors = []
         if mail and not initial:
             errors.append(
@@ -1046,16 +983,6 @@ class ScheduleSet(AdminFormSet):
                     code="same_time",
                 )
             )
-        if len(set(digests)) != len(digests):
-            errors.append(
-                forms.ValidationError(
-                    _(
-                        "Only one Daily Admin digest and one Weekly Admin digest are "
-                        "allowed. Delete the extra one."
-                    ),
-                    code="one_digest",
-                )
-            )
         if errors:
             raise forms.ValidationError(errors)
 
@@ -1064,10 +991,8 @@ class ScheduleSet(AdminFormSet):
 
         Subjects come from immutable templates, never from browser fields. An
         unresolved legacy template stays acceptable only on the saved row that
-        already uses it. A converted report keeps its own subject.
+        already uses it.
         """
-        if data["kind"] in DIGEST_KINDS:
-            return previous["subject"] if previous else None
         template = next(
             (
                 row["values"]
@@ -1102,21 +1027,9 @@ class ScheduleSet(AdminFormSet):
             "date": data["date"].isoformat() if data["date"] else None,
             "time": data["time"].isoformat(timespec="seconds"),
             "weekday": data["weekday"],
-            "template_version": None
-            if data["kind"] in DIGEST_KINDS
-            else data["template_version"],
+            "template_version": data["template_version"],
             "subject": subject,
         }
-        # Present only when on, so a schedule saved before the setting
-        # existed (#1018) is unchanged when its row is posted back as shown.
-        if data.get("comparison"):
-            values["comparison"] = True
-        # A digest keeps the sends it skips (#1658) on every later revision:
-        # a skipped past send has no fulfillment, so a revision without it
-        # would plan that send again as missed. Only a skip adds a date
-        # (digest_skips.apply); no form field changes them.
-        if previous and previous.get("skip_dates") and data["kind"] == previous["kind"]:
-            values["skip_dates"] = previous["skip_dates"]
         return values
 
     def patch(self):

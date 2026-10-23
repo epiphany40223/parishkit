@@ -101,8 +101,6 @@ FIELD_TYPES = {
     "time": (str,),
     "weekday": (int, type(None)),
     "template_version": (str,),
-    # A daily digest's Compared with past campaigns section (#1018).
-    "comparison": (bool,),
 }
 
 

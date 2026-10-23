@@ -98,7 +98,7 @@ def deletion_patch(document, campaign, records, identifiers):
     """The one configuration patch that removes every chosen email template.
 
     Each chosen ID must be one of this campaign's schedulable emails
-    (invitation, reminder or Admin digest); the confirmation email is a
+    (invitation or reminder); the confirmation email is a
     single entry that is edited, never deleted. ``revision_patch`` refuses
     an email a schedule still sends, with the same explanation the editor
     gives, so nothing is removed.

@@ -97,7 +97,6 @@ from parishkit.stewardship.web.refusals import (
 from . import (
     admin_navigation,
     campaign_wizard,
-    digest_skips,
     schedule_email,
     schedule_local,
     schedule_suggestions,
@@ -136,7 +135,7 @@ from .schedule_forms import (
 )
 from .schedule_preview import work_summary
 from .schedule_reads import campaign_schedules, schedule_state
-from .schedule_table import DIGESTS, schedule_rows
+from .schedule_table import schedule_rows
 from .series_edits import SCOPES, SeriesEditError, cut, plan, rule_text
 from .series_schema import SECTION as SERIES
 from .sessions import authenticated_admin
@@ -167,7 +166,6 @@ ENTRY_FIELDS = (
     "time",
     "weekday",
     "template_version",
-    "comparison",
     # The moment an Edit page drew its schedule from (#558, ScheduleForm).
     "drawn_at",
 )
@@ -264,11 +262,10 @@ MOVE_FIELDS = {
     f"{ENTRY}-date",
 }
 # Why a send the calendar offers no Move… for is refused anyway (an old
-# page or a crafted request): a digest is one repeating schedule, and a
-# missed send's time has passed.
+# page or a crafted request): a missed send's time has passed.
 NOT_MOVABLE = _(
-    "This scheduled email can't be moved from the calendar: it repeats, or its "
-    "send time has passed without sending."
+    "This scheduled email can't be moved from the calendar: its send time has "
+    "passed without sending."
 )
 # Edit's line when "This reminder only" takes a reminder off the dates its
 # series' rule gives (#1521), which ``series_schema.upkeep`` then applies.
@@ -286,37 +283,28 @@ MOVE_REPEATED_HOUR = _(
 )
 # A year and month as the calendar's addresses name one (``?month=``).
 YEAR_MONTH = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
-# Edit's Delete (#1656): which reminders of a series' reminder it removes,
-# or (#1658) "send", one send of a digest it skips; the fields its review
-# posts, and the review's lines on a series or digest.
-DELETE_SCOPES = ("this", "series", "send")
+# Edit's Delete (#1656): which reminders of a series' reminder it removes;
+# the fields its review posts, and the review's line on a series.
+DELETE_SCOPES = ("this", "series")
 DELETE_FIELDS = {
     "csrfmiddlewaretoken",
     "base_digest",
     "schedule_id",
     "action",
     "scope",
-    "send",
     # The browser's zone, which the review's send times are shown in
     # (#1129, #1949), as on Edit's own review.
     ZONE,
 }
-# The address parameter naming the digest send Edit was opened for from the
-# Campaign calendar (#1658), which Delete's This email only skips.
-SEND = "send"
 SERIES_DELETED = _(
     "The whole series is deleted: %(rule)s. Its reminders that already sent "
     "stay as ordinary reminders."
-)
-DIGEST_DELETED = _(
-    "This report repeats, so deleting it stops every send of it still to come."
 )
 # Edit's refusal of a save that changes nothing. The page's change gate
 # keeps Review unavailable until something changed, so only a request that
 # bypasses the page script meets it, in the review dialog (#750).
 UNCHANGED = _(
-    "Nothing has changed. Change the date, time, email or comparison, then "
-    "choose Review changes."
+    "Nothing has changed. Change the date, time or email, then choose Review changes."
 )
 # The signed review of an edited email carries its text; the Pages and emails
 # editor refuses a preview this large too (content_views._preview).
@@ -638,7 +626,6 @@ def review(
     series=(),
     series_changes=(),
     key=None,
-    skips=None,
     zone=None,
 ):
     """Bind a change document to the review's forms and build the review.
@@ -654,8 +641,7 @@ def review(
     entry may send one. ``series`` and ``series_changes`` are
     ``build_preview``'s reminder series to remember and series operations
     (#469). ``key`` signs the review with a direct save's request key
-    (#1404 PR 4b, ``admin_editing.direct_key``). ``skips`` names the one
-    digest send the change skips (#1658, ``build_preview``'s). ``zone`` is
+    (#1404 PR 4b, ``admin_editing.direct_key``). ``zone`` is
     the browser's posted zone, which the review's send times are shown in
     (#1129); the command line passes none.
     """
@@ -697,7 +683,6 @@ def review(
         series=series,
         series_changes=series_changes,
         request_key=key,
-        skips=skips,
         zone=zone,
     )
     return context, window, schedules, identifiers
@@ -892,8 +877,8 @@ def editor_mode(posted):
 def _days(entry, repeat):
     """The send dates typed on a valid page, in the browser's zone.
 
-    One per repeat date when the page repeats; otherwise the one date field
-    (None for a digest). Repeat dates are also what ``_targets`` names.
+    One per repeat date when the page repeats; otherwise the one date field.
+    Repeat dates are also what ``_targets`` names.
     """
     if repeat is not None and repeat.cleaned_data["repeat"]:
         return repeat.cleaned_data["dates"]
@@ -928,8 +913,6 @@ def _entries(entry, repeat, schedule, *, zone, campaign_zone, now):
             "time": clock.isoformat(timespec="seconds"),
             "weekday": weekday,
             "template_version": data["template_version"],
-            # The daily digest's comparison section (#1018); False elsewhere.
-            "comparison": bool(data.get("comparison")),
         }
         if schedule is not None:
             fields = {"id": schedule["id"], **fields}
@@ -1189,8 +1172,7 @@ def _series_edit(
     )
     entries = [{"id": member, "delete": True} for member in outcome["remove"]]
     entries.extend(
-        {"kind": "reminder", **row, "weekday": None, "comparison": False}
-        for row in outcome["add"]
+        {"kind": "reminder", **row, "weekday": None} for row in outcome["add"]
     )
     series = (
         [outcome["series"] | {"added": list(range(len(outcome["add"])))}]
@@ -1263,12 +1245,11 @@ def _moved(posted, schedule, saved, campaign, now):
 
     ``posted`` holds only ``MOVE_FIELDS``: the new send date in the
     browser's zone. The send time is the saved one in that zone (so 9:00 AM
-    stays 9:00 AM on the new day), the email is the saved one (a digest's
-    comparison never applies: a digest does not move), and ``drawn_at`` is
-    the saved send's moment, as a freshly drawn Edit page would post them;
-    Edit then reviews it exactly as if the Administrator had changed only
-    the date there. A send the calendar
-    offers no Move… for (a digest, a missed send) is refused. A blank or
+    stays 9:00 AM on the new day), the email is the saved one, and
+    ``drawn_at`` is the saved send's moment, as a freshly drawn Edit page
+    would post them; Edit then reviews it exactly as if the Administrator
+    had changed only the date there. A send the calendar offers no Move…
+    for (a missed send) is refused. A blank or
     unknown zone keeps the campaign-local time, so Edit's own zone refusal
     answers it.
     """
@@ -1451,11 +1432,9 @@ def _entry(request, campaign_id, schedule_id=None):
     the Campaign calendar's Add on a day (``?date=``, ``added_on``, #1521)
     has that send date filled in, and its Cancel and Apply return to the
     calendar on that day's month; Edit opened from the calendar
-    (``?calendar=<month>``, #1656) returns to that month (``return_url``);
-    opened for one of a digest's sends (``?send=<slot>``, #1658), its Delete
-    offers This email only while that send may be skipped
-    (``digest_skips.skippable``). The page posts to its own path, without the
-    parameters. Edit also draws Delete, whose review is ``_delete_review``'s.
+    (``?calendar=<month>``, #1656) returns to that month (``return_url``).
+    The page posts to its own path, without the parameters. Edit also draws
+    Delete, whose review is ``_delete_review``'s.
 
     Inside the campaign wizard the page posts ``save`` instead (#1404 PR 4b):
     the same review, signed with the save's request key and recorded at once
@@ -1467,13 +1446,10 @@ def _entry(request, campaign_id, schedule_id=None):
     actor = principal(request, service)
     parameters = filters(
         request.GET,
-        allowed={ADD_ON} if schedule_id is None else {FROM_CALENDAR, SEND},
+        allowed={ADD_ON} if schedule_id is None else {FROM_CALENDAR},
     )
     on = added_on(parameters)
     month = year_month(parameters, FROM_CALENDAR)
-    send = parameters.get(SEND)
-    if send is not None and digest_skips.slot_date(send) is None:
-        raise ValueError("Unknown filter input.")
     if request.FILES:
         raise unexpected_fields(request.FILES, allowed=())
     new = schedule_id is None
@@ -1569,9 +1545,6 @@ def _entry(request, campaign_id, schedule_id=None):
             "email_test": schedule_email.test_context(test_mail, campaign.pk),
             "new": new,
             "schedule": schedule,
-            # A converted Daily or Weekly report (#1786) sends no email
-            # template, so Edit offers no email of its own.
-            "report": schedule is not None and "report" in schedule,
             # Edit of a series' reminder (#469): its rule and the scope.
             "series": part_of,
             "base_digest": state[0].active_configuration.digest,
@@ -1581,13 +1554,6 @@ def _entry(request, campaign_id, schedule_id=None):
             "list_url": return_url(on, month),
             # Edit's Delete (#1656) posts its review here.
             "delete_url": reverse("admin:schedule_delete"),
-            # The digest send Edit was opened for from the calendar, when
-            # Delete may skip it alone (#1658); else None.
-            "skip_send": digest_skips.skippable(
-                schedule["id"], schedule["values"], values, send, now
-            )
-            if schedule is not None and send is not None
-            else None,
             # The review dialog's Apply confirms on the list, then returns.
             "apply_url": reverse("admin:schedule_settings"),
             "window_text": window_text(values),
@@ -1595,14 +1561,13 @@ def _entry(request, campaign_id, schedule_id=None):
             "editor_mode": editor_mode(posted),
         } | entry_times(values, saved, schedule, now, bound=posted is not None)
         admin_navigation.place(request, flow="change", step="edit")
-        report = context["report"]
         if posted is None:
             return _entry_page(request, context)
         valid = (
             entry.is_valid()
             & (repeat is None or repeat.is_valid())
             & (scope is None or scope.is_valid())
-            & (not email.is_bound or report or email.is_valid())
+            & (not email.is_bound or email.is_valid())
         )
         if valid:
             _check_repeat(entry, repeat)
@@ -1663,7 +1628,7 @@ def _entry(request, campaign_id, schedule_id=None):
                 # Every entry has the one mail type (a repeat's are reminders).
                 kind=schedule["values"]["kind"] if schedule else entries[0]["kind"],
             )
-            if email.is_bound and not report
+            if email.is_bound
             else None
         )
         series, series_changes, notes = [], [], None
@@ -1829,8 +1794,7 @@ def _sends_once(reviewed, repeat):
 
     Such a review shows nothing the New page does not: no current schedule,
     no sent or planned work (every count is 0), and a send time the reader
-    just typed. A recurring schedule or digest (its resolved send times), a
-    Repeat (its generated reminders), anything else the change touches, or
+    just typed. A Repeat (its generated reminders), anything else the change touches, or
     sends that block it keep the full review.
     """
     changes = reviewed["changes"]
@@ -1989,12 +1953,7 @@ def _delete_entries(schedule, record, saved, read_only, scope):
     """
     identifier = schedule["id"]
     if scope == "this":
-        digest = schedule["values"]["kind"] in DIGESTS
-        return (
-            [{"id": identifier, "delete": True}],
-            [],
-            [DIGEST_DELETED] if digest else [],
-        )
+        return [{"id": identifier, "delete": True}], [], []
     if record is None:
         # A page drawn while the reminder was in a series.
         raise UserFacingError(
@@ -2016,10 +1975,7 @@ def _delete_review(request, service, actor, campaign_id):
 
     The post names one schedule (``schedule_id``), ``action=preview`` and,
     for a series' reminder, ``scope`` ("this", the default, or "series",
-    ``_delete_entries``). For a digest opened from one of its calendar sends
-    (#1658), ``scope`` "send" with that send's slot date (``send``) skips it
-    alone (``digest_skips``) and keeps the digest; any other scope deletes
-    the whole digest. The schedule must still be changeable
+    ``_delete_entries``). The schedule must still be changeable
     (``_changeable``: not run and no work prepared), as on Edit. The change
     is reviewed exactly as every schedule change is (``review``), and the
     answer is the review dialog's fragment, whose Apply confirms on Dates and
@@ -2033,14 +1989,7 @@ def _delete_review(request, service, actor, campaign_id):
     ):
         raise unexpected_fields(posted, allowed=DELETE_FIELDS)
     scope = posted.get("scope", "this")
-    # This email only (#1658) names its digest send; the field is posted
-    # with either choice, and only "send" reads it.
-    slot = digest_skips.slot_date(posted.get(SEND)) if scope == "send" else None
-    if (
-        posted["action"] != "preview"
-        or scope not in DELETE_SCOPES
-        or (scope == "send" and slot is None)
-    ):
+    if posted["action"] != "preview" or scope not in DELETE_SCOPES:
         # No sources: an unknown action or scope value, not an unknown field.
         raise unexpected_fields()
     identifier = str(UUID(posted.get("schedule_id", "")))
@@ -2050,13 +1999,9 @@ def _delete_review(request, service, actor, campaign_id):
         read_only = _changeable(saved, campaign, {identifier})
         schedule = next(row for row in saved if row["id"] == identifier)
         record = _series_of(state[0], campaign, schedule)
-        if slot is None:
-            entries, series_changes, notes = _delete_entries(
-                schedule, record, saved, read_only, scope
-            )
-        else:
-            # The digest itself stays; build_preview adds the skip.
-            entries, series_changes, notes = [], [], []
+        entries, series_changes, notes = _delete_entries(
+            schedule, record, saved, read_only, scope
+        )
         reviewed, window, schedules, _forms = review(
             service,
             actor,
@@ -2066,17 +2011,10 @@ def _delete_review(request, service, actor, campaign_id):
             entries,
             base_digest=posted.get("base_digest"),
             series_changes=series_changes,
-            skips={identifier: slot} if slot else None,
             zone=posted.get(ZONE),
         )
     if reviewed is None:
         raise _refusal(window, schedules)
-    skipped = None
-    if slot is not None:
-        send = digest_skips.send_of(
-            schedule["values"], campaign.active_configuration.values, slot
-        )
-        skipped = {"key": slot, "due_at": send.due_at.isoformat()}
     response = render(
         request,
         "stewardship/schedule-review.html",
@@ -2085,7 +2023,6 @@ def _delete_review(request, service, actor, campaign_id):
             "new": False,
             "deleting": scope,
             "series_notes": notes,
-            "skipped_send": skipped,
         },
     )
     _recheck(request, service)

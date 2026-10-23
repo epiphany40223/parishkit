@@ -3,8 +3,9 @@
 Rendered from the real templates with the views' own helpers, so the browser
 checks need no database:
 
-- ``LIST``: a sent invitation, two upcoming reminders and a weekly digest,
-  sorted by When either way (``?sort=-when``, ``?sort=when``). Its Delete
+- ``LIST``: a sent invitation and two upcoming reminders (Reminder 2 with
+  email already delivered, as a re-planned send may have), sorted by When
+  either way (``?sort=-when``, ``?sort=when``). Its Delete
   posts to ``DELETE``, which answers as the server does: a redirect to the
   change's status page, here already Applied, after which the dialog redraws
   the table from the list's refresh address, which shows Reminder 1 gone.
@@ -17,9 +18,8 @@ checks need no database:
   shared review dialog (#750), whose Apply posts to ``APPLY`` (Applied at
   once), then returns to ``LIST``. New's answer adds one reminder that
   sends once, so it is the confirmation (#1356); Edit's is a full review.
-  ``EDIT_DIGEST`` is Edit scheduled email
-  for the weekly digest. The campaign is in New York's zone; the pages show
-  and take times in the browser's (#558).
+  The campaign is in New York's zone; the pages show and take times in the
+  browser's (#558).
   Edit also offers the schedule's own email (#446), filled in from Reminder
   1's email; the reminder type has two emails to choose from.
   ``EDIT_EMAIL_REFUSED``: the same Edit, whose Review answers 400 with the
@@ -66,9 +66,11 @@ checks need no database:
   the view draws a page answering a post sent from Advanced, so their
   tests reach Repeat and the schedule's own email directly.
 - ``CALENDAR``: the read-only Campaign calendar (#469) of the same schedules
-  plus a daily digest at 7:00 AM, the invitation sent, with the weekly digest
-  expanded to each Monday and the daily one to each day through November 1
-  (the day after the campaign closes), its first four days already past.
+  plus two report emails (#1786), drawn by the view's own
+  ``report_calendar_sends``: the converted Weekly report on each Monday at
+  9:00 AM through November 2, and the converted Daily report at 7:00 AM each
+  day through November 1 (the day after the campaign closes), whose first
+  four sends have already been made. The invitation has sent.
   Each campaign day's Add (#1521) opens ``NEW`` with ``?date=``; ``ADD_ON``
   (``NEW?date=2054-10-12``) is that New with October 12 filled in, as the
   view draws it, whose Cancel and Apply return to ``CALENDAR`` on October
@@ -88,11 +90,7 @@ checks need no database:
   answered with the review of deleting its whole series; ``EDIT_INITIAL``
   to ``INITIAL_DELETE``, refused with ``REFUSAL`` in the server's words.
   ``EDIT_FROM_CALENDAR`` is ``EDIT`` opened from the calendar's October,
-  whose Cancel and Apply return there. ``EDIT_DIGEST_SEND`` is
-  ``EDIT_DIGEST`` opened from the calendar for its October 12 send
-  (``SKIP_DAY``, #1658), whose Delete offers This email only and The whole
-  digest and posts to ``DIGEST_SKIP``, answered with the review of skipping
-  that send.
+  whose Cancel and Apply return there.
 
 ``POSTS`` lists the fixture server's answers to the pages' POSTs; it is
 filled in by ``components``, before the server starts.
@@ -100,6 +98,8 @@ filled in by ``components``, before the server starts.
 
 import json
 from datetime import UTC, datetime, time
+from types import SimpleNamespace
+from unittest import mock
 from uuid import uuid4
 
 from django import forms
@@ -107,14 +107,13 @@ from django.http import QueryDict
 from django.template.loader import render_to_string
 from django.urls import reverse
 
-from parishkit.stewardship.accounts import schedule_email
+from parishkit.stewardship.accounts import schedule_calendar_views, schedule_email
 from parishkit.stewardship.accounts.campaign_mail import NOT_OPEN as CLOSED
-from parishkit.stewardship.accounts.digest_skips import send_of
-from parishkit.stewardship.accounts.report_rows import view_rows
 from parishkit.stewardship.accounts.reports_conversion import converted_values
 from parishkit.stewardship.accounts.schedule_calendar_views import (
     WEEK,
     calendar_sends,
+    report_calendar_sends,
     sends_view,
 )
 from parishkit.stewardship.accounts.schedule_changes import (
@@ -148,6 +147,7 @@ from parishkit.stewardship.accounts.schedule_table import (
 )
 from parishkit.stewardship.accounts.schedule_views import _summary as dates_summary
 from parishkit.stewardship.accounts.series_edits import plan, rule_text
+from parishkit.stewardship.reports import report_email_list
 from parishkit.stewardship.web.refusals import send_time_passed
 from parishkit.stewardship.web.tables import whole_table
 
@@ -165,7 +165,6 @@ REFUSED = "/schedule-list-refused"
 FAILED = "/schedule-list-failed"
 NEW = "/schedule-new"
 EDIT = "/schedule-edit"
-EDIT_DIGEST = "/schedule-edit-digest"
 EDIT_EMAIL_REFUSED = "/schedule-edit-email-refused"
 EDIT_INITIAL = "/schedule-edit-initial"
 EDIT_CLOSED = "/schedule-edit-closed"
@@ -231,10 +230,6 @@ EDIT_DELETE = f"{EDIT}/deletion"
 SERIES_DELETE = f"{EDIT_SERIES}/deletion"
 INITIAL_DELETE = f"{EDIT_INITIAL}/deletion"
 EDIT_FROM_CALENDAR = f"{EDIT}?calendar=2054-10"
-# The weekly digest's Monday send Edit is opened for from the calendar (#1658).
-SKIP_DAY = "2054-10-12"
-EDIT_DIGEST_SEND = f"{EDIT_DIGEST}?send={SKIP_DAY}&calendar=2054-10"
-DIGEST_SKIP = f"{EDIT_DIGEST}/deletion"
 # The end date Campaign settings proposes; the saved one is October 31.
 DATES_END = "2054-10-25"
 # The refusal's own explanation, which the dialog shows.
@@ -257,12 +252,10 @@ POSTS_STALE = (
 
 
 def converted(owner, kind, *, time, weekday=None):
-    """A report shaped as the converted Daily or Weekly, as the editors read it.
+    """A report email record as the conversion made the Daily or Weekly (#1786).
 
     The conversion table's values (``reports_conversion.converted_values``)
-    drawn as their digest row (``report_rows.view_rows``), as Dates and mail
-    schedules shows a converted report (#1786): no email of its own, its
-    report values beside the view under ``"report"``.
+    with a record ID, as the applied configuration holds a report.
     """
     values = converted_values(
         {
@@ -274,18 +267,57 @@ def converted(owner, kind, *, time, weekday=None):
         },
         None,
     )
-    return view_rows([{"id": str(uuid4()), "values": values}])[0]
+    return {"id": str(uuid4()), "values": values}
+
+
+def _report_sends(owner, reports):
+    """The calendar's report email rows, from the view's own function.
+
+    ``report_calendar_sends`` reads the applied configuration's report
+    records, the sends each report made (``report_email_list.report_sends``)
+    and whether the scheduler owes one a catch-up; the last two read the
+    database, so they stand in here: each report has made every send of its
+    rule whose time has passed by ``NOW``, and owes none.
+    """
+    values = owner["values"]
+    configuration = SimpleNamespace(
+        mode="production",
+        active_configuration=SimpleNamespace(
+            canonical_document={"sections": {"schedules": reports}}
+        ),
+    )
+    made = {
+        record["id"]: [
+            {"result": "sent", "made_at": slot.due_at}
+            for slot in report_email_list.plan(record["values"], values)
+            .page(through=NOW, limit=100)
+            .slots
+        ]
+        for record in reports
+    }
+    with (
+        mock.patch.object(
+            report_email_list, "report_sends", lambda *_args, **_kwargs: made
+        ),
+        mock.patch.object(
+            schedule_calendar_views, "owes_catch_up", lambda *_args: False
+        ),
+    ):
+        return report_calendar_sends(
+            configuration,
+            owner["id"],
+            SimpleNamespace(active_configuration=SimpleNamespace(values=values)),
+            NOW,
+            3,
+        )
 
 
 def _data():
-    """The campaign, its emails and its saved schedules, in sending order.
-
-    The weekly digest is the converted Weekly report (Mondays, 9:00 AM).
-    """
+    """The campaign, its emails and its saved schedules, in sending order."""
     owner = campaign()
     emails = [
         content(owner["id"], kind="email", slot=kind, subject=f"{kind} mail")
-        for kind in ("initial", "reminder", "daily_digest", "weekly_digest")
+        for kind in ("initial", "reminder")
     ]
     # A second reminder email with the same subject, so the list names the
     # two apart by the start of their IDs, and its own text (and hand-written
@@ -316,7 +348,6 @@ def _data():
 
     rows = sorted(
         [
-            converted(owner, "weekly_digest", time="09:00:00", weekday=0),
             saved("reminder", date="2054-10-20"),
             saved("initial"),
             saved("reminder", date="2054-10-10"),
@@ -327,17 +358,19 @@ def _data():
 
 
 def _list(values, owner, emails, rows, *, sort="when", **extra):
-    """The list page for ``rows`` (Initial invitation sent, with results;
-    the Weekly Admin digest has sent too, and stays deletable)."""
+    """The list page for ``rows`` (Initial invitation sent, with results).
+
+    The October 20 reminder has delivered email too while its time is still
+    ahead, as a send re-planned by a campaign change may have, so it stays
+    deletable with the confirmation's caution (R40b).
+    """
     names = email_names([row for row in emails if row["values"]["kind"] == "email"])
     summary = {
-        **{
-            row["id"]: {"delivered": 4}
-            for row in rows
-            if row["values"]["kind"] == "weekly_digest"
-        },
-        rows[0]["id"]: {"delivered": 1031, "failed": 2},
+        row["id"]: {"delivered": 4}
+        for row in rows
+        if row["values"]["date"] == "2054-10-20"
     }
+    summary[rows[0]["id"]] = {"delivered": 1031, "failed": 2}
     described = schedule_rows(rows, owner["values"], summary, NOW, names)
     context = {
         "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
@@ -357,16 +390,23 @@ def _list(values, owner, emails, rows, *, sort="when", **extra):
 
 
 def _calendar(values, owner, emails, rows, address=CALENDAR):
-    """The Campaign calendar for ``rows`` and a daily digest (invitation sent).
+    """The Campaign calendar for ``rows`` and two report emails (invitation sent).
 
     ``address`` is the page's address: its ``show`` and ``sort`` choose the
-    table's view, as the view's own ``sends_view`` reads them.
+    table's view, as the view's own ``sends_view`` reads them. The report
+    emails' rows follow the Family mail's, by time, as the view lists them.
     """
     names = email_names([row for row in emails if row["values"]["kind"] == "email"])
     summary = {rows[0]["id"]: {"delivered": 1031, "failed": 2}}
-    daily = converted(owner, "daily_digest", time="07:00:00")
-    rows = sorted([*rows, daily], key=schedule_order)
-    sends = calendar_sends(rows, owner["values"], summary, NOW, names)
+    reports = [
+        converted(owner, "daily_digest", time="07:00:00"),
+        converted(owner, "weekly_digest", time="09:00:00", weekday=0),
+    ]
+    sends = sorted(
+        calendar_sends(rows, owner["values"], summary, NOW, names)
+        + _report_sends(owner, reports),
+        key=lambda send: (send.due, send.position),
+    )
     parameters = QueryDict(address.partition("?")[2]).dict()
     parameters.pop("month", None)
     context = {
@@ -403,7 +443,6 @@ def _entry(
     on=None,
     list_url=LIST,
     delete_url=EDIT_DELETE,
-    skip_send=None,
     mode="advanced",
 ):
     """New scheduled email, or Edit scheduled email for ``schedule_row``.
@@ -416,7 +455,6 @@ def _entry(
     at the choice, with its summary. ``on`` is New's send date from the
     calendar's Add on a day (#1521), ``list_url`` where Cancel and Apply
     return, and ``delete_url`` where Edit's Delete posts its review (#1656).
-    ``skip_send`` is the digest send Delete may skip alone (#1658).
     ``mode`` is the Basic and Advanced toggle's opening mode (#1129,
     ``schedule_entry_views.editor_mode``).
     """
@@ -451,14 +489,11 @@ def _entry(
             "series": part_of,
             "new": schedule_row is None,
             "schedule": schedule_row,
-            # A converted report sends no email of its own (#1786).
-            "report": schedule_row is not None and "report" in schedule_row,
             "base_digest": "a" * 64,
             "post_url": post_url,
             "list_url": list_url,
             "apply_url": apply_url,
             "delete_url": delete_url,
-            "skip_send": skip_send,
             "window_text": window_text(owner["values"]),
             "editor_mode": mode,
         }
@@ -655,14 +690,12 @@ def _review(
     blocking=0,
     series_notes=(),
     deleting=None,
-    skipped_send=None,
 ):
     """The review dialog's fragment for ``changes`` (schedule-review.html).
 
     A New review adding one schedule that sends once is the view's
     confirmation (``_sends_once``, #1356), as the server draws it.
-    ``deleting`` is Edit's Delete's scope (#1656), and ``skipped_send`` the
-    digest send This email only skips (#1658).
+    ``deleting`` is Edit's Delete's scope (#1656).
     """
     reviewed = {
         "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
@@ -673,7 +706,6 @@ def _review(
         "new": new,
         "series_notes": series_notes,
         "deleting": deleting,
-        "skipped_send": skipped_send,
     }
     return render_to_string(
         "stewardship/schedule-review.html",
@@ -742,7 +774,7 @@ def components(context, admin):
     """Every page above, and the POST answers (see the module docstring)."""
     values = context | {"admin_chrome": admin}
     owner, emails, rows = _data()
-    initial, first, _second, digest = rows
+    initial, first, _second = rows
     reminders = [row for row in rows if row["values"]["kind"] == "reminder"]
     series = {
         "id": str(uuid4()),
@@ -780,7 +812,7 @@ def components(context, admin):
             values,
             owner,
             emails,
-            [initial, digest],
+            [initial],
             refresh_url=f"{BULK}-deleted",
         ),
         REFUSED: _list(values, owner, emails, rows, delete_url=f"{REFUSED}/deletion"),
@@ -814,20 +846,6 @@ def components(context, admin):
         ),
         EDIT: _entry(
             values, owner, emails, rows, schedule_row=first, post_url=f"{EDIT}/review"
-        ),
-        EDIT_DIGEST: _entry(
-            values, owner, emails, rows, schedule_row=digest, post_url=f"{EDIT}/review"
-        ),
-        EDIT_DIGEST_SEND: _entry(
-            values,
-            owner,
-            emails,
-            rows,
-            schedule_row=digest,
-            post_url=f"{EDIT}/review",
-            list_url=CALENDAR_OCTOBER,
-            delete_url=DIGEST_SKIP,
-            skip_send=send_of(digest["values"], owner["values"], SKIP_DAY),
         ),
         EDIT_EMAIL_REFUSED: _entry(
             values,
@@ -1001,25 +1019,6 @@ def components(context, admin):
         deleting="series",
         series_notes=[SERIES_DELETED % {"rule": rule_text(SERIES_RULE)}],
     )
-    # This email only (#1658): the weekly digest skips its October 12 send.
-    skip_send = send_of(digest["values"], owner["values"], SKIP_DAY)
-    skip_review = _review(
-        owner,
-        [
-            {
-                "label": "Weekly report",
-                "operation": "update",
-                "before": _side(digest["values"], owner["values"]),
-                "after": _side(
-                    digest["values"] | {"skip_dates": [SKIP_DAY]}, owner["values"]
-                ),
-                "impact": {},
-            }
-        ],
-        new=False,
-        deleting="send",
-        skipped_send={"key": SKIP_DAY, "due_at": skip_send.due_at.isoformat()},
-    )
     blocked = _review(
         owner,
         [
@@ -1056,7 +1055,6 @@ def components(context, admin):
             f"{NEW}/review": (200, None, review),
             EDIT_DELETE: (200, None, delete_review),
             SERIES_DELETE: (200, None, series_delete),
-            DIGEST_SKIP: (200, None, skip_review),
             INITIAL_DELETE: (
                 400,
                 None,

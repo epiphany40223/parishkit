@@ -66,12 +66,12 @@ def emails():
     """One saved email of each schedulable type."""
     return [
         content(OWNER["id"], kind="email", slot=kind, subject=f"{kind} mail")
-        for kind in ("initial", "reminder", "daily_digest", "weekly_digest")
+        for kind in ("initial", "reminder")
     ]
 
 
 def saved(templates):
-    """A sent invitation, two reminders and a weekly digest, in sending order."""
+    """A sent invitation and two reminders, in sending order."""
     by_kind = {row["values"]["slot"]: row["id"] for row in templates}
     rows = [
         schedule(OWNER["id"], template_version=by_kind["initial"]),
@@ -87,13 +87,6 @@ def saved(templates):
             date="2054-10-20",
             template_version=by_kind["reminder"],
         ),
-        schedule(
-            OWNER["id"],
-            kind="weekly_digest",
-            date=None,
-            weekday=0,
-            template_version=by_kind["weekly_digest"],
-        ),
     ]
     return sorted(rows, key=schedule_order)
 
@@ -107,14 +100,13 @@ def posted(**fields):
 
 
 def test_rows_offer_edit_only_until_a_schedule_has_run():
-    """A sent invitation has no edit page; upcoming reminders and digests do."""
+    """A sent invitation has no edit page; upcoming reminders do."""
     templates = emails()
     rows = saved(templates)
     summary = {rows[0]["id"]: {"delivered": 5}}
     described = schedule_rows(rows, VALUES, summary, NOW)
     assert [row.edit_url for row in described][0] is None
     assert described[1].edit_url == f"/admin/campaign/schedules/{rows[1]['id']}/"
-    assert described[3].edit_url  # a digest repeats and stays editable
 
 
 def test_rows_show_each_email_by_its_readable_name():
@@ -128,17 +120,12 @@ def test_rows_show_each_email_by_its_readable_name():
 
 
 def test_when_sorts_chronologically_or_the_reverse():
-    """Time order, a digest at its next send (#1652); ``-when`` reverses it."""
+    """Time order (#1652); ``-when`` reverses it."""
     described = schedule_rows(saved(emails()), VALUES, {}, NOW)
     labels = [
         row.label for row in whole_table(described, sorting=SORTING, sort="when").rows
     ]
-    assert labels == [
-        "Initial invitation",
-        "Weekly report",
-        "Reminder 1",
-        "Reminder 2",
-    ]
+    assert labels == ["Initial invitation", "Reminder 1", "Reminder 2"]
     backwards = whole_table(described, sorting=SORTING, sort="-when").rows
     assert [row.label for row in backwards] == list(reversed(labels))
     with pytest.raises(ValueError):
@@ -287,7 +274,6 @@ def test_entries_are_one_schedule_or_one_reminder_per_repeat_date():
             "time": "09:00:00",
             "weekday": None,
             "template_version": reminder,
-            "comparison": False,
         }
     ]
     change = valid_entry(
@@ -305,7 +291,6 @@ def test_entries_are_one_schedule_or_one_reminder_per_repeat_date():
             "time": "10:30:00",
             "weekday": None,
             "template_version": reminder,
-            "comparison": False,
         }
     ]
     repeat = RepeatRule(
@@ -508,12 +493,12 @@ def test_review_errors_come_back_to_the_page_field_or_its_top():
     templates = emails()
     rows = saved(templates)
     data = data_for(rows, total=len(rows) + 1)
-    # The new row (index 4): a reminder outside the campaign.
+    # The new row (index 3): a reminder outside the campaign.
     data |= {
-        "schedules-4-kind": "reminder",
-        "schedules-4-date": "2054-11-15",
-        "schedules-4-time": "09:00",
-        "schedules-4-template_version": templates[1]["id"],
+        "schedules-3-kind": "reminder",
+        "schedules-3-date": "2054-11-15",
+        "schedules-3-time": "09:00",
+        "schedules-3-template_version": templates[1]["id"],
     }
     schedules = Schedules(
         data,
@@ -729,8 +714,8 @@ def series_of(rows):
     }
 
 
-def test_delete_this_removes_one_schedule_and_names_a_digest():
-    """This one alone; a digest's review says every later send stops."""
+def test_delete_this_removes_one_schedule():
+    """This one alone, with no further line in its review."""
     rows = saved(emails())
     entries, changes, notes = _delete_entries(rows[1], None, rows, set(), "this")
     assert (entries, changes, notes) == (
@@ -738,11 +723,6 @@ def test_delete_this_removes_one_schedule_and_names_a_digest():
         [],
         [],
     )
-    entries, changes, notes = _delete_entries(rows[3], None, rows, set(), "this")
-    assert entries == [{"id": rows[3]["id"], "delete": True}]
-    assert notes == [
-        "This report repeats, so deleting it stops every send of it still to come."
-    ]
 
 
 def test_delete_the_whole_series_keeps_its_sent_reminders():

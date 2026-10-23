@@ -34,9 +34,6 @@ def data_for(rows, *, total=None):
         for name in ("id", "kind", "date", "time", "weekday", "template_version"):
             value = values.get(name)
             data[f"schedules-{index}-{name}"] = "" if value is None else str(value)
-        # A ticked checkbox posts "on" (the daily digest's comparison, #1018).
-        if values.get("comparison"):
-            data[f"schedules-{index}-comparison"] = "on"
     return data
 
 
@@ -305,7 +302,7 @@ def emails(owner):
     """One saved email of every schedulable mail type, keyed by that type."""
     return {
         kind: content(owner["id"], kind="email", slot=kind)
-        for kind in ("initial", "reminder", "daily_digest", "weekly_digest")
+        for kind in ("initial", "reminder")
     }
 
 
@@ -321,43 +318,11 @@ def saved_row(owner, templates, kind="initial", **overrides):
     )
 
 
-def saved_digest(owner, kind="daily_digest", **overrides):
-    """A converted Daily or Weekly report as the editors see it (#1786).
-
-    ``report_rows.digest_view`` shows it as its digest, with no email
-    template: its subject and introduction are its own.
-    """
-    values = {
-        "kind": kind,
-        "date": None,
-        "weekday": 0 if kind == "weekly_digest" else None,
-        "template_version": None,
-        "subject": "Report",
-    }
-    return schedule(owner["id"], **(values | overrides))
-
-
-def edited_digest(owner, digest, **fields):
-    """The form set with ``digest`` saved and posted with ``fields`` changed."""
-    data = data_for([digest]) | {
-        f"schedules-0-{name}": value for name, value in fields.items()
-    }
-    formset = Schedules(
-        data,
-        prefix="schedules",
-        previous=[digest],
-        templates=[],
-        campaign_id=owner["id"],
-        campaign=owner["values"],
-    )
-    return formset, formset.forms[0]
-
-
 def with_new_row(owner, saved, templates, **fields):
     """The saved rows plus one new row with exactly the given fields posted."""
     data = data_for(saved)
     index = len(saved)
-    for name in ("kind", "date", "time", "weekday", "template_version", "comparison"):
+    for name in ("kind", "date", "time", "weekday", "template_version"):
         value = fields.get(name, "")
         if name == "template_version" and value in templates:
             value = templates[value]["id"]
@@ -402,7 +367,7 @@ WINDOW = "October 1, 2054 – October 31, 2054"
         ),
         # Report emails replaced the digests: none can be added (#1786).
         (
-            {"kind": "daily_digest", "date": ""},
+            {"kind": "daily_digest", "date": "", "template_version": "reminder"},
             "kind",
             "Select a valid choice. daily_digest is not one of the available choices.",
         ),
@@ -442,40 +407,6 @@ def test_each_inapplicable_or_missing_value_is_reported_on_its_field(
     assert formset.non_form_errors() == []
 
 
-@pytest.mark.parametrize(
-    ("kind", "fields", "field", "message"),
-    [
-        (
-            "daily_digest",
-            {"date": "2054-10-05"},
-            "date",
-            "A date applies only to initial invitations and reminders — leave it "
-            "empty. Digests are sent throughout the campaign.",
-        ),
-        (
-            "weekly_digest",
-            {"weekday": ""},
-            "weekday",
-            "Choose the day of the week the digest is sent.",
-        ),
-        (
-            "daily_digest",
-            {"weekday": "3"},
-            "weekday",
-            "A weekday applies only to weekly digests — leave it at Not weekly.",
-        ),
-    ],
-)
-def test_a_converted_report_edit_reports_each_mistake_on_its_field(
-    kind, fields, field, message
-):
-    """The Daily and Weekly reports are still edited as digests (#1786)."""
-    owner = campaign()
-    formset, form = edited_digest(owner, saved_digest(owner, kind), **fields)
-    assert not formset.is_valid()
-    assert form.errors == {field: [message]}
-
-
 def test_each_mail_type_accepts_exactly_its_own_fields():
     """The campaign's last day is inclusive."""
     owner = campaign()
@@ -488,24 +419,6 @@ def test_each_mail_type_accepts_exactly_its_own_fields():
     assert formset.is_valid(), (formset.errors, formset.non_form_errors())
     (added,) = formset.patch()
     assert added["values"]["kind"] == fields["kind"]
-
-
-@pytest.mark.parametrize(
-    ("kind", "fields"),
-    [
-        ("daily_digest", {"time": "00:15:00"}),
-        ("weekly_digest", {"weekday": "6", "time": "08:00:00"}),
-    ],
-)
-def test_a_converted_report_takes_its_digest_fields_and_no_email(kind, fields):
-    """Digests take no date and no email template: the report has its own."""
-    owner = campaign()
-    formset, _ = edited_digest(owner, saved_digest(owner, kind), **fields)
-    assert formset.is_valid(), (formset.errors, formset.non_form_errors())
-    (changed,) = formset.patch()
-    assert changed["values"]["kind"] == kind
-    assert changed["values"]["template_version"] is None
-    assert changed["values"]["subject"] == "Report"
 
 
 @pytest.mark.parametrize(
@@ -531,10 +444,7 @@ def test_problems_between_schedules_are_collection_errors(fields, message):
     """Only rules that involve more than one row stay non-field errors."""
     owner = campaign()
     templates = emails(owner)
-    saved = [
-        saved_row(owner, templates),
-        saved_digest(owner),
-    ]
+    saved = [saved_row(owner, templates)]
     formset, form = with_new_row(
         owner,
         saved,
@@ -611,7 +521,9 @@ def test_saved_mail_type_is_fixed_and_offers_only_its_own_emails():
     assert "DELETE" in saved.fields and "DELETE" not in blank.fields
     assert formset.window_text == WINDOW
     assert formset.timezone == "America/New_York"
-    assert json.loads(blank.field_rules)["weekly_digest"] == ["weekday", "time"]
+    assert json.loads(blank.field_rules) == {
+        kind: ["date", "time", "template_version"] for kind in ("initial", "reminder")
+    }
 
 
 def new_rows(owner, saved, templates, rows):
@@ -699,95 +611,6 @@ def test_saved_schedules_are_shown_in_sending_order():
     assert formset.patch() == []
 
 
-@pytest.mark.parametrize(("posted", "saved"), [("on", True), ("", None)])
-def test_a_daily_digest_saves_the_comparison_only_when_ticked(posted, saved):
-    """Ticked saves ``comparison: true``; unticked leaves it out (#1018)."""
-    owner = campaign()
-    digest = saved_digest(owner, time="07:00:00")
-    data = data_for([digest]) | {"schedules-0-time": "07:30:00"}
-    if posted:
-        data["schedules-0-comparison"] = posted
-    formset = Schedules(
-        data,
-        prefix="schedules",
-        previous=[digest],
-        templates=[],
-        campaign_id=owner["id"],
-        campaign=owner["values"],
-    )
-    assert formset.is_valid(), (formset.errors, formset.non_form_errors())
-    (changed,) = formset.patch()
-    assert changed["values"].get("comparison") is saved
-
-
-def test_only_a_daily_digest_may_include_the_comparison():
-    """A weekly digest (or any other mail) with it ticked is told on the field."""
-    owner = campaign()
-    formset, form = edited_digest(
-        owner, saved_digest(owner, "weekly_digest"), weekday="2", comparison="on"
-    )
-    assert not formset.is_valid()
-    assert form.errors == {
-        "comparison": [
-            "Only daily Admin digests can include the comparison with past "
-            "campaigns — leave it unticked."
-        ]
-    }
-
-
-def test_a_saved_daily_digest_posted_unchanged_keeps_its_comparison():
-    """Turning it on is a change; posting the saved row back is not."""
-    owner = campaign()
-    templates = emails(owner)
-    initial = saved_row(owner, templates)
-    digest = saved_digest(owner, comparison=True)
-    data = data_for([initial, digest])
-    formset = Schedules(
-        data,
-        prefix="schedules",
-        previous=[initial, digest],
-        templates=list(templates.values()),
-        campaign_id=owner["id"],
-        campaign=owner["values"],
-    )
-    assert formset.is_valid(), (formset.errors, formset.non_form_errors())
-    assert formset.patch() == []
-
-
-def test_a_digest_keeps_its_skipped_sends_on_every_later_change():
-    """An Edit of a digest carries its ``skip_dates`` forward (#1658).
-
-    A skipped past send has no fulfillment, so a revision without it would
-    plan that send again as missed. Posting the row back unchanged is no
-    change; changing its time keeps the skips on the new values.
-    """
-    owner = campaign()
-    templates = emails(owner)
-    initial = saved_row(owner, templates)
-    digest = saved_digest(owner, skip_dates=["2054-10-02"])
-
-    def bound(rows):
-        """The form set with these rows posted."""
-        return Schedules(
-            data_for(rows),
-            prefix="schedules",
-            previous=[initial, digest],
-            templates=list(templates.values()),
-            campaign_id=owner["id"],
-            campaign=owner["values"],
-        )
-
-    formset = bound([initial, digest])
-    assert formset.is_valid(), (formset.errors, formset.non_form_errors())
-    assert formset.patch() == []
-    later = digest | {"values": digest["values"] | {"time": "07:30:00"}}
-    formset = bound([initial, later])
-    assert formset.is_valid(), (formset.errors, formset.non_form_errors())
-    (changed,) = formset.patch()
-    assert changed["values"]["time"] == "07:30:00"
-    assert changed["values"]["skip_dates"] == ["2054-10-02"]
-
-
 # The date-change review's send times are the browser's (#558). The
 # fixture campaign is in New York, October 1-31, 2054.
 BROWSER_NOW = datetime(2054, 9, 1, 12, tzinfo=UTC)
@@ -850,27 +673,6 @@ def test_first_campaign_send_times_are_typed_in_the_browser_zone(
     assert (added["values"]["date"], added["values"]["time"]) == (
         stored_day,
         stored_time,
-    )
-
-
-def test_a_weekly_digest_weekday_follows_the_browser_zone():
-    """Monday 1:00 AM in Auckland is a Sunday digest in New York.
-
-    A digest converts at its next send from now (September 7, 2054), when
-    Auckland is still on standard time (UTC+12): Sunday 9:00 AM in New York.
-    """
-    owner = campaign()
-    digest = saved_digest(owner, "weekly_digest", weekday=2, time="10:00:00")
-    data = data_for([digest]) | {
-        "schedules-0-time": "01:00",
-        "schedules-0-weekday": "0",
-    }
-    formset = browser_schedules(data, owner, [digest], zone="Pacific/Auckland")
-    assert formset.is_valid(), (formset.errors, formset.non_form_errors())
-    [changed] = formset.patch()
-    assert (changed["values"]["weekday"], changed["values"]["time"]) == (
-        6,
-        "09:00:00",
     )
 
 
@@ -1201,53 +1003,3 @@ def test_the_review_reads_a_skipped_browser_time_forward():
         "2054-03-08",
         "06:00:00",
     )
-
-
-def test_a_digest_in_another_browser_zone_posted_across_a_dst_change():
-    """The formset posts back each row's drawn moment (``drawn_at``).
-
-    A daily 8:00 AM New York digest is drawn on October 31, 2054 as 12:00
-    London; posted unchanged on November 1 it is kept, and posted as 14:00
-    it is a change to 9:00 AM New York (London 14:00 that day is 09:00 EST).
-    """
-    owner = late_campaign()
-    digest = saved_digest(owner, time="08:00:00")
-    template = content(owner["id"], kind="email", slot="reminder", subject="D")
-    drawn_on = datetime(2054, 10, 31, 20, tzinfo=UTC)
-    page = Schedules(
-        prefix="schedules",
-        previous=[digest],
-        templates=[template],
-        campaign_id=owner["id"],
-        campaign=owner["values"],
-        browser_times=True,
-        now=drawn_on,
-    )
-    drawn = page.forms[0].schedule_moment
-    assert drawn == "2054-10-31T12:00:00+00:00"
-    assert f'name="schedules-0-drawn_at" value="{drawn}"' in str(page.forms[0])
-
-    def posted(clock):
-        """The page posted on November 1 with the digest's time as ``clock``."""
-        data = data_for([digest]) | {
-            "zone": "Europe/London",
-            "schedules-0-time": clock,
-            "schedules-0-drawn_at": drawn,
-        }
-        formset = Schedules(
-            data,
-            prefix="schedules",
-            previous=[digest],
-            templates=[template],
-            campaign_id=owner["id"],
-            campaign=owner["values"],
-            browser_times=True,
-            zone="Europe/London",
-            now=datetime(2054, 11, 1, 12, tzinfo=UTC),
-        )
-        assert formset.is_valid(), (formset.errors, formset.non_form_errors())
-        return formset.patch()
-
-    assert posted("12:00") == []
-    [changed] = posted("14:00")
-    assert changed["values"]["time"] == "09:00:00"

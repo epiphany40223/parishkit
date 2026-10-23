@@ -217,7 +217,6 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/schedule-list",
         "/schedule-new",
         "/schedule-edit",
-        "/schedule-edit-digest",
         "/clone-settings",
         "/clone-preview",
         "/integrations",

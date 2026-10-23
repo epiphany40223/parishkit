@@ -54,8 +54,8 @@ EMAIL_LABELS = {
     "initial": _("Initial invitation"),
     "reminder": _("Reminder"),
     "confirmation": _("Confirmation email"),
-    # The converted Daily and Weekly report emails (#1786), which the
-    # schedule editors still show as these two mail types.
+    # The retired Daily and Weekly digest emails (#1786), whose saved
+    # templates and history keep these names.
     "daily_digest": _("Daily report"),
     "weekly_digest": _("Weekly report"),
 }

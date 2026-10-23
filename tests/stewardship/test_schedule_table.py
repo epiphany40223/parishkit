@@ -1,6 +1,6 @@
 """The scheduled emails table: order, labels, status and which editors start open."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from parishkit.stewardship.accounts.schedule_forms import Schedules
 from parishkit.stewardship.accounts.schedule_table import (
@@ -21,12 +21,10 @@ AFTER = datetime(2054, 11, 15, tzinfo=UTC)
 
 
 def saved():
-    """An initial invitation, two reminders and both digests, out of order."""
+    """An initial invitation and two reminders, out of order."""
     owner = OWNER["id"]
     return [
-        schedule(owner, kind="weekly_digest", date=None, weekday=0),
         schedule(owner, kind="reminder", date="2054-10-20"),
-        schedule(owner, kind="daily_digest", date=None, time="06:00:00"),
         schedule(owner, kind="reminder", date="2054-10-10"),
         schedule(owner),
     ]
@@ -63,7 +61,6 @@ def test_status_follows_due_time_and_work_counts():
     # and locked as Preparing rather than Upcoming.
     assert status("reminder", due, {"blocking": 1}, BEFORE) == "preparing"
     assert status("initial", due, {}, AFTER) == "missed"
-    assert status("daily_digest", None, {"delivered": 9}, AFTER) == "repeats"
 
 
 def test_rows_follow_sending_order_and_number_reminders():
@@ -73,16 +70,10 @@ def test_rows_follow_sending_order_and_number_reminders():
         "Initial invitation",
         "Reminder 1",
         "Reminder 2",
-        "Daily report",
-        "Weekly report",
     ]
-    assert [row.status for row in rows] == ["upcoming"] * 3 + ["repeats"] * 2
+    assert [row.status for row in rows] == ["upcoming"] * 3
     assert rows[0].due < rows[1].due < rows[2].due
-    # Digests repeat: no one-time send, but a next send time and a cadence.
-    daily, weekly = rows[3:]
-    assert daily.due is None and daily.next_due is not None and daily.weekday is None
-    assert weekly.weekday == "Monday" and weekly.next_due.weekday() == 0
-    assert not any(row.read_only for row in rows)
+    assert not any(row.read_only or row.digest for row in rows)
 
 
 def test_a_sent_schedule_is_read_only_with_its_last_send():
@@ -101,9 +92,6 @@ def test_a_sent_schedule_is_read_only_with_its_last_send():
     assert not reminder.last_send
     # After the campaign, a reminder that never sent stays editable.
     assert later.status == "missed" and not later.read_only
-    # Digests never lock, and have no Family send to link to.
-    assert table[3].next_due is None and not table[3].read_only
-    assert not table[3].last_send
 
 
 def test_editors_start_closed_unless_changed_or_in_error():
@@ -112,17 +100,16 @@ def test_editors_start_closed_unless_changed_or_in_error():
     assert not any(row.open for row in attach(formset(rows), VALUES, {}, BEFORE))
     data = data_for(rows)
     data["schedules-1-date"] = "2054-10-12"
-    data["schedules-2-date"] = "2055-01-01"
-    data["schedules-3-DELETE"] = "on"
+    data["schedules-2-DELETE"] = "on"
     bound = formset(rows, data)
     bound.is_valid()
     opened = attach(bound, VALUES, {}, BEFORE)
     # Unchanged rows stay closed even though Django's has_changed compares
     # the saved strings with typed values and would call them all changed.
-    assert [row.open for row in opened] == [False, True, True, True, False]
+    assert [row.open for row in opened] == [False, True, True]
     # Each saved form carries its row; the blank new row carries none.
-    assert [form.schedule_row for form in bound.forms[:5]] == opened
-    assert not hasattr(bound.forms[5], "schedule_row")
+    assert [form.schedule_row for form in bound.forms[:3]] == opened
+    assert not hasattr(bound.forms[3], "schedule_row")
 
 
 def test_a_past_send_editor_opens_only_to_show_an_error():
@@ -179,43 +166,14 @@ def test_work_prepared_ahead_is_read_only_and_waiting_is_not():
     assert (waiting.status_label, waiting.read_only) == ("Not sent yet", False)
 
 
-def test_rows_tolerate_a_send_time_far_past_the_campaign():
-    """A digest whose campaign is long over has no next send."""
-    later = AFTER + timedelta(days=400)
-    table = schedule_rows(formset(saved()).previous, VALUES, {}, later)
-    assert table[3].next_due is None and table[4].next_due is None
-
-
-def test_when_sorts_digests_at_their_next_send_both_ways():
-    """A digest sorts at its next send among the dated sends (#1652).
-
-    On Monday 5 October at 8 AM in New York the weekly digest sends at 9 AM
-    that day and the daily one at 6 AM the next, both before Reminder 1.
-    """
-    now = datetime(2054, 10, 5, 12, tzinfo=UTC)
-    rows = schedule_rows(formset(saved()).previous, VALUES, {}, now)
-    order = [
-        "Initial invitation",
-        "Weekly report",
-        "Daily report",
-        "Reminder 1",
-        "Reminder 2",
-    ]
+def test_when_sorts_by_send_time_both_ways():
+    """The When heading lists the sends by time, or the reverse (#1652)."""
+    rows = schedule_rows(formset(saved()).previous, VALUES, {}, BEFORE)
+    order = ["Initial invitation", "Reminder 1", "Reminder 2"]
     table = whole_table(rows, sorting=SORTING, sort="when")
     assert [row.label for row in table.rows] == order
     table = whole_table(rows, sorting=SORTING, sort="-when")
     assert [row.label for row in table.rows] == order[::-1]
-
-
-def test_when_lists_a_digest_with_no_more_sends_last_both_ways():
-    """After the campaign a digest has no next send, so it sorts last."""
-    rows = schedule_rows(formset(saved()).previous, VALUES, {}, AFTER)
-    for sort in ("when", "-when"):
-        table = whole_table(rows, sorting=SORTING, sort=sort)
-        assert [row.label for row in table.rows][-2:] == [
-            "Daily report",
-            "Weekly report",
-        ]
 
 
 def test_content_review_rows_leave_out_report_emails(monkeypatch):
@@ -247,7 +205,5 @@ def test_content_review_rows_leave_out_report_emails(monkeypatch):
         "Initial invitation",
         "Reminder 1",
         "Reminder 2",
-        "Daily report",
-        "Weekly report",
     ]
     assert sent == []

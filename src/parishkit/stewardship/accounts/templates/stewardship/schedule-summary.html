@@ -4,12 +4,8 @@ it sends. Its next sends from now are drawn by the shared schedule preview
 (components/occurrences.html, value.occurrences; #1129, ui-conventions
 "Schedule previews") in its compact layout: each line names its day and its
 time in the browser's time zone (#558), never the saved campaign-local date
-and time with the campaign's zone; a digest also says it recurs, and each
-digest line names its day. A digest also lists the sends it skips (#1658,
-describe's skipped_sends) by their send times.
-{% endcomment %}{% if value %}<p>{{ value.subject }}</p>{% if not value.date %}<p>{% if value.weekday_label %}{% translate "Sent every week." %}{% else %}{% translate "Sent every day." %}{% endif %}</p>{% endif %}
+and time with the campaign's zone.
+{% endcomment %}{% if value %}<p>{{ value.subject }}</p>
 {% if value.occurrences.state == 'shown' %}<p>{% translate "When it sends (shown in your computer's time zone):" %}</p>
 {% endif %}{% include 'stewardship/components/occurrences.html' with preview=value.occurrences %}
-{% if value.kind == 'daily_digest' %}<p>{% if value.comparison %}{% translate "Includes Compared with past campaigns." %}{% else %}{% translate "Does not include Compared with past campaigns." %}{% endif %}</p>{% endif %}
-{% if value.skipped_sends %}<p>{% translate "Skipped sends (shown in your computer's time zone):" %}</p><ul>{% for send in value.skipped_sends %}<li><time datetime="{{ send.due_at }}" data-local-instant>{{ send.due_at }}</time></li>{% endfor %}</ul>{% endif %}
 {% else %}<p>{% translate "None (not scheduled)" %}</p>{% endif %}

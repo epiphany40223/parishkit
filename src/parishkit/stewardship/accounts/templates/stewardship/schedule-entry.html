@@ -36,17 +36,12 @@ UX conventions "A confirmation when Review would only repeat the page",
 #1356). A schedule that sends once, with no edited email, is answered with a
 confirmation that repeats none of the form's values and names its own
 question and sentence (data-review-title, data-review-describedby); any
-other New (recurring, a digest, a Repeat, an edited email) keeps the full
+other New (a Repeat, an edited email) keeps the full
 review under this dialog's own title.
 A Repeat is also remembered as a reminder series, and Edit of a series'
 reminder shows "Part of" its rule with the Change scope
 (schedule-series-scope.html, drawn by schedule-row.html, #469); the review
 then lists the series it keeps or changes.
-Edit opened for one send of a digest from the Campaign calendar (?send=,
-skip_send, #1658) offers "This email only" (scope=send, the default, with
-that send's slot in the hidden send field), which skips just that send, and
-"The whole digest" (scope=this); otherwise a digest's Delete is the whole
-digest alone.
 Edit has Delete in a section of its own after the form (#1656): a second
 form, posting action=preview to Delete scheduled emails, that opens its own
 review dialog (schedule-delete-review) with the server's review of removing
@@ -83,9 +78,9 @@ mode (schedule_entry_views.editor_mode); it is never saved.
 {% endcomment %}{% translate "Your custom schedule has no basic equivalent." as no_basic_title %}{% if new %}{% translate "Basic can't show a repeat or this schedule's own email. If you switch, Repeat and Edit this schedule's email are turned off, so neither is reviewed. Nothing changes until you review and apply." as no_basic_body %}{% else %}{% translate "Basic can't show this schedule's own email. If you switch, Edit this schedule's email is turned off, so it is not reviewed. Nothing changes until you review and apply." as no_basic_body %}{% endif %}{% include "stewardship/components/editor-mode.html" with mode_id="schedule-mode" mode=editor_mode no_basic_title=no_basic_title no_basic_body=no_basic_body %}
 {% if new %}{% translate "Scheduled email" as legend %}{% else %}{% firstof entry.schedule_label _("Scheduled email") as legend %}{% endif %}
 {% include 'stewardship/schedule-row.html' with form=entry legend=legend number=0 %}
-{% if report %}<p class="help">{% if schedule.values.kind == 'weekly_digest' %}{% translate "This is the Weekly report: its subject, introduction and sections are its own and don't change here. Its day of the week and send time do." %}{% else %}{% translate "This is the Daily report: its subject and introduction are its own and don't change here. Its send time and whether it includes Compared with past campaigns do." %}{% endif %}</p>{% else %}{% include 'stewardship/schedule-email.html' %}{% endif %}
+{% include 'stewardship/schedule-email.html' %}
 {% if repeat %}<p class="repeat-summary" role="status" data-repeat-summary hidden></p><div data-repeat-posted></div>{% endif %}
-{% if direct %}<p><span class="help unchanged-hint" data-unchanged-hint data-idle>{% if new %}{% translate "Fill in the scheduled email to save it." %}{% else %}{% if report %}{% translate "Change the day, time or comparison to save it." %}{% else %}{% translate "Change the date, time, email or comparison to save it." %}{% endif %}{% endif %}</span></p>{% else %}<p>{% button type="submit" autocomplete="off" %}{% if new %}{% translate "Add the scheduled email" %}{% else %}{% translate "Review changes" %}{% endif %}{% endbutton %} <a href="{{ list_url }}">{% translate "Cancel" %}</a> <span class="help unchanged-hint" data-unchanged-hint data-idle>{% if new %}{% translate "Fill in the scheduled email to add it." %}{% else %}{% translate "Change the date, time, email or comparison to review it." %}{% endif %}</span></p>{% endif %}
+{% if direct %}<p><span class="help unchanged-hint" data-unchanged-hint data-idle>{% if new %}{% translate "Fill in the scheduled email to save it." %}{% else %}{% translate "Change the date, time or email to save it." %}{% endif %}</span></p>{% else %}<p>{% button type="submit" autocomplete="off" %}{% if new %}{% translate "Add the scheduled email" %}{% else %}{% translate "Review changes" %}{% endif %}{% endbutton %} <a href="{{ list_url }}">{% translate "Cancel" %}</a> <span class="help unchanged-hint" data-unchanged-hint data-idle>{% if new %}{% translate "Fill in the scheduled email to add it." %}{% else %}{% translate "Change the date, time or email to review it." %}{% endif %}</span></p>{% endif %}
 {% if repeat %}<div data-repeat-dates></div>{% endif %}
 </div>
 </form>
@@ -95,11 +90,8 @@ mode (schedule_entry_views.editor_mode); it is never saved.
 {% if series %}<fieldset class="field" aria-describedby="schedule-delete-help"><legend>{% translate "Delete" %}</legend>
 <div><input type="radio" name="scope" value="this" id="schedule-delete-this" checked> <label for="schedule-delete-this">{% translate "This reminder only" %}</label></div>
 <div><input type="radio" name="scope" value="series" id="schedule-delete-series"> <label for="schedule-delete-series">{% translate "The whole series" %}</label></div>
-</fieldset>{% elif skip_send %}<input type="hidden" name="send" value="{{ skip_send.key }}"><fieldset class="field" aria-describedby="schedule-delete-help"><legend>{% translate "Delete" %}</legend>
-<div><input type="radio" name="scope" value="send" id="schedule-delete-send" checked> <label for="schedule-delete-send">{% translate "This email only" %}</label></div>
-<div><input type="radio" name="scope" value="this" id="schedule-delete-digest"> <label for="schedule-delete-digest">{% translate "The whole report" %}</label></div>
 </fieldset>{% endif %}
-<p class="help" id="schedule-delete-help">{% if skip_send %}{% translate "This email only skips just the report's send at" %} <time datetime="{{ skip_send.due_at|instant }}" data-local-instant>{{ skip_send.due_at|instant }}</time>. {% translate "The report keeps every other send. The whole report stops every send of it still to come. You review what changes before anything does." %}{% elif series %}{% translate "This reminder only deletes just this reminder, which then leaves its series. The whole series deletes every reminder of the series that has not sent or been prepared; those that sent stay as ordinary reminders." %}{% elif schedule.values.kind == "daily_digest" or schedule.values.kind == "weekly_digest" %}{% translate "This report repeats, so deleting it stops every send of it still to come. You review what is removed before anything changes." %}{% else %}{% translate "Deleting cancels this email's sends that have not started. You review what is removed before anything changes." %}{% endif %}</p>
+<p class="help" id="schedule-delete-help">{% if series %}{% translate "This reminder only deletes just this reminder, which then leaves its series. The whole series deletes every reminder of the series that has not sent or been prepared; those that sent stay as ordinary reminders." %}{% else %}{% translate "Deleting cancels this email's sends that have not started. You review what is removed before anything changes." %}{% endif %}</p>
 <p>{% button type="submit" class="button-danger" autocomplete="off" aria-describedby="schedule-delete-help" %}{% translate "Delete" %}{% endbutton %}</p>
 </form>
 </section>

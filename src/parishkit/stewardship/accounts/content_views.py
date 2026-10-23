@@ -178,20 +178,17 @@ def campaign_email_usage(configuration, campaign_id):
     email lists use, so both pages name a sender the same way (#446).
     """
     # The same records schedule_reads.campaign_schedules reads; that module
-    # imports this one, so it is not imported here. A converted report
-    # (#1786) sends no email template, so it uses none.
-    from .report_rows import view_rows
-
+    # imports this one, so it is not imported here. A report email (#1786)
+    # sends no email template, so it uses none and is left out.
     return email_usage(
         sorted(
-            view_rows(
-                [
-                    row
-                    for row in configuration.active_configuration.canonical_document[
-                        "sections"
-                    ].get("schedules", [])
-                    if row["values"]["campaign_id"] == str(campaign_id)
-                ]
+            (
+                row
+                for row in configuration.active_configuration.canonical_document[
+                    "sections"
+                ].get("schedules", [])
+                if row["values"]["campaign_id"] == str(campaign_id)
+                and row["values"].get("kind") != "report"
             ),
             key=schedule_order,
         )

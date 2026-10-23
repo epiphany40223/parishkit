@@ -14,7 +14,6 @@ from uuid import uuid4
 
 import pytest
 
-from parishkit.stewardship.accounts.report_rows import translate
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.schedule_models import (
     ScheduleDefinition,
@@ -215,28 +214,23 @@ def test_a_converted_reports_skip_date_skips_exactly_that_send(
     dispatch_worker,  # noqa: F811
     monkeypatch,
 ):
-    """A skip through the editors' translation skips one send, nothing more.
+    """A converted Daily's skip date skips exactly that send, nothing more.
 
-    Dates and mail schedules posts a digest's skip as its ``skip_dates``;
-    ``report_rows.translate`` turns it into the converted Daily's own
-    values. Skipping October 4 (the send on October 5) leaves the sends
-    before and after it, and October 6's is not a recovery send.
+    Skipping October 4 (the send on October 5) leaves the sends before and
+    after it, and October 6's is not a recovery send.
     """
     harness, path = dispatch_worker
     store, campaign = harness.service.store, harness.campaign
     with campaign_clock(at(2)):
         identifier = add_digest(store, campaign, time="07:00:00")
-        patch = translate(
-            store.active().document(),
-            [
-                {
-                    "operation": "update",
-                    "section": "schedules",
-                    "id": str(identifier),
-                    "values": {"skip_dates": ["2054-10-04"]},
-                }
-            ],
-        )
+        patch = [
+            {
+                "operation": "update",
+                "section": "schedules",
+                "id": str(identifier),
+                "values": {"skip_dates": ["2054-10-04"]},
+            }
+        ]
         assert change(store, store.active(), uuid4(), patch).state == "applied"
     values = ScheduleDefinition.objects.get(pk=identifier).current_revision.values
     assert values["kind"] == "report" and values["skip_dates"] == ["2054-10-04"]

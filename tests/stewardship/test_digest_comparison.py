@@ -12,7 +12,6 @@ from dataclasses import replace
 from io import BytesIO
 
 import pytest
-from django import forms
 from PIL import Image
 
 from parishkit.config import ConfigError
@@ -358,18 +357,6 @@ def test_only_a_daily_digest_may_turn_the_section_on():
     ):
         with pytest.raises(ConfigError):
             schedule_values(refused, CAMPAIGN)
-
-
-def test_the_schedule_form_saves_the_setting_only_when_on():
-    """Ticked saves ``comparison``; unticked leaves it out; never on weekly."""
-    from parishkit.stewardship.accounts.schedule_forms import FIELDS, ScheduleForm
-
-    assert "comparison" in FIELDS["daily_digest"]
-    others = [kind for kind in FIELDS if kind != "daily_digest"]
-    assert all("comparison" not in FIELDS[kind] for kind in others)
-    field = ScheduleForm.base_fields["comparison"]
-    assert isinstance(field, forms.BooleanField) and not field.required
-    assert field.label == "Include Compared with past campaigns"
 
 
 def test_a_withheld_render_sends_every_number_without_server_charts(renderer):
