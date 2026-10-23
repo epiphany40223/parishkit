@@ -1740,7 +1740,12 @@ the campaign wizard in #1404 PR 4).
   and described by it: no summary is placed above the heading, since moving
   focus there would jump the page to the top, and no error line is added
   that would move the pane's controls. The line clears on the form's next
-  edit or accepted Review (#1410). A form inside a dialog of its own (the
+  edit or accepted Review (#1410). A long form whose refusal must keep the
+  summary's links to fields across the page (Dates and mail schedules,
+  whose New schedule pane ends the page, R45) names where its summary goes
+  instead (`data-review-summary-after`): just after its Review changes,
+  where the reader is, taking focus there, so the page does not jump to
+  its top and nothing above the button moves. A form inside a dialog of its own (the
   Campaign calendar's Move…, #1521) names its refusal line the same way
   with `data-review-refused` instead, which leaves Apply's status line the
   page's: a refusal is said where the reader is, in the dialog, and the
@@ -3839,7 +3844,37 @@ learned once. **Shared code.**
   with less common tools, such as New and Edit scheduled email (Repeat and
   the schedule's own email), is an
   [additive editor](#basic-and-advanced-modes). An editor of one or two
-  plain fields, such as the campaign dates, has no modes.
+  plain fields, such as the campaign dates, has no modes, and neither does
+  one whose only less common tool is a repeat: Once or Repeating (below) is
+  its disclosure.
+- **Once or Repeating.** An editor that sets a schedule which can send once
+  or on a repeat asks **Sends**, drawn as the shared two-way pair
+  (**Once** | **Repeating**, `components/choice-pair.html`), never a Repeat
+  checkbox or a separate repeat panel. It is a [stored two-way
+  setting](#binary-choices) only where the editor stores the repeat (report
+  emails); where a repeat adds ordinary schedules (the date-change review)
+  it is a choice of the page, never stored or posted. Sends comes right after the choice that makes a repeat
+  possible (a Reminder's mail type), and is not shown for a kind that only
+  sends once (an Initial invitation), which is Once. Once shows the date;
+  Repeating shows the shared repeat rule in its place, and the
+  fields both use (the send time, the email) follow, shared. Switching
+  keeps what was typed for each, hidden fields are disabled so they are
+  not posted, and the fields change in place below the pair, with no
+  reload or jump ([conditional fields](#conditional-fields)). First uses:
+  [report emails](../report-emails/spec.md#schedule-fields) and the
+  [date-change review](../admin-portal/spec.md#new-schedule-on-the-date-change-review)
+  (Administrator, R43,
+  [#1944](https://github.com/epiphany40223/parishkit/issues/1944)).
+- **One schedule at a time.** A page that adds schedules in a pane
+  follows [new pages and in-page panes](#new-pages-and-in-page-panes): one
+  New schedule pane, one schedule per Review. For schedules, a repeating
+  schedule is one schedule to the reader even where the feature stores its
+  occurrences as ordinary schedules, which Apply adds together; and a
+  second Initial invitation (a campaign has one) is never offered for
+  Review: while one is scheduled, Review waits, saying so
+  ([date-change review](../admin-portal/spec.md#new-schedule-on-the-date-change-review),
+  Administrator, R44 and R45,
+  [#1944](https://github.com/epiphany40223/parishkit/issues/1944)).
 - **Times of day** are [time entry](#time-entry) fields. No schedule editor
   draws its own reading or uses a native time control.
 - **Days of the week** use one picker that lists Monday to Sunday with the
@@ -3946,13 +3981,18 @@ except the browser-zone entry, which is its recorded exception
 note names its schedule zone instead. The date-change review draws the
 shared zone note, as do System logs, Ministry requests, and New and Edit
 scheduled email. The two mail
-repeat panels, New scheduled email's Repeat and the date-change review's
-Repeat a reminder, draw one repeat rule, so they offer the same choices in
-the same order and one page script expands both. New and Edit scheduled
-email have the Basic and Advanced modes as an additive editor. Later
-[#1129](https://github.com/epiphany40223/parishkit/issues/1129) slices bring
-the shared preview and Basic and Advanced modes to the date-change review's
-editors and reminder repeats; the report email editor is built with them
+repeat rules, New scheduled email's Repeat and the date-change review's New
+schedule (Sends Repeating), draw one repeat rule, so they offer the same
+choices in the same order and one page script expands both. New and Edit
+scheduled email have the Basic and Advanced modes as an additive editor;
+New scheduled email is brought in line with Once or Repeating in a follow-up
+([#2022](https://github.com/epiphany40223/parishkit/issues/2022)). The
+date-change review has no modes: its New schedule pane follows Once or
+Repeating and one schedule at a time
+([#1944](https://github.com/epiphany40223/parishkit/issues/1944)). A later
+[#1129](https://github.com/epiphany40223/parishkit/issues/1129) slice brings
+the shared preview to the date-change review's editors and reminder
+repeats; the report email editor is built with them
 ([#1786](https://github.com/epiphany40223/parishkit/issues/1786)). Until
 each change lands, an
 editor keeps the behavior its feature spec describes.

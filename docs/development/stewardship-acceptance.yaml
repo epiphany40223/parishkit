@@ -92,6 +92,7 @@ sections:
     "Campaign configuration": [ADM-04]
     "Campaign settings page": [ADM-04]
     "Dates and mail schedules": [ADM-03, ADM-04]
+    "New schedule on the date-change review": [ADM-04]
     "New and Edit scheduled email": [ADM-04]
     "Campaign calendar": [ADM-04]
     "Editing from the calendar": [ADM-04]
