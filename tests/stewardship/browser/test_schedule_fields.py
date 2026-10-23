@@ -8,7 +8,7 @@ from urllib.parse import parse_qs
 import pytest
 
 from .test_components import axe_violations
-from .waits import has_attribute, has_text, hidden, visible
+from .waits import available, has_attribute, has_text, hidden, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -46,6 +46,14 @@ def offered(page):
     return page.locator(f'[name="{NEW}template_version"] option').evaluate_all(
         "options => options.map(option => option.dataset.kind || '')"
     )
+
+
+def counted(pane, count):
+    """The pane's dates list says how many reminders it adds, in its heading;
+    the line above it does not repeat the count (R45)."""
+    word = "reminder" if count == 1 else "reminders"
+    has_text(pane.locator("[data-repeat-dates] > p"), f"{count} {word} to add:")
+    has_text(pane.locator("[data-repeat-summary]"), "")
 
 
 @pytest.mark.parametrize("width", [320, 1280])
@@ -137,49 +145,42 @@ def posted(page, component_origin, path):
     return {name: values[0] for name, values in fields[0].items()}
 
 
-@pytest.mark.parametrize("path", ["/schedule-editor-mail", "/schedule-settings"])
-def test_add_and_remove_new_schedule_rows_before_saving(
-    page, component_origin, axe_source, path
+def test_review_posts_the_panes_once_schedule_as_an_ordinary_row(
+    page, component_origin, axe_source
 ):
-    """New rows clone the empty form, show only their type's fields and renumber."""
+    """Review covers the New schedule pane's one schedule (#1944).
+
+    Only the Mail type shows until a type is chosen; a Once schedule is the
+    pane's own row, which Review posts as an ordinary new row, with no row
+    added and nothing of Sends.
+    """
     page.set_viewport_size({"width": 320, "height": 900})
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
+    path = "/schedule-editor-mail"
     page.goto(component_origin + path)
     total = page.locator('[name="schedules-TOTAL_FORMS"]')
+    pane = page.locator("[data-schedule-pane]")
     first = int(total.input_value())
-    add = page.get_by_role("button", name="Add another schedule")
-    add.click()
-    one = f"schedules-{first}-"
-    assert page.evaluate("document.activeElement.name") == one + "kind"
-    assert "added" in page.locator("[data-schedule-status]").inner_text()
-    add.click()
-    two = f"schedules-{first + 1}-"
-    assert page.evaluate("document.activeElement.name") == two + "kind"
-    assert total.input_value() == str(first + 2)
-    # Mail-type show/hide applies to the added rows too.
-    assert shown(page, two) == set()
-    page.locator(f'[name="{two}kind"]').select_option("reminder")
-    assert shown(page, two) == SHOWN["reminder"]
-    page.locator(f'[name="{two}date"]').fill("2054-10-05")
-    page.locator(f'[name="{two}time"]').fill("08:30:00")
-    page.locator(f'[name="{one}kind"]').select_option("initial")
-    assert shown(page, one) == SHOWN["initial"]
+    assert first == int(NEW.split("-")[1]) + 1
+    hidden(pane.locator("[data-schedule-pane-line]"))
+    assert shown(page) == set()
+    page.locator(f'[name="{NEW}kind"]').select_option("reminder")
+    page.locator(f'[name="{NEW}date"]').fill("2054-10-05")
+    page.locator(f'[name="{NEW}time"]').fill("08:30:00")
+    page.locator(f'[name="{NEW}template_version"]').select_option(index=1)
+    has_text(
+        pane.locator("[data-repeat-summary]"),
+        "Ready to add: Reminder, Monday, October 5, 2054 at 8:30 AM: reminder mail.",
+    )
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
-    # Removing the first added row renumbers the second into its place.
-    page.get_by_role("button", name="Remove this new schedule").first.click()
-    assert page.evaluate("document.activeElement.dataset.scheduleAdd") == ""
-    assert total.input_value() == str(first + 1)
-    assert page.locator(f'[name="{one}kind"]').input_value() == "reminder"
-    assert page.locator(f'[name="{two}kind"]').count() == 0
-    assert shown(page, one) == SHOWN["reminder"]
     fields = posted(page, component_origin, path)
-    assert fields["schedules-TOTAL_FORMS"] == str(first + 1)
-    assert fields[one + "kind"] == "reminder"
-    # The typed time was rewritten in its canonical form as focus left (#631).
-    assert fields[one + "date"] == "2054-10-05" and fields[one + "time"] == "08:30"
-    assert not any(name.startswith(two) for name in fields)
+    assert fields["schedules-TOTAL_FORMS"] == str(first)
+    assert fields[NEW + "kind"] == "reminder"
+    assert fields[NEW + "date"] == "2054-10-05" and fields[NEW + "time"] == "08:30"
+    assert "schedule_sends" not in fields
+    assert not any(name.startswith(f"schedules-{first}-") for name in fields)
     assert not any("__prefix__" in name for name in fields)
     assert not failures
 
@@ -239,64 +240,80 @@ def page_top(locator):
     return locator.evaluate("node => node.getBoundingClientRect().top + window.scrollY")
 
 
+PANE = "[data-schedule-pane]"
+
+
 def repeat(page, name):
-    """One control of the Repeat a reminder panel."""
-    return page.locator(f'[data-repeat-panel] [data-repeat="{name}"]')
+    """One control of the pane's Repeating: the rule's, or the row's own
+    Send time and Email to send, which Once and Repeating share (#1944)."""
+    if name == "time":
+        return page.locator(f'[name="{NEW}time"]')
+    if name == "email":
+        return page.locator(f'[name="{NEW}template_version"]')
+    return page.locator(f'{PANE} [data-repeat-panel] [data-repeat="{name}"]')
+
+
+def choose_repeating(page):
+    """Choose Reminder and Sends Repeating in the New schedule pane."""
+    page.locator(f'[name="{NEW}kind"]').select_option("reminder")
+    page.locator(PANE).get_by_role("radio", name="Repeating").check()
+    visible(page.locator(f"{PANE} [data-repeat-panel]"))
 
 
 @pytest.mark.parametrize("width", [320, 1280])
-def test_repeat_adds_ordinary_reminder_rows_in_place(
+def test_repeating_posts_one_reminder_row_per_date(
     page, component_origin, axe_source, width
 ):
-    """The rule lists its dates and why any is left out, then adds one row each.
+    """The rule lists its dates and why any is left out; Review posts one
+    ordinary reminder row per date in the pane's place (#1944).
 
     The saved initial invitation is Thursday, October 1, 2054 at 9:00 AM in
     the campaign's New York time, in a campaign of October 2054, so a Monday
-    and Thursday rule at 6am leaves out that first Thursday and adds the
-    other eight. Nothing reloads; the rows
-    post like hand-added ones, and the panel's own controls never post.
+    and Thursday rule at 6am leaves out that first Thursday and posts the
+    other eight. Nothing reloads; the rows post like reminders added one at
+    a time, and the rule's own controls and Sends never post.
     """
     page.set_viewport_size({"width": width, "height": 900})
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
     path = "/schedule-editor-mail"
     page.goto(component_origin + path)
-    panel = page.locator("[data-repeat-panel]")
-    visible(panel)
+    pane = page.locator(PANE)
     total = page.locator('[name="schedules-TOTAL_FORMS"]')
     first = int(total.input_value())
+    choose_repeating(page)
+    panel = pane.locator("[data-repeat-panel]")
+    # Repeating replaces the send date; the time and email follow the rule.
+    hidden(group(page, "date"))
+    assert page.locator(f'[name="{NEW}date"]').is_disabled()
     # The campaign's own dates are the starting range.
     assert repeat(page, "from").input_value() == "2054-10-01"
     assert repeat(page, "until").input_value() == "2054-10-31"
     # Only the fields of the chosen repeat show.
     hidden(panel.locator('[data-repeat-when="monthly"]'))
-    summary = panel.locator("[data-repeat-summary]")
-    add = panel.locator("[data-repeat-add]")
-    dates = panel.locator("[data-repeat-dates]")
+    summary = pane.locator("[data-repeat-summary]")
+    review = page.get_by_role("button", name="Review changes")
+    wait = pane.locator("#schedule-pane-wait")
+    dates = pane.locator("[data-repeat-dates]")
     # Only the one-line summary is live; the long date list is not.
     assert summary.get_attribute("role") == "status"
     assert dates.get_attribute("aria-live") is None
     assert not dates.locator("[aria-live], [role=status]").count()
     has_text(summary, "Choose at least one day of the week.")
-    top = page_top(add)
     for day in ("0", "3"):
         panel.locator(f'[data-repeat="weekday"][value="{day}"]').check()
     # Without a send time the timed checks cannot run: say what is missing
     # instead of offering a count that could be too high.
     has_text(summary, "Enter a send time to check these dates.")
-    assert add.is_disabled()
+    assert review.get_attribute("data-pane-gated") == ""
     assert "Dates this rule gives:" in dates.inner_text()
     assert "to add" not in dates.inner_text()
-    # The send time is a shared time entry field (#1117): the same reading
-    # line, refusal and blur rewrite as every Admin time.
-    reading = panel.locator("#repeat-time + .time-reading")
+    # The send time is the row's shared time entry field (#1117).
+    reading = page.locator(f"#id_{NEW}time_reading")
     assert repeat(page, "time").get_attribute("data-time-entry") == "time"
-    described = repeat(page, "time").get_attribute("aria-describedby").split()
-    assert described == ["repeat-time-help", reading.get_attribute("id")]
     reading_height = reading.bounding_box()["height"]
     gap = page_top(repeat(page, "email")) - page_top(reading)
     repeat(page, "time").fill("9xx")
-    has_attribute(reading, "class", "time-reading is-error")
     has_text(reading, "“9xx” isn't a time. Try 2:00 PM, 2pm, 14:00 or 1400.")
     has_attribute(repeat(page, "time"), "aria-invalid", "true")
     # Its two lines are reserved: the refusal moves nothing below it.
@@ -304,60 +321,47 @@ def test_repeat_adds_ordinary_reminder_rows_in_place(
     assert abs(page_top(repeat(page, "email")) - page_top(reading) - gap) < 1
     repeat(page, "time").fill("6am")
     has_text(reading, "Reads as 06:00 (6:00 AM)")
-    has_attribute(reading, "class", "time-reading")
-    # The line keeps its height: the reading moves nothing below it.
-    assert reading.bounding_box()["height"] == pytest.approx(reading_height, abs=1)
     repeat(page, "time").blur()
     assert repeat(page, "time").input_value() == "06:00"
-    has_text(add, "Add these 8 reminders")
-    has_text(summary, "8 reminders to add, 1 not added.")
-    # The summary's line is reserved and the list sits below the button, so
-    # neither the summary's text nor a growing list moves the button.
-    assert abs(page_top(add) - top) < 1
-    # No email chosen: say so rather than leave the button silently disabled.
-    repeat(page, "email").evaluate(
-        "select => { select.selectedIndex = -1;"
-        " select.dispatchEvent(new Event('change', {bubbles: true})); }"
-    )
+    # No email chosen: say so, and Review waits, saying why.
     has_text(summary, "Choose the email to send.")
-    assert add.is_disabled()
-    repeat(page, "email").evaluate(
-        "select => { select.selectedIndex = 0;"
-        " select.dispatchEvent(new Event('change', {bubbles: true})); }"
-    )
-    has_text(summary, "8 reminders to add, 1 not added.")
-    assert abs(page_top(add) - top) < 1
+    assert review.get_attribute("data-pane-gated") == ""
+    assert "pane-hint" in (review.get_attribute("aria-describedby") or "")
+    # Only reminder emails are offered for a Reminder.
+    assert repeat(page, "email").locator("option").evaluate_all(
+        "options => options.map(option => option.dataset.kind || '')"
+    ) == ["", "reminder"]
+    repeat(page, "email").select_option(index=1)
+    counted(pane, 8)
+    # The summary's line is reserved and the list sits last, so neither the
+    # summary's text nor a shorter or longer list moves the help line below
+    # it (the chosen email's description above it is drawn by now).
+    top = page_top(wait)
+    panel.locator('[data-repeat="weekday"][value="3"]').uncheck()
+    counted(pane, 4)
+    assert abs(page_top(wait) - top) < 1
+    panel.locator('[data-repeat="weekday"][value="3"]').check()
+    counted(pane, 8)
+    assert abs(page_top(wait) - top) < 1
     assert (
         "Thursday, October 1, 2054: not added, not after the initial invitation"
         in dates.inner_text()
     )
     assert "8 reminders to add:" in dates.inner_text()
-    assert repeat(page, "email").locator("option").evaluate_all(
-        "options => options.map(option => option.dataset.kind)"
-    ) == ["reminder"]
+    # A whole schedule: Review covers it.
+    available(review)
+    assert review.get_attribute("data-pane-gated") is None
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
     url = page.url
-    add.click()
-    assert page.url == url
-    assert total.input_value() == str(first + 8)
-    one = f"schedules-{first}-"
-    # The status and focus do not depend on how a new row is labelled (a
-    # row may carry no schedule number), and the summary is refreshed.
-    has_text(
-        page.locator("[data-schedule-status]"),
-        "8 reminders added. Preview to check and save them.",
-    )
-    assert page.evaluate("document.activeElement.name") == one + "date"
-    has_text(summary, "Nothing to add: none of these dates can be used.")
-    # The added dates are now taken, so nothing is left to add.
-    assert add.is_disabled()
-    assert "another email is already scheduled then" in dates.inner_text()
-    assert shown(page, one) == SHOWN["reminder"]
     fields = posted(page, component_origin, path)
+    assert page.url == url
+    pane_index = first - 1
+    assert fields["schedules-TOTAL_FORMS"] == str(pane_index + 8)
+    one = NEW
     reminders = [
         (fields[f"schedules-{index}-date"], fields[f"schedules-{index}-time"])
-        for index in range(first, first + 8)
+        for index in range(pane_index, pane_index + 8)
         if fields[f"schedules-{index}-kind"] == "reminder"
     ]
     assert reminders == [
@@ -376,25 +380,95 @@ def test_repeat_adds_ordinary_reminder_rows_in_place(
     email = fields[one + "template_version"]
     assert email and all(
         fields[f"schedules-{index}-template_version"] == email
-        for index in range(first, first + 8)
+        for index in range(pane_index, pane_index + 8)
     )
     assert not any(name.startswith("repeat") for name in fields)
+    assert "schedule_sends" not in fields
     assert not failures
+
+
+@pytest.mark.parametrize(
+    ("zone", "weekday", "until", "clock", "kept", "left_out"),
+    [
+        # Saturdays at 10:00 PM in Los Angeles: October 31's is 1:00 AM on
+        # November 1 in New York, after the campaign ends, so it is left out.
+        (
+            "America/Los_Angeles",
+            "5",
+            "2054-10-31",
+            "10pm",
+            ["2054-10-03", "2054-10-10", "2054-10-17", "2054-10-24"],
+            "Saturday, October 31, 2054",
+        ),
+        # Sundays at 2:00 AM in London: November 1's is 9:00 PM on October
+        # 31 in New York, the campaign's last day, so it is kept.
+        (
+            "Europe/London",
+            "6",
+            "2054-11-01",
+            "2am",
+            ["2054-10-04", "2054-10-11", "2054-10-18", "2054-10-25", "2054-11-01"],
+            None,
+        ),
+    ],
+)
+def test_repeating_judges_each_date_in_the_campaigns_zone(
+    browser_engine, component_origin, zone, weekday, until, clock, kept, left_out
+):
+    """Repeating's dates are judged at the send time in the campaign's zone
+    (New York), as a Once send date and the server judge them, whatever the
+    browser's zone (#1944): a date the browser puts on the campaign's last
+    day but New York puts after it is listed as not added, and one the
+    browser puts after the last day but New York puts on it is posted."""
+    context = browser_engine.new_context(timezone_id=zone, reduced_motion="reduce")
+    page = context.new_page()
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    path = "/schedule-editor-mail"
+    page.goto(component_origin + path)
+    pane = page.locator(PANE)
+    choose_repeating(page)
+    panel = pane.locator("[data-repeat-panel]")
+    panel.locator(f'[data-repeat="weekday"][value="{weekday}"]').check()
+    repeat(page, "until").fill(until)
+    repeat(page, "time").fill(clock)
+    repeat(page, "time").blur()
+    repeat(page, "email").select_option(index=1)
+    dates = pane.locator("[data-repeat-dates]")
+    if left_out:
+        counted(pane, len(kept))
+        assert (
+            f"{left_out}: not added, outside the campaign dates" in dates.inner_text()
+        )
+    else:
+        counted(pane, len(kept))
+        assert "not added" not in dates.inner_text()
+    first = int(page.locator('[name="schedules-TOTAL_FORMS"]').input_value()) - 1
+    fields = posted(page, component_origin, path)
+    assert [
+        fields[f"schedules-{first + offset}-date"] for offset in range(len(kept))
+    ] == kept
+    assert fields["schedules-TOTAL_FORMS"] == str(first + len(kept))
+    assert not failures
+    context.close()
 
 
 def test_repeat_monthly_names_skipped_months_and_refusals(page, component_origin):
     """A month without the chosen day is listed as skipped; dates outside the
     campaign are listed as not added."""
     page.goto(component_origin + "/schedule-editor-mail")
+    choose_repeating(page)
     repeat(page, "frequency").select_option("monthly")
-    panel = page.locator("[data-repeat-panel]")
+    panel = page.locator(f"{PANE} [data-repeat-panel]")
     visible(panel.locator('[data-repeat-when="monthly"]'))
     hidden(panel.locator('[data-repeat-when="weekly"]'))
     repeat(page, "day").fill("31")
     repeat(page, "until").fill("2054-11-30")
     repeat(page, "time").fill("10:00")
-    dates = panel.locator("[data-repeat-dates]")
-    has_text(panel.locator("[data-repeat-add]"), "Add this reminder")
+    repeat(page, "email").select_option(index=1)
+    pane = page.locator(PANE)
+    dates = pane.locator("[data-repeat-dates]")
+    counted(pane, 1)
     text = dates.inner_text()
     assert "Saturday, October 31, 2054" in text
     assert "November 2054: not added, skipped: it has no day 31" in text
@@ -410,32 +484,34 @@ def test_repeat_monthly_names_skipped_months_and_refusals(page, component_origin
     # A rule error is said at its fields (#1915), not in the summary.
     repeat(page, "until").fill("2054-09-01")
     has_text(panel.locator("#repeat-until_error"), "The last date is before the first.")
-    has_text(panel.locator("[data-repeat-summary]"), "")
-    assert panel.locator("[data-repeat-add]").is_disabled()
+    has_text(pane.locator("[data-repeat-summary]"), "")
+    review = page.get_by_role("button", name="Review changes")
+    assert review.get_attribute("data-pane-gated") == ""
 
 
 def test_repeat_rule_errors_show_at_their_fields(page, component_origin):
     """Each rule error marks its fields, with its words in their reserved
     line (#1915): Until before From marks both and is said once, after
     Until; a missing date marks the empty one; a day of the month out of
-    range marks the day; no weekday marks the days. Add these reminders
-    waits meanwhile, named by that line, and nothing below moves. The
-    date-change review's own Preview never waits for the panel, whose
-    controls are not posted."""
+    range marks the day; no weekday marks the days. Review changes waits
+    meanwhile for the pane (it holds part of a schedule), never as a rule
+    gate of its own, whose controls are not posted, and nothing below
+    moves."""
     page.set_viewport_size({"width": 1280, "height": 900})
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
     page.goto(component_origin + "/schedule-editor-mail")
-    panel = page.locator("[data-repeat-panel]")
-    visible(panel)
-    add = panel.locator("[data-repeat-add]")
-    summary = panel.locator("[data-repeat-summary]")
+    choose_repeating(page)
+    pane = page.locator(PANE)
+    panel = pane.locator("[data-repeat-panel]")
+    summary = pane.locator("[data-repeat-summary]")
     start, until = repeat(page, "from"), repeat(page, "until")
     for day in ("0", "3"):
         panel.locator(f'[data-repeat="weekday"][value="{day}"]').check()
     repeat(page, "time").fill("6am")
-    has_text(summary, "8 reminders to add, 1 not added.")
-    places = [add, summary, repeat(page, "time")]
+    repeat(page, "email").select_option(index=1)
+    counted(pane, 8)
+    places = [pane.locator("#schedule-pane-wait"), summary, repeat(page, "time")]
     before = [page_top(item) for item in places]
     preview = page.locator("form:has([data-repeat-panel]) [type=submit]").first
 
@@ -451,11 +527,10 @@ def test_repeat_rule_errors_show_at_their_fields(page, component_origin):
         assert "repeat-until_error" in described(field)
     hidden(panel.locator("#repeat-from_error"))
     has_text(summary, "")
-    assert add.is_disabled()
-    assert "repeat-until_error" in described(add)
     assert [page_top(item) for item in places] == pytest.approx(before, abs=1)
-    # Only the panel's own button waits.
+    # Review waits for the pane, not for the rule.
     assert not preview.evaluate("node => node.hasAttribute('data-repeat-gated')")
+    assert preview.evaluate("node => node.hasAttribute('data-pane-gated')")
     # Emptied, only From is marked, with its own line.
     until.fill("2054-10-31")
     start.fill("")
@@ -466,14 +541,14 @@ def test_repeat_rule_errors_show_at_their_fields(page, component_origin):
     has_attribute(start, "aria-invalid", "true")
     has_attribute(until, "aria-invalid", "false")
     hidden(line)
-    assert "repeat-from_error" in described(add)
+    assert preview.evaluate("node => node.hasAttribute('data-pane-gated')")
     assert [page_top(item) for item in places] == pytest.approx(before, abs=1)
     start.fill("2054-10-01")
     has_attribute(start, "aria-invalid", "false")
     hidden(panel.locator("#repeat-from_error"))
-    has_text(summary, "8 reminders to add, 1 not added.")
-    assert not add.is_disabled()
-    assert "repeat-until_error" not in described(add)
+    counted(pane, 8)
+    available(preview)
+    assert not preview.evaluate("node => node.hasAttribute('data-pane-gated')")
     # A day of the month out of range.
     repeat(page, "frequency").select_option("monthly")
     day = repeat(page, "day")
@@ -497,7 +572,7 @@ def test_repeat_rule_errors_show_at_their_fields(page, component_origin):
     has_text(
         panel.locator("#repeat-weekdays_error"), "Choose at least one day of the week."
     )
-    assert "repeat-weekdays_error" in described(add)
+    assert preview.evaluate("node => node.hasAttribute('data-pane-gated')")
     panel.locator('[data-repeat="weekday"][value="1"]').check()
     has_attribute(days.first, "aria-invalid", "false")
     hidden(panel.locator("#repeat-weekdays_error"))
@@ -507,10 +582,12 @@ def test_repeat_rule_errors_show_at_their_fields(page, component_origin):
 def test_repeat_limit_leaves_out_saved_rows_marked_delete(page, component_origin):
     """The form's schedule limit counts what the server counts (#469).
 
-    The page is served with a limit two rows above its own, so a Monday and
-    Thursday rule fits only two new reminders. Marking the saved initial
-    invitation Delete frees its place (and its date and time), as the
-    server's formset does not count a deleted row.
+    The page is served with a limit two rows above its own (the saved
+    invitation and the blank pane, which Django's formset counts too). A
+    Repeating pane's reminders take the pane's place (#1944), so a Monday
+    and Thursday rule fits three. Marking the saved initial invitation
+    Delete frees its place (and its date and time), as the server's formset
+    does not count a deleted row.
     """
     path = "/schedule-editor-mail"
 
@@ -527,19 +604,19 @@ def test_repeat_limit_leaves_out_saved_rows_marked_delete(page, component_origin
 
     page.route(component_origin + path, lower_limit)
     page.goto(component_origin + path)
-    panel = page.locator("[data-repeat-panel]")
-    visible(panel)
+    choose_repeating(page)
+    pane = page.locator(PANE)
+    panel = pane.locator("[data-repeat-panel]")
     total = int(page.locator('[name="schedules-TOTAL_FORMS"]').input_value())
     for day in ("0", "3"):
         panel.locator(f'[data-repeat="weekday"][value="{day}"]').check()
     repeat(page, "time").fill("9:00")
-    summary = panel.locator("[data-repeat-summary]")
-    has_text(summary, "2 reminders to add, 7 not added.")
-    assert f"over the limit of {total + 2} schedules" in panel.inner_text()
+    repeat(page, "email").select_option(index=1)
+    counted(pane, 3)
+    assert f"over the limit of {total + 2} schedules" in pane.inner_text()
     open_saved(page)
     page.locator('[name="schedules-0-DELETE"]').check()
-    has_text(summary, "3 reminders to add, 6 not added.")
-    has_text(panel.locator("[data-repeat-add]"), "Add these 3 reminders")
+    counted(pane, 4)
 
 
 def test_repeat_leaves_out_dates_whose_time_has_passed(page, component_origin):
@@ -554,15 +631,16 @@ def test_repeat_leaves_out_dates_whose_time_has_passed(page, component_origin):
 
     page.clock.set_fixed_time(datetime(2054, 10, 15, 16, tzinfo=UTC))
     page.goto(component_origin + "/schedule-editor-mail")
-    panel = page.locator("[data-repeat-panel]")
-    visible(panel)
+    choose_repeating(page)
+    pane = page.locator(PANE)
+    panel = pane.locator("[data-repeat-panel]")
     for day in ("0", "3"):
         panel.locator(f'[data-repeat="weekday"][value="{day}"]').check()
     repeat(page, "time").fill("6am")
     repeat(page, "time").blur()
-    has_text(panel.locator("[data-repeat-summary]"), "4 reminders to add, 5 not added.")
-    has_text(panel.locator("[data-repeat-add]"), "Add these 4 reminders")
-    text = panel.locator("[data-repeat-dates]").inner_text()
+    repeat(page, "email").select_option(index=1)
+    counted(pane, 4)
+    text = pane.locator("[data-repeat-dates]").inner_text()
     for passed in ("Thursday, October 1", "Monday, October 5", "Thursday, October 15"):
         assert f"{passed}, 2054: not added, its time has passed" in text
     assert "Monday, October 19, 2054" in text

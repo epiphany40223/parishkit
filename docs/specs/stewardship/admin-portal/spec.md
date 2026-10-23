@@ -374,9 +374,10 @@ button waits until it is changed. On the date-change review it is judged
 against the campaign dates and time zone being proposed, so shortening the
 campaign refuses, at once, each saved schedule it would leave outside and
 opens that schedule's editor. On the date-change
-review, "Add another schedule" adds blank rows (with
-the same per-type fields) before saving, and a row added this way can be removed
-again, so several schedules save in one submission and are validated together.
+review, a new schedule is added one at a time in its
+[New schedule pane](#new-schedule-on-the-date-change-review), reviewed and
+applied with the proposed dates, and validated together with every saved
+schedule.
 
 A schedule's **Email to send** list tells look-alike emails apart
 ([#446](https://github.com/epiphany40223/parishkit/issues/446)). Each email has
@@ -3205,8 +3206,113 @@ change it offers no Apply. **Apply** records the change with the same signed
 preview, blocking-work recheck under the work lock, stale and two-tab checks
 and audit as before; a live campaign's end-date rules, reminder planning and
 emailed Family codes and links are unaffected by how the review is shown.
-Once the change is applied the reader returns to the list without proposed
-dates, whose status line says "Dates and mail schedules changed." and when.
+Once the change is applied the page is redrawn in place from its own
+address ([New schedule](#new-schedule-on-the-date-change-review)), and its
+status line under Review changes says "Dates and mail schedules changed."
+and when.
+
+#### New schedule on the date-change review
+
+The date-change review adds a schedule in one **New schedule** pane, under
+the table and the saved schedules' editors
+([#1944](https://github.com/epiphany40223/parishkit/issues/1944),
+Administrator, R43 and R44). It follows the shared
+[Once or Repeating](../ui-conventions/spec.md#schedules) and
+[one schedule at a time](../ui-conventions/spec.md#schedules) rules and
+has no Basic and Advanced toggle: Sends is its progressive disclosure.
+
+- **Mail type first.** The pane opens with only **Mail type** and the help
+  above it; nothing else shows until a type is chosen.
+- **Sends.** For a Reminder the next field is **Sends**, the shared
+  two-way pair **Once** | **Repeating** (`components/choice-pair.html`),
+  Once chosen to start. Here it is a choice of the page only, never stored
+  or posted. An Initial invitation is always Once and shows no Sends
+  choice. **Once** shows Send date, Send time and Email to send.
+  **Repeating** shows How often, the days, From and Until (the shared
+  repeat rule, From and Until starting at the campaign dates being
+  proposed), then the same Send time and Email to send, which both kinds
+  share. The page lists the dates the rule gives with the same checks
+  and limits as before (see [Repeat](#new-and-edit-scheduled-email),
+  and the date-change review's rules below it). Each date is judged at the
+  send time in the campaign's time zone, as a Once send date is, so a date
+  the browser's zone puts on a campaign day that the campaign's zone does
+  not (10:00 PM in Los Angeles on the last day of a New York campaign) is
+  listed as outside the campaign dates, and one the campaign's zone puts
+  inside is kept. Here the list's heading ("2 reminders to add:") gives the
+  count, so the pane's line above it does not repeat it; it still says
+  what is missing or wrong, and each date not added says so, with its
+  reason (R45). Switching between Once and
+  Repeating keeps what was typed for each; changing the mail type clears
+  the fields the new type does not use, as every schedule row does. Each
+  choice changes the pane in place, below the control just used, with no
+  reload or jump.
+- **Review changes covers the pane's one schedule**, with the proposed
+  dates and any saved schedule changed in its editor. While the pane has a
+  mail type but not yet a whole schedule (for Repeating, a rule that gives
+  a date), Review changes waits (a
+  [prerequisite gate](../ui-conventions/spec.md#prerequisite-gates)); the
+  pane's line says what is still missing, or what Review will add, and its
+  help says to set Mail type back to Choose a mail type to review without
+  it. An empty pane is no change. A campaign has one Initial invitation, so
+  while one is scheduled (and not marked Delete) an Initial invitation in
+  the pane holds Review too, the line saying "An Initial invitation is
+  already scheduled. Change or delete it from the table instead."; the
+  server's own rule stays the safeguard (R45). Review opens the shared
+  review dialog, and **Apply** saves everything it lists together.
+- **A short confirmation when Review only adds the pane's schedule**
+  (Administrator, R45; the [review dialog](../ui-conventions/spec.md#review-dialog)'s
+  one-sentence confirmation). When the pane's schedule, sent once or
+  Repeating, is all the Review adds, with at most the proposed campaign
+  dates, the dialog says only what is added ("Add a reminder:", "Add the
+  Initial invitation:" or "Add 2 reminders:") with each send, drawn by the
+  one [schedule preview](../ui-conventions/spec.md#schedule-previews) in
+  the browser's zone, then a line for each proposed date ("Campaign end
+  date: October 26, 2026 → November 2, 2026."), any report emails whose
+  sends move with the dates, and "Nothing is sent now." It lists no
+  Current or Proposed schedule. A change to a saved schedule, a digest, a
+  financial acknowledgement or sends that block the change keep the full
+  review. Apply and Cancel, the signed preview and its audit are the same
+  either way (`schedule_views.pane_confirmation`).
+- **A repeating schedule is one scheduled email that becomes its
+  reminders.** It is never stored as one schedule: Review posts one
+  ordinary reminder per date the rule gives, so the dialog lists each date
+  as its own reminder and Apply adds them all; no schedule record changes
+  shape.
+- **What is posted.** The pane is the form's blank new schedule row: it
+  posts nothing while it is empty, and the server skips it. For Once it
+  posts its own fields. For Repeating the page posts, in its place, one
+  reminder row per date. Sends and the rule's controls post nothing:
+  hidden controls are disabled, the rule's have no names, and the server
+  refuses a posted Sends as an unknown field. The server checks every
+  posted row as before (the Initial invitation before every reminder, no
+  two Family emails at the same moment, every send inside the campaign
+  dates, the proposed ones while they are reviewed, and the schedule
+  limit), whatever the page did.
+- **A refused Review** keeps the page as it is, the pane's values
+  included, with its fields marked, as for every editor on the page, and
+  with no page load: its error summary is placed just under Review
+  changes, where the reader is, and takes focus there
+  ([field errors stay on the form](../ui-conventions/spec.md#review-dialog)).
+  A rule between schedules (one Initial invitation, no two Family emails
+  at one moment) is listed there without a link and marks no field; it
+  goes once the pane's Mail type changes, as do the pane's marks. For
+  Repeating, the posted reminders are not drawn as rows, so a refused
+  date is shown at the rule's **Until**, led by the date it refuses, and
+  the error summary's link to it moves focus to Until; a refusal of
+  another field links to the pane's own field. When
+  the browser shows the page again from its history, the pane's fields are
+  worked out again from their values (`pageshow`).
+- **After Apply the page updates in place**, with no reload and no jump
+  ([in-place controls](../ui-conventions/spec.md#in-place-controls)):
+  the page is redrawn from its own address, so the table lists the new
+  schedule (and the saved schedules at the new dates), the campaign window
+  shows the dates now saved, and the pane is empty again with only Mail
+  type, as on a fresh visit, ready for the next schedule. The
+  proposed-dates notice is shown only while a proposed date differs from
+  the saved one, so it goes once the dates are applied. The reserved
+  status line under Review changes says what was applied and when, and
+  takes focus. Removing or changing a saved schedule works from the table,
+  as before.
 
 #### New and Edit scheduled email
 
@@ -3426,9 +3532,9 @@ the [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates) rule,
 and worked out again when the page is shown from the browser's history. The
 server refuses such a rule at the same fields in the same words, and
 otherwise refuses a rule none of whose dates can be added at Repeat. The
-date-change review's **Repeat a reminder** shows rule errors at its fields
-the same way, and its **Add these reminders** is unavailable, named by that
-line or by its summary, while there is nothing to add. A month without the
+date-change review's New schedule, Sends Repeating, shows rule errors at
+its fields the same way, and **Review changes** waits, named by the pane's help
+line, while the rule gives nothing to add. A month without the
 chosen day (the 31st in September) is skipped and listed as skipped, not
 moved. Every day comes with a note that each reminder goes to every Family that
 has not responded and that sending spreads out or waits near the mailbox's

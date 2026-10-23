@@ -1926,7 +1926,7 @@ th:not([aria-sort]) .sort-indicator { opacity: .45; }
    checks it). */
 h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem; }
 
-/* Repeat a reminder (#469): the seven weekday choices wrap side by side
+/* The repeat rule's weekdays (#469): the seven choices wrap side by side
    instead of a tall single column; each keeps its 44px touch target. */
 .repeat-days { display: flex; flex-wrap: wrap; column-gap: 1.25rem; }
 .repeat-days > label { display: inline-block; }
@@ -1934,13 +1934,14 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
    group is outlined in the error colour, which takes no room, so the mark
    moves nothing; its message is in the reserved line after the group. */
 .repeat-days:has(> label > input[aria-invalid=true]) { outline: 2px solid var(--error-border); outline-offset: .25rem; border-radius: .25rem; }
-/* The Repeat panel's Send time reading (#1117) reserves two lines, and on
-   desktop takes the field's full width rather than the short-field 14rem,
-   so a refusal such as "“9xx” isn't a time. Try 2:00 PM, …" appearing moves
-   nothing below it. */
-.schedule-repeat .time-reading { min-height: 3.2em; min-height: 2lh; }
+/* The New schedule pane's Send time reading (#1117, #1944) reserves two
+   lines, so a refusal such as "“9xx” isn't a time. Try 2:00 PM, …"
+   appearing moves nothing below it (the pane's line). On desktop it takes
+   the field's full width, not the short-field 14rem, whose selector it must
+   outrank (R45: at 14rem the refusal wrapped to a third line). */
+.schedule-pane .time-reading { min-height: 3.2em; min-height: 2lh; }
 @media (min-width: 48rem) {
-  .schedule-repeat > div:has(> input[data-time-entry=time]) > .time-reading { max-width: none; }
+  .schedule-pane div:has(> input[data-time-entry=time]) > .time-reading { max-width: none; }
 }
 /* The repeat summary reserves two lines, so its text appearing, changing or
    wrapping on a phone never moves the Add button below it (#469). */

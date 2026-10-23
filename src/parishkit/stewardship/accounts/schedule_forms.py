@@ -159,7 +159,13 @@ class ScheduleWindow(AdminForm):
         financial acknowledgement stay locked.
         """
         self.previous = previous
-        self.proposed = bool(proposed)
+        # Proposed dates are only a proposal while one differs from the
+        # saved value: once Apply saves them, the page redrawn from the same
+        # address (#1944) no longer shows the "not saved" notice.
+        self.proposed = any(
+            str(value) != str(previous.get(name))
+            for name, value in (proposed or {}).items()
+        )
         self.live_at = None if editable else live_at
         open_fields = (
             {"timezone", "start_date", "end_date"}
@@ -736,13 +742,33 @@ class ScheduleSet(AdminFormSet):
         return schedulable(self.templates)
 
     @property
-    def repeat_rule(self):
-        """A blank repeat rule for the date-change review's Repeat a reminder.
+    def saved_forms(self):
+        """The saved schedules' editors, in sending order (before any new row)."""
+        return self.forms[: len(self.previous)]
 
-        The panel draws the shared rule controls
+    @property
+    def pane_form(self):
+        """The date-change review's New schedule pane: the first new row.
+
+        The pane is the formset's blank new row (#1944): it posts blank,
+        which ``clean`` skips, until a mail type is chosen; for Repeating
+        the page posts one reminder row per date in its place. None only
+        for a post that carried no new row.
+        """
+        return (
+            self.forms[len(self.previous)]
+            if len(self.forms) > len(self.previous)
+            else None
+        )
+
+    @property
+    def repeat_rule(self):
+        """A blank repeat rule for the date-change review's Sends Repeating.
+
+        The pane draws the shared rule controls
         (``components/repeat-rule.html``) from New scheduled email's own
-        ``RepeatRule``, so both repeat panels offer the same choices (#1129).
-        The panel posts nothing, so the form is never bound. It is imported
+        ``RepeatRule``, so both repeat rules offer the same choices (#1129).
+        The rule posts nothing, so the form is never bound. It is imported
         here, not at the top, because ``schedule_entry_views`` imports this
         module.
         """

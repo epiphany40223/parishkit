@@ -1,9 +1,10 @@
 """Both mail repeat panels draw the one shared repeat rule (#1129).
 
 New scheduled email's Repeat (``schedule-repeat-entry.html``) and the
-date-change review's Repeat a reminder (``schedule-repeat.html``) include
-``components/repeat-rule.html``, so they offer the same choices in the same
-order. The review's controls have no names, so nothing of its rule is posted.
+date-change review's New schedule, Sends Repeating (``schedule-repeat.html``,
+#1944), include ``components/repeat-rule.html``, so they offer the same
+choices in the same order. The review's rule controls have no names, so
+nothing of its rule is posted.
 """
 
 import re
@@ -21,7 +22,7 @@ VALUES = {"start_date": "2054-10-01", "end_date": "2054-10-31"}
 
 
 def review_panel():
-    """The date-change review's Repeat a reminder, as schedule-fields.html draws it."""
+    """The date-change review's Sends and rule, as the New schedule pane draws them."""
     owner = campaign()
     schedules = Schedules(
         prefix="schedules",
@@ -80,14 +81,18 @@ def test_both_panels_draw_the_same_repeat_rule():
 
 
 def test_the_review_rule_posts_nothing():
-    """The review panel only adds rows in the page: no rule control has a name.
+    """The review's rule only adds rows in the page: no rule control has a name.
 
-    Its From and Until start empty; the page script fills them from the
-    proposed campaign dates.
+    Sends (Once | Repeating, #1944) is the one named control, so its two
+    radios group; it is drawn disabled, so it posts nothing until the page
+    script shows it for a Reminder. Its From and Until start empty; the page
+    script fills them from the proposed campaign dates.
     """
     review = review_panel()
-    # The whole panel: the shared rule, the send time and the email.
-    assert re.findall(r"<(?:input|select)[^>]*\bname=", review) == []
+    named = re.findall(r"<(?:input|select)[^>]*\bname=[^>]*>", review)
+    assert len(named) == 2
+    assert all('name="schedule_sends"' in tag and " disabled" in tag for tag in named)
+    assert 'value="once" checked' in named[0] and 'value="repeat"' in named[1]
     assert re.search(r'id="repeat-from" type="date" data-repeat="from">', review)
     assert re.search(r'id="repeat-until" type="date" data-repeat="until">', review)
 
@@ -163,7 +168,13 @@ def test_an_unrefused_rule_reserves_its_error_lines_empty():
                 f'<ul class="errorlist" id="repeat-{line}_error" hidden><li></li></ul>'
                 in html
             )
-        assert html.count('class="field-error-line"') == 4
+        # The review's Sends pair reserves its own line before the rule.
+        rule = (
+            html[html.index("data-repeat-panel") :]
+            if "data-schedule-sends" in html
+            else html
+        )
+        assert rule.count('class="field-error-line"') == 4
 
 
 def test_until_before_from_is_refused_at_both_and_said_once():
@@ -250,3 +261,29 @@ def test_a_valid_rule_is_not_refused_at_its_fields():
     assert repeat.is_valid(), repeat.errors
     assert not repeat.refuse_rule()
     assert repeat.marks == {}
+
+
+def test_the_sends_pair_never_shows_the_pages_error_summary():
+    """A refused date-change Review's page carries its error summary as
+    ``errors``, a list of message dicts (R45). The pane's Sends pair has no
+    errors of its own: it never draws the summary's dicts as text in its
+    line, nor marks its radios."""
+    owner = campaign()
+    schedules = Schedules(
+        prefix="schedules",
+        previous=[],
+        templates=[],
+        campaign_id=owner["id"],
+        campaign=owner["values"],
+    )
+    message = "Only one Initial invitation is allowed. Delete the extra one."
+    review = render_to_string(
+        "stewardship/schedule-repeat.html",
+        {
+            "schedules": schedules,
+            "errors": [{"message": message, "field_id": None, "scope": "schedules"}],
+        },
+    )
+    assert "message" not in review and message not in review
+    assert '<ul class="errorlist" id="schedule-sends_error" hidden><li></li>' in review
+    assert 'aria-invalid="true"' not in review

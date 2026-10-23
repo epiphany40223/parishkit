@@ -335,7 +335,9 @@ def test_proposed_dates_page_posts_to_its_clean_path(auth_service, google):
         '<form id="schedule-dates-review-apply" method="post" '
         f'action="{path}" data-review-apply>' in body
     )
-    assert f'data-review-return="{path}"' in body
+    # Apply then redraws the page in place from its own address (#1944).
+    assert 'data-review-return=""' in body
+
     data, _ = fields(store, campaign)
     data["window-start_date"] = "2054-09-30"
     preview = post(browser, path, data)

@@ -8,7 +8,8 @@ default page is Los Angeles's, three hours behind. Their Review changes is
 available only for a real change and opens the shared review dialog (#750),
 whose Apply returns to the list with its status line. The date-change
 review (proposed campaign dates with every schedule's editor) reviews and
-applies in the same dialog, then returns to the list the same way.
+applies in the same dialog, then redraws itself in place from its own
+address (#1944), its status line saying what was applied.
 The pages and their POST answers are schedule_list_components'.
 """
 
@@ -1198,8 +1199,10 @@ SAVED_END = "2054-10-31"
 
 
 def test_date_change_review_waits_for_a_real_change(page, component_origin):
-    """Proposed dates are a change; returning them to the saved dates, or
-    adding a blank schedule, is none, and Review greys again (#750)."""
+    """Proposed dates are a change; returning them to the saved dates is
+    none, and Review greys again (#750). Part of a schedule in the New
+    schedule pane holds Review (#1944); a whole one is a change, and
+    setting its Mail type back is none."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + DATES)
     failures = watch(page)
@@ -1218,15 +1221,22 @@ def test_date_change_review_waits_for_a_real_change(page, component_origin):
     )
     visible(hint)
     assert near(button.bounding_box()["y"], before["y"])
-    # A blank added schedule is nothing to review; choosing its type is.
-    page.get_by_role("button", name="Add another schedule").click()
+    # Part of a schedule in the pane holds Review; a whole one is a change.
+    pane = page.locator("[data-schedule-pane]")
+    kind = pane.locator('[data-schedule-field="kind"] select')
+    kind.select_option("reminder")
     assert button.is_disabled()
-    added = page.locator("[data-change-blank]")
-    added.locator('[data-schedule-field="kind"] select').select_option("reminder")
+    assert button.get_attribute("data-pane-gated") == ""
+    pane.locator('[data-schedule-field="date"] input').fill("2054-10-12")
+    pane.locator('[data-schedule-field="time"] input').fill("9am")
+    pane.locator('[data-schedule-field="template_version"] select').select_option(
+        index=1
+    )
     eventually(
         page, "!document.querySelector('#schedule-dates-form [type=submit]').disabled"
     )
-    page.get_by_role("button", name="Remove this new schedule").click()
+    assert button.get_attribute("data-pane-gated") is None
+    kind.select_option("")
     eventually(
         page, "document.querySelector('#schedule-dates-form [type=submit]').disabled"
     )
@@ -1237,12 +1247,13 @@ def test_date_change_review_waits_for_a_real_change(page, component_origin):
     assert not failures
 
 
-def test_date_change_review_applies_in_the_dialog_and_returns_to_the_list(
+def test_date_change_review_applies_in_the_dialog_and_redraws_in_place(
     page, component_origin, axe_source
 ):
     """Review posts the proposal; the dialog shows the new dates and the
     re-planned mail; Apply posts only the signed preview to the list, then
-    returns there with the status line."""
+    the page is redrawn in place from its own address, with no reload, and
+    its status line under Review changes says what was applied (#1944)."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + DATES)
     failures = watch(page)
@@ -1267,12 +1278,16 @@ def test_date_change_review_applies_in_the_dialog_and_returns_to_the_list(
     assert set(fields) == {"csrfmiddlewaretoken", "action", "preview"}
     assert fields["action"] == ["confirm"]
     assert fields["preview"] == ["synthetic-preview"]
-    page.wait_for_url(re.compile(re.escape(LIST) + "$"))
-    eventually(page, "document.getElementById('schedules-outcome').textContent !== ''")
-    line = page.locator("#schedules-outcome")
+    eventually(
+        page, "document.getElementById('schedule-dates-outcome').textContent !== ''"
+    )
+    line = page.locator("#schedule-dates-outcome")
     assert line.inner_text().startswith("Dates and mail schedules changed. ")
     assert APPLIED_LINE.search(line.inner_text())
-    assert page.evaluate(FOCUSED) == "schedules-outcome"
+    assert page.evaluate(FOCUSED) == "schedule-dates-outcome"
+    hidden(shown)
+    assert page.url.endswith(DATES)
+    assert page.evaluate("window.notReloaded === true")
     assert not failures
 
 

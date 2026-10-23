@@ -1,14 +1,21 @@
-{% load i18n stewardship %}
+{% load i18n stewardship %}{% comment %}
+The date-change review's schedules (schedule-reconcile.html): the saved
+schedules' editors (opened from the table) and the New schedule pane
+(#1944; admin-portal spec, "New schedule on the date-change review"; UX
+conventions, "Schedules": Once or Repeating, one schedule at a time).
+
+The pane is the formset's first new row (schedules.pane_form), drawn by
+schedule-row.html with pane: Mail type first, then for a Reminder the
+Sends pair and the repeat rule (schedule-repeat.html), the row's own send
+date, time and email, and the pane's line (schedule-pane-line.html). It
+posts blank (the server skips a blank row) until a mail type is chosen;
+then Review changes covers its one schedule. For Repeating, ui-v1.js
+posts one ordinary reminder row per date in its place, numbered on from
+the pane's own index.
+{% endcomment %}
 {{ schedules.management_form }}{{ schedules.non_form_errors }}
 {% if not schedules.has_templates %}<div class="notice"><p><strong>{% translate "No invitation or reminder emails are saved yet." %}</strong> {% translate "Every schedule sends a saved email, so there is nothing to schedule until one exists." %}</p>
 {% if templates_url %}<p><a href="{{ templates_url }}">{% translate "Create the emails with the page and email templates first" %}</a></p>{% endif %}</div>{% endif %}
-{% if schedule_rows is not None %}<p>{% translate "The blank last row adds a schedule: choose its mail type first, then the fields it uses. To remove a saved schedule, open it from the table and check Delete; one that has already run can't be changed or deleted." %}</p>{% else %}<p>{% translate "The blank last row adds a schedule: choose its mail type first, then fill in the fields it uses. To remove a saved schedule, check its Delete box. A saved schedule's mail type cannot change; delete it and add a new one instead." %}</p>{% endif %}
-<div data-schedule-rows>{% for form in schedules %}{% include 'stewardship/schedule-row.html' with number=forloop.counter %}{% endfor %}</div>
-{% comment %}ui-v1.js clones this empty row (its __prefix__ names become the
-next index) and reveals the button, so several new schedules can be saved in
-one submission. The button starts hidden so a page whose script failed to
-load never offers a button that does nothing.{% endcomment %}
-<template data-schedule-template>{% include 'stewardship/schedule-row.html' with form=schedules.empty_form number=0 %}</template>
-<p class="schedule-add" data-schedule-add-row hidden>{% button type="button" variant="secondary" data-schedule-add %}{% translate "Add another schedule" %}{% endbutton %}</p>
-{% include 'stewardship/schedule-repeat.html' %}
-<p class="visually-hidden" role="status" data-schedule-status></p>
+<p>{% translate "To add a schedule, choose its mail type under New schedule and fill in what it asks for. Add one at a time: after Apply, New schedule is empty for the next. To remove a saved schedule, open it from the table and check Delete." %}</p>
+<div data-schedule-rows>{% for form in schedules.saved_forms %}{% include 'stewardship/schedule-row.html' with number=forloop.counter %}{% endfor %}</div>
+{% if schedules.pane_form %}{% include 'stewardship/schedule-row.html' with form=schedules.pane_form number=0 pane=True %}{% endif %}

@@ -941,3 +941,75 @@ def test_the_content_editor_reviews_in_the_dialog_and_returns_to_its_list():
     listing = (TEMPLATES / "content-catalog.html").read_text(encoding="utf-8")
     assert 'review-outcome.html" with outcome_id="content-outcome"' in listing
     assert not (TEMPLATES / "content-preview.html").exists()
+
+
+def test_the_new_schedule_panes_review_is_a_short_confirmation():
+    """R45: a date-change review that only adds the New schedule pane's
+    schedule (with at most the proposed dates) says what it adds, each send
+    drawn by the one schedule preview, and the date change on its own line;
+    no Current or Proposed schedule. A change to a saved schedule, a digest
+    or a financial acknowledgement keeps the full review."""
+    from datetime import UTC, datetime
+
+    from parishkit.stewardship.accounts.schedule_changes import describe
+    from parishkit.stewardship.accounts.schedule_views import pane_confirmation
+
+    from .campaign_factory import campaign, schedule
+
+    owner = campaign()
+    now = datetime(2054, 10, 5, 12, tzinfo=UTC)
+
+    def added(day, kind="reminder"):
+        """One added schedule as build_preview describes it."""
+        values = schedule(owner["id"], kind=kind, date=day)["values"]
+        after = describe(values, owner["values"], now=now, zone="America/New_York")
+        return scheduled() | {"after": after}
+
+    review = {
+        "campaign": {"active_configuration": owner["values"]},
+        "changes": [added("2054-10-12"), added("2054-10-19")],
+        "window_changes": {"end_date"},
+        "before_window": owner["values"],
+        "after_window": owner["values"] | {"end_date": "2054-11-02"},
+        "series": [],
+        "blocking": 0,
+        "preview": "signed",
+        "dates": True,
+    }
+    extra = pane_confirmation(review)
+    assert extra["pane_confirmation"] is True
+    text = render_to_string("stewardship/schedule-review.html", review | extra)
+    assert '<p id="schedule-review-summary">Add 2 reminders:</p>' in text
+    assert 'data-review-describedby="schedule-review-summary"' in text
+    assert text.count("<li ") == 2 and 'class="occurrence-list"' in text
+    assert "Monday, Oct" in text or "Monday, October" in text
+    assert "Campaign end date:" in text and "→" in text
+    assert 'name="preview" value="signed" data-review-preview' in text
+    assert "Current schedule" not in text and "Reminder — Add" not in text
+    one = review | {"changes": [added("2054-10-12", "initial")], "window_changes": {}}
+    text = render_to_string(
+        "stewardship/schedule-review.html", one | pane_confirmation(one)
+    )
+    assert '<p id="schedule-review-summary">Add the Initial invitation:</p>' in text
+    assert "Campaign end date:" not in text
+    # Anything more than the pane's schedule keeps the full review.
+    edited = review["changes"][0] | {"operation": "update"}
+    assert pane_confirmation(review | {"changes": [edited]}) == {}
+    assert pane_confirmation(review | {"window_changes": {"financial"}}) == {}
+    assert pane_confirmation(review | {"blocking": 1}) == {}
+    assert pane_confirmation(review | {"changes": []}) == {}
+    assert pane_confirmation(review | {"series": [{"id": "x"}]}) == {}
+    assert pane_confirmation(review | {"series_changes": [{"id": "x"}]}) == {}
+    mixed = [added("2054-10-12", "initial"), added("2054-10-19")]
+    assert pane_confirmation(review | {"changes": mixed}) == {}
+    unshown = added("2054-10-12")
+    unshown["after"] = unshown["after"] | {
+        "occurrences": unshown["after"]["occurrences"] | {"state": "unavailable"}
+    }
+    assert pane_confirmation(review | {"changes": [unshown]}) == {}
+    zoned = review | {"window_changes": {"timezone"}}
+    zoned["after_window"] = owner["values"] | {"timezone": "America/Chicago"}
+    text = render_to_string(
+        "stewardship/schedule-review.html", zoned | pane_confirmation(zoned)
+    )
+    assert "Campaign time zone:" in text and "America/Chicago." in text
