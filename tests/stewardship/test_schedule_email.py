@@ -198,11 +198,12 @@ def test_new_checks_the_email_against_the_posted_mail_type():
         assert form.slot is None
 
 
-def test_new_states_the_family_access_rule_and_gates_on_the_mail_type():
-    """New's help names the code and link rule before a type is chosen.
+def test_new_states_the_family_access_rule_and_waits_for_the_mail_type():
+    """New's help names the code and link rule for every type.
 
-    Its checkbox and Reset wait for a mail type, with a reserved reason line;
-    Edit, whose type is fixed, has no such line.
+    New draws the section hidden until a mail type is chosen (#2022, Mail
+    type first), and shown when it is drawn again with one; Edit, whose
+    type is fixed, always shows it. No reason line is drawn any more.
     """
     records, row = setup()
     toggle, form, sources = schedule_email.editor(None, records, None, CAMPAIGN)
@@ -210,15 +211,18 @@ def test_new_states_the_family_access_rule_and_gates_on_the_mail_type():
     page = render_to_string("stewardship/schedule-email.html", context | {"new": True})
     # The long help is in the plain text's "i" toggletip.
     assert "Initial invitation or a Reminder, both the formatted" in page
-    assert "data-schedule-email-reason data-idle" in page
-    assert "Choose a mail type first." in page
     assert "checked against the chosen type" in page
+    assert '<div class="schedule-email" data-schedule-email hidden>' in page
+    assert "Choose a mail type first." not in page
+    typed = context | {"new": True, "entry": {"kind": {"value": "reminder"}}}
+    page = render_to_string("stewardship/schedule-email.html", typed)
+    assert '<div class="schedule-email" data-schedule-email>' in page
     toggle, form, sources = schedule_email.editor(None, records, row, CAMPAIGN)
     page = render_to_string(
         "stewardship/schedule-email.html",
         {"email_toggle": toggle, "email": form, "email_sources": sources},
     )
-    assert "data-schedule-email-reason" not in page
+    assert '<div class="schedule-email" data-schedule-email>' in page
 
 
 def test_the_editor_renders_hidden_until_ticked_with_its_texts():

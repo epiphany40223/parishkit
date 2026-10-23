@@ -1,6 +1,6 @@
 """Both mail repeat panels draw the one shared repeat rule (#1129).
 
-New scheduled email's Repeat (``schedule-repeat-entry.html``) and the
+New scheduled email's Sends Repeating (``schedule-repeat-entry.html``) and the
 date-change review's New schedule, Sends Repeating (``schedule-repeat.html``,
 #1944), include ``components/repeat-rule.html``, so they offer the same
 choices in the same order. The review's rule controls have no names, so
@@ -36,12 +36,16 @@ def review_panel():
     )
 
 
-def entry_panel(repeat):
-    """New scheduled email's Repeat, with the context its view passes."""
+def entry_panel(repeat, kind=""):
+    """New scheduled email's Sends and rule, with the context its view passes.
+
+    ``kind`` is the mail type the page is drawn with (the entry form's).
+    """
     return render_to_string(
         "stewardship/schedule-repeat-entry.html",
         {
             "repeat": repeat,
+            "entry": {"kind": {"value": kind}},
             "values": VALUES,
             "window_start": "2054-10-01T04:00:00+00:00",
             "window_end": "2054-11-01T04:00:00+00:00",
@@ -102,7 +106,7 @@ def test_the_entry_rule_draws_what_was_posted():
     data = QueryDict(mutable=True)
     data.update(
         {
-            "repeat-repeat": "on",
+            "repeat-sends": "repeat",
             "repeat-frequency": "monthly",
             "repeat-by": "weekday",
             "repeat-day": "5",
@@ -168,19 +172,15 @@ def test_an_unrefused_rule_reserves_its_error_lines_empty():
                 f'<ul class="errorlist" id="repeat-{line}_error" hidden><li></li></ul>'
                 in html
             )
-        # The review's Sends pair reserves its own line before the rule.
-        rule = (
-            html[html.index("data-repeat-panel") :]
-            if "data-schedule-sends" in html
-            else html
-        )
+        # Both Sends pairs reserve their own line before the rule.
+        rule = html[html.index('<div class="field"><label for="repeat-frequency">') :]
         assert rule.count('class="field-error-line"') == 4
 
 
 def test_until_before_from_is_refused_at_both_and_said_once():
     """The server's refusal lands where the page marks it (#1915)."""
     repeat = bound(
-        repeat="on", frequency="daily", start="2054-10-20", until="2054-10-10"
+        sends="repeat", frequency="daily", start="2054-10-20", until="2054-10-10"
     )
     assert repeat.is_valid(), repeat.errors
     assert repeat.refuse_rule()
@@ -223,7 +223,7 @@ def test_until_before_from_is_refused_at_both_and_said_once():
 def test_each_rule_error_is_refused_at_its_fields(values, line, controls):
     """A missing date at the empty one(s), no weekday at the days, a span
     over a year at both dates (#1915; ui-v1.js repeatErrorPlace)."""
-    repeat = bound(repeat="on", **values)
+    repeat = bound(sends="repeat", **values)
     assert repeat.is_valid(), repeat.errors
     assert repeat.refuse_rule()
     html = entry_panel(repeat)
@@ -237,7 +237,7 @@ def test_each_rule_error_is_refused_at_its_fields(values, line, controls):
 def test_a_day_out_of_range_is_refused_at_the_day_in_the_page_words():
     """The day's own field check speaks the page script's words (#1915)."""
     repeat = bound(
-        repeat="on",
+        sends="repeat",
         frequency="monthly",
         by="day",
         day="40",
@@ -256,7 +256,7 @@ def test_a_day_out_of_range_is_refused_at_the_day_in_the_page_words():
 def test_a_valid_rule_is_not_refused_at_its_fields():
     """A rule with dates is left to the Repeat checkbox's own refusal."""
     repeat = bound(
-        repeat="on", frequency="daily", start="2054-10-01", until="2054-10-02"
+        sends="repeat", frequency="daily", start="2054-10-01", until="2054-10-02"
     )
     assert repeat.is_valid(), repeat.errors
     assert not repeat.refuse_rule()
@@ -287,3 +287,31 @@ def test_the_sends_pair_never_shows_the_pages_error_summary():
     assert "message" not in review and message not in review
     assert '<ul class="errorlist" id="schedule-sends_error" hidden><li></li>' in review
     assert 'aria-invalid="true"' not in review
+
+
+def test_the_entry_sends_is_drawn_as_posted():
+    """New's Sends (#2022): drawn disabled, Once to start, posted as repeat-sends.
+
+    A blank page draws Sends and the rule hidden. A page drawn again for a
+    Reminder draws Sends shown, and for Repeating the rule too, so nothing
+    flashes before the page script runs; the script enables Sends then.
+    """
+    blank = entry_panel(RepeatRule(prefix="repeat"))
+    radios = re.findall(r'<input type="radio"[^>]*name="repeat-sends"[^>]*>', blank)
+    assert len(radios) == 2 and all(" disabled" in tag for tag in radios)
+    assert 'value="once" checked' in radios[0]
+    assert re.search(r"data-repeat-limit=\"30\" hidden>", blank)
+    assert "<div data-repeat-rule hidden>" in blank
+    assert 'type="checkbox" name="repeat-repeat"' not in blank
+    data = QueryDict("repeat-sends=repeat&repeat-frequency=daily")
+    repeat = RepeatRule(data, prefix="repeat")
+    assert repeat.is_valid(), repeat.errors
+    shown = entry_panel(repeat, kind="reminder")
+    assert re.search(r'data-repeat-limit="30">', shown)
+    assert "<div data-repeat-rule>" in shown
+    assert re.search(r'value="repeat" checked', shown)
+    once = entry_panel(RepeatRule(QueryDict(""), prefix="repeat"), kind="reminder")
+    assert "<div data-repeat-rule hidden>" in once
+    # Another mail type keeps Sends hidden, whatever was posted.
+    other = entry_panel(repeat, kind="initial")
+    assert re.search(r"data-repeat-limit=\"30\" hidden>", other)

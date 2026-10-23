@@ -12,10 +12,10 @@ is the content editors' own panel and script (data-plain-text), so the
 plain text a save stores is shown as it is typed. The HTML source is edited
 directly; the visual editor and the campaign banner choice stay on Pages and
 emails.
-On New, both the checkbox and Reset need a mail type: until one is chosen
-ui-v1.js keeps them unavailable and data-schedule-email-reason, whose line is
-always reserved (data-idle hides it with visibility), says why, so nothing
-moves when a type is chosen (UX conventions, "Prerequisite gates").
+On New the section shows only once a mail type is chosen (#2022; admin-portal
+spec, "New and Edit scheduled email": Mail type first): the server draws it
+hidden while the drawn page has no type, and ui-v1.js hides it again, and
+unticks the box so the fields are not sent, when the type is cleared.
 "Send a test of this text" (data-schedule-email-test, #446) posts the
 fields as they are now to schedule_email_test, without a page load, and
 saves nothing. Its reserved status line, after the button, says why it is
@@ -23,14 +23,10 @@ unavailable (no email chosen; data-closed while the campaign admits no test
 mail) or what the send did, so nothing above it moves. The acknowledgment
 of an uncertain earlier test sits after that line, shown when the page or a
 refusal says one is uncertain; it has no name, so a Review never posts it.
-The whole section is an Advanced panel of the page's Basic and Advanced
-toggle (#1129, schedule-entry.html): hidden in Basic, where the checkbox is
-always off.
-{% endcomment %}<div class="schedule-email" data-schedule-email data-editor-mode-panel="advanced"{% if editor_mode == "basic" %} hidden{% endif %}>
-<div>{{ email_toggle.edit_email.as_field_group }}</div>{% if new %}
-<p class="help schedule-email-reason" id="schedule-email-reason" data-schedule-email-reason data-idle>{% translate "Choose a mail type first." %}</p>{% endif %}
+{% endcomment %}<div class="schedule-email" data-schedule-email{% if new and not entry.kind.value %} hidden{% endif %}>
+<div>{{ email_toggle.edit_email.as_field_group }}</div>
 <fieldset class="panel" data-show-when="edit_email=on"><legend>{% translate "This schedule's email" %}</legend>
-{% if new %}<p class="help">{% translate "These fields start from the email chosen in Email to send. Once you edit or reset them, choosing another email or mail type keeps your text, which is checked against the chosen type. Only this scheduled email sends it; with Repeat, every reminder it adds shares it." %}</p>{% else %}<p class="help">{% translate "These fields start from the email chosen in Email to send. Once you edit them or reset them to the default text, choosing another email keeps your text; to start again from a saved email, choose Cancel and edit this schedule again. Only this schedule sends what you save here." %}</p>{% endif %}
+{% if new %}<p class="help">{% translate "These fields start from the email chosen in Email to send. Once you edit or reset them, choosing another email or mail type keeps your text, which is checked against the chosen type. Only this scheduled email sends it; with Repeating, every reminder it adds shares it." %}</p>{% else %}<p class="help">{% translate "These fields start from the email chosen in Email to send. Once you edit them or reset them to the default text, choosing another email keeps your text; to start again from a saved email, choose Cancel and edit this schedule again. Only this schedule sends what you save here." %}</p>{% endif %}
 <p>{% button type="button" variant="secondary" data-schedule-email-reset %}{% translate "Reset to the default text" %}{% endbutton %}</p>
 {{ email.non_field_errors }}
 <div>{{ email.subject.as_field_group }}</div>

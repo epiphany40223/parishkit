@@ -285,7 +285,7 @@ def test_a_repeat_with_one_date_keeps_the_full_review(auth_service, google):
     data = entry(
         store, kind="reminder", time="09:00", template_version=emails["reminder"]["id"]
     ) | {
-        "repeat-repeat": "on",
+        "repeat-sends": "repeat",
         "repeat-frequency": "weekly",
         "repeat-weekdays": "1",
         "repeat-start": "2054-10-01",
@@ -340,7 +340,7 @@ def test_a_repeat_adds_one_ordinary_reminder_per_date(auth_service, google):
     data = entry(
         store, kind="reminder", time="09:00", template_version=emails["reminder"]["id"]
     ) | {
-        "repeat-repeat": "on",
+        "repeat-sends": "repeat",
         "repeat-frequency": "weekly",
         "repeat-weekdays": "1",
         "repeat-start": "2054-10-01",
@@ -414,7 +414,7 @@ def test_a_repeat_date_whose_time_has_passed_is_refused(
     data = entry(
         store, kind="reminder", time="09:00", template_version=emails["reminder"]["id"]
     ) | {
-        "repeat-repeat": "on",
+        "repeat-sends": "repeat",
         "repeat-frequency": "weekly",
         "repeat-weekdays": "1",
         "repeat-start": "2054-10-01",
@@ -428,7 +428,7 @@ def test_a_repeat_date_whose_time_has_passed_is_refused(
         "The reminder on October 6, 2054 at 9:00 AM would send at a time that "
         "has already passed" in unescape(refused.content.decode())
     )
-    errors = refused.context["repeat"].errors.as_data()["repeat"]
+    errors = refused.context["repeat"].errors.as_data()["sends"]
     assert [error.code for error in errors] == ["repeat_time_passed"]
     assert ConfigurationChangeRequest.objects.count() == before
     review = post(browser, NEW, data | {"repeat-dates": ["2054-10-13"]})
@@ -493,7 +493,7 @@ def test_edit_is_filled_in_and_saves_only_that_schedule(auth_service, google):
         template_version=emails["reminder"]["id"],
     )
     # A posted mail type is ignored (the field is fixed); a repeat is refused.
-    assert post(browser, path, data | {"repeat-repeat": "on"}).status_code == 400
+    assert post(browser, path, data | {"repeat-sends": "repeat"}).status_code == 400
     review = post(browser, path, data | {"schedule-kind": "initial"})
     assert review.status_code == 200, review.content
     apply(store, post(browser, LIST, {"action": "confirm", "preview": token(review)}))
@@ -931,7 +931,7 @@ def test_new_with_an_edited_email_adds_one_email_its_reminders_share(
     base = entry(
         store, kind="reminder", time="09:00", template_version=emails["reminder"]["id"]
     ) | {
-        "repeat-repeat": "on",
+        "repeat-sends": "repeat",
         "repeat-frequency": "weekly",
         "repeat-weekdays": "1",
         "repeat-start": "2054-10-01",

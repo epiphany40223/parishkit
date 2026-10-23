@@ -2463,14 +2463,15 @@ and #1062 (Parish logos), then the scheduling editors of #1129.
     not the editor's other tools. **Switch to Basic** turns each tool off,
     as unticking it would, so the hidden panels post nothing and Basic
     needs no exception to [conditional fields](#conditional-fields). A tool
-    that hides when another choice changes (Repeat, when the mail type is
-    no longer Reminder) is turned off then, and is not a tool in use.
+    that hides when another choice changes (a tool only one kind of item
+    has, when another kind is chosen) is turned off then, and is not a tool in use.
   - The mode is not stored with the setting: the page opens in Basic, or in
     Advanced when it is drawn with a tool in use or answers a post sent
     from Advanced (a refused Review, the browser restoring the page).
-  - First use: [New and Edit scheduled
-    email](../admin-portal/spec.md#new-and-edit-scheduled-email)
-    ([#1129](https://github.com/epiphany40223/parishkit/issues/1129)).
+  - First used by New and Edit scheduled email
+    ([#1129](https://github.com/epiphany40223/parishkit/issues/1129)),
+    which replaced it with [Once or Repeating](#schedules)
+    ([#2022](https://github.com/epiphany40223/parishkit/issues/2022)).
 
 A setting that can't change in the page's present state (rather than one
 that does not apply to the choices made) stays where it is, disabled, with
@@ -3895,19 +3896,21 @@ learned once. **Shared code.**
   the common case follows [Basic and Advanced modes](#basic-and-advanced-modes):
   Basic has a few presets, and Advanced has the rules, the exceptions, and
   "Edit as text" where the editor has it. An editor of a few plain fields
-  with less common tools, such as New and Edit scheduled email (Repeat and
-  the schedule's own email), is an
+  with less common tools is an
   [additive editor](#basic-and-advanced-modes). An editor of one or two
   plain fields, such as the campaign dates, has no modes, and neither does
-  one whose only less common tool is a repeat: Once or Repeating (below) is
+  one whose less common tools are only a repeat and checkboxes that show
+  their own fields, such as New and Edit scheduled email (Sends and Edit
+  this schedule's email): Once or Repeating (below) and the checkbox are
   its disclosure.
 - **Once or Repeating.** An editor that sets a schedule which can send once
   or on a repeat asks **Sends**, drawn as the shared two-way pair
   (**Once** | **Repeating**, `components/choice-pair.html`), never a Repeat
   checkbox or a separate repeat panel. It is a [stored two-way
   setting](#binary-choices) only where the editor stores the repeat (report
-  emails); where a repeat adds ordinary schedules (the date-change review)
-  it is a choice of the page, never stored or posted. Sends comes right after the choice that makes a repeat
+  emails); where a repeat adds ordinary schedules (the date-change review,
+  New scheduled email) it is never stored, and it is posted only where the
+  server reads the repeat to check it (New scheduled email). Sends comes right after the choice that makes a repeat
   possible (a Reminder's mail type), and is not shown for a kind that only
   sends once (an Initial invitation), which is Once. Once shows the date;
   Repeating shows the shared repeat rule in its place, and the
@@ -3915,10 +3918,12 @@ learned once. **Shared code.**
   keeps what was typed for each, hidden fields are disabled so they are
   not posted, and the fields change in place below the pair, with no
   reload or jump ([conditional fields](#conditional-fields)). First uses:
-  [report emails](../report-emails/spec.md#schedule-fields) and the
+  [report emails](../report-emails/spec.md#schedule-fields), the
   [date-change review](../admin-portal/spec.md#new-schedule-on-the-date-change-review)
   (Administrator, R43,
-  [#1944](https://github.com/epiphany40223/parishkit/issues/1944)).
+  [#1944](https://github.com/epiphany40223/parishkit/issues/1944)) and
+  [New scheduled email](../admin-portal/spec.md#new-and-edit-scheduled-email)
+  ([#2022](https://github.com/epiphany40223/parishkit/issues/2022)).
 - **One schedule at a time.** A page that adds schedules in a pane
   follows [new pages and in-page panes](#new-pages-and-in-page-panes): one
   New schedule pane, one schedule per Review. For schedules, a repeating
@@ -4035,15 +4040,15 @@ except the browser-zone entry, which is its recorded exception
 note names its schedule zone instead. The date-change review draws the
 shared zone note, as do System logs, Ministry requests, and New and Edit
 scheduled email. The two mail
-repeat rules, New scheduled email's Repeat and the date-change review's New
-schedule (Sends Repeating), draw one repeat rule, so they offer the same
-choices in the same order and one page script expands both. New and Edit
-scheduled email have the Basic and Advanced modes as an additive editor;
-New scheduled email is brought in line with Once or Repeating in a follow-up
-([#2022](https://github.com/epiphany40223/parishkit/issues/2022)). The
-date-change review has no modes: its New schedule pane follows Once or
-Repeating and one schedule at a time
-([#1944](https://github.com/epiphany40223/parishkit/issues/1944)). A later
+repeat rules, New scheduled email's and the date-change review's New
+schedule's (both Sends Repeating), draw one repeat rule, so they offer the
+same choices in the same order and one page script expands both. Neither
+New and Edit scheduled email
+([#2022](https://github.com/epiphany40223/parishkit/issues/2022)) nor the
+date-change review
+([#1944](https://github.com/epiphany40223/parishkit/issues/1944)) has
+modes: both follow Once or Repeating, and the date-change review's New
+schedule pane one schedule at a time. A later
 [#1129](https://github.com/epiphany40223/parishkit/issues/1129) slice brings
 the shared preview to the date-change review's editors and reminder
 repeats; the report email editor is built with them

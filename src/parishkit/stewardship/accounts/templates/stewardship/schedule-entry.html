@@ -3,7 +3,11 @@
 {% block content %}{% comment %}
 New and Edit scheduled email (#878; schedule_entry_views): one schedule's
 fields (schedule-row.html, so the mail type shows only its fields), plus, on
-New, the Repeat rule for reminders (schedule-repeat-entry.html). Review
+New, a Reminder's Sends (Once or Repeating) and repeat rule
+(schedule-repeat-entry.html). The page has no Basic and Advanced toggle
+(#2022; UX conventions, "Schedules", Once or Repeating): New shows only
+Mail type until one is chosen, and Sends and Edit this schedule's email
+are its disclosure. Review
 changes posts here without a page load (data-review-open, UX conventions
 "Review dialog", #750): while the answer is prepared the form is inert and
 busy; an accepted review of the whole set of schedules, as every schedule
@@ -16,7 +20,16 @@ refusal (a stale page, a read-only schedule, a refused Apply) shows inside
 the dialog. The button stays unavailable until the form differs from
 what the page was drawn with (data-require-change, #750): on Edit, the saved
 schedule as the page script shows it in this browser's zone; on New, the
-blank form. Its hint keeps its space, so it never moves the page. The repeat
+blank form. It also waits for a whole schedule (data-require-complete,
+#2025): a mail type and, for it, a send date (Repeating: the rule's dates,
+data-repeat-gated, whose reason is the repeat summary's), a send time that can be read and an email, each field
+named by its data-missing-hint (schedule_entry_views.MISSING_HINTS). On New,
+while the campaign already has its one Initial invitation, choosing that
+type holds it at once with the server's words (data-initial-taken). The two
+hints share one cell after the button (gate-hints, ui-v1.css): the unchanged
+hint while the form is unchanged, else the complete gate's, so neither
+moves the button (at a narrow width a longer reason may wrap to another
+line below it). The repeat
 summary reserves its lines above the button and the date list sits below it,
 so neither moves the button.
 Send dates and times are shown and typed in the browser's time zone (#558):
@@ -36,9 +49,9 @@ UX conventions "A confirmation when Review would only repeat the page",
 #1356). A schedule that sends once, with no edited email, is answered with a
 confirmation that repeats none of the form's values and names its own
 question and sentence (data-review-title, data-review-describedby); any
-other New (a Repeat, an edited email) keeps the full
+other New (Repeating, an edited email) keeps the full
 review under this dialog's own title.
-A Repeat is also remembered as a reminder series, and Edit of a series'
+A Repeating schedule is also remembered as a reminder series, and Edit of a series'
 reminder shows "Part of" its rule with the Change scope
 (schedule-series-scope.html, drawn by schedule-row.html, #469); the review
 then lists the series it keeps or changes.
@@ -63,26 +76,15 @@ Dates and mail schedules again, its status line saying what was saved.
 {% aboutpage "schedule-entry" %}{% include 'stewardship/schedule-guide.html' with window_text=window_text %}{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
 <p class="campaign-dates">{% blocktranslate trimmed with start=values.start_date|parish_date end=values.end_date|parish_date %}Campaign dates: {{ start }} – {{ end }}{% endblocktranslate %}</p>
-<form method="post" action="{{ post_url }}" id="schedule-entry-form" data-schedule-entry {% if direct %}data-direct-save data-direct-saved="{% if new %}{% translate 'New scheduled email saved.' %}{% else %}{% translate 'Scheduled email saved.' %}{% endif %}"{% else %}data-review-open="schedule-review"{% endif %} data-require-change="base_digest" data-window-start="{{ values.start_date }}" data-window-end="{{ values.end_date }}" data-window-zone="{{ values.timezone }}"{% if local_from %} data-schedule-local="{{ local_from }}"{% endif %}>{% csrf_token %}{% if direct %}<input type="hidden" name="action" value="save"><input type="hidden" name="request_key" value="{{ admin_chrome.campaign_wizard.save_key }}">{% else %}<input type="hidden" name="action" value="preview">{% endif %}<input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="zone" value="" data-browser-zone>
+<form method="post" action="{{ post_url }}" id="schedule-entry-form" data-schedule-entry {% if direct %}data-direct-save data-direct-saved="{% if new %}{% translate 'New scheduled email saved.' %}{% else %}{% translate 'Scheduled email saved.' %}{% endif %}"{% else %}data-review-open="schedule-review"{% endif %} data-require-change="base_digest" data-require-complete{% if initial_taken %} data-initial-taken="{{ initial_taken }}"{% endif %} data-window-start="{{ values.start_date }}" data-window-end="{{ values.end_date }}" data-window-zone="{{ values.timezone }}"{% if local_from %} data-schedule-local="{{ local_from }}"{% endif %}>{% csrf_token %}{% if direct %}<input type="hidden" name="action" value="save"><input type="hidden" name="request_key" value="{{ admin_chrome.campaign_wizard.save_key }}">{% else %}<input type="hidden" name="action" value="preview">{% endif %}<input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="zone" value="" data-browser-zone>
 {% translate "Enter the date and time in this computer's time zone:" as zone_note %}{% include "stewardship/components/zone-note.html" with note_text=zone_note %}
 <p class="notice notice-error" id="schedule-zone-missing" data-zone-missing hidden>{% translate "Your browser didn't report a time zone, so this send time can't be read. Check your computer's time zone setting, then reload this page." %}</p>
-<div data-editor-modes="schedule-entry">{% comment %}
-Basic and Advanced (#1129; UX conventions, "Basic and Advanced modes",
-additive editors): the toggle sits above the schedule's fields, which both
-modes show. Advanced adds New's Repeat (schedule-repeat-entry.html) and
-"Edit this schedule's email" (schedule-email.html), each an Advanced panel
-where it is drawn. Basic is the page with both off; ui-v1.js's
-"schedule-entry" adapter asks before Advanced → Basic while either is
-ticked, and Switch to Basic unticks them. The view works out the opening
-mode (schedule_entry_views.editor_mode); it is never saved.
-{% endcomment %}{% translate "Your custom schedule has no basic equivalent." as no_basic_title %}{% if new %}{% translate "Basic can't show a repeat or this schedule's own email. If you switch, Repeat and Edit this schedule's email are turned off, so neither is reviewed. Nothing changes until you review and apply." as no_basic_body %}{% else %}{% translate "Basic can't show this schedule's own email. If you switch, Edit this schedule's email is turned off, so it is not reviewed. Nothing changes until you review and apply." as no_basic_body %}{% endif %}{% include "stewardship/components/editor-mode.html" with mode_id="schedule-mode" mode=editor_mode no_basic_title=no_basic_title no_basic_body=no_basic_body %}
 {% if new %}{% translate "Scheduled email" as legend %}{% else %}{% firstof entry.schedule_label _("Scheduled email") as legend %}{% endif %}
 {% include 'stewardship/schedule-row.html' with form=entry legend=legend number=0 %}
 {% include 'stewardship/schedule-email.html' %}
 {% if repeat %}<p class="repeat-summary" role="status" data-repeat-summary hidden></p><div data-repeat-posted></div>{% endif %}
-{% if direct %}<p><span class="help unchanged-hint" data-unchanged-hint data-idle>{% if new %}{% translate "Fill in the scheduled email to save it." %}{% else %}{% translate "Change the date, time or email to save it." %}{% endif %}</span></p>{% else %}<p>{% button type="submit" autocomplete="off" %}{% if new %}{% translate "Add the scheduled email" %}{% else %}{% translate "Review changes" %}{% endif %}{% endbutton %} <a href="{{ list_url }}">{% translate "Cancel" %}</a> <span class="help unchanged-hint" data-unchanged-hint data-idle>{% if new %}{% translate "Fill in the scheduled email to add it." %}{% else %}{% translate "Change the date, time or email to review it." %}{% endif %}</span></p>{% endif %}
+{% if direct %}<p><span class="gate-hints"><span class="help unchanged-hint" data-unchanged-hint data-idle>{% if new %}{% translate "Fill in the scheduled email to save it." %}{% else %}{% translate "Change the date, time or email to save it." %}{% endif %}</span><span class="help" id="schedule-complete-hint" data-complete-hint="reserve"></span></span></p>{% else %}<p>{% button type="submit" autocomplete="off" aria-describedby="schedule-complete-hint" %}{% if new %}{% translate "Add the scheduled email" %}{% else %}{% translate "Review changes" %}{% endif %}{% endbutton %} <a href="{{ list_url }}">{% translate "Cancel" %}</a> <span class="gate-hints"><span class="help unchanged-hint" data-unchanged-hint data-idle>{% if new %}{% translate "Fill in the scheduled email to add it." %}{% else %}{% translate "Change the date, time or email to review it." %}{% endif %}</span><span class="help" id="schedule-complete-hint" data-complete-hint="reserve"></span></span></p>{% endif %}
 {% if repeat %}<div data-repeat-dates></div>{% endif %}
-</div>
 </form>
 {% if not direct and not new %}<section class="panel schedule-delete" aria-labelledby="schedule-delete-title">
 <h2 id="schedule-delete-title">{% translate "Delete this scheduled email" %}</h2>
