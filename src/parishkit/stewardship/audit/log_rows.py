@@ -351,6 +351,7 @@ ACTIVITY_TYPES = {
         "admin_cmd_report_email_send_now",
         "weekly_manual_requested",
         "report_email_manual_requested",
+        "report_email_test_sent",
         "campaign_comparison_exported",
         "campaign_archive_exported",
         "export_requested",

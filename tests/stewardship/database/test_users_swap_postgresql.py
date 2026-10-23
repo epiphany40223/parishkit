@@ -983,6 +983,24 @@ CLOSURE_CREATED = {
         "stewardship_campaigns",
         "0018_family_statistics",
     ),
+    # 0173 (#2036) creates the report email test table (in CLOSURE_TABLES)
+    # with these functions, its triggers on the outbox and task tables, and
+    # replaces six of 0161's functions in place. After 0161's file runs again
+    # (its entry is above), 0173's, whole, puts all of it back.
+    **dict.fromkeys(
+        (
+            "public.stewardship_report_email_test_mutable_v1()",
+            "public.stewardship_report_email_test_settled_v1(uuid)",
+            "public.stewardship_report_email_test_guard_v1()",
+            "public.stewardship_report_email_test_settle_v1()",
+            "public.stewardship_report_email_test_live_v1(uuid)",
+            "public.stewardship_report_email_test_render_v1(jsonb,uuid)",
+            "public.stewardship_report_email_test_write_v1(text,jsonb)",
+            "public.stewardship_report_email_test_dispatch_live_v1(uuid)",
+            "public.stewardship_report_email_test_dispatch_write_v1(text,jsonb,jsonb)",
+        ),
+        ("stewardship_reports", "0047_report_email_test"),
+    ),
 }
 
 

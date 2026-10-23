@@ -178,7 +178,13 @@ def _retry_inputs(purpose):
     origin = getattr(settings, "STEWARDSHIP_PUBLIC_ORIGIN", None)
     if origin is None:
         raise ConfigError("Mail preparation origin is unavailable.")
-    if purpose in {"receipt", "daily_digest", "weekly_digest", "admin_report"}:
+    if purpose in {
+        "receipt",
+        "daily_digest",
+        "weekly_digest",
+        "admin_report",
+        "admin_report_test",
+    }:
         return dict(general=None, public=None, public_origin=origin)
     keys = family_runtime()
     return dict(general=keys.general, public=keys.public, public_origin=origin)

@@ -249,6 +249,7 @@ TASK_NAMES = {
     "weekly_digest_finalize": _("Finishing the weekly Admin report"),
     "report_email_prepare": _("Preparing a report email"),
     "report_email_finalize": _("Finishing a report email"),
+    "report_email_test": _("Making a report email test"),
     "family_mail_prepare": _("Preparing Family emails"),
     "family_mail_test": _("Test email for chosen Families"),
     "family_address_retry": _("Sending an email again to an address refused for now"),

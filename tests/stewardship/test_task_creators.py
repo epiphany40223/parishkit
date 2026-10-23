@@ -252,6 +252,9 @@ SITES = {
         WEB,
         {"reports/report_email_views.py", "admin_report_emails.py"},
     ),
+    # Send a test to me (#2036): Report emails' row action, the editor's
+    # button and ``report-email send-test``, through request_test.
+    "reports/report_email_test.py::_queue": site("report_email_test", WEB),
     "responses/receipts.py::create_submission_receipt": site(
         # A Family's submission receipt.
         "outbox_delivery",
@@ -357,6 +360,8 @@ SITES = {
             "jobs/family_mail_test_tasks.py",
             "jobs/operational_fanout.py",
             "reports/report_email_fanout.py",
+            # A report email's Send a test to me (#2036).
+            "reports/report_email_test.py",
         },
     ),
     "reports/exact_tasks.py::_handoff": site(

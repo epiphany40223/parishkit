@@ -21,6 +21,10 @@ The report-emails spec ("New and Edit report email", "Review and Apply",
   unsaved form from current data in its own dialog
   (``report_email_preview_views.preview_answer``), saving nothing; a
   refused field answers as Review does.
+- ``action=preview`` with ``test=yes`` (Send a test to me, #2036), a page
+  script's post, sends the unsaved form as Preview draws it to the
+  Administrator (``report_email_test_views.test_answer``), saving nothing
+  but the test; it answers JSON, a refused field by its label.
 - ``action=confirm`` (the dialog's Apply) records the signed change under
   the work lock (``confirm_intent``). A change whose report would send
   after the campaign's last day needs the dialog's "Send after the campaign
@@ -100,8 +104,10 @@ FIELDS = frozenset(
         "action",
         "csrfmiddlewaretoken",
         "base_digest",
-        # The editor's Preview (#2035) posts the form with render=yes.
+        # The editor's Preview (#2035) posts the form with render=yes, and
+        # its Send a test to me (#2036) with test=yes.
         "render",
+        "test",
         *editor.EditorForm.base_fields,
     }
 )
@@ -518,6 +524,11 @@ def _editor(request, campaign_id, report_id=None):
         state, campaign = change_state(service, campaign_id)
         saved, others = _saved(state, campaign, report_id)
         form = _form(request, state, campaign, saved, others, report_id)
+        testing = request.method == "POST" and request.POST.get("test") == "yes"
+        if testing and not form.is_valid():
+            from .report_email_test_views import form_errors
+
+            return form_errors(form)
         if request.method == "GET" or not form.is_valid():
             return _page(
                 request,
@@ -536,6 +547,11 @@ def _editor(request, campaign_id, report_id=None):
         return preview_answer(
             request, actor, values, subject_id=report_id or campaign_id
         )
+    if testing:
+        # Send a test to me of the unsaved form (spec): only the test is kept.
+        from .report_email_test_views import test_answer
+
+        return test_answer(request, service, actor, values, definition_id=report_id)
     given = {name: value for name, value in values.items() if name in EDITABLE}
     entries = [
         {"operation": "create", "values": given}

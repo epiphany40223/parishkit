@@ -54,6 +54,8 @@ PURPOSES = (
     "weekly_digest",
     # Report emails (#1786); the digests' messages remain for history.
     "admin_report",
+    # Send a test to me (#2036): settled from evidence only, never resent.
+    "admin_report_test",
 )
 # Sent mail lists every email of every kind (#1562): also the operational
 # and security notices and the Ministry leader emails (#1592), which belong

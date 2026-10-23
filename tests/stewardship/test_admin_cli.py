@@ -206,6 +206,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "report-email sends",
         "report-email copy",
         "report-email render",
+        "report-email send-test",
         "report-email send-now",
         "report-email preview",
         "report-email confirm",
@@ -818,6 +819,13 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert render["arguments"] == ["REPORT"]
     assert "text" in render["result_fields"]
     assert "html" not in render["result_fields"]
+    # Send a test to me (#2036) is a keyed, full-scope change, with no prompt:
+    # it sends only to the caller.
+    test = entries["report-email send-test"]
+    assert test["scope"] == "full" and test["changes_state"]
+    assert test["request_key"] and not test["prompts"]
+    assert test["audit_event"] == "report_email_test_sent"
+    assert test["arguments"] == ["REPORT"]
     # The Family-level exports: full-scope, keyed changes that create an
     # export record (fetched with export fetch), never a search option.
     # The campaign archive (#1018 part (a)) is the same kind of keyed,

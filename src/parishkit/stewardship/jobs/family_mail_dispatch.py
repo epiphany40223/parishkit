@@ -59,8 +59,19 @@ TASK_TYPE = "outbox_delivery"
 # Purposes with no schedule occurrence: they never write occurrence state or a
 # fulfillment, whatever their provider outcome.
 UNSCHEDULED_PURPOSES = frozenset(
-    {"receipt", "family_test", "daily_digest", "weekly_digest", "admin_report"}
+    {
+        "receipt",
+        "family_test",
+        "daily_digest",
+        "weekly_digest",
+        "admin_report",
+        # Send a test to me (#2036): no occurrence, fulfillment or hold.
+        "admin_report_test",
+    }
 )
+# Report emails' purposes: their messages carry chart images, so each is
+# sent on its own rather than by a batched helper.
+REPORT_PURPOSES = frozenset({"admin_report", "admin_report_test"})
 MAX_ATTEMPTS = 5
 PROVIDER_SECONDS = 30
 RETRY_BASE_SECONDS = 30
@@ -439,6 +450,7 @@ def bound_dispatch(status):
             "receipt",
             "family_test",
             "admin_report",
+            "admin_report_test",
         ),
     )
     # A report email (#1786); the digests' messages are all settled.
@@ -446,6 +458,12 @@ def bound_dispatch(status):
         from .report_dispatch import bound_report
 
         bound_report(row)
+        return row
+    # Send a test to me (#2036).
+    if row.purpose == "admin_report_test":
+        from .report_test_dispatch import bound_test_message
+
+        bound_test_message(row)
         return row
     if row.purpose == "receipt":
         from .receipt_dispatch import bound_receipt
@@ -476,6 +494,10 @@ def disposition(message, *, check_recipient=False):
         from .report_dispatch import report_disposition
 
         return report_disposition(message, check_recipient=check_recipient)
+    if message.purpose == "admin_report_test":
+        from .report_test_dispatch import test_disposition
+
+        return test_disposition(message, check_recipient=check_recipient)
     if message.purpose == "receipt":
         from .receipt_dispatch import receipt_disposition
 
@@ -602,7 +624,7 @@ def cancel_unsent(identifier, claim, *, reason):
     require_work_order()
     owner = bound_dispatch(_status(lock_task_claim(claim)))
     row = OutboxMessage.objects.get(pk=identifier)
-    if owner.purpose == "admin_report" and row.pk != owner.pk:
+    if owner.purpose in REPORT_PURPOSES and row.pk != owner.pk:
         raise PermissionError("Report cancellation cannot affect another recipient.")
     # A chosen-Family test is not part of the Family's scheduled mail group.
     if "family_test" in {owner.purpose, row.purpose} and row.pk != owner.pk:
@@ -797,6 +819,10 @@ def begin_submission(
             from .report_dispatch import current_report_content
 
             render, sealed, mail = current_report_content(message, scope)
+        elif message.purpose == "admin_report_test":
+            from .report_test_dispatch import current_test_content
+
+            render, sealed, mail = current_test_content(message, scope)
         elif message.purpose == "receipt":
             from .receipt_dispatch import current_receipt_content
 
@@ -928,6 +954,9 @@ def finish_submission(identifier, claim, result, *, hold=False):
                 or runtime.mode != message.mode
                 or (
                     message.mode == "testing"
+                    # A report email test (#2036) is bound to no epoch: its
+                    # scope is rechecked before each submission instead.
+                    and message.purpose != "admin_report_test"
                     and population.rehearsal_epoch_id
                     != (
                         message.rehearsal_epoch_id

@@ -374,6 +374,7 @@ from .report_email_models import (  # noqa: E402,F401
     ReportEmailPreparation,
     ReportEmailRecipient,
     ReportEmailSnapshot,
+    ReportEmailTest,
 )
 from .verification_models import (  # noqa: E402,F401
     FactVerificationRequest,

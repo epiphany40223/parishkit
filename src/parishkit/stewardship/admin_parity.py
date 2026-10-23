@@ -448,6 +448,10 @@ LEDGER = {
     # dialog's chart images are drawn again for it.
     "report_email_render": command("report-email render"),
     "report_email_preview_image": permanent(IMAGES),
+    # Send a test to me (#2036): a saved report's row action is report-email
+    # send-test; the editor's button for the unsaved form posts to New or
+    # Edit.
+    "report_email_test": command("report-email send-test"),
     "logs": command("logs list"),
     "logs_export": command("logs export"),
     # System health (ADM-13): the page, its polled fragment (``--watch``)

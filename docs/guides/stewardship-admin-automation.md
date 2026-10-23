@@ -2210,6 +2210,7 @@ pk-admin delivery bounce-report MESSAGE_ID --address ADDRESS \
 email address, a delivery id, or any other text as part of a Family's or a
 person's name, ignoring case, as input only), `--purpose` (`initial`,
 `reminder`, `receipt`, `family_test`, `admin_report` (a report email),
+`admin_report_test` (a report email's Send a test to me),
 `daily_digest`, `weekly_digest` (digests sent before report emails),
 `operational`, `security_event` or `leader_email`, or the group `family`:
 invitations and reminders), `--state` (a state, or the groups `needs_attention`,
@@ -2841,6 +2842,7 @@ pk-admin report-email show REPORT
 pk-admin report-email sends REPORT
 pk-admin report-email copy SEND [--page 2]
 pk-admin report-email render REPORT
+pk-admin report-email send-test REPORT [--request-key KEY]
 pk-admin report-email send-now REPORT --yes [--request-key KEY]
 pk-admin report-email preview --expected-version VERSION --changes FILE|-
 pk-admin report-email confirm --token TOKEN|-
@@ -2881,6 +2883,19 @@ pk-admin report-email confirm --token TOKEN|-
   session scope. It records `report_email_previewed`. Before any
   ParishSoft data is loaded, or while the figures are being updated, it
   is exit 1 (`not_available`).
+- `send-test REPORT` is the row's Send a test to me (#2036): the report as
+  `render` draws it now, sent only to you (in Testing, to the Testing
+  recipient), labeled test in its subject and first line, never a send of
+  the report. It takes `--request-key` as [task retries](#task-retries)
+  do (a repeated key returns the same test, with `created` false), and
+  prints `id`, `report_id`, `created`, the labeled `subject`, `updating`,
+  `recipient` (`self` or `testing`) and `task`, which makes its message;
+  follow it with `delivery list --purpose admin_report_test`.
+  Administrators only, full scope. While a test of the report is still on
+  its way to you it is exit 1 (`stale_version`); before any ParishSoft
+  data, while the figures are being updated, while Production mail is
+  paused or for an archived campaign it is exit 1 (`not_available`). It
+  records `report_email_test_sent`.
 - `send-now REPORT` is the row's Send now: it asks the dialog's question
   at the [confirmation prompt](#confirmations), or takes `--yes`, takes
   `--request-key` as [task retries](#task-retries) do, and prints
@@ -4413,3 +4428,6 @@ Each change is recorded in System logs as on the page
   sends as `"sends": [SLOT, ...]` instead of one `"send": SLOT`.
 - `pk-admin/1` (#2035, delivery plan item 7): `report-email render`, the
   row's Preview.
+- `pk-admin/1` (#2036, delivery plan item 7): `report-email send-test`, the
+  row's Send a test to me; `delivery list --purpose` takes
+  `admin_report_test`.

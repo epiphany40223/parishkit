@@ -777,6 +777,9 @@ CLOSURE_TABLES = {
         "stewardship_reports",
         "0043_report_coverage_decisions",
     ),
+    # Send a test to me (0173, #2036): web records a test, the worker makes
+    # its message and mail dispatch sends it.
+    "stewardship_report_email_test": ("stewardship_reports", "0047_report_email_test"),
 }
 
 

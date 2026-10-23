@@ -11,6 +11,11 @@
 
 Every write is admitted by the tables' own guards (frozen file 0156);
 the conversion (0161, #1786) admits report schedules.
+
+Send a test to me (frozen file 0173, #2036): web records a test with the
+email it compiled; the worker reads it to make the test's message and mail
+dispatch to send it; the scheduler and web see only its bindings. No login
+updates it: the database settles and scrubs it itself.
 """
 
 PREPARATION = "stewardship_report_email_preparation"
@@ -22,11 +27,31 @@ COMPLETION = "stewardship_report_email_completion_ready"
 # #1872), which web records, with its evidence note, and reads, and the
 # worker's coverage comparison reads.
 DECISION = "stewardship_report_email_coverage_decision"
-TABLES = (MANUAL, PREPARATION, SNAPSHOT, RECIPIENT, COMPLETION, DECISION)
+# Send a test to me (0173, #2036).
+TEST = "stewardship_report_email_test"
+TABLES = (MANUAL, PREPARATION, SNAPSHOT, RECIPIENT, COMPLETION, DECISION, TEST)
 # The columns that bind a snapshot or recipient without its content.
 # When its email was made is a binding too: Report emails lists the sends.
 SNAPSHOT_BINDING = {"id", "preparation_id", "campaign_id", "has_content", "created_at"}
 RECIPIENT_BINDING = {"id", "snapshot_id", "outbox_id", "disposition"}
+# A test's columns without its address or email (the inserted row's
+# database defaults included, which an INSERT reads back).
+TEST_BINDING = {
+    "id",
+    "created_at",
+    "updated_at",
+    "version",
+    "actor_id",
+    "correlation_id",
+    "campaign_id",
+    "configuration_id",
+    "definition_id",
+    "requested_by_id",
+    "mode",
+    "testing_recipient",
+    "task_id",
+    "state",
+}
 
 
 def _columns(columns, table, names):
@@ -49,9 +74,13 @@ def add_report_email_grants(tables, columns, *, worker):
         # never the email.
         _columns(columns, SNAPSHOT, {"fact_set_id"})
         _columns(columns, RECIPIENT, RECIPIENT_BINDING)
+        # A test task's hint admission reads the test's bindings.
+        _columns(columns, TEST, TEST_BINDING)
         return
     for table in (SNAPSHOT, RECIPIENT):
         tables.setdefault(table, set()).update({"SELECT", "INSERT"})
+    # The test task makes its message from the kept email (#2036).
+    tables.setdefault(TEST, set()).add("SELECT")
     # The coverage comparison (stewardship_report_email_prior_v1), which the
     # fanout and the recipient guard run with the worker's rights, reads
     # the Administrator's coverage decisions (#1872).
@@ -66,11 +95,13 @@ def add_report_email_dispatch_grants(tables, columns, *, private):
     for table in (PREPARATION, COMPLETION):
         tables.setdefault(table, set()).add("SELECT")
     if private:
-        for table in (SNAPSHOT, RECIPIENT):
+        # A test's kept email is what its message sends (#2036).
+        for table in (SNAPSHOT, RECIPIENT, TEST):
             tables.setdefault(table, set()).add("SELECT")
         return
     _columns(columns, SNAPSHOT, SNAPSHOT_BINDING)
     _columns(columns, RECIPIENT, RECIPIENT_BINDING)
+    _columns(columns, TEST, TEST_BINDING)
 
 
 # What a saved copy shows (report_email_copy_views, #1946): the email as
@@ -90,9 +121,12 @@ COPY_COLUMNS = {
 
 
 def add_report_email_web_grants(tables, columns):
-    """Record Send now and coverage decisions; read sends and saved copies."""
+    """Record Send now, tests and coverage decisions; read sends and copies."""
     tables.setdefault(MANUAL, set()).update({"SELECT", "INSERT"})
     tables.setdefault(DECISION, set()).update({"SELECT", "INSERT"})
+    # Send a test to me (#2036): web records the test and reads its
+    # bindings (the one-pending check), never its email again.
+    tables.setdefault(TEST, set()).add("INSERT")
     add_report_email_dispatch_grants(tables, columns, private=False)
     _columns(columns, SNAPSHOT, COPY_COLUMNS)
     # Sent mail's retry admission and a retry's seed (the report branches

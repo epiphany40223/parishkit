@@ -549,6 +549,9 @@ FROZEN = {
     "0172_family_campaign_statistics.sql": (
         "8b71ec22ab4f5432cc938a0b9cb285b3ecfd9a5b042fa6948b60350f55e3396d"
     ),
+    "0173_report_email_test.sql": (
+        "f112d010b3feb86f79adcc3e48d38781f7cf66970eaf3104719fd9c416bedd35"
+    ),
 }
 
 

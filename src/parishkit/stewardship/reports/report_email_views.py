@@ -162,6 +162,7 @@ def _context(system, *, administrator, requested):
             "change_url": reverse("admin:report_email_changes"),
             "send_now_url": reverse("admin:report_email_send_now"),
             "render_url": reverse("admin:report_email_render"),
+            "test_url": reverse("admin:report_email_test"),
         }
     )
 

@@ -90,6 +90,10 @@ class Action(StrEnum):
     # A report email drawn from current data in its Preview (#2035): the
     # report (or, for an unsaved form, the campaign), never its content.
     REPORT_EMAIL_PREVIEWED = "report_email_previewed"
+    # Send a test to me (#2036): the report (or, for an unsaved form, the
+    # campaign) and the mode (``report_mode``: the Administrator, or the
+    # Testing recipient in Testing), never the address or the email.
+    REPORT_EMAIL_TEST_SENT = "report_email_test_sent"
     PARTICIPATION_VIEWED = "participation_viewed"
     # The Campaign comparison report (#1018): its context is the outcome and
     # the comparison day as ``count`` (the campaign days compared), no figure.

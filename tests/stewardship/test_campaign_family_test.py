@@ -102,6 +102,15 @@ def test_sql_recovery_budget_mirrors_the_python_attempt_budget():
     ).read_text()
     assert f"t.attempt>={delivery.MAX_ATTEMPTS} AND own.purpose='family_test'" in text
     assert text.count("t.attempt>=") == 1
+    # A report email test's recovery cancel (#2036, frozen file 0173).
+    test = (
+        Path(delivery.__file__).parents[1]
+        / "schema"
+        / "migrations"
+        / "0173_report_email_test.sql"
+    ).read_text()
+    assert f"(task.attempt>={delivery.MAX_ATTEMPTS} AND" in test
+    assert test.count("task.attempt>=") == 1
 
 
 def test_form_reports_bad_duid_lists_as_field_errors():
