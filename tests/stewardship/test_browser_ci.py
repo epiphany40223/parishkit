@@ -1,5 +1,6 @@
 """Browser CI partitions preserve the complete suite and fail closed."""
 
+import ast
 import json
 import os
 import re
@@ -491,7 +492,7 @@ def test_browser_workflow_contract():
         "matrix": {"runs": list(BROWSER_JOBS)},
     }
     assert job["timeout-minutes"] == 60
-    assert job["env"] == {"BROWSER_RUNS": "${{ matrix.runs }}"}
+    assert job["env"] == {"BROWSER_RUNS": "${{ matrix.runs }}", "HOME": "/root"}
     # The job's start is recorded first, so setup time counts (#2050).
     assert job["steps"][0]["run"] == (
         f'echo "{quality_browser.JOB_STARTED_ENV}=$(date +%s)" >> "$GITHUB_ENV"'
@@ -499,7 +500,9 @@ def test_browser_workflow_contract():
     assert job["timeout-minutes"] * 60 == quality_browser.JOB_LIMIT_SECONDS
     install, run = job["steps"][-2:]
     assert 'read -ra runs <<<"$BROWSER_RUNS"' in install["run"]
-    assert 'playwright install --with-deps "${runs[@]%%:*}"' in install["run"]
+    # The container image has the OS packages, so nothing installs them (#2053).
+    assert 'python -m playwright install "${runs[@]%%:*}"' in install["run"]
+    assert "--with-deps" not in install["run"]
     assert run["env"]["PARISHKIT_RUN_BROWSER_TESTS"] == "1"
     assert run["run"] == (
         'python -m parishkit.stewardship.quality_browser --runs "$BROWSER_RUNS"'
@@ -517,6 +520,69 @@ def test_browser_workflow_contract():
         "JOBS": "${{ inputs.jobs }}",
     }
     assert_gate_truth_table(gate["steps"][0], GATES["stewardship-browser"])
+
+
+def preflight_browser_image():
+    """Return tools/stewardship-preflight.py's BROWSER_IMAGE_BASE value."""
+    tree = ast.parse((ROOT / "tools/stewardship-preflight.py").read_text())
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            getattr(target, "id", None) == "BROWSER_IMAGE_BASE"
+            for target in node.targets
+        ):
+            return ast.literal_eval(node.value)
+    raise AssertionError("BROWSER_IMAGE_BASE not found")
+
+
+def test_browser_jobs_run_in_the_pinned_playwright_image():
+    """Engine jobs use the preflight's digest-pinned image, never apt (#2053).
+
+    The image's browsers must be the ones the playwright pin expects, or
+    ``playwright install`` would quietly download them again.
+    """
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+    job = yaml.safe_load(workflow)["jobs"]["stewardship-browser-engine"]
+    image = job["container"]["image"]
+    assert image == preflight_browser_image()
+    assert re.fullmatch(
+        r"mcr\.microsoft\.com/playwright/python:v(\d+\.\d+\.\d+)-noble"
+        r"@sha256:[0-9a-f]{64}",
+        image,
+    )
+    version = re.search(r":v([\d.]+)-", image).group(1)
+    # The development container mounts only some requirements files, not this
+    # one; every checkout-based run (the sharded suite) still checks the pin.
+    pin_file = ROOT / "requirements/stewardship-browser.txt"
+    if pin_file.exists():
+        assert f"\nplaywright=={version}\n" in pin_file.read_text()
+    assert job["container"]["options"] == "--ipc=host"
+    fonts = "/usr/share/fonts/truetype/dejavu"
+    assert job["container"]["volumes"] == [f"{fonts}:{fonts}"]
+    assert "--with-deps" not in workflow
+    # Container steps default to sh, which rejects the steps' bash features.
+    assert job["defaults"]["run"]["shell"] == "bash -e {0}"
+    # Firefox will not launch as root unless HOME is /root (Playwright docs).
+    assert job["env"]["HOME"] == "/root"
+    assert "sudo" not in yaml.safe_dump(job)
+    names = [step.get("name") for step in job["steps"]]
+    assert "Remove the Microsoft apt source" not in names
+    font_check = job["steps"][names.index("Require the runner's DejaVu fonts")]
+    assert 'match=$(fc-match "$family")' in font_check["run"]
+    assert "for family in sans-serif serif monospace; do" in font_check["run"]
+    # The font check precedes the tests it protects.
+    assert names.index("Require the runner's DejaVu fonts") < len(names) - 2
+    # setup-python needs lsb_release, which the image lacks, so the job uses
+    # the image's Python in a virtualenv instead. setup-node stays: no Node.
+    uses = [step.get("uses", "") for step in job["steps"]]
+    assert not any(u.startswith("actions/setup-python") for u in uses)
+    assert any(u.startswith("actions/setup-node") for u in uses)
+    venv = job["steps"][names.index("Use the image's Python 3.12 in a virtualenv")]
+    assert '"Python 3.12."*' in venv["run"]
+    assert "virtualenv" in venv["run"]
+    assert '>> "$GITHUB_PATH"' in venv["run"]
+    assert names.index("Use the image's Python 3.12 in a virtualenv") < names.index(
+        "Install component test dependencies"
+    )
 
 
 def test_ci_cancels_only_superseded_pr_heads():
