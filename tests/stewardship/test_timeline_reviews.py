@@ -405,3 +405,123 @@ def test_an_information_line_shows_only_the_notes_its_step_changed():
         line + "; note: Not done yet",
         line,
     ]
+
+
+def test_pledge_lines_read_as_their_action_for_financial_readers():
+    """Each pledge review reads as its own action (#2071), an Edit with the
+    Reviewer's value as Pledges shows it; a Back to review line shows its
+    note to a reader of Pledges, and a reader without financial detail (or
+    none) sees no pledge line at all."""
+    pledge = {"entity_kind": None, "entity_key": None, "subject": None}
+    rows = [
+        row("pledge", "7", 1, "accept", "accepted", note="Fine", **pledge),
+        row("pledge", "7", 2, "back_to_review", None, note="Typo", **pledge),
+        row(
+            "pledge",
+            "7",
+            3,
+            "edit",
+            "accepted_edited",
+            "1300.00",
+            "quarterly",
+            **pledge,
+        ),
+        row(
+            "pledge",
+            "7",
+            4,
+            "entered_by_hand",
+            "accepted_edited",
+            "1300.00",
+            "quarterly",
+            **pledge,
+        ),
+        # Undoing the mark keeps the edited decision; then an Ignore after
+        # the Family changed its pledge, and a $0.00 Edit with no frequency.
+        row(
+            "pledge",
+            "7",
+            5,
+            "back_to_review",
+            "accepted_edited",
+            "1300.00",
+            "quarterly",
+            note="Wrong",
+            **pledge,
+        ),
+        row("pledge", "7", 6, "ignore", "ignored", **pledge),
+        row("pledge", "7", 7, "back_to_review", None, **pledge),
+        row("pledge", "7", 8, "edit", "accepted_edited", "0.00", None, **pledge),
+    ]
+    by = "; by staff@example.org"
+    for who in (reader("staff"), reader("administrator")):
+        lines = steps(rows, reader=who)
+        assert [str(what) for _at, what, _detail in lines] == [
+            "Accepted",
+            "Back to review",
+            "Accepted (edited)",
+            "Entered by hand",
+            "Back to review",
+            "Ignored",
+            "Back to review",
+            "Accepted (edited)",
+        ]
+        assert details(rows, who) == [
+            "Pledge" + by,
+            "Pledge" + by + "; note: Typo",
+            "Pledge; Reviewer's value: $1,300.00, Quarterly" + by,
+            "Pledge" + by,
+            "Pledge" + by + "; note: Wrong",
+            "Pledge" + by,
+            "Pledge" + by,
+            "Pledge; Reviewer's value: $0.00, No frequency" + by,
+        ]
+    census = row("census_review", "p", 9, "approved", "false", None, "false")
+    for who in (reader("ministry_leader", ministries=[9]), None):
+        assert [detail for _at, _w, detail in steps([*rows, census], reader=who)] == [
+            "Email address for Smith, Anne" + by
+        ]
+
+
+def test_limitation_lines_read_as_their_decision():
+    """A Limitations review reads as its decision (#2071): an ``accepted``
+    row that undoes Handled (``d``) reads Back to review with its note, a
+    fresh Accept reads Accepted; the answer is named in the Limitations
+    report's words, for the Member or the Family."""
+    member = {"entity_kind": "member", "subject": "member"}
+    family = {"entity_kind": "family", "entity_key": None, "subject": "family"}
+    rows = [
+        row("limitation", "member:3", 0, "accepted", d="false", **member),
+        row("limitation", "member:3", 1, "handled", d="false", **member),
+        row(
+            "limitation", "member:3", 2, "accepted", d="true", note="Not yet", **member
+        ),
+        row("limitation", "family:", 3, "ignored", d="false", **family),
+        row("limitation", "family:", 4, "none", d="false", note="Asked", **family),
+        # A Handled the Family's new answer ended, then a fresh Accept.
+        row("limitation", "member:3", 5, "handled", d="false", **member),
+        row("limitation", "member:3", 6, "accepted", d="false", note="New", **member),
+    ]
+    assert words(rows) == [
+        "Accepted",
+        "Handled",
+        "Back to review",
+        "Ignored",
+        "Back to review",
+        "Handled",
+        "Accepted",
+    ]
+    by = "; by staff@example.org"
+    serve = "Cannot participate in any ministries for Smith, Anne" + by
+    attend = "Cannot attend Mass or prayer services for the Family" + by
+    assert details(rows, reader("staff")) == [
+        serve,
+        serve,
+        serve + "; note: Not yet",
+        attend,
+        attend + "; note: Asked",
+        serve,
+        serve,
+    ]
+    leader = reader("ministry_leader", ministries=[9])
+    assert not any("note:" in detail for detail in details(rows, leader))

@@ -1199,9 +1199,14 @@ decision reads as its
 review**, and the other steps read **Entered by hand**, **Entered by hand
 cleared**, **Handled**, **Handled cleared**, **Edited**, **Edit cleared** or,
 for a step that changes no decision or stage (a note, a contact attempt or a
-move to In progress), **Follow-up updated**. Each is worded from the
-item's state before and after the step, so the words never depend on what
-the row is called in storage. A census change that a resubmission carried
+move to In progress), **Follow-up updated**. A census, Ministry or
+Additional information line is worded from the item's state before and
+after the step, so the words never depend on what the row is called in
+storage. A pledge or Limitations row records the step's own decision, so
+its line reads as that decision; a Limitations Back to review of a
+Handled answer, which records Accepted again (To handle), reads **Back to
+review**, as a fresh Accept after the Family changed its answer reads
+**Accepted** (#2071). A census change that a resubmission carried
 over with its decision and Reviewer's value (the same answer, neither
 resolved nor cancelled, under the rule before the reviewed form) starts from
 what it carried, so its first step reads as what the reviewer did. A
@@ -1214,11 +1219,18 @@ none, even with the same answer as the change it replaced (#2028). **Details** n
 - a Ministry request: Join or Leave, the Ministry and the Member, and a
   decided request's outcome in Ministry requests' words;
 - Additional information: "Additional information";
+- a pledge: "Pledge", and on an **Accepted (edited)** line the Reviewer's
+  value as [Pledges](#pledges) shows it ("Pledge; Reviewer's value:
+  $1,300.00, Quarterly");
+- a Limitations answer: the answer in [Limitations](#limitations)' words
+  and whom it is about ("Cannot participate in any ministries for Smith,
+  Anne", "Cannot attend Mass or prayer services for the Family");
 - then "by" and the acting user's address ("Former portal user" when the
   user record is gone, as Ministry requests says). A line never shows a
   value the Family gave or a reviewer typed (the Member tabs show them),
-  and shows no note, since notes can hold personal detail, except on a
-  Back to review line (below);
+  except a pledge Edit's Reviewer's value, which only a reader of Pledges
+  sees (below), and shows no note, since notes can hold personal detail,
+  except on a Back to review line (below);
 - on a **Back to review** line, then "note:" and the note the step was
   recorded with, when it has one
   ([#1893](https://github.com/epiphany40223/parishkit/issues/1893)). The
@@ -1226,7 +1238,8 @@ none, even with the same answer as the change it replaced (#2028). **Details** n
   where the same note is already on the item's row: Census changes for a
   census line, Ministry requests (for the request's Ministry) for a
   Ministry line, Additional information for an Additional information
-  line. A reader who may not sees the line without it. The Administrator
+  line, Pledges for a pledge line and Limitations for a Limitations line.
+  A reader who may not sees the line without it. The Administrator
   chose this on 2026-10-21 ("If staff can see the changes in
   Census/Ministry work pages, it's ok for them to see the changes
   (including back to review) in the timeline, too"); it is an exception
@@ -1247,10 +1260,14 @@ In this release the lines cover the decisions stored today:
   ([#1840](https://github.com/epiphany40223/parishkit/issues/1840)) is part
   of that one Back to review line, not a line of its own;
 - Additional information: each follow-up edit
-  (`stewardship_information_revision`).
+  (`stewardship_information_revision`);
+- pledges: each Accept, Edit, Ignore, Back to review and Entered by hand
+  (`stewardship_pledge_review`), including a Cannot contribute financially
+  answer, which is decided on Pledges and reads "Pledge" too;
+- Limitations: each Accept, Ignore, Back to review and Handled
+  (`stewardship_limitation_review`).
 
-Pledges, cannot-participate answers and Limitations store no decision yet;
-their lines, Staff's Add, Update ParishSoft and the refresh checks
+Staff's Add, Update ParishSoft and the refresh checks
 (Confirmed, Entered incorrectly, Not seen in ParishSoft, attributed to the
 system) join when the review-pipeline slices that store them land
 ([#1734](https://github.com/epiphany40223/parishkit/pull/1734),
@@ -1263,8 +1280,10 @@ never listed, and only while the Timeline tab is chosen; the
 [timeline export](#timeline-export) always includes them.
 
 Administrators and Staff see the same review lines, and the same Back to
-review notes, since Staff review every stream. Ministry leaders cannot open the page; if a leader view is
-ever added, a leader would see only decisions on requests for the
+review notes, since Staff review every stream. A pledge line is listed only
+for a reader who may open [Pledges](#pledges) (financial detail), as that
+page requires, so a role without it would see none (#2071). Ministry
+leaders cannot open the page; if a leader view is ever added, a leader would see only decisions on requests for the
 Ministries they lead, as Ministry requests scopes them, and never a census,
 financial, Limitations or Additional information line.
 

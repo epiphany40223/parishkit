@@ -13,26 +13,33 @@ from the audit log, whose context deliberately names no item or value:
 - Ministry: ``stewardship_ministry_revision`` (each follow-up edit) and
   ``stewardship_ministry_roster_entry`` (each Entered in ParishSoft tick,
   except the clearing a Back to review undo writes with its revision);
-- Additional information: ``stewardship_information_revision``.
+- Additional information: ``stewardship_information_revision``;
+- pledges: ``stewardship_pledge_review`` (#2071), listed only for a reader
+  who may open Pledges (``Capability.FINANCIAL_DETAIL``, ``steps``);
+- Limitations: ``stewardship_limitation_review`` (#2071).
 
-Each history row stores the item's state after the step, not the step
-itself, so ``steps`` replays one item's rows in order and words each from
-the state before and after it (``word``), in the review pipeline's words.
-A line never carries a value (the Member tabs show the values), and only a
-Back to review line carries its note, to a reader who may open that
-stream's work page, where the same note is on the item's row
-(``note_visible``, #1893): notes can hold personal detail, so every other
-line shows none.
+A census, Ministry or Additional information history row stores the
+item's state after the step, not the step itself, so ``steps`` replays one
+item's rows in order and words each from the state before and after it
+(``word``), in the review pipeline's words. A pledge or Limitations row
+records the step's own decision, so its word is that decision
+(``state_after``). A line never carries a value (the Member tabs show the
+values), except a pledge Edit's Reviewer's value, which only a reader of
+Pledges sees; and only a Back to review line carries its note, to a reader
+who may open that stream's work page, where the same note is on the item's
+row (``note_visible``, #1893): notes can hold personal detail, so every
+other line shows none.
 
 ``read_reviews`` runs one statement (plus the Ministry names when a line
 needs them); everything else is pure, so a unit test drives it from plain
-values. A stream that stores a new kind of decision (pledges, Limitations,
-Update ParishSoft, the refresh checks) adds a branch to ``_HISTORY`` and a
-state mapping to ``state_after`` (review-pipeline spec, "Audit").
+values. A stream that stores a new kind of decision (Update ParishSoft,
+the refresh checks) adds a branch to ``_HISTORY`` and a state mapping to
+``state_after`` (review-pipeline spec, "Audit").
 """
 
 import json
 from dataclasses import dataclass, replace
+from decimal import Decimal
 
 from django.db import connection
 from django.utils.translation import gettext_lazy as _
@@ -47,8 +54,11 @@ from parishkit.stewardship.pipeline import (
 from parishkit.stewardship.source.catalog_names import ministry_display_name
 
 from .census_changes import LABELS
+from .financial import FREQUENCY_LABELS
 from .hub_census import member_label
+from .limitations import ANSWERS as LIMITATION_ANSWERS
 from .ministries import outcome_label
+from .money import MoneyAmount
 
 # One Family's decision history in one scope, oldest first: one row per
 # stored step, across every stream, each with the submission it belongs to
@@ -57,10 +67,13 @@ from .ministries import outcome_label
 # ``state_after``) and the note it was recorded with (``note``: a census
 # review's or resolution's note, a Ministry revision's decision note, an
 # Additional information revision's Staff notes; shown only on a Back to
-# review line, ``note_visible``). ``item`` keys one change, request or Additional
-# information item; ``step`` orders its rows (the change's or request's
-# version, a tick's sequence). Every branch reaches the stream's rows
-# through the Family's submissions and the history's foreign-key indexes.
+# review line, ``note_visible``; a pledge review's or Limitations review's
+# note). ``item`` keys one change, request, Additional information item,
+# pledge (the Family's campaign record) or Limitations answer (its kind and
+# Member key); ``step`` orders its rows (the change's, request's or
+# answer's version, a tick's or pledge review's sequence). Every branch
+# reaches the stream's rows through the Family's submissions and the
+# history's foreign-key indexes.
 # The Member's ParishSoft name comes from the current snapshot, as Census
 # changes names a Member.
 #
@@ -77,11 +90,19 @@ from .ministries import outcome_label
 # reviewed-form response (``reviewed_view``) never carries a decision, so
 # its new change with the same answer (one answered again over the value
 # the form showed for it) starts from no decision (#2028).
+#
+# A Limitations ``accepted`` row is either an Accept at To review or the
+# undo of a Handled answer (#1840), which records Accepted again; ``d``
+# says it is the undo: the answer's previous row is a Handled still in
+# force when this row was written, that is, no live response from the one
+# it was decided on up to this row's own answered the other way, the
+# rule of ``stewardship_limitation_in_force_v1`` bounded at this row.
 # Takes %(family)s, %(campaign)s, %(response_mode)s and %(epoch)s
 # (``timelines.scope_values``).
 _HISTORY = """
 WITH subs AS (
-    SELECT s.id, s.answers, s.reviewed_view FROM stewardship_submission s
+    SELECT s.id, s.answers, s.reviewed_view, s.family_version
+    FROM stewardship_submission s
     WHERE s.family_id=%(family)s AND s.campaign_id=%(campaign)s
       AND s.mode=%(response_mode)s
       AND s.rehearsal_epoch_id IS NOT DISTINCT FROM %(epoch)s
@@ -147,6 +168,35 @@ WITH subs AS (
         NULL, NULL, NULL, v.notes
     FROM subs JOIN stewardship_additional_information i ON i.submission_id=subs.id
     JOIN stewardship_information_revision v ON v.item_id=i.id
+    UNION ALL
+    SELECT 'pledge', g.family_id::text, g.sequence, g.created_at, g.actor_id,
+        g.submission_id, NULL, NULL, NULL, g.action, g.decision,
+        g.reviewed_annual_pledge::text, g.reviewed_frequency,
+        NULL, NULL, NULL, g.note
+    FROM subs JOIN stewardship_pledge_review g ON g.submission_id=subs.id
+    UNION ALL
+    SELECT 'limitation', l.kind || ':' || l.member_key, l.expected_version,
+        l.created_at, l.actor_id, l.submission_id, l.kind,
+        nullif(l.member_key, ''), l.kind, l.decision, NULL, NULL,
+        (l.decision='accepted' AND EXISTS(
+            SELECT 1 FROM stewardship_limitation_review p
+            JOIN stewardship_submission decided ON decided.id=p.submission_id
+            WHERE p.family_id=l.family_id AND p.kind=l.kind
+              AND p.member_key=l.member_key
+              AND p.expected_version=l.expected_version-1
+              AND p.decision='handled'
+              AND NOT EXISTS(SELECT 1 FROM stewardship_submission later
+                  WHERE later.family_id=decided.family_id
+                    AND later.campaign_id=decided.campaign_id
+                    AND later.mode='live'
+                    AND later.family_version>decided.family_version
+                    AND later.family_version<=subs.family_version
+                    AND stewardship_limitation_stated_v1(
+                        later.answers, p.kind, p.member_key)
+                    AND NOT stewardship_limitation_answer_v1(
+                        later.answers, p.kind, p.member_key))))::text,
+        NULL, NULL, NULL, l.note
+    FROM subs JOIN stewardship_limitation_review l ON l.submission_id=subs.id
 )
 SELECT h.stream, h.item, h.step, h.at, u.email, h.entity_kind, h.entity_key,
     h.subject, h.a, h.b, h.c, h.d, h.seed_decision, h.seed_set, h.seed_value,
@@ -192,11 +242,14 @@ COLUMNS = (
 CENSUS_DECISIONS = {"approved": Decision.ACCEPTED, "ignored": Decision.IGNORED}
 # The capability of each stream's work page, whose readers see the note
 # of that stream's Back to review lines (#1893): Census changes, Ministry
-# requests (scoped to the request's Ministry) and Additional information.
+# requests (scoped to the request's Ministry), Additional information,
+# Pledges and Limitations.
 NOTE_READERS = {
     "census": Capability.VIEW_CENSUS,
     "ministry": Capability.MINISTRY_FOLLOWUP,
     "information": Capability.ADDITIONAL_FOLLOWUP,
+    "pledge": Capability.FINANCIAL_DETAIL,
+    "limitation": Capability.CAMPAIGN_REPORT,
 }
 # Who acted when the user record is gone, as Ministry requests says it.
 FORMER_USER = "Former portal user"
@@ -207,6 +260,23 @@ UPDATED = _("Follow-up updated")
 # A step that finishes an item's work, and the word for undoing it.
 DONE = {"entered": _("Entered by hand"), "handled": _("Handled")}
 CLEARED = {"entered": _("Entered by hand cleared"), "handled": _("Handled cleared")}
+# A pledge review's action, and a Limitations review's decision, as its
+# line's word: each row records the step itself (#2071). A Limitations
+# ``accepted`` row that undoes Handled reads Back to review instead
+# (``_HISTORY``'s ``d``).
+PLEDGE_WORDS = {
+    "accept": DECISION_LABELS[Decision.ACCEPTED],
+    "edit": DECISION_LABELS[Decision.ACCEPTED_EDITED],
+    "ignore": DECISION_LABELS[Decision.IGNORED],
+    "back_to_review": BACK_TO_REVIEW,
+    "entered_by_hand": DONE["entered"],
+}
+LIMITATION_WORDS = {
+    "accepted": DECISION_LABELS[Decision.ACCEPTED],
+    "ignored": DECISION_LABELS[Decision.IGNORED],
+    "none": BACK_TO_REVIEW,
+    "handled": DONE["handled"],
+}
 # Every word ``word`` can give a line, for the timeline PDF's Reviews kind.
 WORDS = frozenset(
     str(value)
@@ -250,9 +320,18 @@ def state_after(row, before):
     revision's state and outcome (``c`` the request's join or leave, ``d``
     whether it has a decision note); a
     roster tick's "true" or "false"; an Additional information revision's
-    follow-up-needed and followed-up flags.
+    follow-up-needed and followed-up flags; a pledge review's action
+    (``b`` to ``d`` its decision and Reviewer's amount and frequency); a
+    Limitations review's decision (``d`` whether it undoes Handled).
+    A pledge or Limitations row records its step's own decision, so its
+    state is only that word (``forced``): no later step reads from it.
     """
     stream, a, b = row["stream"], row["a"], row["b"]
+    if stream == "pledge":
+        return State(forced=PLEDGE_WORDS[a])
+    if stream == "limitation":
+        undo = a == "accepted" and row["d"] == "true"
+        return State(forced=BACK_TO_REVIEW if undo else LIMITATION_WORDS[a])
     before = replace(before, forced=None)
     if stream == "census_review":
         # Use the Family's value anyway keeps a decision accepted, so its
@@ -373,11 +452,23 @@ def item_words(row, names):
 
     ``names`` maps a Ministry DUID to its display name. A census change
     names its field and Member (or the Family); a Ministry request its join
-    or leave, Ministry and Member, plus a decided request's outcome.
+    or leave, Ministry and Member, plus a decided request's outcome; a
+    pledge only itself, plus an Edit's Reviewer's value (``pledge_words``);
+    a Limitations answer the answer and its Member (or the Family).
     """
     stream = row["stream"]
     if stream == "information":
         return str(_("Additional information"))
+    if stream == "pledge":
+        return pledge_words(row)
+    if stream == "limitation":
+        subject = (
+            str(_("the Family")) if row["entity_kind"] == "family" else member_name(row)
+        )
+        words = _("%(answer)s for %(subject)s")
+        return str(
+            words % {"answer": LIMITATION_ANSWERS[row["subject"]], "subject": subject}
+        )
     if stream.startswith("census"):
         if row["entity_kind"] == "family":
             subject = str(_("the Family"))
@@ -400,6 +491,24 @@ def item_words(row, names):
     )
     outcome = outcome_label(row["b"], action) if stream == "ministry_revision" else ""
     return f"{words}; {outcome}" if outcome else words
+
+
+def pledge_words(row):
+    """A pledge line's item: "Pledge", and an Edit's Reviewer's value.
+
+    The value reads as the Pledges page's Reviewer's value cell does
+    (``pledge_review_views.reviewer_value``): the annual pledge, then the
+    frequency's word ("No frequency" for a zero pledge without one).
+    It repeats ``reviewed_parts`` and ``frequency_label`` there rather than
+    import a views module; keep the two in step. Only an Edit records an
+    Accepted (edited) decision (``pledge_review_action_state``).
+    """
+    if row["a"] != "edit":
+        return str(_("Pledge"))
+    amount = MoneyAmount(int(Decimal(row["c"]) * 100)).display
+    frequency = FREQUENCY_LABELS[row["d"] or "none"]
+    words = _("Pledge; Reviewer's value: %(amount)s, %(frequency)s")
+    return str(words % {"amount": amount, "frequency": frequency})
 
 
 def first_state(row):
@@ -440,11 +549,17 @@ def steps(rows, names=None, reader=None):
     rows are replayed from its first state (``first_state``), so each line
     is worded from the state before and after its step. A Back to review
     line's detail ends with its note, when it has one and ``reader`` may
-    read it (``note_visible``); no other line carries one.
+    read it (``note_visible``); no other line carries one. A pledge line is
+    listed only for a ``reader`` who may open Pledges (financial detail,
+    #2071), as that page requires; a caller that names no reader sees no
+    pledge line.
     """
     names = names or {}
     states, notes, lines = {}, {}, []
+    pledges = allows(reader, Capability.FINANCIAL_DETAIL)
     for row in rows:
+        if row["stream"] == "pledge" and not pledges:
+            continue
         key = (row["stream"].split("_")[0], row["item"])
         before = states.get(key) or first_state(row)
         after = state_after(row, before)
