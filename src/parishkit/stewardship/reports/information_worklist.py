@@ -280,7 +280,7 @@ def stage_counts(counts):
     }
 
 
-def worklist_page(counts, query, table, action, *, mutable):
+def worklist_page(counts, query, table, action, *, mutable, prefix="information"):
     """The page's ``worklist`` and its table, from the placed requests.
 
     ``table`` is the placed rows' page (``paginate``); its rows become the
@@ -290,6 +290,8 @@ def worklist_page(counts, query, table, action, *, mutable):
     stage does not count. The view's address carries its Stage alone
     (To review is the plain address), the one choice its GET takes
     (#1818), so a reload after an in-place answer draws the same Stage.
+    ``prefix`` keeps the element ids apart where another page draws these
+    rows (the Family hub's Additional tab, #2064).
     """
     rows = worklist_rows(table.rows)
     table = replace(table, rows=rows, method="post", action=action)
@@ -297,7 +299,7 @@ def worklist_page(counts, query, table, action, *, mutable):
         Stream.ADDITIONAL_INFORMATION,
         rows,
         frozenset({"staff"}) if mutable else frozenset(),
-        prefix="information",
+        prefix=prefix,
         action=action,
         columns=COLUMNS,
         stage=query.stage,

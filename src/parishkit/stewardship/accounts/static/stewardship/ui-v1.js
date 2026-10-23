@@ -5433,6 +5433,10 @@
     // Fields start again from their defaults each time, so an earlier
     // contact attempt is never recorded again unasked; each change event
     // lets the rules on them (data-enabled-when, the complete gate) follow.
+    // Those events are not the reader's typing, so the form's "edited since"
+    // mark is put back as it was: a region that redraws the dialog's form
+    // (a Family hub tab, #2064) must not then say typed changes were lost.
+    const edited = editedSince.get(form.id);
     dialog.querySelectorAll("[data-confirm-reset]").forEach((field) => {
       if (field instanceof HTMLSelectElement) {
         const first = [...field.options].find((option) => option.defaultSelected) || field.options[0];
@@ -5442,6 +5446,8 @@
       }
       field.dispatchEvent(new Event("change", {bubbles: true}));
     });
+    if (edited) editedSince.set(form.id, edited);
+    else editedSince.delete(form.id);
     // The review worklist's choice field (#1681): a nameless hidden input
     // marked data-confirm-choice, which a data-required-when rule on the
     // dialog's note reads, so one dialog asks for a note only when the
@@ -5771,8 +5777,10 @@
     const region = form.closest(REGIONS) || state.opener.closest(REGIONS);
     // A row's control in a table whose rows have ids (Census changes, #879)
     // returns focus to that row's first action once it is redrawn, so the
-    // reader stays where they were; when the row is gone, the fallback.
-    const row = state.opener.closest("tr[id]")?.id;
+    // reader stays where they were; when the row is gone, the fallback. An
+    // item drawn on a line of its own rather than a table row (a Family
+    // hub tab's New Member addition, #2064) is marked data-action-row.
+    const row = state.opener.closest("tr[id], [data-action-row][id]")?.id;
     // A review worklist icon (data-row-action, #1681) returns focus to the
     // same action's icon in the redrawn row, now drawn selected, so the
     // reader hears the decision in force (data-focus-action names another

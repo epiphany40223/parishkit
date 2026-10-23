@@ -30,6 +30,7 @@ from parishkit.stewardship.pipeline import (
     information_placement,
     ministry_placement,
 )
+from parishkit.stewardship.responses.limitation_review import answer_id
 from parishkit.stewardship.source.source_status import (
     NAME_NOT_RECORDED,
     source_status_label,
@@ -51,7 +52,7 @@ from .ministries import outcome_label
 # stewardship_ministry_request_member_status_v1: NULL for an added Member).
 # Takes %(family)s, %(campaign)s, %(kind)s and %(key)s.
 MINISTRY_REQUESTS = """
-SELECT DISTINCT ON (r.ministry_duid) r.ministry_duid, r.action, r.state,
+SELECT DISTINCT ON (r.ministry_duid) r.id::text, r.ministry_duid, r.action, r.state,
     r.outcome, r.resolution_source_id IS NOT NULL,
     coalesce((SELECT e.entered FROM stewardship_ministry_roster_entry e
         WHERE e.request_id=r.id ORDER BY e.sequence DESC LIMIT 1), false),
@@ -63,6 +64,7 @@ WHERE s.family_id=%(family)s AND s.campaign_id=%(campaign)s AND s.mode='live'
 ORDER BY r.ministry_duid, s.family_version DESC
 """
 REQUEST_COLUMNS = (
+    "id",
     "ministry",
     "action",
     "state",
@@ -131,6 +133,7 @@ def ministry_rows(rows, names):
                 baseline=str(BASELINES.get(row["action"], "")),
                 placement=placement,
                 note=member_note(row) or outcome_label(row["outcome"], row["action"]),
+                item_id=row.get("id", ""),
             )
         )
     return tuple(sorted(shown, key=lambda row: row.label.casefold()))
@@ -218,6 +221,17 @@ def read_hub_financial(campaign, family_duid, *, parish_name):
     return financial_tab(result["rows"][0], result["metadata"])
 
 
+def frequency_words(label, installment=""):
+    """A pledge's Frequency cell: its word with its installment ("Monthly
+    ($100.00 each)"), or the word alone without one ("No frequency")."""
+    if not installment:
+        return str(label)
+    return str(
+        _("%(frequency)s (%(installment)s each)")
+        % {"frequency": label, "installment": installment}
+    )
+
+
 def financial_tab(row, metadata):
     """The pledge item from one shaped Financial stewardship row.
 
@@ -230,16 +244,10 @@ def financial_tab(row, metadata):
         amount = str(_("Cannot contribute financially"))
     else:
         amount = row["annual"].display
-    if row["installment"].available:
-        frequency = str(
-            _("%(frequency)s (%(installment)s each)")
-            % {
-                "frequency": row["frequency_label"],
-                "installment": row["installment"].display,
-            }
-        )
-    else:
-        frequency = str(row["frequency_label"])
+    frequency = frequency_words(
+        row["frequency_label"],
+        row["installment"].display if row["installment"].available else "",
+    )
     shares = "; ".join(
         f"{share['label']}: {share['text']}" if share["text"] else share["label"]
         for share in row["shares"]
@@ -255,7 +263,15 @@ def financial_tab(row, metadata):
         FieldRow(str(_("Frequency")), frequency, True, baseline_read=False),
         FieldRow(str(_("Share methods")), shares, True, baseline_read=False),
     )
-    stage = FieldRow(str(_("Pledge")), "", True, placement=financial_placement())
+    stage = FieldRow(
+        str(_("Pledge")),
+        "",
+        True,
+        placement=financial_placement(),
+        # The pledge item's id, its Family's current response (Pledges' row
+        # id), for its row actions (#2064).
+        item_id=str(row.get("id", "")),
+    )
     return HubFinancial(
         Subject("financial", str(_("Financial")), rows, addition=stage),
         contributions=row["source_contributions"],
@@ -309,20 +325,28 @@ class HubOther:
     ``ministry`` says the campaign has Ministry stewardship, whose
     Limitations page the panel links to, and ``information`` that it has
     Additional information, whose page and words the panel shows only then.
+    ``actions`` are the worklists whose dialogs the tab's row actions open.
     """
 
     subject: Subject | None = None
     item: object = None
     ministry: bool = False
     information: bool = False
+    # The worklists whose row actions the tab's answers offer (Limitations'
+    # and Additional information's, ``hub_actions.other_tab``, #2064).
+    actions: tuple = ()
 
 
-def read_hub_other(campaign_id, family_id, members, *, ministry, information):
+def read_hub_other(
+    campaign_id, family_id, members, *, ministry, information, family_duid=None
+):
     """The last tab's answers: one statement.
 
     ``members`` are the hub's Member subjects (their labels and entities,
     from the census read the page already made); ``ministry`` and
     ``information`` say whether those streams are in the campaign.
+    ``family_duid``, when given, names each answer's Limitations item
+    (``other_tab``).
     """
     with connection.cursor() as cursor:
         cursor.execute(OTHER, {"family": family_id, "campaign": campaign_id})
@@ -331,10 +355,16 @@ def read_hub_other(campaign_id, family_id, members, *, ministry, information):
         return HubOther(ministry=ministry, information=information)
     row = dict(zip(OTHER_COLUMNS, found, strict=True))
     row["service"] = json.loads(row["service"])
-    return other_tab(row, members, ministry=ministry, information=information)
+    return other_tab(
+        row,
+        members,
+        ministry=ministry,
+        information=information,
+        family_duid=family_duid,
+    )
 
 
-def other_tab(row, members, *, ministry, information):
+def other_tab(row, members, *, ministry, information, family_duid=None):
     """The last tab's rows from one ``OTHER`` row, in form order.
 
     A Yes to a cannot answer is an item (``cannot_participate_placement``);
@@ -342,10 +372,21 @@ def other_tab(row, members, *, ministry, information):
     tab order; a Member the response answered for without a tab is named
     as an unnamed Member is. The current Additional information item is
     staged by ``information_placement``; without one, Additional
-    information is unchanged ("None given").
+    information is unchanged ("None given"). With ``family_duid`` each Yes
+    carries its Limitations item id and the current item its own, for their
+    row actions (#2064).
     """
+
+    def item(kind, key=""):
+        """The Limitations item id of one answer, or "" without the DUID."""
+        return answer_id(family_duid, kind, key) if family_duid else ""
+
     rows = [
-        cannot_row(_("Cannot attend Mass or prayer services"), row["cannot_attend"])
+        cannot_row(
+            _("Cannot attend Mass or prayer services"),
+            row["cannot_attend"],
+            item("family"),
+        )
     ]
     if ministry:
         service = row["service"] or {}
@@ -364,6 +405,7 @@ def other_tab(row, members, *, ministry, information):
                 cannot_row(
                     _("Cannot participate in ministries: %(name)s") % {"name": name},
                     (entry or {}).get("cannot_serve") is True,
+                    item(*entity),
                 )
             )
     if information:
@@ -380,15 +422,23 @@ def other_tab(row, members, *, ministry, information):
             )
             rows.append(
                 FieldRow(
-                    label, row["text"], True, baseline_read=False, placement=placement
+                    label,
+                    row["text"],
+                    True,
+                    baseline_read=False,
+                    placement=placement,
+                    item_id=str(row["item"]),
                 )
             )
     subject = Subject("other", str(_("Additional")), tuple(rows))
     return HubOther(subject, row["item"], ministry, information)
 
 
-def cannot_row(label, yes):
-    """One cannot answer: a Yes is a To review item, a No is unchanged."""
+def cannot_row(label, yes, item_id=""):
+    """One cannot answer: a Yes is a To review item, a No is unchanged.
+
+    ``item_id`` is the Yes's Limitations item id, for its row actions.
+    """
     if yes:
         return FieldRow(
             str(label),
@@ -396,5 +446,6 @@ def cannot_row(label, yes):
             True,
             baseline_read=False,
             placement=cannot_participate_placement(),
+            item_id=item_id,
         )
     return FieldRow(str(label), str(_("No")))

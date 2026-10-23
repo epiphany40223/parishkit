@@ -136,10 +136,16 @@ def test_member_ministry_rows_follow_the_ministry_mapping(response_service, goog
     assert counts == {"ministry": 0, "financial": 0, "other": 0}
     assert 'aria-disabled="true"' not in body.split('role="tablist"')[1]
     body, counts = page(client, f"{path}?tab={member.key}")
-    assert counts["ministry"] == 1
+    # The tab's own read, then Ministry requests' own reads of the requests
+    # (two statements), which give them their row actions (#2064).
+    assert counts["ministry"] == 3
     drawn = body.split(f'id="family-tabs-panel-{member.key}"')[1]
     assert names[9] in drawn and "Entered by hand" in drawn
     assert f'id="hub-{member.key}-ministry-caption"' in drawn
+    # Each request offers Ministry requests' own row actions, posting there.
+    assert f'id="hub-{member.key}-ministry-decide-dialog"' in drawn
+    assert f'action="{reverse("admin:ministry_report")}"' in drawn
+    assert 'data-row-action="back_to_review"' in drawn
     assert viewed() == before + 2
 
     # ParishSoft moves Member 3 to another Family: Ministry requests leaves
@@ -227,9 +233,16 @@ def test_the_financial_tab_reads_the_report_row(response_service, google):
     body, counts = page(client, path)
     assert counts["financial"] == 0
     body, counts = page(client, path + "?tab=financial")
-    assert counts == {"ministry": 0, "financial": 1, "other": 0}
+    # The tab's own selection, then Pledges' own, which gives the pledge its
+    # row actions (#2064).
+    assert counts == {"ministry": 0, "financial": 2, "other": 0}
     drawn = body.split('id="family-tabs-panel-financial"')[1]
     assert "$1,234.50" in drawn and "To review" in drawn
+    # The pledge's table offers Pledges' own row actions, posting there
+    # (#2064).
+    assert 'data-row-action="accept"' in drawn
+    assert 'id="hub-financial-pledges-decide-dialog"' in drawn
+    assert f'action="{reverse("admin:pledges_to_enter")}"' in drawn
     assert "ParishSoft contributions for" in drawn
     assert viewed() == before + 2
 

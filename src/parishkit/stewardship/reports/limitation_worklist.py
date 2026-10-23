@@ -212,13 +212,14 @@ def worklist_rows(rows):
     return found
 
 
-def worklist_page(counts, query, table, action, *, mutable):
+def worklist_page(counts, query, table, action, *, mutable, prefix="limitations"):
     """The page's ``worklist`` and its table, from the placed answers.
 
     ``table`` is the placed rows' page (``paginate``); its rows become the
     worklist's rows. ``mutable`` is false while other campaign work holds
     the campaign: the reader is then offered no action at all, as the
-    service would refuse them.
+    service would refuse them. ``prefix`` keeps the element ids apart where
+    another page draws these rows (the Family hub's Additional tab, #2064).
     """
     rows = worklist_rows(table.rows)
     table = replace(table, rows=rows, method="post", action=action)
@@ -226,7 +227,7 @@ def worklist_page(counts, query, table, action, *, mutable):
         Stream.CANNOT_PARTICIPATE,
         rows,
         frozenset({"staff"}) if mutable else frozenset(),
-        prefix="limitations",
+        prefix=prefix,
         action=action,
         columns=COLUMNS,
         stage=query.stage,

@@ -254,7 +254,7 @@ def panel(page, key):
 
 
 def test_the_financial_panel_draws_the_pledge():
-    """One stage line, the table, the contributions line and the link."""
+    """The pledge table with its one stage, the contributions line and the link."""
     page = render(
         "financial",
         sections=("financial",),
@@ -262,7 +262,7 @@ def test_the_financial_panel_draws_the_pledge():
     )
     assert page.count("data-tab-loaded") == 1
     drawn = panel(page, "financial")
-    assert 'This pledge: <span class="stage-chip">' in drawn
+    assert '<td rowspan="3"><span class="stage-chip">' in drawn
     assert 'id="hub-financial-caption"' in drawn
     assert '<span class="cell-blank">(not read)</span>' in drawn
     assert "ParishSoft contributions for 2026: $900.00." in drawn

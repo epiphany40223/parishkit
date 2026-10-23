@@ -365,6 +365,7 @@ LEFT JOIN LATERAL (
     ORDER BY h.expected_version DESC LIMIT 1
 ) latest ON true
 WHERE c.id=%s AND p.handling<>'report-only'
+    AND (%s::uuid IS NULL OR f.id=%s::uuid)
 ORDER BY f.family_duid, s.submitted_at, p.entity_kind,
     p.entity_key, p.field
 """
@@ -394,7 +395,7 @@ LEFT JOIN LATERAL (SELECT * FROM stewardship_census_addition_resolution x
     WHERE x.addition_id=a.id ORDER BY x.sequence DESC LIMIT 1) r ON true
 LEFT JOIN stewardship_portal_user u ON u.id=a.actor_id
 LEFT JOIN stewardship_portal_user ru ON ru.id=r.actor_id
-WHERE f.campaign_id=%s
+WHERE f.campaign_id=%s AND (%s::uuid IS NULL OR f.id=%s::uuid)
 ORDER BY f.family_duid, a.created_at, a.entity_kind, a.entity_key, a.field
 """
 ADDITION_COLUMNS = (
@@ -533,13 +534,18 @@ REVIEW_CHOICES = (
 JSON_COLUMNS = ("baseline_value", "submitted_value", "current_value", "admin_value")
 
 
-def census_changes(campaign_id, query, principal):
-    """Read, word and filter the campaign's census changes for Admin or Staff."""
+def census_changes(campaign_id, query, principal, *, family=None):
+    """Read, word and filter the campaign's census changes for Admin or Staff.
+
+    ``family`` (a Family record id) reads only that Family's changes: the
+    Family hub's (#2064). Every rule that compares a change with others
+    compares it with its own Family's, so the narrowing changes no row.
+    """
     if not allows(principal, Capability.VIEW_CENSUS):
         raise PermissionError("Census changes are unavailable.")
     administrator = allows(principal, Capability.PUBLISH_CENSUS)
-    changes = census_rows(campaign_id)
-    added = addition_rows(campaign_id)
+    changes = census_rows(campaign_id, family=family)
+    added = addition_rows(campaign_id, family=family)
     result = select(changes + added, query, administrator=administrator)
     # What the worklist's Add needs from every row, whatever the filters:
     # the ignored changes an addition may be added in place of, and each
@@ -635,10 +641,12 @@ def link_additions(changes, added):
     return replacements
 
 
-def census_rows(campaign_id):
+def census_rows(campaign_id, *, family=None):
     """Every census change of the campaign, read and worded, unfiltered.
 
-    The caller has checked who may read them. Update ParishSoft (#528)
+    ``family`` (a Family record id) narrows the read to that Family's
+    changes, for the Family hub (#2064). The caller has checked who may
+    read them. Update ParishSoft (#528)
     reads its plan's values from these rows, so both pages word a change
     the same way.
     """
@@ -646,7 +654,7 @@ def census_rows(campaign_id):
         cursor.execute("SELECT 1 FROM stewardship_campaign WHERE id=%s", [campaign_id])
         if cursor.fetchone() is None:
             raise ReadUnavailable("Census change inputs are unavailable.")
-        cursor.execute(ROWS, [NAME_NOT_RECORDED, campaign_id])
+        cursor.execute(ROWS, [NAME_NOT_RECORDED, campaign_id, family, family])
         rows = [dict(zip(COLUMNS, values, strict=True)) for values in cursor]
 
     # The refresh checks (#1689) of the final changes, which place them: only
@@ -684,15 +692,16 @@ def census_rows(campaign_id):
     return [shape(row) for row in rows]
 
 
-def addition_rows(campaign_id):
+def addition_rows(campaign_id, *, family=None):
     """Every census change the parish added in the campaign, worded (#1710).
 
-    The caller has checked who may read them. Each is shaped as a change
-    is (``shape_addition``), so the page, its filters and the downloads
-    treat both alike.
+    ``family`` narrows it to one Family, as ``census_rows``'s does. The
+    caller has checked who may read them. Each is shaped as a change is
+    (``shape_addition``), so the page, its filters and the downloads treat
+    both alike.
     """
     with connection.cursor() as cursor:
-        cursor.execute(ADDITION_ROWS, [NAME_NOT_RECORDED, campaign_id])
+        cursor.execute(ADDITION_ROWS, [NAME_NOT_RECORDED, campaign_id, family, family])
         rows = [dict(zip(ADDITION_COLUMNS, values, strict=True)) for values in cursor]
     return [shape_addition(row) for row in rows]
 
