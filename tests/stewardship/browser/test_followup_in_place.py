@@ -275,7 +275,8 @@ def test_contact_time_takes_any_common_form(page, component_origin):
     has_text(reading, refusal)
     assert time.get_attribute("aria-invalid") == "true"
     assert save.is_disabled()
-    has_text(hint, refusal)
+    # The hint points at the field, which gives the refusal (#2082).
+    has_text(hint, "Fix the time above.")
     time.fill("00:30")
     contact_marked(page, False)
     assert save.is_enabled()
