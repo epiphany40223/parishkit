@@ -1443,26 +1443,35 @@ def test_an_interrupted_prompt_leaves_no_writer_at_the_terminal(host, tmp_path):
     pgrep = tmp_path / "bin" / "pgrep"
     pgrep.write_text("#!/bin/sh\nexit 1\n")
     pgrep.chmod(0o755)
+    # A command that reads the preamble, marks that it now waits at its
+    # prompt, then waits for the answer line: the test interrupts only once
+    # that mark exists, never after a guessed delay (#2077).
+    ready = tmp_path / "docker" / "ready"
+    (tmp_path / "bin" / "docker").write_text(
+        "#!/usr/bin/env bash\n"
+        'IFS= read -r preamble\n: >"$FAKE_DOCKER_READY"\n'
+        'IFS= read -r answer\ncat "$FAKE_DOCKER_OUTPUT"\n'
+    )
     controller, terminal = pty.openpty()
     try:
         process = subprocess.Popen(
             [str(prompting(tmp_path)), "test", "act"],
-            # The command reads the preamble, then waits for the answer.
-            env={**host.environment, "FAKE_DOCKER_LINES": "2"},
+            env={**host.environment, "FAKE_DOCKER_READY": str(ready)},
             stdin=terminal,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             start_new_session=True,
         )
-        arguments = Path(host.environment["FAKE_DOCKER_ARGS"])
-        for _ in range(100):
-            if arguments.exists():
-                break
-            time.sleep(0.1)
-        time.sleep(0.5)
+        deadline = time.monotonic() + 20
+        while not ready.exists():
+            assert time.monotonic() < deadline, "the command never reached its prompt"
+            if process.poll() is not None:
+                errors = process.communicate()[1]
+                pytest.fail(f"the wrapper ended before the prompt: {errors!r}")
+            time.sleep(0.05)
         os.killpg(process.pid, signal.SIGINT)
-        process.communicate(timeout=20)
-        assert process.returncode == 130
+        _, errors = process.communicate(timeout=20)
+        assert process.returncode == 130, errors
         # Nothing of the run is left in its process group: poll until the
         # group is gone (ProcessLookupError). On macOS, a group whose last
         # members are still exiting (zombies not yet reaped) answers EPERM
