@@ -207,35 +207,19 @@ def test_an_entered_addition_is_not_reopened_over_a_second_one(response_service)
 def test_an_entered_addition_is_not_reopened_over_the_familys_open_change(
     response_service,
 ):
-    """An addition added in place of the Family's ignored change, then
-    Entered by hand, frees that change to go back to review; while it is
-    open again, the addition's undo is refused at the note in plain words
-    (``reopen_open_change``) and by SQL."""
+    """Once an addition is Entered by hand the Family may answer its field
+    again; while that change is open, the addition's undo is refused at the
+    note in plain words (``reopen_open_change``) and by SQL. (An ignored
+    change it was added in place of can no longer be reopened under it,
+    #2008, so the Family's own later answer is the open change here.)"""
     from .test_census_add_page_postgresql import worklist
-    from .test_census_pipeline_review_postgresql import decide
-    from .test_census_review_postgresql import fresh
+    from .test_reviewed_form_additions_postgresql import again, set_nickname
 
     harness, _, staff, rows = prepared(response_service)
     campaign = campaign_of(rows)
-    decide(harness, staff, [rows["first_name"]], "ignore")
-    addition, _ = add(
-        harness,
-        staff,
-        campaign,
-        member_form(
-            rows, "first_name", "Robert", in_place_of=str(rows["first_name"].pk)
-        ),
-    )
+    addition, _ = add(harness, staff, campaign, member_form(rows, "nickname", "Bo"))
     step(harness, staff, campaign, addition, 1, "entered")
-    ignored = fresh(rows["first_name"])
-    worklist(
-        harness,
-        staff,
-        campaign,
-        "back_to_review",
-        {str(ignored.pk): ignored.version},
-        note="Family meant it",
-    )
+    again(harness, set_nickname("Rob"))
     with pytest.raises(AddRefusal) as refused:
         worklist(
             harness,
