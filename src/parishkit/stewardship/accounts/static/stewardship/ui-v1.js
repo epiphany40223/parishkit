@@ -6221,13 +6221,35 @@
     // marked data-review-skip (Off-site backups' Test access, which posts in
     // place). A pasted key is reviewed without it (data-review-key, above).
     if (event.submitter?.hasAttribute("data-review-skip")) return;
-    const dialog = document.getElementById(form.dataset.reviewOpen);
+    // A submitter may name a dialog of its own (data-review-open on the
+    // button): the report editor's Preview opens "Preview — not sent", not
+    // the form's review (#2035).
+    const dialog = document.getElementById(event.submitter?.dataset.reviewOpen
+      || form.dataset.reviewOpen);
     if (!(dialog instanceof HTMLDialogElement) || !sameOrigin(formUrl(form))) return;
     event.preventDefault();
     // A repeat (Enter pressed twice) while a Review is prepared is ignored.
     if (reviewing.has(form)) return;
     prepareReview(form, dialog, event.submitter);
   }, true);
+  // Two views of one thing in a dialog, a binary choice (UX conventions,
+  // "Binary choices"; #2035): a report email Preview's Email | Plain text.
+  // Each segment is a button naming its panel (data-view-show); choosing
+  // one shows its panel and hides the other, in place, with no request, and
+  // focus stays on the segment. The pair is drawn with the panels, so a new
+  // answer starts at its first view.
+  document.addEventListener("click", (event) => {
+    const segment = event.target instanceof Element && event.target.closest("[data-view-show]");
+    if (!segment) return;
+    const pair = segment.closest("[data-view-pair]");
+    if (!pair) return;
+    pair.querySelectorAll("[data-view-show]").forEach((button) => {
+      const chosen = button === segment;
+      button.setAttribute("aria-pressed", String(chosen));
+      const panel = document.getElementById(button.dataset.viewShow);
+      if (panel) panel.hidden = !chosen;
+    });
+  });
   // The region a review's Apply redraws as its form's own: the one the form
   // names in data-review-region, else the one it is in.
   const reviewRegion = (form) => (form.dataset.reviewRegion

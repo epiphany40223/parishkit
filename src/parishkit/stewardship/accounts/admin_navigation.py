@@ -786,6 +786,10 @@ NON_PAGES = frozenset(
         "report_email_schedule_preview",
         # A report send's chart images (#1786), PNG files, not pages.
         "report_email_send_image",
+        # The editor's Preview (#2035): a JSON fragment drawn from current
+        # data and the PNG chart images it shows, neither a page.
+        "report_email_render",
+        "report_email_preview_image",
         "security_event_acknowledge",
         # New user's in-place Email check and Name suggestions (#952), JSON.
         "user_name_suggestions",

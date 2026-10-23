@@ -443,6 +443,11 @@ LEDGER = {
     "report_email_send": command("report-email copy"),
     "report_email_send_item": command("report-email copy"),
     "report_email_send_image": permanent(IMAGES),
+    # Preview (#2035): a saved report's row action is report-email render;
+    # the editor's Preview of the unsaved form posts to New or Edit. The
+    # dialog's chart images are drawn again for it.
+    "report_email_render": command("report-email render"),
+    "report_email_preview_image": permanent(IMAGES),
     "logs": command("logs list"),
     "logs_export": command("logs export"),
     # System health (ADM-13): the page, its polled fragment (``--watch``)

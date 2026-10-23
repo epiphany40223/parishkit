@@ -161,6 +161,7 @@ def _context(system, *, administrator, requested):
             "command_id": uuid4(),
             "change_url": reverse("admin:report_email_changes"),
             "send_now_url": reverse("admin:report_email_send_now"),
+            "render_url": reverse("admin:report_email_render"),
         }
     )
 

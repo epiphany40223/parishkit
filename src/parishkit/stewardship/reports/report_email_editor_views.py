@@ -17,6 +17,10 @@ The report-emails spec ("New and Edit report email", "Review and Apply",
   sends and Send selected sends, from the Next sends table, each naming
   one or more ``send`` slot keys) and ``action=delete_preview`` (Delete)
   review those changes the same way.
+- ``action=preview`` with ``render=yes`` (Preview, #2035) draws the
+  unsaved form from current data in its own dialog
+  (``report_email_preview_views.preview_answer``), saving nothing; a
+  refused field answers as Review does.
 - ``action=confirm`` (the dialog's Apply) records the signed change under
   the work lock (``confirm_intent``). A change whose report would send
   after the campaign's last day needs the dialog's "Send after the campaign
@@ -96,6 +100,8 @@ FIELDS = frozenset(
         "action",
         "csrfmiddlewaretoken",
         "base_digest",
+        # The editor's Preview (#2035) posts the form with render=yes.
+        "render",
         *editor.EditorForm.base_fields,
     }
 )
@@ -522,9 +528,15 @@ def _editor(request, campaign_id, report_id=None):
                 form=form,
                 status=200 if request.method == "GET" else 400,
             )
-        given = {
-            name: value for name, value in form.values().items() if name in EDITABLE
-        }
+        values = form.values()
+    if request.POST.get("render") == "yes":
+        # Preview of the unsaved form (spec, "Preview"): drawn, never saved.
+        from .report_email_preview_views import preview_answer
+
+        return preview_answer(
+            request, actor, values, subject_id=report_id or campaign_id
+        )
+    given = {name: value for name, value in values.items() if name in EDITABLE}
     entries = [
         {"operation": "create", "values": given}
         if report_id is None

@@ -18,6 +18,10 @@ line"; admin-automation, "Rules for new Admin actions"):
   current state, never a Family's text; it records the page's
   ``report_email_viewed``. A daily or weekly digest saved before the
   conversion is read through its own page's functions (``admin_digests``).
+- ``report-email render REPORT`` is the row's Preview (#2035): the
+  report drawn from current data, its subject, text part and recipients,
+  never its HTML; Administrators only; it records the page's
+  ``report_email_previewed``.
 - ``report-email send-now REPORT`` is the row's Send now, keyed by its
   request key, with the dialog's words asked at the prompt (or ``--yes``).
 - ``report-email preview`` and ``confirm`` are the row's Pause, Resume and
@@ -27,7 +31,7 @@ line"; admin-automation, "Rules for new Admin actions"):
   token is confirmed under the work lock as every schedule change is.
 
 The reads admit passively as the page does and record no event, except
-``copy``, which records the saved copy page's own.
+``copy`` and ``render``, which record their pages' own.
 """
 
 from dataclasses import dataclass
@@ -119,6 +123,31 @@ class ReportEmailCopy(ReadModel):
     covers: str
     recipients: dict
     blocks: list
+
+
+@dataclass(frozen=True)
+class ReportEmailRender(ReadModel):
+    """A report email drawn from current data, as its Preview shows it (#2035).
+
+    ``subject`` and ``text`` are the email's subject and plain-text part
+    (never its HTML); ``as_of`` the report's as-of choice and ``as_of_at``
+    the moment every figure is counted at; ``updating`` says the figures
+    are not those a send would build now. ``recipients`` are who it would
+    go to now, by kind (``users``, ``groups``, ``outside`` and
+    ``outside_count``), as the dialog names them. ``mode`` is Production or
+    Testing, where every message goes to the Testing recipient.
+    """
+
+    id: UUID
+    campaign_id: UUID
+    name: str
+    subject: str
+    text: str
+    as_of: str
+    as_of_at: str
+    updating: bool
+    mode: str
+    recipients: dict
 
 
 @dataclass(frozen=True)
@@ -518,6 +547,56 @@ def read_copy(caller, service, send_id, *, page):
     if WeeklyDigestSnapshot.objects.filter(pk=send_id).exists():
         return read_digest(caller, service, send_id, kind="weekly", page=page)
     raise NotAvailable("No such saved copy.")
+
+
+def read_render(caller, service, report_id, *, campaign_id):
+    """``report-email render REPORT``: the row's Preview, as its dialog draws it.
+
+    Administrators only, any session scope: the report compiled from
+    current data by the page's own function, in one read snapshot, then the
+    page's audit event (``report_email_previewed``). No ParishSoft data yet,
+    or a chart that cannot be drawn, is ``not_available``.
+    """
+    from .accounts.policy import Capability
+    from .campaigns.work_locks import read_transaction
+    from .reports.export_services import admit_campaign
+    from .reports.report_email_copy import recipients_by_kind
+    from .reports.report_email_list import version_user_names
+    from .reports.report_email_preview_views import _audit, draw
+
+    def step():
+        """Admit an Administrator, draw the report and recheck."""
+        actor = _admit(caller, service, _report_principal)
+        if not _administrator(actor):
+            raise PermissionError("Only Administrators preview report emails.")
+        with read_transaction():
+            system, campaign = _system(campaign_id)
+            values = _record(system, campaign.pk, report_id)["values"]
+            admit_campaign(campaign.pk, mutating=False)
+            try:
+                preview = draw(values, system, campaign)
+            except LookupError as error:
+                raise NotAvailable(str(error)) from None
+            names = version_user_names(system.active_configuration)
+            parish_id = system.active_configuration.parish.pk
+        _recheck(caller, service.store, actor, Capability.CONFIGURE)
+        _audit(actor, report_id, campaign.pk, parish_id)
+        return ReportEmailRender(
+            id=report_id,
+            campaign_id=campaign.pk,
+            name=values["name"],
+            subject=preview.subject,
+            text=preview.text,
+            as_of=preview.as_of,
+            as_of_at=preview.as_of_at.isoformat(),
+            updating=preview.updating,
+            mode=preview.mode,
+            recipients=recipients_by_kind(
+                preview.recipients, names, administrator=True
+            ),
+        )
+
+    return _held(step)
 
 
 def send_now_lines(caller, service, report_id, *, campaign_id):

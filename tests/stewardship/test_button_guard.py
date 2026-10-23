@@ -41,6 +41,10 @@ RAW_ALLOWED = {
     # is marked aria-current inside its own tag, which the block tag cannot
     # take.
     "components/segmented-choice.html": 2,
+    # A report email Preview's Email | Plain text (#2035): the same
+    # segmented look inside a dialog, two views switched in place with no
+    # address, each marked aria-pressed, never portal buttons.
+    "report-email-preview.html": 2,
 }
 
 COMMENT = re.compile(r"{% comment %}.*?{% endcomment %}", re.S)

@@ -7,6 +7,7 @@ and one deleted report with a past send. The page shows names, schedules,
 times and results only, never report data.
 """
 
+import re
 from datetime import UTC, date, datetime
 from types import SimpleNamespace
 from uuid import UUID
@@ -83,7 +84,13 @@ def rows():
             WEEKLY,
             "Weekly report",
             "upcoming",
-            actions={"edit": None, "send_now": None, "pause": None, "delete": None},
+            actions={
+                "edit": None,
+                "preview": None,
+                "send_now": None,
+                "pause": None,
+                "delete": None,
+            },
             sends=[
                 _send(0, count=12),
                 _send(1, how="manual", count=0),
@@ -96,6 +103,7 @@ def rows():
             "Finance council report",
             "sending",
             actions={
+                "preview": None,
                 "send_now": IN_PROGRESS_REASON,
                 "pause": IN_PROGRESS_REASON,
                 "delete": IN_PROGRESS_REASON,
@@ -109,6 +117,7 @@ def rows():
             "paused",
             actions={
                 "edit": None,
+                "preview": None,
                 "send_now": None,
                 "resume": None,
                 "delete": None,
@@ -146,6 +155,7 @@ def _page(context, admin, *, administrator):
             "command_id": UUID(int=9),
             "change_url": "/admin/mail/report-emails/changes/",
             "send_now_url": "/admin/mail/report-emails/manual-sends/",
+            "render_url": RENDER,
         },
     )
 
@@ -160,3 +170,101 @@ def components(context, admin):
 
 # Kept beside the components so the tests name the reasons the rows show.
 REASONS = (IN_PROGRESS_REASON, ATTENTION_REASON)
+
+
+# Where a row's Preview posts (#2035); the test routes its answer.
+RENDER = "/admin/mail/report-emails/previews/"
+# The synthetic preview's chart image address, which the test routes too.
+PREVIEW_IMAGE = "/admin/mail/report-emails/previews/synthetic/participation.png"
+
+
+def _weekly_email(mode):
+    """A Weekly-shaped email: one open request and the Response funnel.
+
+    Its request row and closing button link where a preview links them (the
+    live request, the Report emails page), as ``preview_report`` draws them.
+    """
+    from parishkit.stewardship.reports.report_blocks.compiler import compile_report
+    from parishkit.stewardship.reports.report_document import ReportDocument
+    from parishkit.stewardship.reports.weekly_digest import WeeklyInformation
+
+    from ..test_daily_digest_content import funnel_metrics
+
+    document = ReportDocument(
+        send_id=UUID(int=77),
+        name="Weekly report",
+        as_of="send_time",
+        as_of_at=NOW,
+        campaign_timezone="America/New_York",
+        mode=mode,
+        covered_dates=(date(2054, 10, 20),),
+        # The sample funnel is Production's; a Testing report draws none.
+        funnel=funnel_metrics() if mode == "production" else None,
+        information=(
+            WeeklyInformation(UUID(int=3), 1234, "A & B", NOW, "Please call us."),
+        ),
+    )
+    report = compile_report(
+        document,
+        ["additional_information", "response_funnel"],
+        public_origin="https://parish.example",
+        copy_path="/admin/mail/report-emails/",
+        requests_path="/admin/reports/information/",
+    )
+    return report.html, report.text
+
+
+def _daily_email(mode):
+    """A Daily-shaped email: every fact block but the server-drawn comparison.
+
+    The opening line's dashboard link, the section headings, the totals'
+    bars, the funnel's and day-by-day tables' headers and the chart, whose
+    image is pointed at ``PREVIEW_IMAGE`` as the view points it.
+    """
+    from dataclasses import replace
+
+    from parishkit.stewardship.reports.daily_digest import DAILY_BLOCKS
+    from parishkit.stewardship.reports.report_blocks.compiler import compile_report
+
+    from ..test_daily_digest_content import document, funnel_metrics
+
+    value = replace(document(), funnel=funnel_metrics(), mode=mode)
+    keys = [key for key in DAILY_BLOCKS if key != "compared_with_past_campaigns"]
+    report = compile_report(value, keys, public_origin="https://parish.example")
+    html = re.sub(r'src="cid:[^"]+"', f'src="{PREVIEW_IMAGE}"', report.html)
+    return html, report.text
+
+
+def preview_answer(*, shape="weekly", updating=False, testing=False):
+    """The Preview dialog's answer, from the real template and compiler.
+
+    ``shape`` is "weekly" (``_weekly_email``) or "daily" (``_daily_email``):
+    a real report email compiled by the one report compiler, so the page's
+    styles meet its real headings, links and tables.
+    """
+    from django.utils.safestring import mark_safe
+
+    mode = "testing" if testing else "production"
+    html, text = (_daily_email if shape == "daily" else _weekly_email)(mode)
+    name = "Daily report" if shape == "daily" else "Weekly report"
+    preview = SimpleNamespace(
+        subject=f"{name} — October 20, 2054 (Annual campaign, Example Parish)",
+        text=text,
+        updating=updating,
+        fact_set_id=None,
+        mode=mode,
+    )
+    return render_to_string(
+        "stewardship/report-email-preview.html",
+        {
+            "preview": preview,
+            "name": name,
+            "recipients": {
+                "users": ["Pat Doe"],
+                "groups": [{"name": "All Administrators", "people": 2}],
+                "outside": ["council@example.org"],
+                "outside_count": 1,
+            },
+            "email": mark_safe(html),
+        },
+    )

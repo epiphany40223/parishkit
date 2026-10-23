@@ -23,6 +23,7 @@ from ..jobs import delivery_views, mail_queue_views, send_history_views
 from ..reports import (
     report_email_copy_views,
     report_email_editor_views,
+    report_email_preview_views,
     report_email_views,
 )
 from ..web.admin_routes import current_campaign
@@ -68,6 +69,18 @@ patterns = [
         "mail/report-emails/manual-sends/",
         current_campaign(report_email_views.report_email_send_now),
         name="report_email_send_now",
+    ),
+    # Preview of a saved report email, the row action's dialog, and the
+    # dialog's chart images, drawn again from a signed recipe (#2035).
+    path(
+        "mail/report-emails/previews/",
+        current_campaign(report_email_preview_views.report_email_render),
+        name="report_email_render",
+    ),
+    path(
+        "mail/report-emails/previews/<str:token>/<str:name>.png",
+        current_campaign(report_email_preview_views.report_email_preview_image),
+        name="report_email_preview_image",
     ),
     # New and Edit report email (#1786, delivery plan item 6), and the
     # editor's live schedule preview, a POST its script reads. "new/" and

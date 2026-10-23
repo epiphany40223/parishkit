@@ -205,6 +205,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "report-email show",
         "report-email sends",
         "report-email copy",
+        "report-email render",
         "report-email send-now",
         "report-email preview",
         "report-email confirm",
@@ -810,6 +811,13 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert copy["scope"] == "read_only" and not copy["changes_state"]
     assert copy["audit_event"] == "report_email_viewed"
     assert copy["arguments"] == ["SEND"]
+    # Preview (#2035) is an audited read of a saved report, as its row's is.
+    render = entries["report-email render"]
+    assert render["scope"] == "read_only" and not render["changes_state"]
+    assert render["audit_event"] == "report_email_previewed"
+    assert render["arguments"] == ["REPORT"]
+    assert "text" in render["result_fields"]
+    assert "html" not in render["result_fields"]
     # The Family-level exports: full-scope, keyed changes that create an
     # export record (fetched with export fetch), never a search option.
     # The campaign archive (#1018 part (a)) is the same kind of keyed,

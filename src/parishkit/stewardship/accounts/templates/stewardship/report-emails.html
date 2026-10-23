@@ -7,7 +7,10 @@ the action forms, the table, each report's past sends and the deleted reports,
 so the hidden re-read link (every 30 seconds) and every row action redraw it in
 place. Row actions are icon buttons that open the row actions' confirmation
 dialog; an action the row cannot take now stays in place, unavailable, with its
-reason in its tooltip. Staff see no recipients, no actions and no Edit links.
+reason in its tooltip. Preview (#2035) posts the report to the
+report-preview form, whose answer fills the "Preview — not sent" review
+dialog, which has no Apply. Staff see no recipients, no actions and no Edit
+links.
 A Paused status takes the Warning look of the UX conventions' status
 indicators (#1966): the warning icon, hidden from assistive technology, and
 the warning colours, with the word kept, since a paused report silently
@@ -28,6 +31,7 @@ stops sending.
 <form method="post" action="{{ change_url }}" id="report-pause">{% csrf_token %}<input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="operation" value="pause"></form>
 <form method="post" action="{{ change_url }}" id="report-resume">{% csrf_token %}<input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="operation" value="resume"></form>
 <form method="post" action="{{ change_url }}" id="report-delete">{% csrf_token %}<input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="operation" value="delete"></form>
+<form method="post" action="{{ render_url }}" id="report-preview" data-review-open="report-preview-dialog">{% csrf_token %}</form>
 <form method="post" action="{{ send_now_url }}" id="report-send-now">{% csrf_token %}<input type="hidden" name="command_id" value="{{ command_id }}"><input type="hidden" name="configuration_id" value="{{ configuration_id }}"></form>
 {% endif %}
 {% if rows %}<div class="table-scroll" tabindex="0" role="region" aria-labelledby="report-emails-caption">
@@ -63,6 +67,7 @@ stops sending.
 </details>{% endif %}
 </section>
 {% if administrator and not archived %}
+{% translate "Preview — not sent" as preview_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="report-preview-dialog" title=preview_title apply_url=render_url fallback="report-emails-title" cancel=_("Close") %}
 {% translate "Pause {name}?" as title %}{% translate "No email is sent while it is paused, and sends missed while it is paused are not made later. Resume starts its sends again." as body %}
 {% include "stewardship/components/confirm-dialog.html" with dialog_id="report-pause-dialog" form_id="report-pause" fallback="report-emails-title" title_one=title title_many=title body=body accept=_("Pause") plain_accept=True done_one=_("Paused {name}.") done_many=_("Paused {name}.") %}
 {% translate "Resume {name}?" as title %}{% translate "Its sends start again with the next one its schedule makes. Sends missed while it was paused are not made." as body %}

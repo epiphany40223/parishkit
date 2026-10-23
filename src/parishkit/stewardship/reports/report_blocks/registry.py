@@ -53,12 +53,16 @@ class Frame:
 
     ``public_origin`` is the portal's public origin; ``dashboard_url`` the
     Response dashboard's address (None in a report with no opening line);
-    ``copy_url`` the send's saved copy (None when the report has none).
+    ``copy_url`` the send's saved copy (None when the report has none);
+    ``requests_url`` the address each listed request's id (and a slash)
+    completes: the saved copy's own request pages, or the live requests
+    in a Preview, which has no saved copy.
     """
 
     public_origin: str
     dashboard_url: str | None = None
     copy_url: str | None = None
+    requests_url: str | None = None
 
 
 @dataclass(frozen=True)

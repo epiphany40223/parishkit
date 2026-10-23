@@ -1,0 +1,23 @@
+{% load i18n %}{% comment %}
+A report email's Preview (report-emails spec, "Preview", #2035;
+reports/report_email_preview_views.py): the review dialog's answer, with
+no signed preview, so the dialog ("Preview — not sent") offers no Apply.
+It names the subject and who the email would go to now, says when the
+figures are Updating and when Testing sends every message to the Testing
+recipient, then shows the email under a binary choice (UX conventions,
+"Binary choices"): Email, the compiled markup as the saved copy shows it,
+or Plain text, its text part. The email's panel is a light card, light in
+either scheme as a recipient sees it. ui-v1.js switches the two in place
+([data-view-pair]); the email's chart images are drawn again for the
+dialog through their preview addresses.
+{% endcomment %}<div data-review-answer data-report-preview>
+{% if preview.updating %}<p class="notice">{% if preview.fact_set_id %}{% translate "Updating — the newest figures are still being prepared, so this preview shows the latest complete ones. A send uses the newest." %}{% else %}{% translate "Updating — no complete figures are ready yet, so the figure blocks show their empty lines. A send uses the newest figures." %}{% endif %}</p>{% endif %}
+{% if preview.mode == 'testing' %}<p class="notice">{% translate "Testing mode: every message of this report would go to the Testing recipient." %}</p>{% endif %}
+<dl class="report-preview-recipients">
+<dt>{% translate "Subject" %}</dt><dd data-preview-subject>{{ preview.subject }}</dd>
+<dt>{% translate "Recipients now" %}</dt><dd data-preview-recipients>{% if recipients.users or recipients.groups or recipients.outside_count %}{% for group in recipients.groups %}{% blocktranslate with name=group.name count people=group.people %}{{ name }} ({{ people }} person){% plural %}{{ name }} ({{ people }} people){% endblocktranslate %}{% if not forloop.last or recipients.users or recipients.outside %}; {% endif %}{% endfor %}{{ recipients.users|join:", " }}{% if recipients.users and recipients.outside %}; {% endif %}{{ recipients.outside|join:", " }}{% else %}{% translate "Nobody: the report has no current recipients, so a send now would go to no one." %}{% endif %}</dd>
+</dl>
+<div class="segmented-choice" role="group" aria-labelledby="report-preview-view-label" data-view-pair><span class="segmented-choice-label" id="report-preview-view-label">{% translate "Show" %}</span> <span class="segmented-choice-options"><button type="button" aria-pressed="true" aria-controls="report-preview-email" data-view-show="report-preview-email">{% translate "Email" %}</button><button type="button" aria-pressed="false" aria-controls="report-preview-text" data-view-show="report-preview-text">{% translate "Plain text" %}</button></span></div>
+<div id="report-preview-email" class="report-email-copy light-card" role="region" aria-label="{% translate 'The email' %}" data-preview-email>{{ email }}</div>
+<pre id="report-preview-text" class="report-preview-text" role="region" aria-label="{% translate 'The plain text' %}" data-preview-text hidden>{{ preview.text }}</pre>
+</div>
