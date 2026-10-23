@@ -942,7 +942,11 @@ configuration still holds a digest.
   [database functions](../report-emails/spec.md#database-functions))
   drops the digest kinds and the digest write functions. It refuses, naming
   the count, while any schedule definition is still a digest, so upgrade
-  to it only from a release whose conversion has already run. The scripted
+  to it only from a release whose conversion has already run. The release
+  helper refuses to tag a tree with the retirement file (0171) unless the
+  previous release already had the conversion's (0161)
+  ([operator scripts](../../../guides/stewardship-operator-scripts.md#releases)),
+  so the two never ship in one release. The scripted
   upgrade checks this in its step 1, before it stops anything: when the new
   image has the retirement file (0171) and the database has not applied
   the conversion's migration (`stewardship_reports.0041`) or still has a
