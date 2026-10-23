@@ -4,7 +4,8 @@
 saved emails alone: the Initial invitation on the start date at 9:00 AM and
 one Reminder seven days before the end date at 9:00 AM, each sending the
 first saved email of its mail type, with the rules that leave one out. No
-report is suggested (#1786).
+digest is suggested (#1786); the report emails' starting points are
+``suggested_reports``' (test_suggested_reports).
 """
 
 from datetime import UTC, datetime

@@ -7,6 +7,11 @@ continue posts only the page's version and request key. The server adds the
 same set in one configuration change at once; a repeat returns that change's
 status, a page drawn before it is refused, and once the wizard no longer
 applies nothing is suggested and a late save records nothing.
+
+The same panel offers the report emails' Daily and Weekly starting points
+(#2038): each ticked one is added in that one change, so the Family
+schedules and the reports apply in one configuration version; a ticked
+report without a time is refused at its time field with nothing recorded.
 """
 
 import re
@@ -27,6 +32,7 @@ from ..campaign_factory import campaign as campaign_record
 from ..content_factory import content
 from .auth_builders import signed_in
 from .campaign_builders import change
+from .report_builders import users_form
 from .test_campaign_setup_review_postgresql import web
 from .test_campaign_stepper_postgresql import status_of, stepper
 from .test_campaign_views_postgresql import apply, post, requested
@@ -92,8 +98,11 @@ def test_the_suggested_schedules_are_listed_and_added(auth_service, google):
     )
     assert kinds == ["initial", "reminder"]
     assert body.count('<span class="status-badge">Not saved yet</span>') == 2
-    # Report emails replaced the digests: none is suggested (#1786).
-    assert "Every Monday" not in body
+    # Report emails replaced the digests: no digest is a suggested
+    # schedule (#1786). Report emails exist only in the users form, which
+    # this fixture's sign-in rules are not in, so none is offered (#2038).
+    assert "data-suggested-report" not in body
+    assert "data-require-complete" not in body.split('id="suggested-schedules-form"')[1]
     assert 'data-direct-saved="Suggested schedules added."' in body
     assert re.search(
         r'<button type="submit" form="suggested-schedules-form" [^>]*'
@@ -114,6 +123,8 @@ def test_the_suggested_schedules_are_listed_and_added(auth_service, google):
     assert recorded.request_key == direct_key(QueryDict(urlencode(data)))
     assert ConfigurationChangeRequest.objects.count() == requests + 1
     apply(store, response)
+    # Nothing ticked (the fields left unposted): no report email is added.
+    assert not ScheduleDefinition.objects.filter(kind="report").exists()
     saved = {
         row.kind: row.current_revision.values
         for row in ScheduleDefinition.objects.filter(current_revision__isnull=False)
@@ -285,3 +296,145 @@ def test_send_work_that_blocks_the_change_refuses_it(auth_service, google, monke
     assert refused.status_code == 409
     assert refused.stewardship_reason == "send_work_blocks"
     assert ConfigurationChangeRequest.objects.count() == requests
+
+
+def ticks(**times):
+    """The suggested report emails' posted fields: each named key ticked
+    with its typed time, in the parish's own zone."""
+    fields = {"zone": "America/New_York"}
+    for key, typed in times.items():
+        fields |= {f"report_{key}": "yes", f"report_{key}_time": typed}
+    return fields
+
+
+def test_ticked_report_emails_are_added_with_the_schedules(auth_service, google):
+    """Both reports and both Family schedules apply in one configuration version."""
+    store = auth_service.store
+    setup(store)
+    users_form(store)
+    browser, _ = signed_in()
+    with web():
+        body = unescape(browser.get(LIST).content.decode())
+    assert '<h3 id="suggested-reports-title">Suggested report emails</h3>' in body
+    data = drawn(body) | ticks(daily="7:00 AM", weekly="8:30 AM")
+    requests = ConfigurationChangeRequest.objects.count()
+    with web():
+        response = post(browser, SUGGESTED, data)
+    assert response.status_code == 302
+    assert ConfigurationChangeRequest.objects.count() == requests + 1
+    apply(store, response)
+    rows = list(ScheduleDefinition.objects.filter(current_revision__isnull=False))
+    assert sorted(row.kind for row in rows) == [
+        "initial",
+        "reminder",
+        "report",
+        "report",
+    ]
+    # One applied version holds all four: the save is one change.
+    assert len({row.current_revision.configuration_id for row in rows}) == 1
+    reports = {
+        row.current_revision.values["name"]: row.current_revision.values
+        for row in rows
+        if row.kind == "report"
+    }
+    assert set(reports) == {"Daily report", "Weekly report"}
+    assert reports["Daily report"]["schedule"]["time"] == "07:00:00"
+    assert reports["Weekly report"]["schedule"]["time"] == "08:30:00"
+    assert reports["Weekly report"]["recipients"] == [{"group": "administrators"}]
+    assert reports["Daily report"]["slot_basis"] == "send_date"
+
+
+def test_one_ticked_report_is_added_alone(auth_service, google):
+    """An unticked row adds nothing, even with a time posted."""
+    store = auth_service.store
+    setup(store)
+    users_form(store)
+    browser, _ = signed_in()
+    with web():
+        data = drawn(unescape(browser.get(LIST).content.decode()))
+    data |= ticks(weekly="9:15 AM") | {"report_daily_time": "7:00 AM"}
+    with web():
+        response = post(browser, SUGGESTED, data)
+    assert response.status_code == 302
+    apply(store, response)
+    names = [
+        row.current_revision.values["name"]
+        for row in ScheduleDefinition.objects.filter(
+            kind="report", current_revision__isnull=False
+        )
+    ]
+    assert names == ["Weekly report"]
+
+
+def test_a_ticked_report_without_a_time_is_refused_at_its_field(auth_service, google):
+    """The page is drawn again (400) with the error at the time field.
+
+    Nothing is recorded: neither the Family schedules nor the other,
+    complete, report.
+    """
+    store = auth_service.store
+    setup(store)
+    users_form(store)
+    browser, _ = signed_in()
+    with web():
+        data = drawn(unescape(browser.get(LIST).content.decode()))
+    data |= ticks(weekly="9:15 AM") | {"report_daily": "yes", "report_daily_time": ""}
+    requests = ConfigurationChangeRequest.objects.count()
+    with web():
+        refused = post(browser, SUGGESTED, data)
+    assert refused.status_code == 400
+    page = unescape(refused.content.decode())
+
+    error = re.search(
+        r'<ul class="errorlist" id="suggested-report_daily_time_error">(.*?)</ul>',
+        page,
+    )
+    assert error and "Enter the time it sends, or untick it." in error.group(1)
+    assert 'id="suggested-report_daily_time"' in page
+    assert re.search(r'id="suggested-report_daily_time"[^>]*aria-invalid="true"', page)
+    # What was typed is kept: the Weekly's time and both ticks.
+    assert 'value="9:15 AM"' in page
+    assert ConfigurationChangeRequest.objects.count() == requests
+    assert not ScheduleDefinition.objects.filter(
+        current_revision__isnull=False
+    ).exists()
+    # An unknown field is still refused outright.
+    with web():
+        extra = post(browser, SUGGESTED, data | {"report_monthly": "yes"})
+    assert extra.status_code == 400
+    assert ConfigurationChangeRequest.objects.count() == requests
+
+
+def test_a_report_the_campaign_has_is_not_suggested(auth_service, google):
+    """A saved report named like a starting point leaves that one out."""
+    from parishkit.stewardship.campaigns.report_presets import DAILY, starting_point
+
+    store = auth_service.store
+    emails = setup(store)
+    users_form(store)
+    owner = emails["initial"]["values"]["campaign_id"]
+    report = starting_point(DAILY, owner)
+    report["schedule"]["time"] = "07:00:00"
+    result = change(
+        store,
+        store.active(),
+        uuid4(),
+        [
+            {
+                "operation": "add",
+                "section": "schedules",
+                "id": str(uuid4()),
+                "values": report,
+            }
+        ],
+    )
+    assert result.state == "applied"
+    browser, _ = signed_in()
+    with web():
+        body = unescape(browser.get(LIST).content.decode())
+    assert re.findall(r'data-suggested-report="(\w+)"', body) == ["weekly"]
+    data = drawn(body) | ticks(daily="7:00 AM")
+    with web():
+        refused = post(browser, SUGGESTED, data)
+    # The Daily's fields are no longer the page's: an unknown request.
+    assert refused.status_code == 400

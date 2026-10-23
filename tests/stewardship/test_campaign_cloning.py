@@ -148,3 +148,20 @@ def test_clone_carries_share_option_short_labels():
     assert not {row["id"] for row in cloned} & {
         row["id"] for row in source["values"]["share_options"]
     }
+
+
+def test_clone_leaves_report_emails_behind():
+    """A copy takes Family mail only, never the source's report emails.
+
+    Its reports start from New report email's Start from: the copy has
+    Family schedules, so its schedule step suggests none (report-emails
+    spec, "Suggested report emails", #2038).
+    """
+    from parishkit.stewardship.campaigns.report_presets import DAILY, starting_point
+
+    document, source = example()
+    report = starting_point(DAILY, source["id"])
+    report["schedule"]["time"] = "07:00:00"
+    document["sections"]["schedules"].append({"id": str(uuid4()), "values": report})
+    _previous, _content, schedules = clone_structures(document, source, uuid4())
+    assert [row["values"]["kind"] for row in schedules] == ["initial", "reminder"]

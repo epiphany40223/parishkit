@@ -24,8 +24,17 @@ the suggested starting schedules (schedule_suggestions) as the table lists
 saved ones, each "Not saved yet", and holds the form the action row's Add
 these schedules and continue posts (data-direct-save, followed in place by
 ui-v1.js, which then opens the next step with "Suggested schedules added.").
-The form carries only the page's version and request key: the server works
-the same set out again.
+The form carries the page's version and request key (the server works the
+same set out again) and, after the table, the Suggested report emails
+(suggested_reports, #2038): per starting point a checkbox ticked when drawn,
+its plain-words rule, recipients and blocks, a time entry typed in this
+browser's zone (posted as zone) and greyed while unticked
+(data-enabled-when, so ticking moves nothing), and "Not saved yet". The
+form's complete gate holds Add while a ticked row's time is empty or
+unreadable, saying so in the reserved hint; a refused save draws this page
+again (400, redraw: on the save's own address, where the wizard is not
+drawn), whose time errors ui-v1.js places in each row's reserved
+error line.
 {% endcomment %}{% with suggest=admin_chrome.campaign_wizard.suggest %}
 <h1>{% translate "Dates and mail schedules" %}</h1>
 {% aboutpage "schedules" %}{% include 'stewardship/schedule-guide.html' %}
@@ -72,7 +81,7 @@ the same set out again.
 <p class="help">{% translate "Every reminder sends after the Initial invitation, and no two Family emails share a date and time." %}</p>
 <p>{% translate "Report emails to Administrators, Staff and others are on" %} {% menu_link "report_emails" _("Report emails") %}.</p>
 </section>
-{% if suggest and suggested %}<section id="suggested-schedules" class="panel" aria-labelledby="suggested-schedules-title">
+{% if suggest and suggested or redraw and suggested %}<section id="suggested-schedules" class="panel" aria-labelledby="suggested-schedules-title">
 <h2 id="suggested-schedules-title">{% translate "Suggested schedules" %}</h2>
 <p class="help">{% translate "A starting set for this campaign. Add these schedules and continue saves them; you can change or delete any of them later." %}</p>
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="suggested-schedules-caption">
@@ -94,6 +103,32 @@ the same set out again.
   </tbody>
 </table>
 </div>
-<form method="post" action="{{ suggested_url }}" id="suggested-schedules-form" data-direct-save data-direct-saved="{% translate 'Suggested schedules added.' %}">{% csrf_token %}<input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="request_key" value="{{ admin_chrome.campaign_wizard.save_key }}"></form>
+<form method="post" action="{{ suggested_url }}" id="suggested-schedules-form" data-direct-save data-direct-saved="{% translate 'Suggested schedules added.' %}"{% if suggested_reports %} data-require-complete{% endif %}>{% csrf_token %}<input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="request_key" value="{{ admin_chrome.campaign_wizard.save_key }}">
+{% if suggested_reports %}<input type="hidden" name="zone" value="" data-browser-zone data-zone-missing-hint="{% translate "Your browser didn't report a time zone, so the send times can't be read. Check your computer's time zone setting, then reload this page." %}">
+<h3 id="suggested-reports-title">{% translate "Suggested report emails" %}</h3>
+<p class="help">{% translate "Report emails to Administrators about how the campaign is going. Each ticked one is added with the schedules above; untick any you don't want. You can change, pause or delete them later on Report emails." %}</p>
+{% translate "Enter each time in this computer's time zone:" as note_text %}{% include "stewardship/components/zone-note.html" with note_text=note_text note_id="suggested-reports-zone-note" %}
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="suggested-reports-caption">
+<table class="data-table whole-words suggested-reports-table">
+  <caption id="suggested-reports-caption" class="visually-hidden">{% translate "Suggested report emails" %}</caption>
+  <thead><tr>
+    <th scope="col">{% translate "Report email" %}</th>
+    <th scope="col">{% translate "What it sends" %}</th>
+    <th scope="col">{% translate "Time" %}</th>
+    <th scope="col">{% translate "Status" %}</th>
+  </tr></thead>
+  <tbody>
+  {% for row in suggested_reports %}<tr data-suggested-report="{{ row.key }}">
+    <th scope="row"><label for="{{ row.tick.id_for_label }}"><input type="checkbox" name="{{ row.tick.html_name }}" id="{{ row.tick.id_for_label }}" value="yes"{% if row.tick.value %} checked{% endif %}> {{ row.name }}</label></th>
+    <td>{{ row.rule }} {% blocktranslate trimmed with recipients=row.recipients %}To {{ recipients }}.{% endblocktranslate %} {% blocktranslate trimmed with blocks=row.blocks %}Shows {{ blocks }}.{% endblocktranslate %}</td>
+    <td><div class="field" data-missing-hint="{% blocktranslate trimmed with name=row.name %}Enter the time {{ name }} sends, or untick it.{% endblocktranslate %}"><label class="visually-hidden" for="{{ row.time.id_for_label }}">{% blocktranslate trimmed with name=row.name %}Time for {{ name }}{% endblocktranslate %}</label>
+<input type="text" name="{{ row.time.html_name }}" id="{{ row.time.id_for_label }}" value="{{ row.time.value|default:'' }}" maxlength="32" required autocomplete="off" spellcheck="false" autocapitalize="off" data-time-entry="time" data-browser-zone-field data-enabled-when="{{ row.tick.html_name }}=yes" aria-describedby="suggested-reports-zone-note{% if row.time.errors %} {{ row.time.id_for_label }}_error{% endif %}"{% if row.time.errors %} aria-invalid="true"{% endif %}>
+<div class="field-error-line" role="status"><ul class="errorlist" id="{{ row.time.id_for_label }}_error"{% if not row.time.errors %} hidden{% endif %}>{% for error in row.time.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></div></td>
+    <td><span class="status-badge">{% translate "Not saved yet" %}</span></td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="help" id="suggested-reports-hint" data-complete-hint="reserve" role="status"></p>{% endif %}</form>
 </section>{% endif %}{% endwith %}
 {% endblock %}

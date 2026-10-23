@@ -1666,6 +1666,51 @@ the step's one save. Elsewhere, Start from fills New report email's form.
 Neither is required for go-live: Go live no longer checks digest
 schedules.
 
+### Suggested report emails
+
+The list is part of the step's
+[suggested schedules](../admin-portal/spec.md#create-the-campaign) panel
+(#2038), after its table, and is drawn only while that panel is: inside the
+campaign wizard, on a campaign with no Family schedule saved and an Initial
+invitation still to send. A starting point whose name a report of the
+campaign already has is left out (it is there already), and the list with
+it once both are. Each row has:
+
+- a checkbox, ticked when the page is drawn, labeled with the report's name;
+- a plain-words summary: its days and bounds ("Every day, from the day
+  after the campaign starts until the day after it ends"), a sentence
+  that it keeps sending after the campaign's last day, its recipients
+  (All Administrators) and its blocks in order;
+- a **Time** field, a [time entry](../ui-conventions/spec.md#time-entry)
+  typed in this computer's time zone, empty when drawn (the starting
+  points have no time), required while the row is ticked and greyed in
+  place while it is not
+  ([conditional fields](../ui-conventions/spec.md#conditional-fields)), so
+  ticking moves nothing;
+- the status "Not saved yet".
+
+While a ticked row's time is empty or unreadable, Add these schedules and
+continue is unavailable, its reserved hint after the button saying so
+([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)); the
+server checks the same: a ticked report without a readable time is
+refused at its own time field, with nothing saved. **Add these schedules
+and continue** builds one change: the suggested Family schedules, worked
+out again on the server as before, and one `create` entry per ticked
+report, each the starting point with its time, checked by the
+[New report email checks](#new-and-edit-report-email) (as
+`report-email preview` checks a `create`). It is signed, recorded and
+audited as one configuration change, so Family schedules and reports are
+applied in one configuration version or not at all. With nothing ticked
+it adds the Family schedules alone. **Continue without schedules for now**
+saves neither. Both reports end the day after the campaign's last day, a
+send after its end (decision 9); the wizard saves without a review dialog,
+so each row's summary says so and ticking the row is the confirmation.
+
+Copy campaign copies the source's Family mail schedules only, never its
+report emails ([delivery plan](#delivery-plan) item 4); since the copy then
+has Family schedules, its schedule step proposes nothing, and its report
+emails are added from Start from on New report email.
+
 ## Command line
 
 `pk-admin report-email` reaches every action of the page under the same
@@ -2112,6 +2157,13 @@ reason; the Administrator may change any of them.
   chosen apart from the repeat rule, so Basic and Advanced describe only a
   rule and a one-time report never shows a mode toggle; the Once preset is
   that choice.
+- **Ticking a suggested report confirms its send after the campaign.**
+  The wizard's direct save has no review dialog to hold the
+  "Send after the campaign ends" tick, so the row's summary names the day
+  after the campaign's end and ticking it is the confirmation (#2038).
+- **Suggested reports only beside suggested Family schedules.** They share
+  the panel and its one save; once a Family schedule is saved the step
+  proposes nothing, and reports are added on Report emails.
 - **Days of the week stay the campaign's.** Only a repeating report's time
   of day is read in the browser's zone; its days are the campaign's
   calendar days, as the Campaign calendar shows them, so a day chosen is

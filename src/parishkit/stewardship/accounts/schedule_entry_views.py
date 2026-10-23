@@ -73,6 +73,7 @@ from parishkit.stewardship.campaigns.recurrence import (
     canonical_rule,
     expand,
 )
+from parishkit.stewardship.campaigns.report_presets import STARTING_POINTS
 from parishkit.stewardship.campaigns.work_locks import (
     read_transaction,
     work_transaction,
@@ -100,9 +101,12 @@ from . import (
     schedule_email,
     schedule_local,
     schedule_suggestions,
+    schedule_views,
+    suggested_reports,
 )
 from .admin_editing import (
     confirm_intent,
+    database_now,
     direct_key,
     error_response,
     form_action,
@@ -135,7 +139,7 @@ from .schedule_forms import (
 )
 from .schedule_preview import work_summary
 from .schedule_reads import campaign_schedules, schedule_state
-from .schedule_table import schedule_rows
+from .schedule_table import SORTING, schedule_rows
 from .series_edits import SCOPES, SeriesEditError, cut, plan, rule_text
 from .series_schema import SECTION as SERIES
 from .sessions import authenticated_admin
@@ -661,6 +665,7 @@ def review(
     series_changes=(),
     key=None,
     zone=None,
+    added_reports=(),
 ):
     """Bind a change document to the review's forms and build the review.
 
@@ -677,7 +682,8 @@ def review(
     (#469). ``key`` signs the review with a direct save's request key
     (#1404 PR 4b, ``admin_editing.direct_key``). ``zone`` is
     the browser's posted zone, which the review's send times are shown in
-    (#1129); the command line passes none.
+    (#1129); the command line passes none. ``added_reports`` are report
+    email rows added in the same change (``build_preview``'s, #2038).
     """
     # The schedule commands' own binding, so the page and the command line
     # cannot read the same change differently.
@@ -718,6 +724,7 @@ def review(
         series_changes=series_changes,
         request_key=key,
         zone=zone,
+        added_reports=added_reports,
     )
     return context, window, schedules, identifiers
 
@@ -2145,6 +2152,39 @@ NOT_ADDED_FIX = _(
 )
 
 
+def _report_rows(configuration, campaign, entries):
+    """The configuration rows of the ticked suggested report emails (#2038).
+
+    ``entries`` are their ``create`` entries (``SuggestedReports.entries``),
+    checked and built by the Report emails page's own code, which refuses a
+    value New report email would refuse, naming its field.
+    """
+    if not entries:
+        return []
+    from parishkit.stewardship.reports.report_email_changes import change_rows
+    from parishkit.stewardship.reports.report_email_editor import portal_users
+    from parishkit.stewardship.reports.report_email_list import report_records
+
+    patch, due, _changes = change_rows(
+        entries,
+        {
+            row["id"]: row["values"]
+            for row in report_records(configuration, campaign.pk)
+        },
+        campaign.active_configuration.values,
+        database_now(),
+        campaign_id=campaign.pk,
+        users=portal_users(configuration),
+    )
+    # Both starting points repeat, so no send time is ever returned. A
+    # one-time starting point would return one, which Apply must sign so it
+    # refuses a time that has passed (#1464); this save signs none, so
+    # refuse rather than save such a report unchecked.
+    if due:
+        raise RuntimeError("a suggested report email has a one-time send time")
+    return patch
+
+
 @require_http_methods(["POST"])
 def schedule_suggested(request, campaign_id):
     """Add the suggested starting schedules directly (#1404 PR 6).
@@ -2154,7 +2194,15 @@ def schedule_suggested(request, campaign_id):
     only the page's version (``base_digest``) and request key; the server
     works the set out again from the applied values
     (``schedule_suggestions.entries``), so the change is exactly what the
-    page listed for that version. It is reviewed as New scheduled email
+    page listed for that version. The suggested report emails the page
+    offers beside them (#2038, ``suggested_reports``) post their ticks and
+    times: each ticked report becomes a ``report-email preview`` ``create``
+    entry, checked as New report email checks one
+    (``report_email_changes.change_rows``), and its row joins the same
+    change, so the Family schedules and the reports apply in one
+    configuration version or not at all. A ticked report without a readable
+    time is refused at its time field: the page drawn again, status 400,
+    with nothing saved. It is reviewed as New scheduled email
     reviews its schedules (``review``), signed with the save's request key
     (``admin_editing.direct_key``), and recorded at once by
     ``campaign_wizard.save_step``, which rechecks under the work lock that
@@ -2172,7 +2220,12 @@ def schedule_suggested(request, campaign_id):
             raise unexpected_fields(request.FILES, allowed=())
         values = filters(
             request.POST,
-            allowed={"csrfmiddlewaretoken", "base_digest", "request_key"},
+            allowed={
+                "csrfmiddlewaretoken",
+                "base_digest",
+                "request_key",
+                *suggested_reports.fields(STARTING_POINTS),
+            },
         )
         key = direct_key(request.POST)
         if answered := campaign_wizard.repeated_save(request, actor, key):
@@ -2197,33 +2250,67 @@ def schedule_suggested(request, campaign_id):
                 )
             if values.get("base_digest") != state[0].active_configuration.digest:
                 raise stale_page()
-            reviewed, window, schedules, _forms = review(
-                service,
-                actor,
-                state,
-                campaign,
-                editable,
-                entries,
-                base_digest=values["base_digest"],
-                key=key,
+            ticked = schedule_views.suggested_form(
+                request.POST, state[0], campaign, database_now()
             )
-            if reviewed is None:
-                raise _refusal(
-                    window,
-                    schedules,
-                    fallback=_("The suggested schedules don't fit the campaign."),
-                    fix=NOT_ADDED_FIX,
+            # A starting point no longer offered (a report of its name was
+            # saved since) is refused rather than silently left out.
+            allowed = {
+                "csrfmiddlewaretoken",
+                "base_digest",
+                "request_key",
+                *suggested_reports.fields(ticked.keys),
+            }
+            if set(request.POST) - allowed:
+                raise unexpected_fields(request.POST, allowed=allowed)
+            refused = None
+            if not ticked.is_valid():
+                # The page drawn again with the refusal at its fields, which
+                # the page script places (ui-v1.js, showFieldErrors); answered
+                # once access is rechecked, after the transaction.
+                refused = schedule_views._list(
+                    request,
+                    state,
+                    campaign,
+                    editable,
+                    SORTING.parse({}),
+                    reports_form=ticked,
                 )
-            if not reviewed["preview"]:
-                # A draft with no schedule has no send work to block the
-                # change; should any, refuse it as New scheduled email does.
-                raise UserFacingStale(
-                    BLOCKED,
-                    fix=BLOCKED_FIX,
-                    link=reverse("admin:deliveries"),
-                    link_label=_("Outgoing mail"),
-                    reason="send_work_blocks",
+                refused.status_code = 400
+                refused.stewardship_safe_error = True
+                with_default_code(refused)
+            else:
+                reviewed, window, schedules, _forms = review(
+                    service,
+                    actor,
+                    state,
+                    campaign,
+                    editable,
+                    entries,
+                    base_digest=values["base_digest"],
+                    key=key,
+                    added_reports=_report_rows(state[0], campaign, ticked.entries()),
                 )
+                if reviewed is None:
+                    raise _refusal(
+                        window,
+                        schedules,
+                        fallback=_("The suggested schedules don't fit the campaign."),
+                        fix=NOT_ADDED_FIX,
+                    )
+                if not reviewed["preview"]:
+                    # A draft with no schedule has no send work to block the
+                    # change; should any, refuse it as New scheduled email does.
+                    raise UserFacingStale(
+                        BLOCKED,
+                        fix=BLOCKED_FIX,
+                        link=reverse("admin:deliveries"),
+                        link_label=_("Outgoing mail"),
+                        reason="send_work_blocks",
+                    )
+        if refused is not None:
+            _recheck(request, service)
+            return refused
         # Recorded once the work transaction has ended.
         response = campaign_wizard.save_step(
             request,

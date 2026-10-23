@@ -67,7 +67,11 @@ version and request key to ``SUGGESTED`` itself (answered with ``APPLIED``)
 and goes on to ``CONTENT``. ``SUGGESTED_PASSED`` is the same page once the
 Initial invitation's send time has passed: nothing is suggested, so the
 panel and Add are left out and only Continue without schedules for now
-remains.
+remains. ``SUGGESTED`` also lists the suggested report emails (#2038),
+ticked with no time; ``SUGGESTED_REFUSED`` is the page a refused save
+draws again (status 400 in the real view), the Daily report's time
+missing and the Weekly's typed, which the browser test answers a save
+with.
 """
 
 from dataclasses import replace
@@ -75,10 +79,15 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
+from django.http import QueryDict
 from django.template.loader import render_to_string
 from django.urls import reverse
 
-from parishkit.stewardship.accounts import campaign_wizard, schedule_suggestions
+from parishkit.stewardship.accounts import (
+    campaign_wizard,
+    schedule_suggestions,
+    suggested_reports,
+)
 from parishkit.stewardship.accounts.admin_editing import summary_errors
 from parishkit.stewardship.accounts.content_forms import ContentForm
 from parishkit.stewardship.accounts.option_editing import option_changes
@@ -117,6 +126,7 @@ NEW_DIRECT = "/campaign-stepper-new-direct"
 EDIT_DIRECT = "/campaign-stepper-edit-direct"
 SUGGESTED = "/campaign-stepper-suggested"
 SUGGESTED_PASSED = "/campaign-stepper-suggested-passed"
+SUGGESTED_REFUSED = "/campaign-stepper-suggested-refused"
 # Campaign settings with Financial stewardship on, complete.
 FINANCIAL_VALUES = VALUES | {
     "financial_enabled": True,
@@ -312,18 +322,29 @@ def components(context, admin):
             post_url=path,
         )
 
-    def suggested(path=SUGGESTED, now=datetime(2054, 9, 1, tzinfo=UTC)):
+    def suggested(path=SUGGESTED, now=datetime(2054, 9, 1, tzinfo=UTC), posted=None):
         """Dates and mail schedules proposing its suggested schedules.
 
         No schedule is saved, so the wizard suggests (#1404 PR 6a); its Add
         these schedules and continue posts to ``SUGGESTED`` and goes on to
         ``CONTENT``. With ``now`` past the Initial invitation's send time
         nothing is suggested, as the wizard decides from the same rule.
+        The suggested report emails (#2038) are drawn from ``posted``, a
+        refused save's fields, or unbound.
         """
         owner, emails, _rows = schedule_pages._data()
         rows = schedule_suggestions.rows(
             owner["values"], emails, owner["id"], now, email_names(emails)
         )
+        reports = suggested_reports.SuggestedReports(
+            posted,
+            keys=suggested_reports.offered([], owner["id"]),
+            campaign=owner["values"],
+            campaign_id=owner["id"],
+            now=now,
+        )
+        if posted is not None:
+            assert not reports.is_valid()
         wizard = campaign_wizard.build(
             True,
             "schedules",
@@ -352,6 +373,9 @@ def components(context, admin):
                     "new_url": schedule_pages.NEW,
                     "delete_url": schedule_pages.DELETE,
                     "suggested": rows,
+                    "suggested_reports": suggested_reports.rows(reports)
+                    if rows
+                    else [],
                     "suggested_url": path,
                 },
             ),
@@ -521,6 +545,13 @@ def components(context, admin):
         EDIT_DIRECT: schedule(context, EDIT_DIRECT, schedule_row=True),
         SUGGESTED: suggested(),
         SUGGESTED_PASSED: suggested(SUGGESTED_PASSED, schedule_pages.NOW),
+        SUGGESTED_REFUSED: suggested(
+            SUGGESTED,
+            posted=QueryDict(
+                "zone=America/New_York&report_daily=yes&report_daily_time="
+                "&report_weekly=yes&report_weekly_time=8%3A30+AM"
+            ),
+        ),
         REVIEW: (
             "text/html",
             render_to_string(

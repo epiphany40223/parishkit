@@ -2966,6 +2966,13 @@
   // On Campaign images (data-direct-uploads, #1404 PR 4c) the change is a
   // chosen image in any slot's upload form (chosenUploads, below).
   const gateStepContinue = () => {
+    // Add these schedules and continue is held by its form's complete gate
+    // while a ticked suggested report email has no readable time (#2038);
+    // the form's reserved hint says why, so it describes the button.
+    document.querySelectorAll("[data-campaign-add]").forEach((add) => {
+      const hint = add.form?.querySelector("[data-complete-hint][id]");
+      if (hint) add.setAttribute("aria-describedby", hint.id);
+    });
     const form = document.querySelector("form[data-campaign-continue]");
     if (!form) return;
     const save = document.querySelector("[data-campaign-save]");

@@ -1307,6 +1307,29 @@ def describe(values, campaign, now, choices):
         return None
     from .report_email_list import schedule_words
 
+    return {
+        "name": values["name"],
+        "subject": values["subject"],
+        "recipients": [
+            chip_label(entry_value(entry), choices) for entry in values["recipients"]
+        ],
+        "schedule": schedule_words(values, campaign, now),
+        "as_of": AS_OF_LABELS[values["as_of"]],
+        "blocks": block_labels(values, campaign),
+        "content_required": values["content_required"],
+        "intro": bool(values["intro_html"] or values["intro_text"]),
+        "sends": sends_preview(values, campaign, now),
+    }
+
+
+def block_labels(values, campaign):
+    """The report's blocks in order, each named as the review names it.
+
+    Day by day table names its days and Participation charts the charts it
+    draws for ``campaign`` (the applied campaign values). Shared by the
+    review dialog (``describe``) and the campaign wizard's suggested report
+    emails (``accounts.suggested_reports``, #2038).
+    """
     blocks = []
     for entry in values["blocks"]:
         block = REGISTRY.get(entry["block"])
@@ -1335,19 +1358,7 @@ def describe(values, campaign, now, choices):
                 )
             label = str(_("%(label)s (%(charts)s)") % {"label": label, "charts": names})
         blocks.append(label)
-    return {
-        "name": values["name"],
-        "subject": values["subject"],
-        "recipients": [
-            chip_label(entry_value(entry), choices) for entry in values["recipients"]
-        ],
-        "schedule": schedule_words(values, campaign, now),
-        "as_of": AS_OF_LABELS[values["as_of"]],
-        "blocks": blocks,
-        "content_required": values["content_required"],
-        "intro": bool(values["intro_html"] or values["intro_text"]),
-        "sends": sends_preview(values, campaign, now),
-    }
+    return blocks
 
 
 def blank_values(campaign, campaign_id):
