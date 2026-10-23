@@ -13,6 +13,8 @@
 #      exists neither locally nor on the remote. Land the version bump first.
 #      Check too that this gh can run step 6's gh attestation verify with
 #      its flags, so an older gh is refused before anything is tagged.
+#      Refuse a tree whose frozen schema files need an earlier release to
+#      have shipped another one first (release_evidence.py release-order).
 #   2. Ask release_evidence.py which full run decides for that commit (the
 #      run release.yml will check). CI_RUN_ID must be that run. Without it,
 #      use that run when it passed or is still running, and otherwise
@@ -122,6 +124,20 @@ if [ -n "$remote_tag" ]; then
     ops_refuse "Tag $tag already exists on $remote"
 fi
 ops_log "main is $sha (version $version)"
+
+# Some frozen schema files need an earlier release to have shipped another
+# (#1834: the digest retirement needs the report email conversion already
+# deployed); a release carrying both could never be deployed. The table and
+# its reasons are in release_evidence.py; it logs each refusal.
+order=0
+"$python" "$here/release_evidence.py" release-order --commit "$sha" \
+    --checkout "$checkout" --remote "$remote" || order=$?
+if [ "$order" = "$OPS_TIMEOUT_STATUS" ]; then
+    exit "$OPS_TIMEOUT_STATUS"
+fi
+if [ "$order" != 0 ]; then
+    ops_refuse "main ($sha) cannot be released yet: it needs an earlier release first (named above); not tagging"
+fi
 
 # Step 6 verifies the image with gh attestation verify; a gh too old for it
 # or its flags would otherwise fail there, after the tag is pushed, with a
