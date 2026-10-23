@@ -105,16 +105,19 @@ def test_packed_jobs_cover_every_partition_once(count, per_job):
             ci.job_partitions(job, count, per_job)
 
 
-def test_slot_ports_are_distinct_and_skip_the_reserved_valkey_port():
-    """Slot one keeps the default ports; no slot may claim 56380, which the
-    unavailable-service tests require to stay closed."""
+def test_slot_ports_are_distinct_unprivileged_and_below_the_ephemeral_range():
+    """Every slot's ports are distinct, unprivileged and below Linux's
+    ephemeral range (32768-60999), where a transient outbound connection can
+    hold a port when Docker binds it (#2085); no slot may claim 56380, which
+    the unavailable-service tests require to stay closed."""
     slots = [ci.slot_ports(slot) for slot in range(8)]
     assert slots[0] == {
-        "PARISHKIT_TEST_POSTGRES_PORT": "55432",
-        "PARISHKIT_TEST_VALKEY_PORT": "56379",
+        "PARISHKIT_TEST_POSTGRES_PORT": "25432",
+        "PARISHKIT_TEST_VALKEY_PORT": "26379",
     }
     for name in ("PARISHKIT_TEST_POSTGRES_PORT", "PARISHKIT_TEST_VALKEY_PORT"):
         assert len({slot[name] for slot in slots}) == len(slots)
+        assert all(1024 <= int(slot[name]) < 32768 for slot in slots)
     assert "56380" not in {slot["PARISHKIT_TEST_VALKEY_PORT"] for slot in slots}
 
 
