@@ -16,6 +16,7 @@ from .authentication import runtime
 from .limiting import LimiterUnavailable
 from .local_sign_in import PATH as LOCAL_SIGN_IN
 from .models import SystemConfiguration
+from .role_refusal import signed_out_response
 from .sessions import authenticated_admin
 
 AUTH_ROUTES = frozenset(
@@ -101,7 +102,13 @@ class AccessGateMiddleware(MiddlewareMixin):
             if admin:
                 principal = authenticated_admin(request, store=service.store)
                 if principal is None:
-                    return HttpResponseRedirect("/admin/login")
+                    # Before setup or during a restore review, the shared
+                    # signed-out refusal, as on every other Admin page
+                    # (#2062): the browser-error middleware sends a page
+                    # load to sign-in with the page as ``next``, a form
+                    # POST gets its one sign-in link, and scripts keep the
+                    # typed 403 the session-ended dialog reads.
+                    return signed_out_response()
             if restored:
                 return self._unavailable(
                     request, "maintenance", admin, principal if admin else None

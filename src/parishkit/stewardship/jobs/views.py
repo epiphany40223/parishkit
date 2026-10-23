@@ -18,7 +18,10 @@ from parishkit.stewardship.accounts.authority import AuthorityChanging
 from parishkit.stewardship.accounts.limiting import LimiterUnavailable
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.role_refusal import response as role_response
-from parishkit.stewardship.accounts.role_refusal import role_denied
+from parishkit.stewardship.accounts.role_refusal import (
+    role_denied,
+    signed_out_response,
+)
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import (
     authenticated_admin,
@@ -109,7 +112,9 @@ def _read_once(request, identifier, *, counts_only, audit):
         service = runtime()
         principal = authenticated_admin(request, store=service.store, activity=False)
         if principal is None:
-            return _error(ErrorCode.DENIED, 403)
+            # An ended session: a page load goes to the sign-in page; the
+            # header counts and status polls keep the 403 (#2062).
+            return signed_out_response()
         if not allows(principal, Capability.BACKGROUND_WORK):
             # A current session whose role lacks the page (#1924).
             return role_response(role_denied(Capability.BACKGROUND_WORK))

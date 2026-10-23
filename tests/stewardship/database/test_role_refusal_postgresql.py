@@ -1,6 +1,7 @@
 """A current session whose role lacks the page is told so, not to sign in (#1924)."""
 
 import json
+from urllib.parse import urlencode
 from uuid import uuid4
 
 import pytest
@@ -71,26 +72,20 @@ def test_staff_and_leaders_are_told_the_page_is_for_administrators(
 
 
 @pytest.mark.parametrize("name", PAGES)
-def test_an_ended_session_still_says_to_sign_in_again(auth_service, google, name):
+def test_an_ended_session_goes_to_sign_in(auth_service, google, name):
     """Without a current session the refusal stays the sign-in one."""
     browser = signed_in_with(auth_service, google, "reader@example.org", ("staff",))
     PortalSession.objects.filter(revoked_at__isnull=True).update(
         revoked_at=timezone.now(), version=F("version") + 1
     )
     page = browser.get(reverse(name), **PAGE)
-    if name == "admin:users":
-        # The shared admission's signed-out refusal: a page load goes to
-        # sign-in with the page as next and the ended flag (#2058).
-        assert (page.status_code, page["Location"]) == (
-            302,
-            "/admin/login?ended=1&next=%2Fadmin%2Fusers%2F",
-        )
-    else:
-        # System logs answers with its own error page.
-        body = page.content.decode()
-        assert page.status_code == 403
-        assert "Sign in again" in body
-        assert ROLE not in body
+    # The signed-out refusal, also on System logs with its own error page
+    # (#2062): a page load goes to sign-in with the page as next and the
+    # ended flag (#2058).
+    assert (page.status_code, page["Location"]) == (
+        302,
+        "/admin/login?" + urlencode({"ended": "1", "next": reverse(name)}),
+    )
     script = browser.get(reverse(name), **SCRIPT)
     assert script.status_code == 403
     assert "This page is for" not in script.content.decode()
@@ -154,7 +149,8 @@ def test_staff_bulk_action_on_sent_mail_is_refused_by_role(auth_service, google)
 def test_background_task_reads_refuse_staff_by_role(auth_service, google):
     """The task list's JSON read (``jobs.views._read_once``) names the role.
 
-    An ended session still gets the plain denial without a role message.
+    An ended session gets the typed signed-out refusal, without a role
+    message (#2062).
     """
     browser = signed_in_with(auth_service, google, "staff@example.org", ("staff",))
     script = browser.get(reverse("admin:background_tasks"), **SCRIPT)
@@ -170,3 +166,4 @@ def test_background_task_reads_refuse_staff_by_role(auth_service, google):
     ended = browser.get(reverse("admin:background_tasks"), **SCRIPT)
     assert ended.status_code == 403
     assert "This page is for" not in ended.content.decode()
+    assert json.loads(ended.content)["refusal"]["link"]["url"] == "/admin/login"

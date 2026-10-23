@@ -37,6 +37,7 @@ from .access_gate import status_page
 from .admin_editing import error_response
 from .admin_editing import principal as admin_principal
 from .authentication import runtime
+from .role_refusal import signed_out_response
 from .sessions import authenticated_admin, sign_in_instant
 
 # The form fields each step accepts; anything else is refused unread.
@@ -80,7 +81,9 @@ def restore_review(request):
         request, store=service.store, activity=request.method == "POST"
     )
     if principal is None:
-        return redirect("admin:login")
+        # A session that ended after the access gate's own check: the
+        # gate's answer, the shared signed-out refusal (#2062).
+        return signed_out_response()
     if "administrator" not in principal.roles:
         # Staff and Ministry leaders: the plain notice, never the review.
         return status_page(request, kind="maintenance", admin=True)

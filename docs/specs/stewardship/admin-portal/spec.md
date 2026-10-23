@@ -41,10 +41,13 @@ All login and callback denial pages preserve the retry path while honoring
 A page load whose Admin session has ended (an hour without activity, a
 sign-out in another tab, a revoked session) goes to the sign-in page instead
 of an error page
-([#2058](https://github.com/epiphany40223/parishkit/issues/2058)). A browser
+([#2058](https://github.com/epiphany40223/parishkit/issues/2058),
+[#2062](https://github.com/epiphany40223/parishkit/issues/2062)). A browser
 GET refused as signed out (the shared signed-out refusal of the Admin
-admission and role checks, which the report pages use too, and the Admin
-home) is redirected to
+admission and role checks, which every Admin page answers an ended session
+with, including the pages that have their own error page for other
+refusals, such as System logs, System health, Sent mail and Background
+work) is redirected to
 `/admin/login` with the page's own path and query as `next`, kept only when
 it is a same-origin Admin page other than the home page (the shared Admin
 return-path check; anything else is dropped). When the browser still sent an
@@ -62,9 +65,8 @@ Sign in again button. A form POST's page that shows the refusal offers
 exactly one sign-in link, returning to the page the form was posted from
 (its same-origin Referer, else the Admin home), and no "Return to the
 previous page" or "Administration home" link, since every other page would
-refuse too. Pages that answer an ended session with their own error page
-(System logs, System health, Background work and a few others) still do so
-until [#2062](https://github.com/epiphany40223/parishkit/issues/2062).
+refuse too. The Admin home and every gated Admin page before setup or during
+a restore review send an ended session to sign-in the same way.
 
 A user's address need not be a Gmail address, but it must have a Google
 Account, and many volunteer Ministry leaders' addresses have none

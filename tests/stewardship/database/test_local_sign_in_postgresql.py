@@ -342,8 +342,11 @@ def test_sign_in_works_before_setup_completes_and_leads_to_the_wizard(
         auth_service, setup_complete=lambda: False
     )
     client = browser()
-    assert client.get("/admin/").status_code == 302
-    assert client.get("/admin/")["Location"] == "/admin/login"
+    # A page load; a script gets the typed signed-out 403 instead (#2062).
+    page = {"HTTP_ACCEPT": "text/html", "HTTP_SEC_FETCH_MODE": "navigate"}
+    assert client.get("/admin/", **page).status_code == 302
+    assert client.get("/admin/", **page)["Location"] == "/admin/login"
+    assert client.get("/admin/").status_code == 403
     response = post_token(client, mint(auth_service))
     assert (response.status_code, response["Location"]) == (302, "/admin/")
     assert PortalSession.objects.count() == 1
