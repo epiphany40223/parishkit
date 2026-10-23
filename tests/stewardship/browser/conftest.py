@@ -7,7 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
 from pathlib import Path
 from threading import Thread
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -293,9 +293,14 @@ def finishing_context(**status):
     )
 
 
-@pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def browser_opt_in():
-    """Skip before any browser, HTTP-server or npm-asset fixture is evaluated."""
+    """Skip before any browser, HTTP-server or npm-asset fixture is evaluated.
+
+    Session-scoped like ``component_responses``: pytest sets up wider-scoped
+    fixtures first, so a module-scoped opt-in would only skip after the
+    session build had already run (#2021).
+    """
     if os.environ.get("PARISHKIT_RUN_BROWSER_TESTS") != "1":
         pytest.skip("Browser component tests require PARISHKIT_RUN_BROWSER_TESTS=1.")
 
@@ -533,9 +538,19 @@ def refused_table_data(rows):
     return data
 
 
-@pytest.fixture(scope="module")
-def component_origin():
-    """An exact response allowlist avoids exposing source files through the server."""
+@pytest.fixture(scope="session")
+def component_responses():
+    """Every offline component page and POST answer, built once per session.
+
+    Returns ``(responses, posts)``: GET path -> (media type, body), and POST
+    path -> (status, location, body[, media type]). Building them renders
+    every component page, which took about 5 s locally and 12-16 s in CI;
+    when this was module-scoped, every browser test module paid that again
+    (#2021). Nothing here reads the clock except the Finishing setup pages'
+    relative times, and no test changes these maps or the module-level
+    state the builders fill (``REVIEW_DST``, the components' ``POSTS``), so
+    one build serves every module.
+    """
     mail_campaign = campaign()
     mail = schedule(mail_campaign["id"])
     financial_campaign = campaign(modules=["financial"], financial=financial())
@@ -2415,6 +2430,21 @@ def component_origin():
             )
         ),
     )
+
+    # Read-only views: every module shares these maps now, so a test or
+    # handler that tried to change one would fail instead of leaking the
+    # change into later modules.
+    return MappingProxyType(responses), MappingProxyType(posts)
+
+
+@pytest.fixture(scope="session")
+def component_origin(component_responses):
+    """An exact response allowlist avoids exposing source files through the server.
+
+    One server for the whole session: the handler only reads the maps and
+    module-level path sets, and keeps no state between requests (#2021).
+    """
+    responses, posts = component_responses
 
     class Handler(BaseHTTPRequestHandler):
         """Suppress raw request logging; unknown routes are intentionally empty."""

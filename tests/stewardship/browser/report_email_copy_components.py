@@ -77,10 +77,10 @@ TINY_PNG = b64decode(
 def snapshot():
     """The kept blocks of a send of every block, and its email as sent.
 
-    Built once per process: ``component_origin`` is module-scoped, so every
-    browser test module would otherwise render the digest again (#1946).
-    The blocks are a deep copy, so a renderer that changed its kept data
-    could not leak into the next module's pages.
+    Built once per process (#1946), so the builder's two uses render the
+    digest only once; ``component_responses`` itself is now built once per
+    session (#2021). The blocks are a deep copy, so a renderer that changed
+    its kept data could not leak into another page.
     """
     blocks, participation, html = _snapshot()
     return SimpleNamespace(blocks=deepcopy(blocks)), participation, html
