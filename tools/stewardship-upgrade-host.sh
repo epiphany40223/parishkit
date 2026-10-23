@@ -618,6 +618,11 @@ if [ "$mode" = upgrade ]; then
             echo "Nothing was stopped or changed. Deploy the release that converts the digests" >&2
             echo "first (its run includes pk-stewardship upgrade-reports), then this one; see" >&2
             echo "$runbook (Report email conversion)." >&2
+            if [ "$profile" = local ]; then
+                # pk-local has no releases, only commits to deploy.
+                echo "Locally: deploy a commit that converts the digests but does not retire them" >&2
+                echo "(it has frozen file 0161 but not 0171), then this one again." >&2
+            fi
             exit 1
         fi
     fi

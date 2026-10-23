@@ -877,6 +877,15 @@ def test_the_digest_retirement_refuses_an_unconverted_database_first(
     assert not any(" stop " in call for call in calls)
     assert not any("backup-worker" in call for call in calls)
     assert not any(" retarget-image " in call for call in calls)
+    assert "Locally:" not in output
+    # The local profile has no releases: it names a commit to deploy.
+    calls, output, _ = run_host(
+        tmp_path / "local", "upgrade", noop="f", schema_change="1", status=1,
+        converted=converted, profile="local",
+    )  # fmt: skip
+    assert "Locally: deploy a commit that converts the digests" in output
+    assert "frozen file 0161 but not 0171" in output
+    assert not any(" stop " in call for call in calls)
 
 
 def test_the_digest_retirement_check_needs_the_file_and_an_upgrade(tmp_path):

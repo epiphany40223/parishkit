@@ -2045,6 +2045,9 @@ def test_wizard_finishes_setup_through_the_same_step(tmp_path):
 
 OLD_IMAGE = f"parishkit-stewardship-local:{'a' * 40}-1690000000"
 MIGRATIONS = "stewardship_accounts 0001_initial;stewardship_accounts 0002_more"
+# Migration rows from either side of the digest retirement (#1834).
+CONVERSION = "stewardship_reports 0041_report_conversion"
+RETIRED = f"{MIGRATIONS};{CONVERSION};stewardship_reports 0046_retire_digests"
 
 
 def snapshot_of(
@@ -2266,6 +2269,10 @@ def test_snapshot_list_shows_each_record_and_what_a_switch_would_do(tmp_path):
         )  # fmt: skip
         snapshot_of(snapshots, "elsewhere", uuid="other")
         snapshot_of(snapshots, "legacy", image=OLD_IMAGE, clock="fake")
+        snapshot_of(
+            snapshots, "converted", image=OLD_IMAGE,
+            migrations=f"{MIGRATIONS};{CONVERSION}",
+        )  # fmt: skip
 
     def row(output, name):
         return next(line for line in output.splitlines() if line.split()[:1] == [name])
@@ -2295,6 +2302,14 @@ def test_snapshot_list_shows_each_record_and_what_a_switch_would_do(tmp_path):
     )  # fmt: skip
     assert "refused: image gone" in row(output, "older")
     assert "Mac free" not in output
+    # Once the running code retired the digests (#1834), only a snapshot
+    # taken after the report email conversion can migrate forward.
+    _, output, _ = run_vm(
+        tmp_path / "d", "snapshot-list", prepare=prepare,
+        env={"FAKE_MIGRATIONS": RETIRED, "FAKE_IMAGE_EXISTS": "1"},
+    )  # fmt: skip
+    assert "refused: unconverted" in row(output, "older")
+    assert "migrates forward" in row(output, "converted")
     # status ends with the same summary.
     _, output, _ = run_vm(tmp_path / "c", "status", MAC_FREE, prepare=prepare)
     assert "Snapshots in " in output and "Mac free: 100.0 GiB" in output
@@ -2384,6 +2399,11 @@ def test_a_data_switch_keeps_the_code_and_restores_only_the_data(tmp_path):
             {"image": OLD_IMAGE, "migrations": "stewardship_accounts 0001_initial"},
             {"FAKE_MIGRATIONS": MIGRATIONS},
             "which is no longer in the VM",
+        ),
+        (
+            {"image": OLD_IMAGE, "migrations": MIGRATIONS},
+            {"FAKE_MIGRATIONS": RETIRED, "FAKE_IMAGE_EXISTS": "1"},
+            "taken before the report email conversion",
         ),
     ],
 )
