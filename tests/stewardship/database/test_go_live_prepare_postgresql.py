@@ -662,6 +662,22 @@ def test_a_control_sent_after_the_step_moved_on_does_nothing(prepare_page):
     assert TaskRun.objects.filter(root_id=preparation.task_id).count() == 2
 
 
+@pytest.mark.parametrize("action", ["retry", "again", "stop"])
+def test_a_post_without_its_control_is_refused_not_a_server_error(prepare_page, action):
+    """A control-less post is a forged control: a 400 refusal, never a 500.
+
+    The field-set check rejects extra fields, not missing ones, so the
+    missing control must be refused by the signature check (#2044).
+    """
+    _harness, browser, _admin, _request = prepare_page
+    browser.raise_request_exception = False
+    with web_login():
+        missing = post(browser, PREPARE, {"action": action})
+        empty = post(browser, PREPARE, {"action": action, "control": ""})
+    assert missing.status_code == 400, missing.content
+    assert empty.status_code == 400, empty.content
+
+
 def test_a_stop_that_finds_go_live_moving_says_so_and_stops_nothing(
     prepare_page, monkeypatch
 ):
