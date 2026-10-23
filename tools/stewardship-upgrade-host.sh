@@ -828,8 +828,9 @@ if [ "$mode" = upgrade ]; then
             # The digest retirement (#1834) refuses a database not yet
             # converted; step 1 checks for that, so this is the fallback.
             echo "If it refused because schedule definitions are still Daily or Weekly digests," >&2
-            echo "the conversion's migration (0161) may already have committed: do not run the" >&2
-            echo "conversion on this database. Restore the pre-upgrade backup with the previous" >&2
+            echo "the migrations before it (the conversion's 0161 and any later one up to the one" >&2
+            echo "that refused) may already have committed: do not run the conversion on this" >&2
+            echo "database. Restore the pre-upgrade backup with the previous" >&2
             echo "release first ($runbook#rollback), then upgrade through the release that" >&2
             echo "converts the digests (the same section)." >&2
             exit 1

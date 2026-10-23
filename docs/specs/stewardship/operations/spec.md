@@ -949,8 +949,9 @@ configuration still holds a digest.
   digest definition, it refuses with nothing changed. Deploy the
   conversion's release first (its run includes `pk-stewardship
   upgrade-reports`), then the later one. If the migration refuses anyway,
-  the conversion's migration (0161) may already have committed in the
-  same run: do not run the conversion on that database; restore the
+  the migrations before it (the conversion's 0161 and any later one up to
+  the one that refused) may already have committed in the same run: do
+  not run the conversion on that database; restore the
   pre-upgrade backup with the previous release, as
   [production upgrades](#production-upgrades) allow, upgrade to the
   conversion's release first, and then to the later one.

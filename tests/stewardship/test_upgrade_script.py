@@ -926,11 +926,12 @@ def test_the_digest_retirement_check_needs_the_file_and_an_upgrade(tmp_path):
 
 
 def test_a_refused_retirement_migration_names_the_restore(tmp_path):
-    """The step-4 fallback says 0161 may have committed: restore first."""
+    """The step-4 fallback says 0161 and later may have committed: restore first."""
     _, output, _ = run_host(
         tmp_path, "upgrade", noop="f", schema_change="1", status=1, migrate_fail="1"
     )
-    assert "the conversion's migration (0161) may already have committed" in output
+    assert "the conversion's 0161 and any later one up to the one" in output
+    assert "that refused) may already have committed" in output
     assert "Restore the pre-upgrade backup with the previous" in output
     assert "do not run the" in output
 
