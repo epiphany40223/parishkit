@@ -87,6 +87,7 @@ def rows():
             actions={
                 "edit": None,
                 "preview": None,
+                "test": None,
                 "send_now": None,
                 "pause": None,
                 "delete": None,
@@ -104,6 +105,7 @@ def rows():
             "sending",
             actions={
                 "preview": None,
+                "test": None,
                 "send_now": IN_PROGRESS_REASON,
                 "pause": IN_PROGRESS_REASON,
                 "delete": IN_PROGRESS_REASON,
@@ -118,6 +120,7 @@ def rows():
             actions={
                 "edit": None,
                 "preview": None,
+                "test": None,
                 "send_now": None,
                 "resume": None,
                 "delete": None,
@@ -156,6 +159,7 @@ def _page(context, admin, *, administrator):
             "change_url": "/admin/mail/report-emails/changes/",
             "send_now_url": "/admin/mail/report-emails/manual-sends/",
             "render_url": RENDER,
+            "test_url": TEST,
         },
     )
 
@@ -174,6 +178,8 @@ REASONS = (IN_PROGRESS_REASON, ATTENTION_REASON)
 
 # Where a row's Preview posts (#2035); the test routes its answer.
 RENDER = "/admin/mail/report-emails/previews/"
+# Where a row's Send a test to me posts (#2036); the test routes its answer.
+TEST = "/admin/mail/report-emails/tests/"
 # The synthetic preview's chart image address, which the test routes too.
 PREVIEW_IMAGE = "/admin/mail/report-emails/previews/synthetic/participation.png"
 

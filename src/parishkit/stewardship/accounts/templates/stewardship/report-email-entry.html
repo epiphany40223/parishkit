@@ -15,6 +15,10 @@ field (data-require-complete), with its reason after it. Preview beside it
 (render=yes, #2035) posts the unsaved form too, once it is complete but
 whether or not it changed (data-change-exempt), and opens its own dialog,
 "Preview — not sent", which has no Apply (data-review-open on the button).
+Send a test to me beside it (test=yes, #2036) is held by the same gate and
+posts the unsaved form in place from the page script (data-review-skip, so
+no dialog opens); the reserved status line under the buttons says "Test
+sent to you at 9:42 AM." or why it was refused.
 
 Sends (Once | Repeating), As of and Frequency are stored two-way settings,
 each a segmented pair of radios (components/choice-pair.html; UX
@@ -158,7 +162,8 @@ list.
 {% if new %}{% translate "Add the report email" as review_action %}{% else %}{% translate "Review changes" as review_action %}{% endif %}{% include "stewardship/components/html-content-editor.html" with html=form.html generate=form.generate_text text=form.text visual=visual heading="h3" review_action=review_action %}
 </section>
 
-<p>{% if new %}{% button type="submit" autocomplete="off" aria-describedby="report-complete-hint" %}{% translate "Add the report email" %}{% endbutton %}{% else %}{% button type="submit" autocomplete="off" aria-describedby="report-complete-hint" %}{% translate "Review changes" %}{% endbutton %}{% endif %} {% button type="submit" variant="secondary" name="render" value="yes" autocomplete="off" data-change-exempt data-review-open="report-preview-dialog" aria-describedby="report-complete-hint" %}{% translate "Preview" %}{% endbutton %} <a href="{{ cancel_url }}">{% translate "Cancel" %}</a>{% if not new %} <span class="help unchanged-hint" data-unchanged-hint data-idle>{% translate "Change a field to review it." %}</span>{% endif %}</p>
+<p>{% if new %}{% button type="submit" autocomplete="off" aria-describedby="report-complete-hint" %}{% translate "Add the report email" %}{% endbutton %}{% else %}{% button type="submit" autocomplete="off" aria-describedby="report-complete-hint" %}{% translate "Review changes" %}{% endbutton %}{% endif %} {% button type="submit" variant="secondary" name="render" value="yes" autocomplete="off" data-change-exempt data-review-open="report-preview-dialog" aria-describedby="report-complete-hint" %}{% translate "Preview" %}{% endbutton %} {% button type="submit" variant="secondary" name="test" value="yes" autocomplete="off" data-change-exempt data-review-skip data-report-test-submit aria-describedby="report-complete-hint" %}{% translate "Send a test to me" %}{% endbutton %} <a href="{{ cancel_url }}">{% translate "Cancel" %}</a>{% if not new %} <span class="help unchanged-hint" data-unchanged-hint data-idle>{% translate "Change a field to review it." %}</span>{% endif %}</p>
+<p class="reserve-lines-wrap report-test-status" id="report-test-status" role="status" data-report-test-status></p>
 <p class="help" id="report-complete-hint" data-complete-hint="reserve"></p>
 </form>
 {% if new %}{% translate "Review new report email" as review_title %}{% else %}{% translate "Review report email change" as review_title %}{% endif %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="report-review" title=review_title apply_url=post_url return_url=list_url outcome_id="report-emails-outcome" fallback="report-email-form" %}

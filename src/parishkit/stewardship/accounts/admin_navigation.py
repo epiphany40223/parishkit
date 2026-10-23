@@ -790,6 +790,8 @@ NON_PAGES = frozenset(
         # data and the PNG chart images it shows, neither a page.
         "report_email_render",
         "report_email_preview_image",
+        # Send a test to me (#2036): a JSON answer posted in place, not a page.
+        "report_email_test",
         "security_event_acknowledge",
         # New user's in-place Email check and Name suggestions (#952), JSON.
         "user_name_suggestions",
