@@ -3065,7 +3065,8 @@ its heading, About panel and campaign name, one line gives the campaign dates
 There is no separate campaign window panel. Every editor this page opens
 follows the shared [schedules](../ui-conventions/spec.md#schedules) rules.
 **New scheduled email**, above the
-table, opens the [New scheduled email page](#new-and-edit-scheduled-email), and
+table, opens the [New scheduled email page](#new-and-edit-scheduled-email)
+(a [New page](../ui-conventions/spec.md#new-pages-and-in-page-panes)), and
 the link beside it the read-only [Campaign calendar](#campaign-calendar).
 
 The **Scheduled emails** table
@@ -3126,7 +3127,11 @@ dates, the page shows the date-change review instead of the list: the proposed
 dates, the same table, and every schedule's editor (opened from its row, past
 sends read-only), so mailings that would fall outside the new dates are changed
 or deleted in the same reviewed change (see [campaign
-configuration](#campaign-configuration)). Choosing an editable row there (its
+configuration](#campaign-configuration)). It adds new schedules on the page
+itself rather than on New scheduled email, since each is judged and
+reviewed with the proposed dates
+([in-page panes](../ui-conventions/spec.md#new-pages-and-in-page-panes)).
+Choosing an editable row there (its
 name, or anywhere else on the row) opens that schedule's editor in place,
 without a page load, marks the row as being edited and moves focus to the
 editor; an opened editor stays open. Saved schedules' editors start closed,
