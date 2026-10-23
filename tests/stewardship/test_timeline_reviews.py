@@ -525,3 +525,12 @@ def test_limitation_lines_read_as_their_decision():
     ]
     leader = reader("ministry_leader", ministries=[9])
     assert not any("note:" in detail for detail in details(rows, leader))
+    # A proposed Member is named as the Limitations page names them.
+    proposed = {"entity_kind": "proposed_member", "subject": "proposed_member"}
+    added = row(
+        "limitation", "proposed_member:p1", 0, "accepted", d="false", **proposed
+    )
+    assert details([added], reader("staff")) == [
+        "Cannot participate in any ministries for Smith, Anne (proposed)"
+        "; by staff@example.org"
+    ]

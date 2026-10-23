@@ -50,6 +50,17 @@ ANSWERS = {
     # beside the Limitations answers, but decided on Pledges.
     "cannot_give": "Cannot contribute financially",
 }
+
+
+def proposed_label(name, proposed):
+    """A Member's ``name``, marked "(proposed)" when the Family added them.
+
+    One rule for the Limitations downloads and the Family Timeline (#2071),
+    so the same answer is never named two ways.
+    """
+    return name + (" (proposed)" if proposed else "")
+
+
 # Each download table has its page table's columns, names and order (#932,
 # #966): the Members table leads with the Member and Member DUID, as on the
 # page, and the Families table names each Family's limitation in its
@@ -315,7 +326,7 @@ def export_tables(result, zone, *, time_text=iso_time):
 
     members = [
         (
-            row["member_name"] + (" (proposed)" if row["proposed"] else ""),
+            proposed_label(row["member_name"], row["proposed"]),
             # A proposed Member has no DUID yet, so its cell is empty.
             "" if row["member_duid"] is None else str(row["member_duid"]),
             *_family(row),

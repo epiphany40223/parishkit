@@ -57,6 +57,7 @@ from .census_changes import LABELS
 from .financial import FREQUENCY_LABELS
 from .hub_census import member_label
 from .limitations import ANSWERS as LIMITATION_ANSWERS
+from .limitations import proposed_label
 from .ministries import outcome_label
 from .money import MoneyAmount
 
@@ -462,8 +463,13 @@ def item_words(row, names):
     if stream == "pledge":
         return pledge_words(row)
     if stream == "limitation":
+        # A proposed Member is named as the Limitations downloads name them.
         subject = (
-            str(_("the Family")) if row["entity_kind"] == "family" else member_name(row)
+            str(_("the Family"))
+            if row["entity_kind"] == "family"
+            else proposed_label(
+                member_name(row), row["entity_kind"] == "proposed_member"
+            )
         )
         words = _("%(answer)s for %(subject)s")
         return str(
