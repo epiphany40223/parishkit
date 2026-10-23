@@ -16,6 +16,9 @@ Send selected sends, each available only for its kind of send; a send the
 Campaign calendar names (?send=) has its box ticked and focused. The
 Participation charts block's Charts boxes sit under its help, one chart a
 line, start all ticked when the block is added, and tick in place (#1956).
+Unticking the last chart, or Advanced's last day, says so at the group at
+once, moving nothing, and a tick clears it; the server's refusal of either
+is drawn at the group and cleared by a tick (#2009).
 """
 
 import re
@@ -27,6 +30,7 @@ from .report_email_editor_components import (
     EDIT_CHARTS,
     EDIT_SKIPPED,
     NEW,
+    NEW_GROUPS_REFUSED,
     NEW_REFUSED,
     USERS,
     WEEKLY,
@@ -56,7 +60,9 @@ def send_time(page, key):
 
 @pytest.mark.parametrize("scheme", ["light", "dark"])
 @pytest.mark.parametrize("width", [320, 1280])
-@pytest.mark.parametrize("path", [NEW, EDIT, EDIT_SKIPPED, NEW_REFUSED])
+@pytest.mark.parametrize(
+    "path", [NEW, EDIT, EDIT_SKIPPED, NEW_REFUSED, NEW_GROUPS_REFUSED]
+)
 def test_the_editor_fits_and_passes_axe(
     page, component_origin, axe_source, width, scheme, path
 ):
@@ -648,3 +654,145 @@ def test_an_added_charts_block_starts_with_every_chart(page, component_origin):
     assert posted(page, "charts") == ["first_submissions", "cumulative_families"]
     page.get_by_role("button", name="Remove Participation charts").click()
     assert posted(page, "charts") == []
+
+
+def group_state(page, group_id):
+    """The live-check state of the group ``group_id``: its error line's words
+    (empty while hidden), whether the group is described by the line, and
+    each box's aria-invalid."""
+    return page.evaluate(
+        """(id) => {
+            const group = document.getElementById(id);
+            const line = document.getElementById(`${id}_error`);
+            return {
+                words: line.hidden ? "" : line.textContent.trim(),
+                described: (group.getAttribute("aria-describedby") || "")
+                    .split(/\\s+/).includes(line.id),
+                invalid: [...group.querySelectorAll("input[type=checkbox]")]
+                    .map((box) => box.getAttribute("aria-invalid")),
+            };
+        }""",
+        group_id,
+    )
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_unticking_every_chart_says_so_at_the_group(
+    page, component_origin, axe_source, width
+):
+    """Unticking the last chart shows the server's words at the Charts group
+    at once, without Review and without moving anything (its line is
+    reserved), and holds Review; ticking one clears it (#2009)."""
+    from playwright.sync_api import expect
+
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + EDIT_CHARTS)
+    group = page.get_by_role("group", name="Charts")
+    visible(group)
+    remove = page.get_by_role("button", name="Remove Participation charts")
+    review = page.get_by_role("button", name="Review changes")
+    before = page_place(remove)
+    page.get_by_label("First submissions of the day").uncheck()
+    assert group_state(page, "report-charts")["words"] == ""
+    page.get_by_label("Effective annual pledges").uncheck()
+    eventually(
+        page,
+        "() => document.getElementById('report-charts_error').textContent.trim()",
+        "Choose at least one chart.",
+    )
+    assert group_state(page, "report-charts") == {
+        "words": "Choose at least one chart.",
+        "described": True,
+        "invalid": ["true", "true", "true"],
+    }
+    assert page_place(remove) == pytest.approx(before, abs=0.5)
+    expect(review).to_be_disabled()
+    assert page.locator("[data-error-summary]").count() == 0
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
+    page.get_by_label("Cumulative participating Families").check()
+    eventually(
+        page,
+        "() => document.getElementById('report-charts_error').hidden",
+    )
+    assert group_state(page, "report-charts") == {
+        "words": "",
+        "described": False,
+        "invalid": ["false", "false", "false"],
+    }
+    assert page_place(remove) == pytest.approx(before, abs=0.5)
+    expect(review).to_be_enabled()
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_unticking_every_day_says_so_at_the_group(
+    page, component_origin, axe_source, width
+):
+    """Advanced's On these days says "Choose at least one day." at once when
+    its last day is unticked, moving nothing, and clears on a tick; hiding
+    the days (Daily) takes the mark away too (#2009)."""
+    from playwright.sync_api import expect
+
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + EDIT)
+    page.get_by_label("Advanced").check()
+    group = page.get_by_role("group", name="On these days")
+    visible(group)
+    after = page.get_by_label("From", exact=True)
+    before = page_place(after)
+    group.get_by_label("Monday").uncheck()
+    eventually(
+        page,
+        "() => document.getElementById('report-weekdays_error').textContent.trim()",
+        "Choose at least one day.",
+    )
+    state = group_state(page, "report-weekdays")
+    assert state["described"] and set(state["invalid"]) == {"true"}
+    assert page_place(after) == pytest.approx(before, abs=0.5)
+    expect(page.get_by_role("button", name="Review changes")).to_be_disabled()
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
+    group.get_by_label("Tuesday").check()
+    eventually(page, "() => document.getElementById('report-weekdays_error').hidden")
+    state = group_state(page, "report-weekdays")
+    assert not state["described"] and set(state["invalid"]) == {"false"}
+    assert page_place(after) == pytest.approx(before, abs=0.5)
+    group.get_by_label("Tuesday").uncheck()
+    eventually(
+        page,
+        "() => document.getElementById('report-weekdays_error').hidden",
+        False,
+    )
+    page.locator("#report-frequency_0").check()
+    eventually(page, "() => document.getElementById('report-weekdays_error').hidden")
+    assert set(group_state(page, "report-weekdays")["invalid"]) == {"false"}
+
+
+def test_the_servers_group_refusals_clear_on_a_tick(page, component_origin):
+    """A Review the server refused for no day and no chart (a post the page
+    would have held) draws both at their groups with the error summary; a
+    tick clears that group's refusal and its summary item, and unticking it
+    again is said live, without a summary item (#2009)."""
+    page.goto(component_origin + NEW_GROUPS_REFUSED)
+    summary = page.locator("[data-error-summary]")
+    visible(summary)
+    for group_id, words in (
+        ("report-weekdays", "Choose at least one day."),
+        ("report-charts", "Choose at least one chart."),
+    ):
+        state = group_state(page, group_id)
+        assert state["words"] == words and state["described"]
+        assert set(state["invalid"]) == {"true"}
+    assert summary.get_by_role("link").count() == 2
+    days = page.get_by_role("group", name="On these days")
+    days.get_by_label("Friday").check()
+    eventually(page, "() => document.getElementById('report-weekdays_error').hidden")
+    assert summary.get_by_role("link").count() == 1
+    assert group_state(page, "report-charts")["words"] == "Choose at least one chart."
+    days.get_by_label("Friday").uncheck()
+    eventually(
+        page,
+        "() => document.getElementById('report-weekdays_error').textContent.trim()",
+        "Choose at least one day.",
+    )
+    assert summary.get_by_role("link").count() == 1

@@ -1441,6 +1441,15 @@ refuses a file larger than the limit, or than the room left, at once (Hosted
 files);
 and `data-pattern` gives a textarea, which has no `pattern` of its own, a
 rule to match (no "@" in the Family portal maintenance message).
+A group of checkboxes that needs one ticked (`data-require-one`, held by
+the complete-before-submit gate above) says so at the group, live, when it
+has a reserved error line (`<group id>_error`): once the reader has changed
+or left one of its boxes, no box ticked shows the group's
+`data-missing-hint` (the server's words) in that line at once, marks its boxes `aria-invalid="true"` and has the group
+described by the line, and ticking a box clears it; the mark goes too when
+the group is hidden. The page's error summary lists only the server's
+refusals (the report email editor's On these days and Charts groups,
+[#2009](https://github.com/epiphany40223/parishkit/issues/2009)).
 The server stays the authority: it checks every save, and its refusal is
 shown at the field as above, even when the browser would have allowed the
 value (a wrong computer clock, for example).
