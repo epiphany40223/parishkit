@@ -22,6 +22,10 @@ line"; admin-automation, "Rules for new Admin actions"):
   report drawn from current data, its subject, text part and recipients,
   never its HTML; Administrators only; it records the page's
   ``report_email_previewed``.
+- ``report-email send-test REPORT`` is the row's Send a test to me (#2036),
+  keyed by its request key: the report drawn now, sent only to the
+  Administrator (the Testing recipient in Testing); it records the page's
+  ``report_email_test_sent``.
 - ``report-email send-now REPORT`` is the row's Send now, keyed by its
   request key, with the dialog's words asked at the prompt (or ``--yes``).
 - ``report-email preview`` and ``confirm`` are the row's Pause, Resume and
@@ -148,6 +152,29 @@ class ReportEmailRender(ReadModel):
     updating: bool
     mode: str
     recipients: dict
+
+
+@dataclass(frozen=True)
+class ReportEmailSendTest(ReadModel):
+    """The Send a test to me a ``report-email send-test`` made or found (#2036).
+
+    ``id`` is the test's request key; ``created`` is false for a repeated
+    key, which returns the original test (``subject`` and ``updating`` are
+    then None: the email is not drawn again). ``subject`` is the test's
+    labeled subject; ``updating`` says its figures were not the newest.
+    ``recipient`` is ``self`` (the Administrator's own address) or
+    ``testing`` (the Testing recipient). Follow ``task``, which makes the
+    test's message, with ``task show --watch``; the message is then on
+    ``delivery list --purpose admin_report_test``.
+    """
+
+    id: UUID
+    report_id: UUID
+    created: bool
+    subject: str | None
+    updating: bool | None
+    recipient: str
+    task: dict
 
 
 @dataclass(frozen=True)
@@ -597,6 +624,74 @@ def read_render(caller, service, report_id, *, campaign_id):
         )
 
     return _held(step)
+
+
+def send_test(caller, service, report_id, *, campaign_id, request_key, context):
+    """``report-email send-test REPORT``: the row's Send a test to me (#2036).
+
+    Admits as the page's post does (recording activity, so a full-scope
+    session), for an Administrator and the current campaign's report, then
+    draws and queues the test through the page's own function, in the
+    page's command scope. A pending test of the report is ``stale_version``;
+    no ParishSoft data, busy figures, a chart that cannot be drawn,
+    Production mail paused or an archived campaign is ``not_available``.
+    ``context["committed"]`` is set once the test may have committed.
+    """
+    from .admin_operations import _admit as admit_form
+    from .admin_operations import _ended_or_raise, task_retry_model
+    from .jobs.task_retries import command_scope
+    from .reports.report_email_changes import refuse_archived
+    from .reports.report_email_test import request_test, task_of
+    from .web.refusals import UserFacingUnavailable
+
+    actor = admit_form(caller, service)
+    context["request_id"] = str(request_key)
+    written = []
+
+    def step():
+        """Draw the report and queue its test inside the page's command scope."""
+        written.clear()
+        if not _administrator(actor):
+            raise PermissionError("Only Administrators send report email tests.")
+        system, campaign = _system(campaign_id)
+        try:
+            refuse_archived(campaign)
+        except PermissionError as error:
+            raise NotAvailable(str(error)) from None
+        values = _record(system, campaign.pk, report_id)["values"]
+        try:
+            row, preview, created = request_test(
+                actor.identity,
+                values,
+                definition_id=report_id,
+                request_id=request_key,
+                scope=command_scope(caller, service, actor),
+            )
+        except (LookupError, UserFacingUnavailable) as error:
+            raise NotAvailable(str(error)) from None
+        written.append(True)
+        retry = task_retry_model(task_of(row), created=created, request_key=request_key)
+        return ReportEmailSendTest(
+            id=row.pk,
+            report_id=report_id,
+            created=created,
+            subject=None if preview is None else "[TEST] " + preview.subject,
+            updating=None if preview is None else preview.updating,
+            recipient="testing" if row.mode == "testing" else "self",
+            task=retry.task,
+        )
+
+    try:
+        model = _held(step)
+    except DatabaseError:
+        # Only once the test was recorded may it have committed (exit 6).
+        if written:
+            context["committed"] = True
+        raise
+    except (NotAvailable, PermissionError) as error:
+        _ended_or_raise(caller, service, actor, error)
+    context["committed"] = True
+    return model
 
 
 def send_now_lines(caller, service, report_id, *, campaign_id):

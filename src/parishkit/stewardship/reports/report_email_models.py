@@ -237,3 +237,83 @@ class ReportEmailCoverageDecision(ImmutableRecord):
                 name="report_email_coverage_decision_known",
             )
         ]
+
+
+# How a report email test (#2036) stands: waiting to be made or sent, or
+# settled (its message delivered, failed or cancelled, or its task ended
+# without one), when its kept email is scrubbed.
+TEST_STATES = ("queued", "settled")
+
+
+class ReportEmailTest(MutableRecord):
+    """One Administrator's Send a test to me of a report email (#2036).
+
+    The report as it would be drawn now (a saved report's ``definition_id``,
+    or None for an unsaved New form), compiled by the web and kept here
+    until its message is settled, so every attempt sends the same email and
+    images (``[content id, base64 PNG]`` pairs, as a snapshot keeps them).
+    ``address`` is the Administrator's own sign-in address, which the
+    database guard fills in; ``testing_recipient`` is set exactly in
+    Testing, where the test goes there instead. The outbox message's
+    semantic key is this row's id; no occurrence, fulfillment, snapshot or
+    pause hold is ever made for it. The guard (frozen file 0173) admits the
+    web's insert and only the database's own settlement afterwards, which
+    scrubs the email; the partial unique constraint allows one queued test
+    per Administrator and report.
+    """
+
+    immutable_fields = MutableRecord.immutable_fields + (
+        "campaign_id",
+        "configuration_id",
+        "definition_id",
+        "requested_by_id",
+        "mode",
+        "testing_recipient",
+        "address",
+        "task_id",
+    )
+    campaign = models.ForeignKey(
+        "stewardship_campaigns.Campaign", on_delete=models.PROTECT
+    )
+    configuration = models.ForeignKey(
+        "stewardship_accounts.AppliedConfigurationVersion", on_delete=models.PROTECT
+    )
+    definition_id = models.UUIDField(null=True)
+    requested_by_id = models.UUIDField()
+    mode = models.CharField(max_length=16)
+    testing_recipient = models.CharField(max_length=254, null=True)
+    address = models.CharField(max_length=254)
+    subject = models.CharField(max_length=254)
+    html = models.TextField()
+    text = models.TextField()
+    images = models.JSONField()
+    task = models.OneToOneField("stewardship_jobs.TaskRun", on_delete=models.PROTECT)
+    state = models.CharField(max_length=16, default="queued", db_default="queued")
+
+    class Meta(MutableRecord.Meta):
+        db_table = "stewardship_report_email_test"
+        constraints = [
+            *MutableRecord.Meta.constraints,
+            models.CheckConstraint(
+                condition=models.Q(mode="production", testing_recipient=None)
+                | models.Q(mode="testing", testing_recipient__isnull=False),
+                name="report_email_test_mode",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(state__in=TEST_STATES),
+                name="report_email_test_known_state",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(state="queued")
+                | models.Q(subject="", html="", text="", images=[]),
+                name="report_email_test_scrubbed",
+            ),
+            # One pending test per Administrator and report; an unsaved New
+            # form's tests (no report yet) share one, hence NULLS NOT DISTINCT.
+            models.UniqueConstraint(
+                fields=["requested_by_id", "definition_id"],
+                condition=models.Q(state="queued"),
+                nulls_distinct=False,
+                name="report_email_test_pending",
+            ),
+        ]

@@ -9,7 +9,10 @@ place. Row actions are icon buttons that open the row actions' confirmation
 dialog; an action the row cannot take now stays in place, unavailable, with its
 reason in its tooltip. Preview (#2035) posts the report to the
 report-preview form, whose answer fills the "Preview — not sent" review
-dialog, which has no Apply. Staff see no recipients, no actions and no Edit
+dialog, which has no Apply. Send a test to me (#2036) posts the report
+through the report-test form from the page script, in place, and writes
+its result ("Test of Weekly report sent to you at 9:42 AM.") to the status
+line above the table, which the 30-second re-read leaves alone. Staff see no recipients, no actions and no Edit
 links.
 A Paused status takes the Warning look of the UX conventions' status
 indicators (#1966): the warning icon, hidden from assistive technology, and
@@ -19,7 +22,7 @@ stops sending.
 <h1>{% translate "Report emails" %}</h1>
 {% aboutpage "report-emails" %}<p>{% translate "A report email is an email about the campaign that is sent once or on a repeating schedule. Each is made of blocks, such as the campaign totals, the response funnel or the open additional information requests, and goes to the people chosen for it: Administrators, Staff and other addresses." %}</p>
 <p>{% translate "Times are shown in this computer's time zone. Report emails keep sending after the campaign ends, as their schedules say, until the campaign is archived. The Family mail of the campaign is on Dates and mail schedules, and alerts and receipts are not report emails." %}</p>
-<p>{% translate "Send now sends a report email at once, outside its schedule. Pause stops its sends until you resume it; sends missed while it is paused are not made later. Delete stops its sends for good; its past sends stay listed below. Past sends open each email's saved copy. The list updates itself every 30 seconds." %}</p>{% endaboutpage %}
+<p>{% translate "Send now sends a report email at once, outside its schedule. Pause stops its sends until you resume it; sends missed while it is paused are not made later. Delete stops its sends for good; its past sends stay listed below. Send a test to me sends one copy, as it would be sent now, only to you (or, in Testing, to the Testing recipient); it is not a send of the report. Past sends open each email's saved copy. The list updates itself every 30 seconds." %}</p>{% endaboutpage %}
 {% if not campaign %}<p>{% translate "There is no current campaign." %}</p>{% else %}
 {% include "stewardship/components/review-outcome.html" with outcome_id="report-emails-outcome" %}
 <section id="report-emails-table" class="panel" data-table-region data-refresh-url="{{ refresh_url }}" aria-labelledby="report-emails-title">
@@ -32,6 +35,7 @@ stops sending.
 <form method="post" action="{{ change_url }}" id="report-resume">{% csrf_token %}<input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="operation" value="resume"></form>
 <form method="post" action="{{ change_url }}" id="report-delete">{% csrf_token %}<input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="operation" value="delete"></form>
 <form method="post" action="{{ render_url }}" id="report-preview" data-review-open="report-preview-dialog">{% csrf_token %}</form>
+<form method="post" action="{{ test_url }}" id="report-test" data-report-test-form data-report-test-outcome="report-emails-outcome">{% csrf_token %}</form>
 <form method="post" action="{{ send_now_url }}" id="report-send-now">{% csrf_token %}<input type="hidden" name="command_id" value="{{ command_id }}"><input type="hidden" name="configuration_id" value="{{ configuration_id }}"></form>
 {% endif %}
 {% if rows %}<div class="table-scroll" tabindex="0" role="region" aria-labelledby="report-emails-caption">

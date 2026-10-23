@@ -1189,6 +1189,11 @@ td > :last-child { margin-bottom: 0; }
 /* Send a test of this text (#446): its status line (.reserve-line) keeps one
    line while empty; a refusal reads as an error. */
 .schedule-email-test-status.is-error { color: var(--error-ink); font-weight: 600; }
+/* Send a test to me (#2036): the editor's status line keeps two lines (three
+   on a phone, .reserve-lines-wrap), since a refusal names its fields, and
+   the Report emails page writes the row's result to its one-line status
+   line (.review-outcome); a refusal reads as an error in either. */
+.report-test-status.is-error, .review-outcome.is-error { color: var(--error-ink); font-weight: 600; }
 .status-badge { display: inline-block; padding: .1rem .6rem; border-radius: 999px; background: var(--paper-soft); border: 1px solid var(--border); font-size: .8125rem; font-weight: 600; white-space: nowrap; }
 .status-badge-on { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-strong); }
 .bulk-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin-block: 1rem .5rem; }

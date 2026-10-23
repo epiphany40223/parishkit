@@ -102,7 +102,7 @@ BEGIN
     proposed:=to_jsonb(NEW);
     SELECT * INTO t FROM public.stewardship_task_run WHERE id=NEW.correlation_id;
     SELECT * INTO own FROM public.stewardship_outbox_message
-        WHERE id=t.domain_request_id AND task_id=t.root_id AND purpose IN ('initial','reminder','receipt','family_test','admin_report','operational','security_event','leader_email');
+        WHERE id=t.domain_request_id AND task_id=t.root_id AND purpose IN ('initial','reminder','receipt','family_test','admin_report','admin_report_test','operational','security_event','leader_email');
     IF own.purpose='operational' THEN
         IF public.stewardship_ops_dispatch_write_v1(TG_TABLE_NAME,proposed,
             CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE THEN
@@ -129,6 +129,15 @@ BEGIN
         IF public.stewardship_report_email_dispatch_write_v1(TG_TABLE_NAME,proposed,
             CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE THEN
             RAISE EXCEPTION 'Report email dispatch requires its exact current owner' USING ERRCODE='23514';
+        END IF;
+        RETURN NEW;
+    END IF;
+    -- Send a test to me (#2036): one Administrator's test of a report,
+    -- which has no occurrence, fulfillment or pause hold.
+    IF own.purpose='admin_report_test' THEN
+        IF public.stewardship_report_email_test_dispatch_write_v1(TG_TABLE_NAME,proposed,
+            CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE THEN
+            RAISE EXCEPTION 'Report email test dispatch requires its exact current owner' USING ERRCODE='23514';
         END IF;
         RETURN NEW;
     END IF;

@@ -24,6 +24,7 @@ from ..reports import (
     report_email_copy_views,
     report_email_editor_views,
     report_email_preview_views,
+    report_email_test_views,
     report_email_views,
 )
 from ..web.admin_routes import current_campaign
@@ -81,6 +82,12 @@ patterns = [
         "mail/report-emails/previews/<str:token>/<str:name>.png",
         current_campaign(report_email_preview_views.report_email_preview_image),
         name="report_email_preview_image",
+    ),
+    # Send a test to me of a saved report email, the row action (#2036).
+    path(
+        "mail/report-emails/tests/",
+        current_campaign(report_email_test_views.report_email_test),
+        name="report_email_test",
     ),
     # New and Edit report email (#1786, delivery plan item 6), and the
     # editor's live schedule preview, a POST its script reads. "new/" and

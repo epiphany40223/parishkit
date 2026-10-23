@@ -173,6 +173,8 @@ def scheduler_handlers():
     from .reports.report_email_finalization import finalization_handler
     from .reports.report_email_ownership import TASK_TYPE as REPORT_EMAIL_PREPARE
     from .reports.report_email_tasks import report_email_handler
+    from .reports.report_email_test import TASK_TYPE as REPORT_EMAIL_TEST
+    from .reports.report_email_test import report_email_test_handler
     from .reports.verification_production import TASK_TYPE as VERIFY_FACTS
     from .reports.verification_tasks import verification_handler
     from .source.outcomes import admit_refresh_metadata, recovery_plan
@@ -196,6 +198,8 @@ def scheduler_handlers():
         # Report emails (#1786), which replaced the Daily and Weekly digests.
         REPORT_EMAIL_PREPARE: report_email_handler(scheduler=True),
         REPORT_EMAIL_FINALIZE: finalization_handler(scheduler=True),
+        # Send a test to me (#2036).
+        REPORT_EMAIL_TEST: report_email_test_handler(scheduler=True),
         FAMILY_MAIL_PREPARE: preparation_handler(scheduler=True),
         FAMILY_MAIL_TEST: family_test_handler(scheduler=True),
         REPORT_EXPORT: export_handler(scheduler=True),
@@ -391,6 +395,8 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
             TASK_TYPE as REPORT_EMAIL_PREPARE,
         )
         from .reports.report_email_tasks import report_email_handler
+        from .reports.report_email_test import TASK_TYPE as REPORT_EMAIL_TEST
+        from .reports.report_email_test import report_email_test_handler
         from .reports.verification_production import TASK_TYPE as VERIFY_FACTS
         from .reports.verification_tasks import verification_handler
         from .source.effects import refresh_reconciler, refresh_unchanged
@@ -407,6 +413,8 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
                 public_origin=configuration.public_origin
             ),
             REPORT_EMAIL_FINALIZE: finalization_handler(),
+            # Send a test to me (#2036): the test's one message.
+            REPORT_EMAIL_TEST: report_email_test_handler(),
             FAMILY_MAIL_PREPARE: preparation_handler(
                 general=rings["general_encryption"],
                 mac=rings["family_code_mac"],

@@ -3129,6 +3129,23 @@ def report_email_render(args, preamble, runtime, context):
     )
 
 
+def report_email_send_test(args, preamble, runtime, context):
+    """Send a test of one report email to the caller, as its row does (#2036)."""
+    from .accounts.policy import Capability
+    from .admin_report_emails import send_test
+
+    # The role first (#1341): denied before any input or lookup.
+    _role_first(context, runtime, Capability.CONFIGURE)
+    return send_test(
+        context["caller"],
+        runtime,
+        args.report_id,
+        campaign_id=args.campaign,
+        request_key=_request_key(args, context),
+        context=context,
+    )
+
+
 def report_email_send_now(args, preamble, runtime, context):
     """Send one report email now, as its row's Send now does (#1786).
 
@@ -3582,6 +3599,7 @@ DELIVERY_PURPOSES = (
     "daily_digest",
     "weekly_digest",
     "admin_report",
+    "admin_report_test",
     "operational",
     "security_event",
     "leader_email",
@@ -4963,7 +4981,7 @@ def _report_email_copy_options(parser):
 
 
 def _report_email_send_now_options(parser):
-    """Options of ``report-email send-now``: the report and the request key."""
+    """Options of ``report-email send-now`` and ``send-test``: report and key."""
     _report_email_options(parser)
     _request_key_option(parser)
 
@@ -6834,6 +6852,7 @@ def _report_specs():
         ReportEmailRender,
         ReportEmailSendNow,
         ReportEmailSends,
+        ReportEmailSendTest,
         ReportEmailShow,
     )
     from .admin_report_reads import (
@@ -7152,6 +7171,18 @@ def _report_specs():
             8,
             options=(_report_email_options,),
             audit_event="report_email_previewed",
+        ),
+        CommandSpec(
+            "report-email send-test",
+            "Send yourself a test of one report email, as its Send a test to me does.",
+            report_email_send_test,
+            "full",
+            True,
+            ReportEmailSendTest.field_names(),
+            8,
+            options=(_report_email_send_now_options,),
+            request_key=True,
+            audit_event="report_email_test_sent",
         ),
         CommandSpec(
             "report-email send-now",

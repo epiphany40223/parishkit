@@ -48,6 +48,7 @@ from .family_mail_dispatch import (
     LIMIT_RETRY_SECONDS,
     MAILBOX_LIMITS,
     MAX_ATTEMPTS,
+    REPORT_PURPOSES,
     RESERVED_SENDS,
     FamilyDeliveryHeld,
     begin_submission,
@@ -62,6 +63,7 @@ from .family_mail_dispatch import (
     sends_in_last_day,
 )
 from .family_mail_dispatch_recovery import (
+    TEST_PURPOSES,
     cancel_abandoned_family_test,
     definitely_unsent,
     record_abandoned_submission,
@@ -507,12 +509,13 @@ def recovery_plan(status):
         "retry_wait": "recovery_retry",
     }[row.state]
     if action == "recovery_retry" and preparation_attempts(status) >= MAX_ATTEMPTS:
-        # A chosen-Family test nothing else can settle is cancelled, not left
-        # unsent; the SQL recovery clause admits exactly these two states and
-        # its literal budget mirrors MAX_ATTEMPTS.
+        # A test nothing else can settle (a chosen-Family test or a report
+        # email test) is cancelled, not left unsent; each SQL recovery clause
+        # admits exactly these two states and its literal budget mirrors
+        # MAX_ATTEMPTS.
         action = (
             "recovery_cancel"
-            if row.purpose == "family_test" and definitely_unsent(row)
+            if row.purpose in TEST_PURPOSES and definitely_unsent(row)
             else "recovery_fail"
         )
     return (
@@ -883,7 +886,7 @@ def _execute(
                 raise FamilyDeliveryHeld("Workspace key change is switching.")
             raise PermissionError("Installed Workspace credential differs.")
         execution.check()
-        if session is not None and message.purpose != "admin_report":
+        if session is not None and message.purpose not in REPORT_PURPOSES:
             # Settle retired helpers before this message commits
             # "submitting": failing to reap one is fatal, and must not leave
             # an unsent message looking possibly sent.
@@ -914,7 +917,7 @@ def _execute(
             len(mail.recipients),
             health=ProviderHealth.UNOBSERVED,
         )
-        batched = session is not None and message.purpose != "admin_report"
+        batched = session is not None and message.purpose not in REPORT_PURPOSES
         stats.update(
             {"transport": "batched"}
             if batched
@@ -969,7 +972,7 @@ def _execute(
                     identity["family_duid"],
                     extra=log_extra({"task_id": execution.claim.run_id}),
                 )
-                if _settle_failed_family_test(execution):
+                if _settle_failed_test(execution):
                     execution.transition("safe_cancel")
                 else:
                     execution.transition("permanent_failure")
@@ -1097,17 +1100,20 @@ def mark_hold(execution):
         execution.handler.after_transition("progress", status)
 
 
-def _settle_failed_family_test(execution):
-    """A chosen-Family test that cannot be prepared is cancelled, never left unsent.
+def _settle_failed_test(execution):
+    """A test that cannot be prepared is cancelled, never left unsent.
 
-    Its key is an Admin ticket, not a schedule occurrence: no planner, retry or
-    Admin resolution would ever settle a pending test, and an unsent Testing
-    message blocks Testing cleanup for good. Scheduled mail keeps its ordinary
-    failed task, which planning and Admin retry still own.
+    A chosen-Family test's key is an Admin ticket and a report email test's
+    its request (#2036), not a schedule occurrence: no planner, retry or Admin
+    resolution would ever settle a pending test, a report email test would
+    stay pending (refusing the next one and keeping its email), and an unsent
+    Testing message blocks Testing cleanup for good. Scheduled mail and report
+    sends keep their ordinary failed task, which planning and Admin retry
+    still own.
     """
     with execution.control.lock, work_transaction():
         message = bound_dispatch(_status(lock_task_claim(execution.claim)))
-        if message.purpose != "family_test":
+        if message.purpose not in TEST_PURPOSES:
             return False
         # Already cancelled (for example by go-live invalidation) is settled.
         if message.state == "cancelled":

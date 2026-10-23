@@ -8539,6 +8539,86 @@
     });
   });
 
+  // Send a test to me (#2036; report-emails spec, "Send a test to me"): a
+  // report email's test to the signed-in Administrator, posted in place.
+  // The Report emails row action (data-report-test, the report's id) posts
+  // through the page's report-test form and writes its result to the status
+  // line above the table (data-report-test-outcome), which the 30-second
+  // re-read leaves alone; the editor's button (data-report-test-submit, a
+  // submit button marked data-review-skip so neither the review dialog nor
+  // the in-place table save takes it) posts the unsaved form with test=yes
+  // and writes to the reserved line after it (data-report-test-status). The
+  // complete gate holds the editor's button as it holds Preview. The answer
+  // is JSON: {"queued": true}, a 400 with the form's refusals by field, or
+  // the shared refusal body. The time is this browser's. A send that gets
+  // no answer may have been queued, so it is never repeated by itself.
+  const reportTestSending = new WeakSet();
+  const reportTest = async (button, url, body, csrf, line, sent) => {
+    if (reportTestSending.has(button)) return;
+    reportTestSending.add(button);
+    button.setAttribute("aria-disabled", "true");
+    button.classList.add("is-busy");
+    const say = (text, error) => {
+      line.textContent = text;
+      line.classList.toggle("is-error", Boolean(error));
+    };
+    say("Sending the test…", false);
+    let text = "The server could not be reached, so a test may or may not be on its way. "
+      + "Check your mailbox before sending another.";
+    let error = true;
+    try {
+      const response = await fetch(url, {
+        method: "POST", credentials: "same-origin", cache: "no-store",
+        headers: {"X-CSRFToken": csrf, "Accept": "application/json"}, body
+      });
+      const raw = await response.text();
+      let answer = null;
+      try { answer = JSON.parse(raw); } catch { answer = null; }
+      const problems = Array.isArray(answer?.errors)
+        ? answer.errors.filter((item) => typeof item?.message === "string") : [];
+      if (response.ok && answer?.queued === true) {
+        // The shared clock (date-format-v1.js); without it the time is left out.
+        text = sent(clockTime());
+        error = false;
+      } else if (response.status === 400 && problems.length) {
+        text = "This form can't be sent as a test. " + problems
+          .map((item) => (item.field ? `${item.field}: ${item.message}` : item.message)).join(" ");
+      } else {
+        text = refusalText(response.status, raw);
+      }
+    } catch { /* no answer: said above */ }
+    reportTestSending.delete(button);
+    button.removeAttribute("aria-disabled");
+    button.classList.remove("is-busy");
+    say(text, error);
+  };
+  document.addEventListener("click", (event) => {
+    const button = event.target instanceof Element && event.target.closest("[data-report-test]");
+    const form = document.querySelector("form[data-report-test-form]");
+    const line = form && document.getElementById(form.dataset.reportTestOutcome);
+    const csrf = form?.querySelector('input[name="csrfmiddlewaretoken"]');
+    if (!button || !form || !line || !csrf || button.getAttribute("aria-disabled") === "true") return;
+    event.preventDefault();
+    const name = button.dataset.reportName || "";
+    reportTest(button, form.action, new URLSearchParams({report: button.dataset.reportTest}),
+      csrf.value, line, (time) => (time
+        ? fillIn("Test of {name} sent to you at {time}.", {name, time})
+        : fillIn("Test of {name} sent to you.", {name})));
+  });
+  document.addEventListener("submit", (event) => {
+    const button = event.submitter;
+    if (!(button instanceof HTMLElement) || !button.hasAttribute("data-report-test-submit")) return;
+    const form = event.target;
+    const line = form.querySelector("[data-report-test-status]")
+      || document.querySelector("[data-report-test-status]");
+    const csrf = form.querySelector('input[name="csrfmiddlewaretoken"]');
+    if (!line || !csrf) return;
+    event.preventDefault();
+    reportTest(button, formUrl(form), new URLSearchParams(new FormData(form, button)),
+      csrf.value, line, (time) => (time
+        ? fillIn("Test sent to you at {time}.", {time}) : "Test sent to you."));
+  }, true);
+
   // "Send a test of this text" under a scheduled email's own email (#446,
   // schedule-email.html): posts the email fields as they are now, with the
   // email chosen in Email to send, to schedule_email_test without a page

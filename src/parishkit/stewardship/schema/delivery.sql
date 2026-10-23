@@ -302,7 +302,8 @@ BEGIN
        AND public.stewardship_report_email_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),NULL) IS NOT TRUE
        AND public.stewardship_ops_prepare_write_v1(TG_TABLE_NAME,to_jsonb(NEW)) IS NOT TRUE
        AND public.stewardship_security_prepare_write_v1(TG_TABLE_NAME,to_jsonb(NEW)) IS NOT TRUE
-       AND public.stewardship_leader_email_prepare_write_v1(TG_TABLE_NAME,to_jsonb(NEW)) IS NOT TRUE THEN
+       AND public.stewardship_leader_email_prepare_write_v1(TG_TABLE_NAME,to_jsonb(NEW)) IS NOT TRUE
+       AND public.stewardship_report_email_test_write_v1(TG_TABLE_NAME,to_jsonb(NEW)) IS NOT TRUE THEN
         RAISE EXCEPTION 'Outbox insertion requires current preparation ownership'
             USING ERRCODE='23514';
     END IF;
@@ -884,7 +885,7 @@ BEGIN
     SELECT * INTO r FROM public.stewardship_outbox_render WHERE id=e.render_id;
     SELECT * INTO m FROM public.stewardship_outbox_message WHERE id=e.message_id;
     IF e.id IS NULL OR r.id IS NULL OR m.id IS NULL OR e.previous_state<>'submitting'
-       OR m.purpose NOT IN ('initial','reminder','receipt','family_test','daily_digest','weekly_digest','admin_report','operational','security_event','leader_email') OR e.attempt<1
+       OR m.purpose NOT IN ('initial','reminder','receipt','family_test','daily_digest','weekly_digest','admin_report','admin_report_test','operational','security_event','leader_email') OR e.attempt<1
        OR e.evidence_digest<>encode(sha256(convert_to(e.evidence_note,'UTF8')),'hex')
        OR e.provider_key_digest<>encode(sha256(convert_to(m.semantic_key::text,'UTF8')),'hex')
        THEN RETURN NULL; END IF;

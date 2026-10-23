@@ -231,6 +231,7 @@ def test_every_report_email_command_has_its_models_fields():
         "report-email copy": models.ReportEmailCopy,
         "report-email render": models.ReportEmailRender,
         "report-email send-now": models.ReportEmailSendNow,
+        "report-email send-test": models.ReportEmailSendTest,
         "report-email preview": models.ReportEmailPreview,
         "report-email confirm": models.ReportEmailConfirm,
     }

@@ -268,7 +268,9 @@ A manual send's request is a `ReportEmailManualRequest`
 data: Testing cleanup, the Production-transition inventory, restore,
 archive and the campaign purge include them as they include today's digest
 tables, and their writes go through the same campaign read guards and
-security-definer write functions.
+security-definer write functions. A [Send a test to me](#send-a-test-to-me)
+request is a `ReportEmailTest` (`stewardship_report_email_test`), which is
+no send and is read by none of the send records' checks.
 
 ### Report pipeline
 
@@ -1406,6 +1408,74 @@ occurrence, fulfillment or saved copy, never counts as a send of the
 report, is limited to one pending test per Administrator and report, and is
 audited. Its Sent mail row has the purpose `admin_report_test`.
 
+Its details ([#2036](https://github.com/epiphany40223/parishkit/issues/2036)):
+
+- **What it sends.** The email [Preview](#preview) draws now, from the same
+  compile (the same as-of moment, facts, Updating rule and links), with
+  "[TEST] " before its subject and a first line: "TEST — a test of this
+  report email, sent only to you. It is not a send of the report." In
+  Testing the [Testing redirect](#testing-redirect) applies: it goes to the
+  Testing recipient instead, and the line reads "TEST — sent to {Testing
+  recipient} instead of you ({address}). It is a test of this report
+  email, not a send of the report." Its chart images travel with it, as a
+  send's do.
+- **Who gets it.** Only the Administrator who asked, at the address they
+  sign in with; Staff have no Send a test to me. Nothing else in the report
+  is read for recipients.
+- **Where the result shows.** On the Report emails page the row action's
+  result is the status line above the table, naming the
+  report ("Test of Weekly report sent to you at 9:42 AM."); on the editor
+  it is the reserved line after the button. The time is when it was queued,
+  in this browser's zone. The email then appears on Sent mail as a "Report
+  email test", where its delivery shows as any message's does.
+- **One pending test.** While an earlier test of the same report (for an
+  unsaved New form: of a new report) by the same Administrator is still
+  waiting to be made or handed to the mail service, another is refused:
+  "A test of this report is already on its way to you. Wait for it to
+  arrive, then send another. If Sent mail shows its delivery as unknown,
+  record what happened there first." A delivered, failed or cancelled test
+  no longer counts; one whose delivery is not known counts until it is
+  settled on Sent mail. The database refuses the second request (a unique index on
+  the pending tests), so two tabs cannot both queue one.
+- **Refusals.** Preview's (no ParishSoft data yet, figures being updated,
+  a chart that cannot be drawn), a form the editor's checks refuse (named
+  by field, as the status line can show them), Production mail paused ("Mail
+  is paused, so the test was not sent. Send it after Resume."), a campaign
+  that is not sending report emails in this mode ("This campaign is not
+  sending report emails now, so no test was sent."): in Production one that
+  is not scheduled, active or closed, in Testing one that has left draft,
+  as for the report's own sends; and an archived campaign, which offers no
+  Send a test to me. Each is said in
+  plain words with its error code; nothing is recorded but the refusal.
+- **Delivery.** The worker makes the message from the request's kept
+  email, and mail dispatch sends exactly that email, rechecking that the
+  campaign, mode, Testing recipient and the Administrator's authority are
+  unchanged, and that the campaign still sends in this mode; a change
+  cancels the unsent test. A Production test waits while mail is paused
+  (it is in no pause hold). Like a chosen-Family test, a test whose message
+  cannot be prepared within its attempts (or whose abandoned delivery has
+  spent them) is cancelled as not sent, which settles it; and an unknown or
+  failed test is settled on Sent mail from evidence only (recorded as
+  delivered or as not sent, or noted); it is never resent or retried.
+- **Never a send.** A test has no occurrence, fulfillment, preparation,
+  snapshot, saved copy or pause hold. It is not listed in the report's past
+  sends or last send, never satisfies or blocks a scheduled send, and is
+  not counted by the report's completion or recovery.
+- **Records.** One `ReportEmailTest` (`stewardship_report_email_test`) per
+  request, immutable: the campaign, configuration, report (none for an
+  unsaved New form), the Administrator, the mode and Testing recipient, the
+  address, the email's subject, HTML, text and images, and its task
+  (`report_email_test`). Its message's semantic key is the request's id.
+  Once the message is delivered, failed or cancelled (or removed by
+  cleanup), or the task ends without one, the database settles the request
+  and scrubs the kept email, so no copy of the email or its images stays on
+  the request. The message's stored render keeps its subject, HTML and
+  text, as every report email's does.
+- **Audit.** `report_email_test_sent`, naming the report (the campaign for
+  an unsaved form) and the mode (`report_mode`), which says whether it went
+  to the Administrator or the Testing recipient; never the address or the
+  email's content.
+
 ### Send now
 
 **Send now** sends the saved report to its recipients now, outside its
@@ -1728,14 +1798,13 @@ entries of the schedule commands (a daily digest's `comparison`, a digest's
 | `report-email preview --expected-version V --changes FILE` | The review of a change document: `create`, `edit` (by `id`, keeping what it leaves out), `delete`, `pause`, `resume`, `skip` and `unskip` entries, validated, previewed and signed as the page does; prints the review and its token, and whether the after-campaign confirmation is required. The document is `{"changes": [ENTRY, ...]}`, each entry `{"operation": OPERATION, "id": REPORT}` (a `skip` or `unskip` adds `"sends": [SLOT, ...]`, one to fifty slot keys, each once: for a skip those `show` lists in its next sends, for an unskip those of its skip dates still ahead; the review lists each with its `due_at`; `create` has no `id` and holds `"values"`, and `edit` holds the `"values"` it changes, each in the [stored form](#stored-form) with times in the campaign's zone, of `name`, `subject`, `intro_html`, `intro_text`, `recipients`, `schedule`, `as_of`, `blocks` and `content_required`), at most one entry per report; `V` is the version `show` or `list` printed. A `create` or `edit` is checked by the page's own checks ([recipients](#recipients-field) included), and a refusal names each field and its problem as the page would show it at that field ("Recipients: …"). |
 | `report-email confirm --token TOKEN\|-` | Applies a previewed change; the after-campaign confirmation is asked at the [prompt](../admin-automation/spec.md#command-line-confirmation) or given by `--yes`, else exit 4 (`confirmation_required`). |
 | `report-email render REPORT` | Preview: the report drawn from current data, its subject and text part (never the HTML), its as-of moment, whether its figures are Updating, and who it would go to now (users and groups; outside addresses as the page shows them to Administrators). Administrators only; any session scope. Records the page's audit event, `report_email_previewed`. |
-| `report-email send-test REPORT` | Send a test to me. |
+| `report-email send-test REPORT [--request-key KEY]` | [Send a test to me](#send-a-test-to-me) of a saved report, keyed by its request key (the request's id): the test's `id`, the report, whether this call `created` it, its labeled `subject`, whether its figures are `updating`, who it goes to (`recipient`: `self`, or `testing` for the Testing recipient) and its task. Repeating a key returns the same test. Administrators only. A test of the report still pending is `stale_version`; no ParishSoft data yet, figures being updated or a chart that cannot be drawn is `not_available`. Records `report_email_test_sent` when it made the test. |
 | `report-email send-now REPORT [--request-key KEY]` | Send now, keyed by its request key (the page's command id), with the confirmation at the prompt or `--yes`. |
 | `report-email sends REPORT` | Past sends, as the page lists them: each send's id, kind, when it was made, how, its as-of moment, its email count, result and a list block's count. |
 | `report-email copy SEND` | A saved copy, read from its snapshot through its page's functions: each block's figures, and for the additional information block each request's identifier and states, never a Family's text; its as-of line, how it was sent and its recipients by kind (outside addresses to Administrators only), as the page shows them. Reads pre-migration daily and weekly copies too. Records `report_email_viewed`. |
 
 Other commands change with it: `delivery list --purpose` accepts
-`admin_report` (and `admin_report_test` with Send a test to me, delivery
-plan item 7) and still the old `daily_digest` and `weekly_digest` for
+`admin_report`, `admin_report_test` (Send a test to me) and still the old `daily_digest` and `weekly_digest` for
 history, and the Resolve held messages commands' `--type` takes
 `admin_report`, keeping `daily_digest` and `weekly_digest` for digests held
 from before the conversion
@@ -2138,7 +2207,12 @@ require.
    [#1957](https://github.com/epiphany40223/parishkit/issues/1957). Needs the
    Administrator's pk-local check.
 7. **Preview and Send a test to me**, with `report-email render` and
-   `send-test`.
+   `send-test`, in two pull requests: Preview
+   ([#2035](https://github.com/epiphany40223/parishkit/issues/2035)), then
+   Send a test to me
+   ([#2036](https://github.com/epiphany40223/parishkit/issues/2036)), whose
+   test request table and message path are one forward migration with a
+   frozen file (see [send a test to me](#send-a-test-to-me)).
 8. **Campaign wizard starting points**, and Start from on New: first the
    starting points' one definition and Start from on New
    ([#2037](https://github.com/epiphany40223/parishkit/issues/2037)), then

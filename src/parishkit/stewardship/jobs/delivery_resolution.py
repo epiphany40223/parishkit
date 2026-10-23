@@ -50,6 +50,10 @@ def _prepare(message, *, general, public, public_origin):
         # Cleanup at go-live deletes it, so leaving it unsettled has no cost
         # beyond blocking cleanup until an Admin records the outcome.
         raise PermissionError("Family tests cannot be resent or retried.")
+    if message is not None and message.purpose == "admin_report_test":
+        # A report email test (#2036) is settled from evidence only, as a
+        # chosen-Family test is; the Administrator sends another instead.
+        raise PermissionError("Report email tests cannot be resent or retried.")
     if message is not None and message.purpose in {
         "daily_digest",
         "weekly_digest",

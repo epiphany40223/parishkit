@@ -546,8 +546,11 @@ def actions(row_status, *, archived, editable):
         ATTENTION: ATTENTION_REASON,
     }.get(row_status)
     offered = {
-        # Preview reads only, so it is offered in every status (#2035).
+        # Preview reads only, so it is offered in every status (#2035), and
+        # Send a test to me sends only to the Administrator, never counting
+        # as a send, so it is too (#2036).
         "preview": None,
+        "test": None,
         "send_now": blocked,
         "resume" if row_status == PAUSED else "pause": blocked
         or (NOTHING_AHEAD if row_status == DONE else None),

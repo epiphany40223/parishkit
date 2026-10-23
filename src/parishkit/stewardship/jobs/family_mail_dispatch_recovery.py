@@ -12,6 +12,11 @@ from .outbox_storage import change_message
 from .outbox_validation import DeliveryEvidence
 from .ownership import database_now
 
+# Tests no planner, retry or Admin resolution would ever settle: a
+# chosen-Family test and a report email test (#2036). Once its preparation
+# budget is spent, a definitely unsent one is cancelled, never left pending.
+TEST_PURPOSES = frozenset({"family_test", "admin_report_test"})
+
 
 def record_abandoned_submission(status, *, actor_id):
     """Recover only after Task abandonment and the finite provider deadline.
@@ -75,7 +80,9 @@ def definitely_unsent(row):
 
 
 def cancel_abandoned_family_test(status, *, actor_id):
-    """Cancel an unsent chosen-Family test whose abandoned dispatch cannot prepare.
+    """Cancel an unsent test whose abandoned dispatch cannot prepare.
+
+    A test is one of ``TEST_PURPOSES``.
 
     The recovery counterpart of the in-process settlement: a worker crash,
     lost lease or escaped exception leaves no live claim, and no planner,
@@ -86,10 +93,10 @@ def cancel_abandoned_family_test(status, *, actor_id):
     row = bound_dispatch(status)
     if (
         status.state != "abandoned"
-        or row.purpose != "family_test"
+        or row.purpose not in TEST_PURPOSES
         or not definitely_unsent(row)
     ):
-        raise PermissionError("Family test recovery cancellation is not admitted.")
+        raise PermissionError("Test recovery cancellation is not admitted.")
 
     def admit(action, identity, current, proposal):
         actual = bound_dispatch(status)

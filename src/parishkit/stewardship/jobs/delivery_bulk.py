@@ -63,11 +63,14 @@ from .storage import TaskRetryConflict
 
 # Each bulk action, with the message state it selects from.
 KINDS = {"retry_failed": "permanent_failure", "confirm_unsent": "delivery_unknown"}
-# The email types each action may cover. A chosen-Family test is never
-# retried (its own page offers no retry), so it is left out of retry
-# rather than previewed and then refused.
+# The email types each action may cover. A chosen-Family test and a report
+# email test (#2036) are never retried (their own pages offer no retry), so
+# they are left out of retry rather than previewed and then refused.
+NEVER_RETRIED = frozenset({"family_test", "admin_report_test"})
 KIND_PURPOSES = {
-    "retry_failed": tuple(purpose for purpose in PURPOSES if purpose != "family_test"),
+    "retry_failed": tuple(
+        purpose for purpose in PURPOSES if purpose not in NEVER_RETRIED
+    ),
     "confirm_unsent": PURPOSES,
 }
 SALT = "parishkit.stewardship.delivery-bulk"

@@ -87,6 +87,8 @@ class DeliveryIdentity:
             # admit it only with the conversion (report-emails spec,
             # "Database functions").
             "admin_report",
+            # Send a test to me (#2036): one Administrator's test of a report.
+            "admin_report_test",
         ):
             raise ValueError("Invalid delivery identity.")
         family_purpose = self.purpose in (
@@ -297,7 +299,8 @@ class ReportRenderInput(WeeklyRenderInput):
 def validate_render_purpose(identity, render):
     """Reject the larger report capacity when a render is bound to another purpose."""
     if isinstance(render, ReportRenderInput):
-        if identity.purpose != "admin_report":
+        # A report email, or its test (#2036), which draws the same report.
+        if identity.purpose not in ("admin_report", "admin_report_test"):
             raise ValueError("Report rendering requires report delivery identity.")
     elif isinstance(render, WeeklyRenderInput) and identity.purpose != "weekly_digest":
         raise ValueError("Weekly rendering requires weekly delivery identity.")

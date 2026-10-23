@@ -47,6 +47,7 @@ TASK_QUEUES = {
     "production_tokens": WorkQueue.GENERAL,
     "report_email_finalize": WorkQueue.GENERAL,
     "report_email_prepare": WorkQueue.GENERAL,
+    "report_email_test": WorkQueue.GENERAL,
     "report_exact_export": WorkQueue.GENERAL,
     "report_export": WorkQueue.GENERAL,
     "report_export_cleanup": WorkQueue.GENERAL,
@@ -74,6 +75,7 @@ BLOCKER_NAMES = {
     "report_fact_verification": _("the report totals check"),
     "report_email_prepare": _("a report email"),
     "report_email_finalize": _("a report email"),
+    "report_email_test": _("a report email test"),
     "family_mail_prepare": _("Family email preparation"),
 }
 
