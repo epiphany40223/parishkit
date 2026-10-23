@@ -78,6 +78,7 @@ when it lands.
 - Tables: [Admin tables](#admin-tables),
   [empty tables and lists](#empty-tables-and-lists),
   [row actions](#row-actions-and-confirmation),
+  [new pages and in-page panes](#new-pages-and-in-page-panes),
   [column order](#table-column-order),
   [Family and Member names](#family-and-member-names),
   [Members and Families no longer in ParishSoft](#members-and-families-no-longer-in-parishsoft),
@@ -4533,6 +4534,59 @@ inventory on #879 lists.
   POST body, and focus returns to the same row's icon after it filters. So
   far only [System logs](../admin-portal/spec.md#logs) has them: related
   entries, same actor, same subject, same campaign and the task's page.
+
+### New pages and in-page panes
+
+**Rule.** **New** opens the item's own New page, the page Edit opens
+filled in ([row actions](#row-actions-and-confirmation)). A page adds new
+items in a **pane on the page itself** instead only when all of these
+hold: the item has few fields; the reader needs what the page already
+shows while adding it (the saved rows it must not clash with or must be
+spaced from, a preview that depends on them, or unsaved values on the
+page that it is checked and reviewed with); and several are often added
+one after another. **Why.** A New page is one pattern learned once and
+has room for an item with many fields, but for a small item judged
+against its neighbours it hides the very rows the reader needs, and it
+would have to carry the page's unsaved values (proposed dates) to judge
+and review the item with them. A modal form is not used for adding: it
+would cover the table and put a second dialog under the review dialog.
+**Shared code.** The [review dialog](#review-dialog) and its in-place
+redraw (`data-in-place-region`); the pane's gate (`data-pane-gated` in
+`ui-v1.js`, from #1993). **Precedent.** The date-change review's New
+schedule pane
+([Dates and mail schedules](../admin-portal/spec.md#dates-and-mail-schedules),
+Administrator, R43 and R44, 2026-10-22,
+[#1944](https://github.com/epiphany40223/parishkit/issues/1944); built by
+[#1993](https://github.com/epiphany40223/parishkit/pull/1993)) and its
+one-sentence confirmation (Administrator, 2026-10-23, still to be built);
+this rule, [#2060](https://github.com/epiphany40223/parishkit/issues/2060).
+Schedule-specific detail stays in [schedules](#schedules).
+
+- **Where and how it opens.** The pane sits after the table it adds to
+  (and any editors opened from it). It starts with only its first choice
+  (a schedule's mail type) and shows the rest as each choice makes it
+  relevant, in place ([conditional fields](#conditional-fields),
+  [no layout shift](#no-layout-shift)).
+- **One item at a time.** Each Review and Apply adds at most one new
+  item: never a stack of panes or a list of items collected for one
+  Review. While the pane holds part of an item, Review waits as a
+  [prerequisite gate](#prerequisite-gates) that says what is missing; an
+  empty pane is no change. An item the feature stores as several rows (a
+  repeating schedule's reminders) is still one item to the reader.
+- **Review.** Review opens the shared [review dialog](#review-dialog).
+  What the pane adds is stated in one sentence, since the pane already
+  shows it, even when it adds several rows (a repeating schedule's
+  reminders, an exception to a repeat's full review); other changes the
+  same Review covers (proposed dates, saved schedules) keep the review
+  they need.
+- **After Apply** the page updates [in place](#in-place-controls): the
+  table lists the new item and the pane is back to its first state, as on
+  a fresh visit, ready for the next.
+- **Saved rows are unchanged by it.** Changing or removing a saved row
+  works as the page already does it: [row
+  actions](#row-actions-and-confirmation) on an ordinary table, or, on the
+  date-change review, whose one reviewed change covers every saved
+  schedule, that schedule's own editor opened from its row.
 
 ### Table column order
 
