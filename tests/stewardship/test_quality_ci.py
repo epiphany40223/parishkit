@@ -76,9 +76,12 @@ def test_workflow_partition_count_matches_required_combiner():
     )
     assert workflow_partitions(shard, count) == list(range(1, count + 1))
     # Job one also runs every baseline part beside its partitions (#1205).
+    # Its single, half-share partition needs one cluster, so its runner may
+    # hold one pytest process more than the others, never two (#2065).
+    assert ci.job_partitions(1, count) == [1]
     assert len(ci.job_partitions(1, count)) + ci.BASELINE_PARTS <= (
-        ci.PARTITIONS_PER_JOB
-    ), "job one would run more pytest processes than any other job"
+        ci.PARTITIONS_PER_JOB + 1
+    ), "job one would run more pytest processes than its runner can hold"
     run = next(
         step["run"]
         for step in shard["steps"]
@@ -207,16 +210,32 @@ def test_cost_balancing_keeps_slow_cases_separate(monkeypatch):
     assert sorted(node for group in groups for node in group) == sorted(nodes)
 
 
-@pytest.mark.parametrize("size", [8000, 2000, 24])
-def test_shard_one_takes_an_ordinary_share(monkeypatch, size):
-    """Shard one's baseline runs beside its database tests on its own
-    deadline (#1200), so shard one gets as much database work as any other."""
+@pytest.mark.parametrize("size", [8000, 2000, 150])
+def test_shard_one_takes_half_a_share(monkeypatch, size):
+    """Shard one's runner also runs the CPU-heavy baseline parts (#2065), so
+    shard one gets about half the database work of any other shard."""
     monkeypatch.setattr(sharding, "SLOW_TEST_SECONDS", {})
     monkeypatch.setattr(sharding, "MODULE_SECONDS", {})
     nodes = [f"test_a.py::case[{n}]" for n in range(size)]
     groups = [partition(nodes, index, 8) for index in range(1, 9)]
-    assert len(groups[0]) == max(map(len, groups)) == size // 8
+    share = size / 7.5
+    assert abs(len(groups[0]) - share / 2) <= 1
+    assert all(abs(len(group) - share) <= 1 for group in groups[1:])
     assert sorted(node for group in groups for node in group) == sorted(nodes)
+
+
+def test_equal_first_share_and_baseline_split_stay_even(monkeypatch):
+    """``first_share=1`` keeps the old equal split, which the baseline uses."""
+    monkeypatch.setattr(sharding, "SLOW_TEST_SECONDS", {})
+    monkeypatch.setattr(sharding, "MODULE_SECONDS", {})
+    nodes = [f"test_a.py::case[{n}]" for n in range(2000)]
+    groups = [partition(nodes, index, 8, first_share=1) for index in range(1, 9)]
+    assert {len(group) for group in groups} == {250}
+    parts = [baseline_partition(nodes, part, 4) for part in range(1, 5)]
+    assert {len(part) for part in parts} == {500}
+    for share in (0, -1, 2):
+        with pytest.raises(ValueError):
+            partition(nodes, 1, 8, first_share=share)
 
 
 def test_parameter_cost_override_preserves_all_cases(monkeypatch):
@@ -1491,7 +1510,9 @@ def test_actual_plugin_selection(tmp_path):
             }
         )
     )
-    for shard in ("1/1", "2/2"):
+    # One selected test goes to partition two of two: partition one's head
+    # start (quality_sharding.FIRST_SHARE) leaves it the empty one.
+    for shard in ("1/1", "1/2"):
         evidence = tmp_path / f"tests-{shard.replace('/', '-')}.json"
         result = subprocess.run(
             [

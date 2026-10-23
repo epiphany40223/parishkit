@@ -1,6 +1,7 @@
 """Deterministic, complete test partitions for isolated CI runners."""
 
 import hashlib
+from fractions import Fraction
 from pathlib import Path
 
 BROWSER_ENGINES = ("chromium", "firefox", "webkit")
@@ -269,6 +270,17 @@ CASE_SECONDS = {
 }
 
 
+# Partition one's share of the database seconds, as a fraction of an
+# ordinary partition's. Its CI job also runs the CPU-heavy non-database
+# baseline parts beside it (quality_ci.run_with_baseline). With an ordinary
+# share it took 1,687 to 1,740 s of the 1,800 s deadline in four full runs on
+# 2026-10-23 and was killed at it once, while the partitions on other runners
+# took 910 to 1,720 s (#2065). It once ran after the baseline under one shared
+# deadline with a reservation here (#961), then took an ordinary share beside
+# it (#1200).
+FIRST_SHARE = Fraction(1, 2)
+
+
 def estimated_seconds(nodeid):
     """Estimate execution only; parameter changes remain independently assigned."""
     case = nodeid.rsplit("::", 1)[-1]
@@ -280,12 +292,19 @@ def estimated_seconds(nodeid):
 
 
 def partition(
-    nodeids: list[str], index: int, count: int, cost=estimated_seconds
+    nodeids: list[str],
+    index: int,
+    count: int,
+    cost=estimated_seconds,
+    first_share=FIRST_SHARE,
 ) -> list[str]:
     """Assign every unique test once, independently of collection ordering.
 
     ``cost`` estimates one node's seconds; the database hints above by
     default. Whatever it returns, every node lands in exactly one partition.
+    Partition one ends with about ``first_share`` of an ordinary partition's
+    estimated seconds (see FIRST_SHARE); ``1`` gives every partition an equal
+    share.
     """
     if (
         type(index) is not int
@@ -294,13 +313,19 @@ def partition(
         or len(nodeids) != len(set(nodeids))
     ):
         raise ValueError("Invalid or duplicate CI test partition")
-    # Shard one's non-database baseline runs beside its database tests, each
-    # with its own deadline (quality_ci.run_with_baseline), so shard one takes
-    # an ordinary share. It once ran first under one shared deadline, and a
-    # reservation here kept shard one light; the growing baseline outran
-    # that (#961, #1200).
     groups = [[] for _ in range(count)]
     loads = [0] * count
+    # Heaviest-first assignment fills the least-loaded partition, so a head
+    # start of (1 - share) ordinary shares leaves partition one with about
+    # ``share`` of one: with every partition at load L, the total is
+    # (count - 1 + share) * L. Fractions keep the arithmetic exact for the
+    # integer hint seconds, so every runner computes the same assignment.
+    share = Fraction(first_share)
+    if not 0 < share <= 1:
+        raise ValueError("Invalid first partition share")
+    if count > 1 and share != 1:
+        total = sum(cost(node) for node in nodeids)
+        loads[0] = (1 - share) * total / (count - 1 + share)
     # Lexical ties repeatedly put the same parameter positions on one runner.
     # A stable digest spreads those unrelated fixture costs without randomizing
     # collection or omitting any node. Return each owner's nodes in normal order.
@@ -327,7 +352,7 @@ def baseline_partition(nodeids: list[str], index: int, count: int) -> list[str]:
     stable digest order then deals the nodes out evenly, whatever order
     pytest collected them in.
     """
-    return partition(nodeids, index, count, cost=lambda node: 1)
+    return partition(nodeids, index, count, cost=lambda node: 1, first_share=1)
 
 
 def nodes_digest(nodeids) -> str:
