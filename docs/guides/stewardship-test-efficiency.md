@@ -420,11 +420,11 @@ The baseline then neared its own deadline
 ([#1205](https://github.com/epiphany40223/parishkit/issues/1205)). In the
 thirteen successful full runs from October 11 to 13, it took 765 to 1,310 s,
 depending mostly on the runner. On slow runners that is about 78 ms a test,
-and the suite gained about 900 tests a day, so 25 minutes was days away. It is
-now split by node ID into `quality_ci.BASELINE_PARTS` (two) parts, which run
-at once beside partition one's database tests. Each part has its own deadline
-and its own coverage file. Job one then has three pytest processes, like the
-other jobs, and a contract test keeps it so. The split counts every test
+and the suite gained about 900 tests a day, so 25 minutes was days away. It was
+then split by node ID into two parts (`quality_ci.BASELINE_PARTS`, three
+since #2065; see below), which run at once beside partition one's database tests. Each part has its own deadline
+and its own coverage file. Job one then had three pytest processes, like the
+other jobs (it now has four; see below). The split counts every test
 equally, because the database hints would give heavy weights to database tests
 that the baseline only skips.
 
@@ -436,11 +436,11 @@ megabytes of test data. `quality_ci combine` collects the unsplit baseline on
 its own, recomputes every part's share and requires each receipt to match. It
 also requires the shares to be disjoint and to add up to the whole collection.
 A missing, stale or partial part fails the gate. A stray receipt, such as
-`baseline-3.json` when there are two parts, is ignored, because only parts one
+`baseline-4.json` when there are three parts, is ignored, because only parts one
 to `BASELINE_PARTS` are read. When a part nears its
-deadline, raise `BASELINE_PARTS`. If job one would then hold more pytest
-processes than `PARTITIONS_PER_JOB`, the contract test fails; move parts to
-another slot first.
+deadline, raise `BASELINE_PARTS`. If job one would then hold more than one
+pytest process beyond `PARTITIONS_PER_JOB`, the contract test fails; move
+parts to another slot first.
 
 Packing was expected to cut the PostgreSQL group from about 185
 runner-minutes (#625) to about 100. By October 2026 the suite had grown, and
@@ -466,6 +466,35 @@ more concurrent runners, eight of the account's twenty, and only a few more
 runner-minutes for their setup and the new partitions' fixed cost. Test maps
 record their count, so until the first full run at twenty-two publishes a
 map, test selection runs the whole PostgreSQL group.
+
+Twenty-two then lost their margin
+([#2065](https://github.com/epiphany40223/parishkit/issues/2065)). In four
+full runs on 2026-10-23, partition one's database tests took 1,687 to 1,740 s
+every time and were killed at the deadline once, beside two baseline parts of
+1,284 to 1,549 s. The other partitions took 910 to 1,200 s on fast runners and
+1,450 to 1,720 s on slow ones; which jobs drew slow runners changed from run
+to run, and a replay of each test's measured seconds showed their content
+within about 14% of each other, so placement again could not help. On a slow
+runner each partition's fixed cost is about 232 s (collection and the first
+test's schema). Three changes followed:
+
+- Partition one carries half an ordinary database share
+  (`quality_sharding.FIRST_SHARE`): `partition()` gives it a head start of
+  half a share before the heaviest-first assignment. The baseline split keeps
+  equal parts.
+- The baseline has three parts, about 1,060 s each projected before any
+  extra CPU contention. Job one then
+  runs four pytest processes but only one PostgreSQL cluster, and less work
+  than before; the contract test allows job one one process beyond
+  `PARTITIONS_PER_JOB`, never two.
+- The count is twenty-eight, on ten jobs, which projects the slowest
+  slow-runner partition of that day to about 232 + (1,722 - 232) x 22/27.5,
+  or 1,424 s, a job of about 25 minutes; the slowest of the run that prompted
+  the change projects to about 23 minutes, and job one to about 20.
+
+That is ten of the account's twenty concurrent slots and roughly ten more
+runner-minutes per full run. As before, selection runs the whole PostgreSQL
+group until a full run at twenty-eight publishes a map.
 
 ## Transient infrastructure failures
 

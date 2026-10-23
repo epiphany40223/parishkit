@@ -36,32 +36,36 @@ BASELINE_TESTS = "tests"
 # Parts the baseline is split into, run at once beside partition one's
 # database tests, each with its own SHARD_TIMEOUT (#1205). In October 2026
 # the whole baseline took 765 to 1,310 s depending on the runner, and gained
-# about 900 tests a day. Job one holds only partition one, so two parts make
-# three pytest processes on its 4 vCPUs, like every other job. When a part
-# nears its deadline, raise this; combine requires every part's evidence.
-BASELINE_PARTS = 2
+# about 900 tests a day. By 2026-10-23 each of two parts took 1,284 to
+# 1,549 s, so there are three (#2065). Job one holds only partition one, with
+# half a database share (quality_sharding.FIRST_SHARE), so three parts make
+# four pytest processes on its 4 vCPUs but only one PostgreSQL cluster. When a
+# part nears its deadline, raise this; combine requires every part's evidence.
+BASELINE_PARTS = 3
 # Collecting the whole baseline took about 35 s locally for 27,677 tests.
 BASELINE_COLLECTION_SECONDS = 5 * 60
 # Partitions one CI job runs concurrently, each against its own PostgreSQL/
 # Valkey pair (issue #625). This is the one tuning knob: the contract tests
 # derive the workflow's job matrix and its service pairs from it, and fail
 # naming what to change. Three per job keeps a full run's PostgreSQL group to
-# eight of the account's twenty concurrent job slots for twenty-two
-# partitions (#625, #1200, #1529). It also fits a 4 vCPU / 16 GB hosted
+# ten of the account's twenty concurrent job slots for twenty-eight
+# partitions (#625, #1200, #1529, #2065). It also fits a 4 vCPU / 16 GB hosted
 # runner: the partitions spend much of their time waiting on PostgreSQL and
 # on real lease and drain deadlines, and three 2 GiB tmpfs clusters plus
 # three pytest processes stay well inside 16 GB. Job one holds partition one
-# and the BASELINE_PARTS baseline parts, also three pytest processes.
+# and the BASELINE_PARTS baseline parts, which need no cluster.
 PARTITIONS_PER_JOB = 3
 # Each pytest child's deadline: a partition's database run, and each
 # baseline part beside partition one's. Packed fourteen ways, partitions took
 # 1,120 to 1,690 s and the baseline 1,310 to 1,330 s in October 2026 (#1200);
 # sixteen partitions brought the heaviest to about 24 minutes. By
 # 2026-10-17 sixteen took 825 to 1,757 s, mostly by runner, and two were
-# killed here, so the workflow runs twenty-two, projected at most about
-# 1,330 s (#1529). The margin absorbs slow runners, not a slower suite:
-# when a partition nears it, add partitions; when a baseline part does,
-# add parts (BASELINE_PARTS).
+# killed here, so the workflow ran twenty-two, projected at most about
+# 1,330 s (#1529). By 2026-10-23 twenty-two took 910 to 1,720 s, again by
+# runner, so it runs twenty-eight, projected at 1,330 to 1,430 s on that
+# day's slow runners (#2065). The margin absorbs slow runners, not a slower
+# suite: when a partition nears it, add partitions; when a baseline part
+# does, add parts (BASELINE_PARTS).
 SHARD_TIMEOUT = 30 * 60
 # The first slot keeps the services' default ports. Valkey port 56380 stays
 # unused: the unavailable-service tests rely on nothing listening there.
