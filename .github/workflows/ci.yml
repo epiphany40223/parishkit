@@ -322,6 +322,11 @@ jobs:
     env:
       BROWSER_RUNS: ${{ matrix.runs }}
     steps:
+      # quality_browser.py ends its partitions before timeout-minutes even
+      # when a slow mirror stretches setup (#2050), so a slow job still logs
+      # CI_BROWSER_BUDGET_KILLED instead of being cancelled silently.
+      - name: Record the job start
+        run: echo "BROWSER_JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:

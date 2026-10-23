@@ -41,6 +41,12 @@ BROWSER_DIRECTORY = "tests/stewardship/browser"
 CASES = [(f"opaque-{index}", engine) for index, engine in enumerate(BROWSER_ENGINES)]
 
 
+@pytest.fixture(autouse=True)
+def no_job_start(monkeypatch):
+    """Run every test as if outside a browser CI job, with the full budget."""
+    monkeypatch.delenv(quality_browser.JOB_STARTED_ENV, raising=False)
+
+
 def test_disjoint_exhaustive_engine_ownership():
     """Fixture values, not misleading parameter IDs, determine ownership."""
     cases = CASES + [("webkit-chromium", "firefox")]
@@ -486,6 +492,11 @@ def test_browser_workflow_contract():
     }
     assert job["timeout-minutes"] == 60
     assert job["env"] == {"BROWSER_RUNS": "${{ matrix.runs }}"}
+    # The job's start is recorded first, so setup time counts (#2050).
+    assert job["steps"][0]["run"] == (
+        f'echo "{quality_browser.JOB_STARTED_ENV}=$(date +%s)" >> "$GITHUB_ENV"'
+    )
+    assert job["timeout-minutes"] * 60 == quality_browser.JOB_LIMIT_SECONDS
     install, run = job["steps"][-2:]
     assert 'read -ra runs <<<"$BROWSER_RUNS"' in install["run"]
     assert 'playwright install --with-deps "${runs[@]%%:*}"' in install["run"]
@@ -871,6 +882,50 @@ def run_job_timed(monkeypatch, seconds):
     return calls, quality_browser.run_job(ROOT, runs)
 
 
+@pytest.mark.parametrize(
+    "started,now,expected",
+    [
+        (None, 5000, (3000, 0)),  # Outside CI: the whole budget.
+        (1000, 1100, (3000, 100)),  # Ordinary setup leaves the full budget.
+        (1000, 1000 + 1980, (1440, 1980)),  # 33-minute setup (#2050).
+        (1000, 1000 + 4000, (0, 4000)),  # Setup alone outran the job.
+        (1000, 900, (3000, 0)),  # A clock step back counts as no setup.
+    ],
+)
+def test_job_budget_stops_before_the_job_limit(started, now, expected):
+    """A slow setup shrinks the budget so the job limit is never reached."""
+    assert quality_browser.job_budget(started, now) == expected
+
+
+@pytest.mark.parametrize("value,expected", [("1700000000", 1700000000), ("x", None)])
+def test_job_started_reads_the_workflow_value(monkeypatch, value, expected):
+    """The workflow's start time is read; a malformed one is ignored."""
+    monkeypatch.setenv(quality_browser.JOB_STARTED_ENV, value)
+    assert quality_browser.job_started() == expected
+
+
+def test_slow_setup_ends_in_budget_kills_before_the_job_limit(monkeypatch, capfd):
+    """The 2026-10-23 runs: a 33-minute setup left 27 minutes of the job.
+
+    The two partitions share what is left before the limit, so the slow
+    WebKit half is killed with a CI_BROWSER_BUDGET_KILLED line instead of
+    GitHub cancelling the job with none.
+    """
+    monkeypatch.setenv(quality_browser.JOB_STARTED_ENV, "1000")
+    monkeypatch.setattr(quality_browser.time, "time", lambda: 1000 + 1980)
+    calls, failed = run_job_timed(monkeypatch, [700, 99999])
+    assert calls == [720, 1440 - 700]
+    assert failed == ["webkit 1/2"]
+    out = capfd.readouterr().out
+    assert (
+        "CI_BROWSER_JOB_BUDGET 1,440 s for 2 partition(s); "
+        "setup used 1,980 s of the 3,600 s job limit\n"
+    ) in out
+    assert "CI_BROWSER_BUDGET_KILLED webkit 1/2: running t.py::slow" in out
+    # Setup, Chromium's 700 s and WebKit's whole limit end before the reserve.
+    assert 1980 + 700 + calls[1] == 3600 - quality_browser.RESERVE_SECONDS
+
+
 def test_slow_webkit_last_gets_what_chromium_left(monkeypatch):
     """The 2026-10-12 run: WebKit 1/2 needed 1,451 s on a slow runner.
 
@@ -975,7 +1030,7 @@ def test_timeout_message_names_budget_and_failures(failures, tail):
     """The kill message names the budget, the elapsed time and any failures."""
     assert quality_browser.timeout_message(1350, 1350.4, failures) == (
         "killed after 1,350 s when its 1,350 s partition budget "
-        "(its share of the 3,000 s job budget) ran out" + tail
+        "(its share of the job budget) ran out" + tail
     )
 
 

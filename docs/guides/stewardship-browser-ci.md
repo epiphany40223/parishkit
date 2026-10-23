@@ -124,6 +124,8 @@ times as long as its Chromium partner. So each two-partition job runs its
 Chromium partition first and its WebKit partition last, and WebKit gets its own
 share plus whatever Chromium left unused.
 
+The budget also ends 3 minutes (`RESERVE_SECONDS`) before the 60-minute job limit, counted from the job's first step, which records the start time in `BROWSER_JOB_STARTED` (#2050). On 2026-10-23 a slow Ubuntu package mirror (about 48 kB/s) stretched `playwright install --with-deps` to 25 to 42 minutes. A full 50-minute budget then outlasted the job, and GitHub cancelled it mid-test with no `CI_BROWSER_*` line. Now a slow setup shrinks the shared budget, so a slow job still ends with `CI_BROWSER_BUDGET_KILLED` and the "rerun once" rule applies. Every job logs `CI_BROWSER_JOB_BUDGET N s for K partition(s); setup used S s of the 3,600 s job limit` before its first partition.
+
 Before #1112 one 38-minute deadline covered the whole job, and WebKit ran
 first. On 2026-10-12 a slow runner took WebKit 1/2 about 1,451 seconds against
 a 902-second estimate, and Chromium 1/2 was killed with the remaining 819
@@ -138,8 +140,8 @@ as it happens, so the parent can still tell what happened after a kill (#2001):
   log says `CI_BROWSER_BUDGET_KILLED <label>: running <node id> after N s
   (budget M s)`, where the node id is the last test that started.
 - If a test phase had already failed, the log says `CI_BROWSER_FAILED <label>:
-  killed after N s when its M s partition budget (its share of the 3,000 s job
-  budget) ran out; K test phase(s) had already failed: ...`.
+  killed after N s when its M s partition budget (its share of the job budget)
+  ran out; K test phase(s) had already failed: ...`.
 
 Both fail the job. The GitHub job summary lists the failed test node ids
 first, then the budget kills with their last started test, then every other failed
