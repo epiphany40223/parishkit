@@ -240,13 +240,22 @@ def test_a_role_without_the_page_is_refused_not_told_why(auth_service, google):
 
 
 def test_a_signed_out_visitor_is_not_told_why(auth_service, google):
-    """No session: the page's own refusal (sign in again), never the reason."""
+    """No session: sent to sign in (#2058), never told the page's reason.
+
+    A browser that never had a session gets no ended flag.
+    """
+    from urllib.parse import quote
+
     from django.test import Client
 
     store = auth_service.store
     add_draft(store, store.active(), uuid4())
-    response = Client().get(f"/admin/{_path('delivery_control')}", **PAGE)
-    assert response.status_code == 403
+    path = f"/admin/{_path('delivery_control')}"
+    response = Client().get(path, **PAGE)
+    assert (response.status_code, response["Location"]) == (
+        302,
+        f"/admin/login?next={quote(path, safe='')}",
+    )
     assert str(navigation.PRODUCTION_ONLY).encode() not in response.content
 
 

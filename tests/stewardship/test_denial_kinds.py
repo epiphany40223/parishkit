@@ -116,16 +116,16 @@ def test_a_leader_capability_keeps_the_generic_denial(capability):
 
 
 def test_require_tells_an_ended_session_apart_from_a_role():
-    """No current session keeps the generic denial; a role gets its own."""
+    """No current session gets the signed-out refusal (#2058); a role its own."""
     from uuid import uuid4
 
     from parishkit.stewardship.accounts.policy import Capability, Principal
     from parishkit.stewardship.accounts.role_refusal import RoleDenied, require
-    from parishkit.stewardship.web.refusals import AccessDenied
+    from parishkit.stewardship.web.refusals import UserFacingSignedOut
 
-    with pytest.raises(AccessDenied) as ended:
+    with pytest.raises(UserFacingSignedOut) as ended:
         require(None, Capability.SYSTEM_LOGS)
-    assert getattr(ended.value, "refusal", None) is None
+    assert ended.value.refusal.signed_out is True
     staff = Principal(uuid4(), frozenset({"staff"}))
     with pytest.raises(RoleDenied):
         require(staff, Capability.SYSTEM_LOGS)
@@ -145,12 +145,12 @@ def test_a_role_level_refusal_names_that_level(level):
 
 
 def test_require_role_admits_the_level_and_those_above_it():
-    """Administrators pass both levels; Staff only ``staff``; ``None`` stays generic."""
+    """Administrators pass both levels; Staff only ``staff``; ``None`` is signed out."""
     from uuid import uuid4
 
     from parishkit.stewardship.accounts.policy import Principal
     from parishkit.stewardship.accounts.role_refusal import RoleDenied, require_role
-    from parishkit.stewardship.web.refusals import AccessDenied
+    from parishkit.stewardship.web.refusals import UserFacingSignedOut
 
     admin = Principal(uuid4(), frozenset({"administrator"}))
     staff = Principal(uuid4(), frozenset({"staff"}))
@@ -162,7 +162,7 @@ def test_require_role_admits_the_level_and_those_above_it():
         require_role(staff, "administrator")
     with pytest.raises(RoleDenied):
         require_role(leader, "staff")
-    with pytest.raises(AccessDenied):
+    with pytest.raises(UserFacingSignedOut):
         require_role(None, "staff")
 
 

@@ -45,7 +45,7 @@ from parishkit.stewardship.web.contracts import (
     FieldError,
     validation_response,
 )
-from parishkit.stewardship.web.namespaces import ADMIN_HOME
+from parishkit.stewardship.web.namespaces import ADMIN_HOME, admin_return_path
 from parishkit.stewardship.web.refusals import (
     UserFacingDenied,
     UserFacingGone,
@@ -384,6 +384,8 @@ def complete_identity(request, subject, email, hosted, *, authenticated_at):
         hosted,
         authenticated_at=authenticated_at,
         recovery_epoch=data["recovery_epoch"],
+        # Checked again here, though the sign-in stored only a checked path.
+        destination=admin_return_path(data.get("next")),
     )
 
 
@@ -395,6 +397,7 @@ def establish_identity(
     *,
     authenticated_at,
     recovery_epoch,
+    destination=ADMIN_HOME,
 ):
     """The post-verification identity core shared by every Admin sign-in path.
 
@@ -410,8 +413,10 @@ def establish_identity(
     drift apart.
 
     A new session replaces whatever the browser held, the CSRF secret
-    rotates and the browser goes to the Admin home. There is no step-up
-    sign-in that keeps a session (#1547).
+    rotates and the browser goes to ``destination``: the Admin home, or
+    the Admin page an ended session was sent to sign in from (#2058),
+    which the caller has passed through ``admin_return_path``. There is no
+    step-up sign-in that keeps a session (#1547).
     """
     service = runtime()
     epoch = (
@@ -491,21 +496,35 @@ def establish_identity(
         record_account_refusal(user.pk)
         return denial(status=429 if delay else 403, retry=delay, sign_in=True)
     service.limiter.clear(counter)
-    return HttpResponseRedirect(ADMIN_HOME)
+    return HttpResponseRedirect(destination)
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
 def login(request):
     """Only a CSRF-protected POST initiates authentication; ignore dynamic scopes.
 
-    The sign-in always returns to the Admin home. Google is asked only to let
-    the person choose an account (``prompt=select_account``); it ignores
-    ``max_age``, so none is sent (#1547).
+    The sign-in returns to the Admin home, or to the Admin page in the
+    form's ``next`` (``admin_return_path`` accepts only a same-origin Admin
+    page; anything else means home). A page load whose session had ended
+    is sent here with that page as ``next`` and the fixed ``ended=1`` flag,
+    which shows a short notice (#2058). A refused sign-in's retry link is
+    plain ``/admin/login``, so that sign-in opens the Admin home. Google is
+    asked only to let the person choose an account
+    (``prompt=select_account``); it ignores ``max_age``, so none is sent
+    (#1547).
     """
     try:
         service = runtime()
         if request.method != "POST":
-            return render(request, "stewardship/login.html")
+            destination = admin_return_path(request.GET.get("next"))
+            return render(
+                request,
+                "stewardship/login.html",
+                {
+                    "ended": request.GET.get("ended") == "1",
+                    "next": None if destination == ADMIN_HOME else destination,
+                },
+            )
         limiter = service.limiter
         counter = ip_counter(limiter, request.client_address, initiation=True)
         delay = limiter.counters([counter])
@@ -524,6 +543,8 @@ def login(request):
                 "nonce": nonce,
                 "recovery_epoch": revocation_epoch(),
                 "initiated_at": int(database_now().timestamp()),
+                # Where the callback sends the browser: a checked Admin page.
+                "next": admin_return_path(request.POST.get("next")),
             },
             scope=["openid", "email"],
             auth_params={
@@ -581,7 +602,11 @@ def index(request):
         caller = AdminCaller.from_request(request)
         principal = authenticated_admin(caller, store=service.store, activity=True)
         if principal is None:
-            return HttpResponseRedirect("/admin/login")
+            # With the ended flag when the browser still had a session
+            # (#2058), as every other Admin page load does.
+            from parishkit.stewardship.web.error_pages import sign_in_address
+
+            return HttpResponseRedirect(sign_in_address(request, ended=True))
         landing = review_work.lands_here(principal)
         if landing:
             observed = review_work.observe(principal, service.store)

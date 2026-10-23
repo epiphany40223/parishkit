@@ -79,6 +79,10 @@ class Refusal:
     # for a refusal that signing in cannot fix, such as a role that lacks
     # the page (#1924).
     sign_in: bool = True
+    # Whether the refusal says the Admin session has ended (#2058). The
+    # browser-error middleware sends such a page load to the sign-in page
+    # instead of showing an error page.
+    signed_out: bool = False
 
     def as_dict(self):
         """JSON-safe fields for scripts; the link is a same-origin path."""
@@ -118,6 +122,8 @@ class UserFacing(TypedRefusal):
     # Copied to ``Refusal.sign_in``: a subclass whose refusal signing in
     # cannot fix sets it False.
     offers_sign_in = True
+    # Copied to ``Refusal.signed_out``: True only for ``UserFacingSignedOut``.
+    ends_session = False
     # What the refusal log adds (#1403): the number of submitted field names
     # the form does not have, and its own fields sent more than once
     # (``unexpected_fields``); never shown.
@@ -163,6 +169,7 @@ class UserFacing(TypedRefusal):
             page_fix,
             reason,
             self.offers_sign_in,
+            self.ends_session,
         )
 
     @property
@@ -201,6 +208,17 @@ class UserFacingDenied(UserFacing, PermissionError):
     """The action is not allowed in the current state (HTTP 403)."""
 
     default_reason = "denied"
+
+
+class UserFacingSignedOut(UserFacingDenied):
+    """The Admin session has ended, so only signing in again helps (#2058).
+
+    Still a 403 ``UserFacingDenied`` for scripts and in-place regions; a
+    browser's page load is sent to the sign-in page instead (see
+    ``web.error_pages``).
+    """
+
+    ends_session = True
 
 
 class AccessDenied(TypedRefusal, PermissionError):

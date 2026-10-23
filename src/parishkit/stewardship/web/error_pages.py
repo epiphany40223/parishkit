@@ -9,11 +9,11 @@ server-owned text is shown: never exception strings or submitted values.
 """
 
 import contextlib
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 from django.conf import settings
 from django.db import DatabaseError
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseRedirect
 from django.middleware.csrf import get_token
 from django.template.loader import render_to_string
 from django.utils.cache import patch_vary_headers
@@ -21,8 +21,13 @@ from django.utils.translation import gettext_lazy as _
 
 from ..deployment import DeploymentProfile
 from .contracts import MESSAGES, ErrorCode, FieldError, validation_response
-from .namespaces import ADMIN_HOME, admin_return_path, is_admin
+from .namespaces import ADMIN_COOKIES, ADMIN_HOME, admin_return_path, is_admin
 from .refusals import Refusal
+
+# The sign-in page's fixed flag (``?ended=1``) for a page load whose Admin
+# session had ended (#2058): it shows a short notice saying so. Never free
+# text.
+ENDED_FLAG = "ended"
 
 # Headers that choose between the JSON and HTML representations.
 NEGOTIATION_HEADERS = ("Accept", "Sec-Fetch-Mode", "X-Requested-With")
@@ -188,6 +193,14 @@ def page_request(request):
     )
 
 
+def _referer_path(request):
+    """The same-origin Referer's path and query, or None for another origin."""
+    referer = urlsplit(request.headers.get("Referer", ""))
+    if (referer.scheme, referer.netloc) != (request.scheme, request.get_host()):
+        return None
+    return referer.path + (f"?{referer.query}" if referer.query else "")
+
+
 def _back_path(request):
     """Offer a return link to a same-origin Admin page the person came from.
 
@@ -200,10 +213,9 @@ def _back_path(request):
     if request.method == "POST":
         candidate = request.get_full_path()
     else:
-        referer = urlsplit(request.headers.get("Referer", ""))
-        if (referer.scheme, referer.netloc) != (request.scheme, request.get_host()):
+        candidate = _referer_path(request)
+        if candidate is None:
             return None
-        candidate = referer.path + (f"?{referer.query}" if referer.query else "")
     path = admin_return_path(candidate)
     if path == ADMIN_HOME or (request.method != "POST" and path == request.path):
         return None
@@ -236,6 +248,7 @@ def error_page(request, response):
     # A user-facing refusal replaces the closed message with its own reviewed
     # explanation, fix and link (see web.refusals); still never raw text.
     refusal = getattr(response, "stewardship_refusal", None)
+    signed_out = admin and refusal is not None and refusal.signed_out
     messages = list(dict.fromkeys(str(MESSAGES[e.code]) for e in errors))
     if refusal is not None:
         messages = [str(refusal.message)]
@@ -254,6 +267,13 @@ def error_page(request, response):
     if fix_link == home:
         # The actions row already shows the home link; never show it twice.
         fix_link = None
+    if signed_out:
+        # Only signing in helps (#2058): one sign-in link that returns here,
+        # and no back or home link, which would only be refused again.
+        fix_link = sign_in_address(request, ended=False)
+    if fix_link is not None and fix_link.partition("?")[0] == sign_in:
+        # The refusal's own link is the sign-in; never show it twice.
+        sign_in = None
     context = {
         # Admin errors extend the JavaScript-gated Admin base (#565); Family
         # errors keep the ungated base.
@@ -265,8 +285,8 @@ def error_page(request, response):
         "fix_link": fix_link,
         "fix_label": refusal.link_label if fix_link else None,
         "sign_in": sign_in,
-        "back": _back_path(request),
-        "home": home,
+        "back": None if signed_out else _back_path(request),
+        "home": None if signed_out else home,
         "home_label": _("Administration home") if admin else _("Family portal home"),
         # The chrome's forms need this even without request context.
         "csrf_token": get_token(request),
@@ -297,6 +317,56 @@ def error_page(request, response):
     return page
 
 
+def sign_in_address(request, *, ended):
+    """The Admin sign-in address that returns to the page ``request`` came from.
+
+    ``next`` is the page a GET asked for, or the page a form was posted
+    from (its same-origin Referer): a POST's own address may answer only
+    POST, and signing in must never repeat it. It is kept only when
+    ``admin_return_path`` accepts it as a same-origin Admin page other than
+    the home page (where sign-in goes anyway). ``ended`` adds the fixed flag
+    for the sign-in page's notice (``ENDED_FLAG``), but only when the
+    browser sent an Admin session cookie: a visitor who never signed in
+    (a new browser, a bookmark) is not told they were signed out.
+    """
+    ended = ended and ADMIN_COOKIES[0] in request.COOKIES
+    query = {ENDED_FLAG: "1"} if ended else {}
+    if request.method in {"GET", "HEAD"}:
+        candidate = request.get_full_path()
+    else:
+        candidate = _referer_path(request)
+    path = admin_return_path(candidate)
+    if path != ADMIN_HOME:
+        query["next"] = path
+    return "/admin/login" + (f"?{urlencode(query)}" if query else "")
+
+
+def _ended_session_load(request, response):
+    """Whether a browser page load (GET or HEAD) was refused as signed out.
+
+    Only these go to the sign-in page (#2058). A form POST keeps its error
+    page, so nothing posted is ever replayed after signing in; scripts and
+    in-place regions never reach here (``page_request``) and keep the typed
+    refusal for the Admin base's session-ended dialog.
+    """
+    refusal = getattr(response, "stewardship_refusal", None)
+    return (
+        refusal is not None
+        and refusal.signed_out
+        and is_admin(request)
+        and request.method in {"GET", "HEAD"}
+    )
+
+
+def sign_in_redirect(request, response):
+    """Send an ended session's page load to sign-in, keeping cookie changes."""
+    redirect = HttpResponseRedirect(sign_in_address(request, ended=True))
+    # A revoked session's cookie deletion must still reach the browser.
+    redirect.cookies = response.cookies
+    patch_vary_headers(redirect, NEGOTIATION_HEADERS)
+    return redirect
+
+
 class BrowserErrorMiddleware:
     """Show typed errors to people as pages; scripts keep the JSON contract.
 
@@ -323,4 +393,6 @@ class BrowserErrorMiddleware:
         if not page_request(request):
             return response
         response.close()
+        if _ended_session_load(request, response):
+            return sign_in_redirect(request, response)
         return error_page(request, response)

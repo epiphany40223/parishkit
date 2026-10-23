@@ -2,10 +2,11 @@
 {% block title %}{% translate "Administration sign-in" %}{% endblock %}
 {% block content %}<section class="flow panel">
   <h1>{% translate "Administration sign-in" %}</h1>
+  {% if ended %}<p class="notice notice-info" role="status">{% translate "You were signed out, for example after an hour without activity or after signing out in another tab. Sign in to continue." %}</p>{% endif %}
   {% if local_environment %}
   {% if google_sign_in %}<p>{% translate "Use your authorized Google account, or a test sign-in link." %}</p>
   <form method="post" action="{% url 'admin:login' %}">
-    {% csrf_token %}{% button type="submit" %}{% translate "Sign in with Google" %}{% endbutton %}
+    {% csrf_token %}{% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}{% button type="submit" %}{% translate "Sign in with Google" %}{% endbutton %}
   </form>
   {% google_account_help %}
   <p>{% translate "Or, for a test sign-in link:" %}</p>{% else %}<p>{% translate "Google sign-in is not available in the local laptop environment." %}</p>{% endif %}
@@ -14,7 +15,7 @@
   {% else %}
   <p>{% translate "Use your authorized Google account to continue." %}</p>
   <form method="post" action="{% url 'admin:login' %}">
-    {% csrf_token %}{% button type="submit" %}{% translate "Sign in with Google" %}{% endbutton %}
+    {% csrf_token %}{% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}{% button type="submit" %}{% translate "Sign in with Google" %}{% endbutton %}
   </form>
   {% google_account_help %}
   {% endif %}

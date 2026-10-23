@@ -9,6 +9,7 @@ from django.contrib.sessions.models import Session
 from django.db import connections
 from django.db.models import F
 from django.test import Client
+from django.utils import timezone
 
 from parishkit.stewardship.accounts.models import PortalSession, PortalUser
 from parishkit.stewardship.accounts.sessions import cleanup_admin_sessions
@@ -697,18 +698,63 @@ def test_idle_session_is_replaced_rather_than_revived(auth_service, google):
 
 
 @pytest.mark.parametrize(
-    "value",
+    "value,expected",
     [
-        None,
-        "/admin/integrations",
-        "/admin/setup/credentials/parishsoft",
-        "https://attacker.example/admin/",
-        "//attacker.example/admin/",
+        (None, "/admin/"),
+        ("/admin/integrations", "/admin/integrations"),
+        ("/admin/users?page=2", "/admin/users?page=2"),
+        ("/admin/setup/credentials/parishsoft", "/admin/setup/credentials/parishsoft"),
+        ("/admin/login", "/admin/"),
+        ("/admin/../family", "/admin/"),
+        ("https://attacker.example/admin/", "/admin/"),
+        ("//attacker.example/admin/", "/admin/"),
     ],
 )
-def test_sign_in_always_returns_to_the_admin_home(auth_service, google, value):
-    """A posted ``next`` field is ignored: every sign-in lands on /admin/."""
+def test_sign_in_returns_only_to_a_checked_admin_page(
+    auth_service, google, value, expected
+):
+    """A posted ``next`` is followed only when it is a same-origin Admin page.
+
+    The sign-in page posts it after an ended session's page load (#2058);
+    anything else, including an off-site address, lands on /admin/.
+    """
     fields = {} if value is None else {"next": value}
     _, response = signed_in(**fields)
     assert response.status_code == 302
-    assert response["Location"] == "/admin/"
+    assert response["Location"] == expected
+
+
+def test_an_ended_session_signs_in_back_to_its_page(auth_service, google):
+    """Ended session: page load -> sign-in with a notice -> back to the page.
+
+    The whole #2058 path through real views: the shared admission refuses
+    the ended session, the page load is redirected with the page as
+    ``next``, the sign-in page shows its notice and carries ``next``, and
+    the new session opens that page instead of the Admin home.
+    """
+    from urllib.parse import parse_qs, urlsplit
+
+    page = {"HTTP_ACCEPT": "text/html", "HTTP_SEC_FETCH_MODE": "navigate"}
+    client, _ = signed_in()
+    PortalSession.objects.filter(revoked_at__isnull=True).update(
+        revoked_at=timezone.now(), version=F("version") + 1
+    )
+    refused = client.get("/admin/users/?page=1", **page)
+    assert refused.status_code == 302
+    location = urlsplit(refused["Location"])
+    query = parse_qs(location.query)
+    assert (location.path, query) == (
+        "/admin/login",
+        {"ended": ["1"], "next": ["/admin/users/?page=1"]},
+    )
+    login = client.get(refused["Location"], **page)
+    body = login.content.decode()
+    assert login.status_code == 200
+    assert "You were signed out" in body
+    assert '<input type="hidden" name="next" value="/admin/users/?page=1">' in body
+    assert "You were signed out" not in client.get("/admin/login").content.decode()
+    _, response = signed_in(client, next=query["next"][0])
+    assert (response.status_code, response["Location"]) == (
+        302,
+        "/admin/users/?page=1",
+    )

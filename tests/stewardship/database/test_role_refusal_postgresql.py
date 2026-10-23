@@ -78,10 +78,19 @@ def test_an_ended_session_still_says_to_sign_in_again(auth_service, google, name
         revoked_at=timezone.now(), version=F("version") + 1
     )
     page = browser.get(reverse(name), **PAGE)
-    body = page.content.decode()
-    assert page.status_code == 403
-    assert "Sign in again" in body
-    assert ROLE not in body
+    if name == "admin:users":
+        # The shared admission's signed-out refusal: a page load goes to
+        # sign-in with the page as next and the ended flag (#2058).
+        assert (page.status_code, page["Location"]) == (
+            302,
+            "/admin/login?ended=1&next=%2Fadmin%2Fusers%2F",
+        )
+    else:
+        # System logs answers with its own error page.
+        body = page.content.decode()
+        assert page.status_code == 403
+        assert "Sign in again" in body
+        assert ROLE not in body
     script = browser.get(reverse(name), **SCRIPT)
     assert script.status_code == 403
     assert "This page is for" not in script.content.decode()

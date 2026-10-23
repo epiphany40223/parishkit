@@ -36,7 +36,6 @@ from parishkit.stewardship.web.contracts import (
     validation_response,
 )
 from parishkit.stewardship.web.refusals import (
-    UserFacingDenied,
     UserFacingGone,
     UserFacingUnavailable,
     annotate,
@@ -55,7 +54,7 @@ from .configuration_request_reads import receipt as configuration_receipt
 from .configuration_requests import record_request
 from .policy import Capability, allows
 from .request_models import ConfigurationChangeRequest
-from .role_refusal import role_denied
+from .role_refusal import role_denied, signed_out
 from .sessions import authenticated_admin, sign_in_instant
 
 
@@ -84,19 +83,6 @@ def principal(
         # not the session (#1924).
         raise role_denied(capability)
     return value
-
-
-def signed_out():
-    """The refusal for a request whose Admin session has ended."""
-    return UserFacingDenied(
-        _(
-            "Your sign-in has ended, for example after an hour without "
-            "activity or after signing out in another tab."
-        ),
-        fix=_("Sign in again to continue."),
-        link="/admin/login",
-        link_label=_("Sign in"),
-    )
 
 
 def editable_configuration(service):
