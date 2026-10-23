@@ -651,6 +651,7 @@ sections:
     "Saved copies": [RPT-01, DOM-03]
     "Campaign calendar and other pages": [ADM-04, ADM-12]
     "Campaign wizard starting points": [ADM-02, ADM-04]
+    "Suggested report emails": [ADM-02, ADM-04]
     "Command line": [ADM-11]
     "Migration of the Daily and Weekly digests": [OPS-04, DAT-02]
     "Conversion": [OPS-04, DAT-02]
