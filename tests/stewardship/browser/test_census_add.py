@@ -283,26 +283,34 @@ def test_the_familys_accept_says_it_withdraws_the_addition(page, component_origi
     row = page.locator("#census-row-3")
     row.locator('[data-row-action="accept"]').click()
     dialog = page.locator("#census-decide-dialog")
-    has_text(
-        dialog.locator("[data-confirm-body]"),
-        "Record this decision. Back to review undoes it. This also withdraws the "
-        "parish's added Mobile phone (555-0123).",
-    )
+    # The withdrawal is a paragraph of its own in the error notice's look,
+    # not run on from the body (Administrator, R45 W), and describes the
+    # dialog with it.
+    body = dialog.locator("[data-confirm-body]")
+    warning = dialog.locator("[data-confirm-warning]")
+    has_text(body, "Record this decision. Back to review undoes it.")
+    has_text(warning, "This also withdraws the parish's added Mobile phone (555-0123).")
+    visible(warning)
+    assert "notice-error" in warning.get_attribute("class").split()
+    assert dialog.get_attribute("aria-describedby").split() == [
+        "census-decide-dialog-body",
+        "census-decide-dialog-warning",
+    ]
     dialog.get_by_role("button", name="Cancel").click()
     hidden(dialog)
     other = page.locator("#census-row-4")
     other.locator('[data-row-action="accept"]').click()
-    has_text(
-        dialog.locator("[data-confirm-body]"),
-        "Record this decision. Back to review undoes it.",
-    )
+    has_text(body, "Record this decision. Back to review undoes it.")
+    hidden(warning)
     dialog.get_by_role("button", name="Cancel").click()
     row.locator("input[data-select-row]").check()
     page.locator(".bulk-bar").get_by_role("button", name="Accept", exact=True).click()
+    bulk = page.locator("#census-bulk-dialog")
+    has_text(bulk.locator("[data-confirm-body]"), BULK_BODY)
     has_text(
-        page.locator("#census-bulk-dialog [data-confirm-body]"),
-        f"{BULK_BODY} A ticked change whose field has a change the parish added, "
-        "still To enter by hand, withdraws that addition too.",
+        bulk.locator("[data-confirm-warning]"),
+        "A ticked change whose field has a change the parish added, still To "
+        "enter by hand, withdraws that addition too.",
     )
 
 

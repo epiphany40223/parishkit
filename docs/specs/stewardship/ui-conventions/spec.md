@@ -4431,6 +4431,9 @@ inventory on #879 lists.
   editor that records a corrected value (the review worklist's Edit) holds
   its Save until the value differs from the one it opened with, saying so
   in its reserved line, since saving the same value records no edit (R38).
+  A consequence a reader must not miss (a census Accept that also withdraws
+  the parish's addition, #2041) is its own paragraph under the dialog's
+  words, in the error notice's look, never run on from them.
   A row
   shows only the actions that apply to it; a row with none shows nothing
   there.

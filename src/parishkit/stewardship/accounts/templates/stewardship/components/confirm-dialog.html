@@ -9,6 +9,10 @@
     announcement after success, with {name} (the row's data-confirm-name) or
     {count} filled in by the script.
   - body and caution say what the action does and what it cannot undo.
+  - warning=True reserves an error notice under the body for an opener's
+    data-confirm-warning: a consequence said on its own, never run on from
+    the body (a census Accept that withdraws the parish's addition, #2041).
+    It is hidden while the opener carries none.
     With caution_marked=True the caution is said only while some chosen
     row's control (its Delete, or its ticked box) carries
     data-confirm-caution: Delete scheduled email's "Email already sent is
@@ -112,9 +116,10 @@
 <div class="dialog-actions">{% button type="button" data-confirm-accept %}{% translate "Apply" %}{% endbutton %}{% button type="button" variant="secondary" data-confirm-cancel %}{% if cancel %}{{ cancel }}{% else %}{% translate "Cancel" %}{% endif %}{% endbutton %}</div>
 <p id="{{ dialog_id }}-status" class="dialog-status" role="status" data-confirm-status></p>
 <div class="notice notice-error" role="alert" data-confirm-error hidden></div>
-</dialog>{% else %}<dialog id="{{ dialog_id }}" class="confirm-dialog" aria-labelledby="{{ dialog_id }}-title" aria-describedby="{{ dialog_id }}-body" data-confirm-dialog data-confirm-form="{{ form_id }}" data-confirm-fallback="{{ fallback }}" data-title-one="{{ title_one }}" data-title-many="{{ title_many }}" data-done-one="{{ done_one }}" data-done-many="{{ done_many }}"{% if answer_page %} data-confirm-answer-page{% endif %} data-working="{% translate 'Working…' %}">
+</dialog>{% else %}<dialog id="{{ dialog_id }}" class="confirm-dialog" aria-labelledby="{{ dialog_id }}-title" aria-describedby="{{ dialog_id }}-body{% if warning %} {{ dialog_id }}-warning{% endif %}" data-confirm-dialog data-confirm-form="{{ form_id }}" data-confirm-fallback="{{ fallback }}" data-title-one="{{ title_one }}" data-title-many="{{ title_many }}" data-done-one="{{ done_one }}" data-done-many="{{ done_many }}"{% if answer_page %} data-confirm-answer-page{% endif %} data-working="{% translate 'Working…' %}">
 <h2 id="{{ dialog_id }}-title" data-confirm-title>{{ title_many }}</h2>
 <p id="{{ dialog_id }}-body" data-confirm-body>{{ body }}</p>
+{% if warning %}<p id="{{ dialog_id }}-warning" class="notice notice-error" data-confirm-warning hidden></p>{% endif %}
 {% if caution %}<p class="notice"{% if caution_marked %} data-confirm-caution-marked hidden{% endif %}>{{ caution }}</p>{% endif %}
 {% if fields_template %}{% include fields_template %}{% endif %}
 <div class="dialog-actions">{% if plain_accept %}{% button type=accept_type|default:"button" aria-describedby=accept_hint data-confirm-accept %}{{ accept }}{% endbutton %}{% else %}{% button type="button" class="button-danger" data-confirm-accept %}{{ accept }}{% endbutton %}{% endif %}{% button type="button" variant="secondary" data-confirm-cancel %}{% if cancel %}{{ cancel }}{% else %}{% translate "Cancel" %}{% endif %}{% endbutton %}</div>

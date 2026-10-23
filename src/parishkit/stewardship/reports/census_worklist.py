@@ -76,7 +76,6 @@ from parishkit.stewardship.web.presentation import duid
 from parishkit.stewardship.web.review_worklist import (
     ADD_BODY,
     ALREADY_HELD,
-    EDIT_BODY,
     INCORRECT_WORDS,
     NOT_SEEN,
     REOPEN,
@@ -427,7 +426,9 @@ OVERLAP = (
     "withdraws this one."
 )
 # What Accept and Edit say on a Family's change whose field has an open
-# addition, which accepting it withdraws (#2041).
+# addition, which accepting it withdraws (#2041): a paragraph of its own in
+# the dialog's error notice (``warning``), never run on from its body, so
+# the withdrawal is not missed (Administrator, R45 W).
 ACCEPT_WITHDRAWS = "This also withdraws the parish's added {added}."
 BULK_ACCEPT_WITHDRAWS = (
     "A ticked change whose field has a change the parish added, still To "
@@ -477,20 +478,19 @@ def _addition_icons(row):
             icon["done"] = "{name} " + NOT_ENTERED_DONE
 
 
+# The icons that accept a Family's change (Edit records Accepted (edited)).
+ACCEPTS = frozenset({Action.ACCEPT.value, Action.EDIT.value})
+
+
 def _accept_words(row):
-    """Say on a Family change's Accept and Edit that accepting it withdraws
+    """Warn on a Family change's Accept and Edit that accepting it withdraws
     the open addition of its field (``withdraws``, #2041), in place."""
     added = row.get("withdraws")
     if not added:
         return
-    extra = ACCEPT_WITHDRAWS.format(added=added)
     for icon in row["icons"]:
-        if icon["selected"]:
-            continue
-        if icon["action"] == Action.ACCEPT.value:
-            icon["body"] = f"{icon['body']} {extra}"
-        elif icon["action"] == Action.EDIT.value:
-            icon["body"] = f"{EDIT_BODY} {extra}"
+        if not icon["selected"] and icon["action"] in ACCEPTS:
+            icon["warning"] = ACCEPT_WITHDRAWS.format(added=added)
 
 
 def _added_words(row, replacements):
@@ -523,9 +523,9 @@ def _bulk_words(worklist):
     Withdraw is offered only while the page lists a change the parish added
     that is not withdrawn (it is no choice otherwise); its note is required
     while a ticked one is Entered by hand (the ``reopen`` choice). Back to
-    review says what it does to a ticked entered addition, and Accept that
-    it withdraws a ticked change's open addition, each only while the page
-    has such a row.
+    review says what it does to a ticked entered addition, and Accept warns
+    that it withdraws a ticked change's open addition, each only while the
+    page has such a row.
     """
     rows = worklist.rows
     added = [row for row in rows if row.get("added") and row.get("offers")]
@@ -546,7 +546,7 @@ def _bulk_words(worklist):
         elif value == Action.BACK_TO_REVIEW.value and entered:
             choice["body"] = f"{choice['body']} {BULK_NOT_ENTERED}"
         elif value == Action.ACCEPT.value and withdraws:
-            choice["body"] = f"{choice['body']} {BULK_ACCEPT_WITHDRAWS}"
+            choice["warning"] = BULK_ACCEPT_WITHDRAWS
         kept.append(choice)
     worklist.bulk = kept
 

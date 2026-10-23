@@ -2919,9 +2919,10 @@ same field again; the open addition then says the Family has an open change
 of this field too, and accepting the Family's change (Accept or Edit, one by
 one, in bulk, or `pk-admin census review`) withdraws the open addition in
 the same action, all or none, so the field never has two values waiting to
-be entered (#2041). Its dialog says so ("This also withdraws the parish's
-added Nickname (Dave)."; the bulk Accept's dialog in general words while
-the page lists such a change). The withdrawal is the addition's own
+be entered (#2041). Its dialog says so in a paragraph of its own under
+its body, in the error notice's look, so it is not missed ("This also
+withdraws the parish's added Nickname (Dave)."; the bulk Accept's dialog in
+general words while the page lists such a change). The withdrawal is the addition's own
 `withdrawn` step under the reviewer's name, with the note "Withdrawn: the
 Family's own change of this field was accepted.", and its own audit
 event. Ignoring the Family's change leaves the addition standing. An

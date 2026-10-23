@@ -256,14 +256,6 @@ UNDO_PORTAL_ONLY = (
 # said in the dialogs whose decision it shows: Ignore on an item whose
 # ParishSoft value the form shows (``shown_baseline`` rows), and Add.
 IGNORE_SEEN = "The Family will see ParishSoft's value the next time it signs in."
-# What Edit's dialog says (``components/review-worklist.html`` draws the
-# same words as the dialog's default): a stream that says more on one row
-# sets the row's Edit body to these words and its own (#2041).
-EDIT_BODY = (
-    "Record this value as the reviewer's value. The item is Accepted (edited), "
-    "and the Family's answer stays beside it. The Family will see this value "
-    "the next time it signs in."
-)
 ADD_BODY = (
     "Add a change the Family did not ask for. It starts Accepted, shown as "
     "Added by the parish."

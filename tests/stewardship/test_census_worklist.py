@@ -36,7 +36,6 @@ from parishkit.stewardship.responses.comparison import ADDRESS_COMPONENTS
 from parishkit.stewardship.responses.refresh_checks import CheckState
 from parishkit.stewardship.web.review_worklist import (
     BODIES,
-    EDIT_BODY,
     INCORRECT_BODIES,
     WORDS,
 )
@@ -633,28 +632,27 @@ def test_additions_are_tied_to_the_familys_changes_of_their_field():
     assert not ignored["withdraws"]
     extra = "This also withdraws the parish's added Mobile phone (555-0123)."
     icons = {icon["action"]: icon for icon in rows["8"]["icons"]}
-    assert (
-        icons["accept"]["body"]
-        == f"Record this decision. Back to review undoes it. {extra}"
-    )
-    assert icons["edit"]["body"] == f"{EDIT_BODY} {extra}"
+    # The withdrawal is its own paragraph (``warning``), not run on from the
+    # body (Administrator, R45 W).
+    assert icons["accept"]["body"] == "Record this decision. Back to review undoes it."
+    assert icons["accept"]["warning"] == icons["edit"]["warning"] == extra
+    assert not icons["edit"].get("body")
     bulk = {item["value"]: item for item in worklist.bulk}
     # No entered addition here: Back to review keeps its own words.
     assert bulk["back_to_review"]["body"] == BODIES[Action.BACK_TO_REVIEW]
-    assert bulk["accept"]["body"].endswith(
+    assert bulk["accept"]["warning"] == (
         "A ticked change whose field has a change the parish added, still To "
         "enter by hand, withdraws that addition too."
     )
+    assert "withdraws" not in bulk["accept"]["body"]
     assert "withdraw" in bulk
 
 
 def test_the_bulk_bar_offers_withdraw_only_beside_an_addition():
     """#2041: Withdraw is in the bulk bar only while the page lists a change
-    the parish added that is not withdrawn; the Edit dialog's own words are
-    the ones a row that says more extends (``EDIT_BODY``)."""
-    worklist, html = page([shaped()])
+    the parish added that is not withdrawn."""
+    worklist, _ = page([shaped()])
     assert "withdraw" not in [item["value"] for item in worklist.bulk]
-    assert EDIT_BODY in unescape(html)
     gone = added(step="withdrawn", step_at=SUBMITTED)
     worklist, _ = page([shaped(), gone])
     assert "withdraw" not in [item["value"] for item in worklist.bulk]
