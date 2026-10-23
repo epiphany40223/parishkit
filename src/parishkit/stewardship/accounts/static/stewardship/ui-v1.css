@@ -2450,3 +2450,7 @@ fieldset.choice-pair:has(input[aria-invalid=true]) > .choice-pair-options { bord
    The review's value cells keep the page's wrapping, so a long address
    still breaks rather than widening the table. */
 .choice-pair-options > label, .report-review-table th { overflow-wrap: normal; word-break: normal; }
+/* New report email's Start from (#2037) has three segments, not a pair's
+   two: on a phone each takes narrower side padding, so "Weekly report"
+   wraps between its words inside its frame rather than overflowing it. */
+@media (max-width: 40rem) { .report-start .choice-pair-options > label:has(> input[type=radio]) { padding-inline: .5rem; } }

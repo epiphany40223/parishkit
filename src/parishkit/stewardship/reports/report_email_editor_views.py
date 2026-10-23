@@ -4,7 +4,8 @@ The report-emails spec ("New and Edit report email", "Review and Apply",
 "Skip one send", "Delete a report email"). One Administrator page at
 ``/admin/mail/report-emails/new/`` and ``/admin/mail/report-emails/<report>/``:
 
-- GET draws the editor (``report_email_editor.EditorForm``), New blank and
+- GET draws the editor (``report_email_editor.EditorForm``), New blank (with
+  Start from's starting points, ``report_email_editor.starting_points``) and
   Edit filled from the saved report, its time (and a one-time date) filled
   in this browser's zone by the page script from the moment drawn
   (``data-schedule-local``), and on Edit its past sends and Delete.
@@ -289,6 +290,11 @@ def _page(request, *, state, campaign, report_id, saved, form, status=200):
         # The Introduction's visual editor starts from the sanitized HTML.
         "visual": _visual(form),
         "date_time_error": _date_time_error(form),
+        # New's Start from (spec, "New and Edit report email"): the starting
+        # points as the page script fills them, from report_presets.
+        "starting_points": editor.starting_points(values, campaign.pk, choices)
+        if report_id is None
+        else None,
     }
     if saved is not None and not form.is_bound:
         moment = editor.moment(saved, values, now)

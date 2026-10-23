@@ -1031,6 +1031,90 @@ def basic_preset(schedule):
     return None
 
 
+# The fields Start from sets (spec, "New and Edit report email"), each to
+# its value in ``initial``'s form, or to this when ``initial`` has none.
+START_DEFAULTS = {
+    "name": "",
+    "subject": "",
+    "sends": "repeat",
+    "once_date": "",
+    "time": "",
+    "editor_mode": "basic",
+    "preset": "",
+    # The Day menu's first entry, as New's blank form draws it.
+    "preset_weekday": "0",
+    "frequency": "daily",
+    "weekdays": [],
+    "from_kind": "campaign_start",
+    "from_date": "",
+    "until_kind": "day_after_campaign_end",
+    "until_date": "",
+    "as_of": "previous_day_end",
+    "days_shown": 5,
+    "content_required": False,
+}
+
+
+def _start_fields(data):
+    """``initial``'s fields as Start from sets them: every field of
+    ``START_DEFAULTS``, an empty value as an empty string. The introduction
+    is left out: the page script clears the shared editor itself."""
+    merged = START_DEFAULTS | data
+    return {
+        name: "" if merged[name] is None else merged[name] for name in START_DEFAULTS
+    }
+
+
+def starting_points(campaign, campaign_id, choices):
+    """New report email's Start from choices, as the page script fills them.
+
+    ``campaign`` is the applied campaign values and ``choices`` the
+    recipient picker's (``recipient_choices``). A list of ``{"key",
+    "label", "fields", "recipients", "blocks", "charts"}``: Blank (New's
+    blank form) and each of ``report_presets``' starting points, drawn
+    through ``initial`` as Edit draws a saved report, with the time left
+    empty. ``recipients`` are the chips (value and label), ``blocks`` the
+    block keys in order and ``charts`` the Participation charts boxes
+    ticked. The page embeds it as JSON, so the page script holds no copy
+    of the starting points.
+    """
+    from parishkit.stewardship.campaigns.report_presets import (
+        STARTING_POINTS,
+        starting_point,
+    )
+
+    offered = offered_charts(campaign)
+    result = [
+        {
+            "key": "blank",
+            "label": str(_("Blank")),
+            "fields": _start_fields(initial(None, campaign, None)),
+            "recipients": [],
+            "blocks": [],
+            "charts": offered,
+        }
+    ]
+    for key in STARTING_POINTS:
+        values = starting_point(key, campaign_id)
+        values["schedule"]["time"] = ""
+        fields = _start_fields(initial(values, campaign, None))
+        recipients = [entry_value(entry) for entry in values["recipients"]]
+        result.append(
+            {
+                "key": key,
+                "label": values["name"],
+                "fields": fields,
+                "recipients": [
+                    {"value": value, "label": chip_label(value, choices)}
+                    for value in recipients
+                ],
+                "blocks": [entry["block"] for entry in values["blocks"]],
+                "charts": ticked_charts(values, campaign),
+            }
+        )
+    return result
+
+
 def moment(values, campaign, now):
     """The instant the page fills the time (and once, the date) fields from.
 

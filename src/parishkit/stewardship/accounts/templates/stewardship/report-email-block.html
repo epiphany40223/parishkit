@@ -1,12 +1,13 @@
 {% load i18n stewardship %}{% comment %}
 One row of New and Edit report email's Blocks list (report-email-entry.html):
 the block's hidden field (its place in the list is its place in the email),
-its label and help, its options (Day by day table's days shown,
+its label and help (data-help, which Start from gives Add a block's
+option back), its options (Day by day table's days shown,
 Participation charts' Charts checkboxes, which need one ticked, checked live
 as data-require-one, #2009), and Move up, Move down and Remove, which
 report-email-editor-v1.js runs in place. A block placed after the dashboard
 button (block.last) stays last and has neither move button.
-{% endcomment %}<li class="report-block" data-block="{{ block.key }}"{% if block.last %} data-block-last{% endif %} tabindex="-1"><input type="hidden" name="block" value="{{ block.key }}" data-change-setting>
+{% endcomment %}<li class="report-block" data-block="{{ block.key }}" data-help="{{ block.help }}"{% if block.last %} data-block-last{% endif %} tabindex="-1"><input type="hidden" name="block" value="{{ block.key }}" data-change-setting>
 <p class="report-block-label"><strong>{{ block.label }}</strong></p>
 <p class="help">{{ block.help }}{% if block.last %} {% translate "This block always follows the dashboard button." %}{% endif %}</p>
 {% if block.key == "day_by_day" %}<div class="field"><label for="report-days_shown">{% translate "Days shown" %}</label>
