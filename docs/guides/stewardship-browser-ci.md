@@ -147,6 +147,38 @@ partition, so the cause is visible without reading the log. The child pytest
 runs in its own process group, and the kill ends the whole group, so no
 orphaned Playwright driver or browser slows the next partition.
 
+## Browser job container (#2053)
+
+The `stewardship-browser-engine` jobs run inside the
+`mcr.microsoft.com/playwright/python:v1.62.0-noble` image, pinned by its
+multi-arch index digest. The image already has Chromium, Firefox and WebKit
+and their OS packages. Before #2053, every job ran `playwright install
+--with-deps`, which fetched about 119 MB of Ubuntu packages. On a slow mirror
+(48 kB/s) that took 25 to 42 minutes of the 60-minute job limit.
+
+- `actions/setup-python` (Python 3.12, pip cache) and `actions/setup-node`
+  (npm cache) still run inside the container. The locked requirements and
+  `npm ci` for axe-core install as before.
+- `python -m playwright install <engines>` stays, without `--with-deps`. It
+  downloads nothing while the image's browsers match the `playwright` pin in
+  `requirements/stewardship-browser.txt`. `test_browser_ci.py` requires the
+  image tag to match that pin, and the workflow and
+  `tools/stewardship-preflight.py` to name the same digest. To upgrade
+  Playwright, change all three together.
+- The job runs as the image's root user, which owns the checked-out
+  workspace. The job uses no services.
+- The image's default sans-serif font is WenQuanYi Zen Hei. The runner's
+  DejaVu fonts (`/usr/share/fonts/truetype/dejavu`) are mounted into the
+  container, so text wraps as it did on the runner. The "Require the
+  runner's DejaVu fonts" step fails the job if `fc-match` does not resolve
+  sans-serif, serif and monospace to DejaVu.
+- `--ipc=host` gives Chromium the shared memory that Playwright's Docker
+  guide recommends.
+- The microsoft.com apt-source workaround (#1990) is gone, because no job
+  runs apt any more.
+- GitHub pulls the image before the first step runs, so the time it takes is
+  not counted in a job's setup time.
+
 ## Local Linux Firefox and WebKit runs (#1156)
 
 Firefox and WebKit behave differently on Linux than on macOS. Linux has
@@ -154,12 +186,12 @@ different default fonts (so text wraps at different widths), and wheel
 scrolling and Tab focus differ too. Most cross-engine train failures came from
 this. `tools/stewardship-preflight.py --browsers` (see the
 [pre-flight guide](../development/stewardship.md#pre-flight-before-a-release-train))
-runs the changed browser test files for Firefox and WebKit in the
-`mcr.microsoft.com/playwright/python:v1.62.0-noble` image, as CI's engines see
-them. A file whose cases run only in Chromium is left out.
+runs the changed browser test files for Firefox and WebKit in the same
+digest-pinned image that CI's browser jobs run in (see
+[Browser job container](#browser-job-container-2053)). A file whose cases run only in Chromium is left out.
 
 - The first run builds a local `parishkit-preflight-browser:<hash>` image. It
-  adds `fonts-dejavu-core` to match the CI runner's layout, the locked Python
+  adds `fonts-dejavu-core` to match CI's DejaVu fonts, the locked Python
   requirements, and axe-core at its locked version and integrity. Later runs
   reuse it until a requirements file or `package-lock.json` changes.
 - Each run copies the checkout, including uncommitted and untracked files, into

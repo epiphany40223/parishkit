@@ -1,5 +1,6 @@
 """Browser CI partitions preserve the complete suite and fail closed."""
 
+import ast
 import json
 import os
 import re
@@ -488,7 +489,9 @@ def test_browser_workflow_contract():
     assert job["env"] == {"BROWSER_RUNS": "${{ matrix.runs }}"}
     install, run = job["steps"][-2:]
     assert 'read -ra runs <<<"$BROWSER_RUNS"' in install["run"]
-    assert 'playwright install --with-deps "${runs[@]%%:*}"' in install["run"]
+    # The container image has the OS packages, so nothing installs them (#2053).
+    assert 'python -m playwright install "${runs[@]%%:*}"' in install["run"]
+    assert "--with-deps" not in install["run"]
     assert run["env"]["PARISHKIT_RUN_BROWSER_TESTS"] == "1"
     assert run["run"] == (
         'python -m parishkit.stewardship.quality_browser --runs "$BROWSER_RUNS"'
@@ -506,6 +509,50 @@ def test_browser_workflow_contract():
         "JOBS": "${{ inputs.jobs }}",
     }
     assert_gate_truth_table(gate["steps"][0], GATES["stewardship-browser"])
+
+
+def preflight_browser_image():
+    """Return tools/stewardship-preflight.py's BROWSER_IMAGE_BASE value."""
+    tree = ast.parse((ROOT / "tools/stewardship-preflight.py").read_text())
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            getattr(target, "id", None) == "BROWSER_IMAGE_BASE"
+            for target in node.targets
+        ):
+            return ast.literal_eval(node.value)
+    raise AssertionError("BROWSER_IMAGE_BASE not found")
+
+
+def test_browser_jobs_run_in_the_pinned_playwright_image():
+    """Engine jobs use the preflight's digest-pinned image, never apt (#2053).
+
+    The image's browsers must be the ones the playwright pin expects, or
+    ``playwright install`` would quietly download them again.
+    """
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+    job = yaml.safe_load(workflow)["jobs"]["stewardship-browser-engine"]
+    image = job["container"]["image"]
+    assert image == preflight_browser_image()
+    assert re.fullmatch(
+        r"mcr\.microsoft\.com/playwright/python:v(\d+\.\d+\.\d+)-noble"
+        r"@sha256:[0-9a-f]{64}",
+        image,
+    )
+    version = re.search(r":v([\d.]+)-", image).group(1)
+    pins = (ROOT / "requirements/stewardship-browser.txt").read_text()
+    assert f"\nplaywright=={version}\n" in pins
+    assert job["container"]["options"] == "--ipc=host"
+    fonts = "/usr/share/fonts/truetype/dejavu"
+    assert job["container"]["volumes"] == [f"{fonts}:{fonts}"]
+    assert "--with-deps" not in workflow
+    assert "sudo" not in yaml.safe_dump(job)
+    names = [step.get("name") for step in job["steps"]]
+    assert "Remove the Microsoft apt source" not in names
+    font_check = job["steps"][names.index("Require the runner's DejaVu fonts")]
+    assert 'match=$(fc-match "$family")' in font_check["run"]
+    assert "for family in sans-serif serif monospace; do" in font_check["run"]
+    # The font check precedes the tests it protects.
+    assert names.index("Require the runner's DejaVu fonts") < len(names) - 2
 
 
 def test_ci_cancels_only_superseded_pr_heads():

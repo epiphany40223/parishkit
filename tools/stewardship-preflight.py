@@ -41,7 +41,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 STATIC_JS = "src/parishkit/stewardship"
 BROWSER_TESTS = "tests/stewardship/browser/"
-BROWSER_IMAGE_BASE = "mcr.microsoft.com/playwright/python:v1.62.0-noble"
+# The same digest-pinned image CI's browser jobs run in (#2053);
+# test_browser_ci.py keeps the two and the playwright pin in step.
+BROWSER_IMAGE_BASE = (
+    "mcr.microsoft.com/playwright/python:v1.62.0-noble"
+    "@sha256:aa81288e738725378becba5b3e06cb0f3a7f012a610e87e8d767a090ea3f740d"
+)
 BROWSER_ENGINES = ("firefox", "webkit")
 
 # Fast, database-free guard tests that other PRs in a train most often break

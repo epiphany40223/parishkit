@@ -295,8 +295,6 @@ jobs:
     needs: validate
     if: ${{ needs.validate.outputs.browser != 'false' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)) }}
     runs-on: ubuntu-latest
-    # On 2026-09-30 a slow Ubuntu package mirror spent 17 minutes installing
-    # WebKit's system packages, so 25 minutes cancelled passing runs.
     # quality_browser.py bounds the test run itself at 50 minutes, split into
     # one budget per partition (#1112), leaving 10 minutes for setup and
     # post-job steps.
@@ -306,8 +304,8 @@ jobs:
     # budget (#1380), and WebKit (the slowest engine) and Chromium each split
     # in five, one fifth of each per job, each near 60% (#1529; thirds had
     # grown to fill the budget). WebKit runs last so it inherits Chromium's
-    # unused budget (#1112). Each job installs only its engines and must
-    # prove every partition ran all of its cases.
+    # unused budget (#1112). Each job must prove every partition ran all of
+    # its cases.
     strategy:
       fail-fast: false
       matrix:
@@ -319,6 +317,21 @@ jobs:
           - "chromium:3/5 webkit:3/5"
           - "chromium:4/5 webkit:4/5"
           - "chromium:5/5 webkit:5/5"
+    # The pinned Playwright image already holds every engine and its OS
+    # packages, so no job downloads them from an Ubuntu mirror (#2053: a
+    # 48 kB/s mirror made Playwright's OS-package install take 25-42
+    # minutes). tools/stewardship-preflight.py runs the same image locally;
+    # test_browser_ci.py keeps it, the preflight and the playwright pin in
+    # step. The job runs as the image's root user, which owns the
+    # workspace. Its default sans-serif font is WenQuanYi Zen Hei, so the
+    # runner's own DejaVu fonts are mounted in to keep today's text
+    # wrapping. --ipc=host gives Chromium the shared memory Playwright's
+    # Docker guide asks for.
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.62.0-noble@sha256:aa81288e738725378becba5b3e06cb0f3a7f012a610e87e8d767a090ea3f740d
+      options: --ipc=host
+      volumes:
+        - /usr/share/fonts/truetype/dejavu:/usr/share/fonts/truetype/dejavu
     env:
       BROWSER_RUNS: ${{ matrix.runs }}
     steps:
@@ -332,21 +345,27 @@ jobs:
           node-version: "24"
           cache: npm
           cache-dependency-path: tests/stewardship/browser/package-lock.json
-      # The runner image ships a packages.microsoft.com apt source that
-      # sometimes answers 403 and fails Playwright's apt-get update before
-      # any test runs (#1990). These jobs need only Ubuntu's packages, so
-      # drop that source; a no-op when the image no longer has it.
-      - name: Remove the Microsoft apt source
+      # A missing host font directory would mount empty and silently change
+      # every engine's layout, so fail instead.
+      - name: Require the runner's DejaVu fonts
         run: |
-          grep -ls packages.microsoft.com /etc/apt/sources.list /etc/apt/sources.list.d/* \
-            | xargs -r sudo rm -f
+          for family in sans-serif serif monospace; do
+            match=$(fc-match "$family")
+            echo "$family: $match"
+            case "$match" in
+              *'"DejaVu '*) ;;
+              *) echo "::error::$family is not DejaVu inside the container"; exit 1 ;;
+            esac
+          done
       - name: Install component test dependencies
         run: |
           tools/ci-pip-install.sh -r requirements/stewardship-build.txt
           tools/ci-pip-install.sh --no-build-isolation -r requirements.txt -r requirements/stewardship-browser.txt
           npm ci --ignore-scripts --prefix tests/stewardship/browser
+          # A no-op when the image's browsers match the playwright pin; it
+          # never installs OS packages, because the image already has them.
           read -ra runs <<<"$BROWSER_RUNS"
-          python -m playwright install --with-deps "${runs[@]%%:*}"
+          python -m playwright install "${runs[@]%%:*}"
       - name: Responsive, keyboard, accessibility, and session component checks
         env:
           PARISHKIT_RUN_BROWSER_TESTS: "1"
