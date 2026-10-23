@@ -26,6 +26,16 @@ from .quality_sharding import BROWSER_ENGINES, browser_label, parse_browser_runs
 # from 38 minutes when slow runners ran a partition 60% over its estimate
 # (#1112).
 JOB_SECONDS = 3000
+# The browser job's timeout-minutes in ci.yml, counted from the job's start.
+# A slow package mirror can spend 25 to 42 minutes on setup (#2050), after
+# which a full JOB_SECONDS budget would outlast the job and GitHub would cancel
+# it mid-test with no CI_BROWSER_* line. So run_job also stops RESERVE_SECONDS
+# before this limit, leaving time to kill the partition, log the kill and
+# write the job summary.
+JOB_LIMIT_SECONDS = 3600
+RESERVE_SECONDS = 180
+# The workflow's first step stores the job's start (Unix seconds) here.
+JOB_STARTED_ENV = "BROWSER_JOB_STARTED"
 
 
 class BudgetExhausted(ValueError):
@@ -50,10 +60,10 @@ def sidecar_lines(path):
     return path.read_text(encoding="utf-8").splitlines() if path.exists() else []
 
 
-def partition_limit(remaining, later, count):
+def partition_limit(remaining, later, count, budget=JOB_SECONDS):
     """Seconds a partition may run: REMAINING job time less later reserves.
 
-    Each of a job's COUNT partitions reserves an equal share of JOB_SECONDS,
+    Each of a job's COUNT partitions reserves an equal share of BUDGET,
     and LATER partitions still to run keep theirs, so a slow partition cannot
     starve the ones after it; time an earlier partition left unused rolls
     forward to the next. Shares are equal, not proportional to need: a
@@ -62,14 +72,38 @@ def partition_limit(remaining, later, count):
     it gets its own share plus whatever Chromium left unused. A
     one-partition job gets the whole budget.
     """
-    return max(1, remaining - later * JOB_SECONDS / count)
+    return max(1, remaining - later * budget / count)
+
+
+def job_budget(started, now):
+    """Seconds the job's partitions may share, and the seconds setup used.
+
+    STARTED is the job's start in Unix seconds (None outside CI) and NOW the
+    current Unix time. The budget is JOB_SECONDS, cut to what is left before
+    the job limit less RESERVE_SECONDS when setup was slow (#2050); never
+    below zero, so partitions then get partition_limit's 1 s floor and are
+    reported as budget kills instead of being cancelled by GitHub.
+    """
+    if started is None:
+        return JOB_SECONDS, 0
+    setup = max(0, now - started)
+    left = JOB_LIMIT_SECONDS - RESERVE_SECONDS - setup
+    return max(0, min(JOB_SECONDS, left)), setup
+
+
+def job_started():
+    """The job's start time from the workflow, or None when unset or invalid."""
+    try:
+        return int(os.environ[JOB_STARTED_ENV])
+    except (KeyError, ValueError):
+        return None
 
 
 def timeout_message(limit, elapsed, failures):
     """Say which budget ran out, the elapsed time and whether any test failed."""
     budget = (
         f"killed after {elapsed:,.0f} s when its {limit:,.0f} s partition budget "
-        f"(its share of the {JOB_SECONDS:,} s job budget) ran out"
+        "(its share of the job budget) ran out"
     )
     if not failures:
         return f"{budget}; no test had failed, so rerun the job"
@@ -226,7 +260,14 @@ def run_job(root, runs):
     the job. Failures also go to the GitHub job summary when one is
     available. Return the labels of the partitions that failed.
     """
-    deadline = time.monotonic() + JOB_SECONDS
+    budget, setup = job_budget(job_started(), time.time())
+    # One line per job, so a kill after a slow setup is attributable (#2050).
+    print(
+        f"CI_BROWSER_JOB_BUDGET {budget:,.0f} s for {len(runs):,} partition(s); "
+        f"setup used {setup:,.0f} s of the {JOB_LIMIT_SECONDS:,} s job limit",
+        flush=True,
+    )
+    deadline = time.monotonic() + budget
     failed = []
     tests, kills, others = [], [], []
     # try/finally: a job timeout or cancel (SIGINT -> KeyboardInterrupt) during
@@ -234,7 +275,10 @@ def run_job(root, runs):
     try:
         for position, (engine, index, count) in enumerate(runs):
             limit = partition_limit(
-                deadline - time.monotonic(), len(runs) - position - 1, len(runs)
+                deadline - time.monotonic(),
+                len(runs) - position - 1,
+                len(runs),
+                budget,
             )
             try:
                 run_engine(root, engine, index, count, limit)
