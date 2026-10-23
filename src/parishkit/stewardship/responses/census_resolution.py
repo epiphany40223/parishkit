@@ -51,7 +51,7 @@ provisional).
 
 from uuid import UUID
 
-from django.db.models import F
+from django.db.models import F, Q
 
 from parishkit.stewardship.accounts.policy import Capability, allows, current_principal
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
@@ -75,7 +75,7 @@ from .models import (
     RESOLUTION_ACTIONS,
     ProposalResolution,
     ProposedChange,
-    open_additions,
+    standing_additions,
 )
 from .refresh_checks import check_states, entered_incorrectly, replaced
 
@@ -199,29 +199,34 @@ class KeyRebound(ValueError):
 
 
 class ReopenCovered(ValueError):
-    """An ignored change an open parish addition covers cannot be reopened.
+    """A change a standing parish addition covers cannot be reopened.
 
-    The addition stands in for it (#1710): reopening it would leave two
-    open changes of one field. Nothing was saved; withdraw the addition
-    first.
+    The addition stands in for it (#1710): reopening it beside an open one
+    would leave two open changes of one field, and beside an Entered by
+    hand one added after it, a change the Family's reviewed form draws the
+    addition over (#2008). Nothing was saved; withdraw the addition first.
     """
 
 
 def covered_by_addition(proposal):
-    """Whether an open parish addition covers ``proposal``'s field (#1710).
+    """Whether a standing parish addition covers ``proposal``'s field.
 
-    The same Family, Member (or Family) and field, with no later step or
-    one Back to review reopened (#1840). The callers hold the work order,
-    so no Add can slip in between this check and their write.
+    The same Family, Member (or Family) and field, and an addition that is
+    open (no later step, or one Back to review reopened, #1710, #1840), or
+    Entered by hand and added after ``proposal`` was made (#2008): the
+    Family's reviewed form draws that addition over an older change, so
+    reopening the change would let an unchanged submit lose its answer.
+    The callers hold the work order, so no Add can slip in between this
+    check and their write.
     """
     return (
-        open_additions()
+        standing_additions(proposal.submission.family_id)
         .filter(
-            family_id=proposal.submission.family_id,
             entity_kind=proposal.entity_kind,
             entity_key=proposal.entity_key,
             field=proposal.field,
         )
+        .filter(Q(is_open=True) | Q(created_at__gt=proposal.created_at))
         .exists()
     )
 
@@ -411,7 +416,7 @@ def record_resolution(
     ) or (member_duid is not None and action != "entered"):
         raise ValueError("This census change cannot be resolved that way now.")
     if action == "reopened" and covered_by_addition(proposal):
-        raise ReopenCovered("An open addition covers this census change.")
+        raise ReopenCovered("A change the parish added covers this census change.")
     resolution = ProposalResolution.objects.create(
         actor_id=actor_id, request_key=request_key, **intent
     )

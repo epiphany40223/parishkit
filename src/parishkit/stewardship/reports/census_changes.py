@@ -334,7 +334,11 @@ SELECT p.id::text, p.entity_kind, p.entity_key, p.field,
         WHERE k.outcome='conflict'
           AND NOT EXISTS (SELECT 1 FROM stewardship_proposal_review v
               WHERE v.proposal_id=p.id AND v.expected_version>k.item_version)),
-        false) AS refresh_conflict
+        false) AS refresh_conflict,
+    -- When the change was made, on the database's clock as an addition's
+    -- own time is: an Entered by hand addition covers only changes made
+    -- before it (``link_additions``, #2008).
+    p.created_at
 FROM stewardship_campaign c
 LEFT JOIN stewardship_source_current sc ON sc.singleton
 JOIN stewardship_submission s ON s.campaign_id=c.id AND s.mode='live'
@@ -452,6 +456,7 @@ COLUMNS = (
     "family_version",
     "resolution_member",
     "refresh_conflict",
+    "created_at",
 )
 
 # The menu's open count (#585, #1590; admin_context.OPEN_COUNTS embeds it):
@@ -573,10 +578,11 @@ def link_additions(changes, added):
     Returns each ignored change's additions made in place of it (its
     history line names them), and marks rows in place: an open addition
     whose field the Family has an open change of too (``overlap``, from a
-    later response), and an ignored or terminal change an open addition of
-    its field covers (``covered``: it is not sent back to review while that
-    addition is open, so the field never has two open changes, #1710,
-    #1840).
+    later response), and an ignored or terminal change a standing addition
+    of its field covers (``covered``: it is not sent back to review while
+    that addition is open, so the field never has two open changes, #1710,
+    #1840, nor while one added after it is Entered by hand, which the
+    Family's reviewed form draws over it, #2008).
     """
     replacements = {}
     for row in added:
@@ -591,17 +597,24 @@ def link_additions(changes, added):
         key = _key(row)
         row["overlap"] = row["stage"] == Stage.TO_ENTER_BY_HAND.value and key in asked
     # An ignored change, or one whose terminal step Back to review would
-    # undo (#1840), that an open addition of its field covers is not sent
-    # back to review while the addition is open (``census_resolution.
-    # covered_by_addition`` refuses it too), so the field never has two.
-    covering = {
-        _key(row) for row in added if row["stage"] == Stage.TO_ENTER_BY_HAND.value
-    }
+    # undo (#1840), that a standing addition of its field covers is not
+    # sent back to review (``census_resolution.covered_by_addition``
+    # refuses it too): an open addition covers every change of its field,
+    # and an Entered by hand one the changes made before it was added.
+    # Each field's covering additions, by when each was added (None: open).
+    covering = {}
+    for row in added:
+        if row["stage"] == Stage.TO_ENTER_BY_HAND.value:
+            covering.setdefault(_key(row), []).append(None)
+        elif row["stage"] == Stage.ENTERED_BY_HAND.value:
+            covering.setdefault(_key(row), []).append(row["created_at"])
     for row in changes:
-        key = _key(row)
-        row["covered"] = key in covering and (
+        row["covered"] = (
             row["stage"] == Stage.IGNORED.value
             or Stage(row["stage"]) in TERMINAL_STAGES
+        ) and any(
+            at is None or (row["created_at"] is not None and at > row["created_at"])
+            for at in covering.get(_key(row), ())
         )
     return replacements
 
@@ -704,6 +717,7 @@ def shape_addition(raw):
             "decision": "approved",
             "execution": ADDITION_EXECUTION[step or "open"],
             "submitted_at": raw["created_at"],
+            "created_at": raw["created_at"],
             "family_duid": raw["family_duid"],
             "family_name": raw["family_name"],
             "member_name": raw["member_name"],

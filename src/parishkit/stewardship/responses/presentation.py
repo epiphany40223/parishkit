@@ -9,6 +9,7 @@ from parishkit.stewardship.accounts.branding_context import campaign_artwork
 from parishkit.stewardship.campaigns.models import CampaignConfiguration
 from parishkit.stewardship.campaigns.runtime import _now
 from parishkit.stewardship.campaigns.work_locks import require_work_order
+from parishkit.stewardship.pipeline import Shown
 from parishkit.stewardship.source.family_names import (
     family_display_name,
     name_placeholders,
@@ -46,8 +47,10 @@ from .reviewed import (
     CENSUS,
     FINANCIAL,
     MINISTRY,
+    census_additions,
     census_fields,
     census_key,
+    drawn_entries,
     entries_of,
     financial_draw,
     proposed_draw,
@@ -75,8 +78,16 @@ def form_presentation(form):
     # Effective-value merge of the Family's own answers.
     reviewed = baseline.shown_items if baseline.reviewed_view else None
     census_shown = entries_of(reviewed, CENSUS) if census else []
+    # The census fields drawn with a change the parish added (#2008), which
+    # the browser marks "Added by the parish"; never on a Testing form.
+    additions = census_additions(census_shown)
+    added = frozenset(
+        key
+        for key, entry in drawn_entries(census_shown, additions).items()
+        if entry["shown"] == Shown.PARISH
+    )
     if census and reviewed is not None:
-        values = census_fields(form.inputs, census_shown)
+        values = census_fields(form.inputs, census_shown, additions)
     elif census:
         values = effective_fields(form.inputs, prior)
     else:
@@ -136,6 +147,7 @@ def form_presentation(form):
                     "available": effective.value.available,
                     "changed": effective.changed,
                     "conflict": effective.conflict,
+                    "added": ("member", str(identifier), definition.name) in added,
                 }
             )
         first, last = (
@@ -202,7 +214,9 @@ def form_presentation(form):
         "family": family,
         "modules": list(form.inputs.modules),
         "effective_member_count": member_count,
-        "household": _household_presentation(values, census_prior) if census else None,
+        "household": _household_presentation(values, census_prior, added)
+        if census
+        else None,
         "members": members,
         "proposed_members": proposed,
         "ministries": ministries,
@@ -346,8 +360,12 @@ def _proposed_rows(pairs):
     ]
 
 
-def _household_presentation(values, prior):
-    """Expose effective household values once, without raw competing source data."""
+def _household_presentation(values, prior, added=frozenset()):
+    """Expose effective household values once, without raw competing source data.
+
+    ``added`` are the census fields drawn with a change the parish added
+    (#2008); a Family address among them is marked ``added``.
+    """
     indexed = {
         field.field: field.effective for field in values if field.entity == "family"
     }
@@ -366,6 +384,10 @@ def _household_presentation(values, prior):
                 "available": effective.value.available,
                 "changed": effective.changed,
                 "conflict": effective.conflict,
+                "added": any(
+                    entity == "family" and field == definition.name
+                    for entity, _key, field in added
+                ),
             }
         )
     home = indexed["home_address"].value.value

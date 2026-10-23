@@ -491,7 +491,10 @@ def test_revisit_never_serializes_hidden_conflicting_source_value(
         "available",
         "changed",
         "conflict",
+        # Whether the value is a change the parish added (#2008); not here.
+        "added",
     }
+    assert field["added"] is False
 
 
 def test_multiple_source_addresses_submit_unchanged_and_revisit(live_response_service):

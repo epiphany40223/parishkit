@@ -509,6 +509,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # again, so its body survives the swap and nothing is registered.
 # 0169 (#1594) creates one definer, granted to web
 # (runtime_grants.CLOSURE_FUNCTIONS), and replaces nothing.
+# 0170 (#2008) creates nothing: it replaces 0160's submission effects check
+# and 0163's derived guard in place, so ``CLOSURE_REPLACED_ONLY`` puts each
+# body back last, after 0160's and 0163's.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -1514,6 +1517,21 @@ CLOSURE_REPLACED_ONLY = {
             ("stewardship_responses", "0031_edit_replacement"),
             "AND shown->>'stream'='census' AND shown->>'item'=candidate.id::text",
         )
+    },
+    # 0170 (#2008) replaces the submission effects check last, on 0160's
+    # body, and the derived guard last, on 0163's (each value wins over the
+    # entries above), so a reviewed form's change the parish added, left as
+    # shown, makes no change, and edited back to ParishSoft's value makes
+    # one.
+    **{
+        "stewardship_submission_effects_v1": (
+            ("stewardship_responses", "0032_parish_added_shown"),
+            "AND shown->>'stream'='census' AND shown->>'shown'='parish'",
+        ),
+        "stewardship_response_derived_guard_v1": (
+            ("stewardship_responses", "0032_parish_added_shown"),
+            "AND addition.family_id=response.family_id",
+        ),
     },
 }
 

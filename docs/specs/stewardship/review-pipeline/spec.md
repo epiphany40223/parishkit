@@ -731,12 +731,49 @@ stream, as the table above says. Notes on the table:
   the reviewed form shows the Family the carried-forward state.
 - **Cannot participate and Cannot contribute.** Unchecking either restores
   the shown values of the answers it hides, not the Family's older ones.
-- **Not yet in this design:** census Add
-  ([#1710](https://github.com/epiphany40223/parishkit/issues/1710)). It has
-  landed, but a change the parish added is its own record, with no Family
-  answer and no version a Family's resubmission could keep or replace, so
-  the reviewed form does not show it yet and its Add dialog says nothing of
-  the Family. Showing it like any decided census field is follow-up work.
+- **A census change added by the parish**
+  ([census Add](../reports/spec.md#census-add),
+  [#1710](https://github.com/epiphany40223/parishkit/issues/1710)) is
+  drawn in its field as the field's value, editable like any other value,
+  marked changed where it differs from ParishSoft's, with an "Added by the
+  parish" badge directly under the field (under the address fields for a
+  Family address) for as long as the field is drawn with it
+  ([#2008](https://github.com/epiphany40223/parishkit/issues/2008); the
+  design the Administrator chose on 2026-10-22, which replaced a read-only
+  line under the field). The form records it as a shown item of its own
+  ([Shown items](#shown-items)). Only a Member's ordinary fields and the
+  home and mailing addresses take one, the fields census Add offers but a
+  death date. A field shows its addition while it stands: its open one (To
+  enter by hand; a field has at most one), or, when it has none, its newest
+  Entered by hand one while ParishSoft still has the value it had when the
+  change was added; once ParishSoft's value changes the field shows
+  ParishSoft's. A withdrawn addition is never shown, so Back to review
+  returns the field to what it would otherwise show. A Family change of the
+  field that is not Ignored and is newer than the addition, whatever its
+  stage (Confirmed included, which records no shown item of its own), or
+  still open (a change reopened before Back to review was refused for it,
+  [census Add](../reports/spec.md#census-add)), is shown instead, as the
+  table says (the Family's later answer); an Ignored change the addition
+  was added in place of keeps its own shown item.
+  - **Submitted unchanged.** An answer equal to the added value by the
+    field's canonical comparison leaves it as shown (rule 1): no new Family
+    change; the addition stays as Staff left it, and an earlier change of
+    the field stays as it is (an Ignored one stays Ignored).
+  - **Edited.** Any other answer is an ordinary Family change of the field
+    and goes to review (the Administrator's decision 2 on
+    [#2008](https://github.com/epiphany40223/parishkit/issues/2008)): always
+    a new change To review, even when it is ParishSoft's value or the value
+    of the Ignored change the addition was added in place of, so Staff see
+    that the Family turned the added value down. It replaces an open
+    earlier change of the field (the Ignored one included), as rule 2 does.
+    The addition is left as it is, and Staff decide between them in the
+    census list, whose open addition says the Family has an open change of
+    this field too ([census Add](../reports/spec.md#census-add)).
+  - **While the form is open.** An addition withdrawn after the form was
+    drawn makes the submit a stale-form review
+    ([Reviewed form concurrency](#reviewed-form-concurrency)); one Entered
+    by hand meanwhile is still left as shown.
+  - A Testing form never shows an addition.
 
 #### Shown items
 
@@ -755,7 +792,10 @@ When a live form is drawn as the reviewed form, the form's
   the item's identity, the stream's item version (the one the
   [worklist's concurrency check](#concurrency) already uses), the immutable
   decision row in force (or none), and which value was shown (the Family's
-  answer, the reviewer's value, or the baseline). Cannot participate,
+  answer, the reviewer's value, or the baseline). A census field with a
+  standing change the parish added has one more entry, naming the
+  addition, whose shown value is the added value
+  ([What the reviewed form shows](#what-the-reviewed-form-shows)). Cannot participate,
   cannot attend and Additional information record no entries: their shown
   value is always the Family's own answer, which the response itself
   holds.
@@ -810,6 +850,11 @@ each item under the reviewed rule:
   decision was recorded meanwhile (rule 1 then keeps the newer decision).
   Only the affected fields take fresh shown values, and they are listed in
   the review as today.
+- **A change the parish added, withdrawn while the form is open** (Back to
+  review), is a stale-form review too, so the Family never sends a value
+  Staff took back as if it were still the parish's: the fresh form draws
+  the field without it, and the tab keeps an edit the Family made to the
+  field. One Entered by hand meanwhile changes nothing.
 - **Another session's submission** advances the Family's effective version
   and is refused for review, as today.
 - **A form open across the deploy** of #1705's last slice is never refused
@@ -828,13 +873,17 @@ each item under the reviewed rule:
 #### Privacy and wording
 
 - The form payload for an item carries only what it carries today: the
-  value and the changed and conflict markers. It never carries the stage,
-  the decision, a note, a reviewer's or Ministry leader's name or role, a
-  decision time, "Added by the parish", a refresh outcome or any mention of
-  ParishSoft, and the Family pages render none of them. A test lists the
-  payload's keys per field and fails on any other, and scans the rendered
-  pages for the pipeline's words.
-- No new Family-facing text: the existing marker ("Your updated value"),
+  value and the changed and conflict markers, and, on a census field,
+  whether the value is a change the parish added (`added`, true or false;
+  [What the reviewed form shows](#what-the-reviewed-form-shows)). It never
+  carries the stage, the decision, a note, a reviewer's or Ministry
+  leader's name or role, a decision time, a refresh outcome or any mention
+  of ParishSoft, and the Family pages render none of them; "Added by the
+  parish" appears only as that badge's words. A test lists the payload's
+  keys per field and fails on any other, and scans the rendered pages for
+  the pipeline's words.
+- No new Family-facing text but the parish-added census badge above: the
+  existing marker ("Your updated value"),
   Ministry lists, Review page, welcome notice, Thank You page and receipt
   are unchanged, because the Administrator's stated intent limits Staff
   changes to consistency fixes and corrections the Family asked for
@@ -858,10 +907,10 @@ each item under the reviewed rule:
   (one dialog takes both a join and a leave, so one sentence covers both);
   and Ignore, on Ministry requests and on a Member's census fields and
   requests, whose ParishSoft value the form shows, "The Family will see
-  ParishSoft's value the next time it signs in." Census Add says nothing
-  of the Family: the reviewed form does not show a change the parish added
-  to the census yet ([What the reviewed form shows](#what-the-reviewed-form-shows)),
-  so the sentence would be untrue. Ignore on a Family address, the email
+  ParishSoft's value the next time it signs in." Census Add: "The Family
+  will see this value on its form, marked Added by the parish, the next
+  time it signs in." ([What the reviewed form shows](#what-the-reviewed-form-shows)).
+  Ignore on a Family address, the email
   opt-out or a New Member says nothing either, as the form shows the
   Family's own answer, or leaves the New Member out.
 - Open form shows Staff the same reviewed form, with the same rules, and
@@ -869,7 +918,11 @@ each item under the reviewed rule:
 
 #### Reviewed form accessibility
 
-The reviewed form adds no control, page or message. A shown value uses
+The reviewed form adds no control or page, and one message only: the
+parish-added census badge, text that names its meaning (never colour
+alone), drawn with the field when the form is drawn and named by the
+field's description (each address control's and the address fieldset's for an address), so it never
+appears, disappears or moves while the Family works, typing included. A shown value uses
 the same field, the same programmatic state (a selected Ministry is a
 checked control, "Stop participating" the selected choice) and the same
 non-colour change marker (icon and text label) as a Family's own answer,
@@ -983,7 +1036,11 @@ derivation), where the design leaves a choice:
   `ProposedChange`) at its version, the `ProposalReview` whose Edit set a
   reviewer's value (`decision`, found on the change or, for a value carried
   to a same-answer successor before the reviewed form, on the change it
-  replaced), and `shown` (`family`, `reviewer` or `baseline`). A Ministry
+  replaced), and `shown` (`family`, `reviewer` or `baseline`). A change
+  the parish added has an entry of the same shape with `shown` `parish`,
+  whose `item` is the `CensusAddition` and whose `version` and `decision`
+  are null; a field may then have two entries (the addition and the
+  Ignored change it replaced), and the form draws the addition's. A Ministry
   entry names the request, the Family's own Ministry and action, and, for an
   Edit, the `MinistryWorkflowRevision` that carried another Ministry
   forward. The pledge entry names the Family's current live response and,
@@ -1036,7 +1093,15 @@ derivation), where the design leaves a choice:
   earlier response, and the census guard finds it as `proposal_index` does,
   as the predecessor whose decision a same answer carries and as the change
   a new answer supersedes or a set-back withdraws (frozen file 0163,
-  [#1909](https://github.com/epiphany40223/parishkit/issues/1909)).
+  [#1909](https://github.com/epiphany40223/parishkit/issues/1909)). Frozen
+  file 0170 ([#2008](https://github.com/epiphany40223/parishkit/issues/2008))
+  lets the submission completeness check admit an answer left as a shown
+  change the parish added: no row for it, and an earlier open change of
+  that field left as it is, only while the entry names this Family's
+  addition for that field, not withdrawn, with that value. Under the same
+  entry any other answer must have its row, and the derived guard admits
+  that row even where its value is ParishSoft's (an edited added value is
+  always a change To review, [What the reviewed form shows](#what-the-reviewed-form-shows)).
 
 #### Reviewed form decisions
 

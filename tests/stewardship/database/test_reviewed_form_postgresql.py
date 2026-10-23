@@ -588,7 +588,8 @@ def test_an_edited_pledge_changed_again_reopens(response_service):
 # --- Privacy ---------------------------------------------------------------
 
 # The keys each census field of the payload carries, as before the reviewed
-# form: never a stage, decision, note, reviewer or ParishSoft value.
+# form, plus whether the value is a change the parish added (``added``,
+# #2008): never a stage, decision, note, reviewer or ParishSoft value.
 FIELD_KEYS = {
     "name",
     "label",
@@ -600,8 +601,18 @@ FIELD_KEYS = {
     "available",
     "changed",
     "conflict",
+    "added",
 }
-HOUSEHOLD_KEYS = {"name", "label", "kind", "value", "available", "changed", "conflict"}
+HOUSEHOLD_KEYS = {
+    "name",
+    "label",
+    "kind",
+    "value",
+    "available",
+    "changed",
+    "conflict",
+    "added",
+}
 PIPELINE_WORDS = (
     "Accepted",
     "Ignored",

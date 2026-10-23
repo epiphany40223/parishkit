@@ -73,6 +73,7 @@ from parishkit.stewardship.responses.refresh_checks import (
 from parishkit.stewardship.source.source_status import source_status_label
 from parishkit.stewardship.web.presentation import duid
 from parishkit.stewardship.web.review_worklist import (
+    ADD_BODY,
     ALREADY_HELD,
     INCORRECT_WORDS,
     NOT_SEEN,
@@ -104,6 +105,13 @@ COLUMNS = (
 # the same version, which reads as the stale notice.
 UNIQUE_VIOLATION = "23505"
 EDIT_MATCHED = "accepted: the value matched the Family's answer."
+# What census Add's dialog says (review pipeline spec, "Privacy and
+# wording"): the reviewed Family form draws an added change in its field,
+# editable, with an "Added by the parish" badge under it (#2008).
+CENSUS_ADD_BODY = (
+    f"{ADD_BODY} The Family will see this value on its form, marked Added by "
+    "the parish, the next time it signs in."
+)
 # The ParishSoft Member ID field of a New Member's Entered by hand dialog
 # (#1749), named as the worklist's editor fields are (``read_decision``).
 MEMBER_FIELD = "value_member"
@@ -368,6 +376,7 @@ def worklist_page(result, query, table, action, *, mutable, paging=None):
         filters_template="stewardship/census-worklist-filters.html",
         editor_template="stewardship/census-worklist-value.html",
         add_template="stewardship/census-worklist-add.html",
+        add_body=CENSUS_ADD_BODY,
         export_template="stewardship/census-worklist-export.html",
         address=page_address(action, link_pairs(query, paging)),
     )
@@ -782,13 +791,18 @@ class CensusDecisions:
         except ReopenCovered:
             # Checked under the work order, so no Add slips in between; the
             # page withholds the icon, but a page drawn before the Add, or
-            # the bulk bar, still posts it (#1710).
+            # the bulk bar, still posts it (#1710). An Entered by hand
+            # addition made after the change covers it too (#2008).
             raise AddRefusal(
                 "reopen_added",
-                "A change the parish added for this field is still open, so this "
-                "change cannot go back to review.",
+                "A change the parish added for this field is still open, or was "
+                "entered by hand after this change, so this change cannot go back "
+                "to review.",
                 field_ids=("bulk_note" if decision.bulk else "note",),
-                fix="Withdraw the added change first, then send this one back.",
+                fix=(
+                    "Choose Back to review on the added change first (twice if it "
+                    "was entered by hand), then send this one back."
+                ),
             ) from None
         except ReopenOverOpen:
             # An entered addition reopened while another open change of its
