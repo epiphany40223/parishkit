@@ -411,7 +411,9 @@ guards still bind each effect to a live, unrevoked, non-idle session of the
 acting Admin and record that session's verified Google sign-in instant as
 audit evidence, but they no longer check its age. The login asks Google for
 account selection (`prompt=select_account`) and nothing else; every
-successful sign-in issues a new session and opens the Admin home page.
+successful sign-in issues a new session and opens the Admin home page, or
+the Admin page whose load found the session ended
+([ended sessions](../admin-portal/spec.md#login-and-denial-behavior)).
 
 Passive presence heartbeat and ordinary background polling never refresh idle
 expiry. The sole setup exception is the first-Admin wizard's correlated staged-

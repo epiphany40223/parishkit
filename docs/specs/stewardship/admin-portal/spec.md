@@ -38,6 +38,34 @@ defined by the
 All login and callback denial pages preserve the retry path while honoring
 `429`/`Retry-After`; they never reveal which authorization check failed.
 
+A page load whose Admin session has ended (an hour without activity, a
+sign-out in another tab, a revoked session) goes to the sign-in page instead
+of an error page
+([#2058](https://github.com/epiphany40223/parishkit/issues/2058)). A browser
+GET refused as signed out (the shared signed-out refusal of the Admin
+admission and role checks, which the report pages use too, and the Admin
+home) is redirected to
+`/admin/login` with the page's own path and query as `next`, kept only when
+it is a same-origin Admin page other than the home page (the shared Admin
+return-path check; anything else is dropped). When the browser still sent an
+Admin session cookie, the redirect adds the fixed flag `ended=1`, and the
+sign-in page then shows one information notice above the sign-in control:
+"You were signed out, for example after an hour without activity or after
+signing out in another tab. Sign in to continue." A plain visit, or a
+browser that never signed in, shows no notice. The sign-in form carries
+`next` through Google sign-in, checked again at the callback, and a
+successful sign-in opens that page instead of the Admin home; a refused
+sign-in's retry opens the Admin home. Only a GET is redirected, so nothing
+posted is ever replayed. Scripts and in-place controls keep the typed 403
+refusal, which the Admin base's session-ended dialog answers with its single
+Sign in again button. A form POST's page that shows the refusal offers
+exactly one sign-in link, returning to the page the form was posted from
+(its same-origin Referer, else the Admin home), and no "Return to the
+previous page" or "Administration home" link, since every other page would
+refuse too. Pages that answer an ended session with their own error page
+(System logs, System health, Background work and a few others) still do so
+until [#2062](https://github.com/epiphany40223/parishkit/issues/2062).
+
 A user's address need not be a Gmail address, but it must have a Google
 Account, and many volunteer Ministry leaders' addresses have none
 ([#1593](https://github.com/epiphany40223/parishkit/issues/1593)). Google
