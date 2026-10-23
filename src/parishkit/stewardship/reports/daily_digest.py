@@ -164,7 +164,7 @@ class DailyDigestContent:
     chart, so the digest is sent without them, its tables and text part
     carrying every number. ``funnel`` holds the Response funnel section's
     two chart images (#477 slice 2) only when a ready row compiled before
-    #1370 removed them is sent again (``digest_fanout``); a new compile
+    #1370 removed them was sent again (the retired digest fanout); a new compile
     never has them.
     """
 

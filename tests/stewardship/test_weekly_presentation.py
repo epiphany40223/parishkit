@@ -9,7 +9,7 @@ from django.http import QueryDict
 
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.reports import weekly_presentation as presentation
-from parishkit.stewardship.reports.weekly_selection import WeeklyHistory, select_weekly
+from parishkit.stewardship.reports.weekly_selection import WeeklySelection
 
 from .test_weekly_selection import CAMPAIGN, item, observation
 
@@ -54,7 +54,9 @@ def test_detail_query_cannot_select_another_page():
 def report(monkeypatch):
     """Create a detached selection and prove status reads are limited to its page."""
     values = tuple(item(number) for number in range(1, 121))
-    selection = select_weekly(observation(*values), WeeklyHistory(CAMPAIGN))
+    selection = WeeklySelection(
+        observation(*values), tuple(value.value for value in values), ()
+    )
     snapshot = SimpleNamespace(
         pk=uuid4(),
         campaign_id=CAMPAIGN,

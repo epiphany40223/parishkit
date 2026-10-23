@@ -1,17 +1,13 @@
-"""Single-statement live additional-information capture for a weekly report owner.
+"""Decode a sent Weekly digest's retained observation for its saved page.
 
-PostgreSQL MVCC freezes item dispositions, submission sequence and source names
-together. Terminal rows are projected without text *inside SQL*: historical
-private prose must not leak into detached correction inputs or diagnostics.
-This read has no send/retention authority. Its caller must authorize and retain
-the observation under fenced ownership before leaving its protected transaction.
+The observation is the projection ``stewardship_weekly_observation_v1``
+captured when the digest was prepared (the capture retired with the Weekly
+pipeline, #1834). Terminal rows carry no text: historical private prose
+must not leak into correction inputs or diagnostics.
 """
 
-import json
 from datetime import UTC, datetime
 from uuid import UUID
-
-from django.db import connection
 
 from .weekly_digest import WeeklyCorrection, WeeklyInformation
 from .weekly_selection import WeeklyItem, WeeklyObservation
@@ -19,9 +15,6 @@ from .weekly_selection import WeeklyItem, WeeklyObservation
 
 class WeeklyUnavailable(ValueError):
     """Invalid private observations fail without disclosing their input values."""
-
-
-CAPTURE = "SELECT stewardship_weekly_observation_v1(%s)::text"
 
 
 def _instant(value):
@@ -74,62 +67,3 @@ def decode_observation(document):
         )
     except (TypeError, ValueError, AttributeError, OverflowError):
         raise WeeklyUnavailable("Weekly report inputs are unavailable.") from None
-
-
-def capture_weekly_observation(campaign_id):
-    """Capture all live items, including inactive Families, in one MVCC statement.
-
-    The weekly report is not a Family mailing: source eligibility, consent and
-    email deliverability cannot suppress an already submitted request for Staff.
-    A disappeared source Family retains its DUID and an honest generic name, not
-    an invented current source name. Source rows need no later read for compilation.
-    """
-    if not isinstance(campaign_id, UUID):
-        raise ValueError("Weekly capture requires a canonical campaign identity.")
-    with connection.cursor() as cursor:
-        cursor.execute(CAPTURE, [campaign_id])
-        row = cursor.fetchone()
-    if row is None or row[0] is None:
-        raise WeeklyUnavailable("Weekly report inputs are unavailable.")
-    return decode_observation(json.loads(row[0]))
-
-
-def observation_document(observation):
-    """Serialize a validated frozen observation using the exact SQL projection."""
-    if type(observation) is not WeeklyObservation:
-        raise TypeError("Weekly retention requires a typed observation.")
-    return {
-        "campaign_id": str(observation.campaign_id),
-        "source_id": str(observation.source_id),
-        "configuration_id": str(observation.configuration_id),
-        "observed_at": _sql_instant(observation.observed_at),
-        "watermark": observation.watermark,
-        "items": [
-            [
-                str(item.value.item_id),
-                item.sequence,
-                item.value.family_duid,
-                item.value.family_name,
-                _sql_instant(item.value.submitted_at),
-                "current_actionable"
-                if type(item.value) is WeeklyInformation
-                else item.value.disposition,
-                item.value.text if type(item.value) is WeeklyInformation else None,
-            ]
-            for item in observation.items
-        ],
-    }
-
-
-def _sql_instant(value):
-    """Match PostgreSQL JSON's UTC timestamp spelling, including fractional zeros.
-
-    Python's automatic ISO format retains six microsecond digits while SQL
-    trims trailing fractional zeros. The independent capture guard compares
-    item JSON exactly, so equivalent instants also need identical encodings.
-    Always start with a fractional component to avoid trimming whole seconds.
-    """
-    clock, offset = (
-        value.astimezone(UTC).isoformat(timespec="microseconds").rsplit("+", 1)
-    )
-    return clock.rstrip("0").rstrip(".") + "+" + offset

@@ -2045,6 +2045,9 @@ def test_wizard_finishes_setup_through_the_same_step(tmp_path):
 
 OLD_IMAGE = f"parishkit-stewardship-local:{'a' * 40}-1690000000"
 MIGRATIONS = "stewardship_accounts 0001_initial;stewardship_accounts 0002_more"
+# Migration rows from either side of the digest retirement (#1834).
+CONVERSION = "stewardship_reports 0041_report_conversion"
+RETIRED = f"{MIGRATIONS};{CONVERSION};stewardship_reports 0046_retire_digests"
 
 
 def snapshot_of(
@@ -2266,6 +2269,10 @@ def test_snapshot_list_shows_each_record_and_what_a_switch_would_do(tmp_path):
         )  # fmt: skip
         snapshot_of(snapshots, "elsewhere", uuid="other")
         snapshot_of(snapshots, "legacy", image=OLD_IMAGE, clock="fake")
+        snapshot_of(
+            snapshots, "converted", image=OLD_IMAGE,
+            migrations=f"{MIGRATIONS};{CONVERSION}",
+        )  # fmt: skip
 
     def row(output, name):
         return next(line for line in output.splitlines() if line.split()[:1] == [name])
@@ -2295,6 +2302,14 @@ def test_snapshot_list_shows_each_record_and_what_a_switch_would_do(tmp_path):
     )  # fmt: skip
     assert "refused: image gone" in row(output, "older")
     assert "Mac free" not in output
+    # Once the running code retired the digests (#1834), only a snapshot
+    # taken after the report email conversion can migrate forward.
+    _, output, _ = run_vm(
+        tmp_path / "d", "snapshot-list", prepare=prepare,
+        env={"FAKE_MIGRATIONS": RETIRED, "FAKE_IMAGE_EXISTS": "1"},
+    )  # fmt: skip
+    assert "refused: unconverted" in row(output, "older")
+    assert "migrates forward" in row(output, "converted")
     # status ends with the same summary.
     _, output, _ = run_vm(tmp_path / "c", "status", MAC_FREE, prepare=prepare)
     assert "Snapshots in " in output and "Mac free: 100.0 GiB" in output
@@ -2365,6 +2380,17 @@ def test_a_data_switch_keeps_the_code_and_restores_only_the_data(tmp_path):
     assert "http://localhost:8025" in output
 
 
+def test_the_switch_names_the_real_conversion_and_retirement_migrations():
+    """plan_switch's #1834 check names migrations that exist, as the host half does."""
+    text = VM_SCRIPT.read_text()
+    migrations = ROOT / "src/parishkit/stewardship/reports/migrations"
+    for variable in ("conversion_migration", "retirement_migration"):
+        name = re.search(rf"^{variable}=(\d{{4}}_[a-z_]+)$", text, re.M).group(1)
+        assert (migrations / f"{name}.py").is_file(), variable
+    conversion = re.search(r"^conversion_migration=(\S+)$", text, re.M).group(1)
+    assert f"name='{conversion}'" in HOST_SCRIPT.read_text()
+
+
 @pytest.mark.parametrize(
     "snapshot, env, reason",
     [
@@ -2384,6 +2410,11 @@ def test_a_data_switch_keeps_the_code_and_restores_only_the_data(tmp_path):
             {"image": OLD_IMAGE, "migrations": "stewardship_accounts 0001_initial"},
             {"FAKE_MIGRATIONS": MIGRATIONS},
             "which is no longer in the VM",
+        ),
+        (
+            {"image": OLD_IMAGE, "migrations": MIGRATIONS},
+            {"FAKE_MIGRATIONS": RETIRED, "FAKE_IMAGE_EXISTS": "1"},
+            "taken before the report email conversion",
         ),
     ],
 )

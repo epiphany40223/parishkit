@@ -2,7 +2,7 @@
 
 One ``report_email_prepare`` task moves its preparation through the report
 pipeline's phases (report-emails spec, "Report pipeline"), each in its own
-owned effect, as the Daily digest's task does (``digest_tasks``). Facts
+owned effect, as the Daily digest's task did. Facts
 are built and the email is compiled outside the lifecycle locks; a chart
 the renderer cannot draw is retried until the last attempt, which sends the
 report without its server-drawn charts rather than not at all.
@@ -18,6 +18,8 @@ from functools import partial
 from django.db import connection
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+from parishkit.stewardship.audit.schemas import ContextKind, Outcome
+from parishkit.stewardship.audit.services import operational
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
 from parishkit.stewardship.campaigns.models import ScheduleRevision
 from parishkit.stewardship.campaigns.schedule_models import (
@@ -33,11 +35,11 @@ from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.jobs.phases import TaskPhase
 from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.storage import _status
+from parishkit.stewardship.observability import Event, failure_kind_of
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .chart_rendering import ChartRenderError
 from .digest_comparison import withheld
-from .digest_tasks import FINAL_ATTEMPT, charts_withheld
 from .facts import FactUnavailable
 from .materialization import materialize_fact_set
 from .report_email_capture import (
@@ -56,6 +58,42 @@ from .report_email_ownership import (
     current_preparation,
 )
 from .report_email_planning import cover_dates, discover_dates
+
+# A compile that cannot finish is retried until this attempt, then fails
+# permanently. A chart the server renderer cannot draw on this last attempt
+# is withheld instead, so the report is still sent (#477; the Daily
+# digest's rule, kept when report emails replaced it, #1834).
+FINAL_ATTEMPT = 5
+
+
+def charts_withheld(claim, error, attempt):
+    """Record durably that this report is sent without its server-drawn charts.
+
+    One ERROR ``task_failed`` entry naming the chart that could not be
+    drawn (a closed failure word), the failure's category, the task and the
+    attempt, so System logs show why the email has no charts. ERROR is the
+    level the worker login may record for ``task_failed`` below CRITICAL
+    (``stewardship_operational_log_writer_v1``); only CRITICAL opens an
+    incident, and the report itself was sent. Every chart is drawn through
+    ``chart_rendering.render_digest_chart``, which names it, so an unnamed
+    failure is a programming error, refused rather than guessed.
+    """
+    if error.chart is None:
+        raise ValueError("A withheld digest chart must be named.")
+    operational(
+        Event.TASK_FAILED,
+        level="ERROR",
+        schema=ContextKind.FAILURE,
+        context={
+            "failure": error.chart,
+            "failure_kind": failure_kind_of(error),
+            "task_id": claim.run_id,
+            "attempt": attempt,
+            "attempt_limit": FINAL_ATTEMPT,
+            "outcome": Outcome.FAILED,
+        },
+    )
+
 
 PHASES = {
     "dates": TaskPhase.PREPARING,

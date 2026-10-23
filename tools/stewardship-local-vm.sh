@@ -703,6 +703,11 @@ compare_migrations() {
 }
 
 running_migrations=""
+# The report email conversion and the digest retirement that needs it
+# (#1834); stewardship-upgrade-host.sh's step-1 guard names the same
+# conversion migration.
+conversion_migration=0041_report_conversion
+retirement_migration=0046_retire_digests
 plan_switch() {
     # plan_switch NAME: what `snapshot-restore NAME` would do, as one word.
     # data: the snapshot was taken on the running image, so its schema,
@@ -712,9 +717,12 @@ plan_switch() {
     # steps (which also check the grants and logins). Refusals: foreign
     # (another install's UUID), newer (a migration the running code does
     # not know), unrecorded (another image and no migrations record, so
-    # newer code cannot be ruled out), missing-image (the upgrade needs
-    # the snapshot's image, which is gone) and unknown (the running
-    # database's migrations could not be read). Needs load_env and
+    # newer code cannot be ruled out), unconverted (the running code has
+    # retired the digests, #1834, but the snapshot predates the report
+    # email conversion that the retirement needs first, so the host half
+    # would refuse only after the data was replaced), missing-image (the
+    # upgrade needs the snapshot's image, which is gone) and unknown (the
+    # running database's migrations could not be read). Needs load_env and
     # $running_migrations.
     local dir="$snapshots/$1" snap_image
     [ "$(record_value "$dir/deployment.env" UUID)" = "$UUID" ] || { echo foreign; return 0; }
@@ -727,6 +735,9 @@ plan_switch() {
     [ -s "${running_migrations:-/nonexistent}" ] || { echo unknown; return 0; }
     if [ "$(compare_migrations "$dir/migrations" "$running_migrations")" = newer ]; then
         echo newer
+    elif grep -qxF "stewardship_reports $retirement_migration" "$running_migrations" &&
+        ! grep -qxF "stewardship_reports $conversion_migration" "$dir/migrations"; then
+        echo unconverted
     elif docker image inspect "$snap_image" >/dev/null 2>&1; then
         echo upgrade
     else
@@ -760,6 +771,7 @@ cmd_snapshot_list() {
                 foreign) plan="refused: other install" ;;
                 unrecorded) plan="refused: no record" ;;
                 missing-image) plan="refused: image gone" ;;
+                unconverted) plan="refused: unconverted" ;;
                 unknown) plan="unknown: no migrations" ;;
             esac
         fi
@@ -1004,6 +1016,7 @@ switch_to() {
         newer) refuse "The $name snapshot has migrations the running code does not know: it was taken on commit $(image_commit "$snap_image"). Deploy that commit (or a later one) first, or 'reset $name' to restore it whole." ;;
         unrecorded) refuse "The $name snapshot was taken on another image ($snap_image) before snapshots recorded their migrations, so newer code cannot be ruled out; refusing. Record it with 'reset $name' then 'snapshot save $name --replace', or use 'reset $name' alone." ;;
         unknown) refuse "Could not read the running database's migrations, so the $name snapshot cannot be checked against the running code; refusing (nothing stopped)." ;;
+        unconverted) refuse "The $name snapshot was taken before the report email conversion, which the running code needs before it retires the digests; refusing (nothing stopped). Use 'reset $name', deploy a commit that converts the digests but does not retire them (it has frozen file 0161 but not 0171), then deploy this code again; 'snapshot save $name --replace' after the conversion keeps the snapshot usable." ;;
         missing-image) refuse "The $name snapshot's data is migrated forward on its own image $snap_image, which is no longer in the VM; refusing." ;;
     esac
     case "$clock" in fake|normal) ;; *) refuse "The $name snapshot has no clock-mode marker; refusing." ;; esac

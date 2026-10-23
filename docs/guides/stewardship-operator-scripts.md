@@ -72,7 +72,11 @@ A refusal or failure exits with 1, a usage error with 2, and Ctrl-C with
   Its arguments and output are unchanged by the verification, but it needs
   a `gh` whose `attestation verify` has `--signer-workflow`, `--source-ref`
   and `--deny-self-hosted-runners`; it checks that first and refuses an
-  older `gh` before it tags anything. Pushing a release tag needs a human's
+  older `gh` before it tags anything. It also refuses a tree that carries a
+  frozen schema file needing an earlier release to have shipped another one
+  (the digest retirement, 0171, needs a previous release with the report
+  email conversion, 0161; the table is in `release_evidence.py`), since such
+  a release could never be deployed. Pushing a release tag needs a human's
   explicit authorization; running the script is that act.
 
 ## Upgrades

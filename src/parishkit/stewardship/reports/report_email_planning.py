@@ -1,7 +1,7 @@
 """A report send's slots and coverage, before any input is recorded (#1786).
 
 The report pipeline's ``dates`` and ``cover`` phases (report-emails spec,
-"Report pipeline"), as the Daily digest's (``digest_planning``): pages of at
+"Report pipeline"), as the Daily digest's were planned: pages of at
 most 100 candidate sends through the report's ``ReportPlan`` give every due
 slot its occurrence, then the latest pending occurrence is chosen and the
 earlier ones are coalesced into it, so missed sends become one recovery

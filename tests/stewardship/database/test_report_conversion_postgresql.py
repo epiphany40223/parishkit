@@ -33,6 +33,7 @@ from .report_builders import (
     convert_reports,
     deliver_all,
     digest_history,
+    digest_kinds_admitted,
     digest_send,
     digests_admitted,
     fake_provider,
@@ -49,6 +50,13 @@ from .test_family_mail_worker_postgresql import (  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
 NOW = datetime(2054, 10, 9, 15, tzinfo=UTC)
+
+
+@pytest.fixture(autouse=True)
+def digest_kinds(transactional_db):
+    """Seed digests as a database held them before the retirement (#1834)."""
+    with digest_kinds_admitted():
+        yield
 
 
 def plan_slots(definition, campaign, *, after=None):

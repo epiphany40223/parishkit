@@ -133,18 +133,6 @@ END $$;
 CREATE TRIGGER weekly_snapshot_insert BEFORE INSERT ON stewardship_weekly_digest_snapshot
 FOR EACH ROW EXECUTE FUNCTION stewardship_weekly_snapshot_guard_v1();
 
-CREATE FUNCTION stewardship_weekly_snapshot_commit_v1() RETURNS trigger
-LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
-BEGIN
-    IF NOT EXISTS(SELECT 1 FROM stewardship_weekly_digest_preparation
-        WHERE id=NEW.preparation_id AND phase IN ('fanout','complete')) THEN
-        RAISE EXCEPTION 'Weekly capture and fanout release must commit together' USING ERRCODE='23514';
-    END IF;
-    RETURN NULL;
-END $$;
-CREATE CONSTRAINT TRIGGER weekly_snapshot_complete AFTER INSERT ON stewardship_weekly_digest_snapshot
-DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION stewardship_weekly_snapshot_commit_v1();
-
 CREATE FUNCTION stewardship_weekly_immutable_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN

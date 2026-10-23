@@ -551,6 +551,33 @@ def test_release_refuses_an_existing_tag(tmp_path):
     assert calls == []
 
 
+def test_release_refuses_a_tree_that_needs_an_earlier_release(tmp_path):
+    """The digest retirement cannot ship before a release with the conversion."""
+    work, remote, _ = release_repo(tmp_path)
+    migrations = work / "src" / "parishkit" / "stewardship" / "schema" / "migrations"
+    migrations.mkdir(parents=True)
+    (migrations / "0161_report_conversion.sql").write_text("-- frozen\n")
+    git("add", "-A", cwd=work)
+    git("commit", "-q", "-m", "conversion", cwd=work)
+    git("tag", "-a", "v1.2.2", "-m", "release", "HEAD~1", cwd=work)
+    (migrations / "0171_retire_digests.sql").write_text("-- frozen\n")
+    git("add", "-A", cwd=work)
+    git("commit", "-q", "-m", "retirement", cwd=work)
+    git("push", "-q", "--tags", "origin", "main", cwd=work)
+    result, calls = run_release(tmp_path / "both", work, "--yes", "1.2.3", "77")
+    assert result.returncode == 1
+    assert "previous release (v1.2.2) does not" in result.stderr
+    assert "cannot be released yet" in result.stderr
+    assert calls == []
+    assert remote_tag(remote, "v1.2.3") == ""
+    # Once a release carries the conversion, the check passes (the run
+    # named here then fails later for another reason).
+    git("tag", "-a", "v1.2.4", "-m", "release", "HEAD~1", cwd=work)
+    git("push", "-q", "origin", "v1.2.4", cwd=work)
+    result, _ = run_release(tmp_path / "after", work, "--yes", "1.2.3", "77")
+    assert "cannot be released yet" not in result.stderr
+
+
 def test_release_refuses_a_run_release_yml_would_not_check(tmp_path):
     """The named run must be the newest full CI run on main's head's tree."""
     work, remote, sha = release_repo(tmp_path)

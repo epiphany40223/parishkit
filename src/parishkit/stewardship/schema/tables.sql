@@ -1495,7 +1495,7 @@ CREATE TABLE public.stewardship_schedule_definition (
     removed_at timestamp with time zone,
     campaign_id uuid NOT NULL,
     current_revision_id uuid,
-    CONSTRAINT schedule_definition_kind CHECK (((kind)::text = ANY ((ARRAY['initial'::character varying, 'reminder'::character varying, 'daily_digest'::character varying, 'weekly_digest'::character varying, 'report'::character varying])::text[]))),
+    CONSTRAINT schedule_definition_kind CHECK (((kind)::text = ANY ((ARRAY['initial'::character varying, 'reminder'::character varying, 'report'::character varying])::text[]))),
     CONSTRAINT schedule_selection_shape CHECK ((((current_revision_id IS NOT NULL) AND (removed_at IS NULL)) OR ((current_revision_id IS NULL) AND (removed_at IS NOT NULL)))),
     CONSTRAINT stewardship_campaigns_scheduledefinition_positive_version CHECK ((version >= 1)),
     CONSTRAINT stewardship_schedule_definition_version_check CHECK ((version >= 0))

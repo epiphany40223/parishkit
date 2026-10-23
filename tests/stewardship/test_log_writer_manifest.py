@@ -59,7 +59,9 @@ WRITERS = {
             {"ERROR", "CRITICAL"},
         )
     ],
-    "reports/digest_tasks.py": [({"worker"}, "failure", {E.TASK_FAILED}, {"ERROR"})],
+    "reports/report_email_tasks.py": [
+        ({"worker"}, "failure", {E.TASK_FAILED}, {"ERROR"})
+    ],
     "reports/export_cleanup.py": [
         ({"worker"}, "failure", {E.TASK_FAILED}, {"CRITICAL"})
     ],

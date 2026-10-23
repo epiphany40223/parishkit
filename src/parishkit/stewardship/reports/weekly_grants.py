@@ -1,4 +1,8 @@
-"""The report worker may read weekly inputs; scheduler/MAIL cannot read raw text."""
+"""The report worker may read weekly inputs; scheduler/MAIL cannot read raw text.
+
+The Weekly digest pipeline is retired (#1834): every grant here reads the
+saved digests. Migration 0171 revoked the write grants these once declared.
+"""
 
 REPORT_FIELDS = (
     "id",
@@ -17,12 +21,10 @@ REPORT_FIELDS = (
 
 
 def add_weekly_grants(tables, columns, *, worker):
-    """Add only capture projections, never follow-up mutations or all answers."""
+    """Add only read projections, never follow-up mutations or all answers."""
     tables.setdefault("stewardship_weekly_manual_request", set()).add("SELECT")
     tables.setdefault("stewardship_weekly_digest_completion_ready", set()).add("SELECT")
-    tables.setdefault("stewardship_weekly_digest_preparation", set()).update(
-        {"SELECT", "UPDATE" if worker else "INSERT"}
-    )
+    tables.setdefault("stewardship_weekly_digest_preparation", set()).add("SELECT")
     for table, fields in {
         "stewardship_weekly_digest_snapshot": {
             "id",
@@ -36,12 +38,8 @@ def add_weekly_grants(tables, columns, *, worker):
         columns.setdefault(table, {}).setdefault("SELECT", set()).update(fields)
     if not worker:
         return
-    tables.setdefault("stewardship_weekly_digest_snapshot", set()).update(
-        {"SELECT", "INSERT"}
-    )
-    tables.setdefault("stewardship_weekly_digest_recipient", set()).update(
-        {"SELECT", "INSERT"}
-    )
+    tables.setdefault("stewardship_weekly_digest_snapshot", set()).add("SELECT")
+    tables.setdefault("stewardship_weekly_digest_recipient", set()).add("SELECT")
     for table, fields in {
         "stewardship_additional_information": {
             "id",
@@ -81,10 +79,8 @@ def add_weekly_dispatch_grants(tables, columns, *, private):
 
 
 def add_weekly_web_grants(tables, columns):
-    """Allow exact Admin retry admission without exposing compiled private text."""
-    tables.setdefault("stewardship_weekly_manual_request", set()).update(
-        {"SELECT", "INSERT"}
-    )
+    """Read the saved Weekly digests without exposing compiled private text."""
+    tables.setdefault("stewardship_weekly_manual_request", set()).add("SELECT")
     add_weekly_dispatch_grants(tables, columns, private=False)
     # Readiness needs only accepted item/disposition identities to count mail;
     # rendered recipient text and the complete historical cohort stay private.

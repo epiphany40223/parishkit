@@ -1870,9 +1870,11 @@ as they are and keep rendering their saved copies.
 The digest kinds are named throughout the installed SQL. The baseline files
 `daily_digests.sql`, `daily_dispatch.sql`, `weekly_digests.sql`,
 `weekly_capture.sql`, `weekly_completion.sql`, `weekly_dispatch.sql`,
-`weekly_fanout.sql` and `weekly_manual.sql` hold the two digest pipelines
+`weekly_fanout.sql` and `weekly_manual.sql` held the two digest pipelines
 (page proofs, preparation, snapshot, ready and recipient guards, mail writes,
-completion and settlement, manual allocation). Shared functions also branch
+completion and settlement, manual allocation); since the retirement file
+(below) only their guards, history triggers and read functions remain.
+Shared functions also branch
 on the kinds or the purposes: in `functions.sql` the occurrence guard
 (`stewardship_occurrence_guard_v1`), the canonical slot check
 (`stewardship_catchup_due_v1`), the catch-up receipt and occurrence shape
@@ -1886,7 +1888,7 @@ Testing cleanup and Production-transition inventories; and a few single
 functions (activation impact, exact fact pins, fact runtime binding,
 Family dispatch).
 
-The work is split across two frozen files, each with its own forward
+The work is split across three frozen files, each with its own forward
 migration:
 
 - **The report pipeline file** (delivery PR 3) adds the
@@ -1910,10 +1912,9 @@ migration:
   in them: the revision checks for the history rows, which are immutable,
   and the definition check because the rows are converted after the file
   runs (above); the configuration validation refuses any change that adds
-  a digest, and a later migration
-  ([#1834](https://github.com/epiphany40223/parishkit/issues/1834)) drops
-  the digest kinds from the definition check, the one SQL check that still
-  admits them, once every deployment is converted. It adds the outbox purposes
+  a digest, and the retirement file (below) drops the digest kinds from
+  the definition check, the one SQL check that still admits them, once
+  every deployment is converted. It adds the outbox purposes
   `admin_report` and `admin_report_test`, keeping the old purposes valid for
   history; adds the new validation schema name; and makes the digest
   pipelines' write functions refuse (no digest kind remains to write for)
@@ -1921,6 +1922,32 @@ migration:
   evaluate the stored repeat rule, slot basis, skip dates and pause
   intervals exactly as `SchedulePlan` does, and one shared case table pins
   the two together, as `dst_cases.json` pins the daylight-saving rule.
+- **The retirement file**
+  ([#1834](https://github.com/epiphany40223/parishkit/issues/1834)), in a
+  release after the conversion's, retires what the conversion left in
+  place. It drops `daily_digest` and `weekly_digest` from the definition
+  kind check; the revision checks keep them for the history rows. It drops
+  the digest pipelines' write machinery, which no gate calls any more: the
+  two write admissions and mail writes, the two dispatch writes and their
+  render checks, the snapshot, ready and mail commit triggers, the
+  settlement triggers on the digest preparations, task runs and outbox
+  messages with the completion checks only they used, and the Weekly
+  manual request's allocation trigger. It keeps every digest table and its
+  rows, their insert guards (which admit nothing once no digest definition
+  remains), their immutability, cleanup and pin retention triggers, the
+  completion views, and the read functions the saved digest pages, Sent
+  mail's retry check and delivery resolution still call (the scope, live,
+  page, predecessor, replacement, prior message and item, seed and
+  dispatch liveness functions, and the Weekly history and selection). It
+  revokes the service logins' write grants on the digest tables (the
+  worker's and scheduler's on the preparations, snapshots, ready rows and
+  recipients, and web's on the Weekly Send now requests), which
+  `database-grants` no longer declares; their read grants stay for the
+  saved copies, and the insert guards still refuse every digest write. The
+  Python digest pipeline (the Daily and Weekly
+  preparation tasks, planning and fanout, their dispatch modules and the
+  digest schedule planner) leaves in the same pull request; the few
+  helpers report emails still use move to the report email modules.
 
 Each file repeats every `ALTER FUNCTION … SECURITY DEFINER` the baseline sets
 for a function it replaces, and ends with a `DO` block that raises unless
@@ -1930,6 +1957,10 @@ file's block also checks that no write gate admits a digest write and no
 task map names a digest task type; that every digest definition is
 converted is checked by the conversion command and by the services'
 startup check (above), since the rows are converted after the file.
+The retirement file's block checks that the definition check admits no
+digest kind, that every function and trigger it drops is gone, and that
+no installed function or view body still names a dropped function, and
+that no service login keeps a write grant on a digest table.
 
 The conversion file refuses to run while any digest occurrence is
 `pending`, `running` or `delivery_unknown`, any digest outbox message is
@@ -1941,6 +1972,21 @@ upgrades again; the precheck before the window avoids this
 refuses the same way. The
 Python that reads `report` rows ships in the same release as the conversion
 file, so no release reads a `report` row with digest code.
+
+The retirement file refuses to run, naming the count, while any schedule
+definition still has a digest kind, which means the conversion command has
+not run on that database. It therefore ships in a release after the
+conversion's, never in the same one: the scripted upgrade runs the
+conversion command after the migrations, so a release carrying both would
+stop at the retirement file on every database that still had digests.
+The scripted upgrade also refuses before it stops anything when the new
+release has the retirement file but the database has not applied the
+conversion's migration or still has a digest definition
+([operations](../operations/spec.md#report-email-conversion)). A
+database that refuses it anyway (the conversion's migration committed in
+the same run) is restored from the pre-upgrade backup with the previous
+release, upgraded to the conversion's release first, and then to the
+later one.
 
 ### Gating tests
 
@@ -1990,6 +2036,11 @@ refuses as the last safeguard. Nightly release windows do not move report send t
 release notes tell operators to run the scripted upgrade with
 `STEWARDSHIP_SCHEMA_CHANGE=1` and that Reports › Emailed reports moves when
 the page ships.
+
+The retirement file ([database functions](#database-functions)) needs no
+window of its own beyond the schema-change upgrade, but only after the
+conversion has run on every deployment (Production and the local
+environment); its release notes say so.
 
 ## Delivery plan
 

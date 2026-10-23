@@ -45,6 +45,8 @@ Usage:
         [--checkout DIR] [--remote NAME] [--limit N]
         [--run ID [--retry-seconds N]]
     release_evidence.py docs-tests
+    release_evidence.py release-order --commit SHA [--checkout DIR]
+        [--remote NAME]
 
 prints "RUN_ID STATUS CONCLUSION HEAD_SHA DOCS_PATHS ATTEMPT" (tab
 separated; STATUS is "unreadable" for an unreadable run; DOCS_PATHS counts
@@ -53,11 +55,16 @@ than 1 when failed jobs were re-run, #158) for the deciding run, or nothing
 when no full run qualifies. Progress and failures go to stderr. Exit status
 3 means a git or gh call passed its time limit; 1 means gh failed every
 attempt.
+
+release-order (#1834) checks the EARLIER_RELEASE_REQUIRED table against the
+remote's previous release tag: it prints each refusal on stderr and exits 1
+when the commit must not be tagged yet, and exits 0 silently otherwise.
 """
 
 import argparse
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -394,8 +401,94 @@ def list_runs(repo, limit):
     return runs
 
 
+# Frozen schema files that need an earlier release to have shipped another
+# one (#1834): LATER -> EARLIER. The digest retirement (0171) refuses a
+# database that the report email conversion (0161 and `upgrade-reports`) has
+# not converted, and the upgrade host script refuses it before stopping
+# anything, so a release carrying both could never be deployed. release.sh
+# asks `release-order` before it tags. Add a row only for that kind of
+# cross-release dependency; ordinary migration order needs none.
+SCHEMA_MIGRATIONS = "src/parishkit/stewardship/schema/migrations"
+EARLIER_RELEASE_REQUIRED = {
+    f"{SCHEMA_MIGRATIONS}/0171_retire_digests.sql": (
+        f"{SCHEMA_MIGRATIONS}/0161_report_conversion.sql"
+    ),
+}
+RELEASE_TAG_REF = re.compile(r"^refs/tags/v(\d+)\.(\d+)\.(\d+)\^\{\}$")
+
+
+def order_refusals(has_path, previous_tag, previous_has_path):
+    """Why this tree must not be tagged yet, one line per broken table row.
+
+    has_path(path) says whether the tree to tag holds a path, and
+    previous_has_path(path) whether the previous release (previous_tag, or
+    None when there is none) does.
+    """
+    refusals = []
+    for later, earlier in EARLIER_RELEASE_REQUIRED.items():
+        if has_path(later) and not (previous_tag and previous_has_path(earlier)):
+            refusals.append(
+                f"this tree has {later}, which needs an earlier release that "
+                f"has {earlier}, but the previous release "
+                f"({previous_tag or 'none'}) does not: release {earlier} on its "
+                "own first, deploy it, and only then a tree that has both"
+            )
+    return refusals
+
+
+def tree_has(checkout, commit, path):
+    """Whether the commit's tree holds path (git cat-file -e)."""
+    result = limited(
+        f"git cat-file of {commit}:{path}",
+        GIT_SECONDS,
+        ["git", "-C", checkout, "cat-file", "-e", f"{commit}:{path}"],
+    )
+    return result.returncode == 0
+
+
+def previous_release(checkout, remote, commit):
+    """The highest annotated vX.Y.Z tag on the remote that is commit's ancestor.
+
+    The remote's tags decide (release.sh fetches main without tags), read
+    peeled so that only annotated tags count, as prepare-release.py counts
+    them. Returns (tag, tagged commit), or (None, None).
+    """
+    listing = limited(
+        f"git ls-remote --tags {remote}",
+        GIT_SECONDS,
+        ["git", "-C", checkout, "ls-remote", "--tags", remote, "refs/tags/v*"],
+    )
+    if listing.returncode != 0:
+        raise RuntimeError(f"cannot list the release tags on {remote}")
+    tags = []
+    for line in listing.stdout.splitlines():
+        sha, _, ref = line.partition("\t")
+        match = RELEASE_TAG_REF.match(ref)
+        if match:
+            tags.append((tuple(int(part) for part in match.groups()), sha))
+    for version, sha in sorted(tags, reverse=True):
+        ancestor = limited(
+            f"git merge-base --is-ancestor {sha} {commit}",
+            GIT_SECONDS,
+            ["git", "-C", checkout, "merge-base", "--is-ancestor", sha, commit],
+        )
+        if ancestor.returncode == 0:
+            return "v" + ".".join(map(str, version)), sha
+    return None, None
+
+
+def release_order(checkout, remote, commit):
+    """The order_refusals for tagging commit after the remote's last release."""
+    tag, tagged = previous_release(checkout, remote, commit)
+    return order_refusals(
+        lambda path: tree_has(checkout, commit, path),
+        tag,
+        lambda path: tree_has(checkout, tagged, path),
+    )
+
+
 def main(argv=None):
-    """Print the deciding run for the select command."""
+    """Print the deciding run (select), the docs tests, or the release order."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
     pick = sub.add_parser("select")
@@ -407,10 +500,25 @@ def main(argv=None):
     pick.add_argument("--run", type=int)
     pick.add_argument("--retry-seconds", type=int, default=LIST_RETRY_SECONDS)
     sub.add_parser("docs-tests")
+    order = sub.add_parser("release-order")
+    order.add_argument("--commit", required=True)
+    order.add_argument("--checkout", default=".")
+    order.add_argument("--remote", default="origin")
     args = parser.parse_args(argv)
     if args.command == "docs-tests":
         print("\n".join(DOCS_TESTS))
         return 0
+    if args.command == "release-order":
+        try:
+            refusals = release_order(args.checkout, args.remote, args.commit)
+        except TimedOut:
+            return TIMEOUT_STATUS
+        except RuntimeError as error:
+            log(str(error))
+            return 1
+        for refusal in refusals:
+            log(refusal)
+        return 1 if refusals else 0
     try:
         chosen, runs = choose(
             args.repo,

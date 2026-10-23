@@ -247,6 +247,9 @@ def test_the_optional_variables_reach_the_host(tmp_path):
 # service list the re-rendered Compose file has after a retarget;
 # FAKE_MIGRATE_FAIL makes the full migration fail (as the users swap does on
 # an unconverted configuration) and FAKE_USERS_FAIL the users conversion.
+# The digest retirement guard (#1834): FAKE_RETIREMENT is what the image's
+# `test -f` of the retirement file exits with (default 0, the file is
+# there), and FAKE_CONVERTED what the conversion query answers (default t).
 # The users swap's pending state is kept in FAKE_STATE/swap_pending: the base
 # migration, or a full one that fails, leaves it; a full one that succeeds
 # clears it; and while it lasts every `up` is refused (recorded in
@@ -282,6 +285,8 @@ json() {
     echo '{"backup_recorded": '"$recorded"', "offsite": {"state": "'"$1"'"}}'
 }
 case "$*" in
+    *" --entrypoint test "*0171_retire_digests.sql) exit "${FAKE_RETIREMENT:-0}" ;;
+    *"0041_report_conversion"*) echo "${FAKE_CONVERTED:-t}" ;;
     "image inspect "*faketime-stewardship*) exit 1 ;;
     "image inspect "*) ;;
     *" stop "*)
@@ -690,7 +695,8 @@ def test_an_upgrade_follows_the_runbook_order(tmp_path):
     # caddy keeps serving its maintenance page; it is never stopped.
     assert not any(" stop " in call and "caddy" in call for call in calls)
     # Step 4's decisive check runs after the retarget, and t skips both commands.
-    assert retarget < [i for i, c in enumerate(calls) if "PGOPTIONS" in c][1]
+    checks = [i for i, c in enumerate(calls) if "PGOPTIONS" in c and "0041" not in c]
+    assert retarget < checks[1]
     assert not any(" migration" in call for call in calls)
     assert not any("database-grants" in call for call in calls)
     start_web = first(calls, "up --detach --wait web")
@@ -831,6 +837,103 @@ def test_a_failed_stop_of_web_starts_everything_again(tmp_path):
         calls, "up --detach --wait web worker scheduler mail-dispatch caddy"
     )
     assert first(calls, " stop web") < restart == len(calls) - 1
+
+
+def test_the_retirement_guard_names_the_real_retire_digests_migration():
+    """The host script's release-order guard must name a migration that exists.
+
+    The guard probes the image for one hard-coded file name; a later renumber
+    would make that probe always miss and silently disable the guard.
+    """
+    names = re.findall(r"/migrations/(\d{4}_[a-z_]+\.sql)$", HOST.read_text(), re.M)
+    assert names == ["0171_retire_digests.sql"]
+    migrations = ROOT / "src/parishkit/stewardship/schema/migrations"
+    assert (migrations / names[0]).is_file()
+    assert "retire" in names[0] and "digest" in names[0]
+
+
+def test_the_retirement_guard_names_the_real_conversion_migration():
+    """The guard's applied-migration probe must name a migration that exists.
+
+    The query hard-codes the report email conversion's Django migration; a
+    renumber of it would make every converted database answer f, so the
+    guard would refuse every upgrade (closed, but disruptive).
+    """
+    names = re.findall(
+        r"app='(stewardship_[a-z]+)' AND name='(\d{4}_[a-z_]+)'", HOST.read_text()
+    )
+    assert names == [("stewardship_reports", "0041_report_conversion")]
+    migrations = ROOT / "src/parishkit/stewardship/reports/migrations"
+    assert (migrations / f"{names[0][1]}.py").is_file()
+
+
+@pytest.mark.parametrize("converted", ["f", 'ERROR:  relation "x" does not exist'])
+def test_the_digest_retirement_refuses_an_unconverted_database_first(
+    tmp_path, converted
+):
+    """A release with 0171 on an unconverted database stops before anything.
+
+    The conversion's migration not applied, a definition still a digest or
+    a failed query all answer something other than t: the run refuses in
+    step 1, naming the converting release, with nothing stopped.
+    """
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", noop="f", schema_change="1", status=1, converted=converted
+    )
+    test = first(calls, " --entrypoint test ")
+    assert "/app/src/parishkit/stewardship/schema/migrations/0171_" in calls[test]
+    query = first(calls, "0041_report_conversion")
+    assert "default_transaction_read_only=on" in calls[query]
+    assert "kind IN ('daily_digest','weekly_digest')" in calls[query]
+    assert "has not finished the report email conversion" in output
+    assert "Deploy the release that converts the digests" in output
+    assert "pk-stewardship upgrade-reports" in output
+    assert "Failed before anything stopped; nothing changed" in output
+    assert not any(" stop " in call for call in calls)
+    assert not any("backup-worker" in call for call in calls)
+    assert not any(" retarget-image " in call for call in calls)
+    assert "Locally:" not in output
+    # The local profile has no releases: it names a commit to deploy.
+    calls, output, _ = run_host(
+        tmp_path / "local", "upgrade", noop="f", schema_change="1", status=1,
+        converted=converted, profile="local",
+    )  # fmt: skip
+    assert "Locally: deploy a commit that converts the digests" in output
+    assert "frozen file 0161 but not 0171" in output
+    assert not any(" stop " in call for call in calls)
+
+
+def test_the_digest_retirement_check_needs_the_file_and_an_upgrade(tmp_path):
+    """Only an upgrade to an image with 0171 asks the database; t passes.
+
+    An image without the file never runs the query, a converted database
+    upgrades as usual, a rollback never asks, and a failure to ask the
+    image refuses.
+    """
+    calls, _, _ = run_host(tmp_path / "absent", "upgrade", retirement="1")
+    assert any(" --entrypoint test " in call for call in calls)
+    assert not any("0041_report_conversion" in call for call in calls)
+    calls, output, _ = run_host(tmp_path / "converted", "upgrade")
+    assert first(calls, "0041_report_conversion") < first(calls, " stop web")
+    assert f"Upgraded to {TARGET} in" in output
+    calls, _, _ = run_host(tmp_path / "rollback", "rollback", kept="kept\n")
+    assert not any(" --entrypoint test " in call for call in calls)
+    calls, output, _ = run_host(
+        tmp_path / "broken", "upgrade", status=1, retirement="125"
+    )
+    assert "whether it retires the digests (exit 125); refusing" in output
+    assert not any(" stop " in call for call in calls)
+
+
+def test_a_refused_retirement_migration_names_the_restore(tmp_path):
+    """The step-4 fallback says 0161 and later may have committed: restore first."""
+    _, output, _ = run_host(
+        tmp_path, "upgrade", noop="f", schema_change="1", status=1, migrate_fail="1"
+    )
+    assert "the conversion's 0161 and any later one up to the one" in output
+    assert "that refused) may already have committed" in output
+    assert "Restore the pre-upgrade backup with the previous" in output
+    assert "do not run the" in output
 
 
 def test_an_unreadable_render_refuses_before_anything_stops(tmp_path):

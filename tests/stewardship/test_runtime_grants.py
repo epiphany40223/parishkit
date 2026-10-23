@@ -63,6 +63,43 @@ def test_grant_registry_names_existing_models_and_excludes_unrelated_download_da
         assert table not in grants
 
 
+# The digest tables migration 0171 (#1834) revoked every service login's
+# writes on; the saved digests still read them.
+DIGEST_TABLES = (
+    "stewardship_daily_digest_preparation",
+    "stewardship_daily_digest_snapshot",
+    "stewardship_daily_digest_ready",
+    "stewardship_daily_digest_recipient",
+    "stewardship_weekly_digest_preparation",
+    "stewardship_weekly_digest_snapshot",
+    "stewardship_weekly_digest_recipient",
+    "stewardship_weekly_manual_request",
+)
+
+
+def test_no_login_writes_a_retired_digest_table():
+    """The digest pipelines are retired: every login only reads their tables.
+
+    The worker, scheduler and web logins keep the reads the saved digest
+    pages and delivery history use; no login has a write on any of them.
+    """
+    for _, _, role, target in database_identities():
+        if role is ServiceRole.MIGRATION:
+            continue
+        tables, columns = runtime_grants(role, target=target)
+        for table in DIGEST_TABLES:
+            assert tables.get(table, set()) <= {"SELECT"}, (role, table)
+            assert set(columns.get(table, {})) <= {"SELECT"}, (role, table)
+    for role in (ServiceRole.WORKER, ServiceRole.SCHEDULER, ServiceRole.WEB):
+        tables, columns = runtime_grants(role)
+        assert tables["stewardship_daily_digest_preparation"] == {"SELECT"}, role
+        assert tables["stewardship_weekly_digest_preparation"] == {"SELECT"}, role
+        assert tables["stewardship_weekly_manual_request"] == {"SELECT"}, role
+    tables, _ = runtime_grants(ServiceRole.WORKER)
+    for table in DIGEST_TABLES[1:4] + DIGEST_TABLES[5:7]:
+        assert tables[table] == {"SELECT"}, table
+
+
 def test_family_test_tickets_have_one_writer_per_transition():
     """Web inserts, worker and scheduler update under SQL guards, mail only reads."""
     table = "stewardship_family_mail_test"

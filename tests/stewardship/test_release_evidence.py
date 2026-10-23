@@ -535,3 +535,90 @@ def test_select_names_the_attempt_of_a_re_run(monkeypatch, capsys):
     fake_gh(monkeypatch, None, [legacy])
     assert evidence.main(["select", "--repo", "o/r", "--commit", "tag"]) == 0
     assert capsys.readouterr().out == "82\tcompleted\tsuccess\tsame\t0\t1\n"
+
+
+RETIREMENT = "src/parishkit/stewardship/schema/migrations/0171_retire_digests.sql"
+CONVERSION = "src/parishkit/stewardship/schema/migrations/0161_report_conversion.sql"
+
+
+def test_the_release_order_table_names_real_frozen_files():
+    """Both sides of every row exist, so a renumber cannot silently disarm it."""
+    assert evidence.EARLIER_RELEASE_REQUIRED[RETIREMENT] == CONVERSION
+    for later, earlier in evidence.EARLIER_RELEASE_REQUIRED.items():
+        assert (ROOT / later).is_file() and (ROOT / earlier).is_file()
+
+
+@pytest.mark.parametrize(
+    "tree, previous_tag, previous, refused",
+    [
+        # Retirement and conversion in one release: refused.
+        ({RETIREMENT, CONVERSION}, "v1.0.0", set(), True),
+        # No earlier release at all: refused.
+        ({RETIREMENT, CONVERSION}, None, set(), True),
+        # The conversion already shipped: allowed.
+        ({RETIREMENT, CONVERSION}, "v1.0.0", {CONVERSION}, False),
+        # No retirement in the tree: nothing to check.
+        ({CONVERSION}, "v1.0.0", set(), False),
+    ],
+)
+def test_order_refusals(tree, previous_tag, previous, refused):
+    """A later file needs an earlier release that already had its prerequisite."""
+    refusals = evidence.order_refusals(
+        tree.__contains__, previous_tag, previous.__contains__
+    )
+    assert bool(refusals) is refused
+    if refused:
+        assert RETIREMENT in refusals[0] and CONVERSION in refusals[0]
+        assert f"previous release ({previous_tag or 'none'})" in refusals[0]
+
+
+def commit_files(work, message, *paths):
+    """Add each path (empty) to the checkout and commit; return the SHA."""
+    for path in paths:
+        (work / path).parent.mkdir(parents=True, exist_ok=True)
+        (work / path).write_text("-- frozen\n")
+    git(work, "add", "-A")
+    git(work, "commit", "-q", "--allow-empty", "-m", message)
+    return git(work, "rev-parse", "HEAD")
+
+
+def test_release_order_reads_the_remotes_previous_annotated_release(tmp_path, capsys):
+    """Only an annotated vX.Y.Z tag that is an ancestor counts, highest first."""
+    work = checkout_with_remote(tmp_path)
+    commit_files(work, "base")
+    git(work, "tag", "-a", "v1.9.0", "-m", "old release")
+    converting = commit_files(work, "conversion", CONVERSION)
+    # A lightweight tag on the converting commit is not a release.
+    git(work, "tag", "v1.10.0")
+    head = commit_files(work, "retirement", RETIREMENT)
+    git(work, "push", "-q", "--tags", "origin", "main")
+    args = ["release-order", "--checkout", str(work), "--commit", head]
+    assert evidence.release_order(str(work), "origin", head)
+    assert evidence.main(args) == 1
+    assert "previous release (v1.9.0)" in capsys.readouterr().err
+    # The converting commit released (annotated, and v1.10.0 sorts above
+    # v1.9.0 numerically): the retirement may follow.
+    git(work, "tag", "-d", "v1.10.0")
+    git(work, "tag", "-a", "v1.10.0", "-m", "converting release", converting)
+    git(work, "push", "-q", "--force", "origin", "v1.10.0")
+    assert evidence.previous_release(str(work), "origin", head) == (
+        "v1.10.0",
+        converting,
+    )
+    assert evidence.main(args) == 0
+    # A higher release tag that is not an ancestor (another line) is skipped.
+    git(work, "checkout", "-q", "--detach", "HEAD~2")
+    commit_files(work, "elsewhere")
+    git(work, "tag", "-a", "v9.0.0", "-m", "elsewhere")
+    git(work, "push", "-q", "origin", "v9.0.0")
+    assert evidence.previous_release(str(work), "origin", head)[0] == "v1.10.0"
+
+
+def test_release_order_refuses_when_the_tags_cannot_be_listed(tmp_path, capsys):
+    """An unreachable remote is a refusal (exit 1), never a pass."""
+    work = checkout_with_remote(tmp_path)
+    head = commit_files(work, "retirement", RETIREMENT)
+    git(work, "remote", "set-url", "origin", str(tmp_path / "missing.git"))
+    args = ["release-order", "--checkout", str(work), "--commit", head]
+    assert evidence.main(args) == 1
+    assert "cannot list the release tags on origin" in capsys.readouterr().err

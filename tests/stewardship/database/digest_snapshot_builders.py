@@ -7,15 +7,19 @@ holds them: the rows are inserted with the digest guards off, as
 ``report_builders.digest_history`` writes occurrences and fulfillments. What
 the rows hold is real: the Daily's facts are the fact-set storage's own,
 calculated from the campaign's source by the participation calculation, and
-its statistics inputs and the Weekly's observation and selection are the
-live captures. Nothing here calls a provider or sends mail.
+its statistics inputs are the live capture, and the Weekly's observation is
+the database's own projection (``stewardship_weekly_observation_v1``, kept
+for the saved pages when the Weekly pipeline retired, #1834). Nothing here
+calls a provider or sends mail.
 """
 
+import json
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from io import BytesIO
 from uuid import uuid4
 
+from django.db import connection
 from PIL import Image
 
 from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
@@ -30,17 +34,14 @@ from parishkit.stewardship.reports.inputs import FactInputs
 from parishkit.stewardship.reports.materialization import materialize_fact_set
 from parishkit.stewardship.reports.statistics import calculate_statistics
 from parishkit.stewardship.reports.statistics_selection import capture_statistics
+from parishkit.stewardship.reports.weekly_digest import WeeklyInformation
 from parishkit.stewardship.reports.weekly_models import (
     WeeklyDigestPreparation,
     WeeklyDigestSnapshot,
 )
-from parishkit.stewardship.reports.weekly_observation import (
-    capture_weekly_observation,
-    observation_document,
-)
-from parishkit.stewardship.reports.weekly_selection import WeeklyHistory, select_weekly
+from parishkit.stewardship.reports.weekly_observation import decode_observation
 
-from .report_builders import seed_digests, triggers_off
+from .report_builders import digest_kinds_admitted, seed_digests, triggers_off
 from .source_builders import running_source_task
 from .test_source_snapshots_postgresql import permit
 
@@ -94,16 +95,25 @@ def claim_of(task):
 
 
 def digest_definitions(harness, monkeypatch):
-    """The campaign's Daily and Weekly definition IDs, added on first use."""
+    """The campaign's Daily and Weekly definition IDs, added on first use.
+
+    A database past the digest retirement (#1834) holds them converted to
+    report emails, with the digest kind only on their immutable revisions,
+    so they are seeded with the digest kinds admitted and retyped as
+    reports afterwards (``digest_kinds_admitted``), and found again by
+    their revisions' kind.
+    """
     found = {
-        row.kind: row.pk
+        row.current_revision.kind: row.pk
         for row in ScheduleDefinition.objects.filter(
-            campaign=harness.campaign, kind__in=("daily_digest", "weekly_digest")
-        )
+            campaign=harness.campaign,
+            current_revision__kind__in=("daily_digest", "weekly_digest"),
+        ).select_related("current_revision")
     }
     if found:
         return found["daily_digest"], found["weekly_digest"]
-    return seed_digests(harness.service.store, harness.campaign, monkeypatch)
+    with digest_kinds_admitted():
+        return seed_digests(harness.service.store, harness.campaign, monkeypatch)
 
 
 @dataclass(frozen=True)
@@ -213,6 +223,33 @@ def _runtime_configuration_id():
     return SystemConfiguration.objects.get().active_configuration_id
 
 
+def weekly_selected(observation, *, after, reported, corrected):
+    """The items a Weekly digest of ``observation`` sent, in page order.
+
+    The rule the retired Weekly selection applied: a live request submitted
+    after the earlier report's sequence ``after``, and a correction of a
+    request already ``reported`` whose disposition is not yet ``corrected``
+    (pairs of item and disposition), each in submission-time order.
+    """
+    information, corrections = [], []
+    for item in observation.items:
+        value = item.value
+        if type(value) is WeeklyInformation:
+            if item.sequence > after:
+                information.append(value)
+        elif (
+            value.item_id in reported
+            and (value.item_id, value.disposition) not in corrected
+        ):
+            corrections.append(value)
+
+    def order(value):
+        """The page's stable submission-time and identity order."""
+        return value.submitted_at, value.item_id.int
+
+    return sorted(information, key=order), sorted(corrections, key=order)
+
+
 def seed_weekly(
     harness,
     monkeypatch,
@@ -223,19 +260,24 @@ def seed_weekly(
 ):
     """Retain one Weekly digest of the campaign's live requests.
 
-    The selection is the real one (``select_weekly``) over the live
-    observation; ``after`` (the submission sequence the earlier report
-    covered), ``reported`` and ``corrected`` are the history it follows, as
-    an earlier report's coverage would have left it.
+    The observation is the database's live projection, retained as the
+    digest retained it, and the selection is ``weekly_selected`` over it;
+    ``after`` (the submission sequence the earlier report covered),
+    ``reported`` and ``corrected`` are the history it follows, as an
+    earlier report's coverage would have left it.
     """
     campaign = harness.campaign
     _, weekly = digest_definitions(harness, monkeypatch)
     claim = claim_of(running_source_task())
-    observation = capture_weekly_observation(campaign.pk)
-    history = WeeklyHistory(
-        campaign.pk, after, frozenset(reported), frozenset(corrected)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT stewardship_weekly_observation_v1(%s)::text", [campaign.pk]
+        )
+        document = json.loads(cursor.fetchone()[0])
+    observation = decode_observation(document)
+    information, corrections = weekly_selected(
+        observation, after=after, reported=reported, corrected=corrected
     )
-    selected = select_weekly(observation, history)
     with triggers_off():
         preparation = WeeklyDigestPreparation.objects.create(
             **preparation_values(campaign, weekly, claim, phase="complete")
@@ -248,13 +290,11 @@ def seed_weekly(
             source_id=observation.source_id,
             observed_at=observation.observed_at,
             submission_watermark=observation.watermark,
-            after_watermark=history.watermark,
-            observation=observation_document(observation),
+            after_watermark=after,
+            observation=document,
             item_versions={},
-            information=[str(item.item_id) for item in selected.information],
-            corrections=[
-                [str(item.item_id), item.disposition] for item in selected.corrections
-            ],
+            information=[str(item.item_id) for item in information],
+            corrections=[[str(item.item_id), item.disposition] for item in corrections],
             recipients=ADMINS,
             run_id=claim.run_id,
             fence=claim.fence,
