@@ -72,8 +72,8 @@ abuse limits still apply uniformly through the
 [secure-link anti-flood policy](../architecture/spec.md#identity-and-session-security).
 
 An explicit Cancel and sign out action is available throughout: centered in
-the button row of every editing page, and below the flow on Review, where
-Submit takes the row's middle. When the form
+the button row of every editing page, and below the flow on Review, just
+above the button row, where Submit takes the row's middle. When the form
 has unsaved answers it first asks the Family to confirm discarding them; it then
 clears client state, revokes the server session, and returns to `/`.
 
