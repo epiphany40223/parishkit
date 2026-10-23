@@ -1,17 +1,28 @@
 {% load i18n stewardship %}{% comment %}
-New scheduled email's Repeat (#878; #469): drawn after the mail type, shown by
-ui-v1.js only for a Reminder. Checked, it hides the send date and shows the
-rule. The page's send time and Email to send apply to every date. The rule's
-controls are the shared repeat rule (components/repeat-rule.html, #1129),
-which the date-change review's panel (schedule-repeat.html) draws too, so one
-script expands and checks both. Here they are named only so the server can
-read and refuse them with the rest of the form
-(schedule_entry_views.RepeatRule); what is saved is the dates the script lists as fitting, posted as hidden
-repeat-dates fields (data-repeat-posted, in the form). Dates and the send
-time are the browser's (#558), so the page carries moments for the script to
-compare in this browser's zone: data-repeat-mailings holds the saved
-invitations and reminders to check against ({kind, at}), and
-data-repeat-window-start and -end the campaign's first and last moments.
+New scheduled email's Sends and repeat rule (#878; #469; #2022; UX
+conventions, "Schedules", Once or Repeating): drawn after the mail type,
+shown only for a Reminder (an Initial invitation is always Once). Sends is
+the shared two-way pair (components/choice-pair.html), as on the
+date-change review's New schedule pane (schedule-repeat.html, #1944).
+Unlike that pane, it is posted (repeat-sends, once or repeat) while shown,
+since New's server reads the repeat (RepeatRule): it refuses a rule at its
+fields and remembers the reminder series. It is drawn disabled and
+ui-v1.js enables it only while shown, so a non-Reminder posts none, which
+the server reads as Once.
+Repeating hides and disables the send date (keeping its value for Once)
+and shows the rule in its place; the page's send time and Email to send
+apply to every date. The rule's controls are the shared repeat rule
+(components/repeat-rule.html, #1129), which the date-change review's pane
+draws too, so one script expands and checks both. Here they are named so
+the server can read and refuse them with the rest of the form
+(schedule_entry_views.RepeatRule), and disabled while Repeating is not
+chosen, so a hidden rule posts nothing; what is saved is the dates the
+script lists as fitting, posted as hidden repeat-dates fields
+(data-repeat-posted, in the form). Dates and the send time are the
+browser's (#558), so the page carries moments for the script to compare in
+this browser's zone: data-repeat-mailings holds the saved invitations and
+reminders to check against ({kind, at}), and data-repeat-window-start and
+-end the campaign's first and last moments.
 The rule's From and Until start as the campaign's own calendar dates
 (data-repeat-start and -end), which are never shifted. The server draws them
 as the fields' values, so the page's change gate (#750) counts them as part
@@ -21,12 +32,13 @@ summary line and the date list are drawn by schedule-entry.html around Review
 changes. A rule error is shown at its fields (#1915), and while the rule gives
 no date to add the form's buttons wait (data-repeat-gated), named by that
 error's words or the summary's; a refused New draws the server's refusal at
-the same fields (RepeatRule.refuse_rule).
-It is an Advanced panel of the page's Basic and Advanced toggle (#1129,
-schedule-entry.html): hidden in Basic, where Repeat is always off.
-{% endcomment %}<div data-editor-mode-panel="advanced"{% if editor_mode == "basic" %} hidden{% endif %}><div class="schedule-repeat-entry" data-repeat-panel data-repeat-entry data-repeat-start="{{ values.start_date }}" data-repeat-end="{{ values.end_date }}" data-repeat-window-start="{{ window_start }}" data-repeat-window-end="{{ window_end }}" data-repeat-mailings="{{ mailings_json }}" data-repeat-room="{{ room }}" data-repeat-limit="{{ limit }}" hidden>
-<div class="field">{{ repeat.repeat.errors }}<label><input type="checkbox" name="{{ repeat.repeat.html_name }}" id="{{ repeat.repeat.auto_id }}" data-repeat="enabled" aria-describedby="repeat-help"{% if repeat.repeat.value %} checked{% endif %}> {% translate "Repeat" %}</label>
-<p class="help" id="repeat-help">{% translate "Send this reminder on several dates. Each date is saved as its own reminder." %}</p></div>
-<div data-repeat-rule hidden>
+the same fields (RepeatRule.refuse_rule), and a refusal of the repeat as a
+whole (only reminders repeat, no date fits, a time passed) at Sends.
+A page drawn again for a Reminder draws Sends shown, and for Repeating the
+rule too, so nothing flashes before the page script runs.
+{% endcomment %}{% with reminder=entry.kind.value|stringformat:"s" sends=repeat.sends.value|default:"once" %}<div class="schedule-repeat-entry" data-repeat-panel data-repeat-entry data-repeat-start="{{ values.start_date }}" data-repeat-end="{{ values.end_date }}" data-repeat-window-start="{{ window_start }}" data-repeat-window-end="{{ window_end }}" data-repeat-mailings="{{ mailings_json }}" data-repeat-room="{{ room }}" data-repeat-limit="{{ limit }}"{% if reminder != "reminder" %} hidden{% endif %}>
+{% translate "Sends" as sends_legend %}{% translate "Once" as once_label %}{% translate "Repeating" as repeating_label %}{% include "stewardship/components/choice-pair.html" with pair_id="repeat-sends" name=repeat.sends.html_name legend=sends_legend first_value="once" first_label=once_label second_value="repeat" second_label=repeating_label chosen=sends help_id="repeat-help" errors=repeat.sends.errors disabled=True %}
+<p class="help" id="repeat-help">{% translate "Once sends this reminder on one date. Repeating sends it on each date of a rule, for example every Monday until the campaign ends; each date is saved as its own reminder." %}</p>
+<div data-repeat-rule{% if reminder != "reminder" or sends != "repeat" %} hidden{% endif %}>
 {% include 'stewardship/components/repeat-rule.html' with rule=repeat named=True from_value=values.start_date until_value=values.end_date %}
-</div></div></div>
+</div></div>{% endwith %}

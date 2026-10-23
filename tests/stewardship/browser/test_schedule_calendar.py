@@ -317,8 +317,10 @@ def test_add_on_a_day_applies_and_returns_to_the_calendar(page, component_origin
     visible(page.get_by_text("Fill in the scheduled email to add it."))
     assert page.locator('[name="schedule-date"]').input_value() == ADD_DAY
     page.locator('[name="schedule-time"]').fill("9am")
-    assert not button.is_disabled()
+    # A whole schedule needs its email too (#2025).
+    assert button.is_disabled()
     choose(page, "template_version", email_for(page, "reminder"))
+    assert not button.is_disabled()
     with page.expect_request(lambda request: request.method == "POST") as sent:
         shown = review(page)
     assert "schedule-date=2054-10-12" in (sent.value.post_data or "")

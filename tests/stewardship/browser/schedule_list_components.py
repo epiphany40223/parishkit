@@ -43,6 +43,10 @@ checks need no database:
   ``EDIT_PASSED``: Edit for Reminder 1 whose Apply posts to
   ``APPLY_PASSED``, which answers 409 with the server's refusal of a
   reviewed send time that has since passed (``send_time_passed``, #1464).
+- ``NEW_INITIAL_SCHEDULED`` and ``NEW_INITIAL_SENT``: New in a campaign
+  whose Initial invitation is still to send, or already sent, drawn with
+  the view's words for each (``initial_taken``, #2025), so choosing
+  Initial invitation holds Add the scheduled email at once.
 - ``NEW_REPEAT``: New, whose Review answers with the review of 30 repeated
   reminders (the most one rule adds), a long review; ``NEW_BLOCKED``: New,
   whose review is blocked by sends in progress, so it has no preview;
@@ -74,11 +78,6 @@ checks need no database:
   never draws. ``DATES_INITIAL``: the same page, whose Review answers 400
   for a second Initial invitation posted from the pane (R45), a rule
   between schedules with no field of its own (``_initial_refused``).
-- ``NEW_BASIC``, ``EDIT_BASIC`` and ``EDIT_SERIES_BASIC``: New, Edit and
-  the series Edit drawn in Basic, as the view draws a page for a GET
-  (#1129). Every other New and Edit page above is drawn in Advanced, as
-  the view draws a page answering a post sent from Advanced, so their
-  tests reach Repeat and the schedule's own email directly.
 - ``CALENDAR``: the read-only Campaign calendar (#469) of the same schedules
   plus two report emails (#1786), drawn by the view's own
   ``report_calendar_sends``: the converted Weekly report on each Monday at
@@ -136,6 +135,8 @@ from parishkit.stewardship.accounts.schedule_changes import (
 )
 from parishkit.stewardship.accounts.schedule_entry_views import (
     DAY_MOVED,
+    INITIAL_SCHEDULED,
+    INITIAL_SENT,
     SERIES_DELETED,
     RepeatRule,
     _check_repeat,
@@ -201,13 +202,12 @@ NOT_OPEN = str(CLOSED)
 # The refusal EDIT_EMAIL_REFUSED's answer draws on the email.
 EMAIL_REFUSAL = str(EMAIL_DOES_NOT_FIT)
 NEW_REPEAT = "/schedule-new-repeat"
+NEW_INITIAL_SCHEDULED = "/schedule-new-initial-scheduled"
+NEW_INITIAL_SENT = "/schedule-new-initial-sent"
 NEW_BLOCKED = "/schedule-new-blocked"
 NEW_PENDING = "/schedule-new-pending"
 NEW_INVALID = "/schedule-new-invalid"
 NEW_STALE = "/schedule-new-stale"
-NEW_BASIC = "/schedule-new-basic"
-EDIT_BASIC = "/schedule-edit-basic"
-EDIT_SERIES_BASIC = "/schedule-edit-series-basic"
 NEW_RULE_REFUSED = "/schedule-new-rule-refused"
 APPLY = "/schedule-list/apply"
 APPLY_PENDING = "/schedule-list/apply-pending"
@@ -465,7 +465,7 @@ def _entry(
     on=None,
     list_url=LIST,
     delete_url=EDIT_DELETE,
-    mode="advanced",
+    initial_taken="",
 ):
     """New scheduled email, or Edit scheduled email for ``schedule_row``.
 
@@ -477,8 +477,8 @@ def _entry(
     at the choice, with its summary. ``on`` is New's send date from the
     calendar's Add on a day (#1521), ``list_url`` where Cancel and Apply
     return, and ``delete_url`` where Edit's Delete posts its review (#1656).
-    ``mode`` is the Basic and Advanced toggle's opening mode (#1129,
-    ``schedule_entry_views.editor_mode``).
+    ``initial_taken`` is New's words while the campaign already has its
+    Initial invitation (#2025), which the view works out from the database.
     """
     entry = entry_form(None, emails, rows, schedule_row, on=on)
     scope_data = QueryDict("series-scope=following") if scope_error else None
@@ -517,7 +517,7 @@ def _entry(
             "apply_url": apply_url,
             "delete_url": delete_url,
             "window_text": window_text(owner["values"]),
-            "editor_mode": mode,
+            "initial_taken": initial_taken,
         }
         | entry_times(owner["values"], rows, schedule_row, NOW, bound=False)
         | errors
@@ -619,7 +619,7 @@ def _rule_refused(values, owner, emails, rows):
             "schedule-kind": "reminder",
             "schedule-time": "06:00",
             "schedule-template_version": reminder["id"],
-            "repeat-repeat": "on",
+            "repeat-sends": "repeat",
             "repeat-frequency": "daily",
             "repeat-start": "2054-10-20",
             "repeat-until": "2054-10-10",
@@ -1053,6 +1053,22 @@ def components(context, admin):
             apply_url=APPLY_PASSED,
         ),
         PENDING: _status(values, "validating"),
+        NEW_INITIAL_SCHEDULED: _entry(
+            values,
+            owner,
+            emails,
+            rows,
+            post_url=f"{NEW}/review",
+            initial_taken=INITIAL_SCHEDULED,
+        ),
+        NEW_INITIAL_SENT: _entry(
+            values,
+            owner,
+            emails,
+            rows,
+            post_url=f"{NEW}/review",
+            initial_taken=INITIAL_SENT,
+        ),
         NEW_REPEAT: _entry(
             values, owner, emails, rows, post_url=f"{NEW_REPEAT}/review"
         ),
@@ -1071,28 +1087,6 @@ def components(context, admin):
             values, owner, emails, rows, post_url=f"{NEW_INVALID}/review"
         ),
         NEW_STALE: _entry(values, owner, emails, rows, post_url=f"{NEW_STALE}/review"),
-        NEW_BASIC: _entry(
-            values, owner, emails, rows, post_url=f"{NEW}/review", mode="basic"
-        ),
-        EDIT_BASIC: _entry(
-            values,
-            owner,
-            emails,
-            rows,
-            schedule_row=first,
-            post_url=f"{EDIT}/review",
-            mode="basic",
-        ),
-        EDIT_SERIES_BASIC: _entry(
-            values,
-            owner,
-            emails,
-            rows,
-            schedule_row=first,
-            post_url=f"{EDIT_SERIES}/review",
-            series=series,
-            mode="basic",
-        ),
         NEW_RULE_REFUSED: _entry(
             values, owner, emails, rows, post_url=f"{NEW_RULE_REFUSED}/review"
         ),

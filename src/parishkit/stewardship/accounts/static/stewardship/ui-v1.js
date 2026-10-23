@@ -4270,6 +4270,12 @@
           // itself.
           || (missing.matches("[data-time-entry], [data-duid-list], [data-distinct]")
             && missing.validity.customError && missing.validationMessage)
+          // So does a send date outside the campaign (#1787, on New and
+          // Edit scheduled email's gate, #2025), once the window check
+          // shows its words (after a pause, so a year being typed flashes
+          // none); until then the date's own data-missing-hint stands.
+          || (missing.matches("[data-send-window][aria-invalid=true]")
+            && missing.validity.customError && missing.validationMessage)
           || (empty && missing.dataset.emptyHint)
           || (missing.hasAttribute("data-max-ticked-over") && missing.validationMessage)
           || missing.closest("[data-missing-hint]")?.dataset.missingHint
@@ -6759,8 +6765,9 @@
   const modeChoice = (root, mode) => modeToggle(root)
     ?.querySelector(`input[data-editor-mode-choice][value="${mode}"]`);
   // root's panels for mode (not a nested editor's). An additive editor
-  // (New and Edit scheduled email, #1129) has several Advanced panels, one
-  // where each of its tools is drawn; other editors have one of each.
+  // (first used by New and Edit scheduled email, #1129) may have several
+  // Advanced panels, one where each of its tools is drawn; other editors
+  // have one of each.
   const modePanels = (root, mode) => [...root.querySelectorAll(
     `[data-editor-mode-panel="${mode}"]`)].filter((node) => node.closest("[data-editor-modes]") === root);
   const modePanel = (root, mode) => modePanels(root, mode)[0];
@@ -7719,9 +7726,14 @@
     if (pane.isConnected) update();
   }));
 
-  // New scheduled email's Repeat (#878, schedule-repeat-entry.html): for a
-  // Reminder, a Repeat checkbox swaps the send date for a repeat rule. The
-  // page's own send time and Email to send apply to every date. As the Admin
+  // New scheduled email's Sends (#878, #2022, schedule-repeat-entry.html;
+  // UX conventions, "Schedules", Once or Repeating): for a Reminder, the
+  // Sends pair (Once | Repeating) is shown and enabled, so it is posted;
+  // Repeating swaps the send date (hidden and disabled, its value kept for
+  // Once) for the repeat rule, whose named controls are enabled only then,
+  // so a hidden rule posts nothing. The choice is kept while another mail
+  // type hides Sends. The page's own send time and Email to send apply to
+  // every date. As the Admin
   // types, the dates the rule gives are listed with the same checks as the
   // date-change review's New schedule pane (repeatDates), against the saved
   // invitations and
@@ -7731,22 +7743,23 @@
   // come as UTC instants, and every timed check compares moments
   // (localMoment). The dates that fit are kept as hidden
   // repeat-dates fields, which Review changes posts; the server checks each
-  // date as an ordinary reminder. Repeat and its rule show only for a
-  // Reminder; with another mail type nothing of the rule is posted as a
-  // date, and the server refuses a repeat that is not a reminder anyway.
+  // date as an ordinary reminder. Sends and its rule show only for a
+  // Reminder; with another mail type nothing of them is posted, and the
+  // server refuses a repeat that is not a reminder anyway.
   const repeatHints = new WeakMap(); // form -> its visually hidden reason
   document.querySelectorAll("[data-repeat-entry]").forEach((panel) => {
     const form = panel.closest("form");
     const kind = form?.querySelector('[data-schedule-field="kind"] select');
-    const enabled = panel.querySelector('[data-repeat="enabled"]');
+    const radios = [...panel.querySelectorAll('input[name="repeat-sends"]')];
     const rule = panel.querySelector("[data-repeat-rule]");
     const time = form?.querySelector('[data-schedule-field="time"] input');
     const email = form?.querySelector('[data-schedule-field="template_version"] select');
     const summary = form?.querySelector("[data-repeat-summary]");
     const list = form?.querySelector("[data-repeat-dates]");
     const posted = form?.querySelector("[data-repeat-posted]");
-    if (!kind || !enabled || !rule || !time || !email || !summary || !list || !posted) return;
+    if (!kind || !radios.length || !rule || !time || !email || !summary || !list || !posted) return;
     const date = form.querySelector('[data-schedule-field="date"]');
+    const dateInput = date?.querySelector("input");
     let existing = [];
     try { existing = JSON.parse(panel.dataset.repeatMailings || "[]"); } catch { existing = []; }
     existing = existing.map((mailing) => ({kind: mailing.kind, at: Date.parse(mailing.at)}))
@@ -7769,17 +7782,19 @@
     const update = (event) => {
       window.clearTimeout(pause);
       const reminder = kind.value === "reminder";
-      // Repeat is a Reminder's: with another mail type its panel is hidden,
-      // so the box is unticked rather than posted hidden (conditional
-      // fields), and it does not count as a tool in use for Basic.
-      if (!reminder) enabled.checked = false;
-      const on = reminder && enabled.checked;
+      // Sends is a Reminder's: with another mail type it is hidden and
+      // disabled, so it is not posted (conditional fields); the choice is
+      // kept for when Reminder is chosen again.
+      radios.forEach((radio) => { radio.disabled = !reminder; });
+      const on = reminder && radios.some((radio) => radio.checked && radio.value === "repeat");
       panel.hidden = !reminder;
       rule.hidden = !on;
-      // The date field is the mail type's to show (scheduleRow); a repeat
-      // replaces it only while it is on. Its value is kept, so turning
-      // Repeat off again brings back what was typed.
+      rule.querySelectorAll("input, select").forEach((control) => { control.disabled = !on; });
+      // The date field is the mail type's to show (scheduleRow); Repeating
+      // replaces it, and disables it so the send-date check and the post
+      // leave it out. Its value is kept, so Once brings back what was typed.
       if (reminder && date) date.hidden = on;
+      if (dateInput) dateInput.disabled = on;
       summary.hidden = !on;
       posted.replaceChildren();
       if (!on) {
@@ -7829,9 +7844,44 @@
     form.addEventListener("input", update);
     form.addEventListener("change", update);
     wireRepeatControls(panel, update);
-    // The browser can restore the checkbox and the rule on Back.
+    // The browser can restore Sends and the rule on Back.
     window.addEventListener("pageshow", () => update());
     update();
+  });
+
+  // New scheduled email's one Initial invitation (#2025; UX conventions,
+  // "Prerequisite gates"): a campaign has one (the server's one_initial
+  // rule, which stays the safeguard), so while it already has one,
+  // scheduled or sent, the form carries the server's words for which
+  // (data-initial-taken). Choosing Initial invitation then marks Mail type
+  // with them (data-client-error), and the complete gate holds the button
+  // with them as its hint at once, before anything else is filled in, as
+  // the date-change review's New schedule pane does (INITIAL_TAKEN).
+  document.querySelectorAll("form[data-schedule-entry][data-initial-taken]").forEach((form) => {
+    const kind = form.querySelector('[data-schedule-field="kind"] select');
+    if (!kind) return;
+    const mark = () => {
+      if (kind.value === "initial") kind.dataset.clientError = form.dataset.initialTaken;
+      else delete kind.dataset.clientError;
+    };
+    // Capture, so the mark is set before the gate's own listeners read it.
+    form.addEventListener("input", mark, true);
+    form.addEventListener("change", mark, true);
+    // A server error drawn on Mail type is cleared by its first edit
+    // (wireValidity's clearFieldError, on the document), which drops the
+    // mark too: it is set again after that, and the gate looks again.
+    document.addEventListener("change", (event) => {
+      if (event.target !== kind) return;
+      mark();
+      gateComplete(form);
+    });
+    // The browser can restore the mail type on Back, with no event.
+    window.addEventListener("pageshow", () => {
+      mark();
+      gateComplete(form);
+    });
+    mark();
+    gateComplete(form);
   });
 
   // Edit of a reminder in a remembered series (#469,
@@ -7970,6 +8020,11 @@
     const refused = [...form.querySelectorAll(SEND_DATES)].find((date) => windowRefused.has(date));
     holdFormButtons(form, {mark: "data-window-gated", hints: windowHints, suffix: "window-hint"},
       refused ? refused.validationMessage : "");
+    // A complete-gated form (New and Edit scheduled email, #2025) reads the
+    // date's validity too, which this check sets after the gate's own
+    // listeners ran: the gate looks again, so a time typed back inside
+    // the campaign releases its button without a blur.
+    gateComplete(form);
   };
   // Judge every send date of ``form`` and gate its buttons. With ``show``
   // the refusals are also shown, and an editor holding one is opened; a
@@ -8392,11 +8447,10 @@
   // texts are the server's (data-schedule-email-sources); each is set as a
   // field value, never as markup. "Generate plain text from HTML" is the
   // content editors' panel below, told of every fill by its change event.
-  // On New both the checkbox and Reset need a mail type (UX conventions,
-  // "Prerequisite gates"): while none is chosen they are unavailable, the
-  // box is unticked (so the fields close and are not sent), and the reserved
-  // reason line (data-schedule-email-reason) says why. Checked on load, on
-  // every type change and on pageshow.
+  // On New the section shows only once a mail type is chosen (#2022,
+  // Mail type first): while none is, it is hidden and the box is unticked,
+  // so the fields close and are not sent. Checked on load, on every type
+  // change and on pageshow.
   document.querySelectorAll("[data-schedule-email]").forEach((section) => {
     const form = section.closest("form");
     const box = form?.elements.namedItem("edit_email");
@@ -8433,22 +8487,13 @@
     });
     const refill = () => { if (box.checked && !edited) fill(chosen()); };
     [box, kind, choice].forEach((control) => control.addEventListener("change", refill));
-    const reason = section.querySelector("[data-schedule-email-reason]");
     const gate = () => {
       const ready = Boolean(kind.value);
       if (!ready && box.checked) {
         box.checked = false;
         box.dispatchEvent(new Event("change"));
       }
-      [box, reset].forEach((control) => {
-        control.disabled = !ready;
-        const described = (control.getAttribute("aria-describedby") || "").split(/\s+/)
-          .filter((id) => id && id !== reason?.id);
-        if (!ready && reason?.id) described.push(reason.id);
-        if (described.length) control.setAttribute("aria-describedby", described.join(" "));
-        else control.removeAttribute("aria-describedby");
-      });
-      reason?.toggleAttribute("data-idle", ready);
+      section.hidden = !ready;
     };
     kind.addEventListener("change", gate);
     window.addEventListener("pageshow", gate);
@@ -8461,28 +8506,6 @@
       // does not replace it.
       edited = true;
     });
-  });
-
-  // New and Edit scheduled email's Basic and Advanced modes (#1129; UX
-  // conventions, "Basic and Advanced modes", additive editors). Both modes
-  // show the schedule's fields; Advanced adds Repeat and "Edit this
-  // schedule's email", each an Advanced panel where it is drawn. Basic is
-  // the page with both off, so Advanced → Basic switches at once while
-  // they are off and otherwise asks. Switch to Basic unticks them through
-  // their own change events, so the repeat rule and the email fields close
-  // as if the reader had unticked them, and nothing hidden is posted.
-  // A Repeat ticked under another mail type is unticked as it hides (the
-  // repeat script), so a tool in use is always one on screen.
-  const scheduleTools = (root) => [...root.querySelectorAll(
-    'input[data-repeat="enabled"], input[name="edit_email"]')];
-  window.ParishEditorMode.register("schedule-entry", {
-    toBasic: (root) => scheduleTools(root).every((box) => !box.checked),
-    clearBasic(root) {
-      scheduleTools(root).filter((box) => box.checked).forEach((box) => {
-        box.checked = false;
-        box.dispatchEvent(new Event("change", {bubbles: true}));
-      });
-    },
   });
 
   // "Send a test of this text" under a scheduled email's own email (#446,

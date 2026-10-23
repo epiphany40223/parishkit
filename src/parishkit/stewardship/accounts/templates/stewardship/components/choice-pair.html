@@ -26,7 +26,8 @@
     (a Basic panel's choice that only writes the Advanced fields).
   - disabled (optional): both radios are drawn disabled, so nothing is
     posted until the page script shows the pair and enables them (the
-    date-change review's Sends, shown only for a Reminder, #1944).
+    Sends of the date-change review, #1944, and of New scheduled email,
+    #2022, both shown only for a Reminder).
 {% endcomment %}<fieldset class="choice-pair" id="{{ pair_id }}" aria-labelledby="{{ pair_id }}-legend"{% if help_id or errors %} aria-describedby="{% if help_id %}{{ help_id }}{% endif %}{% if errors %} {{ pair_id }}_error{% endif %}"{% endif %}{% if data_not_a_change %} data-not-a-change{% endif %}><legend id="{{ pair_id }}-legend">{{ legend }}</legend>{% if fixed and tip %}{% include "stewardship/components/toggletip.html" with tip_id=pair_id|add:"-tip" tip_label_id=pair_id|add:"-legend" tip_text=tip %}{% endif %}
 <span class="choice-pair-options">
 <label for="{{ pair_id }}_0"><input type="radio" id="{{ pair_id }}_0" name="{{ name }}" value="{{ first_value }}"{% if chosen == first_value %} checked{% endif %}{% if fixed and chosen != first_value %} disabled{% endif %}{% if required %} required{% endif %}{% if disabled %} disabled{% endif %}{% if errors %} aria-invalid="true" aria-describedby="{{ pair_id }}_error"{% endif %}>{{ first_label }}</label>

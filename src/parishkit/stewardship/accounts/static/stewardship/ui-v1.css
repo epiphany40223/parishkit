@@ -1174,12 +1174,18 @@ td > :last-child { margin-bottom: 0; }
    line keeps its space while idle, so it never moves the page (#736). */
 .unchanged-hint { margin-inline-start: .5rem; }
 .unchanged-hint[data-idle] { visibility: hidden; }
+/* A form with both the change gate and the complete gate (New and Edit
+   scheduled email, #2025) says one reason at a time in one cell: the
+   unchanged hint while the form is unchanged, else the complete gate's
+   (reserved, so it only empties). The cell is as wide as the longer and
+   follows the button, so neither moves the button; at a narrow width a
+   longer reason may wrap onto another line. */
+.gate-hints { display: inline-grid; margin-inline-start: .5rem; }
+.gate-hints > * { grid-area: 1 / 1; margin: 0; }
+.gate-hints:has(> [data-unchanged-hint]:not([data-idle])) > [data-complete-hint] { visibility: hidden; }
 /* The chosen email under a schedule's email list (#446). */
 .email-summary { margin-block-start: .35rem; }
 .email-summary p { margin-block: .2rem; }
-/* Why New's own email is unavailable until a mail type is chosen (#446):
-   the line keeps its space while idle, so it never moves the page (#736). */
-.schedule-email-reason[data-idle] { visibility: hidden; }
 /* Send a test of this text (#446): its status line (.reserve-line) keeps one
    line while empty; a refusal reads as an error. */
 .schedule-email-test-status.is-error { color: var(--error-ink); font-weight: 600; }

@@ -11,7 +11,7 @@ and emails.
 A changed email is always saved as a new email that only this schedule
 sends: the change adds that content record, and the schedule's
 ``template_version`` and ``subject`` point at it, reviewed and applied with
-the rest of the schedule's change in one request. On New with Repeat, every
+the rest of the schedule's change in one request. On New with Repeating, every
 reminder the rule adds sends that one record. The email the schedule
 sent before is left exactly as it is, so every other schedule that sends it
 keeps it. Text left as the chosen email's adds nothing.

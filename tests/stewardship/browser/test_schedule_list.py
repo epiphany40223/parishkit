@@ -339,14 +339,14 @@ def email_for(page, kind):
 
 
 def test_new_scheduled_email_posts_one_schedule(page, component_origin, axe_source):
-    """Repeat is offered only for a Reminder; an invitation posts one date."""
+    """Sends is offered only for a Reminder; an invitation posts one date."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + NEW)
     failures = watch(page)
     # A blank form is nothing to review.
     assert page.get_by_role("button", name=ADD).is_disabled()
     visible(page.get_by_text("Fill in the scheduled email to add it."))
-    repeat = page.get_by_label("Repeat", exact=True)
+    repeat = page.get_by_role("radio", name="Repeating")
     hidden(repeat)
     choose(page, "kind", "reminder")
     visible(repeat)
@@ -369,6 +369,8 @@ def test_new_scheduled_email_posts_one_schedule(page, component_origin, axe_sour
     assert fields["zone"] == ["America/Los_Angeles"]
     assert fields["schedule-template_version"] == [email]
     assert "repeat-dates" not in fields
+    # A hidden Sends posts nothing (#2022).
+    assert "repeat-sends" not in fields
     # One schedule that sends once: a confirmation (#1356).
     dialog = page.get_by_role("dialog", name="Add this scheduled email?")
     visible(dialog)
@@ -424,7 +426,7 @@ def test_new_repeating_reminder_lists_and_posts_the_dates_that_fit(
     page.goto(component_origin + NEW)
     failures = watch(page)
     choose(page, "kind", "reminder")
-    page.get_by_label("Repeat", exact=True).check()
+    page.get_by_role("radio", name="Repeating").check()
     hidden(page.locator('[name="schedule-date"]'))
     # The rule starts with the campaign's dates.
     assert page.locator("#repeat-from").input_value() == "2054-10-01"
@@ -448,7 +450,9 @@ def test_new_repeating_reminder_lists_and_posts_the_dates_that_fit(
         page.get_by_role("button", name=ADD).click()
     fields = posted(sent.value)
     assert fields["zone"] == ["America/Los_Angeles"]
-    assert fields["repeat-repeat"] == ["on"]
+    assert fields["repeat-sends"] == ["repeat"]
+    # Repeating disables the hidden send date, so it is not posted.
+    assert "schedule-date" not in fields
     assert fields["repeat-dates"] == ["2054-10-06", "2054-10-13", "2054-10-27"]
     assert fields["schedule-kind"] == ["reminder"]
     # The fixture answers every New Review alike; the server answers a
@@ -463,11 +467,11 @@ NO_WEEKDAY = "Choose at least one day of the week."
 
 
 def start_repeat(page, origin, path=NEW):
-    """New with Repeat ticked for a reminder every Tuesday at 6:00 AM."""
+    """New with Sends Repeating for a reminder every Tuesday at 6:00 AM."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(origin + path)
     choose(page, "kind", "reminder")
-    page.get_by_label("Repeat", exact=True).check()
+    page.get_by_role("radio", name="Repeating").check()
     page.get_by_label("Tuesday").check()
     page.locator('[name="schedule-time"]').fill("06:00")
     choose(page, "template_version", email_for(page, "reminder"))
@@ -558,7 +562,7 @@ def test_a_repeat_with_no_date_to_add_holds_add_with_the_summary(
     choose(page, "template_version", email_for(page, "reminder"))
     time = page.locator('[name="schedule-time"]')
     time.fill("06:00")
-    page.get_by_label("Repeat", exact=True).check()
+    page.get_by_role("radio", name="Repeating").check()
     add = page.get_by_role("button", name=ADD)
     summary = page.locator("[data-repeat-summary]")
     # A fresh rule's missing weekday, never reached, is not marked: the
@@ -864,7 +868,7 @@ def test_a_repeat_compares_moments_in_a_zone_a_day_ahead(
         page.goto(component_origin + NEW)
         failures = watch(page)
         choose(page, "kind", "reminder")
-        page.get_by_label("Repeat", exact=True).check()
+        page.get_by_role("radio", name="Repeating").check()
         # A pure date is never shifted: the campaign's own dates.
         assert page.locator("#repeat-from").input_value() == "2054-10-01"
         assert page.locator("#repeat-until").input_value() == "2054-10-31"
@@ -1479,18 +1483,12 @@ def test_new_offers_the_email_of_the_chosen_mail_type(page, component_origin):
     kind = page.locator('[name="schedule-kind"]')
     choice = page.locator('[name="schedule-template_version"]')
     reset = page.get_by_role("button", name="Reset to the default text")
-    reason = page.locator("[data-schedule-email-reason]")
     hidden(subject)
-    # No mail type yet: the checkbox is unavailable and its reserved line
-    # says why; once a type is chosen the line idles but keeps its space, so
-    # the fields below it do not move up.
-    assert box.is_disabled() and reason.is_visible()
-    assert "schedule-email-reason" in (box.get_attribute("aria-describedby") or "")
-    space = reason.bounding_box()["height"]
+    # No mail type yet: the checkbox is not shown (#2022, Mail type first).
+    hidden(box)
     kind.select_option("reminder")
-    assert box.is_enabled() and not reason.is_visible()
-    assert reason.bounding_box()["height"] == space > 0
-    # The reason leaves the description; the checkbox's own help stays.
+    visible(box)
+    assert box.is_enabled()
     assert box.get_attribute("aria-describedby") == "id_edit_email_helptext"
     first = choice.locator('option[data-kind="reminder"]').first.get_attribute("value")
     choice.select_option(first)
@@ -1510,10 +1508,11 @@ def test_new_offers_the_email_of_the_chosen_mail_type(page, component_origin):
     reset.click()
     assert subject.input_value() != invitation
     assert "{{ family_code }}" in html.input_value()
-    # Clearing the mail type unticks the box and closes the fields.
+    # Clearing the mail type unticks the box, closes the fields and hides
+    # the section again.
     kind.select_option("")
-    assert not box.is_checked() and box.is_disabled()
-    assert page.locator("[data-schedule-email-reset]").is_disabled()
+    assert not box.is_checked()
+    hidden(box)
     hidden(subject)
     kind.select_option("reminder")
     box.check()

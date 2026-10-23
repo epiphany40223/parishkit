@@ -4,7 +4,7 @@ Dates and mail schedules lists the saved schedules (``schedule_views``); these
 views act on them:
 
 - **New scheduled email** and **Edit scheduled email** are one page with one
-  schedule's fields, plus, on New, a Repeat rule for reminders. Review
+  schedule's fields, plus, on New, Sends (Once or Repeating) for reminders. Review
   changes builds the whole set of schedules (the saved ones unchanged, plus
   this one added or changed, or one reminder per repeat date) and reviews it
   in the shared review dialog (UX conventions, "Review dialog", #750), whose
@@ -20,7 +20,7 @@ views act on them:
   the same reviewed change.
   Its **Send a test of this text** sends the unsaved text as a test, saving
   nothing (``schedule_email_test``).
-- **Reminder series** (#469): New's Repeat also remembers its rule as a
+- **Reminder series** (#469): New's Sends Repeating also remembers its rule as a
   series (``_remember``), and Edit of a series' reminder offers "this and
   following" and "the whole series" for a time or email change
   (``SeriesScope``, ``_series_edit``), planned by the command line's own
@@ -170,7 +170,7 @@ ENTRY_FIELDS = (
     "drawn_at",
 )
 REPEAT_FIELDS = (
-    "repeat",
+    "sends",
     "frequency",
     "weekdays",
     "by",
@@ -182,12 +182,32 @@ REPEAT_FIELDS = (
     "dates",
 )
 REPEAT_MULTIPLE = {"repeat-weekdays", "repeat-dates"}
-# The page's Basic and Advanced toggle (#1129; UX conventions, "Basic and
-# Advanced modes", additive editors). Only the page is drawn by it: Basic is
-# the page with Repeat and the schedule's own email off, so the mode itself
-# is never saved.
-MODE = "editor_mode"
-BASIC, ADVANCED = "basic", "advanced"
+# The complete gate's words for each field still missing (#2025; UX
+# conventions, "Prerequisite gates"): the page's button waits for a whole
+# schedule, its hint naming the first field missing, as the date-change
+# review's New schedule pane does.
+MISSING_HINTS = {
+    "kind": _("Choose a mail type."),
+    # A date typed but refused (outside the campaign, before the window
+    # check shows its own words after a pause): data-empty-hint says the
+    # empty case.
+    "date": _("Enter a send date within the campaign."),
+    "time": _("Enter a send time that can be read, for example 9:00 AM."),
+    "template_version": _("Choose the email to send."),
+}
+DATE_EMPTY = _("Enter the send date.")
+# New's hint while Initial invitation is chosen in a campaign that already
+# has one (#2025): the server's one_initial rule refuses a second, so the
+# button waits from the moment the type is chosen. One not yet sent can be
+# changed from the list; one sent (or being prepared) cannot.
+INITIAL_SCHEDULED = _(
+    "This campaign already has an Initial invitation. Change it from Dates "
+    "and mail schedules instead."
+)
+INITIAL_SENT = _(
+    "This campaign's Initial invitation has already been sent or is being "
+    "prepared, so it can't have another."
+)
 # Edit's choice of which reminders of a series change (#469), posted as
 # ``series-scope``.
 SCOPE = "series-scope"
@@ -365,17 +385,25 @@ def rule_place(error, data):
 
 
 class RepeatRule(AdminForm):
-    """New scheduled email's Repeat checkbox and rule, for reminders only.
+    """New scheduled email's Sends and repeat rule, for reminders only.
 
-    The page script expands the rule into dates (``window.ParishRecurrence``)
-    and posts the dates that fit as ``dates``; only ``repeat`` and ``dates``
-    decide what is saved. The rule's own fields are kept loose (any choice the
-    page offers, or nothing) because they are only drawn again on a refused
-    page, never trusted, except that a rule giving no date is refused at the
-    field the page marks for it (``refuse_rule``, #1915).
+    Sends (``once`` or ``repeat``; UX conventions, "Schedules", Once or
+    Repeating, #2022) is posted only while the page shows it, for a
+    Reminder; missing, it is Once. ``clean`` gives ``repeat``, whether the
+    page repeats. The page script expands the rule into dates
+    (``window.ParishRecurrence``) and posts the dates that fit as ``dates``;
+    only Sends and ``dates`` decide what is saved. The rule's own fields are
+    kept loose (any choice the page offers, or nothing) because they are only
+    drawn again on a refused page, never trusted, except that a rule giving
+    no date is refused at the field the page marks for it (``refuse_rule``,
+    #1915).
     """
 
-    repeat = forms.BooleanField(required=False, label=_("Repeat"))
+    sends = forms.ChoiceField(
+        required=False,
+        label=_("Sends"),
+        choices=[("once", _("Once")), ("repeat", _("Repeating"))],
+    )
     frequency = forms.ChoiceField(
         required=False,
         label=_("How often"),
@@ -465,6 +493,12 @@ class RepeatRule(AdminForm):
         )
         self.rule_marks = tuple((name, line) for name in fields)
         return True
+
+    def clean(self):
+        """Add ``repeat``: True when Sends is Repeating."""
+        cleaned = super().clean()
+        cleaned["repeat"] = cleaned.get("sends") == "repeat"
+        return cleaned
 
     def clean_dates(self):
         """The posted dates: distinct calendar days, at most REPEAT_LIMIT."""
@@ -800,7 +834,30 @@ def entry_form(
         )
     if kept is not None:
         form.fields["time"].keep(kept)
+    # The page's complete gate (#2025) names what is missing; the send date
+    # is optional to the form (ScheduleSet.clean asks for it by mail type),
+    # so it is required in the page only. A disabled date (Repeating, a
+    # series' greyed date) asks for nothing; one hidden but enabled (no mail
+    # type yet) is never submitted over, since the required Mail type holds
+    # the button first, so the browser's own check never stops a Review.
+    for name, hint in MISSING_HINTS.items():
+        form.fields[name].widget.attrs["data-missing-hint"] = hint
+    form.fields["date"].widget.attrs["data-empty-hint"] = DATE_EMPTY
+    form.fields["date"].widget.attrs["required"] = True
     return form
+
+
+def initial_taken(saved, campaign):
+    """New's words while the campaign already has its Initial invitation.
+
+    Empty when it has none. Otherwise the hint the page's button waits with
+    once Initial invitation is chosen (#2025): a sent or prepared one cannot
+    be changed, so only an unsent one points at Dates and mail schedules.
+    """
+    initial = {row["id"] for row in saved if row["values"]["kind"] == "initial"}
+    if not initial:
+        return ""
+    return INITIAL_SENT if initial & _read_only(saved, campaign) else INITIAL_SCHEDULED
 
 
 def entry_times(values, saved, schedule, now, *, bound):
@@ -837,7 +894,6 @@ def _fields(new):
     names = {
         "base_digest",
         ZONE,
-        MODE,
         schedule_email.EDIT,
         *schedule_email.FIELDS,
         *(f"{ENTRY}-{name}" for name in ENTRY_FIELDS),
@@ -849,36 +905,11 @@ def _fields(new):
     return names
 
 
-def editor_mode(posted):
-    """The mode New and Edit scheduled email is drawn in (#1129).
-
-    Basic, unless the page answers a post sent from Advanced or with an
-    Advanced tool in use (Repeat on a Reminder, or "Edit this schedule's email"), so a
-    page drawn again never hides a tool the reader was using. The mode is
-    derived, never stored: Basic is the page with both tools off (UX
-    conventions, "Basic and Advanced modes", additive editors). A posted
-    mode other than Basic or Advanced is refused, as any unknown value is.
-    """
-    if posted is None:
-        return BASIC
-    mode = posted.get(MODE, BASIC)
-    if mode not in {BASIC, ADVANCED}:
-        # No sources: a malformed value of a field the page has.
-        raise unexpected_fields()
-    # Repeat is a Reminder's: a ticked box left over from another mail type
-    # is hidden, so it is not a tool in use.
-    repeating = (
-        posted.get("repeat-repeat") and posted.get("schedule-kind") == "reminder"
-    )
-    in_use = posted.get(schedule_email.EDIT) or repeating
-    return ADVANCED if in_use else mode
-
-
 def _days(entry, repeat):
     """The send dates typed on a valid page, in the browser's zone.
 
     One per repeat date when the page repeats; otherwise the one date field.
-    Repeat dates are also what ``_targets`` names.
+    Repeating dates are also what ``_targets`` names.
     """
     if repeat is not None and repeat.cleaned_data["repeat"]:
         return repeat.cleaned_data["dates"]
@@ -937,22 +968,22 @@ def _targets(entries, schedule, days):
 
 
 def _check_repeat(entry, repeat):
-    """Repeat applies to reminders only and needs at least one date."""
+    """Repeating applies to reminders only and needs at least one date."""
     if repeat is None or not repeat.cleaned_data.get("repeat"):
         return
     if entry.cleaned_data.get("kind") != "reminder":
         repeat.add_error(
-            "repeat",
+            "sends",
             forms.ValidationError(_("Only reminders repeat."), code="reminders_only"),
         )
     elif not repeat.cleaned_data.get("dates") and not repeat.refuse_rule():
         # A valid rule none of whose dates can be added.
         repeat.add_error(
-            "repeat",
+            "sends",
             forms.ValidationError(
                 _(
                     "This rule gives no date that can be added. Change the rule, "
-                    "or uncheck Repeat to choose one date."
+                    "or choose Once to send on one date."
                 ),
                 code="no_dates",
             ),
@@ -960,7 +991,7 @@ def _check_repeat(entry, repeat):
 
 
 def _rule(repeat):
-    """The canonical rule New's Repeat fields give, or None (#469).
+    """The canonical rule New's Repeating fields give, or None (#469).
 
     The page script expands the same fields into the posted dates; here
     they are read only to remember the rule, so anything incomplete or
@@ -971,7 +1002,7 @@ def _rule(repeat):
 
 
 def _rule_fields(data):
-    """The rule New's cleaned Repeat fields describe, as ``expand`` takes it.
+    """The rule New's cleaned Repeating fields describe, as ``expand`` takes it.
 
     None when a monthly weekday choice is not a number (only a request built
     by hand sends one).
@@ -998,7 +1029,7 @@ def _rule_fields(data):
 
 
 def _remember(repeat, entries, document):
-    """New's Repeat as ``build_preview``'s series to remember, or none (#469).
+    """New's Repeating rule as ``build_preview``'s series to remember, or none (#469).
 
     The rule is remembered, holding exactly the reminders the repeat adds,
     when it is valid, every reminder's campaign-local date is a day it gives
@@ -1305,8 +1336,12 @@ def _summary(entry, repeat, email=None, scope=None):
             continue
         for field, messages in form.errors.items():
             target = None if field == "__all__" else form[field].auto_id
+            # A choice group links to its first choice: Edit's scope, and
+            # New's Sends (components/choice-pair.html's radio ids).
             if form is scope and target:
                 target = f"{target}_0"
+            if form is repeat and field == "sends":
+                target = "repeat-sends_0"
             if form is repeat and field in RULE_IDS:
                 marked = [name for name, line in repeat.rule_marks if line == field]
                 target = RULE_IDS[marked[0] if marked else field]
@@ -1424,7 +1459,7 @@ def _entry(request, campaign_id, schedule_id=None):
     rules compare the moments the Admin chose. A ticked "Edit this
     schedule's email" with changed text adds the new email to the same
     review, and the schedule sends it (``schedule_email``); on New with
-    Repeat, every reminder the rule adds sends that one new email, and the
+    Sends Repeating, every reminder the rule adds sends that one new email, and the
     rule is remembered as a series (``_remember``). On Edit of a series'
     reminder, "this and following" or "the whole series" (``SeriesScope``)
     plans the series edit instead (``_series_edit``); the send date is not
@@ -1557,8 +1592,8 @@ def _entry(request, campaign_id, schedule_id=None):
             # The review dialog's Apply confirms on the list, then returns.
             "apply_url": reverse("admin:schedule_settings"),
             "window_text": window_text(values),
-            # The Basic and Advanced toggle's opening mode (#1129).
-            "editor_mode": editor_mode(posted),
+            # New waits while a second Initial invitation is chosen (#2025).
+            "initial_taken": initial_taken(saved, campaign) if new else "",
         } | entry_times(values, saved, schedule, now, bound=posted is not None)
         admin_navigation.place(request, flow="change", step="edit")
         if posted is None:
@@ -1616,7 +1651,7 @@ def _entry(request, campaign_id, schedule_id=None):
         )
         if passed:
             repeat.add_error(
-                "repeat", forms.ValidationError(passed, code="repeat_time_passed")
+                "sends", forms.ValidationError(passed, code="repeat_time_passed")
             )
             return _entry_page(request, context, status=400)
         added = (
@@ -1794,11 +1829,11 @@ def _sends_once(reviewed, repeat):
 
     Such a review shows nothing the New page does not: no current schedule,
     no sent or planned work (every count is 0), and a send time the reader
-    just typed. A Repeat (its generated reminders), anything else the change touches, or
-    sends that block it keep the full review.
+    just typed. A Repeating New (its generated reminders), anything else the
+    change touches, or sends that block it keep the full review.
     """
     changes = reviewed["changes"]
-    # A Repeat keeps the full review even when its rule yields one date.
+    # Repeating keeps the full review even when its rule yields one date.
     repeating = repeat is not None and repeat.cleaned_data["repeat"]
     return (
         not repeating
@@ -1835,7 +1870,7 @@ def mailings(saved, schedule, campaign_zone, now):
 
     Each is ``{"kind", "at"}``, ``at`` the UTC moment it sends (ISO 8601),
     which the page script compares repeat dates with in the browser's zone.
-    The schedule being edited is left out (Repeat is offered on New only,
+    The schedule being edited is left out (Repeating is offered on New only,
     so it is None there).
     """
     return [

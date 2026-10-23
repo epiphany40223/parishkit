@@ -69,7 +69,7 @@ def test_a_new_repeat_is_remembered_as_a_series(auth_service, google):
     data = entry(
         store, kind="reminder", time="10:00", template_version=emails["reminder"]["id"]
     ) | {
-        "repeat-repeat": "on",
+        "repeat-sends": "repeat",
         "repeat-frequency": "weekly",
         "repeat-weekdays": str(RULE["weekdays"][0]),
         "repeat-start": rule["start"],
@@ -96,7 +96,7 @@ def test_a_repeat_is_not_remembered_before_the_users_form(auth_service, google):
     data = entry(
         store, kind="reminder", time="10:00", template_version=emails["reminder"]["id"]
     ) | {
-        "repeat-repeat": "on",
+        "repeat-sends": "repeat",
         "repeat-frequency": "weekly",
         "repeat-weekdays": str(RULE["weekdays"][0]),
         "repeat-start": "2054-10-10",

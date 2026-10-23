@@ -14,8 +14,11 @@ from django import template
 from django.http import QueryDict
 from django.template import Context, Template
 
-from parishkit.stewardship.accounts import schedule_local
+from parishkit.stewardship.accounts import schedule_entry_views, schedule_local
 from parishkit.stewardship.accounts.schedule_entry_views import (
+    INITIAL_SCHEDULED,
+    INITIAL_SENT,
+    MISSING_HINTS,
     SCHEDULE_LIMIT,
     RepeatRule,
     SeriesScope,
@@ -30,10 +33,11 @@ from parishkit.stewardship.accounts.schedule_entry_views import (
     _remember,
     _rule,
     _series_edit,
+    _summary,
     _targets,
-    editor_mode,
     entry_form,
     entry_times,
+    initial_taken,
     mailings,
     return_url,
     year_month,
@@ -153,6 +157,37 @@ def test_entry_form_fixes_a_saved_mail_type_and_never_reads_a_posted_id():
     assert "campaign" not in str(form.fields["time"].help_text)
 
 
+def test_entry_form_names_each_missing_field_for_the_complete_gate():
+    """The page's complete gate (#2025) names the first field missing; the
+    send date, optional to the form, is required in the page."""
+    form = entry_form(None, emails(), [])
+    for name, hint in MISSING_HINTS.items():
+        assert form.fields[name].widget.attrs["data-missing-hint"] == hint
+    assert form.fields["date"].widget.attrs["required"] is True
+    assert form.fields["date"].widget.attrs["data-empty-hint"] == "Enter the send date."
+    assert not form.fields["date"].required
+    assert "required" in str(form["date"])
+
+
+def test_initial_taken_says_whether_the_invitation_can_still_change(monkeypatch):
+    """New's hint for a second Initial invitation (#2025): none without one,
+    a pointer to the list while it is unsent, and no pointer once sent."""
+    templates = emails()
+    rows = saved(templates)
+    first = next(row for row in rows if row["values"]["kind"] == "initial")
+    reminders = [row for row in rows if row["values"]["kind"] == "reminder"]
+    read_only = set()
+    monkeypatch.setattr(
+        schedule_entry_views, "_read_only", lambda saved, campaign: read_only
+    )
+    assert initial_taken(reminders, None) == ""
+    assert initial_taken(rows, None) == INITIAL_SCHEDULED
+    read_only.add(reminders[0]["id"])
+    assert initial_taken(rows, None) == INITIAL_SCHEDULED
+    read_only.add(first["id"])
+    assert initial_taken(rows, None) == INITIAL_SENT
+
+
 def test_entry_times_carry_moments_for_the_browser_to_show():
     """Saved mailings, the campaign's bounds and an Edit page's own moment."""
     rows = saved(emails())
@@ -181,7 +216,7 @@ def repeat_rule(**fields):
     """A bound, valid Repeat form with ``fields`` (``repeat-`` prefixed)."""
     form = RepeatRule(
         posted(
-            **{"repeat-repeat": "on"} | {f"repeat-{k}": v for k, v in fields.items()}
+            **{"repeat-sends": "repeat"} | {f"repeat-{k}": v for k, v in fields.items()}
         ),
         prefix="repeat",
     )
@@ -296,7 +331,7 @@ def test_entries_are_one_schedule_or_one_reminder_per_repeat_date():
     repeat = RepeatRule(
         posted(
             **{
-                "repeat-repeat": "on",
+                "repeat-sends": "repeat",
                 "repeat-dates": ["2054-10-27", "2054-10-13"],
             }
         ),
@@ -341,7 +376,7 @@ def test_entries_convert_the_browser_time_to_the_campaign_zone():
     assert (item["date"], item["time"]) == ("2054-10-13", "01:30:00")
     # Each repeat date converts on its own date.
     repeat = RepeatRule(
-        posted(**{"repeat-repeat": "on", "repeat-dates": ["2054-10-27"]}),
+        posted(**{"repeat-sends": "repeat", "repeat-dates": ["2054-10-27"]}),
         prefix="repeat",
     )
     assert repeat.is_valid()
@@ -447,7 +482,7 @@ def test_an_unchanged_edit_keeps_the_saved_values_at_fall_back():
 def test_repeat_refuses_too_many_repeated_or_unreadable_dates(dates):
     """At most 30 distinct calendar days."""
     repeat = RepeatRule(
-        posted(**{"repeat-repeat": "on", "repeat-dates": dates}), prefix="repeat"
+        posted(**{"repeat-sends": "repeat", "repeat-dates": dates}), prefix="repeat"
     )
     assert not repeat.is_valid()
     assert "dates" in repeat.errors
@@ -466,12 +501,12 @@ def test_repeat_is_for_reminders_with_at_least_one_date():
         template_version=templates[0]["id"],
     )
     repeat = RepeatRule(
-        posted(**{"repeat-repeat": "on", "repeat-dates": "2054-10-13"}),
+        posted(**{"repeat-sends": "repeat", "repeat-dates": "2054-10-13"}),
         prefix="repeat",
     )
     assert repeat.is_valid()
     _check_repeat(invitation, repeat)
-    assert repeat.errors["repeat"] == ["Only reminders repeat."]
+    assert repeat.errors["sends"] == ["Only reminders repeat."]
     reminder = valid_entry(
         templates,
         rows,
@@ -479,13 +514,13 @@ def test_repeat_is_for_reminders_with_at_least_one_date():
         time="09:00",
         template_version=templates[1]["id"],
     )
-    empty = RepeatRule(posted(**{"repeat-repeat": "on"}), prefix="repeat")
+    empty = RepeatRule(posted(**{"repeat-sends": "repeat"}), prefix="repeat")
     assert empty.is_valid()
     _check_repeat(reminder, empty)
     # A rule with no dates is refused at its fields, in the rule's own words
     # (#1915), not by the generic "no date that can be added" line.
     assert empty.errors["until"] == ["Choose the first and last dates to repeat on."]
-    assert "repeat" not in empty.errors
+    assert "sends" not in empty.errors
 
 
 def test_review_errors_come_back_to_the_page_field_or_its_top():
@@ -777,25 +812,46 @@ def test_a_reminder_moved_off_its_rule_says_it_leaves_its_series():
     assert _leaves_series(record, [{"id": rows[1]["id"], "date": None}]) == []
 
 
-def test_the_page_opens_in_basic_unless_advanced_was_sent_or_a_tool_is_on():
-    """New and Edit's mode is derived, never stored (#1129, additive editor).
+def test_sends_once_or_repeating_and_no_mode_field():
+    """New's Sends decides whether it repeats (#2022, Once or Repeating).
 
-    A page drawn for a GET is Basic; a page drawn again for a post keeps
-    Advanced when it was sent from there, and opens Advanced whenever
-    Repeat or the schedule's own email was ticked, so a refused Review
-    never hides a tool in use. Any other mode value is refused.
+    Missing (a hidden Sends posts nothing) or Once, the page sends once;
+    Repeating repeats. Any other value is refused at Sends. The page has no
+    Basic and Advanced toggle, so its field is no longer one it may post,
+    and neither is the old Repeat checkbox.
     """
-    assert editor_mode(None) == "basic"
-    assert editor_mode(posted()) == "basic"
-    assert editor_mode(posted(editor_mode="basic")) == "basic"
-    assert editor_mode(posted(editor_mode="advanced")) == "advanced"
-    assert editor_mode(posted(editor_mode="basic", edit_email="on")) == "advanced"
-    reminder = {"repeat-repeat": "on", "schedule-kind": "reminder"}
-    assert editor_mode(posted(**reminder)) == "advanced"
-    # A Repeat left ticked under another mail type is hidden, not in use.
-    assert editor_mode(posted(**reminder | {"schedule-kind": "initial"})) == "basic"
-    assert editor_mode(posted(**{"repeat-repeat": "on"})) == "basic"
-    with pytest.raises(UserFacingError):
-        editor_mode(posted(editor_mode="simple"))
-    # The toggle's field is one the page may post, on New and Edit.
-    assert "editor_mode" in _fields(True) and "editor_mode" in _fields(False)
+    assert RepeatRule(posted(), prefix="repeat").is_valid()
+    for value, repeats in ((None, False), ("once", False), ("repeat", True)):
+        data = posted(**({"repeat-sends": value} if value else {}))
+        form = RepeatRule(data, prefix="repeat")
+        assert form.is_valid(), form.errors
+        assert form.cleaned_data["repeat"] is repeats
+    odd = RepeatRule(posted(**{"repeat-sends": "on"}), prefix="repeat")
+    assert not odd.is_valid() and "sends" in odd.errors
+    for new in (True, False):
+        assert "editor_mode" not in _fields(new)
+        assert "repeat-repeat" not in _fields(new)
+    assert "repeat-sends" in _fields(True) and "repeat-sends" not in _fields(False)
+
+
+def test_a_refusal_at_sends_links_to_its_first_choice():
+    """The error summary links a refusal at Sends to its first radio."""
+    templates = emails()
+    rows = saved(templates)
+    invitation = valid_entry(
+        templates,
+        rows,
+        kind="initial",
+        date="2054-10-02",
+        time="09:00",
+        template_version=templates[0]["id"],
+    )
+    repeat = RepeatRule(
+        posted(**{"repeat-sends": "repeat", "repeat-dates": "2054-10-13"}),
+        prefix="repeat",
+    )
+    assert repeat.is_valid()
+    _check_repeat(invitation, repeat)
+    assert {"message": "Only reminders repeat.", "field_id": "repeat-sends_0"} in (
+        _summary(invitation, repeat)
+    )
