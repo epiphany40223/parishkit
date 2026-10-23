@@ -59,7 +59,21 @@ checks need no database:
   (Applied at once) and then returns there. ``DATES_INVALID``: the same page,
   whose Review answers 400 with the page drawn again with Reminder 2 outside
   the campaign, its editor open and the view's summary; ``DATES_STALE``: the
-  same page, whose Review answers 409 (``STALE_REFUSAL``).
+  same page, whose Review answers 409 (``STALE_REFUSAL``). ``DATES_ADDED``:
+  the same page, whose Review answers 400 for the New schedule pane's one
+  reminder (#1944), sent after the campaign ends, so its date is refused
+  (``_dates_added_refused``). ``DATES_PANE``: the same page, whose Review
+  answers with the review of the new end date and the reminders the
+  pane's Repeating schedule posts (``PANE_DAYS``); its Apply posts to
+  ``LIST`` (Applied at once), after which the page is read again from its
+  own address, which a test answers with ``DATES_PANE_FRESH``: the page as
+  it is once that change is saved (the end date saved, so no notice, and
+  the reminders in the table), with an empty pane. ``DATES_PANE_REFUSED``:
+  the same page, whose Review answers 400 refusing the second of the
+  reminders a Repeating pane posts (``_pane_refused``), a row the page
+  never draws. ``DATES_INITIAL``: the same page, whose Review answers 400
+  for a second Initial invitation posted from the pane (R45), a rule
+  between schedules with no field of its own (``_initial_refused``).
 - ``NEW_BASIC``, ``EDIT_BASIC`` and ``EDIT_SERIES_BASIC``: New, Edit and
   the series Edit drawn in Basic, as the view draws a page for a GET
   (#1129). Every other New and Edit page above is drawn in Advanced, as
@@ -146,6 +160,7 @@ from parishkit.stewardship.accounts.schedule_table import (
     schedule_rows,
 )
 from parishkit.stewardship.accounts.schedule_views import _summary as dates_summary
+from parishkit.stewardship.accounts.schedule_views import pane_confirmation
 from parishkit.stewardship.accounts.series_edits import plan, rule_text
 from parishkit.stewardship.reports import report_email_list
 from parishkit.stewardship.web.refusals import send_time_passed
@@ -206,6 +221,13 @@ NOT_APPLIED = "/schedule-change-failed"
 DATES = "/schedule-dates"
 DATES_INVALID = "/schedule-dates-invalid"
 DATES_STALE = "/schedule-dates-stale"
+DATES_ADDED = "/schedule-dates-added"
+DATES_PANE = "/schedule-dates-pane"
+DATES_PANE_FRESH = "/schedule-dates-pane-applied"
+DATES_PANE_REFUSED = "/schedule-dates-pane-refused"
+DATES_INITIAL = "/schedule-dates-initial"
+# The Mondays a Repeating pane gives inside the proposed dates (#1944).
+PANE_DAYS = ("2054-10-12", "2054-10-19")
 CALENDAR = "/schedule-calendar"
 # New opened by the calendar's Add on October 12, 2054 (#1521).
 ADD_DAY = "2054-10-12"
@@ -682,6 +704,134 @@ def _dates_refused(values, owner, emails, rows):
     )
 
 
+def _dates_added_refused(values, owner, emails, rows):
+    """``DATES_ADDED``'s answer: the New schedule pane's one reminder
+    (#1944), posted as the pane row itself at 9:00 AM on November 15, after
+    the campaign ends, so its date is refused."""
+    reminder = next(row for row in emails if row["values"]["slot"] == "reminder")
+    data = data_for(rows)
+    data.update(
+        {
+            "base_digest": "a" * 64,
+            "window-timezone": owner["values"]["timezone"],
+            "window-start_date": owner["values"]["start_date"],
+            "window-end_date": DATES_END,
+        }
+    )
+    index = len(rows)
+    data |= {
+        f"schedules-{index}-kind": "reminder",
+        f"schedules-{index}-date": "2054-11-15",
+        f"schedules-{index}-time": "09:00",
+        f"schedules-{index}-template_version": reminder["id"],
+    }
+    return _dates(
+        values, owner, emails, rows, post_url=f"{DATES_ADDED}/review", data=data
+    )
+
+
+def _initial_refused(values, owner, emails, rows):
+    """``DATES_INITIAL``'s answer: the pane posted a second Initial invitation
+    (R45), which the formset refuses with no field to mark."""
+    initial = next(row for row in emails if row["values"]["slot"] == "initial")
+    data = data_for(rows)
+    data.update(
+        {
+            "base_digest": "a" * 64,
+            "window-timezone": owner["values"]["timezone"],
+            "window-start_date": owner["values"]["start_date"],
+            "window-end_date": DATES_END,
+        }
+    )
+    index = len(rows)
+    data |= {
+        f"schedules-{index}-kind": "initial",
+        f"schedules-{index}-date": "2054-10-15",
+        f"schedules-{index}-time": "09:00",
+        f"schedules-{index}-template_version": initial["id"],
+    }
+    return _dates(
+        values, owner, emails, rows, post_url=f"{DATES_INITIAL}/review", data=data
+    )
+
+
+def _pane_refused(values, owner, emails, rows):
+    """``DATES_PANE_REFUSED``'s answer: a Repeating pane's two reminders
+    (#1944), the pane's own row and the next, the second after the
+    proposed end, so the server refuses a row the page never draws."""
+    reminder = next(row for row in emails if row["values"]["slot"] == "reminder")
+    data = data_for(rows, total=len(rows) + 2)
+    data.update(
+        {
+            "base_digest": "a" * 64,
+            "window-timezone": owner["values"]["timezone"],
+            "window-start_date": owner["values"]["start_date"],
+            "window-end_date": DATES_END,
+        }
+    )
+    for offset, day in enumerate((PANE_DAYS[0], "2054-11-16")):
+        data |= {
+            f"schedules-{len(rows) + offset}-kind": "reminder",
+            f"schedules-{len(rows) + offset}-date": day,
+            f"schedules-{len(rows) + offset}-time": "09:00",
+            f"schedules-{len(rows) + offset}-template_version": reminder["id"],
+        }
+    return _dates(
+        values, owner, emails, rows, post_url=f"{DATES_PANE_REFUSED}/review", data=data
+    )
+
+
+def _pane_reminders(owner, emails):
+    """The reminders the pane's Repeating schedule adds, as saved rows."""
+    reminder = next(row for row in emails if row["values"]["slot"] == "reminder")
+    return [
+        schedule(
+            owner["id"],
+            kind="reminder",
+            date=day,
+            time="09:00:00",
+            template_version=reminder["id"],
+            subject=reminder["values"]["subject"],
+        )
+        for day in PANE_DAYS
+    ]
+
+
+def _pane_review(owner, emails):
+    """``DATES_PANE``'s review: the new end date and one added reminder per
+    date of the pane's Repeating schedule, as ``build_preview`` lists them,
+    drawn as the view draws it: a short confirmation (R45)."""
+    review = {
+        "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
+        "changes": [
+            _added(owner, row["values"]) for row in _pane_reminders(owner, emails)
+        ],
+        "window_changes": {"end_date"},
+        "before_window": owner["values"],
+        "after_window": owner["values"] | {"end_date": DATES_END},
+        "blocking": 0,
+        "preview": "synthetic-preview",
+        "dates": True,
+    }
+    return render_to_string(
+        "stewardship/schedule-review.html",
+        review | pane_confirmation(review),
+    )
+
+
+def _pane_applied(values, owner, emails, rows):
+    """``DATES_PANE_FRESH``: the page once ``DATES_PANE``'s change is saved.
+
+    The end date is saved, so the address's proposed date is no proposal
+    and the notice is gone; the pane's reminders are saved schedules in
+    the table; the pane is empty again; the configuration's version moved.
+    """
+    saved = owner | {"values": owner["values"] | {"end_date": DATES_END}}
+    added = sorted(rows + _pane_reminders(owner, emails), key=schedule_order)
+    page = _dates(values, saved, emails, added, post_url=f"{DATES_PANE}/review")
+    return page.replace("a" * 64, "b" * 64)
+
+
 def _review(
     owner,
     changes,
@@ -958,6 +1108,25 @@ def components(context, admin):
             "text/html",
             _dates(values, owner, emails, rows, post_url=f"{DATES_STALE}/review"),
         ),
+        DATES_ADDED: (
+            "text/html",
+            _dates(values, owner, emails, rows, post_url=f"{DATES_ADDED}/review"),
+        ),
+        DATES_PANE: (
+            "text/html",
+            _dates(values, owner, emails, rows, post_url=f"{DATES_PANE}/review"),
+        ),
+        DATES_PANE_FRESH: ("text/html", _pane_applied(values, owner, emails, rows)),
+        DATES_INITIAL: (
+            "text/html",
+            _dates(values, owner, emails, rows, post_url=f"{DATES_INITIAL}/review"),
+        ),
+        DATES_PANE_REFUSED: (
+            "text/html",
+            _dates(
+                values, owner, emails, rows, post_url=f"{DATES_PANE_REFUSED}/review"
+            ),
+        ),
     }
     review = _review(owner, [_added(owner, reminders[0]["values"])])
     edit_review = _review(
@@ -1131,6 +1300,22 @@ def components(context, admin):
                 _dates_refused(values, owner, emails, rows),
             ),
             f"{DATES_STALE}/review": POSTS_STALE,
+            f"{DATES_ADDED}/review": (
+                400,
+                None,
+                _dates_added_refused(values, owner, emails, rows),
+            ),
+            f"{DATES_PANE}/review": (200, None, _pane_review(owner, emails)),
+            f"{DATES_PANE_REFUSED}/review": (
+                400,
+                None,
+                _pane_refused(values, owner, emails, rows),
+            ),
+            f"{DATES_INITIAL}/review": (
+                400,
+                None,
+                _initial_refused(values, owner, emails, rows),
+            ),
             # The date-change review's Apply confirms on the list.
             LIST: (303, APPLIED, ""),
             APPLY: (303, APPLIED, ""),

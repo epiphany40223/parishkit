@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from .test_components import axe_violations
-from .waits import has_attribute, has_text, hidden, visible
+from .waits import available, has_attribute, has_text, hidden, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -188,7 +188,12 @@ def open_saved(page):
 def test_schedule_send_times_read_live_normalise_and_gate_save(
     page, component_origin, axe_source
 ):
-    """A new schedule row and an added one each take any common form."""
+    """The New schedule pane's send time takes any common form.
+
+    Review covers the pane's one schedule (#1944): while its time cannot be
+    read Review waits, both for the time and for the incomplete schedule,
+    and once the schedule is whole it is available.
+    """
     page.set_viewport_size({"width": 320, "height": 900})
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
@@ -201,6 +206,8 @@ def test_schedule_send_times_read_live_normalise_and_gate_save(
     assert page.locator(saved).input_value() == "06:00"
     has_text(reading(page, saved), "Reads as 06:00 (6:00 AM)")
     page.locator(f'[name="{NEW}kind"]').select_option("reminder")
+    page.locator(f'[name="{NEW}date"]').fill("2054-10-05")
+    page.locator(f'[name="{NEW}template_version"]').select_option(index=1)
     time = f'[name="{NEW}time"]'
     page.locator(time).fill("9p")
     has_text(reading(page, time), "Reads as 21:00 (9:00 PM)")
@@ -210,29 +217,22 @@ def test_schedule_send_times_read_live_normalise_and_gate_save(
         "“21:60” has no minute 60: minutes run from 00 to 59.",
     )
     assert save.is_disabled()
+    assert save.get_attribute("data-pane-gated") == ""
     assert axe_violations(page, axe_source) == []
     page.locator(time).fill("7")
     has_text(reading(page, time), "Reads as 07:00 (7:00 AM)")
-    assert save.is_enabled()
+    # The pane now holds a whole schedule, which Review covers.
+    available(save)
+    assert save.get_attribute("data-pane-gated") is None
     page.locator(time).blur()
     assert page.locator(time).input_value() == "07:00"
-    # A bad time in a row whose type then hides it no longer holds Save.
+    # A bad time in a pane whose type then hides it no longer holds Save.
     page.locator(time).fill("nonsense")
     assert save.is_disabled()
     page.locator(f'[name="{NEW}kind"]').select_option("")
-    assert save.is_enabled()
-    # An added row is wired too.
-    page.get_by_role("button", name="Add another schedule").click()
-    page.locator('[name="schedules-2-kind"]').select_option("reminder")
-    added = '[name="schedules-2-time"]'
-    page.locator(added).fill("6:15 PM")
-    has_text(reading(page, added), "Reads as 18:15 (6:15 PM)")
-    assert reading(page, added).get_attribute("id") == "id_schedules-2-time_reading"
-    page.locator(added).fill("13pm")
-    assert save.is_disabled()
-    has_text(reading(page, added), "“13pm”: with AM or PM the hour runs from 1 to 12.")
-    page.get_by_role("button", name="Remove this new schedule").click()
-    assert save.is_enabled()
+    available(save)
+    assert reading(page, time).get_attribute("id") == f"id_{NEW}time_reading"
+
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert not failures
 
@@ -254,10 +254,15 @@ def test_a_value_restored_without_an_event_is_checked_on_pageshow(
 
 
 def test_a_schedule_time_refused_by_the_server_clears_on_edit(page, component_origin):
-    """The send time's server error shows alone, then the live check takes over."""
+    """The send time's server error shows alone, then the live check takes over.
+
+    The refused schedule is the New schedule pane's (#1944), whose fields
+    the refused answer draws with its error.
+    """
     page.goto(component_origin + "/schedule-editor-time-error")
     time = '[name="schedules-0-time"]'
     server = page.locator("#id_schedules-0-time_error")
+
     visible(server)
     assert "has no hour 25" in server.inner_text()
     assert reading(page, time).inner_text() == ""
@@ -305,10 +310,11 @@ def test_another_controls_change_announces_no_time_field(page, component_origin)
     page.locator(f'[name="{NEW}kind"]').select_option("reminder")
     page.locator(f'[name="{NEW}kind"]').select_option("initial")
     page.wait_for_timeout(700)
-    # The saved row's, the new row's and the Repeat panel's send time (#1117).
+    # The saved row's and the New schedule pane's send time (#1117), which
+    # Once and Repeating share (#1944).
     assert page.locator(".time-reading + [aria-live=polite]").evaluate_all(
         "nodes => nodes.map(node => node.textContent)"
-    ) == ["", "", ""]
+    ) == ["", ""]
     # This field's own typing is announced after the pause, once.
     page.locator(f'[name="{NEW}time"]').fill("7pm")
     has_text(live(page, f'[name="{NEW}time"]'), "Reads as 19:00 (7:00 PM)")

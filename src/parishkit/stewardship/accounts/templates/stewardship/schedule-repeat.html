@@ -1,34 +1,35 @@
 {% load i18n stewardship %}{% comment %}
-"Repeat a reminder" (#469 slice 1). The page script expands a repeat rule
-into concrete dates (window.ParishRecurrence, pinned by
-tests/stewardship/fixtures/recurrence_cases.json) and appends one ordinary
-reminder row per date to the schedule rows above, so the server validates,
-previews and confirms them exactly like rows added by hand. The rule's
-controls are the shared repeat rule (components/repeat-rule.html, #1129),
-the same as New scheduled email's Repeat, with its choices from a blank
-RepeatRule (Schedules.repeat_rule). None of these controls has a name, so
-nothing here is ever posted. The panel stays hidden
-until the script reveals it; the Admin portal requires JavaScript.
-Only the one-line summary is a live region (the date list can run to
-hundreds of items and is rebuilt as the Admin types), and it sits with the
-button above the list, its line reserved, so a growing or shrinking list
-never moves the button. A rule error is shown at its fields, in the rule's
-reserved error lines (#1915); while the rule gives nothing to add, Add these
-reminders waits, named by that line or by the summary, which says what is
-missing. The send time is a shared time entry field
-(data-time-entry, ui-v1.js): its "Reads as" line, refusal, blur rewrite and
-Save gate are the same as every other Admin time (#1117). Its zone is the
-rows': the browser's (schedules.browser_times, #558). Only the date-change
-review shows this panel, and it always takes browser times.
-{% endcomment %}<fieldset class="panel schedule-repeat" data-repeat-panel data-repeat-start="{{ schedules.campaign.start_date }}" data-repeat-end="{{ schedules.campaign.end_date }}" hidden aria-describedby="repeat-intro">
-<legend>{% translate "Repeat a reminder" %}</legend>
-<p class="help" id="repeat-intro">{% translate "Add several reminders at once, for example every Monday until the campaign ends. They are added to the schedules above as ordinary reminders, which you can still change or remove one at a time. Nothing is saved until you preview and confirm." %}</p>
+The New schedule pane's Sends and repeat rule (#1944; UX conventions,
+"Schedules", Once or Repeating), drawn by schedule-row.html after the
+pane's Mail type. ui-v1.js shows Sends only for a Reminder (an Initial
+invitation is always Once) and the rule only for Repeating, which hides
+the row's send date in its place (keeping its value for Once); the row's
+own Send time and Email to send follow and serve both.
+
+Sends is the shared two-way pair (components/choice-pair.html, as
+the report email editor's Sends). It is no setting of its own: it is drawn
+disabled and left out of the change gate, enabled only while shown, and
+ui-v1.js drops it from the form's data (formdata), so it is never posted;
+the server refuses it as an unknown field. It is passed errors=None: it
+has no errors of its own, and without it the include would read the
+page's error summary (``errors``, a list of message dicts) as its own and
+draw them as text in its line (R45).
+
+The rule's controls are the shared repeat rule (components/repeat-rule.html,
+#1129), the same as New scheduled email's Repeat, with its choices from a
+blank RepeatRule (Schedules.repeat_rule). None of them has a name, so
+nothing of the rule is posted: when Review changes gathers the form's
+data, the page expands it (window.ParishRecurrence, pinned by
+tests/stewardship/fixtures/recurrence_cases.json) into one ordinary
+reminder row per date in the pane's place, which the server validates,
+previews and confirms exactly like reminders added one at a time. A rule
+error is shown at its fields,
+in the rule's reserved error lines (#1915). From and Until start at the
+campaign dates being proposed (data-repeat-start and -end as drawn, then
+the window fields).
+{% endcomment %}<div class="schedule-sends" data-schedule-sends hidden>
+{% translate "Sends" as sends_legend %}{% translate "Once" as once_label %}{% translate "Repeating" as repeating_label %}{% include "stewardship/components/choice-pair.html" with pair_id="schedule-sends" name="schedule_sends" legend=sends_legend first_value="once" first_label=once_label second_value="repeat" second_label=repeating_label chosen="once" help_id="schedule-sends-help" data_not_a_change=True disabled=True errors=None %}
+<p class="help" id="schedule-sends-help">{% translate "Once sends this reminder on one date. Repeating adds a reminder on each date of a rule, for example every Monday until the campaign ends; each date becomes an ordinary reminder, which you can later change or remove from the table." %}</p></div>
+<div class="schedule-repeat" data-repeat-panel data-repeat-start="{{ schedules.campaign.start_date }}" data-repeat-end="{{ schedules.campaign.end_date }}" hidden>
 {% include 'stewardship/components/repeat-rule.html' with rule=schedules.repeat_rule %}
-<div class="field"><label for="repeat-time">{% translate "Send time" %}</label><input id="repeat-time" type="text" maxlength="32" autocomplete="off" spellcheck="false" autocapitalize="off" data-time-entry="time" data-repeat="time" aria-describedby="repeat-time-help">
-<p class="help" id="repeat-time-help">{% translate "In this computer's time zone, for example 9:00 AM. Every date uses the same time, even across a daylight-saving change." %}</p></div>
-<div class="field"><label for="repeat-email">{% translate "Email to send" %}</label><select id="repeat-email" data-repeat="email"></select>
-<p class="help" data-repeat-no-email hidden>{% translate "No reminder email is saved yet. Save one with the page and email templates first." %}</p></div>
-<p class="repeat-summary" id="repeat-summary" role="status" data-repeat-summary></p>
-<p>{% button type="button" variant="secondary" data-repeat-add disabled %}{% translate "Add these reminders" %}{% endbutton %}</p>
-<div data-repeat-dates></div>
-</fieldset>
+</div>

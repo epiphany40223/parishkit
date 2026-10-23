@@ -10,9 +10,9 @@ configuration rules require. Send dates and times there are shown and typed
 in the browser's time zone (#558; ``ScheduleSet`` with ``browser_times``),
 which the page posts as ``zone``. Its Review changes opens the shared review
 dialog (UX conventions, "Review dialog", #750) without a page load, and once
-the change is applied the dialog returns to the list, whose status line says
-what was applied. The review of every schedule change, from any of these
-pages, confirms here.
+the change is applied the page is redrawn in place from its own address
+(#1944), its status line saying what was applied. The review of every
+schedule change, from any of these pages, confirms here.
 """
 
 from django.core import signing
@@ -132,7 +132,9 @@ def _summary(window, schedules):
     A field's message links to its field; a schedule's own message (a rule
     between its fields) links to that schedule's editor, which the page
     script opens; the window's and the formset's rules between schedules
-    have no one place, so they are listed without a link. The review dialog
+    have no one place, so they are listed without a link. The formset's are
+    marked with the ``schedules`` scope, so the page script can drop them
+    once the New schedule pane's Mail type changes (R45). The review dialog
     stays shut and ui-v1.js shows this summary on the form (#750).
     """
     errors = []
@@ -144,7 +146,8 @@ def _summary(window, schedules):
 
     add(window)
     errors.extend(
-        {"message": text, "field_id": None} for text in schedules.non_form_errors()
+        {"message": text, "field_id": None, "scope": "schedules"}
+        for text in schedules.non_form_errors()
     )
     for form in schedules.forms:
         row = getattr(form, "schedule_row", None)
@@ -186,8 +189,8 @@ def _page(request, campaign, window, schedules, digest, *, editable, status=200)
             # settings, but POSTs with a query string are refused, so the
             # form posts to the clean path and carries the dates as fields.
             "post_url": request.path,
-            # The review dialog's Apply confirms here, then returns to the
-            # list (the address without proposed dates).
+            # The review dialog's Apply confirms here (the address without
+            # proposed dates); the page is then redrawn in place (#1944).
             "list_url": reverse("admin:schedule_settings"),
         }
         | ({"errors": _summary(window, schedules)} if status == 400 else {}),
@@ -198,6 +201,60 @@ def _page(request, campaign, window, schedules, digest, *, editable, status=200)
         # The refusal log's code for this page's own refusal (#1444).
         with_default_code(response)
     return response
+
+
+# The campaign window fields a New schedule pane's confirmation can name
+# beside what it adds: the proposed dates (and zone) from the address.
+CONFIRMED_WINDOW = frozenset({"start_date", "end_date", "timezone"})
+
+
+def pane_confirmation(review):
+    """The short confirmation's context when a date-change review only adds
+    the New schedule pane's schedule, else an empty dict.
+
+    The Administrator's R45 decision: such a review would only repeat the
+    pane, so the dialog is a short confirmation (UX conventions, "Review
+    dialog") naming what is added and any proposed date change. It holds
+    for one Initial invitation or reminder that sends once, or the
+    reminders of a Repeating pane, each with its send time, alongside at
+    most the proposed campaign dates. A change to a saved schedule, a
+    digest, a financial acknowledgement, a series, or sends that block the
+    change keep the full review. The signed preview, and its audit on
+    Apply, are the same either way.
+
+    Its ``added_sends`` is one schedule preview (components/occurrences.html,
+    UX conventions "Schedule previews") of every added schedule's send, the
+    lines of each one's own preview, in order.
+    """
+    changes = review["changes"]
+    shown = (
+        bool(changes)
+        and all(
+            change["operation"] == "add"
+            and change["after"]["date"]
+            and change["after"]["occurrences"]["state"] == "shown"
+            for change in changes
+        )
+        # Several additions come only from Repeating: all reminders.
+        and (
+            len(changes) == 1
+            or all(change["after"]["kind"] == "reminder" for change in changes)
+        )
+        and set(review["window_changes"]) <= CONFIRMED_WINDOW
+        and not review.get("series")
+        and not review.get("series_changes")
+        and not review["blocking"]
+        and bool(review["preview"])
+    )
+    if not shown:
+        return {}
+    previews = [change["after"]["occurrences"] for change in changes]
+    added = previews[0] | {
+        "days": [day for preview in previews for day in preview["days"]],
+        "more": None,
+        "dst_note": any(preview["dst_note"] for preview in previews),
+    }
+    return {"pane_confirmation": True, "added_sends": added}
 
 
 def _preview(
@@ -235,7 +292,9 @@ def _preview(
             status=400,
         )
     return render(
-        request, "stewardship/schedule-review.html", context | {"dates": True}
+        request,
+        "stewardship/schedule-review.html",
+        context | {"dates": True} | pane_confirmation(context),
     )
 
 

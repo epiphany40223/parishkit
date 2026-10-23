@@ -631,11 +631,13 @@
   // problems (data-schedule-gated), alongside the change gate (#1330).
   // The mail schedule pages hold theirs while a send date falls outside
   // the campaign (data-window-gated, #1787), and New scheduled email while
-  // its Repeat gives no date to add (data-repeat-gated, #1915).
+  // its Repeat gives no date to add (data-repeat-gated, #1915). The
+  // date-change review holds Review changes while its New schedule pane
+  // holds part of a schedule (data-pane-gated, #1944).
   const GATE_MARKS = [
     "data-time-gated", "data-acknowledgment-gated", "data-complete-gated", "data-change-gated",
     "data-live-stale-gated", "data-schedule-gated", "data-download-ended-gated",
-    "data-save-spent-gated", "data-window-gated", "data-repeat-gated",
+    "data-save-spent-gated", "data-window-gated", "data-repeat-gated", "data-pane-gated",
   ];
   const gated = (node) => GATE_MARKS.some((mark) => node.hasAttribute(mark));
   document.querySelectorAll("button[disabled], input[disabled]").forEach((node) => {
@@ -1019,7 +1021,11 @@
   };
   // Shared with the browser tests, which pin it to the server's reading.
   window.ParishLocalTime = Object.freeze({moment: localMoment});
-  document.querySelectorAll("form[data-schedule-entry], form[data-schedule-zoned]").forEach((form) => {
+  // Without a browser zone, a schedule form's send times cannot be read:
+  // say so and hold its buttons. Run for the page and again for a redrawn
+  // date-change review (#1944, parishkit:swap below).
+  const gateScheduleZones = (root) => root.querySelectorAll(
+    "form[data-schedule-entry], form[data-schedule-zoned]").forEach((form) => {
     const zone = form.querySelector("input[data-browser-zone]");
     if (zone && !zone.value) {
       const missing = form.querySelector("[data-zone-missing]");
@@ -1036,10 +1042,12 @@
       });
     }
   });
-  // Fill one schedule's fields (New and Edit's form,
-  // or one date-change review repeat
-  // row) from its data-schedule-local moment, in this browser's zone.
-  document.querySelectorAll("form[data-schedule-entry][data-schedule-local], "
+  gateScheduleZones(document);
+  // Fill one schedule's fields (New and Edit's form, or one date-change
+  // review row) from its data-schedule-local moment, in this browser's
+  // zone. Run for the page and again for a redrawn date-change review.
+  const localizeSchedules = (root) => root.querySelectorAll(
+    "form[data-schedule-entry][data-schedule-local], "
     + "[data-schedule-row][data-schedule-local]").forEach((scope) => {
     const moment = Date.parse(scope.dataset.scheduleLocal || "");
     if (Number.isNaN(moment)) return;
@@ -1065,6 +1073,7 @@
       if (time.dataset.timeKept) time.dataset.timeKept = parts.time;
     }
   });
+  localizeSchedules(document);
 
   // Everything above that binds to elements inside a table, so a table
   // swapped in by the in-place re-sort below behaves like one the page
@@ -5992,8 +6001,10 @@
         node.setAttribute("data-field-error", "");
       }
     });
+    // A summary an earlier refusal placed inside the form's region (below)
+    // goes too.
     document.querySelectorAll("[data-error-summary]").forEach((node) => {
-      if (!node.closest(REGIONS)) node.remove();
+      if (!node.closest(REGIONS) || node.hasAttribute("data-summary-placed")) node.remove();
     });
     const summary = parsed.querySelector("[data-error-summary]");
     if (line) {
@@ -6015,7 +6026,17 @@
     }
     const placed = document.importNode(summary, true);
     const heading = document.querySelector("main h1");
-    if (heading) heading.before(placed);
+    // A long form whose Review changes sits far below the heading names the
+    // element its summary follows (data-review-summary-after: Dates and mail
+    // schedules, whose New schedule pane is at the end, R45), so the summary
+    // shows, and takes focus, where the reader is, rather than jumping the
+    // page to the top; nothing above the button moves.
+    const after = form.dataset.reviewSummaryAfter
+      && document.getElementById(form.dataset.reviewSummaryAfter);
+    if (after) {
+      placed.setAttribute("data-summary-placed", "");
+      after.after(placed);
+    } else if (heading) heading.before(placed);
     else form.before(placed);
     wireSummaryLinks(placed.parentElement);
     placed.focus();
@@ -6193,7 +6214,7 @@
       // which holds Review until it clears by itself). Reserved lines stay,
       // hidden and empty; a list showFieldErrors placed is hidden too.
       document.querySelectorAll("[data-error-summary]").forEach((node) => {
-        if (!node.closest(REGIONS)) node.remove();
+        if (!node.closest(REGIONS) || node.hasAttribute("data-summary-placed")) node.remove();
       });
       form.querySelectorAll('[data-field-error=""]').forEach((node) => {
         if (node.hasAttribute("data-field-error")) clearFieldError(node);
@@ -6958,9 +6979,9 @@
   };
   window.ParishRecurrence = Object.freeze({expand: expandRecurrence});
 
-  // "Repeat a reminder" (#469 slice 1): the panel under the schedule rows
-  // lists, as the Admin types, every date its rule produces and why any of
-  // them will not be added, then appends one ordinary reminder row per date
+  // The date-change review's Sends Repeating (#469 slice 1; #1944): its rule
+  // lists, as the Admin types, every date it produces and why any of
+  // them will not be added; Review changes then posts one ordinary reminder row per date
   // that fits. The checks here only say early what the server will refuse
   // anyway (configuration.validate_campaign_sections stays the authority):
   // inside the campaign dates, strictly after the initial invitation, not at
@@ -7020,7 +7041,7 @@
     });
   };
   // Every date a repeat rule gives, and why any of them will not be added
-  // (shared by the date-change review repeat panel and New scheduled
+  // (shared by the date-change review's New schedule pane and New scheduled
   // email, #878).
   // ``existing`` is the Family mailings already scheduled, as {kind, date,
   // time} campaign-local text; ``first`` and ``last`` the campaign's dates;
@@ -7028,7 +7049,8 @@
   // time, or "" when it does not read yet; ``email`` whether an email is
   // chosen and ``emails`` whether any reminder email exists. Returns the
   // dates that fit (``ready``), one {text, reason} item per date or skipped
-  // month, the summary line and the list's heading; for a rule
+  // month, the summary line and the list's heading, and ``tally`` when the
+  // summary only counts what the heading already says; for a rule
   // expandRecurrence refuses, only its ``error`` (a REPEAT_ERRORS key),
   // which is shown at its fields (markRepeatRule, #1915), not in the
   // summary.
@@ -7036,9 +7058,13 @@
   // and passes ``at`` (localMoment), ``bounds`` (the campaign's [start, end)
   // moments) and each existing mailing's ``at`` moment, so the timed checks
   // compare moments, as the server does; ``first`` and ``last`` are then
-  // the browser-local days the campaign touches.
+  // the browser-local days the campaign touches. The New schedule pane
+  // passes ``judge`` instead (judgeSendWindow on the pane's window fields,
+  // as the send-date check judges a Once date): whether a date at the send
+  // time falls on a campaign day in the campaign's zone, or null when it
+  // cannot tell, when ``first`` and ``last`` decide as campaign days.
   const repeatDates = ({rule, existing, first, last, room, limit, sendTime, email, emails,
-    at, bounds}) => {
+    at, bounds, judge}) => {
     const ready = [];
     const items = [];
     const when = (date) => (at ? at(date, sendTime) : `${date} ${sendTime}`);
@@ -7047,14 +7073,22 @@
     // timed checks (after the initial invitation, already scheduled then)
     // cannot run, so no count is offered rather than one that is too high.
     let summary = "";
+    let tally = false; // whether the summary is just the count of dates
     const expanded = expandRecurrence(rule);
     if (expanded.error) return {ready, items, summary, heading: "", error: expanded.error};
     const sends = (mailing) => (at ? mailing.at : `${mailing.date} ${mailing.time}`);
     const initial = existing.find((mailing) => mailing.kind === "initial");
     const taken = new Set(existing.map(sends));
+    // A browser-local date on the campaign's edge can fall on the day
+    // before or after it in the campaign's zone, so the pane's judge
+    // decides once the send time reads.
+    const outside = (date) => {
+      const inside = judge && sendTime ? judge(date, sendTime) : null;
+      return inside === null ? date < first || date > last : !inside;
+    };
     expanded.dates.forEach((date) => {
       let reason = "";
-      if (date < first || date > last) reason = "outside the campaign dates";
+      if (outside(date)) reason = "outside the campaign dates";
       // Without a send time the remaining checks wait; the date is
       // listed but not counted.
       else if (!sendTime) reason = "";
@@ -7090,12 +7124,13 @@
     else {
       summary = `${plural(ready.length, "reminder")} to add${
         left ? `, ${left.toLocaleString("en-US")} not added` : ""}.`;
+      tally = true;
     }
     const heading = !sendTime ? "Dates this rule gives:"
       : ready.length
         ? `${ready.length.toLocaleString("en-US")} ${ready.length === 1 ? "reminder" : "reminders"} to add:`
         : "Nothing to add yet:";
-    return {ready, items, summary, heading};
+    return {ready, items, summary, heading, tally};
   };
   // Draw repeatDates' list: its heading, then one line per date, a date it
   // will not add saying why.
@@ -7218,122 +7253,6 @@
       });
     });
   };
-  const repeatPanel = ({form, panel, template, rows, maximum, status, count, addScheduleRow}) => {
-    const control = (name) => panel.querySelector(`[data-repeat="${name}"]`);
-    const list = panel.querySelector("[data-repeat-dates]");
-    const button = panel.querySelector("[data-repeat-add]");
-    const email = control("email");
-    // Only reminder emails, from the new-row template's own list.
-    const reminders = [...template.content.querySelectorAll(
-      '[data-schedule-field="template_version"] option[data-kind="reminder"]')];
-    email.replaceChildren(...reminders.map((option) => option.cloneNode(true)));
-    panel.querySelector("[data-repeat-no-email]").hidden = reminders.length > 0;
-    let ready = [];
-    // The summary is the panel's only live region.
-    const announce = quietLine(panel.querySelector("[data-repeat-summary]"));
-    // The Family mailings already in the form, as {kind, date, time} text.
-    const mailings = () => [...rows.querySelectorAll("[data-schedule-row]")].flatMap((row) => {
-      const value = (name) => row.querySelector(`[name$="-${name}"]`)?.value ?? "";
-      const kind = value("kind");
-      const deleted = row.querySelector('[name$="-DELETE"]')?.checked;
-      const time = parseTime(value("time"), value("time"));
-      if (deleted || !["initial", "reminder"].includes(kind) || !value("date") || time.error) return [];
-      return [{kind, date: value("date"), time: canonicalTime(time.value)}];
-    });
-    const windowDay = (name) => form.querySelector(`[name="window-${name}"]`)?.value
-      || panel.dataset[`repeat${name === "start_date" ? "Start" : "End"}`];
-    const summary = panel.querySelector("[data-repeat-summary]");
-    let pause; // the timer that shows an error typed into a date
-    let reason = ""; // the id of the line naming why Add waits
-    const update = (event) => {
-      window.clearTimeout(pause);
-      showRepeatParts(panel);
-      // The send time is a shared time entry field (data-time-entry, #1117):
-      // its reading, refusal, blur rewrite and Save gate are drawn by that
-      // code; the panel only reads the same value from it.
-      const time = readTimeEntry(control("time"));
-      const result = repeatDates({
-        rule: repeatRule(panel),
-        existing: mailings(),
-        first: windowDay("start_date"),
-        last: windowDay("end_date"),
-        room: Number.isFinite(maximum) ? maximum - count() : Infinity,
-        limit: maximum,
-        sendTime: time.error ? "" : canonicalTime(time.value),
-        email: Boolean(email.value),
-        emails: reminders.length > 0,
-      });
-      ready = result.ready;
-      // A rule error shows at its fields (#1915); typed into a date, after
-      // a pause. One the reader has not reached is said in the summary.
-      const show = !repeatTyping(event);
-      const {line, atField} = markRepeatRule(panel, result.error || "", show);
-      if (!show) pause = window.setTimeout(update, TIME_PAUSE);
-      announce(result.error && !atField ? REPEAT_ERRORS[result.error] : result.summary);
-      showRepeatDates(list, result);
-      button.disabled = !ready.length || !email.value;
-      // While Add waits it is named by its reason: the rule error's line,
-      // or the summary, which says what is missing (prerequisite gates).
-      if (reason) describeBy(button, reason, false);
-      reason = !button.disabled ? "" : (atField ? line.id : summary.id);
-      if (reason) describeBy(button, reason, true);
-      // Rewrite the label only when it changes. Pressing the button blurs the
-      // send time, whose change event runs this update between mousedown and
-      // mouseup; replacing the text node under the pointer then makes WebKit
-      // drop the click, so an unchanged label must leave the node alone.
-      const label = ready.length > 1
-        ? `Add these ${ready.length.toLocaleString("en-US")} reminders`
-        : ready.length ? "Add this reminder" : "Add these reminders";
-      if (button.textContent !== label) button.textContent = label;
-    };
-    button.addEventListener("click", () => {
-      const sendTime = canonicalTime(readTimeEntry(control("time")).value);
-      const dates = [...ready];
-      const added = dates.map((date) => {
-        const row = addScheduleRow();
-        const field = (name) => row.querySelector(`[name$="-${name}"]`);
-        field("kind").value = "reminder";
-        field("kind").dispatchEvent(new Event("change", {bubbles: true}));
-        field("date").value = date;
-        field("time").value = sendTime;
-        field("time").dispatchEvent(new Event("input", {bubbles: true}));
-        field("template_version").value = email.value;
-        // So the row's email description (#446) shows the chosen email.
-        field("template_version").dispatchEvent(new Event("change", {bubbles: true}));
-        return row;
-      });
-      gateTimes(form);
-      // The message does not name the rows' numbers: how a new row is
-      // labelled belongs to the row markup (it may have no number at all).
-      status.textContent = added.length === 1
-        ? "1 reminder added. Preview to check and save it."
-        : `${added.length.toLocaleString("en-US")} reminders added. Preview to check and save them.`;
-      update();
-      // Focus the first new row's date (its mail type is already chosen), or
-      // its first field if the row has no date field.
-      (added[0].querySelector('[name$="-date"]')
-        ?? added[0].querySelector("input, select, textarea"))?.focus();
-    });
-    panel.addEventListener("input", update);
-    panel.addEventListener("change", update);
-    wireRepeatControls(panel, update);
-    // Edits to the rows (an initial invitation's time, a removed row) change
-    // which dates fit.
-    rows.addEventListener("input", () => update());
-    rows.addEventListener("change", () => update());
-    form.addEventListener("schedules-changed", () => update());
-    form.querySelectorAll('[name^="window-"]').forEach((field) => {
-      field.addEventListener("change", () => update());
-    });
-    // The browser can restore the rule on Back (#563).
-    window.addEventListener("pageshow", () => update());
-    // Prefill the dates with the campaign's own, so the first list is useful.
-    control("from").value ||= windowDay("start_date") || "";
-    control("until").value ||= windowDay("end_date") || "";
-    panel.hidden = false;
-    update();
-  };
-
   // Mail schedule rows: show only the fields the chosen mail type uses (the
   // row's data-schedule-fields is schedule_forms.FIELDS), and offer only
   // emails of that type. A field hidden here is also cleared, so a stale date
@@ -7408,7 +7327,7 @@
   // Each editor's opener, for the send date's window check (#1787), which
   // opens an editor holding a refused date as a refused Review would.
   const scheduleEditorOpeners = new WeakMap();
-  document.querySelectorAll("[data-schedule-table]").forEach((table) => {
+  const wireScheduleTable = (table) => {
     const form = table.closest("form");
     const editors = [];
     table.querySelectorAll("tr[data-schedule-choose]").forEach((row) => {
@@ -7467,7 +7386,10 @@
       });
     };
     reveal();
-    window.addEventListener("pageshow", reveal);
+    // One pageshow listener serves every table (below); one an Apply's
+    // redraw replaced (#1944) is dropped, so its detached form is not kept.
+    tableReveals = tableReveals.filter((item) => item.table.isConnected);
+    tableReveals.push({table, reveal});
     // A Review refused in the review dialog's flow (#750) leaves this form
     // in place: each editor the refused answer drew open (one with an error
     // or a change, as the server opens them) opens here too, so its marked
@@ -7482,87 +7404,289 @@
         if (opened(editor)) editor.hidden = false;
       });
     });
-  });
+  };
+  let tableReveals = []; // {table, reveal} for each wired schedules table
+  document.querySelectorAll("[data-schedule-table]").forEach(wireScheduleTable);
+  window.addEventListener("pageshow", () => tableReveals.forEach(({table, reveal}) => {
+    if (table.isConnected) reveal();
+  }));
 
-  // "Add another schedule" clones the formset's empty form (rendered in a
-  // <template> with __prefix__ names) as the next index and raises
-  // TOTAL_FORMS, so several new schedules save in one submission and the
-  // server validates them all together as before. Rows added here can be
-  // removed again before saving; later added rows are renumbered so the
-  // indexes stay contiguous. Without this script the button stays hidden and
-  // each save offers one blank row.
-  document.querySelectorAll("[data-schedule-template]").forEach((template) => {
-    const form = template.closest("form");
+  // The date-change review's New schedule pane (#1944; admin-portal spec,
+  // "New schedule on the date-change review"; UX conventions, "Schedules":
+  // Once or Repeating, one schedule at a time). The pane is the formset's
+  // first new row (schedule-fields.html), drawn with only its Mail type
+  // shown. For a Reminder it shows Sends (Once | Repeating); Repeating
+  // hides and disables the row's send date (keeping its value for Once) and
+  // shows the shared repeat rule, and the row's own Send time and Email to
+  // send serve both. An Initial invitation is always Once.
+  //
+  // Review changes covers the pane's one schedule. Once posts the pane's
+  // own fields, an ordinary new row. Repeating posts, in the pane's place,
+  // one ordinary reminder row per date the rule gives (with the checks of
+  // repeatDates): the form's data is rewritten as it is gathered (the
+  // formdata event), so the server reviews and applies ordinary reminders
+  // and the dialog lists each date. Sends is dropped from the data, and the
+  // rule's controls have no names, so neither is ever posted. While the pane
+  // holds part of a schedule, Review changes waits (data-pane-gated), so
+  // nothing typed there is reviewed unseen or dropped. Once applied, the
+  // page is redrawn in place and the fresh pane, empty again, is wired
+  // anew (parishkit:swap, below). Everything is worked out again on
+  // pageshow, for values the browser restores.
+  const paneHints = new WeakMap(); // form -> Review's visually hidden reason
+  const INITIAL_TAKEN = "An Initial invitation is already scheduled. Change or delete it from the table instead.";
+  const wireSchedulePane = (pane) => {
+    const form = pane.closest("form");
     const total = form?.querySelector('input[name="schedules-TOTAL_FORMS"]');
+    const saved = form?.querySelector('input[name="schedules-INITIAL_FORMS"]');
     const maximum = Number(form?.querySelector('input[name="schedules-MAX_NUM_FORMS"]')?.value);
-    const rows = form?.querySelector("[data-schedule-rows]");
-    const addRow = form?.querySelector("[data-schedule-add-row]");
-    const add = addRow?.querySelector("[data-schedule-add]");
-    const status = form?.querySelector("[data-schedule-status]");
-    if (!total || !rows || !add || !status) return;
-    const first = Number(total.value); // The server's rows keep their indexes.
-    const added = [];
-    const renumber = (row, index) => {
-      // aria-controls: field toggletips point at their bubble's id.
-      row.querySelectorAll("[name], [id], [for], [aria-describedby], [aria-controls]").forEach((node) => {
-        ["name", "id", "for", "aria-describedby", "aria-controls"].forEach((attribute) => {
-          const value = node.getAttribute(attribute);
-          if (value) node.setAttribute(attribute,
-            value.replace(/schedules-(?:\d+|__prefix__)-/g, `schedules-${index}-`));
+    const control = (name) => pane.querySelector(`[data-schedule-field="${name}"] :is(input, select)`);
+    const kind = control("kind");
+    const date = control("date");
+    const time = control("time");
+    const email = control("template_version");
+    const sends = pane.querySelector("[data-schedule-sends]");
+    const rule = pane.querySelector("[data-repeat-panel]");
+    const end = pane.querySelector("[data-schedule-pane-line]");
+    const summary = pane.querySelector("[data-repeat-summary]");
+    const dates = pane.querySelector("[data-repeat-dates]");
+    if (!form || !total || !saved || !kind || !date || !time || !email || !sends || !rule
+      || !end || !summary || !dates) return;
+    const radios = [...sends.querySelectorAll("input[type=radio]")];
+    const dateGroup = date.closest("[data-schedule-field]");
+    // The pane is row INITIAL_FORMS, the first after the saved ones.
+    const index = Number(saved.value);
+    const value = (row, name) => row.querySelector(`[name$="-${name}"]`);
+    // The saved rows the server counts toward its limit, less those marked
+    // Delete; the pane's schedule (or its reminders) comes on top.
+    const count = () => index
+      - form.querySelectorAll('[data-schedule-rows] [name$="-DELETE"]:checked').length;
+    const repeating = () => kind.value === "reminder"
+      && radios.find((radio) => radio.checked)?.value === "repeat";
+    // The pane's schedule in words: "Reminder, Monday, November 2, 2026 at
+    // 9:00 AM: <email>", the email by its name without its "sent by" note.
+    const describe = () => {
+      const reading = readTimeEntry(time);
+      const words = (select) => select?.selectedOptions[0]?.textContent.trim() || "";
+      const when = date.value
+        ? `${spokenDay(date.value)}${reading.error ? "" : ` at ${twelveHourTime(reading.value)}`}` : "";
+      return `${words(kind)}, ${when}: ${words(email).split(" — ")[0]}`;
+    };
+    // The Family mailings already in the form (the saved rows), as {kind,
+    // date, time} browser-local text, for the rule's checks.
+    const mailings = () => [...form.querySelectorAll("[data-schedule-row]:not([data-schedule-pane])")]
+      .flatMap((row) => {
+        const type = value(row, "kind")?.value ?? "";
+        const day = value(row, "date")?.value ?? "";
+        const reading = parseTime(value(row, "time")?.value ?? "", value(row, "time")?.value ?? "");
+        if (value(row, "DELETE")?.checked || !["initial", "reminder"].includes(type) || !day
+          || reading.error) return [];
+        return [{kind: type, date: day, time: canonicalTime(reading.value)}];
+      });
+    // Whether a saved row is an Initial invitation not marked Delete, read
+    // from its fixed kind alone, so a date being retyped still counts.
+    const initialSaved = () => [...form.querySelectorAll("[data-schedule-row]:not([data-schedule-pane])")]
+      .some((row) => value(row, "kind")?.value === "initial" && !value(row, "DELETE")?.checked);
+    // The campaign dates being proposed, or the drawn ones.
+    const windowDay = (name) => form.querySelector(`[name="window-${name}"]`)?.value
+      || rule.dataset[`repeat${name === "start_date" ? "Start" : "End"}`];
+    const announce = quietLine(summary);
+    const gate = {mark: "data-pane-gated", hints: paneHints, suffix: "pane-hint"};
+    const wait = pane.querySelector("#schedule-pane-wait")?.textContent.trim() || "";
+    let ready = []; // the send dates Review would post: one for Once
+    let pause; // the timer that shows an error typed into a rule date
+    const update = (event) => {
+      window.clearTimeout(pause);
+      const chosen = Boolean(kind.value);
+      const reminder = kind.value === "reminder";
+      const repeat = repeating();
+      // Each part shows only once its choice is made (conditional fields);
+      // a hidden Sends is disabled.
+      sends.hidden = !reminder;
+      radios.forEach((radio) => { radio.disabled = !reminder; });
+      rule.hidden = !repeat;
+      end.hidden = !chosen;
+      // The date is the mail type's to show (scheduleRow); Repeating
+      // replaces it, keeping its value for Once, and disables it so the
+      // send-date check and the post leave it out. With no mail type it is
+      // hidden and empty, and disabled too: WebKit can keep a date control
+      // emptied by script "invalid" for the form's own checks, which would
+      // stop Review over a field the reader cannot see.
+      if (chosen) dateGroup.hidden = repeat;
+      date.disabled = repeat || !chosen;
+      ready = [];
+      let text = "";
+      let taken = false; // an Initial invitation is already scheduled
+      if (repeat) {
+        showRepeatParts(rule);
+        // The shared time entry's own reading (data-time-entry, #1117).
+        const reading = readTimeEntry(time);
+        // Each date is judged in the campaign's zone, as the send-date
+        // check judges a Once date and the server each posted row.
+        const {start, end, zone} = sendWindow(form);
+        const result = repeatDates({
+          rule: repeatRule(rule),
+          existing: mailings(),
+          first: windowDay("start_date"),
+          last: windowDay("end_date"),
+          room: Number.isFinite(maximum) ? maximum - count() : Infinity,
+          limit: maximum,
+          sendTime: time.value.trim() && !reading.error ? canonicalTime(reading.value) : "",
+          email: Boolean(email.value),
+          emails: [...email.options].some((option) => option.dataset.kind === "reminder"),
+          judge: (day, clock) => judgeSendWindow({date: day, time: clock, start, end, zone}),
         });
+        // A rule error shows at its fields (#1915); typed into a date, after
+        // a pause. One the reader has not reached is said in the summary.
+        const show = !repeatTyping(event);
+        const marked = markRepeatRule(rule, result.error || "", show);
+        if (!show) pause = window.setTimeout(update, TIME_PAUSE);
+        // Once the rule gives reminders to add, the list's heading says how
+        // many, so the line does not repeat it (R45); it still says what
+        // is missing or wrong.
+        text = result.error && !marked.atField ? REPEAT_ERRORS[result.error]
+          : result.tally ? "" : result.summary;
+        showRepeatDates(dates, result);
+        if (email.value) ({ready} = result);
+      } else {
+        markRepeatRule(rule, "", true);
+        dates.replaceChildren();
+        if (chosen) {
+          const reading = readTimeEntry(time);
+          // The first thing the pane still needs, or what Review will add.
+          // A campaign has one Initial invitation (the server's one_initial
+          // rule, which stays the safeguard), so a second is never offered
+          // for Review (prerequisite gates; R45).
+          if (kind.value === "initial" && initialSaved()) {
+            text = INITIAL_TAKEN;
+            taken = true;
+          } else if (!date.value) text = "Enter the send date.";
+          else if (!date.validity.valid) text = date.validationMessage;
+          else if (!time.value.trim() || reading.error) text = "Enter a send time that can be read, for example 9:00 AM.";
+          else if (!email.value) text = "Choose the email to send.";
+          else {
+            text = `Ready to add: ${describe()}.`;
+            ready = [date.value];
+          }
+        }
+      }
+      announce(text);
+      // Review changes waits while the pane holds part of a schedule, or a
+      // schedule the campaign cannot have, named by its reason.
+      holdFormButtons(form, gate, chosen && !ready.length ? (taken ? text : wait) : "");
+    };
+    // At once, so a part a choice shows or hides changes with it (the row's
+    // own script shows the date for a Reminder), and again after the other
+    // listeners of the same event (the send-date check sets the date's
+    // validity, the time entry its reading), so the gate reads what they
+    // decided.
+    let later;
+    const soon = (event) => {
+      update(event);
+      window.clearTimeout(later);
+      later = window.setTimeout(() => update(event), 0);
+    };
+    // Review's data: Sends never goes; for Repeating, the pane's row is
+    // replaced by one reminder row per date, numbered on from the pane's
+    // index, each with the pane's fields, its own date and the time as read.
+    let posted = []; // the dates the last Review posted for Repeating
+    form.addEventListener("formdata", (event) => {
+      const data = event.formData;
+      data.delete("schedule_sends");
+      posted = repeating() ? [...ready] : [];
+      if (!posted.length) return;
+      const prefix = `schedules-${index}-`;
+      const fields = [...data.entries()].filter(([name]) => name.startsWith(prefix));
+      fields.forEach(([name]) => data.delete(name));
+      const sendTime = canonicalTime(readTimeEntry(time).value);
+      ready.forEach((day, offset) => {
+        const row = `schedules-${index + offset}-`;
+        fields.forEach(([name, text]) => data.append(row + name.slice(prefix.length), text));
+        data.set(`${row}date`, day);
+        data.set(`${row}time`, sendTime);
       });
-    };
-    const refresh = () => {
-      added.forEach((row, offset) => renumber(row, first + offset));
-      total.value = String(first + added.length);
-      add.disabled = Number.isFinite(maximum) && first + added.length >= maximum;
-    };
-    const addScheduleRow = () => {
-      const row = template.content.firstElementChild.cloneNode(true);
-      // Until a field is filled in, a new row is no change to review (#750).
-      row.setAttribute("data-change-blank", "");
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "button-secondary";
-      remove.textContent = "Remove this new schedule";
-      remove.addEventListener("click", () => {
-        added.splice(added.indexOf(row), 1);
-        cancelTimeChecks(row);
-        row.remove();
-        refresh();
-        gateTimes(form);
-        status.textContent = "New schedule removed.";
-        add.focus();
-        form.dispatchEvent(new Event("schedules-changed", {bubbles: true}));
-      });
-      row.append(remove);
-      rows.append(row);
-      added.push(row);
-      refresh();
-      scheduleRow(row);
-      wireTimeEntry(row);
-      return row;
-    };
-    add.addEventListener("click", () => {
-      const row = addScheduleRow();
-      status.textContent = "New schedule added. Choose its mail type.";
-      row.querySelector('[data-schedule-field="kind"] select')?.focus();
+      data.set(total.name, String(index + ready.length));
     });
-    addRow.hidden = false;
-    const panel = form.querySelector("[data-repeat-panel]");
-    if (panel) repeatPanel({form, panel, template, rows, maximum, status,
-      // Saved rows marked Delete do not count toward the limit, as on the
-      // server.
-      count: () => first + added.length
-        - rows.querySelectorAll('[name$="-DELETE"]:checked').length,
-      addScheduleRow});
-  });
+    // A refused Review of a Repeating schedule: the server judged the
+    // posted reminder rows, which the page never draws (only the pane's
+    // row, its send date hidden). Each summary link to one of them is
+    // pointed at what the pane shows instead: a send date at the rule's
+    // Until, any other field at the pane's own. Each refused date's words,
+    // led by that date, show in Until's error line, which marks Until as
+    // the server marks a field: until its first edit (wireValidity). The
+    // summary is placed under Review changes, with focus (showFieldErrors,
+    // data-review-summary-after); nothing else moves the page.
+    form.addEventListener("review-refused", () => {
+      if (!posted.length) return;
+      const until = rule.querySelector('[data-repeat="until"]');
+      const line = until && document.getElementById(`${until.id}_error`);
+      if (!line) return;
+      const words = [];
+      document.querySelectorAll('[data-error-summary] a[href^="#id_schedules-"]').forEach((link) => {
+        const [, row, name] = link.getAttribute("href").match(/^#id_schedules-(\d+)-(.+)$/) || [];
+        const offset = Number(row) - index;
+        if (!name || offset < 0 || offset >= posted.length) return;
+        const target = name === "date" ? until : pane.querySelector(`#id_schedules-${index}-${name}`);
+        if (target) link.setAttribute("href", `#${target.id}`);
+        if (name === "date") words.push(`${spokenDay(posted[offset])}: ${link.textContent.trim()}`);
+      });
+      // The pane's own (hidden) send date keeps no mark of a date it did
+      // not post.
+      if (date.hasAttribute("data-field-error")) clearFieldError(date);
+      if (!words.length) return;
+      line.replaceChildren(...words.map((text) => {
+        const item = document.createElement("li");
+        item.textContent = text;
+        return item;
+      }));
+      line.hidden = false;
+      until.setAttribute("aria-invalid", "true");
+      until.setAttribute("data-field-error", "");
+      describeBy(until, line.id, true);
+    });
+    // A new Mail type is a new schedule: a refused Review's marks in the
+    // pane, and the summary's rules between schedules (no field of their
+    // own, such as one Initial invitation only; data-error-scope, from
+    // schedule_views._summary), no longer apply, so they go, and the
+    // summary with them once it lists nothing (R45).
+    kind.addEventListener("change", () => {
+      pane.querySelectorAll('[data-field-error=""]').forEach(clearFieldError);
+      document.querySelectorAll('[data-error-summary] li[data-error-scope="schedules"]')
+        .forEach((item) => item.remove());
+      // A Repeating refusal's links were pointed at the pane's fields
+      // (review-refused, below), which the page never marked: they go too.
+      document.querySelectorAll('[data-error-summary] li a[href^="#"]').forEach((link) => {
+        if (pane.contains(document.getElementById(link.hash.slice(1)))) link.closest("li")?.remove();
+      });
+      document.querySelectorAll("[data-error-summary]").forEach((node) => {
+        if (!node.querySelector("li")) node.remove();
+      });
+    });
+    form.addEventListener("input", soon);
+    form.addEventListener("change", soon);
+    wireRepeatControls(rule, update);
+    // The browser can restore the pane's values on Back (#563): one
+    // pageshow listener serves every pane (below); one an Apply's redraw
+    // replaced is dropped, so its detached form is not kept.
+    paneUpdates = paneUpdates.filter((item) => item.pane.isConnected);
+    paneUpdates.push({pane, update});
+    // Start the rule at the campaign's dates, so its first list is useful.
+    rule.querySelector('[data-repeat="from"]').value ||= windowDay("start_date") || "";
+    rule.querySelector('[data-repeat="until"]').value ||= windowDay("end_date") || "";
+    update();
+  };
+  let paneUpdates = []; // {pane, update} for each wired New schedule pane
+  const wireSchedulePanes = (root) => {
+    root.querySelectorAll("[data-schedule-pane]").forEach(wireSchedulePane);
+  };
+  window.addEventListener("pageshow", () => paneUpdates.forEach(({pane, update}) => {
+    if (pane.isConnected) update();
+  }));
 
   // New scheduled email's Repeat (#878, schedule-repeat-entry.html): for a
   // Reminder, a Repeat checkbox swaps the send date for a repeat rule. The
   // page's own send time and Email to send apply to every date. As the Admin
   // types, the dates the rule gives are listed with the same checks as the
-  // date-change review repeat panel (repeatDates), against the saved
+  // date-change review's New schedule pane (repeatDates), against the saved
   // invitations and
   // reminders the page carries (data-repeat-mailings) and the schedules
   // still free (data-repeat-room). Dates and the time are this browser's
@@ -7860,7 +7984,32 @@
     if (form) checkSendWindows(form);
   }));
   window.addEventListener("pageshow", () => sendWindowForms().forEach((form) => checkSendWindows(form)));
+  // The page's New schedule panes are wired here, once judgeSendWindow and
+  // sendWindow (which their rule's dates use) are defined, and just before
+  // the send-date checks, the order the swap below keeps.
+  wireSchedulePanes(document);
   sendWindowForms().forEach((form) => checkSendWindows(form));
+  // The date-change review is redrawn in place once a change is applied
+  // (#1944; review dialog, redrawFrom): its fresh form is wired as the
+  // page's own was at load, in the same order (the zone, the saved rows'
+  // browser-local values, each row's fields, the table's editors, the New
+  // schedule pane, the send-date checks). The swap's own enhancement
+  // (enhanceSwapped) has already wired its time entries and zone field, so
+  // the times localized here are read again for their "Reads as" lines.
+  document.addEventListener("parishkit:swap", (event) => {
+    const root = event.target;
+    if (!(root instanceof Element) || !root.querySelector("form[data-schedule-zoned]")) return;
+    gateScheduleZones(root);
+    localizeSchedules(root);
+    root.querySelectorAll("[data-schedule-local] [data-time-entry]").forEach((field) => {
+      if (timeParts.has(field)) checkTimeField(field, {quiet: Boolean(serverTimeError(field))});
+    });
+    root.querySelectorAll("form[data-schedule-zoned]").forEach((form) => gateTimes(form));
+    root.querySelectorAll("[data-schedule-row]").forEach(scheduleRow);
+    root.querySelectorAll("[data-schedule-table]").forEach(wireScheduleTable);
+    wireSchedulePanes(root);
+    root.querySelectorAll("form[data-schedule-zoned]").forEach((form) => checkSendWindows(form));
+  });
 
   // Plain multi-select lists: say how many items are chosen, since a long list
   // (a parish may have hundreds of Ministries) hides most of its selection.

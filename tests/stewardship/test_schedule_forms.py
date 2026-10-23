@@ -84,6 +84,24 @@ def test_a_proposed_date_carries_the_saved_one_for_the_change_gate():
     assert "data-saved-value" not in str(plain["end_date"])
 
 
+@pytest.mark.parametrize(
+    ("proposed", "expected"),
+    [
+        (None, False),
+        ({"end_date": "2054-10-20"}, True),
+        # Once Apply saves the dates, the same address proposes nothing new
+        # (#1944), so the page shows no "not saved" notice.
+        ({"end_date": "2054-10-31"}, False),
+        ({"start_date": "2054-10-01", "end_date": "2054-10-31"}, False),
+    ],
+)
+def test_proposed_dates_are_a_proposal_only_while_one_differs(proposed, expected):
+    """``proposed`` says whether any proposed date differs from the saved one."""
+    owner = campaign()
+    form = ScheduleWindow(previous=owner["values"], editable=True, proposed=proposed)
+    assert form.proposed is expected
+
+
 def test_schedule_window_financial_overlap_requires_explicit_acknowledgement():
     """A draft date extension cannot silently move into its financial period."""
     owner = campaign(modules=["financial"], financial=financial())
@@ -527,7 +545,8 @@ def test_saved_mail_type_is_fixed_and_offers_only_its_own_emails():
 
 
 def new_rows(owner, saved, templates, rows):
-    """The saved rows plus several new rows, as "Add another schedule" posts."""
+    """The saved rows plus several new rows, as the New schedule pane's
+    Repeating posts them in its place, one reminder row per date (#1944)."""
     data = data_for(saved, total=len(saved) + len(rows))
     for offset, fields in enumerate(rows):
         for name in ("kind", "date", "time", "weekday", "template_version"):

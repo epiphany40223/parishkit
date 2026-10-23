@@ -1,0 +1,14 @@
+{% load i18n stewardship %}{% comment %}
+The end of the date-change review's New schedule pane (#1944), drawn by
+schedule-row.html with pane, hidden until a mail type is chosen. The
+summary line (the only live region; two lines reserved, so its words never
+move what follows) says what the pane still needs, what Review changes
+will add, or, for Repeating, the rule's summary. While the pane holds
+part of a schedule, Review changes waits, and the help after the line
+says how to review without it (its visually hidden reason,
+holdFormButtons, has the same words). For Repeating, the dates the rule
+gives are listed last, so a growing list never moves anything above it.
+{% endcomment %}<div class="schedule-pane-line" data-schedule-pane-line hidden>
+<p class="repeat-summary" id="repeat-summary" role="status" data-repeat-summary></p>
+<p class="help" id="schedule-pane-wait">{% translate "Review changes includes this schedule once it is complete. To review without it, set Mail type back to Choose a mail type." %}</p>
+<div data-repeat-dates></div></div>
