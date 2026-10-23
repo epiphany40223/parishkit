@@ -741,6 +741,11 @@ class Worklist:
     address: str = ""
     # What Add's dialog says (a stream whose Add a Family sees says so).
     add_body: str = ADD_BODY
+    # Whether the answer to a decision is this page, drawn from directly
+    # (data-confirm-answer-page): a review worklist's is. The Family hub
+    # (#2064) posts a row's decision to the stream's page and then redraws
+    # its own tab from the tab's address, so its dialogs set it false.
+    answer_page: bool = True
 
     max_bulk = MAX_BULK
 
@@ -800,6 +805,13 @@ class Worklist:
             (kind, f"{self.prefix}-{kind}", f"{self.prefix}-{kind}-dialog")
             for kind in kinds
         ]
+
+    @property
+    def acting(self):
+        """Whether any row offers or shows an action to this reader, so a
+        page drawing only some rows (the Family hub, #2064) draws an Actions
+        column and the rows' dialogs."""
+        return any(row["icons"] for row in self.rows)
 
     @property
     def selectable(self):
