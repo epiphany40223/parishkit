@@ -852,6 +852,21 @@ def test_the_retirement_guard_names_the_real_retire_digests_migration():
     assert "retire" in names[0] and "digest" in names[0]
 
 
+def test_the_retirement_guard_names_the_real_conversion_migration():
+    """The guard's applied-migration probe must name a migration that exists.
+
+    The query hard-codes the report email conversion's Django migration; a
+    renumber of it would make every converted database answer f, so the
+    guard would refuse every upgrade (closed, but disruptive).
+    """
+    names = re.findall(
+        r"app='(stewardship_[a-z]+)' AND name='(\d{4}_[a-z_]+)'", HOST.read_text()
+    )
+    assert names == [("stewardship_reports", "0041_report_conversion")]
+    migrations = ROOT / "src/parishkit/stewardship/reports/migrations"
+    assert (migrations / f"{names[0][1]}.py").is_file()
+
+
 @pytest.mark.parametrize("converted", ["f", 'ERROR:  relation "x" does not exist'])
 def test_the_digest_retirement_refuses_an_unconverted_database_first(
     tmp_path, converted

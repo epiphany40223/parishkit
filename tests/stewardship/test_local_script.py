@@ -2380,6 +2380,17 @@ def test_a_data_switch_keeps_the_code_and_restores_only_the_data(tmp_path):
     assert "http://localhost:8025" in output
 
 
+def test_the_switch_names_the_real_conversion_and_retirement_migrations():
+    """plan_switch's #1834 check names migrations that exist, as the host half does."""
+    text = VM_SCRIPT.read_text()
+    migrations = ROOT / "src/parishkit/stewardship/reports/migrations"
+    for variable in ("conversion_migration", "retirement_migration"):
+        name = re.search(rf"^{variable}=(\d{{4}}_[a-z_]+)$", text, re.M).group(1)
+        assert (migrations / f"{name}.py").is_file(), variable
+    conversion = re.search(r"^conversion_migration=(\S+)$", text, re.M).group(1)
+    assert f"name='{conversion}'" in HOST_SCRIPT.read_text()
+
+
 @pytest.mark.parametrize(
     "snapshot, env, reason",
     [
