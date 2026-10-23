@@ -794,9 +794,14 @@ fi
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/pk-admin.XXXXXX")
 # A terminal whose echo was turned off for a key gets it back on every exit
-# path, an interruption's included (its handler ends with `exit`).
+# path, an interruption's included (its handler ends with `exit`). The
+# removal tolerates failure: after an interruption, a process of the run the
+# wrapper cannot or does not stop (the docker client writing its status, the
+# key reader its marks) may add a file while rm empties the directory, and
+# under `set -e` a failed command here would replace the exit status (1, not
+# 130). At worst that late file is left in the emptied directory.
 tty_state=""
-trap 'if [ -n "$tty_state" ]; then stty "$tty_state" 2>/dev/null || :; fi; rm -rf "$work"' EXIT
+trap 'if [ -n "$tty_state" ]; then stty "$tty_state" 2>/dev/null || :; fi; rm -rf "$work" 2>/dev/null || :' EXIT
 
 # A watch (`--watch SECONDS` or `--watch=SECONDS`, the number optionally
 # signed with `+`, before any `--`) gets a
