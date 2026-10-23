@@ -355,6 +355,10 @@
     seconds: (p) => `“${p.entry}” has seconds: these times are to the minute, so leave the seconds out.`,
     too_many: (p) => `Enter at most ${p.count} different times.`,
   };
+  // The complete gate's hint for an entry that cannot be read (#2082):
+  // short enough for one line at 320 px, as the refusal itself shows at the
+  // field.
+  const TIME_HINT = "Fix the time above.";
   const timeError = (code, params = {}) => ({error: code, message: TIME_MESSAGES[code](params)});
   // White space spelled out, the server's time_entry.WHITESPACE (which is
   // JavaScript's \s); ASCII digits only, as on the server.
@@ -4266,8 +4270,15 @@
         ? (unchanged.dataset.unchangedHint || "Change the value to save it.")
         : missing
         ? (missing.dataset.clientError
-          // An unreadable time entry (#398) or DUID list (#1577) says why
-          // itself.
+          // An unreadable time entry (#398) points at the field, whose
+          // reading line already gives the whole refusal: repeating it here
+          // could wrap onto more lines on a phone and move what follows the
+          // hint as the Admin types (#2082). The fixed words keep the hint
+          // to one line at 320 px. A time field's other refusal (its
+          // browser zone, data-browser-zone-field) and a DUID list (#1577)
+          // say why themselves.
+          || (missing.matches("[data-time-entry]") && readTimeField(missing).invalid
+            && TIME_HINT)
           || (missing.matches("[data-time-entry], [data-duid-list], [data-distinct]")
             && missing.validity.customError && missing.validationMessage)
           || (empty && missing.dataset.emptyHint)

@@ -3782,6 +3782,15 @@ its time keeps that time when it is posted back unchanged.
   shares the buttons' line, so their labels do not wrap. A field hidden by
   another choice (a mail type that takes no time, a refresh frequency without
   set times) does not hold Save, and a `formnovalidate` button stays usable.
+- On a form whose buttons wait for every field (`data-require-complete`, see
+  [Prerequisite gates](#prerequisite-gates)), the form's own visible hint
+  says only "Fix the time above." for an entry that cannot be read, and the
+  refusal itself stays under the field. Repeated in the hint, a refusal
+  wraps onto two lines or more at 320 px (it quotes the entry), which moved
+  the controls after the hint as the Admin typed; the fixed words fit one
+  line, so a reserved hint line holds them without blank space on a desktop
+  ([#2082](https://github.com/epiphany40223/parishkit/issues/2082);
+  `test_time_gate_hint.py` checks every time form at 320 px).
 - A list field (the refresh schedule's Edit as text lists, a multi-line
   `textarea`) reads each entry. Entries are separated by commas, semicolons,
   spaces or new lines (a one-line list box drops line breaks from pasted
