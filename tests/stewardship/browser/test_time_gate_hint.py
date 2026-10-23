@@ -58,11 +58,24 @@ def report_email_editor(page):
     return page.locator("#report-time")
 
 
+def wizard_suggested_reports(page):
+    """The campaign wizard's suggested report emails (#2038), Daily report's
+    time, with Weekly report's time readable (so the complete gate's hint
+    has only Daily's refusal to name)."""
+    page.locator("#suggested-report_weekly_time").fill("8:30 AM")
+    return page.locator("#suggested-report_daily_time")
+
+
 FORMS = [
     pytest.param("/schedule-new", new_scheduled_email, id="new-scheduled-email"),
     pytest.param("/schedule-edit", edit_scheduled_email, id="edit-scheduled-email"),
     pytest.param("/schedule-editor-mail", date_change_pane, id="date-change-pane"),
     pytest.param("/report-email-edit", report_email_editor, id="report-email-editor"),
+    pytest.param(
+        "/campaign-stepper-suggested",
+        wizard_suggested_reports,
+        id="wizard-suggested-reports",
+    ),
 ]
 
 # The bottom of the field's reading line, and the top of every visible
