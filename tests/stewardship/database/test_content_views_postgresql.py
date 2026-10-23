@@ -407,6 +407,40 @@ def test_content_stale_base_noop_and_route_scope(auth_service, google):
     assert post(browser, catalog, values(store)).status_code == 400
 
 
+@pytest.mark.parametrize("error", [KeyError, IndexError])
+def test_editor_defect_is_a_server_error_not_an_unknown_page(
+    auth_service, google, monkeypatch, error
+):
+    """A KeyError or IndexError inside the editor is a 500, never a 404 (#2034).
+
+    Both are LookupError subclasses, the view's "not found" type, so a
+    broad catch once answered a defect (#2029) as an unknown page. A real
+    unknown slot or email revision is still a 404.
+    """
+    from parishkit.stewardship.accounts import content_views
+
+    _, catalog, _ = setup(store := auth_service.store)
+    browser, _ = signed_in()
+    browser.raise_request_exception = False
+    assert browser.get(catalog + "page/financial/").status_code == 404
+    unknown = f"{catalog}email/confirmation/{uuid4()}/"
+    assert browser.get(unknown).status_code == 404
+
+    def failed(*args):
+        """Simulate a defect inside the editor, not a missing page."""
+        raise error("PRIVATE-CONTENT-FAILURE")
+
+    monkeypatch.setattr(content_views, "_shows_banner", failed)
+    for response in (
+        browser.get(catalog + "email/confirmation/"),
+        post(browser, catalog + "email/confirmation/", values(store)),
+    ):
+        assert response.status_code == 500
+        assert response.content == b"The request could not be completed.\n"
+    # The intentional not-found answers are unchanged by the defect path.
+    assert browser.get(unknown).status_code == 404
+
+
 def test_receipt_template_edits_one_selection_and_retains_old_revision(
     auth_service, google
 ):
