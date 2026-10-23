@@ -167,6 +167,9 @@ and their OS packages. Before #2053, every job ran `playwright install
 - A container job's `run` steps default to `sh`, not the runner's `bash`, so
   the job sets `defaults.run.shell: bash -e {0}` to keep the steps' bash
   features working.
+- A container job's `HOME` is the runner user's directory, and Firefox
+  refuses to launch as root there, so the job sets `HOME: /root` as
+  Playwright's GitHub Actions guidance says.
 - `python -m playwright install <engines>` stays, without `--with-deps`. It
   downloads nothing while the image's browsers match the `playwright` pin in
   `requirements/stewardship-browser.txt`. `test_browser_ci.py` requires the

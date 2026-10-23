@@ -486,7 +486,7 @@ def test_browser_workflow_contract():
         "matrix": {"runs": list(BROWSER_JOBS)},
     }
     assert job["timeout-minutes"] == 60
-    assert job["env"] == {"BROWSER_RUNS": "${{ matrix.runs }}"}
+    assert job["env"] == {"BROWSER_RUNS": "${{ matrix.runs }}", "HOME": "/root"}
     install, run = job["steps"][-2:]
     assert 'read -ra runs <<<"$BROWSER_RUNS"' in install["run"]
     # The container image has the OS packages, so nothing installs them (#2053).
@@ -547,6 +547,8 @@ def test_browser_jobs_run_in_the_pinned_playwright_image():
     assert "--with-deps" not in workflow
     # Container steps default to sh, which rejects the steps' bash features.
     assert job["defaults"]["run"]["shell"] == "bash -e {0}"
+    # Firefox will not launch as root unless HOME is /root (Playwright docs).
+    assert job["env"]["HOME"] == "/root"
     assert "sudo" not in yaml.safe_dump(job)
     names = [step.get("name") for step in job["steps"]]
     assert "Remove the Microsoft apt source" not in names

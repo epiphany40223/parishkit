@@ -337,8 +337,12 @@ jobs:
     defaults:
       run:
         shell: bash -e {0}
+    # Firefox refuses to launch as root when $HOME is not root's own, and a
+    # container job's HOME is the runner user's directory (/github/home).
+    # Playwright's own GitHub Actions guidance is to set HOME=/root.
     env:
       BROWSER_RUNS: ${{ matrix.runs }}
+      HOME: /root
     steps:
       - uses: actions/checkout@v4
       # actions/setup-python cannot run in this image: it calls lsb_release
