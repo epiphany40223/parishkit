@@ -369,8 +369,10 @@ receipt, `--require-no-skips`,
 [deadline](stewardship-database-tests.md#parallel-ci-and-live-progress),
 `partition-N` output directory and pytest temporary root. Each slot has its own
 PostgreSQL/Valkey service pair on its own ports (SQL roles are cluster-wide, so
-partitions never share a cluster); Valkey skips port 56380, which the
-unavailable-service tests keep closed. Child output is relayed live with a
+partitions never share a cluster). The ports sit below Linux's ephemeral range,
+so no outbound connection on the host (for example during the image pulls)
+can hold one when Docker binds it (#2085). Port 56380, which the
+unavailable-service tests keep closed, is never assigned. Child output is relayed live with a
 `[partition N]` prefix, so a job killed at its time limit still shows each
 partition's last `CI_PROGRESS` record. A job fails if any of its partitions
 fails, after all of them finish; if the job is interrupted, or a partition

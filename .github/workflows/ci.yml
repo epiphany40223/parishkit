@@ -439,9 +439,9 @@ jobs:
 
   # Each job runs PARTITIONS_PER_JOB (quality_ci.py) of the 28 coverage
   # partitions concurrently, each against its own PostgreSQL/Valkey pair
-  # (service pair N on the ports quality_ci.slot_ports assigns slot N-1),
-  # because SQL roles are cluster-wide fixtures. Packing leaves runner slots
-  # for other runs (#625). Job 1 runs only partition 1, with half a share,
+  # (service pair N on the ports quality_ci.slot_ports assigns slot N-1,
+  # kept below the ephemeral port range, #2085), because SQL roles are
+  # cluster-wide fixtures. Packing leaves runner slots for other runs (#625). Job 1 runs only partition 1, with half a share,
   # beside the non-database baseline's parts (#1200, #1205, #2065). Sixteen
   # partitions left the slowest only 2-10% under SHARD_TIMEOUT, so the count
   # became 22 (#1529); slow runners took 22 to 29 minutes, so it is 28
@@ -464,7 +464,7 @@ jobs:
     services:
       valkey-1:
         image: mirror.gcr.io/valkey/valkey:9.1.2@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
-        ports: ["56379:6379"]
+        ports: ["26379:6379"]
         options: >-
           --health-cmd "valkey-cli ping"
           --health-interval 2s --health-timeout 5s --health-retries 30
@@ -476,14 +476,14 @@ jobs:
           POSTGRES_PASSWORD: disposable-test-only
           # Keep errors/details, not multi-megabyte rejected payload statements.
           POSTGRES_INITDB_ARGS: --set=log_min_error_statement=panic
-        ports: ["55432:5432"]
+        ports: ["25432:5432"]
         options: >-
           --tmpfs /var/lib/postgresql:rw,size=2g
           --health-cmd "pg_isready -U stewardship_tests"
           --health-interval 2s --health-timeout 5s --health-retries 30
       valkey-2:
         image: mirror.gcr.io/valkey/valkey:9.1.2@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
-        ports: ["56381:6379"]
+        ports: ["26380:6379"]
         options: >-
           --health-cmd "valkey-cli ping"
           --health-interval 2s --health-timeout 5s --health-retries 30
@@ -495,14 +495,14 @@ jobs:
           POSTGRES_PASSWORD: disposable-test-only
           # Keep errors/details, not multi-megabyte rejected payload statements.
           POSTGRES_INITDB_ARGS: --set=log_min_error_statement=panic
-        ports: ["55433:5432"]
+        ports: ["25433:5432"]
         options: >-
           --tmpfs /var/lib/postgresql:rw,size=2g
           --health-cmd "pg_isready -U stewardship_tests"
           --health-interval 2s --health-timeout 5s --health-retries 30
       valkey-3:
         image: mirror.gcr.io/valkey/valkey:9.1.2@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
-        ports: ["56382:6379"]
+        ports: ["26381:6379"]
         options: >-
           --health-cmd "valkey-cli ping"
           --health-interval 2s --health-timeout 5s --health-retries 30
@@ -514,7 +514,7 @@ jobs:
           POSTGRES_PASSWORD: disposable-test-only
           # Keep errors/details, not multi-megabyte rejected payload statements.
           POSTGRES_INITDB_ARGS: --set=log_min_error_statement=panic
-        ports: ["55434:5432"]
+        ports: ["25434:5432"]
         options: >-
           --tmpfs /var/lib/postgresql:rw,size=2g
           --health-cmd "pg_isready -U stewardship_tests"

@@ -67,10 +67,15 @@ PARTITIONS_PER_JOB = 3
 # suite: when a partition nears it, add partitions; when a baseline part
 # does, add parts (BASELINE_PARTS).
 SHARD_TIMEOUT = 30 * 60
-# The first slot keeps the services' default ports. Valkey port 56380 stays
-# unused: the unavailable-service tests rely on nothing listening there.
-POSTGRES_PORT = 55432
-VALKEY_PORT = 56379
+# CI's service pairs publish host ports below Linux's ephemeral range
+# (32768-60999). Inside it, any outbound connection open on the host (for
+# example during the service image pulls) can hold the port at the moment
+# Docker binds it, and the job fails before any step (#2085). The local defaults (55432 and
+# 56379 in the test settings) stay as they are: `job` is CI-only and always
+# sets both ports. Valkey port 56380 stays unused: the unavailable-service
+# tests rely on nothing listening there.
+POSTGRES_PORT = 25432
+VALKEY_PORT = 26379
 RESERVED_VALKEY_PORT = 56380
 # The per-test stack dump only diagnoses a hang; SHARD_TIMEOUT is what fails
 # one. Keep it well above the longest legitimate case and well below the shard
