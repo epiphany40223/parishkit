@@ -512,6 +512,8 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0170 (#2008) creates nothing: it replaces 0160's submission effects check
 # and 0163's derived guard in place, so ``CLOSURE_REPLACED_ONLY`` puts each
 # body back last, after 0160's and 0163's.
+# 0172 (#1932) creates one definer, granted to the general worker
+# (runtime_grants.CLOSURE_FUNCTIONS), and replaces nothing.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -975,6 +977,11 @@ CLOSURE_CREATED = {
     "public.stewardship_ministry_leader_coverage_v1(text,uuid)": (
         "stewardship_reports",
         "0045_ministry_leader_coverage",
+    ),
+    # 0172 (#1932): the Family campaign statistics definer.
+    "public.stewardship_family_campaign_analyze_v1(uuid)": (
+        "stewardship_campaigns",
+        "0018_family_statistics",
     ),
 }
 

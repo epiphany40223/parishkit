@@ -546,6 +546,9 @@ FROZEN = {
     "0171_retire_digests.sql": (
         "b008823233c276bf35c938237f85cb0f709c2023e70b5b7911fb48cc9c07d79a"
     ),
+    "0172_family_campaign_statistics.sql": (
+        "8b71ec22ab4f5432cc938a0b9cb285b3ecfd9a5b042fa6948b60350f55e3396d"
+    ),
 }
 
 
