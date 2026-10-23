@@ -91,7 +91,11 @@ def prepare(request, campaign_id):
         _closed(request, {"action", *_FIELDS[action]})
         if action == "review_stop":
             return _stop_answer(request, service, campaign_id)
-        target = _act(request, service, campaign_id, action, request.POST["control"])
+        # A post without its control is a forged one: _closed rejects extra
+        # fields, not missing ones, so the empty token is refused as a bad
+        # signature (a 400), as go_live_views does, never a KeyError (500).
+        token = request.POST.get("control", "")
+        target = _act(request, service, campaign_id, action, token)
         if target is None:
             # Stop go-live found the step moved under the work lock: said
             # inside its dialog, never a silent landing on the step.

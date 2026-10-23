@@ -497,6 +497,9 @@ def _reviewed(request, service, actor, configuration, campaign, change):
     """
     try:
         review = _review(request, service, actor, configuration, campaign, change)
+    except (KeyError, IndexError):
+        # A defect, not an unreviewable upload: a 500 (#2044).
+        raise
     except (StaleRecordError, LookupError, ConfigError) as error:
         if isinstance(error, UserFacing):
             raise
@@ -565,6 +568,9 @@ def _save(request, service, actor, campaign_id):
             images[slot] = str(_staged_asset(request, service, slot, bundle_id).pk)
         patch = artwork_patch(campaign, {**artwork, "images": images})
         _check_candidate(service, configuration, patch, actor)
+    except (KeyError, IndexError):
+        # A defect, not an unsavable upload: a 500 (#2044).
+        raise
     except (StaleRecordError, LookupError, ConfigError) as error:
         if isinstance(error, UserFacing):
             raise

@@ -443,7 +443,17 @@ def error_response(error):
     (``web.refusals``) keeps its base type's status but adds its reviewed
     explanation and fix link. Every response carries the error's reason for
     the refusal log (``web.refusals.annotate``).
+
+    A ``KeyError`` or ``IndexError`` is re-raised instead (#2044). Views
+    catch ``LookupError`` as their "not found", and those two are its
+    subclasses, but every intentional not-found raises a plain
+    ``LookupError`` or a dedicated subclass (``UserFacingMissing``,
+    ``DayOutOfRange``); only a defect raises these two. Re-raised, it
+    reaches Django's closed 500 boundary with its traceback logged rather
+    than answering an unknown page (#2029's ``KeyError`` looked like one).
     """
+    if isinstance(error, (KeyError, IndexError)):
+        raise error
     return annotate(_error_response(error), error)
 
 
