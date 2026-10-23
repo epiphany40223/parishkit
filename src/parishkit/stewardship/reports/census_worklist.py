@@ -359,7 +359,9 @@ def link_pairs(query, paging=None):
     return pairs + sorted((paging or {}).items())
 
 
-def worklist_page(result, query, table, action, *, mutable, paging=None):
+def worklist_page(
+    result, query, table, action, *, mutable, paging=None, prefix="census"
+):
     """The page's ``worklist`` and its table, from ``census_changes``'s result.
 
     ``table`` is the shaped rows' page (``paginate``); its rows become the
@@ -367,7 +369,9 @@ def worklist_page(result, query, table, action, *, mutable, paging=None):
     the campaign: the reader is then offered no action at all, as the
     services would refuse them. History (superseded and cancelled rows) is
     a Stage choice of its own, which Every stage does not count. ``paging``
-    is the table's choices as sent, for the view's own address.
+    is the table's choices as sent, for the view's own address. ``prefix``
+    keeps the element ids apart where another page draws these rows (the
+    Family hub's tabs, #2064).
     """
     rows = worklist_rows(table.rows)
     table = replace(table, rows=rows, method="post", action=action)
@@ -376,7 +380,7 @@ def worklist_page(result, query, table, action, *, mutable, paging=None):
         Stream.CENSUS,
         rows,
         result["roles"] if mutable else frozenset(),
-        prefix="census",
+        prefix=prefix,
         action=action,
         columns=COLUMNS,
         stage=query.stage,

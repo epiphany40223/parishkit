@@ -72,6 +72,8 @@ from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.family_identity import code_context
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, emit_failure
+from parishkit.stewardship.responses.census_review import campaign_today
+from parishkit.stewardship.responses.financial import FREQUENCIES
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.snapshot_names import snapshot_family_facts
@@ -88,6 +90,8 @@ from parishkit.stewardship.web.tabs import PARAMETER as TAB
 from parishkit.stewardship.web.tabs import Tab, tab_set
 
 from .export_views import SAFE_FAILURES
+from .financial import FREQUENCY_LABELS
+from .hub_actions import census_tab, financial_tab, ministry_tab, other_tab
 from .hub_census import HubCensus, read_hub_census
 from .hub_streams import read_hub_financial, read_hub_other, read_member_ministry
 from .read_admission import admit_report_read
@@ -322,7 +326,8 @@ def hub_reads(campaign, family, census, chosen, *, principal, parish_name):
 
     ``census`` is the page's ``HubCensus`` and ``chosen`` the address's
     ``tab``. Returns the extra context: ``hub_ministry`` (the chosen Member
-    tab's Ministry rows, in a campaign with Ministry stewardship),
+    tab's Ministry rows, in a campaign with Ministry stewardship, each with
+    its row actions, and ``hub_ministry_actions``, their worklist, #2064),
     ``hub_financial`` (``HubFinancial``) or ``hub_other`` (``HubOther``),
     each None when its tab is not the chosen one. A tab whose stream the
     reader's role may not see reads nothing (both hub roles may, today).
@@ -330,30 +335,47 @@ def hub_reads(campaign, family, census, chosen, *, principal, parish_name):
     values = campaign.active_configuration.values
     sections = hub_sections(values)
     modules = set(values.get("modules", ()))
-    reads = {"hub_ministry": None, "hub_financial": None, "hub_other": None}
+    reads = {
+        "hub_ministry": None,
+        "hub_ministry_actions": None,
+        "hub_financial": None,
+        "hub_other": None,
+    }
     subject = census.subject(chosen) if chosen.startswith("member-") else None
     # A Member of a Family with no response has no requests to read; a
     # pre-census response's Members (No census answers yet) keep theirs.
     if subject is not None and subject.mark != "unsubmitted" and "ministry" in modules:
-        reads["hub_ministry"] = read_member_ministry(
-            campaign.pk, family.pk, subject.entity
+        reads["hub_ministry"], reads["hub_ministry_actions"] = ministry_tab(
+            campaign.pk,
+            read_member_ministry(campaign.pk, family.pk, subject.entity),
+            subject.key,
+            principal,
         )
     if (
         chosen == "financial"
         and "financial" in sections
         and allows(principal, Capability.FINANCIAL_DETAIL)
     ):
-        reads["hub_financial"] = read_hub_financial(
-            campaign, family.family_duid, parish_name=parish_name
+        reads["hub_financial"] = financial_tab(
+            campaign.pk,
+            family.family_duid,
+            read_hub_financial(campaign, family.family_duid, parish_name=parish_name),
+            principal,
         )
     if chosen == "other" and "other" in sections:
-        reads["hub_other"] = read_hub_other(
+        reads["hub_other"] = other_tab(
             campaign.pk,
-            family.pk,
-            census.members,
-            ministry="ministry" in modules,
-            information=bool(values.get("additional_information"))
-            and allows(principal, Capability.ADDITIONAL_FOLLOWUP),
+            family.family_duid,
+            read_hub_other(
+                campaign.pk,
+                family.pk,
+                census.members,
+                ministry="ministry" in modules,
+                information=bool(values.get("additional_information"))
+                and allows(principal, Capability.ADDITIONAL_FOLLOWUP),
+                family_duid=family.family_duid,
+            ),
+            principal,
         )
     return reads
 
@@ -424,11 +446,14 @@ def page_context(campaign, family_id, identity, timeline, as_of, **options):
         "census_url": reverse("admin:census_changes"),
         # The chosen tab's stream (``hub_reads``), None on every other tab.
         "hub_ministry": options.get("hub_ministry"),
+        "hub_ministry_actions": options.get("hub_ministry_actions"),
         "hub_financial": options.get("hub_financial"),
         "hub_other": options.get("hub_other"),
         # Where each stream is handled, linked from its panel.
         "ministry_url": reverse("admin:ministry_report"),
         "financial_url": reverse("admin:financial_report"),
+        # Where a pledge's row actions post, linked when the tab offers them.
+        "pledges_url": reverse("admin:pledges_to_enter"),
         "limitations_url": reverse("admin:limitations_report"),
         "information_url": reverse("admin:information_queue"),
         "table": table,
@@ -450,6 +475,14 @@ def page_context(campaign, family_id, identity, timeline, as_of, **options):
         "mail_links": full and options.get("mail_links", False),
         # People in this Family who are users (#1867), Administrators only.
         "family_users": options.get("family_users", ()),
+        # The chosen tab's own address, which a row action's dialog redraws
+        # the tab from once its decision is applied (#2064).
+        "hub_tab_url": tabs.chosen.href,
+        # The latest date a census Edit may give a birth or death date, as
+        # on Census changes (its value editor reads it).
+        "edit_today": options.get("edit_today", ""),
+        # The frequencies a pledge's Edit offers, as on Pledges.
+        "frequencies": [(key, FREQUENCY_LABELS[key]) for key in FREQUENCIES],
     }
 
 
@@ -630,6 +663,11 @@ def timeline(request, campaign_id, family_id):
             # The review lines (#1774) are read only while the Timeline tab
             # is the one drawn, the tab the address chooses or falls back to.
             chosen = hub_tabs("", request.GET, sections, census).selected
+            # The chosen census tab's row actions (#2064): its changes as
+            # Census changes reads and decorates them, read only while that
+            # tab is drawn.
+            if census is not None:
+                census = census_tab(campaign_id, family.pk, census, chosen, principal)
             records = read_timeline(
                 ResponseScope(campaign_id),
                 family.pk,
@@ -689,6 +727,7 @@ def timeline(request, campaign_id, family_id):
                     campaign.active_configuration.values.get("additional_information")
                 ),
                 family_users=members,
+                edit_today=campaign_today(campaign).isoformat(),
                 **streams,
             )
             page = render_to_string(

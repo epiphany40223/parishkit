@@ -38,7 +38,8 @@ from parishkit.stewardship.reports.timeline_views import (
 from parishkit.stewardship.reports.timelines import Timeline, events
 from parishkit.stewardship.web.dates import using
 
-from ..test_hub_census import ANSWERS, NAMES, ROWS
+from ..test_hub_actions import HOME_ID, census_worklist, family_tab, pledge_tab
+from ..test_hub_census import ANSWERS, HOME, NAMES, NEW_HOME, ROWS
 from ..test_hub_streams import (
     ITEM,
     METADATA,
@@ -160,6 +161,34 @@ STREAMS = {
         )
     },
 }
+# The Family tab with its row actions (#2064): its home address change as
+# Census changes decorates it, To review, then once accepted (the page the
+# tab redraws from after Accept; a test serves it at the tab's address).
+HUB_ACTIONS = "/hub-actions"
+HUB_ACCEPTED = "/hub-actions-accepted"
+# The Financial tab with its pledge's row actions, the pledge edited (its
+# Reviewer's value in the pledge table's column, R46 Part J).
+HUB_PLEDGE = "/hub-pledge"
+# The same tab with the pledge To review, before a decision.
+HUB_PLEDGE_FRESH = "/hub-pledge-fresh"
+HOME_CHANGE = {
+    "id": HOME_ID,
+    "entity_kind": "family",
+    "entity_key": "1234",
+    "field": "home_address",
+    "handling": "manual",
+    "baseline_value": HOME,
+    "current_value": HOME,
+    "submitted_value": NEW_HOME,
+    "member_name": None,
+}
+
+
+def acting(**values):
+    """The hub's census with the Family tab's home address change acting."""
+    return family_tab(census_worklist(HOME_CHANGE | values))
+
+
 # The export form's values, as the view's ``export_context`` gives them.
 EXPORT = {
     "url": "/timeline-export",
@@ -219,6 +248,31 @@ def components(context, admin):
             {"full": True, "parameters": {"tab": key}} | STREAMS.get(key, {}),
         )
         for key, path in TAB.items()
+    }
+    pages |= {
+        path: (
+            TIMELINE,
+            {
+                "full": True,
+                "parameters": {"tab": "family"},
+                "census": census,
+                "edit_today": "2054-10-05",
+            },
+        )
+        for path, census in (
+            (HUB_ACTIONS, acting()),
+            (HUB_ACCEPTED, acting(decision="approved")),
+        )
+    }
+    pages |= {
+        path: (
+            TIMELINE,
+            {"full": True, "parameters": {"tab": "financial"}, "hub_financial": tab},
+        )
+        for path, tab in (
+            (HUB_PLEDGE, pledge_tab()),
+            (HUB_PLEDGE_FRESH, pledge_tab(fresh=True)),
+        )
     }
     responses = {}
     with using("us_long"):

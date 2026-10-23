@@ -836,6 +836,7 @@ def worklist_context(
     decisions=None,
     asked=None,
     families=None,
+    prefix=PREFIX,
 ):
     """The worklist and its table for one page of the view.
 
@@ -843,7 +844,8 @@ def worklist_context(
     page (not ``mutable``), every row is drawn with no actions and the
     selection bar and Add are gone; the page's notice says why.
     ``decisions`` and ``asked`` are given only to a detached page
-    (``decorate``).
+    (``decorate``). ``prefix`` keeps the element ids apart where another
+    page draws these rows (the Family hub's Member tabs, #2064).
     """
     leader = is_leader(principal)
     rows = result["rows"]
@@ -885,7 +887,7 @@ def worklist_context(
         Stream.MINISTRY,
         table.rows,
         roles,
-        prefix=PREFIX,
+        prefix=prefix,
         action=action,
         columns=COLUMNS,
         stage=query.stage,

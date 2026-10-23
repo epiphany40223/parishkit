@@ -1032,6 +1032,9 @@ td > :last-child { margin-bottom: 0; }
 /* Shared Admin tables (web/tables.py): a compact data grid for desktop use,
    a selection column, a bulk-action bar and a row navigator above and below. */
 .data-table th, .data-table td { padding: .5rem .85rem; vertical-align: middle; }
+/* A cell spanning rows (the Family hub pledge's Stage and Actions, #2064)
+   sits beside its first row, which it belongs to. */
+.data-table td[rowspan] { vertical-align: top; }
 .data-table td > form, .data-table td > button { margin: 0; }
 .data-table button { margin-block: 0; padding: .35rem .85rem; min-height: 36px; }
 .data-table .select-col { width: 2.75rem; }

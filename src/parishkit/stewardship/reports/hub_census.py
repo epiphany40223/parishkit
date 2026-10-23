@@ -126,7 +126,7 @@ LIMIT 1
 # %(terminal)s (``TERMINAL``, a list).
 PROPOSALS = """
 SELECT DISTINCT ON (p.entity_kind, p.entity_key, p.field)
-    p.entity_kind, p.entity_key, p.field, p.baseline_available,
+    p.id::text, p.entity_kind, p.entity_key, p.field, p.baseline_available,
     p.baseline_value::text, p.submitted_value::text, p.admin_value_set,
     p.admin_value::text, p.handling, p.decision, p.execution
 FROM stewardship_proposed_change p
@@ -174,6 +174,7 @@ WHERE c.singleton AND p.canonical::jsonb->>'active'='true'
 ORDER BY m.source_key::bigint
 """
 COLUMNS = (
+    "id",
     "entity_kind",
     "entity_key",
     "field",
@@ -200,6 +201,10 @@ class FieldRow:
     for a report-only one); ``changed`` is False for an unchanged field,
     whose one value is ``answer``. ``note`` is any words shown after the
     stage chip (a decided Ministry request's outcome, ``hub_streams``).
+    ``item_id`` is the change's own id (its stream's worklist item) and
+    ``item`` that item's row as its stream's review worklist decorates it
+    (``hub_actions``, #2064): the icons and dialogs its stream page draws,
+    or None while the reader has none.
     """
 
     label: str
@@ -210,6 +215,8 @@ class FieldRow:
     reviewer: str = ""
     placement: object = None
     note: str = ""
+    item_id: str = ""
+    item: object = None
 
     @property
     def stage_label(self):
@@ -239,6 +246,8 @@ class Subject:
     requests name it (``("member", DUID)`` or ``("proposed_member",
     local id)``); it never enters the address. ``duid`` (a ParishSoft
     Member's DUID, from ``entity``) is shown beside the panel's heading.
+    ``actions`` is the census worklist whose dialogs the tab's row actions
+    open (``hub_actions``, #2064), None until the tab's actions are read.
     """
 
     key: str
@@ -247,6 +256,7 @@ class Subject:
     mark: str = ""
     addition: FieldRow | None = None
     entity: tuple = ()
+    actions: object = None
 
     @property
     def duid(self):
@@ -265,6 +275,21 @@ class Subject:
     def unchanged(self):
         """The fields whose answer matched ParishSoft."""
         return tuple(row for row in self.rows if not row.changed)
+
+    @property
+    def actions_column(self):
+        """Whether the Changed table draws an Actions column: a change on
+        the tab offers or shows an action for this reader."""
+        return any(row.item and row.item["icons"] for row in self.changed)
+
+    @property
+    def acting(self):
+        """Whether the tab offers or shows any row action (its changes' or
+        a New Member's addition's), so it draws its stream's dialogs."""
+        addition = self.addition
+        return self.actions_column or bool(
+            addition and addition.item and addition.item["icons"]
+        )
 
     @property
     def reviewer_column(self):
@@ -426,6 +451,7 @@ def changed_row(row, placement):
         baseline_read=bool(row["baseline_available"]),
         reviewer=display(row["admin_value"]) if row["admin_value_set"] else "",
         placement=placement,
+        item_id=row.get("id", ""),
     )
 
 

@@ -49,7 +49,7 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.pipeline import TERMS, Stage, Stream
-from parishkit.stewardship.responses.financial import FREQUENCIES
+from parishkit.stewardship.responses.financial import FREQUENCIES, installment
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.source.source_status import (
     NAME_NOT_RECORDED,
@@ -349,6 +349,21 @@ def reviewed_parts(row):
         return "", ""
     amount = MoneyAmount(int(review.reviewed_annual_pledge * 100))
     return amount.display, frequency_label(review.reviewed_frequency)
+
+
+def reviewed_installment(row):
+    """The installment of an Edit in force ("$100.00"), or "" without one.
+
+    Computed as Financial stewardship computes the Family's own
+    (``responses.financial.installment``), so the Family hub can word the
+    reviewer's frequency as it words the Family's (#2064).
+    """
+    item = row["item"]
+    review = item.review
+    if not reviewed_parts(row)[0] or review.reviewed_frequency not in FREQUENCIES:
+        return ""
+    amount = MoneyAmount(int(review.reviewed_annual_pledge * 100))
+    return installment(amount, review.reviewed_frequency).display
 
 
 def to_enter(row):
@@ -776,6 +791,14 @@ def decorate(rows):
                 "baseline": "",
                 "family_answer": family_answer(row),
                 "reviewer_value": reviewer_value(row),
+                # Its parts, which the Family hub's Financial tab shows
+                # beside the fields they replace (#2064), with the
+                # installment its Frequency row words.
+                "reviewer_parts": (
+                    amount,
+                    frequency,
+                    reviewed_installment(row) if amount else "",
+                ),
                 # Shown beside Entered incorrectly and Not seen in
                 # ParishSoft (the component's shows_now), #1704.
                 "parishsoft_now": parishsoft_amount(row),
@@ -825,12 +848,14 @@ def stage_table(rows, stage, extra, *, action):
     return replace(table, method="post", action=action), counts
 
 
-def page_context(rows, stage, extra, roles, *, mutable, notice):
+def page_context(rows, stage, extra, roles, *, mutable, notice, prefix=PREFIX):
     """The page's template context for the applied view.
 
     ``roles`` are the reader's pipeline roles, or none while other campaign
     work holds the list (``mutable`` False): every row is then drawn with no
     action and the selection bar is gone, and the page's notice says why.
+    ``prefix`` keeps the element ids apart where another page draws these
+    rows (the Family hub's Financial tab, #2064).
     """
     action = reverse("admin:pledges_to_enter")
     table, counts = stage_table(rows, stage, extra, action=action)
@@ -838,7 +863,7 @@ def page_context(rows, stage, extra, roles, *, mutable, notice):
         Stream.FINANCIAL,
         decorate(table.rows),
         roles,
-        prefix=PREFIX,
+        prefix=prefix,
         action=action,
         columns=COLUMNS,
         stage=stage,
