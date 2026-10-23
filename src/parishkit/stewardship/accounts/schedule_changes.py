@@ -270,6 +270,7 @@ def build_preview(
     series_changes=(),
     request_key=None,
     zone=None,
+    added_reports=(),
 ):
     """Validate the complete candidate, including each stranded or reordered mailing.
 
@@ -305,6 +306,11 @@ def build_preview(
     each side's send times are grouped and shown in (``describe``); a caller
     with no browser (the command line, Campaign settings' end-date review)
     passes none.
+    ``added_reports`` are report email ``add`` rows built and checked by
+    ``report_email_changes.change_rows`` (the campaign wizard's suggested
+    report emails, #2038); they are validated, signed and applied with the
+    schedules in the one request. No review dialog shows them (the wizard
+    saves without one), so the review does not name them.
     """
     configuration = state[0]
     digest = configuration.active_configuration.digest
@@ -385,6 +391,7 @@ def build_preview(
     # names them.
     reports = report_window_rows(configuration, campaign, window.values(), explicit)
     patch.extend(reports)
+    patch.extend(added_reports)
     if changed or campaign_values:
         patch.append(
             {

@@ -4,9 +4,10 @@ While the campaign wizard applies and the campaign has no schedule saved,
 Dates and mail schedules proposes a starting set (admin-portal spec, "Create
 the campaign", the steps page by page): the Initial invitation on the start
 date at 9:00 AM and one Reminder seven days before the end date at 9:00 AM,
-in the campaign's time zone. No Weekly or Daily report is suggested: report
-emails replaced the digests, and a digest schedule can no longer be added
-(#1786). The page lists them as the table lists saved schedules, marked "Not
+in the campaign's time zone. No digest is suggested: report emails replaced
+the digests (#1786), and the same panel offers the report emails' Daily and
+Weekly starting points instead (``suggested_reports``, #2038). The page
+lists them as the table lists saved schedules, marked "Not
 saved yet" (``rows``), and its **Add these schedules and continue** saves
 them directly (``schedule_entry_views.schedule_suggested``), which works the
 set out again here (``entries``) rather than trusting posted values.

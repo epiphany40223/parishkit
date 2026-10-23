@@ -37,7 +37,7 @@ from parishkit.stewardship.web.refusals import (
 )
 from parishkit.stewardship.web.tables import whole_table
 
-from . import admin_navigation, schedule_suggestions
+from . import admin_navigation, schedule_suggestions, suggested_reports
 from .admin_editing import confirm, error_response, principal
 from .authentication import runtime
 from .campaign_mail import admits_test_mail
@@ -78,7 +78,9 @@ def campaign_email_names(records):
     )
 
 
-def _list(request, state, campaign, editable, sort, *, end_live=False):
+def _list(
+    request, state, campaign, editable, sort, *, end_live=False, reports_form=None
+):
     """The scheduled emails list (#878): dates on one line, the table, New.
 
     The rows are the saved schedules in sending order, described from the
@@ -91,6 +93,9 @@ def _list(request, state, campaign, editable, sort, *, end_live=False):
     ``suggested`` are the suggested starting schedules of a campaign with
     none saved (#1404 PR 6, ``schedule_suggestions``); the page lists them
     only while the campaign wizard proposes them (its ``suggest``).
+    ``suggested_reports`` are the report emails' starting points the same
+    panel offers with them (#2038, ``suggested_reports``), drawn from
+    ``reports_form``: a refused save's bound form, or a fresh one.
     """
     configuration = state[0]
     values = campaign.active_configuration.values
@@ -106,6 +111,11 @@ def _list(request, state, campaign, editable, sort, *, end_live=False):
         if previous or not editable
         else schedule_suggestions.rows(values, records, campaign.pk, now, names)
     )
+    reports = []
+    if suggested:
+        reports = suggested_reports.rows(
+            reports_form or suggested_form(None, configuration, campaign, now)
+        )
     return render(
         request,
         "stewardship/schedule-settings.html",
@@ -117,12 +127,44 @@ def _list(request, state, campaign, editable, sort, *, end_live=False):
             "base_digest": configuration.active_configuration.digest,
             "table": whole_table(rows, sorting=SORTING, sort=sort),
             "suggested": suggested,
+            "suggested_reports": reports,
+            # A refused save's redraw (#2038), answered on the save's own
+            # address, where the wizard's chrome is not drawn: its panel is
+            # drawn regardless, so the page script can place the errors.
+            "redraw": reports_form is not None,
             "suggested_url": reverse("admin:schedule_suggested"),
             "refresh_url": request.get_full_path(),
             "new_url": reverse("admin:schedule_new"),
             "delete_url": reverse("admin:schedule_delete"),
             "window_text": window_text(values),
         },
+    )
+
+
+def suggested_form(data, configuration, campaign, now):
+    """The suggested report emails' form for ``campaign`` (#2038).
+
+    It offers each starting point no saved report of the campaign names
+    (``suggested_reports.offered``), and none before the configuration is in
+    the users form, the only form that holds report emails; ``data`` is the
+    posted save, or None for the page as drawn.
+    """
+    from parishkit.stewardship.reports.report_email_list import report_records
+
+    from .users_schema import uses_users
+
+    document = configuration.active_configuration.canonical_document
+    return suggested_reports.SuggestedReports(
+        data,
+        keys=suggested_reports.offered(
+            [row["values"] for row in report_records(configuration, campaign.pk)],
+            campaign.pk,
+        )
+        if uses_users(document)
+        else [],
+        campaign=campaign.active_configuration.values,
+        campaign_id=campaign.pk,
+        now=now,
     )
 
 
