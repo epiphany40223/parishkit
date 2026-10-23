@@ -87,6 +87,9 @@ class Action(StrEnum):
     DAILY_DIGEST_VIEWED = "daily_digest_viewed"
     WEEKLY_DIGEST_VIEWED = "weekly_digest_viewed"
     REPORT_EMAIL_VIEWED = "report_email_viewed"
+    # A report email drawn from current data in its Preview (#2035): the
+    # report (or, for an unsaved form, the campaign), never its content.
+    REPORT_EMAIL_PREVIEWED = "report_email_previewed"
     PARTICIPATION_VIEWED = "participation_viewed"
     # The Campaign comparison report (#1018): its context is the outcome and
     # the comparison day as ``count`` (the campaign days compared), no figure.

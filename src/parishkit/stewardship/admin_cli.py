@@ -3120,6 +3120,15 @@ def report_email_copy(args, preamble, runtime, context):
     return read_copy(context["caller"], runtime, args.send_id, page=args.page)
 
 
+def report_email_render(args, preamble, runtime, context):
+    """One report email drawn from current data, as its Preview shows it (#2035)."""
+    from .admin_report_emails import read_render
+
+    return read_render(
+        context["caller"], runtime, args.report_id, campaign_id=args.campaign
+    )
+
+
 def report_email_send_now(args, preamble, runtime, context):
     """Send one report email now, as its row's Send now does (#1786).
 
@@ -6822,6 +6831,7 @@ def _report_specs():
         ReportEmailCopy,
         ReportEmailList,
         ReportEmailPreview,
+        ReportEmailRender,
         ReportEmailSendNow,
         ReportEmailSends,
         ReportEmailShow,
@@ -7131,6 +7141,17 @@ def _report_specs():
             8,
             options=(_report_email_copy_options,),
             audit_event="report_email_viewed",
+        ),
+        CommandSpec(
+            "report-email render",
+            "Preview one report email: drawn from current data, never sent.",
+            report_email_render,
+            "read_only",
+            False,
+            ReportEmailRender.field_names(),
+            8,
+            options=(_report_email_options,),
+            audit_event="report_email_previewed",
         ),
         CommandSpec(
             "report-email send-now",

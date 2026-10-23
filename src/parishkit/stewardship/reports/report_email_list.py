@@ -546,6 +546,8 @@ def actions(row_status, *, archived, editable):
         ATTENTION: ATTENTION_REASON,
     }.get(row_status)
     offered = {
+        # Preview reads only, so it is offered in every status (#2035).
+        "preview": None,
         "send_now": blocked,
         "resume" if row_status == PAUSED else "pause": blocked
         or (NOTHING_AHEAD if row_status == DONE else None),

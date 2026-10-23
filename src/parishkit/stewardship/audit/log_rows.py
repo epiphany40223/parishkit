@@ -449,6 +449,7 @@ UNGROUPED_REASONS = {
         "user_names_looked_up",
         "weekly_digest_viewed",
         "report_email_viewed",
+        "report_email_previewed",
     ),
     "Staff follow-up on Family requests, not a setting": (
         "admin_cmd_census_edit",

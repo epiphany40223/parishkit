@@ -122,16 +122,19 @@ def has_content(captured):
     return any(REGISTRY[item["block"]].has_content(item["data"]) for item in captured)
 
 
-def compile_report(document, keys, *, public_origin, copy_path=None, options=None):
+def compile_report(
+    document, keys, *, public_origin, copy_path=None, requests_path=None, options=None
+):
     """Draw ``document`` as the report email made of the blocks ``keys``.
 
     ``document`` is the report's immutable source (today a Daily or Weekly
     digest document), which supplies its ``title``, ``date_format`` and,
     with a fact block, its ``opening`` line and ``mode``. ``copy_path`` is
     the send's saved copy, which the closing button of a report without a
-    fact block links. ``options`` maps a block key to option values over its
-    defaults. Everything runs in the date format the source pinned, not
-    whichever the worker has active.
+    fact block links; ``requests_path`` the address a listed request's id
+    completes (default: the saved copy's ``items/``). ``options`` maps a
+    block key to option values over its defaults. Everything runs in the
+    date format the source pinned, not whichever the worker has active.
     """
     blocks = report_blocks(keys)
     facts = any(block.fact for block in blocks)
@@ -140,12 +143,18 @@ def compile_report(document, keys, *, public_origin, copy_path=None, options=Non
     # ``opens``, so only the Daily's facts open them.
     opens = facts or getattr(document, "opens", False)
     with dates.using(document.date_format):
+        copy_url = report_url(public_origin, copy_path) if copy_path else None
+        if requests_path:
+            requests_url = report_url(public_origin, requests_path)
+        else:
+            requests_url = copy_url + "items/" if copy_url else None
         frame = Frame(
             public_origin,
             dashboard_url=(
                 response_dashboard_url(public_origin, document.mode) if opens else None
             ),
-            copy_url=report_url(public_origin, copy_path) if copy_path else None,
+            copy_url=copy_url,
+            requests_url=requests_url,
         )
         html, text, images = [], [], []
 

@@ -126,21 +126,26 @@ def test_status_and_the_action_matrix():
     assert rows.status(values, [], None) == rows.DONE
     assert rows.status(values, [{"result": rows.SENT}], upcoming) == rows.UPCOMING
     assert rows.actions(rows.UPCOMING, archived=False, editable=True) == {
+        "preview": None,
         "send_now": None,
         "pause": None,
         "delete": None,
         "edit": None,
     }
     assert rows.actions(rows.PAUSED, archived=False, editable=False) == {
+        "preview": None,
         "send_now": None,
         "resume": None,
         "delete": None,
     }
     done = rows.actions(rows.DONE, archived=False, editable=False)
     assert done["pause"] == rows.NOTHING_AHEAD and done["send_now"] is None
+    # Preview reads only, so it is offered even while a send is busy (#2035).
     busy = rows.actions(rows.SENDING, archived=False, editable=True)
+    assert busy.pop("preview") is None
     assert set(busy.values()) == {rows.IN_PROGRESS_REASON}
     stuck = rows.actions(rows.ATTENTION, archived=False, editable=True)
+    assert stuck.pop("preview") is None
     assert set(stuck.values()) == {rows.ATTENTION_REASON}
     assert rows.actions(rows.UPCOMING, archived=True, editable=True) == {}
 

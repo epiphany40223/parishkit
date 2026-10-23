@@ -56,10 +56,10 @@ def draw(document, frame, options):
     Rows give submitted times without a zone: the subject names the report
     and its date, so the body repeats neither.
     """
-    if frame.copy_url is None:
-        raise ValueError("The requests block links the send's saved copy.")
+    if frame.requests_url is None:
+        raise ValueError("The requests block links the saved copy's requests.")
     zone = ZoneInfo(document.campaign_timezone)
-    url = frame.copy_url
+    url = frame.requests_url
     html = text = ""
     for heading, rows in sections(document):
         html += f"<h2{style('heading')}>{heading}</h2>"
@@ -83,7 +83,7 @@ def draw(document, frame, options):
                     "is no longer actionable."
                 )
                 shortened = False
-            item_url = escape(url + f"items/{row.item_id}/", quote=True)
+            item_url = escape(url + f"{row.item_id}/", quote=True)
             link = f'<a href="{item_url}"{style("link")} rel="noopener noreferrer">'
             # Numbers are table cells, not list markers, so every mail program
             # shows the same stable 1, 2, 3 a reader can refer back to.
@@ -99,7 +99,7 @@ def draw(document, frame, options):
             prefix = f"{number}. " if numbered else ""
             text += f"\n\n{prefix}{family}. {submitted}\n{detail}"
             link_label = "Read the full request: " if shortened else ""
-            text += "\n" + link_label + url + f"items/{row.item_id}/"
+            text += "\n" + link_label + url + f"{row.item_id}/"
         html += "</tbody></table>"
     return Section(html, text)
 

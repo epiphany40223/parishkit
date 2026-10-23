@@ -912,6 +912,7 @@ DESCRIPTIONS = {
     "daily_digest_viewed": _("Someone opened a daily summary."),
     "weekly_digest_viewed": _("Someone opened a weekly report."),
     "report_email_viewed": _("Someone opened a report email's saved copy."),
+    "report_email_previewed": _("Someone previewed a report email."),
     "information_viewed": _("Someone opened the information changes report."),
     "information_updated": _("Someone updated follow-up on an information change."),
     "limitation_reviewed": _(

@@ -2132,6 +2132,20 @@ details.by-ministry > section { display: block; margin-block: 0 .5rem; }
 .review-dialog .dialog-body { flex: 1 1 auto; min-height: 0; overflow: auto; margin-bottom: 1rem; }
 .review-dialog .dialog-body > :first-child { margin-top: 0; }
 .review-dialog [data-confirm-accept][data-recorded] { visibility: hidden; }
+/* A report email's Preview (#2035): wide enough for the email's desktop
+   layout where the window allows; the body scrolls both ways, and the plain
+   text keeps its lines, wrapping only what is too long. The pair of buttons
+   between them follow the segmented pair's look (Binary choices). */
+.review-dialog:has([data-report-preview]) { width: min(64rem, calc(100vw - 2rem)); }
+/* The email's panel is the email's white page in either scheme, as a
+   recipient sees it: it is a .light-card, which re-declares the light
+   tokens on itself. The page's style policy drops the email's inline
+   colours, so its headings, links and table headers read those tokens, and
+   without them would take the dark scheme's light text on the white panel.
+   The plain text follows the page's scheme. */
+.review-dialog [data-preview-email] { padding: 1rem; border-radius: var(--radius-small); }
+.report-preview-text { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); margin: 0; }
+.report-preview-recipients { margin-block: 0 1rem; }
 /* A compact review (#1356, components/compact-review.html): one line per
    changed field, "Field: old → new"; a long label or value wraps. */
 .compact-review { padding-left: 1.25rem; overflow-wrap: anywhere; }
@@ -2160,17 +2174,17 @@ fieldset:is(.editor-mode, .choice-pair) > legend { float: none; width: auto; mar
 :is(.editor-mode-options, .choice-pair-options) label:has(> input[type=radio]), .segmented-choice-options :is(a, button) { display: inline-flex; align-items: center; min-height: var(--button-min-height); margin: 0; padding: .5rem 1.25rem; color: var(--accent); font-weight: 650; text-decoration: none; }
 :is(.editor-mode-options, .choice-pair-options) label + label, .segmented-choice-options a + a, .segmented-choice-options form + form > button { border-inline-start: var(--button-border-width) solid var(--accent); }
 :is(.editor-mode-options, .choice-pair-options) label:has(> input[type=radio]) > input { inset: 0; width: 100%; height: 100%; opacity: 0; }
-:is(.editor-mode-options, .choice-pair-options) label:has(> input:checked), .segmented-choice-options :is(a, button)[aria-current=page], .segmented-choice-options button[aria-current=page]:not(:disabled):hover { background: var(--accent); color: var(--paper); }
+:is(.editor-mode-options, .choice-pair-options) label:has(> input:checked), .segmented-choice-options :is(a, button)[aria-current=page], .segmented-choice-options button:is([aria-current=page], [aria-pressed=true]):not(:disabled):hover, .segmented-choice-options button[aria-pressed=true] { background: var(--accent); color: var(--paper); }
 :is(.editor-mode-options, .choice-pair-options) label:has(> input:focus-visible), .segmented-choice-options :is(a, button):focus-visible { outline: 3px solid var(--focus); outline-offset: -6px; }
 /* The ring sits inside the segment, so on the chosen (accent) segment it
    is drawn in --paper, which keeps 3:1 on --accent in both schemes (#1264). */
-:is(.editor-mode-options, .choice-pair-options) label:has(> input:checked:focus-visible), .segmented-choice-options :is(a, button)[aria-current=page]:focus-visible { outline-color: var(--paper); }
+:is(.editor-mode-options, .choice-pair-options) label:has(> input:checked:focus-visible), .segmented-choice-options :is(a, button)[aria-current=page]:focus-visible, .segmented-choice-options button[aria-pressed=true]:focus-visible { outline-color: var(--paper); }
 /* A POST segment's form gives way to its button, which drops the shared
    button look (radius, shadow, its own border and hover colours): only the
    pair's outline and divider frame it, as they frame a link. */
 .segmented-choice-options form { display: contents; }
 .segmented-choice-options button { border: 0; border-radius: 0; background: none; box-shadow: none; line-height: inherit; }
-.segmented-choice-options button:not(:disabled):hover:not([aria-current=page]) { background: none; border-color: var(--accent); color: var(--accent); box-shadow: none; }
+.segmented-choice-options button:not(:disabled):hover:not([aria-current=page], [aria-pressed=true]) { background: none; border-color: var(--accent); color: var(--accent); box-shadow: none; }
 /* Tabs (ui-conventions "Tabs", #1712; components/tabs.html): a row of tabs
    above one panel area, the chosen tab filled in the accent colour (a
    selected state, independent of any primary button, #1713). Every tab is

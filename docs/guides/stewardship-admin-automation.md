@@ -2840,6 +2840,7 @@ pk-admin report-email list
 pk-admin report-email show REPORT
 pk-admin report-email sends REPORT
 pk-admin report-email copy SEND [--page 2]
+pk-admin report-email render REPORT
 pk-admin report-email send-now REPORT --yes [--request-key KEY]
 pk-admin report-email preview --expected-version VERSION --changes FILE|-
 pk-admin report-email confirm --token TOKEN|-
@@ -2870,6 +2871,16 @@ pk-admin report-email confirm --token TOKEN|-
   `report_email_viewed`. A daily or weekly digest saved before the
   conversion prints as `digest daily` and `digest weekly` printed it
   (`--page` pages a weekly report's items).
+- `render REPORT` is the row's Preview (#2035): the report drawn from
+  current data, never sent or saved. It prints the `subject`, the plain
+  `text` (never the HTML; its "Open protected report" link is the Report
+  emails page and its request links the live requests, since a preview
+  has no saved copy), `as_of` and `as_of_at`, `updating` (the
+  figures are not yet those a send would use now), `mode` and the
+  `recipients` it would go to now, by kind. Administrators only; any
+  session scope. It records `report_email_previewed`. Before any
+  ParishSoft data is loaded, or while the figures are being updated, it
+  is exit 1 (`not_available`).
 - `send-now REPORT` is the row's Send now: it asks the dialog's question
   at the [confirmation prompt](#confirmations), or takes `--yes`, takes
   `--request-key` as [task retries](#task-retries) do, and prints
@@ -4400,3 +4411,5 @@ Each change is recorded in System logs as on the page
 - `pk-admin/1` (#1786, delivery plan item 6): `report-email preview` takes
   `create`, `edit` and `unskip` entries. Breaking: a `skip` entry names its
   sends as `"sends": [SLOT, ...]` instead of one `"send": SLOT`.
+- `pk-admin/1` (#2035, delivery plan item 7): `report-email render`, the
+  row's Preview.

@@ -311,10 +311,15 @@ class CompiledEmail:
     has_content: bool
 
 
-def compile_report_email(document, values, *, public_origin, names):
+def compile_report_email(
+    document, values, *, public_origin, names, copy_path=None, requests_path=None
+):
     """Draw the email: introduction, blocks and subject (spec, "Compiling a report").
 
     ``names`` are the public placeholder values (``placeholder_values``).
+    ``copy_path`` and ``requests_path`` replace the send's saved copy as
+    the closing button's and the request links' targets (a Preview has no
+    saved copy); by default both are the send's saved copy.
     The Administrator's subject and introduction accept only public
     placeholders, checked together before the compiler's markup is
     appended, as the digests' are.
@@ -327,7 +332,8 @@ def compile_report_email(document, values, *, public_origin, names):
         document,
         keys,
         public_origin=public_origin,
-        copy_path=document.report_path,
+        copy_path=copy_path or document.report_path,
+        requests_path=requests_path,
         options=options,
     )
     subject = report_subject(
