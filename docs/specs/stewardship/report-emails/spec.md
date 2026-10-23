@@ -1092,8 +1092,36 @@ way in.
 email** (`/admin/mail/report-emails/<report>/`) are one Administrator page.
 New first offers **Start from**: Blank, Daily report or Weekly report (the
 [starting points](#campaign-wizard-starting-points)); choosing one fills the
-form in place and changes nothing saved. The page has these sections, in
-this order:
+form in place and changes nothing saved. Start from:
+
+- sits above the form, on New only, and is three equal segments drawn in
+  the shared segmented style (a `fieldset` whose visible legend is "Start
+  from", around three native radios, as the
+  [binary choices](../ui-conventions/spec.md#binary-choices)' stored
+  settings are drawn), with Blank chosen when the page is drawn and none
+  chosen on a refused Add, whose form holds what was typed. It is not a
+  value of the report and is never posted.
+- fills every field in place from the chosen starting point, or Blank's
+  from New's blank form: the name, subject, recipients, schedule (Basic,
+  Repeating, with its frequency and day), As of, the blocks in order with
+  their options, Send only when there is something to report, and an
+  empty introduction. The time is left empty for the Administrator to
+  choose, so the page asks for it as it does on a blank form, and Next
+  sends draws the schedule once it has one.
+- asks first when the choice would replace typing, as every
+  [choice that fills a form](../ui-conventions/spec.md#choices-that-fill-a-form)
+  does: its dialog asks "Replace what you have entered?" and says the form
+  is filled from the chosen starting point and nothing is saved until Add
+  the report email. The Basic/Advanced toggle and the Basic panel are not
+  typing, since Advanced always holds the schedule.
+- says what it did ("Filled in from Daily report.", or for Blank "The form
+  is blank again.") in its reserved line after the segments, short enough
+  for one line on a phone.
+
+A starting point's name another report of the campaign already has (a
+"Daily report" still kept) is refused at the name field by the usual
+check when the report is added. The page has these sections, in this
+order:
 
 1. **Report name** and **Email subject line**. The report name is the
    report's own name, never the From name: its help says it is shown on
@@ -1623,6 +1651,14 @@ yet:
   requests and Response funnel, Send only when there is something to report
   on; subject "{{ campaign_name }} — weekly report"; no introduction.
 
+They are named "Daily report" and "Weekly report", as the converted reports
+are, and key their sends by send date, as every report created after the
+migration does ([slot keys](#slot-keys)). They are defined once, in
+`campaigns/report_presets.py`, as report values in their
+[stored form](#stored-form) without the time; New report email's Start
+from, the wizard and any later command draw them from there, and a test
+checks each, with a time added, against the report values validator.
+
 In the wizard (#1404), the step lists them under "Suggested report emails",
 each with a checkbox and a time field, marked "Not saved yet"; **Add these
 schedules and continue** adds the ticked ones with the Family schedules in
@@ -2007,7 +2043,11 @@ require.
    Administrator's pk-local check.
 7. **Preview and Send a test to me**, with `report-email render` and
    `send-test`.
-8. **Campaign wizard starting points**, and Start from on New.
+8. **Campaign wizard starting points**, and Start from on New: first the
+   starting points' one definition and Start from on New
+   ([#2037](https://github.com/epiphany40223/parishkit/issues/2037)), then
+   the wizard's suggestions
+   ([#2038](https://github.com/epiphany40223/parishkit/issues/2038)).
 
 Issue #1597 is settled by decision 3; it is closed by PR 6, the first that lets an
 Administrator add Staff as recipients.

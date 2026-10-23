@@ -467,6 +467,7 @@ sections:
     "Tabs": [ADM-03]
     "Clear filters": [ADM-03]
     "Basic and Advanced modes": [ADM-03]
+    "Choices that fill a form": [ADM-03]
     "Single-campaign interim": [ADM-03, ADM-12]
     "Addresses and legacy URLs": [ADM-03, ADM-12]
     "Not-found pages": [ARC-03]

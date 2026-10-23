@@ -59,6 +59,7 @@ when it lands.
   [binary choices](#binary-choices), [tabs](#tabs),
   [Clear filters](#clear-filters),
   [Basic and Advanced modes](#basic-and-advanced-modes),
+  [choices that fill a form](#choices-that-fill-a-form),
   [single-campaign interim](#single-campaign-interim),
   [addresses and legacy URLs](#addresses-and-legacy-urls),
   [not-found pages](#not-found-pages),
@@ -2477,6 +2478,36 @@ the reason in its tip, never a line under it or a line for its section;
 the page shows each setting once, in the same place whatever can change.
 First use: [Campaign settings](../admin-portal/spec.md#campaign-settings-page)
 for a live or locked campaign (#1119).
+
+### Choices that fill a form
+
+**Rule.** A control that fills several fields of a form at once (a starting
+point, a template, a "fill from" choice) asks before it replaces what the
+reader typed, and fills at once otherwise. **Why.** One click must never
+silently throw away typing, yet a reader trying the choices on an untouched
+form should not be asked each time. **Shared code.**
+`components/confirm-dialog.html` and `ParishConfirm.wire` in `ui-v1.js`
+(Tab wrap, Escape and Cancel of every confirmation dialog); the page's
+script decides what Replace and closing do. **Precedent.**
+[Start from](../report-emails/spec.md#new-and-edit-report-email) on New
+report email ([#2037](https://github.com/epiphany40223/parishkit/issues/2037)).
+
+- **When it asks.** Only when the form differs from what it was drawn with
+  or last filled with. Changes that alter no value, such as switching
+  [Basic and Advanced](#basic-and-advanced-modes) alone, do not count; a
+  form the server sent back after a refused save holds typing, so a choice
+  there always asks.
+- **The dialog.** The shared
+  [confirmation dialog](#row-actions-and-confirmation) says the form will be
+  filled from the choice and that nothing is saved until the form's own
+  save, with **Replace** (a primary button) and **Keep what I entered**
+  (the safe choice, which takes focus when the dialog opens).
+- **Keeping.** Keep what I entered, Escape or closing changes nothing and
+  puts the control back on its previous choice, with focus on it. Where
+  there was none (a refused save), nothing is chosen and focus returns to
+  the option just chosen, the control that opened the dialog.
+- **After filling.** Focus stays on the choice, and a reserved line says
+  what was filled, so nothing moves ([no layout shift](#no-layout-shift)).
 
 ### Single-campaign interim
 
