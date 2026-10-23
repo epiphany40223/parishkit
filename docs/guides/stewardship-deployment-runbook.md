@@ -934,7 +934,7 @@ the migration refuses because a digest send is unfinished, restore the
 pre-upgrade backup with the previous release ([Rollback](#rollback)), let
 the send finish and upgrade again; if `upgrade-reports` fails after the migration, fix the
 cause and repeat the run (fail forward). The later release that retires
-the digests (#1834, migration 0162) needs the conversion done first: the
+the digests (#1834, migration 0171) needs the conversion done first: the
 scripted upgrade refuses it in step 1, with nothing stopped or changed,
 while the database has not applied the conversion's migration or still
 has a digest definition; deploy the conversion's release first, then the

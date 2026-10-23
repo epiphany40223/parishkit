@@ -1,4 +1,4 @@
--- Frozen forward migration file 0162 (the repository-wide file sequence):
+-- Frozen forward migration file 0171 (the repository-wide file sequence):
 -- the Daily and Weekly digest pipelines retire once report emails have
 -- replaced them (#1834; report-emails spec, "Database functions"). This
 -- file is installed by its Django migration in the reports app and must
@@ -76,7 +76,7 @@ BEGIN
     SELECT count(*) INTO remaining FROM public.stewardship_schedule_definition
         WHERE kind IN ('daily_digest','weekly_digest');
     IF remaining>0 THEN
-        RAISE EXCEPTION 'Migration 0162: % schedule definitions are still Daily or Weekly digests; upgrade to the release that converts them and run its report email conversion first (operations specification, Report email conversion)',
+        RAISE EXCEPTION 'Migration 0171: % schedule definitions are still Daily or Weekly digests; upgrade to the release that converts them and run its report email conversion first (operations specification, Report email conversion)',
             remaining;
     END IF;
 END
@@ -173,20 +173,20 @@ BEGIN
        OR (SELECT pg_get_constraintdef(oid) FROM pg_constraint
         WHERE conrelid='public.stewardship_schedule_revision'::regclass
           AND conname='schedule_revision_due_kind') NOT LIKE '%''weekly_digest''%' THEN
-        RAISE EXCEPTION 'Migration 0162: the schedule kind checks are not as declared';
+        RAISE EXCEPTION 'Migration 0171: the schedule kind checks are not as declared';
     END IF;
     IF EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
             WHERE n.nspname='public' AND p.proname=ANY(dropped))
        OR EXISTS(SELECT 1 FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
             JOIN pg_namespace n ON n.oid=c.relnamespace
             WHERE n.nspname='public' AND NOT t.tgisinternal AND t.tgname=ANY(triggers)) THEN
-        RAISE EXCEPTION 'Migration 0162: a digest write function or trigger remains';
+        RAISE EXCEPTION 'Migration 0171: a digest write function or trigger remains';
     END IF;
     IF EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
             WHERE n.nspname='public' AND p.prosrc ~ named)
        OR EXISTS(SELECT 1 FROM pg_views WHERE schemaname='public'
             AND definition ~ named) THEN
-        RAISE EXCEPTION 'Migration 0162: an installed body still names a dropped digest function';
+        RAISE EXCEPTION 'Migration 0171: an installed body still names a dropped digest function';
     END IF;
     IF to_regprocedure('public.stewardship_daily_dispatch_live_v1(uuid,boolean)') IS NULL
        OR to_regprocedure('public.stewardship_weekly_dispatch_live_v1(uuid,boolean)') IS NULL
@@ -201,7 +201,7 @@ BEGIN
                 'daily_digest_facts_retained','weekly_digest_preparation_write',
                 'weekly_snapshot_insert','weekly_recipient_insert','weekly_manual_guard',
                 'weekly_snapshot_immutable','weekly_recipient_immutable'))<>12 THEN
-        RAISE EXCEPTION 'Migration 0162: a digest read function, view or guard kept for history is missing';
+        RAISE EXCEPTION 'Migration 0171: a digest read function, view or guard kept for history is missing';
     END IF;
     IF EXISTS(SELECT 1 FROM pg_roles r
             CROSS JOIN unnest(ARRAY['stewardship_daily_digest_preparation',
@@ -213,7 +213,7 @@ BEGIN
             WHERE r.rolname IN ('pk_stewardship_worker','pk_stewardship_scheduler',
                 'pk_stewardship_web')
               AND has_table_privilege(r.oid,('public.'||d.name)::regclass,w.privilege)) THEN
-        RAISE EXCEPTION 'Migration 0162: a service login can still write a digest table';
+        RAISE EXCEPTION 'Migration 0171: a service login can still write a digest table';
     END IF;
 END
 $check$;

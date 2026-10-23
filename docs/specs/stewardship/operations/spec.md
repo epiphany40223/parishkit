@@ -944,7 +944,7 @@ configuration still holds a digest.
   the count, while any schedule definition is still a digest, so upgrade
   to it only from a release whose conversion has already run. The scripted
   upgrade checks this in its step 1, before it stops anything: when the new
-  image has the retirement file (0162) and the database has not applied
+  image has the retirement file (0171) and the database has not applied
   the conversion's migration (`stewardship_reports.0041`) or still has a
   digest definition, it refuses with nothing changed. Deploy the
   conversion's release first (its run includes `pk-stewardship

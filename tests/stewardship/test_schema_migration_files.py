@@ -543,8 +543,8 @@ FROZEN = {
     "0170_parish_added_shown.sql": (
         "464837acb882063ecf8374fe318cb9a87ead789a59dbb9b7a1672e6e5e555d73"
     ),
-    "0162_retire_digests.sql": (
-        "42b2263c16990d7c8d46426f8186b7d59b3eb1e0e55985c87094b747d4d0c8e0"
+    "0171_retire_digests.sql": (
+        "b008823233c276bf35c938237f85cb0f709c2023e70b5b7911fb48cc9c07d79a"
     ),
 }
 

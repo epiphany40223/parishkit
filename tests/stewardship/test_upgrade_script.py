@@ -285,7 +285,7 @@ json() {
     echo '{"backup_recorded": '"$recorded"', "offsite": {"state": "'"$1"'"}}'
 }
 case "$*" in
-    *" --entrypoint test "*0162_retire_digests.sql) exit "${FAKE_RETIREMENT:-0}" ;;
+    *" --entrypoint test "*0171_retire_digests.sql) exit "${FAKE_RETIREMENT:-0}" ;;
     *"0041_report_conversion"*) echo "${FAKE_CONVERTED:-t}" ;;
     "image inspect "*faketime-stewardship*) exit 1 ;;
     "image inspect "*) ;;
@@ -846,7 +846,7 @@ def test_the_retirement_guard_names_the_real_retire_digests_migration():
     would make that probe always miss and silently disable the guard.
     """
     names = re.findall(r"/migrations/(\d{4}_[a-z_]+\.sql)$", HOST.read_text(), re.M)
-    assert names == ["0162_retire_digests.sql"]
+    assert names == ["0171_retire_digests.sql"]
     migrations = ROOT / "src/parishkit/stewardship/schema/migrations"
     assert (migrations / names[0]).is_file()
     assert "retire" in names[0] and "digest" in names[0]
@@ -856,7 +856,7 @@ def test_the_retirement_guard_names_the_real_retire_digests_migration():
 def test_the_digest_retirement_refuses_an_unconverted_database_first(
     tmp_path, converted
 ):
-    """A release with 0162 on an unconverted database stops before anything.
+    """A release with 0171 on an unconverted database stops before anything.
 
     The conversion's migration not applied, a definition still a digest or
     a failed query all answer something other than t: the run refuses in
@@ -866,7 +866,7 @@ def test_the_digest_retirement_refuses_an_unconverted_database_first(
         tmp_path, "upgrade", noop="f", schema_change="1", status=1, converted=converted
     )
     test = first(calls, " --entrypoint test ")
-    assert "/app/src/parishkit/stewardship/schema/migrations/0162_" in calls[test]
+    assert "/app/src/parishkit/stewardship/schema/migrations/0171_" in calls[test]
     query = first(calls, "0041_report_conversion")
     assert "default_transaction_read_only=on" in calls[query]
     assert "kind IN ('daily_digest','weekly_digest')" in calls[query]
@@ -880,7 +880,7 @@ def test_the_digest_retirement_refuses_an_unconverted_database_first(
 
 
 def test_the_digest_retirement_check_needs_the_file_and_an_upgrade(tmp_path):
-    """Only an upgrade to an image with 0162 asks the database; t passes.
+    """Only an upgrade to an image with 0171 asks the database; t passes.
 
     An image without the file never runs the query, a converted database
     upgrades as usual, a rollback never asks, and a failure to ask the

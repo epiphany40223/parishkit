@@ -958,7 +958,7 @@ CLOSURE_CREATED = {
     ),
     # 0164 (#1872) creates the coverage decision table (in
     # CLOSURE_TABLES) with its guard and replaces 0162's comparison; after
-    # 0162's file runs again (its entry is above), 0164's, whole, puts back
+    # 0171's file runs again (its entry is above), 0164's, whole, puts back
     # the table, guard and its comparison. 0165's waiting read is in
     # runtime_grants.CLOSURE_FUNCTIONS, which installs it again on its own.
     "public.stewardship_report_email_coverage_decision_guard_v1()": (
@@ -997,10 +997,10 @@ CLOSURE_RERUN = {
         "stewardship_reports",
         "0024_hide_gone_members",
     ),
-    # 0162 (#1834) drops the digest write functions and triggers that
+    # 0171 (#1834) drops the digest write functions and triggers that
     # ``before_retire_digests`` makes again and narrows the definition check
     # 0161's file widens, so it runs again after 0161's.
-    ("stewardship_reports", "0035_retire_digests"): (
+    ("stewardship_reports", "0046_retire_digests"): (
         "stewardship_reports",
         "0041_report_conversion",
     ),
@@ -1798,10 +1798,10 @@ def before_submission_upcoming_pledge():
 REPORT_CONVERSION = MIGRATIONS / "migrations/0161_report_conversion.sql"
 REPORT_PIPELINE = MIGRATIONS / "migrations/0156_report_pipeline.sql"
 PRE_CONVERSION = Path(__file__).with_name("pre_report_conversion_definitions.sql")
-# 0162 (#1834) drops the digest write functions and triggers, which the
+# 0171 (#1834) drops the digest write functions and triggers, which the
 # base's gate bodies (put back by ``before_report_conversion``) still call.
 # While the swap is pending they are made again from their frozen baseline
-# copy (``before_retire_digests``); 0162's file runs again afterwards
+# copy (``before_retire_digests``); 0171's file runs again afterwards
 # (``CLOSURE_RERUN``).
 PRE_RETIREMENT = Path(__file__).with_name("pre_retire_digests_definitions.sql")
 
@@ -1953,7 +1953,7 @@ def before_report_conversion(cursor, views_before):
 
 
 def before_retire_digests(cursor):
-    """Make again the digest write functions and triggers 0162 drops.
+    """Make again the digest write functions and triggers 0171 drops.
 
     The copy is the baseline's own, run as a fresh install runs it: bodies
     are checked when they run, since the copy's functions call each other.
@@ -2035,7 +2035,7 @@ def swap_pending():
     form baselines and submissions as they were before 0143
     (``before_reviewed_form_shown_items``), and the functions and views 0161
     replaced as they were before 0156 (``before_report_conversion``), and
-    the digest write functions and triggers 0162 drops
+    the digest write functions and triggers 0171 drops
     (``before_retire_digests``).
     """
     from django.db.migrations.loader import MigrationLoader

@@ -588,16 +588,17 @@ if [ "$advisory" != t ]; then
     fi
 fi
 
-# The digest retirement (#1834, frozen file 0162) needs the report email
+# The digest retirement (#1834, frozen file 0171) needs the report email
 # conversion done first: its migration (stewardship_reports.0041, frozen
 # file 0161) applied and `upgrade-reports` run, so that no schedule
 # definition is still a digest. On a database without it, step 4 would
-# commit 0161 and then stop at 0162, leaving a restore as the only way
-# back, so refuse here instead, before anything stops. The image answers
-# whether it has the file (test exits 0 or 1; anything else is a failure to
-# ask); the database, in a read-only session, whether it is converted.
+# commit 0161 through 0170 and then stop at 0171, leaving a restore as the
+# only way back, so refuse here instead, before anything stops. The image
+# answers whether it has the file (test exits 0 or 1; anything else is a
+# failure to ask); the database, in a read-only session, whether it is
+# converted.
 if [ "$mode" = upgrade ]; then
-    retirement=/app/src/parishkit/stewardship/schema/migrations/0162_retire_digests.sql
+    retirement=/app/src/parishkit/stewardship/schema/migrations/0171_retire_digests.sql
     rc=0
     "${isolated[@]}" --entrypoint test "$image" -f "$retirement" || rc=$?
     if [ "$rc" -gt 1 ]; then
@@ -610,7 +611,7 @@ if [ "$mode" = upgrade ]; then
             "SELECT EXISTS (SELECT 1 FROM public.django_migrations WHERE app='stewardship_reports' AND name='0041_report_conversion') AND NOT EXISTS (SELECT 1 FROM public.stewardship_schedule_definition WHERE kind IN ('daily_digest','weekly_digest'))" \
             2>&1 || true)
         if [ "$converted" != t ]; then
-            echo "This release retires the Daily and Weekly digests (migration 0162), but the" >&2
+            echo "This release retires the Daily and Weekly digests (migration 0171), but the" >&2
             echo "database has not finished the report email conversion: the conversion's" >&2
             echo "migration is not applied or a schedule definition is still a digest (answer:" >&2
             echo "$(head -3 <<<"$converted"))." >&2

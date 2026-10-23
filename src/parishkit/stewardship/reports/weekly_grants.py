@@ -1,7 +1,7 @@
 """The report worker may read weekly inputs; scheduler/MAIL cannot read raw text.
 
 The Weekly digest pipeline is retired (#1834): every grant here reads the
-saved digests. Migration 0162 revoked the write grants these once declared.
+saved digests. Migration 0171 revoked the write grants these once declared.
 """
 
 REPORT_FIELDS = (

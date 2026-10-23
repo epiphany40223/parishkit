@@ -1,4 +1,4 @@
-"""Migration 0162 retires the digest pipelines (#1834).
+"""Migration 0171 retires the digest pipelines (#1834).
 
 The schedule definition check admits no digest kind any more (the revision
 checks still do, for history), the digest write functions and triggers are
@@ -20,7 +20,7 @@ pytestmark = pytest.mark.django_db
 
 FROZEN = (
     Path(__file__).resolve().parents[3]
-    / "src/parishkit/stewardship/schema/migrations/0162_retire_digests.sql"
+    / "src/parishkit/stewardship/schema/migrations/0171_retire_digests.sql"
 ).read_text(encoding="utf-8")
 # The file's closing self-check, run on its own against chosen states.
 CHECK = FROZEN[FROZEN.index("DO $check$") :]
@@ -188,7 +188,7 @@ def test_the_file_refuses_while_a_definition_is_still_a_digest(kind):
         insert_definition(kind)
         refused(
             FROZEN,
-            "Migration 0162: 2 schedule definitions are still Daily or Weekly digests",
+            "Migration 0171: 2 schedule definitions are still Daily or Weekly digests",
         )
         transaction.set_rollback(True)
 
@@ -245,7 +245,7 @@ def test_the_closing_block_refuses_each_undeclared_state(case):
     with transaction.atomic():
         with connection.cursor() as cursor:
             cursor.execute(change)
-        refused(CHECK, f"Migration 0162: {message}")
+        refused(CHECK, f"Migration 0171: {message}")
         transaction.set_rollback(True)
     with connection.cursor() as cursor:
         cursor.execute(CHECK)

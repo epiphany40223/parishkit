@@ -63,7 +63,7 @@ def test_grant_registry_names_existing_models_and_excludes_unrelated_download_da
         assert table not in grants
 
 
-# The digest tables migration 0162 (#1834) revoked every service login's
+# The digest tables migration 0171 (#1834) revoked every service login's
 # writes on; the saved digests still read them.
 DIGEST_TABLES = (
     "stewardship_daily_digest_preparation",

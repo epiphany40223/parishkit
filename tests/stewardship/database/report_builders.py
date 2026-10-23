@@ -196,7 +196,7 @@ def digests_admitted(monkeypatch):
         yield
 
 
-# The schedule definition check before and after migration 0162 (#1834),
+# The schedule definition check before and after migration 0171 (#1834),
 # in the form the frozen files write it.
 DIGEST_KIND_CHECK = (
     "CHECK (((kind)::text = ANY ((ARRAY['initial'::character varying, "
@@ -225,7 +225,7 @@ def _definition_check(cursor, check):
 def digest_kinds_admitted():
     """Admit the digest kinds in the definition check for one test.
 
-    Migration 0162 (#1834) dropped them, since every deployment has run the
+    Migration 0171 (#1834) dropped them, since every deployment has run the
     conversion; the conversion suites still seed the digests a database
     held before it. Afterwards any digest definition the test left is
     retyped as a report, with the triggers off (the transactional test's

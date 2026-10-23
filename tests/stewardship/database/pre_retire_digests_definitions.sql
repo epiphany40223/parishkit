@@ -1,4 +1,4 @@
--- The digest write functions and triggers migration 0162 (#1834) drops,
+-- The digest write functions and triggers migration 0171 (#1834) drops,
 -- copied unchanged from the baseline schema files before it. While the
 -- users swap is pending, test_users_swap_postgresql.py makes them again
 -- (``before_retire_digests``), as the users upgrade's base has them; the

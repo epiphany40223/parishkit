@@ -1,7 +1,7 @@
 """Daily digest permissions: scheduler metadata is not access to private reports.
 
 The Daily digest pipeline is retired (#1834): every grant here reads the
-saved digests. Migration 0162 revoked the write grants these once declared.
+saved digests. Migration 0171 revoked the write grants these once declared.
 """
 
 
