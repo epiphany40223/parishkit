@@ -44,9 +44,10 @@ The historical measurements below describe the original increment.
 
 Issue #627 later split the slowest engine across CI jobs.
 `quality_sharding.BROWSER_JOBS` lists the jobs, and the workflow matrix runs
-one job per entry: Firefox halved, one half per job (#1380; it ran whole
-before), and WebKit and Chromium each split in five, one fifth of each per job
-(#1529; they were split in three before, and halved before #1151).
+one job per entry: Firefox in quarters, one quarter per job (#2051; it was
+halved in #1380 and ran whole before), and WebKit and Chromium each split in
+seven, one seventh of each per job (#2051; they were split in five in #1529,
+in three in #1151, and halved before that).
 `test_browser_ci.py` requires the matrix to match and every engine's
 partitions to appear exactly once. An engine's partitions split its cases by
 whole test file, balanced by estimated seconds for that engine (scheduling
@@ -98,17 +99,18 @@ run in fifths, about 1,800 seconds of tests per job on the same runners, near
 shorten the paired jobs from 47 to 49 minutes to about 31. When a job's tests
 near 75% of the budget again, split further rather than raising `JOB_SECONDS`.
 
+Within a week the suite outgrew both splits (#2051). By train run 39905434294 on 2026-10-23 the tests took about 5,750 seconds on Firefox, 4,710 on Chromium and 6,590 on WebKit, against estimates 1.2 to 2.1 times low. One Firefox half ran 2,704 seconds and the other was killed at its 3,000-second budget on all four attempts, each time in a different test and with no test failed, including on quiet runners. The paired fifths ran 1,840 to 2,940 seconds, and one WebKit fifth was killed. `quality_browser_hints` refitted every hint to that run's four attempts. Replayed on the same tests, every partition's estimate is within about 7% of its actual seconds, the Firefox quarters take about 1,430 seconds each (48% of the budget) and the paired sevenths 1,580 to 1,690 (53 to 56%), so a runner 60% slower still finishes. Firefox thirds (62 to 64%) and paired sixths (61 to 64%) would already have been above 60%. The four extra jobs run the same test seconds; they add about 1.5 minutes of setup each and shorten the longest job from over 50 minutes to about 30. Split further, and refit, when a job's tests near 60% of the budget again.
+
 Each partition logs its estimate on its `CI_BROWSER_PARTITION` line and
 `CI_BROWSER_TIMING <label>: estimated N s, actual M s` when it finishes, pass
 or fail (#666). Estimates are per engine, so each estimate should be close to
-its actual time on a normal runner. To refresh the hints, sum each file's
-`CI_PROGRESS ... END ... elapsed=` seconds per engine from the job logs of a
-recent full run or two (`gh api repos/OWNER/REPO/actions/jobs/ID/logs`). Fit
-each engine's fixed and per-case seconds to those sums by least squares,
-record as extra seconds the files that stay more than about 10 seconds above
-the fit on average across engines (refitting without them), and note the
-source run IDs. Hints change only placement and logged estimates, never which
-tests run.
+its actual time on a normal runner. To refresh the hints:
+
+1. Save the logs of every `stewardship-browser-engine` job of a recent full run, every attempt (`gh api repos/OWNER/REPO/actions/runs/RUN/attempts/N/jobs` lists them; `gh api repos/OWNER/REPO/actions/jobs/ID/logs > ID.log` saves one; the API sometimes answers 502, so retry).
+2. Run `python -m parishkit.stewardship.quality_browser_hints *.log`. It takes each test's median `CI_PROGRESS ... END ... elapsed=` seconds across the logs, sums them per file and engine, fits each engine's fixed and per-case seconds by least squares, and records as extra seconds the files that stay more than 10 seconds (`--threshold`) above the fit on average across engines, refitting without them.
+3. Paste the printed `BROWSER_ENGINE_SECONDS` and `BROWSER_FILE_EXTRA_SECONDS` into `quality_sharding`, note the source run IDs there, and rerun the tool. Its replay of `BROWSER_JOBS` on the same tests prints each partition's estimate beside its actual seconds and each job's total as a share of `JOB_SECONDS`. If a job is above about 60%, raise that engine's count in `BROWSER_JOBS` and the workflow matrix together and rerun.
+
+Tests a budget kill never finished are missing from the logs, so include every attempt of a killed job. Hints change only placement and logged estimates, never which tests run.
 
 ## Partition budgets (#1112)
 

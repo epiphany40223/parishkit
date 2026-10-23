@@ -305,7 +305,7 @@ def test_collection_hook_keeps_exact_owner_and_reports(selection_config):
     selection_config.hook.pytest_deselected.assert_called_once_with(items=removed)
     reporter = selection_config.pluginmanager.get_plugin.return_value
     reporter.write_line.assert_called_once_with(
-        "CI_BROWSER_PARTITION chromium: 1 out of 3 (33.3%) cases, estimated 8 s"
+        "CI_BROWSER_PARTITION chromium: 1 out of 3 (33.3%) cases, estimated 14 s"
     )
 
 
@@ -852,14 +852,20 @@ def test_browser_estimate_sums_engine_costs_and_file_extras(engine):
 
 
 def test_browser_estimates_are_engine_scale():
-    """Chromium is the fastest engine and WebKit, about 1.6 times Chromium
-    (#1151), the slowest; Firefox, refitted in #1380, falls between them."""
-    nodes = [f"tests/x/test_{n}.py::case[{c}]" for n in range(20) for c in range(8)]
+    """Chromium is the fastest engine and WebKit the slowest per case.
+
+    At the suite's typical 12 or 13 cases per file, Firefox and WebKit each
+    take 1.4 to 2 times as long as Chromium (refitted in #2051; Firefox's
+    higher fixed cost per file now puts it above WebKit there).
+    """
+    nodes = [f"tests/x/test_{n}.py::case[{c}]" for n in range(20) for c in range(12)]
     chromium, firefox, webkit = (
         browser_estimate(nodes, engine) for engine in BROWSER_ENGINES
     )
-    assert chromium < firefox < webkit
-    assert 1.4 < webkit / chromium < 2
+    assert 1.4 < firefox / chromium < 2 and 1.4 < webkit / chromium < 2
+    per_case = {engine: BROWSER_ENGINE_SECONDS[engine][1] for engine in BROWSER_ENGINES}
+    assert max(per_case, key=per_case.get) == "webkit"
+    assert min(per_case, key=per_case.get) == "chromium"
 
 
 @pytest.mark.parametrize(

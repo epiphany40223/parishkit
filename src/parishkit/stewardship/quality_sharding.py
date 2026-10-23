@@ -8,54 +8,78 @@ BROWSER_ENGINES = ("chromium", "firefox", "webkit")
 # The browser CI jobs (#627), one workflow matrix entry each; every entry
 # runs its ENGINE:INDEX/COUNT partitions in turn. test_browser_ci.py requires
 # the matrix to equal this and every engine's partitions to appear exactly
-# once. Firefox is halved, alone in each of its two jobs (#1380): each half
-# took 1,120 to 1,840 s in October 2026, at most about 60% of
-# quality_browser.JOB_SECONDS. WebKit and Chromium are each split in five and
-# paired, one fifth of each per job (#1529). In thirds (#1151) the paired
-# jobs had grown to 2,700 to 2,930 s of tests on ordinary runners, and two
-# were killed at the 3,000 s budget with no test failed; fifths bring a job to
-# about 1,800 s, 60% of the budget. WebKit, the slowest engine, runs last in
-# its job so it inherits whatever time Chromium leaves of its reserved share
-# (quality_browser.partition_limit, #1112). When a job's tests near 75% of
-# the budget again, split further rather than raising the budget.
+# once. Firefox runs in quarters, alone in each of its four jobs, and WebKit
+# and Chromium in sevenths, paired one seventh of each per job (#2051). By
+# CI run 39905434294 the suite had grown to about 5,750 s of tests on
+# Firefox, 4,710 on Chromium and 6,590 on WebKit: a Firefox half ran 2,700 s
+# and the other was killed at the 3,000 s budget (quality_browser.JOB_SECONDS)
+# on all four attempts, and the paired fifths ran 1,840 to 2,940 s. Replayed
+# on that run, the quarters take about 1,430 s and the paired sevenths 1,580
+# to 1,690 s, 47 to 56% of the budget, so a runner 60% slower still
+# finishes. (Firefox was halved in #1380 and the pair split in five in #1529.)
+# WebKit, the slowest engine, runs last in its job so it inherits whatever
+# time Chromium leaves of its reserved share (quality_browser.partition_limit,
+# #1112). When a job's tests near 60% of the budget again, refit the hints
+# below and split further rather than raising the budget.
 BROWSER_JOBS = (
-    "firefox:1/2",
-    "firefox:2/2",
-    "chromium:1/5 webkit:1/5",
-    "chromium:2/5 webkit:2/5",
-    "chromium:3/5 webkit:3/5",
-    "chromium:4/5 webkit:4/5",
-    "chromium:5/5 webkit:5/5",
+    "firefox:1/4",
+    "firefox:2/4",
+    "firefox:3/4",
+    "firefox:4/4",
+    "chromium:1/7 webkit:1/7",
+    "chromium:2/7 webkit:2/7",
+    "chromium:3/7 webkit:3/7",
+    "chromium:4/7 webkit:4/7",
+    "chromium:5/7 webkit:5/7",
+    "chromium:6/7 webkit:6/7",
+    "chromium:7/7 webkit:7/7",
 )
 
-# Scheduling hints only, fitted to the per-test CI_PROGRESS seconds of CI run
-# 38719928786 (#1380). A test file costs its engine's fixed seconds (opening
-# pages and module fixtures) plus its per-case seconds for each case, plus
-# any BROWSER_FILE_EXTRA_SECONDS: fixed waits in that file that cost about
-# the same on every engine. Replayed on that run's file times, every
-# partition's estimate fell within about 4% of its actual seconds. Hints
-# never select or exclude a test; they only balance whole files (which keeps
-# module-scoped fixtures together) across an engine's partitions, and give
-# each partition's logged estimate.
+# Scheduling hints only, fitted by quality_browser_hints to the per-test
+# CI_PROGRESS seconds of every browser job of CI run 39905434294, attempts 1
+# to 4 (#2051; docs/guides/stewardship-browser-ci.md says how to refit). A
+# test file costs its engine's fixed seconds (opening pages and module
+# fixtures) plus its per-case seconds for each case, plus any
+# BROWSER_FILE_EXTRA_SECONDS: fixed waits in that file that cost about the
+# same on every engine. Replayed on that run, every partition's estimate fell
+# within about 7% of its actual seconds; the previous fit (run 38719928786,
+# #1380) had fallen 1.2 to 2.1 times low as the suite grew. Hints never select
+# or exclude a test; they only balance whole files (which keeps module-scoped
+# fixtures together) across an engine's partitions, and give each
+# partition's logged estimate.
 BROWSER_ENGINE_SECONDS = {
     # engine: (seconds per file, seconds per case)
-    "chromium": (8, 0.28),
-    "firefox": (9, 0.6),
-    "webkit": (11, 0.8),
+    "chromium": (14, 0.26),
+    "firefox": (19, 0.81),
+    "webkit": (12, 1.19),
 }
 BROWSER_FILE_EXTRA_SECONDS = {
-    "test_system_health.py": 440,
-    "test_about_page.py": 53,
-    "test_family_pledge_walks.py": 53,
-    "test_live_status_in_place.py": 35,
-    "test_refresh_schedule_editor.py": 29,
-    "test_send_progress.py": 20,
-    "test_campaign_comparison.py": 19,
-    "test_family_acceptance.py": 18,
-    "test_schedule_fields.py": 14,
-    "test_schedule_list.py": 14,
-    "test_system_logs.py": 12,
-    "test_time_entry.py": 11,
+    "test_system_health.py": 530,
+    "test_campaign_stepper.py": 111,
+    "test_technical_details_live.py": 87,
+    "test_about_page.py": 74,
+    "test_export_in_place.py": 69,
+    "test_family_pledge_walks.py": 49,
+    "test_live_status_in_place.py": 40,
+    "test_refresh_stage_boxes.py": 32,
+    "test_system_health_clear_halt.py": 31,
+    "test_refresh_schedule_editor.py": 27,
+    "test_send_progress.py": 24,
+    "test_go_live_prepare.py": 21,
+    "test_schedule_calendar.py": 21,
+    "test_family_acceptance.py": 19,
+    "test_admin_stepper_row.py": 18,
+    "test_financial_report.py": 17,
+    "test_report_workspace.py": 17,
+    "test_schedule_fields.py": 17,
+    "test_campaign_comparison.py": 14,
+    "test_family_financial.py": 13,
+    "test_go_live_confirm.py": 13,
+    "test_report_email_editor.py": 12,
+    "test_setup_mail.py": 12,
+    "test_schedule_list.py": 11,
+    "test_setup_back_path.py": 10,
+    "test_time_entry.py": 10,
 }
 
 
