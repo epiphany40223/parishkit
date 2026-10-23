@@ -10,6 +10,7 @@ under the page's one audited view. Ministry leaders still cannot open it
 """
 
 import re
+from html import unescape
 from uuid import uuid4
 
 import pytest
@@ -350,3 +351,107 @@ def test_a_replacing_change_on_the_reviewed_form_carries_nothing(
     body, _ = page(client, path)
     shown = [w for w, detail in rows(body) if detail.startswith("First name for ")]
     assert shown == ["Accepted", "Accepted (edited)"]
+
+
+def test_pledge_decisions_reach_only_financial_readers(response_service, google):
+    """An Edit, its mark and the mark's undo (#2071) each add a pledge line,
+    the Edit with the Reviewer's value and the undo with its note, for
+    Administrators and Staff, on the page too; a reader without financial
+    detail, or none, sees no pledge line. One statement either way."""
+    from parishkit.stewardship.accounts.policy import Principal
+
+    from .test_pledge_review_postgresql import admin as pledge_admin
+    from .test_pledge_review_postgresql import decide, pledged
+
+    harness, submission = pledged(response_service)
+    actor = pledge_admin()
+    decide(
+        harness,
+        actor,
+        "edit",
+        [submission],
+        value_amount="1,300",
+        value_frequency="quarterly",
+    )
+    decide(harness, actor, "entered_by_hand", [submission])
+    decide(harness, actor, "back_to_review", [submission], note="Wrong amount")
+    family_id = submission.family_id
+    by = "; by admin@example.org"
+    expected = [
+        ("Accepted (edited)", "Pledge; Reviewer's value: $1,300.00, Quarterly" + by),
+        ("Entered by hand", "Pledge" + by),
+        ("Back to review", "Pledge" + by + "; note: Wrong amount"),
+    ]
+    for roles in ({"staff"}, {"administrator"}):
+        reader = Principal(uuid4(), frozenset(roles), frozenset())
+        assert reviews(harness.campaign.pk, family_id, reader) == (expected, 1)
+    leader = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({1}))
+    for reader in (None, leader):
+        assert reviews(harness.campaign.pk, family_id, reader) == ([], 1)
+
+    client, login = signed_in()
+    assert login.status_code == 302
+    path = reverse("admin:timeline", args=[family_id]) + "?kind=reviews"
+    body, counted = page(client, path)
+    assert counted == 1
+    # The page escapes the apostrophe in Reviewer's.
+    shown = [(what, unescape(detail)) for what, detail in rows(body)]
+    assert shown == list(reversed(expected))
+
+
+def test_limitation_decisions_reach_the_timeline(response_service, google):
+    """Accept, Handled, Handled's undo and Ignore (#2071) each add a
+    Limitations line; a Handled the Family's changed answer ended, then a
+    fresh Accept, reads Accepted rather than as the undo."""
+    from parishkit.stewardship.accounts.policy import Principal
+    from parishkit.stewardship.campaigns.models import FamilyCampaign
+    from parishkit.stewardship.pipeline import Action
+    from parishkit.stewardship.responses.limitation_review import answer_id
+
+    from .response_builders import activate_response_service
+    from .test_information_limitation_review_postgresql import (
+        decide_answer,
+        resubmit,
+        staff_actor,
+    )
+    from .test_limitations_report_postgresql import submit_live
+    from .test_ministry_responses_postgresql import start
+
+    harness = response_service
+    start(harness)
+    harness = activate_response_service(harness)
+    first = submit_live(harness, cannot_serve=True)
+    actor = staff_actor()
+    family = FamilyCampaign.objects.get(pk=first.family_id)
+    member = answer_id(family.family_duid, "member", "3")
+    whole = answer_id(family.family_duid, "family")
+    decide_answer(harness, actor, Action.ACCEPT, member, 0)
+    decide_answer(harness, actor, Action.HANDLED, member, 1)
+    # An unchanged answer between Handled and its undo keeps Handled in
+    # force, so the undo still reads Back to review.
+    resubmit(harness, cannot_serve=True)
+    decide_answer(harness, actor, Action.BACK_TO_REVIEW, member, 2, note="Not yet")
+    decide_answer(harness, actor, Action.HANDLED, member, 3)
+    decide_answer(harness, actor, Action.IGNORE, whole, 0)
+    # The Family clears the answer, then gives it again: a new To review.
+    resubmit(harness, cannot_serve=False)
+    resubmit(harness, cannot_serve=True)
+    decide_answer(harness, actor, Action.ACCEPT, member, 4, note="Asked again")
+    staff = Principal(uuid4(), frozenset({"staff"}), frozenset())
+    lines, statements = reviews(harness.campaign.pk, family.pk, staff)
+    assert statements == 1
+    assert [what for what, _detail in lines] == [
+        "Accepted",
+        "Handled",
+        "Back to review",
+        "Handled",
+        "Ignored",
+        "Accepted",
+    ]
+    serve = [detail for _what, detail in lines[:4]] + [lines[5][1]]
+    assert all(d.startswith("Cannot participate in any ministries for ") for d in serve)
+    assert lines[2][1].endswith("; by admin@example.org; note: Not yet")
+    assert lines[4][1] == (
+        "Cannot attend Mass or prayer services for the Family; by admin@example.org"
+    )
+    assert "note:" not in lines[5][1]
