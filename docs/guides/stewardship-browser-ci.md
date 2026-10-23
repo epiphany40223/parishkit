@@ -156,9 +156,14 @@ and their OS packages. Before #2053, every job ran `playwright install
 --with-deps`, which fetched about 119 MB of Ubuntu packages. On a slow mirror
 (48 kB/s) that took 25 to 42 minutes of the 60-minute job limit.
 
-- `actions/setup-python` (Python 3.12, pip cache) and `actions/setup-node`
-  (npm cache) still run inside the container. The locked requirements and
-  `npm ci` for axe-core install as before.
+- `actions/setup-python` does not run in the container: it calls
+  `lsb_release`, which the image lacks, and the job failed in seconds. The
+  job checks that the image's `python3` is 3.12.x and installs the locked
+  requirements into a virtualenv made with the image's `virtualenv` (the
+  image has no `ensurepip`, so `python -m venv` fails, and Ubuntu noble
+  refuses a system-wide pip install). `actions/cache` keeps `~/.cache/pip`.
+  The image has no Node, so `actions/setup-node` (npm cache) still runs, and
+  `npm ci` for axe-core installs as before.
 - `python -m playwright install <engines>` stays, without `--with-deps`. It
   downloads nothing while the image's browsers match the `playwright` pin in
   `requirements/stewardship-browser.txt`. `test_browser_ci.py` requires the

@@ -553,6 +553,18 @@ def test_browser_jobs_run_in_the_pinned_playwright_image():
     assert "for family in sans-serif serif monospace; do" in font_check["run"]
     # The font check precedes the tests it protects.
     assert names.index("Require the runner's DejaVu fonts") < len(names) - 2
+    # setup-python needs lsb_release, which the image lacks, so the job uses
+    # the image's Python in a virtualenv instead. setup-node stays: no Node.
+    uses = [step.get("uses", "") for step in job["steps"]]
+    assert not any(u.startswith("actions/setup-python") for u in uses)
+    assert any(u.startswith("actions/setup-node") for u in uses)
+    venv = job["steps"][names.index("Use the image's Python 3.12 in a virtualenv")]
+    assert '"Python 3.12."*' in venv["run"]
+    assert "virtualenv" in venv["run"]
+    assert '>> "$GITHUB_PATH"' in venv["run"]
+    assert names.index("Use the image's Python 3.12 in a virtualenv") < names.index(
+        "Install component test dependencies"
+    )
 
 
 def test_ci_cancels_only_superseded_pr_heads():

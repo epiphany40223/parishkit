@@ -336,10 +336,25 @@ jobs:
       BROWSER_RUNS: ${{ matrix.runs }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      # actions/setup-python cannot run in this image: it calls lsb_release
+      # (absent here) to pick its toolcache build. Use the image's own Python
+      # 3.12 in a virtualenv, because Ubuntu noble refuses a system-wide pip
+      # install (PEP 668) and the image lacks ensurepip, so `python -m venv`
+      # fails but its bundled virtualenv works. The image has no Node, so
+      # setup-node still installs it.
+      - name: Use the image's Python 3.12 in a virtualenv
+        run: |
+          case "$(python3 --version)" in
+            "Python 3.12."*) ;;
+            *) echo "::error::the image's python3 is not 3.12.x"; exit 1 ;;
+          esac
+          python3 -m virtualenv "$RUNNER_TEMP/venv"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+      - uses: actions/cache@v4
         with:
-          python-version: "3.12"
-          cache: pip
+          path: ~/.cache/pip
+          key: pip-playwright-container-${{ hashFiles('requirements.txt', 'requirements/*.txt') }}
+          restore-keys: pip-playwright-container-
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
