@@ -4,19 +4,24 @@ In Chromium and WebKit. The real page is served by ``census_components``;
 each POST is answered with the fixture page after it. A mark outside every
 region shows the page never reloaded. Add shows only the controls the
 chosen field needs, sends only those, waits until they are complete, shows
-a refusal at its field, and the added row offers only its own steps; once
-Entered by hand, its Back to review undoes the mark with a required note
-(#1840).
+a refusal at its field, and the added row offers only its own steps, named
+for what they do (#2041): Withdraw, and once Entered by hand Not entered yet
+(the mark's undo, with a required note, #1840) and Withdraw with the same
+note. The Family's own change of the field says its Accept withdraws the
+addition.
 """
 
 import json
 
 import pytest
 
+from parishkit.stewardship.web.review_worklist import BULK_BODY
+
 from .census_components import (
     ADDED,
     ADDED_ENTERED,
     ADDED_NOTICE,
+    ADDED_OVERLAP,
     ADDED_REOPENED,
     ADDED_REOPENED_NOTICE,
     PATH,
@@ -103,7 +108,7 @@ def test_an_add_posts_its_fields_and_answers_in_place(page, component_origin):
     """A filled Add posts decide=add with only the chosen field's controls and
     the page's view; a refusal is shown at its field, and the corrected Add
     answers with the page redrawn and the added row, which offers only
-    Entered by hand and a Back to review that withdraws it."""
+    Withdraw and Entered by hand (#2041)."""
     page.goto(component_origin + PATH)
     page.evaluate(MARK)
     sent = answer_posts(page, component_origin, refuse_first=True)
@@ -136,18 +141,20 @@ def test_an_add_posts_its_fields_and_answers_in_place(page, component_origin):
         node.get_attribute("data-row-action")
         for node in added.locator(".table-actions button").all()
     ]
-    assert actions == ["accept", "back_to_review", "entered_by_hand"]
-    assert added.locator('[data-row-action="accept"]').get_attribute(
-        "aria-pressed"
-    ) == ("true")
-    added.locator('[data-row-action="back_to_review"]').click()
-    decide = page.locator("#census-decide-dialog")
-    has_text(decide.locator("h2"), "Withdraw Nickname for Member 03?")
-    has_text(
-        decide.locator("[data-confirm-body]"),
-        "The added change is withdrawn: nothing is entered in ParishSoft, and it "
-        "moves to History.",
+    assert actions == ["accept", "withdraw", "entered_by_hand"]
+    accept = added.locator('[data-row-action="accept"]')
+    assert accept.get_attribute("aria-pressed") == "true"
+    assert accept.get_attribute("title") == "Added by the parish"
+    withdraw = added.locator('[data-row-action="withdraw"]')
+    assert withdraw.get_attribute("aria-label") == (
+        "Withdraw the added Nickname for Member 03"
     )
+    withdraw.click()
+    decide = page.locator("#census-decide-dialog")
+    has_text(decide.locator("h2"), "Withdraw the added Nickname for Member 03?")
+    has_text(decide.locator("[data-confirm-body]"), "The Family will no longer see it.")
+    # No note is needed to withdraw an open addition.
+    available(decide.get_by_role("button", name="Record"))
     assert page.evaluate(MARKED) == "kept"
 
 
@@ -180,10 +187,10 @@ def test_an_added_address_sends_only_the_shown_state(page, component_origin):
     assert "value_member" not in sent[0]
 
 
-def test_back_to_review_undoes_an_added_changes_mark_in_place(page, component_origin):
-    """An added change Entered by hand offers Back to review (#1840): its
-    dialog says the mark is undone and the change goes back to To enter by
-    hand, and Record waits for the required note; the redrawn row is To
+def test_not_entered_yet_undoes_an_added_changes_mark_in_place(page, component_origin):
+    """An added change Entered by hand offers Not entered yet (#1840, #2041):
+    its dialog says the mark is undone and the change goes back to To enter
+    by hand, and Record waits for the required note; the redrawn row is To
     enter by hand again, in place."""
     page.goto(component_origin + ADDED_ENTERED)
     page.evaluate(MARK)
@@ -197,9 +204,13 @@ def test_back_to_review_undoes_an_added_changes_mark_in_place(page, component_or
     fulfil_post_with(page, "**" + PATH, component_origin, answer)
     added = page.locator("#census-row-add-a1")
     has_text(added.locator(".stage-chip .status-word"), "Entered by hand")
-    added.locator('[data-row-action="back_to_review"]').click()
+    undo = added.locator('[data-row-action="back_to_review"]')
+    assert undo.get_attribute("aria-label") == (
+        "Mark Nickname for Member 03 not entered yet"
+    )
+    undo.click()
     dialog = page.locator("#census-decide-dialog")
-    has_text(dialog.locator("h2"), "Send Nickname for Member 03 back to review?")
+    has_text(dialog.locator("h2"), "Mark Nickname for Member 03 not entered yet?")
     has_text(
         dialog.locator("[data-confirm-body]"),
         "Entered by hand is undone: the item goes back to To enter by hand, with "
@@ -216,6 +227,103 @@ def test_back_to_review_undoes_an_added_changes_mark_in_place(page, component_or
     assert "item=add-a1" in sent[-1] and "version=2" in sent[-1]
     has_text(added.locator(".stage-chip .status-word"), "To enter by hand")
     assert page.evaluate(MARKED) == "kept"
+
+
+def test_withdraw_after_entered_needs_the_undos_note(page, component_origin):
+    """An entered addition's Withdraw says the mark is undone and the Family
+    will no longer see it, and Record waits for the required note; it posts
+    decide=withdraw at the row's version."""
+    page.goto(component_origin + ADDED_ENTERED)
+    sent = []
+
+    def answer(request):
+        """Keep the body; answer with the page after the undo."""
+        sent.append(request.post_data)
+        return ADDED_REOPENED
+
+    fulfil_post_with(page, "**" + PATH, component_origin, answer)
+    added = page.locator("#census-row-add-a1")
+    actions = [
+        node.get_attribute("data-row-action")
+        for node in added.locator(".table-actions button").all()
+    ]
+    assert actions == ["accept", "back_to_review", "withdraw", "entered_by_hand"]
+    assert added.locator('[data-row-action="entered_by_hand"]').get_attribute(
+        "title"
+    ) == ("Entered by hand; choose Not entered yet to change it")
+    added.locator('[data-row-action="withdraw"]').click()
+    dialog = page.locator("#census-decide-dialog")
+    has_text(dialog.locator("h2"), "Withdraw the added Nickname for Member 03?")
+    has_text(
+        dialog.locator("[data-confirm-body]"),
+        "Entered by hand is undone and the added change is withdrawn: it moves to "
+        "History. The Family will no longer see it. Say why.",
+    )
+    record = dialog.get_by_role("button", name="Record")
+    assert record.is_disabled()
+    dialog.get_by_label("Note (required)").fill("Not needed")
+    available(record)
+    record.click()
+    hidden(dialog)
+    assert "decide=withdraw" in sent[-1] and "version=2" in sent[-1]
+
+
+def test_the_familys_accept_says_it_withdraws_the_addition(page, component_origin):
+    """The Family's change of a field the parish added a value for says, in
+    its Accept and Edit dialogs and the bulk Accept's, that accepting it
+    withdraws the addition (#2041)."""
+    page.goto(component_origin + ADDED_OVERLAP)
+    added = page.locator("#census-row-add-a1")
+    has_text(
+        added.locator("span.help"),
+        "Added by the parish. The Family has an open change of this field too: "
+        "accepting that one withdraws this one.",
+    )
+    row = page.locator("#census-row-3")
+    row.locator('[data-row-action="accept"]').click()
+    dialog = page.locator("#census-decide-dialog")
+    has_text(
+        dialog.locator("[data-confirm-body]"),
+        "Record this decision. Back to review undoes it. This also withdraws the "
+        "parish's added Mobile phone (555-0123).",
+    )
+    dialog.get_by_role("button", name="Cancel").click()
+    hidden(dialog)
+    other = page.locator("#census-row-4")
+    other.locator('[data-row-action="accept"]').click()
+    has_text(
+        dialog.locator("[data-confirm-body]"),
+        "Record this decision. Back to review undoes it.",
+    )
+    dialog.get_by_role("button", name="Cancel").click()
+    row.locator("input[data-select-row]").check()
+    page.locator(".bulk-bar").get_by_role("button", name="Accept", exact=True).click()
+    has_text(
+        page.locator("#census-bulk-dialog [data-confirm-body]"),
+        f"{BULK_BODY} A ticked change whose field has a change the parish added, "
+        "still To enter by hand, withdraws that addition too.",
+    )
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_the_withdraw_dialogs_fit_and_have_no_wcag_violation(
+    page, component_origin, axe_source, width
+):
+    """The entered addition's Withdraw dialog and the Family's Accept that
+    withdraws an addition keep the phone width without a page scroll and
+    have no WCAG violation."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + ADDED_ENTERED)
+    page.locator('#census-row-add-a1 [data-row-action="withdraw"]').click()
+    dialog = page.locator("#census-decide-dialog")
+    visible(dialog)
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert_accessible(page, axe_source)
+    page.goto(component_origin + ADDED_OVERLAP)
+    page.locator('#census-row-3 [data-row-action="accept"]').click()
+    visible(dialog)
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert_accessible(page, axe_source)
 
 
 @pytest.mark.parametrize("width", [320, 1280])

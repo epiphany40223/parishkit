@@ -114,15 +114,15 @@ def test_back_to_review_reopens_an_entered_addition_keeping_history(
 
 
 def test_a_reopened_addition_can_be_withdrawn(response_service):
-    """After the undo, Back to review withdraws it, into History, and the
+    """After the undo, Withdraw withdraws it, into History, and the
     field is free for a new Add."""
     harness, _, staff, rows, campaign, addition = entered(response_service)
     step(harness, staff, campaign, addition, 2, "back_to_review", note="Wrong")
-    withdrawn = step(harness, staff, campaign, addition, 3, "back_to_review")
+    withdrawn = step(harness, staff, campaign, addition, 3, "withdraw")
     assert withdrawn.action == "withdrawn"
     assert row_of(campaign, addition)["stage"] == "history"
     with pytest.raises(BulkStale):
-        step(harness, staff, campaign, addition, 4, "back_to_review", note="x")
+        step(harness, staff, campaign, addition, 4, "withdraw", note="x")
     add(harness, staff, campaign, member_form(rows, "nickname", "Bob"))
 
 
@@ -199,7 +199,7 @@ def test_an_entered_addition_is_not_reopened_over_a_second_one(response_service)
     ):
         forge(RESOLUTION, [staff, first.pk, "reopened", "Typo", 2])
     assert CensusAdditionResolution.objects.filter(addition=first).count() == 1
-    step(harness, staff, campaign, second, 1, "back_to_review")
+    step(harness, staff, campaign, second, 1, "withdraw")
     reopened = step(harness, staff, campaign, first, 2, "back_to_review", note="Typo")
     assert reopened.action == "reopened"
 

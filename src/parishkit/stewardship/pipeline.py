@@ -129,6 +129,9 @@ class Action(StrEnum):
     ENTERED_BY_HAND = "entered_by_hand"
     HANDLED = "handled"
     START_UPDATE = "start_update"
+    # A census change the parish added is withdrawn, not sent back to
+    # review (#2041).
+    WITHDRAW = "withdraw"
 
 
 @dataclass(frozen=True, slots=True)
@@ -288,9 +291,9 @@ def census_addition_placement(state):
     Added by the parish (spec, "Reviewed stage"). Until the update run is
     rebuilt (#1688) nothing writes an addition to ParishSoft, so every one
     is To enter by hand, whatever the handling registry says of its field;
-    Back to review withdraws an open one, into History, and undoes an
-    entered one's mark (#1840), which records ``reopened`` and leaves it
-    ``open`` again.
+    Withdraw moves one into History, and Not entered yet (Back to review)
+    undoes an entered one's mark (#1840, #2041), which records ``reopened``
+    and leaves it ``open`` again.
     """
     if state not in CENSUS_ADDITION_STATES:
         raise ValueError("Unknown census addition state.")
@@ -298,6 +301,26 @@ def census_addition_placement(state):
         return Placement(Stage.HISTORY)
     stage = Stage.ENTERED_BY_HAND if state == "entered" else Stage.TO_ENTER_BY_HAND
     return Placement(stage, Decision.ADDED)
+
+
+# What a parish-added census change offers in each state (#2041), before
+# the reader's role is considered: its own later steps, never a review.
+# Back to review is worded Not entered yet on an entered one, the
+# terminal step's undo; Withdraw takes it into History from either state.
+_ADDITION_ACTIONS = MappingProxyType(
+    {
+        "open": frozenset({Action.ENTERED_BY_HAND, Action.WITHDRAW}),
+        "entered": frozenset({Action.BACK_TO_REVIEW, Action.WITHDRAW}),
+        "withdrawn": frozenset(),
+    }
+)
+
+
+def census_addition_actions(state):
+    """The actions a parish-added census change in ``state`` offers (#2041)."""
+    if state not in CENSUS_ADDITION_STATES:
+        raise ValueError("Unknown census addition state.")
+    return _ADDITION_ACTIONS[state]
 
 
 # --- Ministry stream -------------------------------------------------------
@@ -485,7 +508,9 @@ def cannot_participate_placement(*, decision=None, in_force=False):
 
 ROLES = ("ministry_leader", "staff", "administrator")
 _REVIEW = frozenset({Action.ACCEPT, Action.EDIT, Action.IGNORE, Action.BACK_TO_REVIEW})
-_STAFF_CENSUS = _REVIEW | {Action.ADD, Action.ENTERED_BY_HAND}
+# Withdraw is a census addition's own (#2041; ``census_addition_actions``):
+# no stage of a Family's change offers it.
+_STAFF_CENSUS = _REVIEW | {Action.ADD, Action.ENTERED_BY_HAND, Action.WITHDRAW}
 _STAFF_MINISTRY = _REVIEW | {Action.ADD, Action.ENTERED_BY_HAND}
 _STAFF_FINANCIAL = _REVIEW | {Action.ENTERED_BY_HAND}
 # Cannot participate and Additional information record what the Family
@@ -656,7 +681,7 @@ def stage_actions(stream, stage, *, by_hand=False):
     return _STAGE_ACTIONS.get(Stage(stage), frozenset())
 
 
-def allowed_actions(stream, stage, roles, *, leads=False, by_hand=False):
+def allowed_actions(stream, stage, roles, *, leads=False, by_hand=False, offers=None):
     """The row actions one reader sees on one item: stage ∩ role.
 
     Actions a role does not allow are not shown at all (not disabled), so
@@ -664,12 +689,14 @@ def allowed_actions(stream, stage, roles, *, leads=False, by_hand=False):
     server and database still enforce each action where the stream's rules
     are enforced today; this only decides what is offered. A terminal
     step's undo is Staff's and Administrators', never a leader's.
+    ``offers`` replaces the stage's own actions for an item that has its
+    own (a census addition, ``census_addition_actions``).
     """
     if Stage(stage) in TERMINAL_STAGES:
         roles = set(roles) & _TERMINAL_ROLES
-    return stage_actions(stream, stage, by_hand=by_hand) & role_actions(
-        stream, roles, leads=leads
-    )
+    if offers is None:
+        offers = stage_actions(stream, stage, by_hand=by_hand)
+    return frozenset(offers) & role_actions(stream, roles, leads=leads)
 
 
 def may_add(stream, roles):

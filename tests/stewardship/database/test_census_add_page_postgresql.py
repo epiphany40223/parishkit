@@ -25,6 +25,7 @@ from parishkit.stewardship.reports.census_worklist import (
     CensusDecisions,
     worklist_page,
 )
+from parishkit.stewardship.responses.census_additions import AddRefusal
 from parishkit.stewardship.responses.models import (
     CensusAddition,
     CensusAdditionResolution,
@@ -121,9 +122,7 @@ def test_entered_by_hand_moves_the_version_and_withdraw_is_final(response_servic
     with pytest.raises(StaleDecision):
         worklist(harness, staff, campaign, "back_to_review", {f"add-{first.pk}": 1})
     second, _ = add(harness, staff, campaign, member_form(rows, "suffix", "Jr."))
-    notice = worklist(
-        harness, staff, campaign, "back_to_review", {f"add-{second.pk}": 1}
-    )
+    notice = worklist(harness, staff, campaign, "withdraw", {f"add-{second.pk}": 1})
     assert notice.endswith("withdrawn.")
     _, shown = rows_of(harness, staff, campaign, "history")
     assert shown[f"add-{second.pk}"]["stage"] == "history"
@@ -133,37 +132,38 @@ def test_entered_by_hand_moves_the_version_and_withdraw_is_final(response_servic
     assert CensusAdditionResolution.objects.count() == 2
 
 
-def test_bulk_back_to_review_undoes_an_entered_addition_and_withdraws_an_open_one(
-    response_service,
-):
-    """Over an entered and an open addition, Back to review reopens the
-    first (its mark undone, To enter by hand) and withdraws the second, all
-    or none: without a note, nothing is recorded (#1840)."""
+def test_bulk_withdraw_covers_an_entered_and_an_open_addition(response_service):
+    """Over an entered and an open addition, Withdraw (#2041) undoes the
+    first's mark and withdraws both, all or none: without a note, nothing is
+    recorded. Back to review (Not entered yet) is no choice over an open
+    one."""
     harness, _, staff, rows = prepared(response_service)
     campaign = campaign_of(rows)
     first, _ = add(harness, staff, campaign, member_form(rows, "nickname", "Bo"))
     second, _ = add(harness, staff, campaign, member_form(rows, "suffix", "Jr."))
     worklist(harness, staff, campaign, "entered_by_hand", {f"add-{first.pk}": 1})
     items = {f"add-{first.pk}": 2, f"add-{second.pk}": 1}
-    with pytest.raises(ValueError, match="needs a note"):
-        worklist(harness, staff, campaign, "back_to_review", items)
+    with pytest.raises(ValueError, match="does not offer"):
+        worklist(harness, staff, campaign, "back_to_review", items, note="Typo")
+    with pytest.raises(AddRefusal, match="needs a note") as refused:
+        worklist(harness, staff, campaign, "withdraw", items)
+    assert refused.value.code == "note_required"
+    assert refused.value.fix == "Write a note, then choose Withdraw again."
     assert CensusAdditionResolution.objects.count() == 1
-    notice = worklist(harness, staff, campaign, "back_to_review", items, note="Typo")
-    assert notice == "2 changes sent back to review."
-    _, shown = rows_of(harness, staff, campaign)
-    reopened = shown[f"add-{first.pk}"]
-    assert (reopened["stage"], reopened["version"]) == ("to_enter_by_hand", 3)
-    assert (reopened["resolution_action"], reopened["resolution_note"]) == (
-        "reopened",
-        "Typo",
-    )
+    notice = worklist(harness, staff, campaign, "withdraw", items, note="Typo")
+    assert notice == "2 changes withdrawn."
     _, history = rows_of(harness, staff, campaign, "history")
+    assert history[f"add-{first.pk}"]["stage"] == "history"
     assert history[f"add-{second.pk}"]["stage"] == "history"
+    assert list(
+        CensusAdditionResolution.objects.filter(addition=first)
+        .order_by("sequence")
+        .values_list("action", "note")
+    ) == [("entered", ""), ("reopened", "Typo"), ("withdrawn", "Typo")]
     # Each step has its own audit event, versions only.
-    event = AuditEvent.objects.get(
-        subject_id=CensusAdditionResolution.objects.get(action="reopened").pk
-    )
-    assert event.event_type == "census_change_updated"
+    for resolution in CensusAdditionResolution.objects.filter(addition=first):
+        event = AuditEvent.objects.get(subject_id=resolution.pk)
+        assert event.event_type == "census_change_updated"
 
 
 def test_a_bulk_decision_covers_additions_and_changes_all_or_none(response_service):
@@ -211,8 +211,9 @@ def test_an_addition_takes_only_its_own_steps(response_service):
 
 
 def test_the_worklist_words_an_addition_and_the_change_it_replaced(response_service):
-    """The added row offers Entered by hand and a Back to review that says it
-    withdraws; the ignored change names the one added in its place."""
+    """The added row offers Withdraw and Entered by hand (#2041), Withdraw
+    naming what it takes back; the ignored change names the one added in
+    its place."""
     harness, _, staff, rows = prepared(response_service)
     campaign = campaign_of(rows)
     decide(harness, staff, [rows["first_name"]], "ignore")
@@ -235,12 +236,13 @@ def test_the_worklist_words_an_addition_and_the_change_it_replaced(response_serv
     added = shown[f"add-{first.pk}"]
     assert [icon["action"] for icon in added["icons"]] == [
         "accept",
-        "back_to_review",
+        "withdraw",
         "entered_by_hand",
     ]
     assert added["icons"][0]["selected"]
-    back = added["icons"][1]
-    assert back["title_one"] == "Withdraw {name}?" and "withdrawn" in back["body"]
+    withdraw = added["icons"][1]
+    assert withdraw["title_one"] == "Withdraw the added {name}?"
+    assert withdraw["body"] == "The Family will no longer see it."
     assert "Added in place of an ignored change." in added["decision_label"]
     ignored = shown[str(rows["first_name"].pk)]
     assert "Added in its place: First name: Robert" in ignored["decision_label"]
@@ -294,8 +296,6 @@ def test_add_over_http_answers_in_place_or_at_the_field(response_service, google
 def test_an_ignored_change_an_addition_covers_is_not_reopened(response_service):
     """While an open addition of its field stands in for it, the ignored
     change cannot go back to review; once withdrawn, it can."""
-    from parishkit.stewardship.responses.census_additions import AddRefusal
-
     harness, _, staff, rows = prepared(response_service)
     campaign = campaign_of(rows)
     decide(harness, staff, [rows["first_name"]], "ignore")
@@ -311,7 +311,7 @@ def test_an_ignored_change_an_addition_covers_is_not_reopened(response_service):
             note="Family meant it",
         )
     assert refused.value.code == "reopen_added"
-    worklist(harness, staff, campaign, "back_to_review", {f"add-{first.pk}": 1})
+    worklist(harness, staff, campaign, "withdraw", {f"add-{first.pk}": 1})
     worklist(
         harness,
         staff,
@@ -346,9 +346,7 @@ def test_a_refused_reopen_says_what_to_do_over_http(response_service, google):
     assert response.status_code == 400
     refusal = json.loads(body)
     assert [error["field_id"] for error in refusal["errors"]] == ["note"]
-    assert refusal["refusal"]["fix"].startswith(
-        "Choose Back to review on the added change"
-    )
+    assert refusal["refusal"]["fix"].startswith("Withdraw the added change first")
     assert state(ignored)[0] == "ignored"
 
 

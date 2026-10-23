@@ -295,7 +295,7 @@ def test_mailing_same_as_home_after_a_home_address_addition(response_service):
 def test_an_addition_withdrawn_while_the_form_is_open_is_a_stale_form(
     response_service,
 ):
-    """Withdrawn (Back to review) after the form was drawn: the submit is a
+    """Withdrawn (Withdraw) after the form was drawn: the submit is a
     stale-form review, and the fresh form draws the field without it; sent
     as drawn that fresh form makes no change."""
     harness, _, staff, rows = prepared(response_service)
@@ -305,7 +305,7 @@ def test_an_addition_withdrawn_while_the_form_is_open_is_a_stale_form(
         form = revisit(harness)
     answers = answers_for(form)
     assert answers["members"]["3"]["nickname"] == "Bobby"
-    worklist(harness, staff, campaign, "back_to_review", {f"add-{addition.pk}": 1})
+    worklist(harness, staff, campaign, "withdraw", {f"add-{addition.pk}": 1})
     with web_login():
         before = Submission.objects.count()
         result = post(
@@ -366,7 +366,7 @@ def test_a_withdrawn_addition_is_not_drawn(response_service):
     harness, _, staff, rows = prepared(response_service)
     campaign = campaign_of(rows)
     withdrawn, _ = add(harness, staff, campaign, member_form(rows, "suffix", "Jr."))
-    worklist(harness, staff, campaign, "back_to_review", {f"add-{withdrawn.pk}": 1})
+    worklist(harness, staff, campaign, "withdraw", {f"add-{withdrawn.pk}": 1})
     form, _ = again(harness)
     suffix = member_field(form, "suffix")
     assert suffix["value"] != "Jr." and suffix["added"] is False
@@ -422,7 +422,7 @@ def test_a_value_added_again_after_a_withdrawal_draws_the_new_one(response_servi
     harness, _, staff, rows = prepared(response_service)
     campaign = campaign_of(rows)
     first, _ = add(harness, staff, campaign, member_form(rows, "nickname", "Bo"))
-    worklist(harness, staff, campaign, "back_to_review", {f"add-{first.pk}": 1})
+    worklist(harness, staff, campaign, "withdraw", {f"add-{first.pk}": 1})
     add(harness, staff, campaign, member_form(rows, "nickname", "Bobby"))
     form, _ = again(harness)
     assert member_field(form, "nickname")["value"] == "Bobby"

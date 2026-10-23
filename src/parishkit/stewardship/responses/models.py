@@ -697,9 +697,9 @@ class CensusAdditionResolution(ImmutableRecord):
     """One later step of a parish-added census change (#1710, #1840).
 
     ``entered`` records that a person typed it into ParishSoft (Entered by
-    hand); ``withdrawn`` is Back to review on an open addition, which
-    withdraws it (review pipeline spec, "Reviewed stage"), and is final;
-    ``reopened`` is Back to review on an entered one, which undoes the mark
+    hand); ``withdrawn`` is Withdraw on an open addition, or accepting the
+    Family's own change of its field (#2041), and is final; ``reopened`` is
+    Not entered yet (Back to review) on an entered one, which undoes the mark
     with a required note, so the addition is To enter by hand again (spec,
     "Undoing a terminal stage"). Each addition's steps are numbered from 1
     (``sequence``), so its version is its latest sequence plus one, and

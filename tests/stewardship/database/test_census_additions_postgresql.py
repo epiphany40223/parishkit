@@ -194,7 +194,7 @@ def test_a_step_needs_its_state_and_withdrawn_frees_the_field(response_service):
             staff,
             campaign,
             {second.pk: 1},
-            "back_to_review",
+            "withdraw",
             note="Wrong Member",
             request_key=uuid4(),
         )

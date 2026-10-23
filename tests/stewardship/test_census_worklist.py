@@ -34,7 +34,12 @@ from parishkit.stewardship.responses.census import address_editor
 from parishkit.stewardship.responses.census_additions import AddRefusal, parse_add
 from parishkit.stewardship.responses.comparison import ADDRESS_COMPONENTS
 from parishkit.stewardship.responses.refresh_checks import CheckState
-from parishkit.stewardship.web.review_worklist import INCORRECT_BODIES, WORDS
+from parishkit.stewardship.web.review_worklist import (
+    BODIES,
+    EDIT_BODY,
+    INCORRECT_BODIES,
+    WORDS,
+)
 from parishkit.stewardship.web.tables import paginate
 
 from .test_census_changes import SUBMITTED, row
@@ -528,10 +533,12 @@ def added(**values):
 
 
 def test_an_entered_addition_is_undone_back_to_enter_by_hand():
-    """Back to review on an entered addition undoes the mark (#1840): its
-    icon asks for a note and says where it goes, not that it is withdrawn;
-    once reopened, it is To enter by hand, Added by the parish, at the next
-    version, its last decision the undo with its note."""
+    """Not entered yet (Back to review) on an entered addition undoes the
+    mark (#1840, #2041): its icon is named so, asks for a note and says
+    where it goes; Withdraw beside it needs the note too. Once reopened, it
+    is To enter by hand, Added by the parish, at the next version, its last
+    decision the undo with its note, and offers Withdraw, not Back to
+    review."""
     entered = added(step="entered", step_sequence=1, step_at=SUBMITTED)
     assert (entered["stage"], entered["version"]) == ("entered_by_hand", 2)
     reopened = added(
@@ -559,19 +566,53 @@ def test_an_entered_addition_is_undone_back_to_enter_by_hand():
         "Entered by hand is undone: the item goes back to To enter by hand, "
         "with its decision kept. Say why."
     )
+    name = "Mobile phone for Pat Sample"
+    assert (undo["label"], undo["title"], undo["title_one"], undo["done"]) == (
+        f"Mark {name} not entered yet",
+        f"Mark {name} not entered yet",
+        "Mark {name} not entered yet?",
+        "{name} marked not entered yet.",
+    )
     assert rows["add-a1"]["choice"] == "reopen"
-    (withdraw,) = [
-        icon
-        for icon in rows["add-a2"]["icons"]
-        if icon["action"] == "back_to_review" and not icon["selected"]
-    ]
-    assert withdraw["body"].startswith("The added change is withdrawn")
+    icons = {icon["action"]: icon for icon in rows["add-a1"]["icons"]}
+    assert icons["withdraw"]["choice"] == "reopen"
+    assert icons["withdraw"]["body"] == (
+        "Entered by hand is undone and the added change is withdrawn: it moves "
+        "to History. The Family will no longer see it. Say why."
+    )
+    assert icons["entered_by_hand"]["title"] == (
+        "Entered by hand; choose Not entered yet to change it"
+    )
+    assert icons["accept"]["title"] == "Added by the parish"
+    assert rows["add-a1"]["kinds"] == "back_to_review withdraw"
+    icons = {icon["action"]: icon for icon in rows["add-a2"]["icons"]}
+    assert set(icons) == {"accept", "withdraw", "entered_by_hand"}
+    withdraw = icons["withdraw"]
+    assert (withdraw["label"], withdraw["title_one"], withdraw["body"]) == (
+        f"Withdraw the added {name}",
+        "Withdraw the added {name}?",
+        "The Family will no longer see it.",
+    )
+    assert withdraw["choice"] == "" and withdraw["icon"] == "remove"
+    assert icons["accept"]["title"] == "Added by the parish"
+    assert rows["add-a2"]["kinds"] == "withdraw entered_by_hand"
+    bulk = {item["value"]: item for item in worklist.bulk}
+    assert bulk["back_to_review"]["body"].endswith(
+        "A ticked change the parish added that is Entered by hand goes back to To "
+        "enter by hand (Not entered yet)."
+    )
+    assert (bulk["withdraw"]["title_many"], bulk["withdraw"]["choice"]) == (
+        "Withdraw {count} changes the parish added?",
+        "reopen",
+    )
 
 
 def test_additions_are_tied_to_the_familys_changes_of_their_field():
     """Every addition in place of an ignored change is listed under it; an
     open addition beside the Family's open change of the field says so; an
-    ignored change an open addition covers offers no Back to review."""
+    ignored change an open addition covers offers no Back to review; the
+    Family's open change of an open addition's field says Accept withdraws
+    it, in its own dialogs and the bulk Accept's (#2041)."""
     ignored = shaped(id="9", decision="ignored")
     asked = shaped(id="8", entity_key="42")
     first = added(in_place_of="9")
@@ -586,8 +627,38 @@ def test_additions_are_tied_to_the_familys_changes_of_their_field():
     assert "back_to_review" not in [icon["action"] for icon in rows["9"]["icons"]]
     assert rows["9"]["decision_label"].count("Mobile phone: 555-0123") == 2
     assert "open change of this field too" in rows["add-a2"]["decision_label"]
-    (back,) = [item for item in worklist.bulk if item["value"] == "back_to_review"]
-    assert back["body"].endswith("is withdrawn instead.")
+    assert asked["withdraws"] == "Mobile phone (555-0123)"
+    assert not ignored["withdraws"]
+    extra = "This also withdraws the parish's added Mobile phone (555-0123)."
+    icons = {icon["action"]: icon for icon in rows["8"]["icons"]}
+    assert (
+        icons["accept"]["body"]
+        == f"Record this decision. Back to review undoes it. {extra}"
+    )
+    assert icons["edit"]["body"] == f"{EDIT_BODY} {extra}"
+    bulk = {item["value"]: item for item in worklist.bulk}
+    # No entered addition here: Back to review keeps its own words.
+    assert bulk["back_to_review"]["body"] == BODIES[Action.BACK_TO_REVIEW]
+    assert bulk["accept"]["body"].endswith(
+        "A ticked change whose field has a change the parish added, still To "
+        "enter by hand, withdraws that addition too."
+    )
+    assert "withdraw" in bulk
+
+
+def test_the_bulk_bar_offers_withdraw_only_beside_an_addition():
+    """#2041: Withdraw is in the bulk bar only while the page lists a change
+    the parish added that is not withdrawn; the Edit dialog's own words are
+    the ones a row that says more extends (``EDIT_BODY``)."""
+    worklist, html = page([shaped()])
+    assert "withdraw" not in [item["value"] for item in worklist.bulk]
+    assert EDIT_BODY in unescape(html)
+    gone = added(step="withdrawn", step_at=SUBMITTED)
+    worklist, _ = page([shaped(), gone])
+    assert "withdraw" not in [item["value"] for item in worklist.bulk]
+    worklist, html = page([shaped(), added()])
+    assert "withdraw" in [item["value"] for item in worklist.bulk]
+    assert 'data-confirm-body="The Family will no longer see it."' in html
 
 
 def test_every_terminal_row_offers_back_to_review_with_a_note():
@@ -656,7 +727,8 @@ def test_every_terminal_row_offers_back_to_review_with_a_note():
     )
     for name in ("entered", "one_step", "updated", "held", "add-a2"):
         assert back(name)["choice"] == "reopen", name
-        assert rows[name]["kinds"] == "back_to_review", name
+        kinds = "back_to_review withdraw" if name == "add-a2" else "back_to_review"
+        assert rows[name]["kinds"] == kinds, name
         assert rows[name]["choice"] == "reopen", name
     for name in ("gone", "covered"):
         assert back(name) is None, name

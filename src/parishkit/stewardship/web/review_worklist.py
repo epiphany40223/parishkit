@@ -47,6 +47,7 @@ ROW_ORDER = (
     Action.EDIT,
     Action.IGNORE,
     Action.BACK_TO_REVIEW,
+    Action.WITHDRAW,
     Action.ENTERED_BY_HAND,
     Action.HANDLED,
 )
@@ -56,6 +57,7 @@ BULK = (
     Action.ACCEPT,
     Action.IGNORE,
     Action.BACK_TO_REVIEW,
+    Action.WITHDRAW,
     Action.ENTERED_BY_HAND,
     Action.HANDLED,
 )
@@ -123,6 +125,17 @@ WORDS = {
         "Send {name} back to review?",
         "Send {count} {items} back to review?",
         "sent back to review.",
+        None,
+    ),
+    # Only a census change the parish added offers it (#2041), which the
+    # census worklist words with the field and the Member.
+    Action.WITHDRAW: Words(
+        "remove",
+        "Withdraw",
+        "Withdraw {name}",
+        "Withdraw {name}?",
+        "Withdraw {count} {items}?",
+        "withdrawn.",
         None,
     ),
     Action.ENTERED_BY_HAND: Words(
@@ -207,6 +220,10 @@ BODIES = {
         "Back to review undoes the mark."
     ),
     Action.HANDLED: "Record that this was handled. Back to review undoes it.",
+    Action.WITHDRAW: (
+        "The item is withdrawn: nothing is entered in ParishSoft, and it moves "
+        "to History."
+    ),
     Action.BACK_TO_REVIEW: (
         "A decided item goes back to To review, to be decided again; a marked, "
         "handled, updated or confirmed one goes back to the stage before that "
@@ -238,6 +255,14 @@ UNDO_PORTAL_ONLY = (
 # said in the dialogs whose decision it shows: Ignore on an item whose
 # ParishSoft value the form shows (``shown_baseline`` rows), and Add.
 IGNORE_SEEN = "The Family will see ParishSoft's value the next time it signs in."
+# What Edit's dialog says (``components/review-worklist.html`` draws the
+# same words as the dialog's default): a stream that says more on one row
+# sets the row's Edit body to these words and its own (#2041).
+EDIT_BODY = (
+    "Record this value as the reviewer's value. The item is Accepted (edited), "
+    "and the Family's answer stays beside it. The Family will see this value "
+    "the next time it signs in."
+)
 ADD_BODY = (
     "Add a change the Family did not ask for. It starts Accepted, shown as "
     "Added by the parish."
@@ -316,7 +341,15 @@ def _selected_title(action, placement, undo):
 
 
 def row_icons(
-    stream, placement, roles, *, name, leads=False, by_hand=False, withheld=()
+    stream,
+    placement,
+    roles,
+    *,
+    name,
+    leads=False,
+    by_hand=False,
+    withheld=(),
+    offers=None,
 ):
     """One row's action icons for one reader, in ``ROW_ORDER``.
 
@@ -327,10 +360,11 @@ def row_icons(
     does not allow is left out, selected or not (UX conventions, "By role").
     ``withheld`` are actions this one item cannot take whatever its stage
     (a census field no value can be typed for has no Edit); they are left
-    out too, as the stream's service refuses them.
+    out too, as the stream's service refuses them. ``offers`` are an item's
+    own actions in place of its stage's (a census addition's, #2041).
     """
     offered = allowed_actions(
-        stream, placement.stage, roles, leads=leads, by_hand=by_hand
+        stream, placement.stage, roles, leads=leads, by_hand=by_hand, offers=offers
     ) - frozenset(Action(action) for action in withheld)
     allowed = role_actions(stream, roles, leads=leads)
     selected = selected_actions(placement) & allowed
@@ -548,6 +582,7 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
             leads=row.get("leads", False),
             by_hand=row.get("by_hand", False),
             withheld=row.get("withheld", ()),
+            offers=row.get("offers"),
         )
     )
     key = uuid4()

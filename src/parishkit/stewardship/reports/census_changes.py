@@ -578,7 +578,10 @@ def link_additions(changes, added):
     Returns each ignored change's additions made in place of it (its
     history line names them), and marks rows in place: an open addition
     whose field the Family has an open change of too (``overlap``, from a
-    later response), and an ignored or terminal change a standing addition
+    later response); a change Accept or Edit would accept that has an open
+    addition of its field (``withdraws``: the addition's field and value,
+    which accepting it withdraws, #2041); and an ignored or terminal change
+    a standing addition
     of its field covers (``covered``: it is not sent back to review while
     that addition is open, so the field never has two open changes, #1710,
     #1840, nor while one added after it is Entered by hand, which the
@@ -596,6 +599,19 @@ def link_additions(changes, added):
     for row in added:
         key = _key(row)
         row["overlap"] = row["stage"] == Stage.TO_ENTER_BY_HAND.value and key in asked
+    # Accepting the Family's change withdraws its field's open addition (a
+    # field has at most one), so the Accept and Edit dialogs name it.
+    open_added = {
+        _key(row): f"{row['label']} ({row['edited']})"
+        for row in added
+        if row["stage"] == Stage.TO_ENTER_BY_HAND.value
+    }
+    for row in changes:
+        row["withdraws"] = (
+            open_added.get(_key(row), "")
+            if row["stage"] in (Stage.TO_REVIEW.value, Stage.CONFLICT.value)
+            else ""
+        )
     # An ignored change, or one whose terminal step Back to review would
     # undo (#1840), that a standing addition of its field covers is not
     # sent back to review (``census_resolution.covered_by_addition``

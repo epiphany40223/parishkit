@@ -26,6 +26,7 @@ from parishkit.stewardship.pipeline import (
     Stage,
     Stream,
     allowed_actions,
+    census_addition_actions,
     census_addition_placement,
     census_by_hand,
     census_placement,
@@ -75,8 +76,10 @@ from parishkit.stewardship.web.presentation import duid
 from parishkit.stewardship.web.review_worklist import (
     ADD_BODY,
     ALREADY_HELD,
+    EDIT_BODY,
     INCORRECT_WORDS,
     NOT_SEEN,
+    REOPEN,
     RETIRED_DATES,
     WORDS,
     Column,
@@ -297,9 +300,23 @@ def worklist_rows(rows):
                 # ParishSoft, so it shows the Family's own answer for those,
                 # and it leaves an Ignored New Member out.
                 "shown_baseline": row["entity_kind"] == "member",
+                # A change the parish added offers its own steps, not its
+                # stage's review actions (#2041).
+                "offers": census_addition_actions(ADDITION_STATES[row["stage"]])
+                if row.get("added")
+                else None,
             }
         )
     return found
+
+
+# A parish-added change's state from its row's stage (``census_addition_
+# placement`` the other way round).
+ADDITION_STATES = {
+    Stage.TO_ENTER_BY_HAND.value: "open",
+    Stage.ENTERED_BY_HAND.value: "entered",
+    Stage.HISTORY.value: "withdrawn",
+}
 
 
 def stage_counts(counts):
@@ -384,59 +401,154 @@ def worklist_page(result, query, table, action, *, mutable, paging=None):
     replacements = result.get("replacements", {})
     for row in worklist.rows:
         _added_words(row, replacements)
-    if any(row.get("added") for row in worklist.rows):
-        # A ticked added change's Back to review withdraws it.
-        for choice in worklist.bulk:
-            if choice["value"] == Action.BACK_TO_REVIEW.value:
-                choice["body"] = f"{choice['body']} {BULK_WITHDRAW}"
+    _bulk_words(worklist)
     return worklist, table
 
 
-# An open added change's Back to review withdraws it (spec, "Reviewed
-# stage"); an entered one's undoes the mark, worded as every terminal
-# stage's undo is (``review_worklist.undo_body``, #1840).
-WITHDRAW_TITLE = "Withdraw {name}?"
-BULK_WITHDRAW = (
-    "A ticked change the parish added that is still To enter by hand is "
-    "withdrawn instead."
+# A parish-added change's actions are named for what they do, not Back to
+# review, which would read as if it had been in review (#2041): Withdraw,
+# and once Entered by hand, Not entered yet (the mark's undo, worded as
+# every terminal stage's undo is, ``review_worklist.undo_body``, #1840).
+WITHDRAW_LABEL = "Withdraw the added {name}"
+WITHDRAW_TITLE = "Withdraw the added {name}?"
+WITHDRAW_BODY = "The Family will no longer see it."
+WITHDRAW_ENTERED_BODY = (
+    "Entered by hand is undone and the added change is withdrawn: it moves to "
+    "History. The Family will no longer see it. Say why."
 )
+NOT_ENTERED = "Not entered yet"
+NOT_ENTERED_LABEL = "Mark {name} not entered yet"
+NOT_ENTERED_TITLE = "Mark {name} not entered yet?"
+NOT_ENTERED_DONE = "marked not entered yet."
+# The selected Entered by hand icon's undo, as Not entered yet names it.
+NOT_ENTERED_UNDO = "Entered by hand; choose Not entered yet to change it"
 OVERLAP = (
-    "The Family has an open change of this field too: decide that one, and "
-    "withdraw this one if it is no longer needed."
+    "The Family has an open change of this field too: accepting that one "
+    "withdraws this one."
 )
-WITHDRAW_BODY = (
-    "The added change is withdrawn: nothing is entered in ParishSoft, and it "
-    "moves to History."
+# What Accept and Edit say on a Family's change whose field has an open
+# addition, which accepting it withdraws (#2041).
+ACCEPT_WITHDRAWS = "This also withdraws the parish's added {added}."
+BULK_ACCEPT_WITHDRAWS = (
+    "A ticked change whose field has a change the parish added, still To "
+    "enter by hand, withdraws that addition too."
 )
+BULK_NOT_ENTERED = (
+    "A ticked change the parish added that is Entered by hand goes back to To "
+    "enter by hand (Not entered yet)."
+)
+BULK_WITHDRAW_TITLE = "Withdraw {count} changes the parish added?"
+BULK_WITHDRAW_BODY = (
+    "The ticked changes the parish added are withdrawn: nothing is entered in "
+    "ParishSoft, they move to History, and the Family no longer sees them. "
+    "Withdrawing one that is Entered by hand undoes its mark too, which needs "
+    "a note."
+)
+
+
+def _addition_icons(row):
+    """Word a parish-added row's own actions (#2041), in place.
+
+    Withdraw names the field and the Member and says the Family will no
+    longer see it; on an entered one it undoes the mark too, so its note
+    is required (the ``reopen`` choice). Back to review, offered only on an
+    entered one, is Not entered yet. A selected icon's tooltip names the
+    undo the row offers: Not entered yet for the mark; Accept, drawn
+    selected as Added by the parish, is undone by no action of its own.
+    """
+    name = row["name"]
+    entered = row["placement"].stage is Stage.ENTERED_BY_HAND
+    for icon in row["icons"]:
+        action = Action(icon["action"])
+        if icon["selected"]:
+            if action is Action.ACCEPT:
+                icon["title"] = row["placement"].decision.label
+            elif action is Action.ENTERED_BY_HAND:
+                icon["title"] = NOT_ENTERED_UNDO
+            continue
+        if action is Action.WITHDRAW:
+            icon["label"] = icon["title"] = WITHDRAW_LABEL.format(name=name)
+            icon["title_one"] = WITHDRAW_TITLE
+            icon["body"] = WITHDRAW_ENTERED_BODY if entered else WITHDRAW_BODY
+            icon["choice"] = REOPEN if entered else ""
+        elif action is Action.BACK_TO_REVIEW:
+            icon["label"] = icon["title"] = NOT_ENTERED_LABEL.format(name=name)
+            icon["title_one"] = NOT_ENTERED_TITLE
+            icon["done"] = "{name} " + NOT_ENTERED_DONE
+
+
+def _accept_words(row):
+    """Say on a Family change's Accept and Edit that accepting it withdraws
+    the open addition of its field (``withdraws``, #2041), in place."""
+    added = row.get("withdraws")
+    if not added:
+        return
+    extra = ACCEPT_WITHDRAWS.format(added=added)
+    for icon in row["icons"]:
+        if icon["selected"]:
+            continue
+        if icon["action"] == Action.ACCEPT.value:
+            icon["body"] = f"{icon['body']} {extra}"
+        elif icon["action"] == Action.EDIT.value:
+            icon["body"] = f"{EDIT_BODY} {extra}"
 
 
 def _added_words(row, replacements):
-    """Word a parish-added row's Back to review, and every row's Add history.
+    """Word a parish-added row's actions, and every row's Add history.
 
-    An open added change's Back to review withdraws it, so its dialog says
-    so (an entered one's keeps the undo's own words, #1840);
-    an ignored change the parish added another in place of names that one
-    under its stage ("Ignored. Added in its place: ..."), and an addition
-    made in place of one says so (#1710), as does one whose field the
-    Family has an open change of too.
+    A parish-added row's own actions are worded for it (``_addition_icons``)
+    and a Family change whose Accept withdraws an addition says so
+    (``_accept_words``, #2041); an ignored change the parish added another
+    in place of names that one under its stage ("Ignored. Added in its
+    place: ..."), and an addition made in place of one says so (#1710), as
+    does one whose field the Family has an open change of too.
     """
     parts = [row["decision_label"]] if row["decision_label"] else []
     if row.get("added"):
-        for icon in row["icons"]:
-            if (
-                icon["action"] == Action.BACK_TO_REVIEW.value
-                and not icon["selected"]
-                and row["placement"].stage is Stage.TO_ENTER_BY_HAND
-            ):
-                icon["title_one"] = WITHDRAW_TITLE
-                icon["body"] = WITHDRAW_BODY
+        _addition_icons(row)
         if row.get("in_place_of"):
             parts.append("Added in place of an ignored change.")
         if row.get("overlap"):
             parts.append(OVERLAP)
-    elif row["id"] in replacements:
-        parts.append(f"Added in its place: {'; '.join(replacements[row['id']])}")
+    else:
+        _accept_words(row)
+        if row["id"] in replacements:
+            parts.append(f"Added in its place: {'; '.join(replacements[row['id']])}")
     row["decision_label"] = " ".join(parts)
+
+
+def _bulk_words(worklist):
+    """Word the bulk bar for the parish's additions on this page (#2041).
+
+    Withdraw is offered only while the page lists a change the parish added
+    that is not withdrawn (it is no choice otherwise); its note is required
+    while a ticked one is Entered by hand (the ``reopen`` choice). Back to
+    review says what it does to a ticked entered addition, and Accept that
+    it withdraws a ticked change's open addition, each only while the page
+    has such a row.
+    """
+    rows = worklist.rows
+    added = [row for row in rows if row.get("added") and row.get("offers")]
+    entered = any(row["placement"].stage is Stage.ENTERED_BY_HAND for row in added)
+    withdraws = any(row.get("withdraws") for row in rows)
+    kept = []
+    for choice in worklist.bulk:
+        value = choice["value"]
+        if value == Action.WITHDRAW.value:
+            if not added:
+                continue
+            choice |= {
+                "title_one": WITHDRAW_TITLE,
+                "title_many": BULK_WITHDRAW_TITLE,
+                "body": BULK_WITHDRAW_BODY,
+                "choice": REOPEN,
+            }
+        elif value == Action.BACK_TO_REVIEW.value and entered:
+            choice["body"] = f"{choice['body']} {BULK_NOT_ENTERED}"
+        elif value == Action.ACCEPT.value and withdraws:
+            choice["body"] = f"{choice['body']} {BULK_ACCEPT_WITHDRAWS}"
+        kept.append(choice)
+    worklist.bulk = kept
 
 
 def add_fields():
@@ -500,11 +612,13 @@ def addition_name(addition):
     return f"{label} for {who} in Family DUID {addition.family.family_duid}"
 
 
-# The worklist decisions an added change takes: its own later steps. Back
-# to review withdraws an open one and undoes an entered one's mark (#1840).
+# The worklist decisions an added change takes: its own later steps.
+# Back to review (Not entered yet) undoes an entered one's mark (#1840);
+# Withdraw withdraws it (#2041).
 ADDITION_STEPS = {
     Action.ENTERED_BY_HAND: "entered",
     Action.BACK_TO_REVIEW: "back_to_review",
+    Action.WITHDRAW: "withdraw",
 }
 
 
@@ -648,10 +762,10 @@ class CensusDecisions:
         page's own offer (``pipeline.allowed_actions``) is checked here, as
         the ``DecisionService`` contract asks. A change whose version moved
         since the page was drawn is left to the service, which answers with
-        the stale notice rather than a refusal. ``added`` are the open
-        additions' placements at the version the page showed, which offer
-        only their own later steps (Back to review on an entered one undoes
-        its mark, #1840). A New
+        the stale notice rather than a refusal. ``added`` are the chosen
+        additions' states at the version the page showed, which offer only
+        their own later steps (``pipeline.census_addition_actions``: Withdraw,
+        and Not entered yet on an entered one, #2041). A New
         Member Entered by hand also offers Entered by hand again, one row at a
         time, to correct its ParishSoft Member ID
         (``census_resolution.member_correctable``, #1773).
@@ -685,7 +799,7 @@ class CensusDecisions:
             )
             for pk, proposal in proposals.items()
             if proposal.version == versions[pk]
-        ] + [(placement.stage, True, None) for placement in added]
+        ]
         for stage, by_hand, proposal in stages:
             offered = allowed_actions(Stream.CENSUS, stage, roles, by_hand=by_hand)
             correction = (
@@ -697,6 +811,15 @@ class CensusDecisions:
                 and member_correctable(proposal)
             )
             if action not in offered and not correction:
+                raise ValueError("This census change does not offer that action now.")
+        for state in added:
+            offered = allowed_actions(
+                Stream.CENSUS,
+                census_addition_placement(state).stage,
+                roles,
+                offers=census_addition_actions(state),
+            )
+            if action not in offered:
                 raise ValueError("This census change does not offer that action now.")
 
     def _add(self, principal, decision):
@@ -723,8 +846,11 @@ class CensusDecisions:
         Add records a new addition. Any other decision may cover proposals
         and additions together (a bulk Entered by hand or Back to review):
         each is recorded by its own service in one work transaction, all or
-        none. An addition takes only Entered by hand and Back to review,
-        which withdraws an open one and undoes an entered one's mark.
+        none. An addition takes only Entered by hand, Withdraw and Back to
+        review (Not entered yet), which undoes an entered one's mark
+        (#2041); accepting a Family's change withdraws its field's open
+        addition in the same transaction (``census_review.
+        withdraw_open_additions``).
         """
         if decision.action is Action.ADD:
             return self._add(principal, decision)
@@ -737,7 +863,7 @@ class CensusDecisions:
             proposal_ids,
             proposals,
             added=[
-                census_addition_placement(addition_state(latest.get(pk)))
+                addition_state(latest.get(pk))
                 for pk in additions
                 if addition_ids[pk] == addition_version(latest.get(pk))
             ],
@@ -799,10 +925,7 @@ class CensusDecisions:
                 "entered by hand after this change, so this change cannot go back "
                 "to review.",
                 field_ids=("bulk_note" if decision.bulk else "note",),
-                fix=(
-                    "Choose Back to review on the added change first (twice if it "
-                    "was entered by hand), then send this one back."
-                ),
+                fix="Withdraw the added change first, then send this one back.",
             ) from None
         except ReopenOverOpen:
             # An entered addition reopened while another open change of its
@@ -811,20 +934,27 @@ class CensusDecisions:
             raise AddRefusal(
                 "reopen_open_change",
                 "This field has another open change now, so this added change "
-                "cannot go back to review.",
+                "cannot be marked not entered yet or withdrawn.",
                 field_ids=("bulk_note" if decision.bulk else "note",),
-                fix="Decide or withdraw the other change first, then send this "
-                "one back.",
+                fix="Decide or withdraw the other change first, then try again.",
             ) from None
         except NoteRequired:
             # The page's dialog requires the note too; a post without one
             # (an older page, a script) is refused in plain words at it.
+            # Not entered yet or Withdraw of an entered addition needs one
+            # too (#2041), named as the page names the action.
+            again = (
+                WORDS[Action.WITHDRAW].button
+                if decision.action is Action.WITHDRAW
+                else NOT_ENTERED
+                if additions and not proposals
+                else WORDS[Action.BACK_TO_REVIEW].button
+            )
             raise AddRefusal(
                 "note_required",
-                "Back to review of a mark or update already made needs a "
-                "note saying why.",
+                "Undoing a mark or update already made needs a note saying why.",
                 field_ids=("bulk_note" if decision.bulk else "note",),
-                fix="Write a note, then choose Back to review again.",
+                fix=f"Write a note, then choose {again} again.",
             ) from None
         except BulkStale as error:
             if error.proposal_id in additions:
@@ -847,11 +977,8 @@ class CensusDecisions:
             return f"{len(recorded):,} changes {words}"
         if additions:
             (addition,) = additions.values()
-            if (
-                decision.action is Action.BACK_TO_REVIEW
-                and recorded[0].action == "withdrawn"
-            ):
-                return f"{addition_name(addition)} withdrawn."
+            if decision.action is Action.BACK_TO_REVIEW:
+                words = NOT_ENTERED_DONE
             return f"{addition_name(addition)} {words}"
         (proposal,) = proposals.values()
         correction = (

@@ -155,6 +155,9 @@ def test_bulk_buttons_follow_the_role():
         "accept",
         "ignore",
         "back_to_review",
+        # A census addition's own (#2041); the census page keeps it only
+        # while it lists one.
+        "withdraw",
         "entered_by_hand",
     ]
     assert values("ministry", LEADER) == ["accept", "ignore", "back_to_review"]
