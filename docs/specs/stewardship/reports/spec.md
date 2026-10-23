@@ -2872,15 +2872,28 @@ drawn selected, and *How it reaches ParishSoft* is *By hand*: until the
 update run is rebuilt
 ([#1688](https://github.com/epiphany40223/parishkit/issues/1688)) nothing
 writes an addition to ParishSoft, whatever the handling registry says of its
-field. It offers only **Entered by hand** and **Back to review**, which
-withdraws it: it moves to *History*, and the field may be added again. Once
-Entered by hand, Back to review undoes the mark instead, with a required
-note, as on every terminal stage
-([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)):
-the added change is *To enter by hand* again, at its next version, and may
-be entered again or withdrawn; every step stays in its history. Both are in
-the bulk bar too, together with the Family's own changes, all or none; the
-bulk dialog says a ticked added change still to enter by hand is withdrawn. Each ignored change it replaced shows "Added in its
+field. Its actions are named for what they do, not Back to review, which
+would read as if it had been in review
+([#2041](https://github.com/epiphany40223/parishkit/issues/2041)). While To
+enter by hand it offers **Entered by hand** and **Withdraw** (dialog
+"Withdraw the added Nickname for David Taylor? The Family will no longer
+see it."): it moves to *History*, and the field may be added again. Once
+Entered by hand it offers **Not entered yet**, which undoes the mark with a
+required note, as on every terminal stage
+([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)),
+so the added change is *To enter by hand* again, at its next version, and
+**Withdraw**, which undoes the mark and withdraws it in one action, with the
+same required note (its two steps, `reopened` then `withdrawn`, each with
+its own audit event). An entered one's row draws Accept (selected, Added
+by the parish), Withdraw, Entered by hand (selected), then Not entered yet,
+the undo just right of the mark it undoes
+([row actions](../ui-conventions/spec.md#row-actions-and-confirmation)).
+Every step stays in its history. Entered by hand, Not entered yet (the
+bulk bar's Back to review, whose dialog says so while the
+page lists an entered addition) and Withdraw are in the bulk bar too,
+together with the Family's own changes, all or none; the bulk bar offers
+Withdraw only while the page lists a change the parish added, and a ticked
+Entered by hand one makes its note required. Each ignored change it replaced shows "Added in its
 place:" with the field and value of every addition made for it under its
 stage, and the added change says it was added in place of an ignored change.
 
@@ -2889,17 +2902,32 @@ an addition of the field is open, or Entered by hand and added after the
 Family's change was made, an ignored change of the same field, or one
 whose terminal step Back to review would undo, offers no Back to review,
 and one posted anyway is refused (`reopen_added`; withdraw the addition
-first), as is `pk-admin census review` or `census resolve` reopening it;
+first, with Withdraw), as is `pk-admin census review` or `census resolve`
+reopening it;
 the check runs under the work order. The Entered by hand case keeps the
 Family's reviewed form from drawing the addition over an older change
 reopened under it, whose own answer would then be lost
 ([#2008](https://github.com/epiphany40223/parishkit/issues/2008); [What the reviewed form shows](../review-pipeline/spec.md#what-the-reviewed-form-shows)). Likewise an
-entered addition's Back to review is refused while the field has another open
-change, another open addition or the Family's own change that is not ignored
-(`reopen_open_change`; decide or withdraw that one first), in SQL too. A later Family response may still ask for the
+entered addition's Not entered yet or Withdraw is refused while the field
+has another open change, another open addition or the Family's own change
+that is not ignored (`reopen_open_change`; decide or withdraw that one
+first), in SQL too: the frozen guard (0147) lets an entered addition be
+withdrawn only through `reopened`, which it refuses then, so no schema
+change is made for it (a forward migration letting `entered` be followed
+by `withdrawn` could lift it later, #2041). A later Family response may still ask for the
 same field again; the open addition then says the Family has an open change
-of this field too, so Staff decide that one and withdraw the addition if it
-is no longer needed. Its Baseline is ParishSoft's value of the field when it
+of this field too, and accepting the Family's change (Accept or Edit, one by
+one, in bulk, or `pk-admin census review`) withdraws the open addition in
+the same action, all or none, so the field never has two values waiting to
+be entered (#2041). Its dialog says so in a paragraph of its own under
+its body, in the error notice's look, so it is not missed ("This also
+withdraws the parish's added Nickname (Dave)."; the bulk Accept's dialog in
+general words while the page lists such a change). The withdrawal is the addition's own
+`withdrawn` step under the reviewer's name, with the note "Withdrawn: the
+Family's own change of this field was accepted.", and its own audit
+event. Ignoring the Family's change leaves the addition standing. An
+Entered by hand addition is left as it is (it waits for nothing; the
+Family's newer change is the one its form shows). Its Baseline is ParishSoft's value of the field when it
 was added (blank where it cannot be read, as for every Family address),
 which the database records with the snapshot it came from: the baseline the
 refresh rules re-evaluate an open addition against once

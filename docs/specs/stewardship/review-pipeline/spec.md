@@ -146,7 +146,8 @@ shown as **Added by the parish**, and goes through the rest of the pipeline
 like any other item; it may name the item it was added in place of, so the
 history reads "Ignored; Added in its place: …". **Back to review** undoes a
 decision while the item has not started its update (for an Added item, it
-withdraws the item), and undoes a terminal step after it
+withdraws the item; a census addition names it **Withdraw** instead, below),
+and undoes a terminal step after it
 ([undoing a terminal stage](#undoing-a-terminal-stage)). Every decision
 takes an optional note; only undoing a terminal step requires one.
 Reopening an ignored item takes an optional note like any other decision
@@ -177,7 +178,7 @@ again), never on a To review or Conflict one
 
 | Stream | Ministry leader | Staff | Administrator |
 | --- | --- | --- | --- |
-| Census | nothing (never sees it) | Accept, Edit, Ignore, Back to review, Add; Entered by hand | everything Staff can, plus start an update run |
+| Census | nothing (never sees it) | Accept, Edit, Ignore, Back to review, Add; Entered by hand; Withdraw (an addition) | everything Staff can, plus start an update run |
 | Ministry | on requests for Ministries they lead only: Accept, Edit (into another Ministry they lead), Ignore, Back to review | Accept, Edit (into any Ministry), Ignore, Back to review, Add (any Member, any Ministry); Entered by hand | as Staff (rosters are never written automatically) |
 | Financial | nothing | Accept, Edit (amount, frequency), Ignore, Back to review; Entered by hand | as Staff |
 | Cannot participate | nothing | Accept, Ignore, Back to review; Handled | as Staff |
@@ -194,6 +195,17 @@ Details the table cannot hold:
 - Leaders never Add: adding a Member to a Ministry the Family did not ask
   for is a parish decision. A leader who sees a mistaken request Ignores it
   with a note; Staff Add the right one.
+- A census change the parish added
+  ([census Add](../reports/spec.md#census-add)) takes plainly named actions
+  instead of Back to review, which would read as if it had been in review
+  ([#2041](https://github.com/epiphany40223/parishkit/issues/2041)): while
+  To enter by hand, **Withdraw** and Entered by hand; once Entered by hand,
+  **Not entered yet** (the terminal step's undo, back to To enter by hand,
+  with its required note) and **Withdraw** (the undo and the withdrawal in
+  one action, with the same note). Withdraw moves it to History, and the
+  Family no longer sees it. Accepting the Family's own change of the same
+  field withdraws its open addition in the same action, so one field never
+  has two values waiting to be entered.
 - Leaders never see or record Entered by hand, Handled or the update phase,
   as today. A leader's Accept moves the item to To enter by hand for Staff.
 - Add is not offered for the financial stream (a pledge the Family did not
@@ -747,8 +759,9 @@ stream, as the table above says. Notes on the table:
   enter by hand; a field has at most one), or, when it has none, its newest
   Entered by hand one while ParishSoft still has the value it had when the
   change was added; once ParishSoft's value changes the field shows
-  ParishSoft's. A withdrawn addition is never shown, so Back to review
-  returns the field to what it would otherwise show. A Family change of the
+  ParishSoft's. A withdrawn addition is never shown, so Withdraw (or
+  Accept of the Family's own change of the field, which withdraws an open
+  addition, #2041) returns the field to what it would otherwise show. A Family change of the
   field that is not Ignored and is newer than the addition, whatever its
   stage (Confirmed included, which records no shown item of its own), or
   still open (a change reopened before Back to review was refused for it,
@@ -850,8 +863,9 @@ each item under the reviewed rule:
   decision was recorded meanwhile (rule 1 then keeps the newer decision).
   Only the affected fields take fresh shown values, and they are listed in
   the review as today.
-- **A change the parish added, withdrawn while the form is open** (Back to
-  review), is a stale-form review too, so the Family never sends a value
+- **A change the parish added, withdrawn while the form is open**
+  (Withdraw, or Accept of the Family's own change of the field, #2041), is
+  a stale-form review too, so the Family never sends a value
   Staff took back as if it were still the parish's: the fresh form draws
   the field without it, and the tab keeps an edit the Family made to the
   field. One Entered by hand meanwhile changes nothing.
@@ -1891,7 +1905,11 @@ Accept (check), Edit (pencil; opens the stream's own value editor: for a
 pledge the amount and frequency, for a Ministry request the Ministry list
 scoped to the reader), Ignore (eye struck through), Back to review (arrow
 turning back), and, in the update phase, Entered by hand / Handled (check in
-a box), on accepted rows only (never To review or Conflict, #1890). A row
+a box), on accepted rows only (never To review or Conflict, #1890). A
+census addition's Back to review is worded **Not entered yet**, and it
+offers **Withdraw** (a circled minus) in its place while To enter by hand, beside it
+once Entered by hand (#2041,
+[role-specific actions](#role-specific-actions)). A row
 whose value ParishSoft already holds before its step says "ParishSoft
 already holds this value." on the line under its stage
 ([rule 1](#baseline-refresh-re-evaluation)). The line appears only on a row
@@ -1917,7 +1935,8 @@ Selection boxes and the bulk bar follow the
 [row action](../ui-conventions/spec.md#row-actions-and-confirmation) rules (several rows, by role); today Census changes
 breaks the box rule, giving a box only to rows offering a review decision,
 so the By hand rows have actions but no box. The bulk bar offers Accept,
-Ignore, Back to review and Entered by hand / Handled
+Ignore, Back to review and Entered by hand / Handled, and on Census changes
+Withdraw while the page lists a change the parish added (#2041)
 ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)), with
 the exact count in the dialog. Edit, Add and a New Member's Member ID
 correction are one item at a time. The

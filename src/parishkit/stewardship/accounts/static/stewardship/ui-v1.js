@@ -5413,6 +5413,13 @@
       if (body.dataset.default === undefined) body.dataset.default = body.textContent;
       body.textContent = opener.dataset.confirmBody || body.dataset.default;
     }
+    // A consequence the opener says on its own (confirm-dialog.html warning):
+    // its own error notice, hidden while this opener carries none (#2041).
+    const warning = dialog.querySelector("[data-confirm-warning]");
+    if (warning) {
+      warning.textContent = opener.dataset.confirmWarning || "";
+      warning.hidden = !warning.textContent;
+    }
     const error = dialog.querySelector("[data-confirm-error]");
     error.hidden = true;
     error.replaceChildren();

@@ -366,8 +366,9 @@ def test_cannot_participate_refuses_unknown_state(decision, in_force):
 REVIEW = {"accept", "edit", "ignore", "back_to_review"}
 ROLE_TABLE = {
     ("census", "ministry_leader"): set(),
-    ("census", "staff"): REVIEW | {"add", "entered_by_hand"},
-    ("census", "administrator"): REVIEW | {"add", "entered_by_hand", "start_update"},
+    ("census", "staff"): REVIEW | {"add", "entered_by_hand", "withdraw"},
+    ("census", "administrator"): REVIEW
+    | {"add", "entered_by_hand", "withdraw", "start_update"},
     ("ministry", "ministry_leader"): REVIEW,
     ("ministry", "staff"): REVIEW | {"add", "entered_by_hand"},
     ("ministry", "administrator"): REVIEW | {"add", "entered_by_hand"},
@@ -424,6 +425,36 @@ def test_leader_acts_only_on_ministries_they_lead():
     assert pipeline.allowed_actions(
         "ministry", Stage.TO_ENTER_BY_HAND, leader, leads=True
     ) == {Action.BACK_TO_REVIEW}
+
+
+def test_a_census_addition_offers_its_own_steps():
+    """#2041: an addition offers Withdraw and Entered by hand while open,
+    Not entered yet (Back to review) and Withdraw once entered, nothing once
+    withdrawn; no stage of a Family's change offers Withdraw."""
+    staff = {"staff"}
+    assert pipeline.census_addition_actions("open") == {
+        Action.ENTERED_BY_HAND,
+        Action.WITHDRAW,
+    }
+    assert pipeline.census_addition_actions("entered") == {
+        Action.BACK_TO_REVIEW,
+        Action.WITHDRAW,
+    }
+    assert pipeline.census_addition_actions("withdrawn") == frozenset()
+    with pytest.raises(ValueError):
+        pipeline.census_addition_actions("ignored")
+    for stage in Stage:
+        assert Action.WITHDRAW not in pipeline.stage_actions("census", stage)
+    offers = pipeline.census_addition_actions("entered")
+    assert pipeline.allowed_actions(
+        "census", Stage.ENTERED_BY_HAND, staff, offers=offers
+    ) == {Action.BACK_TO_REVIEW, Action.WITHDRAW}
+    assert (
+        pipeline.allowed_actions(
+            "census", Stage.ENTERED_BY_HAND, {"ministry_leader"}, offers=offers
+        )
+        == frozenset()
+    )
 
 
 def test_administrator_role_set_is_the_union():

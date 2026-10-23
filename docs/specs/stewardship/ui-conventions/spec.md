@@ -4472,6 +4472,9 @@ inventory on #879 lists.
   editor that records a corrected value (the review worklist's Edit) holds
   its Save until the value differs from the one it opened with, saying so
   in its reserved line, since saving the same value records no edit (R38).
+  A consequence a reader must not miss (a census Accept that also withdraws
+  the parish's addition, #2041) is its own paragraph under the dialog's
+  words, in the error notice's look, never run on from them.
   A row
   shows only the actions that apply to it; a row with none shows nothing
   there.
@@ -4493,6 +4496,11 @@ inventory on #879 lists.
   So the decision shows on the icons, not only in a
   status column ([review pipeline](../review-pipeline/spec.md#selected-state-icons),
   [#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
+  The icons keep one order from row to row, except the undo: it is drawn
+  just right of the selected icon it undoes (the last one, when a decision
+  and a mark are both in force), so a row Entered by hand reads Accepted,
+  Entered by hand, Back to review (the Administrator, R45 W,
+  [#2041](https://github.com/epiphany40223/parishkit/issues/2041)).
   An action that amends the mark in force rather than undoing it comes
   after the selected icon, is never a toggle (no `aria-pressed`), acts on
   one row at a time (no bulk), and returns focus to the selected icon; so

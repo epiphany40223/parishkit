@@ -185,10 +185,11 @@ def test_back_to_review_undoes_entered_by_hand_with_a_note(page, component_origi
     page.goto(component_origin + ENTERED)
     page.evaluate(MARK)
     sent = posts(page, component_origin, UNDONE)
+    # The undo sits just right of the mark it undoes (R45 W, #2041).
     assert actions(page, 1) == [
         ("accept", "true"),
-        ("back_to_review", None),
         ("entered_by_hand", "true"),
+        ("back_to_review", None),
     ]
     icon(page, 1, "Send").click()
     dialog = page.locator("#census-decide-dialog")

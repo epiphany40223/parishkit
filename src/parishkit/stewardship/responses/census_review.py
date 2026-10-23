@@ -85,9 +85,11 @@ from .member_census import InvalidMemberValue, validate_member_value
 from .member_requests import REQUEST_FIELDS
 from .models import (
     REVIEW_DECISIONS,
+    CensusAdditionResolution,
     ProposalResolution,
     ProposalReview,
     ProposedChange,
+    open_additions,
 )
 from .publication import MEMBER_FIELDS, encode_member_value
 
@@ -496,7 +498,67 @@ def _record(
             "after_version": expected_version + 1,
         },
     )
+    if state["decision"] == "approved":
+        withdraw_open_additions(proposal, actor_id, request_key, parish)
     return review
+
+
+# The note on a parish addition that accepting the Family's own change of
+# its field withdrew (#2041): the addition's history says why it went.
+WITHDRAWN_BY_ACCEPT = "Withdrawn: the Family's own change of this field was accepted."
+
+
+def withdraw_open_additions(proposal, actor_id, request_key, parish):
+    """Withdraw the open parish additions of an accepted change's field (#2041).
+
+    Called by ``_record`` in the same work transaction as the review that
+    leaves ``proposal`` accepted (Accept, Edit, a bulk Accept or
+    ``pk-admin census review``), so one field never has two values waiting
+    to be entered. Each open addition of the same Family, Member (or
+    Family) and field gets its own ``withdrawn`` step under the reviewer's
+    name, with ``WITHDRAWN_BY_ACCEPT`` as its note, and its own audit
+    event; its request key is derived from the review's, so the step is
+    the review's alone (a replayed review returns before this). An Entered
+    by hand addition is left as it is: it waits for nothing, and the frozen
+    guard (0147) withdraws one only through a reopen, which it refuses
+    while the Family's change is open. Returns the steps recorded.
+    """
+    recorded = []
+    for addition in (
+        open_additions()
+        .filter(
+            family_id=proposal.submission.family_id,
+            entity_kind=proposal.entity_kind,
+            entity_key=proposal.entity_key,
+            field=proposal.field,
+        )
+        .order_by("pk")
+    ):
+        latest = addition.resolutions.order_by("-sequence").first()
+        sequence = 1 if latest is None else latest.sequence + 1
+        step = CensusAdditionResolution.objects.create(
+            actor_id=actor_id,
+            request_key=bulk_key_for(request_key, addition.pk),
+            addition=addition,
+            sequence=sequence,
+            action="withdrawn",
+            note=WITHDRAWN_BY_ACCEPT,
+        )
+        record_action(
+            Action.CENSUS_CHANGE_UPDATED,
+            actor_kind=ActorKind.PORTAL_USER,
+            actor_id=actor_id,
+            subject_id=step.pk,
+            parish_id=parish,
+            campaign_id=proposal.submission.campaign_id,
+            context={
+                "outcome": Outcome.CHANGED,
+                "before_version": sequence,
+                "after_version": sequence + 1,
+            },
+        )
+        recorded.append(step)
+    return recorded
 
 
 def _parish_id():

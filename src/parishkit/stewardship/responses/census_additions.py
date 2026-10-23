@@ -16,9 +16,13 @@ proposals belong to the Family submit path, whose guards and derived rows
 stay exactly as they are. Until the update run is rebuilt (#1688) nothing
 writes an addition to ParishSoft, so each is To enter by hand
 (``pipeline.census_addition_placement``); each later step is a
-``CensusAdditionResolution``: Entered by hand; Back to review, which
-withdraws an open one and reopens an entered one (with a required note,
-#1840), so it can be entered again or withdrawn. SQL checks the actor, the
+``CensusAdditionResolution``: Entered by hand; Withdraw (#2041); and Not
+entered yet (the worklist's Back to review), which reopens an entered one
+(with a required note, #1840), so it can be entered again or withdrawn.
+Withdraw of an entered one records both steps, ``reopened`` then
+``withdrawn``, as the frozen guard lets an entered one be withdrawn only so.
+Accepting the Family's own change of the field withdraws its open addition
+too (``census_review.withdraw_open_additions``). SQL checks the actor, the
 campaign, the Family, the Member, the field and the value's shape again,
 which step may follow which, and pairs each row with its audit event
 (``schema/migrations/0129_census_additions.sql``, ``0147_census_addition_undo.sql``).
@@ -389,9 +393,9 @@ def add_census_change(store, actor_id, campaign_id, add, *, note, request_key):
 
 
 # The later steps a worklist decision records on an addition: Entered by
-# hand, or Back to review, which withdraws an open addition and reopens an
-# entered one (#1840).
-ADDITION_DECISIONS = ("entered", "back_to_review")
+# hand; Back to review (worded Not entered yet), which reopens an entered
+# one (#1840); and Withdraw (#2041).
+ADDITION_DECISIONS = ("entered", "back_to_review", "withdraw")
 
 
 def addition_state(latest):
@@ -410,35 +414,80 @@ def addition_version(latest):
     return 1 if latest is None else latest.sequence + 1
 
 
-def _step(state, decision):
-    """The step ``decision`` records on an addition in ``state``, else None.
+# The steps each decision records on an addition in each state (#2041):
+# Entered by hand marks an open addition; Back to review (Not entered yet)
+# undoes an entered one's mark; Withdraw withdraws an open one, and an
+# entered one through ``reopened`` first, the only way the frozen guard
+# (0147) lets an entered one be withdrawn.
+_STEPS = {
+    ("entered", "open"): ("entered",),
+    ("back_to_review", "entered"): ("reopened",),
+    ("withdraw", "open"): ("withdrawn",),
+    ("withdraw", "entered"): ("reopened", "withdrawn"),
+}
 
-    Entered by hand marks an open addition; Back to review withdraws an
-    open one, or undoes an entered one's mark (``reopened``).
+
+def _steps(state, decision):
+    """The steps ``decision`` records on an addition in ``state``; () if none."""
+    return _STEPS.get((decision, state), ())
+
+
+def _step_keys(key, addition_id, count):
+    """Each step's request key: the decision's own, then one derived from it.
+
+    A Withdraw of an entered addition records two steps, each of which
+    needs a key of its own; the second is derived (``bulk_key_for``), so a
+    repeated post finds both.
     """
-    if decision == "entered":
-        return "entered" if state == "open" else None
-    return {"open": "withdrawn", "entered": "reopened"}.get(state)
+    return [key, bulk_key_for(key, addition_id)][:count]
+
+
+def _record_step(addition, actor_id, key, sequence, action, note, campaign_id, parish):
+    """Record one step on ``addition`` at ``sequence``, with its audit event."""
+    resolution = CensusAdditionResolution.objects.create(
+        actor_id=actor_id,
+        request_key=key,
+        addition=addition,
+        sequence=sequence,
+        action=action,
+        note=note,
+    )
+    record_action(
+        Action.CENSUS_CHANGE_UPDATED,
+        actor_kind=ActorKind.PORTAL_USER,
+        actor_id=actor_id,
+        subject_id=resolution.pk,
+        parish_id=parish,
+        campaign_id=campaign_id,
+        context={
+            "outcome": Outcome.CHANGED,
+            "before_version": sequence,
+            "after_version": sequence + 1,
+        },
+    )
+    return resolution
 
 
 def resolve_census_additions(
     store, actor_id, campaign_id, versions, action, *, note, request_key, bulk=False
 ):
-    """Mark additions Entered by hand, or send them back, all or none.
+    """Mark additions Entered by hand, not entered yet, or withdrawn, all or none.
 
     ``versions`` maps each addition id to the version its row showed
-    (``addition_version``); ``action`` is ``entered`` or ``back_to_review``
-    (``ADDITION_DECISIONS``). Back to review withdraws an open addition and
-    reopens an entered one, To enter by hand again, which needs a note
-    (review pipeline spec, "Undoing a terminal stage"). Each gets its own
+    (``addition_version``); ``action`` is ``entered``, ``back_to_review``
+    (the worklist's Not entered yet: an entered addition reopened, To enter
+    by hand again) or ``withdraw`` (``ADDITION_DECISIONS``). Undoing an
+    entered one's mark needs a note (review pipeline spec, "Undoing a
+    terminal stage"), so Withdraw of an entered one does too: it records
+    ``reopened`` and then ``withdrawn`` (#2041). Each step gets its own
     resolution row, at the addition's next sequence, and audit event, its
     request key derived from the page's bulk key for ``bulk``
     (``bulk_key_for``), so a repeated post records nothing more. One whose
-    state does not take the step, or shown at another version, raises
+    state does not take the decision, or shown at another version, raises
     ``BulkStale`` naming it; reopening one whose field has another open
-    change raises ``ReopenOverOpen``. Nestable inside the caller's work transaction,
-    so a bulk decision over proposals and additions together is all or
-    none. Returns the resolutions in id order.
+    change raises ``ReopenOverOpen``. Nestable inside the caller's work
+    transaction, so a bulk decision over proposals and additions together
+    is all or none. Returns each addition's last step, in id order.
     """
     if (
         not isinstance(actor_id, UUID)
@@ -469,27 +518,31 @@ def resolve_census_additions(
         recorded = []
         for addition in additions:
             key = bulk_key_for(request_key, addition.pk) if bulk else request_key
-            previous = CensusAdditionResolution.objects.filter(
-                actor_id=actor_id, request_key=key
-            ).first()
-            if previous is not None:
-                # A replay: the step this key recorded, which the decision
-                # gives for the state the addition had before it.
-                again = _step(
-                    "entered" if previous.action == "reopened" else "open", action
-                )
-                if (previous.addition_id, previous.action) != (addition.pk, again):
+            keys = _step_keys(key, addition.pk, 2)
+            previous = list(
+                CensusAdditionResolution.objects.filter(
+                    actor_id=actor_id, request_key__in=keys
+                ).order_by("sequence")
+            )
+            if previous:
+                # A replay: the steps this key recorded, which the decision
+                # gives for the state the addition had before them.
+                before = "entered" if previous[0].action == "reopened" else "open"
+                if previous[0].request_key != key or (
+                    {step.addition_id for step in previous} != {addition.pk}
+                    or tuple(step.action for step in previous) != _steps(before, action)
+                ):
                     raise KeyRebound("This request key is already bound.")
-                recorded.append(previous)
+                recorded.append(previous[-1])
                 continue
             latest = addition.resolutions.order_by("-sequence").first()
-            step = _step(addition_state(latest), action)
-            if step is None or versions[addition.pk] != addition_version(latest):
+            steps = _steps(addition_state(latest), action)
+            if not steps or versions[addition.pk] != addition_version(latest):
                 raise BulkStale(addition.pk)
-            if step == "reopened" and not note.strip():
+            if steps[0] == "reopened" and not note.strip():
                 # Undoing a mark needs a reason, as reopening Ignored does.
                 raise NoteRequired("Undoing Entered by hand needs a note.")
-            if step == "reopened" and _open_change(
+            if steps[0] == "reopened" and _open_change(
                 addition.family_id,
                 addition.entity_kind,
                 addition.entity_key,
@@ -500,26 +553,18 @@ def resolve_census_additions(
                 # slips in between.
                 raise ReopenOverOpen("Another open change covers this field.")
             sequence = addition_version(latest)
-            resolution = CensusAdditionResolution.objects.create(
-                actor_id=actor_id,
-                request_key=key,
-                addition=addition,
-                sequence=sequence,
-                action=step,
-                note=note,
-            )
-            record_action(
-                Action.CENSUS_CHANGE_UPDATED,
-                actor_kind=ActorKind.PORTAL_USER,
-                actor_id=actor_id,
-                subject_id=resolution.pk,
-                parish_id=parish,
-                campaign_id=campaign_id,
-                context={
-                    "outcome": Outcome.CHANGED,
-                    "before_version": sequence,
-                    "after_version": sequence + 1,
-                },
-            )
+            for offset, (step_key, step) in enumerate(
+                zip(_step_keys(key, addition.pk, len(steps)), steps, strict=True)
+            ):
+                resolution = _record_step(
+                    addition,
+                    actor_id,
+                    step_key,
+                    sequence + offset,
+                    step,
+                    note,
+                    campaign_id,
+                    parish,
+                )
             recorded.append(resolution)
         return recorded

@@ -19,6 +19,7 @@ from parishkit.stewardship.reports.census_change_views import (
 )
 from parishkit.stewardship.reports.census_changes import (
     CensusQuery,
+    link_additions,
     select,
     shape,
     shape_addition,
@@ -72,8 +73,11 @@ ADDED_NOTICE = "Nickname for Member DUID 103 in Family DUID 1003 added."
 ADDED_ENTERED = "/census-changes-added-entered"
 ADDED_REOPENED = "/census-changes-added-reopened"
 ADDED_REOPENED_NOTICE = (
-    "Nickname for Member DUID 103 in Family DUID 1003 sent back to review."
+    "Nickname for Member DUID 103 in Family DUID 1003 marked not entered yet."
 )
+# The added row's field is Member 03's mobile phone, which row 3 (To review)
+# asks for too, so row 3's Accept withdraws the addition (#2041).
+ADDED_OVERLAP = "/census-changes-added-overlap"
 # Row 3 Entered incorrectly (#1737): a refresh found ParishSoft at a third
 # value, and the pages after each of its two fixes: Back to review undoes
 # the mark (#1840), so row 3 is To enter by hand again, Accepted.
@@ -158,16 +162,19 @@ def components(context, admin):
             )
         )
 
-    def addition(step=None, sequence=None):
-        """The parish-added row: Member 03's nickname, To enter by hand, or
-        at its latest ``step`` (``sequence``)."""
+    def addition(step=None, sequence=None, phone=False):
+        """The parish-added row: Member 03's nickname (mobile phone with
+        ``phone``), To enter by hand, or at its latest ``step``
+        (``sequence``)."""
         return shape_addition(
             {
                 "id": "a1",
                 "entity_kind": "member",
                 "entity_key": "103",
-                "field": "nickname",
-                "value": '"Bo"',
+                "field": "mobile_phone" if phone else "nickname",
+                "value": '{"display": "555-0123", "number": "5550123"}'
+                if phone
+                else '"Bo"',
                 "in_place_of": None,
                 "created_at": when + timedelta(hours=1),
                 "baseline": None,
@@ -250,20 +257,30 @@ def components(context, admin):
         }
 
     def page(
-        paging, notice=None, *, stage="all", rows=ROWS, added=False, step=(), **changes
+        paging,
+        notice=None,
+        *,
+        stage="all",
+        rows=ROWS,
+        added=False,
+        step=(),
+        phone=False,
+        **changes,
     ):
         """Render the page with the table paged and sorted as ``paging`` says,
         the Stage filter at ``stage``, ``notice`` above the table, and
         ``changes`` (``shaped``'s) applied, for a Staff reader; ``added``
         puts the parish-added row first, at ``step`` (``addition``'s
-        arguments) when given."""
+        arguments) when given, of Member 03's mobile phone with ``phone``.
+        The additions are tied to the changes of their field as the view
+        ties them (``link_additions``)."""
         query = CensusQuery(stage=stage)
-        found = [addition(*step)] * added + [
-            shaped(index, **changes) for index in range(rows)
-        ]
-        result = select(found, query, administrator=False)
+        additions = [addition(*step, phone=phone)] * added
+        found = [shaped(index, **changes) for index in range(rows)]
+        replacements = link_additions(found, additions)
+        result = select(additions + found, query, administrator=False)
         result["roles"] = frozenset({"staff"})
-        result["replacements"] = {}
+        result["replacements"] = replacements
         table = paginate(
             result["rows"],
             paging,
@@ -318,6 +335,7 @@ def components(context, admin):
         STALE: page(size, STALE_NOTICE),
         EDITED: page(size, EDITED_NOTICE, accepted={2}),
         ADDED: page(size, ADDED_NOTICE, added=True),
+        ADDED_OVERLAP: page(size, added=True, phone=True),
         **undo_pages(size),
         NEW_MEMBER: page(size, new_members=True),
         MEMBER_ENTERED: page(
