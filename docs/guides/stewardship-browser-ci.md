@@ -101,14 +101,13 @@ near 75% of the budget again, split further rather than raising `JOB_SECONDS`.
 Each partition logs its estimate on its `CI_BROWSER_PARTITION` line and
 `CI_BROWSER_TIMING <label>: estimated N s, actual M s` when it finishes, pass
 or fail (#666). Estimates are per engine, so each estimate should be close to
-its actual time on a normal runner. To refresh the hints, sum each file's
-`CI_PROGRESS ... END ... elapsed=` seconds per engine from the job logs of a
-recent full run or two (`gh api repos/OWNER/REPO/actions/jobs/ID/logs`). Fit
-each engine's fixed and per-case seconds to those sums by least squares,
-record as extra seconds the files that stay more than about 10 seconds above
-the fit on average across engines (refitting without them), and note the
-source run IDs. Hints change only placement and logged estimates, never which
-tests run.
+its actual time on a normal runner. To refresh the hints:
+
+1. Save the logs of every `stewardship-browser-engine` job of a recent full run, every attempt (`gh api repos/OWNER/REPO/actions/runs/RUN/attempts/N/jobs` lists them; `gh api repos/OWNER/REPO/actions/jobs/ID/logs > ID.log` saves one; the API sometimes answers 502, so retry).
+2. Run `python -m parishkit.stewardship.quality_browser_hints *.log`. It takes each test's median `CI_PROGRESS ... END ... elapsed=` seconds across the logs, sums them per file and engine, fits each engine's fixed and per-case seconds by least squares, and records as extra seconds the files that stay more than 10 seconds (`--threshold`) above the fit on average across engines, refitting without them.
+3. Paste the printed `BROWSER_ENGINE_SECONDS` and `BROWSER_FILE_EXTRA_SECONDS` into `quality_sharding`, note the source run IDs there, and rerun the tool. Its replay of `BROWSER_JOBS` on the same tests prints each partition's estimate beside its actual seconds and each job's total as a share of `JOB_SECONDS`. If a job is above about 60%, raise that engine's count in `BROWSER_JOBS` and the workflow matrix together and rerun.
+
+Tests a budget kill never finished are missing from the logs, so include every attempt of a killed job. Hints change only placement and logged estimates, never which tests run.
 
 ## Partition budgets (#1112)
 
