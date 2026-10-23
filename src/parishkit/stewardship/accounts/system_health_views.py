@@ -54,7 +54,7 @@ from .admin_editing import editable_configuration
 from .authentication import runtime
 from .content_views import resave_recommended
 from .policy import Capability
-from .role_refusal import RoleDenied, require
+from .role_refusal import SHARED_REFUSALS, require
 from .role_refusal import response as role_response
 from .runtime_models import SystemConfiguration
 from .sessions import authenticated_admin
@@ -222,9 +222,9 @@ def _read(request, template, *, page):
                 )
         response["Cache-Control"] = "no-store"
         return response
-    except RoleDenied as error:
-        # A role that lacks the page: the shared role refusal (#1924), not
-        # this page's sign-in-again error.
+    except SHARED_REFUSALS as error:
+        # A role that lacks the page, or an ended session: the shared
+        # refusal (#1924, #2062), not this page's own error.
         return role_response(error)
     except PermissionError:
         return _error(ErrorCode.DENIED, 403)

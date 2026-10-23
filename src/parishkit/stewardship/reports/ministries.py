@@ -9,6 +9,7 @@ from django.utils.datastructures import MultiValueDict
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.accounts.role_refusal import signed_out
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.responses.member_census import gender_word
 from parishkit.stewardship.schema_primitives import timezone_names
@@ -235,9 +236,12 @@ def unscoped(principal, message):
     current ParishSoft data (no leader role on a current campaign
     Ministry's roster). That person is told so plainly, still with a 403,
     rather than given the generic sign-in denial, which suggests signing in
-    again would help. Anyone else keeps the generic denial (``message`` is
-    internal and never shown).
+    again would help. No current session (``None``) gets the signed-out
+    refusal, whose page load goes to the sign-in page (#2062). Anyone else
+    keeps the generic denial (``message`` is internal and never shown).
     """
+    if principal is None:
+        return signed_out()
     if "ministry_leader" in getattr(principal, "roles", ()):
         return UserFacingDenied(
             _(

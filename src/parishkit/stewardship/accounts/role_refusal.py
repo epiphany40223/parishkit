@@ -50,6 +50,14 @@ class RoleDenied(UserFacingDenied):
     offers_sign_in = False
 
 
+# The refusals a view with its own error page (System logs, System health,
+# Sent mail) still answers with the shared typed 403 (``response``): a
+# role that lacks the page (#1924), and an ended session, whose page load
+# the browser-error middleware sends to the sign-in page (#2062). Every
+# other ``PermissionError`` keeps the view's own page.
+SHARED_REFUSALS = (RoleDenied, UserFacingSignedOut)
+
+
 def signed_out():
     """The refusal for a request with no current Admin session.
 
@@ -140,11 +148,12 @@ def require(actor, capability):
 
 
 def response(error):
-    """The typed 403 for a ``RoleDenied``, for views that answer, not raise.
+    """The typed 403 for a ``SHARED_REFUSALS`` error, for views that answer.
 
-    The browser-error middleware shows people the standard error page (no
-    Sign in again, a link home); scripts and in-place regions get the same
-    refusal as JSON.
+    For a ``RoleDenied`` the browser-error middleware shows people the
+    standard error page (no Sign in again, a link home); for the signed-out
+    refusal it sends a page load to the sign-in page (#2062). Scripts and
+    in-place regions get the same refusal as JSON.
     """
     return annotate(
         validation_response(
@@ -152,3 +161,13 @@ def response(error):
         ),
         error,
     )
+
+
+def signed_out_response():
+    """The typed signed-out 403, for a view that finds no current session.
+
+    For views that check ``authenticated_admin`` themselves rather than
+    raising (Background work): a page load goes to the sign-in page, and
+    scripts keep the 403 (#2062).
+    """
+    return response(signed_out())

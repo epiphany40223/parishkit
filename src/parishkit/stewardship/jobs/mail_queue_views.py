@@ -21,6 +21,8 @@ from django.utils.translation import gettext as _
 from django.views.decorators.http import require_safe
 
 from parishkit.stewardship.accounts.authentication import runtime
+from parishkit.stewardship.accounts.role_refusal import SHARED_REFUSALS
+from parishkit.stewardship.accounts.role_refusal import response as role_response
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
@@ -159,6 +161,10 @@ def _read(request, template, *, page):
                 )
         response["Cache-Control"] = "no-store"
         return response
+    except SHARED_REFUSALS as error:
+        # A role that lacks the page, or an ended session: the shared
+        # refusal (#1924, #2062), not this page's own error.
+        return role_response(error)
     except PermissionError:
         return _error(ErrorCode.DENIED, 403)
     except DatabaseError as error:
