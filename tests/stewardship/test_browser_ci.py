@@ -545,6 +545,8 @@ def test_browser_jobs_run_in_the_pinned_playwright_image():
     fonts = "/usr/share/fonts/truetype/dejavu"
     assert job["container"]["volumes"] == [f"{fonts}:{fonts}"]
     assert "--with-deps" not in workflow
+    # Container steps default to sh, which rejects the steps' bash features.
+    assert job["defaults"]["run"]["shell"] == "bash -e {0}"
     assert "sudo" not in yaml.safe_dump(job)
     names = [step.get("name") for step in job["steps"]]
     assert "Remove the Microsoft apt source" not in names

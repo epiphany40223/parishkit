@@ -332,6 +332,11 @@ jobs:
       options: --ipc=host
       volumes:
         - /usr/share/fonts/truetype/dejavu:/usr/share/fonts/truetype/dejavu
+    # A container job's `run` steps default to `sh` (dash here), not the
+    # runner's `bash -e`; the steps use bash features such as `read -ra`.
+    defaults:
+      run:
+        shell: bash -e {0}
     env:
       BROWSER_RUNS: ${{ matrix.runs }}
     steps:

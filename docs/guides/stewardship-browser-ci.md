@@ -164,6 +164,9 @@ and their OS packages. Before #2053, every job ran `playwright install
   refuses a system-wide pip install). `actions/cache` keeps `~/.cache/pip`.
   The image has no Node, so `actions/setup-node` (npm cache) still runs, and
   `npm ci` for axe-core installs as before.
+- A container job's `run` steps default to `sh`, not the runner's `bash`, so
+  the job sets `defaults.run.shell: bash -e {0}` to keep the steps' bash
+  features working.
 - `python -m playwright install <engines>` stays, without `--with-deps`. It
   downloads nothing while the image's browsers match the `playwright` pin in
   `requirements/stewardship-browser.txt`. `test_browser_ci.py` requires the
