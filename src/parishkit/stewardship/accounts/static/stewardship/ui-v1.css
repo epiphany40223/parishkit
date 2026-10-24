@@ -2007,6 +2007,24 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 @media (min-width: 48rem) {
   .schedule-pane div:has(> input[data-time-entry=time]) > .time-reading { max-width: none; }
 }
+/* Repeating (New scheduled email, the date-change review's New schedule;
+   pk-local R48): on desktop From, Until and Send time share one row, as
+   other short fields do (the row rule above). From and Until are the repeat
+   rule's, inside its panel, and Send time is the schedule row's own field,
+   so the panel and rule boxes are dissolved (display: contents) while shown
+   and the three boxes sit in one line, wrapping where they do not fit; the
+   hidden Send date between them takes no place. The markup is unchanged,
+   so labels, help, errors and tab order (From, Until, Send time) stay as
+   they were. Below 48rem everything stacks as before. While Repeating, the
+   time's reading wraps inside its box (it never widens it, which would push
+   it to a line of its own as a refusal appears) and reserves three lines,
+   so a refusal moves nothing. */
+@media (min-width: 48rem) {
+  [data-schedule-row] :is([data-repeat-panel], [data-repeat-rule]):not([hidden]) { display: contents; }
+  [data-schedule-row] .field:has(> input:is([data-repeat=from], [data-repeat=until])) { display: inline-flex; flex-direction: column; vertical-align: top; min-width: 12rem; margin-inline-end: 1.5rem; }
+  [data-schedule-row] .field > input:is([data-repeat=from], [data-repeat=until]) { max-width: 14rem; }
+  [data-schedule-row]:has([data-repeat-panel]:not([hidden]) [data-repeat=from]):not(:has([data-repeat-rule][hidden])) [data-schedule-field=time] .time-reading { width: 0; min-width: 100%; max-width: none; min-height: 4.8em; min-height: 3lh; }
+}
 /* The repeat summary reserves two lines, so its text appearing, changing or
    wrapping on a phone never moves the Add button below it (#469). */
 .repeat-summary { min-height: 3.2em; min-height: 2lh; margin-block: .5rem 0; font-weight: 600; }

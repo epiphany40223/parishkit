@@ -32,3 +32,37 @@ def repeat_dates_answer(path, body, content_type):
     except ValueError:
         return 400, ""
     return 200, render_to_string(repeat_dates_preview.TEMPLATE, context)
+
+
+def assert_span_row(page, width, from_until, time):
+    """From, Until and Send time share one row at a desktop ``width`` and
+    stack at a phone's, with no sideways scroll either way (pk-local R48).
+
+    ``from_until`` is a selector reaching the rule's From and Until through
+    their data-repeat hooks' parent (the panel), and ``time`` the row's Send
+    time box. Their document order (From, Until, Send time) is the tab
+    order, which the layout never changes.
+    """
+    boxes = [
+        page.locator(f'{from_until} [data-repeat="from"]'),
+        page.locator(f'{from_until} [data-repeat="until"]'),
+        page.locator(time),
+    ]
+    tops = [box.bounding_box()["y"] for box in boxes]
+    lefts = [box.bounding_box()["x"] for box in boxes]
+    if width >= 1280:
+        assert max(tops) - min(tops) < 1, tops
+        assert lefts[0] < lefts[1] < lefts[2], lefts
+    else:
+        assert tops[0] < tops[1] < tops[2], tops
+    assert page.evaluate(
+        "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
+    )
+    # Document order is tab order: From, Until, then Send time.
+    assert boxes[0].evaluate(
+        "(from, [until, time]) => {"
+        " const after = (a, b) => !!(a.compareDocumentPosition(b)"
+        " & Node.DOCUMENT_POSITION_FOLLOWING);"
+        " return after(from, until) && after(until, time); }",
+        [boxes[1].element_handle(), boxes[2].element_handle()],
+    )
