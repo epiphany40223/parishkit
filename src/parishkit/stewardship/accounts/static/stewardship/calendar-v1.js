@@ -55,7 +55,9 @@
 // again after each draw to the month or week each would show. The buttons'
 // words and reasons follow the view. The week view's address is
 // ?view=week&week=<its Sunday>, without ?month=, and its Edit and Add links
-// carry ?calendar=<that Sunday>, so New and Edit return to the week.
+// carry ?calendar=<that Sunday>, so New and Edit return to the week. A
+// week's first day of a month shows its month ("Oct 1", Administrator
+// 2026-10-23), as the row can cross into it.
 (() => {
   const root = document.querySelector("[data-calendar]");
   const template = document.getElementById("calendar-month");
@@ -253,8 +255,8 @@
     return note;
   }
 
-  // One day's cell: its number (with Add on a campaign day), its notes and
-  // its sends.
+  // One day's cell: its number (``day``, the text shown: "12", or "Oct 1"
+  // in a week), with Add on a campaign day, its notes and its sends.
   function dayCell(key, day, days, today) {
     const cell = document.createElement("td");
     // The day a send dropped here moves to (#1521).
@@ -311,7 +313,9 @@
   }
 
   // One week (``index``, weekIndex's, #1808) as the month grid's table with
-  // one row of seven days, Sunday first, captioned "Week of" its Sunday.
+  // one row of seven days, Sunday first, captioned "Week of" its Sunday. A
+  // month's first day shows its month ("Oct 1"), so a week that crosses
+  // into it says so.
   function weekGrid(index, days, today) {
     const sunday = weekKey(index);
     const region = template.content.firstElementChild.cloneNode(true);
@@ -323,7 +327,9 @@
     const row = document.createElement("tr");
     for (let offset = 0; offset < 7; offset += 1) {
       const key = numberKey(dayNumber(sunday) + offset);
-      row.append(dayCell(key, Number(key.slice(8)), days, today));
+      const day = Number(key.slice(8));
+      const shown = day === 1 ? dates.monthDay(Number(key.slice(5, 7)), day) : day;
+      row.append(dayCell(key, shown, days, today));
     }
     region.querySelector("tbody").append(row);
     return region;

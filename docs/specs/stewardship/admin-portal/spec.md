@@ -3930,10 +3930,14 @@ changes them.
   11, 2054"). It sits before the buttons, whose words change with the
   view, so it never moves.
 - **One week** is one row of seven days, Sunday first, under the month
-  grid's weekday headings; its caption and the name after the buttons say
-  "Week of" and its Sunday's date. Each day is drawn as in a month: its
-  number, Add on a day, Today and the campaign's first and last days in
-  words, and its sends with Move… and drag onto any day of the week.
+  grid's weekday headings; its caption says "Week of" and its Sunday's
+  date. Each day is drawn as in a month: its number, Add on a day, Today
+  and the campaign's first and last days in words, and its sends with
+  Move… and drag onto any day of the week the send can move to. A month's
+  first day shows its month as well ("27 28 29 30 Oct 1 2 3", Administrator
+  2026-10-23), since a week can cross into it; every other day is its
+  number only. A month grid shows only its own month's days (the others
+  are blank), so its days stay numbers only.
 - **Previous week** and **Next week** take the month buttons' place and
   step a week. The weeks run from the one holding the campaign's first day
   (or its first send) to the one holding its last day (or its last send);

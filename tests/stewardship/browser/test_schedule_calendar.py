@@ -1040,7 +1040,7 @@ def test_the_week_view_is_drawn_in_place_and_steps_by_week(
     rows = page.locator("table.calendar-week tbody tr")
     assert rows.count() == 1
     assert rows.locator(".calendar-day").all_inner_texts() == [
-        "27", "28", "29", "30", "1", "2", "3"
+        "27", "28", "29", "30", "Oct 1", "2", "3"
     ]  # fmt: skip
     previous = page.get_by_role("button", name="Previous week")
     following = page.get_by_role("button", name="Next week")
