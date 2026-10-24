@@ -430,7 +430,7 @@ active registered Families before (below).
 | --- | --- | --- | --- |
 | **Active parishioners** (preset) | yes | the group named exactly "Active" | Active |
 | **Active parishioners and Staff** (preset) | yes | the group named exactly "Active" or exactly "Staff" | Active |
-| **Advanced** | yes, or not required | any of the chosen groups (one or more) | any of the chosen statuses (one or more of Active, ActOther, Unknown) |
+| **Advanced** | yes, or not required | any of the chosen groups (one or more), where "(No Family Group)" means a Family with no group | any of the chosen statuses (one or more of Active, ActOther, Unknown) |
 | **Legacy** (only campaigns created before this rule existed) | yes | any group except the one named exactly "Inactive", or no group | anything except Inactive or Deceased (an empty status counts) |
 
 - *Registered to this parish* is today's `family_is_parishioner`: the
@@ -440,15 +440,31 @@ active registered Families before (below).
 - A Member's Status is ParishSoft's `memberStatus`, compared exactly. A
   Deceased or Inactive Member never satisfies a preset or Advanced rule, since
   neither status can be chosen.
-- Preset groups match by exact name, as the legacy rule's "Inactive" always
-  has, so the presets mean the same thing in every parish's data. Advanced
-  groups are chosen from the group lookup the latest promoted snapshot
-  recorded (every group, including groups no Family is in) and are stored by
-  `famGroupID` with the name shown when it was chosen; pages show the current
-  name. A Family with no group is not in any group, so no preset or Advanced
-  rule selects it.
+- ParishSoft's Family groups are a fixed list: a parish cannot rename, add
+  or delete them (Administrator, 2026-10-24). So preset groups match by exact
+  name, as the legacy rule's "Inactive" always has, the presets mean the same
+  thing in every parish's data, and nothing handles a renamed group.
+- Advanced groups are chosen from the group lookup the latest promoted
+  snapshot recorded: every group, including groups no Family is in, the
+  "Inactive" group and oddly named ones such as "(blank)" (a real group,
+  not the absence of one), each stored by `famGroupID` with its name. Lookup
+  IDs are positive integers.
+- A Family with no group has `famGroupID` 0 or none, which the snapshot
+  already records as no `family_group`. No preset selects it. Advanced
+  offers it once, as the choice **(No Family Group)**, stored as
+  `{"id": 0, "name": "(No Family Group)"}`, which matches exactly the
+  Families with no group. "No Family Group" is only ParishSoft's own screen
+  label for such a Family, not an entry in the group lookup: a read-only
+  check against real ParishSoft on 2026-10-24 found 18 lookup groups, none
+  of them "No Family Group", and a Family set to "No Family Group" in
+  ParishSoft returned `famGroupID` 0
+  ([#1393](https://github.com/epiphany40223/parishkit/issues/1393)). Should
+  a lookup ever hold a group named exactly "No Family Group", Advanced still
+  shows one such choice: (No Family Group) then also matches that group, and
+  the group is not listed again.
 - A chosen group (preset name or Advanced ID) that a later refresh no longer
-  finds matches no Family. The refresh records the missing group in its load
+  finds is not expected, since the list is fixed, but is still safe: it
+  matches no Family. The refresh records the missing group in its load
   evidence and raises an Admin alert naming it; the drop check stops a refresh
   that would lose many Families that way, and the Administrator decides with
   [accept a large ParishSoft change once](../admin-portal/spec.md#accept-a-large-parishsoft-change-once).
@@ -463,10 +479,17 @@ the legacy one by calling today's `family_is_active` and
 and registration). `active` stays the flag [Ministry leader](#ministry-leaders)
 sign-in reads (Administrator decision, 2026-10-15): the Families rule decides
 only which Families get the Family form and email. `portal_eligible` becomes
-"matches the campaign's Families rule". `email_eligible` stays
-`portal_eligible` and at least one active head (today's head test: Head,
-Husband or Wife, not Inactive or Deceased) with a valid email address, for
-every rule. Under an Advanced rule a Family can be a campaign Family while
+"matches the campaign's Families rule". `email_eligible` is
+`portal_eligible` and at least one head (Head, Husband or Wife) whose Member
+Status is one of the rule's statuses (Active for both presets; the chosen
+statuses for Advanced), who is not Deceased, and who has a valid email
+address (Administrator decision, 2026-10-24). So a campaign Family is never
+emailed through a head whose status the rule does not accept; such a Family
+is reached by postal mail, as a Family with no email is today. The legacy
+rule keeps today's email test exactly (any head not Inactive or Deceased,
+with a valid email address), so nothing changes for the
+[existing campaign](#the-existing-campaigns-rule), and
+`active_head_duids` keeps today's meaning. Under an Advanced rule a Family can be a campaign Family while
 `active` is false (for example one in a chosen "Inactive" group); the status
 reason then reads as a campaign Family, not as inactive.
 
@@ -476,10 +499,12 @@ other configurable fields ([Campaign](#campaign)):
 
 - `{"rule": "active_parishioners"}`
 - `{"rule": "active_parishioners_and_staff"}`
-- `{"rule": "advanced", "registered": true, "family_groups": [{"id": 12,
-  "name": "Active"}], "member_statuses": ["Active", "ActOther"]}`
+- `{"rule": "advanced", "registered": true, "family_groups": [{"id": 0,
+  "name": "(No Family Group)"}, {"id": 12, "name": "Active"}],
+  "member_statuses": ["Active", "ActOther"]}`
   (`registered` is a boolean; both lists are non-empty, without duplicates, in
-  a canonical order; statuses are a subset of the three).
+  a canonical order; group IDs are non-negative, 0 meaning no group;
+  statuses are a subset of the three).
 
 A configuration with no `campaign_families` value means the legacy rule;
 that value is never written. Applied configuration versions are immutable and
@@ -539,7 +564,8 @@ Families were emailed codes and links that must never be invalidated
 (Administrator's hard rule). It keeps exactly the Families it has. Its
 configuration has no `campaign_families` value, which means the legacy rule:
 today's code path, evaluated by today's functions, so every refresh selects
-the same Families it would have selected before this change, and the
+the same Families it would have selected before this change, and emails
+them through exactly the heads today's email test accepts, and the
 migration's guard keeps it that way for the rest of the campaign (no
 configuration version may add a rule to it). Campaign settings shows the
 rule as "Chosen before this choice existed: Families registered to this

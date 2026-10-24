@@ -4565,11 +4565,16 @@ modes. It opens in Basic with **Active parishioners** chosen.
     required**, with the tip "Not required also includes Families registered
     to another parish, or to none."
   - **In any of these Family groups**: one checkbox per Family group in the
-    latest ParishSoft data's group lookup, by name, each with the number of
-    Families in it; at least one is required.
+    latest ParishSoft data's group lookup, by name, including "Inactive"
+    (Administrator decision, 2026-10-24), then one **(No Family Group)**
+    checkbox for Families with no group, each with the number of Families in
+    it; at least one is required. The data specification's
+    [campaign Families](../data/spec.md#campaign-families) says why
+    (No Family Group) appears exactly once.
   - **With at least one Member whose status is**: checkboxes **Active**,
     **ActOther** and **Unknown**, with ParishSoft's own words; at least one is
-    required.
+    required. Its tip says the campaign's emails go only to a head of the
+    Family with one of these statuses.
 
   Each preset maps to the Advanced configuration it equals (registered
   Required, the named groups, Active), so Basic → Advanced is lossless. A
@@ -4584,7 +4589,9 @@ place as the choice changes, without a reload, without moving anything
 ([in-place controls](../ui-conventions/spec.md#in-place-controls), [no layout
 shift](../ui-conventions/spec.md#no-layout-shift)), through a passive,
 unaudited count read that takes the posted choice and the page's snapshot and
-returns the two numbers (no names, no Family data). The time is browser-local.
+returns the two numbers (no names, no Family data). It shows only those two
+counts (Administrator decision, 2026-10-24), not a comparison with another
+choice. The time is browser-local.
 While the choice is incomplete the line says what is missing ("Choose at
 least one Family group."). When no Family matches, the line says so and
 **Create the campaign and continue** is unavailable with the reason "No
@@ -4598,7 +4605,7 @@ data it reads.
 **Locked after creation.** On Campaign settings the section stays in its
 place in every campaign state, disabled, with the reason in its tip: "Chosen
 when the campaign was created; it can't be changed." It shows the rule in the
-words above (an Advanced rule lists its groups by current name, and a group
+words above (an Advanced rule lists its groups by name, and a group
 the latest data no longer has as "*name* (no longer in ParishSoft)"). The
 server keeps the saved rule whatever is posted, and the configuration guard
 refuses any change ([data](../data/spec.md#campaign-families)). The existing

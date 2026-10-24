@@ -3183,7 +3183,9 @@ reaches ("no campaign is open to parishioners") is unchanged. **Why.** A
 campaign's Families are whatever its rule chose, which may include Staff or
 Families registered elsewhere, so "active parishioner" stopped being true
 (Administrator, 2026-10-24,
-[#1393](https://github.com/epiphany40223/parishkit/issues/1393)). Status:
+[#1393](https://github.com/epiphany40223/parishkit/issues/1393); the
+Administrator approved these words, including the Family badge, the same
+day). Status:
 specified, not built; the implementing PR changes the strings, their tests
 and the specification text together, and renames the reports
 specification's "Active parishioner family directory" heading (with its
