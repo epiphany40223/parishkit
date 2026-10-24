@@ -83,7 +83,10 @@ def test_staff_panels_link_each_stage_and_fit(
         limitations.get_by_role("link", name="To handle 0 answers")
     ).to_have_attribute("href", "/admin/reports/limitations/?stage=to_handle")
     if width == 1366:
-        # An overview page fits a laptop window without scrolling.
+        # An overview page fits a laptop window without scrolling (the
+        # ui-conventions Overview pages rule). Measure with the page's own
+        # fonts, not a wider fallback still showing while they load.
+        page.evaluate("document.fonts.ready.then(() => true)")
         assert page.evaluate(
             "document.querySelector('[data-review-stream=cannot_participate]')"
             ".getBoundingClientRect().bottom <= innerHeight"
