@@ -139,22 +139,22 @@ def _changes(configuration, patch):
     ]
 
 
-# The refusal of a switch that would change the loaded ParishSoft
-# organization (#1492), shown in the review dialog (#1568).
-ORGANIZATION_LOCKED = _(
-    "This key was saved with a different ParishSoft organization ID. The "
-    "organization ID can't change after ParishSoft data has been loaded, so "
-    "this switch was refused and nothing was changed."
-)
-
-
 def _locked():
-    """The dialog's refusal of a switch to another ParishSoft organization."""
+    """The dialog's refusal of a switch to another ParishSoft organization.
+
+    Shown in the review dialog (#1492, #1568), in the words ``pk-admin
+    integration key finish-switching`` shares (``organization_fixed``,
+    #1554): the organization is chosen once, in setup.
+    """
+    from parishkit.stewardship.source.organization_names import organization_fixed
+
+    from .integration_selection import loaded_organization
+
     return UserFacingStale(
-        ORGANIZATION_LOCKED,
+        organization_fixed(loaded_organization()),
         fix=_(
-            "Paste the ParishSoft API key for the loaded organization on this "
-            "page instead."
+            "Nothing was changed. Paste a ParishSoft API key that reaches it "
+            "on this page instead."
         ),
     )
 

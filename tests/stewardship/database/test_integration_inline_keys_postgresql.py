@@ -110,15 +110,14 @@ def working(request, monkeypatch, tmp_path, google):
 def save(value, candidate=CANDIDATE, **settings):
     """Submit the page's own form with a pasted key, as a browser would.
 
-    A setting given as None is left out, as a browser leaves out a disabled
-    field (the locked organization ID, #1492).
+    A setting given as None is left out. The page has no organization field
+    (#1554), so none is posted unless a test forges one.
     """
     browser, store = value["browser"], value["service"].store
     page = browser.get(URL)
     fields = {
         "action": "preview",
         "base_digest": store.active().digest,
-        "organization_id": "12345",
         "intent": hidden(page, "intent"),
         "candidate": candidate.decode(),
     } | settings
@@ -198,52 +197,21 @@ def test_saved_key_installs_acknowledges_and_is_selected(working):
     assert SecretReplacementRequest.objects.count() == 1
 
 
-def test_before_a_load_key_and_changed_organization_are_saved_together(working):
-    """Before any ParishSoft data is loaded, the organization ID can still change.
-
-    The new organization ID travels with the key it was checked against.
-    Once data is loaded it cannot change (see the next tests).
-    """
-    assert save(working, organization_id="54321").status_code == 302
-    row = SecretReplacementRequest.objects.get()
-    selection = ConfigurationChangeRequest.objects.get(
-        request_key=selection_key(row.pk)
-    )
-    assert selection.patch[0]["values"]["settings"]["organization_id"] == "54321"
-    with identity("pk_stewardship_credential_parishsoft"):
-        working["installer"].run_once()
-    with identity("pk_stewardship_worker"):
-        acknowledge_rotations(working["worker"], {})
-    with identity("pk_stewardship_credential_parishsoft"):
-        working["installer"].run_once()
-    assert install(working, selection.pk).state == "applied"
-    settings = (
-        working["service"]
-        .store.active()
-        .document()["sections"]["integrations"][0]["values"]["settings"]
-    )
-    assert settings["organization_id"] == "54321"
-
-
 @pytest.mark.parametrize("with_key", [False, True])
-def test_organization_cannot_change_after_the_first_load(
-    working, monkeypatch, with_key
-):
-    """After a load, a different organization ID is refused in plain language.
+def test_the_page_names_the_organization_and_refuses_a_posted_one(working, with_key):
+    """The organization is chosen once, in setup (#1554): the page names it
+    as text above the key, never a field, and a request that posts one
+    anyway (with or without a key) is refused as unexpected input, with
+    nothing queued or staged.
 
-    Every refresh must read the organization whose data is loaded, so saving
-    another ID (with or without a new key) would stop them all. The page
-    shows the ID disabled, and a posted change is refused: nothing is
-    queued or staged.
+    No load recorded a name here, so it is named by its ID alone.
     """
-    monkeypatch.setattr(
-        "parishkit.stewardship.accounts.integration_views.loaded_organization",
-        lambda: 12345,
-    )
     page = working["browser"].get(URL)
-    field = page.context["form"]["organization_id"]
-    assert field.field.disabled and " disabled" in str(field)
-    assert b"Locked: ParishSoft data for this organization is loaded." in page.content
+    assert "organization_id" not in page.context["form"].fields
+    assert page.context["organization"] == "ParishSoft organization 12345"
+    content = page.content.decode()
+    assert "ParishSoft organization: ParishSoft organization 12345" in content
+    assert "It must be a key that reaches ParishSoft organization 12345;" in content
     if with_key:
         response = save(working, organization_id="54321")
     else:
@@ -259,15 +227,14 @@ def test_organization_cannot_change_after_the_first_load(
                 },
             )
     assert response.status_code == 400
-    assert b"can&#x27;t change after ParishSoft data has been loaded" in (
-        response.content
-    )
-    assert b"Keep 12345 here." in response.content
     assert not SecretReplacementRequest.objects.exists()
     assert not ConfigurationChangeRequest.objects.exists()
-    # The same organization still saves a key and other settings.
+    # Without it, the key saves alone and the organization stays.
     assert save(working).status_code == 302
-    assert SecretReplacementRequest.objects.count() == 1
+    selection = ConfigurationChangeRequest.objects.get(
+        request_key=selection_key(SecretReplacementRequest.objects.get().pk)
+    )
+    assert set(selection.patch[0]["values"]) == {"credential_fingerprint"}
 
 
 def installed(value):
@@ -294,7 +261,7 @@ def test_failed_switch_is_an_error_and_finish_switching_recovers(
     """
     from parishkit.stewardship.accounts.integration_selection import switching
 
-    assert save(working, organization_id="54321").status_code == 302
+    assert save(working).status_code == 302
     row = installed(working)
     selection = ConfigurationChangeRequest.objects.get(
         request_key=selection_key(row.pk)
@@ -368,7 +335,7 @@ def test_failed_switch_is_an_error_and_finish_switching_recovers(
     assert install(working, finish.pk).state == "applied"
     record = _record(working)["values"]
     assert record["credential_fingerprint"] == fingerprint
-    assert record["settings"]["organization_id"] == "54321"
+    assert record["settings"]["organization_id"] == "12345"
     page = browser.get(URL).content
     assert b"Key updated." in page and b"switching to it did not" not in page
     assert b"switching to it did not" not in browser.get("/admin/").content
@@ -378,14 +345,25 @@ def test_failed_switch_is_an_error_and_finish_switching_recovers(
     )
 
 
-def failed_switch(value, **values):
-    """Save a key with a new organization, then let another change land first.
+def failed_switch(value, *, organization=None, **values):
+    """Save a key, then let another change land first.
 
     ``values`` is the other Administrator's ParishSoft settings change (by
-    default a new parish name instead). Returns the key's request row, whose
-    own selection has failed as ``stale_base``.
+    default a new parish name instead). ``organization`` forges the key's
+    save with another organization ID, which no page or command can post
+    (#1554), for the refusals that guard every other path. Returns the key's
+    request row, whose own selection has failed as ``stale_base``.
     """
-    assert save(value, organization_id="54321").status_code == 302
+    from parishkit.stewardship.accounts.integration_forms import IntegrationForm
+
+    def forged(form, settings=IntegrationForm.public_settings):
+        """The form's settings with the forged organization."""
+        return settings(form) | {"organization_id": organization}
+
+    with pytest.MonkeyPatch.context() as patched:
+        if organization is not None:
+            patched.setattr(IntegrationForm, "public_settings", forged)
+        assert save(value).status_code == 302
     row = installed(value)
     store = value["service"].store
     base = store.active()
@@ -417,14 +395,14 @@ def test_finish_switching_keeps_another_admins_newer_schedule(working):
 
     Another Administrator's schedule change landed first. Replaying the
     whole saved settings block would silently undo it; only the key-scope
-    organization ID is carried over, and the confirmation lists it.
+    settings are carried over. The organization is the same (the page has
+    no field for it, #1554), so the confirmation lists no other setting.
     """
     row = failed_switch(working, nightly_time="04:15")
     browser = working["browser"]
     page = post(browser, URL, {"action": "finish"})
-    changes = page.context["changes"]
-    assert [(c["before"], c["after"]) for c in changes] == [("12345", "54321")]
-    assert b"Settings saved with the new key" in page.content
+    assert page.context["changes"] == []
+    assert b"Settings saved with the new key" not in page.content
     with identity("pk_stewardship_web"):
         response = post(
             browser,
@@ -440,29 +418,33 @@ def test_finish_switching_keeps_another_admins_newer_schedule(working):
     assert install(working, finish).state == "applied"
     settings = _record(working)["values"]["settings"]
     assert settings["nightly_time"] == "04:15"
-    assert settings["organization_id"] == "54321"
+    assert settings["organization_id"] == "12345"
     assert _record(working)["values"]["credential_fingerprint"] == (
         file_fingerprint(CANDIDATE)
     )
 
 
 def test_finish_switching_cannot_change_a_loaded_organization(working, monkeypatch):
-    """A key saved with a new organization before the first load can't switch after.
+    """A key saved with another organization can't switch once data is loaded.
 
-    Its review in the dialog refuses in plain language and records nothing
-    (#1568), and the configuration installer refuses the same change from
-    any other path.
+    No page or command saves one (the organization has no field, #1554), so
+    the save is forged here. Its review in the dialog refuses in plain
+    language, naming the organization, and records nothing (#1568), and the
+    configuration installer refuses the same change from any other path.
     """
     from parishkit.stewardship.accounts import integration_selection
     from parishkit.stewardship.accounts.configuration_requests import record_request
 
-    failed_switch(working)
+    failed_switch(working, organization="54321")
     monkeypatch.setattr(integration_selection, "loaded_organization", lambda: 12345)
     count = ConfigurationChangeRequest.objects.count()
     browser = working["browser"]
     page = post(browser, URL, {"action": "finish"})
     assert page.status_code == 409
-    assert b"organization ID can't change after ParishSoft data" in page.content
+    assert page.json()["refusal"]["message"] == (
+        "The ParishSoft organization is ParishSoft organization 12345 and "
+        "can't change after setup."
+    )
     assert b'name="preview"' not in page.content
     assert ConfigurationChangeRequest.objects.count() == count
     # Any other path to the same change is refused by the installer.
@@ -516,21 +498,23 @@ def test_rejected_key_keeps_the_old_one_and_says_so(working):
     ).exists()
 
 
-@pytest.mark.parametrize("loaded", [12345, None])
+@pytest.mark.parametrize("loaded", ["St. Example Parish (12345)", None])
 def test_key_for_another_organization_says_exactly_that(working, monkeypatch, loaded):
     """A key that does not reach the organization fails with its own line (#1495).
 
     The real installer role records the cause as one audit event about the
     request, committed with the failure; the request itself stays failed,
-    the previous key stays in use, and the page names that one cause.
+    the previous key stays in use, and the page names that one cause and
+    the loaded organization, "Name (ID)" (#1554).
     """
+    from parishkit.stewardship.source import organization_names
 
     def validate(value):
         """The check's "mismatch" verdict, as provider_checks raises it."""
         raise CredentialOrganizationMismatch()
 
     installer = CredentialInstaller(working["installer"].files, validate=validate)
-    monkeypatch.setattr(credentials, "loaded_organization", lambda: loaded)
+    monkeypatch.setattr(organization_names, "loaded_organization_label", lambda: loaded)
     assert save(working).status_code == 302
     row = SecretReplacementRequest.objects.get()
     with identity("pk_stewardship_credential_parishsoft"):
@@ -552,16 +536,10 @@ def test_key_for_another_organization_says_exactly_that(working, monkeypatch, lo
     )
     assert install(working, selection.pk).state == "failed"
     page = working["browser"].get(URL).content.decode()
-    if loaded is None:
-        expected = (
-            "This key does not reach the configured ParishSoft organization ID. "
-            "Check the key and the organization ID, then try again."
-        )
-    else:
-        expected = (
-            "This key does not reach the ParishSoft organization whose data is "
-            "already loaded. Paste a key that reaches the loaded organization."
-        )
+    expected = (
+        f"This key does not reach {loaded or 'the organization chosen in setup'}, "
+        "whose data is loaded. Paste a key that reaches it."
+    )
     assert expected in page
     assert "ParishSoft did not accept" not in page
     assert summary("parishsoft", _record(working)).message == expected
@@ -676,10 +654,12 @@ def test_an_old_sign_in_stages_the_key(working):
 
 
 def test_blank_key_keeps_the_settings_preview(working):
-    """Whitespace in the key field is not a key; settings still preview first."""
-    response = save(working, candidate=b"   ", organization_id="54321")
-    assert response.status_code == 200
-    assert b'name="preview"' in response.content
+    """Whitespace in the key field is not a key: the Save is a settings
+    review, which here changes nothing (ParishSoft's organization has no
+    field, #1554), so it is refused as no change and nothing is staged."""
+    response = save(working, candidate=b"   ")
+    assert response.status_code == 400
+    assert response.json()["refusal"]["message"] == "No settings have changed."
     assert not SecretReplacementRequest.objects.exists()
 
 
@@ -843,20 +823,16 @@ def _record(value):
 
 
 def test_a_key_pasted_with_the_schedule_untouched_is_saved(working, monkeypatch):
-    """With data loaded, a key pasted on the page as drawn is saved (#1492).
+    """A key pasted on the page as drawn is saved (#1492).
 
-    The browser posts the schedule rows back untouched and leaves out the
-    disabled organization ID, so the save is neither a key plus a schedule
+    The browser posts the schedule rows back untouched, and the page has no
+    organization field (#1554), so the save is neither a key plus a schedule
     change (``key_with_schedule_change``) nor an organization change: the
     key's selection changes the key alone.
     """
-    monkeypatch.setattr(
-        "parishkit.stewardship.accounts.integration_views.loaded_organization",
-        lambda: 12345,
-    )
     page = shown(working["browser"].get(URL).content.decode())
     assert int(page["rules-TOTAL_FORMS"]) > 0
-    response = save(working, organization_id=None, **page)
+    response = save(working, **page)
     assert response.status_code == 302, response.content
     row = SecretReplacementRequest.objects.get()
     selection = ConfigurationChangeRequest.objects.get(

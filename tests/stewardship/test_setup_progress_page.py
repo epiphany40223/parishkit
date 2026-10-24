@@ -383,7 +383,10 @@ def test_continue_sits_in_the_bottom_action_row_from_the_start(key):
         assert ("The notice above says what to do." in row) is (key != "fetching")
 
 
-@pytest.mark.parametrize("organizations", [None, {"reached": 3, "skipped": 9}])
+@pytest.mark.parametrize(
+    "organizations",
+    [None, {"reached": 3, "skipped": 9, "organization": "St. Example Parish (12)"}],
+)
 def test_a_finished_load_counts_the_organizations_a_key_reaches(organizations):
     """#1554: the result notice says how many organizations the key reaches,
     from the load's own evidence, and nothing for a one-organization key."""
@@ -412,6 +415,7 @@ def test_a_finished_load_counts_the_organizations_a_key_reaches(organizations):
             in html
         )
         assert "left out by that load: 9." in html
+        assert "Only the data of St. Example Parish (12) is loaded;" in html
 
 
 @pytest.mark.parametrize(

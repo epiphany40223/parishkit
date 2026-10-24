@@ -1672,7 +1672,7 @@ Workspace mail or Outgoing email addresses not set up is exit 1
 | `target`, `name` | The integration and the page's name for it |
 | `configured` | Whether it is set up; Slack and Off-site backups are optional |
 | `removable` | Whether the page offers Remove (Slack and Off-site backups, once set up) |
-| `settings` | The saved settings the page shows, such as the ParishSoft organization ID and refresh schedule, the mailbox and addresses, the Slack channel or the Drive folder link; empty when not set up. ParishSoft's also carry `organization_name` beside `organization_id`, read-only: the name the latest full load recorded, or null until one records it ([#1554](https://github.com/epiphany40223/parishkit/issues/1554)) |
+| `settings` | The saved settings the page shows, such as the ParishSoft organization ID (chosen in setup, read-only) and refresh schedule, the mailbox and addresses, the Slack channel or the Drive folder link; empty when not set up. ParishSoft's also carry `organization_name` beside `organization_id`, read-only: the name the latest full load recorded, or null until one records it ([#1554](https://github.com/epiphany40223/parishkit/issues/1554)) |
 | `refresh_schedule` | For ParishSoft, the refresh schedule as its editor shows it, in the shape `integration preview --refresh-schedule` takes (see [Changing the refresh schedule](#changing-the-refresh-schedule)); an older schedule is shown converted to rules; null otherwise |
 | `key` | For ParishSoft, Google Workspace mail and Slack, the latest key change line: `state` (`pending`, `updated`, `unselected` when Finish switching is needed, or `failed`), `at`, `message` and `request_id`; null when the page shows none |
 | `source` | For ParishSoft, the same refresh facts as `refresh status`'s `source`; null otherwise |
@@ -1703,9 +1703,15 @@ pk-admin integration preview slack --expected-version VERSION --remove
 
 `--changes` is a JSON document (or `-` for standard input) with a
 `settings` object shaped like `integration show`'s: any of the page's
-fields for that integration (`organization_id`; `delegated_email`;
-`sender`, `sender_name`, `reply_to`; `channel_id`; `target`, the Drive
-folder link). A field you leave out keeps its saved value; only
+fields for that integration (`delegated_email`; `sender`, `sender_name`,
+`reply_to`; `channel_id`; `target`, the Drive folder link). ParishSoft's
+only editable setting is its refresh schedule (below): its
+`organization_id` is chosen once, in setup, so it may come back unchanged
+from `integration show`, and another value is exit 1 (`invalid`) at
+`settings.organization_id` with the page's words ("The ParishSoft
+organization is Name (ID) and can't change after setup.",
+[#1554](https://github.com/epiphany40223/parishkit/issues/1554)). A field
+you leave out keeps its saved value; only
 `sender_name` may be null or empty, which drops the From name so mail uses
 the parish name. Keys are never accepted (they have their own steps), and
 the ParishSoft refresh schedule is kept exactly as saved unless you give
@@ -1903,8 +1909,8 @@ pk-admin integration key replace slack --expected-version VERSION \
   fine.
 - `--changes JSON` saves settings with the key, in `integration preview`'s
   shape (`{"settings": {"channel_id": "C0123ABC"}}`): for example the
-  channel that sets Slack up with its first token, or a new ParishSoft
-  organization ID before any data is loaded. It is literal JSON, never
+  channel that sets Slack up with its first token. The ParishSoft
+  organization never changes this way (see above). It is literal JSON, never
   `-`, since standard input carries the key. A refresh schedule change is
   refused with a key, as on the page: change it first.
 
@@ -2035,8 +2041,9 @@ session and an Administrator and prints `version`, `target`, `name`,
 also applies, each `field`, `before` and `after`) and `preview.token`. It
 changes nothing. When nothing waits to be switched to it is exit 1
 (`not_available`); when the key was saved with a different ParishSoft
-organization ID than the loaded data's it is exit 1 (`invalid`) at
-`organization_id`, with the page's words. `integration key
+organization than the loaded data's it is exit 1 (`invalid`) at
+`organization_id`, with the page's words ("The ParishSoft organization is
+Name (ID) and can't change after setup."). `integration key
 finish-switching` takes that token, preferably on standard input
 (`--token -`, as above) so it stays out of the argument list and shell
 history, or one the page signed for you. Standard input then carries the

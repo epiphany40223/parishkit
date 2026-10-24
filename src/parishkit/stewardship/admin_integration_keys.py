@@ -51,26 +51,24 @@ from .admin_reads import NotAvailable, ReadModel, _held, _recheck, config_reques
 # spelled out for the parser, which is built before Django is set up; a test
 # keeps them equal.
 KEY_TARGETS = ("parishsoft", "google_workspace", "slack")
-# The page's own refusal of a switch that would change the loaded ParishSoft
-# organization (``integration_selection_views.ORGANIZATION_LOCKED``, which a
-# test keeps equal).
-ORGANIZATION_LOCKED = (
-    "This key was saved with a different ParishSoft organization ID. The "
-    "organization ID can't change after ParishSoft data has been loaded, so "
-    "this switch was refused and nothing was changed."
-)
 
 
 def _organization_locked():
-    """The page's refusal of a changed loaded organization, at its field."""
+    """The page's refusal of a changed loaded organization, at its field.
+
+    In the page's own words (``organization_names.organization_fixed``,
+    #1554), which name the loaded organization.
+    """
+    from .accounts.integration_selection import loaded_organization
     from .admin_changes import InvalidChange
+    from .source.organization_names import organization_fixed
 
     return InvalidChange(
         [
             {
                 "field": "organization_id",
                 "code": "invalid",
-                "message": ORGANIZATION_LOCKED,
+                "message": organization_fixed(loaded_organization()),
             }
         ]
     )

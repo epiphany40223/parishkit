@@ -106,15 +106,6 @@ FOLDER_LINK_PATTERN = (
     r"[Dd][Rr][Ii][Vv][Ee]\.[Gg][Oo][Oo][Gg][Ll][Ee]\.[Cc][Oo][Mm]([:\/?#].*)?)\s*"
 )
 
-# Why the ParishSoft organization ID is locked once its data is loaded
-# (#1492): the one line shown under its label, and the why in its tip.
-ORGANIZATION_LOCKED = _("Locked: ParishSoft data for this organization is loaded.")
-ORGANIZATION_LOCKED_TIP = _(
-    "The loaded Families, Members, ministries and giving belong to this "
-    "organization, and every refresh must read the same one, so its ID can no "
-    "longer change. A new API key must be a key for this organization."
-)
-
 
 class IntegrationForm(AdminForm):
     """Non-secret settings never accept fingerprints, keys or arbitrary URLs."""
@@ -123,45 +114,21 @@ class IntegrationForm(AdminForm):
         regex=r"^[0-9a-f]{64}$", max_length=64, widget=forms.HiddenInput
     )
 
-    def __init__(self, target, *args, loaded_organization=None, stored=None, **kwargs):
+    def __init__(self, target, *args, stored=None, **kwargs):
         """Use a compiled form per integration, not caller-provided schema fields.
 
-        ``loaded_organization`` is the ParishSoft organization ID whose data
-        is already loaded, or None before the first load. Once data is
-        loaded, the organization ID is shown disabled and a different value
-        is refused: every later refresh must read that same organization, so
-        a changed ID would stop them all (see ``source.requests``).
         ``stored`` are the integration's stored settings: ParishSoft's
         refresh schedule editor (``schedule``, #632) shows and compares
-        against the schedule they hold.
+        against the schedule they hold, and ParishSoft's organization ID is
+        carried over from them. It is chosen once, in the setup wizard
+        (#1554), so the form has no field for it: the page shows it as text
+        and a posted organization is refused as unexpected input.
         """
         super().__init__(*args, **kwargs)
         self.target = target
-        self.loaded_organization = loaded_organization
+        self.stored = stored or {}
         self.schedule = None
         if target == "parishsoft":
-            self.fields["organization_id"] = forms.IntegerField(
-                label=_("Expected ParishSoft organization ID"),
-                min_value=1,
-                max_value=2**31 - 1,
-            )
-            if loaded_organization is not None:
-                # Drawn disabled where it stands (ui-conventions, Prerequisite
-                # gates and Conditional fields): not focusable, not sent, and
-                # still showing the loaded ID, which Django's disabled field
-                # takes as its value. A posted value is still refused when it
-                # differs (clean_organization_id). The one-line reason is the
-                # field's visible hint, which the Administrator asked for
-                # (#1492), and the why is in its tip.
-                field = self.fields["organization_id"]
-                field.disabled = True
-                field.initial = loaded_organization
-                field_tips.add(field, ORGANIZATION_LOCKED_TIP, ORGANIZATION_LOCKED)
-            else:
-                # Before the first load, explain the value as setup does.
-                self.fields["organization_id"].help_text = setup_help.CREDENTIALS[
-                    "parishsoft"
-                ]["organization_id"]
             # The refresh schedule is edited as rows of rules (#632), read
             # from the same submitted data as the other settings.
             self.schedule = ScheduleEditor(
@@ -238,7 +205,6 @@ class IntegrationForm(AdminForm):
                 "delegated_email": setup_help.HINTS["delegated_email"],
                 "sender": setup_help.HINTS["sender"],
                 "channel_id": setup_help.HINTS["channel_id"],
-                "organization_id": setup_help.HINTS["organization_id"],
             },
         )
         # The folder link keeps a line for its error, shown or not, so Test
@@ -270,53 +236,25 @@ class IntegrationForm(AdminForm):
         """Normalize exact YAML types after validation; never include the base field.
 
         ParishSoft's schedule keys are the editor's: the stored ones for an
-        unchanged schedule, else those its rules give.
+        unchanged schedule, else those its rules give; its organization ID
+        is the stored one, which no form changes (#1554).
         """
         if not self.is_valid():
             raise ValueError("Valid integration settings are required.")
         # An empty From name is omitted: the applied settings then use the
         # Parish name, and the setting stays absent as in older documents.
         settings = {
-            name: str(value)
-            if name == "organization_id"
-            else (
-                normalized_email(value)
-                if isinstance(self.fields[name], forms.EmailField)
-                else value
-            )
+            name: normalized_email(value)
+            if isinstance(self.fields[name], forms.EmailField)
+            else value
             for name, value in self.cleaned_data.items()
             if name != "base_digest" and not (name == "sender_name" and not value)
         }
+        if self.target == "parishsoft" and "organization_id" in self.stored:
+            settings = {"organization_id": self.stored["organization_id"]} | settings
         if self.schedule is not None:
             settings |= self.schedule.settings()
         return settings
-
-    def clean_organization_id(self):
-        """Refuse a different organization once its ParishSoft data is loaded.
-
-        The locked field is disabled, so the browser sends nothing and its
-        value is the loaded ID; a request that posts another value anyway is
-        refused rather than quietly ignored.
-        """
-        value = self.cleaned_data["organization_id"]
-        posted = self.data.get(self.add_prefix("organization_id"))
-        if self.loaded_organization is not None and posted not in (None, ""):
-            try:
-                value = int(str(posted).strip())
-            except ValueError:
-                value = None
-        if self.loaded_organization is not None and value != self.loaded_organization:
-            raise forms.ValidationError(
-                _(
-                    "The organization ID can't change after ParishSoft data has "
-                    "been loaded: the loaded Families and Members belong to "
-                    "organization %(loaded)s, and every refresh must read that "
-                    "same organization. Keep %(loaded)s here."
-                ),
-                params={"loaded": self.loaded_organization},
-                code="organization_locked",
-            )
-        return value
 
 
 class WriteOnlyTextarea(forms.Textarea):
@@ -345,16 +283,17 @@ class CredentialForm(AdminForm):
 
 
 # Label and help for each integration's inline "replace the key" field.
+# ParishSoft's help names its organization (``%(organization)s``, "Name
+# (ID)", #1554), which InlineCredentialForm fills in.
 KEY_FIELDS = {
     "parishsoft": (
         _("New ParishSoft API key"),
         _(
             "Paste a new key only to replace the current one, for example after "
-            "creating a new key in ParishSoft. It is checked against the "
-            "organization ID above. It must be a key for the organization above; "
-            "a key for another organization is refused. Leave this blank to keep "
-            "the current key, which is never shown. A new key can't be saved "
-            "together with a refresh schedule change: "
+            "creating a new key in ParishSoft. It must be a key that reaches "
+            "%(organization)s; any other key is refused. Leave this blank to "
+            "keep the current key, which is never shown. A new key can't be "
+            "saved together with a refresh schedule change: "
             "save the schedule change first."
         ),
     ),
@@ -405,10 +344,19 @@ class InlineCredentialForm(AdminForm):
 
     intent = forms.CharField(max_length=4096, widget=forms.HiddenInput)
 
-    def __init__(self, target, *args, required=False, **kwargs):
-        """Use the target's own label, help text and one- or multi-line field."""
+    def __init__(self, target, *args, required=False, organization=None, **kwargs):
+        """Use the target's own label, help text and one- or multi-line field.
+
+        ``organization`` is ParishSoft's organization, named "Name (ID)"
+        (``organization_names``), which its key's help names; a form that is
+        only validated, never drawn, may leave it out.
+        """
         super().__init__(*args, **kwargs)
         label, help_text = KEY_FIELDS[target]
+        if target == "parishsoft":
+            help_text = str(help_text) % {
+                "organization": organization or _("the organization chosen in setup")
+            }
         missing = None
         if required:
             label, help_text, missing = SETUP_KEY_FIELDS[target]

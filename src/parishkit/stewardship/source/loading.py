@@ -175,24 +175,42 @@ def snapshot_organizations(snapshot_id=None):
     """What a snapshot's load recorded about other organizations, or None.
 
     ``snapshot_id`` names the snapshot (a setup load's); None reads the
-    current one. Returns ``{"reached": N, "skipped": total}``, the counts the
-    Integrations page, the setup load's result and System health show
-    (#1554), or None for a key that reaches only the configured
-    organization, a snapshot recorded before this, or no snapshot. One query.
+    current one. Returns ``{"reached": N, "skipped": total, "organization":
+    label}``, the counts the Integrations page, the setup load's result and
+    System health show (#1554), with the loaded organization named as
+    ``organization_names.organization_label`` names it; or None for a key
+    that reaches only the configured organization, a snapshot recorded
+    before this, or no snapshot. One query.
     """
+    from .organization_names import organization_label
     from .snapshot_models import SourceCurrent, SourceSnapshot
 
-    field = f"cursor__load__{ORGANIZATIONS_KEY}"
+    fields = (
+        f"cursor__load__{ORGANIZATIONS_KEY}",
+        "organization_id",
+        f"cursor__load__{ORGANIZATION_KEY}",
+    )
     if snapshot_id is None:
-        rows = SourceCurrent.objects.values_list(f"snapshot__{field}", flat=True)
-    else:
-        rows = SourceSnapshot.objects.filter(pk=snapshot_id).values_list(
-            field, flat=True
+        rows = SourceCurrent.objects.values_list(
+            *(f"snapshot__{field}" for field in fields)
         )
-    value = recorded_organizations({"load": {ORGANIZATIONS_KEY: rows.first()}})
-    if value is None:
+    else:
+        rows = SourceSnapshot.objects.filter(pk=snapshot_id).values_list(*fields)
+    row = rows.first()
+    if row is None:
         return None
-    return {"reached": value["reached"], "skipped": sum(value["skipped"].values())}
+    others, organization, name = row
+    value = recorded_organizations({"load": {ORGANIZATIONS_KEY: others}})
+    if value is None or organization is None:
+        return None
+    return {
+        "reached": value["reached"],
+        "skipped": sum(value["skipped"].values()),
+        "organization": organization_label(
+            organization,
+            recorded_organization_name({"load": {ORGANIZATION_KEY: name}}),
+        ),
+    }
 
 
 def _families_left_without_members(data, client):

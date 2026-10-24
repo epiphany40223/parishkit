@@ -46,7 +46,6 @@ from .integration_forms import (
     InlineCredentialForm,
     IntegrationForm,
 )
-from .integration_selection import loaded_organization
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
 from .refresh_schedule_forms import (
@@ -146,19 +145,39 @@ def integration_list(configuration):
 
 
 def _form(target, *args, stored=None, **kwargs):
-    """The settings form, with ParishSoft's organization ID fixed once loaded.
+    """The settings form for ``target``.
 
     ``stored`` is the integration's stored settings record, if any; the
-    ParishSoft refresh schedule editor (#632) compares against its schedule.
+    ParishSoft refresh schedule editor (#632) compares against its schedule,
+    and ParishSoft's organization ID is carried over from it (#1554).
     """
-    loaded = loaded_organization() if target == "parishsoft" else None
     return IntegrationForm(
         target,
         *args,
-        loaded_organization=loaded,
         stored=stored["values"]["settings"] if stored is not None else None,
         **kwargs,
     )
+
+
+def _organization(configuration, target):
+    """ParishSoft's organization named "Name (ID)" (#1554), else None.
+
+    The configured organization, with the name the current snapshot's load
+    recorded (``current_organization_label``): the page's organization
+    line and its key's help name it. None for another integration or a
+    ParishSoft record with no organization. One query for ParishSoft.
+    """
+    from parishkit.stewardship.source.organization_names import (
+        current_organization_label,
+    )
+
+    if target != "parishsoft":
+        return None
+    record = _optional(configuration, target)
+    settings = {} if record is None else record["values"]["settings"]
+    if "organization_id" not in settings:
+        return None
+    return current_organization_label(settings["organization_id"])
 
 
 def _schedule_zone(configuration):
@@ -253,10 +272,15 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
     latest = summary(target, record) if target in ROTATING_TARGETS else None
     pending = latest is not None and latest.kind == "pending"
     unavailable = False
+    organization = _organization(configuration, target)
     if target in ROTATING_TARGETS and credential is None and not pending:
         try:
             credential = _inline_credential_form(
-                configuration, request, target, required=not configured
+                configuration,
+                request,
+                target,
+                required=not configured,
+                organization=organization,
             )
         except IntegrationUnavailable:
             # Settings stay editable while the key installer is unavailable.
@@ -278,6 +302,8 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
             "summary": latest,
             "pending": pending,
             "configured": configured,
+            # ParishSoft's organization line, text above the key (#1554).
+            "organization": organization,
             "errors": _summary(form, credential) if status == 400 else [],
             # Save waits for every required field (#563). ParishSoft's
             # refresh schedule editor gates Save itself (refresh-schedule-v1.js,
@@ -502,14 +528,23 @@ def queue_probe(configuration, actor, entered):
     )
 
 
-def _inline_credential_form(configuration, request, target, *, required=False):
+def _inline_credential_form(
+    configuration, request, target, *, required=False, organization=None
+):
     """Sign a fresh request identity for the page's new-key field.
 
     ``required`` is true for an optional integration that is not set up yet,
-    whose key is what sets it up (#563).
+    whose key is what sets it up (#563). ``organization`` is ParishSoft's
+    named organization (``_organization``), which its help names; it is
+    read here when not given.
     """
     intent = sign_key_intent(configuration, request.portal_session.principal_id, target)
-    return InlineCredentialForm(target, initial={"intent": intent}, required=required)
+    return InlineCredentialForm(
+        target,
+        initial={"intent": intent},
+        required=required,
+        organization=organization or _organization(configuration, target),
+    )
 
 
 def sign_key_intent(configuration, actor_id, target):
@@ -547,13 +582,19 @@ def _refused_key(configuration, request, target, message=None, *, code=None):
     """
     if message is not None and not code:
         raise TypeError("A refused key's message needs its closed code.")
+    organization = _organization(configuration, target)
     blank = _inline_credential_form(
-        configuration, request, target, required=message is None
+        configuration,
+        request,
+        target,
+        required=message is None,
+        organization=organization,
     )
     credential = InlineCredentialForm(
         target,
         {"intent": blank.initial["intent"], "candidate": ""},
         required=message is None,
+        organization=organization,
     )
     if credential.is_valid():
         credential.add_error("candidate", ValidationError(message, code=code))
@@ -599,6 +640,7 @@ def _refused_entries(request, configuration, target, form):
         target,
         initial={"intent": request.POST.get("intent", "")},
         required=_optional(configuration, target) is None,
+        organization=_organization(configuration, target),
     )
     return _page(
         request,
