@@ -557,6 +557,14 @@ HELP_LINE_ALLOWED = {
     ("system-health-clear-halt-button.html", "A mail sender reports"),
     ("users.html", "People ParishSoft lists as"),
     ("users.html", "Send each chosen Ministry"),
+    # Lines that sit right after another help line but are not a second
+    # paragraph of one field's help: a section's stacked guidance, a
+    # status line or the alternative of two states of which one shows.
+    ("refresh-schedule-editor.html", "Refreshes never overlap: one"),
+    ("refresh-schedule-editor.html", "Times are in the"),
+    ("report-email-entry.html", "Every block is in"),
+    ("schedule-email.html", "The generated plain text"),
+    ("users.html", "{{ count }} Ministry"),
 }
 
 
@@ -569,6 +577,20 @@ def help_words(text):
 def help_key(name, message):
     """A help line's allowlist key: its template and its first four words."""
     return (name, " ".join(TAG.sub(" ", message).split()[:4]))
+
+
+def adjacent_help(source):
+    """The body of each help element that directly follows another one.
+
+    Only whitespace may lie between the two; a tag or an ``{% if %}``
+    between them means alternatives or separate things.
+    """
+    matches = list(HELP_LINE.finditer(source))
+    return [
+        after.group(2)
+        for before, after in zip(matches, matches[1:], strict=False)
+        if not source[before.end() : after.start()].strip()
+    ]
 
 
 def long_help_lines(name):
@@ -586,6 +608,14 @@ def long_help_lines(name):
             texts = messages(branch)
             if sum(help_words(text) for text in texts) > FIELD_HELP_WORDS:
                 found.append(help_key(name, texts[0]))
+    # Help split into several short paragraphs is still more than one line:
+    # a help element right after another one counts as long, whatever its
+    # own length. Text between them (a tag, an ``{% if %}``) means they are
+    # alternatives or separate things and is not counted.
+    for body in adjacent_help(read(name)):
+        texts = messages(body)
+        if texts:
+            found.append(help_key(name, texts[0]))
     return found
 
 
@@ -667,6 +697,15 @@ def test_the_help_line_guard_catches_what_it_describes():
         + "word " * 40
         + '" as tip %}</div><p class="help">{% translate "One line." %}</p>'
     )
+    split = (
+        '<p class="help">{% translate "' + "word " * 20 + '" %}</p>\n'
+        '<p class="help">{% translate "Second line here." %}</p>'
+    )
+    either = (
+        '{% if a %}<p class="help">{% translate "One." %}</p>{% endif %}'
+        '{% if b %}<p class="help">{% translate "Two." %}</p>{% endif %}'
+    )
+    assert len(adjacent_help(split)) == 1 and not adjacent_help(either)
     assert [len(messages(b)) for _, b in HELP_LINE.findall(long_line)] == [1]
     assert help_words(messages(long_line)[0]) > FIELD_HELP_WORDS
     assert sum(map(help_words, messages(HELP_LINE.findall(two)[0][1]))) == 29
