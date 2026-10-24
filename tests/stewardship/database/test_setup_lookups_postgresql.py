@@ -19,12 +19,17 @@ import pytest
 from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.db.models import F
 
+from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.accounts.setup_credentials import stage_credential
 from parishkit.stewardship.accounts.setup_drafts import save_section, view_draft
-from parishkit.stewardship.accounts.setup_lookup_models import SetupParishSoftLookup
+from parishkit.stewardship.accounts.setup_lookup_models import (
+    OPEN_STATES,
+    SetupParishSoftLookup,
+)
 from parishkit.stewardship.accounts.setup_lookups import (
     choose_organization,
+    chosen_name,
     current_lookup,
     discard_key,
     recover_pending,
@@ -373,7 +378,16 @@ def test_the_page_lists_and_chooses_several_organizations(setup_http, google):
         page = browser.get(URL)
         body = page.content.decode()
         assert "This key reaches 3 ParishSoft organizations." in body
-        assert re.search(r'value="8" required disabled> Diocesan School \(8\)', body)
+        # Each note describes its radio, so a screen reader says why one
+        # cannot be chosen.
+        assert re.search(
+            r'value="8" required disabled aria-describedby="organization-note-8">'
+            r" Diocesan School \(8\)",
+            body,
+        )
+        assert '<span class="help" id="organization-note-8">No Families in' in body
+        assert 'aria-describedby="organization-note-9"' in body
+        assert 'aria-describedby="organization-note-7"' not in body
         assert "No Families in ParishSoft" in body
         assert "ParishSoft did not say whether it has Families" in body
         assert 'value="retry"' in body and "Check again" in body
@@ -453,6 +467,158 @@ def test_more_than_twenty_organizations_add_a_filter_box(setup_http, google):
     assert body.count('name="organization"') == 21
 
 
+def test_keeping_the_saved_key_after_a_failed_lookup_clears_the_lookup(
+    setup_http, google
+):
+    """The saved key pasted again, its lookup failed, then kept by leaving
+    the field empty: the failed lookup goes, the key keeps its organization,
+    and nothing holds Load parish data back."""
+    from .test_setup_credentials_postgresql import publish
+
+    private = publish("parishsoft")
+    with web_login():
+        browser = started()
+        post(
+            browser,
+            URL,
+            {"candidate": CANDIDATE.decode(), "version": str(version_of())},
+        )
+    answer_lookup(
+        private, found([{"id": 7, "name": "St. Example Parish", "families": True}])
+    )
+    with web_login():
+        lookup = current_lookup(SetupAttempt.objects.get().pk)
+        chosen = post(
+            browser,
+            URL,
+            {
+                "action": "choose",
+                "lookup": str(lookup.identifier),
+                "organization": "7",
+                "version": str(version_of()),
+            },
+        )
+        assert chosen.status_code == 302
+        post(
+            browser,
+            URL,
+            {"candidate": CANDIDATE.decode(), "version": str(version_of())},
+        )
+    kept = SetupSealedCredential.objects.get(scrubbed_at=None)
+    answer_lookup(private, {"outcome": "refused"})
+    with web_login():
+        page = browser.get(URL).content.replace(b"&#x27;", b"'")
+        assert b"ParishSoft did not accept this key." in page
+        assert b"To keep it, leave the key field empty" in page
+        # One region in every state, so the wait's re-read swaps this in.
+        assert b'id="parishsoft-connection" data-in-place-region' in page
+        answered = post(browser, URL, {"candidate": "", "version": str(version_of())})
+        assert answered.status_code == 302 and answered["Location"] != URL
+    assert not SetupParishSoftLookup.objects.filter(state__in=OPEN_STATES).exists()
+    again = SetupSealedCredential.objects.get(scrubbed_at=None)
+    assert (again.pk, again.version, again.settings) == (
+        kept.pk,
+        kept.version,
+        {"organization_id": 7},
+    )
+
+
+@pytest.mark.parametrize("revoked", [False, True])
+def test_web_lookup_writes_need_the_owners_live_sign_in(setup_service, revoked):
+    """Bypassing Python, the web can neither queue a lookup for the staged
+    key nor choose while the owner's setup sign-in is revoked (#1554)."""
+    request, attempt_id, _, private = pending(setup_service)
+    answer_lookup(private)
+    choose(request, setup_service, attempt_id)
+    credential = SetupSealedCredential.objects.defer("ciphertext").get()
+    owner = SetupAttempt.objects.get().owner_id
+    if revoked:
+        PortalSession.objects.filter(revoked_at__isnull=True).update(
+            revoked_at=database_now(), version=F("version") + 1
+        )
+
+    def queue():
+        """Queue a lookup for the staged key, as the saved key pasted again does."""
+        with web_login(), work_transaction():
+            return SetupParishSoftLookup.objects.create(
+                id=uuid4(),
+                attempt_id=attempt_id,
+                credential_id=credential.pk,
+                credential_version=credential.version,
+                fingerprint=credential.fingerprint,
+                actor_id=owner,
+            )
+
+    if revoked:
+        with pytest.raises(DatabaseError, match="staged key and Administrator"):
+            queue()
+        return
+    row = queue()
+    answer_lookup(private)
+    row.refresh_from_db()
+    assert row.state == "ready"
+    # The organization the key already has, chosen again: live sign-in
+    # only (revoked now, so refused).
+    PortalSession.objects.filter(revoked_at__isnull=True).update(
+        revoked_at=database_now(), version=F("version") + 1
+    )
+    with (
+        web_login(),
+        pytest.raises(DatabaseError, match="Only the setup's Administrator"),
+        work_transaction(),
+    ):
+        SetupParishSoftLookup.objects.filter(pk=row.pk).update(
+            state="chosen",
+            chosen_id=1,
+            chosen_name="St. Example Parish",
+            organizations=None,
+            scrubbed_at=database_now(),
+            actor_id=owner,
+            version=F("version") + 1,
+        )
+
+
+def test_a_new_choice_clears_the_name_an_earlier_one_kept(setup_service):
+    """Choosing again (here another organization for the saved key pasted
+    again) keeps only the latest choice's name; SQL clears no other."""
+    request, attempt_id, _, private = pending(setup_service)
+    answer_lookup(private)
+    choose(request, setup_service, attempt_id)
+    first = SetupParishSoftLookup.objects.get(state="chosen")
+    assert chosen_name(attempt_id, 1) == "St. Example Parish"
+    owner = SetupAttempt.objects.get().owner_id
+    # The only choice keeps its name: nothing later replaced it.
+    with web_login(), pytest.raises(DatabaseError), work_transaction():
+        SetupParishSoftLookup.objects.filter(pk=first.pk).update(
+            chosen_name=None, actor_id=owner, version=F("version") + 1
+        )
+    with web_login():
+        stage_credential(
+            request,
+            setup_service,
+            attempt_id,
+            target="parishsoft",
+            candidate=CANDIDATE,
+            expected_version=version(attempt_id),
+        )
+    answer_lookup(private, found([{"id": 2, "name": "Other Parish", "families": True}]))
+    choose(request, setup_service, attempt_id, 2)
+    first.refresh_from_db()
+    assert (first.state, first.chosen_id, first.chosen_name) == ("chosen", 1, None)
+    assert chosen_name(attempt_id, 1) is None
+    assert chosen_name(attempt_id, 2) == "Other Parish"
+    latest = SetupParishSoftLookup.objects.get(state="chosen", chosen_id=2)
+    # A chosen lookup changes in no other way, and the latest keeps its name.
+    for pk, change in (
+        (first.pk, {"chosen_id": 3}),
+        (latest.pk, {"chosen_name": None}),
+    ):
+        with web_login(), pytest.raises(DatabaseError), work_transaction():
+            SetupParishSoftLookup.objects.filter(pk=pk).update(
+                **change, actor_id=owner, version=F("version") + 1
+            )
+
+
 def version_of():
     """The one attempt's current version."""
     return SetupAttempt.objects.get().version
@@ -507,4 +673,36 @@ def test_the_do_block_passes_installed_and_refuses_each_missing_part(db):
         connection.cursor() as cursor,
     ):
         cursor.execute(old[start:end])
+        cursor.execute(block)
+    # The audit context check's body before 0174 (0122's).
+    old = (
+        Path(__file__).resolve().parents[3]
+        / "src/parishkit/stewardship/schema/migrations/0122_automatic_report_views.sql"
+    ).read_text(encoding="utf-8")
+    start = old.index("CREATE OR REPLACE FUNCTION public.stewardship_safe_context_v1(")
+    end = old.index("END $_$;", start) + len("END $_$;")
+    with (
+        pytest.raises(DatabaseError, match="Migration 0174"),
+        transaction.atomic(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(old[start:end])
+        cursor.execute(block)
+    # The lookup guard without its live sign-in checks.
+    text = FROZEN.read_text(encoding="utf-8")
+    start = text.index(
+        "CREATE FUNCTION public.stewardship_setup_parishsoft_lookup_guard_v1()"
+    )
+    end = text.index("END $$;", start) + len("END $$;")
+    weaker = text[start:end].replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION")
+    weaker = weaker.replace(
+        "OR NOT public.stewardship_setup_owner_live_v1(NEW.attempt_id)", ""
+    )
+    assert weaker != text[start:end]
+    with (
+        pytest.raises(DatabaseError, match="Migration 0174"),
+        transaction.atomic(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(weaker)
         cursor.execute(block)

@@ -553,7 +553,7 @@ FROZEN = {
         "f112d010b3feb86f79adcc3e48d38781f7cf66970eaf3104719fd9c416bedd35"
     ),
     "0174_parishsoft_organization_choice.sql": (
-        "64285937385ea598af5913f75e88401af5f7350c7cf7a87a4c24061d618ca61f"
+        "133e6978d1421afd54db67cefe5a373f7648e16d95c4d33288dda84a57253acd"
     ),
 }
 

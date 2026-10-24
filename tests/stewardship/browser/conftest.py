@@ -8,7 +8,7 @@ from io import BytesIO
 from pathlib import Path
 from threading import Thread
 from types import MappingProxyType, SimpleNamespace
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from django import forms
@@ -57,6 +57,7 @@ from parishkit.stewardship.accounts.setup_confirmation_views import (
 from parishkit.stewardship.accounts.setup_credential_views import (
     SetupCredentialForm,
     _lookup_context,
+    lookup_failure,
 )
 from parishkit.stewardship.accounts.setup_forms import FORMS
 from parishkit.stewardship.accounts.setup_lookups import LookupStatus, Organization
@@ -249,20 +250,27 @@ HISTORY_EVENT = {
 }
 
 
-def lookup_page(organizations):
-    """The ParishSoft connection page's context for a ready lookup (#1554).
+# The one lookup every organization lookup page answers (#1554), so a
+# test can check the form's posted lookup.
+LOOKUP_ID = UUID("00000000-0000-4000-8000-000000001554")
+
+
+def lookup_page(organizations, *, state="ready", error=None):
+    """The ParishSoft connection page's context for one lookup (#1554).
 
     ``organizations`` are (ID, name, holds Families) triples, as the page
-    lists them.
+    lists them (only while ``ready``); ``error`` is a ``failed`` lookup's
+    code, shown at the key field as the view shows it.
     """
     lookup = LookupStatus(
-        uuid4(),
-        "ready",
-        None,
+        LOOKUP_ID,
+        state,
+        error,
         tuple(Organization(*item) for item in organizations),
         1,
     )
-    return _lookup_context(None, lookup)
+    form = lookup_failure(SetupCredentialForm("parishsoft"), lookup)
+    return {"form": form} | _lookup_context(None, lookup)
 
 
 def _history(events):
@@ -1596,22 +1604,22 @@ def component_responses():
         ),
         # The key's organization lookup (#1554): several organizations to
         # choose from, one greyed and one unknown, and a long list with its
-        # filter box.
+        # filter box; the wait, one organization to confirm, and a failure
+        # at the key field, which the wait's re-read swaps in.
         *(
             (
                 path,
                 "setup-credential",
                 {
                     "draft": setup_draft,
-                    "form": SetupCredentialForm("parishsoft"),
                     "target": "parishsoft",
                     "label": "ParishSoft",
                     "step_label": "ParishSoft connection",
                     "saved": False,
-                    **lookup_page(organizations),
+                    **lookup_page(organizations, **lookup),
                 },
             )
-            for path, organizations in (
+            for path, organizations, lookup in (
                 (
                     "/setup-organization-choice",
                     [
@@ -1619,10 +1627,19 @@ def component_responses():
                         (8, "Diocesan School", False),
                         (9, "Mission Chapel", None),
                     ],
+                    {},
                 ),
                 (
                     "/setup-organization-filter",
                     [(n, f"Parish {n:02d}", True) for n in range(1, 23)],
+                    {},
+                ),
+                ("/setup-organization-wait", [], {"state": "queued"}),
+                ("/setup-organization-one", [(7, "St. Example Parish", True)], {}),
+                (
+                    "/setup-organization-failed",
+                    [],
+                    {"state": "failed", "error": "parishsoft_key_refused"},
                 ),
             )
         ),

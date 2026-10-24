@@ -16,13 +16,15 @@
 -- organization ID field wrote before. The lookup's guard admits each move
 -- for its one owner and only under the work lock: the web's request,
 -- choice and discard (the choice only of a listed organization that is not
--- known to hold no Families, its name copied from the list), and the
--- installer's claim and answer. Choosing, discarding or ending setup
--- scrubs the list, so the other organizations' IDs and names are never
--- kept; the choice records setup_parishsoft_organization_chosen with
--- counts only. The guard and the end-of-setup scrub are SECURITY DEFINER,
--- stated again with ALTER as every definer is; the other new functions are
--- invoker's rights.
+-- known to hold no Families, its name copied from the list), each only
+-- while the owner's own setup sign-in is live, as the setup credential
+-- guard requires (stewardship_setup_owner_live_v1), and the installer's
+-- claim and answer. Choosing, discarding or ending setup scrubs the list,
+-- so the other organizations' IDs and names are never kept; a new choice
+-- also clears the name an earlier choice kept. The choice records
+-- setup_parishsoft_organization_chosen with counts only. The guard and the
+-- end-of-setup scrub are SECURITY DEFINER, stated again with ALTER as every
+-- definer is; the other new functions are invoker's rights.
 --
 -- This file replaces, each its baseline body with only this change (their
 -- final bodies are also the baseline's):
@@ -116,6 +118,43 @@ LANGUAGE sql IMMUTABLE SET search_path TO pg_catalog,public,pg_temp AS $$
            WHERE o->'families' IS DISTINCT FROM 'false'::jsonb)
 $$;
 
+-- Whether the setup attempt's owner is still signed in as the setup
+-- credential guard (stewardship_setup_secret_guard_v1) requires before it
+-- stages a key: the attempt's own sign-in, live and active within 60
+-- minutes (a command session also needs its live full-scope automation
+-- session), of an enabled Administrator of the attempt's configuration,
+-- while the system is in its first Testing setup. The lookup's guard asks
+-- it for every web write, so the paths that stage no key (the saved key
+-- pasted again, the organization the key already has chosen again) are
+-- held to the same sign-in as a staged key (#1554).
+CREATE FUNCTION public.stewardship_setup_owner_live_v1(target uuid) RETURNS boolean
+LANGUAGE sql SET search_path TO pg_catalog,public,pg_temp AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.stewardship_setup_attempt attempt
+        JOIN public.stewardship_system_configuration runtime
+            ON runtime.active_configuration_id=attempt.base_id
+        JOIN public.stewardship_configuration_version base
+            ON base.id=runtime.active_configuration_id
+            AND base.validation_schema IN ('bootstrap-policy-v1', 'bootstrap-users-v10')
+        JOIN public.stewardship_portal_session login ON login.id=attempt.session_id
+            AND login.principal_id=attempt.owner_id AND login.revoked_at IS NULL
+            AND login.expires_at>clock_timestamp()
+            AND login.last_activity_at>clock_timestamp()-interval '60 minutes'
+            AND login.authenticated_at<=clock_timestamp()
+            AND (NOT EXISTS (SELECT 1 FROM public.stewardship_automation_login command
+                     WHERE command.portal_session_id=login.id)
+                 OR public.stewardship_automation_fresh_v1(login.id,attempt.owner_id))
+        JOIN public.stewardship_portal_user owner ON owner.id=attempt.owner_id
+            AND NOT owner.disabled
+        JOIN public.stewardship_address_rule rule ON rule.email=owner.email
+            AND rule.configuration_id=runtime.active_configuration_id
+            AND rule.roles @> '["administrator"]'::jsonb
+        WHERE attempt.id=$1 AND runtime.mode='testing'
+          AND NOT runtime.restore_review_required
+          AND runtime.current_campaign_id IS NULL)
+$$;
+REVOKE ALL ON FUNCTION public.stewardship_setup_owner_live_v1(uuid) FROM PUBLIC;
+
 -- The lookup's guard, with owner rights: the installer reads no audit
 -- table and the end-of-setup scrub runs for whichever login ends setup.
 -- Every write needs the work lock. INSERT: only the web login, for the
@@ -127,8 +166,10 @@ $$;
 -- listed organization not known to hold no Families, with its listed name,
 -- while the key is still the one looked up) or any open state to
 -- discarded; and, once setup has ended, the scrub to discarded. Choosing
--- or discarding scrubs the list. A finished lookup never changes. DELETE:
--- never.
+-- or discarding scrubs the list. Every web write also needs the owner's
+-- live setup sign-in (stewardship_setup_owner_live_v1). A finished lookup
+-- never changes, except that the web clears an earlier choice's name once
+-- a later lookup of the attempt is chosen. DELETE: never.
 CREATE FUNCTION public.stewardship_setup_parishsoft_lookup_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE attempt public.stewardship_setup_attempt%ROWTYPE;
@@ -160,10 +201,24 @@ BEGIN
            OR NEW.chosen_id IS NOT NULL OR NEW.chosen_name IS NOT NULL
            OR NEW.worker_id IS NOT NULL OR NEW.started_at IS NOT NULL
            OR NEW.deadline_at IS NOT NULL OR NEW.finished_at IS NOT NULL
-           OR NEW.scrubbed_at IS NOT NULL THEN
+           OR NEW.scrubbed_at IS NOT NULL
+           OR NOT public.stewardship_setup_owner_live_v1(NEW.attempt_id) THEN
             RAISE EXCEPTION 'A ParishSoft organization lookup needs its setup''s staged key and Administrator'
                 USING ERRCODE='23514';
         END IF;
+        RETURN NEW;
+    END IF;
+    IF OLD.state='chosen' AND NEW.state='chosen' AND OLD.chosen_name IS NOT NULL
+       AND NEW.chosen_name IS NULL AND NEW.chosen_id=OLD.chosen_id
+       AND NEW.organizations IS NULL AND NEW.error_code IS NULL
+       AND session_user='pk_stewardship_web' AND attempt.state='collecting'
+       AND NEW.actor_id IS NOT DISTINCT FROM attempt.owner_id
+       AND EXISTS (SELECT 1 FROM public.stewardship_setup_parishsoft_lookup later
+           WHERE later.attempt_id=NEW.attempt_id AND later.state='chosen'
+             AND later.created_at>OLD.created_at)
+       AND public.stewardship_setup_owner_live_v1(NEW.attempt_id) THEN
+        -- A later choice replaced this one: its organization's name, the
+        -- only thing a chosen lookup keeps, goes (#1554).
         RETURN NEW;
     END IF;
     IF OLD.state NOT IN ('queued','running','ready','failed') THEN
@@ -222,7 +277,8 @@ BEGIN
     END IF;
     IF session_user<>'pk_stewardship_web' OR NEW.actor_id IS DISTINCT FROM attempt.owner_id
        OR NEW.organizations IS NOT NULL OR NEW.error_code IS NOT NULL
-       OR NEW.scrubbed_at IS NULL THEN
+       OR NEW.scrubbed_at IS NULL
+       OR NOT public.stewardship_setup_owner_live_v1(NEW.attempt_id) THEN
         RAISE EXCEPTION 'Only the setup''s Administrator chooses or discards an organization lookup'
             USING ERRCODE='23514';
     END IF;
@@ -709,6 +765,7 @@ BEGIN
     SELECT string_agg(name, ', ') INTO missing FROM (VALUES
         ('stewardship_setup_parishsoft_lookup_mutable_v1()', false, true),
         ('stewardship_setup_lookup_list_valid_v1(jsonb)', false, false),
+        ('stewardship_setup_owner_live_v1(uuid)', false, true),
         ('stewardship_setup_parishsoft_lookup_guard_v1()', true, true),
         ('stewardship_setup_scrub_lookups_v1()', true, true),
         ('stewardship_setup_load_organization_v1()', false, true)
@@ -721,6 +778,17 @@ BEGIN
               OR NOT has_function_privilege('public', p.oid, 'EXECUTE')));
     IF missing IS NOT NULL THEN
         RAISE EXCEPTION 'Migration 0174: not installed as declared: %', missing;
+    END IF;
+    -- The guard holds every web write to the owner's live sign-in and
+    -- admits clearing an earlier choice's name.
+    IF (SELECT count(*) FROM regexp_matches(
+            (SELECT prosrc FROM pg_proc WHERE oid=to_regprocedure(
+                'public.stewardship_setup_parishsoft_lookup_guard_v1()')),
+            'public\.stewardship_setup_owner_live_v1\(NEW\.attempt_id\)', 'g'))<>3
+       OR strpos((SELECT prosrc FROM pg_proc WHERE oid=to_regprocedure(
+                'public.stewardship_setup_parishsoft_lookup_guard_v1()')),
+            'later.created_at>OLD.created_at')=0 THEN
+        RAISE EXCEPTION 'Migration 0174: the organization lookup guard is not installed as declared';
     END IF;
     -- Each trigger is in place and enabled.
     SELECT string_agg(name, ', ') INTO missing FROM (VALUES

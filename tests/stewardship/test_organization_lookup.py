@@ -443,3 +443,44 @@ def test_status_marks_unknown_and_unselectable_organizations():
 def test_organization_label(name, expected):
     """Name (ID), or the ID alone while no name is recorded."""
     assert organization_label(1234, name) == expected
+
+
+@pytest.mark.parametrize(
+    "cursor,expected",
+    [
+        (
+            {"load": {"organization": {"name": "St. Example Parish"}}},
+            "St. Example Parish",
+        ),
+        # A snapshot from before the name was recorded, or none recorded.
+        ({"load": {}}, None),
+        ({"load": {"organization": {"name": None}}}, None),
+        # Anything malformed is no name.
+        ({"load": {"organization": {"name": ""}}}, None),
+        ({"load": {"organization": {"name": 7}}}, None),
+        ({"load": {"organization": {"name": "A", "extra": 1}}}, None),
+        ({"load": {"organization": "St. Example Parish"}}, None),
+        ({}, None),
+        (None, None),
+    ],
+)
+def test_a_snapshot_names_its_organization_only_as_recorded(cursor, expected):
+    """The recorded name, or None for an older or malformed snapshot."""
+    from parishkit.stewardship.source.loading import recorded_organization_name
+
+    assert recorded_organization_name(cursor) == expected
+
+
+def test_a_full_load_records_the_clients_cleaned_name():
+    """The evidence holds the validated client's name, or null."""
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.source.loading import organization_name_evidence
+
+    named = SimpleNamespace(organization_name="St. Example Parish")
+    assert organization_name_evidence(named) == {
+        "organization": {"name": "St. Example Parish"}
+    }
+    assert organization_name_evidence(SimpleNamespace()) == {
+        "organization": {"name": None}
+    }

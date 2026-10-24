@@ -132,8 +132,8 @@ CREDENTIALS = {
             "is never displayed again; enter a new one here at any time before "
             "setup finishes to replace it. The system only reads from ParishSoft. "
             "After you save it, the system asks ParishSoft which parish "
-            "organizations the key reaches, and you choose your parish's next; "
-            "only that organization's data is ever loaded."
+            "organizations the key reaches, and you then choose your parish's "
+            "organization; only that organization's data is ever loaded."
         ),
         # The Integrations page's ParishSoft organization field; the setup
         # wizard has none (#1554).

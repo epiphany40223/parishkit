@@ -1010,6 +1010,7 @@ CLOSURE_CREATED = {
         (
             "public.stewardship_setup_parishsoft_lookup_mutable_v1()",
             "public.stewardship_setup_lookup_list_valid_v1(jsonb)",
+            "public.stewardship_setup_owner_live_v1(uuid)",
             "public.stewardship_setup_parishsoft_lookup_guard_v1()",
             "public.stewardship_setup_scrub_lookups_v1()",
             "public.stewardship_setup_load_organization_v1()",

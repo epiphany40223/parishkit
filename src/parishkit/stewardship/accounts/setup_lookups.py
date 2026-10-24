@@ -176,8 +176,9 @@ def current_lookup(attempt_id):
 def chosen_name(attempt_id, organization_id):
     """The name the attempt's lookup read for its chosen organization, or None.
 
-    Held with the lookup until the setup load records the name in its
-    snapshot (data spec "ParishSoft organization name").
+    Held with the latest chosen lookup until the setup load records the
+    name in its snapshot (data spec "ParishSoft organization name"); a
+    later choice clears the names earlier ones kept.
     """
     return (
         SetupParishSoftLookup.objects.filter(
@@ -259,7 +260,8 @@ def choose_organization(
     bound to it is kept; choosing another discards a finished load first
     (audit reason ``organization_changed``), as the spec's discard rules
     say. The lookup's list is scrubbed and the choice audited (counts
-    only) by its SQL guard.
+    only) by its SQL guard, and any earlier choice's organization name is
+    cleared.
     """
     from .sessions import authenticated_admin, database_now
     from .setup_staging import _status as draft_status
@@ -284,6 +286,13 @@ def choose_organization(
                 scrubbed_at=database_now(),
                 actor_id=actor.identity,
             )
+        )
+        # An earlier choice (the key pasted again, or replaced) keeps no
+        # name of an organization that may no longer be the one in use.
+        SetupParishSoftLookup.objects.filter(attempt=attempt, state="chosen").exclude(
+            pk=row.pk
+        ).exclude(chosen_name=None).update(
+            **_context(chosen_name=None, actor_id=actor.identity)
         )
         settings = {"organization_id": organization_id}
         if dict(credential.settings) != settings:

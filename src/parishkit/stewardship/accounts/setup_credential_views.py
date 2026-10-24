@@ -246,6 +246,24 @@ def _lookup_context(attempt_id, lookup):
     }
 
 
+def lookup_failure(form, lookup):
+    """``form`` with a failed lookup's message at its key field, if any.
+
+    A failed lookup is answered at the key field, with its stable code,
+    ready for a different key (#1554). The form is unbound, so it has no
+    cleaned data for ``add_error`` to trim.
+    """
+    if lookup is not None and lookup.error_code in LOOKUP_ERRORS:
+        form.cleaned_data = {}
+        form.add_error(
+            "candidate",
+            forms.ValidationError(
+                LOOKUP_ERRORS[lookup.error_code], code=lookup.error_code
+            ),
+        )
+    return form
+
+
 def _answer_lookup(request, service, draft, target, lookup):
     """Handle a lookup button; return a redirect, or the bound form refused."""
     form = LookupForm(request.POST, lookup=lookup)
@@ -367,6 +385,19 @@ def setup_credential(request, target):
                 # Keep the saved credential: nothing is staged or re-sealed.
                 refusal = _keep_refusal(current)
                 if refusal is None:
+                    if lookup is not None:
+                        # The saved key pasted again, then kept (#1554): its
+                        # lookup (a failed one, at the key field) goes, and
+                        # only it, so Load parish data is not held back by a
+                        # lookup nobody will answer. The key keeps its
+                        # organization and any load bound to it.
+                        discard_key(
+                            request,
+                            service,
+                            attempt_id,
+                            lookup_id=lookup.identifier,
+                            expected_version=version,
+                        )
                     return _checked(
                         request,
                         service,
@@ -412,19 +443,8 @@ def setup_credential(request, target):
                     del candidate
             status = 400
         else:
-            form = SetupCredentialForm(target, **options)
+            form = lookup_failure(SetupCredentialForm(target, **options), lookup)
             status = 200
-            if lookup is not None and lookup.error_code in LOOKUP_ERRORS:
-                # A failed lookup is answered at the key field, with its
-                # stable code, ready for a different key. The form is
-                # unbound, so it has no cleaned data for add_error to trim.
-                form.cleaned_data = {}
-                form.add_error(
-                    "candidate",
-                    forms.ValidationError(
-                        LOOKUP_ERRORS[lookup.error_code], code=lookup.error_code
-                    ),
-                )
         name = chosen_name(attempt_id, organization) if organization else None
         response = render(
             request,

@@ -117,6 +117,27 @@ def test_parishsoft_shows_its_settings_and_refresh_facts(admin):
     assert AuditEvent.objects.count() == events
 
 
+def test_parishsoft_shows_the_name_the_current_load_recorded(admin, monkeypatch):
+    """Once the current snapshot's full load recorded the organization's
+    name (test_source_organizations_postgresql shows a real load doing so),
+    ``show`` prints it beside the ID; another organization's snapshot names
+    nothing (#1554)."""
+    from parishkit.stewardship.source import loading
+
+    _, reader, _ = paired(admin.service, scope="read-only")
+    for snapshot, expected in (
+        ((12345, "St. Example Parish"), "St. Example Parish"),
+        ((999, "Other Parish"), None),
+        ((12345, None), None),
+    ):
+        monkeypatch.setattr(
+            loading, "snapshot_organization", lambda value=snapshot: value
+        )
+        settings = read(admin, reader, "integration", "show", "parishsoft")["settings"]
+        assert settings["organization_id"] == "12345"
+        assert settings["organization_name"] == expected
+
+
 def test_an_optional_integration_not_set_up(admin):
     """Slack before setup: nothing configured, nothing to remove, no key."""
     _, reader, _ = paired(admin.service, scope="read-only")
