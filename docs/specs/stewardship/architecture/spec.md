@@ -35,7 +35,8 @@ and is sanitized on input and output.
 
 Production Compose contains:
 
-- `web`: Gunicorn-hosted Django application;
+- `web` (plus `web-1` … `web-7` when the runtime budget sets more replicas, up to
+  eight): Gunicorn-hosted Django application;
 - `config-installer`: the only online service with write access to the Stewardship
   configuration-authority directory;
 - target-specific `credential-installer-*` workers, each able to decrypt only
@@ -52,14 +53,16 @@ Production Compose contains:
 - `scheduler`: exactly one scheduler process that materializes due work;
 - `postgres`: PostgreSQL with a durable volume;
 - `valkey`: broker/cache with a durable local volume, though task correctness
-  cannot depend on broker persistence; and
-- `proxy`: Caddy on ports 80/443 with durable ACME state.
+  cannot depend on broker persistence;
+- `caddy`: Caddy on ports 80/443 with durable ACME state; and
+- `migration`: a one-shot maintenance service (profile `migration`) that applies
+  forward migrations and then exits.
 
 Initial provisioning uses the separate operator-only, one-shot
 [offline bootstrap profile](../operations/spec.md#offline-bootstrap-profile).
 Its narrowly scoped write exception does not expand online service mounts.
 
-Local Compose uses the same service topology without Caddy/TLS by default,
+The Development profile uses the same service topology without Caddy/TLS,
 bind-mounts the checkout into the Python containers, and enables development
 reload. It supports Linux, macOS, and Windows Docker hosts. Optional development
 profiles may add a local mail catcher, but must not create an authentication
@@ -112,9 +115,10 @@ supported third-party contract.
 
 The package exposes a `pk-stewardship` console entry point and thin executable
 wrapper. Subcommands cover bootstrap, configuration validation, migration,
-health diagnostics, backup, operator-only secret escrow, Admin-access recovery,
-and restore. Web-
-serving and worker commands remain container entry points that import package
+health diagnostics, backup, Admin-access recovery, and restore. Operator secret
+escrow is deferred (see the [v1 launch
+scope](../../../plans/stewardship/v1-launch.md#reduced-for-v1)).
+Web-serving and worker commands remain container entry points that import package
 code. There is no console campaign purge; purge is intentionally a guarded
 Admin web workflow.
 
