@@ -819,7 +819,7 @@ no longer does (decision 16).
 The option is offered for every report, whatever its blocks, with help
 that says when it can take effect: "Skips a send only when every block is
 empty. Blocks that show where the campaign stands, such as the Response
-funnel, always count, so a report with one always sends." It is not a
+funnel, always count." It is not a
 [conditional field](../ui-conventions/spec.md#conditional-fields): adding
 or removing a block never shows, hides or clears it. Send now and test
 sends always send.

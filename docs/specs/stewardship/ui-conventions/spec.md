@@ -3051,13 +3051,23 @@ a date and a time) likewise share a row on desktop (`.field-row` in
 notes span the form; at phone width each field takes its own row (#1014). The
 Family portal keeps its own spacing.
 
-Field help longer than about one line opens from an "i" button beside the
-field's label (the shared toggletip). Only a one-line hint stays visible under
-the label, for fields whose format or rule is needed every time (an example
-address, "one per line", a key's paste rule), and a warning that blocks the
-field, such as having no emails to schedule, always stays visible. The field
-remains described by its full help, so screen readers announce it without
-opening the tip. Checkbox help is a toggletip beside the box. A toggletip in a
+**One help line under a field.** An Admin field has at most one line of
+help or guidance under it: one short paragraph of plain language, about 25
+words at most (Administrator decision, 2026-10-24,
+[#2130](https://github.com/epiphany40223/parishkit/issues/2130)). Anything
+more opens from an "i" button beside the field's label or legend (the shared
+toggletip), or is left out when it is not really needed. Only a one-line
+hint stays visible under the label, for fields whose format or rule is needed every time
+(an example address, "one per line", a key's paste rule), or a caution that
+prevents a likely mistake, and a warning that blocks the field, such as
+having no emails to schedule, always stays visible in that line's place.
+Validation errors are separate and keep their own line. The field remains
+described by its full help, so screen readers announce it without opening
+the tip. `test_admin_help_guards.py` fails when an Admin template's help
+line (`class="help"` or Django's `helptext`) or an Admin form field's own
+help runs past one line; its short list of exceptions holds only help that
+is not a field's (a section's guidance, or why an action is unavailable).
+The Family portal keeps its own wording rules. Checkbox help is a toggletip beside the box. A toggletip in a
 table heading is described by its bubble alone, and it closes when the table's
 box scrolls its button out of view. An export carries no
 help about how its formats write values (see [Downloaded files](#downloaded-files)).
