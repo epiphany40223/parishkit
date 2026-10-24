@@ -634,9 +634,11 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
         # Shared table (#203): headings choose the selection's own sort values
         # through POST forms carrying the private filters; sorting stays
         # within the leader's scope and any other value is refused. The
-        # default newest-first order has no Submitted column to mark (#1064),
-        # and oldest first is no longer offered.
-        assert b"Page 1 of 1" in body and b"aria-sort=" not in body
+        # default order is the Member column's own A-Z order (UX
+        # conventions, "Default row order", #2124), so the Member heading
+        # alone is marked; oldest first is no longer offered.
+        assert b"Page 1 of 1" in body and body.count(b"aria-sort=") == 1
+        assert b'aria-sort="ascending" data-sort-column="member"' in body
         assert b'<a class="sort-link"' not in body
         assert b'name="sort" value="name"' in body
         assert b'value="oldest"' not in body

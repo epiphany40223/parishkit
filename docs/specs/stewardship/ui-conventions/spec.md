@@ -4939,6 +4939,8 @@ table's rows). Downloads keep their own documented orders. Per stream:
 | Limitations | Family name, Family DUID, Member name (none for the Family's own answer, which comes first), the answer's id |
 
 A row with no DUID (a New Member, a proposed Member) follows those with one.
+The default is that first identity column's own A-Z sort, so its heading
+is marked sorted (`aria-sort="ascending"`) as a chosen sort's would be.
 A column the reader chooses sorts first, as its
 [heading](#admin-tables) says, and the rows it leaves equal keep this
 default order (ascending, whichever direction the column sorts), so a
