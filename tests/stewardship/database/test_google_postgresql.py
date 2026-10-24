@@ -199,6 +199,79 @@ def test_signed_denied_account_is_not_authorized(auth_service, google):
     assert not PortalSession.objects.exists()
 
 
+NO_ACCESS = "You signed in with Google as <strong>{}</strong>, but that address"
+
+
+def test_a_refused_account_is_told_its_verified_address(auth_service, google):
+    """Google verified the address, so its page names it (#2116).
+
+    The address is in this response's body only, never its headers or
+    cookies, and the page's "Sign in with a different account" form starts
+    an ordinary sign-in that asks Google for its account chooser.
+    """
+    import re
+    from html import unescape
+    from urllib.parse import parse_qs, urlsplit
+
+    google[0].update(email="outsider@example.net", sub="outsider-subject")
+    client, response = signed_in()
+    assert response.status_code == 403
+    body = response.content.decode()
+    assert "<h1>No access with this account</h1>" in body
+    assert NO_ACCESS.format("outsider@example.net") in body
+    assert "Need access? Ask the parish staff member" in body
+    assert "data-google-account-help" not in body
+    assert "Sign-in is unavailable" not in body
+    assert '<a href="/">Family campaign portal</a>' in body
+    assert "outsider" not in str(response.cookies)
+    assert not any("outsider" in value for _, value in response.items())
+    # The form posts to the sign-in route with a working CSRF token.
+    form = re.search(
+        r'<form method="post" action="/admin/login">.*?</form>', body, re.S
+    ).group(0)
+    assert "Sign in with a different account" in unescape(form)
+    token = re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"', form)
+    again = client.post("/admin/login", {"csrfmiddlewaretoken": token.group(1)})
+    assert again.status_code == 302
+    query = parse_qs(urlsplit(again["Location"]).query)
+    assert query["prompt"] == ["select_account"]
+    assert "outsider" not in again["Location"]
+
+
+def test_a_disabled_user_reads_the_same_as_one_never_added(auth_service, google):
+    """Never added and removed share one message that says neither (#2116)."""
+    signed_in()
+    PortalUser.objects.update(disabled=True, version=F("version") + 1)
+    disabled = signed_in()[1].content.decode()
+    google[0].update(email="outsider@example.net", sub="outsider-subject")
+    never = signed_in()[1].content.decode()
+    assert NO_ACCESS.format("admin@example.org") in disabled
+    assert NO_ACCESS.format("outsider@example.net") in never
+
+    def shape(body, address):
+        """The page with its address and CSRF token taken out."""
+        import re
+
+        body = body.replace(address, "ADDRESS")
+        return re.sub(r'value="[^"]+"', 'value=""', body)
+
+    assert shape(disabled, "admin@example.org") == shape(never, "outsider@example.net")
+
+
+def test_a_replayed_sign_in_reads_as_unfinished(auth_service, google):
+    """A used OAuth state says the sign-in didn't finish, naming no one."""
+    client = Client(enforce_csrf_checks=True)
+    query = start(client)
+    data = {"code": "synthetic", "state": query["state"][0]}
+    assert client.get("/admin/oauth/callback", data).status_code == 302
+    response = client.get("/admin/oauth/callback", data)
+    assert response.status_code == 403
+    body = response.content.decode()
+    assert "<h1>Sign-in didn't finish</h1>" in body
+    assert "admin@example.org" not in body
+    assert '<a href="/admin/login">Try signing in again</a>' in body
+
+
 def refusals():
     """Each named refusal's actor address, oldest first (#953)."""
     return [
@@ -413,7 +486,11 @@ def test_identity_limited_attempt_stays_an_anonymous_sample(
 
     monkeypatch.setattr(limiter, "counters", limited)
     google[0].update(email="outsider@example.net", sub="outsider-subject")
-    assert signed_in()[1].status_code == 429
+    response = signed_in()[1]
+    assert response.status_code == 429
+    # The rate-limit page names no one and shows no minute count (#2116).
+    assert b"Too many sign-in attempts. Try again later." in response.content
+    assert b"outsider" not in response.content
     assert not refusals()
     assert AuditEvent.objects.get(event_type="admin_login_denied").actor_id is None
 

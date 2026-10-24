@@ -29,7 +29,7 @@ from django.core.exceptions import MultipleObjectsReturned
 from django.db import DatabaseError, IntegrityError, transaction
 from django.db.models import F
 from django.http import HttpResponseRedirect
-from django.middleware.csrf import rotate_token
+from django.middleware.csrf import get_token, rotate_token
 from django.shortcuts import render
 from django.views.decorators.http import (
     require_GET,
@@ -101,15 +101,28 @@ def runtime():
     return value
 
 
-def denial(*, status=403, retry=None, admin=True, sign_in=False):
-    """Uniform retryable response, with no provider details or denied identity.
+def denial(*, status=403, retry=None, admin=True, sign_in=False, account=None):
+    """Retryable response, with no provider details, naming its refusal kind.
 
-    The kind follows the status alone, as Family ``denied()`` does: a rate
-    limit (429) or outage (503) uses the temporary-unavailability text, as the
-    architecture specification requires of Admin OAuth and Family code entry.
-    Any other refusal keeps the original generic text. Report views answer an
-    outage with ``web.report_errors.report_unavailable`` instead, so Admins
-    see a report error rather than this sign-in wording.
+    The kind follows the status first: an outage (503) uses the
+    temporary-unavailability text; a rate limit (429) reads "Too many
+    sign-in attempts" on the Admin side (every Admin 429 is a sign-in
+    route's) and the temporary text on the Family side, as Family
+    ``denied()`` does. Report views answer an outage with
+    ``web.report_errors.report_unavailable`` instead, so Admins see a report
+    error rather than this sign-in wording.
+
+    Any other refusal of sign-in itself (``sign_in``: OAuth start, callback,
+    login page) says why (#2116). ``account`` is ``(request, address)`` for
+    the one case where Google verified the address this callback and policy
+    gave it no Admin access: the page names that address, server-side in
+    this response only, with a "Sign in with a different account" form.
+    Every other sign-in refusal (cancelled at Google, a provider error, a
+    used or expired OAuth state, a recovery-epoch change) reads "Sign-in
+    didn't finish". Google does the authentication, so only the person who
+    just proved control of an address learns whether it has access.
+    Signed-in refusals, such as the report views', keep the original
+    generic text.
 
     Every report view sends a ``PermissionError`` here, including the
     ``UserFacingGone`` refusal of a campaign that is not the current one
@@ -120,12 +133,11 @@ def denial(*, status=403, retry=None, admin=True, sign_in=False):
     now, #939) likewise keeps its 403 but shows its own plain explanation.
     Reading the exception being handled keeps that in one place instead of
     an extra ``except`` clause in every report view.
-
-    ``sign_in`` is true only where sign-in itself is refused (OAuth start,
-    callback, login page): the generic page then adds the Google Account
-    guidance (#1593). Signed-in refusals, such as the report views', leave
-    it false, since that advice is wrong for someone already signed in.
     """
+    if account is not None and not sign_in:
+        # The address page answers only the sign-in that just verified it;
+        # a signed-in refusal naming an address would be a caller's mistake.
+        raise ValueError("account is only for a sign-in refusal")
     error = sys.exception()
     if isinstance(error, UserFacingGone):
         debug_swallowed("admin request refused")
@@ -142,12 +154,20 @@ def denial(*, status=403, retry=None, admin=True, sign_in=False):
         )
     # Callers deny from inside an except block; record what actually failed.
     debug_swallowed("admin request denied")
-    response = login_denial(
-        admin=admin,
-        status=status,
-        kind="unavailable" if status in (429, 503) else "",
-        sign_in=sign_in,
-    )
+    extra = {}
+    if status == 503 or (status == 429 and not admin):
+        kind = "unavailable"
+    elif status == 429:
+        kind = "rate_limited"
+    elif account is not None:
+        request, address = account
+        kind = "no_access"
+        extra = {"account": address, "csrf_token": get_token(request)}
+    elif sign_in:
+        kind = "unfinished"
+    else:
+        kind = ""
+    response = login_denial(admin=admin, status=status, kind=kind, **extra)
     response.stewardship_safe_error = True
     if retry:
         response["Retry-After"] = str(min(3600, max(1, int(retry))))
@@ -494,7 +514,14 @@ def establish_identity(
             request, identity=fingerprint, counter=counter, sampled=False
         )
         record_account_refusal(user.pk)
-        return denial(status=429 if delay else 403, retry=delay, sign_in=True)
+        # Only this branch names the address: Google verified it on this
+        # callback, so the person seeing it is the one who controls it.
+        return denial(
+            status=429 if delay else 403,
+            retry=delay,
+            sign_in=True,
+            account=(request, email),
+        )
     service.limiter.clear(counter)
     return HttpResponseRedirect(destination)
 

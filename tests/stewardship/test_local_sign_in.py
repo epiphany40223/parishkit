@@ -166,6 +166,8 @@ def test_local_post_from_another_host_is_denied_before_valkey(settings):
         request.client_address = "127.0.0.1"
         response = local_sign_in.sign_in(request)
         assert response.status_code == 403
+        # A sign-in refusal says the sign-in didn't finish (#2116).
+        assert b"<h1>Sign-in didn't finish</h1>" in response.content
     assert runtime.mock_calls == []
 
 

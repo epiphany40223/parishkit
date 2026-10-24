@@ -507,20 +507,30 @@ def test_edit_review_waits_for_a_change(page, component_origin):
 
 
 def test_google_account_guidance_shows_where_sign_in_fails(page, component_origin):
-    """The one Google Account guidance reaches a stuck leader and the Admin (#1593).
+    """A refused leader sees their address; the Administrator the guidance.
 
-    The generic Admin refusal shows it, with no Google help link since
-    #2115; the Admin sign-in page (#2115) and a Family refusal do not. On
-    Users, the line under the table counts the Ministry leader who never
-    signed in, and the About panel repeats the guidance for the
-    Administrator to pass on.
+    The no-access page (#2116) names the address Google verified and says
+    a different address needs a Google Account, in its own wording rather
+    than the shared guidance; the Admin sign-in page (#2115) and the other
+    refusals show neither. On Users, the line under the table counts the
+    Ministry leader who never signed in, and the About panel shows the
+    guidance (#1593) for the Administrator to pass on.
     """
     page.goto(component_origin + "/denied-admin")
-    guidance = page.locator("[data-google-account-help]")
-    visible(guidance.get_by_text("It doesn't have to be a Gmail address"))
-    visible(guidance.get_by_text("Still can't sign in?"))
-    assert guidance.locator("a").count() == 0
-    for path in ("/login", "/denied", "/denied-admin-signed-in"):
+    heading = page.get_by_role("heading", level=1)
+    assert heading.inner_text() == "No access with this account"
+    visible(page.locator("strong").get_by_text("outsider@example.net"))
+    visible(page.get_by_text("It doesn't have to be a Gmail address"))
+    visible(page.get_by_role("button", name="Sign in with a different account"))
+    visible(page.get_by_role("link", name="Family campaign portal"))
+    for path in (
+        "/login",
+        "/denied",
+        "/denied-admin",
+        "/denied-admin-signed-in",
+        "/denied-admin-unfinished",
+        "/denied-admin-limited",
+    ):
         page.goto(component_origin + path)
         assert page.locator("[data-google-account-help]").count() == 0, path
     page.set_viewport_size({"width": 320, "height": 900})

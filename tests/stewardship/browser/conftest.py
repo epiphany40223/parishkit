@@ -1743,11 +1743,28 @@ def component_responses():
             },
         ),
         ("/denied", "denied", {"retry_path": "/admin/login"}),
-        # The generic Admin refusal, with the Google Account guidance (#1593).
+        # A Google-verified account with no Admin access (#2116).
         (
             "/denied-admin",
             "denied",
-            {"retry_path": "/admin/login", "admin": True, "sign_in": True},
+            {
+                "retry_path": "/admin/login",
+                "admin": True,
+                "kind": "no_access",
+                "account": "outsider@example.net",
+                "csrf_token": "synthetic-csrf-token",
+            },
+        ),
+        # A Google sign-in that didn't finish, and an Admin rate limit (#2116).
+        (
+            "/denied-admin-unfinished",
+            "denied",
+            {"retry_path": "/admin/login", "admin": True, "kind": "unfinished"},
+        ),
+        (
+            "/denied-admin-limited",
+            "denied",
+            {"retry_path": "/admin/login", "admin": True, "kind": "rate_limited"},
         ),
         # A signed-in person's refusal (a report view) gets no guidance.
         (

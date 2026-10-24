@@ -27,16 +27,56 @@ Sign-in is by email address only. There are no hosted-domain rules and no
 explicit-deny entries: an address without a user cannot sign in, and the
 signed Google hosted-domain (`hd`) claim plays no part in authorization.
 
-Provider authentication failure and an unverified email may use distinct safe
-error pages. Allowlist denial, no effective role, and any authorization denial
-use one generic not-authorized page that does not reveal which check failed.
-Each page offers another Google login attempt and parish contact guidance.
+A refused Admin sign-in says which kind of refusal it was
+([#2116](https://github.com/epiphany40223/parishkit/issues/2116)). Each kind
+has one fixed page; the reason within a kind is never shown:
+
+1. **No access with this account** (title and heading). Google verified the
+   account, but it has no Admin access: no user has that address, the user
+   is disabled, or the current rules give it no role (including the SQL
+   session guard's refusal). The page says "You signed in with Google as
+   **_address_**, but that address doesn't have access to the
+   Administration portal.", then "If the parish gave access to a different
+   address, sign in with that one. It doesn't have to be a Gmail address,
+   but it needs a Google Account." and "Need access? Ask the parish staff
+   member who manages access to this portal." Its actions are **Sign in with
+   a different account**, which posts the ordinary sign-in form and so asks
+   Google for its account chooser (`prompt=select_account`), and the
+   **Family campaign portal** link. Never added and removed read the same;
+   the page never says which. The address is the one Google verified on this
+   callback only: it is rendered server-side into this response, never put
+   in a URL, query string or cookie, and logged no further than the existing
+   named refusal ([#953](https://github.com/epiphany40223/parishkit/issues/953)).
+2. **Sign-in didn't finish** (heading). Google sign-in did not complete: it
+   was cancelled at Google, the provider returned an error, the OAuth state
+   was expired, reused or already spent, or the recovery epoch changed
+   during the sign-in. The page says "Signing in with Google didn't
+   complete. This can happen if it was cancelled or the sign-in page was
+   open for a while." and offers **Try signing in again**.
+3. **Too many sign-in attempts**: any Admin sign-in `429`, including the
+   per-identity counter, says "Too many sign-in attempts. Try again later."
+   It shows no minute count; `Retry-After` is unchanged.
+4. An outage (`503`: the limiter is unavailable or the provider is
+   misconfigured) keeps "Sign-in temporarily unavailable. Please try again
+   later."
+
+The usual rule of not revealing whether an account exists does not apply
+here, because Google does the authentication and the portal only does
+authorization. Only the person who has just proved to Google that they
+control an address learns whether *that* address has access, so nobody can
+probe someone else's address. A single page with gentler wording was
+rejected: it still could not tell a leader the one useful thing, that they
+used the wrong address. Family code and link refusals keep their deliberate
+sameness, because there the portal *is* the authenticator. A refusal of a
+person who is already signed in (such as a report view they may not read)
+keeps the generic "Access unavailable" page. Status codes, limiter
+accounting, the audit entries and the `next` handling are unchanged.
 Rate-limit and suspicious-login events are logged.
 Concrete per-IP, verified-identity, proxy, and deployment-wide limits are
 defined by the
 [identity security policy](../architecture/spec.md#identity-and-session-security).
 All login and callback denial pages preserve the retry path while honoring
-`429`/`Retry-After`; they never reveal which authorization check failed.
+`429`/`Retry-After`.
 
 A page load whose Admin session has ended (an hour without activity, a
 sign-out in another tab, a revoked session) goes to the sign-in page instead
@@ -72,27 +112,24 @@ A user's address need not be a Gmail address, but it must have a Google
 Account, and many volunteer Ministry leaders' addresses have none
 ([#1593](https://github.com/epiphany40223/parishkit/issues/1593)). Google
 itself refuses such an address before it ever reaches the callback, so the
-portal says how to fix it where the person meets the problem. The Admin
-generic not-authorized page, where a refused leader lands, shows a short
-**Google Account guidance**: sign in with the
-address the parish gave access to (it need not be a Gmail address, but it
-needs a Google Account), then whom to ask when it still fails. It has no
-"create a Google Account first" paragraph or Google help link (the
+portal says how to fix it in a short **Google Account guidance**: sign in
+with the address the parish gave access to (it need not be a Gmail address,
+but it needs a Google Account), then whom to ask when it still fails. It has
+no "create a Google Account first" paragraph or Google help link (the
 Administrator removed them in
 [#2115](https://github.com/epiphany40223/parishkit/issues/2115)); the
 [leader sign-in guide](../../../guides/stewardship-leader-sign-in.md) keeps
-that fuller help. The not-authorized page shows it for every sign-in
-refusal alike (a refusal of a signed-in person, such as a report view
-they may not read, does not), so it still reveals nothing about which check failed. The
-temporary-unavailability page and the Family portal's pages do not show it.
-The local laptop environment's test sign-in branch does not either,
-nor do its refused test sign-in links. The Admin login page does not show it
+that fuller help. No sign-in refusal page shows the shared guidance
+([#2116](https://github.com/epiphany40223/parishkit/issues/2116)): the "No
+access with this account" page carries its own wording with the verified
+address, and the other refusal pages and the Family portal's pages are not
+about the address. The Admin login page does not show it
 either ([#2115](https://github.com/epiphany40223/parishkit/issues/2115)): it
 has only its heading, the Sign in with Google button and the Family campaign
 portal link, plus the ended-session notice when one applies and, in the
 local laptop environment, the test sign-in link steps. Rejected there: a
 collapsed "Having trouble signing in?" disclosure, which is still extra text
-when the not-authorized page already reaches anyone who fails to sign in. The
+when the refusal page already reaches anyone who fails to sign in. The
 guidance's wording is kept in one place in code
 (`accounts/google_account_help.py`), so the [Users page](#users-table) and a
 later leader email ([#1592](https://github.com/epiphany40223/parishkit/issues/1592))

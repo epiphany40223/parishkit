@@ -4,10 +4,11 @@ The Admin portal signs in with Google only, and a user's address must have a
 Google Account. Many volunteer Ministry leaders use addresses at other
 providers that have none, and Google refuses such an address before the
 portal ever sees it (#1593). This short wording is the one copy of what to tell
-them: the generic Admin not-authorized page and the Users page About panel
-both render it (through the ``google_account_help``
-template tag), and a later leader email (#1592) should reuse these strings
-rather than restate them. The admin-portal spec's "Login and denial
+them: the Users page About panel renders it (through the
+``google_account_help`` template tag), and the leader email (#1592) reuses
+these strings rather than restating them. The Admin "No access with this
+account" page carries its own wording with the verified address instead
+(#2116). The admin-portal spec's "Login and denial
 behavior" section describes where it appears; the Admin login page keeps
 only its button and the Family portal link (#2115).
 """

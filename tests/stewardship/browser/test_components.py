@@ -183,6 +183,8 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/availability",
         "/denied",
         "/denied-admin",
+        "/denied-admin-unfinished",
+        "/denied-admin-limited",
         "/denied-code",
         "/denied-link",
         "/denied-unavailable",
