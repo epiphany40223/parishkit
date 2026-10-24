@@ -113,12 +113,12 @@ src/parishkit/            Reusable, parish-neutral package code
   retry.py                RetryPolicy + retry_call/retry decorator
   files.py                atomic_write_text (owner-only, crash-safe)
   auth.py                 Credential-loading philosophy (docstring-only package)
-  cli_arguments.py        Lightweight shared argument registration (no provider imports)
-  paths.py                runtime_root(): late-bound PARISHKIT_ROOT / /opt/parishkit default
+  cli_arguments.py        Shared argument registration (no provider imports)
+  paths.py                runtime_root(): late-bound PARISHKIT_ROOT default
   parishsoft.py           ParishSoft v2 client + data model loading/linking/filtering
   parishsoft_runtime.py   Build a ParishSoftClient from CommonOptions + YAML
   parishsoft_source.py    Coherent-source client (see "Coherent source layer")
-  parishsoft_transport.py Bounded read transport (and the gated contact PUT session)
+  parishsoft_transport.py Bounded read transport + gated contact PUT session
   parishsoft_http_worker.py  Private helper process behind that transport
   parishsoft_pagination.py   Strict bounded pagination for coherent loads
   constant_contact.py     Constant Contact v3 client, OAuth device/refresh, contact mapping
@@ -138,7 +138,7 @@ src/parishkit/            Reusable, parish-neutral package code
   pk_create_ps_ministry_rosters.py       Ministry rosters → Drive/Sheets
   pk_sync_ps_to_ggroup.py Google Group membership sync
   pk_sync_ps_to_cc.py     Constant Contact list sync
-  stewardship/            The Stewardship campaign portal (Django); see its own specs
+  stewardship/            Stewardship campaign portal (Django); own specs
 
 scripts/<tool-name>/      One folder per command:
   <tool-name>.py          Executable wrapper (delegates to package entry point)
@@ -153,9 +153,9 @@ tools/stewardship-ops/    Host-side Stewardship operator scripts (release.sh,
                           release_evidence.py, pk-admin, ...)
 install.py                Installs into a runtime tree
 .github/workflows/        ci.yml (lint, format, docs, tests; main-tree evidence),
-                          release.yml (tag→evidence check→build→image→release)
+                          release.yml (tag→evidence→build→image→release)
 pyproject.toml            Package metadata, entry points, deps/extras, ruff/pytest config
-requirements.txt          `-e .[dev,google,slack,stewardship]` for dev/CI convenience,
+requirements.txt          `-e .[dev,google,slack,stewardship]` (dev/CI),
                           constrained by the pinned files under requirements/
 CLAUDE.md (== AGENTS.md)  Contributor/agent instructions
 docs/                     Documentation
@@ -416,7 +416,7 @@ existing tools never touch, provide it:
 The transport also contains the single ParishSoft write: a Member contact PUT
 that only `BoundedPublicationSession` can send. Only the Stewardship census
 publication gateway (`stewardship.responses.publication_gateway`) builds that
-session, and it works only when publication is switched on. Every other helper
+session, so the PUT is gated. Every other helper
 refuses a PUT. See the [Stewardship background-processing
 spec](../stewardship/background-processing/spec.md) for how the portal uses this
 layer.
@@ -644,7 +644,7 @@ cases, and link back to the shared sections here.
 | `pk-validate-gcalendar-reservations` | [spec](../pk-validate-gcalendar-reservations/spec.md) | Audit | Google Calendar RSVPs |
 | `pk-query-ps-memfam` | [spec](../pk-query-ps-memfam/spec.md) | Lookup (read-only) | — |
 | `pk-print-ps-ministries` | [spec](../pk-print-ps-ministries/spec.md) | Lookup (read-only) | — |
-| `pk-stewardship` | [specs](../stewardship/spec.md) | Stewardship portal operations | Its own database, media and configuration; gated ParishSoft contact PUT |
+| `pk-stewardship` | [specs](../stewardship/spec.md) | Stewardship portal | Its own database and media; gated ParishSoft PUT |
 
 ## Recreating ParishKit from these specs
 

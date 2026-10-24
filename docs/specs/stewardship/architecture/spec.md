@@ -35,8 +35,8 @@ and is sanitized on input and output.
 
 Production Compose contains:
 
-- `web` (plus `web-1` … `web-7` when the runtime budget sets more replicas, up to
-  eight): Gunicorn-hosted Django application;
+- `web` (plus `web-1` … `web-7` when the runtime budget sets more replicas,
+  up to eight): Gunicorn-hosted Django application;
 - `config-installer`: the only online service with write access to the Stewardship
   configuration-authority directory;
 - target-specific `credential-installer-*` workers, each able to decrypt only
@@ -118,9 +118,9 @@ wrapper. Subcommands cover bootstrap, configuration validation, migration,
 health diagnostics, backup, Admin-access recovery, and restore. Operator secret
 escrow is deferred (see the [v1 launch
 scope](../../../plans/stewardship/v1-launch.md#reduced-for-v1)).
-Web-serving and worker commands remain container entry points that import package
-code. There is no console campaign purge; purge is intentionally a guarded
-Admin web workflow.
+Web-serving and worker commands remain container entry points that import
+package code. There is no console campaign purge; purge is intentionally a
+guarded Admin web workflow.
 
 The host-only [Admin automation interface](../admin-automation/spec.md)
 (`pk-stewardship admin`) reaches Admin portal actions from inside the web

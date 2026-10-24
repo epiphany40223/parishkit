@@ -10,7 +10,7 @@ and the Weekly additional-information digest: the
 campaign's Daily and Weekly digest into a report email in place, and from
 then on there are no digest kinds, digest editors or digest commands.
 
-Status: **specified, not built.** The [delivery plan](#delivery-plan) ships
+Status: **built and authoritative.** The [delivery plan](#delivery-plan) ships
 it in small pull requests; the internal rework and the migration come first
 and change nothing a reader sees except the converted Weekly's
 [three documented changes](#conversion): the additional information block's
