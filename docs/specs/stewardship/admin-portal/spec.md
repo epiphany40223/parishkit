@@ -8512,9 +8512,10 @@ Ministry an Edit or an Add carries forward, "Join Adult Choir"), Stage (with
 the decision under it), Submitted, Last decision (who, when and the note)
 and Actions. The worklist has no Baseline column: a Ministry request's
 baseline is only whether the Member is on the roster, which its kind already
-says. The rows are newest first by default, and the table scrolls sideways
-in its own box when it is wider than the page. A long Member or Ministry
-name is cut short, whole in its tip, as before (#1136).
+says. The rows are newest first by default, and the table is laid out as
+the [review work tables](../ui-conventions/spec.md#review-work-tables) are.
+A long Member or Ministry name wraps to two lines, then is cut short, whole
+in its tip (#1136, #2124).
 
 **Row actions** (icons, hidden rather than disabled by role, each with the
 shared confirmation dialog and its optional note):

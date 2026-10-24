@@ -2605,11 +2605,11 @@ header: surname, then heads, as on the
 the search, sort and downloads use the same name, and a Family the data no
 longer has shows the
 [Not in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
-badge), Family DUID, then:
+badge), with its Family DUID on the line under it, then:
 
 - **Who**: the Member, "New Member" with the proposed Member's name, or the
   Family for its household fields (home and mailing address, email opt-out).
-- **Member DUID**, beside Who: the Member's ParishSoft DUID, "New Member"
+- **Member DUID**, on the line under Who: the Member's ParishSoft DUID, "New Member"
   for a Member added on the form, and blank for a household change. Rows
   without a DUID follow the Members on the first click.
 - **What changed**: the field's plain label (Mobile phone, Home address,
@@ -2632,7 +2632,9 @@ badge), Family DUID, then:
   rows only), **Stage** (with the decision behind it, an earlier decision a
   Conflict holds but that is not in force, and a failed update), **Submitted**
   and **Last decision** (who, when and the note of the latest review or
-  mark), then the row's action icons. Values appear in full: Staff need them
+  mark), then the row's action icons, sharing cells as the
+  [review work tables](../ui-conventions/spec.md#review-work-tables) do.
+  Values appear in full (a long one under Show all): Staff need them
   to type into ParishSoft, and every view and download is audited. A blank
   Family's answer means the Family removed the value: remove it in
   ParishSoft, or Ignore the row to keep it. A birth date the Family gave as
