@@ -587,5 +587,3 @@ Locked-down behavior asserted:
 - Operator docs and example config:
   `scripts/pk-sync-ps-to-ggroup/README.md`,
   `scripts/pk-sync-ps-to-ggroup/example-config.yaml`.
-</content>
-</invoke>

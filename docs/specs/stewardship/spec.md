@@ -341,10 +341,14 @@ Every source requirement maps to one normative section:
 | Initial setup, Google login, RBAC, config, users | [Admin portal](admin-portal/spec.md) |
 | Deployment, database, sessions, responsive/security rules | [Architecture](architecture/spec.md) |
 | ParishSoft refresh and atomic truth | [Background processing](background-processing/spec.md) and [data](data/spec.md) |
-| Family email, reports by email, critical alerts | [Background processing](background-processing/spec.md) |
+| Family email, critical alerts | [Background processing](background-processing/spec.md) |
+| Reports by email: designed emails, blocks, schedules, recipients | [Report emails](report-emails/spec.md) |
 | Family login and census/stewardship form | [Parishioner portal](parishioner-portal/spec.md) |
 | Reports, charts, filters, downloads | [Reports](reports/spec.md) |
-| Review and ParishSoft publication | [Data](data/spec.md) and [admin portal](admin-portal/spec.md) |
+| Review of Family changes and ParishSoft publication | [Review pipeline](review-pipeline/spec.md), [data](data/spec.md) and [admin portal](admin-portal/spec.md) |
+| Commands for Administrators on the deployment host | [Admin automation](admin-automation/spec.md) |
+| Past campaigns, the archive workbook and comparison | [Campaign history](campaign-history/spec.md) |
+| General, portal-wide UX conventions | [UX conventions](ui-conventions/spec.md) |
 | Logs and campaign replay | [Admin portal](admin-portal/spec.md) and [data](data/spec.md) |
 | Compose, TLS, persistence, release, backups, tests | [Operations](operations/spec.md) |
 | Hosted parishioner files and file placeholders | [Hosted files](hosted-files/spec.md) |

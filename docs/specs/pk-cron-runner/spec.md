@@ -527,5 +527,3 @@ and `MAX_CAPTURED_OUTPUT_BYTES`, and `_log_summary` with a fake logger.
   [`pk-validate-gcalendar-reservations`](../pk-validate-gcalendar-reservations/spec.md),
   [`pk-query-ps-memfam`](../pk-query-ps-memfam/spec.md),
   [`pk-print-ps-ministries`](../pk-print-ps-ministries/spec.md).
-</content>
-</invoke>

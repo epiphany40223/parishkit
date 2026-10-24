@@ -244,12 +244,6 @@ There is no JSON output mode and no field-selection option; format toggles are
 limited to `--full` (membership detail) and `--load-contributions` (whether
 giving data is present in the dumped object).
 
-> Documentation discrepancy to preserve awareness of: the operator README
-> (`scripts/pk-query-ps-memfam/README.md`) describes the output as "a bounded,
-> readable summary, not a raw ParishSoft record dump." In practice the output
-> *is* a pretty-printed raw+derived record dump; only `membership` lists are
-> bounded (unless `--full`). Treat the code behavior as authoritative.
-
 ## 7. Failure modes and exit codes
 
 The tool body runs inside `run_user_facing` (the shared

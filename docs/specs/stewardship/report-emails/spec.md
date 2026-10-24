@@ -10,13 +10,11 @@ and the Weekly additional-information digest: the
 campaign's Daily and Weekly digest into a report email in place, and from
 then on there are no digest kinds, digest editors or digest commands.
 
-Status: **specified, not built.** The [delivery plan](#delivery-plan) ships
-it in small pull requests; the internal rework and the migration come first
-and change nothing a reader sees except the converted Weekly's
+Status: **built and authoritative.** Every part of the
+[delivery plan](#delivery-plan) has shipped. The conversion changed nothing a
+reader sees except the converted Weekly's
 [three documented changes](#conversion): the additional information block's
 scope, a send every week, and the rewording of its default introduction.
-Until the pull request that ships a part lands, the code that runs today is
-the reference for that part, and this document describes where it is going.
 
 General UX rules come from the [UX conventions](../ui-conventions/spec.md),
 which take precedence over this specification for portal-wide rules (in-place
