@@ -33,7 +33,7 @@
 {% if progress.organizations %}{% include 'stewardship/parishsoft-organizations.html' with organizations=progress.organizations %}{% endif %}
 </div>{% elif status_key == 'failed' %}<div class="notice notice-error" data-progress-failed>
 <p data-progress-organization>{% if progress.organization_label %}{% blocktranslate trimmed with organization=progress.organization_label %}The parish data of {{ organization }} could not be loaded from ParishSoft.{% endblocktranslate %}{% else %}{% translate "The load did not finish." %}{% endif %} {% translate "The most common causes are a wrong ParishSoft API key, or an organization that is not your parish's." %}</p>
-<p>{% translate "What to do: go back to ParishSoft connection to choose another organization (paste the key again to see the organizations it reaches) or to enter a different key, then load the parish data again. If the load keeps failing, ask the operator to check the service logs for the task reference under Technical details." %}</p>
+<p>{% translate "What to do: go back to ParishSoft connection and choose another organization (paste the key again to see the ones it reaches) or enter a different key, then load again. If it keeps failing, ask the operator to check the service logs for the task reference under Technical details." %}</p>
 <p><a href="{% url 'admin:setup_credential' 'parishsoft' %}">{% translate "Choose another organization or enter a different key" %}</a></p>
 <p><a href="{% url 'admin:setup_source' %}">{% translate "Go to “Load parish data”" %}</a></p>
 </div>{% elif status_key == 'voided' %}<div class="notice" data-progress-voided>

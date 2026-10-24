@@ -4919,9 +4919,9 @@ campaign** section, after the modules (and the additional information box)
 and before the Ministry selections, because the
 choice has to be made before the campaign's first load creates its Families
 (above). It is part of the one Campaign settings form, so it is asked once.
-Its help says, in plain words: "Choose which ParishSoft Families this
-campaign is sent to. They get a Family code and link, the Family form and the
-campaign's emails. You can't change this after the campaign is created."
+Its help says, in plain words: "Choose which ParishSoft Families get this
+campaign's Family code, form and emails. You can't change this after the
+campaign is created."
 
 **Basic and Advanced.** The section follows [Basic and Advanced
 modes](../ui-conventions/spec.md#basic-and-advanced-modes), with its toggle at
