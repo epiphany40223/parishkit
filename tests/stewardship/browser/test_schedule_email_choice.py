@@ -1,4 +1,4 @@
-"""A schedule's editor describes its chosen email and links to it (#446)."""
+"""A schedule's editor links to its chosen email in one help line (#446, #2130)."""
 
 import pytest
 
@@ -17,10 +17,15 @@ def summary(locator):
 
 
 @pytest.mark.parametrize("width", [320, 1280])
-def test_the_chosen_email_is_described_with_its_users_and_links(
+def test_the_chosen_email_has_one_line_of_links(
     page, component_origin, axe_source, width
 ):
-    """Both reminders share one email: the summary says so and links to it."""
+    """Both reminders share one email: its option says so, the line links to it.
+
+    The line under the list is one paragraph of links (#2130); who sends the
+    email is in the option's own label, and the list's tip says that editing
+    it changes every schedule that sends it.
+    """
     page.set_viewport_size({"width": width, "height": 900})
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
@@ -28,10 +33,11 @@ def test_the_chosen_email_is_described_with_its_users_and_links(
     page.get_by_role("button", name="Change Reminder 1").click()
     reminder = editor(page, "Reminder 1")
     visible(reminder)
+    assert summary(reminder).locator("p").count() == 1
     text = summary(reminder).inner_text()
-    assert "Sent by: Reminder 1, Reminder 2" in text
-    assert "changes it for every schedule that sends it" in text
-    assert "Starts: Welcome to {{ parish_name }}." in text
+    assert "Sent by" not in text and "Starts:" not in text
+    tip = reminder.locator("#id_schedules-1-template_version_tip")
+    assert "changes it for every schedule that sends it" in tip.text_content()
     email = reminder.locator('[name="schedules-1-template_version"]')
     chosen = email.input_value()
     test = summary(reminder).get_by_role("link", name="Preview and send a test")
@@ -68,7 +74,7 @@ def test_a_live_campaign_says_why_there_is_no_test_link(page, component_origin):
 
 
 def test_a_new_schedule_describes_the_email_it_chooses(page, component_origin):
-    """The summary follows the choice in place, and clears with it.
+    """The line follows the choice in place, and clears with it.
 
     New offers Family mail only (#1786); the invitation's email is the one
     the saved Initial invitation sends.
@@ -81,26 +87,24 @@ def test_a_new_schedule_describes_the_email_it_chooses(page, component_origin):
     email = row.locator('[name="schedules-3-template_version"]')
     assert summary(row).inner_text().strip() == ""
     email.select_option(index=1)
-    text = summary(row).inner_text()
-    assert "Sent by: Initial invitation" in text
     visible(summary(row).get_by_role("link", name="Edit this email"))
     email.select_option(index=0)
     assert summary(row).inner_text().strip() == ""
 
 
 @pytest.mark.parametrize("path", ["/schedule-editor-mail", "/clone-settings"])
-def test_a_sole_sender_is_not_warned_on_setup_and_copy(page, component_origin, path):
-    """Without the schedules table, a saved row still knows its own name.
+def test_setup_and_copy_show_at_most_one_line_under_the_list(
+    page, component_origin, path
+):
+    """Setup and Copy show at most the links line under the list (#2130).
 
-    The only schedule sending its email gets no "changes it for every
-    schedule" warning, and the list is described by the summary too.
+    A saved row says nothing about who sends its email, and the list is
+    described by its line too.
     """
     page.goto(component_origin + path)
     saved = page.locator("fieldset[data-schedule-row]").first
-    assert saved.get_attribute("data-schedule-label") == "Initial invitation"
-    text = summary(saved).inner_text()
-    assert "Sent by: Initial invitation" in text
-    assert "changes it for every schedule" not in text
+    assert summary(saved).locator("p").count() <= 1
+    assert "Sent by" not in summary(saved).inner_text()
     described = saved.locator('[name="schedules-0-template_version"]')
     summary_id = summary(saved).get_attribute("id")
     assert summary_id in described.get_attribute("aria-describedby").split()

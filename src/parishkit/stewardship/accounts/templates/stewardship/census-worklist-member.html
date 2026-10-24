@@ -9,8 +9,8 @@
   Family already listed) is shown in the one reserved error line and marks
   the field until it is edited (ui-v1.js refuseAtFields). It ends with the
   worklist's note, as every decision does.
-{% endcomment %}<div class="dialog-fields"><label for="{{ dialog_id }}-member">{% translate "ParishSoft Member ID (optional)" %}</label><input id="{{ dialog_id }}-member" name="value_member" inputmode="numeric" autocomplete="off" maxlength="19" value="" aria-describedby="{{ dialog_id }}-member-help" data-confirm-reset>
-<p class="help" id="{{ dialog_id }}-member-help">{% translate "The new Member's ID in ParishSoft. The next refresh confirms the entry when ParishSoft lists this Member in the Family. Leave it blank if you do not have it: you can add it later." %}</p>
+{% endcomment %}<div class="dialog-fields"><div class="label-row"><label for="{{ dialog_id }}-member" id="{{ dialog_id }}-member-label">{% translate "ParishSoft Member ID (optional)" %}</label>{% translate "The next refresh confirms the entry when ParishSoft lists this Member in the Family. You can add the ID later." as member_tip %}{% include "stewardship/components/toggletip.html" with tip_id=dialog_id|add:"-member-tip" tip_label_id=dialog_id|add:"-member-label" tip_text=member_tip %}</div><input id="{{ dialog_id }}-member" name="value_member" inputmode="numeric" autocomplete="off" maxlength="19" value="" aria-describedby="{{ dialog_id }}-member-help {{ dialog_id }}-member-tip" data-confirm-reset>
+<p class="help" id="{{ dialog_id }}-member-help">{% translate "The new Member's ID in ParishSoft. Leave it blank if you do not have it." %}</p>
 <div class="field-error-line"><ul class="errorlist" id="{{ dialog_id }}-error" hidden><li></li></ul></div>
 </div>
 {% include "stewardship/components/review-worklist-note.html" with note_name="note" %}

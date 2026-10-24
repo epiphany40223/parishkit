@@ -89,11 +89,11 @@ Dates and mail schedules again, its status line saying what was saved.
 {% if not direct and not new %}<section class="panel schedule-delete" aria-labelledby="schedule-delete-title">
 <h2 id="schedule-delete-title">{% translate "Delete this scheduled email" %}</h2>
 <form method="post" action="{{ delete_url }}" id="schedule-delete-form" data-review-open="schedule-delete-review">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="schedule_id" value="{{ schedule.id }}"><input type="hidden" name="zone" value="" data-browser-zone>
-{% if series %}<fieldset class="field" aria-describedby="schedule-delete-help"><legend>{% translate "Delete" %}</legend>
+{% if series %}<fieldset class="field" aria-describedby="schedule-delete-help schedule-delete-tip"><legend id="schedule-delete-legend">{% translate "Delete" %}</legend>{% translate "This reminder only deletes just this reminder, which then leaves its series. Reminders of the series that sent stay as ordinary reminders." as delete_tip %}{% include "stewardship/components/toggletip.html" with tip_id="schedule-delete-tip" tip_label_id="schedule-delete-legend" tip_text=delete_tip %}
 <div><input type="radio" name="scope" value="this" id="schedule-delete-this" checked> <label for="schedule-delete-this">{% translate "This reminder only" %}</label></div>
 <div><input type="radio" name="scope" value="series" id="schedule-delete-series"> <label for="schedule-delete-series">{% translate "The whole series" %}</label></div>
 </fieldset>{% endif %}
-<p class="help" id="schedule-delete-help">{% if series %}{% translate "This reminder only deletes just this reminder, which then leaves its series. The whole series deletes every reminder of the series that has not sent or been prepared; those that sent stay as ordinary reminders." %}{% else %}{% translate "Deleting cancels this email's sends that have not started. You review what is removed before anything changes." %}{% endif %}</p>
+<p class="help" id="schedule-delete-help">{% if series %}{% translate "The whole series deletes every reminder of the series that has not sent or been prepared." %}{% else %}{% translate "Deleting cancels this email's sends that have not started. You review what is removed before anything changes." %}{% endif %}</p>
 <p>{% button type="submit" class="button-danger" autocomplete="off" aria-describedby="schedule-delete-help" %}{% translate "Delete" %}{% endbutton %}</p>
 </form>
 </section>

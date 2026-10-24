@@ -467,17 +467,18 @@ one readable name: its subject, plus the start of its ID only when another
 email of the same mail type has the same subject. The list, the scheduled
 emails table and [Pages and emails](#default-content) all use that name. Each
 choice reads the name and the saved schedules that send it ("sent by Reminder
-1, Reminder 2", or "not sent by any schedule", the same verb as the description
-below it). Under the list, the chosen email is described in place: the start of
-its plain text, the saved schedules that send it, and, when another schedule
-sends it too, that editing it changes every one of them. On the New and Edit
-scheduled email pages the description also links to the email's test page
-(Preview and send a test) and its editor (Edit this email), each in a new tab so
-the page's unsaved changes stay; an email saved there makes this page's review
+1, Reminder 2", or "not sent by any schedule"). The list's "i" tip says what
+it holds and that editing a saved email changes it for every schedule that
+sends it. Under the list, the chosen email has one help line
+([one help line under a field](../ui-conventions/spec.md#page-help),
+[#2130](https://github.com/epiphany40223/parishkit/issues/2130)): on the
+schedule pages that offer them, links to the email's test page (Preview and
+send a test) and its editor (Edit this email), each in a new tab so the
+page's unsaved changes stay; an email saved there makes this page's review
 ask for a reload, as any concurrent change does. Test emails can be sent only
 while the campaign is a Testing draft, or in Production while live email
 delivery is paused ([Live delivery pause](#live-delivery-pause)); at any other
-time the description says so in place of the test link, and the test page
+time the line says so in place of the test link, and the test page
 itself refuses with the same explanation and a link to Pause and resume mail
 rather than asking for a reload
 ([#923](https://github.com/epiphany40223/parishkit/issues/923)). Choosing an

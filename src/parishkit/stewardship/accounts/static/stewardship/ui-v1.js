@@ -5257,12 +5257,14 @@
     wireOverlap(event.target);
   });
 
-  // The chosen email, described under a schedule's email list (#446): the
-  // start of its text, the saved schedules that send it, a warning when
-  // editing it would change other schedules too, and (on Dates and mail
-  // schedules) links to preview, test and edit it, which open in a new tab so
-  // this page's unsaved changes stay. The option's data- attributes come
-  // from schedule_forms.email_details; every value is set as text.
+  // The chosen email's one help line under a schedule's email list (#446,
+  // #2130): where the page offers them (schedule_forms email_links), links
+  // to preview, test and edit it, which open in a new tab so this
+  // page's unsaved changes stay. The option's own label already says which
+  // schedules send it, and the list's tip says that editing a saved email
+  // changes it for each of them, so the line repeats neither. The option's
+  // data- attributes come from schedule_forms.email_details; every value is
+  // set as text.
   const emailSummary = (row, template) => {
     const summary = row.querySelector("[data-email-summary]");
     if (!summary) return;
@@ -5274,38 +5276,27 @@
     const option = template.selectedOptions[0];
     summary.replaceChildren();
     if (!option || !option.value) return;
-    let users = [];
-    try { users = JSON.parse(option.dataset.usedBy || "[]"); } catch { users = []; }
-    const line = (text) => {
-      const paragraph = document.createElement("p");
-      paragraph.className = "help";
-      paragraph.textContent = text;
-      summary.append(paragraph);
-      return paragraph;
-    };
-    if (option.dataset.excerpt) line(`Starts: ${option.dataset.excerpt}`);
-    line(users.length ? `Sent by: ${users.join(", ")}` : "No saved schedule sends this email yet.");
-    const own = row.dataset.scheduleLabel;
-    if (users.some((user) => user !== own)) {
-      line("Editing this email changes it for every schedule that sends it.");
-    }
-    const links = [["testUrl", "Preview and send a test"], ["editUrl", "Edit this email"]]
-      .filter(([key]) => option.dataset[key]);
-    if (links.length) {
-      const paragraph = line("");
-      links.forEach(([key, text], index) => {
-        if (index) paragraph.append(" · ");
+    const parts = [["testUrl", "Preview and send a test"], ["editUrl", "Edit this email"]]
+      .filter(([key]) => option.dataset[key])
+      .map(([key, text]) => {
         const link = document.createElement("a");
         link.href = option.dataset[key];
         link.target = "_blank";
         link.rel = "noopener";
         link.textContent = `${text} (opens in a new tab)`;
-        paragraph.append(link);
+        return link;
       });
-    }
     // While the campaign admits no test mail, the server sends why in place
     // of the test address (#923), so the page never links a dead end.
-    if (option.dataset.testNote) line(option.dataset.testNote);
+    if (option.dataset.testNote) parts.push(option.dataset.testNote);
+    if (!parts.length) return;
+    const paragraph = document.createElement("p");
+    paragraph.className = "help";
+    parts.forEach((part, index) => {
+      if (index) paragraph.append(" · ");
+      paragraph.append(part);
+    });
+    summary.append(paragraph);
   };
 
   // Action tables (#879; admin-portal spec, "Row actions and confirmation").
