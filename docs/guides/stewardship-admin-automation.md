@@ -2503,10 +2503,12 @@ under review) is exit 3 (`unavailable`): try again later. The host's
 the summary of the data problems that are fixed in ParishSoft. Like the
 page, Administrators and Staff may run it, from a session of any scope;
 each sees only the sections whose list they may open (Staff:
-`unreachable_families` and `census_changes`). It prints the current
-`campaign_id` (null without one) and `sections`, one member per section:
-`form_cannot_open`, `refused_addresses`, `unreachable_families` and
-`census_changes`. Each is `{"count": N}` (refused addresses add
+`unreachable_families`, `census_changes` and `roster_changes`). It prints
+the current `campaign_id` (null without one) and `sections`, one member
+per section: `form_cannot_open`, `refused_addresses`,
+`unreachable_families`, `census_changes` and `roster_changes` (accepted
+Ministry requests still to enter by hand, Ministry requests' To enter by
+hand count). Each is `{"count": N}` (refused addresses add
 `families`, how many Families the addresses belong to), or
 `{"unavailable": "…"}` with the page's reason when that section cannot
 count now, such as no current campaign or a campaign without the census.
