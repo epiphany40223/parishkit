@@ -8199,7 +8199,7 @@ who and when (until
 Not yet entered in ParishSoft, Mark entered in ParishSoft and Entered in
 ParishSoft). A request a refresh resolved before #1890 because the
 ParishSoft roster already showed the change (it has a resolution source)
-needs no tick and shows *Confirmed* (until #2102, *Already in ParishSoft*); a
+needs no tick; a
 refresh no longer resolves requests, so every new request is decided and
 ticked first. For Staff and Admin, the
 worklist's Stage says To enter by hand or Entered by hand, its Entered by
