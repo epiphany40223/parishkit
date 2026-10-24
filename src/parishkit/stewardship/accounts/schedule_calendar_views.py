@@ -53,7 +53,7 @@ from parishkit.stewardship.web.tables import Sorting, whole_table
 from .admin_editing import error_response, principal
 from .authentication import runtime
 from .content_views import _records
-from .schedule_entry_views import ERRORS, _recheck, year_month
+from .schedule_entry_views import ERRORS, _recheck, added_on, year_month
 from .schedule_forms import schedule_order
 from .schedule_preview import work_summary
 from .schedule_reads import campaign_schedules, schedule_state
@@ -62,6 +62,11 @@ from .schedule_views import campaign_email_names
 
 # The address parameter naming the month shown (``2054-11``, #1656).
 MONTH = "month"
+# The grid's View (#1808): by month (the default) or by week, the week
+# shown named by a day of it (its Sunday, ``2054-10-11``). Like ``month``,
+# both are the page script's; only their form is checked here.
+VIEW, WEEK_SHOWN = "view", "week"
+VIEWS = ("month", "week")
 # The table's Show choice (#1656): upcoming emails only (the default), or
 # every email, past ones included.
 SHOW = "show"
@@ -282,21 +287,37 @@ def sends_view(sends, parameters, now, path):
     }
 
 
+def view_links(path):
+    """The View's Month and Week links (#1808) as the page first draws them.
+
+    The page script follows them with no request and sets them again to
+    the month or week each would show, with the table's Show and sort.
+    """
+    return {"month": path, "week": f"{path}?{VIEW}=week"}
+
+
 @require_http_methods(["GET", "HEAD"])
 def schedule_calendar(request, campaign_id):
     """Show the current campaign's sends by date (Administrator).
 
     It reads the applied configuration in one read-only snapshot, as the
     scheduled emails list does, and rechecks access after rendering so a
-    revocation committed meanwhile is not hidden. ``?month=`` (#1656) is
-    the page script's; a malformed one is refused as an unknown address, as
+    revocation committed meanwhile is not hidden. ``?month=`` (#1656) and
+    the View's ``?view=`` and ``?week=`` (#1808) are the page script's; a
+    malformed one is refused as an unknown address, as
     is a Show or sort the table does not offer (``sends_view``).
     """
     try:
         service = runtime()
         principal(request, service)
-        parameters = filters(request.GET, allowed={MONTH, SHOW, "sort"})
+        parameters = filters(
+            request.GET, allowed={MONTH, VIEW, WEEK_SHOWN, SHOW, "sort"}
+        )
         year_month(parameters, MONTH)
+        added_on(parameters, WEEK_SHOWN)
+        view = parameters.get(VIEW, "month")
+        if view not in VIEWS:
+            raise ValueError("Unknown filter input.")
         now = timezone.now()
         with read_transaction():
             state, campaign, _editable = schedule_state(service, campaign_id, page=True)
@@ -334,7 +355,8 @@ def schedule_calendar(request, campaign_id):
                     "base_digest": configuration.active_configuration.digest,
                     "apply_url": reverse("admin:schedule_settings"),
                 }
-                | sends_view(sends, parameters, now, request.path),
+                | sends_view(sends, parameters, now, request.path)
+                | {"view": view, "view_links": view_links(request.path)},
             )
         _recheck(request, service)
         response["Cache-Control"] = "no-store"

@@ -274,6 +274,18 @@ def test_edit_from_the_calendar_returns_to_its_month(auth_service, google, monke
     # New from a day's Add returns to that day's month.
     added = unescape(browser.get(f"{NEW}?date=2054-10-12").content.decode())
     assert f'<a href="{CALENDAR}?month=2054-10">Cancel</a>' in added
+    # From the week view (#1808), Edit and New's Add name the week's Sunday
+    # and return to that week.
+    week = f"{CALENDAR}?view=week&week=2054-10-11"
+    edited = unescape(browser.get(f"{path}?calendar=2054-10-11").content.decode())
+    assert f'<a href="{week}">Cancel</a>' in edited
+    assert f'data-review-return="{week}"' in edited
+    added = unescape(
+        browser.get(f"{NEW}?date=2054-10-12&calendar=2054-10-11").content.decode()
+    )
+    assert f'<a href="{week}">Cancel</a>' in added
+    for refused in (f"{path}?calendar=2054-10-32", f"{NEW}?date=2054-10-12&calendar=x"):
+        assert browser.get(refused).status_code == 400, refused
 
 
 def test_the_calendar_takes_only_a_well_formed_month(auth_service, google):
@@ -290,6 +302,21 @@ def test_the_calendar_takes_only_a_well_formed_month(auth_service, google):
     for month in ("2054-13", "2054-1", "november", ""):
         assert browser.get(f"{CALENDAR}?month={month}").status_code == 400, month
     assert browser.get(f"{CALENDAR}?month=2054-10&month=2054-11").status_code == 400
+    # The View (#1808): Month or Week, the week named by one of its days.
+    week = browser.get(f"{CALENDAR}?view=week&week=2054-10-14")
+    assert week.status_code == 200
+    page = unescape(week.content.decode())
+    assert 'id="calendar-view"' in page
+    assert f'href="{CALENDAR}?view=week#calendar-source"' in page
+    assert browser.get(f"{CALENDAR}?view=month").status_code == 200
+    for query in (
+        "view=day",
+        "view=",
+        "view=week&week=2054-10-32",
+        "view=week&week=20541014",
+        "view=week&week=2054-10-11&week=2054-10-18",
+    ):
+        assert browser.get(f"{CALENDAR}?{query}").status_code == 400, query
 
 
 def test_every_email_by_date_shows_upcoming_and_sorts(
@@ -380,7 +407,7 @@ def test_the_calendar_offers_move_on_dated_sends_with_edits_review_dialog(
         '<form method="post" id="schedule-entry-form" '
         'data-review-open="schedule-review" '
         'data-review-refused="calendar-move-refusal" '
-        'data-require-change="calendar-move-version">'
+        'data-require-change="calendar-move-version" data-require-complete>'
     ) in dialog
     for field in (
         '<input type="hidden" name="action" value="preview">',
@@ -567,6 +594,15 @@ def test_a_missed_send_or_a_digest_does_not_move(auth_service, google, monkeypat
     daily = f"/admin/mail/report-emails/{definition('report').pk}/"
     assert f'data-edit-url="{daily}?send=' in page
     assert f'data-move-url="{daily}' not in page
+    # Only Family emails are moments a move can't share (PR #2095): the
+    # missed invitation still is one, a report's send never is.
+    items = {
+        item: "data-own-moment" in item
+        for item in re.findall(r"<li data-calendar-send[^>]*>", page)
+        if first in item or daily in item
+    }
+    assert set(items.values()) == {False, True}
+    assert all(flag == (first in item) for item, flag in items.items())
     before = ConfigurationChangeRequest.objects.count()
     refused = post(browser, first, move(store, date="2054-10-20"))
     assert refused.status_code == 403
@@ -619,3 +655,31 @@ def test_a_move_into_the_repeated_hour_is_refused_at_the_date(auth_service, goog
     assert "Choose another day, or change the time on its Edit page." in page
     assert re.search(r'name="schedule-date"[^>]*aria-invalid="true"', page)
     assert ConfigurationChangeRequest.objects.count() == before
+
+
+def test_a_move_to_a_time_already_past_is_refused_at_the_date(
+    auth_service, google, monkeypatch
+):
+    """A move keeps its time of day, so a day already past, or today once that
+    time has gone, would send at once (Administrator, PR #2095): refused at
+    the date, recording nothing (before that, Edit's review was drawn). Now
+    is October 21 at 10:00 AM in New York, so the 9:00 AM reminder may move
+    to October 22 but not to October 20 or 21.
+    """
+    store = auth_service.store
+    draft_with_schedules(store)
+    browser, _ = signed_in()
+    reminder_row = definition("reminder")
+    later = reminder_row.current_revision.due_at.replace(day=21, hour=14)
+    clock = SimpleNamespace(now=lambda: later)
+    monkeypatch.setattr(schedule_entry_views, "timezone", clock)
+    edit = f"/admin/campaign/schedules/{reminder_row.pk}/"
+    before = ConfigurationChangeRequest.objects.count()
+    for day in ("2054-10-20", "2054-10-21"):
+        refused = post(browser, edit, move(store, date=day))
+        assert refused.status_code == 400, day
+        page = unescape(refused.content.decode())
+        assert "This day's send time has already passed" in page, day
+        assert re.search(r'name="schedule-date"[^>]*aria-invalid="true"', page)
+    assert ConfigurationChangeRequest.objects.count() == before
+    assert review_text(post(browser, edit, move(store, date="2054-10-22")))

@@ -1115,15 +1115,19 @@ td > :last-child { margin-bottom: 0; }
 .schedule-table tr[data-schedule-choose] { cursor: pointer; }
 .schedule-table tr[data-schedule-choose]:hover { background: var(--accent-soft); }
 .schedule-table tr.schedule-past, .calendar-sends tr.schedule-past { color: var(--muted); }
-/* Campaign calendar's month navigation (#1656): Previous and Next, then the
-   month's name, so a longer name moves neither button. At an end the button
+/* Campaign calendar's month navigation (#1656): Previous and Next; the
+   grid's caption names the month (PR #2095). At an end the button
    stays in place, greyed but focusable (aria-disabled, the shared
    unavailable look above), and the reason line
    under them keeps one line's height while empty, so it moves nothing. */
 .calendar-nav { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; }
 .calendar-nav .button { margin: 0; }
-.calendar-nav-month { font-weight: var(--heading-weight); font-size: 1.125rem; }
 .calendar-nav-reason { min-height: 1.5em; margin-block: .25rem .5rem; }
+/* The View choice (#1808) sits in the row before Previous and Next, so its
+   own bottom margin would push the reason line down; the week view's one
+   row of days is taller, since it has room for a week's sends. */
+.calendar-nav .segmented-choice { margin: 0; }
+.calendar-month.calendar-week td { height: 9rem; }
 /* Campaign calendar (#469): month grids drawn by calendar-v1.js. Each grid
    keeps a readable width and scrolls inside its .table-scroll region on a
    phone; days hold short lines (time and schedule name) that wrap between
@@ -1165,6 +1169,13 @@ td > :last-child { margin-bottom: 0; }
 .calendar-month li.calendar-dragging { opacity: .55; }
 .calendar-month td.calendar-drop-target { outline: 2px dashed var(--accent); outline-offset: -3px; }
 .calendar-drag-active, .calendar-drag-active * { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+/* A day a dragged send can't move to (PR #2095: already past for its time
+   of day, outside the campaign, or at another Family email's moment) looks
+   unavailable, titled with why, as every unavailable
+   control does: greyed, with the not-allowed pointer. Only colours change,
+   so nothing moves. */
+.calendar-month td.calendar-drop-unavailable { background: var(--paper-soft); color: var(--unavailable); }
+.calendar-drag-active td.calendar-drop-unavailable, .calendar-drag-active td.calendar-drop-unavailable * { cursor: not-allowed; }
 /* The Move dialog's refusal line, after its buttons (the dialog is anchored
    at the top), so a refusal of any length moves no control; one line is
    kept so a short one does not resize the dialog. */

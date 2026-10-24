@@ -16,18 +16,20 @@
 // Previous month and Next month redraw the grid in place, with no request
 // (UX conventions, "In-place controls", views the page script draws): focus
 // stays on the button, the month is announced, and the address's ?month= is
-// replaced, so Refresh and Back return to it. At an end the button stays in
-// place but is unavailable (aria-disabled, so it keeps focus), and the
-// reserved line after the buttons says why. Every month has six week rows,
-// so a month change never changes the grid's row count.
+// replaced, so Refresh and Back return to it. The grid's caption names the
+// month; nothing beside the buttons repeats it (PR #2095). At an end the
+// button stays in place but is unavailable (aria-disabled, so it keeps
+// focus), and the reserved line after the buttons says why. Every month
+// has six week rows, so a month change never changes the grid's row
+// count.
 //
 // Each day of the campaign's dates that is today or later (browser-local)
 // also gets a (+) Add link (#1521) that opens New scheduled email with that
 // day as its send date, and every Edit link (grid and table) carries the
-// month shown (?calendar=), so Edit returns to it. The table's Show and
-// sort links carry the month shown too (?month=), so the address they leave
-// keeps it; both are set again after each in-place swap of the table
-// (parishkit:swap).
+// month or week shown (?calendar=), so Edit returns to it. The table's Show
+// and sort links carry the month or week shown too (?month=, or
+// ?view=week&week=), so the address they leave keeps it; both are set again
+// after each in-place swap of the table (parishkit:swap).
 //
 // Move… (#1521): each movable send (data-move-url) gets a move icon button
 // after its link, which opens the Move dialog on that send: its title and
@@ -42,8 +44,30 @@
 // that day filled in; Escape cancels a drag, and the drop itself changes
 // nothing (UX conventions, dragging rule). Enter or Space on Move… is a
 // click, never a drag.
+// Only a day the send can move to is a target (PR #2095): from the first
+// day whose kept time of day is still ahead (and not before the campaign
+// opens) through the campaign's last day, as Edit allows no other, and not
+// a day where its kept time is the moment of another Family email (the
+// sends the page marks data-own-moment: Edit's review refuses two Family
+// emails at one date and time). While a drag is active every other day
+// looks unavailable, titled with why, and takes no drop, and Move…'s date
+// field holds the same range (min and max), its Review held with the
+// reason in the dialog's reserved line while the date is refused. The
+// server refuses such a day all the same.
 // Apply redraws the list of sends with the dialog (one region), so the grid
 // is drawn again from the new list on the same month.
+//
+// View (#1808) is a binary choice before Previous and Next: Month (the
+// default) or Week, one row of seven days, Sunday first, drawn from the same
+// list with the same day cells, so Add, Move… and drag work the same in it.
+// Its segments are links (the shared segmented choice), which this script
+// follows itself with no request, before ui-v1.js would fetch them, and sets
+// again after each draw to the month or week each would show. The buttons'
+// words and reasons follow the view. The week view's address is
+// ?view=week&week=<its Sunday>, without ?month=, and its Edit and Add links
+// carry ?calendar=<that Sunday>, so New and Edit return to the week. A
+// week's first day of a month shows its month ("Oct 1", Administrator
+// 2026-10-23), as the row can cross into it.
 (() => {
   const root = document.querySelector("[data-calendar]");
   const template = document.getElementById("calendar-month");
@@ -51,11 +75,10 @@
   const DRAG_THRESHOLD = 5;
   const finePointer = window.matchMedia("(pointer: fine)");
   const dates = window.ParishDates;
-  const name = document.querySelector("[data-calendar-name]");
   const reason = document.querySelector("[data-calendar-reason]");
   const said = document.querySelector("[data-calendar-said]");
   const steps = Array.from(document.querySelectorAll("[data-calendar-step]"));
-  if (!root || !template || !dates || !name || !reason || !said) return;
+  if (!root || !template || !dates || !reason || !said) return;
 
   const SVG = "http://www.w3.org/2000/svg";
   // A year and month as the address names one (``2054-11``).
@@ -70,6 +93,22 @@
     return year * 12 + month - 1;
   };
   const monthKey = (index) => `${Math.floor(index / 12)}-${two((index % 12) + 1)}`;
+  // An ISO day as the address names one (``2054-10-11``).
+  const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+  // A day as one number (days since 1970-01-01, a Thursday), counted in UTC
+  // so a daylight-saving change never makes a day 23 or 25 hours long.
+  const dayNumber = (key) => {
+    const [year, month, day] = key.split("-").map(Number);
+    return Date.UTC(year, month - 1, day) / 86400000;
+  };
+  const numberKey = (number) => {
+    const day = new Date(number * 86400000);
+    return dayKey(day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate());
+  };
+  // A week (#1808) as one number, Sunday to Saturday (day 3 was a Sunday, so
+  // adding 4 puts each Sunday at a multiple of 7), and its Sunday's day.
+  const weekIndex = (key) => Math.floor((dayNumber(key) + 4) / 7);
+  const weekKey = (index) => numberKey(index * 7 - 4);
   // A translated pattern with {name}-style slots filled in as text (a
   // replacement function, so a "$" in a name is never a pattern).
   const fillIn = (pattern, values) => pattern.replace(/\{(\w+)\}/g,
@@ -93,11 +132,19 @@
     return days;
   }
 
-  // An Edit page's address with the month shown, so its Cancel, Apply and
-  // Delete return to this month of the calendar (#1656).
-  function editUrl(edit, index) {
+  // The view shown ("month" or "week", #1808) and its month or week
+  // (monthIndex's or weekIndex's number), set by draw.
+  let view = "month";
+  let shown = null;
+  // The month or week shown as Edit's ?calendar= names it: a month
+  // (``2054-11``) or the week's Sunday (``2054-10-11``).
+  const placeKey = () => (view === "week" ? weekKey(shown) : monthKey(shown));
+
+  // An Edit page's address with the month or week shown, so its Cancel,
+  // Apply and Delete return to it (#1656, #1808).
+  function editUrl(edit) {
     const url = new URL(edit, document.baseURI);
-    url.searchParams.set("calendar", monthKey(index));
+    url.searchParams.set("calendar", placeKey());
     return url.pathname + url.search;
   }
 
@@ -140,12 +187,12 @@
   // page when it has one, Move… when it can move, and its status for screen
   // readers (the table shows it to everyone). ``row`` is the send's item in
   // the hidden list.
-  function sendItem({when, row}, index) {
+  function sendItem({when, row}) {
     const item = document.createElement("li");
     if (row.classList.contains("schedule-past")) item.className = "schedule-past";
     const edit = row.dataset.editUrl;
     const target = document.createElement(edit ? "a" : "span");
-    if (edit) target.href = editUrl(edit, index);
+    if (edit) target.href = editUrl(edit);
     const time = document.createElement("time");
     time.dateTime = when.toISOString();
     time.textContent = dates.time(when);
@@ -188,11 +235,13 @@
   // date. It shows only a (+) icon (#1656); its name and matching tooltip
   // carry the whole date ("Add a scheduled email on October 12, 2054"), so
   // a screen reader, voice control and a keyboard user tabbing through the
-  // grid hear which day it adds to.
+  // grid hear which day it adds to. In the week view it also names the week
+  // (?calendar=, #1808), so New returns to it rather than to the day's month.
   function addLink(key) {
     const link = document.createElement("a");
     const url = new URL(root.dataset.addUrl, document.baseURI);
     url.searchParams.set("date", key);
+    if (view === "week") url.searchParams.set("calendar", placeKey());
     link.href = url.pathname + url.search;
     link.className = "calendar-add";
     const label = root.dataset.addName.replace("{date}", dates.date(key));
@@ -216,9 +265,9 @@
     return note;
   }
 
-  // One day's cell: its number (with Add on a campaign day), its notes and
-  // its sends.
-  function dayCell(key, day, days, today, index) {
+  // One day's cell: its number (``day``, the text shown: "12", or "Oct 1"
+  // in a week), with Add on a campaign day, its notes and its sends.
+  function dayCell(key, day, days, today) {
     const cell = document.createElement("td");
     // The day a send dropped here moves to (#1521).
     cell.dataset.day = key;
@@ -239,7 +288,7 @@
     const sends = days.get(key);
     if (sends) {
       const list = document.createElement("ul");
-      sends.forEach((send) => list.append(sendItem(send, index)));
+      sends.forEach((send) => list.append(sendItem(send)));
       cell.append(list);
     }
     return cell;
@@ -268,54 +317,127 @@
       const day = slot - blank + 1;
       row.append(day < 1 || day > length
         ? document.createElement("td")
-        : dayCell(dayKey(year, month, day), day, days, today, index));
+        : dayCell(dayKey(year, month, day), day, days, today));
     }
     return region;
   }
 
-  // The sends by day and the first and last months, read from the list;
-  // read again when Apply redraws the list (#1521).
+  // One week (``index``, weekIndex's, #1808) as the month grid's table with
+  // one row of seven days, Sunday first, captioned "Week of" its Sunday. A
+  // month's first day shows its month ("Oct 1"), so a week that crosses
+  // into it says so.
+  function weekGrid(index, days, today) {
+    const sunday = weekKey(index);
+    const region = template.content.firstElementChild.cloneNode(true);
+    region.querySelector("table").classList.add("calendar-week");
+    const caption = region.querySelector("caption");
+    caption.id = `calendar-week-${sunday}`;
+    caption.textContent = fillIn(root.dataset.weekName, {date: dates.date(sunday)});
+    region.setAttribute("aria-labelledby", caption.id);
+    const row = document.createElement("tr");
+    for (let offset = 0; offset < 7; offset += 1) {
+      const key = numberKey(dayNumber(sunday) + offset);
+      const day = Number(key.slice(8));
+      const shown = day === 1 ? dates.monthDay(Number(key.slice(5, 7)), day) : day;
+      row.append(dayCell(key, shown, days, today));
+    }
+    region.querySelector("tbody").append(row);
+    return region;
+  }
+
+  // The sends by day and the first and last months and weeks (#1808), read
+  // from the list; read again when Apply redraws the list (#1521).
   let days = new Map();
-  let first = 0;
-  let last = 0;
+  const ends = {month: [0, 0], week: [0, 0]};
   function readSends() {
     days = sendsByDay();
     const keys = [...days.keys(), root.dataset.start, root.dataset.end].filter(Boolean).sort();
     if (!keys.length) return false;
-    first = monthIndex(keys[0]);
-    last = monthIndex(keys[keys.length - 1]);
+    const [earliest, latest] = [keys[0], keys[keys.length - 1]];
+    ends.month = [monthIndex(earliest), monthIndex(latest)];
+    ends.week = [weekIndex(earliest), weekIndex(latest)];
     return true;
   }
+  // ``index`` kept within the campaign's months or weeks (``kind``).
+  const within = (kind, index) => Math.min(ends[kind][1], Math.max(ends[kind][0], index));
   if (!readSends()) return;
-  const today = localKey(new Date());
 
-  // The table's links with the month shown: each Edit link's ?calendar=,
-  // and its Show segments' and sort headings' ?month=. The table is
-  // swapped in place, so they are looked up afresh each time.
-  function linkTable(index) {
+  // ``url`` naming ``kind``'s ``index`` as the calendar's address does
+  // (#1808): a month as ?month=, a week as ?view=week&week=<its Sunday>,
+  // each without the other's parameters.
+  function place(url, kind, index) {
+    if (kind === "week") {
+      url.searchParams.delete("month");
+      url.searchParams.set("view", "week");
+      url.searchParams.set("week", weekKey(index));
+    } else {
+      url.searchParams.delete("view");
+      url.searchParams.delete("week");
+      url.searchParams.set("month", monthKey(index));
+    }
+    return url;
+  }
+
+  // The table's links with the month or week shown: each Edit link's
+  // ?calendar=, and its Show segments' and sort headings' place. The table
+  // is swapped in place, so they are looked up afresh each time.
+  function linkTable() {
     document.querySelectorAll("tr[data-calendar-row][data-edit-url] .table-actions a[href]")
       .forEach((link) => {
-        link.href = editUrl(link.closest("tr").dataset.editUrl, index);
+        link.href = editUrl(link.closest("tr").dataset.editUrl);
       });
     document.querySelectorAll("[data-table-region] a[data-in-place][href], [data-table-region] th a.sort-link[href]")
       .forEach((link) => {
-        const url = new URL(link.href, document.baseURI);
-        url.searchParams.set("month", monthKey(index));
+        const url = place(new URL(link.href, document.baseURI), view, shown);
         link.href = url.pathname + url.search + url.hash;
       });
   }
 
-  // Draw month ``index``: the grid, the month's name after the buttons, each
-  // button available or not (with the reason line), and the table's Edit
-  // links with this month. ``announce`` says the month in the status region,
-  // only after a button changed it, not as the page loads.
-  let shown = null;
-  function draw(index, announce) {
+  // The week Week opens on from month ``index``: this week when today is in
+  // that month, else the week of its first day; and the month Month opens on
+  // from week ``index``: today's when the week holds today, else its
+  // Sunday's. Both are kept within the campaign's range.
+  const today = localKey(new Date());
+  const weekOf = (index) => within("week",
+    monthIndex(today) === index ? weekIndex(today) : weekIndex(`${monthKey(index)}-01`));
+  const monthOf = (index) => within("month",
+    monthIndex(weekIndex(today) === index ? today : weekKey(index)));
+
+  // The View's segments (#1808), each linking to the view it shows with the
+  // month or week it would open on and the address's other choices (the
+  // table's Show and sort), the one shown marked current.
+  const segments = () => Array.from(document.querySelectorAll("#calendar-view a[data-in-place]"));
+  const segmentView = (segment) => (segment.dataset.inPlace === "view-week" ? "week" : "month");
+  function linkViews() {
+    segments().forEach((segment) => {
+      const kind = segmentView(segment);
+      const index = kind === view ? shown : (kind === "week" ? weekOf(shown) : monthOf(shown));
+      const url = place(new URL(window.location.href), kind, index);
+      url.hash = "calendar-source";
+      segment.href = url.pathname + url.search + url.hash;
+      if (kind === view) segment.setAttribute("aria-current", "page");
+      else segment.removeAttribute("aria-current");
+    });
+  }
+
+  // Draw ``index`` of ``kind`` (a month or a week, #1808): the grid, its
+  // name after the buttons, the buttons' words and each available or not
+  // (with the reason line), and the table's and the View's links.
+  // ``announce`` says the name in the status region, after a button or a
+  // segment changed it (``prefix``, the segment's word, comes first), not as
+  // the page loads.
+  function draw(kind, index, announce, prefix) {
+    view = kind;
     shown = index;
-    root.replaceChildren(monthGrid(index, days, today));
-    const label = dates.month(Math.floor(index / 12), (index % 12) + 1);
-    name.textContent = label;
+    const week = kind === "week";
+    root.replaceChildren(week ? weekGrid(index, days, today) : monthGrid(index, days, today));
+    // The name announced; the grid's caption shows the same words.
+    const label = week
+      ? fillIn(root.dataset.weekName, {date: dates.date(weekKey(index))})
+      : dates.month(Math.floor(index / 12), (index % 12) + 1);
+    const [first, last] = ends[kind];
     steps.forEach((button) => {
+      button.textContent = week ? button.dataset.weekLabel : button.dataset.monthLabel;
       const next = index + Number(button.dataset.calendarStep);
       if (next < first || next > last) {
         button.setAttribute("aria-disabled", "true");
@@ -326,44 +448,156 @@
       }
     });
     const why = [];
-    if (index === first) why.push(reason.dataset.first);
-    if (index === last) why.push(reason.dataset.last);
+    if (index === first) why.push(week ? reason.dataset.firstWeek : reason.dataset.first);
+    if (index === last) why.push(week ? reason.dataset.lastWeek : reason.dataset.last);
     reason.textContent = why.join(" ");
-    linkTable(index);
-    if (announce) said.textContent = label;
+    linkTable();
+    linkViews();
+    if (announce) said.textContent = prefix ? `${prefix}: ${label}` : label;
   }
 
-  // The address's month replaced (never added to the history), keeping the
-  // rest of the address.
-  function remember(index) {
-    const url = new URL(window.location.href);
-    url.searchParams.set("month", monthKey(index));
+  // The address's month or week replaced (never added to the history),
+  // keeping the rest of the address; the View's links then follow it.
+  function remember() {
+    const url = place(new URL(window.location.href), view, shown);
     window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+    linkViews();
   }
 
-  // The month to open on: the address's, else this browser's current month
-  // when it is one of the campaign's, else the first; a month outside them
-  // opens the nearer end, which the address then names.
-  const asked = new URLSearchParams(window.location.search).get("month");
-  let start = asked && YEAR_MONTH.test(asked) ? monthIndex(asked) : monthIndex(today);
-  if (!asked && (start < first || start > last)) start = first;
-  start = Math.min(last, Math.max(first, start));
-  draw(start, false);
-  if (asked && asked !== monthKey(start)) remember(start);
+  // The view and its month or week to open on: the address's, else this
+  // browser's current one when it is one of the campaign's, else the first;
+  // one outside them opens the nearer end, which the address then names. A
+  // week may be named by any of its days; the address then names its
+  // Sunday.
+  const address = new URLSearchParams(window.location.search);
+  const kind = address.get("view") === "week" ? "week" : "month";
+  const asked = address.get(kind);
+  const valid = Boolean(asked) && (kind === "week" ? ISO_DAY.test(asked) : YEAR_MONTH.test(asked));
+  const indexOf = kind === "week" ? weekIndex : monthIndex;
+  let start = indexOf(valid ? asked : today);
+  if (!valid && start !== within(kind, start)) start = ends[kind][0];
+  start = within(kind, start);
+  draw(kind, start, false);
+  const named = kind === "week" ? weekKey(start) : monthKey(start);
+  // The other view's parameters are dropped from the address.
+  const stray = kind === "week"
+    ? address.has("month")
+    : address.has("week") || address.has("view");
+  if ((asked && asked !== named) || stray) remember();
 
   steps.forEach((button) => button.addEventListener("click", () => {
     const next = shown + Number(button.dataset.calendarStep);
-    if (button.getAttribute("aria-disabled") === "true" || next < first || next > last) return;
-    draw(next, true);
-    remember(next);
+    if (button.getAttribute("aria-disabled") === "true" || next !== within(view, next)) return;
+    draw(view, next, true);
+    remember();
   }));
+
+  // Choosing a View segment (#1808) redraws the grid in place, with no
+  // request: capture phase, so ui-v1.js's in-place link handler (bubble
+  // phase, which skips a click already handled) never fetches it. A
+  // modified click (a new tab or window) keeps its ordinary meaning. Focus
+  // stays on the segment, which is never redrawn.
+  document.addEventListener("click", (event) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
+        || !(event.target instanceof Element)) return;
+    const segment = event.target.closest("#calendar-view a[data-in-place]");
+    if (!segment) return;
+    event.preventDefault();
+    const kind = segmentView(segment);
+    if (kind === view) return;
+    draw(kind, kind === "week" ? weekOf(shown) : monthOf(shown), true, segment.textContent.trim());
+    remember();
+  }, true);
   // The Move dialog (#1521), looked up afresh: Apply redraws it with the
   // list of sends. ``opener`` takes focus back when it closes unapplied.
   let moveOpener = null;
   const moveDialog = () => document.getElementById("calendar-move");
 
+  // The days the send ``row`` (its item in the list) can move to (PR
+  // #2095), as ISO days that compare as text: ``first``, the first day on
+  // which its kept browser-local time of day is still ahead (today while
+  // that time is to come, else tomorrow), or the campaign's first day if
+  // later; and ``last``, the campaign's last day, the bound Edit enforces
+  // for an invitation or reminder. Read afresh each time, as the time
+  // passes while the page is open.
+  function moveRange(row) {
+    const when = new Date(row.querySelector("time[datetime]").dateTime);
+    const now = new Date();
+    const kept = new Date(now.getFullYear(), now.getMonth(), now.getDate(),
+      when.getHours(), when.getMinutes(), when.getSeconds());
+    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + (kept > now ? 0 : 1));
+    const start = root.dataset.start || "";
+    const ahead = localKey(day);
+    return {first: start > ahead ? start : ahead, last: root.dataset.end || ""};
+  }
+
+  // Whether another Family email already sends at the moment the send
+  // ``row`` would have on day ``key`` (that day at its kept browser-local
+  // time, as the server reads a move). The page marks each Family email
+  // (data-own-moment, ScheduleRow.own_moment) because Edit's review refuses
+  // two at one date and time; this compares exact moments, as it does.
+  function momentTaken(row, key) {
+    const when = new Date(row.querySelector("time[datetime]").dateTime);
+    const [year, month, day] = key.split("-").map(Number);
+    const moment = new Date(year, month - 1, day,
+      when.getHours(), when.getMinutes(), when.getSeconds()).getTime();
+    return [...document.querySelectorAll("[data-calendar-source] [data-own-moment]")]
+      .some((other) => other !== row
+        && new Date(other.querySelector("time[datetime]").dateTime).getTime() === moment);
+  }
+
+  // Why the send ``row`` can't move to day ``key``, or "" when it can,
+  // with ``range`` its moveRange (or the Move dialog's min and max): before
+  // the range (the campaign not yet open, or the kept time already past
+  // that day), after the campaign's last day, or at another Family email's
+  // moment. Drag titles each refused day with it; Move… shows it.
+  function moveRefusal(row, range, key) {
+    const dialog = moveDialog();
+    if (!dialog) return "";
+    const when = new Date(row.querySelector("time[datetime]").dateTime);
+    const words = {first: dates.date(range.first), last: dates.date(range.last),
+      time: dates.time(when)};
+    if (key < range.first) {
+      return fillIn(key < (root.dataset.start || "") ? dialog.dataset.moveBefore
+        : dialog.dataset.movePassed, words);
+    }
+    if (range.last && key > range.last) return fillIn(dialog.dataset.moveAfter, words);
+    if (momentTaken(row, key)) return fillIn(dialog.dataset.moveTaken, words);
+    return "";
+  }
+  // The send the Move dialog was last opened on (its item in the list).
+  let moveRow = null;
+
+  // Check the Move dialog's date as it changes (capture phase, so its
+  // validity is set before ui-v1.js's complete gate reads it): an empty or
+  // refused date (moveRefusal) holds Review the move, the reason said in the
+  // dialog's reserved line (which keeps its height, so nothing moves) and
+  // the field marked and described by it. A server refusal in that line
+  // (data-refusal) is left to ui-v1.js.
+  function checkMoveDate(event) {
+    const field = event.target;
+    if (!(field instanceof HTMLInputElement) || !field.matches("#calendar-move [name='schedule-date']")) return;
+    let message = "";
+    if (!field.value) message = moveDialog().dataset.moveEmpty;
+    else if (moveRow?.isConnected) {
+      message = moveRefusal(moveRow, {first: field.min, last: field.max}, field.value);
+    }
+    field.setCustomValidity(message);
+    const line = document.getElementById(field.form.dataset.reviewRefused);
+    if (!line || line.hasAttribute("data-refusal")) return;
+    if (!message && !line.hasAttribute("data-client-refusal")) return;
+    line.textContent = message;
+    line.toggleAttribute("data-client-refusal", Boolean(message));
+    field.setAttribute("aria-invalid", String(Boolean(message)));
+    if (message) field.setAttribute("aria-describedby", line.id);
+    else field.removeAttribute("aria-describedby");
+  }
+  document.addEventListener("input", checkMoveDate, true);
+  document.addEventListener("change", checkMoveDate, true);
+
   // Open the Move dialog on the send ``row`` (its item in the list), its
-  // date ``day`` when a drop chose one, else the send's own local day.
+  // date ``day`` when a drop chose one, else the send's own local day. The
+  // date field takes the days it can move to (min and max, moveRange).
   function openMove(row, day, opener) {
     const dialog = moveDialog();
     const form = dialog?.querySelector("form");
@@ -382,6 +616,11 @@
     // field's default again.
     const own = localKey(when);
     field.defaultValue = own;
+    moveRow = row;
+    const range = moveRange(row);
+    field.min = range.first;
+    if (range.last) field.max = range.last;
+    else field.removeAttribute("max");
     field.value = day || own;
     version.value = `${form.elements.namedItem("base_digest").value} ${row.dataset.moveUrl}`;
     // A refusal from an earlier Move no longer applies.
@@ -390,6 +629,7 @@
       line.textContent = "";
       line.removeAttribute("title");
       line.removeAttribute("data-refusal");
+      line.removeAttribute("data-client-refusal");
     }
     field.removeAttribute("aria-describedby");
     field.removeAttribute("data-field-error");
@@ -431,6 +671,10 @@
     if (!drag) return;
     drag.item.classList.remove("calendar-dragging");
     drag.over?.classList.remove("calendar-drop-target");
+    root.querySelectorAll("td.calendar-drop-unavailable").forEach((cell) => {
+      cell.classList.remove("calendar-drop-unavailable");
+      cell.removeAttribute("title");
+    });
     document.documentElement.classList.remove("calendar-drag-active");
     if (drag.active) swallowClick = true;
     drag = null;
@@ -460,11 +704,23 @@
       window.getSelection()?.removeAllRanges();
       drag.item.classList.add("calendar-dragging");
       document.documentElement.classList.add("calendar-drag-active");
+      // Every day the send can't move to looks unavailable (a background
+      // and the not-allowed pointer, so nothing moves), is titled with
+      // why (a tooltip, which moves nothing) and takes no drop. Its own
+      // day is no target either way (a drop there cancels).
+      const range = moveRange(drag.row);
+      root.querySelectorAll("td[data-day]").forEach((cell) => {
+        const why = moveRefusal(drag.row, range, cell.dataset.day);
+        if (!why) return;
+        cell.classList.add("calendar-drop-unavailable");
+        cell.title = why;
+      });
     }
     event.preventDefault();
     const under = document.elementFromPoint(event.clientX, event.clientY);
     const cell = under instanceof Element ? under.closest("td[data-day]") : null;
-    const over = cell && root.contains(cell) ? cell : null;
+    const over = cell && root.contains(cell)
+      && !cell.classList.contains("calendar-drop-unavailable") ? cell : null;
     if (over === drag.over) return;
     drag.over?.classList.remove("calendar-drop-target");
     over?.classList.add("calendar-drop-target");
@@ -498,11 +754,13 @@
     // on the month shown (or the nearer end, if the campaign's months
     // changed), without announcing a month the reader did not choose.
     if (event.target instanceof Element && event.target.id === "calendar-source" && readSends()) {
-      const index = Math.min(last, Math.max(first, shown));
+      const index = within(view, shown);
       const moved = index !== shown;
-      draw(index, false);
-      if (moved) remember(index);
+      draw(view, index, false);
+      if (moved) remember();
     }
-    linkTable(shown);
+    linkTable();
+    // A table swap replaced the address's Show or sort: the View keeps them.
+    linkViews();
   });
 })();

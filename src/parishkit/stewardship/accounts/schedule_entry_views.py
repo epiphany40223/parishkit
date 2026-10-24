@@ -265,12 +265,14 @@ MISSED = _(
 )
 # The browser's IANA time zone, which ui-v1.js fills in (#558).
 ZONE = "zone"
-# New scheduled email's one address parameter: the day the Campaign
+# New scheduled email's address parameter: the day the Campaign
 # calendar's Add on a day opened it for (#1521), an ISO date in the browser's
 # zone. That New fills it in as the send date and returns to the calendar.
 ADD_ON = "date"
-# Edit's one address parameter (#1656): the Campaign calendar month
-# (``2054-11``) it was opened from, which its Cancel and Apply return to.
+# Edit's address parameter (#1656), which New also takes (#1808): the calendar month
+# (``2054-11``) it was opened from, or in the week view (#1808) the week's
+# Sunday (``2054-10-11``), which its Cancel and Apply return to. New's Add
+# from the week view carries it too, so New returns to that week.
 FROM_CALENDAR = "calendar"
 # The Campaign calendar's Move… (#1521) posts to Edit with ``move=yes``,
 # the new send date, the browser's zone and the configuration version only;
@@ -303,6 +305,14 @@ MOVE_REPEATED_HOUR = _(
     "On this day the send time falls in the hour that repeats when clocks fall "
     "back in the campaign's time zone, so it can't be saved exactly. Choose "
     "another day, or change the time on its Edit page."
+)
+# A calendar move to a day whose kept time is already past (Administrator,
+# PR #2095): the moved send would be due at once, so it would send right
+# after Apply. The calendar offers no such day; an old page or a crafted
+# request meets this. Unlike the ordinary Edit, a move never goes back.
+MOVE_PASSED = _(
+    "This day's send time has already passed, so the email would send at "
+    "once. Choose a later day."
 )
 # A year and month as the calendar's addresses name one (``?month=``).
 YEAR_MONTH = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
@@ -1411,16 +1421,17 @@ def _kept(posted, schedule, values, now):
         return None
 
 
-def added_on(parameters):
+def added_on(parameters, name=ADD_ON):
     """The day New was opened for by the calendar's Add on a day, or None.
 
     ``parameters`` are the address's checked ones (``filters``). The day is
     an ISO date (``2054-10-12``), the browser-local day of the grid cell;
     anything else is refused as an unknown address (a ``ValueError``, as
     ``filters`` refuses). Whether it falls inside the campaign is the
-    review's to say, at the field, as for a typed date.
+    review's to say, at the field, as for a typed date. ``name`` is the
+    parameter read, for the calendar's own ``week`` (#1808).
     """
-    text = parameters.get(ADD_ON)
+    text = parameters.get(name)
     if text is None:
         return None
     try:
@@ -1449,16 +1460,38 @@ def year_month(parameters, name):
     return text
 
 
-def return_url(on, month):
+def calendar_place(parameters, name):
+    """The calendar month (``2054-11``) or week (``2054-10-11``) ``name`` names.
+
+    Edit's (and New's) ``?calendar=`` is the month the calendar showed or,
+    in its week view (#1808), a day of the week shown; None when absent.
+    Anything else is refused as an unknown address (a ``ValueError``).
+    """
+    text = parameters.get(name)
+    if text is None or YEAR_MONTH.fullmatch(text):
+        return text
+    return added_on(parameters, name)
+
+
+def calendar_url(place):
+    """The Campaign calendar showing ``place``: a month, or a week's day (#1808)."""
+    calendar = reverse("admin:schedule_calendar")
+    if YEAR_MONTH.fullmatch(place):
+        return f"{calendar}?month={place}"
+    return f"{calendar}?view=week&week={place}"
+
+
+def return_url(on, place):
     """Where New or Edit's Cancel goes and its Apply returns (#1521, #1656).
 
-    ``on`` is New's day from the calendar's Add, ``month`` Edit's calendar
-    month: either returns to the calendar showing that month; otherwise
-    the page returns to Dates and mail schedules.
+    ``on`` is New's day from the calendar's Add, ``place`` the calendar
+    month or week (#1808) the page was opened from (``calendar_place``):
+    the page returns to the calendar showing that place, else that day's
+    month; otherwise it returns to Dates and mail schedules.
     """
-    if on is None and month is None:
+    if on is None and place is None:
         return reverse("admin:schedule_settings")
-    return f"{reverse('admin:schedule_calendar')}?month={month or on[:7]}"
+    return calendar_url(place or on[:7])
 
 
 def _entry(request, campaign_id, schedule_id=None):
@@ -1484,7 +1517,9 @@ def _entry(request, campaign_id, schedule_id=None):
     the Campaign calendar's Add on a day (``?date=``, ``added_on``, #1521)
     has that send date filled in, and its Cancel and Apply return to the
     calendar on that day's month; Edit opened from the calendar
-    (``?calendar=<month>``, #1656) returns to that month (``return_url``).
+    (``?calendar=<month>``, #1656) returns to that month, and either opened
+    from its week view (``?calendar=<day>``, #1808) to that week
+    (``return_url``).
     The page posts to its own path, without the parameters. Edit also draws
     Delete, whose review is ``_delete_review``'s.
 
@@ -1498,10 +1533,10 @@ def _entry(request, campaign_id, schedule_id=None):
     actor = principal(request, service)
     parameters = filters(
         request.GET,
-        allowed={ADD_ON} if schedule_id is None else {FROM_CALENDAR},
+        allowed={ADD_ON, FROM_CALENDAR} if schedule_id is None else {FROM_CALENDAR},
     )
     on = added_on(parameters)
-    month = year_month(parameters, FROM_CALENDAR)
+    place = calendar_place(parameters, FROM_CALENDAR)
     if request.FILES:
         raise unexpected_fields(request.FILES, allowed=())
     new = schedule_id is None
@@ -1601,9 +1636,9 @@ def _entry(request, campaign_id, schedule_id=None):
             "series": part_of,
             "base_digest": state[0].active_configuration.digest,
             "post_url": request.path,
-            # Where Cancel goes and Apply returns: the calendar's month for
-            # its Add and its links (#1656), else the list.
-            "list_url": return_url(on, month),
+            # Where Cancel goes and Apply returns: the calendar's month or
+            # week for its Add and its links (#1656, #1808), else the list.
+            "list_url": return_url(on, place),
             # Edit's Delete (#1656) posts its review here.
             "delete_url": reverse("admin:schedule_delete"),
             # The review dialog's Apply confirms on the list, then returns.
@@ -1669,6 +1704,14 @@ def _entry(request, campaign_id, schedule_id=None):
         if passed:
             repeat.add_error(
                 "sends", forms.ValidationError(passed, code="repeat_time_passed")
+            )
+            return _entry_page(request, context, status=400)
+        if (
+            moving
+            and schedule_local.instant(entries[0], values["timezone"], now) <= now
+        ):
+            entry.add_error(
+                "date", forms.ValidationError(MOVE_PASSED, code="move_time_passed")
             )
             return _entry_page(request, context, status=400)
         added = (
