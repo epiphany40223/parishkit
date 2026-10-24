@@ -307,8 +307,12 @@ default application limits are:
 - 5 signed-but-denied callbacks per 15 minutes for each keyed Google `sub`/email
   fingerprint, plus the callback IP limit.
 
-Exceeding a limit returns the same safe denial response with `429` and a
-progressive `Retry-After`, capped at one hour. No identity receives a permanent
+Exceeding a limit returns the safe "Too many sign-in attempts" denial
+response with `429` and a progressive `Retry-After`, capped at one hour; the
+page shows no minute count. The other Admin sign-in refusals say which kind
+they are, and only the "No access with this account" page names an address,
+the one Google verified on that callback
+([login and denial behavior](../admin-portal/spec.md#login-and-denial-behavior)). No identity receives a permanent
 or global account lock; a successful authorized login clears only its identity
 failure counter. Adding a user or raising a user's role atomically increments a
 denial-counter namespace version, invalidating existing identity-denial counters

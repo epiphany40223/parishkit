@@ -63,6 +63,12 @@ codes, `Retry-After`, `Cache-Control: no-store` and limiter accounting are
 unchanged, and so is the optional access-denied help, except that after
 close the ended page's "After the campaign" content takes its place.
 
+Since #2116, Admin sign-in refusals have their own kinds (`no_access`,
+`unfinished`, and `rate_limited` for every Admin `429`) instead of the
+default and temporary texts above; Family denials are unchanged. The
+[login and denial behavior](../specs/stewardship/admin-portal/spec.md#login-and-denial-behavior)
+specification has their text and rationale.
+
 ## Focused validation
 
 - PostgreSQL, after close (#1793): in Testing and after a Production close,

@@ -1,6 +1,6 @@
 # Signing in as a Ministry leader
 
-This guide is for Administrators to pass on to Ministry leaders (and Staff) who will use the Stewardship Admin portal, and for operators answering "I can't sign in" ([#1593](https://github.com/epiphany40223/parishkit/issues/1593)). The portal itself shows the same advice on its refusal page (where a leader lands when sign-in fails) and in the Users page's About panel; the [login and denial behavior](../specs/stewardship/admin-portal/spec.md#login-and-denial-behavior) specification says where and controls the behavior.
+This guide is for Administrators to pass on to Ministry leaders (and Staff) who will use the Stewardship Admin portal, and for operators answering "I can't sign in" ([#1593](https://github.com/epiphany40223/parishkit/issues/1593)). The portal itself shows the same advice in the Users page's About panel, and its "No access with this account" page (where a leader signed in with an address that has no access lands) names the address Google signed them in with; the [login and denial behavior](../specs/stewardship/admin-portal/spec.md#login-and-denial-behavior) specification says where and controls the behavior.
 
 ## For the Administrator
 
@@ -13,10 +13,10 @@ This guide is for Administrators to pass on to Ministry leaders (and Staff) who 
 1. Use the email address the parish added for you. It does not have to be a Gmail address: any address works once it has a Google Account.
 2. If that address has no Google Account yet, create one for it first, keeping your existing address. On Google's sign-up page, choose to use your existing email address instead of creating a new Gmail address, then confirm the code Google emails to that address. Google's own help is [Create a Google Account](https://support.google.com/accounts/answer/27441).
 3. Open the Admin sign-in page, select **Sign in with Google** and pick the Google Account for that address. If you are already signed in to Google with another account (a personal Gmail, say), add or switch to the right one in Google's account chooser.
-4. After you sign in, you see the Ministries you lead and their requests. If you see "Access unavailable", you are signed in with a Google Account for a different address, or the parish has not added your address yet: try again with the right account, or ask the parish staff member who manages access.
+4. After you sign in, you see the Ministries you lead and their requests. If you see "No access with this account", the page shows the address you signed in with: if the parish added a different address, select **Sign in with a different account** and pick that one; otherwise ask the parish staff member who manages access. "Sign-in didn't finish" means the Google step was cancelled or took too long: try signing in again.
 
 ## Troubleshooting for operators
 
 - "Couldn't find your Google Account" on Google's page means the address has no Google Account: step 2.
-- "Access unavailable" on the portal usually means Google signed the person in, but with an address that is not a user. Compare the address on the Users page with the one the person chose in Google's account chooser. Sign-in activity in System logs usually records such refusals.
+- "No access with this account" on the portal means Google signed the person in, but with an address that is not a user (or is one whose access was removed; the page does not say which). The page shows the address Google verified: compare it with the address on the Users page. Sign-in activity in System logs usually records such refusals.
 - Changing the address means deleting the user and adding the new address (see the Users page's About panel).
