@@ -123,7 +123,6 @@ def test_replaced_key_invalidates_the_staged_load(setup_service, monkeypatch):
             attempt.pk,
             target="parishsoft",
             candidate=b"synthetic-replacement",
-            organization_id=1,
             expected_version=attempt.version,
         )
         with pytest.raises(UserFacingMissing, match="Load the parish data"):

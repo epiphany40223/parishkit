@@ -130,8 +130,13 @@ CREDENTIALS = {
             "36 letters, digits and dashes; ask ParishSoft support if you do not "
             "have one. Paste it exactly. It is stored encrypted when you save and "
             "is never displayed again; enter a new one here at any time before "
-            "setup finishes to replace it. The system only reads from ParishSoft."
+            "setup finishes to replace it. The system only reads from ParishSoft. "
+            "After you save it, the system asks ParishSoft which parish "
+            "organizations the key reaches, and you choose your parish's next; "
+            "only that organization's data is ever loaded."
         ),
+        # The Integrations page's ParishSoft organization field; the setup
+        # wizard has none (#1554).
         "organization_id": _(
             "The number ParishSoft uses to identify your parish (its "
             "organization ID), for example 1234; ParishSoft support can tell you "
@@ -302,6 +307,7 @@ HINTS = {
     ),
     "logo": _("PNG, JPEG or WebP, up to 5 MB."),
     "candidate": _("Paste it exactly. It is never displayed again."),
+    # The Integrations page's ParishSoft organization field.
     "organization_id": _("For example 1234."),
 }
 # The multi-select lists keep a short how-to visible; the tip has the full text.

@@ -18,6 +18,7 @@ from parishkit.stewardship.web.contracts import check_version
 
 from .sessions import authenticated_admin, database_now
 from .setup_drafts import _owned, staged_load
+from .setup_lookup_models import OPEN_STATES, SetupParishSoftLookup
 from .setup_models import SetupAttempt, SetupDraftSection
 from .setup_policy import SetupState
 from .setup_secret_models import SetupSealedCredential
@@ -103,8 +104,16 @@ def start_source_load(request, service, attempt_id, *, expected_version):
             SetupDraftSection.objects.filter(
                 attempt=attempt, step="parish", scrubbed_at=None
             ).exists()
+            # A staged key with its organization chosen (#1554), and no
+            # organization lookup still open; SQL refuses the load too.
             and SetupSealedCredential.objects.filter(
-                attempt=attempt, target="parishsoft", scrubbed_at=None
+                attempt=attempt,
+                target="parishsoft",
+                scrubbed_at=None,
+                settings__has_key="organization_id",
+            ).exists()
+            and not SetupParishSoftLookup.objects.filter(
+                attempt=attempt, state__in=OPEN_STATES
             ).exists()
         ):
             raise ValueError("Save the parish profile and ParishSoft credential first.")

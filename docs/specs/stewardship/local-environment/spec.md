@@ -693,7 +693,12 @@ containing:
   pledge and contribution of each fund. Every one names its own organization,
   so a load must drop them all (see
   [ParishSoft organization scope](../data/spec.md#parishsoft-organization-scope)).
-  Rosters and Family groups are unchanged.
+  Rosters and Family groups are unchanged. A `families/search` scoped to one
+  other organization, as the setup wizard's
+  [organization lookup](../admin-portal/spec.md#parishsoft-organization-choice)
+  sends it, answers for odd-numbered other organizations with their one
+  Family and for even-numbered ones with an empty array, so
+  `organizations 2` offers one selectable and one greyed organization.
 
 The fake reads the file once at start, so restarts and deploys keep the same
 data. `up` writes `release_at: null`, so the setup wizard's initial load does

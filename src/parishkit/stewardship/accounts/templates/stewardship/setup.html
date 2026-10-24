@@ -35,7 +35,7 @@
 <li>{% translate "A staff mailbox for Testing mode." %}</li>
 <li>{% translate "Optionally, a Slack app bot token (xoxb-…) and the ID of the alert channel." %}</li>
 <li>{% translate "The parish logo image." %}</li>
-<li>{% translate "Your parish's ParishSoft API key and ParishSoft organization ID." %}</li>
+<li>{% translate "Your parish's ParishSoft API key." %}</li>
 </ul>
 <p>{% translate "Complete setup using this login. Another login cannot resume your temporary settings." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="start">{% button type="submit" %}{% translate "Start setup" %}{% endbutton %}</form>

@@ -54,8 +54,12 @@ from parishkit.stewardship.accounts.setup_branding_views import SetupLogoForm
 from parishkit.stewardship.accounts.setup_confirmation_views import (
     SetupConfirmationForm,
 )
-from parishkit.stewardship.accounts.setup_credential_views import SetupCredentialForm
+from parishkit.stewardship.accounts.setup_credential_views import (
+    SetupCredentialForm,
+    _lookup_context,
+)
 from parishkit.stewardship.accounts.setup_forms import FORMS
+from parishkit.stewardship.accounts.setup_lookups import LookupStatus, Organization
 from parishkit.stewardship.accounts.setup_mail_views import SetupMailForm
 from parishkit.stewardship.accounts.setup_notification_views import (
     SetupNotificationForm,
@@ -243,6 +247,22 @@ HISTORY_EVENT = {
         "display": Percentage(1000, 4000),
     },
 }
+
+
+def lookup_page(organizations):
+    """The ParishSoft connection page's context for a ready lookup (#1554).
+
+    ``organizations`` are (ID, name, holds Families) triples, as the page
+    lists them.
+    """
+    lookup = LookupStatus(
+        uuid4(),
+        "ready",
+        None,
+        tuple(Organization(*item) for item in organizations),
+        1,
+    )
+    return _lookup_context(None, lookup)
 
 
 def _history(events):
@@ -1557,26 +1577,54 @@ def component_responses():
                 "saved": False,
             },
         ),
-        # A current ParishSoft key may be kept; changing the organization
-        # needs the key again (#563).
+        # A current ParishSoft key may be kept (#563); its organization is
+        # named, not a field (#1554).
         (
             "/setup-credential-kept",
             "setup-credential",
             {
                 "draft": setup_draft,
-                "form": SetupCredentialForm(
-                    "parishsoft",
-                    saved=True,
-                    organization=4321,
-                    initial={"organization_id": 4321},
-                ),
+                "form": SetupCredentialForm("parishsoft", saved=True),
                 "target": "parishsoft",
                 "label": "ParishSoft",
                 "step_label": "ParishSoft connection",
                 "saved": True,
                 "current": True,
                 "organization": 4321,
+                "organization_label": "St. Example Parish (4321)",
             },
+        ),
+        # The key's organization lookup (#1554): several organizations to
+        # choose from, one greyed and one unknown, and a long list with its
+        # filter box.
+        *(
+            (
+                path,
+                "setup-credential",
+                {
+                    "draft": setup_draft,
+                    "form": SetupCredentialForm("parishsoft"),
+                    "target": "parishsoft",
+                    "label": "ParishSoft",
+                    "step_label": "ParishSoft connection",
+                    "saved": False,
+                    **lookup_page(organizations),
+                },
+            )
+            for path, organizations in (
+                (
+                    "/setup-organization-choice",
+                    [
+                        (7, "St. Example Parish", True),
+                        (8, "Diocesan School", False),
+                        (9, "Mission Chapel", None),
+                    ],
+                ),
+                (
+                    "/setup-organization-filter",
+                    [(n, f"Parish {n:02d}", True) for n in range(1, 23)],
+                ),
+            )
         ),
         # Check waits for a DUID; a review over the allowance shows Send
         # unavailable with its reason (#563).

@@ -149,18 +149,14 @@ def components(context, admin, now, status_url):
         wizard("succeeded", "parishsoft"),
         {
             "draft": source_draft("succeeded", True),
-            "form": SetupCredentialForm(
-                "parishsoft",
-                saved=True,
-                organization=4321,
-                initial={"organization_id": 4321},
-            ),
+            "form": SetupCredentialForm("parishsoft", saved=True),
             "target": "parishsoft",
             "label": "ParishSoft",
             "step_label": "ParishSoft connection",
             "saved": True,
             "current": True,
             "organization": 4321,
+            "organization_label": "St. Example Parish (4321)",
         },
     )
     return {

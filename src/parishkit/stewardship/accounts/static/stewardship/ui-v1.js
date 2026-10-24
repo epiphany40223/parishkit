@@ -4080,6 +4080,23 @@
   // test_review_dialog checks this class against
   // str.isspace for every code point.
   const SERVER_SPACE = /^[\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]*$/;
+  // A type-to-filter box above a long choice list (the setup wizard's
+  // ParishSoft organization choice, above 20 organizations, #1554):
+  // input[data-choice-filter] names the list by id, and each of its
+  // [data-choice-text] items stays shown while its text holds what is typed,
+  // in any case. Hiding an item never changes the choice already made.
+  document.addEventListener("input", (event) => {
+    const box = event.target;
+    if (!(box instanceof HTMLInputElement) || !box.matches("[data-choice-filter]")) return;
+    const list = document.getElementById(box.dataset.choiceFilter);
+    if (!list) return;
+    const typed = box.value.trim().toLocaleLowerCase();
+    list.querySelectorAll("[data-choice-text]").forEach((item) => {
+      item.hidden = typed !== ""
+        && !item.dataset.choiceText.toLocaleLowerCase().includes(typed);
+    });
+  });
+
   // Complete-before-submit (#553): a form marked data-require-complete keeps
   // its submit buttons disabled until every control that is currently shown
   // and required is valid, and says why in its [data-complete-hint] element
@@ -4090,8 +4107,7 @@
   //     empty value on a field) makes those controls required while shown;
   //   - data-required-when="name=value" makes a field required while the
   //     form's control "name" has that value (notes for the outcome Other);
-  //     "name!=value" while it has any other value (the ParishSoft key in
-  //     setup, once the organization ID differs from the saved one);
+  //     "name!=value" while it has any other value;
   //   - data-require-one on a group of checkboxes needs at least one ticked
   //     (the System logs Show choices, #601), or on a group of file fields
   //     at least one file chosen (Parish logos' Advanced sizes, #1062):
@@ -4108,7 +4124,7 @@
   // "04321" matches a saved 4321; an empty number field matches no number.
   // Every gate (show, enabled and required) compares this way.
   // While the rule's own control is missing or invalid (an emptied
-  // organization ID), the rule waits: that control's hint comes first.
+  // number), the rule waits: that control's hint comes first.
   const sameValue = (control, value) => (control instanceof HTMLInputElement
     && control.type === "number" && value !== ""
     ? control.value.trim() !== "" && Number(control.value) === Number(value)

@@ -301,6 +301,8 @@ ACTIVITY_TYPES = {
         "setup_source_started",
         "setup_source_completed",
         "setup_source_voided",
+        # The setup wizard's ParishSoft organization choice (#1554).
+        "setup_parishsoft_organization_chosen",
         "source_refresh_invalid",
         "source_provider_failed",
         "source_credential_failed",

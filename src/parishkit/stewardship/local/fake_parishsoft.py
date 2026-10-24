@@ -471,9 +471,32 @@ class FakeParishSoft:
         )
 
     def _families_search(self, body):
-        self._tenant_list(body)
+        """The tenant's Families; another reachable organization's for the lookup.
+
+        The setup wizard's organization lookup asks each organization the
+        key reaches for at most one Family (#1554). In multi-organization
+        mode an odd-numbered other organization answers with its one
+        Family, and an even-numbered one with none, so ``organizations 2``
+        offers one selectable and one greyed organization.
+        """
         size, number = _paging(body, "pageSize", "pageNumber")
+        other = self._other_families(body)
+        if other is not None:
+            return _counted(other, size, number, "totalResults", "rowNumber")
+        self._tenant_list(body)
         return _counted(self.view().families, size, number, "totalResults", "rowNumber")
+
+    def _other_families(self, body):
+        """Another reachable organization's Families for its search, or None."""
+        if self.others is None:
+            return None
+        requested = body.get("organizationIDs")
+        for index, organization in enumerate(self.others.organizations):
+            if requested == [organization["organizationID"]]:
+                if index % 2:
+                    return []
+                return [{"familyDUID": OTHER_BASE + organization["organizationID"]}]
+        return None
 
     def _members_search(self, body):
         self._tenant_list(body)
