@@ -63,15 +63,36 @@ CONTRIBUTION_BASE = 600000
 ADULT_TYPES = frozenset({*HEAD_MEMBER_TYPES, "Other"})
 
 # Fixed catalogs. Nothing below names a real person or place.
-FAMILY_GROUPS = (
-    (1, "Active"),
-    (2, "Inactive"),
-    (3, "Contributor Only"),
-    (4, "Staff"),
-    (5, "Visitor"),
-    (6, "Moved"),
+# The Family group lookup as ParishSoft itself lists it, in its order and
+# with its IDs (the first group has a blank name), so pk-local offers the
+# same choices as a real parish.
+FAMILY_GROUPS = tuple(
+    enumerate(
+        (
+            "",
+            "Active",
+            "Inactive",
+            "Staff",
+            "School Only",
+            "Religious Ed Only",
+            "Moved",
+            "Contributor",
+            "Sacrament Only",
+            "No Surviving Members",
+            "Alumni",
+            "Unknown",
+            "Ministry Only",
+            "Associated Non-Parishioner",
+            "Friend",
+            "Visitor",
+            "School Family - Not Registered",
+            "School Family-Registered",
+        ),
+        start=1,
+    )
 )
-ACTIVE_GROUP, INACTIVE_GROUP, CONTRIBUTOR_GROUP = 1, 2, 3
+# The groups the generator assigns; Staff is named for tests and edits.
+ACTIVE_GROUP, INACTIVE_GROUP, STAFF_GROUP, CONTRIBUTOR_GROUP = 2, 3, 4, 8
 FAMILY_WORKGROUP_NAMES = (
     "Business Logistics Email",
     "Parish Council",

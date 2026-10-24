@@ -933,7 +933,7 @@ the nearest integer; tests pin the exact values for a fixed seed.
 | Inactive or non-Parishioner Families | 8% of `N` | 8 | 88 |
 | Deceased Members | 2% of Members | about 5 | about 59 |
 | Families whose heads have no email | 10% of `N` | 10 | 110 |
-| Family groups | fixed catalog | 6 | 6 |
+| Family groups | fixed catalog (ParishSoft's own 18, IDs 1 to 18) | 18 | 18 |
 | Family workgroups | max(4, 8N / 1,100) | 4 | 8 |
 | Member workgroups | max(5, 10N / 1,100) | 5 | 10 |
 | Ministries with rosters | max(25, 40N / 1,100); rosters drawn only from active non-child Members, about 40% of whom are on at least one Ministry (see below) | 25 | 40 |
