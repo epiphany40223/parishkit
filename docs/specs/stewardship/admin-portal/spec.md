@@ -4227,7 +4227,8 @@ snapshot from what the server already records.
 
 Each is drawn after its day's sends, in a muted list set off by a rule,
 led by its kind in words ("ParishSoft refresh 2:00 AM", "Backup 1:00
-AM–1:12 AM", "Production activated 3:40 PM"), never linked, never movable,
+AM–1:12 AM", "Production activated 3:40 PM"; a backup that started and ended
+in the same minute shows that one time, "Backup 1:00 AM"), never linked, never movable,
 and never with Move… or Edit. Refreshes and backups recur, so they are
 drawn only on a day that also holds a send, and a day's refreshes are one
 line: each time when there are up to three, else how many and the first and
@@ -4236,14 +4237,27 @@ always show. Times are browser-local and the events go on their days in the
 browser's zone, as sends do; events never widen the months or weeks the
 calendar runs through.
 
-A send gets a note in words under it, in the grid only: an Initial
-invitation or reminder still to come whose two hours of preparation (the
-Production bulk send's [preparation
-lead](../background-processing/spec.md#preparing-ahead-of-the-due-time)) hold a refresh
-says "A ParishSoft refresh falls in the 2 hours before it", the check the
-scheduler warns with (`refresh_lead_window_conflict`); a send whose time
-fell while a backup ran says "Sent during a backup". The table, Every email
-by date, stays sends only.
+A send gets a note in words under it, in the grid only. In Production, a
+reminder still to come whose two hours of preparation (the Production bulk
+send's [preparation
+lead](../background-processing/spec.md#preparing-ahead-of-the-due-time)) hold a
+refresh says "A ParishSoft refresh falls in the 2 hours before it", the check
+the scheduler warns with (`refresh_lead_window_conflict`). Only a reminder is
+prepared ahead, so an Initial invitation never has this note, and in Testing,
+where nothing is prepared ahead, no send has it. A send whose time fell while
+a backup ran says "Sent during a backup". The table, Every email by date,
+stays sends only.
+
+When the refresh schedule asks to **skip refreshes around Family emails**
+([Skipped around Family
+emails](../background-processing/spec.md#skipped-around-family-emails)) and the
+deployment is in Production with the campaign live and delivery not paused,
+the calendar follows the scheduler: a refresh that is not the nightly one and
+falls inside the window of an Initial invitation or reminder still to come (the
+scheduler's own window, with the minimum estimated send length) is left out of
+the drawn refreshes, and the refresh note counts only the nightly time. A
+past send has no window, so its day still lists its refreshes as they ran or
+were scheduled.
 
 ##### Editing from the calendar
 
