@@ -241,16 +241,15 @@ confirmed: it waits for the invitations to be scheduled and then follows
 them to the end. For the operator's view, run the report with
 `purpose='initial'`, `since` a few minutes before the confirmation and
 `until` a time in the future. Its **Overview** shows how many invitations
-have gone out so far and the rate. While the send runs, the 15-minute
-ParishSoft updates and any daytime full refresh are skipped
-([why](../specs/stewardship/background-processing/spec.md#deltas-wait-for-a-bulk-family-send)),
+have gone out so far and the rate. While the send runs, any daytime full
+refresh waits
+([why](../specs/stewardship/background-processing/spec.md#daytime-refreshes-wait-for-a-bulk-family-send)),
 so a ParishSoft change can take up to about 2 hours to arrive; if a change
 is urgent (say, a Family's address fix), use **Refresh now** on the home
-page after making it. The 15-minute updates carry only Family address, phone,
-email and registration changes; a new Family, a status or Send No Mail change,
-Members, ministries and giving arrive with the next full refresh, scheduled
-at the ParishSoft integration's listed times (02:00 alone by default) or
-started with **Refresh now**.
+page after making it. Every ParishSoft change arrives with the next full
+refresh, scheduled at the ParishSoft integration's listed times (02:00
+alone by default) or started with **Refresh now**; quick updates were
+removed in [#1147](https://github.com/epiphany40223/parishkit/issues/1147).
 
 **Afterwards.** **Mail and Family portal › Family email history**
 ([Family email history](../specs/stewardship/admin-portal/spec.md#family-email-sends))
@@ -467,8 +466,8 @@ one:
   Member or Ministry. Find it in ParishSoft (the debug log names the
   check), fix it there, and use **Refresh now**.
 
-  If only full refreshes fail with `shifted_scan` while quick updates
-  succeed, look for a WARNING `source_provider_failed` line carrying
+  If full refreshes keep failing with `shifted_scan`, look for a WARNING
+  `source_provider_failed` line carrying
   `source_contact_coverage`
   (`docker compose ... logs worker | grep source_contact_coverage`). It
   means the Member contact list left out many more Members than the last
@@ -490,7 +489,8 @@ one:
   usual count is refused the same way. Handle it the same way.
 - `provider_timeout`: ParishSoft did not answer, or the full load did not
   finish within its 15-minute limit. If it repeats on full loads while
-  quick updates succeed, the load has grown or ParishSoft has slowed. Check
+  ParishSoft otherwise answers, the load has grown or ParishSoft has slowed.
+  Check
   how long recent full refreshes took (each refresh's task page) against
   the limit and ParishSoft's status, and report it if loads keep
   approaching the limit.
@@ -571,13 +571,12 @@ PARISHKIT_SOURCE_MAX_DROP_PERCENT=100 docker compose ... up --detach --force-rec
 
 Wait until the full refresh that **Refresh now** started has completed.
 Its progress page (where **Refresh now** takes you) shows it finished, and
-on `/admin/parish/parishsoft-refresh/` the "last full refresh" time
-("ParishSoft data as of", when no quick update brought newer changes) moves
-past the moment you clicked, with no "A full refresh is running now". A
-15-minute update that completes first is not enough: later refreshes also
-compare with the recent full refreshes, and only the accepted full refresh
-starts that comparison again, so removing the override before the full one
-completes gets the next refresh refused again. Only then recreate the
+on `/admin/parish/parishsoft-refresh/` the "ParishSoft data as of" time
+(the last full refresh's start) moves past the moment you clicked, with no
+"A full refresh is running now". Later refreshes also compare with the
+recent full refreshes, and only the accepted full refresh starts that
+comparison again, so removing the override before it completes gets the
+next refresh refused again. Only then recreate the
 worker without the variable, so the 25% limit applies again:
 
 ```text
@@ -870,8 +869,8 @@ example a second ParishSoft Family record kept for a staff member who already
 responded as a parishioner (#861).
 
 **What the system does by itself.** If the campaign names a Reminder
-WorkGroup, every ParishSoft refresh (full refreshes and quick updates) reads
-which Families are in that Family WorkGroup. A Family in it gets no Reminders:
+WorkGroup, every ParishSoft refresh reads which Families are in that Family
+WorkGroup. A Family in it gets no Reminders:
 each one is skipped when it is planned, and one already prepared is not sent.
 Nothing else changes. The Family still gets the invitation, receipts and
 confirmations, keeps its code and link (emailed codes and links are never
@@ -891,7 +890,7 @@ queue's Family send progress panel counts the skipped Reminders separately.
    spaces at the ends do not matter), preview and apply the change. It can be
    changed while the campaign is live.
 3. Wait for the next ParishSoft refresh, or use **Refresh from ParishSoft**.
-   Quick updates wait while a Family email send is in progress, so make
+   Daytime refreshes wait while a Family email send is in progress, so make
    ParishSoft changes before a Reminder's preparation starts (two hours
    before it is due) when you can; a Family added later is still skipped at
    send time once a refresh has read it. After an edit to the name, even of

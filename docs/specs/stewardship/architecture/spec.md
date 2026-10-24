@@ -73,7 +73,9 @@ responses, workflows, reports, jobs, and audit.
 
 Only service-level capabilities become general ParishKit code:
 
-- ParishSoft v2 family-change feed and idempotent `PUT` contact operations;
+- ParishSoft v2 idempotent `PUT` contact operations (the family-change feed
+  adapter was removed with quick updates in
+  [#1147](https://github.com/epiphany40223/parishkit/issues/1147));
 - reusable validation/normalization needed by more than one tool;
 - provider-neutral email improvements; and
 - generic safe export helpers when they have no campaign semantics.
@@ -916,10 +918,11 @@ the work lock, and it takes its row locks in the same order (task root,
 task run, lease, snapshot).
 
 A refresh's inputs step reads source corpora outside the lock too, with no
-schema change. A quick update's base is the whole current snapshot, and a
-current snapshot that predates recorded derived counts is counted from its
-rows. Both reads used to run inside the inputs' work-order effect: about
-200 ms of its 220–265 ms hold for a quick update at 1,100 Families. The
+schema change. A quick update's base (before #1147 removed quick updates)
+was the whole current snapshot, and a current snapshot that predates
+recorded derived counts is counted from its rows. Both reads used to run
+inside the inputs' work-order effect: about 200 ms of its 220–265 ms hold
+for a quick update at 1,100 Families. The
 effect now holds the lock for about 50 ms. It still verifies the attempt
 and its scope, and that the snapshot's base is the current snapshot. The
 corpus is read after it commits, through the snapshot read (the promoted,

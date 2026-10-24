@@ -103,7 +103,12 @@ settings contain any of `nightly_time`, `full_refresh`, `full_refresh_times`,
 the lists are sorted and unique and the full list names the nightly time;
 their scheduling and default behavior remain owned by the
 [refresh schedule specification](../specs/stewardship/background-processing/spec.md#stored-schedule-and-upgrade).
-Every one is optional, so earlier v8 documents stay valid. Validation
+Every one is optional, so earlier v8 documents stay valid. Since quick
+updates were removed in
+[#1147](https://github.com/epiphany40223/parishkit/issues/1147), a stored
+`delta_refresh`, `quick_refresh_times` or quick rule row still validates but
+schedules nothing, and a new or changed schedule carries none of them.
+Validation
 delegates to the frozen content/policy/campaign rules after checking only the
 added fields. Older schema names continue to reject those fields.
 

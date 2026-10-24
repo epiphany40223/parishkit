@@ -430,7 +430,7 @@ BG-12). What an operator sees during that lead window:
 - The Mail queue's Family send panel shows the reminder as upcoming (within an hour
   of its due time), not as a send in progress, and due-work health ignores
   it until it is due.
-- Scheduled delta refreshes wait while the reminders are being prepared,
+- Scheduled daytime refreshes wait while the reminders are being prepared,
   and run again once preparation ends, until the send begins. A Family that
   responds, a pause, or a schedule or content change after preparation is
   caught when the message is sent, as always.

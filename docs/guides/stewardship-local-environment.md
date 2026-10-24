@@ -452,9 +452,9 @@ the Admin portal would (pressing that button works too):
 tools/stewardship-local.sh fake-parishsoft refresh
 ```
 
-It waits until the refresh and the work it starts have finished. Only a full
-refresh sees an edit: the fake's change feed stays empty, as Production's
-does, so the scheduled quick updates find nothing.
+It waits until the refresh and the work it starts have finished. The next
+full refresh sees an edit (every refresh is full since quick updates were
+removed in [#1147](https://github.com/epiphany40223/parishkit/issues/1147)).
 
 To produce each refresh outcome for an item a Family submitted (value A in
 ParishSoft before, C the answer being carried forward):

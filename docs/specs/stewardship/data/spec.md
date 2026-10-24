@@ -557,7 +557,12 @@ Normalized versioned tables store canonical Family, Member, Ministry, roster,
 fund, pledge, and contribution payloads by content digest. Content-addressed
 deduplication is mandatory: a snapshot-to-version membership map reuses the
 same immutable version whenever identity and canonical payload are unchanged.
-No nightly or delta refresh may duplicate unchanged entity payload rows.
+No refresh may duplicate unchanged entity payload rows. The `delta` type
+and the `unchanged` state remain for historic rows: quick updates (delta
+refreshes) were removed in
+[#1147](https://github.com/epiphany40223/parishkit/issues/1147) (see
+[quick updates removed](../background-processing/spec.md#quick-updates-removed)),
+and no new snapshot is a delta or ends `unchanged`.
 Querying an uncompacted snapshot must reproduce one coherent corpus. Short-
 lived HTTP cache files are operational artifacts, not durable snapshots, and
 may be expired normally.
@@ -573,9 +578,12 @@ rows, so its cost follows the size of one corpus, not how many snapshots are
 retained, and a collection with no rows has nothing to check
 ([#629](https://github.com/epiphany40223/parishkit/issues/629)).
 
-A quick update whose corpus equals the current snapshot's is not staged or
-promoted ([#630](https://github.com/epiphany40223/parishkit/issues/630)).
-Promoting it would add no ParishSoft data, yet it would write a full copy of
+Until #1147, a quick update whose corpus equalled the current snapshot's was
+not staged or promoted
+([#630](https://github.com/epiphany40223/parishkit/issues/630)); the rest of
+this section records how those historic `unchanged` rows were made and are
+read. Promoting it would add no ParishSoft data, yet it would write a full copy
+of
 the membership rows, rewrite every Family row with a new generation, and leave
 the old copy for compaction. Instead its snapshot ends in the terminal state
 `unchanged`. It has no membership rows, carries the current snapshot's counts
@@ -604,8 +612,8 @@ An `unchanged` snapshot completes its refresh run, counts as a successful
 ParishSoft answer for the
 [connection line](../operations/spec.md#parishsoft-data-age-and-connection)
 and for recovering refresh-failure alarms, and never moves "data as of". The
-next quick update reads the change list from its watermark, so the window
-does not grow while nothing changes. Its manifest is kept like every other;
+next quick update read the change list from its watermark, so the window
+did not grow while nothing changed. Its manifest is kept like every other;
 with no membership rows, there is nothing for compaction to remove.
 
 Source compaction uses UTC cutoff instants and never compacts the current
