@@ -134,6 +134,10 @@ def denial(*, status=403, retry=None, admin=True, sign_in=False, account=None):
     Reading the exception being handled keeps that in one place instead of
     an extra ``except`` clause in every report view.
     """
+    if account is not None and not sign_in:
+        # The address page answers only the sign-in that just verified it;
+        # a signed-in refusal naming an address would be a caller's mistake.
+        raise ValueError("account is only for a sign-in refusal")
     error = sys.exception()
     if isinstance(error, UserFacingGone):
         debug_swallowed("admin request refused")

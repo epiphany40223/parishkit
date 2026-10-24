@@ -225,8 +225,20 @@ def test_no_access_names_only_the_verified_address(rf):
     assert "Try signing in again" not in body
     assert "a<b>" not in str(dict(response.items()))
     # A rate limit wins over the address: the 429 page names no one.
-    limited = denial(status=429, retry=5, account=(request, "a@example.org"))
+    limited = denial(
+        status=429, retry=5, sign_in=True, account=(request, "a@example.org")
+    )
     assert b"a@example.org" not in limited.content
+
+
+def test_only_a_sign_in_refusal_may_name_an_address(rf):
+    """A signed-in refusal passing ``account`` is refused, not rendered."""
+    from parishkit.stewardship.accounts.authentication import denial
+
+    request = rf.post("/admin/reports/weekly")
+    for status in (403, 429, 503):
+        with pytest.raises(ValueError):
+            denial(status=status, account=(request, "a@example.org"))
 
 
 def test_no_access_without_its_account_fails_closed():
