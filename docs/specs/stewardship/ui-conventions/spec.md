@@ -3140,7 +3140,7 @@ or link variants, the danger class or an icon button. It reads each
 once, and a button repeated by a loop inside a group counts twice; buttons
 that never show together are branches of one `{% if %}`. A group
 is a `<form>`, a `<dialog>`, an element with one of the group classes
-(`filter-bar`, `bulk-bar`, `export-panel`, `dialog-actions` and the other
+(`filter-bar`, `bulk-bar`, `export-actions`, `dialog-actions` and the other
 action rows the test names), an element marked `data-control-group`, or a
 row of sibling forms with nothing between them but template tags, which a
 reader sees as one row of buttons. A button with a `form` attribute belongs

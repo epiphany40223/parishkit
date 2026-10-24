@@ -10,6 +10,7 @@ from parishkit.stewardship.accounts import delivery_forecast
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .campaign_factory import campaign, schedule
+from .test_report_schedule import report
 
 
 def forecast(monkeypatch, kinds, now):
@@ -17,12 +18,12 @@ def forecast(monkeypatch, kinds, now):
     owner = campaign()
     definitions = []
     for kind in kinds:
-        values = schedule(
-            owner["id"],
-            kind=kind,
-            date="2054-10-01" if kind in {"initial", "reminder"} else None,
-            **({"weekday": 0} if kind == "weekly_digest" else {}),
-        )["values"]
+        if kind == "report":
+            # A daily report email, each evening from the campaign's start.
+            values = report(campaign_id=owner["id"])
+            values["schedule"] = values["schedule"] | {"time": "23:00:00"}
+        else:
+            values = schedule(owner["id"], kind=kind, date="2054-10-01")["values"]
         definitions.append(
             SimpleNamespace(kind=kind, current_revision=SimpleNamespace(values=values))
         )
@@ -39,10 +40,10 @@ def forecast(monkeypatch, kinds, now):
 
 
 def test_shared_instant_counts_definitions_not_family_population(monkeypatch):
-    """Only earliest ties contribute, even when later digest definitions exist."""
+    """Only earliest ties contribute, even when later report definitions exist."""
     result = forecast(
         monkeypatch,
-        ["initial", "reminder", "reminder", "daily_digest", "weekly_digest"],
+        ["initial", "reminder", "reminder", "report"],
         datetime(2054, 10, 1, tzinfo=UTC),
     )
     assert result == {
@@ -52,7 +53,7 @@ def test_shared_instant_counts_definitions_not_family_population(monkeypatch):
     }
 
 
-@pytest.mark.parametrize("kinds", [[], ["initial", "daily_digest", "weekly_digest"]])
+@pytest.mark.parametrize("kinds", [[], ["initial", "report"]])
 def test_no_future_slots_is_not_a_guarantee_of_an_empty_backlog(monkeypatch, kinds):
     """An exhausted configured schedule remains separate from the held inventory."""
     assert forecast(monkeypatch, kinds, datetime(2055, 1, 1, tzinfo=UTC)) == {

@@ -68,8 +68,8 @@ CONTENT_TYPES = {
 # aligned.
 JSONL_KEYS = (
     "family",
-    "family_duid",
     "parishsoft_status",
+    "family_duid",
     "annual_pledge",
     "frequency",
     "share_methods",

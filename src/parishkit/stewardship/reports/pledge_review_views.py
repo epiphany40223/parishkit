@@ -136,10 +136,11 @@ COLUMNS = (
 # enter (the reviewer's value, else the Family's) spelled out.
 HEADINGS = (
     "Family",
-    "Family DUID",
     # Blank while ParishSoft lists the Family as active; otherwise #1216's
-    # phrase, the Family cell's badge.
+    # phrase, the Family cell's badge, right after the name it describes
+    # (UX conventions, "Members and Families no longer in ParishSoft").
     "ParishSoft status",
+    "Family DUID",
     "Annual pledge",
     "Frequency",
     "Share methods",
@@ -163,8 +164,8 @@ HEADINGS = (
 # DUIDs stay on one line; names, share methods and notes wrap.
 PDF_WEIGHTS = {
     "Family": 8,
-    "Family DUID": 6,
     "ParishSoft status": 4,
+    "Family DUID": 6,
     "Annual pledge": 6,
     "Frequency": 5,
     "Share methods": 7,
@@ -442,10 +443,10 @@ def export_rows(rows, zone, *, time_text=iso_time):
         lines.append(
             (
                 row["family_name"] or "",
-                str(row["family_duid"]),
                 source_status_label(
                     family_status(row["family_name"], active=row["active"] is not False)
                 ),
+                str(row["family_duid"]),
                 amount,
                 frequency,
                 shares,

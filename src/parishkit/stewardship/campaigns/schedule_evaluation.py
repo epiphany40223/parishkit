@@ -18,12 +18,11 @@ DAY = timedelta(days=1)
 
 @dataclass(frozen=True)
 class ScheduleSlot:
-    """One stable logical slot; daily keys identify the day being reported."""
+    """One stable logical slot: ``once``, or a report's slot date (#1786)."""
 
     key: str
     local_date: date
     due_at: datetime
-    final_weekly: bool = False
 
 
 @dataclass(frozen=True)
@@ -42,141 +41,39 @@ class SchedulePage:
 
 @dataclass(frozen=True)
 class SchedulePlan:
-    """Validated immutable civil configuration without subject or recipient data.
+    """One Family mailing's single send, validated in its campaign's zone.
 
-    ``skipped`` holds a digest's ``skip_dates`` (#1658): slot dates it never
-    sends. Every evaluation leaves them out, advancing its cursor past them
-    as past a wholly skipped civil day, so planners, catch-up and forecasts
-    agree with the database's slot check (``stewardship_catchup_due_v1``).
+    An Initial invitation or a Reminder sends once, on ``one_time_date`` at
+    the resolved instant ``one_time_due``, under the slot key ``once``. A
+    report email's values get a ``ReportPlan``, which answers the same
+    questions. The Daily and Weekly digests' repeating rules retired with
+    the digests (#1834): no definition of theirs remains (migration 0171
+    refuses a database that still has one), so their values are refused
+    here rather than evaluated.
     """
 
     kind: str
-    timezone: str
-    start: date
-    end: date
-    local_time: time
-    weekday: int | None
-    one_time_due: datetime | None
-    one_time_date: date | None
-    skipped: frozenset[date] = frozenset()
+    one_time_due: datetime
+    one_time_date: date
 
     @classmethod
     def from_values(cls, values, campaign):
-        """Resolve using this campaign's versioned timezone, never parish defaults.
-
-        A report email's values (``kind`` ``report``) get a ``ReportPlan``,
-        which answers the same ``page`` and ``next_slot`` questions.
-        """
+        """Resolve using this campaign's versioned timezone, never parish defaults."""
         if values.get("kind") == "report":
             return ReportPlan.from_values(values, campaign)
+        if values.get("kind") not in {"initial", "reminder"}:
+            raise ValueError("Only Family mail and report emails have schedules.")
         interval = campaign_values(campaign)
         due = schedule_values(values, campaign, interval=interval)
-        return cls(
-            values["kind"],
-            campaign["timezone"],
-            date.fromisoformat(campaign["start_date"]),
-            date.fromisoformat(campaign["end_date"]),
-            time.fromisoformat(values["time"]),
-            values["weekday"],
-            due,
-            date.fromisoformat(values["date"]) if values["date"] else None,
-            frozenset(map(date.fromisoformat, values.get("skip_dates", ()))),
-        )
+        return cls(values["kind"], due, date.fromisoformat(values["date"]))
 
-    def page(self, *, through, after=None, limit=100, include_final_weekly=False):
-        """Examine at most ``limit`` dates, with an exclusive stable date cursor.
+    def page(self, *, through, after=None, limit=100):
+        """The one send once it is due by ``through`` and after the ``after`` cursor.
 
-        Daily mail is due the following local day, including after campaign
-        close. Weekly mail normally stops at close; the owning item-coverage
-        planner can additionally inspect exactly one following weekly slot.
-        That candidate alone never establishes a post-close obligation.
+        Time and template revisions keep the same one-time slot, so a cursor
+        at or past its date has nothing left to examine.
         """
-        if (
-            type(through) is not datetime
-            or through.utcoffset() != timedelta(0)
-            or (after is not None and type(after) is not date)
-            or type(limit) is not int
-            or not 1 <= limit <= 1000
-            or type(include_final_weekly) is not bool
-        ):
-            raise ValueError(
-                "Schedule evaluation requires a UTC cutoff and bounded cursor."
-            )
-        if self.kind in {"initial", "reminder"}:
-            return self._one_time(through, after)
-        candidate = self._first_date(after)
-        last = self._last_date(include_final_weekly)
-        slots, cursor = [], after
-        for _ in range(limit):
-            if candidate is None or candidate > last:
-                return SchedulePage(tuple(slots), cursor, True)
-            due = self._due(candidate)
-            if due > through:
-                return SchedulePage(tuple(slots), cursor, True)
-            cursor = candidate
-            # A wholly skipped civil day is not an active campaign day. Its
-            # cursor still advances, rather than trapping a one-row batch, and
-            # so does a skipped send's (#1658).
-            if self._sends(candidate):
-                slots.append(
-                    ScheduleSlot(
-                        candidate.isoformat(),
-                        candidate,
-                        due,
-                        self.kind == "weekly_digest" and candidate > self.end,
-                    )
-                )
-            candidate = self._advance(candidate)
-        return SchedulePage(tuple(slots), cursor, False)
-
-    def _sends(self, day):
-        """Whether a candidate date in range is a send: active and not skipped."""
-        if day in self.skipped:
-            return False
-        return self.kind != "daily_digest" or self._active_day(day)
-
-    def _active_day(self, day):
-        """A daily reporting obligation requires a nonempty campaign-local day."""
-        interval = local_day(day, self.timezone).interval
-        return interval.start < interval.end
-
-    def next_slot(self, *, after, include_final_weekly=False):
-        """Find the next configured slot without enumerating prior campaign days.
-
-        Daily slots name yesterday, whereas weekly slots name their delivery
-        day. Start near the campaign-local clock, preserving the same DST and
-        skipped-civil-day rules as ordinary page evaluation. This is a schedule
-        forecast, not an assertion about eligible recipients or fulfillment.
-        """
-        if (
-            type(after) is not datetime
-            or after.utcoffset() != timedelta(0)
-            or type(include_final_weekly) is not bool
-        ):
-            raise ValueError("Next schedule slot requires a UTC cutoff.")
-        if self.kind in {"initial", "reminder"}:
-            if self.one_time_due <= after:
-                return None
-            return ScheduleSlot("once", self.one_time_date, self.one_time_due)
-        local = after.astimezone(ZoneInfo(self.timezone)).date()
-        offset = 2 if self.kind == "daily_digest" else 1
-        cursor = local - min((local - date.min).days, offset) * DAY
-        candidate = self._first_date(cursor if cursor < local else None)
-        last = self._last_date(include_final_weekly)
-        while candidate is not None and candidate <= last:
-            due = self._due(candidate)
-            if due > after and self._sends(candidate):
-                return ScheduleSlot(
-                    candidate.isoformat(),
-                    candidate,
-                    due,
-                    self.kind == "weekly_digest" and candidate > self.end,
-                )
-            candidate = self._advance(candidate)
-        return None
-
-    def _one_time(self, through, after):
-        """Time/template revisions retain the same one-time semantic slot."""
+        _check_page(through, after, limit)
         if after is not None and after >= self.one_time_date:
             return SchedulePage((), after, True)
         if self.one_time_due > through:
@@ -187,40 +84,17 @@ class SchedulePlan:
             True,
         )
 
-    def _first_date(self, after):
-        """Jump to the next applicable date instead of scanning prior history."""
-        if after == date.max:
+    def next_slot(self, *, after):
+        """The one send if it is due after the UTC instant ``after``, else None.
+
+        This is a schedule forecast, not an assertion about eligible
+        recipients or fulfillment.
+        """
+        if type(after) is not datetime or after.utcoffset() != timedelta(0):
+            raise ValueError("Next schedule slot requires a UTC cutoff.")
+        if self.one_time_due <= after:
             return None
-        first = max(self.start, after + DAY) if after is not None else self.start
-        if self.kind == "weekly_digest":
-            distance = (self.weekday - first.weekday()) % 7
-            if (date.max - first).days < distance:
-                return None
-            first += timedelta(days=distance)
-        return first
-
-    def _last_date(self, include_final_weekly):
-        """At most one post-close weekly candidate; no endless empty obligations."""
-        if self.kind != "weekly_digest" or not include_final_weekly:
-            return self.end
-        distance = (self.weekday - self.end.weekday()) % 7 or 7
-        if (date.max - self.end).days < distance:
-            return self.end
-        return self.end + timedelta(days=distance)
-
-    def _due(self, day):
-        """Use the canonical gap/fold resolver for every recurring due instant."""
-        delivery_day = day + DAY if self.kind == "daily_digest" else day
-        return resolve_local(
-            datetime.combine(delivery_day, self.local_time), self.timezone
-        )
-
-    def _advance(self, day):
-        """Return a bounded successor without overflowing the civil date range."""
-        distance = 7 if self.kind == "weekly_digest" else 1
-        if (date.max - day).days < distance:
-            return None
-        return day + timedelta(days=distance)
+        return ScheduleSlot("once", self.one_time_date, self.one_time_due)
 
 
 def _check_page(through, after, limit):
@@ -250,7 +124,7 @@ class ReportPlan:
     is the slot basis: a ``report_date`` slot names the day before its send
     (the converted Daily), a ``send_date`` slot the send's own day.
 
-    Cursors and slot keys are slot dates, as the digests' are. The database
+    Cursors and slot keys are slot dates. The database
     evaluates the same rule (``stewardship_report_slot_due_v1``); the shared
     table ``tests/stewardship/fixtures/report_slot_cases.json`` pins the two
     together.
@@ -358,14 +232,12 @@ class ReportPlan:
             return date.min
         return after + timedelta(days=self.offset)
 
-    def page(self, *, through, after=None, limit=100, include_final_weekly=False):
+    def page(self, *, through, after=None, limit=100):
         """Examine at most ``limit`` candidate sends after the slot ``after``.
 
-        As ``SchedulePlan.page``: the cursor is the last examined slot date,
-        advanced past a skipped or paused send too; the page is exhausted at
-        the first candidate due after ``through`` or when the rule ends.
-        ``include_final_weekly`` is accepted for the shared interface and
-        changes nothing: a report's post-close sends are ordinary sends.
+        The cursor is the last examined slot date, advanced past a skipped
+        or paused send too; the page is exhausted at the first candidate due
+        after ``through`` or when the rule ends.
         """
         _check_page(through, after, limit)
         send, slots, cursor = self._next(self._start(after)), [], after
@@ -381,7 +253,7 @@ class ReportPlan:
             send = self._next(send)
         return SchedulePage(tuple(slots), cursor, send is None)
 
-    def next_slot(self, *, after, include_final_weekly=False):
+    def next_slot(self, *, after):
         """The first send due after the UTC instant ``after``, or None.
 
         The search starts two days before ``after``'s campaign-local date,

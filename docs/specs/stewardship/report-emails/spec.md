@@ -364,13 +364,15 @@ and the date-change review lists each report whose sends change. A chosen
 date stays where it is.
 
 Unlike the reminder repeat, which adds one reminder schedule per date, a
-report keeps its rule: the scheduler evaluates it, as it evaluates today's
-digests, through the one schedule evaluator (`SchedulePlan`), so planning,
-catch-up, recovery, the preview and the calendar agree. The database's slot
-check evaluates the same rule (see [database functions](#database-functions)).
-An every-day rule leaves out a wholly skipped civil day (a day a time zone
-change removes), as the Daily digest's evaluator does today, so no send is
-invented for a day that has no moments.
+report keeps its rule: the scheduler evaluates it, as it evaluated the
+digests, through the one schedule evaluator (`SchedulePlan`, which hands a
+report to its `ReportPlan`), so planning, catch-up, recovery, the preview and
+the calendar agree. The digests' own rules left the evaluator with them
+(#2107). The database's slot check evaluates the same rule (see
+[database functions](#database-functions)). An every-day rule leaves out a
+wholly skipped civil day (a day a time zone change removes), as the Daily
+digest's evaluator did, so no send is invented for a day that has no
+moments.
 
 Basic mode's **Frequency** offers these presets, named by how often they
 send; the time the Administrator types may be any time of day, so no
@@ -520,6 +522,21 @@ Report sends use the shared machinery unchanged:
   A recovery send of a report whose `as_of` is when the email is made
   reports as of its own capture instant. Either is labeled "recovery" in its
   subject.
+- **Go live impact counts** (#2107). The Confirm Production preview of the
+  [Go live page](../admin-portal/spec.md#go-live-page) counts the report
+  sends due at once as the catch-up above makes them: at most one send per
+  report, however many of its sends are overdue. A send's messages are the
+  addresses of the report's cohort now, or none when it would be skipped as
+  empty ([Sending only when there is content](#sending-only-when-there-is-content)).
+  A report whose `as_of` is the end of the previous day counts under "Daily
+  report emails due at once" (`daily_messages`), one as of when it is made
+  under "Weekly report emails due at once" (`weekly_messages`); the keys keep
+  the names of the digests these reports replaced, since the confirmation's
+  recorded outcomes and the `go-live` command's output name them. The
+  overdue sends folded into one are `coalesced_slots`, a report whose send
+  would be skipped as empty counts once in `empty_weekly_reports`, and a
+  report with a send already under way or of unknown outcome counts in
+  `blocked_groups`, with no messages.
 - **Already-accepted recipients** (#1835). A send never goes again to an
   address that already has every one of its slots. When a scheduled or
   recovery send fans out, each address that passes the recheck is

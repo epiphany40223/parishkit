@@ -474,7 +474,8 @@ def test_the_page_lists_decides_and_downloads_for_staff_only(response_service, g
         )
         assert response.status_code == 200
         rows = list(csv.reader(io.StringIO(body.decode())))
-        assert rows[0][:2] == ["Family", "Family DUID"] and len(rows) == 2
+        assert rows[0][:3] == ["Family", "ParishSoft status", "Family DUID"]
+        assert len(rows) == 2
         # ParishSoft annual pledge (#1704) is blank before any refresh check.
         assert rows[1][8:13] == [
             "$1,234.50",

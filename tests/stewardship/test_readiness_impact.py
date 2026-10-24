@@ -149,7 +149,7 @@ def test_reader_failure_never_returns_partial_success():
         {"slots": family(1).slots * 34},
         {"slots": (replace(family(1).slots[0], mode="testing"),)},
         {"slots": (replace(family(1).slots[0], target="family:another"),)},
-        {"slots": (replace(family(1).slots[0], kind="weekly_digest"),)},
+        {"slots": (replace(family(1).slots[0], kind="report"),)},
     ],
 )
 def test_nonproduction_or_invalid_family_scope_is_rejected(changes):

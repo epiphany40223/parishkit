@@ -2,10 +2,13 @@
 
 Report emails (#1786) replaced the Daily and Weekly digests: the impact counts
 each report's immediately due send, one message per address of its cohort
-now. A report as of the end of the previous day is counted as the Daily was
-("daily report messages"), one as of when it is made as the Weekly was; a
-send that would be skipped as empty (report-emails spec, "Sending only when
-there is content") makes no message and is counted as an empty report.
+now (report-emails spec, "Catch-up, recovery and holds", Go live impact
+counts). A report as of the end of the previous day is counted as the Daily
+was (``daily_messages``), one as of when it is made as the Weekly was
+(``weekly_messages``); the digests' key names stay because the recorded
+confirmation outcomes and the go-live command's output name them. A send
+that would be skipped as empty (report-emails spec, "Sending only when there
+is content") makes no message and is counted as an empty report.
 """
 
 import hashlib
@@ -129,8 +132,9 @@ def _candidates(campaign, definition, cutoff, bind):
         definition.current_revision.values, campaign.active_configuration.values
     )
     common = {"definition": definition, "mode": "production", "target": "admins"}
-    # A recovery aggregate is not an original civil-date slot. Never omit its
-    # pending authority merely because date pagination cannot encounter its key.
+    # A catch-up recovery send (slot ``recovery:...``) is not an original
+    # civil-date slot. Never omit its pending authority merely because date
+    # pagination cannot encounter its key.
     blocked = False
     for row in (
         ScheduleOccurrence.objects.filter(

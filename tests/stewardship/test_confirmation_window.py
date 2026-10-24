@@ -7,12 +7,24 @@ import pytest
 from parishkit.stewardship.campaigns.confirmation_window import confirmation_deadline
 from parishkit.stewardship.campaigns.domain import UTCInterval
 
+from .campaign_factory import campaign
+from .test_report_schedule import report
 from .test_schedule_evaluation import plan
 
 MINUTE = timedelta(minutes=1)
 INTERVAL = UTCInterval(
     datetime(2054, 10, 1, 4, 1, tzinfo=UTC), datetime(2054, 11, 1, 4, tzinfo=UTC)
 )
+
+
+def daily_report(*, campaign_options=None, time="09:00:00"):
+    """A daily report email's sends from the campaign's start, at ``time``."""
+    from parishkit.stewardship.campaigns.schedule_evaluation import SchedulePlan
+
+    owner = campaign(**(campaign_options or {}))
+    values = report(campaign_id=owner["id"])
+    values["schedule"] = values["schedule"] | {"time": time}
+    return SchedulePlan.from_values(values, owner["values"])
 
 
 def deadline(observed, plans=(), *, source=None, interval=INTERVAL):
@@ -25,14 +37,11 @@ def deadline(observed, plans=(), *, source=None, interval=INTERVAL):
     )
 
 
-@pytest.mark.parametrize(
-    "kind", ["initial", "reminder", "daily_digest", "weekly_digest"]
-)
+@pytest.mark.parametrize("kind", ["initial", "reminder", "report"])
 def test_next_due_slot_expires_preview_before_five_minutes(kind):
     """A physical message count may stay equal while its covered slots change."""
-    day = 1 if kind in {"initial", "reminder"} else 2 if kind == "daily_digest" else 5
-    due = datetime(2054, 10, day, 13, tzinfo=UTC)
-    rule = plan(kind)
+    due = datetime(2054, 10, 1, 13, tzinfo=UTC)
+    rule = daily_report() if kind == "report" else plan(kind)
     assert deadline(due - 2 * MINUTE, [rule]) == due
     assert deadline(due, [rule]) == due + 5 * MINUTE
 
@@ -74,14 +83,14 @@ def test_nearest_non_schedule_boundary_expires_preview(boundary):
 
 def test_long_due_history_does_not_hide_the_next_page_boundary():
     """A preview after more than 100 historical dates still finds the next slot."""
-    rule = plan(campaign_options={"start_date": "2054-01-01"})
+    rule = daily_report(campaign_options={"start_date": "2054-01-01"})
     due = datetime(2054, 10, 10, 13, tzinfo=UTC)
     assert deadline(due - MINUTE, [rule]) == due
 
 
 def test_fold_uses_the_existing_earlier_instant():
     """Do not silently keep a preview until the second wall-clock occurrence."""
-    rule = plan(
+    rule = daily_report(
         campaign_options={"start_date": "2054-10-30", "end_date": "2054-11-03"},
         time="01:30:00",
     )

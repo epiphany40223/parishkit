@@ -3585,7 +3585,7 @@ section is the page.
   request as Roster changes to enter's are, with the page's columns and its
   combined cells split
   ([downloaded files](../ui-conventions/spec.md#downloaded-files)): Family,
-  Family DUID, ParishSoft status, Annual pledge, Frequency, Share methods,
+  ParishSoft status, Family DUID, Annual pledge, Frequency, Share methods,
   Reviewer's annual pledge, Reviewer's frequency, Annual pledge to enter,
   Frequency to enter, ParishSoft annual pledge, Stage, Decision, Entered by,
   Entered at, Submitted, Last decision, Last decision at and Note. Money keeps
