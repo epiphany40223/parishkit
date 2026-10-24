@@ -91,7 +91,10 @@ checks need no database:
   are its addresses with ``?month=``, each the same page (the script reads
   the month). Its table, Every email by date (#1656), opens on the upcoming
   emails in sending order; ``CALENDAR_VIEWS`` are its other Show and sort
-  addresses, each with a month, as the page's links send them. Its Move…
+  addresses, each with a month, as the page's links send them. ``WEEKS``
+  (#1808) are its week view's addresses (``?view=week&week=``), each the
+  same page too; the campaign's weeks run from September 27 (the week of
+  October 1) to November 1 (the week of the last send). Its Move…
   (#1521) posts to the send's Edit page (the real address the view's own
   ``edit_url`` gives): Reminder 1's answers with Edit's review, whose Apply
   posts to ``APPLY`` (Applied at once), after which the calendar redraws in
@@ -128,6 +131,7 @@ from parishkit.stewardship.accounts.schedule_calendar_views import (
     calendar_sends,
     report_calendar_sends,
     sends_view,
+    view_links,
 )
 from parishkit.stewardship.accounts.schedule_changes import (
     EMAIL_DOES_NOT_FIT,
@@ -240,13 +244,31 @@ MONTHS = [
     f"{CALENDAR}?month=2054-01",
     f"{CALENDAR}?month=2060-01",
 ]
-# Every Show and sort of the calendar's table, with either month: the
-# addresses its in-place links fetch (the script adds the month shown).
+# The week view's addresses (#1808): each of the campaign's weeks by its
+# Sunday, a week named by another of its days, one before the campaign
+# (the script opens the nearer end), and the view with no week named.
+WEEK_SUNDAYS = (
+    "2054-09-27",
+    "2054-10-04",
+    "2054-10-11",
+    "2054-10-18",
+    "2054-10-25",
+    "2054-11-01",
+)
+WEEKS = [
+    *(f"{CALENDAR}?view=week&week={sunday}" for sunday in WEEK_SUNDAYS),
+    f"{CALENDAR}?view=week&week=2054-10-14",
+    f"{CALENDAR}?view=week&week=2054-01-04",
+    f"{CALENDAR}?view=week",
+]
+# Every Show and sort of the calendar's table, with either month or a
+# week: the addresses its in-place links fetch (the script adds the month
+# or week shown).
 CALENDAR_VIEWS = [
-    f"{CALENDAR}?show={show}&sort={sort}&month={month}"
+    f"{CALENDAR}?show={show}&sort={sort}&{place}"
     for show in ("upcoming", "all")
     for sort in ("when", "-when", "schedule", "-schedule")
-    for month in ("2054-10", "2054-11")
+    for place in ("month=2054-10", "month=2054-11", "view=week&week=2054-10-11")
 ]
 EDIT_DELETE = f"{EDIT}/deletion"
 SERIES_DELETE = f"{EDIT_SERIES}/deletion"
@@ -430,7 +452,8 @@ def _calendar(values, owner, emails, rows, address=CALENDAR):
         key=lambda send: (send.due, send.position),
     )
     parameters = QueryDict(address.partition("?")[2]).dict()
-    parameters.pop("month", None)
+    for name in ("month", "view", "week"):
+        parameters.pop(name, None)
     context = {
         "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
         "values": owner["values"],
@@ -443,6 +466,8 @@ def _calendar(values, owner, emails, rows, address=CALENDAR):
         "base_digest": "a" * 64,
         "apply_url": APPLY,
     } | sends_view(sends, parameters, NOW, CALENDAR)
+    # The View (#1808), as the view draws it; the script redraws both.
+    context |= {"view": "month", "view_links": view_links(CALENDAR)}
     return (
         "text/html",
         render_to_string("stewardship/schedule-calendar.html", values | context),
@@ -969,6 +994,7 @@ def components(context, admin):
         FAILED: _list(values, owner, emails, rows, delete_url=f"{FAILED}/deletion"),
         CALENDAR: _calendar(values, owner, emails, rows),
         **{month: _calendar(values, owner, emails, rows) for month in MONTHS},
+        **{week: _calendar(values, owner, emails, rows) for week in WEEKS},
         **{
             canonical(view): _calendar(values, owner, emails, rows, view)
             for view in CALENDAR_VIEWS

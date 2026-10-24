@@ -188,8 +188,15 @@
   // A month and year, such as a month grid's caption ("October 2054"); month
   // is 1-based. The same in every style, since none abbreviates a lone month.
   const month = (year, number) => `${MONTHS[number - 1]} ${year}`;
+  // A day of a month with the month abbreviated, as a calendar week shows
+  // a month's first day ("Oct 1", PR #2095): the day first in the
+  // day-first styles ("1 Oct"), else the month first. Month is 1-based.
+  const monthDay = (number, day) => {
+    const mon = MONTHS[number - 1].slice(0, 3);
+    return style().startsWith("eu_") ? `${day} ${mon}` : `${mon} ${day}`;
+  };
 
   window.ParishDates = Object.freeze({
-    instant, date: calendar, time, dayTime, month, localize, style
+    instant, date: calendar, time, dayTime, month, monthDay, localize, style
   });
 })();

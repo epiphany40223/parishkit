@@ -1523,9 +1523,9 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `artwork_upload` | Campaign images | Campaign images | Administrator | Campaign images (upload error); Campaign image upload | `/admin/campaign/images/<slot>/` (POST only) | (same) | POST-only: a staged upload answers with the review dialog's review of it (#750); a refused one re-renders Campaign images (status 400). Review campaign image is a review, and Remove campaign image a confirmation (#1356), in Campaign images' review dialog; their old addresses are gone. |
 | `schedule_settings` | Dates and mail schedules | Menu: Dates and mail schedules | Administrator | Mail schedules and campaign dates; Mail schedules | `/admin/campaign/schedules/` | (same) |  |
 | `schedule_new` | New scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/addition/` | (same) | Its review confirms through Dates and mail schedules. |
-| `schedule_edit` | Edit scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/<schedule>/` | (same) | The New page filled in; refuses a read-only schedule. `?calendar=<month>` (from the calendar) returns to that month. |
+| `schedule_edit` | Edit scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/<schedule>/` | (same) | The New page filled in; refuses a read-only schedule. `?calendar=<month>` (from the calendar) returns to that month, and `?calendar=<date>` to that week (#1808). |
 | `schedule_email_test` | Send a test of this text | New and Edit scheduled email | Administrator | (new, #446) | `/admin/campaign/schedules/test-email/` (POST only) | (same) | The page script posts the schedule's unsaved email here; nothing is saved. |
-| `schedule_calendar` | Campaign calendar | Dates and mail schedules | Administrator | (new, #469) | `/admin/campaign/schedules/calendar/` | (same) | Read-only; every send by date. `?month=<year-month>` names the month shown. |
+| `schedule_calendar` | Campaign calendar | Dates and mail schedules | Administrator | (new, #469) | `/admin/campaign/schedules/calendar/` | (same) | Read-only; every send by date. `?month=<year-month>` names the month shown; `?view=week&week=<date>` the week shown (#1808). |
 | `schedule_delete` | Delete scheduled emails | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/deletion/` (POST only) | (same) | The table's confirmation dialog posts here; Edit's Delete posts `action=preview` for its review (#1656). |
 | `share_settings` | Share options | Menu: Share options | Administrator | How Families will share | `/admin/campaign/share-options/` | (same) | Gains a Return link and About panel. |
 | `reminder_workgroup` | No-reminders WorkGroup | Menu: No-reminders WorkGroup | Administrator | (new, #861) | `/admin/campaign/no-reminders-workgroup/` | (same) | Edit, confirm, apply; stays editable while live. |
@@ -4048,9 +4048,11 @@ come, expanded the way the scheduler evaluates them, following the
 that has passed never shows a send computed from a schedule's rule
 (Administrator, R43).
 
-- **By month** shows one month at a time, Sunday first (#1656), with
-  **Previous month** and **Next month** buttons above it and the month's name
-  after them, so a longer name never moves either button. The months run
+- **By month or week** shows one month at a time (or one week, in the
+  [week view](#week-view)), Sunday first (#1656), with
+  **Previous month** and **Next month** buttons above it. The grid's caption
+  names the month ("October 2054"), and nothing beside the buttons repeats
+  it (Administrator, Part K on PR #2095). The months run
   from the campaign's first day (or its first send, if earlier) to its last
   day (or its last send). At either end the button there stays in place and
   focusable but is unavailable (greyed, with the not-allowed pointer, as
@@ -4118,10 +4120,56 @@ page with that send's slot key (`?send=2054-11-03`), so it can offer
 [Skip selected sends](../report-emails/spec.md#skip-and-unskip-sends), with that send's box ticked; a `send` that is
 not a date is refused as an unknown address.
 A muted send is told apart by its status, in words in the table and read to
-screen readers in the grid. A week view,
-Production activation and go-live milestones, ParishSoft refresh times and the
-backup window are planned in
+screen readers in the grid. Production activation and go-live milestones,
+ParishSoft refresh times and the backup window, and changing a series' rule
+from the Admin page, are planned in
 [#1808](https://github.com/epiphany40223/parishkit/issues/1808).
+
+##### Week view
+
+From [#1808](https://github.com/epiphany40223/parishkit/issues/1808)
+(split from #1521); the defaults below stand until the Administrator
+changes them.
+
+- **View** is a [binary choice](../ui-conventions/spec.md#binary-choices)
+  before Previous and Next: **Month** (the default) or **Week**, the same
+  page-script grid drawn from the same list of sends, changed as [views the
+  page script draws](../ui-conventions/spec.md#in-place-controls) are; the
+  view's name is announced with the segment's word ("Week: Week of October
+  11, 2054"). It sits before the buttons, whose words change with the
+  view, so it never moves.
+- **One week** is one row of seven days, Sunday first, under the month
+  grid's weekday headings; its caption says "Week of" and its Sunday's
+  date. Each day is drawn as in a month: its number, Add on a day, Today
+  and the campaign's first and last days in words, and its sends with
+  Move… and drag onto any day of the week the send can move to. A month's
+  first day shows its month as well ("27 28 29 30 Oct 1 2 3", Administrator
+  2026-10-23), since a week can cross into it; every other day is its
+  number only. A month grid shows only its own month's days (the others
+  are blank), so its days stay numbers only.
+- **Previous week** and **Next week** take the month buttons' place and
+  step a week. The weeks run from the one holding the campaign's first day
+  (or its first send) to the one holding its last day (or its last send);
+  at either end the button there is unavailable as a month's is, and the
+  reserved line says "This is the campaign's first week." or "This is the
+  campaign's last week."
+- **The address.** The week view is `?view=week&week=` its Sunday
+  (`?view=week&week=2054-10-11`), without `month`; Month names `month`
+  again, without `view` and `week`. The calendar opens on the week the
+  address names (any of its days; the address then names its Sunday), else
+  on this week in the browser's zone when it is one of the campaign's,
+  else on the first; a week outside them opens the nearer end. A `view`
+  other than `month` or `week`, or a `week` that is not a date, is refused
+  as an unknown address; `week` counts only with `view=week`.
+- **Changing view.** Week opens on this week when today is in the month
+  shown, else on the week holding the month's first day; Month opens on
+  today's month when the week holds today, else on the month of the week's
+  Sunday. Each is kept within the campaign's range.
+- **Returning.** In the week view each Edit link carries the week's Sunday
+  (`?calendar=2054-10-11`) instead of the month, and each Add on a day
+  carries it too, so Cancel, Apply and Delete return to that week; the
+  table's Show and sort links keep the view and the week; Apply of a Move
+  redraws the week shown.
 
 ##### Editing from the calendar
 
@@ -4159,10 +4207,21 @@ checks it exactly as that page does.
   dialog over the calendar titled with the same words, which says the send's
   time (browser-local) and email, that only the date changes and the time
   stays the same in this computer's time zone, and holds one date field,
-  **New send date**, filled in with the send's date. **Review the move**
+  **New send date**, filled in with the send's date. Its choices are only
+  the days the send can move to (see **The moved send**): the field's
+  earliest and latest dates are set, so the browser's date picker offers
+  no other day; a day between them that is still refused (another Family
+  email's moment) can be picked but is refused as below. **Review the move**
   stays unavailable until the date differs from the send's
   ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)), with
-  its hint after it. Review posts the move to the schedule's Edit scheduled
+  its hint after it, and while the date is empty or not a day the send
+  can move to, with the reason in the dialog's reserved line ("On that day
+  this send time has already passed, so it would send at once. Choose
+  October 6, 2054 or later.", "That day is after the campaign closes on
+  October 31, 2054. Choose October 31, 2054 or earlier.", "Another email
+  to Families already sends at 9:00 AM on that day, and two can't send at
+  the same date and time. Choose another day."), which marks and describes
+  the field. Review posts the move to the schedule's Edit scheduled
   email address (`move=yes` with the date, the browser's zone and the
   configuration version) and the server answers exactly the review Edit
   scheduled email draws for that schedule with the new date, the same
@@ -4189,9 +4248,16 @@ checks it exactly as that page does.
 - **Drag to move.** On a fine pointer (a mouse or trackpad), dragging a
   movable send's link or its Move… button by a few pixels starts a drag:
   the send is marked as being dragged and the day under the pointer is
-  outlined (outline only, so nothing moves). Dropping it on another day of
-  the grid opens the same Move dialog with that day filled in; dropping it
-  on its own day, outside the grid, or pressing Escape cancels the drag, and
+  outlined (outline only, so nothing moves). Only a day the send can move
+  to is a target: while the drag lasts every other day of the grid looks
+  unavailable, as an [unavailable
+  control](../ui-conventions/spec.md#prerequisite-gates) does (greyed, with
+  the not-allowed pointer; only colours change, so nothing moves), has a
+  tooltip with the same reason Move… gives for that day, is never
+  outlined and takes no drop. Dropping it on another day it can move to
+  opens the same Move dialog with that day filled in; dropping it
+  on its own day, on a day it can't move to, outside the grid, or pressing
+  Escape cancels the drag, and
   the click that ends a drag neither follows the link nor opens Move…. A
   click without a drag still follows the link or opens Move…, and Enter or
   Space on Move… opens it as before.
@@ -4202,8 +4268,25 @@ checks it exactly as that page does.
   the new day as a typed date is, so 9:00 AM stays 9:00 AM across a
   daylight-saving change. Edit's rules refuse what Edit refuses: a day
   outside the campaign's dates, a reminder not after the Initial invitation,
-  two Family mailings at one moment, and the hour the clocks repeat. Only the
-  moved send may move into the past.
+  two Family mailings at one moment, and the hour the clocks repeat. Unlike
+  Edit, a move never goes into the past (Administrator, Part K
+  on PR #2095): the days a send can move to run from the first day on which its
+  kept time is still ahead (today while that time is to come, else
+  tomorrow; never before the campaign's first day) through the campaign's
+  last day, the bound Edit enforces for an invitation or reminder (report
+  email sends are not movable here), less each day on which its kept time
+  is the moment of another Family email (the Initial invitation or a
+  reminder; report email sends never clash): Edit's review refuses two
+  Family emails at one date and time (`same_time`), so a reminder can still
+  move to a day with another reminder at a different time (Administrator,
+  R50 on PR #2095). The page marks each Family email among its sends and
+  the browser compares exact moments, the server's rule, never its own
+  per-day one. Drag and Move… offer only those days,
+  in Month and Week alike, and the server refuses any other at the date
+  ("This day's send time has already passed, so the email would send at
+  once. Choose a later day."; a day outside the campaign keeps Edit's
+  refusal; a shared moment keeps the review's refusal), changing nothing.
+  Before this the server drew a past move's review.
 - **A series reminder** moves as "This reminder only". On a day its rule does
   not give, it leaves the series, and the review says so in Edit's line
   ([New and Edit scheduled email](#new-and-edit-scheduled-email)). The series
