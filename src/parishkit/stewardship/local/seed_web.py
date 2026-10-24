@@ -925,6 +925,11 @@ def campaign_fields(form, campaign_dates):
         "comparison_fund_duids": funds[1:2] or funds[:1],
         "additional_information": "on",
         "base_digest": form.initial["base_digest"],
+        # Families in this campaign (#1393): the page's default, Active
+        # parishioners.
+        "families_mode": "basic",
+        "families_preset": "active_parishioners",
+        "families_registered": "required",
     }
 
 

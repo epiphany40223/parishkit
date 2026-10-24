@@ -4908,14 +4908,15 @@ emailed links changes.
 
 #### Families in this campaign
 
-Status: specified, not built
-([#1393](https://github.com/epiphany40223/parishkit/issues/1393)). What the
-choice means, how it is stored and how refreshes apply it are in the data
+Status: built ([#1393](https://github.com/epiphany40223/parishkit/issues/1393);
+`accounts/families_choice.py`, `campaign-families-section.html`,
+`campaign-families-v1.js`). What the choice means, how it is stored and how refreshes apply it are in the data
 specification's [campaign Families](../data/spec.md#campaign-families); this
 section is the page.
 
 **Where.** Create the campaign's first page has a **Families in this
-campaign** section, after the modules and before the dates, because the
+campaign** section, after the modules (and the additional information box)
+and before the Ministry selections, because the
 choice has to be made before the campaign's first load creates its Families
 (above). It is part of the one Campaign settings form, so it is asked once.
 Its help says, in plain words: "Choose which ParishSoft Families this
@@ -4966,17 +4967,23 @@ returns the two numbers (no names, no Family data). It shows only those two
 counts (Administrator decision, 2026-10-24), not a comparison with another
 choice. The time is browser-local.
 While the choice is incomplete the line says what is missing ("Choose at
-least one Family group."). When no Family matches, the line says so and
-**Create the campaign and continue** is unavailable with the reason "No
-Families in the latest ParishSoft data match this choice."
-([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)). The
+least one Family group."). When no Family matches, the line says so ("No
+Families in the latest ParishSoft data match this choice."). In both cases
+**Create the campaign and continue** is unavailable, its reason the line's
+own words, so the gate never says no Family matches while the choice is
+only incomplete
+([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)). This
+hold is not an error in the Advanced fields: a complete choice that matches
+nothing but equals a preset still switches back to Basic without the "no
+basic equivalent" question. The
 "Create the campaign?" confirmation repeats the choice in words and the count,
 and says "This can't be changed after the campaign is created." The count is
 a preview: the first load after creation counts the Families again from the
 data it reads.
 
 **Locked after creation.** On Campaign settings the section stays in its
-place in every campaign state, disabled, with the reason in its tip: "Chosen
+place in every campaign state, drawn as the rule's words with no control to
+change, with the reason in its tip: "Chosen
 when the campaign was created; it can't be changed." It shows the rule in the
 words above (an Advanced rule lists its groups by name, and a group
 the latest data no longer has as "*name* (no longer in ParishSoft)"). The
