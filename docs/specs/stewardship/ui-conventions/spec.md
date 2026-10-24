@@ -4921,19 +4921,20 @@ memory since [#1685](https://github.com/epiphany40223/parishkit/issues/1685).
 [review worklist](../review-pipeline/spec.md#review-worklist) of Census
 changes, Ministry requests, Pledges, Additional information and
 Limitations) lists its rows by default in name order: the name shown in
-its first identity column, casefolded, then the secondary name, then the
-DUID, then the row's own unique id. Rows with the same names therefore
-always come out in the same order, on every page and refresh of the same
-view (and in Ministry requests' Export these requests, which lists the
+its first identity column, casefolded, then that name's DUID (so every
+row of one Family or Member stays together, even beside another with the
+same name), then the table's finer parts, ending with the row's own unique
+id. Rows with the same names therefore always come out in the same order,
+on every page and refresh of the same view (and in Ministry requests' Export these requests, which lists the
 table's rows). Downloads keep their own documented orders. Per stream:
 
 | Table | Default order |
 | --- | --- |
-| Census changes | Family name, Who (the Member, "Family" or "New Member: …"), Family DUID, What changed, the change's id |
-| Ministry requests | Member name, Ministry name, Member DUID, the request's id |
+| Census changes | Family name, Family DUID, Who (the Member, "Family" or "New Member: …"), What changed, the change's id |
+| Ministry requests | Member name, Member DUID, Ministry name, the request's id |
 | Pledges | Family name, Family DUID, the response's id |
 | Additional information | Family name, Family DUID, the request's id |
-| Limitations | Family name, Member name (none for the Family's own answer, which comes first), Family DUID, the answer's id |
+| Limitations | Family name, Family DUID, Member name (none for the Family's own answer, which comes first), the answer's id |
 
 A row with no DUID (a New Member, a proposed Member) follows those with one.
 A column the reader chooses sorts first, as its
