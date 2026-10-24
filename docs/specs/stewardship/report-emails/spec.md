@@ -1530,7 +1530,9 @@ records it as one change and redraws the table in place, keeping what the
 Administrator has typed in the editor; the status line under it says "2
 sends skipped." or "Skipped send will send." The calendar's link to a send
 opens Edit with that send named (`?send=<slot key>`, with the month the
-calendar showed, `calendar=<year-month>`, to which Cancel returns), its box
+calendar showed, `calendar=<year-month>`, or in its
+[week view](../admin-portal/spec.md#week-view) the week's Sunday, to which
+Cancel returns), its box
 ticked and focused, so its action is one step away. Each send is checked on
 its own, as today for a digest send: skipping (or sending again) a send
 whose time has passed, or that has Production work (prepared, sending, sent
