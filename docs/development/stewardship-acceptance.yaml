@@ -309,6 +309,7 @@ sections:
     "Download capacity and timeouts": [OPS-04, ARC-08]
     "Kept mail connections": [OPS-04, BG-12]
     "Backup": [OPS-05, ADM-13]
+    "Dedicated off-site uploader (planned, post-launch)": [OPS-05]
     "Restore": [OPS-06]
     "Temporary retention and housekeeping": [OPS-07, ADM-13]
     "Point-in-time exports": [OPS-07, BG-08]
