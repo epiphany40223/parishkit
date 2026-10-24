@@ -1610,7 +1610,7 @@ The cycle:
    drop threshold (25% by default). Every record can stay while the fields
    eligibility depends on disappear, so both are checked. The recent full
    snapshots bound the loss accumulated over several full refreshes that each
-   drop just under the threshold. The Portal-eligible and email-eligible counts are compared only with snapshots recorded under the same [campaign Families rule](../data/spec.md#campaign-families) (#1393, not built), so a new campaign's first load, whose count the Administrator approved, starts their trend again. A full
+   drop just under the threshold. The Portal-eligible, email-eligible and active-head counts are compared only with snapshots recorded under the same [campaign Families rule](../data/spec.md#campaign-families) (#1393), so a new campaign's first load, whose count the Administrator approved, starts their trend again. A full
    refresh accepted past the threshold by the operator's raised threshold
    starts this trend again: older full snapshots are not compared with after
    it. One accepted by an Administrator's

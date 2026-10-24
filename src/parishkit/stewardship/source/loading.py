@@ -19,6 +19,7 @@ from parishkit.parishsoft_source import (
     CoherentParishSoftClient,
     SourceOrganizationMismatch,
 )
+from parishkit.stewardship.campaigns import campaign_families
 from parishkit.stewardship.observability import debug_logging_enabled
 
 from .canonical import InvalidSourcePayload
@@ -661,7 +662,7 @@ def load_full_source(
         data.funds.update(load_funds(client, data.organization_id))
         if progress is not None:
             progress("funds", len(data.funds))
-        corpus = normalize_core(data, as_of=as_of)
+        corpus = normalize_core(data, as_of=as_of, families=window.families)
         giving = load_giving(client, corpus=corpus, window=window, as_of=as_of)
         corpus.update(pledge=giving.pledges, contribution=giving.contributions)
     except (
@@ -721,9 +722,20 @@ def load_full_source(
         "derived_counts": derived,
         # The next full refresh's contact list baseline (#387 M4).
         CONTACT_COVERAGE_KEY: coverage,
+        # The Family group lookup this load read (#1393), which Create the
+        # campaign offers and its count preview reads.
+        campaign_families.GROUPS_KEY: campaign_families.group_lookup_evidence(
+            data.family_groups
+        ),
     }
     # The configured organization's name, for display (#1554).
     evidence.update(organization_name_evidence(client))
+    # The Families rule this load applied, its digest (the drop check's
+    # comparison key) and any chosen group the lookup lacks; nothing for the
+    # legacy rule.
+    applied = campaign_families.evidence(window.families, data.family_groups)
+    if applied is not None:
+        evidence[campaign_families.KEY] = applied
     # Only for a key that reaches several organizations (#1554).
     evidence.update(organization_evidence(client))
     if accepted is not None:

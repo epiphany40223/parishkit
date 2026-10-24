@@ -514,6 +514,12 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # body back last, after 0160's and 0163's.
 # 0172 (#1932) creates one definer, granted to the general worker
 # (runtime_grants.CLOSURE_FUNCTIONS), and replaces nothing.
+# 0175 (#1393) creates nothing: it replaces 0166's campaign pointer function
+# in place, as 0166 did 0103's, and the baseline's source window function;
+# no closure file installs either again, so their bodies survive the swap.
+# It also replaces 0110's financial and 0094's and 0100's information
+# selections, which those files' reruns bring back older, so
+# ``CLOSURE_REPLACED_ONLY`` puts 0175's bodies back last.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -1585,6 +1591,21 @@ CLOSURE_REPLACED_ONLY = {
             "AND addition.family_id=response.family_id",
         ),
     },
+    # 0175 (#1393) replaces the Financial and both Additional information
+    # selections last, on 0110's, 0094's and 0100's bodies, so a rule-loaded
+    # Family's badge follows the rule; those files' reruns put the older
+    # bodies back, so only its replacement statements run again.
+    **dict.fromkeys(
+        (
+            "stewardship_financial_report_v1",
+            "stewardship_information_report_v1",
+            "stewardship_information_report_v2",
+        ),
+        (
+            ("stewardship_campaigns", "0019_campaign_families"),
+            "WHEN p.canonical::jsonb ? 'campaign_families'",
+        ),
+    ),
 }
 
 

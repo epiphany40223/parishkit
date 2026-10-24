@@ -165,13 +165,14 @@ class Refreshes:
     """A configured tenant whose real worker runs full refreshes.
 
     ``suppressed`` stands in for provider mail refusals, so a test can add a
-    bounce between refreshes. ``campaign`` adds a draft campaign first.
+    bounce between refreshes. ``campaign`` adds a draft campaign first:
+    ``row`` (a campaign factory record), or the default draft.
     """
 
-    def __init__(self, tmp_path, monkeypatch, *, campaign=True):
+    def __init__(self, tmp_path, monkeypatch, *, campaign=True, row=None):
         credential, self.store, version, actor = configured(tmp_path)
         if campaign:
-            add_draft(self.store, version, actor)
+            add_draft(self.store, version, actor, row)
         short_drain(monkeypatch)
         self.monkeypatch = monkeypatch
         self.suppressed = set()

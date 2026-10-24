@@ -224,7 +224,7 @@ def test_an_inconsistent_corpus_falls_back_to_the_locked_path(tmp_path, monkeypa
     campaign, ring = setup(tmp_path)
     snapshot, claim = prepare()
 
-    def refuse(corpus):
+    def refuse(corpus, rule=None):
         """Stand in for a corpus whose eligibility contradicts itself."""
         raise InvalidSourcePayload("Source Family eligibility is inconsistent.")
 

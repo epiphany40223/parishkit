@@ -1864,6 +1864,83 @@ def member_is_active(member: dict[str, Any]) -> bool:
     return member.get("memberStatus") != "Inactive" and not member_is_deceased(member)
 
 
+# Families rules: which Families a mailing is sent to (stewardship #1393).
+# A rule is a plain mapping. ``None`` is the legacy rule, today's
+# family_is_active and family_is_parishioner, which other tools keep using.
+# A preset names the Family groups it takes (by exact name: ParishSoft's
+# group list is fixed) and always requires registration and an Active
+# Member; ``advanced`` lists ``registered``, ``family_groups`` ({id, name},
+# id 0 meaning no group) and ``member_statuses``.
+FAMILY_RULE_PRESET_GROUPS = {
+    "active_parishioners": ("Active",),
+    "active_parishioners_and_staff": ("Active", "Staff"),
+}
+FAMILY_RULE_MEMBER_STATUSES = ("Active", "ActOther", "Unknown")
+# ParishSoft's screen label for a Family with no group (``famGroupID`` 0),
+# which is not an entry of the group lookup.
+NO_FAMILY_GROUP_ID = 0
+NO_FAMILY_GROUP_NAME = "No Family Group"
+
+
+def family_rule_member_statuses(rule: dict[str, Any]) -> tuple[str, ...]:
+    """Return the Member statuses a preset or Advanced rule accepts."""
+    if rule["rule"] in FAMILY_RULE_PRESET_GROUPS:
+        return ("Active",)
+    return tuple(rule["member_statuses"])
+
+
+def member_matches_rule(member: dict[str, Any], rule: dict[str, Any] | None) -> bool:
+    """Return True if the member counts for the rule (legacy: not Inactive/Deceased).
+
+    A preset or Advanced rule compares ``memberStatus`` exactly with its
+    statuses, none of which is Inactive or Deceased.
+    """
+    if rule is None:
+        return member_is_active(member)
+    return member.get("memberStatus") in family_rule_member_statuses(rule)
+
+
+def _family_in_rule_groups(family: dict[str, Any], rule: dict[str, Any]) -> bool:
+    """Return True if the family's group is one the rule chose.
+
+    Presets match the group's exact name. Advanced matches ``famGroupID``;
+    its id 0 choice matches a family with no group, and also a group named
+    exactly "No Family Group" should the lookup ever hold one.
+    """
+    name = family.get("py family group")
+    if rule["rule"] in FAMILY_RULE_PRESET_GROUPS:
+        return name in FAMILY_RULE_PRESET_GROUPS[rule["rule"]]
+    chosen = {group["id"] for group in rule["family_groups"]}
+    group_id = family.get("famGroupID")
+    if not group_id:
+        return NO_FAMILY_GROUP_ID in chosen
+    return group_id in chosen or (
+        NO_FAMILY_GROUP_ID in chosen and name == NO_FAMILY_GROUP_NAME
+    )
+
+
+def family_matches_rule(
+    family: dict[str, Any], rule: dict[str, Any] | None, org_id: int | str | None
+) -> bool:
+    """Return True if the family is one the rule selects.
+
+    Every rule joins three conditions with AND: registration at ``org_id``
+    (Advanced may not require it), the Family group, and at least one member
+    the rule accepts. The legacy rule (``None``) is exactly today's
+    family_is_active and family_is_parishioner.
+    """
+    if rule is None:
+        return family_is_active(family) and family_is_parishioner(family, org_id)
+    registered = rule["rule"] in FAMILY_RULE_PRESET_GROUPS or rule["registered"]
+    return (
+        (not registered or family_is_parishioner(family, org_id))
+        and _family_in_rule_groups(family, rule)
+        and any(
+            member_matches_rule(member, rule) for member in family.get("py members", [])
+        )
+    )
+
+
 def get_member_public_phones(member: dict[str, Any]) -> list[dict[str, str]]:
     """Return the member's publishable phone numbers as ``{number, type}`` dicts.
 
