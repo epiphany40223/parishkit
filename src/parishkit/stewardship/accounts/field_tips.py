@@ -9,9 +9,11 @@ reads even while it is closed), so screen-reader users lose nothing.
 
 Checkbox fields and fields that already use their own template keep their
 help visible: their layouts place the help beside the box, and their help is
-short enough to read in place. The one exception is a field with a shared
-format rule (``web.field_rules.apply``): its field group, with a reserved
-error line, draws a tip itself, so the field keeps both.
+short enough to read in place (one line, #2130; ``test_admin_help_guards``).
+The exceptions are a field with a shared format rule
+(``web.field_rules.apply``), whose field group, with a reserved error line,
+draws a tip itself, and a field whose own template draws one
+(``TIP_TEMPLATES``), so the field keeps both.
 """
 
 from django import forms
@@ -19,6 +21,10 @@ from django.forms.boundfield import BoundField
 from django.utils.text import format_lazy
 
 TIP_TEMPLATE = "stewardship/field-tip.html"
+# Field templates that draw the field's tip themselves: a field already
+# drawn by one can still move long help into a tip (a form that shortens its
+# own help, which a view's setup_help.apply then shortens again).
+TIP_TEMPLATES = {TIP_TEMPLATE, "stewardship/file-size-field.html"}
 # Longer help than this (about one line of the form column) becomes a tip.
 LONG_HELP = 120
 
@@ -52,7 +58,9 @@ class TipBoundField(BoundField):
 
 def eligible(field):
     """Whether the field's layout can take a tip beside its label."""
-    own_template = field.template_name is not None and not ruled(field)
+    own_template = field.template_name not in {None, *TIP_TEMPLATES} and not ruled(
+        field
+    )
     return not own_template and not isinstance(field.widget, forms.CheckboxInput)
 
 
@@ -65,8 +73,9 @@ def add(field, tip, hint=""):
     """Show ``tip`` behind the field's "i" button and ``hint`` under its label."""
     field.tip = tip
     field.help_text = hint
-    # A ruled field's group, with its reserved error line, draws the tip too.
-    if not ruled(field):
+    # A ruled field's group, with its reserved error line, draws the tip too,
+    # as do the TIP_TEMPLATES, which are kept.
+    if not ruled(field) and field.template_name not in TIP_TEMPLATES:
         field.template_name = TIP_TEMPLATE
     field.bound_field_class = TipBoundField
 

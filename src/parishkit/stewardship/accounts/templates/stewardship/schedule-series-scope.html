@@ -13,8 +13,8 @@ prepared, or another has passed without sending) is drawn unavailable with
 its reason beside it (UX conventions, "Prerequisite gates"). The error list
 keeps its id, so a refused Review's answer can fill it in place; the help
 line is always shown, never swapped per choice (no layout shift).
-{% endcomment %}{% with field=series.form.scope %}<fieldset class="field schedule-series" data-not-a-change data-series-scope aria-describedby="series-part-of {{ field.auto_id }}_helptext">
-<legend>{{ field.label }}</legend>
+{% endcomment %}{% with field=series.form.scope %}<fieldset class="field schedule-series" data-not-a-change data-series-scope aria-describedby="series-part-of {{ field.auto_id }}_helptext {{ field.auto_id }}_tip">
+<legend id="{{ field.auto_id }}_legend">{{ field.label }}</legend>{% include "stewardship/components/toggletip.html" with tip_id=field.auto_id|add:"_tip" tip_label_id=field.auto_id|add:"_legend" tip_text=field.field.tip %}
 <p id="series-part-of">{% blocktranslate trimmed with rule=series.text %}Part of: {{ rule }}{% endblocktranslate %}</p>
 <ul class="errorlist" id="{{ field.auto_id }}_error"{% if not field.errors %} hidden{% endif %}>{% for error in field.errors %}<li>{{ error }}</li>{% endfor %}</ul>
 {% for option in series.options %}<div><input type="radio" name="{{ field.html_name }}" value="{{ option.value }}" id="{{ field.auto_id }}_{{ forloop.counter0 }}"{% if option.checked %} checked{% endif %}{% if option.reason %} disabled{% endif %}{% if field.errors %} aria-invalid="true"{% endif %}{% if option.reason or field.errors %} aria-describedby="{% if field.errors %}{{ field.auto_id }}_error{% endif %}{% if option.reason %}{% if field.errors %} {% endif %}{{ field.auto_id }}_{{ forloop.counter0 }}_reason{% endif %}"{% endif %}> <label for="{{ field.auto_id }}_{{ forloop.counter0 }}">{{ option.label }}</label>{% if option.reason %} <span class="help" id="{{ field.auto_id }}_{{ forloop.counter0 }}_reason">{% translate "Unavailable:" %} {{ option.reason }}</span>{% endif %}</div>

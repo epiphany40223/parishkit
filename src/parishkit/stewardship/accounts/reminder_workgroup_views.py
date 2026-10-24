@@ -35,6 +35,7 @@ from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.accounts import field_tips
 from parishkit.stewardship.campaigns.configuration import (
     REMINDER_WORKGROUP,
     REMINDER_WORKGROUP_NAME,
@@ -98,6 +99,19 @@ class WorkGroupForm(AdminForm):
     base_digest = forms.RegexField(
         regex=r"^[0-9a-f]{64}$", max_length=64, widget=forms.HiddenInput
     )
+
+    def __init__(self, *args, **kwargs):
+        """Keep one help line under the name (#2130); the rest is its tip."""
+        super().__init__(*args, **kwargs)
+        field = self.fields["name"]
+        field_tips.add(
+            field,
+            field.help_text,
+            _(
+                "Families in this WorkGroup get no Reminder emails. Leave it "
+                "empty to remind every eligible Family."
+            ),
+        )
 
 
 def _campaign(configuration, campaign_id):

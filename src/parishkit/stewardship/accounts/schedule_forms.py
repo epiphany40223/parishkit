@@ -37,6 +37,13 @@ FIELDS = {
 }
 
 
+# The help of Email to send, behind its "i" (#2130).
+EMAIL_TIP = _(
+    "The saved email, with its subject, that this schedule sends; only emails "
+    "of the chosen mail type are listed. Editing a saved email changes it for "
+    "every schedule that sends it. Emails are written with the page and email "
+    "templates."
+)
 NO_TEMPLATES = _(
     "No invitation or reminder email is saved yet, so there is nothing "
     "to choose. Save those emails with the page and email templates first."
@@ -300,9 +307,8 @@ class TemplateSelect(forms.Select):
     """An email list whose options say their mail type, for the page to filter.
 
     ``details`` maps an email's ID to the ``data-`` attributes the page
-    script shows under the list for the chosen email (#446): the start of its
-    text, the saved schedules that send it and, on Dates and mail schedules,
-    the links to preview, test and edit it.
+    script shows under the list for the chosen email (#446, #2130): where
+    the page offers them (``links``), the links to preview, test and edit it.
     """
 
     kinds = {}
@@ -411,10 +417,11 @@ def email_choices(emails, usage):
     ]
 
 
-def email_details(emails, usage, *, links, test_mail=True):
+def email_details(emails, *, links, test_mail=True):
     """The ``data-`` attributes of each email option (see TemplateSelect).
 
-    With ``links``, each email carries its test page and editor addresses.
+    With ``links``, each email carries its test page and editor addresses;
+    without, it carries none.
     While the campaign admits no test mail (``test_mail`` false, see
     ``campaign_mail.admits_test_mail``) the test address is replaced by a short
     note saying why, so the page never links a test that cannot work (#923).
@@ -425,10 +432,7 @@ def email_details(emails, usage, *, links, test_mail=True):
 
     details = {}
     for row in emails:
-        attributes = {
-            "data-excerpt": excerpt(row["values"].get("text")),
-            "data-used-by": json.dumps(usage.get(row["id"], [])),
-        }
+        attributes = {}
         if links:
             if test_mail:
                 attributes["data-test-url"] = reverse(
@@ -494,15 +498,12 @@ class ScheduleForm(AdminForm):
             "your computer's, for example 9:00 AM, 9am or 21:00."
         ),
     )
+    # Its one line under the list is the chosen email's links (ui-v1.js
+    # emailSummary, #2130); its help is all in its tip (EMAIL_TIP).
     template_version = forms.ChoiceField(
         label=_("Email to send"),
         widget=TemplateSelect,
         error_messages={"required": _("Choose the email to send.")},
-        help_text=_(
-            "The saved email, with its subject, that this schedule sends. Only "
-            "emails of the chosen mail type fit. Emails are written with the page "
-            "and email templates."
-        ),
     )
 
     def __init__(
@@ -512,7 +513,6 @@ class ScheduleForm(AdminForm):
         usage=None,
         links=False,
         test_mail=True,
-        label=None,
         browser_times=False,
         **kwargs,
     ):
@@ -525,12 +525,10 @@ class ScheduleForm(AdminForm):
         send it, for labels that tell emails apart; ``links`` adds each email's
         preview, test and edit addresses for the page script (#446), and
         ``test_mail`` false replaces the test address with why there is none
-        (#923). ``label`` names a saved schedule (Reminder 2), so the page can tell
-        whether other schedules send the same email. ``browser_times`` is
+        (#923). ``browser_times`` is
         for a page that shows and takes send times in the browser's time
         zone (#558): only the send time's help differs.
         """
-        self.schedule_label = label
         self.templates = templates
         super().__init__(*args, **kwargs)
         # A saved time with seconds (set before #631) still saves unchanged.
@@ -563,15 +561,14 @@ class ScheduleForm(AdminForm):
         choices = email_choices(emails, usage or {})
         kinds = {row["id"]: row["values"]["slot"] for row in emails}
         self.fields["template_version"].widget.details = email_details(
-            emails, usage or {}, links=links, test_mail=test_mail
+            emails, links=links, test_mail=test_mail
         )
         # The time field's one visible line is its reading ("Reads as
         # 9:00 AM EDT", #2129), so its zone and forms move into its tip.
         field_tips.add(self.fields["time"], self.fields["time"].help_text)
-        field_tips.shorten(
-            self, {"template_version": _("Only emails of the chosen mail type fit.")}
-        )
-        # After shortening, so this warning always stays visible.
+        field_tips.add(self.fields["template_version"], EMAIL_TIP)
+        field_tips.shorten(self)
+        # After the tips, so this warning always stays visible.
         if not schedulable(templates):
             self.fields["template_version"].help_text = NO_TEMPLATES
         selected = self.initial.get("template_version")
@@ -652,7 +649,6 @@ class ScheduleSet(AdminFormSet):
         self.browser_times, self.zone, self.now = browser_times, zone, now
         self.saved_timezone = campaign["timezone"]
         self.previous = sorted(previous, key=schedule_order)
-        self.labels = schedule_labels(self.previous)
         self.usage = email_usage(self.previous)
         self.email_links = email_links
         self.test_mail = test_mail
@@ -682,10 +678,6 @@ class ScheduleSet(AdminFormSet):
             "links": self.email_links,
             "test_mail": self.test_mail,
             "browser_times": self.browser_times,
-            # Saved forms come first, in the same order as self.previous.
-            "label": self.labels[index]
-            if index is not None and index < len(self.labels)
-            else None,
         }
 
     def _construct_form(self, i, **kwargs):

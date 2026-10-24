@@ -67,7 +67,7 @@ from parishkit.stewardship.web.refusals import (
     with_default_code,
 )
 
-from . import admin_navigation, setup_help
+from . import admin_navigation, field_tips, setup_help
 from .admin_editing import (
     confirm,
     error_response,
@@ -237,7 +237,11 @@ def any_zone(form):
     form's initial (parish) zone, and its help says so. The browser
     component pages build their form with this too.
     """
-    form.fields["timezone"].help_text = setup_help.CREATION_TIMEZONE
+    field_tips.add(
+        form.fields["timezone"],
+        setup_help.CREATION_TIMEZONE,
+        setup_help.CREATION_TIMEZONE_HINT,
+    )
     browser_default(form)
     return form
 

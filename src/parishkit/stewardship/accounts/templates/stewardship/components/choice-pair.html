@@ -14,6 +14,9 @@
   - legend: the visible label; first_* / second_*: each segment's value
     and words; chosen: the value checked (none: neither).
   - help_id (optional): a help line after the pair that describes it.
+  - help_tip (optional): the rest of the pair's help, in a toggletip beside
+    the legend (one help line under a field, #2130), which describes the
+    pair too; not used with fixed.
   - fixed (optional): the setting can't change now, so the segment not
     chosen is disabled where it is, and tip gives the reason in a
     toggletip beside the legend (ui-conventions, "Basic and Advanced
@@ -28,7 +31,7 @@
     posted until the page script shows the pair and enables them (the
     Sends of the date-change review, #1944, and of New scheduled email,
     #2022, both shown only for a Reminder).
-{% endcomment %}<fieldset class="choice-pair" id="{{ pair_id }}" aria-labelledby="{{ pair_id }}-legend"{% if help_id or errors %} aria-describedby="{% if help_id %}{{ help_id }}{% endif %}{% if errors %} {{ pair_id }}_error{% endif %}"{% endif %}{% if data_not_a_change %} data-not-a-change{% endif %}><legend id="{{ pair_id }}-legend">{{ legend }}</legend>{% if fixed and tip %}{% include "stewardship/components/toggletip.html" with tip_id=pair_id|add:"-tip" tip_label_id=pair_id|add:"-legend" tip_text=tip %}{% endif %}
+{% endcomment %}<fieldset class="choice-pair" id="{{ pair_id }}" aria-labelledby="{{ pair_id }}-legend"{% if help_id or errors or help_tip %} aria-describedby="{% if help_id %}{{ help_id }} {% endif %}{% if help_tip %}{{ pair_id }}-tip {% endif %}{% if errors %}{{ pair_id }}_error{% endif %}"{% endif %}{% if data_not_a_change %} data-not-a-change{% endif %}><legend id="{{ pair_id }}-legend">{{ legend }}</legend>{% if fixed and tip %}{% include "stewardship/components/toggletip.html" with tip_id=pair_id|add:"-tip" tip_label_id=pair_id|add:"-legend" tip_text=tip %}{% elif help_tip %}{% include "stewardship/components/toggletip.html" with tip_id=pair_id|add:"-tip" tip_label_id=pair_id|add:"-legend" tip_text=help_tip %}{% endif %}
 <span class="choice-pair-options">
 <label for="{{ pair_id }}_0"><input type="radio" id="{{ pair_id }}_0" name="{{ name }}" value="{{ first_value }}"{% if chosen == first_value %} checked{% endif %}{% if fixed and chosen != first_value %} disabled{% endif %}{% if required %} required{% endif %}{% if disabled %} disabled{% endif %}{% if errors %} aria-invalid="true" aria-describedby="{{ pair_id }}_error"{% endif %}>{{ first_label }}</label>
 <label for="{{ pair_id }}_1"><input type="radio" id="{{ pair_id }}_1" name="{{ name }}" value="{{ second_value }}"{% if chosen == second_value %} checked{% endif %}{% if fixed and chosen != second_value %} disabled{% endif %}{% if required %} required{% endif %}{% if disabled %} disabled{% endif %}{% if errors %} aria-invalid="true" aria-describedby="{{ pair_id }}_error"{% endif %}>{{ second_label }}</label>

@@ -23,6 +23,7 @@ from parishkit.stewardship.campaigns.leader_roles import canonical_roles
 from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.presentation import parish_date
 
+from . import field_tips
 from .share_forms import default_share_options
 from .timezone_field import TimezoneField
 
@@ -30,6 +31,11 @@ from .timezone_field import TimezoneField
 MULTI_SELECT_HELP = _(
     "To choose several, hold Ctrl (Cmd on a Mac) while clicking; to choose a "
     "range, click the first item and hold Shift while clicking the last."
+)
+# The one line each multi-select list keeps visible; its tip has the rest.
+MULTI_SELECT_HINTS = dict.fromkeys(
+    ("ministry_duids", "fund_duids", "comparison_fund_duids"),
+    _("Hold Ctrl (Cmd on a Mac) to choose several, or Shift for a range."),
 )
 # What the Ministry leader roles decide (#922), in plain words.
 LEADER_ROLES_HELP = _(
@@ -230,6 +236,10 @@ class CampaignForm(AdminForm):
         financial_on = f"{self.add_prefix('financial_enabled')}=on"
         for name in FINANCIAL_REQUIRED:
             self.fields[name].widget.attrs["data-required-when"] = financial_on
+        # One help line under each field (#2130): longer help, such as the
+        # multi-select how-to and the leader roles', opens from its "i".
+        # A view's setup_help.apply may replace the help and shorten again.
+        field_tips.shorten(self, MULTI_SELECT_HINTS)
         self.fields["overlap_confirmed"].template_name = OVERLAP_TEMPLATE
         if whole:
             self._mark_date_order()
